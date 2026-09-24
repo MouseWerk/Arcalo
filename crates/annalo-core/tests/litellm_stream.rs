@@ -104,3 +104,97 @@ async fn surfaces_provider_errors() {
         .unwrap_err();
     assert!(matches!(err, annalo_core::Error::Provider { status: 404, .. }), "{err}");
 }
+
+/// A server that answers every connection with `response` (status line and headers included).
+async fn fake_raw(response: String) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            let response = response.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 64 * 1024];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock.write_all(response.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    format!("http://{addr}")
+}
+
+fn hello() -> ChatRequest {
+    ChatRequest { model: "m".into(), messages: vec![ChatMessage::user("hi")], ..Default::default() }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_server_that_never_answers_times_out() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    // Accepts every connection and keeps it open without a word.
+    tokio::spawn(async move {
+        let mut held = vec![];
+        while let Ok((sock, _)) = listener.accept().await {
+            held.push(sock);
+        }
+    });
+    let mut client = AiClient::new(format!("http://{addr}"), None);
+    client.first_byte_timeout = std::time::Duration::from_millis(300);
+    client.request_timeout = std::time::Duration::from_millis(300);
+    let err = client.chat_stream(&hello(), None, |_| {}).await.unwrap_err().to_string();
+    assert!(err.contains("Zeitüberschreitung"), "{err}");
+    let err = client.models().await.unwrap_err().to_string();
+    assert!(err.contains("Zeitüberschreitung"), "{err}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn garbage_truncated_and_empty_streams_are_not_answers() {
+    // A captive portal's login page with status 200.
+    let html = "<html><body>Bitte im Hotel-WLAN anmelden</body></html>";
+    let url = fake_raw(format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{html}",
+        html.len()
+    ))
+    .await;
+    let err = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap_err().to_string();
+    assert!(err.contains("Keine Antwort im erwarteten Format") && err.contains("Hotel-WLAN"), "{err}");
+
+    let sse =
+        |body: &str| format!("HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n{body}");
+    // Cut off mid-answer: what arrived is kept and marked.
+    let url = fake_raw(sse("data: {\"choices\":[{\"delta\":{\"content\":\"Halb\"}}]}\n\n")).await;
+    let c = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap();
+    assert!(c.content.starts_with("Halb") && c.content.contains("unvollständig"), "{}", c.content);
+    assert_eq!(c.finish_reason.as_deref(), Some("incomplete"));
+
+    // One broken event does not cost the answer.
+    let url = fake_raw(sse(concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Gut\"}}]}\n\n",
+        "data: {kaputt\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" so\"},\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n"
+    )))
+    .await;
+    let c = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap();
+    assert_eq!(c.content, "Gut so");
+    assert_eq!(c.warnings.len(), 1);
+
+    // Nothing at all.
+    let url =
+        fake_raw(sse("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")).await;
+    let err = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap_err().to_string();
+    assert!(err.starts_with("Leere Antwort"), "{err}");
+    let url = fake_raw(sse("")).await;
+    let err = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap_err().to_string();
+    assert!(err.contains("brach während der Antwort ab"), "{err}");
+
+    // A backend that ignores `stream` and sends the whole answer as JSON.
+    let json = r#"{"choices":[{"message":{"role":"assistant","content":"Ganz"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}"#;
+    let url = fake_raw(format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{json}",
+        json.len()
+    ))
+    .await;
+    let c = AiClient::new(url, None).chat_stream(&hello(), None, |_| {}).await.unwrap();
+    assert_eq!((c.content.as_str(), c.usage.prompt_tokens), ("Ganz", 3));
+}

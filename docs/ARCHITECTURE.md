@@ -45,6 +45,8 @@ the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
+Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
+and by `entry_id`.
 
 ## Data safety
 
@@ -63,7 +65,21 @@ Migration v2 converts the old block model: blocks are concatenated into
 - **Git sync** (`gitsync.rs`): the mirror is swapped atomically, so it cannot hold a repository. The sync keeps its own
   working tree `<data dir>/git-sync`, brings it to the mirror's state like rsync (removals first, `.git`, `.gitattributes`,
   `README.md` and `annalo-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
-  A fresh working tree adopts the remote history only when its `.gitattributes` carries the sync's marker. A rejected push
+  Only a complete mirror is synced: a source that is not a folder with the mirror's `README.txt` marker (drive not
+  connected, a foreign folder the mirror refused) is refused before git runs, and a folder vanishing while it is read is an
+  error, never an empty listing. `mirror::replace_dir` swaps under `mirror::hold_swaps`, and the sync copies the mirror under
+  the same lock; the shell also runs the mirror refresh of a backup under `git_lock` and passes the real mirror result to the
+  sync (a failed mirror is written again by the sync, which then fails with its message).
+  A fresh working tree adopts the remote history only when its `.gitattributes` carries the sync's marker. Adopting merges
+  (`adopt_tree`, first sync of a new computer): the server's files stay, files only this computer has are added, a note
+  both have with different text keeps the server's version and comes back as a conflict (base `None`), and notes only the
+  server has come back with `mine: None`, so the shell creates them as pages (subpages below the page created for their
+  folder). Mass-deletion guard (`mass_deletion`): a commit that deletes more than 10 tracked notes, or 3 and more than a
+  fifth of them, is refused (staged changes reset) with an error starting with `GUARD_PREFIX`; `git_sync_status` reports
+  `blocked_deletions` and Settings → Sicherung offers „Löschungen übertragen“ (`git_sync_now` with `allowDeletions`, after a
+  confirmation). The other direction: `syncmerge::apply` does not trash pages when the server deleted that many at once
+  (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
+  before a sync (`remove_stale_locks`, logged). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `annalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
@@ -105,11 +121,28 @@ Migration v2 converts the old block model: blocks are concatenated into
 - **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
   (`wal_checkpoint(TRUNCATE)`) while holding the database lock, copies `workspace.db` (+ `-wal`/`-shm`),
-  `attachments/` and `backups/` (never over an existing workspace), writes `location.json` and restarts.
+  `attachments/`, `backups/`, the file trash `trash/`, `logs/` and the Git sync's working tree `git-sync/` (never over an
+  existing workspace; `git-sync-export` is written anew by every sync), writes `location.json` and restarts.
   A data folder on a UNC path or inside OneDrive/Dropbox gets a persistent warning at start
   (`data_dir_status`, queried by the UI once it is ready, so the warning cannot be missed).
 - **Single instance**: a second launch only focuses the running window (tauri-plugin-single-instance),
-  so two processes never write one workspace. Test runs with `ANNALO_DATA_DIR` skip the check.
+  so two processes never write one workspace. Test runs with `ANNALO_DATA_DIR` skip the check. A portable copy locks
+  `data/.annalo.lock` instead (`portable::lock_instance`): the plugin is keyed by the app identifier, which the installed
+  copy shares, so both may run side by side on their own data.
+- **Transactions** (`Database::atomic`): savepoints that nest; when the outermost release (the commit) fails (disk full,
+  I/O error, locked file), everything since the savepoint is rolled back and the error returned, so the connection never
+  stays inside a transaction where later saves would look successful without being committed. An open transaction found at
+  the start of an outermost `atomic` is rolled back.
+- **Start-up failures** (shell `recovery.rs`): a data folder that cannot be created, a database that cannot be opened
+  (damaged, not a database, locked, read-only storage: `Error::is_storage`) or one of a newer schema (`db::NEWER_SCHEMA`)
+  show a native dialog instead of a panic without a window: „Letzte Sicherung wiederherstellen“ (only for a damaged
+  database with backups in `<data dir>/backups`: `backup::restore_latest` keeps the broken files as
+  `workspace.db.broken-<stamp>` and copies the newest backup, then restarts), „Ordner öffnen“, „Beenden“. Settings are read
+  key by key (`parse_settings_lenient`, one level deep): a value of the wrong type falls back to its default, the raw JSON
+  is kept in the meta row `settings.broken` and a notice names the keys. A data folder that opens but cannot be written, and
+  network settings that cannot be applied, are start notices (`DataDirStatus.notice` with a `title`).
+- **History**: activity, AI usage and finished focus sessions older than 400 days are pruned on start
+  (`prune_history`); purging a page clears the texts of its activity rows (title, task text, mentions).
 - **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
   „Beenden“ in the tray emits `app://quit-requested`, the UI flushes (asking if that fails) and calls
   `app_quit`. Without it the UI destroys the main window and the shell exits.
@@ -133,7 +166,8 @@ Migration v2 converts the old block model: blocks are concatenated into
   `focus::state` completes a session that ran out while the app was closed (also every 30 s in the shell's reminder loop). A
   completed session books `max(1, round(planned))` minutes, an aborted one the minutes so far when asked. The entry is a draft
   `timer` entry on the Vorgang with the goal as description; a later session of the same local day with the same Vorgang and goal
-  extends it (duration = rounding of the summed worked minutes). While a session is in its work phase the shell holds desktop
+  extends it: the session's minutes are added to the entry's current duration (a correction by hand stays; rounding applies),
+  the start stays and the end follows. While a session is in its work phase the shell holds desktop
   notifications back (`focus::hold` in `desktop::notify`) and the UI holds non-error toasts and budget alerts (`heldToasts`); both
   are summed up in the message after the session. The end is announced as a silent notification „Pause“. `focus::write_daily_line`
   writes or replaces „Fokus heute: …“ in the daily note, on demand or once after the reminder time (default 18:00).
@@ -273,11 +307,22 @@ Migration v2 converts the old block model: blocks are concatenated into
   stays a raw YAML row and is written back verbatim. Its edits go through the editor's save path (one writer per page).
 - A `vorgang:` / `netzplan:` property links a page to the WBS (`pagework.rs`): the work card shows budget, ETC and recent
   bookings, and `/zeit` lines without a reference on that page book on it.
-- Autosave runs 450 ms (Settings → Editor, 250–3000 ms) after the last change and on window blur. Renames rewrite `[[links]]` in every referencing page.
+- Autosave runs 450 ms (Settings → Editor, 250–3000 ms) after the last change and on window blur. Renames rewrite `[[links]]` in every referencing page
+  (`replace_link_target`; fenced and inline code stay as written, like `wiki_links` ignores them).
+- Titles (`notes::clean_title`, applied by `create_page`, `rename_page`, `rename_page_linked` and the shell's `unique_title`):
+  `[` `]` become `(` `)`, `|` `#` `^` their full-width forms `｜` `＃` `＾`, line breaks spaces, so every title can be linked. The
+  title field applies the same rule while typing (`cleanTitleChars` in `ui/src/lib/links.ts`) and says so under the title.
 - Images live as files in `<data_dir>/attachments/`, named by the first 16 hex digits of their SHA-256 (same image, same file),
   and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `annalo-asset:` URI scheme, which
   only answers plain file names inside that folder (no separators, `..` or hidden files; canonical path checked). Regular
-  `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes the embedded ones to `attachments/`.
+  `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes every
+  referenced file (`attachment_manager::export_files`: embeds, `[[file.ext]]` and `[text](file)` links, drawing previews) to `attachments/`.
+- Vault import (`vault::plan_import` + `apply_import`, shell `vault_import`): the files are read and attachments copied
+  off the main thread without the database lock (`vault://progress` events every 25 files, `vault_import_cancel` stops at
+  the next file), then the pages are created in one transaction. Notes that are not UTF-8 are read as Windows-1252, notes
+  above 2 MB are cut with a note (both listed in `ImportReport.warnings`). An attachment whose name is taken by other bytes
+  is stored under a free name (`import_file`) and the embeds of the notes in its folder (the parent of an attachment-only
+  folder like `assets/`) are rewritten.
 - Drawings (`drawings.rs`, `ui/src/editor/drawing.ts`, `DrawingEditor.tsx`) are Excalidraw scenes `<name>.excalidraw` in the same
   folder plus a rendered preview `<name>.excalidraw.svg`, embedded as `![[name.excalidraw]]` like the Obsidian Excalidraw plugin
   does; vault import/export and the mirror carry both files. Scene and preview are written atomically (temp file + rename) on
@@ -321,8 +366,9 @@ Migration v2 converts the old block model: blocks are concatenated into
     or on a pane without a note are stored and opened there.
 - Attachment manager (`attachment_manager.rs`, `views/AttachmentsView.tsx`, tab kind `attachments`): lists the attachments
   folder (drawing previews with their scene) with kind, size, modification time and usage. Usage is one query over pages
-  whose content contains `![[` or `](` (trashed pages included and marked), parsed for `![[name]]`, `![[name|…]]`,
-  `![[name#page=N]]` and `![alt](path/name)` (percent-decoded), matched case-insensitively. Rename checks the new name
+  whose content contains `[[` or `](` (trashed pages included and marked), parsed for `![[name]]`, `![[name|…]]`,
+  `![[name#page=N]]`, links to files `[[name.ext]]` (a name with a file extension) and `![alt](path/name)` / `[text](path/name)`
+  to local files (percent-decoded), matched case-insensitively. Rename checks the new name
   like `clean_name` (same extension, drawings keep `.excalidraw`, no collision in any case), renames the file (a drawing
   with its preview) and rewrites every reference (folder prefix, anchor and alias kept; image links re-encoded) in every
   page through `save_page_content` after `store_version`, all or nothing (files are renamed back on failure); editors
@@ -404,6 +450,28 @@ quelle: "[[Konzept]]"
 - The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
   re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
   collapsed (`annalo.collapsed` in localStorage).
+- Database commands are `#[tauri::command(async)]` (or `spawn_blocking`): they run off the main thread,
+  which handles the window (`set_title`, drag, focus) and never waits for the database. Pure reads
+  (`page_get`, `workspace_tree`, lists, search, budgets) use a second, read-only connection
+  (`Database::open_read_only`, `AppState::reader`): in WAL mode it sees the last committed state and
+  neither waits for a save nor holds one up. The two locks are never held together. Backups
+  (`VACUUM INTO`), the Markdown mirror and the vault export open a read-only connection of their own:
+  the mirror and the export read the tree, all contents (one `SELECT id, content`) and the time entries
+  in one read transaction (`MirrorSnapshot`, `VaultSnapshot`), then write the files without any
+  database lock. The scheduler's first backup check runs 3 minutes after the start
+  (`ANNALO_BACKUP_DELAY_SECS` for tests).
+- `page_save` returns `SavedPage` (tags, unresolved links, `updated_at`), not the page: the editor has
+  the content and a save does not change backlinks. A save writes only what changed: chunk rows whose
+  text is still on the page keep their row, search entry and embedding; links and tags are diffed.
+  Unresolved links are found with one indexed query (`idx_pages_title`, `title COLLATE NOCASE IN (…)`)
+  plus one pass over all titles only for non-ASCII targets. `latest_version` reads only the time, and
+  parsed settings are cached by their JSON (`Database::settings_cache`).
+- Batch reads for views that listed per Netzplan: `netzplan_overview` (budget and schedule of every
+  Netzplan; booked hours in one grouped query, Vorgänge in two), `budgets_all` (dashboard, `/zeit`
+  completion) and `suggestion_facts` (counts of open, overdue and due tasks and the most critical
+  budget, for the assistant's suggestions). `page_collection` sends each child's frontmatter only (the
+  views derive the cells). Filters of `list_time_entries` and `list_tasks` are built from the set
+  fields so SQLite uses the indexes; `time_entries` without a range returns the last 366 days.
 
 ## Key algorithms
 
@@ -463,6 +531,25 @@ quelle: "[[Konzept]]"
   request is refused with a message instead of going to a cloud provider. The query embedding of a private question and the
   embeddings of pages carrying a private marker (`rag::pending_public_blocks`) are not sent to an embedding provider that is
   not local; with „Nur lokal“ such a provider does not index at all.
+- Private pages (`ai::privacy`): a page is private when a marker is among its tags (front matter `tags:` included) or in its
+  text. Every request carries next to a page's content its tags as `#tag` (`privacy::tag_text`: the open page in `ai_chat`,
+  `ai_transform`, `zeit_suggest_ai`); retrieved chunks of a private page add a marker line; a workspace tool result
+  (`search_workspace`, `list_tasks`, `activity_log`) with text of a private page gets `[Enthält vertrauliche Inhalte: <marker>]`
+  appended (`mark_tool_result`), so the follow-up turn that carries it routes to the local model. `pending_public_blocks`
+  skips every block of a page whose text contains a marker. Embedding indexing checks the monthly cost limit (not for local
+  providers) and records its usage (`metrics::embedding_usage`, estimated tokens).
+- Timeouts and broken answers (`ai/client.rs`): a chat must start answering within `first_byte_timeout` (120 s; 60 s in the
+  provider test) and send something every 180 s; model lists and version checks use the network timeout, embeddings four
+  times that (at least 2 min). A 200 answer that is not `text/event-stream` is refused (a WLAN login page) unless it is a
+  complete JSON chat answer (backends that ignore `stream`); an unreadable event is skipped with a warning (logged with
+  provider and model); a stream that ends without `[DONE]` or a finish reason keeps what arrived, marked „Antwort
+  unvollständig“ (`finish_reason: incomplete`); an empty answer is an error and not billed. Tool-call indexes above 63 are
+  ignored. Network settings that cannot be applied (a missing CA file) leave no client: requests fail with „Netzwerkeinstellungen
+  ungültig: …“ instead of bypassing proxy and certificates.
+- Errors (`error.rs`): every message is German and complete (`Error::State` shows its text only, so re-wrapping adds no
+  prefix); I/O and SQLite errors name the cause (`io_text`, disk full, read-only, locked, damaged), request errors keep
+  reqwest's cause chain and name proxy, certificate, timeout or an interrupted answer (`http_text`, read by
+  `ui/src/lib/aierror.ts`).
 - Settings → KI (`AiProvidersSection.tsx`, `ProviderDialog.tsx`): the status of every provider (`ai_provider_models`, works for
   unsaved providers), an offer to add an Ollama found at `http://localhost:11434` (`ollama_detect`), the dialog's
   step-by-step test (`ai_provider_test`: reach, auth, chat, tools, embeddings; nothing is recorded as usage), `ollama_pull`
@@ -478,7 +565,7 @@ quelle: "[[Konzept]]"
 | < 5 ms cold start | The core opens the DB, runs queries and exits in ~6 ms (release CLI, Linux) | The desktop app's cold start is dominated by WebView2 initialisation, typically around a few hundred ms. That has not been measured here |
 | Win32 hooks for idle and active window | `GetLastInputInfo` and `GetForegroundWindow` sampled every 5 s | No global keyboard/mouse hooks: same result, far less invasive |
 | Export SAP PS (CATS), Jira, JSON, CSV | `export.rs` | CATS as an upload file (CATSDB field names). Jira as payloads for `POST /rest/api/3/issue/{key}/worklog`. Nothing is uploaded automatically |
-| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval. git is limited to read-only subcommands, and options that execute programs are rejected |
+| Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval and runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
 | Database views | Timesheet (week grid + entries), Projects (tables with budget, ETC, critical path) | Graphical network diagrams and graph views were dropped in favour of tables |
 
 ## Verification status

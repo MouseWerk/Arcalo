@@ -157,6 +157,8 @@ impl Database {
                     "UPDATE pages SET parent_id = NULL WHERE parent_id = ?1 AND deleted_at IS NOT ?2",
                     params![pid, at],
                 )?;
+                // The activity log keeps no text of a page deleted for good.
+                self.conn().execute(crate::feed::SCRUB_ACTIVITY, [pid])?;
             }
             self.conn().execute("DELETE FROM pages WHERE id = ?1", [id])?;
             Ok(ids.len())

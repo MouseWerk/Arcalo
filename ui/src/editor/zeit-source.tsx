@@ -25,10 +25,14 @@ function load(): Promise<ZeitData> {
   if (cache?.key === key) return cache.data;
   const data = (async () => {
     const since = new Date(Date.now() - RECENT_DAYS * 86400000).toISOString();
-    const [wbs, las, entries] = await Promise.all([api.wbs(), api.leistungsarten().catch(() => []), api.entries(since).catch(() => [])]);
+    const [wbs, las, entries, budgets] = await Promise.all([
+      api.wbs(),
+      api.leistungsarten().catch(() => []),
+      api.entries(since).catch(() => []),
+      api.budgetsAll().catch(() => []),
+    ]);
     const booked = new Map<string, number>();
-    const budgets = await Promise.all(wbs.flatMap((p) => p.netzplaene).map((n) => api.budget(n.id).catch(() => [])));
-    for (const b of budgets.flat()) booked.set(b.label.toLowerCase(), b.booked_hours);
+    for (const b of budgets) booked.set(b.label.toLowerCase(), b.booked_hours);
     return { options: refOptions(wbs, (ref) => booked.get(ref.toLowerCase()) ?? null), recent: recentRefs(entries), las };
   })();
   cache = { key, data };

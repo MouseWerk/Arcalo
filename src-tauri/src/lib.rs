@@ -13,6 +13,7 @@ mod network;
 mod portable;
 mod prefs;
 mod present;
+mod recovery;
 mod secrets;
 mod syncmerge;
 mod updates;
@@ -28,6 +29,7 @@ use annalo_core::ai::availability::{Catalog, Exclude};
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
 use annalo_core::ai::metrics::PriceTable;
 use annalo_core::ai::metrics::SessionMeter;
+use annalo_core::ai::privacy;
 use annalo_core::ai::provider::AiProvider;
 use annalo_core::ai::rag::{self, ContextChunk};
 use annalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
@@ -47,7 +49,7 @@ use annalo_core::mirror::{self, MirrorReport};
 use annalo_core::model::*;
 use annalo_core::network::Purpose;
 use annalo_core::netzplan::{self, Schedule};
-use annalo_core::notes::PageDoc;
+use annalo_core::notes::{PageDoc, SavedPage};
 use annalo_core::pagework::{self, PageWork};
 use annalo_core::properties;
 use annalo_core::report;
@@ -79,8 +81,12 @@ struct AiRuntime {
     /// Clients of the switched-on AI providers, by provider id.
     clients: HashMap<String, Arc<AiClient>>,
     router: Arc<ModelRouter>,
-    /// Client of the assistant's `http_request` tool.
-    tools_http: tools::HttpClient,
+    /// Client of the assistant's `http_request` tool (and link titles); `None` when the network
+    /// settings cannot be applied.
+    tools_http: Option<tools::HttpClient>,
+    /// Why the network settings cannot be applied (a missing CA file): requests fail with this
+    /// instead of going out without proxy and certificates.
+    network_error: Option<String>,
 }
 
 /// A client of `provider`: its key, the network settings (without proxy when it bypasses
@@ -95,6 +101,7 @@ fn provider_client(
     let http = annalo_core::network::http_client(&net, proxy_password, Purpose::Ai)?;
     let mut client = AiClient::for_provider(provider.clone(), key, http);
     client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
+    client.request_timeout = net.timeout();
     Ok(client)
 }
 
@@ -109,27 +116,28 @@ impl AiRuntime {
             devlog::remember_secret(Some(k));
         }
         devlog::remember_secret(proxy_password.as_deref());
+        let mut network_error = None;
+        let mut failed = |e: Error| {
+            let msg = format!("Netzwerkeinstellungen ungültig: {e} (Einstellungen → Netzwerk)");
+            devlog::error("net", &msg);
+            network_error = Some(msg);
+        };
         let tools_http =
             annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), Purpose::Tools)
-                .unwrap_or_else(|e| {
-                    devlog::warn("net", format!("network settings not applied: {e}"));
-                    tools::HttpClient::new()
-                });
-        let clients = settings
-            .providers
-            .iter()
-            .filter(|p| p.enabled)
-            .map(|p| {
-                let key = keys.get(&p.id).cloned();
-                let client =
-                    provider_client(&settings, p, key.clone(), proxy_password.as_deref()).unwrap_or_else(|e| {
-                        devlog::warn("net", format!("network settings not applied to „{}“: {e}", p.display_name()));
-                        AiClient::for_provider(p.clone(), key, tools::HttpClient::new())
-                    });
-                (p.id.clone(), Arc::new(client))
-            })
-            .collect();
-        AiRuntime { clients, router: Arc::new(ModelRouter::new(settings.router.clone())), tools_http, settings }
+                .map_err(&mut failed)
+                .ok();
+        let mut clients = HashMap::new();
+        for p in settings.providers.iter().filter(|p| p.enabled) {
+            let key = keys.get(&p.id).cloned();
+            match provider_client(&settings, p, key, proxy_password.as_deref()) {
+                Ok(client) => {
+                    clients.insert(p.id.clone(), Arc::new(client));
+                }
+                Err(e) => failed(e),
+            }
+        }
+        let router = Arc::new(ModelRouter::new(settings.router.clone()));
+        AiRuntime { clients, router, tools_http, network_error, settings }
     }
 }
 
@@ -147,6 +155,10 @@ type ModelList = (Instant, Option<Vec<String>>);
 
 pub struct AppState {
     db: Mutex<Database>,
+    /// Read-only second connection for commands that only read (WAL: they see the last
+    /// committed state and neither wait for a save nor hold one up). `None` when it could not
+    /// be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    reader: Option<Mutex<Database>>,
     ai: RwLock<AiRuntime>,
     secrets: SecretStore,
     /// Access token of the Git sync.
@@ -177,6 +189,15 @@ impl AppState {
     fn db(&self) -> MutexGuard<'_, Database> {
         lock(&self.db)
     }
+    /// The connection for commands that only read (see [`AppState::reader`]).
+    fn reader(&self) -> MutexGuard<'_, Database> {
+        self.reader.as_ref().map_or_else(|| lock(&self.db), lock)
+    }
+    /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
+    /// neither connection above is held meanwhile; `None` falls back to the main one.
+    fn snapshot_db(&self) -> Option<Database> {
+        Database::open_read_only(self.data_dir.join(datadir::DB_FILE)).ok()
+    }
     fn settings(&self) -> Settings {
         self.ai.read().unwrap_or_else(|e| e.into_inner()).settings.clone()
     }
@@ -187,10 +208,11 @@ impl AppState {
             "" => ai.settings.providers.iter().find(|p| p.enabled).map(|p| p.id.as_str()).unwrap_or_default(),
             id => id,
         };
-        ai.clients.get(id).cloned().ok_or_else(|| {
-            Error::State(format!(
+        ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
+            Some(e) => Error::State(e.clone()),
+            None => Error::State(format!(
                 "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)"
-            ))
+            )),
         })
     }
     /// The clients of the switched-on providers, in the order of the settings.
@@ -228,69 +250,72 @@ impl AppState {
 
 // ------------------------------------------------------------------- pages
 
-#[tauri::command]
+// Commands that touch the database run off the main thread (`async`): the main thread
+// handles the window (title, focus, drag), which must never wait for the database.
+
+#[tauri::command(async)]
 fn workspace_tree(state: State<AppState>) -> Result<Vec<PageNode>> {
-    state.db().page_tree()
+    state.reader().page_tree()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
-    state.db().page_doc(id)
+    state.reader().page_doc(id)
 }
 
-#[tauri::command]
-fn page_save(state: State<AppState>, id: i64, content: String) -> Result<PageDoc> {
-    let db = state.db();
-    db.save_page_content(id, &content)?;
-    db.page_doc(id)
+/// Saves a page. Returns tags, unresolved links and the new time only: the caller has the
+/// content, and a save does not change the page's backlinks.
+#[tauri::command(async)]
+fn page_save(state: State<AppState>, id: i64, content: String) -> Result<SavedPage> {
+    state.db().save_page(id, &content)
 }
 
 // ---------------------------------------------------------------- typed properties
 
-/// The child pages of a page with their typed properties (table and board views).
-#[tauri::command]
-fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties::Collection> {
-    state.db().page_collection(parent_id)
+/// The child pages of a page with their frontmatter (table and board views).
+#[tauri::command(async)]
+fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties::CollectionView> {
+    state.reader().page_collection_view(parent_id)
 }
 
 /// The schema a page's properties follow (its parent's) and the parent's id.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_schema(state: State<AppState>, page_id: i64) -> Result<Option<(i64, properties::Schema)>> {
     state.db().page_schema(page_id)
 }
 
 /// Names for person properties: person values and `@mentions`, most used first.
-#[tauri::command]
+#[tauri::command(async)]
 fn known_persons(state: State<AppState>) -> Result<Vec<String>> {
-    state.db().known_persons()
+    state.reader().known_persons()
 }
 
 // ---------------------------------------------------------------- versions
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_versions(state: State<AppState>, page_id: i64) -> Result<Vec<VersionInfo>> {
-    state.db().list_versions(page_id)
+    state.reader().list_versions(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_version_content(state: State<AppState>, version_id: i64) -> Result<String> {
     state.db().version_content(version_id)
 }
 
 /// Snapshots the page now („Jetzt Version sichern“); `None` when nothing changed.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_snapshot(state: State<AppState>, page_id: i64) -> Result<Option<i64>> {
     state.db().snapshot_page(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_version_restore(state: State<AppState>, page_id: i64, version_id: i64) -> Result<PageDoc> {
     let db = state.db();
     db.restore_version(page_id, version_id)?;
     db.page_doc(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_create(
     state: State<AppState>,
     parent_id: Option<i64>,
@@ -308,7 +333,7 @@ fn page_create(
 
 /// Avoid duplicate titles so [[links]] stay unambiguous.
 fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = title.trim().to_owned();
+    let base = annalo_core::notes::clean_title(title);
     let mut name = base.clone();
     let mut n = 2;
     while db.page_by_title(&name)?.is_some() {
@@ -318,9 +343,11 @@ fn unique_title(db: &Database, title: &str) -> Result<String> {
     Ok(name)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_rename(state: State<AppState>, id: i64, title: String, update_links: bool) -> Result<usize> {
     let db = state.db();
+    // `[ ] | # ^` are replaced (see `notes::clean_title`); the UI applies the same rule while typing.
+    let title = annalo_core::notes::clean_title(&title);
     if let Some(other) = db.page_by_title(&title)?
         && other.id != id
     {
@@ -330,48 +357,48 @@ fn page_rename(state: State<AppState>, id: i64, title: String, update_links: boo
 }
 
 /// Moves a page and its subpages to the trash. Returns the number of pages moved.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_delete(state: State<AppState>, id: i64) -> Result<usize> {
     state.db().trash_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_restore(state: State<AppState>, id: i64) -> Result<Page> {
     state.db().restore_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_purge(state: State<AppState>, id: i64) -> Result<usize> {
     state.db().purge_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn trash_list(state: State<AppState>) -> Result<Vec<TrashEntry>> {
     state.db().list_trash()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn trash_empty(state: State<AppState>) -> Result<usize> {
     state.db().empty_trash()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_move(state: State<AppState>, id: i64, parent_id: Option<i64>, position: i64) -> Result<()> {
     state.db().move_page(id, parent_id, position)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_set_favorite(state: State<AppState>, id: i64, favorite: bool) -> Result<()> {
     state.db().set_favorite(id, favorite)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_set_icon(state: State<AppState>, id: i64, icon: Option<String>) -> Result<()> {
     state.db().set_page_icon(id, icon.as_deref())
 }
 
 /// Resolves a [[link]] target; with `create`, a missing page is created at the top level.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_resolve(state: State<AppState>, title: String, create: bool) -> Result<Option<Page>> {
     let db = state.db();
     match db.page_by_title(&title)? {
@@ -381,39 +408,39 @@ fn page_resolve(state: State<AppState>, title: String, create: bool) -> Result<O
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn recent_pages(state: State<AppState>, limit: usize) -> Result<Vec<Page>> {
-    state.db().recent_pages(limit)
+    state.reader().recent_pages(limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn daily_note(state: State<AppState>, date: Option<NaiveDate>) -> Result<Page> {
     state.db().daily_note(date.unwrap_or_else(|| Local::now().date_naive()))
 }
 
 /// Per day `from..=to` (local): daily note, booked minutes and open tasks due, for the calendar.
-#[tauri::command]
+#[tauri::command(async)]
 fn daily_overview(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<Vec<DayOverview>> {
-    calendar::daily_overview(&state.db(), from, to, &Local)
+    calendar::daily_overview(&state.reader(), from, to, &Local)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tags_list(state: State<AppState>) -> Result<Vec<(String, i64)>> {
-    state.db().tag_counts()
+    state.reader().tag_counts()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tag_pages(state: State<AppState>, tag: String) -> Result<Vec<Page>> {
-    state.db().pages_with_tag(&tag)
+    state.reader().pages_with_tag(&tag)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tasks_list(state: State<AppState>, filter: Option<TaskFilter>) -> Result<Vec<Task>> {
-    state.db().list_tasks(&filter.unwrap_or_default())
+    state.reader().list_tasks(&filter.unwrap_or_default())
 }
 
 /// Checks or unchecks one task in its page's Markdown; the UI then reloads open editors of that page.
-#[tauri::command]
+#[tauri::command(async)]
 fn task_set_done(
     app: AppHandle,
     state: State<AppState>,
@@ -427,23 +454,58 @@ fn task_set_done(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>) -> Result<Vec<SearchHit>> {
-    search::search(&state.db(), &query, limit.unwrap_or(30))
+    search::search(&state.reader(), &query, limit.unwrap_or(30))
 }
 
+/// Set by `vault_import_cancel`; the running import stops at the next file.
+static VAULT_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Imports a vault off the main thread: the files are read (and attachments copied) without
+/// the database lock, with `vault://progress` events; only creating the pages takes the lock.
 #[tauri::command]
-fn vault_import(state: State<AppState>, path: String) -> Result<ImportReport> {
+async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(Error::State(format!("„{path}“ ist kein Ordner")));
     }
-    vault::import_vault(&state.db(), &dir, &state.attachments_dir())
+    VAULT_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut progress = |p: vault::ImportProgress| {
+            let _ = app.emit("vault://progress", p);
+        };
+        let plan = vault::plan_import(&dir, &state.attachments_dir(), &mut progress, &VAULT_CANCEL)?;
+        let report = vault::apply_import(&state.db(), plan)?;
+        for w in &report.warnings {
+            devlog::warn("import", w);
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))?
 }
 
 #[tauri::command]
-fn vault_export(state: State<AppState>, path: String) -> Result<usize> {
-    vault::export_vault(&state.db(), &PathBuf::from(path), &state.attachments_dir())
+fn vault_import_cancel() {
+    VAULT_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Exports off the main thread; the pages are read at once through a connection of its own,
+/// then the files are written without holding the database.
+#[tauri::command]
+async fn vault_export(app: AppHandle, path: String) -> Result<usize> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let snap = match state.snapshot_db() {
+            Some(db) => db.read_snapshot(vault::VaultSnapshot::read)?,
+            None => vault::VaultSnapshot::read(&state.db())?,
+        };
+        vault::export_snapshot(&snap, &PathBuf::from(path), &state.attachments_dir())
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))?
 }
 
 // ------------------------------------------------------------- templates
@@ -454,24 +516,24 @@ fn template_vars(title: &str) -> TemplateVars {
 }
 
 /// Pages below „Vorlagen“.
-#[tauri::command]
+#[tauri::command(async)]
 fn templates_list(state: State<AppState>) -> Result<Vec<Page>> {
-    state.db().list_templates()
+    state.reader().list_templates()
 }
 
 /// The „Vorlagen“ page, created on first use.
-#[tauri::command]
+#[tauri::command(async)]
 fn templates_root(state: State<AppState>) -> Result<Page> {
     state.db().templates_root()
 }
 
 /// Markdown of a template with its placeholders filled in.
-#[tauri::command]
+#[tauri::command(async)]
 fn template_render(state: State<AppState>, id: i64, title: Option<String>) -> Result<String> {
     state.db().render_template(id, &template_vars(title.as_deref().unwrap_or("")))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_from_template(state: State<AppState>, template_id: i64, title: String, parent_id: Option<i64>) -> Result<Page> {
     let db = state.db();
     let name = unique_title(&db, &title)?;
@@ -555,7 +617,9 @@ fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
 /// network settings; the URL itself when there is none or the page cannot be read.
 #[tauri::command]
 async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let Some(http) = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone() else {
+        return Ok(url);
+    };
     match annalo_core::linktitle::fetch_title(&http, &url).await {
         Ok(Some(title)) => Ok(title),
         Ok(None) => Ok(url),
@@ -668,9 +732,9 @@ struct ProjectTree {
 }
 
 /// Projects → Netzpläne → Vorgänge.
-#[tauri::command]
+#[tauri::command(async)]
 fn wbs_tree(state: State<AppState>) -> Result<Vec<ProjectTree>> {
-    let db = state.db();
+    let db = state.reader();
     db.list_projects()?
         .into_iter()
         .map(|p| {
@@ -689,22 +753,22 @@ fn required(value: &str, what: &str) -> Result<String> {
     if v.is_empty() { Err(Error::State(format!("{what} fehlt"))) } else { Ok(v.to_owned()) }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
     state.db().create_project(&required(&code, "Projekt-ID")?, &required(&name, "Name")?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
     state.db().update_project(id, &required(&name, "Name")?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_project(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_create(
     state: State<AppState>,
     project_id: i64,
@@ -718,7 +782,7 @@ fn netzplan_create(
     state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_update(
     state: State<AppState>,
     id: i64,
@@ -729,13 +793,13 @@ fn netzplan_update(
     state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_netzplan(id)
 }
 
 /// Adds a Vorgang; `predecessors` are Vorgang numbers of the same Netzplan.
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_create(
     state: State<AppState>,
     netzplan_id: i64,
@@ -770,7 +834,7 @@ fn vorgang_create(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_update(
     state: State<AppState>,
     id: i64,
@@ -782,29 +846,29 @@ fn vorgang_update(
     state.db().update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_vorgang(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsarten_list(state: State<AppState>) -> Result<Vec<(String, String)>> {
-    state.db().list_leistungsarten()
+    state.reader().list_leistungsarten()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsart_save(state: State<AppState>, code: String, description: String) -> Result<()> {
     state.db().upsert_leistungsart(&code, &description)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
     state.db().delete_leistungsart(&code)
 }
 
 // ---------------------------------------------------------- time tracking
 
-#[tauri::command]
+#[tauri::command(async)]
 fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Result<LogOutcome> {
     let t = state.settings().thresholds;
     let db = state.db();
@@ -815,7 +879,7 @@ fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Resul
 }
 
 /// Budget and bookings of the Vorgang a page is linked to (`vorgang:` property).
-#[tauri::command]
+#[tauri::command(async)]
 fn page_work(state: State<AppState>, page_id: i64) -> Result<Option<PageWork>> {
     let t = state.settings().thresholds;
     pagework::page_work(&state.db(), page_id, &t)
@@ -828,14 +892,14 @@ struct TimerStatus {
     is_idle: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_status(state: State<AppState>) -> Result<Option<TimerStatus>> {
-    let running = state.db().running_timer()?;
+    let running = state.reader().running_timer()?;
     let idle = lock(&state.idle);
     Ok(running.map(|entry| TimerStatus { entry, idle_minutes: idle.idle_minutes(Utc::now()), is_idle: idle.is_idle() }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_start(
     app: AppHandle,
     state: State<AppState>,
@@ -871,7 +935,7 @@ struct StopOutcome {
 }
 
 /// Stops the timer. With `subtract_idle` the detected idle time is not booked.
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Result<StopOutcome> {
     let now = Utc::now();
     let idle_minutes = lock(&state.idle).idle_minutes(now);
@@ -891,7 +955,7 @@ fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Re
     Ok(StopOutcome { entry, idle_minutes, alerts, discarded: false })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_discard(app: AppHandle, state: State<AppState>) -> Result<()> {
     state.db().discard_timer()?;
     let _ = app.emit("data://entries", ());
@@ -899,16 +963,21 @@ fn timer_discard(app: AppHandle, state: State<AppState>) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn time_entries(
     state: State<AppState>,
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
 ) -> Result<Vec<TimeEntryRow>> {
-    state.db().list_time_entries(&EntryFilter { from, to, ..Default::default() })
+    // Without a range: the last year, not years of entries (megabytes) nobody looks at at once.
+    let from = from.or_else(|| to.is_none().then(|| Utc::now() - chrono::TimeDelta::days(DEFAULT_ENTRY_DAYS)));
+    state.reader().list_time_entries(&EntryFilter { from, to, ..Default::default() })
 }
 
-#[tauri::command]
+/// Days of entries `time_entries` returns when asked without any range.
+const DEFAULT_ENTRY_DAYS: i64 = 366;
+
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 fn time_entry_create(
     state: State<AppState>,
@@ -945,7 +1014,7 @@ fn time_entry_create(
     Ok(LogOutcome { entry, alerts, reference })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn time_entry_update(
     state: State<AppState>,
     id: i64,
@@ -965,28 +1034,70 @@ fn time_entry_update(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_entry_status(state: State<AppState>, ids: Vec<i64>, status: StatusFlag) -> Result<usize> {
     state.db().set_entry_status(&ids, status)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_time_entry(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_time_entry(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn budget(state: State<AppState>, netzplan_id: i64) -> Result<Vec<BudgetStatus>> {
     let t = state.settings().thresholds;
-    tracking::budget_status(&state.db(), netzplan_id, &t)
+    tracking::budget_status(&state.reader(), netzplan_id, &t)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn schedule(state: State<AppState>, netzplan_id: i64) -> Result<Schedule> {
-    netzplan::schedule(&state.db().list_vorgaenge(netzplan_id)?)
+    netzplan::schedule(&state.reader().list_vorgaenge(netzplan_id)?)
 }
 
-#[tauri::command]
+/// Budget and schedule of every Netzplan (Projekte), instead of two calls per Netzplan.
+#[tauri::command(async)]
+fn netzplan_overview(state: State<AppState>) -> Result<Vec<tracking::NetzplanOverview>> {
+    let t = state.settings().thresholds;
+    tracking::netzplan_overview(&state.reader(), &t, true)
+}
+
+/// The budget rows of every Netzplan (dashboard, `/zeit` completion) in one call.
+#[tauri::command(async)]
+fn budgets_all(state: State<AppState>) -> Result<Vec<BudgetStatus>> {
+    let t = state.settings().thresholds;
+    tracking::all_budgets(&state.reader(), &t)
+}
+
+/// What the assistant's suggestions are built from, counted in the database.
+#[derive(Serialize)]
+struct SuggestionFacts {
+    open_tasks: i64,
+    overdue: i64,
+    due_today: i64,
+    /// Open tasks on `page_id` (0 without one).
+    page_open_tasks: i64,
+    /// Label of the most critical budget that is not OK (`NP-8801/1020`).
+    worst_budget: Option<String>,
+}
+
+/// Counts of open tasks (`today` is the local day, `YYYY-MM-DD`) and the most critical budget.
+#[tauri::command(async)]
+fn suggestion_facts(state: State<AppState>, today: String, page_id: Option<i64>) -> Result<SuggestionFacts> {
+    let t = state.settings().thresholds;
+    let db = state.reader();
+    let counts = db.open_task_counts(today.trim(), page_id)?;
+    let budgets = tracking::all_budgets(&db, &t)?;
+    Ok(SuggestionFacts {
+        open_tasks: counts.open,
+        overdue: counts.overdue,
+        due_today: counts.due_today,
+        page_open_tasks: counts.on_page,
+        worst_budget: tracking::worst_budget(&budgets).map(|b| b.label.clone()),
+    })
+}
+
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)] // IPC arguments map 1:1 to the UI call
 fn export_entries(
     state: State<AppState>,
@@ -1025,20 +1136,25 @@ fn export_entries(
 
 // ----------------------------------------------------------------- backups
 
-fn run_backup(app: &AppHandle) -> Result<BackupInfo> {
+/// Backs up; the flag tells whether the Markdown mirror was refreshed as well.
+fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let res = backup_once(app);
     match &res {
-        Ok(info) => devlog::debug("backup", format!("backup written: {}", info.path)),
+        Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
         Err(e) => devlog::error("backup", e.to_string()),
     }
     res
 }
 
-fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
+fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
-    let info = backup::backup_to(&state.db(), &dir, keep)?;
+    // `VACUUM INTO` through a connection of its own: saves are not held up by the snapshot.
+    let info = match state.snapshot_db() {
+        Some(db) => backup::backup_to(&db, &dir, keep)?,
+        None => backup::backup_to(&state.db(), &dir, keep)?,
+    };
     feed::record(&state, "backup", &info.file_name, "");
     // Images live next to the database; names are content hashes, so copying new ones suffices.
     let src = state.attachments_dir();
@@ -1048,6 +1164,8 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
         // The backup itself succeeded; a failed mirror is reported in the settings, not as a failed backup.
+        // Mirror and Git sync never run at the same time (both use the mirror folder).
+        let _running = lock(&state.git_lock);
         match run_mirror(&state) {
             Ok(_) => mirror_fresh = true,
             Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
@@ -1056,9 +1174,9 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
         // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
-        let _ = run_git_sync(app, mirror_fresh);
+        let _ = run_git_sync(app, mirror_fresh, false);
     }
-    Ok(info)
+    Ok((info, mirror_fresh))
 }
 
 // ----------------------------------------------------------------- git sync
@@ -1082,7 +1200,8 @@ impl AppState {
 
 /// Refreshes the source (unless the mirror was just written), syncs, records the outcome
 /// and emits `gitsync://done` or `gitsync://failed`. Never holds the database lock while git runs.
-fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
+/// `allow_deletions`: the user confirmed a commit that deletes many notes.
+pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions: bool) -> Result<SyncOutcome> {
     let state = app.state::<AppState>();
     let _running = lock(&state.git_lock);
     let settings = state.settings();
@@ -1097,8 +1216,7 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
                 run_mirror(&state)?;
             }
         } else {
-            let db = state.db();
-            mirror::write_mirror(&db, &source, &state.attachments_dir(), &Local)?;
+            mirror::write_snapshot(&mirror_snapshot(&state)?, &source, &state.attachments_dir(), &Local)?;
         }
         let database = if settings.git_sync.include_database {
             backup::list_backups(&state.backup_dir())?.into_iter().next().map(|b| PathBuf::from(b.path))
@@ -1106,6 +1224,10 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
             None
         };
         let git = network::git(&state, token.clone(), &settings.git_sync.remote_url);
+        // Locks of a git that was stopped (timeout, crash) would block every sync from now on.
+        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
+            devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
+        }
         gitsync::sync(
             &git,
             &SyncRequest {
@@ -1116,6 +1238,7 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
                 host: &gitsync::hostname(),
                 now: Local::now(),
                 hold: &hold,
+                allow_deletions,
             },
         )
     })();
@@ -1176,6 +1299,15 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
                     p.conflicts.len()
                 ),
             );
+            if !p.kept.is_empty() {
+                devlog::warn(
+                    "git",
+                    format!(
+                        "the server deleted {} pages at once: too many, kept here and uploaded again",
+                        p.kept.len()
+                    ),
+                );
+            }
             let _ = app.emit("gitsync://pulled", &p);
         }
         Err(e) => devlog::error("git", format!("taking over the server's notes failed: {e}")),
@@ -1183,12 +1315,14 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
 }
 
 /// Syncs now (also when the automatic sync is off, as long as a remote is set).
+/// `allow_deletions`: „Löschungen übertragen“ after a sync stopped before deleting many notes.
 #[tauri::command]
-async fn git_sync_now(app: AppHandle) -> Result<SyncOutcome> {
+async fn git_sync_now(app: AppHandle, allow_deletions: Option<bool>) -> Result<SyncOutcome> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
         return Err(Error::State("Bitte zuerst die Remote-URL eintragen und speichern".into()));
     }
-    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false))
+    let allow = allow_deletions.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false, allow))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }
@@ -1211,6 +1345,7 @@ fn git_status_of(state: &AppState) -> Result<GitSyncStatus> {
         last_at,
         last_commit,
         last_branch,
+        blocked_deletions: last_error.as_deref().and_then(gitsync::guard_count),
         last_error,
         pending_changes: gitsync::pending_changes(&state.git_source_dir(), &state.git_repo_dir()),
         token_set: state.git_secret.get().is_some(),
@@ -1310,11 +1445,22 @@ async fn git_restore_import(app: AppHandle, url: String) -> Result<ImportReport>
 const MIRROR_LAST: &str = "mirror.last";
 const MIRROR_ERROR: &str = "mirror.error";
 
+/// What the Markdown mirror holds, read through a connection of its own (saves go on
+/// meanwhile); the main one when that cannot be opened.
+fn mirror_snapshot(state: &AppState) -> Result<mirror::MirrorSnapshot> {
+    match state.snapshot_db() {
+        Some(db) => mirror::MirrorSnapshot::read(&db),
+        None => mirror::MirrorSnapshot::read(&state.db()),
+    }
+}
+
 /// Rebuilds the Markdown mirror and records the outcome (time or error) for the settings.
+/// The files are written without holding the database.
 fn run_mirror(state: &AppState) -> Result<MirrorReport> {
     let dir = state.mirror_dir();
+    let res =
+        mirror_snapshot(state).and_then(|snap| mirror::write_snapshot(&snap, &dir, &state.attachments_dir(), &Local));
     let db = state.db();
-    let res = mirror::write_mirror(&db, &dir, &state.attachments_dir(), &Local);
     match &res {
         Ok(r) => {
             db.meta_set(MIRROR_LAST, &r.created_at.to_rfc3339())?;
@@ -1334,7 +1480,7 @@ struct MirrorStatus {
     error: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn mirror_status(state: State<AppState>) -> Result<MirrorStatus> {
     let db = state.db();
     let last_at =
@@ -1386,30 +1532,35 @@ fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<
 /// Async so the snapshot and the Markdown mirror do not block the main (UI) thread.
 #[tauri::command]
 async fn backup_now(app: AppHandle) -> Result<BackupInfo> {
-    tauri::async_runtime::spawn_blocking(move || run_backup(&app)).await.map_err(|e| Error::State(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || run_backup(&app).map(|(info, _)| info))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn backup_list(state: State<AppState>) -> Result<Vec<BackupInfo>> {
     backup::list_backups(&state.backup_dir())
 }
 
-/// Backs up once a day: on start when the newest backup is older than 24 h, then checks hourly.
-/// The hourly Git sync (mode `hourly`) runs in the same loop.
+/// Backs up once a day: a few minutes after the start when the newest backup is older than
+/// 24 h, then checks hourly. The hourly Git sync (mode `hourly`) runs in the same loop.
 fn spawn_backup_scheduler(app: AppHandle) {
     const DAY: chrono::TimeDelta = chrono::TimeDelta::hours(24);
     std::thread::spawn(move || {
+        // Not while the app starts and the first notes open (the mirror writes every page).
+        std::thread::sleep(startup_backup_delay());
         loop {
             let state = app.state::<AppState>();
             let due = match backup::list_backups(&state.backup_dir()) {
                 Ok(list) => list.first().is_none_or(|b| Local::now() - b.created_at >= DAY),
                 Err(_) => true,
             };
-            let mut backed_up = false;
+            // Whether the backup also refreshed the mirror (a failed mirror is written again by the sync).
+            let mut mirror_fresh = false;
             if due {
                 // Failures are logged by `run_backup` and `run_git_sync`.
                 match run_backup(&app) {
-                    Ok(_) => backed_up = true,
+                    Ok((_, fresh)) => mirror_fresh = fresh,
                     Err(e) => {
                         let _ = app.emit("backup://failed", e.to_string());
                     }
@@ -1417,11 +1568,18 @@ fn spawn_backup_scheduler(app: AppHandle) {
             }
             let gs = state.settings().git_sync;
             if gs.enabled && gs.mode == SyncMode::Hourly && !gs.remote_url.is_empty() {
-                let _ = run_git_sync(&app, backed_up && state.settings().markdown_mirror);
+                let _ = run_git_sync(&app, mirror_fresh, false);
             }
             std::thread::sleep(Duration::from_secs(3600));
         }
     });
+}
+
+/// How long after the start the scheduler first looks for a due backup: 3 minutes, or
+/// `ANNALO_BACKUP_DELAY_SECS` (tests).
+fn startup_backup_delay() -> Duration {
+    let secs = std::env::var("ANNALO_BACKUP_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(180);
+    Duration::from_secs(secs)
 }
 
 // ---------------------------------------------------------------- settings
@@ -1717,7 +1875,9 @@ async fn ai_provider_test(
     provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
     let has_key = key.is_some();
-    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let mut client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    // A test must end: a server that accepts but never answers fails the step after a minute.
+    client.first_byte_timeout = Duration::from_secs(60);
     let mut steps = vec![];
     let step = |id, ok: Option<bool>, detail: String, start: Instant| TestStep {
         id,
@@ -1791,6 +1951,10 @@ async fn ai_provider_test(
     };
     let start = Instant::now();
     match client.chat_stream(&ask(vec![]), None, |_| {}).await {
+        // A model that spends its 16 tokens on thinking answers with nothing: it still answers.
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            steps.push(step("chat", Some(true), format!("{chat_model}: antwortet (ohne Text)"), start));
+        }
         Ok(c) => {
             let answer: String = c.content.trim().chars().take(40).collect();
             let detail = if answer.is_empty() { chat_model.clone() } else { format!("{chat_model}: „{answer}“") };
@@ -1818,6 +1982,9 @@ async fn ai_provider_test(
     let start = Instant::now();
     steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
         Ok(_) => step("tools", Some(true), "Werkzeuge werden angenommen".into(), start),
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            step("tools", Some(true), "Werkzeuge werden angenommen".into(), start)
+        }
         Err(Error::Provider { status, body }) => {
             let unsupported =
                 matches!(availability::retry_for(status, &body, true, false), availability::Retry::Without { .. });
@@ -2017,7 +2184,7 @@ async fn ai_chat(
         .rev()
         .find(|m| m.role == "user")
         .and_then(|m| m.content.clone())
-        .ok_or_else(|| Error::State("no user message".into()))?;
+        .ok_or_else(|| Error::State("Keine Nachricht".into()))?;
     let settings = state.settings();
 
     // Retrieval: embeddings are optional; keyword search always works offline. A private
@@ -2043,35 +2210,36 @@ async fn ai_chat(
         }
         _ => None,
     };
-    let (context, active, source_tags) = {
+    let (context, active, source_marker) = {
         let db = state.db();
         let context = rag::retrieve(&db, &prompt, query_embedding.as_deref(), 6)?;
         // Settings → Datenschutz: the open page is only sent when allowed.
+        // Its tags count as well (front matter `tags: [privat]` is not in the text as #privat).
         let active = match page_id.filter(|_| settings.privacy.read_open_page) {
-            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content)),
+            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content, privacy::tag_text(&d.tags))),
             None => None,
         };
-        // A chunk rarely contains its page's #privat tag, so the tags of every source page count too.
-        let mut ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        let mut tags = vec![];
-        for id in ids {
-            tags.extend(db.page_tags(id)?.into_iter().map(|t| format!("#{t}")));
-        }
-        (context, active, tags.join(" "))
+        // A chunk rarely contains its page's #privat tag, so the privacy of every source page counts too.
+        let ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
+        let private = privacy::private_pages(&db, ids, &settings.router.private_markers)?;
+        (
+            context,
+            active,
+            privacy::mark_tool_result(String::new(), !private.is_empty(), &settings.router.private_markers),
+        )
     };
     let mut context_texts: Vec<String> = context.iter().map(|c| c.text.clone()).collect();
-    if let Some((_, text)) = &active {
+    if let Some((_, text, tags)) = &active {
         context_texts.push(text.clone());
+        context_texts.push(tags.clone());
     }
-    context_texts.push(source_tags);
+    context_texts.push(source_marker);
     // Earlier turns (and tool results) of the conversation are sent again, so they count as well.
     context_texts.extend(messages.iter().filter_map(|m| m.content.clone()));
     let route = route_for(&state, &prompt, &context_texts, use_tools, tier);
 
     let mut full = vec![ChatMessage::system(system_prompt(&settings))];
-    if let Some((title, text)) = &active {
+    if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
         full.push(ChatMessage::system(format!("Aktuell geöffnete Seite „{title}“:\n\n{text}")));
     }
@@ -2115,7 +2283,11 @@ async fn stream_completion(
         })
         .await;
     lock(&state.cancels).remove(request_id);
-    let completion = result.inspect_err(|e| devlog::error("ai", e.to_string()))?;
+    let completion =
+        result.inspect_err(|e| devlog::error("ai", format!("{} ({}): {e}", req.model, client.provider().id)))?;
+    for w in &completion.warnings {
+        devlog::warn("ai", format!("{} ({}): {w}", req.model, client.provider().id));
+    }
     let u = &completion.usage;
     devlog::debug(
         "ai",
@@ -2310,7 +2482,7 @@ async fn ai_transform(
     let mut context = vec![text.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &instruction, &context, false, tier);
     let today = Local::now().format("%A, %d.%m.%Y").to_string();
@@ -2362,7 +2534,7 @@ async fn zeit_suggest_ai(
     let mut context = vec![line.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &line, &context, false, None);
     let req = ChatRequest {
@@ -2393,7 +2565,7 @@ enum ToolPlan {
 }
 
 /// Classifies a tool call so the UI knows whether to ask the user first.
-#[tauri::command]
+#[tauri::command(async)]
 fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Result<ToolPlan> {
     tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
     Ok(match tools::classify(&name) {
@@ -2405,13 +2577,15 @@ fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Resu
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, arguments: String) -> Result<String> {
     tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
     let args: serde_json::Value = serde_json::from_str(&arguments)?;
     let arg = |k: &str| args[k].as_str().unwrap_or_default().to_owned();
     let t = state.settings().thresholds;
     let db = state.db();
+    // Pages whose text the result carries: a private one keeps the conversation local.
+    let mut pages: Vec<i64> = vec![];
     let out = match name.as_str() {
         "log_time" => {
             let mut line = arg("command");
@@ -2423,9 +2597,14 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             res
         }
         // Snippets mark hits with STX/ETX; the model does not need them.
-        "search_workspace" => serde_json::to_string(&search::search(&db, &arg("query"), 10)?)?
-            .replace("\\u0002", "")
-            .replace("\\u0003", ""),
+        "search_workspace" => {
+            let hits = search::search(&db, &arg("query"), 10)?;
+            pages.extend(hits.iter().filter_map(|h| match h {
+                search::SearchHit::Page { page_id, .. } | search::SearchHit::Note { page_id, .. } => Some(*page_id),
+                search::SearchHit::TimeEntry { .. } => None,
+            }));
+            serde_json::to_string(&hits)?.replace("\\u0002", "").replace("\\u0003", "")
+        }
         "budget_status" => {
             let np = db.netzplan_by_ref(&arg("netzplan"))?;
             serde_json::to_string(&tracking::budget_status(&db, np.id, &t)?)?
@@ -2444,17 +2623,21 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             };
             let from = date("from")?;
             let to = if arg("to").trim().is_empty() { from } else { date("to")? };
+            pages = annalo_core::feed::day_pages(&db, from, to, &Local)?;
             annalo_core::feed::describe_days(&db, from, to, &Local)?
         }
         "list_tasks" => {
             let filter: TaskFilter = serde_json::from_value(args.clone())?;
             let mut list = db.list_tasks(&filter)?;
             list.truncate(100);
+            pages.extend(list.iter().map(|t| t.page_id));
             serde_json::to_string(&list)?
         }
-        other => return Err(Error::State(format!("'{other}' is not a workspace tool"))),
+        other => return Err(Error::State(format!("„{other}“ ist kein Werkzeug des Arbeitsbereichs"))),
     };
-    Ok(out)
+    let markers = state.settings().router.private_markers;
+    let private = privacy::private_pages(&db, pages, &markers)?;
+    Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
 }
 
 /// Executes a system tool. The UI calls this only after the user approved
@@ -2468,7 +2651,11 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
     };
     let settings = state.settings();
     tools::check_allowed(name, &settings.ai.allowed_tools)?;
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let (http, network_error) = {
+        let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
+        (ai.tools_http.clone(), ai.network_error.clone())
+    };
+    let http = http.ok_or_else(|| Error::State(network_error.unwrap_or_default()))?;
     tools::execute_system_tool(&call, &http, settings.network.timeout()).await
 }
 
@@ -2493,6 +2680,10 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     }
     let mut total = 0;
     loop {
+        // Indexing counts toward the monthly cost limit like any other request (a local model costs nothing).
+        if !local {
+            prefs::check_cost_limit(&state, false)?;
+        }
         let batch = if local {
             rag::pending_blocks(&state.db(), 32)?
         } else {
@@ -2503,7 +2694,9 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
         }
         let texts: Vec<String> = batch.iter().map(|(_, t)| t.clone()).collect();
         let vectors = client.embed(&model, &texts).await?;
+        let usage = annalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
         let db = state.db();
+        db.record_ai_usage(&state.session_id, &usage)?;
         for ((id, _), v) in batch.iter().zip(&vectors) {
             rag::store_embedding(&db, *id, v)?;
         }
@@ -2557,7 +2750,7 @@ fn spawn_activity_sampler(app: AppHandle) {
 }
 
 /// Whether to show the first-run choice: nothing in the workspace yet and not answered before.
-#[tauri::command]
+#[tauri::command(async)]
 fn onboarding_needed(state: State<AppState>) -> Result<bool> {
     let db = state.db();
     Ok(db.meta_get("onboarded")?.is_none() && db.list_projects()?.is_empty() && db.page_tree()?.is_empty())
@@ -2576,7 +2769,7 @@ fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> R
 }
 
 /// Removes the sample project and pages created on first start.
-#[tauri::command]
+#[tauri::command(async)]
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     let n = demo::remove(&state.db())?;
     let _ = app.emit("data://entries", ());
@@ -2844,9 +3037,19 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
         if let Ok(mem) = Database::open_in_memory() {
             *db = mem;
         }
+        drop(db);
+        if let Some(reader) = &state.reader
+            && let Ok(mem) = Database::open_in_memory()
+        {
+            *lock(reader) = mem;
+        }
     }
     // Otherwise the new process would only focus this one.
-    tauri_plugin_single_instance::destroy(app);
+    if portable::active() {
+        portable::unlock_instance();
+    } else {
+        tauri_plugin_single_instance::destroy(app);
+    }
 }
 
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
@@ -2871,7 +3074,16 @@ pub fn run() {
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
     // use their own workspace each and may overlap.
-    if std::env::var_os("ANNALO_DATA_DIR").is_none() {
+    // A portable copy checks its own data folder instead (the identifier is shared with the
+    // installed copy, which may run at the same time on its own data).
+    let portable = portable::detect().filter(|_| std::env::var_os("ANNALO_DATA_DIR").is_none());
+    if let Some(dir) = &portable
+        && !portable::lock_instance(dir)
+    {
+        eprintln!("Annalo already runs on {}", dir.display());
+        return;
+    }
+    if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match jumplist::parse(&args) {
             // A taskbar jump-list entry while the app runs.
             Some(action) => jumplist::run(app, action, true),
@@ -2939,8 +3151,12 @@ pub fn run() {
                 app.path().app_data_dir()?,
             );
             let dir = startup.dir.clone();
-            std::fs::create_dir_all(&dir)?;
+            let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir, false);
+            if let Some(e) = folder_error {
+                recovery::show(app.handle(), &dir, recovery::Failure::Folder(annalo_core::error::io_text(&e)));
+                return Ok(());
+            }
             devlog::info(
                 "core",
                 format!(
@@ -2957,7 +3173,24 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-            let db = Database::open(dir.join(datadir::DB_FILE))?;
+            let db = match Database::open(dir.join(datadir::DB_FILE)) {
+                Ok(db) => db,
+                Err(e) => {
+                    recovery::show(app.handle(), &dir, recovery::Failure::of_database(&e));
+                    return Ok(());
+                }
+            };
+            // A read-only folder (write-protected stick, permissions) still shows the notes,
+            // with a notice that nothing is saved.
+            let mut notice = startup.notice.clone();
+            if !recovery::writable(&dir) {
+                devlog::error("core", format!("data folder is not writable: {}", dir.display()));
+                notice = Some(datadir::Notice::titled("error", "Datenordner schreibgeschützt", format!(
+                    "In den Datenordner {} kann nicht geschrieben werden (schreibgeschützt oder voll) – Änderungen \
+                     werden nicht gespeichert.",
+                    dir.display()
+                )));
+            }
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
             }
@@ -2966,6 +3199,9 @@ pub fn run() {
             }
             if let Err(e) = db.prune_versions(Utc::now()) {
                 devlog::warn("core", format!("version cleanup failed: {e}"));
+            }
+            if let Err(e) = db.prune_history(Utc::now()) {
+                devlog::warn("core", format!("activity cleanup failed: {e}"));
             }
             let trash_days = db.load_settings().map(|s| s.notes.trash_retention_days as i64).unwrap_or(30);
             if let Err(e) = attachment_manager::purge_expired_files(&dir, trash_days.max(1), Utc::now()) {
@@ -2981,7 +3217,32 @@ pub fn run() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
             feed::backfill(&db, &attachments::dir(&dir));
-            let settings = db.load_settings()?;
+            let (settings, unreadable) = db.load_settings_checked()?;
+            if !unreadable.is_empty() {
+                // Kept for a look (and a fix by hand); the defaults are used meanwhile.
+                if let Ok(Some(raw)) = db.conn().query_row("SELECT value FROM settings WHERE key = 'app'", [], |r| {
+                    r.get::<_, String>(0).map(Some)
+                }) {
+                    let _ = db.meta_set("settings.broken", &raw);
+                }
+                devlog::warn("core", format!("settings not readable, defaults used for: {}", unreadable.join(", ")));
+                if notice.is_none() {
+                    notice = Some(datadir::Notice::titled("warning", "Einstellungen zurückgesetzt", format!(
+                        "Einige Einstellungen waren nicht lesbar und stehen wieder auf dem Standard ({}).",
+                        unreadable.join(", ")
+                    )));
+                }
+            }
+            // Network settings that cannot be applied (a missing CA file): requests fail with the
+            // reason instead of going out without the proxy.
+            if let Err(e) = annalo_core::network::http_client(&settings.network, None, Purpose::Tools)
+                && notice.is_none()
+            {
+                notice = Some(datadir::Notice::titled("warning", "Netzwerkeinstellungen ungültig", format!(
+                    "Netzwerkeinstellungen ungültig: {e} – KI-Anfragen und Links werden nicht gesendet, bis das unter \
+                     Einstellungen → Netzwerk korrigiert ist."
+                )));
+            }
             devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
                 settings.capture_shortcut.clone(),
@@ -2998,15 +3259,23 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, proxy_secret.get());
 
+            let reader = match Database::open_read_only(dir.join(datadir::DB_FILE)) {
+                Ok(r) => Some(Mutex::new(r)),
+                Err(e) => {
+                    devlog::warn("core", format!("no second connection for reading, reads share the main one: {e}"));
+                    None
+                }
+            };
             app.manage(AppState {
                 db: Mutex::new(db),
+                reader,
                 ai: RwLock::new(ai),
                 secrets,
                 git_secret: SecretStore::git(&dir),
                 proxy_secret,
                 git_lock: Mutex::new(()),
                 data_dir: dir,
-                data_dir_notice: startup.notice,
+                data_dir_notice: notice,
                 meter: Mutex::new(SessionMeter::default()),
                 session_id: Utc::now().format("%Y%m%dT%H%M%S").to_string(),
                 idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
@@ -3068,6 +3337,9 @@ pub fn run() {
             page_get,
             page_save,
             page_collection,
+            netzplan_overview,
+            budgets_all,
+            suggestion_facts,
             page_schema,
             known_persons,
             page_versions,
@@ -3094,6 +3366,7 @@ pub fn run() {
             task_set_done,
             search_workspace,
             vault_import,
+            vault_import_cancel,
             vault_export,
             templates_list,
             templates_root,

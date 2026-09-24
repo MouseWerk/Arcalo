@@ -137,6 +137,20 @@ pub fn estimate_tokens(text: &str) -> u64 {
     chars.div_ceil(4)
 }
 
+/// Usage of one embedding request (estimated input tokens, priced like a prompt), so indexing
+/// counts toward the monthly cost limit.
+pub fn embedding_usage(model: &str, inputs: &[String], prices: &PriceTable) -> UsageRecord {
+    let prompt_tokens: u64 = inputs.iter().map(|t| estimate_tokens(t)).sum();
+    UsageRecord {
+        model: model.to_owned(),
+        prompt_tokens,
+        completion_tokens: 0,
+        cost_usd: prices.cost(model, prompt_tokens, 0).unwrap_or(0.0),
+        ttft_ms: None,
+        tokens_per_second: None,
+    }
+}
+
 /// Measures one streamed completion: TTFT and decode speed.
 #[derive(Debug, Clone)]
 pub struct StreamTimer {
@@ -240,6 +254,12 @@ mod tests {
         assert_eq!(t.cost("openai/small", 1_000_000, 500_000), Some(2.0));
         assert_eq!(t.cost("openai/big", 1_000_000, 0), Some(10.0));
         assert_eq!(t.cost("unknown", 1, 1), None);
+
+        // Embeddings are priced like a prompt of the estimated size.
+        let u = embedding_usage("openai/small", &["a".repeat(4_000_000), "b".repeat(4)], &t);
+        assert_eq!((u.prompt_tokens, u.completion_tokens), (1_000_001, 0));
+        assert!((u.cost_usd - 1.000_001).abs() < 1e-9);
+        assert_eq!(embedding_usage("unknown", &["x".into()], &t).cost_usd, 0.0);
     }
 
     #[test]

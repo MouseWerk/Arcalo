@@ -32,10 +32,16 @@ export interface PageDoc extends Page {
 export interface PropSchema {
   props: { key: string; kind: import("./collection").PropKind; options: { name: string; color: string }[] }[];
 }
+/** What `page_save` returns: what the save derived (the content is the caller's). */
+export interface SavedPage {
+  id: number;
+  updated_at: string;
+  tags: string[];
+  unresolved_links: string[];
+}
 export interface CollectionRow extends Page {
-  /** The frontmatter block with its `---` lines. */
+  /** The frontmatter block with its `---` lines (the views derive the cells from it). */
   frontmatter: string;
-  cells: { key: string; text: string; value: import("./collection").Typed | null; error: string | null }[];
 }
 export interface PageCollection {
   parent_id: number;
@@ -125,6 +131,20 @@ export interface ScheduleNode {
   gp: number;
   fp: number;
   critical: boolean;
+}
+/** Budget and schedule of one Netzplan (`netzplan_overview`); `schedule` is null for a cycle. */
+export interface NetzplanOverview {
+  netzplan_id: number;
+  budget: BudgetStatus[];
+  schedule: Schedule | null;
+}
+/** What the assistant's suggestions are built from (`suggestion_facts`). */
+export interface SuggestionFacts {
+  open_tasks: number;
+  overdue: number;
+  due_today: number;
+  page_open_tasks: number;
+  worst_budget: string | null;
 }
 export interface Schedule {
   nodes: ScheduleNode[];
@@ -454,6 +474,8 @@ export interface GitSyncStatus {
   last_error: string | null;
   pending_changes: number;
   token_set: boolean;
+  /** The last sync stopped before deleting this many notes on the server ("Löschungen übertragen"). */
+  blocked_deletions?: number | null;
 }
 export interface GitSyncOutcome {
   commit: string | null;
@@ -534,6 +556,8 @@ export interface DevLogStats {
   errors_week: number;
   /** The log folder. */
   dir: string;
+  /** Why the log file cannot be written, if it cannot (full or read-only disk). */
+  write_error?: string | null;
 }
 export interface MirrorStatus {
   enabled: boolean;
@@ -665,6 +689,8 @@ export interface ImportReport {
   attachments: number;
   skipped: number;
   root_page_id: number;
+  /** Notes cut because of their size, files read as Windows-1252. */
+  warnings?: string[];
 }
 export type TaskStatus = "open" | "done" | "all";
 export interface Task {
@@ -712,7 +738,7 @@ export interface DataDirStatus {
   /** Folder the workspace moves to on the next start. */
   pending_move: string | null;
   /** Result of a move or a fallback at startup. */
-  notice: { kind: "info" | "warning" | "error"; message: string } | null;
+  notice: { kind: "info" | "warning" | "error"; message: string; title?: string } | null;
   /** Portable mode: the data folder is fixed next to the executable. */
   portable?: boolean;
 }
@@ -912,4 +938,6 @@ export interface GitPulled {
   created: number[];
   trashed: number[];
   conflicts: number[];
+  /** Pages the server deleted, kept here because there were too many at once. */
+  kept?: number[];
 }

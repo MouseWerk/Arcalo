@@ -68,7 +68,7 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
 
     match it.next() {
         Some(Token::Word(w)) if is_zeit_command(&w) => {}
-        _ => return Err(Error::Parse("command must start with /zeit".into())),
+        _ => return Err(Error::Parse("Der Befehl muss mit /zeit beginnen".into())),
     }
 
     let default_ref = default_ref.map(str::trim).filter(|r| !r.is_empty());
@@ -79,17 +79,17 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
             it.next();
             w
         }
-        _ => return Err(Error::Parse("missing Netzplan reference, e.g. NP-8801/1020".into())),
+        _ => return Err(Error::Parse("Netzplan fehlt, z. B. NP-8801/1020".into())),
     };
     let (netzplan_ref, vorgang_nr) = match target.split_once('/') {
         Some((np, v)) if !np.is_empty() && !v.is_empty() => (np.to_owned(), Some(v.to_owned())),
-        Some(_) => return Err(Error::Parse(format!("invalid reference '{target}'"))),
+        Some(_) => return Err(Error::Parse(format!("Ungültiger Bezug „{target}“"))),
         None => (target, None),
     };
 
     let duration_minutes = match it.next() {
         Some(Token::Word(w)) => parse_duration(&w)?,
-        _ => return Err(Error::Parse("missing duration, e.g. 2.5h or 90m".into())),
+        _ => return Err(Error::Parse("Dauer fehlt, z. B. 2,5h oder 90m".into())),
     };
 
     let mut leistungsart = None;
@@ -102,13 +102,13 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
         match tok {
             Token::Quoted(q) => {
                 if quoted.replace(q).is_some() {
-                    return Err(Error::Parse("only one quoted description is allowed".into()));
+                    return Err(Error::Parse("Nur eine Beschreibung in Anführungszeichen erlaubt".into()));
                 }
             }
             Token::Word(w) if w.len() > 1 && w.starts_with('#') => {
                 let code = w[1..].to_uppercase();
                 if leistungsart.replace(code).is_some() {
-                    return Err(Error::Parse("only one Leistungsart (#CODE) is allowed".into()));
+                    return Err(Error::Parse("Nur eine Leistungsart (#CODE) erlaubt".into()));
                 }
             }
             Token::Word(w) if w.len() > 1 && w.starts_with('@') => {
@@ -127,7 +127,7 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
         (Some(q), true) => q,
         (None, _) => words.join(" "),
         (Some(_), false) => {
-            return Err(Error::Parse(format!("unexpected text after reference: '{}'", words.join(" "))));
+            return Err(Error::Parse(format!("Unerwarteter Text nach dem Bezug: „{}“", words.join(" "))));
         }
     };
 
@@ -169,7 +169,7 @@ fn tokenize(line: &str) -> Result<Vec<Token>> {
                     // Accept a straight double quote closing a typographic opener.
                     Some('"') if matches!(c, '“' | '„') => break,
                     Some(ch) => s.push(ch),
-                    None => return Err(Error::Parse("unterminated quote".into())),
+                    None => return Err(Error::Parse("Anführungszeichen nicht geschlossen".into())),
                 }
             }
             out.push(Token::Quoted(s.trim().to_owned()));
@@ -190,7 +190,7 @@ fn tokenize(line: &str) -> Result<Vec<Token>> {
 
 /// Parses a duration token into whole minutes (rounded).
 pub fn parse_duration(s: &str) -> Result<i64> {
-    let err = || Error::Parse(format!("invalid duration '{s}' (use e.g. 2.5h, 90m, 1h30m or 1:30)"));
+    let err = || Error::Parse(format!("Ungültige Dauer „{s}“ (z. B. 2,5h, 90m, 1h30m oder 1:30)"));
     let lower = s.trim().to_lowercase().replace(',', ".");
 
     let minutes = if let Some((h, m)) = lower.split_once(':') {
@@ -230,7 +230,7 @@ pub fn parse_duration(s: &str) -> Result<i64> {
 
     let minutes = minutes.round() as i64;
     if minutes <= 0 || minutes > 24 * 60 {
-        return Err(Error::Parse(format!("duration '{s}' must be between 1 minute and 24 hours")));
+        return Err(Error::Parse(format!("Die Dauer „{s}“ muss zwischen 1 Minute und 24 Stunden liegen")));
     }
     Ok(minutes)
 }
@@ -261,14 +261,16 @@ fn parse_date(s: &str, today: NaiveDate) -> Result<DateSpec> {
         {
             return Ok(DateSpec::On(d));
         }
-        return Err(Error::Parse(format!("invalid date '@{s}' (use @heute, @gestern, @2026-09-22 or @22.09.)")));
+        return Err(Error::Parse(format!(
+            "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @2026-09-22 oder @22.09.)"
+        )));
     }
     // "22.09." or "22.09": the most recent such day (Dec dates in early January mean last year).
     if let Ok(d) = NaiveDate::parse_from_str(&format!("{trimmed}.{}", today.year()), "%d.%m.%Y") {
         let d = if d > today { d.with_year(today.year() - 1).unwrap_or(d) } else { d };
         return Ok(DateSpec::On(d));
     }
-    Err(Error::Parse(format!("invalid date '@{s}' (use @heute, @gestern, @2026-09-22 or @22.09.)")))
+    Err(Error::Parse(format!("Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @2026-09-22 oder @22.09.)")))
 }
 
 #[cfg(test)]

@@ -46,17 +46,29 @@ impl Database {
             .ok_or_else(|| Error::not_found("page", page_id.to_string()))
     }
 
-    /// (created_at, content) of the page's newest snapshot.
-    fn latest_version(&self, page_id: i64) -> Result<Option<(DateTime<Utc>, String)>> {
-        let row: Option<(String, String)> = self
+    /// When the page's newest snapshot was taken (only the time: a save asks this every time,
+    /// and a snapshot of a long note is large).
+    fn latest_version_at(&self, page_id: i64) -> Result<Option<DateTime<Utc>>> {
+        let at: Option<String> = self
             .conn()
-            .query_row(
-                "SELECT created_at, content FROM page_versions WHERE page_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1",
-                [page_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .prepare_cached(
+                "SELECT created_at FROM page_versions WHERE page_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1",
+            )?
+            .query_row([page_id], |r| r.get(0))
             .optional()?;
-        row.map(|(t, c)| Ok((parse_ts(&t)?, c))).transpose().map_err(Error::Db)
+        at.map(|t| parse_ts(&t)).transpose().map_err(Error::Db)
+    }
+
+    /// Whether the page's newest snapshot holds exactly `content` (compared in SQLite).
+    fn latest_version_is(&self, page_id: i64, content: &str) -> Result<bool> {
+        let same: Option<bool> = self
+            .conn()
+            .prepare_cached(
+                "SELECT content = ?2 FROM page_versions WHERE page_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1",
+            )?
+            .query_row(params![page_id, content], |r| r.get(0))
+            .optional()?;
+        Ok(same.unwrap_or(false))
     }
 
     /// (snapshot interval in minutes, versions kept per page) from Settings → Notizen.
@@ -73,7 +85,7 @@ impl Database {
         if content.trim().is_empty() {
             return Ok(None);
         }
-        if self.latest_version(page_id)?.is_some_and(|(_, c)| c == content) {
+        if self.latest_version_is(page_id, content)? {
             return Ok(None);
         }
         let conn = self.conn();
@@ -96,8 +108,8 @@ impl Database {
         if old == new {
             return Ok(());
         }
-        let due = match self.latest_version(page_id)? {
-            Some((at, _)) => now - at >= Duration::minutes(self.version_policy().0),
+        let due = match self.latest_version_at(page_id)? {
+            Some(at) => now - at >= Duration::minutes(self.version_policy().0),
             None => true,
         };
         if due {

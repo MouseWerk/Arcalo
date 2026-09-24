@@ -69,6 +69,8 @@ struct Inner {
     recent: HashMap<String, Instant>,
     /// Start of the current minute window and UI lines written in it.
     ui_window: Option<(Instant, u32)>,
+    /// Why the last line could not be written (shown in Settings → Protokoll).
+    write_error: Option<String>,
 }
 
 static LOG: OnceLock<DevLog> = OnceLock::new();
@@ -133,10 +135,19 @@ impl DevLog {
             rotate(&self.dir, MAX_BYTES)?;
             OpenOptions::new().create(true).append(true).open(self.file())?.write_all(line.as_bytes())
         });
-        if let Err(e) = res {
-            eprintln!("developer log not written: {e}");
+        match res {
+            Ok(()) => inner.write_error = None,
+            Err(e) => {
+                eprintln!("developer log not written: {e}");
+                inner.write_error = Some(annalo_core::error::io_text(&e));
+            }
         }
         true
+    }
+
+    /// Why the log could not be written the last time, if it could not.
+    pub fn write_error(&self) -> Option<String> {
+        lock(&self.inner).write_error.clone()
     }
 
     /// The newest `limit` entries (newest first), from the current and the rotated files.
@@ -443,6 +454,8 @@ pub struct Stats {
     /// ERROR lines of the last 7 days.
     errors_week: usize,
     dir: String,
+    /// The log file cannot be written (full or read-only disk, permissions).
+    write_error: Option<String>,
 }
 
 #[tauri::command]
@@ -453,7 +466,11 @@ pub fn devlog_stats(state: State<AppState>) -> Stats {
         .filter(|e| e.level == "ERROR")
         .filter(|e| DateTime::parse_from_rfc3339(&e.time).is_ok_and(|t| t >= since))
         .count();
-    Stats { errors_week, dir: log_dir(&state).display().to_string() }
+    Stats {
+        errors_week,
+        dir: log_dir(&state).display().to_string(),
+        write_error: LOG.get().and_then(DevLog::write_error),
+    }
 }
 
 #[tauri::command]

@@ -190,7 +190,8 @@ pub fn end_of_day_reminder(
     })
 }
 
-/// Whether to report a timer still running after [`LATE_TIMER`]: once a day, and not for a
+/// Whether to report a timer still running after [`LATE_TIMER`] (or one left running from an
+/// earlier day for more than four hours, e.g. forgotten over night): once a day, and not for a
 /// timer that was deliberately started in the evening.
 pub fn late_timer_reminder(
     now: NaiveDateTime,
@@ -199,7 +200,12 @@ pub fn late_timer_reminder(
 ) -> bool {
     let Some(since) = running_since else { return false };
     let today = now.date();
-    now.time() >= LATE_TIMER && last_notified != Some(today) && since < today.and_time(LATE_TIMER)
+    if last_notified == Some(today) {
+        return false;
+    }
+    let late = now.time() >= LATE_TIMER && since < today.and_time(LATE_TIMER);
+    let from_an_earlier_day = since.date() < today && now - since >= chrono::Duration::hours(4);
+    late || from_an_earlier_day
 }
 
 /// `NP-8801/1020` for a timer on a Vorgang, `NP-8801` otherwise.
@@ -347,6 +353,10 @@ mod tests {
         assert!(!late_timer_reminder(at(wed, 21, 0), Some(at(wed, 20, 15)), None));
         // Left running since yesterday.
         assert!(late_timer_reminder(at(wed, 20, 0), Some(at(wed.pred_opt().unwrap(), 22, 0)), wed.pred_opt()));
+        // Forgotten over night: reported the next morning, not only at 20:00.
+        let tue = wed.pred_opt().unwrap();
+        assert!(late_timer_reminder(at(wed, 8, 0), Some(at(tue, 16, 0)), Some(tue)));
+        assert!(!late_timer_reminder(at(wed, 0, 30), Some(at(tue, 22, 0)), None), "started in the evening");
     }
 
     #[test]

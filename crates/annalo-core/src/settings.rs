@@ -130,7 +130,7 @@ impl QuickLink {
         if let Some(rest) = lower.strip_prefix("file://") {
             let rest = &u[u.len() - rest.len()..];
             // file:///C:/x → C:/x, file:///home/x → /home/x
-            let path = if rest.len() > 3 && rest.as_bytes()[2] == b':' { &rest[1..] } else { rest };
+            let path = if rest.starts_with('/') && rest.as_bytes().get(2) == Some(&b':') { &rest[1..] } else { rest };
             return LinkTarget::Path(path.replace("%20", " "));
         }
         let drive = u.len() > 2 && u.as_bytes()[1] == b':' && matches!(u.as_bytes()[2], b'\\' | b'/');
@@ -475,21 +475,82 @@ const KEY: &str = "app";
 
 impl Database {
     pub fn load_settings(&self) -> Result<Settings> {
-        let raw: Option<String> =
-            self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
-        let mut s: Settings = match raw {
-            Some(json) => Self::parse_settings(&json)?,
-            None => Settings::default(),
-        };
-        s.dashboard = s.dashboard.normalized();
-        Ok(s)
+        Ok(self.load_settings_checked()?.0)
     }
 
-    /// Parses stored settings JSON; settings from before the start preferences keep
-    /// „Tagesnotiz beim Start öffnen“ (`open_daily_on_start` → `start.open = daily`).
+    /// [`Database::load_settings`] and the settings that could not be read (their defaults
+    /// are used; see [`Database::parse_settings_lenient`]).
+    pub fn load_settings_checked(&self) -> Result<(Settings, Vec<String>)> {
+        let raw: Option<String> =
+            self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
+        // Unchanged JSON (the usual case, e.g. on every page save) is not parsed again.
+        if let (Some(json), Some((cached, s))) = (&raw, &*self.settings_cache.borrow())
+            && json == cached
+        {
+            return Ok((s.clone(), vec![]));
+        }
+        let (mut s, bad) = match &raw {
+            Some(json) => Self::parse_settings_lenient(json),
+            None => (Settings::default(), vec![]),
+        };
+        s.dashboard = s.dashboard.normalized();
+        // Only settings that parsed cleanly are kept: the caller must learn about unreadable ones.
+        *self.settings_cache.borrow_mut() = raw.filter(|_| bad.is_empty()).map(|json| (json, s.clone()));
+        Ok((s, bad))
+    }
+
+    /// Parses stored settings JSON; see [`Database::parse_settings_lenient`].
     pub fn parse_settings(json: &str) -> Result<Settings> {
-        let value: serde_json::Value = serde_json::from_str(json)?;
-        let mut s: Settings = serde_json::from_value(value.clone())?;
+        Ok(Self::parse_settings_lenient(json).0)
+    }
+
+    /// Parses stored settings JSON key by key (and one level deeper): a value of the wrong
+    /// type (hand-edited, from another version) falls back to its default instead of making
+    /// all settings unreadable. Returns the keys that were dropped (`*` for unreadable JSON).
+    /// Settings from before the start preferences keep „Tagesnotiz beim Start öffnen“
+    /// (`open_daily_on_start` → `start.open = daily`).
+    pub fn parse_settings_lenient(json: &str) -> (Settings, Vec<String>) {
+        use serde_json::Value;
+        let value = match serde_json::from_str::<Value>(json) {
+            Ok(v @ Value::Object(_)) => v,
+            _ => return (Settings::default(), vec!["*".into()]),
+        };
+        let fits = |v: &Value| serde_json::from_value::<Settings>(v.clone()).is_ok();
+        let mut bad = vec![];
+        let merged = if fits(&value) {
+            value.clone()
+        } else {
+            let mut base = serde_json::to_value(Settings::default()).unwrap_or(Value::Null);
+            for (k, v) in value.as_object().into_iter().flatten() {
+                let mut candidate = base.clone();
+                candidate[k] = v.clone();
+                if fits(&candidate) {
+                    base = candidate;
+                    continue;
+                }
+                match (v.as_object(), base.get(k).is_some_and(Value::is_object)) {
+                    (Some(fields), true) => {
+                        for (k2, v2) in fields {
+                            let mut candidate = base.clone();
+                            candidate[k][k2] = v2.clone();
+                            if fits(&candidate) {
+                                base = candidate;
+                            } else {
+                                bad.push(format!("{k}.{k2}"));
+                            }
+                        }
+                    }
+                    _ => bad.push(k.clone()),
+                }
+            }
+            base
+        };
+        let mut s: Settings = serde_json::from_value(merged).unwrap_or_default();
+        Self::upgrade_settings(&value, &mut s);
+        (s, bad)
+    }
+
+    fn upgrade_settings(value: &serde_json::Value, s: &mut Settings) {
         if value.get("start").is_none() && s.open_daily_on_start {
             s.start.open = StartOpen::Daily;
         }
@@ -500,7 +561,6 @@ impl Database {
             s.router.fill_providers(LEGACY_ID);
             s.embedding_provider = LEGACY_ID.into();
         }
-        Ok(s)
     }
 
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
@@ -696,6 +756,24 @@ mod tests {
     }
 
     #[test]
+    fn settings_with_a_wrong_value_keep_the_rest() {
+        let json = r#"{"theme":"dark","backup_keep":"viele","idle_threshold_minutes":7,
+            "appearance":{"mica":"ja","custom_titlebar":false},"providers":[]}"#;
+        let (s, bad) = Database::parse_settings_lenient(json);
+        assert_eq!(bad, ["appearance.mica", "backup_keep"]);
+        assert_eq!((s.theme.as_str(), s.idle_threshold_minutes), ("dark", 7));
+        assert_eq!(s.backup_keep, Settings::default().backup_keep);
+        assert!(!s.appearance.custom_titlebar);
+        assert_eq!(s.appearance.mica, AppearancePrefs::default().mica);
+        let (d, bad) = Database::parse_settings_lenient("{kaputt");
+        assert_eq!((bad, d.backup_keep), (vec!["*".to_owned()], Settings::default().backup_keep));
+        // Stored like that, the database still opens.
+        let db = Database::open_in_memory().unwrap();
+        db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [json]).unwrap();
+        assert_eq!(db.load_settings().unwrap().idle_threshold_minutes, 7);
+    }
+
+    #[test]
     fn quick_link_targets() {
         let t = |u: &str| QuickLink { name: String::new(), url: u.into(), icon: String::new() }.target();
         assert_eq!(t("jira.firma.de"), LinkTarget::Url("https://jira.firma.de".into()));
@@ -706,6 +784,9 @@ mod tests {
         assert_eq!(t("/home/anna/Dokumente"), LinkTarget::Path("/home/anna/Dokumente".into()));
         assert_eq!(t("file:///C:/Daten/Plan.xlsx"), LinkTarget::Path("C:/Daten/Plan.xlsx".into()));
         assert_eq!(t("file:///home/anna/a%20b"), LinkTarget::Path("/home/anna/a b".into()));
+        // A multibyte character before the colon (used to panic on a byte-offset slice).
+        assert_eq!(t("file://é:xy"), LinkTarget::Path("é:xy".into()));
+        assert_eq!(t("file://C:/x"), LinkTarget::Path("C:/x".into()));
     }
 
     #[test]

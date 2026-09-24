@@ -78,9 +78,57 @@ fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Resu
     Ok(fresh)
 }
 
+/// Puts the newest backup of `backups` in place of the database `db_file` (start-up recovery
+/// of a broken database). The broken file and its WAL files are kept as
+/// `<name>.broken-<stamp>`. Returns the backup used.
+pub fn restore_latest(db_file: &Path, backups: &Path, now: DateTime<Utc>) -> Result<BackupInfo> {
+    let latest = list_backups(backups)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::State(format!("Im Ordner {} liegt keine Sicherung", backups.display())))?;
+    let stamp = now.format(STAMP);
+    for ext in ["", "-wal", "-shm"] {
+        let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));
+        if from.exists() {
+            fs::rename(&from, format!("{}{ext}.broken-{stamp}", db_file.display()))?;
+        }
+    }
+    let tmp = db_file.with_extension("restore-part");
+    fs::copy(&latest.path, &tmp)?;
+    fs::rename(&tmp, db_file)?;
+    Ok(latest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_broken_database_is_replaced_by_the_newest_backup() {
+        let dir = std::env::temp_dir().join(format!("annalo-restore-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db_file = dir.join("workspace.db");
+        let backups = dir.join("backups");
+        assert!(restore_latest(&db_file, &backups, Utc::now()).is_err(), "no backup yet");
+        {
+            let db = Database::open(&db_file).unwrap();
+            let p = db.create_page(None, "Gesichert", None).unwrap();
+            db.save_page_content(p.id, "aus der Sicherung").unwrap();
+            backup_to(&db, &backups, 3).unwrap();
+        }
+        fs::write(&db_file, b"kein SQLite").unwrap();
+        assert!(Database::open(&db_file).is_err());
+        let used = restore_latest(&db_file, &backups, Utc::now()).unwrap();
+        assert!(used.file_name.starts_with("annalo-"));
+        let db = Database::open(&db_file).unwrap();
+        let p = db.page_by_title("Gesichert").unwrap().unwrap();
+        assert_eq!(db.page_doc(p.id).unwrap().content, "aus der Sicherung");
+        let kept = fs::read_dir(&dir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains(".broken-"));
+        assert!(kept, "the broken file is kept");
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn snapshots_are_readable_and_pruned() {

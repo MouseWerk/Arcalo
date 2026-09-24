@@ -83,7 +83,7 @@ pub struct FocusStateView {
 }
 
 /// The current phase; completes (and books) a session that ran out meanwhile.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_state(app: AppHandle, state: State<AppState>) -> Result<Option<FocusStateView>> {
     let st = focus::state(&state.db(), Utc::now(), &Local)?;
     Ok(st.map(|s| {
@@ -92,7 +92,7 @@ pub fn focus_state(app: AppHandle, state: State<AppState>) -> Result<Option<Focu
     }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_start(app: AppHandle, state: State<AppState>, start: FocusStart) -> Result<FocusState> {
     // One that ran out meanwhile is booked first.
     let completed = focus::state(&state.db(), Utc::now(), &Local)?.and_then(|s| s.completed);
@@ -107,20 +107,20 @@ pub fn focus_start(app: AppHandle, state: State<AppState>, start: FocusStart) ->
 }
 
 /// Completes the running session at its end (called by the UI's countdown).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_finish(app: AppHandle, state: State<AppState>) -> Result<FocusDone> {
     let outcome = focus::finish(&state.db(), Utc::now(), &Local)?;
     Ok(done(&app, outcome, true))
 }
 
 /// Ends the running session early; with `book` the minutes so far are booked.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_abort(app: AppHandle, state: State<AppState>, book: bool) -> Result<FocusDone> {
     let outcome = focus::abort(&state.db(), Utc::now(), book, &Local)?;
     Ok(done(&app, outcome, false))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_end_break(app: AppHandle, state: State<AppState>) -> Result<()> {
     focus::end_break(&state.db(), Utc::now())?;
     let _ = app.emit("focus://changed", ());
@@ -128,21 +128,21 @@ pub fn focus_end_break(app: AppHandle, state: State<AppState>) -> Result<()> {
 }
 
 /// Sessions and minutes per Vorgang of the local days `from..=to`.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_report(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<FocusReport> {
-    focus::report(&state.db(), from, to, &Local)
+    focus::report(&state.reader(), from, to, &Local)
 }
 
 /// Writes „Fokus heute: …“ into the daily note of `date` (default today); returns its page id.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_daily_line(state: State<AppState>, date: Option<NaiveDate>) -> Result<i64> {
     focus::write_daily_line(&state.db(), date.unwrap_or_else(|| Local::now().date_naive()), &Local)
 }
 
 /// Time entries booked by focus sessions (marked in the timesheet).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn focus_entry_ids(state: State<AppState>) -> Result<Vec<i64>> {
-    focus::entry_ids(&state.db())
+    focus::entry_ids(&state.reader())
 }
 
 const NOTE_DAY: &str = "focus.note_day";

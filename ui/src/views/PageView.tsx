@@ -11,11 +11,12 @@ import { ScrollOutline } from "../components/ScrollOutline";
 import { MEETING_SUMMARY_EVENT, NoteEditor, flushAllEditors, reloadEditors, type NoteEditorHandle } from "../editor/NoteEditor";
 import { splitFrontmatter } from "../editor/extensions";
 import { parseFrontmatter } from "../lib/frontmatter";
+import { cleanTitleChars } from "../lib/links";
 import { PAGE_ICONS, PageIcon, iconLabel } from "../components/icons";
 import { Button, EmptyState, IconButton, Spinner, useMenu } from "../components/ui";
 import { addDays, dateLong, isoDay, relative } from "../lib/format";
 import { linkContext } from "../components/linkContext";
-import type { PageDoc } from "../lib/types";
+import type { PageDoc, SavedPage } from "../lib/types";
 import { restorePage } from "./TrashView";
 import { SourceEditor } from "../editor/SourceEditor";
 import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
@@ -54,9 +55,10 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   activeRef.current = active;
   // The Markdown this page's editor stored last: its own save event needs no reload.
   const ownSave = useRef<string | null>(null);
-  const onOwnSave = useCallback((saved: PageDoc, content: string) => {
-    ownSave.current = content;
-    setDoc((cur) => (cur ? withSaved(cur, saved, content) : cur));
+  // A save of this pane: tags, unresolved links and time change; backlinks do not.
+  const onOwnSave = useCallback((saved: SavedPage & { content: string }) => {
+    ownSave.current = saved.content;
+    setDoc((cur) => (cur ? withSaved(cur, saved, saved.content) : cur));
   }, []);
 
   useEffect(() => {
@@ -283,9 +285,9 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
             key={`source-${doc.id}`}
             active={active}
             doc={doc}
-            onSaved={(saved, content) => {
-              onOwnSave(saved, content);
-              setFm(splitFrontmatter(content).frontmatter);
+            onSaved={(d) => {
+              onOwnSave(d);
+              setFm(splitFrontmatter(d.content).frontmatter);
             }}
           />
         ) : (
@@ -338,6 +340,8 @@ function PageHeader({
 }) {
   const toolbarOn = useApp((st) => st.settings?.settings.editor?.toolbar ?? true);
   const [title, setTitle] = useState(doc.title);
+  // `[ ] | # ^` were typed and replaced (they belong to the link syntax).
+  const [titleHint, setTitleHint] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [menu, , openMenuAt] = useMenu();
@@ -345,6 +349,7 @@ function PageHeader({
   useEffect(() => setTitle(doc.title), [doc.title]);
 
   const commitTitle = async () => {
+    setTitleHint(false);
     const t = title.trim();
     if (!t || t === doc.title) return setTitle(doc.title);
     try {
@@ -508,7 +513,12 @@ function PageHeader({
                 value={title}
                 spellCheck={false}
                 aria-label="Seitentitel"
-                onChange={(e) => setTitle(e.target.value.replace(/\n/g, " "))}
+                onChange={(e) => {
+                  const typed = e.target.value.replace(/\n/g, " ");
+                  const clean = cleanTitleChars(typed);
+                  setTitle(clean);
+                  if (clean !== typed) setTitleHint(true);
+                }}
                 onBlur={commitTitle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -520,6 +530,11 @@ function PageHeader({
                 }}
               />
             </div>
+            {titleHint && (
+              <div className="page-subtitle page-title-hint" role="status">
+                [ ] | # ^ gehören zur Link-Schreibweise und werden in Titeln ersetzt.
+              </div>
+            )}
             {daily && <div className="page-subtitle">{dateLong(daily.toISOString())}</div>}
             {iconOpen && (
               <div className="icon-picker" role="listbox" aria-label="Symbol wählen">

@@ -9,6 +9,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,21 @@ pub struct ImportReport {
     pub skipped: usize,
     /// Page created to hold the import.
     pub root_page_id: i64,
+    /// What the user should know (a note cut because of its size, a converted encoding).
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
+
+/// Progress of [`plan_import`]: files read so far of all files in the vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ImportProgress {
+    pub done: usize,
+    pub total: usize,
+}
+
+/// A note larger than this is imported up to here (the editor cannot work with tens of
+/// megabytes); the file in the vault stays as it is.
+pub const MAX_NOTE_BYTES: usize = 2 * 1024 * 1024;
 
 fn hidden(p: &Path) -> bool {
     p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with('.') || n == "node_modules")
@@ -42,43 +57,248 @@ fn stem(p: &Path) -> String {
     p.file_stem().and_then(|s| s.to_str()).unwrap_or("Ohne Titel").to_owned()
 }
 
-/// Reads a note; invalid UTF-8 (e.g. an old ANSI file) is replaced instead of aborting the import.
-fn read_text(p: &Path) -> Result<String> {
+/// Windows-1252 (the „ANSI“ of German Windows) for the bytes 0x80–0x9F; the others are Latin-1.
+const CP1252: [char; 32] = [
+    '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’',
+    '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
+];
+
+/// Text of a note file: UTF-8, else Windows-1252 (old Windows editors), converted.
+pub fn decode_text(bytes: &[u8]) -> (String, bool) {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (s.to_owned(), false),
+        Err(_) => {
+            let text =
+                bytes.iter().map(|&b| if (0x80..0xA0).contains(&b) { CP1252[(b - 0x80) as usize] } else { b as char });
+            (text.collect(), true)
+        }
+    }
+}
+
+/// Reads a note; see [`decode_text`] and [`MAX_NOTE_BYTES`].
+fn read_text(p: &Path, rel: &Path, warnings: &mut Vec<String>) -> Result<String> {
     let bytes = fs::read(p)?;
-    let text = String::from_utf8_lossy(&bytes);
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n");
+    let (text, converted) = decode_text(&bytes);
+    if converted {
+        warnings.push(format!("{}: kein UTF-8, als Windows-1252 gelesen", rel.display()));
+    }
+    let mut text = text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n");
+    if text.len() > MAX_NOTE_BYTES {
+        let mb = text.len() / 1024 / 1024;
+        text.truncate(text.floor_char_boundary(MAX_NOTE_BYTES));
+        text.push_str(&format!(
+            "\n\n> Gekürzt beim Import: die Datei ist {mb} MB groß, der Rest steht nur im Vault.\n"
+        ));
+        warnings.push(format!("{}: {mb} MB groß, gekürzt auf 2 MB", rel.display()));
+    }
     // Obsidian Tasks marks due dates with a calendar symbol; Annalo writes `due:`.
     Ok(text.replace(&format!("{} ", crate::tasks::OBSIDIAN_DUE), "due:").replace(crate::tasks::OBSIDIAN_DUE, "due:"))
 }
 
+/// A page to create, read from the vault without touching the database.
+struct Planned {
+    title: String,
+    icon: &'static str,
+    content: Option<String>,
+    /// Folder of the note in the vault (relative), for the attachment renames.
+    dir: PathBuf,
+    children: Vec<Planned>,
+}
+
+/// A vault read from disk ([`plan_import`]), ready to be written ([`apply_import`]).
+pub struct ImportPlan {
+    name: String,
+    pages: Vec<Planned>,
+    report: ImportReport,
+    /// Attachments stored under another name (a different file had the name): old name, new
+    /// name, and the vault folder whose notes refer to it.
+    renamed: Vec<(String, String, PathBuf)>,
+}
+
 /// Imports `dir` under a new top-level page named after the folder; images go to `attachments_dir`.
 pub fn import_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<ImportReport> {
+    let plan = plan_import(dir, attachments_dir, &mut |_| {}, &AtomicBool::new(false))?;
+    apply_import(db, plan)
+}
+
+/// Reads the vault and copies its attachments, without the database (so the app stays usable
+/// meanwhile). `cancel` stops it between two files.
+pub fn plan_import(
+    dir: &Path,
+    attachments_dir: &Path,
+    progress: &mut dyn FnMut(ImportProgress),
+    cancel: &AtomicBool,
+) -> Result<ImportPlan> {
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("Import").to_owned();
+    let mut walk = Walk {
+        root: dir,
+        attachments_dir,
+        report: ImportReport::default(),
+        renamed: vec![],
+        progress: ImportProgress { done: 0, total: count_files(dir) },
+        on_progress: progress,
+        cancel,
+    };
+    let pages = walk.dir(dir)?;
+    (walk.on_progress)(walk.progress);
+    Ok(ImportPlan { name, pages, report: walk.report, renamed: walk.renamed })
+}
+
+/// Creates the pages of `plan` (one transaction: all or nothing).
+pub fn apply_import(db: &Database, plan: ImportPlan) -> Result<ImportReport> {
+    let ImportPlan { name, pages, mut report, renamed } = plan;
     db.atomic(|| {
         let root = db.create_page(None, &name, Some("library"))?;
-        let mut report = ImportReport { root_page_id: root.id, ..Default::default() };
-        import_dir(db, dir, root.id, attachments_dir, &mut report)?;
+        report.root_page_id = root.id;
+        create_pages(db, root.id, pages, &renamed)?;
         Ok(report)
     })
 }
 
-/// Copies an attachment (image, drawing, PDF or any other file with an extension) by its file
-/// name (Obsidian resolves embeds by name). An existing file with the same name is kept, so
-/// importing twice does not duplicate anything. Files above the attachment limit are skipped.
-fn import_attachment(path: &Path, attachments_dir: &Path) -> Result<bool> {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Ok(false) };
-    if !attachments::embeddable(name) || name.contains(':') {
-        return Ok(false);
+fn create_pages(db: &Database, parent: i64, pages: Vec<Planned>, renamed: &[(String, String, PathBuf)]) -> Result<()> {
+    for p in pages {
+        let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
+        if let Some(mut content) = p.content {
+            // The notes refer to renamed files by their old names.
+            for (old, new, scope) in renamed {
+                if p.dir.starts_with(scope) {
+                    content = crate::attachment_manager::replace_file_refs(&content, old, new);
+                }
+            }
+            db.save_page_content(page.id, &content)?;
+        }
+        create_pages(db, page.id, p.children, renamed)?;
     }
-    if fs::metadata(path)?.len() > attachments::MAX_FILE_BYTES {
-        return Ok(false);
+    Ok(())
+}
+
+fn count_files(dir: &Path) -> usize {
+    visible_entries(dir).map(|v| v.iter().map(|p| if p.is_dir() { count_files(p) } else { 1 }).sum()).unwrap_or(0)
+}
+
+struct Walk<'a> {
+    root: &'a Path,
+    attachments_dir: &'a Path,
+    report: ImportReport,
+    renamed: Vec<(String, String, PathBuf)>,
+    progress: ImportProgress,
+    on_progress: &'a mut dyn FnMut(ImportProgress),
+    cancel: &'a AtomicBool,
+}
+
+impl Walk<'_> {
+    fn rel(&self, p: &Path) -> PathBuf {
+        p.strip_prefix(self.root).map(Path::to_path_buf).unwrap_or_default()
     }
-    fs::create_dir_all(attachments_dir)?;
-    let target = attachments_dir.join(name);
-    if !target.exists() {
-        fs::copy(path, &target)?;
+
+    /// One file done: progress now and then, and the chance to stop.
+    fn tick(&mut self) -> Result<()> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(crate::Error::State("Import abgebrochen".into()));
+        }
+        self.progress.done += 1;
+        if self.progress.done.is_multiple_of(25) {
+            (self.on_progress)(self.progress);
+        }
+        Ok(())
     }
-    Ok(true)
+
+    fn note(&mut self, path: &Path) -> Result<String> {
+        self.tick()?;
+        let rel = self.rel(path);
+        read_text(path, &rel, &mut self.report.warnings)
+    }
+
+    fn dir(&mut self, dir: &Path) -> Result<Vec<Planned>> {
+        let mut entries = visible_entries(dir)?;
+        entries.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|n| n.to_ascii_lowercase())));
+        let here = self.rel(dir);
+        // Full folder names: `v1.2/` pairs with `v1.2.md`, whose stem is also `v1.2`.
+        let folder_names: Vec<String> =
+            entries.iter().filter(|p| p.is_dir()).filter_map(|p| p.file_name()?.to_str().map(str::to_owned)).collect();
+        let mut out = vec![];
+        for path in &entries {
+            if path.is_dir() && !has_markdown(path) {
+                // Pure attachment folders (`assets/`) do not become pages; their files belong
+                // to the notes of this folder.
+                self.files_only(path, &here)?;
+            } else if path.is_dir() {
+                let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("Ordner").to_owned();
+                let note = dir.join(format!("{title}.md"));
+                let content = if is_plain_file(&note) {
+                    self.report.pages += 1;
+                    Some(self.note(&note)?)
+                } else {
+                    None
+                };
+                self.report.folders += 1;
+                let children = self.dir(path)?;
+                out.push(Planned { title, icon: "folder", content, dir: here.clone(), children });
+            } else if is_md(path) {
+                let title = stem(path);
+                if folder_names.iter().any(|f| f == &title) {
+                    continue; // folder note, already used as the folder page's content
+                }
+                let content = self.note(path)?;
+                self.report.pages += 1;
+                out.push(Planned {
+                    title,
+                    icon: "file-text",
+                    content: Some(content),
+                    dir: here.clone(),
+                    children: vec![],
+                });
+            } else {
+                self.attachment(path, &here)?;
+            }
+        }
+        Ok(out)
+    }
+
+    fn files_only(&mut self, dir: &Path, scope: &Path) -> Result<()> {
+        for path in visible_entries(dir)? {
+            if path.is_dir() {
+                self.files_only(&path, scope)?;
+            } else {
+                self.attachment(&path, scope)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Copies an attachment (image, drawing, PDF or any other file with an extension) by its
+    /// file name (Obsidian resolves embeds by name). The same file under that name is kept, so
+    /// importing twice does not duplicate anything; a different file of the same name is stored
+    /// under a free name (`Bild 2.png`) and the notes of `scope` are pointed to it. Files above
+    /// the attachment limit and empty files are skipped.
+    fn attachment(&mut self, path: &Path, scope: &Path) -> Result<()> {
+        self.tick()?;
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            self.report.skipped += 1;
+            return Ok(());
+        };
+        if !attachments::embeddable(name)
+            || name.contains(':')
+            || fs::metadata(path)?.len() > attachments::MAX_FILE_BYTES
+        {
+            self.report.skipped += 1;
+            return Ok(());
+        }
+        match attachments::import_file(self.attachments_dir, path) {
+            Ok(saved) => {
+                if saved.name != name {
+                    self.renamed.push((name.to_owned(), saved.name, scope.to_path_buf()));
+                }
+                self.report.attachments += 1;
+                Ok(())
+            }
+            Err(crate::Error::Io(e)) => Err(e.into()),
+            Err(_) => {
+                self.report.skipped += 1;
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Visible files and folders of `dir`. Symlinks are skipped entirely: following them could
@@ -99,57 +319,6 @@ fn is_plain_file(p: &Path) -> bool {
 
 fn has_markdown(dir: &Path) -> bool {
     visible_entries(dir).is_ok_and(|v| v.iter().any(|p| if p.is_dir() { has_markdown(p) } else { is_md(p) }))
-}
-
-fn import_files_only(dir: &Path, attachments_dir: &Path, report: &mut ImportReport) -> Result<()> {
-    for path in visible_entries(dir)? {
-        if path.is_dir() {
-            import_files_only(&path, attachments_dir, report)?;
-        } else if import_attachment(&path, attachments_dir)? {
-            report.attachments += 1;
-        } else {
-            report.skipped += 1;
-        }
-    }
-    Ok(())
-}
-
-fn import_dir(db: &Database, dir: &Path, parent: i64, attachments_dir: &Path, report: &mut ImportReport) -> Result<()> {
-    let mut entries = visible_entries(dir)?;
-    entries.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|n| n.to_ascii_lowercase())));
-
-    // Full folder names: `v1.2/` pairs with `v1.2.md`, whose stem is also `v1.2`.
-    let folder_names: Vec<String> =
-        entries.iter().filter(|p| p.is_dir()).filter_map(|p| p.file_name()?.to_str().map(str::to_owned)).collect();
-    for path in &entries {
-        if path.is_dir() && !has_markdown(path) {
-            // Pure attachment folders (`assets/`) do not become pages.
-            import_files_only(path, attachments_dir, report)?;
-        } else if path.is_dir() {
-            let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("Ordner").to_owned();
-            let note = dir.join(format!("{title}.md"));
-            let page = db.create_page(Some(parent), &title, Some("folder"))?;
-            if is_plain_file(&note) {
-                db.save_page_content(page.id, &read_text(&note)?)?;
-                report.pages += 1;
-            }
-            report.folders += 1;
-            import_dir(db, path, page.id, attachments_dir, report)?;
-        } else if is_md(path) {
-            let title = stem(path);
-            if folder_names.iter().any(|f| f == &title) {
-                continue; // folder note, already used as the folder page's content
-            }
-            let page = db.create_page(Some(parent), &title, Some("file-text"))?;
-            db.save_page_content(page.id, &read_text(path)?)?;
-            report.pages += 1;
-        } else if import_attachment(path, attachments_dir)? {
-            report.attachments += 1;
-        } else {
-            report.skipped += 1;
-        }
-    }
-    Ok(())
 }
 
 /// Characters Windows does not allow in file names.
@@ -209,41 +378,82 @@ impl Planner<'_> {
         candidate
     }
 
-    fn plan(&mut self, db: &Database, nodes: &[PageNode], dir: &str, out: &mut Vec<(PagePath, String)>) -> Result<()> {
+    /// Paths of `nodes` and their subpages; `has_content` tells whether a page has text.
+    fn plan(&mut self, has_content: &dyn Fn(i64) -> bool, nodes: &[PageNode], dir: &str, out: &mut Vec<PagePath>) {
         for node in nodes {
             let base = file_name(&node.page.title);
-            let content = db.page_doc(node.page.id)?.content;
-            let written = !content.is_empty() || node.children.is_empty();
+            let written = has_content(node.page.id) || node.children.is_empty();
             let file = written.then(|| self.unique(dir, &base, ".md"));
             let folder = (!node.children.is_empty()).then(|| self.unique(dir, &base, ""));
-            out.push((PagePath { page_id: node.page.id, file, folder: folder.clone() }, content));
+            out.push(PagePath { page_id: node.page.id, file, folder: folder.clone() });
             if let Some(sub) = folder {
-                self.plan(db, &node.children, &sub, out)?;
+                self.plan(has_content, &node.children, &sub, out);
             }
         }
-        Ok(())
     }
 }
 
 /// The path of every page in an export into an empty folder (the Markdown mirror), in tree
 /// order. The Git sync maps changed files back to pages with it.
 pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
+    // Only whether a page has text matters here, not the text.
+    let filled: std::collections::HashSet<i64> = db
+        .conn()
+        .prepare_cached("SELECT id FROM pages WHERE deleted_at IS NULL AND content <> ''")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     let mut out = Vec::new();
-    Planner { root: None, taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut out)?;
-    Ok(out.into_iter().map(|(p, _)| p).collect())
+    Planner { root: None, taken: Default::default() }.plan(&|id| filled.contains(&id), &db.page_tree()?, "", &mut out);
+    Ok(out)
+}
+
+/// What an export needs from the database, read at once: the page tree and every page's
+/// Markdown (one query, not one per page). Writing the files then needs no database, so
+/// the Markdown mirror is written without holding the database.
+pub struct VaultSnapshot {
+    tree: Vec<PageNode>,
+    contents: std::collections::HashMap<i64, String>,
+}
+
+impl VaultSnapshot {
+    pub fn read(db: &Database) -> Result<Self> {
+        let tree = db.page_tree()?;
+        let contents = db
+            .conn()
+            .prepare_cached("SELECT id, content FROM pages WHERE deleted_at IS NULL")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(VaultSnapshot { tree, contents })
+    }
+
+    fn content(&self, id: i64) -> &str {
+        self.contents.get(&id).map_or("", String::as_str)
+    }
 }
 
 /// Writes every page as a Markdown file below `dir` and the embedded attachments to
 /// `dir/attachments/`. Returns the number of Markdown files.
 pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<usize> {
+    export_snapshot(&VaultSnapshot::read(db)?, dir, attachments_dir)
+}
+
+/// [`export_vault`] from a [`VaultSnapshot`] (no database access).
+pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path) -> Result<usize> {
     fs::create_dir_all(dir)?;
     let mut planned = Vec::new();
-    Planner { root: Some(dir), taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut planned)?;
+    Planner { root: Some(dir), taken: Default::default() }.plan(
+        &|id| !snap.content(id).is_empty(),
+        &snap.tree,
+        "",
+        &mut planned,
+    );
     let mut count = 0;
     let mut embedded: Vec<String> = vec![];
-    for (path, content) in &planned {
-        for name in attachments::embeds(content) {
-            if !embedded.contains(&name) {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for path in &planned {
+        let content = snap.content(path.page_id);
+        for name in crate::attachment_manager::export_files(content) {
+            if seen.insert(name.clone()) {
                 embedded.push(name);
             }
         }
@@ -319,6 +529,109 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]");
         assert!(root.join("Projekte.md").is_file());
         assert!(root.join("Inbox.md").is_file());
+    }
+
+    #[test]
+    fn linked_files_are_exported_and_name_clashes_keep_both_files() {
+        let db = Database::open_in_memory().unwrap();
+        let att = tmp("att2");
+        fs::write(att.join("Angebot.pdf"), "alt").unwrap();
+        fs::write(att.join("Plan.xlsx"), "tabelle").unwrap();
+        let p = db.create_page(None, "Kunde", None).unwrap();
+        db.save_page_content(p.id, "[[Angebot.pdf]] und [Plan](Plan.xlsx)").unwrap();
+        let out = tmp("out2");
+        export_vault(&db, &out, &att).unwrap();
+        assert_eq!(fs::read_to_string(out.join("attachments/Angebot.pdf")).unwrap(), "alt");
+        assert_eq!(fs::read_to_string(out.join("attachments/Plan.xlsx")).unwrap(), "tabelle");
+
+        // A vault with another file of the same name: both are kept, the import points to its own.
+        let vault = tmp("in2");
+        fs::write(vault.join("Angebot.pdf"), "neu").unwrap();
+        fs::write(vault.join("Plan.xlsx"), "tabelle").unwrap();
+        fs::write(vault.join("Notiz.md"), "![[Angebot.pdf]] [[Angebot.pdf|PDF]] [Plan](Plan.xlsx)").unwrap();
+        let r = import_vault(&db, &vault, &att).unwrap();
+        assert_eq!(r.attachments, 2);
+        assert_eq!(fs::read_to_string(att.join("Angebot.pdf")).unwrap(), "alt", "existing file untouched");
+        assert_eq!(fs::read_to_string(att.join("Angebot 2.pdf")).unwrap(), "neu");
+        assert!(!att.join("Plan 2.xlsx").exists(), "the same file is not stored twice");
+        let notiz = db.page_by_title("Notiz").unwrap().unwrap();
+        assert_eq!(
+            db.page_doc(notiz.id).unwrap().content,
+            "![[Angebot 2.pdf]] [[Angebot 2.pdf|PDF]] [Plan](Plan.xlsx)"
+        );
+        assert_eq!(db.page_doc(p.id).unwrap().content, "[[Angebot.pdf]] und [Plan](Plan.xlsx)", "other pages kept");
+    }
+
+    #[test]
+    fn same_named_files_in_two_folders_stay_apart() {
+        let vault = tmp("in3");
+        for (folder, bytes) in [("Projekt A", "a"), ("Projekt B", "b")] {
+            fs::create_dir_all(vault.join(folder).join("assets")).unwrap();
+            fs::write(vault.join(folder).join("assets/bild.png"), bytes).unwrap();
+            fs::write(vault.join(folder).join("Notiz.md"), "![[bild.png]]").unwrap();
+        }
+        let db = Database::open_in_memory().unwrap();
+        let att = tmp("att3");
+        import_vault(&db, &vault, &att).unwrap();
+        let content = |folder: &str| {
+            let f = db.page_by_title(folder).unwrap().unwrap();
+            let tree = db.page_tree().unwrap();
+            let find = |nodes: &[PageNode]| -> Option<i64> {
+                fn walk(nodes: &[PageNode], parent: i64) -> Option<i64> {
+                    for n in nodes {
+                        if n.page.parent_id == Some(parent) && n.page.title.starts_with("Notiz") {
+                            return Some(n.page.id);
+                        }
+                        if let Some(x) = walk(&n.children, parent) {
+                            return Some(x);
+                        }
+                    }
+                    None
+                }
+                walk(nodes, f.id)
+            };
+            db.page_doc(find(&tree).unwrap()).unwrap().content
+        };
+        let (a, b) = (content("Projekt A"), content("Projekt B"));
+        assert_eq!(a, "![[bild.png]]");
+        assert_eq!(b, "![[bild 2.png]]");
+        assert_eq!(fs::read_to_string(att.join("bild.png")).unwrap(), "a");
+        assert_eq!(fs::read_to_string(att.join("bild 2.png")).unwrap(), "b");
+    }
+
+    #[test]
+    fn old_encodings_and_huge_notes_are_read_with_a_warning() {
+        assert_eq!(decode_text(b"Gr\xfc\xdfe \x80 \x84Zitat\x93").0, "Grüße € „Zitat“");
+        assert_eq!(decode_text("schon UTF-8: ä".as_bytes()), ("schon UTF-8: ä".to_owned(), false));
+        let vault = tmp("in4");
+        fs::write(vault.join("Alt.md"), b"Gr\xfc\xdfe").unwrap();
+        let big = "ä".repeat(MAX_NOTE_BYTES); // twice the limit in bytes
+        fs::write(vault.join("Riesig.md"), &big).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let r = import_vault(&db, &vault, &tmp("att4")).unwrap();
+        assert_eq!(r.warnings.len(), 2, "{:?}", r.warnings);
+        let alt = db.page_by_title("Alt").unwrap().unwrap();
+        assert_eq!(db.page_doc(alt.id).unwrap().content, "Grüße");
+        let riesig = db.page_by_title("Riesig").unwrap().unwrap();
+        let text = db.page_doc(riesig.id).unwrap().content;
+        assert!(text.len() < MAX_NOTE_BYTES + 200 && text.contains("Gekürzt beim Import"));
+    }
+
+    #[test]
+    fn an_import_reports_progress_and_can_be_cancelled() {
+        let vault = tmp("in5");
+        for i in 0..60 {
+            fs::write(vault.join(format!("Notiz {i}.md")), "x").unwrap();
+        }
+        let att = tmp("att5");
+        let mut seen = vec![];
+        let plan = plan_import(&vault, &att, &mut |p| seen.push(p), &AtomicBool::new(false)).unwrap();
+        assert_eq!(seen.last(), Some(&ImportProgress { done: 60, total: 60 }));
+        assert!(seen.len() >= 3);
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(apply_import(&db, plan).unwrap().pages, 60);
+        let err = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(true)).err().unwrap();
+        assert_eq!(err.to_string(), "Import abgebrochen");
     }
 
     #[test]

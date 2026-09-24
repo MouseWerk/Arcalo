@@ -9,7 +9,7 @@ import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, Spinner, useMenu } from "../components/ui";
 import { compact, h1, parseGermanNumber } from "../lib/format";
 import { LEVEL, useWbs } from "./wbs";
-import type { BudgetStatus, NetzplanTree, ProjectTree, Schedule, Vorgang } from "../lib/types";
+import type { NetzplanOverview, NetzplanTree, ProjectTree, Vorgang } from "../lib/types";
 
 export { LEVEL };
 
@@ -20,7 +20,20 @@ type DialogState =
 
 export function ProjectsView() {
   const { wbs } = useWbs();
+  const entriesVersion = useApp((s) => s.entriesVersion);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  // Budget and schedule of all Netzpläne in one call (not two per Netzplan).
+  const [overview, setOverview] = useState<Map<number, NetzplanOverview>>(() => new Map());
+  useEffect(() => {
+    let alive = true;
+    api
+      .netzplanOverview()
+      .then((list) => alive && setOverview(new Map(list.map((o) => [o.netzplan_id, o]))))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [wbs, entriesVersion]);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (wbs.length) setLoaded(true);
@@ -51,7 +64,7 @@ export function ProjectsView() {
             Lege ein Projekt mit Netzplänen und Vorgängen an, um Zeiten darauf zu buchen.
           </EmptyState>
         ) : (
-          wbs.map((p) => <ProjectCard key={p.id} project={p} open={setDialog} />)
+          wbs.map((p) => <ProjectCard key={p.id} project={p} overview={overview} open={setDialog} />)
         )}
       </div>
       {dialog && <WbsDialog state={dialog} onClose={() => setDialog(null)} />}
@@ -59,7 +72,7 @@ export function ProjectsView() {
   );
 }
 
-function ProjectCard({ project, open }: { project: ProjectTree; open: (d: DialogState) => void }) {
+function ProjectCard({ project, overview, open }: { project: ProjectTree; overview: Map<number, NetzplanOverview>; open: (d: DialogState) => void }) {
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   return (
@@ -98,23 +111,18 @@ function ProjectCard({ project, open }: { project: ProjectTree; open: (d: Dialog
       </div>
       {project.netzplaene.length === 0 && <p className="faint small pad">Noch keine Netzpläne.</p>}
       {project.netzplaene.map((n) => (
-        <NetzplanBlock key={n.id} netzplan={n} open={open} />
+        <NetzplanBlock key={n.id} netzplan={n} facts={overview.get(n.id)} open={open} />
       ))}
       {menu}
     </section>
   );
 }
 
-function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: DialogState) => void }) {
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const [budget, setBudget] = useState<BudgetStatus[]>([]);
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
+function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; facts: NetzplanOverview | undefined; open: (d: DialogState) => void }) {
+  const budget = facts?.budget ?? [];
+  const schedule = facts?.schedule ?? null;
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
-  useEffect(() => {
-    api.budget(netzplan.id).then(setBudget).catch(() => {});
-    api.schedule(netzplan.id).then(setSchedule).catch(() => setSchedule(null));
-  }, [netzplan, entriesVersion]);
   const total = budget.find((b) => b.vorgang_nr == null);
   const level = total ? LEVEL[total.level] : null;
 

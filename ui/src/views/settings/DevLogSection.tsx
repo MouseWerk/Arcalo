@@ -28,9 +28,11 @@ export function DevLogSection({ draft, update }: SectionProps) {
   const [entries, setEntries] = useState<DevLogEntry[] | null>(null);
   const [filter, setFilter] = useState<DevLogFilter>("all");
   const [loading, setLoading] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    void api.devlogStats().then((st) => setWriteError(st.write_error ?? null), () => {});
     try {
       setEntries(await api.devlogRead(LIMIT));
     } catch (e) {
@@ -72,7 +74,7 @@ export function DevLogSection({ draft, update }: SectionProps) {
         <Row label={t("devlog.verbose")} description={t("devlog.verboseDesc")}>
           <Switch label={t("devlog.verbose")} checked={draft.dev_log_verbose} onChange={(v) => update({ dev_log_verbose: v })} />
         </Row>
-        <Row label={t("devlog.folder")} description={t("devlog.folderDesc")}>
+        <Row label={t("devlog.folder")} description={writeError ? <span className="mirror-error">{t("devlog.writeError", { msg: writeError })}</span> : t("devlog.folderDesc")}>
           <Button icon={FolderOpen} onClick={() => void openFolder()}>
             {t("devlog.openFolder")}
           </Button>

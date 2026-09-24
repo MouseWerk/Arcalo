@@ -54,9 +54,9 @@ pub fn schedule(vorgaenge: &[Vorgang]) -> Result<Schedule> {
     let mut indeg = vec![0usize; n];
     for (i, v) in vorgaenge.iter().enumerate() {
         for p in &v.predecessors {
-            let &pi = index
-                .get(p)
-                .ok_or_else(|| Error::State(format!("Vorgang {} depends on unknown Vorgang #{p}", v.vorgang_nr)))?;
+            let &pi = index.get(p).ok_or_else(|| {
+                Error::State(format!("Vorgang {} hängt von einem unbekannten Vorgang (#{p}) ab", v.vorgang_nr))
+            })?;
             succ[pi].push(i);
             indeg[i] += 1;
         }
@@ -76,7 +76,7 @@ pub fn schedule(vorgaenge: &[Vorgang]) -> Result<Schedule> {
     }
     if order.len() != n {
         let cyclic: Vec<_> = (0..n).filter(|&i| indeg[i] > 0).map(|i| vorgaenge[i].vorgang_nr.as_str()).collect();
-        return Err(Error::State(format!("Netzplan contains a cycle through {}", cyclic.join(", "))));
+        return Err(Error::State(format!("Der Netzplan enthält einen Zyklus über {}", cyclic.join(", "))));
     }
 
     // Forward pass.

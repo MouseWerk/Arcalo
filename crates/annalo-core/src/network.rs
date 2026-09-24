@@ -696,11 +696,11 @@ fn cert_summary(der: &[u8]) -> (Option<String>, Option<String>) {
         let (ttag, time, _) = der_tlv(v)?;
         let t = std::str::from_utf8(time).ok()?;
         let not_after = match ttag {
-            0x17 if t.len() >= 6 => {
+            0x17 if t.len() >= 6 && t.is_ascii() => {
                 let yy: u32 = t[0..2].parse().ok()?;
                 Some(format!("{}-{}-{}", if yy >= 50 { 1900 + yy } else { 2000 + yy }, &t[2..4], &t[4..6]))
             }
-            0x18 if t.len() >= 8 => Some(format!("{}-{}-{}", &t[0..4], &t[4..6], &t[6..8])),
+            0x18 if t.len() >= 8 && t.is_ascii() => Some(format!("{}-{}-{}", &t[0..4], &t[4..6], &t[6..8])),
             _ => None,
         };
         let (mut cn, mut org) = (None, None);
@@ -902,6 +902,21 @@ mod tests {
 
     const PEM: &str = include_str!("../testdata/test-ca.pem");
     const PEM2: &str = include_str!("../testdata/test-ca2.pem");
+
+    #[test]
+    fn malformed_certificate_time_does_not_panic() {
+        fn tlv(tag: u8, content: &[u8]) -> Vec<u8> {
+            let mut v = vec![tag, content.len() as u8];
+            v.extend_from_slice(content);
+            v
+        }
+        // UTCTime with „é“ straddling byte 2, GeneralizedTime likewise at byte 4.
+        for (tag, time) in [(0x17, "aé1234Z"), (0x18, "202é0101000000Z")] {
+            let validity = tlv(0x30, &[tlv(0x17, b"260101000000Z"), tlv(tag, time.as_bytes())].concat());
+            let tbs = tlv(0x30, &[tlv(0x02, &[1]), tlv(0x30, &[]), tlv(0x30, &[]), validity, tlv(0x30, &[])].concat());
+            let _ = ca_info(&tlv(0x30, &tbs));
+        }
+    }
 
     #[test]
     fn no_proxy_matching() {

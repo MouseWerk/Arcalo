@@ -33,7 +33,7 @@ import { ZeitConfirm, type ZeitChoice } from "./ZeitConfirm";
 import { lacksReference, referenceOffset } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
 import { ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
-import type { PageDoc } from "../lib/types";
+import type { PageDoc, SavedPage } from "../lib/types";
 import { keys } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
@@ -138,8 +138,8 @@ export function NoteEditor({
   /** Where the toolbar goes (the page's header row); in the note itself without one. */
   toolbarSlot?: HTMLElement | null;
   doc: PageDoc;
-  /** After a save: what the server answered and the Markdown that was stored. */
-  onSaved: (saved: PageDoc, content: string) => void;
+  /** After each save: what it derived, with the content that was saved. */
+  onSaved: (saved: SavedPage & { content: string }) => void;
   onOpenLink: (target: string, newTab: boolean) => void;
   onOpenTag: (tag: string) => void;
   /** The frontmatter changed from outside (another pane, a reload). */
@@ -243,7 +243,7 @@ export function NoteEditor({
       .then((saved) => {
         failed.current = false;
         if (merges.current === mergesBefore) base.current = md;
-        cb.current.onSaved(saved, md);
+        cb.current.onSaved({ ...saved, content: md });
         // Other panes showing the same page pick up the new content.
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
         if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");

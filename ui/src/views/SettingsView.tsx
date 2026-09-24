@@ -798,10 +798,20 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       setTesting(false);
     }
   };
-  const syncNow = async () => {
+  const syncNow = async (allowDeletions = false) => {
+    if (allowDeletions) {
+      const n = status?.blocked_deletions ?? 0;
+      const ok = await s().confirm({
+        title: "Löschungen übertragen?",
+        message: `${n} Notizen werden auf dem Server gelöscht und fehlen danach auch auf den anderen Rechnern. Vorher prüfen, ob die Markdown-Kopie vollständig ist.`,
+        confirmLabel: "Löschen und synchronisieren",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setSyncing(true);
     try {
-      const r = await api.gitSyncNow();
+      const r = await api.gitSyncNow(allowDeletions);
       s().toast({ tone: r.fallback ? "warning" : "success", title: r.committed ? "Synchronisiert" : "Git ist aktuell", detail: r.fallback ? r.message : `${r.message}${r.commit ? ` · ${r.commit}` : ""}` });
       onSynced();
     } catch {
@@ -936,10 +946,17 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
           </span>
         }
       >
-        <Button icon={Upload} onClick={syncNow} loading={syncing} disabled={!git.remote_url}>
+        <Button icon={Upload} onClick={() => syncNow()} loading={syncing} disabled={!git.remote_url}>
           Jetzt synchronisieren
         </Button>
       </Row>
+      {status?.blocked_deletions ? (
+        <Row label="Löschungen angehalten" description={`Die Synchronisierung würde ${status.blocked_deletions} Notizen auf dem Server löschen und wurde zur Sicherheit angehalten.`}>
+          <Button variant="danger" icon={Trash2} onClick={() => syncNow(true)} disabled={syncing}>
+            Löschungen übertragen
+          </Button>
+        </Row>
+      ) : null}
       <Row label="Wiederherstellen" description="Klont das Repository und importiert es als neue Seite „Git-Import <Datum>“. Bestehende Seiten bleiben unverändert.">
         <Button icon={Download} onClick={() => setRestoreUrl(restoreUrl == null ? git.remote_url : null)}>
           Aus Git wiederherstellen…

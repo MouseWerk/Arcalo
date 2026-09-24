@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005_entry_page.sql"),
     include_str!("../migrations/0006_page_versions.sql"),
     include_str!("../migrations/0007_activity_focus.sql"),
+    include_str!("../migrations/0008_lookup_indexes.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -45,8 +46,16 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
     })
 }
 
+/// Part of the error for a database written by a newer Annalo (start-up tells it apart).
+pub const NEWER_SCHEMA: &str = "neueren Annalo-Version";
+
 pub struct Database {
     conn: Connection,
+    /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
+    depth: std::sync::atomic::AtomicUsize,
+    /// The stored settings JSON and what it parsed to: a save reads the settings (version
+    /// policy), and parsing them each time costs more than the save itself for small pages.
+    pub(crate) settings_cache: std::cell::RefCell<Option<(String, crate::settings::Settings)>>,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {
@@ -66,6 +75,21 @@ fn booked_guard(e: rusqlite::Error, what: &str) -> Error {
             Error::State(format!("{what} hat gebuchte Zeiten und kann nicht gelöscht werden"))
         }
         other => Error::Db(other),
+    }
+}
+
+/// Booked minutes of one Netzplan, see [`Database::booked_minutes_all`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BookedMinutes {
+    pub total: i64,
+    /// By Vorgang number in ASCII lower case.
+    pub by_vorgang: HashMap<String, i64>,
+}
+
+impl BookedMinutes {
+    /// Minutes booked on the Vorgang `nr` (compared like `COLLATE NOCASE`).
+    pub fn vorgang(&self, nr: &str) -> i64 {
+        self.by_vorgang.get(&nr.to_ascii_lowercase()).copied().unwrap_or(0)
     }
 }
 
@@ -94,16 +118,46 @@ impl Database {
              PRAGMA foreign_keys = ON;
              PRAGMA temp_store = MEMORY;",
         )?;
-        let mut db = Database { conn };
+        let mut db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
         db.migrate()?;
         Ok(db)
+    }
+
+    /// A second, read-only connection to the workspace at `path` (already opened and migrated
+    /// by [`Database::open`]). In WAL mode it reads the last committed state while the main
+    /// connection writes, so long reads (lists, the Markdown mirror) never wait for a save
+    /// and a save never waits for them. Refuses a database this build cannot read.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
+        let db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
+        if db.schema_version()? != MIGRATIONS.len() {
+            return Err(Error::State("Datenbank noch nicht auf dem aktuellen Stand".into()));
+        }
+        Ok(db)
+    }
+
+    /// Runs `f` inside one read transaction, so everything it reads is one consistent state
+    /// (the Markdown mirror reads the tree, all pages and all time entries).
+    pub fn read_snapshot<T>(&self, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        if !self.conn.is_autocommit() {
+            return f(self);
+        }
+        self.conn.execute_batch("BEGIN DEFERRED")?;
+        let res = f(self);
+        let _ = self.conn.execute_batch("COMMIT");
+        res
     }
 
     fn migrate(&mut self) -> Result<()> {
         let current = self.schema_version()?;
         if current > MIGRATIONS.len() {
             return Err(Error::State(format!(
-                "database schema v{current} is newer than this build (v{})",
+                "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{current}, diese kennt v{}). Bitte Annalo aktualisieren.",
                 MIGRATIONS.len()
             )));
         }
@@ -140,21 +194,34 @@ impl Database {
 
     /// Runs `f` atomically. Uses SAVEPOINTs, so calls may nest (e.g. a vault
     /// import that saves many pages).
+    ///
+    /// The outermost savepoint commits on release. When that fails (disk full, I/O error,
+    /// locked file) everything since the savepoint is rolled back and the error returned:
+    /// the connection never stays inside a transaction, where later saves would look
+    /// successful but never be committed.
     pub fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
+        let outermost = self.depth.load(Ordering::Relaxed) == 0;
+        if outermost && !self.conn.is_autocommit() {
+            // Someone left a transaction open (it can only be a failed one): never build on it.
+            eprintln!("annalo: open transaction found outside of atomic(), rolled back");
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
         let name = format!("sp{}", SEQ.fetch_add(1, Ordering::Relaxed));
         self.conn.execute_batch(&format!("SAVEPOINT {name}"))?;
-        match f() {
-            Ok(v) => {
-                self.conn.execute_batch(&format!("RELEASE {name}"))?;
-                Ok(v)
-            }
-            Err(e) => {
-                let _ = self.conn.execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}"));
-                Err(e)
+        self.depth.fetch_add(1, Ordering::Relaxed);
+        let res = f().and_then(|v| self.conn.execute_batch(&format!("RELEASE {name}")).map(|_| v).map_err(Into::into));
+        self.depth.fetch_sub(1, Ordering::Relaxed);
+        if res.is_err() {
+            // SQLite may already have rolled the whole transaction back (then the savepoint is
+            // gone); an outermost one must end outside any transaction either way.
+            let _ = self.conn.execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}"));
+            if outermost && !self.conn.is_autocommit() {
+                let _ = self.conn.execute_batch("ROLLBACK");
             }
         }
+        res
     }
 
     /// Escape hatch for modules that run their own queries (search, RAG).
@@ -259,11 +326,21 @@ impl Database {
     }
 
     pub fn list_netzplaene(&self, project_id: Option<i64>) -> Result<Vec<Netzplan>> {
-        let mut st = self.conn.prepare_cached(&format!(
-            "SELECT {} FROM netzplaene WHERE ?1 IS NULL OR project_id = ?1 ORDER BY netzplan_nr",
-            Self::NETZPLAN_COLS
-        ))?;
-        let rows = st.query_map([project_id], Self::map_netzplan)?.collect::<rusqlite::Result<_>>()?;
+        let rows = match project_id {
+            Some(p) => self
+                .conn
+                .prepare_cached(&format!(
+                    "SELECT {} FROM netzplaene WHERE project_id = ?1 ORDER BY netzplan_nr",
+                    Self::NETZPLAN_COLS
+                ))?
+                .query_map([p], Self::map_netzplan)?
+                .collect::<rusqlite::Result<_>>()?,
+            None => self
+                .conn
+                .prepare_cached(&format!("SELECT {} FROM netzplaene ORDER BY netzplan_nr", Self::NETZPLAN_COLS))?
+                .query_map([], Self::map_netzplan)?
+                .collect::<rusqlite::Result<_>>()?,
+        };
         Ok(rows)
     }
 
@@ -461,7 +538,7 @@ impl Database {
 
     pub fn insert_time_entry(&self, e: &NewTimeEntry) -> Result<TimeEntry> {
         if e.duration_minutes < 0 {
-            return Err(Error::State("duration must not be negative".into()));
+            return Err(Error::State("Die Dauer darf nicht negativ sein".into()));
         }
         let end = e.start_time + chrono::Duration::minutes(e.duration_minutes);
         self.conn.execute(
@@ -520,7 +597,7 @@ impl Database {
         at: DateTime<Utc>,
     ) -> Result<TimeEntry> {
         if let Some(t) = self.running_timer()? {
-            return Err(Error::State(format!("timer #{} is already running", t.id)));
+            return Err(Error::State(format!("Es läuft bereits ein Timer (Eintrag #{})", t.id)));
         }
         self.conn.execute(
             "INSERT INTO time_entries (netzplan_id, vorgang_nr, leistungsart, start_time, description, status_flag, source)
@@ -533,9 +610,9 @@ impl Database {
     /// Stops the running timer. `idle_minutes` is subtracted from the booked
     /// duration (idle detection); the wall-clock end time is kept.
     pub fn stop_timer(&self, at: DateTime<Utc>, idle_minutes: i64) -> Result<TimeEntry> {
-        let running = self.running_timer()?.ok_or_else(|| Error::State("no timer is running".into()))?;
+        let running = self.running_timer()?.ok_or_else(|| Error::State("Es läuft kein Timer".into()))?;
         if at < running.start_time {
-            return Err(Error::State("stop time is before start time".into()));
+            return Err(Error::State("Das Ende liegt vor dem Beginn".into()));
         }
         let minutes = ((at - running.start_time).num_seconds() as f64 / 60.0).round() as i64;
         // Rounding (Settings → Zeiterfassung) applies to what is booked; nothing booked stays nothing.
@@ -569,12 +646,22 @@ impl Database {
     ) -> Result<TimeEntry> {
         let e = self.time_entry(id)?;
         match e.status_flag {
-            StatusFlag::Running => return Err(Error::State("stop the timer before editing it".into())),
-            StatusFlag::Exported => return Err(Error::State("exported entries cannot be edited".into())),
+            StatusFlag::Running => {
+                return Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into()));
+            }
+            StatusFlag::Exported => {
+                return Err(Error::State("Exportierte Einträge können nicht geändert werden".into()));
+            }
             _ => {}
         }
-        if !(1..=24 * 60).contains(&duration_minutes) {
-            return Err(Error::State("duration must be between 1 minute and 24 hours".into()));
+        // A timer that ran over night may have booked more than a day: other fields of such an
+        // entry can still be edited, and its duration corrected.
+        let unchanged = e.duration_minutes == Some(duration_minutes);
+        if !unchanged && !(1..=24 * 60).contains(&duration_minutes) {
+            return Err(Error::State(
+                "Die Dauer muss zwischen 1 Minute und 24 Stunden liegen (längere Zeiten auf mehrere Tage verteilen)"
+                    .into(),
+            ));
         }
         let end = start_time + chrono::Duration::minutes(duration_minutes);
         self.conn.execute(
@@ -587,14 +674,26 @@ impl Database {
         Ok(entry)
     }
 
+    /// Deletes a booking. An exported one is already in the time system and stays; a running
+    /// one is stopped (or discarded) first.
     pub fn delete_time_entry(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
-        Ok(())
+        let status: Option<String> =
+            self.conn.query_row("SELECT status_flag FROM time_entries WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        match status.as_deref() {
+            Some("exported") => Err(Error::State(
+                "Exportierte Einträge können nicht gelöscht werden – sie sind bereits im Zeiterfassungssystem".into(),
+            )),
+            Some("running") => Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into())),
+            _ => {
+                self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
+                Ok(())
+            }
+        }
     }
 
     pub fn set_entry_status(&self, ids: &[i64], status: StatusFlag) -> Result<usize> {
         if status == StatusFlag::Running {
-            return Err(Error::State("entries cannot be set to running".into()));
+            return Err(Error::State("Einträge können nicht auf „läuft“ gesetzt werden".into()));
         }
         self.atomic(|| {
             let mut n = 0;
@@ -614,20 +713,38 @@ impl Database {
     }
 
     pub fn list_time_entries(&self, f: &EntryFilter) -> Result<Vec<TimeEntryRow>> {
+        // Only the filters that are set go into the query, so SQLite can use the index on
+        // start_time (`?1 IS NULL OR …` hides it from the planner).
+        let mut conds: Vec<&str> = vec![];
+        let mut args: Vec<rusqlite::types::Value> = vec![];
+        if let Some(from) = f.from {
+            conds.push("e.start_time >= ?");
+            args.push(ts(from).into());
+        }
+        if let Some(to) = f.to {
+            conds.push("e.start_time < ?");
+            args.push(ts(to).into());
+        }
+        if let Some(np) = f.netzplan_id {
+            conds.push("e.netzplan_id = ?");
+            args.push(np.into());
+        }
+        if let Some(status) = f.status {
+            conds.push("e.status_flag = ?");
+            args.push(status.as_str().to_owned().into());
+        }
+        let filter = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
         let mut st = self.conn.prepare_cached(&format!(
             "SELECT {}, p.project_code, n.netzplan_nr, n.wbs_element
              FROM time_entries e
              JOIN netzplaene n ON n.id = e.netzplan_id
              JOIN projects p ON p.id = n.project_id
-             WHERE (?1 IS NULL OR e.start_time >= ?1)
-               AND (?2 IS NULL OR e.start_time < ?2)
-               AND (?3 IS NULL OR e.netzplan_id = ?3)
-               AND (?4 IS NULL OR e.status_flag = ?4)
+             {filter}
              ORDER BY e.start_time, e.id",
             Self::ENTRY_COLS
         ))?;
         let rows = st
-            .query_map(params![f.from.map(ts), f.to.map(ts), f.netzplan_id, f.status.map(StatusFlag::as_str)], |r| {
+            .query_map(rusqlite::params_from_iter(args), |r| {
                 Ok(TimeEntryRow {
                     entry: Self::map_entry(r)?,
                     project_code: r.get(11)?,
@@ -641,13 +758,81 @@ impl Database {
 
     /// Booked hours (finished entries only) on a Netzplan, optionally for one Vorgang.
     pub fn booked_hours(&self, netzplan_id: i64, vorgang_nr: Option<&str>) -> Result<f64> {
-        let minutes: i64 = self.conn.query_row(
-            "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
-             WHERE netzplan_id = ?1 AND status_flag <> 'running' AND (?2 IS NULL OR vorgang_nr = ?2 COLLATE NOCASE)",
-            params![netzplan_id, vorgang_nr],
-            |r| r.get(0),
-        )?;
+        let minutes: i64 = match vorgang_nr {
+            Some(v) => self.conn.query_row(
+                "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
+                 WHERE netzplan_id = ?1 AND status_flag <> 'running' AND vorgang_nr = ?2 COLLATE NOCASE",
+                params![netzplan_id, v],
+                |r| r.get(0),
+            )?,
+            None => self.conn.query_row(
+                "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
+                 WHERE netzplan_id = ?1 AND status_flag <> 'running'",
+                [netzplan_id],
+                |r| r.get(0),
+            )?,
+        };
         Ok(minutes as f64 / 60.0)
+    }
+
+    /// Booked minutes (finished entries only) of every Netzplan in one grouped query: the
+    /// total and per Vorgang number (keys in ASCII lower case, matching like `COLLATE NOCASE`).
+    pub fn booked_minutes_all(&self) -> Result<HashMap<i64, BookedMinutes>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT netzplan_id, vorgang_nr, SUM(duration_minutes) FROM time_entries
+             WHERE status_flag <> 'running' GROUP BY netzplan_id, vorgang_nr",
+        )?;
+        let mut out: HashMap<i64, BookedMinutes> = HashMap::new();
+        for row in st.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0)))
+        })? {
+            let (np, vorgang, minutes) = row?;
+            let b = out.entry(np).or_default();
+            b.total += minutes;
+            if let Some(v) = vorgang {
+                *b.by_vorgang.entry(v.to_ascii_lowercase()).or_default() += minutes;
+            }
+        }
+        Ok(out)
+    }
+
+    /// All Vorgänge by Netzplan (each list like [`Database::list_vorgaenge`]), in two queries.
+    pub fn vorgaenge_by_netzplan(&self) -> Result<HashMap<i64, Vec<Vorgang>>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT id, netzplan_id, vorgang_nr, description, duration_days, planned_hours, remaining_hours
+             FROM vorgaenge ORDER BY netzplan_id, vorgang_nr",
+        )?;
+        let mut out: HashMap<i64, Vec<Vorgang>> = HashMap::new();
+        let mut at: HashMap<i64, (i64, usize)> = HashMap::new();
+        for v in st.query_map([], |r| {
+            Ok(Vorgang {
+                id: r.get(0)?,
+                netzplan_id: r.get(1)?,
+                vorgang_nr: r.get(2)?,
+                description: r.get(3)?,
+                duration_days: r.get(4)?,
+                planned_hours: r.get(5)?,
+                remaining_hours: r.get(6)?,
+                predecessors: vec![],
+            })
+        })? {
+            let v = v?;
+            let list = out.entry(v.netzplan_id).or_default();
+            at.insert(v.id, (v.netzplan_id, list.len()));
+            list.push(v);
+        }
+        let mut links = self
+            .conn
+            .prepare_cached("SELECT successor_id, predecessor_id FROM vorgang_links ORDER BY predecessor_id")?;
+        for link in links.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (succ, pred) = link?;
+            if let Some((np, i)) = at.get(&succ)
+                && let Some(v) = out.get_mut(np).and_then(|l| l.get_mut(*i))
+            {
+                v.predecessors.push(pred);
+            }
+        }
+        Ok(out)
     }
 
     /// The latest finished entries on a Netzplan (optionally one Vorgang), newest first.
@@ -677,9 +862,9 @@ impl Database {
     // ------------------------------------------------------------------ pages
 
     pub fn create_page(&self, parent_id: Option<i64>, title: &str, icon: Option<&str>) -> Result<Page> {
-        let title = title.trim();
+        let title = crate::notes::clean_title(title);
         if title.is_empty() {
-            return Err(Error::State("title must not be empty".into()));
+            return Err(Error::State("Der Titel darf nicht leer sein".into()));
         }
         if let Some(p) = parent_id
             && self.page(p)?.deleted_at.is_some()
@@ -703,7 +888,7 @@ impl Database {
     pub fn rename_page(&self, id: i64, title: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE pages SET title = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
-            params![id, title.trim()],
+            params![id, crate::notes::clean_title(title)],
         )?;
         Ok(())
     }
@@ -850,6 +1035,78 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_commit_leaves_no_open_transaction() {
+        let path = std::env::temp_dir().join(format!("annalo-commitfail-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let (keep, lost) = {
+            let db = Database::open(&path).unwrap();
+            let p = db.create_page(None, "Seite", None).unwrap();
+            // A foreign key checked only at commit: the commit (RELEASE) itself fails.
+            db.conn().execute_batch("PRAGMA defer_foreign_keys = ON").unwrap();
+            let err = db.atomic(|| {
+                db.save_page_content(p.id, "verloren")?;
+                db.conn().execute("INSERT INTO page_links (from_page, target) VALUES (999999, 'x')", [])?;
+                Ok(())
+            });
+            assert!(err.is_err());
+            assert!(db.conn().is_autocommit(), "transaction rolled back, not left open");
+            // Later saves are committed for real.
+            db.save_page_content(p.id, "gespeichert").unwrap();
+            let q = db.create_page(None, "Neu", None).unwrap();
+
+            // Disk full: the database may not grow any further.
+            let pages: i64 = db.conn().pragma_query_value(None, "page_count", |r| r.get(0)).unwrap();
+            db.conn().execute_batch(&format!("PRAGMA max_page_count = {pages}")).unwrap();
+            let big = "x".repeat(200_000);
+            assert!(db.atomic(|| db.save_page_content(q.id, &big)).is_err());
+            assert!(db.conn().is_autocommit());
+            db.conn().execute_batch("PRAGMA max_page_count = 1073741823").unwrap();
+            db.rename_page(q.id, "Neu umbenannt").unwrap();
+            (p.id, q.id)
+        };
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.page_doc(keep).unwrap().content, "gespeichert");
+        assert_eq!(db.page(lost).unwrap().title, "Neu umbenannt");
+        drop(db);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    #[test]
+    fn an_overnight_timer_entry_can_still_be_edited() {
+        let (db, np) = seeded();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        db.start_timer(np.id, None, None, "vergessen", t0).unwrap();
+        let e = db.stop_timer(t0 + chrono::Duration::hours(50), 0).unwrap();
+        assert_eq!(e.duration_minutes, Some(3000));
+        // Other fields change, the duration stays.
+        let e = db.update_time_entry(e.id, None, None, t0, 3000, "über Nacht").unwrap();
+        assert_eq!(e.description, "über Nacht");
+        assert!(db.update_time_entry(e.id, None, None, t0, 2000, "x").is_err(), "still more than a day");
+        assert_eq!(db.update_time_entry(e.id, None, None, t0, 480, "korrigiert").unwrap().duration_minutes, Some(480));
+    }
+
+    #[test]
+    fn exported_and_running_entries_are_not_deleted() {
+        let (db, np) = seeded();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        let running = db.start_timer(np.id, None, None, "läuft", t0).unwrap();
+        let err = db.delete_time_entry(running.id).unwrap_err().to_string();
+        assert!(err.contains("zuerst den Timer stoppen"), "{err}");
+        let done = db.stop_timer(t0 + chrono::Duration::minutes(30), 0).unwrap();
+        db.set_entry_status(&[done.id], StatusFlag::Exported).unwrap();
+        let err = db.delete_time_entry(done.id).unwrap_err().to_string();
+        assert!(err.contains("Exportierte Einträge"), "{err}");
+        assert!(db.time_entry(done.id).is_ok());
+        db.set_entry_status(&[done.id], StatusFlag::Draft).unwrap();
+        db.delete_time_entry(done.id).unwrap();
+        assert!(db.time_entry(done.id).is_err());
+    }
+
+    #[test]
     fn v1_blocks_are_migrated_into_documents() {
         let path = std::env::temp_dir().join(format!("annalo-mig-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
@@ -960,5 +1217,127 @@ mod tests {
         assert_eq!(tree[3].children[7].page.title, "Seite 3-7", "siblings keep their order");
         // The old filter-per-parent build took seconds here in debug builds.
         assert!(took < std::time::Duration::from_millis(200), "page_tree took {took:?}");
+    }
+
+    #[test]
+    fn entry_filters_match_filtering_all_entries() {
+        let (db, np) = seeded();
+        let p = db.project_by_code("PRJ-2026-X").unwrap();
+        let other = db.create_netzplan(p.id, "NP-8802", "NP-8802-1", "Zweiter", 10.0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        for i in 0..12i64 {
+            let e = db
+                .insert_time_entry(&NewTimeEntry {
+                    netzplan_id: if i % 3 == 0 { other.id } else { np.id },
+                    vorgang_nr: None,
+                    leistungsart: None,
+                    start_time: t0 + chrono::Duration::days(i),
+                    duration_minutes: 30,
+                    description: format!("e{i}"),
+                    source: EntrySource::Manual,
+                    page_id: None,
+                })
+                .unwrap();
+            if i % 2 == 0 {
+                db.set_entry_status(&[e.id], StatusFlag::Released).unwrap();
+            }
+        }
+        let all = db.list_time_entries(&EntryFilter::default()).unwrap();
+        assert_eq!(all.len(), 12);
+        let from = Some(t0 + chrono::Duration::days(3));
+        let to = Some(t0 + chrono::Duration::days(9));
+        for from in [None, from] {
+            for to in [None, to] {
+                for netzplan_id in [None, Some(np.id)] {
+                    for status in [None, Some(StatusFlag::Released)] {
+                        let f = EntryFilter { from, to, netzplan_id, status };
+                        let want: Vec<i64> = all
+                            .iter()
+                            .filter(|r| from.is_none_or(|t| r.entry.start_time >= t))
+                            .filter(|r| to.is_none_or(|t| r.entry.start_time < t))
+                            .filter(|r| netzplan_id.is_none_or(|n| r.entry.netzplan_id == n))
+                            .filter(|r| status.is_none_or(|s| r.entry.status_flag == s))
+                            .map(|r| r.entry.id)
+                            .collect();
+                        let got: Vec<i64> = db.list_time_entries(&f).unwrap().iter().map(|r| r.entry.id).collect();
+                        assert_eq!(got, want, "{f:?}");
+                    }
+                }
+            }
+        }
+        assert_eq!(db.list_netzplaene(None).unwrap().len(), 2);
+        assert_eq!(db.list_netzplaene(Some(p.id)).unwrap().len(), 2);
+        assert!(db.list_netzplaene(Some(p.id + 1)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn vorgaenge_of_all_netzplaene_match_one_by_one() {
+        let (db, np) = seeded();
+        let p = db.project_by_code("PRJ-2026-X").unwrap();
+        let other = db.create_netzplan(p.id, "NP-8802", "NP-8802-1", "Zweiter", 10.0).unwrap();
+        let a = db.create_vorgang(np.id, "1020", "B", 1.0, 2.0).unwrap();
+        let b = db.create_vorgang(np.id, "1010", "A", 1.0, 2.0).unwrap();
+        let c = db.create_vorgang(np.id, "1030", "C", 1.0, 2.0).unwrap();
+        db.create_vorgang(other.id, "9", "X", 1.0, 2.0).unwrap();
+        db.link_vorgaenge(b.id, c.id).unwrap();
+        db.link_vorgaenge(a.id, c.id).unwrap();
+        let all = db.vorgaenge_by_netzplan().unwrap();
+        for n in [np.id, other.id] {
+            assert_eq!(all[&n], db.list_vorgaenge(n).unwrap());
+        }
+        assert_eq!(all[&np.id][2].predecessors, [a.id, b.id]);
+    }
+
+    #[test]
+    fn a_read_only_connection_sees_commits_and_cannot_write() {
+        let path = std::env::temp_dir().join(format!("annalo-reader-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let db = Database::open(&path).unwrap();
+        let reader = Database::open_read_only(&path).unwrap();
+        let p = db.create_page(None, "Neu", None).unwrap();
+        db.save_page_content(p.id, "gespeichert").unwrap();
+        assert_eq!(reader.page_doc(p.id).unwrap().content, "gespeichert");
+        assert!(reader.create_page(None, "Nicht", None).is_err());
+        // One consistent state inside a snapshot, the newest one after it.
+        reader
+            .read_snapshot(|r| {
+                assert_eq!(r.list_pages()?.len(), 1);
+                db.create_page(None, "Später", None)?;
+                assert_eq!(r.list_pages()?.len(), 1);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(reader.list_pages().unwrap().len(), 2);
+        // A backup through the read-only connection.
+        let dir = std::env::temp_dir().join(format!("annalo-reader-bak-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let info = crate::backup::backup_to(&reader, &dir, 2).unwrap();
+        assert_eq!(Database::open(&info.path).unwrap().list_pages().unwrap().len(), 2);
+        drop((db, reader));
+        let _ = std::fs::remove_dir_all(&dir);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    #[test]
+    fn cached_settings_follow_every_change() {
+        let db = Database::open_in_memory().unwrap();
+        let mut s = db.load_settings().unwrap();
+        s.notes.max_versions = 7;
+        db.save_settings(&s).unwrap();
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 7);
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 7, "from the cache");
+        // Changed behind its back (another connection, a migration): read again.
+        db.conn()
+            .execute("UPDATE settings SET value = json_set(value, '$.notes.max_versions', 9) WHERE key = 'app'", [])
+            .unwrap();
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 9);
+        // Unreadable settings are reported every time, not hidden by the cache.
+        db.conn().execute("UPDATE settings SET value = '[1]' WHERE key = 'app'", []).unwrap();
+        assert!(!db.load_settings_checked().unwrap().1.is_empty());
+        assert!(!db.load_settings_checked().unwrap().1.is_empty());
     }
 }

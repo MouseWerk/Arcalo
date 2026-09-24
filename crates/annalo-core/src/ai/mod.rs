@@ -7,6 +7,7 @@
 pub mod availability;
 pub mod client;
 pub mod metrics;
+pub mod privacy;
 pub mod provider;
 pub mod rag;
 pub mod router;

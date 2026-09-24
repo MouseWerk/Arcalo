@@ -29,27 +29,21 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
       const now = new Date();
       const today = isoDay(now);
       const monday = weekStart(now);
-      const [open, days, tree, work, pageTasks] = await Promise.all([
-        api.tasks({ status: "open" }).catch(() => []),
+      // Counts and the most critical budget come counted from the backend (not every open task).
+      const [facts, days, work] = await Promise.all([
+        api.suggestionFacts(today, pageId).catch(() => null),
         api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []),
-        api.wbs().catch(() => []),
         pageId != null ? api.pageWork(pageId).catch(() => null) : Promise.resolve(null),
-        pageId != null ? api.tasks({ status: "open", page_id: pageId }).catch(() => []) : Promise.resolve([]),
       ]);
       const week = weekBars(days, monday, settings?.daily_target_hours ?? 8, settings?.workdays ?? [1, 2, 3, 4, 5], now);
-      // The most critical budget warning, by name.
-      const ids = tree.flatMap((p) => p.netzplaene.map((n) => n.id)).slice(0, 12);
-      const budgets = (await Promise.all(ids.map((id) => api.budget(id).catch(() => [])))).flat();
-      const rank = { critical: 2, warning: 1, ok: 0 } as Record<string, number>;
-      const worst = budgets.filter((b) => b.level !== "ok").sort((a, b) => (rank[b.level] ?? 0) - (rank[a.level] ?? 0) || b.consumed - a.consumed)[0];
       const next = buildSuggestions({
         now,
-        page: pageTitle != null ? { title: pageTitle, openTasks: pageTasks.length, reference: work?.reference ?? null } : null,
-        overdue: open.filter((t) => t.due && t.due < today).length,
-        dueToday: open.filter((t) => t.due === today).length,
-        openTasks: open.length,
+        page: pageTitle != null ? { title: pageTitle, openTasks: facts?.page_open_tasks ?? 0, reference: work?.reference ?? null } : null,
+        overdue: facts?.overdue ?? 0,
+        dueToday: facts?.due_today ?? 0,
+        openTasks: facts?.open_tasks ?? 0,
         gapDays: week.bars.filter((b) => b.gap > 0).map((b) => b.label),
-        budget: worst?.label ?? null,
+        budget: facts?.worst_budget ?? null,
         hasBookings: week.bookedMinutes > 0,
       });
       if (alive) setList(next);

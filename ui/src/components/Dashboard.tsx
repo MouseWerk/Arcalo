@@ -335,9 +335,7 @@ function BudgetsWidget({ size }: { size: WidgetSize }) {
   const thresholds = useApp((s) => s.settings?.settings.thresholds);
   const [alerts] = useLoad(
     async () => {
-      const tree = await api.wbs();
-      const ids = tree.flatMap((p) => p.netzplaene.map((n) => n.id));
-      const all = (await Promise.all(ids.map((id) => api.budget(id)))).flat();
+      const all = await api.budgetsAll();
       return all.filter((b) => b.level !== "ok").sort((a, b) => LEVEL[b.level].rank - LEVEL[a.level].rank || b.consumed - a.consumed);
     },
     [entriesVersion, thresholds?.warning, thresholds?.critical],

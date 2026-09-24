@@ -187,6 +187,18 @@ export function parseGermanNumber(s: string): number | null {
 }
 
 /** „1 Seite, 2 Ordner, 3 Bilder, 1 Datei übersprungen“ */
+/** Whole hours a timer started at `start` has run by `now`, when that is more than `limit`
+ *  (forgotten over night: the stop asks before booking it). */
+export function longTimerHours(start: string, now: Date, limit = 12): number | null {
+  const hours = (now.getTime() - new Date(start).getTime()) / 3_600_000;
+  return hours > limit ? Math.floor(hours) : null;
+}
+
+/** „120 von 480 Dateien gelesen“ while a vault is imported. */
+export function importProgress(p: { done: number; total: number }) {
+  return p.total > 0 ? `${Math.min(p.done, p.total)} von ${p.total} Dateien gelesen` : "Dateien werden gelesen …";
+}
+
 export function importSummary(r: { pages: number; folders: number; attachments: number; skipped: number }) {
   const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
   const parts = [n(r.pages, "Seite", "Seiten"), n(r.folders, "Ordner", "Ordner")];

@@ -79,7 +79,12 @@ function sweepSection(done) {
       if (value === null) out.problems.push(`dropdown did not open: ${label(sel)}`);
       if (value == null || !sel.isConnected) continue;
       if (!(await until(() => sel.dataset.value === value))) out.problems.push(`select did not change: ${label(sel)}`);
-      await choose(sel, (options) => options.find((o) => o.dataset.value === before));
+      // A change can resize the window (Skalierung zooms the webview), and a resize closes an open
+      // list: when it closed before the choice, open it again.
+      for (let i = 0; i < 3 && sel.dataset.value !== before; i++) {
+        await choose(sel, (options) => options.find((o) => o.dataset.value === before));
+        await until(() => sel.dataset.value === before);
+      }
       if (!(await until(() => sel.dataset.value === before))) out.problems.push(`select did not change back: ${label(sel)}`);
       out.selects++;
     }
