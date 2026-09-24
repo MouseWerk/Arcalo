@@ -122,6 +122,14 @@ export const api = {
   /** Downloads and installs the found update, then restarts (`update://progress` events). */
   updateInstall: () => call<void>("update_install"),
 
+  // developer log (Settings → Protokoll)
+  devlogWrite: (level: T.DevLogLevel, source: string, message: string) => call<void>("devlog_write", { level, source, message }),
+  /** Newest first. */
+  devlogRead: (limit = 500) => call<T.DevLogEntry[]>("devlog_read", { limit }),
+  devlogStats: () => call<T.DevLogStats>("devlog_stats"),
+  devlogClear: () => call<void>("devlog_clear"),
+  devlogOpenFolder: () => call<void>("devlog_open_folder"),
+
   // network
   networkStatus: () => call<T.NetworkStatus>("network_status"),
   /** Requests LiteLLM's model list with unsaved network settings; reports the proxy used. */

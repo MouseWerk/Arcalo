@@ -1,10 +1,10 @@
 // Settings: grouped sections with a search over all rows. The connection sections (KI,
 // Netzwerk, Sicherung, Desktop) and the preferences (Darstellung, Editor, Notizen, Zeit,
-// Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung and Über.
+// Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung, Protokoll and Über.
 
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CheckCircle2, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -28,8 +28,9 @@ import { AiPrefGroups } from "./settings/AiPrefGroups";
 import { KeyboardSection } from "./settings/KeyboardSection";
 import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
+import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     label: "navgroup.general",
@@ -63,12 +64,13 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
       { id: "backup", label: "nav.backup", icon: DatabaseBackup },
       { id: "desktop", label: "nav.desktop", icon: Monitor },
       { id: "admin", label: "nav.admin", icon: SlidersHorizontal },
+      { id: "logs", label: "nav.devlog", icon: ScrollText },
       { id: "about", label: "nav.about", icon: Info },
     ],
   },
 ];
 /** Sections that save every change immediately (no save bar). */
-const INSTANT = new Set<Section>(["appearance", "locale", "backup", "about"]);
+const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about"]);
 
 export function SettingsView() {
   const t = useT();
@@ -173,8 +175,10 @@ export function SettingsView() {
         return <DesktopSection draft={draft} update={u} />;
       case "admin":
         return <AdminSection save={save} />;
+      case "logs":
+        return <DevLogSection draft={draft} update={u} />;
       case "about":
-        return <AboutSection draft={draft} update={u} />;
+        return <AboutSection draft={draft} update={u} onOpenLog={() => setSection("logs")} />;
     }
   };
 
@@ -1274,7 +1278,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   );
 }
 
-function AboutSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
+function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (p: Partial<Settings>) => void; onOpenLog: () => void }) {
   const t = useT();
   const view = useApp((s) => s.settings)!;
   const version = useUpdates((s) => s.status?.current_version) ?? view.version;
@@ -1330,6 +1334,7 @@ function AboutSection({ draft, update }: { draft: Settings; update: (p: Partial<
             Speicherort ändern…
           </Button>
         </Row>
+        <DevLogAboutRow onOpen={onOpenLog} />
       </Group>
       <Group title={t("set.about.shortcuts")}>
         <div className="shortcut-list">

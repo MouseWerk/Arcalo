@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { api, errorText } from "../lib/api";
+import { logUi } from "../lib/devlog";
 import type { BudgetStatus, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 
@@ -422,7 +423,11 @@ export const useApp = create<State>((set, get) => ({
     if (!t.persistent) setTimeout(() => get().dismissToast(id), ms);
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
-  error: (title, e) => get().toast({ tone: "danger", title, detail: errorText(e) }),
+  error: (title, e) => {
+    const detail = errorText(e);
+    logUi("ERROR", `${title}: ${detail}`);
+    get().toast({ tone: "danger", title, detail });
+  },
   alerts: (alerts) => {
     // Settings → Benachrichtigungen.
     if (get().settings?.settings.notifications?.budget === false) return;

@@ -68,6 +68,8 @@ pub struct Settings {
     /// Look for a new release at start and every few hours (only in builds with an update
     /// key). Updates are never installed without the user's click.
     pub auto_update_check: bool,
+    /// Developer log (Settings → Protokoll): also write debug lines (AI requests, syncs, backups).
+    pub dev_log_verbose: bool,
     /// Push the Markdown mirror to a Git remote (the access token lives in the credential store).
     pub git_sync: GitSyncSettings,
     /// Proxy, extra root CA and timeouts (the proxy password lives in the credential store).
@@ -193,6 +195,7 @@ impl Default for Settings {
             capture_shortcut: DEFAULT_CAPTURE_SHORTCUT.into(),
             palette_shortcut: None,
             auto_update_check: true,
+            dev_log_verbose: false,
             git_sync: GitSyncSettings::default(),
             search_shortcut: DEFAULT_SEARCH_SHORTCUT.into(),
             dashboard: Dashboard::default(),

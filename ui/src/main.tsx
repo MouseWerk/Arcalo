@@ -13,6 +13,7 @@ import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
 import { IS_MAC } from "./lib/platform";
 import { startSplash } from "./lib/splash";
+import { describeError, logUi } from "./lib/devlog";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -21,14 +22,22 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 
 startSplash(captureMode || searchMode);
 
-// Collect runtime errors so end-to-end tests can assert a clean console.
+// Collect runtime errors so end-to-end tests can assert a clean console; they also go to
+// the developer log (Settings → Protokoll).
 const w = window as unknown as { __annaloErrors: string[] };
 w.__annaloErrors = [];
-window.addEventListener("error", (e) => w.__annaloErrors.push(String(e.message)));
-window.addEventListener("unhandledrejection", (e) => w.__annaloErrors.push(String(e.reason)));
+window.addEventListener("error", (e) => {
+  w.__annaloErrors.push(String(e.message));
+  logUi("ERROR", e.error ? describeError(e.error) : `${e.message} (${e.filename}:${e.lineno})`);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  w.__annaloErrors.push(String(e.reason));
+  logUi("ERROR", `Unbehandelte Ablehnung: ${describeError(e.reason)}`);
+});
 const origError = console.error;
 console.error = (...args: unknown[]) => {
   w.__annaloErrors.push(args.map(String).join(" "));
+  logUi("ERROR", args.map((a) => (a instanceof Error ? describeError(a) : typeof a === "string" ? a : describeError(a))).join(" "));
   origError(...args);
 };
 

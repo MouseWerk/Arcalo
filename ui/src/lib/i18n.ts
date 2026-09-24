@@ -166,6 +166,7 @@ const ENTRIES = {
   "nav.backup": ["Sicherung", "Backup"],
   "nav.desktop": ["Desktop", "Desktop"],
   "nav.admin": ["Verwaltung", "Manage"],
+  "nav.devlog": ["Protokoll", "Logs"],
   "nav.about": ["Über", "About"],
 
   // appearance
@@ -601,6 +602,43 @@ const ENTRIES = {
   "set.about.dataDir": ["Datenordner", "Data folder"],
   "set.about.moveData": ["Speicherort ändern", "Change location"],
   "set.about.shortcuts": ["Tastenkürzel", "Keyboard shortcuts"],
+
+  // developer log
+  "devlog.intro": [
+    "Fehler und Warnungen von Annalo (KI, Git, Sicherung, Updates, Oberfläche) mit Zeit und Quelle. Hilft bei der Fehlersuche und in Fehlerberichten. Zugangsdaten werden vor dem Schreiben entfernt.",
+    "Errors and warnings from Annalo (AI, Git, backup, updates, interface) with time and source. Helps with troubleshooting and bug reports. Credentials are removed before writing.",
+  ],
+  "devlog.settings": ["Protokoll", "Log"],
+  "devlog.verbose": ["Ausführliches Protokoll", "Verbose log"],
+  "devlog.verboseDesc": [
+    "Schreibt zusätzlich Details zu KI-Anfragen, Synchronisierungen, Sicherungen und Update-Prüfungen.",
+    "Also writes details about AI requests, syncs, backups and update checks.",
+  ],
+  "devlog.folder": ["Protokollordner", "Log folder"],
+  "devlog.folderDesc": ["annalo.log im Datenordner; ab 1 MB werden bis zu drei ältere Dateien behalten.", "annalo.log in the data folder; from 1 MB up to three older files are kept."],
+  "devlog.openFolder": ["Protokollordner öffnen", "Open log folder"],
+  "devlog.entries": ["Einträge", "Entries"],
+  "devlog.filter": ["Filter", "Filter"],
+  "devlog.all": ["Alle", "All"],
+  "devlog.errors": ["Fehler", "Errors"],
+  "devlog.warnings": ["Warnungen", "Warnings"],
+  "devlog.refresh": ["Aktualisieren", "Refresh"],
+  "devlog.copy": ["Kopieren", "Copy"],
+  "devlog.copied": ["Protokoll kopiert", "Log copied"],
+  "devlog.copyFailed": ["Kopieren fehlgeschlagen", "Copy failed"],
+  "devlog.lines": ["{n} Zeilen", "{n} lines"],
+  "devlog.readFailed": ["Protokoll nicht gelesen", "Log not read"],
+  "devlog.clearTitle": ["Protokoll leeren?", "Clear log?"],
+  "devlog.clearMessage": ["Alle Einträge und die älteren Protokolldateien werden gelöscht.", "All entries and the older log files are deleted."],
+  "devlog.clearFailed": ["Protokoll nicht geleert", "Log not cleared"],
+  "devlog.empty": ["Keine Einträge – bisher ist nichts schiefgegangen.", "No entries – nothing has gone wrong so far."],
+  "devlog.emptyFilter": ["Keine Einträge für diesen Filter.", "No entries for this filter."],
+  "devlog.limited": ["Es werden die neuesten {n} Einträge angezeigt.", "Showing the newest {n} entries."],
+  "devlog.aboutLabel": ["Entwicklerprotokoll", "Developer log"],
+  "devlog.aboutDesc": ["Fehler und Warnungen für die Fehlersuche.", "Errors and warnings for troubleshooting."],
+  "devlog.errorsWeek": ["{n} Fehler in 7 Tagen", "{n} errors in 7 days"],
+  "devlog.errorsWeekOne": ["1 Fehler in 7 Tagen", "1 error in 7 days"],
+  "devlog.show": ["Protokoll anzeigen", "Show log"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type TKey = keyof typeof ENTRIES;

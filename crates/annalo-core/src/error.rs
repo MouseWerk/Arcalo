@@ -28,9 +28,20 @@ impl Error {
     }
 }
 
+/// Called for every error serialized for the UI (the desktop shell writes it to its log).
+static UI_HOOK: std::sync::OnceLock<fn(&Error)> = std::sync::OnceLock::new();
+
+/// Installs [`UI_HOOK`]; only the first call counts.
+pub fn set_ui_hook(hook: fn(&Error)) {
+    let _ = UI_HOOK.set(hook);
+}
+
 /// Errors cross the Tauri IPC boundary as plain strings.
 impl serde::Serialize for Error {
     fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        if let Some(hook) = UI_HOOK.get() {
+            hook(self);
+        }
         s.serialize_str(&self.to_string())
     }
 }
