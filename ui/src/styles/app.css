@@ -777,14 +777,18 @@ button.side-section-title:hover { color: var(--text-2); }
 .project { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); overflow: hidden; }
 .project-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .project-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
-.project-code { padding: 2px 7px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-sm); }
+.project-code { white-space: nowrap; flex: none; padding: 2px 7px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-sm); }
 .netzplan + .netzplan { border-top: 1px solid var(--border); }
 .netzplan-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 300px) auto; align-items: center; gap: 16px; padding: 12px 16px; background: var(--bg-hover); }
 .netzplan-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .netzplan-budget { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .netzplan-actions { display: flex; gap: 2px; }
 
-.vorgaenge { table-layout: fixed; min-width: 640px; }
+/* The fixed columns take 616 px: the name keeps at least 220 px, the table scrolls sideways
+   in narrow panes with the name pinned. */
+.vorgaenge { table-layout: fixed; min-width: 836px; }
+.vorgaenge th:first-child, .vorgaenge td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-raised); }
+.vorgaenge tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
 .vorgaenge td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vg-nr { display: inline-block; min-width: 38px; }
 .crit { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); font-size: var(--fs-xs); font-weight: 500; margin-left: 6px; }
@@ -1081,7 +1085,7 @@ button.side-section-title:hover { color: var(--text-2); }
 .dw-empty { color: var(--text-3); font-size: var(--fs-sm); padding: 6px 0; }
 .dw-empty .inline-icon { vertical-align: -1px; }
 .dw-big { font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.02em; color: var(--text); }
-.dw-list { list-style: none; margin: 0 -6px; padding: 0; display: grid; gap: 1px; }
+.dw-list { list-style: none; margin: 0 -6px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
 .dw-page, .dw-task-text, .dw-more, .dw-budget {
   display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 6px; border: 0; border-radius: var(--r-sm);
   background: transparent; text-align: left; color: var(--text); font-size: var(--fs-sm);
