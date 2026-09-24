@@ -191,6 +191,28 @@ Migration v2 converts the old block model: blocks are concatenated into
   fonts to inline them into the preview (the asset protocol allows `font-src data:` for that). Excalidraw would subset those
   fonts with WebAssembly in a worker; the CSP allows neither (`worker-src 'none'`, no `unsafe-eval`), so previews carry the
   whole font files (a few 10 kB each).
+- Files (`attachments.rs`: `clean_name`, `store_file`, `import_file`; `ui/src/editor/fileEmbed.ts`, `files.tsx`): any other file
+  is embedded as `![[Angebot.pdf]]`. `![[x]]` counts as a file when the name has an extension of 1–10 ASCII letters/digits with a
+  letter, other than `md` (`attachments::file_extension`, mirrored in the UI's `fileExtension`), so `![[Notiz]]` and `![[Version 1.2]]`
+  stay note embeds; such embeds are not page links (`notes::wiki_links`) and travel with vault import/export and the mirror.
+  Files keep their sanitized name (last path component, reserved/control characters replaced, Windows device names suffixed,
+  at most 150 bytes); a name taken by other bytes gets ` 2`, ` 3`, …, identical bytes reuse the file. Limit 100 MB
+  (`MAX_FILE_BYTES`; images sent base64 stay at 50 MB).
+  - Drop and paste: the main window has Tauri's native file-drop handler disabled (it swallows HTML5 drag and drop on Windows),
+    so files dropped from Explorer/Finder arrive as `File` objects without a path. `AttachmentDrop` stores images as before
+    (content-hash names) and any other file through `attachment_store`: the raw bytes are the IPC body (no base64), the name
+    comes percent-encoded in the `x-annalo-name` header. „Datei einfügen“ uses the dialog plugin and `attachment_import`, which
+    copies by path (streamed, temp file + rename) without loading the file into the webview.
+  - A click on a chip opens the file with the default app (`attachment_open`); programs and scripts (`attachments::is_executable`)
+    are only shown in the file manager, never started.
+  - PDFs (`ui/src/lib/pdf.ts`, `PdfViewer.tsx`): pdf.js (`pdfjs-dist`, legacy build for older WebViews) is a lazy chunk loaded
+    when a PDF card scrolls into view or the viewer opens. It runs without a web worker: the worker module is preloaded as
+    `globalThis.pdfjsWorker`, so pdf.js uses its main-thread "fake worker" and never tries `new Worker` (CSP `worker-src 'none'`
+    stays). The PDF's bytes come through IPC (`attachment_read`, a raw `ipc::Response`), not `fetch`, so `connect-src` needs no
+    `annalo-asset:`; the asset protocol still serves `.pdf` as `application/pdf` and every non-image type as
+    `application/octet-stream`. The standard fonts and the JavaScript image-decoder fallbacks are copied to `ui/public/pdfjs/` at
+    build time (`ui/scripts/pdfjs-assets.mjs`); the WebAssembly decoders are left out (no `wasm-unsafe-eval`), as are the CJK CMaps.
+    First pages are cached per name as canvases (up to 24).
 - Templates are the pages below the top-level page „Vorlagen“ (`templates.rs`); placeholders are filled by `apply_template`.
   The daily note uses `settings.daily_template` when set.
 

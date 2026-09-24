@@ -13,6 +13,7 @@ import Link from "@tiptap/extension-link";
 import { Callouts, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
+import { AttachmentDrop, FileEmbed } from "./fileEmbed";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 
@@ -135,6 +136,18 @@ export interface SchemaOptions {
   attachmentUrl?: (name: string) => string;
   /** Stores a pasted/dropped image, returns the attachment name. */
   uploadImage?: (file: File) => Promise<string | null>;
+  /** Stores any other pasted/dropped file under its name, returns the attachment name. */
+  uploadFile?: (file: File) => Promise<string | null>;
+  /** Slash „Datei einfügen“: file dialog, embeds the chosen files. */
+  onPickFile?: (editor: Editor) => void;
+  /** Size of an attachment in bytes (`null`: missing), for file chips. */
+  attachmentSize?: (name: string) => Promise<number | null>;
+  /** Click on a file chip: opens the file in its default app. */
+  onOpenFile?: (name: string) => void;
+  /** Click on a PDF card: opens the PDF viewer. */
+  onOpenPdf?: (name: string, page: number | null) => void;
+  /** Renders the first page of a PDF into a canvas; resolves to the page count. */
+  renderPdfPreview?: (name: string, canvas: HTMLCanvasElement, width: number) => Promise<number>;
   onPickTemplate?: (editor: Editor) => void;
   onPickImage?: (editor: Editor) => void;
   /** Slash „KI bearbeiten“: inline AI bar on the current block. */
@@ -175,8 +188,15 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     MarkdownFidelity,
     WikiLink.configure({ onOpen: o.onOpenLink ?? (() => {}), isKnown: o.isKnown ?? (() => true) }),
     WikiLinkSuggest.configure({ search: o.searchPages ?? (async () => []) }),
-    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null }),
-    ImageEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), upload: o.uploadImage ?? null }),
+    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null, onFile: o.onPickFile ?? null }),
+    ImageEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`) }),
+    FileEmbed.configure({
+      size: o.attachmentSize ?? (async () => null),
+      onOpen: o.onOpenFile ?? (() => {}),
+      onOpenPdf: o.onOpenPdf ?? (() => {}),
+      renderPdfPreview: o.renderPdfPreview ?? null,
+    }),
+    AttachmentDrop.configure({ uploadImage: o.uploadImage ?? null, uploadFile: o.uploadFile ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),
     DrawingEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), onOpen: o.onOpenDrawing ?? (() => {}) }),
     TimeEntryChip,

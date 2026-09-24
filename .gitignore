@@ -12,3 +12,4 @@ node_modules/
 /e2e/smoke.js
 /.claude/worktrees/
 /ui/public/excalidraw-assets/
+/ui/public/pdfjs/
