@@ -13,6 +13,7 @@ import { AnnaloLogo } from "./Logo";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { t, useT } from "../lib/i18n";
+import { modelLabel, usableProvider } from "../lib/providers";
 
 export function tabTitle(tab: Tab, pages: Map<number, { title: string }>) {
   switch (tab.kind) {
@@ -64,7 +65,7 @@ export function StatusBar() {
   const settings = useApp((s) => s.settings);
   const seconds = useTimerSeconds();
   const s = useApp.getState;
-  const configured = !!settings?.api_key_set;
+  const configured = !!settings && usableProvider(settings);
   const onPage = useApp((st) => st.tabs.find((t) => t.id === st.activeTabId)?.kind === "page");
   const stats = useApp((st) => st.editorStats);
   const doc = useApp((st) => st.activeDoc);
@@ -109,7 +110,7 @@ export function StatusBar() {
             <span className="faint num">{usd(meter.cost_usd)}</span>
           </>
         ) : (
-          <span className="faint">{configured ? settings?.settings.router.standard_model : t("status.setupAi")}</span>
+          <span className="faint">{configured && settings ? modelLabel(settings.settings.providers, settings.settings.router.standard_provider, settings.settings.router.standard_model) : t("status.setupAi")}</span>
         )}
       </button>
     </footer>

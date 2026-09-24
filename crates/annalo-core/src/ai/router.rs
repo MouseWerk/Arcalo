@@ -2,7 +2,8 @@
 //!
 //! The score is a transparent heuristic (length, code, reasoning verbs,
 //! context size, tool use) so the UI can show *why* a model was chosen.
-//! Content marked private is always kept on the local model.
+//! Content marked private is always kept on the local model. Each tier names a provider
+//! (by id) and a model of it.
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,13 @@ pub struct RouterConfig {
     pub local_model: String,
     pub standard_model: String,
     pub reasoning_model: String,
+    /// Provider ids of the tiers; `""` = the first provider (settings of older versions).
+    #[serde(default)]
+    pub local_provider: String,
+    #[serde(default)]
+    pub standard_provider: String,
+    #[serde(default)]
+    pub reasoning_provider: String,
     /// Scores at or above this go to the standard tier.
     pub standard_threshold: u32,
     /// Scores at or above this go to the reasoning tier.
@@ -36,6 +44,9 @@ impl Default for RouterConfig {
             local_model: "ollama/llama3.2".into(),
             standard_model: "cloud-standard".into(),
             reasoning_model: "cloud-reasoning".into(),
+            local_provider: super::provider::LEGACY_ID.into(),
+            standard_provider: super::provider::LEGACY_ID.into(),
+            reasoning_provider: super::provider::LEGACY_ID.into(),
             standard_threshold: 30,
             reasoning_threshold: 60,
             private_markers: vec!["#privat".into(), "#private".into(), "#vertraulich".into(), "#confidential".into()],
@@ -43,9 +54,46 @@ impl Default for RouterConfig {
     }
 }
 
+/// A model of a provider.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ModelRef {
+    pub provider: String,
+    pub model: String,
+}
+
+impl ModelRef {
+    pub fn new(provider: impl Into<String>, model: impl Into<String>) -> Self {
+        ModelRef { provider: provider.into(), model: model.into() }
+    }
+}
+
+impl RouterConfig {
+    /// The provider and model configured for `tier`.
+    pub fn tier_ref(&self, tier: Tier) -> ModelRef {
+        let (p, m) = match tier {
+            Tier::Local => (&self.local_provider, &self.local_model),
+            Tier::Standard => (&self.standard_provider, &self.standard_model),
+            Tier::Reasoning => (&self.reasoning_provider, &self.reasoning_model),
+        };
+        ModelRef::new(p.trim(), m.trim())
+    }
+
+    /// Tiers without a provider (settings of older versions) get `default`.
+    pub fn fill_providers(&mut self, default: &str) {
+        for p in [&mut self.local_provider, &mut self.standard_provider, &mut self.reasoning_provider] {
+            if p.trim().is_empty() {
+                *p = default.to_owned();
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RouteDecision {
     pub tier: Tier,
+    /// Id of the provider the request goes to.
+    #[serde(default)]
+    pub provider: String,
     pub model: String,
     pub score: u32,
     pub reasons: Vec<String>,
@@ -122,8 +170,10 @@ impl ModelRouter {
 
     pub fn route(&self, input: &RouteInput) -> RouteDecision {
         let mut reasons = vec![];
-        let decide =
-            |tier, score, reasons| RouteDecision { tier, model: self.model_for(tier).to_owned(), score, reasons };
+        let decide = |tier, score, reasons| {
+            let r = self.config.tier_ref(tier);
+            RouteDecision { tier, provider: r.provider, model: r.model, score, reasons }
+        };
 
         let lower = input.prompt.to_lowercase();
         let private = self.config.private_markers.iter().any(|m| {
@@ -210,6 +260,28 @@ mod tests {
         let d = route("Übersetze 'Netzplan' ins Englische", &[], false);
         assert_eq!(d.tier, Tier::Local);
         assert_eq!(d.model, "ollama/llama3.2");
+        assert_eq!(d.provider, "litellm");
+    }
+
+    #[test]
+    fn tiers_name_their_provider() {
+        let mut c = RouterConfig {
+            standard_provider: "openai".into(),
+            standard_model: "gpt-4o".into(),
+            local_provider: "".into(),
+            ..Default::default()
+        };
+        c.fill_providers("ollama");
+        assert_eq!(c.tier_ref(Tier::Local), ModelRef::new("ollama", "ollama/llama3.2"));
+        let d =
+            ModelRouter::new(c).route(&RouteInput { prompt: "x", force: Some(Tier::Standard), ..Default::default() });
+        assert_eq!((d.provider.as_str(), d.model.as_str()), ("openai", "gpt-4o"));
+        // Settings of older versions have no provider fields.
+        let old: RouterConfig = serde_json::from_str(
+            r#"{"local_model":"a","standard_model":"b","reasoning_model":"c","standard_threshold":30,"reasoning_threshold":60,"private_markers":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(old.tier_ref(Tier::Standard), ModelRef::new("", "b"));
     }
 
     #[test]

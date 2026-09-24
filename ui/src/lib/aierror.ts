@@ -26,11 +26,11 @@ export function aiErrorSummary(message: string): AiErrorSummary {
     return { title: "Zu viele Anfragen oder Budget aufgebraucht.", hint: "Kurz warten und erneut versuchen.", settings: false };
   if (/context.?length|too many tokens|maximum context/.test(m))
     return { title: "Die Anfrage ist zu lang für das Modell.", hint: "Weniger Kontext anhängen oder einen neuen Chat beginnen.", settings: false };
-  if (status === 404 || /model.*not found|does not exist|gibt es auf dem litellm-server nicht/.test(m))
+  if (status === 404 || /model.*not found|does not exist|gibt es auf dem \S*-server nicht|gibt es bei .* nicht/.test(m))
     return { title: "Das Modell gibt es auf dem KI-Server nicht.", hint: "Modellzuordnung in den KI-Einstellungen prüfen.", settings: true };
   if (status >= 500 && /connection ?(refused|error)|apiconnectionerror|unreachable|errno 111/.test(m))
     return { title: "Der KI-Server erreicht das Modell nicht.", hint: "Läuft der Modelldienst (z. B. Ollama)? Sonst die Administration fragen.", settings: false };
-  if (/^verbindungsfehler|connection refused|error sending request|dns|connect/.test(m))
+  if (/^verbindungsfehler|connection refused|error sending request|dns|connect|nicht erreichbar/.test(m))
     return { title: "Der KI-Server ist nicht erreichbar.", hint: "Server-URL und Netzwerk in den Einstellungen prüfen.", settings: true };
   if (status >= 500) return { title: "Der KI-Server meldet einen internen Fehler.", hint: "Später erneut versuchen.", settings: false };
   return { title: "Die Anfrage ist fehlgeschlagen.", hint: "Erneut versuchen oder die Verbindung prüfen.", settings: true };

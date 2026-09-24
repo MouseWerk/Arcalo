@@ -1,4 +1,4 @@
-// The AI assistant: streaming chat over LiteLLM with workspace context,
+// The AI assistant: streaming chat over the configured AI providers with workspace context,
 // sources, cost/speed metrics and approval-gated tools.
 
 import { streamingOn, warnCost, withCostLimit } from "../lib/aicost";
@@ -18,6 +18,7 @@ import { useApp } from "../store/app";
 import { Button, IconButton, useMenu, type MenuEntry } from "../components/ui";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { h1, usd } from "../lib/format";
+import { modelLabel, usableProvider } from "../lib/providers";
 import type { ChatMessage, ContextChunk, RouteDecision, StreamEvent, Tier, ToolCall } from "../lib/types";
 import type { SuggestionKind } from "../lib/suggestions";
 import { useSuggestions } from "./useSuggestions";
@@ -211,7 +212,8 @@ export function AssistantPanel() {
           // All of them, in order: `[n]` in the answer is `sources[n - 1]`.
           sources: out.context,
           meta: {
-            model: out.route.model,
+            // With several providers: `model · Provider`.
+            model: modelLabel(s().settings?.settings.providers ?? [], out.route.provider, out.route.model),
             tier: out.route.tier,
             ttft: c.usage.ttft_ms,
             tps: c.usage.tokens_per_second,
@@ -339,11 +341,14 @@ export function AssistantPanel() {
   };
 
   const router = settings?.settings.router;
+  const providers = settings?.settings.providers ?? [];
+  // The tier's model, with its provider when there are several.
+  const tierModel = (provider: string | undefined, model: string | undefined) => (model ? modelLabel(providers, provider, model) : undefined);
   const tierOptions: { value: Tier | null; label: string; model?: string }[] = [
-    { value: null, label: "Automatisch", model: settings?.settings.auto_route === false ? router?.standard_model : "nach Aufgabe" },
-    { value: "local", label: "Lokal", model: router?.local_model },
-    { value: "standard", label: "Standard", model: router?.standard_model },
-    { value: "reasoning", label: "Reasoning", model: router?.reasoning_model },
+    { value: null, label: "Automatisch", model: settings?.settings.auto_route === false ? tierModel(router?.standard_provider, router?.standard_model) : "nach Aufgabe" },
+    { value: "local", label: "Lokal", model: tierModel(router?.local_provider, router?.local_model) },
+    { value: "standard", label: "Standard", model: tierModel(router?.standard_provider, router?.standard_model) },
+    { value: "reasoning", label: "Reasoning", model: tierModel(router?.reasoning_provider, router?.reasoning_model) },
   ];
   const currentTier = tierOptions.find((o) => o.value === tier) ?? tierOptions[0];
 
@@ -416,9 +421,9 @@ export function AssistantPanel() {
             </div>
             <div className="assistant-empty-title">Wie kann ich helfen?</div>
             <p className="faint">Ich kenne deine Notizen, Projekte und Zeitbuchungen und kann für dich buchen.</p>
-            {settings && !settings.api_key_set && (
+            {settings && !usableProvider(settings) && (
               <button type="button" className="setup-hint" onClick={() => s().openTab({ kind: "settings" })}>
-                <Settings2 size={14} /> LiteLLM-Server und Token in den Einstellungen verbinden
+                <Settings2 size={14} /> KI-Anbieter in den Einstellungen verbinden
               </button>
             )}
             <div className="suggestions">

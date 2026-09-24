@@ -18,13 +18,13 @@ import { NOT_CONFIGURED } from "../lib/updates";
 import { checkForUpdates, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
-import { autoAssign } from "../lib/models";
-import type { BackupInfo, MirrorStatus, ConnectionTest, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
+import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, Row } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
 import { LocaleSection, NotesPrefGroups, NotificationsSection, PrivacySection, StartSection, TimePrefGroups } from "./settings/PrefSections";
 import { AiPrefGroups } from "./settings/AiPrefGroups";
+import { AiProvidersSection } from "./settings/AiProvidersSection";
 import { KeyboardSection } from "./settings/KeyboardSection";
 import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
@@ -280,141 +280,14 @@ function SearchSection({ title, onOpen, children }: { title: string; onOpen: () 
 
 function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
   const t = useT();
-  const view = useApp((s) => s.settings)!;
-  const [key, setKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [test, setTest] = useState<ConnectionTest | null>(null);
-  const [testing, setTesting] = useState(false);
-  const s = useApp.getState;
-  const models = test?.ok ? test.models : [];
-
-  const runTest = async () => {
-    setTesting(true);
-    try {
-      setTest(await api.testConnection(draft.litellm_base_url, key || null));
-    } catch (e) {
-      setTest({ ok: false, latency_ms: 0, models: [], error: String(e) });
-    } finally {
-      setTesting(false);
-    }
-  };
-  useEffect(() => {
-    runTest();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const saveKey = async (value: string | null) => {
-    try {
-      const v = await api.setApiKey(value);
-      s().set({ settings: v });
-      setKey("");
-      s().toast({ tone: "success", title: value ? "API-Token gespeichert" : "API-Token entfernt", detail: v.api_key_storage });
-      runTest();
-    } catch (e) {
-      s().error("Token konnte nicht gespeichert werden", e);
-    }
-  };
-
-  const router = draft.router;
-  const setRouter = (p: Partial<Settings["router"]>) => update({ router: { ...router, ...p } });
-
   return (
     <>
       <header className="settings-head">
         <h1>{t("set.ai.title")}</h1>
-        <p>Annalo spricht mit deinem LiteLLM-Server. Lokale Modelle (Ollama, vLLM) und Cloud-Modelle werden dort konfiguriert.</p>
+        <p>Annalo spricht mit einem oder mehreren KI-Anbietern: LiteLLM, OpenAI-kompatiblen Diensten, Azure OpenAI oder einem lokalen Ollama.</p>
       </header>
 
-      <Group title={t("set.ai.server")} description="Adresse deines LiteLLM-Proxys und der Zugangstoken (Virtual Key oder Master Key).">
-        <Row stack label={t("set.ai.serverUrl")} description="z. B. https://llm.firma.de oder http://localhost:4000">
-          <Input value={draft.litellm_base_url} onChange={(e) => update({ litellm_base_url: e.target.value })} placeholder="https://" aria-label="Server-URL" className="grow" />
-        </Row>
-        <Row
-          stack
-          label={t("set.ai.apiToken")}
-          description={
-            <>
-              {view.api_key_set ? <Badge tone="success">Hinterlegt</Badge> : <Badge>Nicht gesetzt</Badge>}
-              <span>Sicher gespeichert in: {view.api_key_storage}</span>
-            </>
-          }
-        >
-          <div className="key-input">
-            <KeyRound size={14} className="faint" />
-            <input
-              type={showKey ? "text" : "password"}
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder={view.api_key_set ? "Neuen Token eingeben, um ihn zu ersetzen" : "sk-…"}
-              aria-label="API-Token"
-              autoComplete="off"
-              spellCheck={false}
-              onKeyDown={(e) => e.key === "Enter" && key.trim() && saveKey(key.trim())}
-            />
-            <IconButton icon={showKey ? EyeOff : Eye} label={showKey ? "Verbergen" : "Anzeigen"} size="sm" onClick={() => setShowKey(!showKey)} />
-          </div>
-          <Button variant="primary" onClick={() => saveKey(key.trim())} disabled={!key.trim()}>
-            Speichern
-          </Button>
-          {view.api_key_set && <IconButton icon={Trash2} label="Token entfernen" onClick={() => saveKey(null)} />}
-        </Row>
-        <Row label={t("set.ai.connection")} description="Fragt die verfügbaren Modelle beim Server ab.">
-          <div className={`conn ${test ? (test.ok ? "ok" : "fail") : ""}`}>
-            {testing ? (
-              <>
-                <Loader2 size={14} className="spin" /> Prüfe…
-              </>
-            ) : test?.ok ? (
-              <>
-                <CheckCircle2 size={14} /> Verbunden · {test.models.length} Modelle · {test.latency_ms} ms
-              </>
-            ) : test ? (
-              <span title={test.error ?? ""}>
-                <XCircle size={14} /> Keine Verbindung
-              </span>
-            ) : null}
-          </div>
-          <Button icon={RefreshCw} onClick={runTest} disabled={testing}>
-            Testen
-          </Button>
-        </Row>
-        {test && !test.ok && test.error && <p className="error-note mono small">{test.error}</p>}
-      </Group>
-
-      <Group title={t("set.ai.models")} description="Welche Modelle des Servers für welche Aufgaben verwendet werden.">
-        {(() => {
-          // Tiers naming a model the server does not have: requests would fail with
-          // "No deployments available for selected model" (they fall back, but say so here).
-          const missing = models.length ? (["local_model", "standard_model", "reasoning_model"] as const).filter((k) => !models.includes(router[k])) : [];
-          if (!missing.length) return null;
-          return (
-            <div className="warn-note model-missing" role="status">
-              <span>
-                {missing.length === 1 ? "Ein Modell" : `${missing.length} Modelle`} gibt es auf dem Server nicht ({missing.map((k) => router[k] || "leer").join(", ")}). Anfragen weichen
-                auf ein vorhandenes Modell aus.
-              </span>
-              <Button variant="secondary" size="sm" onClick={() => setRouter(autoAssign(router, models))}>
-                Automatisch zuordnen
-              </Button>
-            </div>
-          );
-        })()}
-        <Row label={t("set.ai.autoRoute")} description="Einfache Aufgaben gehen an das lokale Modell, komplexe an stärkere Modelle.">
-          <Switch checked={draft.auto_route} onChange={(v) => update({ auto_route: v })} label="Automatisches Routing" />
-        </Row>
-        <Row label={t("set.ai.local")} description="Für kurze Fragen, Umformulierungen und vertrauliche Inhalte.">
-          <ModelInput value={router.local_model} models={models} onChange={(v) => setRouter({ local_model: v })} label="Lokales Modell" />
-        </Row>
-        <Row label={t("set.ai.standard")} description={draft.auto_route ? "Für die meisten Aufgaben." : "Wird für alle Anfragen verwendet."}>
-          <ModelInput value={router.standard_model} models={models} onChange={(v) => setRouter({ standard_model: v })} label="Standardmodell" />
-        </Row>
-        <Row label={t("set.ai.reasoning")} description="Für Analysen, Planung und Code.">
-          <ModelInput value={router.reasoning_model} models={models} onChange={(v) => setRouter({ reasoning_model: v })} label="Reasoning-Modell" />
-        </Row>
-        <Row label={t("set.ai.embeddings")} description="Für die semantische Suche in Notizen. Leer = nur Stichwortsuche.">
-          <ModelInput value={draft.embedding_model ?? ""} models={models} onChange={(v) => update({ embedding_model: v || null })} label="Embedding-Modell" allowEmpty />
-        </Row>
-      </Group>
+      <AiProvidersSection draft={draft} update={update} />
 
       <Group title={t("set.ai.behavior")}>
         <Field label={t("set.ai.instructions")} hint="z. B. Rolle, Tonalität, bevorzugte Formate">
@@ -423,28 +296,6 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
       </Group>
     </>
   );
-}
-
-function ModelInput({ value, models, onChange, label, allowEmpty }: { value: string; models: string[]; onChange: (v: string) => void; label: string; allowEmpty?: boolean }) {
-  if (models.length) {
-    const missing = value && !models.includes(value);
-    return (
-      <div className="model-input">
-        <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className="w-360">
-          {allowEmpty && <option value="">Keines</option>}
-          {!allowEmpty && !value && <option value="">Modell wählen</option>}
-          {missing && <option value={value}>{value} (nicht auf dem Server)</option>}
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </Select>
-        {missing && <span className="warn-note small">Dieses Modell bietet der Server nicht an</span>}
-      </div>
-    );
-  }
-  return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={allowEmpty ? "Keines" : "Modellname"} aria-label={label} className="w-360" />;
 }
 
 // ------------------------------------------------------------------ time

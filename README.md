@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Notes, time tracking and your own AI in one local-first desktop app.</b><br>
-  Markdown notes with <code>[[links]]</code> like Obsidian · SAP PS time booking with <code>/zeit</code> · an assistant on <b>your</b> LiteLLM server
+  Markdown notes with <code>[[links]]</code> like Obsidian · SAP PS time booking with <code>/zeit</code> · an assistant on <b>your</b> AI providers (LiteLLM, OpenAI-compatible, Azure, Ollama)
 </p>
 
 <p align="center">
@@ -24,11 +24,11 @@
 hours, kept together.
 
 Everything lives in one SQLite database on your computer. There is no cloud account and no telemetry. The only
-network traffic is what you set up yourself: your LiteLLM server, an optional Git remote for backups, and update checks
+network traffic is what you set up yourself: your AI providers, an optional Git remote for backups, and update checks
 against this repository's releases.
 
 **Contents:** [Download](#download) · [Tour](#a-quick-tour) · [Features](#what-you-get) · [First steps](#first-steps) ·
-[LiteLLM](#connecting-your-litellm-server) · [Proxy](#netzwerk--proxy) · [Customizing](#anpassen) ·
+[AI providers](#connecting-ai-providers) · [Proxy](#netzwerk--proxy) · [Customizing](#anpassen) ·
 [Your data](#your-data-is-safe) · [Git sync](#git-synchronisierung) · [Keyboard](#keyboard) · [Building](#building) ·
 [Updates](#automatische-updates-einrichten) · [Tests](#tests)
 
@@ -189,18 +189,31 @@ settings also cover proxy and certificates for company networks and Git backup.
 
 <br clear="right">
 
-## Connecting your LiteLLM server
+## Connecting AI providers
 
-Settings → **KI & LiteLLM**:
+Settings → **KI & Modelle** → **KI-Anbieter**. Any number of providers, in order of preference:
 
-1. **Server-URL**: e.g. `https://llm.your-company.com`
-2. **API-Token**: your LiteLLM virtual key or master key. It is stored in the Windows Credential Manager or the macOS Keychain, never in the database or the settings
-3. **Testen** lists the server's models; pick the models for *Lokal*, *Standard*, *Reasoning* and (optionally) *Embeddings*
+| Kind | Address | Key |
+|---|---|---|
+| **LiteLLM** | the proxy root, e.g. `https://llm.your-company.com` | virtual key or master key (bearer) |
+| **OpenAI-kompatibel** | the base URL with version: OpenAI `https://api.openai.com/v1`, Mistral `https://api.mistral.ai/v1`, Groq `https://api.groq.com/openai/v1`, OpenRouter `https://openrouter.ai/api/v1`, LM Studio `http://localhost:1234/v1`, vLLM, llama.cpp … | bearer, optional on localhost |
+| **Azure OpenAI** | the resource endpoint, e.g. `https://firma.openai.azure.com`; plus the **API-Version** (default `2024-10-21`) and the **Deployments** (the model names are the deployment names). Requests go to `/openai/deployments/<deployment>/chat/completions?api-version=…` with an `api-key` header | `api-key` |
+| **Ollama** | `http://localhost:11434` (found automatically when it runs) | none |
 
-Changes apply immediately, with no restart. A tier whose model the server does not offer (the defaults are placeholders)
-is flagged there with „Automatisch zuordnen“; requests fall back to a model the server has, and a model whose deployments are
-cooling down („No deployments available for selected model“) is retried once on another one. `#privat` content never falls
-back to a cloud model. `config/litellm.config.example.yaml` shows a matching proxy configuration.
+- Keys are stored per provider in the Windows Credential Manager or the macOS Keychain, never in the database, the settings or their export
+- **Lokal** marks a provider that runs on this machine or in your own network: it may receive private content and costs nothing.
+  **Proxy umgehen** connects directly (default for addresses on localhost)
+- **Verbindung testen** in the provider dialog checks reachability, the key, a short chat, tool support and embeddings, each with its own result.
+  For Ollama, **Modell laden** downloads a model (`/api/pull`) with progress
+- **Modelle**: each tier (*Lokal*, *Standard*, *Reasoning*) and the embeddings pick a provider and a model from its list
+- **Preise**: an editable table (per 1M input/output tokens) for providers that do not report costs; LiteLLM reports its own, local providers are free
+
+Settings of earlier versions become one LiteLLM provider with the same address, models and token. Changes apply immediately.
+A tier whose model its provider does not offer is flagged with „Automatisch zuordnen“; requests fall back to another configured
+model, a model whose deployments are cooling down or whose backend fails is retried on another one, and an unreachable provider
+hands over to the next. `#privat` content and Settings → Datenschutz „Nur lokal“ only ever go to the local tier's model or to providers
+marked **Lokal**, never to a cloud fallback; semantic search does not send private pages to an embedding model that is not local.
+`config/litellm.config.example.yaml` shows a matching LiteLLM configuration.
 
 ## Netzwerk & Proxy
 
@@ -332,7 +345,7 @@ with the old key must be updated once by hand.
   pages, images and bookings (`Zeiterfassung/YYYY-MM.csv`, Excel-ready)
 - **Trash** keeps deleted pages for 30 days. **Version history** keeps earlier states of every page, with a diff
 - **Git sync** pushes the Markdown copy to your own private repository (see below)
-- **Secrets** (LiteLLM key, Git token, proxy password) are stored in the Windows Credential Manager or the macOS
+- **Secrets** (AI provider keys, Git token, proxy password) are stored in the Windows Credential Manager or the macOS
   Keychain (on Linux in `secrets.json` in the data folder, readable only by your user). They are never written to the
   database, settings exports or logs
 - **Export** everything back to plain Markdown files at any time

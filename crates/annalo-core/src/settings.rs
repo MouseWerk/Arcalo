@@ -1,5 +1,5 @@
 //! Application settings, stored as JSON in the workspace database.
-//! Secrets (the LiteLLM API key) are deliberately not part of this struct;
+//! Secrets (the API keys of the AI providers) are deliberately not part of this struct;
 //! the desktop shell keeps them in the OS credential store.
 
 use std::collections::{BTreeMap, HashMap};
@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
+use crate::ai::metrics::{PriceRule, default_price_rules, normalize_price_rules};
+use crate::ai::provider::{self, AiProvider, LEGACY_ID};
 use crate::ai::router::RouterConfig;
 use crate::db::Database;
 use crate::error::Result;
@@ -21,14 +23,22 @@ use crate::tracking::Thresholds;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Root URL of the LiteLLM proxy, e.g. `https://llm.example.com`.
+    /// Root URL of the LiteLLM proxy, e.g. `https://llm.example.com`. Kept in step with the
+    /// address of the provider [`LEGACY_ID`] for older versions and scripts (see [`Settings::sync_legacy`]).
     pub litellm_base_url: String,
-    /// Model names per tier as exposed by the proxy.
+    /// AI providers in order of preference; keys live in the credential store, one per id.
+    pub providers: Vec<AiProvider>,
+    /// Provider and model per tier.
     pub router: RouterConfig,
     /// Route by prompt complexity; when off, `router.standard_model` is always used.
     pub auto_route: bool,
     /// Embedding model for semantic search; `None` = keyword search only.
     pub embedding_model: Option<String>,
+    /// Provider of the embedding model; `""` = the first provider.
+    pub embedding_provider: String,
+    /// Prices per 1M tokens for providers that do not report costs (LiteLLM does; local
+    /// providers are free).
+    pub prices: Vec<PriceRule>,
     /// Extra instructions appended to the assistant's system prompt.
     pub assistant_instructions: String,
     pub thresholds: Thresholds,
@@ -237,10 +247,13 @@ impl Dashboard {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            litellm_base_url: "http://localhost:4000".into(),
+            litellm_base_url: DEFAULT_LITELLM_URL.into(),
+            providers: vec![AiProvider::litellm(DEFAULT_LITELLM_URL)],
             router: RouterConfig::default(),
             auto_route: true,
             embedding_model: None,
+            embedding_provider: LEGACY_ID.into(),
+            prices: default_price_rules(),
             assistant_instructions: String::new(),
             thresholds: Thresholds::default(),
             idle_threshold_minutes: 5,
@@ -280,7 +293,44 @@ impl Default for Settings {
     }
 }
 
+/// Address of the LiteLLM proxy in fresh settings.
+const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
+
 impl Settings {
+    /// Keeps `litellm_base_url` and the provider [`LEGACY_ID`] in step. Older versions and
+    /// scripts only know the old field: when it changed since `previous` and the provider's
+    /// address did not, the old field wins; otherwise the provider's address is copied into it.
+    pub fn sync_legacy(&mut self, previous: &Settings) {
+        let old = |s: &Settings| s.providers.iter().find(|p| p.id == LEGACY_ID).map(|p| p.base_url.clone());
+        let before = old(previous);
+        let url = self.litellm_base_url.trim().trim_end_matches('/').to_owned();
+        let Some(p) = self.providers.iter_mut().find(|p| p.id == LEGACY_ID) else { return };
+        if url != previous.litellm_base_url.trim().trim_end_matches('/')
+            && before.as_deref() == Some(p.base_url.as_str())
+        {
+            p.base_url = url;
+        }
+        self.litellm_base_url = p.base_url.clone();
+    }
+
+    /// Checks and cleans the AI providers, fills tiers without a provider and cleans the price
+    /// table. Used when saving.
+    pub fn normalize_ai(&mut self) -> Result<()> {
+        self.providers = provider::normalize(std::mem::take(&mut self.providers))?;
+        if let Some(first) = self.providers.first().map(|p| p.id.clone()) {
+            self.router.fill_providers(&first);
+            if self.embedding_provider.trim().is_empty() {
+                self.embedding_provider = first;
+            }
+        }
+        self.embedding_provider = self.embedding_provider.trim().to_owned();
+        self.prices = normalize_price_rules(std::mem::take(&mut self.prices));
+        if let Some(p) = self.providers.iter().find(|p| p.id == LEGACY_ID) {
+            self.litellm_base_url = p.base_url.clone();
+        }
+        Ok(())
+    }
+
     /// Clamps numbers to their ranges and replaces unusable values with defaults. Used when
     /// saving and importing; loading keeps what is stored.
     pub fn normalize(&mut self) {
@@ -376,6 +426,7 @@ impl Settings {
                 self.assistant_instructions = d.assistant_instructions;
                 self.router.standard_threshold = d.router.standard_threshold;
                 self.router.reasoning_threshold = d.router.reasoning_threshold;
+                self.prices = d.prices;
             }
             "notifications" => {
                 self.notifications = d.notifications;
@@ -435,6 +486,13 @@ impl Database {
         let mut s: Settings = serde_json::from_value(value.clone())?;
         if value.get("start").is_none() && s.open_daily_on_start {
             s.start.open = StartOpen::Daily;
+        }
+        // Settings from before AI providers: the LiteLLM server becomes the one provider, its
+        // token stays where it is (the credential of the provider `litellm`).
+        if value.get("providers").is_none() {
+            s.providers = vec![AiProvider::litellm(&s.litellm_base_url)];
+            s.router.fill_providers(LEGACY_ID);
+            s.embedding_provider = LEGACY_ID.into();
         }
         Ok(s)
     }
@@ -523,6 +581,68 @@ mod tests {
         assert_eq!(db.load_settings().unwrap().reminder_time, None);
         db.conn().execute("UPDATE settings SET value = '{\"palette_shortcut\":null}'", []).unwrap();
         assert_eq!(db.load_settings().unwrap().palette_shortcut, None);
+    }
+
+    #[test]
+    fn litellm_settings_become_a_provider() {
+        let db = Database::open_in_memory().unwrap();
+        // Settings of version 1.2: one LiteLLM server, models per tier, no providers.
+        let old = r##"{"litellm_base_url":"https://llm.firma.de","embedding_model":"firma-embed",
+            "router":{"local_model":"firma-schnell","standard_model":"firma-standard","reasoning_model":"firma-reasoning",
+            "standard_threshold":30,"reasoning_threshold":60,"private_markers":["#privat"]}}"##;
+        db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [old]).unwrap();
+        let s = db.load_settings().unwrap();
+        assert_eq!(s.providers.len(), 1);
+        let p = &s.providers[0];
+        assert_eq!(
+            (p.id.as_str(), p.kind, p.base_url.as_str()),
+            (LEGACY_ID, crate::ai::ProviderKind::Litellm, "https://llm.firma.de")
+        );
+        assert!(p.enabled && !p.local && !p.bypass_proxy);
+        use crate::ai::router::{ModelRef, Tier};
+        assert_eq!(s.router.tier_ref(Tier::Standard), ModelRef::new(LEGACY_ID, "firma-standard"));
+        assert_eq!(s.router.tier_ref(Tier::Local), ModelRef::new(LEGACY_ID, "firma-schnell"));
+        assert_eq!((s.embedding_provider.as_str(), s.embedding_model.as_deref()), (LEGACY_ID, Some("firma-embed")));
+        assert_eq!(s.prices, default_price_rules(), "the built-in price table");
+        // Saved and loaded again: unchanged.
+        db.save_settings(&s).unwrap();
+        assert_eq!(db.load_settings().unwrap(), s);
+        // A list of providers is kept as it is, even an empty one.
+        db.conn().execute(r#"UPDATE settings SET value = '{"providers":[]}'"#, []).unwrap();
+        assert!(db.load_settings().unwrap().providers.is_empty());
+    }
+
+    #[test]
+    fn the_old_url_field_and_the_provider_stay_in_step() {
+        let prev = Settings::default();
+        // A script (or an older version) changes only the old field: it wins.
+        let mut s = Settings { litellm_base_url: "http://127.0.0.1:4999".into(), ..prev.clone() };
+        s.sync_legacy(&prev);
+        assert_eq!(s.providers[0].base_url, "http://127.0.0.1:4999");
+        // The settings page changes the provider: the old field follows.
+        let mut s = prev.clone();
+        s.providers[0].base_url = "https://llm.firma.de".into();
+        s.sync_legacy(&prev);
+        assert_eq!(s.litellm_base_url, "https://llm.firma.de");
+        // Without the LiteLLM provider the old field is left alone.
+        let mut s = Settings { providers: vec![], litellm_base_url: "http://x".into(), ..prev.clone() };
+        s.sync_legacy(&prev);
+        assert_eq!(s.litellm_base_url, "http://x");
+    }
+
+    #[test]
+    fn normalize_ai_fills_providers_and_checks_addresses() {
+        let mut s = Settings::default();
+        s.providers.insert(0, AiProvider::ollama("", "http://localhost:11434/"));
+        s.router.local_provider = "".into();
+        s.embedding_provider = " ".into();
+        s.normalize_ai().unwrap();
+        assert_eq!(s.providers[0].id, "ollama");
+        assert_eq!(s.providers[0].base_url, "http://localhost:11434");
+        assert_eq!((s.router.local_provider.as_str(), s.embedding_provider.as_str()), ("ollama", "ollama"));
+        assert_eq!(s.router.standard_provider, LEGACY_ID, "set tiers are kept");
+        s.providers[1].base_url = "llm.firma.de".into();
+        assert!(s.normalize_ai().is_err());
     }
 
     #[test]
@@ -673,8 +793,12 @@ mod tests {
         assert_eq!((s.ai.temperature, s.ai.allowed_tools.clone()), (2.0, vec!["git".to_owned()]));
         assert_eq!(s.notifications.quiet_from, "22:00");
         assert!(s.open_daily_on_start);
+        s.prices.clear();
+        s.providers.push(AiProvider::ollama("ollama", provider::OLLAMA_URL));
         s.reset_section("ai").unwrap();
         assert_eq!(s.ai, AiPrefs::default());
+        assert_eq!(s.prices, default_price_rules(), "prices are AI preferences");
+        assert_eq!(s.providers.len(), 2, "providers are connection settings and stay");
         s.reset_section("appearance").unwrap();
         assert_eq!(s.appearance, AppearancePrefs::default());
         assert!(s.reset_section("gibt-es-nicht").is_err());

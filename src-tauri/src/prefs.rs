@@ -71,13 +71,19 @@ pub fn settings_defaults(state: State<'_, AppState>, section: Option<String>) ->
             let cur = state.settings();
             Ok(Settings {
                 litellm_base_url: cur.litellm_base_url,
+                providers: cur.providers,
                 router: annalo_core::ai::router::RouterConfig {
                     local_model: cur.router.local_model,
                     standard_model: cur.router.standard_model,
                     reasoning_model: cur.router.reasoning_model,
+                    local_provider: cur.router.local_provider,
+                    standard_provider: cur.router.standard_provider,
+                    reasoning_provider: cur.router.reasoning_provider,
                     ..Default::default()
                 },
                 embedding_model: cur.embedding_model,
+                embedding_provider: cur.embedding_provider,
+                prices: cur.prices,
                 pernr: cur.pernr,
                 jira_issue_map: cur.jira_issue_map,
                 backup_dir: cur.backup_dir,
