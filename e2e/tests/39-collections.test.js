@@ -114,10 +114,10 @@ test("sort by clicking a header and filter with the filter bar", async () => {
   await app.browser.waitUntil(async () => /sortierung: \{feld: aufwand, richtung: ab\}/.test(await content(parent.id)), { timeoutMsg: "sort not saved" });
 
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-tools .btn")].find((b) => b.innerText.includes("Filter")).click());
-  await app.waitFor('.coll-pop select[aria-label="Eigenschaft"]');
-  await app.select('.coll-pop select[aria-label="Eigenschaft"]', "status");
-  await app.select('.coll-pop select[aria-label="Bedingung"]', "ist");
-  await app.select('.coll-pop select[aria-label="Wert"]', "Offen");
+  await app.waitFor('.coll-pop [role="combobox"][aria-label="Eigenschaft"]');
+  await app.select('.coll-pop [role="combobox"][aria-label="Eigenschaft"]', "status");
+  await app.select('.coll-pop [role="combobox"][aria-label="Bedingung"]', "ist");
+  await app.select('.coll-pop [role="combobox"][aria-label="Wert"]', "Offen");
   await app.browser.execute(() => [...document.querySelectorAll(".coll-pop .btn")].find((b) => b.innerText.includes("Fertig")).click());
   await app.browser.waitUntil(async () => (await rowTitles()).join() === "Suche planen,Login bauen", { timeoutMsg: `not filtered: ${await rowTitles()}` });
   assert.match(await app.text(`${view} .coll-filters`), /status\s+ist „Offen“/);

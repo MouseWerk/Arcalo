@@ -119,11 +119,12 @@ export function Popover({ anchor, onClose, children, className = "", label }: { 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null;
-      if (t && (ref.current?.contains(t) || t.closest?.(".menu, .calendar"))) return;
+      // Dropdown lists and calendars opened from the popup live in their own portal.
+      if (t && (ref.current?.contains(t) || t.closest?.(".menu, .calendar, .select-pop"))) return;
       close.current();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector(".calendar")) {
+      if (e.key === "Escape" && !document.querySelector(".calendar, .select-pop")) {
         e.preventDefault();
         e.stopPropagation();
         close.current();
