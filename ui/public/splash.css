@@ -68,3 +68,6 @@
 }
 #splash[data-reduced] *, #splash[data-reduced] *::before { animation: none !important; opacity: 1 !important; transform: none !important; }
 #splash[data-reduced] .splash-mark path { fill-opacity: 1; stroke-width: 0; }
+
+/* The main window appears only after the first frame; until then the animation waits. */
+#splash:not(.go) *, #splash:not(.go) *::before { animation-play-state: paused !important; }

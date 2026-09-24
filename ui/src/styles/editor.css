@@ -406,8 +406,10 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
   padding: 8px;
   border-radius: var(--r-lg);
   background: var(--bg-overlay);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   animation: pop-in var(--dur-fast) var(--ease-out);
+  scroll-margin: 16px;
 }
 .ai-bar-input { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 4px 0 10px; border-radius: var(--r-md); background: var(--bg-input); border: 1px solid var(--border-strong); }
 .ai-bar-input:focus-within { border-color: var(--border-focus); }
@@ -586,3 +588,27 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .drawing-status.is-error { color: var(--danger); }
 .drawing-done { flex: none; }
 .drawing-canvas { position: relative; flex: 1; min-height: 0; }
+
+/* ------------------------------------------------------------ page modes */
+.page.page-full { max-width: none; }
+.vh-mode { justify-self: center; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.source-editor { margin-top: 4px; }
+.source-text {
+  display: block;
+  width: 100%;
+  min-height: 60vh;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: calc(var(--fs-lg) - 1px);
+  line-height: 1.7;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: var(--accent);
+}

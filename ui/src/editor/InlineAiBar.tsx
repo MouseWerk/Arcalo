@@ -9,7 +9,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ArrowUp, CornerDownLeft, RotateCcw, Replace, Sparkles, Square, X } from "lucide-react";
 import { Button, IconButton } from "../components/ui";
 import { renderMarkdown } from "../lib/markdown";
-import { inlinePresets, transformInstruction } from "../lib/aitext";
+import { WRITE_PRESETS, inlinePresets, transformInstruction, writeInstruction } from "../lib/aitext";
 import { useApp } from "../store/app";
 import { useAiTransform } from "../lib/useAiTransform";
 import { usd } from "../lib/format";
@@ -39,7 +39,10 @@ export function InlineAiBar({
   const source = useRef(rangeMarkdown(editor, initial));
   const root = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  // Nothing selected on an empty line: write new text there, with the page as context.
+  const writing = useRef(!source.current.trim());
+  const initialEmpty = useRef(writing.current).current;
 
   // Marks the text being worked on (the selection is hidden while the bar has the focus);
   // edits elsewhere in the note move the range along.
@@ -71,15 +74,33 @@ export function InlineAiBar({
     };
   }, [editor]);
 
-  // Below the selection, inside the editor (scrolls with the text).
+  // Below the selection, inside the editor (scrolls with the text); above it when there is
+  // more room there. Placed again whenever the bar grows (the answer streams in) and kept in view.
   useLayoutEffect(() => {
-    const wrap = root.current?.offsetParent as HTMLElement | null;
-    if (!wrap) return;
-    const box = wrap.getBoundingClientRect();
-    const start = editor.view.coordsAtPos(Math.min(initial.from + 1, editor.state.doc.content.size));
-    const end = editor.view.coordsAtPos(Math.max(initial.from, initial.to - 1));
-    const width = Math.min(BAR_WIDTH, box.width);
-    setPos({ top: end.bottom - box.top + 8, left: Math.max(0, Math.min(start.left - box.left, box.width - width)) });
+    const el = root.current;
+    const wrap = el?.offsetParent as HTMLElement | null;
+    if (!el || !wrap) return;
+    const place = () => {
+      if (editor.isDestroyed) return;
+      const box = wrap.getBoundingClientRect();
+      const r = range.current;
+      const size = editor.state.doc.content.size;
+      const start = editor.view.coordsAtPos(Math.min(r.from + 1, size));
+      const end = editor.view.coordsAtPos(Math.max(r.from, Math.min(r.to - 1, size)));
+      const width = Math.min(BAR_WIDTH, box.width);
+      const h = el.offsetHeight;
+      const scroller = wrap.closest(".page-scroll")?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      const below = scroller.bottom - end.bottom;
+      const above = start.top - scroller.top;
+      const up = below < h + 16 && above > below;
+      const top = up ? Math.max(0, start.top - box.top - h - 8) : end.bottom - box.top + 8;
+      setPos((cur) => (cur && cur.top === top && cur.width === width ? cur : { top, left: Math.max(0, Math.min(start.left - box.left, box.width - width)), width }));
+      requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -103,12 +124,16 @@ export function InlineAiBar({
     return () => document.removeEventListener("mousedown", onDown, true);
   });
 
-  const presets = inlinePresets(useApp((st) => st.settings?.settings.ai?.inline_presets));
+  const custom = inlinePresets(useApp((st) => st.settings?.settings.ai?.inline_presets));
+  const presets = writing.current ? WRITE_PRESETS : custom;
   const done = !ai.busy && !!ai.text && !ai.error;
   const run = async (instruction: string) => {
     setLast(instruction);
     await beforeRun?.().catch(() => {});
-    ai.run(instruction, source.current, pageId);
+    if (writing.current) {
+      const all = { from: 0, to: editor.state.doc.content.size };
+      ai.run(writeInstruction(instruction), rangeMarkdown(editor, all), pageId);
+    } else ai.run(instruction, source.current, pageId);
   };
   const submit = (presetOrText: string) => {
     const instruction = transformInstruction(presetOrText, presets);
@@ -117,7 +142,10 @@ export function InlineAiBar({
   const submitInput = () => {
     if (!input.trim()) return;
     // Follow-up on a result: refine that result instead of the original text.
-    if (done) source.current = ai.text;
+    if (done) {
+      source.current = ai.text;
+      writing.current = false;
+    }
     submit(input);
     setInput("");
   };
@@ -137,7 +165,7 @@ export function InlineAiBar({
       className="ai-bar"
       role="dialog"
       aria-label="KI-Bearbeitung"
-      style={pos ? { top: pos.top, left: pos.left, width: BAR_WIDTH } : { visibility: "hidden", width: BAR_WIDTH }}
+      style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: "hidden", width: BAR_WIDTH }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -155,7 +183,7 @@ export function InlineAiBar({
         <input
           ref={inputRef}
           value={input}
-          placeholder={ai.text ? "Weiter anpassen…" : "KI anweisen, z. B. „Als E-Mail an das Team“"}
+          placeholder={ai.text ? "Weiter anpassen…" : writing.current ? "KI schreiben lassen, z. B. „Agenda für das Kick-off“" : "KI anweisen, z. B. „Als E-Mail an das Team“"}
           aria-label="Anweisung an die KI"
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -203,12 +231,14 @@ export function InlineAiBar({
         <div className="ai-bar-actions">
           {done && (
             <>
-              <Button size="sm" variant="primary" icon={Replace} onClick={() => apply("replace")}>
-                Ersetzen
+              <Button size="sm" variant="primary" icon={writing.current || !source.current.trim() ? CornerDownLeft : Replace} onClick={() => apply("replace")}>
+                {initialEmpty ? "Einfügen" : "Ersetzen"}
               </Button>
-              <Button size="sm" icon={CornerDownLeft} onClick={() => apply("below")}>
-                Darunter einfügen
-              </Button>
+              {!initialEmpty && (
+                <Button size="sm" icon={CornerDownLeft} onClick={() => apply("below")}>
+                  Darunter einfügen
+                </Button>
+              )}
             </>
           )}
           <Button size="sm" variant="ghost" icon={RotateCcw} disabled={!last} onClick={() => last && run(last)}>
@@ -229,10 +259,10 @@ export function InlineAiBar({
             {ai.meta.cost > 0 && ` · ${usd(ai.meta.cost)}`}
           </span>
         ) : (
-          <span>{ai.busy ? "Wird erstellt…" : "Auswahl wird mit KI bearbeitet"}</span>
+          <span>{ai.busy ? "Wird erstellt…" : initialEmpty ? "Neuer Text an dieser Stelle" : "Auswahl wird mit KI bearbeitet"}</span>
         )}
         <span className="grow" />
-        <span>{done ? `${keys("Mod Enter")} ersetzen · ` : ""}Esc verwerfen</span>
+        <span>{done ? `${keys("Mod Enter")} ${initialEmpty ? "einfügen" : "ersetzen"} · ` : ""}Esc verwerfen</span>
       </div>
     </div>
   );

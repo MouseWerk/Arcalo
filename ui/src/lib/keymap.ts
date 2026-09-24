@@ -34,6 +34,8 @@ export const COMMANDS: CommandDef[] = [
   { id: "toggle_panel", label: "cmd.togglePanel", combo: "Ctrl+Shift+\\" },
   { id: "add_property", label: "cmd.addProperty", combo: "Ctrl+;" },
   { id: "focus_mode", label: "cmd.focusMode", combo: "Ctrl+." },
+  { id: "toggle_source", label: "cmd.toggleSource", combo: "Ctrl+Shift+M" },
+  { id: "full_width", label: "cmd.fullWidth", combo: "Ctrl+Shift+L" },
   { id: "settings", label: "cmd.settings", combo: "Ctrl+," },
 ];
 

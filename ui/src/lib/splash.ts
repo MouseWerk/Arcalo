@@ -35,6 +35,14 @@ export function rememberSplash(p: SplashPrefs) {
   }
 }
 
+let onShown: (() => void) | null = null;
+
+/** The window is on screen: the logo starts drawing itself now. */
+export function splashShown() {
+  onShown?.();
+  onShown = null;
+}
+
 export function startSplash(popup: boolean) {
   const el = document.getElementById("splash");
   if (!el) return;
@@ -47,7 +55,12 @@ export function startSplash(popup: boolean) {
   if (p.dark !== undefined) el.dataset.theme = p.dark ? "dark" : "light";
   if (p.accent) el.style.setProperty("--splash-accent", p.accent);
   if (p.reduced) el.dataset.reduced = "";
-  const started = performance.now();
+  // The window is still hidden: the animation waits for `splashShown` (splash.css pauses it).
+  let started = performance.now();
+  onShown = () => {
+    started = performance.now();
+    el.classList.add("go");
+  };
   let done = false;
   const hide = () => {
     if (done) return;

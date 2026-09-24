@@ -25,6 +25,20 @@ export function inlinePresets(custom?: { label: string; instruction: string }[] 
   return custom.filter((p) => p.label.trim() && p.instruction.trim()).map((p, i) => ({ id: `custom-${i}`, label: p.label.trim(), instruction: p.instruction.trim() }));
 }
 
+/** On an empty line there is nothing to rewrite: the bar writes new text, the page is context. */
+export const WRITE_PRESETS: AiPreset[] = [
+  { id: "write-continue", label: "Weiterschreiben", instruction: "Schreibe die Notiz an dieser Stelle sinnvoll weiter (ein bis drei Absätze)." },
+  { id: "write-outline", label: "Gliederung", instruction: "Erstelle eine knappe Gliederung (Überschriften und Stichpunkte) für das Thema dieser Seite." },
+  { id: "write-tasks", label: "Aufgaben ableiten", instruction: "Leite aus dem Inhalt der Seite die offenen Aufgaben ab, als Aufgabenliste (- [ ] …)." },
+  { id: "write-summary", label: "Zusammenfassung", instruction: "Fasse den Inhalt der Seite in drei bis fünf Stichpunkten zusammen." },
+  { id: "write-next", label: "Nächste Schritte", instruction: "Schlage die nächsten Schritte vor, als kurze Aufgabenliste (- [ ] …)." },
+];
+
+/** Wraps a request to write new text: `<text>` then holds the page as context, not text to change. */
+export function writeInstruction(instruction: string): string {
+  return `${instruction.trim()}\n\nDer Text zwischen <text> und </text> ist der bisherige Inhalt der Seite, nur als Kontext: ändere ihn nicht und wiederhole ihn nicht, sondern antworte nur mit dem neuen Text, der an der Stelle des Cursors eingefügt wird.`;
+}
+
 /** The instruction of a preset or free text (trimmed); null when empty. */
 export function transformInstruction(presetOrText: string, presets: AiPreset[] = AI_PRESETS): string | null {
   const preset = presets.find((p) => p.id === presetOrText);

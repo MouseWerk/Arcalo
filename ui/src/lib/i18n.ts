@@ -155,6 +155,8 @@ const ENTRIES = {
   "cmd.toggleSidebar": ["Seitenleiste umschalten", "Toggle sidebar"],
   "cmd.togglePanel": ["Seitenpanel umschalten", "Toggle side panel"],
   "cmd.focusMode": ["Fokusmodus", "Focus mode"],
+  "cmd.toggleSource": ["Markdown-Quelltext / normaler Editor", "Markdown source / visual editor"],
+  "cmd.fullWidth": ["Volle Breite ein/aus", "Toggle full width"],
   "cmd.theme": ["Hell / Dunkel wechseln", "Switch light / dark"],
   "cmd.importVault": ["Obsidian-Vault importieren", "Import Obsidian vault"],
   "cmd.exportMd": ["Als Markdown-Ordner exportieren", "Export as Markdown folder"],

@@ -12,7 +12,7 @@ import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
 import { IS_MAC } from "./lib/platform";
-import { startSplash } from "./lib/splash";
+import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
 import { describeError, logUi } from "./lib/devlog";
@@ -65,3 +65,16 @@ createRoot(document.getElementById("root")!).render(
     {captureMode ? <CaptureApp /> : searchMode ? <SearchApp /> : <App />}
   </StrictMode>,
 );
+
+// The main window starts hidden and appears once this first frame (the splash) is on screen:
+// no unstyled page and no white flash before it.
+if (!captureMode && !searchMode) {
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("window_ready"))
+        .catch(() => {})
+        .finally(splashShown);
+    }),
+  );
+}

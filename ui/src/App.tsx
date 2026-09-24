@@ -19,6 +19,7 @@ import { flushAllEditors, reloadEditors } from "./editor/NoteEditor";
 import type { ActivityTick, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
+import { requestPageCommand } from "./lib/pageModes";
 import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
 import { commandFor, currentKeymap } from "./lib/keymap";
@@ -366,6 +367,8 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   toggle_sidebar: toggleSidebar,
   toggle_panel: togglePanel,
   add_property: () => requestAddProperty(),
+  toggle_source: () => requestPageCommand("source"),
+  full_width: () => requestPageCommand("full"),
   focus_mode: () => useApp.getState().set({ focusMode: !useApp.getState().focusMode }),
   settings: () => useApp.getState().openTab({ kind: "settings" }),
 };

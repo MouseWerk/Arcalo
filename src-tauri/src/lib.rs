@@ -2060,6 +2060,28 @@ fn create_main_window(
     Ok(window)
 }
 
+/// The main window is waiting to be shown for the first time (not when started minimized).
+static PENDING_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn show_main_once(app: &AppHandle, why: &str) {
+    if !PENDING_SHOW.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    if why != "ui" {
+        devlog::warn("desktop", format!("main window shown without the UI's first frame ({why})"));
+    }
+    if let Some(w) = app.get_webview_window(desktop::MAIN) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// The UI painted its first frame (the splash, or the app when the splash is off).
+#[tauri::command]
+fn window_ready(app: AppHandle) {
+    show_main_once(&app, "ui");
+}
+
 /// Whether the main window was created with the app's own title bar (Windows only).
 static CUSTOM_FRAME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -2374,7 +2396,16 @@ pub fn run() {
             let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
             let minimized = tray && wants_minimized;
             jumplist::set_app_id(&app.config().identifier);
-            let window = create_main_window(app, !minimized, geometry, mica_on, custom_frame)?;
+            // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
+            // Windows showed the unstyled page, then the webview's white, then the splash.
+            let window = create_main_window(app, false, geometry, mica_on, custom_frame)?;
+            PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
+            // Should the UI never report (a script error), the window still appears.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(4));
+                show_main_once(&handle, "fallback");
+            });
             // Started from a taskbar jump-list entry: runs once the UI listens (`jump_take`).
             if let Some(action) = jumplist::parse(&std::env::args().collect::<Vec<_>>()) {
                 jumplist::run(app.handle(), action, false);
@@ -2506,6 +2537,7 @@ pub fn run() {
             onboarding_finish,
             window_backdrop,
             window_frame,
+            window_ready,
             jumplist::jump_take,
             window_set_theme,
             desktop::window_hide,

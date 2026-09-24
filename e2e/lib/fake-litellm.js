@@ -77,6 +77,9 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
         text = JSON.stringify({ reference, leistungsart, confidence: 0.82, reason: `„${activity}“ passt zu den letzten Buchungen auf ${reference}` });
       } else if (transform && /Besprechungsnotiz/.test(instruction)) {
         text = `## Zusammenfassung\n\nIm Jour fixe wurde der Rollout besprochen. Der Termin bleibt.\n\n## Entscheidungen\n\n- Go-Live bleibt am 1. Oktober\n\n## Aufgaben\n\n- [ ] Testplan an [[Architektur]] anpassen @Max due:2026-09-30 !!\n\n## Offene Punkte\n\n- Schulungstermin`;
+      } else if (transform && /nur als Kontext/.test(lastUser)) {
+        // Writing new text on an empty line: the page is context only.
+        text = "Neuer Abschnitt: Testplan mit dem Fachbereich abstimmen.";
       } else if (transform && /^Kürze/.test(instruction)) {
         text = `**Kurz:** ${source.split(/\s+/).slice(0, 3).join(" ")} [[Architektur]]`;
       } else if (transform) {

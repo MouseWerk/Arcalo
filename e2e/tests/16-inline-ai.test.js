@@ -119,6 +119,59 @@ test("Ctrl+J without a selection still opens the assistant", async () => {
   assert.equal(await (await app.$(".ai-bar")).isExisting(), false);
 });
 
+test("KI in the toolbar on an empty line writes new text there, with the page as context", async () => {
+  await openFromTree("Architektur");
+  await app.waitFor(".ProseMirror h2");
+  // Cursor into a new empty paragraph after the first one.
+  await app.browser.execute(() => {
+    const p = document.querySelector(".pane.active .ProseMirror p");
+    const r = document.createRange();
+    r.selectNodeContents(p);
+    r.collapse(false);
+    document.querySelector(".pane.active .ProseMirror").focus();
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+  });
+  await app.keys(["End", "Enter"]);
+  await app.browser.pause(200);
+  await app.click(".pane.active .vh .tb-ai");
+  await app.waitFor(".ai-bar");
+  await app.waitText(".ai-chip", /Weiterschreiben/);
+  await clickText(".ai-chip", /^Weiterschreiben$/);
+  await app.waitText(".ai-bar-preview", /Neuer Abschnitt/);
+  const sent = transforms().at(-1).body.messages.at(-1).content;
+  assert.match(sent, /Middleware verbindet/, "the page goes along as context");
+  await clickText(".ai-bar-actions button", /^Einfügen$/);
+  await app.browser.waitUntil(async () => (await content("Architektur")).includes("Neuer Abschnitt: Testplan mit dem Fachbereich abstimmen."), { timeoutMsg: "not inserted" });
+  const c = await content("Architektur");
+  assert.ok(c.indexOf("Neuer Abschnitt") > c.indexOf("Middleware"), "below the first paragraph, which stays");
+});
+
+test("near the bottom of the window the bar opens above the selection and stays in view", async () => {
+  const size = await app.browser.getWindowSize();
+  await app.browser.setWindowSize(size.width, 620);
+  await openFromTree("Architektur");
+  await app.waitFor(".ProseMirror h2");
+  await app.browser.execute(() => {
+    const s = document.querySelector(".pane.active .page-scroll");
+    s.scrollTop = s.scrollHeight;
+  });
+  await selectText("Restart-Service");
+  await app.keys(["Control", "j"]);
+  const bar = await app.waitFor(".ai-bar");
+  await app.browser.pause(400);
+  const r = await app.browser.execute(() => {
+    const b = document.querySelector(".ai-bar").getBoundingClientRect();
+    const s = document.querySelector(".pane.active .page-scroll").getBoundingClientRect();
+    return { top: b.top, bottom: b.bottom, viewTop: s.top, viewBottom: s.bottom };
+  });
+  assert.ok(r.top >= r.viewTop - 1 && r.bottom <= r.viewBottom + 1, JSON.stringify(r));
+  await app.shot("inline-ai-bottom");
+  await app.keys(["Escape"]);
+  await app.browser.setWindowSize(size.width, size.height);
+  void bar;
+});
+
 test("page menu „Besprechung zusammenfassen“ streams a summary and inserts it at the end", async () => {
   await openFromTree("Jour fixe 22.09.");
   await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Jour fixe 22.09.");

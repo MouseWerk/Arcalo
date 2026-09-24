@@ -85,6 +85,12 @@ export async function flushAllEditors() {
   await Promise.all([...flushers].map((f) => f()));
 }
 
+/** Adds a save handle to `flushAllEditors` (the Markdown source editor); returns the removal. */
+export function registerFlusher(f: () => Promise<void>) {
+  flushers.add(f);
+  return () => void flushers.delete(f);
+}
+
 /** Editors showing one of `ids` (all when omitted) refetch their page, unless they hold unsaved edits. */
 export function reloadEditors(ids?: number[]) {
   window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids } }));

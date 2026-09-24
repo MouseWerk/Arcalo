@@ -1,7 +1,7 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -15,11 +15,14 @@ import { addDays, dateLong, isoDay, relative } from "../lib/format";
 import { linkContext } from "../components/linkContext";
 import type { PageDoc } from "../lib/types";
 import { restorePage } from "./TrashView";
+import { SourceEditor } from "../editor/SourceEditor";
+import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
 import { ADD_PROPERTY_EVENT, PropertyEditor, WorkCard, pageReference } from "./PageProperties";
 import { VersionsDialog } from "./VersionsDialog";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
 import { keys } from "../lib/shortcut";
+import { withHint } from "../lib/keymap";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   const [doc, setDoc] = useState<PageDoc | null>(null);
@@ -60,6 +63,41 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       handle.current?.flush();
     };
   }, [pageId]);
+
+  // Full width and Markdown source mode, per page. Switching the mode saves every editor
+  // first, then shows what was saved.
+  const full = usePageMode("full", pageId);
+  const source = usePageMode("source", pageId);
+  const firstMode = useRef(true);
+  useEffect(() => {
+    if (firstMode.current) {
+      firstMode.current = false;
+      return;
+    }
+    let alive = true;
+    api
+      .page(pageId)
+      .then((d) => {
+        if (!alive) return;
+        setDoc(d);
+        setFm(splitFrontmatter(d.content).frontmatter);
+      })
+      .catch(() => alive && setMissing(true));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+  useEffect(() => {
+    if (!active) return;
+    const onCmd = (e: Event) => {
+      const cmd = (e as CustomEvent<PageCommand>).detail;
+      if (cmd === "source") togglePageSource(pageId);
+      else setPageMode("full", pageId, !pageMode("full", pageId));
+    };
+    window.addEventListener(PAGE_COMMAND_EVENT, onCmd);
+    return () => window.removeEventListener(PAGE_COMMAND_EVENT, onCmd);
+  }, [active, pageId]);
 
   // Palette „Eigenschaft hinzufügen“ / Ctrl+; acts on the focused pane's page.
   useEffect(() => {
@@ -140,9 +178,9 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
 
   return (
     <div className="page-view" ref={root}>
-      <PageHeader tab={tab} root={root} doc={doc} crumbs={crumbs} onChange={(d) => setDoc({ ...doc, ...d })} onSummary={() => setSummaryOpen(true)} toolbarSlot={setToolbarSlot}>
-        <Properties doc={doc} fm={fm} onAdd={() => setAddingProp(true)} />
-        <PropertyEditor
+      <PageHeader tab={tab} root={root} doc={doc} crumbs={crumbs} onChange={(d) => setDoc({ ...doc, ...d })} onSummary={() => setSummaryOpen(true)} toolbarSlot={setToolbarSlot} full={full} source={source}>
+        {!source && <Properties doc={doc} fm={fm} onAdd={() => setAddingProp(true)} />}
+        {!source && <PropertyEditor
           fm={fm}
           adding={addingProp}
           onAdded={() => setAddingProp(false)}
@@ -151,8 +189,19 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
             setFm(next);
             handle.current?.setFrontmatter(next);
           }}
-        />
+        />}
         {reference && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
+        {source ? (
+          <SourceEditor
+            key={`source-${doc.id}`}
+            doc={doc}
+            onSaved={(d) => {
+              setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
+              setFm(splitFrontmatter(d.content).frontmatter);
+              if (activeRef.current) useApp.getState().set({ activeDoc: d });
+            }}
+          />
+        ) : (
         <NoteEditor
           onFrontmatter={setFm}
           key={doc.id}
@@ -167,6 +216,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           handleRef={(h) => (handle.current = h)}
           toolbarSlot={toolbarSlot}
         />
+        )}
         <Backlinks doc={doc} />
         <MeetingSummaryDialog open={summaryOpen} page={doc} reference={reference} getEditor={getEditor} flush={flushEditor} onClose={closeSummary} />
       </PageHeader>
@@ -182,6 +232,8 @@ function PageHeader({
   onChange,
   onSummary,
   toolbarSlot,
+  full,
+  source,
   children,
 }: {
   tab: Tab;
@@ -191,6 +243,8 @@ function PageHeader({
   onChange: (d: Partial<PageDoc>) => void;
   onSummary: () => void;
   toolbarSlot: (el: HTMLDivElement | null) => void;
+  full: boolean;
+  source: boolean;
   children: React.ReactNode;
 }) {
   const toolbarOn = useApp((st) => st.settings?.settings.editor?.toolbar ?? true);
@@ -253,6 +307,22 @@ function PageHeader({
         </>
       )}
       <IconButton
+        icon={source ? Eye : FileCode2}
+        label={withHint(source ? "Normaler Editor" : "Markdown-Quelltext", "toggle_source")}
+        active={source}
+        size={26}
+        iconSize={15}
+        onClick={() => togglePageSource(doc.id)}
+      />
+      <IconButton
+        icon={full ? Minimize2 : MoveHorizontal}
+        label={withHint(full ? "Normale Breite" : "Volle Breite", "full_width")}
+        active={full}
+        size={26}
+        iconSize={15}
+        onClick={() => setPageMode("full", doc.id, !full)}
+      />
+      <IconButton
         icon={Star}
         label={doc.favorite ? "Lesezeichen entfernen" : "Lesezeichen setzen"}
         active={doc.favorite}
@@ -303,12 +373,12 @@ function PageHeader({
           </span>
         ))}
         title={doc.title}
-        center={toolbarOn ? <div className="vh-toolbar" ref={toolbarSlot} /> : undefined}
+        center={source ? <div className="vh-mode">Markdown-Quelltext</div> : toolbarOn ? <div className="vh-toolbar" ref={toolbarSlot} /> : undefined}
         actions={actions}
       />
       <div className="page-scroll-wrap">
       <div className="page-scroll" ref={scrollBox}>
-        <div className="page">
+        <div className={`page ${full ? "page-full" : ""}`}>
           <header className="page-header">
             <div className="page-title-row">
               <button type="button" className="page-icon-btn" aria-label="Symbol ändern" onClick={() => setIconOpen((v) => !v)}>

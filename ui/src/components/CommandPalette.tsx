@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
@@ -12,6 +12,7 @@ import { openCalendar } from "./CalendarPopover";
 import { PageIcon } from "./icons";
 import { createSubpage } from "../views/PageView";
 import { requestAddProperty } from "../views/PageProperties";
+import { requestPageCommand } from "../lib/pageModes";
 import { stopTimer } from "./Sidebar";
 import { hoursFromMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
 import type { SearchHit } from "../lib/types";
@@ -171,6 +172,8 @@ export function CommandPalette() {
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
         ? [
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },
+            { id: "toggle-source", title: t("cmd.toggleSource"), icon: ic(FileCode2), hint: hint("toggle_source"), run: () => setTimeout(() => requestPageCommand("source"), 0) },
+            { id: "full-width", title: t("cmd.fullWidth"), icon: ic(MoveHorizontal), hint: hint("full_width"), run: () => setTimeout(() => requestPageCommand("full"), 0) },
             { id: "drawing", title: t("cmd.insertDrawing"), subtitle: t("cmd.insertDrawingSub"), icon: ic(PenTool), run: () => setTimeout(insertDrawingInActiveNote, 0) },
           ]
         : []),
