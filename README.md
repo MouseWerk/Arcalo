@@ -148,6 +148,8 @@ settings also cover proxy and certificates for company networks and Git backup.
 
 **Desktop**
 - Tray icon: open, stop the timer or restart the last booking, quick capture, quit; the tooltip shows the running timer (`NP-8801/1020 · 01:23`)
+- Startup animation: the logo draws itself while the app loads (Settings → Darstellung → Startanimation)
+- Developer log: errors of the app, the AI, Git sync, backups and updates are written to `logs/annalo.log` in the data folder (rotated at 1 MB, secrets redacted) and shown under Settings → Protokoll (filter, copy, clear, open folder); "Über" shows the errors of the last 7 days
 - Taskbar jump list (Windows, right-click the taskbar button): Heutige Notiz, Neue Seite, Schnellerfassung, Suchen…, stop the running timer or start the last one, and the recently edited pages
 - Own title bar on Windows: the tabs sit at the top edge like in Obsidian, with the app's own window buttons (Settings → Darstellung switches back to the system title bar)
 - Closing hides the window to the tray (Settings → Desktop), start with Windows (minimized), one instance per workspace
@@ -190,7 +192,10 @@ Settings → **KI & LiteLLM**:
 2. **API-Token**: your LiteLLM virtual key or master key. It is stored in the Windows Credential Manager or the macOS Keychain, never in the database or the settings
 3. **Testen** lists the server's models; pick the models for *Lokal*, *Standard*, *Reasoning* and (optionally) *Embeddings*
 
-Changes apply immediately, with no restart. `config/litellm.config.example.yaml` shows a matching proxy configuration.
+Changes apply immediately, with no restart. A tier whose model the server does not offer (the defaults are placeholders)
+is flagged there with „Automatisch zuordnen“; requests fall back to a model the server has, and a model whose deployments are
+cooling down („No deployments available for selected model“) is retried once on another one. `#privat` content never falls
+back to a cloud model. `config/litellm.config.example.yaml` shows a matching proxy configuration.
 
 ## Netzwerk & Proxy
 
