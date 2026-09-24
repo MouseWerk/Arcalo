@@ -39,6 +39,7 @@ use annalo_core::network::Purpose;
 use annalo_core::netzplan::{self, Schedule};
 use annalo_core::notes::PageDoc;
 use annalo_core::pagework::{self, PageWork};
+use annalo_core::properties;
 use annalo_core::report;
 use annalo_core::search::{self, SearchHit};
 use annalo_core::settings::{Dashboard, Settings};
@@ -179,6 +180,26 @@ fn page_save(state: State<AppState>, id: i64, content: String) -> Result<PageDoc
     let db = state.db();
     db.save_page_content(id, &content)?;
     db.page_doc(id)
+}
+
+// ---------------------------------------------------------------- typed properties
+
+/// The child pages of a page with their typed properties (table and board views).
+#[tauri::command]
+fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties::Collection> {
+    state.db().page_collection(parent_id)
+}
+
+/// The schema a page's properties follow (its parent's) and the parent's id.
+#[tauri::command]
+fn page_schema(state: State<AppState>, page_id: i64) -> Result<Option<(i64, properties::Schema)>> {
+    state.db().page_schema(page_id)
+}
+
+/// Names for person properties: person values and `@mentions`, most used first.
+#[tauri::command]
+fn known_persons(state: State<AppState>) -> Result<Vec<String>> {
+    state.db().known_persons()
 }
 
 // ---------------------------------------------------------------- versions
@@ -2479,6 +2500,9 @@ pub fn run() {
             workspace_tree,
             page_get,
             page_save,
+            page_collection,
+            page_schema,
+            known_persons,
             page_versions,
             page_version_content,
             page_snapshot,

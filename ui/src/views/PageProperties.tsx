@@ -1,11 +1,11 @@
 // Page properties (frontmatter) editor and the work card of a page linked to a Vorgang.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Braces, CalendarDays, ChevronDown, ChevronRight, FolderTree, Play, Plus, Tags, TriangleAlert, Type, Workflow, X, type LucideIcon } from "lucide-react";
+import { Braces, CalendarDays, ChevronDown, ChevronRight, FolderInput, FolderMinus, FolderTree, Play, Plus, Settings2, Tags, Trash2, TriangleAlert, Type, Workflow, X, type LucideIcon } from "lucide-react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Badge, Button, IconButton, Progress } from "../components/ui";
+import { Badge, Button, IconButton, Progress, useMenu, type MenuEntry } from "../components/ui";
 import { DATE_RE, LIST_KEYS, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
 import { dateShort, fmtHours, fmtMinutes } from "../lib/format";
 import { NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
@@ -16,6 +16,9 @@ import { pickDate } from "../components/CalendarPopover";
 import { dayLabel } from "../components/DateInput";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
+import { KINDS, cellInput, defOf, hasOptions, inferKind, isManagedKey, validate, writeValue, type PropDef, type PropKind } from "../lib/collection";
+import { KIND_ICON, OptionsDialog, TypedValue, kindMenu, optionsForKind } from "./collection/controls";
+import { renameOptionValues, updateSchema } from "./collection/write";
 
 const TYPE_ICON: Record<Property["type"], LucideIcon> = { text: Type, date: CalendarDays, list: Tags, raw: Braces };
 const isWbsKey = (key: string) => /^(vorgang|netzplan)$/i.test(key);
@@ -36,18 +39,79 @@ export function pageReference(fm: string): string | null {
   return n;
 }
 
-export function PropertyEditor({ fm, onChange, adding, onAdded }: { fm: string; onChange: (fm: string) => void; adding: boolean; onAdded: () => void }) {
+/** The schema of the folder a page is in: its parent's `eigenschaften:`. */
+export interface FolderSchema {
+  parentId: number;
+  parentTitle: string;
+  defs: PropDef[];
+}
+
+export function PropertyEditor({
+  fm,
+  onChange,
+  adding,
+  onAdded,
+  folder,
+  parentId,
+}: {
+  fm: string;
+  onChange: (fm: string) => void;
+  adding: boolean;
+  onAdded: () => void;
+  /** The folder's schema: its properties are typed and always listed. */
+  folder?: FolderSchema | null;
+  /** The parent page; with one, a property can become a property of the whole folder. */
+  parentId?: number | null;
+}) {
   const props = useMemo(() => parseFrontmatter(fm), [fm]);
   const [open, setOpen] = useState(true);
+  const [optionsOf, setOptionsOf] = useState<PropDef | null>(null);
+  const [menu, , openMenuAt] = useMenu();
   useEffect(() => {
     if (adding) setOpen(true);
   }, [adding]);
   const commit = (next: Property[]) => onChange(serializeFrontmatter(next));
   const update = (i: number, change: Partial<Property>) => commit(props.map((p, j) => (j === i ? edited(p, change) : p)));
   const taken = (key: string, except = -1) => props.some((p, j) => j !== except && p.key.toLowerCase() === key.toLowerCase());
-  const rows = props.map((p, i) => ({ p, i })).filter(({ p }) => p.key || p.value.trim());
+  const defs = folder?.defs ?? [];
+  // Schema and view settings of this page's own table are managed by the view.
+  const rows = props.map((p, i) => ({ p, i })).filter(({ p }) => (p.key || p.value.trim()) && !isManagedKey(p.key) && !defOf(defs, p.key));
+  const toast = useApp.getState().toast;
+  const fail = (e: unknown) => useApp.getState().error("Eigenschaft des Ordners nicht geändert", e);
 
-  if (!rows.length && !adding) return null;
+  /** Adds a property of this page to the folder's schema (typed after the values it has). */
+  const shareWithFolder = (key: string, kind?: PropKind) => {
+    if (parentId == null) return;
+    const input = cellInput(props, key);
+    const values = input ? input.items : [];
+    const k = kind ?? inferKind(values);
+    updateSchema(parentId, (ds) => (defOf(ds, key) ? ds : [...ds, { key, kind: k, options: optionsForKind(k, undefined, values) }]))
+      .then(() => toast({ tone: "info", title: `„${key}“ gilt jetzt für alle Seiten im Ordner` }))
+      .catch(fail);
+  };
+  const changeKind = (key: string, kind: PropKind) => {
+    if (parentId == null) return;
+    const input = cellInput(props, key);
+    updateSchema(parentId, (ds) => {
+      const prev = defOf(ds, key);
+      const next = { key: prev?.key ?? key, kind, options: optionsForKind(kind, prev, input ? input.items : []) };
+      return prev ? ds.map((d) => (d === prev ? next : d)) : [...ds, next];
+    }).catch(fail);
+  };
+  const rowMenu = (key: string, anchor: Element, onRemove: (() => void) | null) => {
+    const def = defOf(defs, key);
+    const items: MenuEntry[] = [];
+    if (parentId != null) {
+      items.push({ label: "Typ ändern", icon: def ? KIND_ICON[def.kind] : Type, submenu: kindMenu(def?.kind ?? ("" as PropKind), (k) => changeKind(key, k), KINDS) });
+      if (def && hasOptions(def.kind)) items.push({ label: "Optionen bearbeiten…", icon: Settings2, onSelect: () => setOptionsOf(def) });
+      if (!def) items.push({ label: "Für alle Seiten im Ordner", icon: FolderInput, onSelect: () => shareWithFolder(key) });
+      else items.push({ label: "Aus dem Ordner-Schema entfernen", icon: FolderMinus, onSelect: () => updateSchema(parentId, (ds) => ds.filter((d) => d !== defOf(ds, key))).catch(fail) });
+    }
+    if (onRemove) items.push(...(items.length ? (["separator"] as MenuEntry[]) : []), { label: "Von dieser Seite entfernen", icon: Trash2, danger: true, onSelect: onRemove });
+    if (items.length) openMenuAt(anchor, items);
+  };
+
+  if (!rows.length && !defs.length && !adding) return null;
   return (
     <section className="properties" aria-label="Eigenschaften">
       <button type="button" className="properties-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
@@ -56,10 +120,38 @@ export function PropertyEditor({ fm, onChange, adding, onAdded }: { fm: string; 
       </button>
       {open && (
         <>
+          {defs.map((def) => {
+            const i = props.findIndex((p) => p.key.toLowerCase() === def.key.toLowerCase());
+            const cell = validate(def, cellInput(props, def.key));
+            const Icon = KIND_ICON[def.kind];
+            return (
+              <div key={`schema:${def.key}`} className={`prop-row prop-typed prop-kind-${def.kind}`} data-prop-key={def.key} data-kind={def.kind}>
+                <button type="button" className="prop-icon prop-icon-btn" aria-label={`Menü von ${def.key}`} data-tooltip={`${KINDS.find((k) => k.kind === def.kind)!.label} · Eigenschaft des Ordners „${folder!.parentTitle}“`} onClick={(e) => rowMenu(def.key, e.currentTarget, i >= 0 ? () => commit(props.filter((_, j) => j !== i)) : null)}>
+                  <Icon size={14} />
+                </button>
+                <span className="prop-key prop-key-static">{def.key}</span>
+                <div className="prop-value">
+                  <TypedValue
+                    def={def}
+                    cell={cell}
+                    label={def.key}
+                    onWrite={(v) => onChange(writeValue(fm, def.key, v))}
+                    onAddOption={(name) =>
+                      updateSchema(folder!.parentId, (ds) => ds.map((d) => (d.key === def.key && !d.options.some((o) => o.name.toLowerCase() === name.toLowerCase()) ? { ...d, options: [...d.options, { name, color: optionsForKind(d.kind, d, [name]).at(-1)!.color }] } : d)))
+                        .then(() => undefined)
+                        .catch(fail)
+                    }
+                  />
+                </div>
+                {i >= 0 ? <IconButton icon={X} label="Eigenschaft entfernen" size="sm" className="prop-remove" onClick={() => commit(props.filter((_, j) => j !== i))} /> : <span />}
+              </div>
+            );
+          })}
           {rows.map(({ p, i }) => (
             <PropertyRow
               key={`${i}:${p.key}`}
               prop={p}
+              onMenu={p.key && parentId != null ? (el) => rowMenu(p.key, el, () => commit(props.filter((_, j) => j !== i))) : undefined}
               onChange={(c) => update(i, c)}
               onRename={(key) => {
                 if (!key || key === p.key || !isValidKey(key)) return false;
@@ -78,23 +170,38 @@ export function PropertyEditor({ fm, onChange, adding, onAdded }: { fm: string; 
             onDone={onAdded}
             onAdd={(key) => {
               if (!isValidKey(key)) return;
-              if (taken(key)) {
+              if (taken(key) || defOf(defs, key)) {
                 useApp.getState().toast({ tone: "warning", title: `Eigenschaft „${key}“ gibt es schon` });
                 return;
               }
               const list = LIST_KEYS.has(key.toLowerCase());
               commit([...props, edited({ key, type: list ? "list" : "text", value: "", items: [] }, {})]);
+              // A page in a folder: offer the property to its siblings too.
+              if (parentId != null && !isManagedKey(key)) toast({ tone: "info", title: `„${key}“ hinzugefügt`, action: { label: "Für alle Seiten im Ordner", run: () => shareWithFolder(key) } });
               // Continue with the value of the new row.
               setTimeout(() => document.querySelector<HTMLElement>(`.properties [data-prop-key="${CSS.escape(key)}"] .prop-value-input`)?.focus(), 30);
             }}
           />
         </>
       )}
+      {menu}
+      {optionsOf && folder && (
+        <OptionsDialog
+          def={optionsOf}
+          onClose={() => setOptionsOf(null)}
+          onSave={(opts, renames) => {
+            const key = optionsOf.key;
+            updateSchema(folder.parentId, (ds) => ds.map((d) => (d.key === key ? { ...d, options: opts } : d)))
+              .then(() => (renames.length ? renameOptionValues(folder.parentId, key, renames) : undefined))
+              .catch(fail);
+          }}
+        />
+      )}
     </section>
   );
 }
 
-function PropertyRow({ prop, onChange, onRename, onRemove }: { prop: Property; onChange: (c: Partial<Property>) => void; onRename: (key: string) => boolean; onRemove: () => void }) {
+function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Property; onChange: (c: Partial<Property>) => void; onRename: (key: string) => boolean; onRemove: () => void; onMenu?: (anchor: Element) => void }) {
   const [key, setKey] = useState(prop.key);
   useEffect(() => setKey(prop.key), [prop.key]);
   const Icon = isWbsKey(prop.key) ? Workflow : TYPE_ICON[prop.type];
@@ -105,9 +212,15 @@ function PropertyRow({ prop, onChange, onRename, onRemove }: { prop: Property; o
   };
   return (
     <div className={`prop-row prop-type-${prop.type}${isWbsKey(prop.key) ? " is-wbs" : ""}`} data-prop-key={prop.key}>
-      <span className="prop-icon" aria-hidden>
-        <Icon size={14} />
-      </span>
+      {onMenu ? (
+        <button type="button" className="prop-icon prop-icon-btn" aria-label={`Menü von ${prop.key}`} data-tooltip="Typ ändern, für alle Seiten im Ordner" onClick={(e) => onMenu(e.currentTarget)}>
+          <Icon size={14} />
+        </button>
+      ) : (
+        <span className="prop-icon" aria-hidden>
+          <Icon size={14} />
+        </span>
+      )}
       {prop.type === "raw" ? (
         <span className="prop-key prop-key-static" title="YAML – wird unverändert gespeichert">{prop.key || "YAML"}</span>
       ) : (

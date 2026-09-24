@@ -5,6 +5,7 @@
 //!
 //! * [`db`] – embedded SQLite store (FTS5 full-text search, embeddings as BLOBs)
 //! * [`notes`] – Markdown documents, backlinks, tags, daily notes
+//! * [`properties`] – typed page properties: the schema child pages share, typed values, filters
 //! * [`pagework`] – pages linked to a Vorgang (`vorgang:` property): budget and bookings
 //! * [`trash`] – page trash (restore, purge, 30-day expiry)
 //! * [`versions`] – page version history (snapshots, restore)
@@ -51,6 +52,7 @@ pub mod netzplan;
 pub mod notes;
 pub mod pagework;
 pub mod prefs;
+pub mod properties;
 pub mod report;
 pub mod search;
 pub mod settings;
