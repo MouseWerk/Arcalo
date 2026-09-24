@@ -58,6 +58,9 @@ pub struct AppearancePrefs {
     pub reduce_motion: bool,
     /// Mica backdrop on Windows 11.
     pub mica: bool,
+    /// Windows: own title bar (the tabs sit at the top edge, own window buttons) instead of the
+    /// system one. Takes effect at the next start.
+    pub custom_titlebar: bool,
 }
 
 impl Default for AppearancePrefs {
@@ -72,6 +75,7 @@ impl Default for AppearancePrefs {
             line_width: LineWidth::Normal,
             reduce_motion: false,
             mica: true,
+            custom_titlebar: true,
         }
     }
 }

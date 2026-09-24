@@ -170,6 +170,11 @@ export function AppearanceSection({ draft, update }: SectionProps) {
             <Switch label={t("set.appearance.mica")} checked={a.mica} onChange={(v) => set({ mica: v })} />
           </Row>
         )}
+        {platform === "windows" && (
+          <Row label={t("set.appearance.titlebar")} description={t("set.appearance.titlebarDesc")}>
+            <Switch label={t("set.appearance.titlebar")} checked={a.custom_titlebar} onChange={(v) => set({ custom_titlebar: v })} />
+          </Row>
+        )}
       </Group>
     </>
   );

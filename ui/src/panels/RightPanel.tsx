@@ -18,7 +18,7 @@ export function RightPanel() {
   ];
   return (
     <aside className="panel" aria-label="Seitenpanel">
-      <div className="panel-tabs" role="tablist">
+      <div className="panel-tabs" role="tablist" data-tauri-drag-region>
         {tabs.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`panel-tab ${tab === t.id ? "active" : ""}`} title={t.label} onClick={() => s().set({ panelTab: t.id })}>
             <t.icon size={14} strokeWidth={1.75} />

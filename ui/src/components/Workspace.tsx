@@ -114,6 +114,8 @@ function TabLabel({ tab }: { tab: Tab }) {
 
 const TAB_MIME = "application/x-annalo-tab";
 
+const titleBarInTabs = () => document.documentElement.matches(".os-macos, .frame-custom");
+
 function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   const tr = useT();
   const pages = useApp((s) => s.pages);
@@ -154,7 +156,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       onDragOver={(e) => onDragOver(e, pane.tabs.length)}
       onDragLeave={() => setDropAt(null)}
       onDrop={(e) => onDrop(e, pane.tabs.length)}
-      onDoubleClick={(e) => e.target === e.currentTarget && s().openTab({ kind: "home" }, { newTab: true })}
+      // Where the tab bar is the title bar (macOS, own title bar on Windows) a double-click maximizes.
+      onDoubleClick={(e) => e.target === e.currentTarget && !titleBarInTabs() && s().openTab({ kind: "home" }, { newTab: true })}
     >
       <div className="tabs" data-tauri-drag-region>
         {pane.tabs.map((t, i) => {

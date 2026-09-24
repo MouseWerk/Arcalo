@@ -20,6 +20,34 @@ body.ready .app { opacity: 1; }
 :root.os-macos .ribbon + .sidebar > .side-tabs { padding-left: 28px; }
 :root.os-macos .ribbon + .main .workspace > .pane:first-child .tabbar { padding-left: 28px; }
 :root.os-macos .app > .main:first-child .workspace > .pane:first-child .tabbar { padding-left: 84px; }
+/* Windows with the app's own title bar: the window buttons sit in the top-right corner, over the
+   tab row of whatever reaches it (the side panel or the last pane), which leaves them room. */
+.window-controls { display: none; }
+:root.frame-custom .window-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  height: calc(var(--tabbar-h) - 1px);
+}
+.win-btn {
+  width: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.win-btn:hover { background: var(--bg-hover); color: var(--text); }
+.win-btn:active { background: var(--bg-active); }
+.win-btn.win-close:hover { background: #c42b1c; color: #fff; }
+.win-btn.win-close:active { background: #b22a1b; color: #fff; }
+.win-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.win-btn svg { shape-rendering: crispEdges; }
+:root.frame-custom .panel > .panel-tabs { padding-right: 146px; }
+:root.frame-custom .app:not(.with-panel) .workspace > .pane:last-child .tabbar { padding-right: 146px; }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-canvas); }
 

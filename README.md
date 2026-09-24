@@ -221,7 +221,7 @@ Settings are grouped (Allgemein, Arbeiten, KI, System) and searchable. Besides t
 
 | Section | What |
 |---|---|
-| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, Mica (Windows 11) |
+| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, Mica (Windows 11), own title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
 | Sprache & Format | German or English for settings, ribbon, sidebar, tabs, status bar and commands (longer help texts, dialogs and AI prompts stay German), date format |
 | Start | open the last tabs, the start page or today's note; remember window size and position; start minimized |
 | Tastatur | rebind every in-app shortcut, with conflict detection (commands, editor keys, global shortcuts); Ctrl+Alt is rejected (AltGr) |

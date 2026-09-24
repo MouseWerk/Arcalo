@@ -36,6 +36,11 @@ import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_backdrop"))
   .then((mica) => mica && !captureMode && !searchMode && document.documentElement.classList.add("os-windows"))
   .catch(() => {});
+// Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
+import("@tauri-apps/api/core")
+  .then(({ invoke }) => invoke<boolean>("window_frame"))
+  .then((custom) => custom && !captureMode && !searchMode && document.documentElement.classList.add("frame-custom"))
+  .catch(() => {});
 // macOS: the tab bar sits in the title bar (overlay); the chrome leaves room for the traffic lights.
 if (IS_MAC && !captureMode) document.documentElement.classList.add("os-macos");
 

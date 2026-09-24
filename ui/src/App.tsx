@@ -12,6 +12,7 @@ import { LinkPreview } from "./components/LinkPreview";
 import { CommandPalette } from "./components/CommandPalette";
 import { CalendarPopover, openCalendar } from "./components/CalendarPopover";
 import { RightPanel } from "./panels/RightPanel";
+import { WindowControls } from "./components/WindowControls";
 import { createSubpage } from "./views/PageView";
 import { requestAddProperty } from "./views/PageProperties";
 import { flushAllEditors, reloadEditors } from "./editor/NoteEditor";
@@ -233,7 +234,7 @@ export function App() {
   const showPanel = panelOpen && !focus && !onboardingShown;
   const style = { "--sidebar-w": `${sideW}px`, "--panel-w": `${panelW}px` } as React.CSSProperties;
   return (
-    <div className={`app ${focus ? "focus" : ""}`} style={style}>
+    <div className={`app ${focus ? "focus" : ""} ${showPanel ? "with-panel" : ""}`} style={style}>
       {!focus && <Ribbon />}
       {showSidebar && (
         <>
@@ -278,6 +279,7 @@ export function App() {
       <CommandPalette />
       <LinkPreview />
       <CalendarPopover />
+      <WindowControls />
       <Toasts />
       <ConfirmHost />
       <TemplateHost />

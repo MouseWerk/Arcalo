@@ -77,7 +77,7 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label={t("sidebar.label")}>
-      <div className="side-tabs" role="tablist">
+      <div className="side-tabs" role="tablist" data-tauri-drag-region>
         {tabs.map((t) => (
           <IconButton key={t.id} icon={t.icon} label={t.label} active={tab === t.id} size={30} iconSize={16} onClick={() => setTab(t.id)} role="tab" aria-selected={tab === t.id} />
         ))}

@@ -1780,6 +1780,7 @@ fn create_main_window(
     visible: bool,
     geometry: Option<prefs::WindowState>,
     mica_on: bool,
+    custom_frame: bool,
 ) -> tauri::Result<tauri::WebviewWindow> {
     // Transparent whenever Mica is possible, so switching it on later needs no restart.
     let mica = supports_mica();
@@ -1809,6 +1810,11 @@ fn create_main_window(
     } else {
         builder
     };
+    // Windows: own title bar. The UI draws the window buttons, the tab bar moves the window
+    // (data-tauri-drag-region); resizing at the edges and the shadow stay with the system.
+    #[cfg(windows)]
+    let builder = builder.decorations(!custom_frame);
+    CUSTOM_FRAME.store(cfg!(windows) && custom_frame, std::sync::atomic::Ordering::Relaxed);
     let _ = (mica, mica_on);
     // macOS: the tab bar sits in the title bar; the UI leaves room for the traffic lights (`os-macos`).
     #[cfg(target_os = "macos")]
@@ -1830,6 +1836,16 @@ fn create_main_window(
         }
     }
     Ok(window)
+}
+
+/// Whether the main window was created with the app's own title bar (Windows only).
+static CUSTOM_FRAME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the main window draws its own title bar (Settings → Darstellung, Windows). Reflects
+/// the window as created: a changed setting applies at the next start.
+#[tauri::command]
+fn window_frame() -> bool {
+    CUSTOM_FRAME.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Whether the window has a Mica backdrop (the UI then lets it show through). Off when
@@ -2087,6 +2103,7 @@ pub fn run() {
             let idle_threshold = Duration::from_secs(settings.idle_threshold_minutes * 60);
             let start = settings.start.clone();
             let mica_on = settings.appearance.mica;
+            let custom_frame = settings.appearance.custom_titlebar;
             let geometry = prefs::saved_window(app.handle(), &settings);
             let ai = AiRuntime::new(settings, secrets.get(), proxy_secret.get());
 
@@ -2117,7 +2134,7 @@ pub fn run() {
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
             let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
             let minimized = tray && wants_minimized;
-            let window = create_main_window(app, !minimized, geometry, mica_on)?;
+            let window = create_main_window(app, !minimized, geometry, mica_on, custom_frame)?;
             if wants_minimized && !tray {
                 let _ = window.minimize();
             }
@@ -2240,6 +2257,7 @@ pub fn run() {
             onboarding_needed,
             onboarding_finish,
             window_backdrop,
+            window_frame,
             window_set_theme,
             desktop::window_hide,
             desktop::app_quit,

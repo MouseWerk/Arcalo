@@ -244,6 +244,7 @@ export interface AppearancePrefs {
   line_width: "narrow" | "normal" | "wide" | "full";
   reduce_motion: boolean;
   mica: boolean;
+  custom_titlebar: boolean;
 }
 export interface EditorPrefs {
   spellcheck: "de" | "en" | "de-en" | "off";
