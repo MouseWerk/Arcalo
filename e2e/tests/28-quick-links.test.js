@@ -1,4 +1,4 @@
-// Sidebar links: add one through the dialog (icon guessed from the address, or picked), it is
+// Ribbon links: add one through the dialog (icon guessed from the address, or picked), it is
 // saved on its own, edited and removed through the context menu.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -10,11 +10,12 @@ before(async () => (app = await launch()));
 after(async () => app?.close());
 
 const links = async () => (await app.invoke("settings_get")).settings.quick_links;
-const rows = () => app.browser.execute(() => [...document.querySelectorAll(".quick-link")].map((b) => b.textContent.trim()));
+const rows = () => app.browser.execute(() => [...document.querySelectorAll(".ribbon .quick-link")].map((b) => b.getAttribute("aria-label")));
 
-test("add, edit and remove a sidebar link", async () => {
-  await app.waitFor(".quick-links");
-  await app.click('.quick-links [aria-label="Link hinzufügen"]');
+test("add, edit and remove a link in the ribbon", async () => {
+  await app.waitFor(".ribbon .quick-links");
+  assert.equal(await app.browser.execute(() => !!document.querySelector(".sidebar .quick-links")), false, "not in the file sidebar");
+  await app.click('.ribbon .quick-link-add');
   await app.waitFor(".dialog .link-form");
   const [url, name] = await app.$$(".dialog .link-form input");
   await url.setValue("jira.firma.de/browse/AET");
@@ -27,7 +28,7 @@ test("add, edit and remove a sidebar link", async () => {
   assert.deepEqual(await links(), [{ name: "Jira", url: "jira.firma.de/browse/AET", icon: "ticket" }]);
 
   // A second one with a picked icon, then reorder and edit through the context menu.
-  await app.click('.quick-links [aria-label="Link hinzufügen"]');
+  await app.click('.ribbon .quick-link-add');
   await app.waitFor(".dialog .link-form");
   const [url2] = await app.$$(".dialog .link-form input");
   await url2.setValue("/home/user/Projekte");
@@ -39,7 +40,7 @@ test("add, edit and remove a sidebar link", async () => {
   await app.shot("quick-links");
 
   const menu = async (i, label) => {
-    await (await app.$$(".quick-link"))[i].click({ button: "right" });
+    await (await app.$$(".ribbon .quick-link"))[i].click({ button: "right" });
     await app.browser.execute((l) => [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.includes(l)).click(), label);
   };
   const stale = (await app.invoke("settings_get")).settings;

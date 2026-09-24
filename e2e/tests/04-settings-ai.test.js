@@ -178,3 +178,34 @@ test("a model the server does not offer falls back to one it has", async () => {
   llm.cooldown.clear();
   await app.invoke("settings_save", { settings: view.settings });
 });
+
+// The chat sends tools, the rewrite requests do not: a model that rejects tools (LiteLLM without
+// drop_params) or whose backend is down made only the chat fail.
+test("the chat works with a model that rejects tools, and past a model whose backend is down", async () => {
+  await app.invoke("api_key_set", { key: llm.apiKey });
+  const view = await app.invoke("settings_get");
+  const settings = { ...view.settings, litellm_base_url: llm.url, router: { ...view.settings.router, local_model: "firma-schnell", standard_model: "firma-standard", reasoning_model: "firma-reasoning" } };
+  await app.invoke("settings_save", { settings });
+  const chat = (id, tier) => app.invoke("ai_chat", { requestId: id, messages: [{ role: "user", content: "Was steht heute an?" }], useTools: true, tier, pageId: null, overrideLimit: null });
+
+  llm.noTools.add("firma-standard");
+  const out = await chat("notools-1", "standard");
+  assert.equal(out.route.model, "firma-standard", "same model, without tools");
+  assert.ok(out.completion.content.length > 0);
+  assert.ok(out.route.reasons.some((r) => r.includes("keine Werkzeuge")), out.route.reasons.join(" | "));
+  llm.noTools.clear();
+
+  llm.broken.add("firma-schnell");
+  const out2 = await chat("broken-1", "local");
+  assert.notEqual(out2.route.model, "firma-schnell");
+  assert.ok(out2.completion.content.length > 0);
+  llm.broken.clear();
+
+  // A real error (wrong key) is shown as it is, not retried on every model.
+  await app.invoke("api_key_set", { key: "sk-wrong" });
+  const before = llm.requests.length;
+  await assert.rejects(chat("wrongkey-1", "standard"), /Authentication Error/);
+  assert.equal(llm.requests.slice(before).filter((r) => r.url === "/v1/chat/completions").length, 1, "tried once");
+  await app.invoke("api_key_set", { key: llm.apiKey });
+  await app.invoke("settings_save", { settings: view.settings });
+});

@@ -1499,7 +1499,20 @@ async fn ai_chat(
 
     // Retrieval: embeddings are optional; keyword search always works offline.
     let query_embedding = match &settings.embedding_model {
-        Some(m) if !m.is_empty() => client.embed(m, std::slice::from_ref(&prompt)).await.ok().and_then(|mut v| v.pop()),
+        // Bounded: a slow or missing embedding model must not hold up the answer.
+        Some(m) if !m.is_empty() => {
+            match tokio::time::timeout(Duration::from_secs(8), client.embed(m, std::slice::from_ref(&prompt))).await {
+                Ok(Ok(mut v)) => v.pop(),
+                Ok(Err(e)) => {
+                    devlog::warn("ai", format!("embedding with „{m}“ failed, keyword search only: {e}"));
+                    None
+                }
+                Err(_) => {
+                    devlog::warn("ai", format!("embedding with „{m}“ timed out, keyword search only"));
+                    None
+                }
+            }
+        }
         _ => None,
     };
     let (context, active, source_tags) = {
@@ -1627,32 +1640,64 @@ async fn complete_routed(
         devlog::warn("ai", format!("model „{requested}“ is not offered by the server, used „{}“ instead", route.model));
     }
     req.model = route.model.clone();
-    match stream_completion(app, state, client, request_id, &req).await {
-        Err(Error::Provider { status, body }) if availability::model_unavailable(status, &body) => {
-            let retry = if availability::local_required(&route, local_only) {
-                None
+    let mut tried: Vec<String> = vec![];
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let (status, body) = match stream_completion(app, state, client, request_id, &req).await {
+            Ok((c, m)) => return Ok((c, m, route)),
+            Err(Error::Provider { status, body }) => (status, body),
+            Err(e) => return Err(e),
+        };
+        let give_up = |status: u16, body: String| {
+            if availability::model_unavailable(status, &body) {
+                Error::State(availability::unavailable_message(&req.model, &body))
             } else {
-                // The list may be stale: ask again before picking another model.
-                *lock(&state.server_models) = None;
-                let available = server_models(state, client).await;
-                availability::fallback(&settings.router, route.tier, &available, &[&route.model])
-            };
-            let Some(model) = retry else {
-                return Err(Error::State(availability::unavailable_message(&route.model, &body)));
-            };
-            devlog::warn("ai", format!("no deployment for „{}“ ({status}), retrying on „{model}“", route.model));
-            route.reasons.push(format!("„{}“ ohne erreichbare Instanz → {model}", route.model));
-            route.model = model.clone();
-            req.model = model;
-            match stream_completion(app, state, client, request_id, &req).await {
-                Ok((c, m)) => Ok((c, m, route)),
-                Err(Error::Provider { status, body }) if availability::model_unavailable(status, &body) => {
-                    Err(Error::State(availability::unavailable_message(&req.model, &body)))
-                }
-                Err(e) => Err(e),
+                Error::Provider { status, body }
             }
+        };
+        if attempts >= 4 {
+            return Err(give_up(status, body));
         }
-        other => other.map(|(c, m)| (c, m, route)),
+        match availability::retry_for(status, &body, !req.tools.is_empty(), req.temperature.is_some()) {
+            availability::Retry::Without { tools, temperature } => {
+                devlog::warn(
+                    "ai",
+                    format!(
+                        "„{}“ rejects {} ({status}), repeating without",
+                        req.model,
+                        if tools { "tools" } else { "the temperature" }
+                    ),
+                );
+                if tools {
+                    req.tools.clear();
+                    route.reasons.push(format!("„{}“ unterstützt keine Werkzeuge → ohne", route.model));
+                }
+                if temperature {
+                    req.temperature = None;
+                }
+            }
+            availability::Retry::OtherModel => {
+                tried.push(req.model.clone());
+                let next = if availability::local_required(&route, local_only) {
+                    None
+                } else {
+                    // The list may be stale: ask again before picking another model.
+                    *lock(&state.server_models) = None;
+                    let available = server_models(state, client).await;
+                    let exclude: Vec<&str> = tried.iter().map(String::as_str).collect();
+                    availability::fallback(&settings.router, route.tier, &available, &exclude)
+                };
+                let Some(model) = next else {
+                    return Err(give_up(status, body));
+                };
+                devlog::warn("ai", format!("„{}“ failed ({status}), retrying on „{model}“", req.model));
+                route.reasons.push(format!("„{}“ ohne erreichbare Instanz → {model}", route.model));
+                route.model = model.clone();
+                req.model = model;
+            }
+            availability::Retry::No => return Err(give_up(status, body)),
+        }
     }
 }
 

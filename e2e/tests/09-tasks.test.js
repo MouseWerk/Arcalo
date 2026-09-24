@@ -25,7 +25,7 @@ test("Ctrl+Shift+A lists tasks from all notes grouped by due date", async () => 
   await app.keys(["Control", "Shift", "a"]);
   await app.waitFor(".tasks-view");
   await app.waitFor(row(0));
-  assert.equal(await app.text(".pane.active .vh-title-text"), "Aufgaben");
+  assert.equal(await app.text(".pane.active .tab.active .tab-title"), "Aufgaben");
 
   const overdue = await app.$(".task-group-overdue");
   assert.match(await app.textOf(overdue), /Überfällig/);
@@ -53,7 +53,7 @@ test("filters by status and tag", async () => {
 test("toggling a task rewrites its checkbox and reloads the open editor", async () => {
   // Page in the left pane, task view in the right one.
   await app.click(`${row(0)} .task-page`);
-  await app.waitText(".pane.active .vh-title-text", /Aufgaben-Test/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Aufgaben-Test/);
   await app.waitFor(".ProseMirror li[data-checked]");
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);

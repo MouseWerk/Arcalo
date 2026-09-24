@@ -33,6 +33,8 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   const flushEditor = useCallback(async () => handle.current?.flush(), []);
   const pages = useApp((s) => s.pages);
   const handle = useRef<NoteEditorHandle | null>(null);
+  // The editor toolbar sits in the header row, where the page's small title was.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -135,7 +137,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
 
   return (
     <div className="page-view" ref={root}>
-      <PageHeader tab={tab} root={root} doc={doc} crumbs={crumbs} onChange={(d) => setDoc({ ...doc, ...d })} onSummary={() => setSummaryOpen(true)}>
+      <PageHeader tab={tab} root={root} doc={doc} crumbs={crumbs} onChange={(d) => setDoc({ ...doc, ...d })} onSummary={() => setSummaryOpen(true)} toolbarSlot={setToolbarSlot}>
         <Properties doc={doc} fm={fm} onAdd={() => setAddingProp(true)} />
         <PropertyEditor
           fm={fm}
@@ -160,6 +162,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           onOpenLink={openLink}
           onOpenTag={openTag}
           handleRef={(h) => (handle.current = h)}
+          toolbarSlot={toolbarSlot}
         />
         <Backlinks doc={doc} />
         <MeetingSummaryDialog open={summaryOpen} page={doc} reference={reference} getEditor={getEditor} flush={flushEditor} onClose={closeSummary} />
@@ -175,6 +178,7 @@ function PageHeader({
   crumbs,
   onChange,
   onSummary,
+  toolbarSlot,
   children,
 }: {
   tab: Tab;
@@ -183,8 +187,10 @@ function PageHeader({
   crumbs: { id: number; title: string }[];
   onChange: (d: Partial<PageDoc>) => void;
   onSummary: () => void;
+  toolbarSlot: (el: HTMLDivElement | null) => void;
   children: React.ReactNode;
 }) {
+  const toolbarOn = useApp((st) => st.settings?.settings.editor?.toolbar ?? true);
   const [title, setTitle] = useState(doc.title);
   const [iconOpen, setIconOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
@@ -294,6 +300,7 @@ function PageHeader({
           </span>
         ))}
         title={doc.title}
+        center={toolbarOn ? <div className="vh-toolbar" ref={toolbarSlot} /> : undefined}
         actions={actions}
       />
       <div className="page-scroll-wrap">

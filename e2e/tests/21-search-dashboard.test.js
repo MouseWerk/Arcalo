@@ -220,8 +220,8 @@ test("the quick-search UI (#search) finds pages, books time and opens results in
   // Back in the main UI: `search_open` brings the page up in the main window.
   await reload("");
   await app.invoke("search_open", { target: { kind: "page", page_id: arch.page_id, new_tab: false } });
-  await app.waitText(".pane.active .vh-title-text", /Architektur/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
   await app.invoke("search_open", { target: { kind: "timesheet" } });
-  await app.waitText(".pane.active .vh-title-text", /Zeiterfassung/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Zeiterfassung/);
   assert.deepEqual(await app.consoleErrors(), []);
 });

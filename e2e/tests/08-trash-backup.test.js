@@ -42,7 +42,7 @@ test("deleting a page can be undone from the toast", async () => {
 test("deleted page appears in the trash and is restored from there", async () => {
   await deleteFromTree(PAGE);
   await app.click('.sidebar-foot [aria-label^="Papierkorb"]');
-  await app.waitText(".pane.active .vh-title-text", /Papierkorb/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Papierkorb/);
   await app.waitText(".trash-item-title", new RegExp(PAGE.replace(/\./g, "\\.")));
   await app.shot("trash");
 

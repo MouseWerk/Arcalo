@@ -21,7 +21,7 @@ test("hovering a [[link]] shows a preview card of that page", async () => {
   assert.match(await app.textOf(await app.$(".link-preview-body")), /Middleware/);
   await app.shot("link-preview");
   await (await app.$(".link-preview-title")).click();
-  await app.waitText(".pane.active .vh-title-text", /Architektur/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
   assert.equal((await app.$$(".link-preview")).length, 0, "card closes after opening");
 });
 

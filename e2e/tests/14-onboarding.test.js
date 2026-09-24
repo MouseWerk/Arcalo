@@ -21,7 +21,7 @@ test("a fresh workspace offers empty, import or sample data", async () => {
 
 test("sample data on request (key 3), and the choice is remembered", async () => {
   await app.keys(["3"]);
-  await app.waitText(".pane.active .vh-title-text", /Willkommen/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Willkommen/);
   assert.ok((await app.invoke("wbs_tree")).length > 0);
   assert.equal(await app.invoke("onboarding_needed"), false);
 });

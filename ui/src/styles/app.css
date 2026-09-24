@@ -1233,17 +1233,12 @@ body.search-mode { background: transparent; }
 .set-row-control .w-360 { width: min(360px, 100%); }
 
 /* ------------------------------------------------------------ sidebar quick links */
-.quick-links { padding: 2px 0 6px; margin: 0 6px 4px; border-bottom: 1px solid var(--border); }
-.quick-links-head { display: flex; align-items: center; justify-content: space-between; min-height: 26px; padding-left: 2px; }
-.quick-links-toggle { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 2px 4px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; border-radius: var(--r-xs); }
-.quick-links-toggle:hover { color: var(--text-2); }
-.quick-links-toggle svg { transition: transform var(--dur-fast); }
-.quick-links-toggle svg.open { transform: rotate(90deg); }
-.quick-links-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-.quick-link { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 28px; padding: 0 8px 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); text-align: left; font-size: var(--fs-sm); }
-.quick-link:hover { background: var(--bg-hover); }
-.quick-link .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-links-empty { margin: 2px 10px 4px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.45; }
+/* Links in the ribbon: they scroll when there are more than fit, the actions below stay. */
+.quick-links { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 0; flex: 0 1 auto; overflow-y: auto; scrollbar-width: none; }
+.quick-links::-webkit-scrollbar { display: none; }
+.quick-links > .icon-btn { flex: none; }
+.ribbon .quick-link-add { opacity: 0.55; }
+.ribbon .quick-link-add:hover, .ribbon .quick-link-add:focus-visible { opacity: 1; }
 .link-form { display: grid; gap: 12px; }
 .icon-picker.inline { position: static; display: grid; grid-template-columns: repeat(auto-fill, 34px); gap: 2px; box-shadow: none; border: 1px solid var(--border); border-radius: var(--r-md); padding: 6px; width: auto; max-height: 180px; overflow: auto; }
 

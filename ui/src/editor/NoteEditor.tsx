@@ -17,6 +17,7 @@ import { IconButton, useMenu } from "../components/ui";
 import { findKey } from "./find";
 import { TableToolbar } from "./TableToolbar";
 import { EditorToolbar } from "./EditorToolbar";
+import { createPortal } from "react-dom";
 import { moveBlock } from "./tools";
 import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
@@ -97,8 +98,11 @@ export function NoteEditor({
   handleRef,
   onFrontmatter,
   active = true,
+  toolbarSlot,
 }: {
   active?: boolean;
+  /** Where the toolbar goes (the page's header row); in the note itself without one. */
+  toolbarSlot?: HTMLElement | null;
   doc: PageDoc;
   onSaved: (doc: PageDoc) => void;
   onOpenLink: (target: string, newTab: boolean) => void;
@@ -531,7 +535,11 @@ export function NoteEditor({
 
   return (
     <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
-      {editor && toolbarOn && <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />}
+      {editor &&
+        toolbarOn &&
+        (toolbarSlot
+          ? createPortal(<EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />, toolbarSlot)
+          : <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />)}
       {zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
       {find !== null && (
         <div className="find-anchor">

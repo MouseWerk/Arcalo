@@ -354,7 +354,20 @@ impl StreamAccumulator {
                 tokens_per_second: self.timer.tokens_per_second(exact.then_some(completion_tokens)),
             },
             content: self.content,
-            tool_calls: self.tool_calls,
+            // Some backends (Ollama, Gemini through LiteLLM) send no call id; the tool results
+            // must refer to one, so each call gets its own. Calls without a name are dropped.
+            tool_calls: self
+                .tool_calls
+                .into_iter()
+                .filter(|c| !c.function.name.is_empty())
+                .enumerate()
+                .map(|(i, mut c)| {
+                    if c.id.is_empty() {
+                        c.id = format!("call_{i}");
+                    }
+                    c
+                })
+                .collect(),
             finish_reason: self.finish_reason,
             exact_usage: exact,
         }
@@ -397,6 +410,21 @@ mod tests {
         assert!(c.exact_usage);
         assert!(matches!(events[0], StreamEvent::FirstToken { .. }));
         assert_eq!(events.iter().filter(|e| matches!(e, StreamEvent::Delta { .. })).count(), 2);
+    }
+
+    #[test]
+    fn tool_calls_without_an_id_get_one() {
+        let chunks = [
+            json!({"choices":[{"delta":{"tool_calls":[{"function":{"name":"search_notes","arguments":"{}"}}]}}]}),
+            json!({"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"name":"budget_status","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}),
+        ];
+        let mut acc = StreamAccumulator::new(StreamTimer::start());
+        for c in &chunks {
+            acc.apply(c, &mut |_| {});
+        }
+        let c = acc.finish("ollama/llama3.2", &[], None, &PriceTable::default());
+        let ids: Vec<&str> = c.tool_calls.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, ["call_0", "call_1"]);
     }
 
     #[test]

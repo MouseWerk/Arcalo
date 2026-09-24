@@ -1,8 +1,8 @@
-// Links at the top of the sidebar: web pages, tools, mail and local folders, each with an icon.
+// Links in the ribbon: web pages, tools, mail and local folders, each with an icon.
 // Saved on their own (`quick_links_save`), like the start page's widgets.
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
 import { useApp } from "../store/app";
 import { api } from "../lib/api";
 import type { QuickLink } from "../lib/types";
@@ -10,7 +10,6 @@ import { Button, Dialog, Field, IconButton, Input, useMenu, type MenuEntry } fro
 import { PAGE_ICONS, PageIcon } from "./icons";
 import { useT } from "../lib/i18n";
 
-const OPEN_KEY = "annalo.quicklinks-open";
 /** One shared empty list: a new [] per render would look like a change and re-render forever. */
 const NONE: QuickLink[] = [];
 
@@ -31,10 +30,10 @@ export function guessIcon(url: string): string {
   return "globe";
 }
 
+/** The links as icons in the ribbon, below its own actions; the name is the tooltip. */
 export function QuickLinks() {
   const t = useT();
   const links = useApp((s) => s.settings?.settings.quick_links ?? NONE);
-  const [open, setOpen] = useState(() => localStorage.getItem(OPEN_KEY) !== "0");
   const [editing, setEditing] = useState<{ index: number | null; link: QuickLink } | null>(null);
   const [menu, openMenu] = useMenu();
   const s = useApp.getState;
@@ -47,45 +46,43 @@ export function QuickLinks() {
     }
   };
   const go = (i: number) => api.openQuickLink(i).catch((e) => s().error(t("links.openFailed"), e));
-  const toggle = () => {
-    setOpen(!open);
-    localStorage.setItem(OPEN_KEY, open ? "0" : "1");
-  };
+  const add = () => setEditing({ index: null, link: { name: "", url: "", icon: "" } });
   const move = (i: number, d: number) => {
     const next = [...links];
     [next[i], next[i + d]] = [next[i + d], next[i]];
     save(next);
   };
   const entries = (l: QuickLink, i: number): MenuEntry[] => [
+    { label: t("links.open"), icon: ExternalLink, onSelect: () => go(i) },
     { label: t("links.edit"), icon: Pencil, onSelect: () => setEditing({ index: i, link: l }) },
     { label: t("links.up"), icon: ArrowUp, disabled: i === 0, onSelect: () => move(i, -1) },
     { label: t("links.down"), icon: ArrowDown, disabled: i === links.length - 1, onSelect: () => move(i, 1) },
     "separator",
+    { label: t("links.add"), icon: Plus, onSelect: add },
     { label: t("links.remove"), icon: Trash2, danger: true, onSelect: () => save(links.filter((_, j) => j !== i)) },
   ];
 
   return (
-    <section className="quick-links" aria-label={t("links.title")}>
-      <div className="quick-links-head">
-        <button type="button" className="quick-links-toggle" aria-expanded={open} onClick={toggle}>
-          <ChevronRight size={13} className={open ? "open" : ""} />
-          {t("links.title")}
-        </button>
-        <IconButton icon={Plus} label={t("links.add")} size={22} iconSize={14} onClick={() => setEditing({ index: null, link: { name: "", url: "", icon: "" } })} />
-      </div>
-      {open && links.length > 0 && (
-        <ul className="quick-links-list">
-          {links.map((l, i) => (
-            <li key={`${i}-${l.url}`}>
-              <button type="button" className="quick-link" title={l.url} onClick={() => go(i)} onContextMenu={(e) => openMenu(e, entries(l, i))}>
-                <PageIcon name={l.icon || guessIcon(l.url)} size={15} className="tree-icon" />
-                <span className="tree-label">{l.name}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {open && links.length === 0 && <p className="quick-links-empty">{t("links.empty")}</p>}
+    <div className="quick-links" role="group" aria-label={t("links.title")}>
+      {links.map((l, i) => {
+        const label = l.name || l.url;
+        return (
+          <button
+            key={`${i}-${l.url}`}
+            type="button"
+            className="icon-btn quick-link"
+            aria-label={label}
+            data-tooltip={label}
+            data-tooltip-side="right"
+            style={{ width: 32, height: 32 }}
+            onClick={() => go(i)}
+            onContextMenu={(e) => openMenu(e, entries(l, i))}
+          >
+            <PageIcon name={l.icon || guessIcon(l.url)} size={17} />
+          </button>
+        );
+      })}
+      <IconButton icon={Plus} label={t("links.add")} className="quick-link-add" tooltipSide="right" size={28} iconSize={14} onClick={add} />
       {menu}
       {editing && (
         <LinkDialog
@@ -101,7 +98,7 @@ export function QuickLinks() {
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 

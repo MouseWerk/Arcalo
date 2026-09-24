@@ -16,7 +16,6 @@ import type { PageNode, SearchHit } from "../lib/types";
 import { t as tStatic, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
-import { QuickLinks } from "./QuickLinks";
 import { newPageFromTemplate } from "./Templates";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
@@ -100,7 +99,6 @@ export function Sidebar() {
             />
           </div>
           <div className="sidebar-scroll">
-            <QuickLinks />
             {tree.length === 0 ? (
               // During onboarding the welcome choice explains the empty workspace.
               !onboarding && <div className="side-empty">

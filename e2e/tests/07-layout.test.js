@@ -38,7 +38,7 @@ const drag = async (sel, dx) => {
   ]);
   await app.browser.releaseActions();
 };
-const titles = () => app.browser.execute(() => [...document.querySelectorAll(".pane")].map((p) => p.querySelector(".vh-title-text")?.textContent ?? ""));
+const titles = () => app.browser.execute(() => [...document.querySelectorAll(".pane")].map((p) => p.querySelector(".tab.active .tab-title")?.textContent ?? ""));
 
 test("sidebar and panel are resizable and remember their width", async () => {
   const before = await width(".sidebar");
@@ -61,20 +61,20 @@ test("sidebar and panel are resizable and remember their width", async () => {
 
 test("navigating a tab keeps history for back and forward", async () => {
   await openFromTree("Architektur");
-  await app.waitText(".pane.active .vh-title-text", /Architektur/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
   await openFromTree("PRJ-2026-X Rollout");
-  await app.waitText(".pane.active .vh-title-text", /PRJ-2026-X Rollout/);
+  await app.waitText(".pane.active .tab.active .tab-title", /PRJ-2026-X Rollout/);
   assert.equal((await app.$$(".pane.active .tab")).length, 1, "same tab is reused");
 
   await app.keys(["Alt", "ArrowLeft"]);
-  await app.waitText(".pane.active .vh-title-text", /Architektur/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
   await app.click('.pane.active .vh-nav [aria-label^="Vorwärts"]');
-  await app.waitText(".pane.active .vh-title-text", /PRJ-2026-X Rollout/);
+  await app.waitText(".pane.active .tab.active .tab-title", /PRJ-2026-X Rollout/);
 });
 
 test("split view shows two notes side by side and edits stay in sync", async () => {
   await openFromTree("Architektur");
-  await app.waitText(".pane.active .vh-title-text", /Architektur/);
+  await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);
   assert.deepEqual(await titles(), ["Architektur", "Architektur"]);
@@ -148,7 +148,7 @@ test("Ctrl+Shift+F searches all notes in the sidebar", async () => {
 test("renaming a page updates links shown in another pane", async () => {
   // Architektur links to nothing; PRJ-2026-X Rollout links to [[Architektur]].
   await openFromTree("PRJ-2026-X Rollout");
-  await app.waitText(".pane.active .vh-title-text", /PRJ-2026-X Rollout/);
+  await app.waitText(".pane.active .tab.active .tab-title", /PRJ-2026-X Rollout/);
   await openFromTree("Architektur", { alt: true });
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);
   await app.waitFor(".pane.active .page-title");

@@ -56,6 +56,13 @@ test("toolbar: formatting, block type, insert menu", async () => {
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")));
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === "Werkzeugtest") await r.click();
   await app.waitFor(".pane.active .editor-toolbar");
+  // In the header row, above the page title, instead of the small title.
+  const place = await app.browser.execute(() => {
+    const bar = document.querySelector(".pane.active .editor-toolbar");
+    const title = document.querySelector(".pane.active .page-title, .pane.active h1");
+    return { inHeader: !!bar.closest(".vh"), smallTitle: !!document.querySelector(".pane.active .vh-title-text"), above: bar.getBoundingClientRect().bottom <= title.getBoundingClientRect().top, oneRow: bar.getBoundingClientRect().height <= 34 };
+  });
+  assert.deepEqual(place, { inHeader: true, smallTitle: false, above: true, oneRow: true });
   await app.shot("editor-toolbar");
 
   // Heading from the block-type dropdown.

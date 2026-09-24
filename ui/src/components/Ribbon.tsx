@@ -5,6 +5,7 @@ import { Briefcase, CalendarCheck2, ChevronDown, FilePlus2, Search, ListChecks, 
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
+import { QuickLinks } from "./QuickLinks";
 import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
 import { useT } from "../lib/i18n";
@@ -103,6 +104,8 @@ export function Ribbon() {
       <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "tasks" })} />
       <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "projects" })} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size={32} iconSize={17} onClick={openAssistant} />
+      <span className="ribbon-sep" />
+      <QuickLinks />
       <span className="grow" />
       <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "settings" })} />
     </nav>

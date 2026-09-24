@@ -9,6 +9,9 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
   const MODELS = ["firma-schnell", "firma-standard", "firma-reasoning", "firma-embed"];
   // Listed models without a working deployment (LiteLLM's cooldown after provider errors).
   const cooldown = new Set();
+  // Models whose backend rejects tools (LiteLLM without drop_params) or is down (500).
+  const noTools = new Set();
+  const broken = new Set();
   const server = http.createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -32,6 +35,14 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
       // What LiteLLM answers for an unknown model group or one whose deployments all cool down.
       res.writeHead(429, { "content-type": "application/json" });
       return res.end(JSON.stringify({ error: { message: `No deployments available for selected model, Try again in 60 seconds. Passed model=${json.model}`, type: "None", param: "None", code: "429" } }));
+    }
+    if (req.url === "/v1/chat/completions" && broken.has(json.model)) {
+      res.writeHead(500, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: { message: "litellm.APIConnectionError: OllamaException - [Errno 111] Connection refused", code: "500" } }));
+    }
+    if (req.url === "/v1/chat/completions" && noTools.has(json.model) && json.tools?.length) {
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: { message: `litellm.UnsupportedParamsError: ${json.model} does not support parameters: ['tools']. To drop these, set \`litellm.drop_params=True\``, code: "400" } }));
     }
     if (req.url === "/v1/chat/completions") {
       const msgs = json.messages;
@@ -105,5 +116,5 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
     res.writeHead(404);
     res.end();
   });
-  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, cooldown, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, cooldown, noTools, broken, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
 }

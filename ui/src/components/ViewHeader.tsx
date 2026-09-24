@@ -15,14 +15,17 @@ export function NavButtons({ tab }: { tab: Tab }) {
   );
 }
 
-export function ViewHeader({ tab, crumbs, title, actions }: { tab: Tab; crumbs?: ReactNode; title: ReactNode; actions?: ReactNode }) {
+/** `center` replaces the breadcrumb and title (a page with the editor toolbar). */
+export function ViewHeader({ tab, crumbs, title, actions, center }: { tab: Tab; crumbs?: ReactNode; title: ReactNode; actions?: ReactNode; center?: ReactNode }) {
   return (
     <div className="vh">
       <NavButtons tab={tab} />
-      <div className="vh-title">
-        {crumbs}
-        <span className="vh-title-text">{title}</span>
-      </div>
+      {center ?? (
+        <div className="vh-title">
+          {crumbs}
+          <span className="vh-title-text">{title}</span>
+        </div>
+      )}
       <div className="vh-actions">{actions}</div>
     </div>
   );

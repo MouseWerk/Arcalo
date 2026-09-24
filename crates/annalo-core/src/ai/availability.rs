@@ -23,7 +23,9 @@ fn chat_capable(model: &str) -> bool {
 /// A model the server offers that can stand in for `tier`, skipping `exclude`: first the other
 /// configured models, then any chat model of the server.
 pub fn fallback(config: &RouterConfig, tier: Tier, available: &[String], exclude: &[&str]) -> Option<String> {
-    let usable = |m: &str| !m.is_empty() && !exclude.contains(&m) && available.iter().any(|a| a == m);
+    // An empty list means unknown (the server does not list its models): any configured one.
+    let usable =
+        |m: &str| !m.is_empty() && !exclude.contains(&m) && (available.is_empty() || available.iter().any(|a| a == m));
     preference(config, tier)
         .into_iter()
         .find(|m| usable(m))
@@ -74,6 +76,42 @@ pub fn model_unavailable(status: u16, body: &str) -> bool {
         || b.contains("model_not_found")
         || (status == 404 && b.contains("model"))
         || (b.contains("model") && b.contains("does not exist"))
+}
+
+/// What to do after a failed request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retry {
+    /// The model rejects parameters of the request: repeat it on the same model without them.
+    Without { tools: bool, temperature: bool },
+    /// The model cannot answer right now (unknown, cooling down, its backend is down): try another.
+    OtherModel,
+    /// A real error (wrong key, bad request, cost limit): show it.
+    No,
+}
+
+/// Classifies a provider error. The chat sends tools and a temperature, the rewrite requests do
+/// not: a model (or LiteLLM without `drop_params`) that does not support them fails only in the
+/// chat, so those are dropped first. Server errors (5xx: the model's backend is unreachable,
+/// e.g. a local Ollama that is not running) move on to another model.
+pub fn retry_for(status: u16, body: &str, has_tools: bool, has_temperature: bool) -> Retry {
+    let b = body.to_lowercase();
+    let unsupported = b.contains("unsupportedparams")
+        || b.contains("not support")
+        || b.contains("unsupported")
+        || b.contains("not supported")
+        || b.contains("does not accept")
+        || b.contains("drop_params");
+    if unsupported {
+        let tools = has_tools && (b.contains("tool") || b.contains("function"));
+        let temperature = has_temperature && b.contains("temperature");
+        if tools || temperature {
+            return Retry::Without { tools, temperature };
+        }
+    }
+    if model_unavailable(status, body) || status >= 500 || status == 408 {
+        return Retry::OtherModel;
+    }
+    Retry::No
 }
 
 /// The message shown when the server has no usable deployment of `model`.
@@ -130,6 +168,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(got.model, "azure-gpt-4o", "embedding models are skipped");
+    }
+
+    #[test]
+    fn unsupported_tools_or_temperature_are_dropped_first() {
+        let body = r#"{"error":{"message":"litellm.UnsupportedParamsError: ollama does not support parameters: ['tools']. To drop these, set `litellm.drop_params=True`"}}"#;
+        assert_eq!(retry_for(400, body, true, true), Retry::Without { tools: true, temperature: false });
+        let body = "Unsupported value: 'temperature' does not support 0.3 with this model. Only the default (1) value is supported.";
+        assert_eq!(retry_for(400, body, true, true), Retry::Without { tools: false, temperature: true });
+        let body = "This model does not support function calling";
+        assert_eq!(retry_for(400, body, true, true), Retry::Without { tools: true, temperature: false });
+        // Already without them: nothing left to drop.
+        assert_eq!(retry_for(400, body, false, true), Retry::No);
+    }
+
+    #[test]
+    fn unreachable_backends_try_another_model_real_errors_do_not() {
+        assert_eq!(retry_for(500, "OllamaException - [Errno 111] Connection refused", true, true), Retry::OtherModel);
+        assert_eq!(retry_for(429, "No deployments available for selected model", false, true), Retry::OtherModel);
+        assert_eq!(retry_for(401, "Authentication Error, Invalid proxy server token passed", true, true), Retry::No);
+        assert_eq!(retry_for(400, "context_length_exceeded", true, true), Retry::No);
     }
 
     #[test]
