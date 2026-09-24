@@ -37,7 +37,8 @@ test("Settings → Darstellung „Startanimation“ turns it off", async () => {
   });
   await app.browser.refresh();
   const stored = await app.browser.execute(() => localStorage.getItem("annalo.splash"));
-  assert.equal(await splash(), false, stored);
+  // Removed as soon as the app script runs, long before the animation's 1.3 s.
+  await app.browser.waitUntil(async () => !(await splash()), { timeout: 600, interval: 50, timeoutMsg: `splash shown: ${stored}` });
   await app.browser.execute(() => localStorage.removeItem("annalo.splash-test"));
   await app.invoke("settings_save", { settings: view.settings });
 });
