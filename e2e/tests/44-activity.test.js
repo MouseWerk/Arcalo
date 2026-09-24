@@ -63,20 +63,30 @@ test("type, Vorgang, person and search filters narrow the feed", async () => {
   await app.browser.waitUntil(async () => (await items()).every((i) => i.kind.startsWith("entry_")), { timeoutMsg: "type filter" });
   assert.ok((await items()).length >= 2);
   await chip("Buchungen");
-  const np = await app.browser.execute(() => [...document.querySelectorAll('.activity-view select[aria-label="Projekt, Netzplan oder Vorgang"] option')].find((o) => /NP-8801\/1020/.test(o.textContent))?.value);
+  // The options of the dropdown (it lists them in its popup while open).
+  await app.click('.activity-view [role="combobox"][aria-label="Projekt, Netzplan oder Vorgang"]');
+  const np = await app.browser.waitUntil(
+    () =>
+      app.browser.execute(() => {
+        const list = document.querySelector('.activity-view [role="combobox"][aria-label="Projekt, Netzplan oder Vorgang"]')?.getAttribute("aria-controls");
+        return [...document.querySelectorAll(`#${list} [role="option"]`)].find((o) => /NP-8801\/1020/.test(o.textContent))?.dataset.value ?? false;
+      }),
+    { timeoutMsg: "no options" },
+  ).catch(() => null);
+  await app.keys(["Escape"]);
   assert.ok(np, "Vorgang in the filter");
-  await app.select('.activity-view select[aria-label="Projekt, Netzplan oder Vorgang"]', np);
+  await app.select('.activity-view [role="combobox"][aria-label="Projekt, Netzplan oder Vorgang"]', np);
   await app.browser.waitUntil(async () => {
     const l = await items();
     return l.length > 0 && l.every((i) => /NP-8801\/1020/.test(i.text));
   }, { timeoutMsg: "Vorgang filter" });
-  await app.select('.activity-view select[aria-label="Projekt, Netzplan oder Vorgang"]', "");
-  await app.select('.activity-view select[aria-label="Person"]', "bernd");
+  await app.select('.activity-view [role="combobox"][aria-label="Projekt, Netzplan oder Vorgang"]', "");
+  await app.select('.activity-view [role="combobox"][aria-label="Person"]', "bernd");
   await app.browser.waitUntil(async () => {
     const l = await items();
     return l.length > 0 && l.every((i) => /@bernd/.test(i.text));
   }, { timeoutMsg: "person filter" });
-  await app.select('.activity-view select[aria-label="Person"]', "");
+  await app.select('.activity-view [role="combobox"][aria-label="Person"]', "");
   const search = await app.$('.activity-view input[aria-label="Aktivität durchsuchen"]');
   const typeSearch = async (text) => {
     await search.click();
