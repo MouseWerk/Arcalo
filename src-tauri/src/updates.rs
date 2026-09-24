@@ -76,7 +76,9 @@ fn not_configured() -> Error {
 }
 
 fn failed(what: &str, e: impl std::fmt::Display) -> Error {
-    Error::State(format!("{what}: {e}"))
+    let err = Error::State(format!("{what}: {e}"));
+    crate::devlog::error("update", err.to_string());
+    err
 }
 
 #[tauri::command]
@@ -115,6 +117,10 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
         .map_err(|e| failed("Update-Prüfung nicht möglich", e))?;
     let found = updater.check().await.map_err(|e| failed("Update-Prüfung fehlgeschlagen", e))?;
     let info = found.as_ref().map(UpdateInfo::of);
+    crate::devlog::debug(
+        "update",
+        format!("check done: {}", found.as_ref().map_or("up to date", |u| u.version.as_str())),
+    );
     *lock(&updates.pending) = found;
     Ok(info)
 }

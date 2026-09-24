@@ -202,6 +202,8 @@ export interface Settings {
   dashboard: Dashboard;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
+  /** Developer log: also write debug lines (AI requests, syncs, backups). */
+  dev_log_verbose: boolean;
   /** Push the Markdown mirror to a Git remote; the token lives in the credential store. */
   git_sync: GitSyncSettings;
   /** Proxy, extra root CA, timeouts; the proxy password lives in the credential store. */
@@ -432,6 +434,21 @@ export interface BackupInfo {
   file_name: string;
   created_at: string;
   size_bytes: number;
+}
+export type DevLogLevel = "ERROR" | "WARN" | "INFO" | "DEBUG";
+/** One line of the developer log (`logs/annalo.log`). */
+export interface DevLogEntry {
+  /** RFC 3339 with offset; "" for lines the app did not write itself. */
+  time: string;
+  level: DevLogLevel;
+  source: string;
+  message: string;
+}
+export interface DevLogStats {
+  /** ERROR lines of the last 7 days. */
+  errors_week: number;
+  /** The log folder. */
+  dir: string;
 }
 export interface MirrorStatus {
   enabled: boolean;

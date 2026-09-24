@@ -230,7 +230,7 @@ pub fn open_capture(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         if let Err(e) = show_capture(&app) {
-            eprintln!("quick capture failed: {e}");
+            crate::devlog::error("desktop", format!("quick capture failed: {e}"));
         }
     });
 }
@@ -305,7 +305,7 @@ pub fn open_search(app: &AppHandle, toggle: bool) {
         }
         let popup = Popup { label: SEARCH, title: "Suchen – Annalo", size: (640.0, 420.0), transparent: true };
         if let Err(e) = show_popup(&app, &popup) {
-            eprintln!("quick search failed: {e}");
+            crate::devlog::error("desktop", format!("quick search failed: {e}"));
         }
     });
 }
@@ -466,7 +466,7 @@ pub fn shortcut_role(app: &AppHandle, shortcut: &Shortcut) -> Option<Role> {
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        eprintln!("notification failed: {e}");
+        crate::devlog::warn("desktop", format!("notification failed: {e}"));
     }
 }
 

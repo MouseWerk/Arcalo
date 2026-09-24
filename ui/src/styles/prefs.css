@@ -130,3 +130,19 @@
 .set-group .map-row { flex-wrap: wrap; }
 .set-group .map-row > .grow { flex: 1 1 160px; min-width: 0; }
 .set-row-control { min-width: 0; }
+
+/* ---- developer log ---- */
+.devlog-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; min-width: 0; }
+.devlog-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.devlog-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-canvas); font: var(--fs-xs) / 1.55 var(--font-mono); }
+.devlog-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-width: 0; }
+.devlog-entry:last-child { border-bottom: 0; }
+.devlog-entry.level-error { box-shadow: inset 2px 0 0 var(--danger); }
+.devlog-entry.level-warn { box-shadow: inset 2px 0 0 var(--warning); }
+.devlog-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; color: var(--text-3); }
+.devlog-source { color: var(--text-2); }
+.devlog-message { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; user-select: text; }
+.devlog-empty { display: flex; align-items: center; gap: 8px; padding: 18px 12px; margin-bottom: 8px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); color: var(--text-3); font-size: var(--fs-sm); }
+.devlog-about { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+.devlog-section { display: contents; }
+.devlog-section .set-row { flex-wrap: wrap; row-gap: 10px; }

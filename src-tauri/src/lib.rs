@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod desktop;
+mod devlog;
 mod jumplist;
 mod network;
 mod prefs;
@@ -71,10 +72,12 @@ struct AiRuntime {
 
 impl AiRuntime {
     fn new(settings: Settings, api_key: Option<String>, proxy_password: Option<String>) -> Self {
+        devlog::remember_secret(api_key.as_deref());
+        devlog::remember_secret(proxy_password.as_deref());
         let http = |purpose| {
             annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), purpose).unwrap_or_else(
                 |e| {
-                    eprintln!("network settings not applied: {e}");
+                    devlog::warn("net", format!("network settings not applied: {e}"));
                     tools::HttpClient::new()
                 },
             )
@@ -816,6 +819,15 @@ fn export_entries(
 // ----------------------------------------------------------------- backups
 
 fn run_backup(app: &AppHandle) -> Result<BackupInfo> {
+    let res = backup_once(app);
+    match &res {
+        Ok(info) => devlog::debug("backup", format!("backup written: {}", info.path)),
+        Err(e) => devlog::error("backup", e.to_string()),
+    }
+    res
+}
+
+fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
@@ -830,15 +842,13 @@ fn run_backup(app: &AppHandle) -> Result<BackupInfo> {
         // The backup itself succeeded; a failed mirror is reported in the settings, not as a failed backup.
         match run_mirror(&state) {
             Ok(_) => mirror_fresh = true,
-            Err(e) => eprintln!("markdown mirror failed: {e}"),
+            Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
         }
     }
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
-        // Like the mirror, a failed sync does not fail the backup (reported via event and status).
-        if let Err(e) = run_git_sync(app, mirror_fresh) {
-            eprintln!("git sync failed: {e}");
-        }
+        // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
+        let _ = run_git_sync(app, mirror_fresh);
     }
     Ok(info)
 }
@@ -869,6 +879,7 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
     let _running = lock(&state.git_lock);
     let settings = state.settings();
     let token = state.git_secret.get();
+    devlog::remember_secret(token.as_deref());
     let res = (|| {
         let source = state.git_source_dir();
         if settings.markdown_mirror {
@@ -904,6 +915,10 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
             db.meta_set(GIT_COMMIT, out.commit.as_deref().unwrap_or(""))?;
             db.meta_set(GIT_BRANCH, &out.branch)?;
             db.meta_set(GIT_ERROR, "")?;
+            devlog::debug(
+                "git",
+                format!("sync done: branch {}, commit {}", out.branch, out.commit.as_deref().unwrap_or("–")),
+            );
             let _ = app.emit("gitsync://done", out);
         }
         Err(e) => {
@@ -911,7 +926,10 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
             let msg = gitsync::redact(&e.to_string(), token.as_deref());
             db.meta_set(GIT_ERROR, &msg)?;
             let _ = app.emit("gitsync://failed", &msg);
-            return Err(Error::State(msg));
+            let err = Error::State(msg);
+            // Same text as the error the UI gets, so the log keeps only this line.
+            devlog::error("git", err.to_string());
+            return Err(err);
         }
     }
     res
@@ -966,6 +984,7 @@ async fn git_token_set(app: AppHandle, token: Option<String>) -> Result<GitSyncS
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         state.git_secret.set(token.as_deref().map(str::trim)).map_err(Error::State)?;
+        devlog::remember_secret(token.as_deref());
         git_status_of(&state)
     })
     .await
@@ -1141,21 +1160,17 @@ fn spawn_backup_scheduler(app: AppHandle) {
             };
             let mut backed_up = false;
             if due {
+                // Failures are logged by `run_backup` and `run_git_sync`.
                 match run_backup(&app) {
                     Ok(_) => backed_up = true,
                     Err(e) => {
-                        eprintln!("backup failed: {e}");
                         let _ = app.emit("backup://failed", e.to_string());
                     }
                 }
             }
             let gs = state.settings().git_sync;
-            if gs.enabled
-                && gs.mode == SyncMode::Hourly
-                && !gs.remote_url.is_empty()
-                && let Err(e) = run_git_sync(&app, backed_up && state.settings().markdown_mirror)
-            {
-                eprintln!("git sync failed: {e}");
+            if gs.enabled && gs.mode == SyncMode::Hourly && !gs.remote_url.is_empty() {
+                let _ = run_git_sync(&app, backed_up && state.settings().markdown_mirror);
             }
             std::thread::sleep(Duration::from_secs(3600));
         }
@@ -1242,6 +1257,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> 
         return Err(e);
     }
     lock(&state.idle).set_threshold(Duration::from_secs(settings.idle_threshold_minutes * 60));
+    devlog::set_verbose(settings.dev_log_verbose);
     rebuild_ai(&state, settings);
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
@@ -1294,7 +1310,10 @@ async fn ai_test_connection(
             models.sort();
             ConnectionTest { ok: true, latency_ms, models, error: None }
         }
-        Err(e) => ConnectionTest { ok: false, latency_ms, models: vec![], error: Some(e.to_string()) },
+        Err(e) => {
+            devlog::warn("ai", format!("connection test failed: {e}"));
+            ConnectionTest { ok: false, latency_ms, models: vec![], error: Some(e.to_string()) }
+        }
     })
 }
 
@@ -1468,7 +1487,15 @@ async fn stream_completion(
         })
         .await;
     lock(&state.cancels).remove(request_id);
-    let completion = result?;
+    let completion = result.inspect_err(|e| devlog::error("ai", e.to_string()))?;
+    let u = &completion.usage;
+    devlog::debug(
+        "ai",
+        format!(
+            "{}: {} + {} tokens, finish {:?}",
+            u.model, u.prompt_tokens, u.completion_tokens, completion.finish_reason
+        ),
+    );
 
     state.db().record_ai_usage(&state.session_id, &completion.usage)?;
     let meter = {
@@ -2077,11 +2104,22 @@ pub fn run() {
                 app.path().app_config_dir().ok().as_deref(),
                 app.path().app_data_dir()?,
             );
-            if let Some(n) = &startup.notice {
-                eprintln!("data folder: {}", n.message);
-            }
-            let dir = startup.dir;
+            let dir = startup.dir.clone();
             std::fs::create_dir_all(&dir)?;
+            devlog::init(&dir, false);
+            devlog::info(
+                "core",
+                format!(
+                    "Annalo {} started ({} {}), data folder {}",
+                    env!("CARGO_PKG_VERSION"),
+                    std::env::consts::OS,
+                    std::env::consts::ARCH,
+                    dir.display()
+                ),
+            );
+            if let Some(n) = &startup.notice {
+                devlog::warn("core", format!("data folder: {}", n.message));
+            }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
             let db = Database::open(dir.join(datadir::DB_FILE))?;
@@ -2089,15 +2127,16 @@ pub fn run() {
                 demo::seed(&db, Utc::now())?;
             }
             if let Err(e) = db.purge_expired_trash(Utc::now()) {
-                eprintln!("trash cleanup failed: {e}");
+                devlog::warn("core", format!("trash cleanup failed: {e}"));
             }
             if let Err(e) = db.prune_versions(Utc::now()) {
-                eprintln!("version cleanup failed: {e}");
+                devlog::warn("core", format!("version cleanup failed: {e}"));
             }
             if let Err(e) = db.migrate_palette_default() {
-                eprintln!("settings migration failed: {e}");
+                devlog::warn("core", format!("settings migration failed: {e}"));
             }
             let settings = db.load_settings()?;
+            devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
                 settings.capture_shortcut.clone(),
                 settings.palette_shortcut.clone().unwrap_or_default(),
@@ -2133,7 +2172,7 @@ pub fn run() {
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
-                eprintln!("tray icon not available: {e}");
+                devlog::warn("desktop", format!("tray icon not available: {e}"));
             }
             let tray = app.state::<desktop::Desktop>().has_tray();
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
@@ -2156,7 +2195,7 @@ pub fn run() {
                 let mut specs = [None; 3];
                 specs[i] = Some(spec.as_str());
                 if let Err(e) = desktop::apply_shortcuts(app.handle(), specs) {
-                    eprintln!("global shortcut not available: {e}");
+                    devlog::warn("desktop", format!("global shortcut not available: {e}"));
                 }
             }
             spawn_activity_sampler(app.handle().clone());
@@ -2284,6 +2323,11 @@ pub fn run() {
             updates::update_status,
             updates::update_check,
             updates::update_install,
+            devlog::devlog_write,
+            devlog::devlog_read,
+            devlog::devlog_stats,
+            devlog::devlog_clear,
+            devlog::devlog_open_folder,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

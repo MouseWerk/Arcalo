@@ -28,6 +28,7 @@ const current = (): Settings =>
     capture_shortcut: "Ctrl+Shift+Space",
     palette_shortcut: null,
     auto_update_check: true,
+    dev_log_verbose: false,
     git_sync: { enabled: false, remote_url: "", branch: "main", author_name: "Annalo", author_email: "a@b", include_database: false, mode: "with_backup" },
     network: {
       mode: "system",
