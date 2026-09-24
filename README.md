@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/brand/aether-icon-1024.png" width="112" alt="AETHER OS logo">
+  <img src="docs/brand/annalo-icon-1024.png" width="112" alt="Annalo logo">
 </p>
 
-<h1 align="center">AETHER OS</h1>
+<h1 align="center">Annalo</h1>
 
 <p align="center">
   <b>Notes, time tracking and your own AI in one local-first desktop app.</b><br>
@@ -17,8 +17,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/split-view.png" alt="AETHER OS: two notes side by side with the side panel" width="100%">
+  <img src="docs/screenshots/split-view.png" alt="Annalo: two notes side by side with the side panel" width="100%">
 </p>
+
+*Annalo* comes from the Latin *annales*, the year-by-year record of what happened: your notes and your working
+hours, kept together.
 
 Everything lives in one SQLite database on your computer. There is no cloud account and no telemetry. The only
 network traffic is what you set up yourself: your LiteLLM server, an optional Git remote for backups, and update checks
@@ -35,11 +38,11 @@ Get the latest version from the [**Releases page**](https://github.com/mauricekl
 
 | System | File | Notes |
 |---|---|---|
-| **Windows 10/11** (x64) | `AETHER-OS_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
-| **macOS 11+** Apple Silicon | `AETHER-OS_<version>_aarch64.dmg` | Drag into *Programme*. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
-| **macOS 11+** Intel | `AETHER-OS_<version>_x64.dmg` | Same as above |
-| **Linux** (x64) | `AETHER-OS_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./AETHER-OS_*.deb` |
-| **Linux** (x64) | `AETHER-OS_<version>_amd64.AppImage` | Any distribution: `chmod +x AETHER-OS_*.AppImage && ./AETHER-OS_*.AppImage` |
+| **Windows 10/11** (x64) | `Annalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
+| **macOS 11+** Apple Silicon | `Annalo_<version>_aarch64.dmg` | Drag into *Programme*. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
+| **macOS 11+** Intel | `Annalo_<version>_x64.dmg` | Same as above |
+| **Linux** (x64) | `Annalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Annalo_*.deb` |
+| **Linux** (x64) | `Annalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Annalo_*.AppImage && ./Annalo_*.AppImage` |
 
 The first start opens a short onboarding (language, theme, LiteLLM server) and seeds a small demo workspace to try
 things out.
@@ -205,7 +208,7 @@ sync and the updater (each can be excluded under „Anwenden auf“).
   request went direct or through which proxy, and how long it took
 
 PAC files are JavaScript. The core does not embed a JS engine: the UI evaluates `FindProxyForURL` in a sandboxed frame
-(own `aether-pac:` scheme, opaque origin, no access to the app) for the LiteLLM host, GitHub (updates) and the Git
+(own `annalo-pac:` scheme, opaque origin, no access to the app) for the LiteLLM host, GitHub (updates) and the Git
 remote when the settings are saved or tested and at every start, and stores the answers. Limitations: no DNS
 (`isInNet` only matches IP addresses, `dnsResolve` only returns IP literals, `myIpAddress()` is `127.0.0.1`), and
 other hosts (the assistant's HTTP tool) use the answer for the LiteLLM host. Git receives the proxy through
@@ -244,7 +247,7 @@ cargo tauri dev      # run with hot reload
 cargo tauri build    # installer/packages in target/release/bundle (NSIS on Windows, deb/AppImage on Linux)
 ```
 
-Data lives in `%APPDATA%\os.aether.workspace\` (`workspace.db`); Settings → AETHER OS → „Speicherort ändern…“ moves it
+Data lives in `%APPDATA%\app.annalo.desktop\` (`workspace.db`); Settings → Annalo → „Speicherort ändern…“ moves it
 (avoid OneDrive/Dropbox and network folders for the database; backups there are fine). The first start seeds a small demo workspace.
 The database is backed up daily into `backups` there (or a folder chosen under Settings → Sicherung), and deleted
 pages stay in the trash for 30 days. Each backup also refreshes a read-only Markdown copy of all pages (with images) and
@@ -252,15 +255,15 @@ the bookings as `Zeiterfassung/YYYY-MM.csv` (Excel-ready) in `backups/markdown` 
 
 ## macOS
 
-Releases contain `AETHER-OS_<version>_aarch64.dmg` (Apple Silicon) and `AETHER-OS_<version>_x64.dmg` (Intel), macOS 11
-or newer. Open the disk image and drag **AETHER OS** into *Programme*.
+Releases contain `Annalo_<version>_aarch64.dmg` (Apple Silicon) and `Annalo_<version>_x64.dmg` (Intel), macOS 11
+or newer. Open the disk image and drag **Annalo** into *Programme*.
 
 The app is **ad-hoc signed but not notarized**, so Gatekeeper blocks the first start („kann nicht geöffnet werden, da
 der Entwickler nicht verifiziert werden kann“ or „ist beschädigt“). Once, either:
 
-- in Finder, right-click (Ctrl-click) *AETHER OS* in *Programme* → **Öffnen** → **Öffnen**
+- in Finder, right-click (Ctrl-click) *Annalo* in *Programme* → **Öffnen** → **Öffnen**
   (on macOS 15: System Settings → Datenschutz & Sicherheit → „Dennoch öffnen“), or
-- in the Terminal: `xattr -cr "/Applications/AETHER OS.app"`
+- in the Terminal: `xattr -cr "/Applications/Annalo.app"`
 
 On macOS the app follows the platform conventions: a German menu bar (⌘, settings, ⌘\ sidebar, ⌘. focus mode, ⌘Q
 quits after saving the open editors), the tab bar sits in the title bar, closing the window keeps the app running in
@@ -301,12 +304,12 @@ GitHub → the repository → **Settings → Secrets and variables → Actions �
 
 | Secret | Value |
 |---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | the full content of the private key file (`aether-updater.key`) |
+| `TAURI_SIGNING_PRIVATE_KEY` | the full content of the private key file (`annalo-updater.key`) |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
 
 Then every tag `vX.Y.Z` produces a signed installer (Windows), signed update archives (macOS) and `latest.json`
 (`windows-x86_64`, `darwin-aarch64`, `darwin-x86_64`). To rotate the key, generate a new pair with
-`cargo tauri signer generate -w aether-updater.key`, replace `src-tauri/updater.pub` and both secrets; apps installed
+`cargo tauri signer generate -w annalo-updater.key`, replace `src-tauri/updater.pub` and both secrets; apps installed
 with the old key must be updated once by hand.
 
 ## Your data is safe
@@ -335,10 +338,10 @@ Git repository, for example on GitHub, GitLab or Azure DevOps. It needs Git inst
 4. Choose when to sync: **Mit jeder Sicherung** (daily and „Jetzt sichern“) or **Stündlich**
 
 Every sync commits only when something changed („Sicherung 24.09.2026 14:05 – 3 Dateien geändert“). The working copy
-lives in `git-sync` in the data folder. Optionally the latest database backup is committed as `aether-workspace.db`
+lives in `git-sync` in the data folder. Optionally the latest database backup is committed as `annalo-workspace.db`
 (this grows the repository quickly; GitHub rejects files over 100 MB). If the branch on the server contains a
 different history (for example another computer's or an unrelated project), nothing there is overwritten: the commit
-goes to the branch `aether-sync-<computer name>` and the settings say so. A new computer with the same remote continues
+goes to the branch `annalo-sync-<computer name>` and the settings say so. A new computer with the same remote continues
 the existing history. Failures appear as a notification and in the status line.
 
 **Restore**: „Aus Git wiederherstellen…“ clones the repository and imports it as a new top-level page
@@ -347,7 +350,7 @@ the existing history. Failures appear as a notification and in the status line.
 ## Tests
 
 ```sh
-cargo test -p aether-core      # core: parser, CPM, budgets, exports, FTS, RAG, notes, vault, settings
+cargo test -p annalo-core      # core: parser, CPM, budgets, exports, FTS, RAG, notes, vault, settings
 e2e/run.sh                     # end-to-end: drives the real desktop app via WebDriver (Linux, Xvfb)
 ```
 
@@ -358,8 +361,8 @@ and a fake LiteLLM server for the assistant tests. It also saves screenshots of 
 
 | Path | Contents |
 |---|---|
-| `crates/aether-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/zeit` parser, time tracking, budgets, CPM, exports, idle detection (Win32), LiteLLM client, router, RAG, tools, vault import/export |
-| `crates/aether-cli` | `aether` command line on the same database |
+| `crates/annalo-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/zeit` parser, time tracking, budgets, CPM, exports, idle detection (Win32), LiteLLM client, router, RAG, tools, vault import/export |
+| `crates/annalo-cli` | `annalo` command line on the same database |
 | `src-tauri` | Tauri v2 desktop shell: IPC commands, credential storage, global shortcuts, tray, quick capture, reminders, activity sampler |
 | `ui` | React + TypeScript + TipTap frontend (Vite), Lucide icons |
 | `e2e` | WebdriverIO end-to-end tests against the desktop app |

@@ -14,7 +14,7 @@ let base;
 let bare;
 before(async () => {
   app = await launch();
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "aether-e2e-git-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-git-"));
   bare = path.join(base, "notizen.git");
   execFileSync("git", ["init", "-q", "--bare", bare]);
 });
@@ -57,7 +57,7 @@ test("a backup commits the notes to the remote; a second sync without changes ad
   assert.match(git("show", `main:${arch}`), /Middleware/i);
   assert.ok(files.includes("README.md") && files.includes(".gitattributes"), "sync's own files");
   assert.ok(files.some((f) => f.startsWith("Zeiterfassung/") && f.endsWith(".csv")), "time entries as CSV");
-  assert.ok(!files.includes("aether-workspace.db"), "database only when enabled");
+  assert.ok(!files.includes("annalo-workspace.db"), "database only when enabled");
 
   const out = await app.invoke("git_sync_now");
   assert.equal(out.committed, false);

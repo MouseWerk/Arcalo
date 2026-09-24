@@ -22,7 +22,7 @@ const MIGRATIONS: &[&str] = &[
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
-const REINDEX_MARKER: &str = "-- aether:reindex";
+const REINDEX_MARKER: &str = "-- annalo:reindex";
 
 /// Settings key of the flag that a re-index is pending. It is set in the same transaction as
 /// the migration that needs it and cleared with the re-index, so a crash in between re-runs it.
@@ -782,14 +782,14 @@ mod tests {
 
     pub(crate) fn seeded() -> (Database, Netzplan) {
         let db = Database::open_in_memory().unwrap();
-        let p = db.create_project("PRJ-2026-X", "Aether Rollout").unwrap();
+        let p = db.create_project("PRJ-2026-X", "Annalo Rollout").unwrap();
         let np = db.create_netzplan(p.id, "NP-8801", "NP-8801-1020", "Systemintegration", 40.0).unwrap();
         (db, np)
     }
 
     #[test]
     fn pending_reindex_survives_a_crash() {
-        let path = std::env::temp_dir().join(format!("aether-reindex-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!("annalo-reindex-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let db = Database::open(&path).unwrap();
@@ -835,7 +835,7 @@ mod tests {
 
     #[test]
     fn v1_blocks_are_migrated_into_documents() {
-        let path = std::env::temp_dir().join(format!("aether-mig-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!("annalo-mig-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let c = Connection::open(&path).unwrap();
@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn reindex_migrations_index_existing_pages() {
-        let path = std::env::temp_dir().join(format!("aether-mig-tasks-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!("annalo-mig-tasks-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let before = MIGRATIONS.iter().position(|m| m.contains(REINDEX_MARKER)).unwrap();
         {

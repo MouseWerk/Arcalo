@@ -1,4 +1,4 @@
-// Quick capture: what a line becomes (mirrors aether_core::desktop::classify).
+// Quick capture: what a line becomes (mirrors annalo_core::desktop::classify).
 
 export type CaptureKind = "zeit" | "task" | "note";
 

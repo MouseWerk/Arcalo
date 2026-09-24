@@ -70,7 +70,7 @@ test("imported page keeps frontmatter, links and highlights", async () => {
 test("editing an imported page keeps its frontmatter", async () => {
   await app.caretToEnd();
   await app.keys(["Enter"]);
-  await app.type("Ergänzt in AETHER");
+  await app.type("Ergänzt in Annalo");
   await app.browser.pause(900);
   const page = await app.invoke("page_resolve", { title: "Acme Kickoff", create: false });
   const doc = await app.invoke("page_get", { id: page.id });
@@ -78,7 +78,7 @@ test("editing an imported page keeps its frontmatter", async () => {
   assert.match(doc.content, /\[\[Kunden\]\]/);
   assert.match(doc.content, /==Wichtig==/);
   assert.match(doc.content, /> \[!note\] Hinweis/);
-  assert.match(doc.content, /Ergänzt in AETHER/);
+  assert.match(doc.content, /Ergänzt in Annalo/);
 });
 
 test("exports the workspace as Markdown files", async () => {
@@ -86,7 +86,7 @@ test("exports the workspace as Markdown files", async () => {
   assert.ok(n >= 2);
   const root = fs.readdirSync(out)[0];
   const kickoff = fs.readFileSync(path.join(out, root, "Kunden", "Acme", "Acme Kickoff.md"), "utf8");
-  assert.match(kickoff, /Ergänzt in AETHER/);
+  assert.match(kickoff, /Ergänzt in Annalo/);
 });
 
 test("no console errors", async () => {

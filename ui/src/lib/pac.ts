@@ -1,6 +1,6 @@
 // Proxy auto-config (PAC): the standard helper functions and the evaluation of
 // `FindProxyForURL`. PAC files are JavaScript; the core has no JS engine, so the UI runs them
-// in a sandboxed frame (`aether-pac:` scheme, opaque origin, no IPC) and hands the answers
+// in a sandboxed frame (`annalo-pac:` scheme, opaque origin, no IPC) and hands the answers
 // to the shell (`network.pac_results`, host → answer).
 //
 // Limitations (documented in the settings): no DNS – `dnsResolve` only returns IP literals,
@@ -147,7 +147,7 @@ let nextId = 1;
 
 async function sandboxUrl(): Promise<string> {
   const { convertFileSrc } = await import("@tauri-apps/api/core");
-  return convertFileSrc("index.html", "aether-pac");
+  return convertFileSrc("index.html", "annalo-pac");
 }
 
 async function sandbox() {

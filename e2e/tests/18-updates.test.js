@@ -31,7 +31,7 @@ test("Settings → Über shows that updates are not set up", async () => {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => b.textContent.includes("Über"))?.click());
-  await app.waitText(".settings-head h1", /AETHER OS/);
+  await app.waitText(".settings-head h1", /Annalo/);
   await app.waitText(".update-state", /Automatische Updates sind in diesem Build nicht eingerichtet/);
   const button = await app.browser.execute(() => {
     const b = [...document.querySelectorAll(".settings button")].find((x) => x.textContent.includes("Jetzt nach Updates suchen"));

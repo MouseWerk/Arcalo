@@ -992,7 +992,7 @@ button.side-section-title:hover { color: var(--text-2); }
 
 /* ------------------------------------------------------------------ brand */
 
-.aether-logo { display: block; flex: none; }
+.annalo-logo { display: block; flex: none; }
 .onb-mark { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, #23252d, #0e0f12); color: #fff; box-shadow: var(--shadow-sm); }
 .home-logo { color: var(--text); opacity: 0.9; margin-bottom: 18px; }
 .about-head { display: flex; align-items: center; gap: 16px; }

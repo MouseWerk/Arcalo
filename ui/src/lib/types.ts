@@ -365,7 +365,7 @@ export interface GitSyncStatus {
   repo_path: string;
   last_at: string | null;
   last_commit: string | null;
-  /** Branch of the last push (an `aether-sync-…` branch after a fallback). */
+  /** Branch of the last push (an `annalo-sync-…` branch after a fallback). */
   last_branch: string | null;
   last_error: string | null;
   pending_changes: number;

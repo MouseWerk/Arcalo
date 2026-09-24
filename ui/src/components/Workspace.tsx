@@ -112,7 +112,7 @@ function TabLabel({ tab }: { tab: Tab }) {
   return <>{tabTitle(tab, pages)}</>;
 }
 
-const TAB_MIME = "application/x-aether-tab";
+const TAB_MIME = "application/x-annalo-tab";
 
 function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   const tr = useT();
@@ -233,7 +233,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
           iconSize={15}
           onClick={() => {
             s().set({ panelOpen: !panelOpen });
-            savePref("aether.panel", !panelOpen);
+            savePref("annalo.panel", !panelOpen);
           }}
         />
       )}

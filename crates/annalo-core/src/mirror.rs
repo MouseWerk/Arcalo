@@ -24,14 +24,14 @@ use crate::vault;
 /// Marker file at the root of a mirror.
 pub const README_NAME: &str = "README.txt";
 /// First line of [`README_NAME`]; identifies a folder as a mirror that may be replaced.
-const MARKER: &str = "AETHER OS – Markdown-Kopie";
+const MARKER: &str = "Annalo – Markdown-Kopie";
 /// Folder for the monthly time-entry CSV files.
 pub const TIME_DIR: &str = "Zeiterfassung";
 
-const README: &str = "AETHER OS – Markdown-Kopie\r
+const README: &str = "Annalo – Markdown-Kopie\r
 \r
 Dieser Ordner ist eine schreibgeschützte Kopie des Arbeitsbereichs, damit die\r
-Notizen auch ohne AETHER OS lesbar bleiben. Er wird bei jeder Sicherung\r
+Notizen auch ohne Annalo lesbar bleiben. Er wird bei jeder Sicherung\r
 vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 \r
 - Jede Seite ist eine Markdown-Datei (.md), Unterseiten liegen im gleichnamigen Ordner.\r
@@ -39,8 +39,8 @@ vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 - Zeiterfassung/JJJJ-MM.csv enthält die abgeschlossenen Buchungen je Monat\r
   (Semikolon getrennt, Dezimalkomma, UTF-8 – lässt sich direkt in Excel öffnen).\r
 \r
-Wiederherstellen: die Datenbank aus einer Sicherung (aether-….db) verwenden,\r
-oder diesen Ordner in AETHER OS als Obsidian-Vault importieren.\r
+Wiederherstellen: die Datenbank aus einer Sicherung (annalo-….db) verwenden,\r
+oder diesen Ordner in Annalo als Obsidian-Vault importieren.\r
 ";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -110,7 +110,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
         let empty = fs::read_dir(target)?.next().is_none();
         if !empty && !is_mirror(target) {
             return Err(Error::State(format!(
-                "Der Ordner {} ist nicht leer und keine Markdown-Kopie von AETHER OS – bitte einen leeren Ordner wählen",
+                "Der Ordner {} ist nicht leer und keine Markdown-Kopie von Annalo – bitte einen leeren Ordner wählen",
                 target.display()
             )));
         }
@@ -212,7 +212,7 @@ mod tests {
     use chrono::FixedOffset;
 
     fn tmp(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("aether-mirror-{name}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("annalo-mirror-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p

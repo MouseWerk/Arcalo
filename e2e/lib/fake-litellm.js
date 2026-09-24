@@ -4,7 +4,7 @@
 
 import http from "node:http";
 
-export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-aether" } = {}) {
+export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}) {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     let body = "";
@@ -73,7 +73,7 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-aether" } = {}
       } else {
         const sys = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
         const page = sys.match(/Aktuell geöffnete Seite „([^“]+)“/)?.[1];
-        text = `## Zusammenfassung\n\nDu hast gefragt: *${lastUser}*.\n\n- Kontext: ${page ? `[[${page}]]` : "keine Seite"}\n- Siehe auch [[Architektur]]\n\n\`\`\`bash\necho aether\n\`\`\``;
+        text = `## Zusammenfassung\n\nDu hast gefragt: *${lastUser}*.\n\n- Kontext: ${page ? `[[${page}]]` : "keine Seite"}\n- Siehe auch [[Architektur]]\n\n\`\`\`bash\necho annalo\n\`\`\``;
         // With numbered sources the answer cites the first one.
         if (/nummerierte Quellen/.test(sys)) text += `\n\nDas steht so in deinen Notizen [1].`;
       }

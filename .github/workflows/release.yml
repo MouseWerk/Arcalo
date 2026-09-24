@@ -65,7 +65,7 @@ jobs:
             exit 0
           fi
           NOTES="docs/releases/$TAG.md"
-          [ -f "$NOTES" ] || { echo "AETHER OS $VERSION" > /tmp/notes.md; NOTES=/tmp/notes.md; }
+          [ -f "$NOTES" ] || { echo "Annalo $VERSION" > /tmp/notes.md; NOTES=/tmp/notes.md; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -F "$NOTES"
@@ -126,9 +126,9 @@ jobs:
           echo "SIGN=$SIGN" >> "$GITHUB_ENV"
           if [ "$SIGN" = "1" ]; then
             # Compiled into the app (option_env!): switches the updater on in this build.
-            AETHER_UPDATER_PUBKEY="$(tr -d '\r\n' < src-tauri/updater.pub)"
-            export AETHER_UPDATER_PUBKEY
-            echo "AETHER_UPDATER_PUBKEY=$AETHER_UPDATER_PUBKEY" >> "$GITHUB_ENV"
+            ANNALO_UPDATER_PUBKEY="$(tr -d '\r\n' < src-tauri/updater.pub)"
+            export ANNALO_UPDATER_PUBKEY
+            echo "ANNALO_UPDATER_PUBKEY=$ANNALO_UPDATER_PUBKEY" >> "$GITHUB_ENV"
           fi
           node -e '
             const fs = require("fs");
@@ -137,7 +137,7 @@ jobs:
             c.version = process.env.VERSION;
             if (process.env.SIGN === "1") {
               c.bundle.createUpdaterArtifacts = true;
-              c.plugins.updater.pubkey = process.env.AETHER_UPDATER_PUBKEY.trim();
+              c.plugins.updater.pubkey = process.env.ANNALO_UPDATER_PUBKEY.trim();
             }
             fs.writeFileSync(p, JSON.stringify(c, null, 2));
             const t = "Cargo.toml";
@@ -206,21 +206,21 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             B="target/${{ matrix.target }}/release/bundle"
             ARCH="${{ matrix.arch }}"
-            cp "$B"/dmg/*.dmg "dist/AETHER-OS_${VERSION}_${ARCH}.dmg"
+            cp "$B"/dmg/*.dmg "dist/Annalo_${VERSION}_${ARCH}.dmg"
             # Updater archive of the .app: only in signed builds (createUpdaterArtifacts).
             TGZ="$(ls "$B"/macos/*.app.tar.gz 2>/dev/null | head -1)"
             if [ -n "$TGZ" ] && [ -f "$TGZ.sig" ]; then
-              cp "$TGZ" "dist/AETHER-OS_${VERSION}_${ARCH}.app.tar.gz"
-              cp "$TGZ.sig" "dist/AETHER-OS_${VERSION}_${ARCH}.app.tar.gz.sig"
+              cp "$TGZ" "dist/Annalo_${VERSION}_${ARCH}.app.tar.gz"
+              cp "$TGZ.sig" "dist/Annalo_${VERSION}_${ARCH}.app.tar.gz.sig"
             fi
           elif [ "${{ runner.os }}" = "Windows" ]; then
-            cp "$B"/nsis/*.exe dist/AETHER-OS_${VERSION}_x64-setup.exe
+            cp "$B"/nsis/*.exe dist/Annalo_${VERSION}_x64-setup.exe
             if [ -f "$(ls "$B"/nsis/*.exe.sig 2>/dev/null | head -1)" ]; then
-              cp "$B"/nsis/*.exe.sig dist/AETHER-OS_${VERSION}_x64-setup.exe.sig
+              cp "$B"/nsis/*.exe.sig dist/Annalo_${VERSION}_x64-setup.exe.sig
             fi
           else
-            cp "$B"/deb/*.deb dist/AETHER-OS_${VERSION}_amd64.deb
-            cp "$B"/appimage/*.AppImage dist/AETHER-OS_${VERSION}_amd64.AppImage
+            cp "$B"/deb/*.deb dist/Annalo_${VERSION}_amd64.deb
+            cp "$B"/appimage/*.AppImage dist/Annalo_${VERSION}_amd64.AppImage
           fi
           ls -la dist
 
@@ -253,7 +253,7 @@ jobs:
           VERSION="${TAG#v}"
           NOTES="$(git for-each-ref "refs/tags/$TAG" --format='%(contents)' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
           if [ "$(git cat-file -t "$TAG")" != "tag" ] || [ -z "$(echo "$NOTES" | tr -d '[:space:]')" ]; then
-            NOTES="AETHER OS $VERSION"
+            NOTES="Annalo $VERSION"
           fi
           printf '%s\n' "$NOTES" > notes.md
           # Update feed: every platform whose update file was signed.
@@ -261,9 +261,9 @@ jobs:
             const fs = require("fs");
             const version = process.argv[1];
             const files = {
-              "windows-x86_64": `AETHER-OS_${version}_x64-setup.exe`,
-              "darwin-aarch64": `AETHER-OS_${version}_aarch64.app.tar.gz`,
-              "darwin-x86_64": `AETHER-OS_${version}_x64.app.tar.gz`,
+              "windows-x86_64": `Annalo_${version}_x64-setup.exe`,
+              "darwin-aarch64": `Annalo_${version}_aarch64.app.tar.gz`,
+              "darwin-x86_64": `Annalo_${version}_x64.app.tar.gz`,
             };
             const platforms = {};
             for (const [platform, file] of Object.entries(files)) {
@@ -281,6 +281,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.tag.outputs.tag }}
-          name: AETHER OS ${{ needs.tag.outputs.tag }}
+          name: Annalo ${{ needs.tag.outputs.tag }}
           body_path: notes.md
           files: dist/*

@@ -13,7 +13,7 @@ pub const MAX_TEXT_CHARS: usize = 60_000;
 /// relative dates („nächsten Freitag“) can become `YYYY-MM-DD`.
 pub fn system_prompt(today: &str) -> String {
     format!(
-        "Du bearbeitest Texte in AETHER OS, einem Notizprogramm mit Markdown. Heute ist {today}. \
+        "Du bearbeitest Texte in Annalo, einem Notizprogramm mit Markdown. Heute ist {today}. \
          Führe die Anweisung des Nutzers auf den Text zwischen <text> und </text> aus. Antworte \
          ausschließlich mit dem Ergebnis in Markdown: keine Einleitung, keine Erklärung, kein \
          umschließender Codeblock. Behalte Links ([[Seite]], [Text](URL)), #Tags, Aufgaben \

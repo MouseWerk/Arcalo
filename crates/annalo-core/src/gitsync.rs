@@ -30,17 +30,17 @@ use crate::error::{Error, Result};
 /// Working tree of the sync, inside the data folder.
 pub const REPO_DIR: &str = "git-sync";
 /// Name of the database copy in the repository.
-pub const DB_FILE: &str = "aether-workspace.db";
+pub const DB_FILE: &str = "annalo-workspace.db";
 pub const README_FILE: &str = "README.md";
 pub const ATTRIBUTES_FILE: &str = ".gitattributes";
 /// First line of [`ATTRIBUTES_FILE`]; marks a repository written by this sync.
-const MARKER: &str = "# AETHER OS Git-Synchronisierung";
+const MARKER: &str = "# Annalo Git-Synchronisierung";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 pub const NOT_INSTALLED: &str = "Git ist nicht installiert (git-scm.com)";
 /// Prefix of the branch used when the configured branch has diverged.
-pub const FALLBACK_PREFIX: &str = "aether-sync-";
+pub const FALLBACK_PREFIX: &str = "annalo-sync-";
 
-const ATTRIBUTES: &str = "# AETHER OS Git-Synchronisierung\n\
+const ATTRIBUTES: &str = "# Annalo Git-Synchronisierung\n\
 * text=auto\n\
 *.db binary\n\
 *.png binary\n\
@@ -49,18 +49,18 @@ const ATTRIBUTES: &str = "# AETHER OS Git-Synchronisierung\n\
 *.gif binary\n\
 *.webp binary\n";
 
-const README: &str = "# AETHER OS – Git-Sicherung
+const README: &str = "# Annalo – Git-Sicherung
 
-Dieses Repository wird von AETHER OS automatisch geschrieben: bei jeder Synchronisierung
+Dieses Repository wird von Annalo automatisch geschrieben: bei jeder Synchronisierung
 wird es auf den Stand des Arbeitsbereichs gebracht. Änderungen hier werden dabei
 überschrieben.
 
 - Jede Seite ist eine Markdown-Datei (`.md`), Unterseiten liegen im gleichnamigen Ordner.
 - Eingebettete Bilder liegen in `attachments/`.
 - `Zeiterfassung/JJJJ-MM.csv` enthält die abgeschlossenen Buchungen je Monat.
-- `aether-workspace.db` (falls aktiviert) ist die letzte Sicherung der Datenbank.
+- `annalo-workspace.db` (falls aktiviert) ist die letzte Sicherung der Datenbank.
 
-Wiederherstellen: in AETHER OS unter Einstellungen → Sicherung → „Aus Git wiederherstellen…“,
+Wiederherstellen: in Annalo unter Einstellungen → Sicherung → „Aus Git wiederherstellen…“,
 oder das Repository klonen und als Obsidian-Vault importieren.
 ";
 
@@ -87,7 +87,7 @@ pub struct GitSyncSettings {
     pub branch: String,
     pub author_name: String,
     pub author_email: String,
-    /// Also commit the latest database backup as `aether-workspace.db`.
+    /// Also commit the latest database backup as `annalo-workspace.db`.
     pub include_database: bool,
     pub mode: SyncMode,
 }
@@ -98,8 +98,8 @@ impl Default for GitSyncSettings {
             enabled: false,
             remote_url: String::new(),
             branch: "main".into(),
-            author_name: "AETHER OS".into(),
-            author_email: "aether-os@localhost".into(),
+            author_name: "Annalo".into(),
+            author_email: "annalo@localhost".into(),
             include_database: false,
             mode: SyncMode::WithBackup,
         }
@@ -844,7 +844,7 @@ pub fn pending_changes(source: &Path, repo: &Path) -> usize {
 /// Removes this sync's own README from a cloned repository before it is imported as a vault.
 pub fn strip_sync_files(dir: &Path) -> Result<()> {
     let readme = dir.join(README_FILE);
-    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with("# AETHER OS – Git-Sicherung")) {
+    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with("# Annalo – Git-Sicherung")) {
         fs::remove_file(readme)?;
     }
     Ok(())
@@ -856,7 +856,7 @@ mod tests {
     use chrono::FixedOffset;
 
     fn tmp(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("aether-gitsync-{name}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("annalo-gitsync-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
@@ -948,7 +948,7 @@ mod tests {
         assert!(clean.contains("[Zeile mit Zugangsdaten entfernt]"));
 
         assert_eq!(sanitize_host("DESKTOP-4711.firma.local\n"), "desktop-4711-firma-local");
-        assert_eq!(fallback_branch(""), "aether-sync-rechner");
+        assert_eq!(fallback_branch(""), "annalo-sync-rechner");
         assert!(check_branch("main").is_ok() && check_branch("team/backup").is_ok());
         for bad in ["", "-x", "a..b", "a b", "x.lock", "a:b", "/a"] {
             assert!(check_branch(bad).is_err(), "{bad}");
@@ -963,7 +963,7 @@ mod tests {
         let n = normalize(&s).unwrap();
         assert_eq!(
             (n.remote_url.as_str(), n.branch.as_str(), n.author_name.as_str()),
-            ("https://x/y.git", "main", "AETHER OS")
+            ("https://x/y.git", "main", "Annalo")
         );
         assert!(normalize(&GitSyncSettings { remote_url: "-oProxyCommand=x".into(), ..s }).is_err());
     }
@@ -993,7 +993,7 @@ mod tests {
 
     #[test]
     fn missing_git_and_timeouts_are_reported() {
-        let git = Git::new(None, "").with_program("aether-kein-git-hier");
+        let git = Git::new(None, "").with_program("annalo-kein-git-hier");
         assert_eq!(git.version().unwrap_err().to_string(), format!("invalid state: {NOT_INSTALLED}"));
         #[cfg(unix)]
         if git_available() {
@@ -1032,7 +1032,7 @@ mod tests {
         sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
         write(&src.join("Notiz.md"), "Hallo Welt");
         write(&src.join("attachments/bild.png"), "PNG");
-        let backup = base.join("aether-1.db");
+        let backup = base.join("annalo-1.db");
         fs::write(&backup, b"SQLite format 3\0").unwrap();
         let settings = GitSyncSettings {
             enabled: true,
@@ -1141,10 +1141,10 @@ mod tests {
         )
         .unwrap();
         assert!(out.fallback, "{out:?}");
-        assert_eq!(out.branch, "aether-sync-b-ro-pc");
-        assert!(out.message.contains("aether-sync-b-ro-pc"));
+        assert_eq!(out.branch, "annalo-sync-b-ro-pc");
+        assert!(out.message.contains("annalo-sync-b-ro-pc"));
         assert_eq!(sh(&bare, &["log", "-1", "--format=%s", "main"]).trim(), "fremd", "foreign branch untouched");
-        assert_eq!(sh(&bare, &["show", "aether-sync-b-ro-pc:Notiz.md"]), "meins");
+        assert_eq!(sh(&bare, &["show", "annalo-sync-b-ro-pc:Notiz.md"]), "meins");
 
         // An unreachable remote is a clear error.
         let broken = GitSyncSettings { remote_url: base.join("fehlt.git").display().to_string(), ..settings };

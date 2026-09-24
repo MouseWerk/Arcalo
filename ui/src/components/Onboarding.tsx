@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FilePlus2, FolderInput, LayoutDashboard, Server } from "lucide-react";
-import { AetherLogo } from "./Logo";
+import { AnnaloLogo } from "./Logo";
 import { api } from "../lib/api";
 import { importVault } from "../lib/actions";
 import { useApp } from "../store/app";
@@ -71,9 +71,9 @@ export function Onboarding() {
     <div className="home">
       <div className="home-inner onboarding">
         <div className="onb-mark" aria-hidden>
-          <AetherLogo size={34} />
+          <AnnaloLogo size={34} />
         </div>
-        <h1>Willkommen bei AETHER OS</h1>
+        <h1>Willkommen bei Annalo</h1>
         <p className="muted">Notizen, Projekte und Zeiterfassung an einem Ort. Wie möchtest du beginnen?</p>
         <div className="onb-choices">
           {choices.map((c, i) => (

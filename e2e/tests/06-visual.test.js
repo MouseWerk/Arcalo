@@ -37,7 +37,7 @@ for (const theme of ["dark", "light"]) {
   test(`screens in ${theme} mode`, async () => {
     await setTheme(theme);
     await app.browser.execute(() => {
-      localStorage.removeItem("aether.tabs");
+      localStorage.removeItem("annalo.tabs");
     });
     await openTree("PRJ-2026-X Rollout");
     await app.waitFor(".ProseMirror table");

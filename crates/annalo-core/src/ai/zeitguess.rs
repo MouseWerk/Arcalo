@@ -29,7 +29,7 @@ pub struct Candidate {
     pub reference: String,
     /// Vorgang (or Netzplan) description.
     pub title: String,
-    /// `Systemintegration ERP · PRJ-2026-X Aether Rollout`
+    /// `Systemintegration ERP · PRJ-2026-X Annalo Rollout`
     pub context: String,
     /// Leistungsarten booked on it recently, most used first.
     pub leistungsarten: Vec<String>,
@@ -152,7 +152,7 @@ pub fn unreferenced(line: &str) -> Option<Unreferenced<'_>> {
     Some(Unreferenced { command, duration, rest: rest.trim() })
 }
 
-pub const SYSTEM_PROMPT: &str = "Du ordnest Zeitbuchungen in AETHER OS dem passenden Vorgang zu. \
+pub const SYSTEM_PROMPT: &str = "Du ordnest Zeitbuchungen in Annalo dem passenden Vorgang zu. \
 Wähle aus der Liste der buchbaren Referenzen genau die, zu der die Tätigkeit am besten passt. \
 Zuletzt gebuchte Referenzen stehen oben und sind bei ähnlicher Eignung vorzuziehen. \
 Antworte ausschließlich mit einem JSON-Objekt, ohne Codeblock und ohne weiteren Text: \

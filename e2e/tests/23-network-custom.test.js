@@ -56,7 +56,7 @@ function startProxy() {
 before(async () => {
   llm = await startFakeLiteLLM({ port: 4998 });
   proxy = await startProxy();
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aether-e2e-net-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-net-"));
   app = await launch();
 });
 after(async () => {
@@ -254,7 +254,7 @@ test("export and import of all settings (no secrets) round-trip", async () => {
   const file = path.join(tmp, "einstellungen.json");
   await app.invoke("settings_export", { path: file });
   const exported = JSON.parse(fs.readFileSync(file, "utf8"));
-  assert.equal(exported.format, "aether-os-settings");
+  assert.equal(exported.format, "annalo-settings");
   assert.equal(exported.settings.appearance.accent, "teal");
   const raw = fs.readFileSync(file, "utf8");
   assert.ok(!raw.includes(llm.apiKey) && !raw.includes("geh eim"), "no secrets in the export");

@@ -79,7 +79,7 @@ test("an attachment embed renders as an image", async () => {
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title: "Screenshots", create: false })) !== null);
   await app.invoke("page_save", { id: await pageId("Screenshots"), content: `Fehlerbild:\n\n${saved.markdown}\n` });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("aether:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
   const img = await app.waitFor(".ProseMirror img.embed-image");
   await app.browser.waitUntil(() => app.browser.execute((el) => el.complete && el.naturalWidth === 2, img), { timeoutMsg: "attachment did not load" });
   await app.shot("attachment-embed");

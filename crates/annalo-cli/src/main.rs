@@ -1,22 +1,22 @@
-//! `aether` – headless access to an AETHER OS workspace database.
+//! `annalo` – headless access to an Annalo workspace database.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use aether_core::db::EntryFilter;
-use aether_core::export::{self, ExportFormat, ExportOptions};
-use aether_core::model::StatusFlag;
-use aether_core::tracking::{self, AlertLevel, Thresholds};
-use aether_core::{Database, Result, demo, netzplan, search, zeit};
+use annalo_core::db::EntryFilter;
+use annalo_core::export::{self, ExportFormat, ExportOptions};
+use annalo_core::model::StatusFlag;
+use annalo_core::tracking::{self, AlertLevel, Thresholds};
+use annalo_core::{Database, Result, demo, netzplan, search, zeit};
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "aether", version, about = "AETHER OS workspace from the command line")]
+#[command(name = "annalo", version, about = "Annalo workspace from the command line")]
 struct Cli {
     /// Workspace database file.
-    #[arg(long, env = "AETHER_DB", default_value = "aether.db", global = true)]
+    #[arg(long, env = "ANNALO_DB", default_value = "annalo.db", global = true)]
     db: PathBuf,
     #[command(subcommand)]
     cmd: Cmd,
@@ -26,7 +26,7 @@ struct Cli {
 enum Cmd {
     /// Seed a sample project, Netzplan and notes.
     Demo,
-    /// Book time: `aether zeit NP-8801/1020 2.5h #DEV 'Systemintegration'`.
+    /// Book time: `annalo zeit NP-8801/1020 2.5h #DEV 'Systemintegration'`.
     Zeit {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
         args: Vec<String>,
@@ -76,7 +76,7 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum TimerCmd {
-    /// `aether timer start NP-8801/1020 [#DEV] [description…]`
+    /// `annalo timer start NP-8801/1020 [#DEV] [description…]`
     Start {
         target: String,
         rest: Vec<String>,
@@ -237,7 +237,7 @@ fn run(cli: Cli) -> Result<()> {
                             .iter()
                             .find(|v| &v.vorgang_nr == a)
                             .map(|v| v.id)
-                            .ok_or_else(|| aether_core::Error::not_found("vorgang", a.clone()))
+                            .ok_or_else(|| annalo_core::Error::not_found("vorgang", a.clone()))
                     })
                     .collect::<Result<_>>()?;
                 let v = db.create_vorgang(n.id, &vorgang_nr, &description, days, hours)?;
@@ -305,19 +305,19 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Import { dir } => {
-            let r = aether_core::vault::import_vault(&db, &dir, &attachments_dir(&cli.db))?;
+            let r = annalo_core::vault::import_vault(&db, &dir, &attachments_dir(&cli.db))?;
             println!(
                 "{} Seiten, {} Ordner, {} Bilder importiert ({} Dateien übersprungen)",
                 r.pages, r.folders, r.attachments, r.skipped
             );
         }
         Cmd::ExportVault { dir } => {
-            let n = aether_core::vault::export_vault(&db, &dir, &attachments_dir(&cli.db))?;
+            let n = annalo_core::vault::export_vault(&db, &dir, &attachments_dir(&cli.db))?;
             println!("{n} Markdown-Dateien nach {} geschrieben", dir.display());
         }
         Cmd::Export { format, from, to, pernr, jira_map, mark } => {
             let format = ExportFormat::parse(&format).ok_or_else(|| {
-                aether_core::Error::Parse(format!("unknown format '{format}' (cats, jira, csv, json)"))
+                annalo_core::Error::Parse(format!("unknown format '{format}' (cats, jira, csv, json)"))
             })?;
             let jira_issue_map: HashMap<String, String> = match jira_map {
                 Some(p) => serde_json::from_str(&std::fs::read_to_string(p)?)?,
@@ -346,7 +346,7 @@ fn run(cli: Cli) -> Result<()> {
 
 /// Attachments live next to the database, as in the desktop app.
 fn attachments_dir(db: &std::path::Path) -> PathBuf {
-    aether_core::attachments::dir(db.parent().unwrap_or(std::path::Path::new(".")))
+    annalo_core::attachments::dir(db.parent().unwrap_or(std::path::Path::new(".")))
 }
 
 fn main() -> ExitCode {

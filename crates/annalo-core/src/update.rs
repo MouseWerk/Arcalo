@@ -1,7 +1,7 @@
 //! Auto-update decisions that do not need the updater itself.
 //!
 //! The desktop shell only switches the updater on when the release build compiled in the
-//! public key of the signing keypair (`AETHER_UPDATER_PUBKEY`). Development and test builds
+//! public key of the signing keypair (`ANNALO_UPDATER_PUBKEY`). Development and test builds
 //! have no key: they never contact the update server.
 
 /// GitHub repository the releases are published to.

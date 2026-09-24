@@ -1,4 +1,4 @@
-//! Sample workspace used by `aether demo` and the first launch of the app.
+//! Sample workspace used by `annalo demo` and the first launch of the app.
 
 use chrono::{DateTime, Duration, Utc};
 
@@ -6,7 +6,7 @@ use crate::db::Database;
 use crate::error::Result;
 use crate::model::{EntrySource, NewTimeEntry};
 
-/// Seeds the samples on explicit request (`aether demo`), even if they were removed before.
+/// Seeds the samples on explicit request (`annalo demo`), even if they were removed before.
 pub fn seed_explicit(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     db.conn().execute("DELETE FROM settings WHERE key = 'meta.demo_seeded'", [])?;
     seed(db, now)
@@ -23,7 +23,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     if !db.list_projects()?.is_empty() {
         return Ok(false);
     }
-    let p = db.create_project("PRJ-2026-X", "Aether Rollout")?;
+    let p = db.create_project("PRJ-2026-X", "Annalo Rollout")?;
     let np = db.create_netzplan(p.id, "NP-8801", "NP-8801-1020", "Systemintegration ERP", 120.0)?;
     let np2 = db.create_netzplan(p.id, "NP-8802", "NP-8802-2010", "Schulung & Go-Live", 40.0)?;
 
@@ -74,7 +74,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     let start = db.create_page(None, "Willkommen", Some("sparkles"))?;
     db.save_page_content(
         start.id,
-        "AETHER OS ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
+        "Annalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
          ## So arbeitest du hier\n\n\
          - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
          - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
@@ -110,7 +110,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
          - **Outbound**: REST-Schnittstelle Auftragsdaten (OpenAPI 3.1)\n\n\
          > **Risiko:** Vorgang 1020 liegt auf dem kritischen Pfad. Verzug verschiebt die Abnahme.\n\n\
          ## Betrieb\n\n\
-         ```powershell\nGet-Service -Name 'Aether*' | Restart-Service\n```\n",
+         ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n",
     )?;
     let jf = db.create_page(Some(proj.id), "Jour fixe 22.09.", Some("users"))?;
     db.save_page_content(

@@ -1,10 +1,10 @@
-// Collapsed folders of the sidebar tree, kept in localStorage (`aether.collapsed`).
+// Collapsed folders of the sidebar tree, kept in localStorage (`annalo.collapsed`).
 
 import type { PageNode } from "./types";
 
-const KEY = "aether.collapsed";
+const KEY = "annalo.collapsed";
 /** Fired when folders were collapsed from outside the sidebar (e.g. after an import). */
-export const COLLAPSED_EVENT = "aether:collapsed";
+export const COLLAPSED_EVENT = "annalo:collapsed";
 
 export function readCollapsed(): Set<number> {
   try {

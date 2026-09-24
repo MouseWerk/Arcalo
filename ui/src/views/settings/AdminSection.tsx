@@ -36,7 +36,7 @@ export function AdminSection({ save }: { save: (next: Settings) => Promise<boole
   const [preview, setPreview] = useState<{ settings: Settings; changes: Change[]; warnings: string[]; title: string } | null>(null);
 
   const doExport = async () => {
-    const path = await saveDialog({ defaultPath: `aether-einstellungen-${isoDay(new Date())}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+    const path = await saveDialog({ defaultPath: `annalo-einstellungen-${isoDay(new Date())}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
     if (!path) return;
     try {
       await api.exportSettings(path);

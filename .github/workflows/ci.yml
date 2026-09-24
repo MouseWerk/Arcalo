@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb x11-utils
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test -p aether-core -p aether-cli
+      - run: cargo test -p annalo-core -p annalo-cli
       - run: npm ci --prefix ui && npm run --prefix ui typecheck && npm test --prefix ui
       - run: cargo install tauri-driver --locked
       - name: End-to-end tests against the desktop app
@@ -50,7 +50,7 @@ jobs:
         working-directory: src-tauri
       - uses: actions/upload-artifact@v4
         with:
-          name: aether-os-windows
+          name: annalo-windows
           path: target/release/bundle/nsis/*.exe
 
   macos:
@@ -69,15 +69,15 @@ jobs:
       - run: npm ci --prefix ui
       # The macOS-only code (CoreGraphics idle probe, menu bar, title bar overlay, Dock reopen)
       # is only compiled here.
-      - run: cargo clippy -p aether-os --all-targets -- -D warnings
-      - run: cargo test -p aether-core activity
+      - run: cargo clippy -p annalo --all-targets -- -D warnings
+      - run: cargo test -p annalo-core activity
       - run: cargo install tauri-cli --version "^2" --locked
       - name: Bundle the app (ad-hoc signed)
         run: cargo tauri build --bundles app --target aarch64-apple-darwin
         working-directory: src-tauri
       # ditto keeps the bundle's symlinks and permissions (upload-artifact would not).
-      - run: ditto -c -k --keepParent "target/aarch64-apple-darwin/release/bundle/macos/AETHER OS.app" AETHER-OS-macos.zip
+      - run: ditto -c -k --keepParent "target/aarch64-apple-darwin/release/bundle/macos/Annalo.app" Annalo-macos.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: aether-os-macos
-          path: AETHER-OS-macos.zip
+          name: annalo-macos
+          path: Annalo-macos.zip

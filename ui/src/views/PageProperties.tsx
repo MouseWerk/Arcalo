@@ -21,7 +21,7 @@ const isTagsKey = (key: string) => /^tags?$/i.test(key);
 const KEY_HINT = "Ungültiger Name: nicht mit Leerzeichen oder # - [ ] { } ' \" & * ! | > % @ ` ? , beginnen";
 
 /** Opens „Eigenschaft hinzufügen“ on the page of the focused pane (palette, Ctrl+;). */
-export const ADD_PROPERTY_EVENT = "aether:add-property";
+export const ADD_PROPERTY_EVENT = "annalo:add-property";
 export const requestAddProperty = () => window.dispatchEvent(new Event(ADD_PROPERTY_EVENT));
 
 /** The WBS reference of a page's properties, as the core resolves it (`vorgang:` / `netzplan:`). */
@@ -430,8 +430,8 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
   // The card reads the saved page: reload after each save of this page.
   useEffect(() => {
     const onSaved = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === pageId && setSaved((n) => n + 1);
-    window.addEventListener("aether:page-saved", onSaved);
-    return () => window.removeEventListener("aether:page-saved", onSaved);
+    window.addEventListener("annalo:page-saved", onSaved);
+    return () => window.removeEventListener("annalo:page-saved", onSaved);
   }, [pageId]);
   useEffect(() => {
     let alive = true;
@@ -455,7 +455,7 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
   const start = async () => {
     const s = useApp.getState();
     try {
-      await api.timerStart(work.netzplan_id!, work.vorgang, localStorage.getItem("aether.timer.la") || "DEV", title);
+      await api.timerStart(work.netzplan_id!, work.vorgang, localStorage.getItem("annalo.timer.la") || "DEV", title);
       s.bumpEntries();
       s.toast({ tone: "info", title: "Timer gestartet", detail: work.label });
     } catch (e) {

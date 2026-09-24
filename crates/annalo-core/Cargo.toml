@@ -1,6 +1,6 @@
 [package]
-name = "aether-core"
-description = "Local-first core of AETHER OS: storage, WBS time tracking, Netzplan scheduling and the LiteLLM engine"
+name = "annalo-core"
+description = "Local-first core of Annalo: storage, WBS time tracking, Netzplan scheduling and the LiteLLM engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

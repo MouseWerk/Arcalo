@@ -1,13 +1,13 @@
 //! Desktop integration: tray icon, close to tray, quick-capture window,
-//! native reminders and autostart. The decisions live in `aether_core::desktop`;
+//! native reminders and autostart. The decisions live in `annalo_core::desktop`;
 //! this module only wires them to the window system.
 
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aether_core::desktop::{self as core, CaptureOutcome};
-use aether_core::{Database, Error};
+use annalo_core::desktop::{self as core, CaptureOutcome};
+use annalo_core::{Database, Error};
 use chrono::{Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -86,7 +86,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let mac = cfg!(target_os = "macos");
     let mut builder = TrayIconBuilder::with_id("main")
         .menu(&menu)
-        .tooltip("AETHER OS")
+        .tooltip("Annalo")
         .show_menu_on_left_click(mac)
         .on_menu_event(on_menu)
         .on_tray_icon_event(move |tray, event| {
@@ -273,7 +273,7 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<()> {
 fn show_capture(app: &AppHandle) -> tauri::Result<()> {
     show_popup(
         app,
-        &Popup { label: CAPTURE, title: "Schnellerfassung – AETHER OS", size: (620.0, 132.0), transparent: false },
+        &Popup { label: CAPTURE, title: "Schnellerfassung – Annalo", size: (620.0, 132.0), transparent: false },
     )
 }
 
@@ -300,7 +300,7 @@ pub fn open_search(app: &AppHandle, toggle: bool) {
             let _ = w.hide();
             return;
         }
-        let popup = Popup { label: SEARCH, title: "Suchen – AETHER OS", size: (640.0, 420.0), transparent: true };
+        let popup = Popup { label: SEARCH, title: "Suchen – Annalo", size: (640.0, 420.0), transparent: true };
         if let Err(e) = show_popup(&app, &popup) {
             eprintln!("quick search failed: {e}");
         }
@@ -476,7 +476,7 @@ fn booked_today(db: &Database) -> Result<i64> {
     let now = Utc::now();
     let midnight = Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap_or_default();
     let from = Local.from_local_datetime(&midnight).earliest().map(|d| d.with_timezone(&Utc));
-    let filter = aether_core::db::EntryFilter { from, to: Some(now + TimeDelta::days(1)), ..Default::default() };
+    let filter = annalo_core::db::EntryFilter { from, to: Some(now + TimeDelta::days(1)), ..Default::default() };
     let booked: i64 = db.list_time_entries(&filter)?.iter().filter_map(|r| r.entry.duration_minutes).sum();
     let running = db.running_timer()?.map_or(0, |e| (now - e.start_time).num_minutes().max(0));
     Ok(booked + running)
@@ -517,7 +517,7 @@ pub fn periodic(app: &AppHandle) {
         (eod, late)
     };
     if let Some(msg) = eod {
-        notify(app, &msg, "Zur Zeiterfassung: AETHER OS öffnen");
+        notify(app, &msg, "Zur Zeiterfassung: Annalo öffnen");
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             desktop(app).pending_timesheet.store(true, Ordering::Relaxed);
@@ -592,7 +592,7 @@ mod tests {
                 assert_eq!(parse_shortcut_for(spec, mac), Ok(super_k), "{spec} (mac: {mac})");
             }
         }
-        assert!(parse_shortcut(aether_core::settings::DEFAULT_CAPTURE_SHORTCUT).is_ok());
+        assert!(parse_shortcut(annalo_core::settings::DEFAULT_CAPTURE_SHORTCUT).is_ok());
     }
 
     #[test]

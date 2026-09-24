@@ -153,7 +153,7 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("aether-att-{name}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("annalo-att-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         p
     }

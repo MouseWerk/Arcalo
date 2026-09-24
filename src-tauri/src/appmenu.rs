@@ -21,28 +21,28 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item = |id: &str, text: &str, accel: Option<&str>| MenuItem::with_id(app, id, text, true, accel);
     let sep = || PredefinedMenuItem::separator(app);
     let about = AboutMetadata {
-        name: Some("AETHER OS".into()),
+        name: Some("Annalo".into()),
         version: Some(app.package_info().version.to_string()),
         ..Default::default()
     };
 
     let app_menu = Submenu::with_items(
         app,
-        "AETHER OS",
+        "Annalo",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("Über AETHER OS"), Some(about))?,
+            &PredefinedMenuItem::about(app, Some("Über Annalo"), Some(about))?,
             &sep()?,
             &item("menu:settings", "Einstellungen …", Some("Cmd+,"))?,
             &sep()?,
             &PredefinedMenuItem::services(app, Some("Dienste"))?,
             &sep()?,
-            &PredefinedMenuItem::hide(app, Some("AETHER OS ausblenden"))?,
+            &PredefinedMenuItem::hide(app, Some("Annalo ausblenden"))?,
             &PredefinedMenuItem::hide_others(app, Some("Andere ausblenden"))?,
             &PredefinedMenuItem::show_all(app, Some("Alle einblenden"))?,
             &sep()?,
             // Not the predefined quit (`terminate:`), which would skip storing open editors.
-            &item(QUIT, "AETHER OS beenden", Some("Cmd+Q"))?,
+            &item(QUIT, "Annalo beenden", Some("Cmd+Q"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -87,7 +87,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             // ⌘K stays with the window (it toggles the palette there).
             &item("menu:palette", "Befehlspalette", None)?,
-            &item(WEBSITE, "AETHER OS auf GitHub", None)?,
+            &item(WEBSITE, "Annalo auf GitHub", None)?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &edit, &view, &window, &help])

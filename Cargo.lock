@@ -9,55 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "aether-cli"
-version = "1.0.0"
-dependencies = [
- "aether-core",
- "chrono",
- "clap",
- "serde_json",
-]
-
-[[package]]
-name = "aether-core"
-version = "1.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "futures-util",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "aether-os"
-version = "1.0.0"
-dependencies = [
- "aether-core",
- "base64 0.22.1",
- "chrono",
- "keyring",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,6 +39,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "annalo"
+version = "1.0.0"
+dependencies = [
+ "annalo-core",
+ "base64 0.22.1",
+ "chrono",
+ "keyring",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "annalo-cli"
+version = "1.0.0"
+dependencies = [
+ "annalo-core",
+ "chrono",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
+name = "annalo-core"
+version = "1.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "futures-util",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

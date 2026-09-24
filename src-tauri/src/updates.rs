@@ -1,14 +1,14 @@
 //! Auto-update: checks the GitHub release feed (`latest.json`), downloads the signed
 //! installer and restarts into the new version. Only switched on when the build compiled in
-//! the updater's public key (`AETHER_UPDATER_PUBKEY`, set by the release workflow); other
+//! the updater's public key (`ANNALO_UPDATER_PUBKEY`, set by the release workflow); other
 //! builds never contact the update server. Nothing is installed without the user's click:
 //! the UI asks, stores all open editors and only then calls [`update_install`].
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aether_core::Error;
-use aether_core::update as core;
+use annalo_core::Error;
+use annalo_core::update as core;
 use serde::Serialize;
 use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -18,7 +18,7 @@ use crate::{Result, lock};
 
 /// Public key of the signing keypair, compiled in by the release build.
 pub fn pubkey() -> Option<&'static str> {
-    core::configured_pubkey(option_env!("AETHER_UPDATER_PUBKEY"))
+    core::configured_pubkey(option_env!("ANNALO_UPDATER_PUBKEY"))
 }
 
 /// The updater plugin, or `None` in builds without a key (the app then runs without it).
@@ -101,10 +101,10 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
         let state = app.state::<crate::AppState>();
         let settings = state.settings();
         let password = state.proxy_secret.get();
-        aether_core::network::Prepared::new(
+        annalo_core::network::Prepared::new(
             &settings.network,
             password.as_deref(),
-            aether_core::network::Purpose::Updates,
+            annalo_core::network::Purpose::Updates,
         )?
     };
     let updater = app

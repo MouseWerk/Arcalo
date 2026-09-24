@@ -9,7 +9,7 @@ import { Button, Dialog, IconButton } from "./ui";
 import { clock, h1, usd } from "../lib/format";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
-import { AetherLogo } from "./Logo";
+import { AnnaloLogo } from "./Logo";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { t, useT } from "../lib/i18n";
@@ -130,7 +130,7 @@ function StartPage() {
     <div className="home">
       <div className="home-inner home-dash">
         <header className="home-head">
-          <AetherLogo size={30} className="home-logo" />
+          <AnnaloLogo size={30} className="home-logo" />
           <div>
             <h1>{greeting}</h1>
             <p className="muted">{new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</p>

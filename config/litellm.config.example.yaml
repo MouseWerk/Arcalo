@@ -1,7 +1,7 @@
-# Example LiteLLM proxy config for AETHER OS.
+# Example LiteLLM proxy config for Annalo.
 # Start with:  litellm --config config/litellm.config.example.yaml --port 4000
 #
-# The model names on the left ("model_name") are what AETHER OS routes to;
+# The model names on the left ("model_name") are what Annalo routes to;
 # map them to whatever local or cloud models you use.
 model_list:
   - model_name: ollama/llama3.2          # Tier "local"

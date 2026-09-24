@@ -1,4 +1,4 @@
--- aether:reindex
+-- annalo:reindex
 -- v4: task items (`- [ ] …`) of every page, derived from pages.content on save
 -- like page_links/page_tags. The marker above makes the app re-index all pages.
 

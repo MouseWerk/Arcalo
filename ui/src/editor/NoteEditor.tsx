@@ -70,7 +70,7 @@ export interface NoteEditorHandle {
 }
 
 /** Asks the page view of `pageId` for „Besprechung zusammenfassen“ (slash command). */
-export const MEETING_SUMMARY_EVENT = "aether:meeting-summary";
+export const MEETING_SUMMARY_EVENT = "annalo:meeting-summary";
 
 // Flush handles of all mounted editors (rename, window close).
 const flushers = new Set<() => Promise<void>>();
@@ -82,7 +82,7 @@ export async function flushAllEditors() {
 
 /** Editors showing one of `ids` (all when omitted) refetch their page, unless they hold unsaved edits. */
 export function reloadEditors(ids?: number[]) {
-  window.dispatchEvent(new CustomEvent("aether:reload-pages", { detail: { ids } }));
+  window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids } }));
 }
 
 export function NoteEditor({
@@ -171,7 +171,7 @@ export function NoteEditor({
       .then((saved) => {
         cb.current.onSaved(saved);
         // Other panes showing the same page pick up the new content.
-        window.dispatchEvent(new CustomEvent("aether:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
+        window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
         setStatus(dirty.current ? "dirty" : "saved");
       })
       .catch((e) => {
@@ -348,7 +348,7 @@ export function NoteEditor({
       },
       onCreate: ({ editor }) => activeRef.current && publishOutline(editor),
       // Other panes with this page store their edits first, so we continue from them.
-      onFocus: () => window.dispatchEvent(new CustomEvent("aether:flush-page", { detail: { id: doc.id, from: instance.current } })),
+      onFocus: () => window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } })),
     },
     [doc.id],
   );
@@ -365,7 +365,7 @@ export function NoteEditor({
     const setFrontmatter = (fm: string) => {
       if (fm === frontmatter.current) return;
       // Like focusing the editor: other panes with this page store their edits first.
-      window.dispatchEvent(new CustomEvent("aether:flush-page", { detail: { id: doc.id, from: instance.current } }));
+      window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } }));
       frontmatter.current = fm;
       dirty.current = true;
       setStatus("dirty");
@@ -422,13 +422,13 @@ export function NoteEditor({
       window.clearTimeout(saveTimer.current);
       save(editor);
     };
-    window.addEventListener("aether:page-saved", onSaved);
-    window.addEventListener("aether:reload-pages", onReload);
-    window.addEventListener("aether:flush-page", onFlushPage);
+    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("annalo:reload-pages", onReload);
+    window.addEventListener("annalo:flush-page", onFlushPage);
     return () => {
-      window.removeEventListener("aether:page-saved", onSaved);
-      window.removeEventListener("aether:reload-pages", onReload);
-      window.removeEventListener("aether:flush-page", onFlushPage);
+      window.removeEventListener("annalo:page-saved", onSaved);
+      window.removeEventListener("annalo:reload-pages", onReload);
+      window.removeEventListener("annalo:flush-page", onFlushPage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, doc.id]);

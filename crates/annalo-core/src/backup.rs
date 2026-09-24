@@ -1,5 +1,5 @@
 //! Database backups: consistent snapshots written with `VACUUM INTO` as
-//! `aether-YYYYMMDD-HHMMSS.db` (UTC, so names sort chronologically across DST
+//! `annalo-YYYYMMDD-HHMMSS.db` (UTC, so names sort chronologically across DST
 //! changes), pruned to the newest `keep`. Times are shown in local time.
 
 use std::fs;
@@ -21,9 +21,9 @@ pub struct BackupInfo {
     pub size_bytes: u64,
 }
 
-/// Parses `aether-YYYYMMDD-HHMMSS.db` (UTC) into local time; other files in the folder are ignored.
+/// Parses `annalo-YYYYMMDD-HHMMSS.db` (UTC) into local time; other files in the folder are ignored.
 fn backup_time(file_name: &str) -> Option<DateTime<Local>> {
-    let stamp = file_name.strip_prefix("aether-")?.strip_suffix(".db")?;
+    let stamp = file_name.strip_prefix("annalo-")?.strip_suffix(".db")?;
     let naive = NaiveDateTime::parse_from_str(stamp, STAMP).ok()?;
     Some(naive.and_utc().with_timezone(&Local))
 }
@@ -61,7 +61,7 @@ pub fn backup_to(db: &Database, dir: &Path, keep: usize) -> Result<BackupInfo> {
 /// `now` is UTC.
 fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Result<BackupInfo> {
     fs::create_dir_all(dir)?;
-    let name = format!("aether-{}.db", now.format(STAMP));
+    let name = format!("annalo-{}.db", now.format(STAMP));
     let path = dir.join(&name);
     // VACUUM INTO refuses existing files; a second backup within the same second replaces the first.
     if path.exists() {
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn snapshots_are_readable_and_pruned() {
-        let dir = std::env::temp_dir().join(format!("aether-backup-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("annalo-backup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let db = Database::open_in_memory().unwrap();
         let p = db.create_page(None, "Gesichert", None).unwrap();
@@ -98,7 +98,7 @@ mod tests {
         }
         let list = list_backups(&dir).unwrap();
         let names: Vec<_> = list.iter().map(|b| b.file_name.as_str()).collect();
-        assert_eq!(names, ["aether-20260923-040000.db", "aether-20260923-030000.db"]);
+        assert_eq!(names, ["annalo-20260923-040000.db", "annalo-20260923-030000.db"]);
         assert!(list[0].size_bytes > 0);
         assert!(dir.join("notiz.txt").exists(), "other files are left alone");
 

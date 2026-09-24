@@ -60,7 +60,7 @@ export async function checkForUpdates(manual: boolean) {
   try {
     const found = await api.updateCheck();
     useUpdates.setState((s) => ({ available: found, checkedAt: new Date(), dismissed: manual ? null : s.dismissed }));
-    if (!found && manual) toast({ tone: "success", title: "AETHER OS ist aktuell", detail: `Version ${status.current_version} ist die neueste.` });
+    if (!found && manual) toast({ tone: "success", title: "Annalo ist aktuell", detail: `Version ${status.current_version} ist die neueste.` });
   } catch (e) {
     if (manual) useApp.getState().error("Update-Prüfung fehlgeschlagen", e);
     else console.warn("update check failed", e);
@@ -119,7 +119,7 @@ export function UpdateToast() {
         {busy ? (
           <>
             <div className="toast-title">{phase === "installing" ? `Version ${available.version} wird installiert` : `Version ${available.version} wird geladen`}</div>
-            <div className="toast-detail">{phase === "installing" ? "AETHER OS startet gleich neu." : progressLabel(progress)}</div>
+            <div className="toast-detail">{phase === "installing" ? "Annalo startet gleich neu." : progressLabel(progress)}</div>
             {phase === "downloading" && <Progress value={progressValue(progress)} />}
           </>
         ) : (

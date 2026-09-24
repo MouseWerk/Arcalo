@@ -217,7 +217,7 @@ pub fn tray_tooltip(running: Option<(&str, i64)>) -> String {
             let m = minutes.max(0);
             format!("{label} · {:02}:{:02}", m / 60, m % 60)
         }
-        None => "AETHER OS".to_owned(),
+        None => "Annalo".to_owned(),
     }
 }
 
@@ -353,6 +353,6 @@ mod tests {
     fn tooltip_shows_running_timer() {
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", Some("1020")), 83))), "NP-8801/1020 · 01:23");
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", None), 600))), "NP-8801 · 10:00");
-        assert_eq!(tray_tooltip(None), "AETHER OS");
+        assert_eq!(tray_tooltip(None), "Annalo");
     }
 }

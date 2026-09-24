@@ -3,9 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use aether_core::Error;
-use aether_core::prefs::{self, CostLevel};
-use aether_core::settings::Settings;
+use annalo_core::Error;
+use annalo_core::prefs::{self, CostLevel};
+use annalo_core::settings::Settings;
 use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -15,7 +15,7 @@ use crate::{AppState, Result};
 /// Largest settings file that is read for an import.
 const MAX_IMPORT_BYTES: u64 = 1024 * 1024;
 /// Marker of an exported settings file.
-pub const EXPORT_FORMAT: &str = "aether-os-settings";
+pub const EXPORT_FORMAT: &str = "annalo-settings";
 
 #[derive(Serialize)]
 struct ExportFile<'a> {
@@ -71,7 +71,7 @@ pub fn settings_defaults(state: State<'_, AppState>, section: Option<String>) ->
             let cur = state.settings();
             Ok(Settings {
                 litellm_base_url: cur.litellm_base_url,
-                router: aether_core::ai::router::RouterConfig {
+                router: annalo_core::ai::router::RouterConfig {
                     local_model: cur.router.local_model,
                     standard_model: cur.router.standard_model,
                     reasoning_model: cur.router.reasoning_model,

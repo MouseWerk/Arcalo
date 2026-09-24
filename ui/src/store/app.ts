@@ -155,13 +155,13 @@ interface Layout {
 
 function loadLayout(): Layout {
   try {
-    const raw = JSON.parse(localStorage.getItem("aether.layout") ?? "null");
+    const raw = JSON.parse(localStorage.getItem("annalo.layout") ?? "null");
     if (raw?.panes?.length) {
       const panes: Pane[] = raw.panes.map((p: Pane) => ({ ...p, tabs: p.tabs.map((t) => ({ ...t, back: t.back ?? [], forward: t.forward ?? [] })) }));
       return { panes, activePaneId: raw.activePaneId ?? panes[0].id, paneSizes: raw.paneSizes?.length === panes.length ? raw.paneSizes : panes.map(() => 1 / panes.length) };
     }
     // Older single-pane format.
-    const old = JSON.parse(localStorage.getItem("aether.tabs") ?? "null");
+    const old = JSON.parse(localStorage.getItem("annalo.tabs") ?? "null");
     if (old?.tabs?.length) {
       const pane = { id: uid(), tabs: old.tabs.map((t: Tab) => ({ ...t, back: [], forward: [] })), activeTabId: old.active ?? old.tabs[0].id };
       return { panes: [pane], activePaneId: pane.id, paneSizes: [1] };
@@ -174,7 +174,7 @@ function loadLayout(): Layout {
 }
 function saveLayout(l: Layout) {
   try {
-    localStorage.setItem("aether.layout", JSON.stringify(l));
+    localStorage.setItem("annalo.layout", JSON.stringify(l));
   } catch {
     /* ignore */
   }
@@ -247,8 +247,8 @@ export const useApp = create<State>((set, get) => ({
   paneSizes: initial.paneSizes,
   tree: [],
   pages: new Map(),
-  sidebarOpen: pref("aether.sidebar", true),
-  panelOpen: pref("aether.panel", true),
+  sidebarOpen: pref("annalo.sidebar", true),
+  panelOpen: pref("annalo.panel", true),
   panelTab: "assistant",
   paletteOpen: false,
   paletteQuery: "",

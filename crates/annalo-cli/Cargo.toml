@@ -1,16 +1,16 @@
 [package]
-name = "aether-cli"
-description = "Headless command line for the AETHER OS workspace database"
+name = "annalo-cli"
+description = "Headless command line for the Annalo workspace database"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "aether"
+name = "annalo"
 path = "src/main.rs"
 
 [dependencies]
-aether-core = { path = "../aether-core" }
+annalo-core = { path = "../annalo-core" }
 chrono = "0.4.45"
 clap = { version = "4.6", features = ["derive", "env"] }
 serde_json = "1.0.151"

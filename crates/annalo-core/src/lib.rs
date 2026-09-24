@@ -1,6 +1,6 @@
-//! # aether-core
+//! # annalo-core
 //!
-//! The platform-independent core of AETHER OS. Everything the UI shell needs
+//! The platform-independent core of Annalo. Everything the UI shell needs
 //! lives here so it can be tested headless and reused by the CLI:
 //!
 //! * [`db`] – embedded SQLite store (FTS5 full-text search, embeddings as BLOBs)

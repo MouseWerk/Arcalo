@@ -2,7 +2,7 @@
 // Netzwerk, Sicherung, Desktop) and the preferences (Darstellung, Editor, Notizen, Zeit,
 // Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung and Über.
 
-import { AetherLogo } from "../components/Logo";
+import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { Bell, CheckCircle2, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
@@ -298,7 +298,7 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
     <>
       <header className="settings-head">
         <h1>{t("set.ai.title")}</h1>
-        <p>AETHER OS spricht mit deinem LiteLLM-Server. Lokale Modelle (Ollama, vLLM) und Cloud-Modelle werden dort konfiguriert.</p>
+        <p>Annalo spricht mit deinem LiteLLM-Server. Lokale Modelle (Ollama, vLLM) und Cloud-Modelle werden dort konfiguriert.</p>
       </header>
 
       <Group title={t("set.ai.server")} description="Adresse deines LiteLLM-Proxys und der Zugangstoken (Virtual Key oder Master Key).">
@@ -730,7 +730,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
       </Group>
       <Group
         title="Markdown-Kopie"
-        description="Nach jeder Sicherung werden alle Seiten als Markdown-Dateien (mit Bildern) und die Buchungen als Zeiterfassung/JJJJ-MM.csv in einen Ordner geschrieben – lesbar auch ohne AETHER OS. Der Ordner wird jedes Mal vollständig ersetzt."
+        description="Nach jeder Sicherung werden alle Seiten als Markdown-Dateien (mit Bildern) und die Buchungen als Zeiterfassung/JJJJ-MM.csv in einen Ordner geschrieben – lesbar auch ohne Annalo. Der Ordner wird jedes Mal vollständig ersetzt."
       >
         <Row label={t("set.backup.mirror")}>
           <Switch label="Markdown-Kopie bei jeder Sicherung" checked={draft.markdown_mirror} onChange={(v) => update({ markdown_mirror: v })} />
@@ -929,7 +929,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
         description={
           git.include_database ? (
             <span className={dbSize != null && dbSize > BIG_DB ? "mirror-error" : ""}>
-              Die letzte Sicherung wird als aether-workspace.db übertragen{dbSize != null ? ` (derzeit ${fileSize(dbSize)})` : ""}. Jede Änderung speichert die ganze Datei neu – das Repository wächst schnell; GitHub lehnt Dateien über 100 MB ab.
+              Die letzte Sicherung wird als annalo-workspace.db übertragen{dbSize != null ? ` (derzeit ${fileSize(dbSize)})` : ""}. Jede Änderung speichert die ganze Datei neu – das Repository wächst schnell; GitHub lehnt Dateien über 100 MB ab.
             </span>
           ) : (
             "Nur Markdown, Bilder und Zeiterfassung (empfohlen)."
@@ -1058,7 +1058,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
       <Group title="Befehlspalette">
         <Row
           label="Tastenkürzel (global)"
-          description={`Holt AETHER OS mit der Befehlspalette nach vorn. Ins Feld klicken und die Tasten drücken, z. B. ${keys("Mod Shift K")}. Entf = aus. ${keys("Mod K")} funktioniert im Fenster immer.`}
+          description={`Holt Annalo mit der Befehlspalette nach vorn. Ins Feld klicken und die Tasten drücken, z. B. ${keys("Mod Shift K")}. Entf = aus. ${keys("Mod K")} funktioniert im Fenster immer.`}
         >
           <ShortcutField
             value={draft.palette_shortcut ?? ""}
@@ -1083,7 +1083,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           />
         </Row>
       </Group>
-      <Group title="Feierabend-Erinnerung" description="Hinweis an Arbeitstagen, wenn weniger als das Tagessoll gebucht ist. Ein Klick darauf öffnet die Zeiterfassung. Läuft nach 20 Uhr noch ein Timer, erinnert AETHER OS einmal daran.">
+      <Group title="Feierabend-Erinnerung" description="Hinweis an Arbeitstagen, wenn weniger als das Tagessoll gebucht ist. Ein Klick darauf öffnet die Zeiterfassung. Läuft nach 20 Uhr noch ein Timer, erinnert Annalo einmal daran.">
         <Row label="Erinnern um">
           <div className="unit-input">
             {reminderOn && (
@@ -1186,7 +1186,7 @@ async function moveDataDir(onChanged: () => void) {
     if (target.has_workspace) {
       useExisting = await s.confirm({
         title: "Vorhandenen Arbeitsbereich verwenden?",
-        message: `In ${dir} liegt bereits ein AETHER-Arbeitsbereich. Nach dem Neustart wird dieser geöffnet; es werden keine Daten kopiert. Der aktuelle Arbeitsbereich bleibt unverändert im bisherigen Ordner.`,
+        message: `In ${dir} liegt bereits ein Annalo-Arbeitsbereich. Nach dem Neustart wird dieser geöffnet; es werden keine Daten kopiert. Der aktuelle Arbeitsbereich bleibt unverändert im bisherigen Ordner.`,
         confirmLabel: "Vorhandenen verwenden",
       });
       if (!useExisting) return;
@@ -1215,7 +1215,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   if (!status.enabled) state = NOT_CONFIGURED + ".";
   else if (available) state = `Version ${available.version} ist verfügbar.`;
   else if (phase === "checking") state = "Suche nach Updates …";
-  else if (checkedAt) state = `AETHER OS ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`;
+  else if (checkedAt) state = `Annalo ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`;
   else state = "Noch nicht geprüft.";
   return (
     <Group title={t("set.about.updates")} description="Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert.">
@@ -1270,10 +1270,10 @@ function AboutSection({ draft, update }: { draft: Settings; update: (p: Partial<
     <>
       <header className="settings-head about-head">
         <span className="about-mark">
-          <AetherLogo size={34} />
+          <AnnaloLogo size={34} />
         </span>
         <div>
-          <h1>AETHER OS</h1>
+          <h1>Annalo</h1>
           <p>Version {version}</p>
         </div>
       </header>

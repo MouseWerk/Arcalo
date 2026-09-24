@@ -386,7 +386,7 @@ const ENTRIES = {
 
   // start
   "set.start.title": ["Start", "Startup"],
-  "set.start.intro": ["Was beim Start von AETHER OS passiert.", "What happens when AETHER OS starts."],
+  "set.start.intro": ["Was beim Start von Annalo passiert.", "What happens when Annalo starts."],
   "set.start.opens": ["Beim Start", "At startup"],
   "set.start.open": ["Öffnen", "Open"],
   "set.start.tabs": ["Letzte Tabs", "Last tabs"],
@@ -411,7 +411,7 @@ const ENTRIES = {
 
   // notifications
   "set.notify.title": ["Benachrichtigungen", "Notifications"],
-  "set.notify.intro": ["Welche Hinweise AETHER OS zeigt.", "Which notices AETHER OS shows."],
+  "set.notify.intro": ["Welche Hinweise Annalo zeigt.", "Which notices Annalo shows."],
   "set.notify.desktop": ["Desktop-Benachrichtigungen", "Desktop notifications"],
   "set.notify.endOfDay": ["Feierabend-Erinnerung", "End-of-day reminder"],
   "set.notify.endOfDayAt": ["An Arbeitstagen um {time} Uhr, wenn weniger als das Soll gebucht ist (Uhrzeit unter Desktop).", "On workdays at {time} when less than the target is booked (time under Desktop)."],

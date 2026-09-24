@@ -85,11 +85,11 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
       if (!ids || ids.includes(pageId)) refresh();
     };
-    window.addEventListener("aether:page-saved", onSaved);
-    window.addEventListener("aether:reload-pages", onReload);
+    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("annalo:reload-pages", onReload);
     return () => {
-      window.removeEventListener("aether:page-saved", onSaved);
-      window.removeEventListener("aether:reload-pages", onReload);
+      window.removeEventListener("annalo:page-saved", onSaved);
+      window.removeEventListener("annalo:reload-pages", onReload);
     };
   }, [pageId]);
 

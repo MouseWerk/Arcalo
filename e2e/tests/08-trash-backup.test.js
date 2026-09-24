@@ -70,7 +70,7 @@ test("the database is backed up on start and on demand", async () => {
   // The daily backup runs right after start.
   await app.browser.waitUntil(async () => (await app.invoke("backup_list")).length > 0, { timeout: 10000, timeoutMsg: "no startup backup" });
   const b = await app.invoke("backup_now");
-  assert.match(b.file_name, /^aether-\d{8}-\d{6}\.db$/);
+  assert.match(b.file_name, /^annalo-\d{8}-\d{6}\.db$/);
   assert.equal(path.dirname(b.path), path.join(app.dataDir, "backups"));
   assert.ok(fs.statSync(b.path).size > 0, "backup file written");
 

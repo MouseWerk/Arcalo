@@ -1,19 +1,19 @@
 [package]
-name = "aether-os"
-description = "AETHER OS desktop shell (Tauri v2)"
+name = "annalo"
+description = "Annalo desktop shell (Tauri v2)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "aether_os_lib"
+name = "annalo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-aether-core = { path = "../crates/aether-core" }
+annalo-core = { path = "../crates/annalo-core" }
 base64 = "0.22.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }

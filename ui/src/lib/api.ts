@@ -174,11 +174,11 @@ export function on<P>(event: string, handler: (payload: P) => void): Promise<Unl
   return listen<P>(event, (e) => handler(e.payload));
 }
 
-/** URL of a stored attachment (served by the shell's `aether-asset:` protocol); folders in `![[a/b.png]]` are ignored. */
+/** URL of a stored attachment (served by the shell's `annalo-asset:` protocol); folders in `![[a/b.png]]` are ignored. */
 export function attachmentUrl(name: string) {
   const base = name.split(/[\\/]/).pop() ?? name;
   try {
-    return convertFileSrc(base, "aether-asset");
+    return convertFileSrc(base, "annalo-asset");
   } catch {
     return `attachments/${encodeURIComponent(base)}`;
   }

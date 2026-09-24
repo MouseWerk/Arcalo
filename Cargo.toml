@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/aether-core", "crates/aether-cli", "src-tauri"]
+members = ["crates/annalo-core", "crates/annalo-cli", "src-tauri"]
 # The Tauri shell needs the platform WebView SDK (WebView2 on Windows,
 # webkit2gtk on Linux), so it is not part of the default headless build.
-default-members = ["crates/aether-core", "crates/aether-cli", "src-tauri"]
+default-members = ["crates/annalo-core", "crates/annalo-cli", "src-tauri"]
 
 [workspace.package]
 version = "1.0.0"

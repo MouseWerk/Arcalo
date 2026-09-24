@@ -101,7 +101,7 @@ export function App() {
         if (action === "settings") st.openTab({ kind: "settings" });
         else if (action === "sidebar") {
           st.set({ sidebarOpen: !st.sidebarOpen });
-          savePref("aether.sidebar", !st.sidebarOpen);
+          savePref("annalo.sidebar", !st.sidebarOpen);
         } else if (action === "focus") st.set({ focusMode: !st.focusMode });
         else if (action === "palette") st.set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" });
       }),
@@ -210,13 +210,13 @@ export function App() {
   // Window title follows the active tab.
   const pages = useApp((s) => s.pages);
   useEffect(() => {
-    const title = active ? `${tabTitle(active, pages)} – AETHER OS` : "AETHER OS";
+    const title = active ? `${tabTitle(active, pages)} – Annalo` : "Annalo";
     document.title = title;
     getCurrentWindow().setTitle(title).catch(() => {});
   }, [active, pages]);
 
-  const [sideW, setSideW] = useState(() => readSize("aether.sidebar-w", 264));
-  const [panelW, setPanelW] = useState(() => readSize("aether.panel-w", 360));
+  const [sideW, setSideW] = useState(() => readSize("annalo.sidebar-w", 264));
+  const [panelW, setPanelW] = useState(() => readSize("annalo.panel-w", 360));
   const dragStart = useRef(0);
   const clamp = (v: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, v)));
   const persist = (key: string, v: number) => {
@@ -247,9 +247,9 @@ export function App() {
             }}
             onEnd={() => {
               dragStart.current = 0;
-              persist("aether.sidebar-w", sideW);
+              persist("annalo.sidebar-w", sideW);
             }}
-            onReset={() => (setSideW(264), persist("aether.sidebar-w", 264))}
+            onReset={() => (setSideW(264), persist("annalo.sidebar-w", 264))}
           />
         </>
       )}
@@ -268,9 +268,9 @@ export function App() {
             }}
             onEnd={() => {
               dragStart.current = 0;
-              persist("aether.panel-w", panelW);
+              persist("annalo.panel-w", panelW);
             }}
-            onReset={() => (setPanelW(360), persist("aether.panel-w", 360))}
+            onReset={() => (setPanelW(360), persist("annalo.panel-w", 360))}
           />
           <RightPanel />
         </>
@@ -308,12 +308,12 @@ async function refreshPac(view: SettingsView) {
 const toggleSidebar = () => {
   const st = useApp.getState();
   st.set({ sidebarOpen: !st.sidebarOpen });
-  savePref("aether.sidebar", !st.sidebarOpen);
+  savePref("annalo.sidebar", !st.sidebarOpen);
 };
 const togglePanel = () => {
   const st = useApp.getState();
   st.set({ panelOpen: !st.panelOpen });
-  savePref("aether.panel", !st.panelOpen);
+  savePref("annalo.panel", !st.panelOpen);
 };
 const cycleTab = (d: number) => {
   const st = useApp.getState();
@@ -341,9 +341,9 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
     const st = useApp.getState();
     if (!st.sidebarOpen) {
       st.set({ sidebarOpen: true });
-      savePref("aether.sidebar", true);
+      savePref("annalo.sidebar", true);
     }
-    setTimeout(() => window.dispatchEvent(new Event("aether:sidebar-search")), 0);
+    setTimeout(() => window.dispatchEvent(new Event("annalo:sidebar-search")), 0);
   },
   new_tab: () => useApp.getState().openTab({ kind: "home" }, { newTab: true }),
   close_tab: () => {

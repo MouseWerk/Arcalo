@@ -1,4 +1,4 @@
-// Starts the real AETHER OS desktop binary under tauri-driver and returns a
+// Starts the real Annalo desktop binary under tauri-driver and returns a
 // WebdriverIO session. Each call uses a fresh, isolated data directory.
 
 import { spawn, execSync } from "node:child_process";
@@ -8,8 +8,8 @@ import path from "node:path";
 import { remote } from "webdriverio";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-export const APP = process.env.AETHER_APP ?? path.join(ROOT, "target/debug/aether-os");
-export const SHOTS = process.env.AETHER_SHOTS ?? path.join(ROOT, "e2e/screenshots");
+export const APP = process.env.ANNALO_APP ?? path.join(ROOT, "target/debug/annalo");
+export const SHOTS = process.env.ANNALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
 function ensureXvfb() {
@@ -58,16 +58,16 @@ export function guarded(test, getApp) {
 export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
   ensureXvfb();
   fs.mkdirSync(SHOTS, { recursive: true });
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "aether-e2e-"));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
   const port = 4444 + Math.floor(Math.random() * 500);
   const env = {
     ...process.env,
     DISPLAY,
-    AETHER_DATA_DIR: dataDir,
+    ANNALO_DATA_DIR: dataDir,
     // Isolate WebView storage (localStorage, caches) per run.
     XDG_DATA_HOME: path.join(dataDir, "xdg-data"),
     XDG_CACHE_HOME: path.join(dataDir, "xdg-cache"),
-    AETHER_STARTUP: JSON.stringify({ demo }),
+    ANNALO_STARTUP: JSON.stringify({ demo }),
     WEBKIT_DISABLE_COMPOSITING_MODE: "1",
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
@@ -187,7 +187,7 @@ export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
       }, { timeout, timeoutMsg: `no ${sel} matching ${pattern}` });
     },
     async consoleErrors() {
-      return browser.execute(() => window.__aetherErrors ?? []);
+      return browser.execute(() => window.__annaloErrors ?? []);
     },
     async close() {
       await browser.deleteSession().catch(() => {});

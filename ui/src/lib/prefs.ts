@@ -7,7 +7,7 @@ import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
 
-const STYLE_ID = "aether-accent";
+const STYLE_ID = "annalo-accent";
 
 /** Applies appearance, language, formats and keymap. Safe to call repeatedly. */
 export function applyPrefs(s: Settings) {

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-const SERVICE: &str = "AETHER OS";
+const SERVICE: &str = "Annalo";
 
 pub struct SecretStore {
     /// Credential account name (Windows/macOS).
@@ -33,7 +33,7 @@ impl SecretStore {
     /// The password of the proxy (Settings → Netzwerk).
     pub fn proxy(data_dir: &Path) -> Self {
         SecretStore {
-            account: aether_core::network::PASSWORD_ACCOUNT,
+            account: annalo_core::network::PASSWORD_ACCOUNT,
             field: "proxy_password",
             file: data_dir.join("secrets.json"),
         }
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn two_secrets_share_the_fallback_file() {
-        let dir = std::env::temp_dir().join(format!("aether-secrets-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("annalo-secrets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (ai, git) = (SecretStore::new(&dir), SecretStore::git(&dir));

@@ -1,12 +1,12 @@
 //! Settings → Netzwerk: proxy password, connection test, PAC download, CA file summary
-//! and the network configuration of Git. The decisions live in `aether_core::network`.
+//! and the network configuration of Git. The decisions live in `annalo_core::network`.
 
 use std::time::Instant;
 
-use aether_core::Error;
-use aether_core::gitsync::Git;
-use aether_core::network::{self as core, CaInfo, NetworkSettings, Purpose, SystemProxy};
-use aether_core::settings::Settings;
+use annalo_core::Error;
+use annalo_core::gitsync::Git;
+use annalo_core::network::{self as core, CaInfo, NetworkSettings, Purpose, SystemProxy};
+use annalo_core::settings::Settings;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -175,7 +175,7 @@ pub async fn network_test(
     })
 }
 
-/// The page of the `aether-pac:` scheme: a sandboxed frame (opaque origin, no IPC) in which
+/// The page of the `annalo-pac:` scheme: a sandboxed frame (opaque origin, no IPC) in which
 /// the UI evaluates PAC scripts. PAC files are JavaScript; the app's own pages forbid
 /// `eval`, this frame allows it and nothing else (no network, no storage).
 pub fn pac_sandbox() -> tauri::http::Response<Vec<u8>> {

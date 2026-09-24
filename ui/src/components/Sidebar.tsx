@@ -21,7 +21,7 @@ type SideTab = "files" | "search" | "bookmarks" | "tags";
 /** Title of the daily notes' folder (Settings → Notizen). */
 const journalTitle = () => useApp.getState().settings?.settings.notes?.daily_folder || "Journal";
 /** Id of the Journal folder that was already collapsed once by default. */
-const JOURNAL_SEEN_KEY = "aether.journal-collapsed";
+const JOURNAL_SEEN_KEY = "annalo.journal-collapsed";
 
 export function Sidebar() {
   const t = useT();
@@ -29,11 +29,11 @@ export function Sidebar() {
   const onboarding = useApp((s) => s.onboarding);
   const pages = useApp((s) => s.pages);
   const active = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId) ?? null);
-  const [tab, setTabState] = useState<SideTab>(() => (localStorage.getItem("aether.sidetab") as SideTab) || "files");
+  const [tab, setTabState] = useState<SideTab>(() => (localStorage.getItem("annalo.sidetab") as SideTab) || "files");
   const [collapsed, setCollapsed] = useState<Set<number>>(readCollapsed);
   const setTab = (t: SideTab) => {
     setTabState(t);
-    localStorage.setItem("aether.sidetab", t);
+    localStorage.setItem("annalo.sidetab", t);
   };
   const saveCollapsed = (next: Set<number>) => {
     setCollapsed(next);
@@ -42,10 +42,10 @@ export function Sidebar() {
   useEffect(() => {
     const onFocusSearch = () => setTab("search");
     const onCollapsed = () => setCollapsed(readCollapsed());
-    window.addEventListener("aether:sidebar-search", onFocusSearch);
+    window.addEventListener("annalo:sidebar-search", onFocusSearch);
     window.addEventListener(COLLAPSED_EVENT, onCollapsed);
     return () => {
-      window.removeEventListener("aether:sidebar-search", onFocusSearch);
+      window.removeEventListener("annalo:sidebar-search", onFocusSearch);
       window.removeEventListener(COLLAPSED_EVENT, onCollapsed);
     };
   }, []);
@@ -153,18 +153,18 @@ function SidebarFooter() {
 
 function SearchPane() {
   const tr = useT();
-  const [q, setQ] = useState(() => sessionStorage.getItem("aether.sidesearch") ?? "");
+  const [q, setQ] = useState(() => sessionStorage.getItem("annalo.sidesearch") ?? "");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const s = useApp.getState;
   useEffect(() => {
     setTimeout(() => input.current?.focus(), 30);
     const onFocus = () => input.current?.select();
-    window.addEventListener("aether:sidebar-search", onFocus);
-    return () => window.removeEventListener("aether:sidebar-search", onFocus);
+    window.addEventListener("annalo:sidebar-search", onFocus);
+    return () => window.removeEventListener("annalo:sidebar-search", onFocus);
   }, []);
   useEffect(() => {
-    sessionStorage.setItem("aether.sidesearch", q);
+    sessionStorage.setItem("annalo.sidesearch", q);
     if (q.trim().length < 2) return setHits(null);
     let alive = true;
     const t = setTimeout(() => api.search(q, 60).then((h) => alive && setHits(h)).catch(() => {}), 120);
@@ -451,7 +451,7 @@ function PageTree({
       dragStart: (n, e) => {
         e.dataTransfer.effectAllowed = "move";
         // Own type, so dropping into the editor does not paste the id as text.
-        e.dataTransfer.setData("application/x-aether-page", String(n.id));
+        e.dataTransfer.setData("application/x-annalo-page", String(n.id));
         latest.current.setDrag({ id: n.id });
       },
       dragEnd: () => latest.current.setDrag(null),

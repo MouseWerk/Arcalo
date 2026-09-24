@@ -24,7 +24,7 @@ export async function openToday() {
 export function openAssistant() {
   const s = useApp.getState();
   s.set({ panelOpen: true, panelTab: "assistant" });
-  savePref("aether.panel", true);
+  savePref("annalo.panel", true);
   setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(), 50);
 }
 
@@ -91,7 +91,7 @@ export function Ribbon() {
         iconSize={17}
         onClick={() => {
           s().set({ sidebarOpen: !sidebarOpen });
-          savePref("aether.sidebar", !sidebarOpen);
+          savePref("annalo.sidebar", !sidebarOpen);
         }}
       />
       <span className="ribbon-sep" />

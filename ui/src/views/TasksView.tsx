@@ -53,10 +53,10 @@ export function TasksView() {
       window.clearTimeout(t);
       t = window.setTimeout(load, 300);
     };
-    window.addEventListener("aether:page-saved", onSaved);
+    window.addEventListener("annalo:page-saved", onSaved);
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener("aether:page-saved", onSaved);
+      window.removeEventListener("annalo:page-saved", onSaved);
     };
   }, [load]);
 

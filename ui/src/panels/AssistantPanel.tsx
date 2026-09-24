@@ -61,8 +61,8 @@ export function AssistantPanel() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tier, setTier] = useState<Tier | null>(() => (localStorage.getItem("aether.tier") as Tier | null) || null);
-  const [useTools, setUseTools] = useState(() => localStorage.getItem("aether.tools") !== "0");
+  const [tier, setTier] = useState<Tier | null>(() => (localStorage.getItem("annalo.tier") as Tier | null) || null);
+  const [useTools, setUseTools] = useState(() => localStorage.getItem("annalo.tools") !== "0");
   const [includePage, setIncludePage] = useState(true);
   const [preview, setPreview] = useState<RouteDecision | null>(null);
   const history = useRef<ChatMessage[]>([]);
@@ -261,7 +261,7 @@ export function AssistantPanel() {
                   checked: o.value === tier,
                   onSelect: () => {
                     setTier(o.value);
-                    o.value ? localStorage.setItem("aether.tier", o.value) : localStorage.removeItem("aether.tier");
+                    o.value ? localStorage.setItem("annalo.tier", o.value) : localStorage.removeItem("annalo.tier");
                   },
                 })),
                 "separator" as const,
@@ -270,7 +270,7 @@ export function AssistantPanel() {
                   icon: Wrench,
                   onSelect: () => {
                     setUseTools(!useTools);
-                    localStorage.setItem("aether.tools", useTools ? "0" : "1");
+                    localStorage.setItem("annalo.tools", useTools ? "0" : "1");
                   },
                 },
                 { label: "KI-Einstellungen", icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },

@@ -33,7 +33,7 @@ export function RightPanel() {
           iconSize={14}
           onClick={() => {
             s().set({ panelOpen: false });
-            savePref("aether.panel", false);
+            savePref("annalo.panel", false);
           }}
         />
       </div>

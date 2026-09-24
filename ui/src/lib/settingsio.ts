@@ -3,7 +3,7 @@
 
 import type { Settings } from "./types";
 
-export const EXPORT_FORMAT = "aether-os-settings";
+export const EXPORT_FORMAT = "annalo-settings";
 export const EXPORT_VERSION = 1;
 
 /** Objects whose keys are data (user-chosen), not settings names. */
@@ -116,9 +116,9 @@ export function parseSettingsImport(text: string, current: Settings): ImportResu
   if (kind(raw) !== "object") return { settings: null, warnings: [], error: "Die Datei enthält keine Einstellungen." };
   let obj = raw as Record<string, unknown>;
   if ("format" in obj || "settings" in obj) {
-    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: "Die Datei ist keine AETHER-OS-Einstellungsdatei." };
+    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: "Die Datei ist keine Annalo-Einstellungsdatei." };
     if (typeof obj.version === "number" && obj.version > EXPORT_VERSION)
-      return { settings: null, warnings: [], error: "Die Datei stammt von einer neueren AETHER-OS-Version." };
+      return { settings: null, warnings: [], error: "Die Datei stammt von einer neueren Annalo-Version." };
     if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: "Die Datei enthält keine Einstellungen." };
     obj = obj.settings as Record<string, unknown>;
   }

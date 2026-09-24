@@ -124,7 +124,7 @@ function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: D
 
   const startTimer = async (v: Vorgang | null) => {
     try {
-      await api.timerStart(netzplan.id, v?.vorgang_nr ?? null, localStorage.getItem("aether.timer.la") || "DEV", "");
+      await api.timerStart(netzplan.id, v?.vorgang_nr ?? null, localStorage.getItem("annalo.timer.la") || "DEV", "");
       s().bumpEntries();
       s().toast({ tone: "info", title: "Timer gestartet", detail: `${netzplan.netzplan_nr}${v ? "/" + v.vorgang_nr : ""}` });
     } catch (e) {

@@ -1,4 +1,4 @@
--- AETHER OS schema v1. Applied inside a single transaction by db::migrate.
+-- Annalo schema v1. Applied inside a single transaction by db::migrate.
 
 CREATE TABLE projects (
     id           INTEGER PRIMARY KEY,

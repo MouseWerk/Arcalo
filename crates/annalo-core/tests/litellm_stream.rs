@@ -1,6 +1,6 @@
 //! End-to-end test of the LiteLLM client against a minimal fake proxy.
 
-use aether_core::ai::client::{ChatMessage, ChatRequest, LiteLlmClient, StreamEvent};
+use annalo_core::ai::client::{ChatMessage, ChatRequest, LiteLlmClient, StreamEvent};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -102,5 +102,5 @@ async fn surfaces_provider_errors() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(err, aether_core::Error::Provider { status: 404, .. }), "{err}");
+    assert!(matches!(err, annalo_core::Error::Provider { status: 404, .. }), "{err}");
 }

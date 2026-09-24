@@ -1058,7 +1058,7 @@ mod tests {
         for d in &certs {
             reqwest::Certificate::from_der(d).unwrap();
         }
-        let dir = std::env::temp_dir().join(format!("aether-ca-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("annalo-ca-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (pem_path, der_path) = (dir.join("ca.pem"), dir.join("ca.der"));
         std::fs::write(&pem_path, &bundle).unwrap();

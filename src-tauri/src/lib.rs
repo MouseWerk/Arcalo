@@ -1,4 +1,4 @@
-//! AETHER OS desktop shell: exposes `aether-core` to the web UI over Tauri IPC.
+//! Annalo desktop shell: exposes `annalo-core` to the web UI over Tauri IPC.
 
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -15,37 +15,37 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
-use aether_core::activity::{self, IdleAccumulator, WindowUsage};
-use aether_core::ai::LiteLlmClient;
-use aether_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
-use aether_core::ai::metrics::SessionMeter;
-use aether_core::ai::rag::{self, ContextChunk};
-use aether_core::ai::router::{ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
-use aether_core::ai::tools::{self, Risk, SystemCall};
-use aether_core::ai::transform;
-use aether_core::ai::zeitguess::{self, ZeitGuess};
-use aether_core::attachments::{self, SavedAttachment};
-use aether_core::backup::{self, BackupInfo};
-use aether_core::calendar::{self, DayOverview};
-use aether_core::db::EntryFilter;
-use aether_core::export::{self, ExportFormat, ExportOptions, ExportResult};
-use aether_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
-use aether_core::mirror::{self, MirrorReport};
-use aether_core::model::*;
-use aether_core::network::Purpose;
-use aether_core::netzplan::{self, Schedule};
-use aether_core::notes::PageDoc;
-use aether_core::pagework::{self, PageWork};
-use aether_core::report;
-use aether_core::search::{self, SearchHit};
-use aether_core::settings::{Dashboard, Settings};
-use aether_core::tasks::{Task, TaskFilter};
-use aether_core::templates::TemplateVars;
-use aether_core::tracking::{self, BudgetStatus, LogOutcome};
-use aether_core::trash::TrashEntry;
-use aether_core::vault::{self, ImportReport};
-use aether_core::versions::VersionInfo;
-use aether_core::{Database, Error, datadir, demo};
+use annalo_core::activity::{self, IdleAccumulator, WindowUsage};
+use annalo_core::ai::LiteLlmClient;
+use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
+use annalo_core::ai::metrics::SessionMeter;
+use annalo_core::ai::rag::{self, ContextChunk};
+use annalo_core::ai::router::{ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
+use annalo_core::ai::tools::{self, Risk, SystemCall};
+use annalo_core::ai::transform;
+use annalo_core::ai::zeitguess::{self, ZeitGuess};
+use annalo_core::attachments::{self, SavedAttachment};
+use annalo_core::backup::{self, BackupInfo};
+use annalo_core::calendar::{self, DayOverview};
+use annalo_core::db::EntryFilter;
+use annalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
+use annalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
+use annalo_core::mirror::{self, MirrorReport};
+use annalo_core::model::*;
+use annalo_core::network::Purpose;
+use annalo_core::netzplan::{self, Schedule};
+use annalo_core::notes::PageDoc;
+use annalo_core::pagework::{self, PageWork};
+use annalo_core::report;
+use annalo_core::search::{self, SearchHit};
+use annalo_core::settings::{Dashboard, Settings};
+use annalo_core::tasks::{Task, TaskFilter};
+use annalo_core::templates::TemplateVars;
+use annalo_core::tracking::{self, BudgetStatus, LogOutcome};
+use annalo_core::trash::TrashEntry;
+use annalo_core::vault::{self, ImportReport};
+use annalo_core::versions::VersionInfo;
+use annalo_core::{Database, Error, datadir, demo};
 use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ struct AiRuntime {
 impl AiRuntime {
     fn new(settings: Settings, api_key: Option<String>, proxy_password: Option<String>) -> Self {
         let http = |purpose| {
-            aether_core::network::http_client(&settings.network, proxy_password.as_deref(), purpose).unwrap_or_else(
+            annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), purpose).unwrap_or_else(
                 |e| {
                     eprintln!("network settings not applied: {e}");
                     tools::HttpClient::new()
@@ -419,7 +419,7 @@ fn decode_attachment(data: &str) -> Result<Vec<u8>> {
         .map_err(|e| Error::Parse(format!("Ungültige Bilddaten: {e}")))
 }
 
-/// Serves `aether-asset://localhost/<name>`: only plain file names inside the attachments folder.
+/// Serves `annalo-asset://localhost/<name>`: only plain file names inside the attachments folder.
 fn serve_attachment(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     let respond = |status: u16, mime: &str, body: Vec<u8>| {
         tauri::http::Response::builder()
@@ -1022,7 +1022,7 @@ async fn git_restore_import(app: AppHandle, url: String) -> Result<ImportReport>
         git.version()?;
         let now = Local::now();
         let tmp = std::env::temp_dir().join(format!(
-            "aether-git-import-{}-{}",
+            "annalo-git-import-{}-{}",
             std::process::id(),
             now.format("%Y%m%d%H%M%S%f")
         ));
@@ -1202,10 +1202,10 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> 
     settings.network = settings.network.normalized()?;
     settings.normalize();
     // A missing or unreadable CA file is reported now, not on the next request.
-    aether_core::network::Prepared::new(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
+    annalo_core::network::Prepared::new(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
     settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     if let Some(t) = &settings.reminder_time {
-        let time = aether_core::desktop::parse_hhmm(t)
+        let time = annalo_core::desktop::parse_hhmm(t)
             .ok_or_else(|| Error::State(format!("Erinnerungszeit „{t}“ ungültig, erwartet HH:MM")))?;
         settings.reminder_time = Some(time.format("%H:%M").to_string());
     }
@@ -1283,7 +1283,7 @@ async fn ai_test_connection(
     let settings = state.settings();
     let url = base_url.unwrap_or_else(|| settings.litellm_base_url.clone());
     let key = api_key.filter(|k| !k.is_empty()).or_else(|| state.secrets.get());
-    let http = aether_core::network::http_client(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
+    let http = annalo_core::network::http_client(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
     let client = LiteLlmClient::with_http(url.trim().trim_end_matches('/').to_owned(), key, http);
     let start = Instant::now();
     let res = client.models().await;
@@ -1302,7 +1302,7 @@ async fn ai_test_connection(
 fn system_prompt(settings: &Settings) -> String {
     let now = Local::now();
     let mut s = format!(
-        "Du bist der Assistent von AETHER OS, einem lokalen Arbeitsbereich für Notizen, Projekte und \
+        "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
          Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
          schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
          gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
@@ -1334,10 +1334,10 @@ struct ChatOutcome {
 /// The cost warning after a request (at least 80 % of the monthly limit).
 fn cost_warning(state: &AppState) -> Option<f64> {
     match prefs::cost_status_of(state).ok()?.level {
-        aether_core::prefs::CostLevel::Warning { fraction } | aether_core::prefs::CostLevel::Blocked { fraction } => {
+        annalo_core::prefs::CostLevel::Warning { fraction } | annalo_core::prefs::CostLevel::Blocked { fraction } => {
             Some(fraction)
         }
-        aether_core::prefs::CostLevel::Ok => None,
+        annalo_core::prefs::CostLevel::Ok => None,
     }
 }
 
@@ -1614,7 +1614,7 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     let out = match name.as_str() {
         "log_time" => {
             let mut line = arg("command");
-            if !aether_core::zeit::is_zeit_command(&line) {
+            if !annalo_core::zeit::is_zeit_command(&line) {
                 line = format!("/zeit {line}");
             }
             let res = serde_json::to_string(&tracking::log_slash_command(&db, &line, Utc::now(), &Local, &t)?)?;
@@ -1785,7 +1785,7 @@ fn create_main_window(
     let mica = supports_mica();
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
-        .title("AETHER OS")
+        .title("Annalo")
         .min_inner_size(900.0, 560.0)
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
@@ -1904,8 +1904,8 @@ fn data_dir_status(app: AppHandle, state: State<AppState>) -> DataDirStatus {
 }
 
 fn data_dir_env_guard() -> Result<()> {
-    if std::env::var_os("AETHER_DATA_DIR").is_some() {
-        return Err(Error::State("Der Speicherort ist über AETHER_DATA_DIR festgelegt".into()));
+    if std::env::var_os("ANNALO_DATA_DIR").is_some() {
+        return Err(Error::State("Der Speicherort ist über ANNALO_DATA_DIR festgelegt".into()));
     }
     Ok(())
 }
@@ -1993,9 +1993,9 @@ struct StartupOptions {
 pub fn run() {
     let mut builder = tauri::Builder::default();
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
-    // launch only brings the running window to the front. Test runs (AETHER_DATA_DIR)
+    // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
     // use their own workspace each and may overlap.
-    if std::env::var_os("AETHER_DATA_DIR").is_none() {
+    if std::env::var_os("ANNALO_DATA_DIR").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)));
     }
     // Only in release builds with an update key; others never contact the update server.
@@ -2044,15 +2044,15 @@ pub fn run() {
                 })
                 .build(),
         )
-        .register_uri_scheme_protocol("aether-asset", |ctx, request| serve_attachment(ctx.app_handle(), &request))
-        .register_uri_scheme_protocol("aether-pac", |_ctx, _request| network::pac_sandbox())
+        .register_uri_scheme_protocol("annalo-asset", |ctx, request| serve_attachment(ctx.app_handle(), &request))
+        .register_uri_scheme_protocol("annalo-pac", |_ctx, _request| network::pac_sandbox())
         .on_window_event(desktop::on_window_event)
         .setup(move |app| {
-            // AETHER_DATA_DIR lets tests run against a throw-away workspace; otherwise
+            // ANNALO_DATA_DIR lets tests run against a throw-away workspace; otherwise
             // `location.json` in the config folder may point to a chosen data folder.
             // A pending move is carried out here, before the database is opened.
             let startup = datadir::prepare(
-                std::env::var_os("AETHER_DATA_DIR").map(PathBuf::from),
+                std::env::var_os("ANNALO_DATA_DIR").map(PathBuf::from),
                 app.path().app_config_dir().ok().as_deref(),
                 app.path().app_data_dir()?,
             );
@@ -2062,7 +2062,7 @@ pub fn run() {
             let dir = startup.dir;
             std::fs::create_dir_all(&dir)?;
             let opts: StartupOptions =
-                std::env::var("AETHER_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+                std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
             let db = Database::open(dir.join(datadir::DB_FILE))?;
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
@@ -2256,7 +2256,7 @@ pub fn run() {
             updates::update_install,
         ])
         .build(tauri::generate_context!())
-        .expect("error while running AETHER OS")
+        .expect("error while running Annalo")
         .run(on_run_event);
 }
 
@@ -2285,7 +2285,7 @@ mod tests {
 
     #[test]
     fn backup_copies_only_plain_visible_files() {
-        let base = std::env::temp_dir().join(format!("aether-att-copy-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("annalo-att-copy-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (src, dst) = (base.join("src"), base.join("dst"));
         std::fs::create_dir_all(src.join("sub")).unwrap();

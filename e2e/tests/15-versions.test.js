@@ -135,6 +135,6 @@ test("palette shortcut is validated and saved; the data folder is not flagged", 
   assert.equal(status.data_dir, app.dataDir);
   assert.equal(status.pending_move, null);
   assert.equal(status.notice, null);
-  // Under AETHER_DATA_DIR the folder cannot be changed; nothing is recorded.
-  await assert.rejects(app.invoke("data_dir_set", { path: `${app.dataDir}-neu`, useExisting: false }), /AETHER_DATA_DIR/);
+  // Under ANNALO_DATA_DIR the folder cannot be changed; nothing is recorded.
+  await assert.rejects(app.invoke("data_dir_set", { path: `${app.dataDir}-neu`, useExisting: false }), /ANNALO_DATA_DIR/);
 });

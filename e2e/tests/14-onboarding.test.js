@@ -9,7 +9,7 @@ before(async () => (app = await launch({ demo: false })));
 after(async () => app?.close());
 
 test("a fresh workspace offers empty, import or sample data", async () => {
-  await app.waitText(".onboarding h1", /Willkommen bei AETHER OS/);
+  await app.waitText(".onboarding h1", /Willkommen bei Annalo/);
   assert.equal((await app.$$(".onb-choice")).length, 3);
   // The first choice has the focus; the side panels stay out of the way.
   assert.equal(await app.browser.execute(() => document.activeElement?.classList.contains("onb-choice") ?? false), true);

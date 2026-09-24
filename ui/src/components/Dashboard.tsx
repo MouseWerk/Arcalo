@@ -14,7 +14,7 @@ import { PageIcon } from "./icons";
 import { stopTimer, useTimerSeconds } from "./Sidebar";
 import { openDailyNote } from "./CalendarPopover";
 
-const WIDGET_MIME = "application/x-aether-widget";
+const WIDGET_MIME = "application/x-annalo-widget";
 
 export function Dashboard() {
   const view = useApp((s) => s.settings);

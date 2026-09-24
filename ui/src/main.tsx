@@ -19,13 +19,13 @@ const captureMode = location.hash === "#capture" || new URLSearchParams(location
 const searchMode = !captureMode && (location.hash === "#search" || new URLSearchParams(location.search).has("search"));
 
 // Collect runtime errors so end-to-end tests can assert a clean console.
-const w = window as unknown as { __aetherErrors: string[] };
-w.__aetherErrors = [];
-window.addEventListener("error", (e) => w.__aetherErrors.push(String(e.message)));
-window.addEventListener("unhandledrejection", (e) => w.__aetherErrors.push(String(e.reason)));
+const w = window as unknown as { __annaloErrors: string[] };
+w.__annaloErrors = [];
+window.addEventListener("error", (e) => w.__annaloErrors.push(String(e.message)));
+window.addEventListener("unhandledrejection", (e) => w.__annaloErrors.push(String(e.reason)));
 const origError = console.error;
 console.error = (...args: unknown[]) => {
-  w.__aetherErrors.push(args.map(String).join(" "));
+  w.__annaloErrors.push(args.map(String).join(" "));
   origError(...args);
 };
 

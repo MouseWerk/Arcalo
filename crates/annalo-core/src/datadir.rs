@@ -3,7 +3,7 @@
 //! The data folder holds `workspace.db` (+ WAL files), `attachments/`, `backups/` and
 //! `secrets.json`. By default it is the app data folder; a bootstrap file `location.json`
 //! (`{"data_dir": "…"}`) in the app config folder points elsewhere, and the
-//! `AETHER_DATA_DIR` environment variable (tests) overrides both.
+//! `ANNALO_DATA_DIR` environment variable (tests) overrides both.
 //!
 //! Moving happens in two steps so no edit is lost: choosing a folder only records a
 //! pending move (`{"data_dir": old, "pending_move": new}`); the next start copies the
@@ -21,7 +21,7 @@ pub const DB_FILE: &str = "workspace.db";
 /// Name of the bootstrap file in the app config folder.
 pub const LOCATION_FILE: &str = "location.json";
 /// Staging folder inside the target while a move copies files.
-pub const STAGING_DIR: &str = ".aether-move-tmp";
+pub const STAGING_DIR: &str = ".annalo-move-tmp";
 /// Folders and files next to the database that move with it (the database goes last).
 const DATA_DIRS: [&str; 2] = ["attachments", "backups"];
 const DATA_FILES: [&str; 1] = ["secrets.json"];
@@ -70,7 +70,7 @@ pub fn write_pending_move(config_dir: &Path, from: &Path, to: &Path) -> Result<(
     )
 }
 
-/// The data folder to open: `env` (AETHER_DATA_DIR) wins, then `location.json`, then `default`.
+/// The data folder to open: `env` (ANNALO_DATA_DIR) wins, then `location.json`, then `default`.
 pub fn resolve(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf) -> PathBuf {
     env.filter(|p| !p.as_os_str().is_empty()).or_else(|| config_dir.and_then(read_location)).unwrap_or(default)
 }
@@ -188,7 +188,7 @@ pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
             return Err(Error::State("Der Zielordner liegt im bisherigen Datenordner".into()));
         }
     }
-    let probe = to.join(".aether-write-test");
+    let probe = to.join(".annalo-write-test");
     std::fs::write(&probe, b"ok")
         .map_err(|e| Error::State(format!("In den Ordner {} kann nicht geschrieben werden: {e}", to.display())))?;
     let _ = std::fs::remove_file(&probe);
@@ -196,7 +196,7 @@ pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
 }
 
 /// Copies the closed workspace in `from` to `to`: everything goes to a staging folder
-/// `to/.aether-move-tmp` first and is then renamed into place, the database last. An
+/// `to/.annalo-move-tmp` first and is then renamed into place, the database last. An
 /// interrupted move leaves no half-copied workspace behind and can simply be repeated.
 /// Refuses a folder that already holds a workspace. Returns the files copied.
 ///
@@ -291,21 +291,21 @@ mod tests {
     #[test]
     fn detects_network_and_synced_folders() {
         for p in [
-            r"\\server\share\Aether",
+            r"\\server\share\Annalo",
             "//nas/daten",
-            r"C:\Users\anna\OneDrive - Firma\Aether",
+            r"C:\Users\anna\OneDrive - Firma\Annalo",
             r"C:\Users\anna\onedrive\x",
-            "/home/anna/Dropbox/aether",
+            "/home/anna/Dropbox/annalo",
         ] {
             assert!(is_synced_or_network(p), "{p}");
         }
-        for p in [r"C:\Users\anna\AppData\Roaming\os.aether.workspace", "/home/anna/.local/share/aether", r"D:\Daten"] {
+        for p in [r"C:\Users\anna\AppData\Roaming\app.annalo.desktop", "/home/anna/.local/share/annalo", r"D:\Daten"] {
             assert!(!is_synced_or_network(p), "{p}");
         }
     }
 
     fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("aether-datadir-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("annalo-datadir-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -316,9 +316,9 @@ mod tests {
         let cfg = temp("cfg");
         let default = PathBuf::from("/default");
         assert_eq!(resolve(None, Some(&cfg), default.clone()), default);
-        write_location(&cfg, Path::new("/daten/aether")).unwrap();
-        assert_eq!(read_location(&cfg), Some(PathBuf::from("/daten/aether")));
-        assert_eq!(resolve(None, Some(&cfg), default.clone()), PathBuf::from("/daten/aether"));
+        write_location(&cfg, Path::new("/daten/annalo")).unwrap();
+        assert_eq!(read_location(&cfg), Some(PathBuf::from("/daten/annalo")));
+        assert_eq!(resolve(None, Some(&cfg), default.clone()), PathBuf::from("/daten/annalo"));
         assert_eq!(resolve(Some(PathBuf::from("/env")), Some(&cfg), default.clone()), PathBuf::from("/env"));
         std::fs::write(cfg.join(LOCATION_FILE), "kaputt").unwrap();
         assert_eq!(resolve(None, Some(&cfg), default.clone()), default, "a broken file is ignored");
@@ -334,7 +334,7 @@ mod tests {
         std::fs::create_dir_all(from.join("attachments")).unwrap();
         std::fs::write(from.join("attachments/bild.png"), [1u8, 2]).unwrap();
         std::fs::create_dir_all(from.join("backups/attachments")).unwrap();
-        std::fs::write(from.join("backups/aether-1.db"), [3u8]).unwrap();
+        std::fs::write(from.join("backups/annalo-1.db"), [3u8]).unwrap();
         std::fs::write(from.join("backups/attachments/bild.png"), [1u8, 2]).unwrap();
         std::fs::write(from.join("secrets.json"), b"{}").unwrap();
         p.id

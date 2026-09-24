@@ -102,7 +102,7 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
     const dst = document.querySelector('[data-widget="today"]');
     const r = dst.getBoundingClientRect();
     const dt = new DataTransfer();
-    dt.setData("application/x-aether-widget", "note");
+    dt.setData("application/x-annalo-widget", "note");
     const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.top + 5 };
     dst.dispatchEvent(new DragEvent("dragover", at));
   });
@@ -112,7 +112,7 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
     const dst = document.querySelector('[data-widget="today"]');
     const r = dst.getBoundingClientRect();
     const dt = new DataTransfer();
-    dt.setData("application/x-aether-widget", "note");
+    dt.setData("application/x-annalo-widget", "note");
     const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.top + 5 };
     dst.dispatchEvent(new DragEvent("drop", at));
     src.dispatchEvent(new DragEvent("dragend", at));

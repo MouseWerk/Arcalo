@@ -5,9 +5,9 @@
 ```
  ui/ (React + TipTap, WebView2)      ── invoke()/listen() ──▶  src-tauri (IPC commands, state, secrets, sampler)
                                                                     │
- crates/aether-cli ─────────────────────────────────────────────────┤
+ crates/annalo-cli ─────────────────────────────────────────────────┤
                                                                     ▼
-                                             crates/aether-core
+                                             crates/annalo-core
             ┌─────────┬──────────┬───────────┬──────────┬──────────┬───────────────┐
             │ db      │ zeit     │ tracking  │ netzplan │ export   │ ai::{client,  │
             │ search  │ (parser) │ (budget)  │ (CPM)    │          │ router, rag,  │
@@ -16,10 +16,10 @@
                       SQLite (WAL, FTS5, f32 BLOB embeddings)     LiteLLM proxy (HTTP/SSE)
 ```
 
-All logic lives in `aether-core` and is tested there; the shell only wires state,
+All logic lives in `annalo-core` and is tested there; the shell only wires state,
 events and OS integration. The UI never talks to the network or the filesystem directly.
 
-## Data model (`crates/aether-core/migrations/0001_init.sql`)
+## Data model (`crates/annalo-core/migrations/0001_init.sql`)
 
 | Table | Purpose |
 |---|---|
@@ -50,7 +50,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   subpages trashed earlier stay separate entries). Every normal query (tree, search, links, tags, RAG,
   export) skips trashed pages. Restoring puts a page back under its parent, or at the top level if the
   parent is gone; title and daily-note clashes are resolved. Entries older than 30 days are purged on start.
-- **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `aether-YYYYMMDD-HHMMSS.db`;
+- **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `annalo-YYYYMMDD-HHMMSS.db`;
   older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
   backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`.
 - **Markdown mirror** (`mirror.rs`): after each successful backup (with `markdown_mirror`, default on) the shell
@@ -60,9 +60,9 @@ Migration v2 converts the old block model: blocks are concatenated into
   never replaced. Failures are recorded (`mirror.error` meta row) and shown in the settings; they do not fail the backup.
 - **Git sync** (`gitsync.rs`): the mirror is swapped atomically, so it cannot hold a repository. The sync keeps its own
   working tree `<data dir>/git-sync`, brings it to the mirror's state like rsync (removals first, `.git`, `.gitattributes`,
-  `README.md` and `aether-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
+  `README.md` and `annalo-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
   A fresh working tree adopts the remote history only when its `.gitattributes` carries the sync's marker. A rejected push
-  is rebased onto the remote when the histories are related; otherwise (or on a conflict) it goes to `aether-sync-<host>`.
+  is rebased onto the remote when the histories are related; otherwise (or on a conflict) it goes to `annalo-sync-<host>`.
   The system `git` runs without a shell (`CREATE_NO_WINDOW` on Windows), with `GIT_TERMINAL_PROMPT=0` and a 120 s
   timeout. The HTTPS token comes from the credential store (account `git-token`) and is passed as
   `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`), only to HTTP(S) remotes;
@@ -74,14 +74,14 @@ Migration v2 converts the old block model: blocks are concatenated into
   rename link rewrites in other pages always snapshot first; „Jetzt Version sichern“ (`page_snapshot`)
   stores the current state. At most 50 per page; older than 30 days are pruned on start. A restore saves
   through `save_page_content`, so search, links, tags and tasks follow. The dialog shows a line diff (LCS).
-- **Data folder** (`datadir.rs`): `AETHER_DATA_DIR` wins, then `<app config dir>/location.json`
+- **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
   (`wal_checkpoint(TRUNCATE)`) while holding the database lock, copies `workspace.db` (+ `-wal`/`-shm`),
   `attachments/` and `backups/` (never over an existing workspace), writes `location.json` and restarts.
   A data folder on a UNC path or inside OneDrive/Dropbox gets a persistent warning at start
   (`data_dir_status`, queried by the UI once it is ready, so the warning cannot be missed).
 - **Single instance**: a second launch only focuses the running window (tauri-plugin-single-instance),
-  so two processes never write one workspace. Test runs with `AETHER_DATA_DIR` skip the check.
+  so two processes never write one workspace. Test runs with `ANNALO_DATA_DIR` skip the check.
 - **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
   „Beenden“ in the tray emits `app://quit-requested`, the UI flushes (asking if that fails) and calls
   `app_quit`. Without it the UI destroys the main window and the shell exits.
@@ -112,7 +112,7 @@ Migration v2 converts the old block model: blocks are concatenated into
 
 ## Auto-update (`updates.rs` in the shell, `update.rs` in core)
 
-- `tauri-plugin-updater` is registered only when the build compiled in `AETHER_UPDATER_PUBKEY`
+- `tauri-plugin-updater` is registered only when the build compiled in `ANNALO_UPDATER_PUBKEY`
   (`option_env!`; `build.rs` re-runs when it changes). Without it `update_status` reports `enabled: false`,
   `update_check`/`update_install` refuse, and nothing contacts the network (dev, CI and e2e builds).
 - Endpoint and Windows `installMode: passive` live in `plugins.updater` of `tauri.conf.json`. The release
@@ -140,7 +140,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   not on Windows where Git uses schannel) and `http.sslVerify=false` when invalid certificates are accepted, all via
   `GIT_CONFIG_*`; the proxy password is redacted from git's output.
 - PAC: the UI evaluates the script (`ui/src/lib/pac.ts`, standard helpers without DNS) in an iframe served by the
-  `aether-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
+  `annalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
   `unsafe-eval`. Answers are stored per host in `network.pac_results` (`*` = LiteLLM host, used for other hosts) on
   save, test and start.
 - The proxy password lives in the credential store (account `proxy-password`), never in the settings or exports.
@@ -162,7 +162,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   buttons, ≥ 3 for UI accents), the webview zoom, the language (`i18n.ts`, typed German/English dictionary) and the
   keymap (`keymap.ts`: commands, defaults, recording from key events with AltGr protection, conflicts with other
   commands, editor keys and global shortcuts). The App's keydown handler looks commands up in the keymap.
-- Settings export writes `{format: "aether-os-settings", version, settings}`; the import is validated against the
+- Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the
   current settings in the UI (`settingsio.ts`: same keys and types, unknown or mistyped fields skipped with a warning),
   previewed as a diff and saved through `settings_save`. `settings://changed` is emitted on every save so the UI
   follows changes made elsewhere.
@@ -178,7 +178,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   bookings, and `/zeit` lines without a reference on that page book on it.
 - Autosave runs 450 ms (Settings → Editor, 250–3000 ms) after the last change and on window blur. Renames rewrite `[[links]]` in every referencing page.
 - Images live as files in `<data_dir>/attachments/`, named by the first 16 hex digits of their SHA-256 (same image, same file),
-  and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `aether-asset:` URI scheme, which
+  and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `annalo-asset:` URI scheme, which
   only answers plain file names inside that folder (no separators, `..` or hidden files; canonical path checked). Regular
   `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes the embedded ones to `attachments/`.
 - Templates are the pages below the top-level page „Vorlagen“ (`templates.rs`); placeholders are filled by `apply_template`.
@@ -191,7 +191,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   under 200 ms in a debug build.
 - The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
   re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
-  collapsed (`aether.collapsed` in localStorage).
+  collapsed (`annalo.collapsed` in localStorage).
 
 ## Key algorithms
 
@@ -239,7 +239,7 @@ Migration v2 converts the old block model: blocks are concatenated into
 
 ## Verification status
 
-- `aether-core`: unit and integration tests (including a fake LiteLLM SSE server); `cargo clippy` clean.
+- `annalo-core`: unit and integration tests (including a fake LiteLLM SSE server); `cargo clippy` clean.
 - End-to-end: `e2e/run.sh` builds the desktop app with the production frontend embedded and drives it through
   WebDriver (`tauri-driver` + WebKitWebDriver under Xvfb): notes, links, rename, tags, palette, tabs, find,
   daily notes, `/zeit`, timer, timesheet, export, projects, settings (LiteLLM URL, token, models), the assistant

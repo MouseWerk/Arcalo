@@ -44,7 +44,7 @@ test("sidebar and panel are resizable and remember their width", async () => {
   const before = await width(".sidebar");
   await drag(".side-resizer", 90);
   await app.browser.waitUntil(async () => Math.abs((await width(".sidebar")) - (before + 90)) < 12, { timeoutMsg: "sidebar did not grow" });
-  const stored = await app.browser.execute(() => Number(localStorage.getItem("aether.sidebar-w")));
+  const stored = await app.browser.execute(() => Number(localStorage.getItem("annalo.sidebar-w")));
   assert.ok(Math.abs(stored - (before + 90)) < 12, `stored ${stored}`);
 
   const panelBefore = await width(".panel");
