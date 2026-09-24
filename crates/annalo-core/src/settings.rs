@@ -130,7 +130,7 @@ impl QuickLink {
         if let Some(rest) = lower.strip_prefix("file://") {
             let rest = &u[u.len() - rest.len()..];
             // file:///C:/x → C:/x, file:///home/x → /home/x
-            let path = if rest.len() > 3 && rest.as_bytes()[2] == b':' { &rest[1..] } else { rest };
+            let path = if rest.starts_with('/') && rest.as_bytes().get(2) == Some(&b':') { &rest[1..] } else { rest };
             return LinkTarget::Path(path.replace("%20", " "));
         }
         let drive = u.len() > 2 && u.as_bytes()[1] == b':' && matches!(u.as_bytes()[2], b'\\' | b'/');
@@ -706,6 +706,9 @@ mod tests {
         assert_eq!(t("/home/anna/Dokumente"), LinkTarget::Path("/home/anna/Dokumente".into()));
         assert_eq!(t("file:///C:/Daten/Plan.xlsx"), LinkTarget::Path("C:/Daten/Plan.xlsx".into()));
         assert_eq!(t("file:///home/anna/a%20b"), LinkTarget::Path("/home/anna/a b".into()));
+        // A multibyte character before the colon (used to panic on a byte-offset slice).
+        assert_eq!(t("file://é:xy"), LinkTarget::Path("é:xy".into()));
+        assert_eq!(t("file://C:/x"), LinkTarget::Path("C:/x".into()));
     }
 
     #[test]

@@ -304,23 +304,30 @@ fn remove_path(p: &Path) -> Result<()> {
     Ok(())
 }
 
-fn sync_dir(src: &Path, dst: &Path, keep: Option<&[String]>, apply: bool, ch: &mut TreeChanges) -> Result<()> {
-    // Source entries: plain files and folders, no symlinks, never a `.git`.
+/// Source entries of a folder: plain files and folders, no symlinks, never a `.git`. A
+/// missing folder is an error, never an empty list (that would remove every file).
+fn source_entries(src: &Path) -> Result<Vec<(OsString, bool)>> {
+    if !src.is_dir() {
+        return Err(Error::State(format!("Ordner fehlt: {}", src.display())));
+    }
     let mut entries: Vec<(OsString, bool)> = Vec::new();
-    if src.is_dir() {
-        for e in fs::read_dir(src)? {
-            let e = e?;
-            let ft = e.file_type()?;
-            let name = e.file_name();
-            if ft.is_symlink() || name.to_str().is_some_and(is_git_dir) {
-                continue;
-            }
-            if ft.is_dir() || ft.is_file() {
-                entries.push((name, ft.is_dir()));
-            }
+    for e in fs::read_dir(src)? {
+        let e = e?;
+        let ft = e.file_type()?;
+        let name = e.file_name();
+        if ft.is_symlink() || name.to_str().is_some_and(is_git_dir) {
+            continue;
+        }
+        if ft.is_dir() || ft.is_file() {
+            entries.push((name, ft.is_dir()));
         }
     }
     entries.sort();
+    Ok(entries)
+}
+
+fn sync_dir(src: &Path, dst: &Path, keep: Option<&[String]>, apply: bool, ch: &mut TreeChanges) -> Result<()> {
+    let entries = source_entries(src)?;
     let names: BTreeSet<&OsString> = entries.iter().map(|(n, _)| n).collect();
 
     // Removals first: on a case-insensitive file system a page renamed from `Notiz` to
@@ -382,6 +389,78 @@ fn sync_dir(src: &Path, dst: &Path, keep: Option<&[String]>, apply: bool, ch: &m
 /// `database`: backup file to include as [`DB_FILE`]; `None` removes an earlier copy.
 pub fn prepare_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<TreeChanges> {
     let ch = sync_tree(source, repo, true)?;
+    write_own_files(source, repo, database)?;
+    Ok(ch)
+}
+
+/// First sync of a working tree that took over the server's history (new computer,
+/// reinstall): the server's files are the base and nothing is removed. Files only this
+/// computer has are added, other files it changed replace the server's, except notes: a
+/// note both sides have with different text keeps the server's version and comes back as
+/// a conflict. Notes only the server has come back with `mine: None`, so the shell creates
+/// them here.
+fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<Vec<RemoteChange>> {
+    fn walk(src: &Path, dst: &Path, rel: &str, seen: &mut BTreeSet<String>, out: &mut Vec<RemoteChange>) -> Result<()> {
+        for (name, is_dir) in source_entries(src)? {
+            let Some(name_s) = name.to_str() else { continue };
+            let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
+            let (from, to) = (src.join(&name), dst.join(&name));
+            if is_dir {
+                if to.exists() && !to.is_dir() {
+                    remove_path(&to)?;
+                }
+                fs::create_dir_all(&to)?;
+                walk(&from, &to, &path, seen, out)?;
+                continue;
+            }
+            seen.insert(path.to_lowercase());
+            if to.is_dir() {
+                continue;
+            }
+            if to.is_file() && !same_file(&from, &to)? && is_note(&path) {
+                out.push(RemoteChange {
+                    base: None,
+                    mine: Some(String::from_utf8_lossy(&fs::read(&from)?).into_owned()),
+                    theirs: Some(String::from_utf8_lossy(&fs::read(&to)?).into_owned()),
+                    path,
+                    conflict: true,
+                });
+                continue;
+            }
+            if !to.exists() || !same_file(&from, &to)? {
+                fs::copy(&from, &to)?;
+            }
+        }
+        Ok(())
+    }
+    fn server_notes(dir: &Path, rel: &str, out: &mut Vec<String>) -> Result<()> {
+        for (name, is_dir) in source_entries(dir)? {
+            let Some(name_s) = name.to_str() else { continue };
+            let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
+            if is_dir {
+                server_notes(&dir.join(&name), &path, out)?;
+            } else if is_note(&path) && path != README_FILE {
+                out.push(path);
+            }
+        }
+        Ok(())
+    }
+    let mut seen = BTreeSet::new();
+    let mut changes = Vec::new();
+    walk(source, repo, "", &mut seen, &mut changes)?;
+    let mut theirs = Vec::new();
+    server_notes(repo, "", &mut theirs)?;
+    for path in theirs.into_iter().filter(|p| !seen.contains(&p.to_lowercase())) {
+        let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
+        changes.push(RemoteChange { path, base: None, mine: None, theirs: Some(text), conflict: false });
+    }
+    changes.sort_by(|a, b| a.path.cmp(&b.path));
+    write_own_files(source, repo, database)?;
+    Ok(changes)
+}
+
+/// Writes the sync's own files next to the notes (`database`: see [`prepare_tree`]).
+fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>) -> Result<()> {
     fs::write(repo.join(ATTRIBUTES_FILE), ATTRIBUTES)?;
     if !source.join(README_FILE).exists() {
         fs::write(repo.join(README_FILE), README)?;
@@ -396,7 +475,7 @@ pub fn prepare_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Resu
         None if db.exists() => fs::remove_file(&db)?,
         None => {}
     }
-    Ok(ch)
+    Ok(())
 }
 
 // ------------------------------------------------------------------ runner
@@ -655,6 +734,37 @@ pub struct SyncRequest<'a> {
     /// Paths (`/` separated) of notes with an undecided conflict: they keep the committed
     /// (server's) version in the working tree until the user has merged them.
     pub hold: &'a [String],
+    /// The user confirmed a commit that deletes many notes (see [`mass_deletion`]).
+    pub allow_deletions: bool,
+}
+
+/// Start of the error a sync returns when it stopped before deleting many notes; the shell
+/// offers „Löschungen übertragen“ for it.
+pub const GUARD_PREFIX: &str = "Zur Sicherheit angehalten";
+
+/// Whether deleting `deleted` of `tracked` notes in one step needs the user's confirmation:
+/// more than 10 notes, or more than a fifth of them (from 3 notes on).
+pub fn mass_deletion(deleted: usize, tracked: usize) -> bool {
+    deleted > 10 || (deleted >= 3 && deleted * 5 > tracked)
+}
+
+/// Number of notes (`.md` files, not the sync's README) among `paths`.
+fn count_notes<'a>(paths: impl Iterator<Item = &'a str>) -> usize {
+    paths.filter(|p| is_note(p) && *p != README_FILE).count()
+}
+
+/// The error for a refused mass deletion.
+fn guard_error(deleted: usize, tracked: usize) -> Error {
+    Error::State(format!(
+        "{GUARD_PREFIX}: die Synchronisierung würde {deleted} von {tracked} Notizen auf dem Server löschen. \
+         Wenn das gewollt ist, unter Einstellungen → Sicherung „Löschungen übertragen“ wählen."
+    ))
+}
+
+/// The number of notes a refused sync would have deleted, from its error message.
+pub fn guard_count(message: &str) -> Option<usize> {
+    let rest = message.split(GUARD_PREFIX).nth(1)?;
+    rest.split_whitespace().find_map(|w| w.parse().ok())
 }
 
 /// A note the server changed since the last common state, pulled by a sync.
@@ -702,6 +812,9 @@ pub struct GitSyncStatus {
     /// Files in the mirror that differ from the last synced state.
     pub pending_changes: usize,
     pub token_set: bool,
+    /// The last sync stopped before deleting this many notes on the server (see [`GUARD_PREFIX`]).
+    #[serde(default)]
+    pub blocked_deletions: Option<usize>,
 }
 
 fn has_head(git: &Git, repo: &Path) -> Result<bool> {
@@ -759,24 +872,49 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if s.remote_url.is_empty() {
         return Err(Error::State("Für die Git-Synchronisierung fehlt die Remote-URL".into()));
     }
+    // Only a complete mirror is synced: a missing folder (drive not connected) or a foreign
+    // one (a wrongly chosen mirror folder the mirror refused to replace) would otherwise be
+    // committed as the deletion of every note, or as someone else's files.
+    if !req.source.is_dir() || !crate::mirror::is_mirror(req.source) {
+        return Err(Error::State(format!(
+            "Die Markdown-Kopie unter {} fehlt oder ist keine Markdown-Kopie von Annalo – \
+             Git-Synchronisierung abgebrochen, damit auf dem Server nichts gelöscht wird",
+            req.source.display()
+        )));
+    }
     git.version()?;
     let repo = req.repo;
     let branch = s.branch.as_str();
     ensure_repo(git, repo, &s.remote_url, branch)?;
 
     // A fresh working tree continues the remote's history when it was written by this
-    // sync (new computer, reinstall); foreign history is never adopted.
+    // sync (new computer, reinstall); foreign history is never adopted. Adopting merges:
+    // the server's notes stay and come back to be created here (see [`adopt_tree`]).
     let mut tip = remote_tip(git, repo, branch)?;
+    let mut adopted = false;
     if tip.is_some() && !has_head(git, repo)? {
         fetch(git, repo, branch)?;
         let remote_ref = format!("origin/{branch}");
         let attrs = git.run(Some(repo), &["show", &format!("{remote_ref}:{ATTRIBUTES_FILE}")])?;
         if attrs.ok && attrs.stdout.starts_with(MARKER) {
-            git.check(Some(repo), &["reset", "-q", &remote_ref])?;
+            git.check(Some(repo), &["reset", "-q", "--hard", &remote_ref])?;
+            adopted = true;
         }
     }
 
-    prepare_tree(req.source, repo, req.database)?;
+    let mut pulled: Vec<RemoteChange> = {
+        // The mirror is read in one complete state (no swap in between).
+        let _swap = crate::mirror::hold_swaps();
+        if !crate::mirror::is_mirror(req.source) {
+            return Err(Error::State(format!("Die Markdown-Kopie unter {} fehlt", req.source.display())));
+        }
+        if adopted {
+            adopt_tree(req.source, repo, req.database)?
+        } else {
+            prepare_tree(req.source, repo, req.database)?;
+            vec![]
+        }
+    };
     if has_head(git, repo)? {
         for path in req.hold {
             hold_path(git, repo, path)?;
@@ -785,6 +923,17 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     git.check(Some(repo), &["add", "-A"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
+    if changed > 0 && !req.allow_deletions && has_head(git, repo)? {
+        let deleted = git.check(Some(repo), &["diff", "--cached", "--name-only", "--diff-filter=D", "-z"])?;
+        let deleted = count_notes(deleted.split('\0'));
+        let tracked = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", "HEAD"])?;
+        let tracked = count_notes(tracked.split('\0'));
+        if mass_deletion(deleted, tracked) {
+            // Unstaged again; the working tree is rewritten by the next sync anyway.
+            git.check(Some(repo), &["reset", "-q"])?;
+            return Err(guard_error(deleted, tracked));
+        }
+    }
     let identity = [format!("user.name={}", s.author_name), format!("user.email={}", s.author_email)];
     let committed = changed > 0;
     if committed {
@@ -835,12 +984,12 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     };
 
     if tip.as_deref() == Some(head.as_str()) {
-        return Ok(done(short(git)?, branch, false, vec![]));
+        return Ok(done(short(git)?, branch, false, pulled));
     }
     let target = format!("HEAD:refs/heads/{branch}");
     let push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
     if push.ok {
-        return Ok(done(short(git)?, branch, false, vec![]));
+        return Ok(done(short(git)?, branch, false, pulled));
     }
     if !rejected(&push) {
         return Err(git.failure(&["push"], &push));
@@ -851,7 +1000,6 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     // repository and come back as conflicts for the user to merge (nothing is lost on
     // either side). Unrelated histories stay untouched: this computer pushes to a branch of
     // its own. A second rejection (someone pushed meanwhile) is merged once more.
-    let mut pulled: Vec<RemoteChange> = Vec::new();
     for _ in 0..2 {
         fetch(git, repo, branch)?;
         tip = rev(git, repo, &format!("refs/remotes/origin/{branch}"))?;
@@ -1043,6 +1191,11 @@ mod tests {
         fs::write(p, content).unwrap();
     }
 
+    /// Marks `dir` as a Markdown mirror (the sync refuses anything else).
+    fn mark(dir: &Path) {
+        write(&dir.join(crate::mirror::README_NAME), crate::mirror::MARKER);
+    }
+
     fn files(dir: &Path) -> Vec<String> {
         fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
             for e in fs::read_dir(dir).unwrap().flatten() {
@@ -1207,6 +1360,7 @@ mod tests {
         let (src, repo, bare) = (base.join("mirror"), base.join("git-sync"), base.join("remote.git"));
         sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
         write(&src.join("Notiz.md"), "Hallo Welt");
+        mark(&src);
         write(&src.join("attachments/bild.png"), "PNG");
         let backup = base.join("annalo-1.db");
         fs::write(&backup, b"SQLite format 3\0").unwrap();
@@ -1232,6 +1386,7 @@ mod tests {
                         host: "pc1",
                         now: Local::now(),
                         hold: &[],
+                        allow_deletions: false,
                     },
                 )
             }
@@ -1239,9 +1394,9 @@ mod tests {
 
         let first = req(&repo, Some(backup.clone()))(&git).unwrap();
         assert!(first.committed && !first.fallback, "{first:?}");
-        assert_eq!(first.changed_files, 5, "note, image, db, README, .gitattributes");
+        assert_eq!(first.changed_files, 6, "note, image, db, README, .gitattributes, mirror marker");
         let log = sh(&bare, &["log", "--format=%s", "main"]);
-        assert!(log.starts_with("Sicherung ") && log.contains("5 Dateien geändert"), "{log}");
+        assert!(log.starts_with("Sicherung ") && log.contains("6 Dateien geändert"), "{log}");
         assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "Hallo Welt");
         assert_eq!(first.commit.as_deref(), Some(sh(&bare, &["rev-parse", "--short", "main"]).trim()));
         assert!(!fs::read_to_string(repo.join(".git/config")).unwrap().contains("geheim"));
@@ -1310,12 +1465,14 @@ mod tests {
                     host: pc,
                     now: Local::now(),
                     hold,
+                    allow_deletions: false,
                 },
             )
             .unwrap()
         };
         let put = |pc: &str, file: &str, text: &str| write(&base.join(format!("{pc}/mirror/{file}")), text);
         for pc in ["a", "b"] {
+            mark(&base.join(pc).join("mirror"));
             put(pc, "Notiz.md", "# Notiz\n\nGemeinsam.\n");
             put(pc, "Ordner/Andere.md", "alt\n");
             put(pc, "Weg.md", "wird gelöscht\n");
@@ -1408,6 +1565,7 @@ mod tests {
         sh(&other, &["push", "-q", bare.to_str().unwrap(), "main"]);
 
         write(&src.join("Notiz.md"), "meins");
+        mark(&src);
         let settings =
             GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
         let git = Git::new(None, &settings.remote_url);
@@ -1421,6 +1579,7 @@ mod tests {
                 host: "Büro-PC",
                 now: Local::now(),
                 hold: &[],
+                allow_deletions: false,
             },
         )
         .unwrap();
@@ -1442,11 +1601,248 @@ mod tests {
                 host: "pc",
                 now: Local::now(),
                 hold: &[],
+                allow_deletions: false,
             },
         )
         .unwrap_err()
         .to_string();
         assert!(err.contains("nicht erreichbar") || err.contains("fehlgeschlagen"), "{err}");
         let _ = fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    //! Two computers (two data folders) on one bare remote: first sync of a new computer,
+    //! a missing or foreign mirror folder, mass deletions and mirror swaps during a sync.
+    use super::*;
+    use crate::Database;
+
+    fn git_available() -> bool {
+        Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success())
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("annalo-gitsafety-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn put(p: &Path, content: &str) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, content).unwrap();
+    }
+
+    fn sh(dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(["-c", "user.name=Test", "-c", "user.email=t@example.com"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    struct Remote {
+        base: PathBuf,
+        settings: GitSyncSettings,
+    }
+
+    impl Remote {
+        fn new(name: &str) -> Remote {
+            let base = tmp(name);
+            let bare = base.join("remote.git");
+            sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
+            let settings =
+                GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().into(), ..Default::default() };
+            Remote { base, settings }
+        }
+        fn mirror(&self, pc: &str) -> PathBuf {
+            self.base.join(pc).join("mirror")
+        }
+        fn sync_from(&self, pc: &str, source: &Path, allow: bool) -> Result<SyncOutcome> {
+            sync(
+                &Git::new(None, &self.settings.remote_url),
+                &SyncRequest {
+                    repo: &self.base.join(pc).join(REPO_DIR),
+                    source,
+                    database: None,
+                    settings: &self.settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &[],
+                    allow_deletions: allow,
+                },
+            )
+        }
+        fn sync(&self, pc: &str) -> Result<SyncOutcome> {
+            self.sync_from(pc, &self.mirror(pc), false)
+        }
+        fn tree(&self) -> Vec<String> {
+            let out = sh(&self.base.join("remote.git"), &["ls-tree", "-r", "--name-only", "main"]);
+            out.lines().map(str::to_owned).collect()
+        }
+    }
+
+    impl Drop for Remote {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn mark(dir: &Path) {
+        put(&dir.join(crate::mirror::README_NAME), crate::mirror::MARKER);
+    }
+
+    #[test]
+    fn first_sync_of_a_new_computer_merges_instead_of_deleting() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("fresh");
+        let a = r.mirror("a");
+        mark(&a);
+        for (p, c) in [("Notiz.md", "eins"), ("Projekt.md", "zwei"), ("Projekt/Plan.md", "drei"), ("Heute.md", "A")] {
+            put(&a.join(p), c);
+        }
+        r.sync("a").unwrap();
+
+        // Computer B: a fresh installation with only its daily note and a note of the same name.
+        let b = r.mirror("b");
+        mark(&b);
+        put(&b.join("Journal/2026-09-24.md"), "## Fokus");
+        put(&b.join("Heute.md"), "B");
+        let out_b = r.sync("b").unwrap();
+        let tree = r.tree();
+        for note in ["Notiz.md", "Projekt.md", "Projekt/Plan.md", "Heute.md", "Journal/2026-09-24.md"] {
+            assert!(tree.contains(&note.to_owned()), "{note} on the server: {tree:?}");
+        }
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", "main:Heute.md"]), "A", "server keeps its version");
+        // B gets the server's notes to create, and the note both have as a conflict.
+        let got: Vec<(&str, Option<&str>, bool)> =
+            out_b.remote_changes.iter().map(|c| (c.path.as_str(), c.mine.as_deref(), c.conflict)).collect();
+        assert_eq!(
+            got,
+            [
+                ("Heute.md", Some("B"), true),
+                ("Notiz.md", None, false),
+                ("Projekt.md", None, false),
+                ("Projekt/Plan.md", None, false)
+            ]
+        );
+        assert!(out_b.remote_changes.iter().all(|c| c.theirs.is_some()));
+
+        // A syncs again with nothing changed: it pulls B's daily note and deletes nothing.
+        let out_a = r.sync("a").unwrap();
+        assert!(out_a.remote_changes.iter().all(|c| c.theirs.is_some()), "{:?}", out_a.remote_changes);
+        assert_eq!(out_a.remote_changes.len(), 1);
+        assert_eq!(out_a.remote_changes[0].path, "Journal/2026-09-24.md");
+    }
+
+    #[test]
+    fn missing_or_foreign_mirror_is_refused() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("missing");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins");
+        r.sync("a").unwrap();
+        let before = r.tree();
+
+        // The mirror folder is gone (USB or network drive not connected).
+        let err = r.sync_from("a", &r.base.join("fehlt"), true).unwrap_err().to_string();
+        assert!(err.contains("fehlt oder ist keine Markdown-Kopie"), "{err}");
+        // A foreign folder (e.g. Dokumente) chosen as mirror folder.
+        let foreign = r.base.join("Dokumente");
+        put(&foreign.join("Steuer.pdf"), "PDF");
+        let err = r.sync_from("a", &foreign, true).unwrap_err().to_string();
+        assert!(err.contains("keine Markdown-Kopie"), "{err}");
+        assert_eq!(r.tree(), before, "nothing pushed");
+        // A folder vanishing while the tree is read is an error, not a deletion.
+        assert!(sync_tree(&r.base.join("fehlt"), &r.base.join("x"), false).is_err());
+    }
+
+    #[test]
+    fn mass_deletions_need_confirmation() {
+        assert!(!mass_deletion(1, 2) && !mass_deletion(2, 4) && !mass_deletion(3, 20));
+        assert!(mass_deletion(3, 10) && mass_deletion(11, 1000) && !mass_deletion(10, 1000));
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("mass");
+        let a = r.mirror("a");
+        mark(&a);
+        for i in 0..12 {
+            put(&a.join(format!("Notiz {i}.md")), "x");
+        }
+        r.sync("a").unwrap();
+        for i in 0..11 {
+            fs::remove_file(a.join(format!("Notiz {i}.md"))).unwrap();
+        }
+        let err = r.sync("a").unwrap_err().to_string();
+        assert!(err.contains(GUARD_PREFIX), "{err}");
+        assert_eq!(guard_count(&err), Some(11));
+        assert_eq!(r.tree().len(), 12 + 3, "nothing deleted on the server");
+        let out = r.sync_from("a", &a, true).unwrap();
+        assert!(out.committed);
+        assert_eq!(r.tree().iter().filter(|p| p.ends_with(".md") && *p != README_FILE).count(), 1);
+    }
+
+    #[test]
+    fn mirror_swaps_during_a_sync_never_delete_notes() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("swap");
+        let mirror = r.mirror("a");
+        let pages = |db: &Database| {
+            for i in 0..40 {
+                let p = db.create_page(None, &format!("Seite {i}"), None).unwrap();
+                db.save_page_content(p.id, &format!("Inhalt {i}")).unwrap();
+            }
+        };
+        let db = Database::open_in_memory().unwrap();
+        pages(&db);
+        let files = r.base.join("attachments");
+        fs::create_dir_all(&files).unwrap();
+        crate::mirror::write_mirror(&db, &mirror, &files, &Local).unwrap();
+        r.sync("a").unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = {
+            let (mirror, files, stop) = (mirror.clone(), files.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let db = Database::open_in_memory().unwrap();
+                pages(&db);
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    crate::mirror::write_mirror(&db, &mirror, &files, &Local).unwrap();
+                }
+            })
+        };
+        for _ in 0..6 {
+            // Deletions allowed: only the swap lock keeps the half-swapped folder out.
+            r.sync_from("a", &mirror, true).unwrap();
+            let notes = r.tree().iter().filter(|p| p.starts_with("Seite ")).count();
+            assert_eq!(notes, 40);
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
+
+        // While a reader holds the swap lock (as the sync does while copying), the mirror
+        // is built but not swapped in.
+        let guard = crate::mirror::hold_swaps();
+        let marker = mirror.join("Seite 0.md");
+        let writer = std::thread::spawn(move || {
+            let db = Database::open_in_memory().unwrap();
+            crate::mirror::write_mirror(&db, &mirror, &files, &Local).unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(!writer.is_finished() && marker.exists(), "swap waits for the reader");
+        drop(guard);
+        writer.join().unwrap();
+        assert!(!marker.exists(), "swapped once the reader is done");
     }
 }

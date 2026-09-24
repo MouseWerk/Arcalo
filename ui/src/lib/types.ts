@@ -454,6 +454,8 @@ export interface GitSyncStatus {
   last_error: string | null;
   pending_changes: number;
   token_set: boolean;
+  /** The last sync stopped before deleting this many notes on the server ("Löschungen übertragen"). */
+  blocked_deletions?: number | null;
 }
 export interface GitSyncOutcome {
   commit: string | null;
@@ -912,4 +914,6 @@ export interface GitPulled {
   created: number[];
   trashed: number[];
   conflicts: number[];
+  /** Pages the server deleted, kept here because there were too many at once. */
+  kept?: number[];
 }

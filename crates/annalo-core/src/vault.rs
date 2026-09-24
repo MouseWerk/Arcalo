@@ -28,6 +28,9 @@ pub struct ImportReport {
     pub skipped: usize,
     /// Page created to hold the import.
     pub root_page_id: i64,
+    /// Attachments stored under another name (a different file had the name): old, new.
+    #[serde(skip)]
+    renamed: Vec<(String, String)>,
 }
 
 fn hidden(p: &Path) -> bool {
@@ -58,14 +61,42 @@ pub fn import_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
         let root = db.create_page(None, &name, Some("library"))?;
         let mut report = ImportReport { root_page_id: root.id, ..Default::default() };
         import_dir(db, dir, root.id, attachments_dir, &mut report)?;
+        if !report.renamed.is_empty() {
+            // The imported notes refer to the files by their old names.
+            let mut ids = vec![];
+            collect_ids(&db.page_tree()?, root.id, false, &mut ids);
+            for id in ids {
+                let content = db.page_doc(id)?.content;
+                let mut updated = content.clone();
+                for (old, new) in &report.renamed {
+                    updated = crate::attachment_manager::replace_file_refs(&updated, old, new);
+                }
+                if updated != content {
+                    db.save_page_content(id, &updated)?;
+                }
+            }
+        }
         Ok(report)
     })
 }
 
+/// Ids of the pages below `root` (in the tree `nodes`).
+fn collect_ids(nodes: &[PageNode], root: i64, inside: bool, out: &mut Vec<i64>) {
+    for n in nodes {
+        let below = inside || n.page.id == root;
+        if below {
+            out.push(n.page.id);
+        }
+        collect_ids(&n.children, root, below, out);
+    }
+}
+
 /// Copies an attachment (image, drawing, PDF or any other file with an extension) by its file
-/// name (Obsidian resolves embeds by name). An existing file with the same name is kept, so
-/// importing twice does not duplicate anything. Files above the attachment limit are skipped.
-fn import_attachment(path: &Path, attachments_dir: &Path) -> Result<bool> {
+/// name (Obsidian resolves embeds by name). The same file under that name is kept, so importing
+/// twice does not duplicate anything; a different file of the same name is stored under a free
+/// name (`Bild 2.png`) and the imported notes are pointed to it. Files above the attachment
+/// limit and empty files are skipped.
+fn import_attachment(path: &Path, attachments_dir: &Path, report: &mut ImportReport) -> Result<bool> {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Ok(false) };
     if !attachments::embeddable(name) || name.contains(':') {
         return Ok(false);
@@ -73,12 +104,16 @@ fn import_attachment(path: &Path, attachments_dir: &Path) -> Result<bool> {
     if fs::metadata(path)?.len() > attachments::MAX_FILE_BYTES {
         return Ok(false);
     }
-    fs::create_dir_all(attachments_dir)?;
-    let target = attachments_dir.join(name);
-    if !target.exists() {
-        fs::copy(path, &target)?;
+    match attachments::import_file(attachments_dir, path) {
+        Ok(saved) => {
+            if saved.name != name {
+                report.renamed.push((name.to_owned(), saved.name));
+            }
+            Ok(true)
+        }
+        Err(crate::Error::Io(e)) => Err(e.into()),
+        Err(_) => Ok(false),
     }
-    Ok(true)
 }
 
 /// Visible files and folders of `dir`. Symlinks are skipped entirely: following them could
@@ -105,7 +140,7 @@ fn import_files_only(dir: &Path, attachments_dir: &Path, report: &mut ImportRepo
     for path in visible_entries(dir)? {
         if path.is_dir() {
             import_files_only(&path, attachments_dir, report)?;
-        } else if import_attachment(&path, attachments_dir)? {
+        } else if import_attachment(&path, attachments_dir, report)? {
             report.attachments += 1;
         } else {
             report.skipped += 1;
@@ -143,7 +178,7 @@ fn import_dir(db: &Database, dir: &Path, parent: i64, attachments_dir: &Path, re
             let page = db.create_page(Some(parent), &title, Some("file-text"))?;
             db.save_page_content(page.id, &read_text(path)?)?;
             report.pages += 1;
-        } else if import_attachment(path, attachments_dir)? {
+        } else if import_attachment(path, attachments_dir, report)? {
             report.attachments += 1;
         } else {
             report.skipped += 1;
@@ -242,7 +277,7 @@ pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
     let mut count = 0;
     let mut embedded: Vec<String> = vec![];
     for (path, content) in &planned {
-        for name in attachments::embeds(content) {
+        for name in crate::attachment_manager::export_files(content) {
             if !embedded.contains(&name) {
                 embedded.push(name);
             }
@@ -319,6 +354,37 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]");
         assert!(root.join("Projekte.md").is_file());
         assert!(root.join("Inbox.md").is_file());
+    }
+
+    #[test]
+    fn linked_files_are_exported_and_name_clashes_keep_both_files() {
+        let db = Database::open_in_memory().unwrap();
+        let att = tmp("att2");
+        fs::write(att.join("Angebot.pdf"), "alt").unwrap();
+        fs::write(att.join("Plan.xlsx"), "tabelle").unwrap();
+        let p = db.create_page(None, "Kunde", None).unwrap();
+        db.save_page_content(p.id, "[[Angebot.pdf]] und [Plan](Plan.xlsx)").unwrap();
+        let out = tmp("out2");
+        export_vault(&db, &out, &att).unwrap();
+        assert_eq!(fs::read_to_string(out.join("attachments/Angebot.pdf")).unwrap(), "alt");
+        assert_eq!(fs::read_to_string(out.join("attachments/Plan.xlsx")).unwrap(), "tabelle");
+
+        // A vault with another file of the same name: both are kept, the import points to its own.
+        let vault = tmp("in2");
+        fs::write(vault.join("Angebot.pdf"), "neu").unwrap();
+        fs::write(vault.join("Plan.xlsx"), "tabelle").unwrap();
+        fs::write(vault.join("Notiz.md"), "![[Angebot.pdf]] [[Angebot.pdf|PDF]] [Plan](Plan.xlsx)").unwrap();
+        let r = import_vault(&db, &vault, &att).unwrap();
+        assert_eq!(r.attachments, 2);
+        assert_eq!(fs::read_to_string(att.join("Angebot.pdf")).unwrap(), "alt", "existing file untouched");
+        assert_eq!(fs::read_to_string(att.join("Angebot 2.pdf")).unwrap(), "neu");
+        assert!(!att.join("Plan 2.xlsx").exists(), "the same file is not stored twice");
+        let notiz = db.page_by_title("Notiz").unwrap().unwrap();
+        assert_eq!(
+            db.page_doc(notiz.id).unwrap().content,
+            "![[Angebot 2.pdf]] [[Angebot 2.pdf|PDF]] [Plan](Plan.xlsx)"
+        );
+        assert_eq!(db.page_doc(p.id).unwrap().content, "[[Angebot.pdf]] und [Plan](Plan.xlsx)", "other pages kept");
     }
 
     #[test]

@@ -213,7 +213,35 @@ pub fn day_start<Tz: TimeZone>(day: NaiveDate, tz: &Tz) -> DateTime<Utc> {
 
 // -------------------------------------------------------------------- store
 
+/// Clears the texts (title, task text, mentions) of the page events of page `?1`, before the
+/// page is deleted for good.
+pub(crate) const SCRUB_ACTIVITY: &str = "UPDATE activity SET title = '(gelöscht)', detail = '', people = ''
+     WHERE page_id = ?1 AND kind IN ('page_created', 'page_edited', 'task_added', 'task_done')";
+
+/// Activity, AI usage and focus sessions are kept this long.
+pub const HISTORY_DAYS: i64 = 400;
+
 impl Database {
+    /// Removes activity, AI usage and finished focus sessions older than [`HISTORY_DAYS`], and
+    /// the texts of page events whose page is gone. Returns the number of rows removed.
+    pub fn prune_history(&self, now: DateTime<Utc>) -> Result<usize> {
+        let cutoff = ts(now - chrono::Duration::days(HISTORY_DAYS));
+        self.atomic(|| {
+            let c = self.conn();
+            let mut n = c.execute("DELETE FROM activity WHERE at < ?1", [&cutoff])?;
+            n += c.execute("DELETE FROM ai_usage WHERE created_at < ?1", [&cutoff])?;
+            n += c.execute("DELETE FROM focus_sessions WHERE started_at < ?1 AND status <> 'running'", [&cutoff])?;
+            // Pages deleted before this was done at purge time.
+            c.execute(
+                "UPDATE activity SET title = '(gelöscht)', detail = '', people = ''
+                 WHERE page_id IS NULL AND title <> '(gelöscht)'
+                   AND kind IN ('page_created', 'page_edited', 'task_added', 'task_done')",
+                [],
+            )?;
+            Ok(n)
+        })
+    }
+
     /// Writes one event at `now`.
     pub fn record_activity(&self, a: &NewActivity, now: DateTime<Utc>) -> Result<i64> {
         self.conn().execute(
@@ -589,6 +617,13 @@ pub fn summary(db: &Database, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<
     })
 }
 
+/// Pages [`describe_days`] mentions (for the privacy check of the assistant's tool results).
+pub fn day_pages<Tz: TimeZone>(db: &Database, from: NaiveDate, to: NaiveDate, tz: &Tz) -> Result<Vec<i64>> {
+    let (start, end) = (day_start(from, tz), day_start(to + chrono::Duration::days(1), tz));
+    let items = list(db, &FeedFilter { from: Some(start), to: Some(end), limit: Some(400), ..Default::default() })?;
+    Ok(items.iter().filter_map(|a| a.page_id).collect())
+}
+
 /// „Was habe ich am … gemacht?“ as text for the assistant: the summary and the events of the
 /// local days `from..=to`, oldest first.
 pub fn describe_days<Tz: TimeZone>(db: &Database, from: NaiveDate, to: NaiveDate, tz: &Tz) -> Result<String>
@@ -744,6 +779,37 @@ mod tests {
 
     fn at(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
+
+    #[test]
+    fn history_is_pruned_and_purged_pages_leave_no_text() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Diagnose Kardiologie", None).unwrap();
+        db.save_page_content(p.id, "- [ ] Termin beim Arzt @anna").unwrap();
+        let texts = |db: &Database| -> Vec<String> {
+            let mut st = db.conn().prepare("SELECT title || detail || people FROM activity ORDER BY id").unwrap();
+            st.query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
+        assert!(texts(&db).iter().any(|t| t.contains("Kardiologie") || t.contains("Arzt")));
+        db.trash_page(p.id).unwrap();
+        db.purge_page(p.id).unwrap();
+        assert!(texts(&db).iter().all(|t| !t.contains("Kardiologie") && !t.contains("Arzt") && !t.contains("anna")));
+
+        let now = Utc::now();
+        let old = now - chrono::Duration::days(HISTORY_DAYS + 1);
+        db.record_activity(&NewActivity { kind: "backup", title: "alt".into(), ..Default::default() }, old).unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO ai_usage (session_id, model, prompt_tokens, completion_tokens, cost_usd, created_at)
+                 VALUES ('s', 'm', 1, 1, 0.0, ?1)",
+                [ts(old)],
+            )
+            .unwrap();
+        let before = texts(&db).len();
+        assert_eq!(db.prune_history(now).unwrap(), 2);
+        assert_eq!(texts(&db).len(), before - 1);
+        let usage: i64 = db.conn().query_row("SELECT COUNT(*) FROM ai_usage", [], |r| r.get(0)).unwrap();
+        assert_eq!(usage, 0);
     }
 
     #[test]

@@ -28,6 +28,7 @@ use annalo_core::ai::availability::{Catalog, Exclude};
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
 use annalo_core::ai::metrics::PriceTable;
 use annalo_core::ai::metrics::SessionMeter;
+use annalo_core::ai::privacy;
 use annalo_core::ai::provider::AiProvider;
 use annalo_core::ai::rag::{self, ContextChunk};
 use annalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
@@ -308,7 +309,7 @@ fn page_create(
 
 /// Avoid duplicate titles so [[links]] stay unambiguous.
 fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = title.trim().to_owned();
+    let base = annalo_core::notes::clean_title(title);
     let mut name = base.clone();
     let mut n = 2;
     while db.page_by_title(&name)?.is_some() {
@@ -321,6 +322,8 @@ fn unique_title(db: &Database, title: &str) -> Result<String> {
 #[tauri::command]
 fn page_rename(state: State<AppState>, id: i64, title: String, update_links: bool) -> Result<usize> {
     let db = state.db();
+    // `[ ] | # ^` are replaced (see `notes::clean_title`); the UI applies the same rule while typing.
+    let title = annalo_core::notes::clean_title(&title);
     if let Some(other) = db.page_by_title(&title)?
         && other.id != id
     {
@@ -1025,16 +1028,17 @@ fn export_entries(
 
 // ----------------------------------------------------------------- backups
 
-fn run_backup(app: &AppHandle) -> Result<BackupInfo> {
+/// Backs up; the flag tells whether the Markdown mirror was refreshed as well.
+fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let res = backup_once(app);
     match &res {
-        Ok(info) => devlog::debug("backup", format!("backup written: {}", info.path)),
+        Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
         Err(e) => devlog::error("backup", e.to_string()),
     }
     res
 }
 
-fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
+fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
@@ -1048,6 +1052,8 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
         // The backup itself succeeded; a failed mirror is reported in the settings, not as a failed backup.
+        // Mirror and Git sync never run at the same time (both use the mirror folder).
+        let _running = lock(&state.git_lock);
         match run_mirror(&state) {
             Ok(_) => mirror_fresh = true,
             Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
@@ -1056,9 +1062,9 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
         // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
-        let _ = run_git_sync(app, mirror_fresh);
+        let _ = run_git_sync(app, mirror_fresh, false);
     }
-    Ok(info)
+    Ok((info, mirror_fresh))
 }
 
 // ----------------------------------------------------------------- git sync
@@ -1082,7 +1088,8 @@ impl AppState {
 
 /// Refreshes the source (unless the mirror was just written), syncs, records the outcome
 /// and emits `gitsync://done` or `gitsync://failed`. Never holds the database lock while git runs.
-fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
+/// `allow_deletions`: the user confirmed a commit that deletes many notes.
+pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions: bool) -> Result<SyncOutcome> {
     let state = app.state::<AppState>();
     let _running = lock(&state.git_lock);
     let settings = state.settings();
@@ -1116,6 +1123,7 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
                 host: &gitsync::hostname(),
                 now: Local::now(),
                 hold: &hold,
+                allow_deletions,
             },
         )
     })();
@@ -1176,6 +1184,15 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
                     p.conflicts.len()
                 ),
             );
+            if !p.kept.is_empty() {
+                devlog::warn(
+                    "git",
+                    format!(
+                        "the server deleted {} pages at once: too many, kept here and uploaded again",
+                        p.kept.len()
+                    ),
+                );
+            }
             let _ = app.emit("gitsync://pulled", &p);
         }
         Err(e) => devlog::error("git", format!("taking over the server's notes failed: {e}")),
@@ -1183,12 +1200,14 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
 }
 
 /// Syncs now (also when the automatic sync is off, as long as a remote is set).
+/// `allow_deletions`: „Löschungen übertragen“ after a sync stopped before deleting many notes.
 #[tauri::command]
-async fn git_sync_now(app: AppHandle) -> Result<SyncOutcome> {
+async fn git_sync_now(app: AppHandle, allow_deletions: Option<bool>) -> Result<SyncOutcome> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
         return Err(Error::State("Bitte zuerst die Remote-URL eintragen und speichern".into()));
     }
-    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false))
+    let allow = allow_deletions.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false, allow))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }
@@ -1211,6 +1230,7 @@ fn git_status_of(state: &AppState) -> Result<GitSyncStatus> {
         last_at,
         last_commit,
         last_branch,
+        blocked_deletions: last_error.as_deref().and_then(gitsync::guard_count),
         last_error,
         pending_changes: gitsync::pending_changes(&state.git_source_dir(), &state.git_repo_dir()),
         token_set: state.git_secret.get().is_some(),
@@ -1386,7 +1406,9 @@ fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<
 /// Async so the snapshot and the Markdown mirror do not block the main (UI) thread.
 #[tauri::command]
 async fn backup_now(app: AppHandle) -> Result<BackupInfo> {
-    tauri::async_runtime::spawn_blocking(move || run_backup(&app)).await.map_err(|e| Error::State(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || run_backup(&app).map(|(info, _)| info))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
 }
 
 #[tauri::command]
@@ -1405,11 +1427,12 @@ fn spawn_backup_scheduler(app: AppHandle) {
                 Ok(list) => list.first().is_none_or(|b| Local::now() - b.created_at >= DAY),
                 Err(_) => true,
             };
-            let mut backed_up = false;
+            // Whether the backup also refreshed the mirror (a failed mirror is written again by the sync).
+            let mut mirror_fresh = false;
             if due {
                 // Failures are logged by `run_backup` and `run_git_sync`.
                 match run_backup(&app) {
-                    Ok(_) => backed_up = true,
+                    Ok((_, fresh)) => mirror_fresh = fresh,
                     Err(e) => {
                         let _ = app.emit("backup://failed", e.to_string());
                     }
@@ -1417,7 +1440,7 @@ fn spawn_backup_scheduler(app: AppHandle) {
             }
             let gs = state.settings().git_sync;
             if gs.enabled && gs.mode == SyncMode::Hourly && !gs.remote_url.is_empty() {
-                let _ = run_git_sync(&app, backed_up && state.settings().markdown_mirror);
+                let _ = run_git_sync(&app, mirror_fresh, false);
             }
             std::thread::sleep(Duration::from_secs(3600));
         }
@@ -2043,35 +2066,36 @@ async fn ai_chat(
         }
         _ => None,
     };
-    let (context, active, source_tags) = {
+    let (context, active, source_marker) = {
         let db = state.db();
         let context = rag::retrieve(&db, &prompt, query_embedding.as_deref(), 6)?;
         // Settings → Datenschutz: the open page is only sent when allowed.
+        // Its tags count as well (front matter `tags: [privat]` is not in the text as #privat).
         let active = match page_id.filter(|_| settings.privacy.read_open_page) {
-            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content)),
+            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content, privacy::tag_text(&d.tags))),
             None => None,
         };
-        // A chunk rarely contains its page's #privat tag, so the tags of every source page count too.
-        let mut ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        let mut tags = vec![];
-        for id in ids {
-            tags.extend(db.page_tags(id)?.into_iter().map(|t| format!("#{t}")));
-        }
-        (context, active, tags.join(" "))
+        // A chunk rarely contains its page's #privat tag, so the privacy of every source page counts too.
+        let ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
+        let private = privacy::private_pages(&db, ids, &settings.router.private_markers)?;
+        (
+            context,
+            active,
+            privacy::mark_tool_result(String::new(), !private.is_empty(), &settings.router.private_markers),
+        )
     };
     let mut context_texts: Vec<String> = context.iter().map(|c| c.text.clone()).collect();
-    if let Some((_, text)) = &active {
+    if let Some((_, text, tags)) = &active {
         context_texts.push(text.clone());
+        context_texts.push(tags.clone());
     }
-    context_texts.push(source_tags);
+    context_texts.push(source_marker);
     // Earlier turns (and tool results) of the conversation are sent again, so they count as well.
     context_texts.extend(messages.iter().filter_map(|m| m.content.clone()));
     let route = route_for(&state, &prompt, &context_texts, use_tools, tier);
 
     let mut full = vec![ChatMessage::system(system_prompt(&settings))];
-    if let Some((title, text)) = &active {
+    if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
         full.push(ChatMessage::system(format!("Aktuell geöffnete Seite „{title}“:\n\n{text}")));
     }
@@ -2310,7 +2334,7 @@ async fn ai_transform(
     let mut context = vec![text.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &instruction, &context, false, tier);
     let today = Local::now().format("%A, %d.%m.%Y").to_string();
@@ -2362,7 +2386,7 @@ async fn zeit_suggest_ai(
     let mut context = vec![line.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &line, &context, false, None);
     let req = ChatRequest {
@@ -2412,6 +2436,8 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     let arg = |k: &str| args[k].as_str().unwrap_or_default().to_owned();
     let t = state.settings().thresholds;
     let db = state.db();
+    // Pages whose text the result carries: a private one keeps the conversation local.
+    let mut pages: Vec<i64> = vec![];
     let out = match name.as_str() {
         "log_time" => {
             let mut line = arg("command");
@@ -2423,9 +2449,14 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             res
         }
         // Snippets mark hits with STX/ETX; the model does not need them.
-        "search_workspace" => serde_json::to_string(&search::search(&db, &arg("query"), 10)?)?
-            .replace("\\u0002", "")
-            .replace("\\u0003", ""),
+        "search_workspace" => {
+            let hits = search::search(&db, &arg("query"), 10)?;
+            pages.extend(hits.iter().filter_map(|h| match h {
+                search::SearchHit::Page { page_id, .. } | search::SearchHit::Note { page_id, .. } => Some(*page_id),
+                search::SearchHit::TimeEntry { .. } => None,
+            }));
+            serde_json::to_string(&hits)?.replace("\\u0002", "").replace("\\u0003", "")
+        }
         "budget_status" => {
             let np = db.netzplan_by_ref(&arg("netzplan"))?;
             serde_json::to_string(&tracking::budget_status(&db, np.id, &t)?)?
@@ -2444,17 +2475,21 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             };
             let from = date("from")?;
             let to = if arg("to").trim().is_empty() { from } else { date("to")? };
+            pages = annalo_core::feed::day_pages(&db, from, to, &Local)?;
             annalo_core::feed::describe_days(&db, from, to, &Local)?
         }
         "list_tasks" => {
             let filter: TaskFilter = serde_json::from_value(args.clone())?;
             let mut list = db.list_tasks(&filter)?;
             list.truncate(100);
+            pages.extend(list.iter().map(|t| t.page_id));
             serde_json::to_string(&list)?
         }
         other => return Err(Error::State(format!("'{other}' is not a workspace tool"))),
     };
-    Ok(out)
+    let markers = state.settings().router.private_markers;
+    let private = privacy::private_pages(&db, pages, &markers)?;
+    Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
 }
 
 /// Executes a system tool. The UI calls this only after the user approved
@@ -2493,6 +2528,10 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     }
     let mut total = 0;
     loop {
+        // Indexing counts toward the monthly cost limit like any other request (a local model costs nothing).
+        if !local {
+            prefs::check_cost_limit(&state, false)?;
+        }
         let batch = if local {
             rag::pending_blocks(&state.db(), 32)?
         } else {
@@ -2503,7 +2542,9 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
         }
         let texts: Vec<String> = batch.iter().map(|(_, t)| t.clone()).collect();
         let vectors = client.embed(&model, &texts).await?;
+        let usage = annalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
         let db = state.db();
+        db.record_ai_usage(&state.session_id, &usage)?;
         for ((id, _), v) in batch.iter().zip(&vectors) {
             rag::store_embedding(&db, *id, v)?;
         }
@@ -2966,6 +3007,9 @@ pub fn run() {
             }
             if let Err(e) = db.prune_versions(Utc::now()) {
                 devlog::warn("core", format!("version cleanup failed: {e}"));
+            }
+            if let Err(e) = db.prune_history(Utc::now()) {
+                devlog::warn("core", format!("activity cleanup failed: {e}"));
             }
             let trash_days = db.load_settings().map(|s| s.notes.trash_retention_days as i64).unwrap_or(30);
             if let Err(e) = attachment_manager::purge_expired_files(&dir, trash_days.max(1), Utc::now()) {

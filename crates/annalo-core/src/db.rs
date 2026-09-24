@@ -47,6 +47,8 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
 
 pub struct Database {
     conn: Connection,
+    /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
+    depth: std::sync::atomic::AtomicUsize,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {
@@ -94,7 +96,7 @@ impl Database {
              PRAGMA foreign_keys = ON;
              PRAGMA temp_store = MEMORY;",
         )?;
-        let mut db = Database { conn };
+        let mut db = Database { conn, depth: Default::default() };
         db.migrate()?;
         Ok(db)
     }
@@ -140,21 +142,34 @@ impl Database {
 
     /// Runs `f` atomically. Uses SAVEPOINTs, so calls may nest (e.g. a vault
     /// import that saves many pages).
+    ///
+    /// The outermost savepoint commits on release. When that fails (disk full, I/O error,
+    /// locked file) everything since the savepoint is rolled back and the error returned:
+    /// the connection never stays inside a transaction, where later saves would look
+    /// successful but never be committed.
     pub fn atomic<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
+        let outermost = self.depth.load(Ordering::Relaxed) == 0;
+        if outermost && !self.conn.is_autocommit() {
+            // Someone left a transaction open (it can only be a failed one): never build on it.
+            eprintln!("annalo: open transaction found outside of atomic(), rolled back");
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
         let name = format!("sp{}", SEQ.fetch_add(1, Ordering::Relaxed));
         self.conn.execute_batch(&format!("SAVEPOINT {name}"))?;
-        match f() {
-            Ok(v) => {
-                self.conn.execute_batch(&format!("RELEASE {name}"))?;
-                Ok(v)
-            }
-            Err(e) => {
-                let _ = self.conn.execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}"));
-                Err(e)
+        self.depth.fetch_add(1, Ordering::Relaxed);
+        let res = f().and_then(|v| self.conn.execute_batch(&format!("RELEASE {name}")).map(|_| v).map_err(Into::into));
+        self.depth.fetch_sub(1, Ordering::Relaxed);
+        if res.is_err() {
+            // SQLite may already have rolled the whole transaction back (then the savepoint is
+            // gone); an outermost one must end outside any transaction either way.
+            let _ = self.conn.execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}"));
+            if outermost && !self.conn.is_autocommit() {
+                let _ = self.conn.execute_batch("ROLLBACK");
             }
         }
+        res
     }
 
     /// Escape hatch for modules that run their own queries (search, RAG).
@@ -587,9 +602,21 @@ impl Database {
         Ok(entry)
     }
 
+    /// Deletes a booking. An exported one is already in the time system and stays; a running
+    /// one is stopped (or discarded) first.
     pub fn delete_time_entry(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
-        Ok(())
+        let status: Option<String> =
+            self.conn.query_row("SELECT status_flag FROM time_entries WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        match status.as_deref() {
+            Some("exported") => Err(Error::State(
+                "Exportierte Einträge können nicht gelöscht werden – sie sind bereits im Zeiterfassungssystem".into(),
+            )),
+            Some("running") => Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into())),
+            _ => {
+                self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
+                Ok(())
+            }
+        }
     }
 
     pub fn set_entry_status(&self, ids: &[i64], status: StatusFlag) -> Result<usize> {
@@ -677,7 +704,7 @@ impl Database {
     // ------------------------------------------------------------------ pages
 
     pub fn create_page(&self, parent_id: Option<i64>, title: &str, icon: Option<&str>) -> Result<Page> {
-        let title = title.trim();
+        let title = crate::notes::clean_title(title);
         if title.is_empty() {
             return Err(Error::State("title must not be empty".into()));
         }
@@ -703,7 +730,7 @@ impl Database {
     pub fn rename_page(&self, id: i64, title: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE pages SET title = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
-            params![id, title.trim()],
+            params![id, crate::notes::clean_title(title)],
         )?;
         Ok(())
     }
@@ -847,6 +874,64 @@ mod tests {
         assert_eq!(e.status_flag, StatusFlag::Draft);
         assert!(db.running_timer().unwrap().is_none());
         assert!((db.booked_hours(np.id, Some("1020")).unwrap() - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_failed_commit_leaves_no_open_transaction() {
+        let path = std::env::temp_dir().join(format!("annalo-commitfail-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let (keep, lost) = {
+            let db = Database::open(&path).unwrap();
+            let p = db.create_page(None, "Seite", None).unwrap();
+            // A foreign key checked only at commit: the commit (RELEASE) itself fails.
+            db.conn().execute_batch("PRAGMA defer_foreign_keys = ON").unwrap();
+            let err = db.atomic(|| {
+                db.save_page_content(p.id, "verloren")?;
+                db.conn().execute("INSERT INTO page_links (from_page, target) VALUES (999999, 'x')", [])?;
+                Ok(())
+            });
+            assert!(err.is_err());
+            assert!(db.conn().is_autocommit(), "transaction rolled back, not left open");
+            // Later saves are committed for real.
+            db.save_page_content(p.id, "gespeichert").unwrap();
+            let q = db.create_page(None, "Neu", None).unwrap();
+
+            // Disk full: the database may not grow any further.
+            let pages: i64 = db.conn().pragma_query_value(None, "page_count", |r| r.get(0)).unwrap();
+            db.conn().execute_batch(&format!("PRAGMA max_page_count = {pages}")).unwrap();
+            let big = "x".repeat(200_000);
+            assert!(db.atomic(|| db.save_page_content(q.id, &big)).is_err());
+            assert!(db.conn().is_autocommit());
+            db.conn().execute_batch("PRAGMA max_page_count = 1073741823").unwrap();
+            db.rename_page(q.id, "Neu umbenannt").unwrap();
+            (p.id, q.id)
+        };
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.page_doc(keep).unwrap().content, "gespeichert");
+        assert_eq!(db.page(lost).unwrap().title, "Neu umbenannt");
+        drop(db);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    #[test]
+    fn exported_and_running_entries_are_not_deleted() {
+        let (db, np) = seeded();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        let running = db.start_timer(np.id, None, None, "läuft", t0).unwrap();
+        let err = db.delete_time_entry(running.id).unwrap_err().to_string();
+        assert!(err.contains("zuerst den Timer stoppen"), "{err}");
+        let done = db.stop_timer(t0 + chrono::Duration::minutes(30), 0).unwrap();
+        db.set_entry_status(&[done.id], StatusFlag::Exported).unwrap();
+        let err = db.delete_time_entry(done.id).unwrap_err().to_string();
+        assert!(err.contains("Exportierte Einträge"), "{err}");
+        assert!(db.time_entry(done.id).is_ok());
+        db.set_entry_status(&[done.id], StatusFlag::Draft).unwrap();
+        db.delete_time_entry(done.id).unwrap();
+        assert!(db.time_entry(done.id).is_err());
     }
 
     #[test]

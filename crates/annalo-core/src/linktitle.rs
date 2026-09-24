@@ -106,7 +106,8 @@ pub fn parse_title(html: &str) -> Option<String> {
     }
     let start = find_tag(&lower, "title", 0)?;
     let open_end = lower[start..].find('>')? + start + 1;
-    let close = lower[open_end..].find("</title").map(|i| i + open_end).unwrap_or(lower.len().min(open_end + 2000));
+    let close =
+        lower[open_end..].find("</title").map(|i| i + open_end).unwrap_or(html.floor_char_boundary(open_end + 2000));
     clean(&html[open_end..close])
 }
 
@@ -210,7 +211,7 @@ pub fn decode_entities(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         let tail = &rest[i..];
-        let end = tail[..tail.len().min(12)].find(';');
+        let end = tail[..tail.floor_char_boundary(12)].find(';');
         let decoded = end.and_then(|e| {
             let name = &tail[1..e];
             let c = if let Some(num) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
@@ -271,6 +272,17 @@ pub fn decode_entities(s: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn multibyte_text_at_the_cut_points_does_not_panic() {
+        // An entity window of 12 bytes ending inside „ä“.
+        assert_eq!(parse_title("<title>Bau &Planungsamä Nord</title>").as_deref(), Some("Bau &Planungsamä Nord"));
+        assert_eq!(decode_entities("&aaaaaaaaaaä;"), "&aaaaaaaaaaä;");
+        // An unclosed title cut after 2000 bytes, inside „ä“.
+        let html = format!("<title>{}äääää", "a".repeat(1999));
+        let title = parse_title(&html).unwrap();
+        assert!(title.starts_with("aaa"));
+    }
 
     #[test]
     fn prefers_og_title() {

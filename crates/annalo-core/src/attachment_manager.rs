@@ -89,6 +89,18 @@ pub fn referenced_files(markdown: &str) -> Vec<String> {
     out
 }
 
+/// Files an export of the note carries next to it ([`referenced_files`]; a drawing brings its
+/// SVG preview along).
+pub fn export_files(markdown: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for name in referenced_files(markdown) {
+        let preview = attachments::is_drawing(&name).then(|| format!("{name}.svg"));
+        out.push(name);
+        out.extend(preview);
+    }
+    out
+}
+
 /// One `![[target#anchor|alt]]`: byte range of `target` inside the Markdown and its base name.
 struct EmbedRef<'a> {
     /// Range of the whole target (folders included), without anchor and alias.
@@ -96,11 +108,13 @@ struct EmbedRef<'a> {
     base: &'a str,
 }
 
+/// `![[file]]` embeds and `[[file.pdf]]` links (a link to a name with a file extension is a
+/// link to the file, see [`attachments::embeddable`]).
 fn embed_refs(markdown: &str) -> Vec<EmbedRef<'_>> {
     let mut out = Vec::new();
     let mut from = 0;
-    while let Some(i) = markdown[from..].find("![[") {
-        let start = from + i + 3;
+    while let Some(i) = markdown[from..].find("[[") {
+        let start = from + i + 2;
         let Some(len) = markdown[start..].find("]]") else { break };
         let inner = &markdown[start..start + len];
         let target_len = inner.find(['|', '#']).unwrap_or(inner.len());
@@ -108,7 +122,8 @@ fn embed_refs(markdown: &str) -> Vec<EmbedRef<'_>> {
         let lead = raw.len() - raw.trim_start().len();
         let target = raw.trim();
         let base = target.rsplit(['/', '\\']).next().unwrap_or(target);
-        if !base.is_empty() && !inner.contains('\n') {
+        let embed = markdown[..from + i].ends_with('!');
+        if !base.is_empty() && !inner.contains('\n') && (embed || attachments::embeddable(base)) {
             out.push(EmbedRef { target: start + lead..start + lead + target.len(), base });
         }
         from = start + len + 2;
@@ -116,7 +131,8 @@ fn embed_refs(markdown: &str) -> Vec<EmbedRef<'_>> {
     out
 }
 
-/// One `![alt](path)` to a local file: range of the path's last segment and the decoded name.
+/// One `![alt](path)` or `[text](path)` to a local file: range of the path's last segment and
+/// the decoded name.
 struct LinkRef {
     segment: std::ops::Range<usize>,
     name: String,
@@ -126,18 +142,19 @@ struct LinkRef {
 fn link_refs(markdown: &str) -> Vec<LinkRef> {
     let mut out = Vec::new();
     let mut from = 0;
-    while let Some(i) = markdown[from..].find("![") {
+    while let Some(i) = markdown[from..].find('[') {
         let at = from + i;
-        from = at + 2;
-        if markdown[at..].starts_with("![[") {
+        from = at + 1;
+        // `[[wiki links]]` are handled by `embed_refs`.
+        if markdown[at..].starts_with("[[") || markdown[..at].ends_with('[') {
             continue;
         }
-        let Some(close) = markdown[at + 2..].find("](") else { break };
-        let alt = &markdown[at + 2..at + 2 + close];
-        if alt.contains(['\n', ']']) {
+        let Some(close) = markdown[at + 1..].find("](") else { break };
+        let alt = &markdown[at + 1..at + 1 + close];
+        if alt.contains(['\n', ']', '[']) {
             continue;
         }
-        let path_start = at + 2 + close + 2;
+        let path_start = at + 1 + close + 2;
         let Some(end) = markdown[path_start..].find(')') else { break };
         let mut dest = &markdown[path_start..path_start + end];
         let mut offset = path_start;
@@ -223,7 +240,7 @@ impl Database {
     pub fn attachment_usage(&self) -> Result<HashMap<String, Vec<PageUse>>> {
         let mut st = self.conn().prepare(
             "SELECT id, title, content, deleted_at IS NOT NULL FROM pages
-             WHERE instr(content, '![[') > 0 OR instr(content, '](') > 0
+             WHERE instr(content, '[[') > 0 OR instr(content, '](') > 0
              ORDER BY deleted_at IS NOT NULL, title COLLATE NOCASE, id",
         )?;
         let rows = st.query_map([], |r| {
@@ -551,22 +568,35 @@ mod tests {
         let md = "![[a.png]] ![[Ordner/b.JPG|300]] ![[Notiz]] [[c.png]] ![[Handbuch.pdf#page=3]]\n\
                   ![Bild](attachments/Bild%201.png) ![x](<attachments/mit leer.png> \"Titel\") \
                   ![web](https://example.com/w.png) ![d](data:image/png;base64,xx) ![[a.png]] \
-                  ![[Skizze.excalidraw]] ![kein]( ) ![alt](bild.webp)";
+                  ![[Skizze.excalidraw]] ![kein]( ) ![alt](bild.webp)\n\
+                  - [ ] Aufgabe [Angebot](Angebot.pdf) [Seite](Notiz.md) [web](https://x.de/y.pdf) [a](#anker)";
         assert_eq!(
             referenced_files(md),
-            ["a.png", "b.JPG", "Handbuch.pdf", "Skizze.excalidraw", "Bild 1.png", "mit leer.png", "bild.webp"]
+            [
+                "a.png",
+                "b.JPG",
+                "c.png",
+                "Handbuch.pdf",
+                "Skizze.excalidraw",
+                "Bild 1.png",
+                "mit leer.png",
+                "bild.webp",
+                "Angebot.pdf"
+            ]
         );
     }
 
     #[test]
     fn rewrites_references_and_keeps_the_rest() {
         let md = "Vorher ![[Angebot.pdf]] und ![[ordner/angebot.PDF#page=2|Seite 2]] \
-                  ![[Angebot.pdf.bak]] [[Angebot.pdf]] ![A](attachments/Angebot.pdf) ![B](Angebot.pdf \"t\")";
+                  ![[Angebot.pdf.bak]] [[Angebot.pdf]] ![A](attachments/Angebot.pdf) ![B](Angebot.pdf \"t\") \
+                  [Link](Angebot.pdf) [[Angebot]]";
         let out = replace_file_refs(md, "Angebot.pdf", "Angebot 2024.pdf");
         assert_eq!(
             out,
             "Vorher ![[Angebot 2024.pdf]] und ![[ordner/Angebot 2024.pdf#page=2|Seite 2]] \
-             ![[Angebot.pdf.bak]] [[Angebot.pdf]] ![A](attachments/Angebot%202024.pdf) ![B](Angebot%202024.pdf \"t\")"
+             ![[Angebot.pdf.bak]] [[Angebot 2024.pdf]] ![A](attachments/Angebot%202024.pdf) ![B](Angebot%202024.pdf \"t\") \
+             [Link](Angebot%202024.pdf) [[Angebot]]"
         );
         // Encoded links stay encoded.
         assert_eq!(replace_file_refs("![x](a%20b.png)", "a b.png", "c.png"), "![x](c.png)");

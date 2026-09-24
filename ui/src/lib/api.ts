@@ -139,7 +139,7 @@ export const api = {
   backups: () => call<T.BackupInfo[]>("backup_list"),
   mirrorStatus: () => call<T.MirrorStatus>("mirror_status"),
   openMirror: () => call<void>("mirror_open"),
-  gitSyncNow: () => call<T.GitSyncOutcome>("git_sync_now"),
+  gitSyncNow: (allowDeletions = false) => call<T.GitSyncOutcome>("git_sync_now", { allowDeletions }),
   gitSyncStatus: () => call<T.GitSyncStatus>("git_sync_status"),
   /** Stores (or with null removes) the Git access token; it is never sent back. */
   setGitToken: (token: string | null) => call<T.GitSyncStatus>("git_token_set", { token }),

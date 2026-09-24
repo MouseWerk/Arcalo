@@ -1,7 +1,7 @@
 // Week helpers for the timesheet: gaps against the daily target and a CATS-ready grid.
 
 import { addDays, isoDay, isoWeekday } from "./format";
-import type { TimeEntryRow } from "./types";
+import type { StatusFlag, TimeEntryRow } from "./types";
 
 export interface DayGap {
   day: Date;
@@ -53,4 +53,12 @@ export function catsGrid(rows: TimeEntryRow[], week: Date): { text: string; ids:
   const sorted = [...lines.values()].sort((a, b) => `${a.np}/${a.vg}/${a.la}`.localeCompare(`${b.np}/${b.vg}/${b.la}`));
   const text = sorted.map((l) => [l.np, l.vg, l.la, ...l.perDay.map(hours)].join("\t")).join("\r\n");
   return { text: text ? text + "\r\n" : "", ids };
+}
+
+/** Why an entry cannot be deleted (the core refuses it as well), or null: an exported entry is
+ *  already in the time system, a running one is stopped first. */
+export function undeletableReason(status: StatusFlag): string | null {
+  if (status === "exported") return "bereits exportiert";
+  if (status === "running") return "läuft noch – zuerst stoppen";
+  return null;
 }

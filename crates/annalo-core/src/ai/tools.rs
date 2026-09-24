@@ -154,6 +154,7 @@ impl SystemCall {
                 if list.iter().any(|a| {
                     a.starts_with("--output")
                         || a.starts_with("--ext-diff")
+                        || a.starts_with("--textconv")
                         || a.starts_with("-c")
                         || a.starts_with("--exec")
                 }) {
@@ -214,8 +215,59 @@ fn truncate(mut s: String) -> String {
     s
 }
 
-fn run(mut cmd: Command) -> Result<String> {
-    let out = cmd.output()?;
+/// A system tool that runs longer than this is stopped.
+const SYSTEM_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Runs `cmd` (no stdin, no console window) and waits at most `timeout`.
+fn output_within(mut cmd: Command, timeout: Duration) -> Result<std::process::Output> {
+    use std::io::Read;
+    use std::process::Stdio;
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = cmd.spawn()?;
+    let reader = |r: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut r) = r {
+                let _ = r.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let out_t = reader(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    let err_t = reader(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(s) = child.try_wait()? {
+            break s;
+        }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::State(format!(
+                "Der Befehl hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
+                timeout.as_secs().max(1)
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    Ok(std::process::Output {
+        status,
+        stdout: out_t.join().unwrap_or_default(),
+        stderr: err_t.join().unwrap_or_default(),
+    })
+}
+
+/// Runs `cmd` off the async runtime, with [`SYSTEM_TIMEOUT`].
+async fn run(cmd: Command) -> Result<String> {
+    let out = tokio::task::spawn_blocking(move || output_within(cmd, SYSTEM_TIMEOUT))
+        .await
+        .map_err(|e| Error::State(e.to_string()))??;
     let mut s = String::from_utf8_lossy(&out.stdout).into_owned();
     if !out.stderr.is_empty() {
         s.push_str("\n[stderr]\n");
@@ -223,6 +275,102 @@ fn run(mut cmd: Command) -> Result<String> {
     }
     s.push_str(&format!("\n[exit code: {}]", out.status.code().map_or("signal".into(), |c| c.to_string())));
     Ok(truncate(s))
+}
+
+/// The null device, for config and attribute files git must not read.
+const NULL_FILE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+
+/// `git` in `repo` with a neutral configuration: no system or global config, no pager,
+/// no hooks, no fsmonitor, no external diff, no global attributes.
+fn git_command(repo: &str) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).arg("--no-pager");
+    for c in [
+        "core.fsmonitor=false".to_owned(),
+        format!("core.hooksPath={NULL_FILE}"),
+        format!("core.attributesFile={NULL_FILE}"),
+        "core.pager=cat".to_owned(),
+        "diff.external=".to_owned(),
+        "core.sshCommand=".to_owned(),
+        "protocol.allow=never".to_owned(),
+    ] {
+        cmd.arg("-c").arg(c);
+    }
+    cmd.env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", NULL_FILE)
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_PAGER", "cat")
+        .env_remove("GIT_EXTERNAL_DIFF")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE");
+    cmd
+}
+
+/// Repository settings that make git run programs (textconv and diff drivers, clean and
+/// smudge filters, fsmonitor, aliases, includes that could add any of them).
+pub fn dangerous_git_config(config_list: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in config_list.lines() {
+        let key = line.split('=').next().unwrap_or("").trim().to_ascii_lowercase();
+        let bad = (key.starts_with("diff.") && (key.ends_with(".textconv") || key.ends_with(".command")))
+            || key.starts_with("filter.")
+            || key.starts_with("include.")
+            || key.starts_with("includeif.")
+            || key.starts_with("alias.")
+            || key.starts_with("pager.")
+            || key.starts_with("gpg.")
+            || matches!(
+                key.as_str(),
+                "core.fsmonitor"
+                    | "core.hookspath"
+                    | "core.pager"
+                    | "core.sshcommand"
+                    | "core.gitproxy"
+                    | "diff.external"
+            );
+        // The neutral values this module sets itself are fine.
+        let own =
+            matches!(line.trim(), "core.fsmonitor=false" | "core.pager=cat" | "diff.external=" | "core.sshcommand=")
+                || line.trim().eq_ignore_ascii_case(&format!("core.hookspath={NULL_FILE}"));
+        if bad && !own && !out.contains(&key) {
+            out.push(key);
+        }
+    }
+    out
+}
+
+/// Flags that keep diff-producing subcommands from running textconv or external diff programs.
+fn safe_flags(sub: &str) -> &'static [&'static str] {
+    match sub {
+        "log" | "show" | "diff" => &["--no-textconv", "--no-ext-diff"],
+        "blame" => &["--no-textconv"],
+        _ => &[],
+    }
+}
+
+/// Runs an allowed, read-only git command; refused when the repository's own settings could
+/// start programs.
+async fn run_git(args: &[String], repo: &str) -> Result<String> {
+    let mut check = git_command(repo);
+    check.args(["config", "--list", "--includes"]);
+    let list = tokio::task::spawn_blocking(move || output_within(check, SYSTEM_TIMEOUT))
+        .await
+        .map_err(|e| Error::State(e.to_string()))??;
+    let bad = dangerous_git_config(&String::from_utf8_lossy(&list.stdout));
+    if !bad.is_empty() {
+        return Err(Error::State(format!(
+            "Das Repository enthält Git-Einstellungen, die Programme starten können ({}) – der Befehl wird nicht ausgeführt",
+            bad.join(", ")
+        )));
+    }
+    let mut cmd = git_command(repo);
+    let (sub, rest) = args.split_first().ok_or_else(|| Error::Parse("args missing".into()))?;
+    cmd.arg(sub).args(safe_flags(sub)).args(rest);
+    run(cmd).await
 }
 
 /// Runs an approved system call. Only call this after the user confirmed
@@ -237,17 +385,9 @@ pub async fn execute_system_tool(call: &SystemCall, http: &reqwest::Client, time
             if let Some(dir) = cwd {
                 cmd.current_dir(dir);
             }
-            run(cmd)
+            run(cmd).await
         }
-        SystemCall::Git { args, repo } => {
-            let mut cmd = Command::new("git");
-            // No pager, no external diff drivers or textconv filters.
-            cmd.arg("-C")
-                .arg(repo)
-                .args(["--no-pager", "-c", "diff.external=", "-c", "core.fsmonitor=false"])
-                .args(args);
-            run(cmd)
-        }
+        SystemCall::Git { args, repo } => run_git(args, repo).await,
         SystemCall::HttpRequest { method, url, body } => {
             let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| Error::Parse(e.to_string()))?;
             let mut req = http.request(method, url).timeout(timeout);
@@ -323,6 +463,70 @@ mod tests {
     fn truncation_respects_char_boundaries() {
         let s = truncate("ä".repeat(MAX_OUTPUT));
         assert!(s.ends_with("[gekürzt]"));
+    }
+
+    fn git_available() -> bool {
+        Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success())
+    }
+
+    fn sh(dir: &std::path::Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .args(["-c", "user.name=T", "-c", "user.email=t@e", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap();
+        assert!(ok.success(), "{args:?}");
+    }
+
+    /// A repository whose own config runs a program as textconv driver for every file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn git_tool_never_runs_repository_programs() {
+        if !git_available() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("annalo-evilrepo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        sh(&dir, &["init", "-q"]);
+        std::fs::write(dir.join(".gitattributes"), "* diff=pwn\n").unwrap();
+        std::fs::write(dir.join("f.txt"), "a\n").unwrap();
+        sh(&dir, &["add", "-A"]);
+        sh(&dir, &["commit", "-q", "-m", "eins"]);
+        let pwned = dir.join("PWNED");
+        let textconv = format!("sh -c 'touch {}; cat \"$0\"'", pwned.display());
+        sh(&dir, &["config", "diff.pwn.textconv", &textconv]);
+        let repo = dir.display().to_string();
+        let http = HttpClient::new();
+        for args in [vec!["show", "HEAD"], vec!["log", "-p"], vec!["blame", "f.txt"], vec!["status"]] {
+            let call = SystemCall::Git { args: args.iter().map(|s| s.to_string()).collect(), repo: repo.clone() };
+            let err = execute_system_tool(&call, &http, Duration::from_secs(5)).await.unwrap_err().to_string();
+            assert!(err.contains("diff.pwn.textconv"), "{err}");
+        }
+        assert!(!pwned.exists(), "textconv program ran");
+
+        // Without the repository setting, the diff runs with textconv switched off.
+        sh(&dir, &["config", "--unset", "diff.pwn.textconv"]);
+        let call = SystemCall::Git { args: vec!["show".into(), "HEAD".into()], repo: repo.clone() };
+        let out = execute_system_tool(&call, &http, Duration::from_secs(5)).await.unwrap();
+        assert!(out.contains("+a") && out.contains("[exit code: 0]"), "{out}");
+        sh(&dir, &["config", "core.fsmonitor", "touch /tmp/x"]);
+        let call = SystemCall::Git { args: vec!["status".into()], repo };
+        assert!(execute_system_tool(&call, &http, Duration::from_secs(5)).await.is_err());
+        assert!(SystemCall::from_tool_call("git", r#"{"args":["diff","--textconv"],"repo":"."}"#).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn system_tools_time_out() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 5"]);
+        let start = std::time::Instant::now();
+        let err = output_within(cmd, Duration::from_millis(300)).unwrap_err().to_string();
+        assert!(err.contains("abgebrochen"), "{err}");
+        assert!(start.elapsed() < Duration::from_secs(3));
     }
 
     #[tokio::test]

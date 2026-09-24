@@ -26,8 +26,10 @@ pub const DB_FILE: &str = "workspace.db";
 pub const LOCATION_FILE: &str = "location.json";
 /// Staging folder inside the target while a move copies files.
 pub const STAGING_DIR: &str = ".annalo-move-tmp";
-/// Folders and files next to the database that move with it (the database goes last).
-const DATA_DIRS: [&str; 2] = ["attachments", "backups"];
+/// Folders and files next to the database that move with it (the database goes last): files,
+/// backups, the file trash, the logs and the Git sync's working tree (`git-sync-export` is
+/// written anew by every sync).
+const DATA_DIRS: [&str; 5] = ["attachments", "backups", "trash", "logs", "git-sync"];
 const DATA_FILES: [&str; 1] = ["secrets.json"];
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -437,6 +439,11 @@ mod tests {
         std::fs::write(from.join("backups/annalo-1.db"), [3u8]).unwrap();
         std::fs::write(from.join("backups/attachments/bild.png"), [1u8, 2]).unwrap();
         std::fs::write(from.join("secrets.json"), b"{}").unwrap();
+        for f in ["trash/files/20260901T000000Z/alt.pdf", "logs/annalo.log", "git-sync/.git/HEAD", "git-sync/Notiz.md"]
+        {
+            std::fs::create_dir_all(from.join(f).parent().unwrap()).unwrap();
+            std::fs::write(from.join(f), b"x").unwrap();
+        }
         p.id
     }
 
@@ -459,6 +466,10 @@ mod tests {
         assert_eq!(std::fs::read(to.join("attachments/bild.png")).unwrap(), [1, 2]);
         assert!(to.join("backups/attachments/bild.png").is_file());
         assert!(to.join("secrets.json").is_file());
+        for f in ["trash/files/20260901T000000Z/alt.pdf", "logs/annalo.log", "git-sync/.git/HEAD", "git-sync/Notiz.md"]
+        {
+            assert!(to.join(f).is_file(), "{f} moves along");
+        }
         drop(copy);
         assert!(copy_workspace(&from, &to).is_err(), "never overwrites a workspace");
         assert!(from.join(DB_FILE).is_file(), "the old folder stays");

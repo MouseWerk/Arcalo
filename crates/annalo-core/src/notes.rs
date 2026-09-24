@@ -363,7 +363,8 @@ impl Database {
     /// Renames a page. With `update_links`, `[[Old]]` links in other pages are
     /// rewritten to the new title (aliases and heading anchors are kept).
     pub fn rename_page_linked(&self, id: i64, title: &str, update_links: bool) -> Result<usize> {
-        let title = title.trim();
+        let title = clean_title(title);
+        let title = title.as_str();
         if title.is_empty() {
             return Err(Error::State("title must not be empty".into()));
         }
@@ -523,15 +524,39 @@ impl Database {
 }
 
 /// Rewrites `[[old]]`, `[[old|alias]]` and `[[old#heading]]` (case-insensitive) to `new`.
+/// Code (fenced blocks and inline spans) stays as written, as it is no link ([`wiki_links`]).
 pub fn replace_link_target(content: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(content.len());
-    let mut rest = content;
+    let mut in_fence = false;
+    for line in content.split_inclusive('\n') {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            out.push_str(line);
+            continue;
+        }
+        if in_fence {
+            out.push_str(line);
+            continue;
+        }
+        // Between backticks is inline code (an unclosed one runs to the end of the line).
+        for (i, part) in line.split('`').enumerate() {
+            if i > 0 {
+                out.push('`');
+            }
+            if i % 2 == 1 { out.push_str(part) } else { replace_in_prose(part, old, new, &mut out) }
+        }
+    }
+    out
+}
+
+fn replace_in_prose(text: &str, old: &str, new: &str, out: &mut String) {
+    let mut rest = text;
     while let Some(start) = rest.find("[[") {
         out.push_str(&rest[..start]);
         let after = &rest[start + 2..];
         let Some(end) = after.find("]]") else {
             out.push_str(&rest[start..]);
-            return out;
+            return;
         };
         let inner = &after[..end];
         let split = inner.find(['|', '#']).unwrap_or(inner.len());
@@ -547,12 +572,54 @@ pub fn replace_link_target(content: &str, old: &str, new: &str) -> String {
         rest = &after[end + 2..];
     }
     out.push_str(rest);
-    out
+}
+
+/// Characters a page title cannot hold, because they end or split a `[[link]]`, and what
+/// replaces them: brackets become parentheses, `|`, `#` and `^` their full-width forms.
+pub const TITLE_REPLACEMENTS: [(char, char); 5] =
+    [('[', '('), (']', ')'), ('|', '\u{FF5C}'), ('#', '\u{FF03}'), ('^', '\u{FF3E}')];
+
+/// A title safe to link: trimmed, line breaks as spaces, [`TITLE_REPLACEMENTS`] applied.
+pub fn clean_title(title: &str) -> String {
+    title
+        .trim()
+        .chars()
+        .map(|c| {
+            if c == '\n' || c == '\r' {
+                ' '
+            } else {
+                TITLE_REPLACEMENTS.iter().find(|(from, _)| *from == c).map_or(c, |(_, to)| *to)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titles_with_link_characters_stay_linkable() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.create_page(None, "Alt", None).unwrap();
+        let s = db.create_page(None, "Quelle", None).unwrap();
+        db.save_page_content(s.id, "Siehe [[Alt]] und [[alt|A]]\n\n```\n[[Alt]] im Code\n```\n`[[Alt]]` inline\n")
+            .unwrap();
+        assert_eq!(db.rename_page_linked(a.id, "C# Grundlagen [Teil|1]^", true).unwrap(), 1);
+        let title = db.page(a.id).unwrap().title;
+        assert_eq!(title, "C\u{FF03} Grundlagen (Teil\u{FF5C}1)\u{FF3E}");
+        let src = db.page_doc(s.id).unwrap();
+        assert_eq!(
+            src.content,
+            format!("Siehe [[{title}]] und [[{title}|A]]\n\n```\n[[Alt]] im Code\n```\n`[[Alt]]` inline\n"),
+            "code keeps its text"
+        );
+        assert!(src.unresolved_links.is_empty(), "{:?}", src.unresolved_links);
+        assert_eq!(db.page_doc(a.id).unwrap().backlinks.len(), 1);
+        // New pages follow the same rule.
+        assert_eq!(db.create_page(None, " a|b#c\n", None).unwrap().title, "a\u{FF5C}b\u{FF03}c");
+        assert_eq!(replace_link_target("x [[Alt]] `[[Alt]] ", "Alt", "Neu"), "x [[Neu]] `[[Alt]] ");
+    }
 
     #[test]
     fn parses_links_and_tags_outside_code() {

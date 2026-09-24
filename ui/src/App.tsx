@@ -310,6 +310,14 @@ async function onPulled(p: GitPulled) {
   await st.refreshTree().catch(() => {});
   reloadEditors([...p.pages, ...p.created]);
   await st.refreshConflicts();
+  if (p.kept?.length) {
+    st.toast({
+      tone: "warning",
+      persistent: true,
+      title: "Löschungen vom Server nicht übernommen",
+      detail: `Auf dem Server fehlen ${p.kept.length} Seiten auf einmal. Sie bleiben hier erhalten und werden bei der nächsten Synchronisierung wieder übertragen. Wenn sie gelöscht werden sollen, hier löschen.`,
+    });
+  }
   if (!p.conflicts.length) return;
   const first = p.conflicts[0];
   const title = st.pages.get(first)?.title ?? "Eine Notiz";

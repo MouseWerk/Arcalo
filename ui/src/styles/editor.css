@@ -1040,3 +1040,6 @@
 /* Files dragged over the tab bar or a pane without a note: they open as PDF tabs. */
 .pane.file-drop > .tabbar { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
 .pane.file-drop > .pane-content { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -8px; border-radius: var(--r-md); }
+
+/* ---- Title rule (link characters) ---- */
+.page-title-hint { font-size: 12.5px; }

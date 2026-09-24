@@ -11,6 +11,8 @@ use super::metrics::{PriceTable, StreamTimer, UsageRecord, estimate_tokens};
 use super::provider::{AiProvider, ProviderKind, PullProgress, parse_model_list};
 use crate::error::{Error, Result};
 
+/// Tool calls kept from one streamed answer (higher indexes are ignored).
+const MAX_TOOL_CALLS: u64 = 64;
 /// A stream that delivers nothing for this long is treated as dead.
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -384,7 +386,12 @@ impl StreamAccumulator {
         }
         if let Some(calls) = delta["tool_calls"].as_array() {
             for c in calls {
-                let idx = c["index"].as_u64().unwrap_or(self.tool_calls.len() as u64) as usize;
+                let idx = c["index"].as_u64().unwrap_or(self.tool_calls.len() as u64);
+                // The index comes from the server: a huge one must not allocate millions of calls.
+                if idx >= MAX_TOOL_CALLS {
+                    continue;
+                }
+                let idx = idx as usize;
                 while self.tool_calls.len() <= idx {
                     self.tool_calls.push(ToolCall {
                         id: String::new(),
@@ -485,6 +492,19 @@ mod tests {
         assert!(c.exact_usage);
         assert!(matches!(events[0], StreamEvent::FirstToken { .. }));
         assert_eq!(events.iter().filter(|e| matches!(e, StreamEvent::Delta { .. })).count(), 2);
+    }
+
+    #[test]
+    fn huge_tool_call_index_is_ignored() {
+        let mut acc = StreamAccumulator::new(StreamTimer::start());
+        let chunk = json!({"choices":[{"delta":{"tool_calls":[
+            {"index":100000000,"id":"x","function":{"name":"evil","arguments":"{}"}},
+            {"index":0,"id":"a","function":{"name":"search_notes","arguments":"{}"}}
+        ]}}]});
+        acc.apply(&chunk, &mut |_| {});
+        assert_eq!(acc.tool_calls.len(), 1);
+        let c = acc.finish("m", &[], None, &PriceTable::default());
+        assert_eq!(c.tool_calls[0].function.name, "search_notes");
     }
 
     #[test]
