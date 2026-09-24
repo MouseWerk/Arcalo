@@ -21,7 +21,7 @@ test("add, edit and remove a link in the ribbon", async () => {
   await url.setValue("jira.firma.de/browse/AET");
   await name.setValue("Jira");
   // The icon follows the address until one is picked.
-  await app.browser.waitUntil(async () => app.browser.execute(() => document.querySelector('.dialog .icon-picker [aria-selected="true"]')?.getAttribute("aria-label") === "ticket"));
+  await app.browser.waitUntil(async () => app.browser.execute(() => document.querySelector('.dialog .icon-picker [aria-selected="true"]')?.getAttribute("aria-label") === "Ticket"));
   await app.shot("quick-link-dialog");
   await app.browser.execute(() => [...document.querySelectorAll(".dialog button")].find((b) => b.textContent === "Speichern").click());
   await app.browser.waitUntil(async () => (await rows()).includes("Jira"), { timeoutMsg: "link not shown" });
@@ -32,7 +32,7 @@ test("add, edit and remove a link in the ribbon", async () => {
   await app.waitFor(".dialog .link-form");
   const [url2] = await app.$$(".dialog .link-form input");
   await url2.setValue("/home/user/Projekte");
-  await app.browser.execute(() => document.querySelector('.dialog .icon-picker [aria-label="rocket"]').click());
+  await app.browser.execute(() => document.querySelector('.dialog .icon-picker [aria-label="Rakete"]').click());
   await app.browser.execute(() => [...document.querySelectorAll(".dialog button")].find((b) => b.textContent === "Speichern").click());
   await app.browser.waitUntil(async () => (await rows()).length === 2);
   assert.equal((await links())[1].icon, "rocket");

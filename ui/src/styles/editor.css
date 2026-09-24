@@ -146,8 +146,7 @@
 .prose strong { font-weight: 650; }
 .prose a { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent); text-underline-offset: 3px; }
 .prose code { font-family: var(--font-mono); font-size: 0.86em; padding: 0.15em 0.35em; border-radius: 4px; background: var(--bg-active); color: var(--text); }
-.prose pre { margin: 0.9em 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--bg-app); border: 1px solid var(--border); overflow-x: auto; }
-:root[data-theme="light"] .prose pre { background: #f7f7f9; }
+.prose pre { margin: 0.9em 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--code-bg); border: 1px solid var(--border); overflow-x: auto; }
 .prose pre code { padding: 0; background: none; font-size: 0.84em; line-height: 1.65; }
 .prose pre, .prose pre code { white-space: pre; }
 .prose blockquote { margin: 0.9em 0; padding: 2px 0 2px 16px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
@@ -322,19 +321,14 @@
 
 .bubble-input { width: 240px; height: 26px; border: 0; outline: none; background: var(--bg-hover); border-radius: var(--r-sm); padding: 0 8px; font-size: var(--fs-sm); color: var(--text); user-select: text; }
 
-/* Code highlighting (lowlight / highlight.js classes). */
+/* Code highlighting (lowlight / highlight.js classes). The colors are theme tokens, readable on --code-bg. */
 .prose pre .hljs-comment, .prose pre .hljs-quote { color: var(--text-3); font-style: italic; }
-.prose pre .hljs-keyword, .prose pre .hljs-selector-tag, .prose pre .hljs-built_in { color: #c084fc; }
-.prose pre .hljs-string, .prose pre .hljs-attr, .prose pre .hljs-template-tag { color: #4ade80; }
-.prose pre .hljs-number, .prose pre .hljs-literal, .prose pre .hljs-variable { color: #fb923c; }
-.prose pre .hljs-title, .prose pre .hljs-function, .prose pre .hljs-section { color: #60a5fa; }
-.prose pre .hljs-type, .prose pre .hljs-class { color: #facc15; }
-.prose pre .hljs-meta, .prose pre .hljs-symbol { color: #22d3ee; }
-:root[data-theme="light"] .prose pre .hljs-keyword, :root[data-theme="light"] .prose pre .hljs-built_in { color: #9333ea; }
-:root[data-theme="light"] .prose pre .hljs-string, :root[data-theme="light"] .prose pre .hljs-attr { color: #15803d; }
-:root[data-theme="light"] .prose pre .hljs-number, :root[data-theme="light"] .prose pre .hljs-variable { color: #c2410c; }
-:root[data-theme="light"] .prose pre .hljs-title, :root[data-theme="light"] .prose pre .hljs-function { color: #1d4ed8; }
-:root[data-theme="light"] .prose pre .hljs-type { color: #a16207; }
+.prose pre .hljs-keyword, .prose pre .hljs-selector-tag, .prose pre .hljs-built_in { color: var(--code-keyword); }
+.prose pre .hljs-string, .prose pre .hljs-attr, .prose pre .hljs-template-tag { color: var(--code-string); }
+.prose pre .hljs-number, .prose pre .hljs-literal, .prose pre .hljs-variable { color: var(--code-number); }
+.prose pre .hljs-title, .prose pre .hljs-function, .prose pre .hljs-section { color: var(--code-title); }
+.prose pre .hljs-type, .prose pre .hljs-class { color: var(--code-type); }
+.prose pre .hljs-meta, .prose pre .hljs-symbol { color: var(--code-meta); }
 
 /* Top right of the pane, below the header row; the replace bar stacks under the find bar. */
 .find-anchor { position: absolute; top: 8px; right: 20px; z-index: 20; }
@@ -359,7 +353,7 @@
 .prose blockquote.callout-tip, .prose blockquote.callout-success, .prose blockquote.callout-check, .prose blockquote.callout-done { --c: var(--success); }
 .prose blockquote.callout-warning, .prose blockquote.callout-caution, .prose blockquote.callout-attention, .prose blockquote.callout-todo { --c: var(--warning); --c-fill: var(--warning-fill); }
 .prose blockquote.callout-danger, .prose blockquote.callout-error, .prose blockquote.callout-bug, .prose blockquote.callout-failure { --c: var(--danger); }
-.prose blockquote.callout-question, .prose blockquote.callout-faq, .prose blockquote.callout-example, .prose blockquote.callout-abstract { --c: #a78bfa; }
+.prose blockquote.callout-question, .prose blockquote.callout-faq, .prose blockquote.callout-example, .prose blockquote.callout-abstract { --c: var(--violet); }
 .prose blockquote.callout-quote { --c: var(--text-3); }
 .callout-marker { font-size: 0; }
 .callout-marker::before { content: attr(data-label); font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); margin-right: 8px; }
@@ -617,6 +611,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   caret-color: var(--accent);
+  /* Markdown shows every character as typed: no "->" or "!=" ligatures. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0;
 }
 
 /* ---- file attachments ---- */
@@ -838,11 +835,13 @@
 .coll-td[data-kind="number"] { text-align: right; }
 .coll-input .prop-value-input { height: 33px; border-radius: 0; background: var(--bg-input); box-shadow: inset 0 0 0 2px var(--border-focus); padding: 0 10px; }
 .coll-input .prop-value-input:focus { box-shadow: inset 0 0 0 2px var(--border-focus); }
-.coll-title { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-3); }
+.coll-title { position: relative; display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-3); }
+.coll-title > svg { flex: none; }
 .coll-title-link { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 500; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .coll-title-link:hover { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
-.coll-open { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 22px; margin-left: auto; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-raised); color: var(--text-2); font: inherit; font-size: var(--fs-xs); opacity: 0; }
-.coll-row:hover .coll-open, .coll-td.focus .coll-open { opacity: 1; }
+/* Floats over the end of the title while shown, so it takes no room from it. */
+.coll-open { position: absolute; top: 50%; right: 0; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-raised); color: var(--text-2); font: inherit; font-size: var(--fs-xs); box-shadow: -8px 0 8px -2px var(--bg-canvas); visibility: hidden; }
+.coll-row:hover .coll-open, .coll-td.focus .coll-open { visibility: visible; }
 .coll-open:hover { color: var(--text); }
 .coll-empty-row td { padding: 16px 12px; border-bottom: 1px solid var(--border); color: var(--text-3); }
 .coll-empty-text { margin-right: 8px; }
@@ -872,11 +871,15 @@
 .board-card:focus-visible { box-shadow: 0 0 0 2px var(--border-focus); }
 .board-card.dragging { box-shadow: var(--shadow-lg); transform: rotate(1.2deg); pointer-events: none; }
 .board-card-ghost { border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
-.board-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-3); }
+.board-card-title { display: flex; align-items: flex-start; gap: 7px; min-width: 0; color: var(--text-3); }
+/* The icon sits on the first line of a long title. */
+.board-card-title > svg { flex: none; margin-top: 3px; }
+.board-card-title .board-card-menu { margin: -2px -4px -2px 0; }
 .board-card-title > span { flex: 1; min-width: 0; color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
 .board-card-menu { opacity: 0; }
 .board-card:hover .board-card-menu, .board-card:focus-within .board-card-menu { opacity: 1; }
-.board-card-prop { display: flex; min-width: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.board-card-prop { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.board-card-key { color: var(--text-3); }
 .board-drop { height: 3px; margin: 0 2px; border-radius: 2px; background: var(--accent); }
 .board-add { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-sm); }
 .board-add:hover { background: var(--bg-hover); color: var(--text-2); }
@@ -1040,3 +1043,11 @@
 /* Files dragged over the tab bar or a pane without a note: they open as PDF tabs. */
 .pane.file-drop > .tabbar { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
 .pane.file-drop > .pane-content { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -8px; border-radius: var(--r-md); }
+
+/* ---- visual fixes 1.4 ---- */
+
+/* Scrolling popups: a thin scrollbar in a gutter that is always there, as wide as the left padding,
+   so the items sit centred whether the list scrolls or not. */
+.sugg, .menu, .pal-list { padding-right: 0; scrollbar-gutter: stable; }
+.sugg::-webkit-scrollbar, .menu::-webkit-scrollbar, .pal-list::-webkit-scrollbar { width: 5px; }
+.sugg::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb, .pal-list::-webkit-scrollbar-thumb { border-width: 1px; }

@@ -2,7 +2,7 @@
 // scroll outline and where new pages go.
 
 import { Segmented, Select, Switch } from "../../components/ui";
-import { PAGE_ICONS } from "../../components/icons";
+import { PAGE_ICONS, iconLabel } from "../../components/icons";
 import { useT } from "../../lib/i18n";
 import type { EditorPrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, type SectionProps } from "./common";
@@ -86,7 +86,7 @@ export function EditorSection({ draft, update }: SectionProps) {
             <option value="">{t("set.editor.iconNone")}</option>
             {Object.keys(PAGE_ICONS).map((i) => (
               <option key={i} value={i}>
-                {i}
+                {iconLabel(i)}
               </option>
             ))}
           </Select>

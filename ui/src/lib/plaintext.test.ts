@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripMarkdown } from "./plaintext";
+import { markdownStats, stripMarkdown, textStats } from "./plaintext";
 
 describe("stripMarkdown", () => {
   it("drops block markers", () => {
@@ -31,5 +31,16 @@ describe("stripMarkdown", () => {
   });
   it("keeps FTS hit markers", () => {
     expect(stripMarkdown("…mit **\u0002fett\u0003** und")).toBe("…mit \u0002fett\u0003 und");
+  });
+});
+
+describe("status bar counts", () => {
+  it("counts words and characters without spaces", () => {
+    expect(textStats("")).toEqual({ words: 0, chars: 0 });
+    expect(textStats("  Zwei  Wörter\n")).toEqual({ words: 2, chars: 10 });
+  });
+  it("counts Markdown source like the visual editor: text only, no markers", () => {
+    const md = ["# Titel", "", "- [ ] **Eine** Aufgabe", "> [!note] Hinweis", "", "```js", "let a = 1;", "```", "", "| A | B |", "| --- | --- |", "| x | y |", "---", "<!-- spalten -->", "[[Seite|Alias]] und `code`"].join("\n");
+    expect(markdownStats(md)).toEqual(textStats("Titel Eine Aufgabe Hinweis let a = 1; A B x y Alias und code"));
   });
 });

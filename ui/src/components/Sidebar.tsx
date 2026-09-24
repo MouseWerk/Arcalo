@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { PAGE_ICONS, PageIcon } from "./icons";
+import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
 import { clock, fmtMinutes } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
@@ -448,7 +448,7 @@ function PageTree({
       label: "Symbol ändern",
       icon: Shapes,
       submenu: Object.entries(PAGE_ICONS).map(([name, Icon]) => ({
-        label: name.replace(/-/g, " "),
+        label: iconLabel(name),
         icon: Icon,
         checked: n.icon === name,
         onSelect: async () => {

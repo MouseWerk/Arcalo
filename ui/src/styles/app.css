@@ -299,9 +299,9 @@ button.side-section-title:hover { color: var(--text-2); }
 .timer-dock-main { flex: 1; min-width: 0; display: grid; border: 0; background: none; padding: 0; text-align: left; }
 .timer-dock-time { font-weight: 600; font-size: var(--fs-md); }
 .timer-dock-label { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex: none; box-shadow: 0 0 0 0 rgb(248 113 113 / 0.5); animation: pulse 2s infinite; }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex: none; box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 50%, transparent); animation: pulse 2s infinite; }
 .rec-dot.big { width: 10px; height: 10px; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(248 113 113 / 0.45); } 70% { box-shadow: 0 0 0 7px rgb(248 113 113 / 0); } 100% { box-shadow: 0 0 0 0 rgb(248 113 113 / 0); } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .sidebar-foot { min-height: var(--statusbar-h); padding: 2px 8px; display: flex; align-items: center; border-top: 1px solid var(--border); }
 
 /* ---------------------------------------------------------------- tab bar */
@@ -316,7 +316,9 @@ button.side-section-title:hover { color: var(--text-2); }
   background: var(--bg-canvas);
   flex: none;
 }
-.tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* A grid, not a row of flex items: when space is short every tab first gets its minimum, then the
+   rest is shared evenly, so short titles stay whole and only long ones are shortened. */
+.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(72px, max-content); justify-content: start; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 /* Tabs hidden past an edge fade out there. */
 .tabs.fade-right { mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
 .tabs.fade-left { mask-image: linear-gradient(90deg, transparent, #000 28px); }
@@ -329,12 +331,10 @@ button.side-section-title:hover { color: var(--text-2); }
   gap: 7px;
   height: 28px;
   max-width: 220px;
-  /* Shrink like browser tabs before the row starts to scroll. */
-  min-width: 72px;
+  min-width: 0;
   padding: 0 4px 0 10px;
   border-radius: var(--r-sm);
   color: var(--text-3);
-  flex: 0 1 200px;
   position: relative;
 }
 .tab:hover { background: var(--bg-hover); color: var(--text-2); }
@@ -621,7 +621,7 @@ button.side-section-title:hover { color: var(--text-2); }
 .tier-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--text-3); }
 .tier-local { background: var(--success); }
 .tier-standard { background: var(--info); }
-.tier-reasoning { background: #c084fc; }
+.tier-reasoning { background: var(--violet); }
 .thinking { display: flex; gap: 4px; padding: 6px 0; }
 .thinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: blink 1.2s infinite ease-in-out; }
 .thinking span:nth-child(2) { animation-delay: 0.15s; }
@@ -934,6 +934,7 @@ button.side-section-title:hover { color: var(--text-2); }
   :root, :root[data-theme="dark"] {
     --bg-app: #fff; --bg-canvas: #fff; --bg-raised: #fff; --bg-sidebar: #fff; --bg-hover: transparent; --bg-input: #fff;
     --text: #111; --text-2: #333; --text-3: #666; --border: #ddd; --border-strong: #bbb;
+    --code-bg: #f6f6f7; --code-keyword: #9333ea; --code-string: #15803d; --code-number: #c2410c; --code-title: #1d4ed8; --code-type: #a16207; --code-meta: #0e7490; --violet: #7c3aed;
   }
   body, .app { background: #fff !important; height: auto !important; overflow: visible !important; }
   .app { display: block !important; }
@@ -1338,7 +1339,7 @@ body.search-mode { background: transparent; }
 .slide-content blockquote.callout-tip, .slide-content blockquote.callout-success, .slide-content blockquote.callout-done { --c: var(--success); }
 .slide-content blockquote.callout-warning, .slide-content blockquote.callout-caution, .slide-content blockquote.callout-todo { --c: var(--warning); --c-fill: var(--warning-fill); }
 .slide-content blockquote.callout-danger, .slide-content blockquote.callout-error, .slide-content blockquote.callout-bug { --c: var(--danger); }
-.slide-content blockquote.callout-question, .slide-content blockquote.callout-example, .slide-content blockquote.callout-abstract { --c: #a78bfa; }
+.slide-content blockquote.callout-question, .slide-content blockquote.callout-example, .slide-content blockquote.callout-abstract { --c: var(--violet); }
 .slide-callout-title { font-size: 0.62em; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c); margin-bottom: 0.25em; }
 .slide-content a { text-decoration: none; color: var(--accent-text); }
 .slide-content .slide-img { display: block; max-width: 100%; max-height: 640px; margin: 0.2em auto; border-radius: 12px; }
@@ -1349,8 +1350,15 @@ body.search-mode { background: transparent; }
 .slide-content .slide-file { padding: 0.3em 0.7em; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
 .slide-content .slide-zeit { font-size: 0.7em; padding: 0.1em 0.5em; border-radius: 8px; background: var(--accent-soft); color: var(--accent-text); }
 .slide-content hr { margin: 0.8em 0; }
-.beamer .slide-content { --text-2: #3d4450; --text-3: #6b7280; --border: #d9dde3; --border-strong: #c3c9d1; --bg-raised: #f6f7f9; --bg-app: #f3f4f6; --bg-hover: #eef0f3; --bg-active: #eceef2; }
-.beamer .slide-content pre { background: #f5f6f8; }
+/* The white projector look is the same in every theme: light values for everything a slide shows
+   (a dark theme's light-on-dark accent, status and code colors would be unreadable on white). */
+.beamer .slide-content {
+  --text-2: #3d4450; --text-3: #6b7280; --border: #d9dde3; --border-strong: #c3c9d1; --bg-raised: #f6f7f9; --bg-app: #f3f4f6; --bg-hover: #eef0f3; --bg-active: #eceef2;
+  --text: var(--slide-text);
+  --accent: var(--accent-strong); --accent-text: color-mix(in srgb, var(--accent-strong) 82%, #000); --accent-soft: color-mix(in srgb, var(--accent-strong) 10%, transparent);
+  --success: #157034; --warning: #a14a08; --warning-fill: #f59e0b; --danger: #dc2626; --info: #027cbb; --violet: #7c3aed; --mark: rgb(250 204 21 / 0.38);
+  --code-bg: #f5f6f8; --code-keyword: #9333ea; --code-string: #15803d; --code-number: #c2410c; --code-title: #1d4ed8; --code-type: #a16207; --code-meta: #0e7490;
+}
 .present-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--slide-text) 8%, transparent); }
 .present-progress > span { display: block; height: 100%; background: var(--accent); transition: width var(--dur) var(--ease-out); }
 .present-corner { position: absolute; right: 18px; bottom: 14px; display: flex; align-items: baseline; gap: 12px; font-size: 13px; color: color-mix(in srgb, var(--slide-text) 55%, transparent); font-variant-numeric: tabular-nums; pointer-events: none; }
@@ -1397,7 +1405,9 @@ body.presenter-window .presenter { height: 100vh; }
 .presenter-main, .presenter-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
 .presenter-label { font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); display: flex; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .presenter-label .num { color: var(--text-2); }
-.presenter-current { flex: 1; min-height: 0; border-radius: var(--r-lg); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+/* The current slide in the audience's 16:9, as large as the column allows (label row: 32 px). */
+.presenter-main { container-type: size; }
+.presenter-current { flex: none; aspect-ratio: 16 / 9; width: min(100%, (100cqh - 32px) * 16 / 9); min-height: 0; border-radius: var(--r-lg); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
 .presenter-next { aspect-ratio: 16 / 9; flex: none; border-radius: var(--r-md); border: 1px solid var(--border); opacity: 0.92; }
 .presenter-end { display: grid; place-items: center; color: var(--text-3); background: var(--bg-raised); }
 .presenter-clock { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 4px 2px 6px; }
@@ -1410,7 +1420,7 @@ body.presenter-window .presenter { height: 100vh; }
 .presenter-controls { display: flex; gap: 6px; align-items: center; }
 .presenter-controls .present-btn { border: 1px solid var(--border); background: var(--bg-raised); height: 36px; }
 .presenter-wait { height: 100vh; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-3); background: var(--bg-app); }
-@media (max-width: 1100px) { .presenter { grid-template-columns: minmax(0, 1fr); overflow: auto; } .presenter-current { min-height: 320px; } }
+@media (max-width: 1100px) { .presenter { grid-template-columns: minmax(0, 1fr); overflow: auto; } .presenter-main { container-type: normal; } .presenter-current { width: 100%; } }
 
 /* ---- focus sessions ---- */
 
@@ -1452,8 +1462,8 @@ body.presenter-window .presenter { height: 100vh; }
 
 /* ---- activity feed ---- */
 
-.activity-view { --k-pages: var(--accent); --k-tasks: var(--success); --k-time: #d97706; --k-files: #8b5cf6; --k-focus: #e11d48; --k-system: var(--text-3); }
-:root[data-theme="dark"] .activity-view { --k-time: #f59e0b; --k-files: #a78bfa; --k-focus: #fb7185; }
+.activity-view { --k-pages: var(--accent); --k-tasks: var(--success); --k-time: #d97706; --k-files: var(--violet); --k-focus: #e11d48; --k-system: var(--text-3); }
+:root[data-theme="dark"] .activity-view { --k-time: #f59e0b; --k-focus: #fb7185; }
 .activity-view .kind-pages { --k: var(--k-pages); }
 .activity-view .kind-tasks { --k: var(--k-tasks); }
 .activity-view .kind-time { --k: var(--k-time); }
@@ -1650,3 +1660,37 @@ body.presenter-window .presenter { height: 100vh; }
 
 /* ---- portable mode ---- */
 .portable-badge { display: inline-flex; }
+
+/* ---- visual fixes 1.4 ---- */
+
+/* Four KPI cards: two by two in narrow panes instead of three and one. */
+@container pane (max-width: 640px) {
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Disclosure rows: a chevron that turns instead of the browser's triangle. */
+.provider-more > summary, .msg-error-details > summary { display: flex; align-items: center; gap: 7px; list-style: none; }
+.provider-more > summary::-webkit-details-marker, .msg-error-details > summary::-webkit-details-marker { display: none; }
+.provider-more > summary::before, .msg-error-details > summary::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 1px 0 -1px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.provider-more[open] > summary::before, .msg-error-details[open] > summary::before { transform: rotate(45deg); margin-top: -3px; }
+
+/* Editor blocks on slides: agenda, columns, footnotes. */
+.slide-content ol.slide-toc { padding-left: 1.4em; }
+.slide-content ol.slide-toc li::marker { color: var(--accent); font-variant-numeric: tabular-nums; }
+.slide-content .slide-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1.4em; align-items: start; }
+.slide-content .slide-column > * + * { margin-top: 0.6em; }
+.slide-content .slide-column > :first-child { margin-top: 0; }
+.slide-content sup.slide-fn { font-size: 0.6em; font-weight: 650; color: var(--accent-text); line-height: 0; padding: 0 0.1em; }
+.slide-content .slide-footnotes { margin-top: 1.4em; padding-top: 0.5em; border-top: 1px solid var(--border-strong); font-size: 0.56em; line-height: 1.45; color: var(--text-2); }
+.slide-content .slide-footnotes > * + * { margin-top: 0.25em; }
+.slide-content .slide-footnotes sup.slide-fn { font-size: 0.8em; }

@@ -7,7 +7,7 @@ import { useApp } from "../store/app";
 import { api } from "../lib/api";
 import type { QuickLink } from "../lib/types";
 import { Button, Dialog, Field, IconButton, Input, useMenu, type MenuEntry } from "./ui";
-import { PAGE_ICONS, PageIcon } from "./icons";
+import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { useT } from "../lib/i18n";
 
 /** One shared empty list: a new [] per render would look like a change and re-render forever. */
@@ -148,7 +148,8 @@ function LinkDialog({ initial, isNew, onClose, onSave }: { initial: QuickLink; i
                 type="button"
                 role="option"
                 aria-selected={icon === name}
-                aria-label={name}
+                aria-label={iconLabel(name)}
+                title={iconLabel(name)}
                 className={icon === name ? "on" : ""}
                 onClick={() => {
                   setIconTouched(true);

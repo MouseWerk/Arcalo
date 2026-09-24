@@ -287,6 +287,11 @@ export function Menu({
     setPos({ x: nx, y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
   }, [x, y, flipX, anchor]);
 
+  // Long menus scroll (max-height in CSS); the keyboard selection stays visible.
+  useEffect(() => {
+    if (sel >= 0) ref.current?.querySelector<HTMLElement>(`[data-index="${sel}"]`)?.scrollIntoView?.({ block: "nearest" });
+  }, [sel]);
+
   const openSub = (i: number) => {
     const el = ref.current?.querySelector<HTMLElement>(`[data-index="${i}"]`);
     if (!el) return;

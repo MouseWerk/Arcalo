@@ -11,7 +11,7 @@ import { ScrollOutline } from "../components/ScrollOutline";
 import { MEETING_SUMMARY_EVENT, NoteEditor, flushAllEditors, reloadEditors, type NoteEditorHandle } from "../editor/NoteEditor";
 import { splitFrontmatter } from "../editor/extensions";
 import { parseFrontmatter } from "../lib/frontmatter";
-import { PAGE_ICONS, PageIcon } from "../components/icons";
+import { PAGE_ICONS, PageIcon, iconLabel } from "../components/icons";
 import { Button, EmptyState, IconButton, Spinner, useMenu } from "../components/ui";
 import { addDays, dateLong, isoDay, relative } from "../lib/format";
 import { linkContext } from "../components/linkContext";
@@ -267,6 +267,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         {source ? (
           <SourceEditor
             key={`source-${doc.id}`}
+            active={active}
             doc={doc}
             onSaved={(d) => {
               setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
@@ -516,7 +517,8 @@ function PageHeader({
                   <button
                     key={name}
                     type="button"
-                    aria-label={name}
+                    aria-label={iconLabel(name)}
+                    title={iconLabel(name)}
                     className={doc.icon === name ? "on" : ""}
                     onClick={async () => {
                       try {

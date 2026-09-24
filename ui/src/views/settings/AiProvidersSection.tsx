@@ -2,7 +2,7 @@
 // model each tier uses, and the price table for providers that do not report costs.
 
 import { useContext, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Cpu, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Cloud, Cpu, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Server, Trash2 } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { Badge, Button, IconButton, Input, Select, Switch, useMenu } from "../../components/ui";
@@ -89,7 +89,8 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
   const addMenu = (e: React.MouseEvent) =>
     openMenuAt(
       e,
-      PRESETS.map((p) => ({ label: p.label, icon: p.local ? Cpu : undefined, onSelect: () => add(p) })),
+      // Every entry has an icon: this computer, a cloud service, or a gateway/server of your own.
+      PRESETS.map((p) => ({ label: p.label, icon: p.local ? Cpu : p.key === "litellm" || p.key === "custom" ? Server : Cloud, onSelect: () => add(p) })),
     );
   const move = (i: number, d: -1 | 1) => {
     const next = [...providers];

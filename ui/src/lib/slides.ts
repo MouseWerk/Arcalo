@@ -10,8 +10,19 @@
 // `>` lines, or a paragraph starting with `Notiz:`. They are hidden on the slide and shown in
 // the presenter view. Both are plain Markdown, so the note reads normally outside the
 // presentation.
+//
+// Editor blocks on slides: `[TOC]` lists the other slides, `[^1]` footnotes are numbered and their
+// text (defined anywhere in the note) is shown at the foot of each slide that uses them,
+// `==text==` is highlighted and `<!-- spalten -->` blocks become columns.
 
 import { FIRST_LINE_RE } from "./frontmatter";
+
+export interface SlideFootnote {
+  n: number;
+  label: string;
+  /** Markdown of the definition ("" when it is missing). */
+  text: string;
+}
 
 export interface Slide {
   index: number;
@@ -21,6 +32,10 @@ export interface Slide {
   notes: string;
   /** First heading or first line, for the presenter view and the jump list. */
   title: string;
+  /** Footnotes this slide refers to, numbered across the note. */
+  footnotes?: SlideFootnote[];
+  /** Titles of the other slides, for a `[TOC]` on this slide. */
+  toc?: string[];
 }
 
 const RULE_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
@@ -28,6 +43,9 @@ const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING_RE = /^ {0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$/;
 const NOTE_CALLOUT_RE = /^ {0,3}>[ \t]?\[!(notiz|notizen|notes?|speaker|sprecher)\][+-]?[ \t]*(.*)$/i;
 const NOTE_LINE_RE = /^ {0,3}(?:notiz|sprechernotiz|notes?):[ \t]*(.*)$/i;
+const TOC_RE = /^ {0,3}\[TOC\][ \t]*$/;
+const FN_DEF_RE = /^ {0,3}\[\^([^\]\s^]+)\]:(?:[ \t]+|$)(.*)$/;
+const FN_REF_RE = /\[\^([^\]\s^]+)\](?!:)/g;
 
 /** The body of a note without its YAML frontmatter. */
 export function stripFrontmatter(md: string): string {
@@ -129,13 +147,15 @@ function slideTitle(md: string, n: number): string {
     const h = HEADING_RE.exec(l);
     if (h && h[2].trim()) return plain(h[2]);
   }
-  const first = lines.find((l) => l.trim() && !/^ {0,3}(```|~~~|!\[\[|\|)/.test(l));
+  const first = lines.find((l) => l.trim() && !TOC_RE.test(l) && !/^ {0,3}(```|~~~|!\[\[|\||<!--)/.test(l));
   const text = first ? plain(first.replace(/^ {0,3}([-*+>]|\d+[.)])\s+(\[[ xX]\]\s+)?/, "")) : "";
+  if (!text && lines.some((l) => TOC_RE.test(l))) return "Inhalt";
   return text ? (text.length > 60 ? `${text.slice(0, 59)}…` : text) : `Folie ${n}`;
 }
 
 const plain = (s: string) =>
   s
+    .replace(FN_REF_RE, "")
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
     .replace(/\[\[([^\]]+)\]\]/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
@@ -144,7 +164,7 @@ const plain = (s: string) =>
 
 /** Splits a note (with or without frontmatter) into slides. */
 export function splitSlides(content: string): Slide[] {
-  const lines = stripFrontmatter(content.replace(/\r\n?/g, "\n")).split("\n");
+  const { lines, defs } = takeFootnoteDefs(stripFrontmatter(content.replace(/\r\n?/g, "\n")).split("\n"));
   const rules = ruleLines(lines);
   const chunks: string[] = [];
   if (rules.length) {
@@ -170,22 +190,111 @@ export function splitSlides(content: string): Slide[] {
     const n = slides.length + 1;
     slides.push({ index: slides.length, markdown, notes, title: slideTitle(markdown, n) });
   }
+  // Footnotes are numbered in the order of their first reference in the note.
+  const numbers = new Map<string, number>();
+  for (const slide of slides) for (const label of footnoteRefs(slide.markdown)) if (!numbers.has(label)) numbers.set(label, numbers.size + 1);
+  for (const slide of slides) {
+    const refs = footnoteRefs(slide.markdown);
+    if (refs.length) slide.footnotes = refs.map((label) => ({ n: numbers.get(label)!, label, text: defs.get(label) ?? "" }));
+    if (slide.markdown.split("\n").some((l) => TOC_RE.test(l))) slide.toc = slides.filter((o) => o !== slide).map((o) => o.title);
+  }
   return slides;
+}
+
+/** Removes footnote definitions (`[^x]: text` and their indented continuation lines) outside code. */
+function takeFootnoteDefs(lines: string[]): { lines: string[]; defs: Map<string, string> } {
+  const inFence = fenceTracker();
+  const keep: string[] = [];
+  const defs = new Map<string, string>();
+  for (let i = 0; i < lines.length; i++) {
+    const m = inFence(lines[i]) ? null : FN_DEF_RE.exec(lines[i]);
+    if (!m) {
+      keep.push(lines[i]);
+      continue;
+    }
+    const text = [m[2]];
+    while (i + 1 < lines.length && /^(?: {4}|\t)\S/.test(lines[i + 1])) text.push(lines[++i].replace(/^(?: {4}|\t)/, ""));
+    if (!defs.has(m[1])) defs.set(m[1], text.join("\n").trim());
+  }
+  return { lines: keep, defs };
+}
+
+/** Footnote labels referenced in a slide, in order, each once (not in code). */
+function footnoteRefs(md: string): string[] {
+  const out: string[] = [];
+  const inFence = fenceTracker();
+  for (const line of md.split("\n")) {
+    if (inFence(line)) continue;
+    outsideCode(line, (text) => {
+      for (const m of text.matchAll(FN_REF_RE)) if (!out.includes(m[1])) out.push(m[1]);
+      return text;
+    });
+  }
+  return out;
+}
+
+/** Applies `f` to the parts of a line outside inline code spans. */
+function outsideCode(line: string, f: (text: string) => string): string {
+  return line
+    .split(/(`+[^`]*?`+)/)
+    .map((part, i) => (i % 2 ? part : f(part)))
+    .join("");
 }
 
 const escapeAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
  * Markdown for the slide renderer: `![[name|300]]` embeds become placeholders the slide fills
- * (images, drawings, PDF cards, files), booked time (`<time-entry>`) its text. Code stays untouched.
+ * (images, drawings, PDF cards, files), booked time (`<time-entry>`) its text. The editor blocks
+ * become HTML: `[TOC]` the list of the other slides (`deck.toc`), columns a grid, `==x==` a mark,
+ * `[^x]` a number with the footnotes (`deck.footnotes`) at the end. Code stays untouched.
  */
-export function prepareSlideMarkdown(md: string): string {
+export function prepareSlideMarkdown(md: string, deck: Pick<Slide, "footnotes" | "toc"> = {}): string {
   const lines = md.split("\n");
   const inFence = fenceTracker();
-  return lines
-    .map((line) => {
-      if (inFence(line)) return line;
-      return line
+  const numbers = new Map((deck.footnotes ?? []).map((f) => [f.label, f.n]));
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (inFence(line)) {
+      out.push(line);
+      continue;
+    }
+    const t = line.trim();
+    if (TOC_RE.test(line)) {
+      if (deck.toc?.length) out.push("", `<ol class="slide-toc">${deck.toc.map((x) => `<li>${escapeAttr(x)}</li>`).join("")}</ol>`, "");
+      continue;
+    }
+    // Columns: blank lines around the HTML so the Markdown inside the columns is still parsed.
+    if (t === "<!-- spalten -->") {
+      out.push("", `<div class="slide-columns"><div class="slide-column">`, "");
+      continue;
+    }
+    if (t === "<!-- spalte -->") {
+      out.push("", `</div><div class="slide-column">`, "");
+      continue;
+    }
+    if (t === "<!-- /spalten -->") {
+      out.push("", "</div></div>", "");
+      continue;
+    }
+    // A definition left in the slide (it is shown with the footnotes instead).
+    if (FN_DEF_RE.test(line)) {
+      while (i + 1 < lines.length && /^(?: {4}|\t)\S/.test(lines[i + 1])) i++;
+      continue;
+    }
+    out.push(inline(line));
+  }
+  if (deck.footnotes?.length) {
+    out.push("", `<div class="slide-footnotes">`, "");
+    for (const f of deck.footnotes) out.push(`<sup class="slide-fn">${f.n}</sup> ${inline(f.text.replace(/\n/g, " "))}`, "");
+    out.push("</div>");
+  }
+  return out.join("\n");
+
+  function inline(line: string): string {
+    return outsideCode(line, (text) =>
+      text
         .replace(/!\[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/g, (_, name: string, opt?: string) => {
           const width = opt && /^\d+(x\d+)?$/.test(opt.trim()) ? ` data-width="${escapeAttr(opt.trim().split("x")[0])}"` : "";
           return `<span class="slide-embed" data-embed="${escapeAttr(name.trim())}"${width}></span>`;
@@ -193,9 +302,11 @@ export function prepareSlideMarkdown(md: string): string {
         .replace(/<time-entry\b([^>]*)>([^<]*)<\/time-entry>/g, (_, attrs: string, text: string) => {
           const hours = /\bhours="?([^"\s>]+)"?/.exec(attrs)?.[1];
           return `<span class="slide-zeit">${hours ? `${escapeAttr(hours)} h · ` : ""}${escapeAttr(text)}</span>`;
-        });
-    })
-    .join("\n");
+        })
+        .replace(/==(?=\S)([^=\n]*?\S)==/g, "<mark>$1</mark>")
+        .replace(FN_REF_RE, (_, label: string) => `<sup class="slide-fn">${numbers.get(label) ?? escapeAttr(label)}</sup>`),
+    );
+  }
 }
 
 /** Slide number from typed digits (1-based) clamped to the deck; null for nothing typed. */

@@ -18,6 +18,7 @@ import { AttachmentDrop, FileEmbed } from "./fileEmbed";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
+import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 
 export const lowlight = createLowlight(common);
@@ -211,7 +212,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     MarkdownLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true, HTMLAttributes: { rel: "noopener noreferrer", target: null } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     TaskList,
-    TaskItem.configure({ nested: true }),
+    TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
     Highlight,
     TableKit.configure({ table: false }),
     MarkdownTable.configure({ resizable: false }),

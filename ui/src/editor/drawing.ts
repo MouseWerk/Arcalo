@@ -18,6 +18,16 @@ export function drawingTitle(d = new Date()): string {
 /** File name without folders and `.excalidraw`, for headers and alt texts. */
 export const drawingLabel = (name: string) => (name.split(/[\\/]/).pop() ?? name).replace(/\.excalidraw$/i, "");
 
+/** Whether a scene (the drawing file) has anything to show: visible elements, or a format we cannot read. */
+export function sceneHasContent(scene: string): boolean {
+  try {
+    const elements = (JSON.parse(scene) as { elements?: { isDeleted?: boolean }[] }).elements;
+    return Array.isArray(elements) && elements.some((e) => !e?.isDeleted);
+  } catch {
+    return scene.trim() !== "";
+  }
+}
+
 /** Fired on `window` after a drawing was saved (`detail.name`), so previews reload. */
 export const DRAWING_SAVED_EVENT = "annalo:drawing-saved";
 
@@ -106,7 +116,17 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
 
       // No preview file (new or emptied drawing) shows the placeholder.
       img.onload = () => dom.classList.remove("is-empty");
-      img.onerror = () => dom.classList.add("is-empty");
+      img.onerror = () => {
+        dom.classList.add("is-empty");
+        empty.textContent = "Leere Zeichnung – klicken zum Zeichnen";
+        // A drawing made elsewhere (or before previews existed) has no preview but is not empty.
+        import("../lib/api")
+          .then(({ api }) => api.readDrawing(name))
+          .then((scene) => {
+            if (sceneHasContent(scene)) empty.textContent = "Noch keine Vorschau – klicken zum Öffnen";
+          })
+          .catch(() => {});
+      };
       const load = (bust: boolean) => {
         const base = name.split(/[\\/]/).pop() ?? name;
         img.src = `${resolve(`${base}.svg`)}${bust ? `?v=${Date.now()}` : ""}`;

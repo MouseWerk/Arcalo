@@ -463,6 +463,8 @@ export function NoteEditor({
         (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
       },
     });
+    // No stale count once this editor is gone or another pane is focused (that one publishes its own).
+    return () => useApp.getState().set({ editorStats: null });
   }, [editor, active]);
 
   // Same page open in another pane: take over its saved content unless we have unsaved

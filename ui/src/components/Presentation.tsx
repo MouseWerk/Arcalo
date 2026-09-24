@@ -150,7 +150,7 @@ export function SlideView({ slide, className = "", label }: { slide: Slide | nul
   const box = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => (slide ? renderMarkdown(prepareSlideMarkdown(slide.markdown)) : ""), [slide]);
+  const html = useMemo(() => (slide ? renderMarkdown(prepareSlideMarkdown(slide.markdown, slide)) : ""), [slide]);
   const fit = useCallback(() => {
     const b = box.current;
     const st = stage.current;

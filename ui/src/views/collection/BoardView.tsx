@@ -185,8 +185,11 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                           const d = defOf(defs, k);
                           const cell = cellOf(row, k, d);
                           if (!cell.text) return null;
+                          // A bare number or checkbox says nothing without its name.
+                          const bare = d?.kind === "number" || d?.kind === "checkbox";
                           return (
                             <div key={k} className="board-card-prop" title={fieldLabel(k)}>
+                              {bare && <span className="board-card-key">{fieldLabel(k)}</span>}
                               <Invalid error={cell.error}>
                                 <CellDisplay def={d} cell={cell} />
                               </Invalid>

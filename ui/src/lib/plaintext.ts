@@ -31,3 +31,24 @@ export function stripMarkdown(line: string, opts: { keepWikilinks?: boolean } = 
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** Word and character (without spaces) count of a text, as the status bar shows it. */
+export function textStats(text: string): { words: number; chars: number } {
+  return { words: text.split(/\s+/).filter(Boolean).length, chars: text.replace(/\s/g, "").length };
+}
+
+/**
+ * Counts a Markdown body like the visual editor counts its text: markers, fences, table rules
+ * and HTML comments do not count, the text inside them does.
+ */
+export function markdownStats(body: string): { words: number; chars: number } {
+  const lines: string[] = [];
+  for (const raw of body.replace(/<!--[\s\S]*?-->/g, "").split("\n")) {
+    const line = raw.trim();
+    if (/^(```|~~~)/.test(line)) continue;
+    if (/^([-*_]\s*){3,}$/.test(line)) continue;
+    if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(line)) continue;
+    lines.push(line.startsWith("|") ? line.split("|").map((cell) => stripMarkdown(cell)).join(" ") : stripMarkdown(line));
+  }
+  return textStats(lines.join(" "));
+}

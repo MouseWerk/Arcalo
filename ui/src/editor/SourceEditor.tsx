@@ -6,6 +6,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { PageDoc } from "../lib/types";
 import { useApp } from "../store/app";
+import { splitFrontmatter } from "./extensions";
+import { markdownStats } from "../lib/plaintext";
 import { registerFlusher } from "./NoteEditor";
 
 const SAVE_MS = 700;
@@ -20,7 +22,7 @@ export function continuation(line: string): { prefix: string; empty: boolean } |
   return { prefix: `${indent}${next}${gap}${box ? "[ ] " : ""}`, empty: line.trim().length === all.trim().length };
 }
 
-export function SourceEditor({ doc, onSaved }: { doc: PageDoc; onSaved: (d: PageDoc) => void }) {
+export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; onSaved: (d: PageDoc) => void; active?: boolean }) {
   const [value, setValue] = useState(doc.content);
   const ref = useRef<HTMLTextAreaElement>(null);
   const dirty = useRef(false);
@@ -70,6 +72,14 @@ export function SourceEditor({ doc, onSaved }: { doc: PageDoc; onSaved: (d: Page
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
+
+  // The focused pane's editor feeds the word count in the status bar (the text without properties).
+  useEffect(() => {
+    if (active) useApp.getState().set({ editorStats: markdownStats(splitFrontmatter(value).body) });
+  }, [value, active]);
+  useEffect(() => {
+    if (active) return () => useApp.getState().set({ editorStats: null });
+  }, [active]);
 
   // Grows with its text: the page scrolls, not the text box.
   useLayoutEffect(() => {

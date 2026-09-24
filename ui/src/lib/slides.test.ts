@@ -80,6 +80,48 @@ describe("prepareSlideMarkdown", () => {
   it("gebuchte Zeit zeigt ihren Text", () => {
     expect(prepareSlideMarkdown('<time-entry id="3" hours="1,5" target="NP-1">Review</time-entry>')).toBe('<span class="slide-zeit">1,5 h · Review</span>');
   });
+
+  it("Markierung ==x== wird <mark>, nicht in Code", () => {
+    expect(prepareSlideMarkdown("Das ist ==wichtig== und `a==b==c`")).toBe("Das ist <mark>wichtig</mark> und `a==b==c`");
+    expect(prepareSlideMarkdown("```\n==bleibt==\n```")).toBe("```\n==bleibt==\n```");
+  });
+
+  it("Spalten werden ein Raster mit Markdown in jeder Spalte", () => {
+    const out = prepareSlideMarkdown("<!-- spalten -->\n- links\n<!-- spalte -->\n**rechts**\n<!-- /spalten -->");
+    expect(out).toBe(['', '<div class="slide-columns"><div class="slide-column">', "", "- links", "", '</div><div class="slide-column">', "", "**rechts**", "", "</div></div>", ""].join("\n"));
+  });
+
+  it("[TOC] zeigt die anderen Folien, ohne Liste verschwindet es", () => {
+    expect(prepareSlideMarkdown("# Agenda\n[TOC]", { toc: ["Start", "A & B"] })).toContain('<ol class="slide-toc"><li>Start</li><li>A &amp; B</li></ol>');
+    expect(prepareSlideMarkdown("# Agenda\n[TOC]")).toBe("# Agenda");
+  });
+});
+
+describe("Folien mit Editor-Blöcken", () => {
+  const md = "# Agenda\n\n[TOC]\n\n---\n\n# Eins\n\nText[^b] und ==neu==\n\n---\n\n# Zwei\n\nMehr[^a] und wieder[^b]\n\n```\n[^c] im Code\n```\n\n---\n\n[^a]: Quelle A\n[^b]: Quelle **B**\n    zweite Zeile";
+
+  it("Fußnoten: über die Notiz nummeriert, Definitionen an jeder Folie, keine Folie nur aus Definitionen", () => {
+    const s = splitSlides(md);
+    expect(s.map((x) => x.title)).toEqual(["Agenda", "Eins", "Zwei"]);
+    expect(s[1].footnotes).toEqual([{ n: 1, label: "b", text: "Quelle **B**\nzweite Zeile" }]);
+    expect(s[2].footnotes).toEqual([
+      { n: 2, label: "a", text: "Quelle A" },
+      { n: 1, label: "b", text: "Quelle **B**\nzweite Zeile" },
+    ]);
+    const out = prepareSlideMarkdown(s[2].markdown, s[2]);
+    expect(out).toContain('Mehr<sup class="slide-fn">2</sup> und wieder<sup class="slide-fn">1</sup>');
+    expect(out).toContain("```\n[^c] im Code\n```");
+    expect(out).toContain('<div class="slide-footnotes">\n\n<sup class="slide-fn">2</sup> Quelle A\n\n<sup class="slide-fn">1</sup> Quelle **B** zweite Zeile\n\n</div>');
+    expect(out).not.toMatch(/\[\^[ab]\]/);
+  });
+
+  it("[TOC] listet die übrigen Folien", () => {
+    const s = splitSlides(md);
+    expect(s[0].toc).toEqual(["Eins", "Zwei"]);
+    expect(splitSlides("# Ende[^w]\n\n[^w]: Danke")[0].title).toBe("Ende");
+    expect(s[1].toc).toBeUndefined();
+    expect(splitSlides("[TOC]\n\n---\n\n# A")[0].title).toBe("Inhalt");
+  });
 });
 
 describe("Hilfen", () => {

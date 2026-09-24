@@ -21,3 +21,37 @@ describe("stylesheets", () => {
     });
   }
 });
+
+// Colors come from the theme tokens (tokens.css, lib/themes.ts). A literal color elsewhere is only
+// fine where it must not follow the theme; every such place is listed here with its reason.
+const LITERAL_COLORS_OK: [RegExp, string][] = [
+  [/win-close/, "Windows' own red close button"],
+  [/fade-(left|right)|assistant-scroll/, "mask gradients (only the alpha counts)"],
+  [/send-btn|task-check|\.cite:hover|cf-choice\.on|btn-primary|switch-knob|\.check:|theme-card-now|taskList.*checked::after|slide-task > input:checked::after|swatch/, "white on --accent-strong or a color swatch (>= 4.5:1 by construction)"],
+  [/^:root, :root\[data-theme="dark"\]$|^body, \.app$/, "print: black on white paper"],
+  [/onb-mark|about-mark/, "the app logo"],
+  [/beamer/, "the white projector look of presentations"],
+  [/slide-drawing|slide-pdf canvas|att-thumb|pdf-embed|pdf-page/, "drawings and PDF pages are white paper"],
+  [/^\.opt-\d$/, "the fixed option colors users pick for select properties"],
+  [/activity-view/, "category colors of the activity timeline"],
+  [/find-hit\.current/, "the current search hit, distinct from --mark"],
+  [/\.overlay$/, "dialog scrim"],
+];
+
+describe("literal colors", () => {
+  const dir = resolve(__dirname);
+  for (const name of readdirSync(dir).filter((f) => f.endsWith(".css") && f !== "tokens.css")) {
+    it(`${name} uses theme tokens except in the listed places`, () => {
+      const css = readFileSync(resolve(dir, name), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      const unexplained: string[] = [];
+      for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const selector = m[1].replace(/\s+/g, " ").trim();
+        // Black shadows and scrims are black in every theme.
+        const body = m[2].replace(/rgb\(0 0 0 \/ [\d.]+\)/g, "");
+        if (!/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i.test(body)) continue;
+        if (!LITERAL_COLORS_OK.some(([re]) => re.test(selector))) unexplained.push(selector);
+      }
+      expect(unexplained).toEqual([]);
+    });
+  }
+});

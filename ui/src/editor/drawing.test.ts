@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drawingLabel, drawingTitle, isDrawingName } from "./drawing";
+import { drawingLabel, drawingTitle, isDrawingName, sceneHasContent } from "./drawing";
 
 describe("drawing names", () => {
   it("accepts plain .excalidraw file names", () => {
@@ -15,5 +15,13 @@ describe("drawing names", () => {
   });
   it("labels drawings without folder and suffix", () => {
     expect(drawingLabel("Skizzen/Plan.excalidraw")).toBe("Plan");
+  });
+
+  it("tells an empty scene from one without a preview", () => {
+    expect(sceneHasContent('{"type":"excalidraw","elements":[]}')).toBe(false);
+    expect(sceneHasContent('{"elements":[{"id":"a","isDeleted":true}]}')).toBe(false);
+    expect(sceneHasContent('{"elements":[{"id":"a","type":"rectangle"}]}')).toBe(true);
+    expect(sceneHasContent("")).toBe(false);
+    expect(sceneHasContent("kein JSON")).toBe(true);
   });
 });

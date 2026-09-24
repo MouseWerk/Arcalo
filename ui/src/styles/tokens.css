@@ -1,4 +1,9 @@
-/* Design tokens. Dark is the default look; light follows the same scale. */
+/* Design tokens. Dark is the default look; light follows the same scale.
+   Other stylesheets use these tokens for every color. The few literal colors elsewhere are
+   intentional: Windows' red close button, masks, white on --accent-strong and on swatches, print,
+   the logo, the white "Beamer" slides, paper (drawings, PDF pages), the option and activity
+   category palettes, the current search hit, black shadows and scrims. styles.test.ts lists
+   them and fails on any other. lib/themes.ts derives the same tokens for the other themes. */
 
 :root {
   --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -67,6 +72,16 @@
   --danger-soft: rgb(248 113 113 / 0.12);
   --info: #38bdf8;
   --info-soft: rgb(56 189 248 / 0.12);
+  --violet: #a78bfa;
+
+  /* Code blocks: background and syntax colors (themes.ts derives them per theme). */
+  --code-bg: #0e0f11;
+  --code-keyword: #c084fc;
+  --code-string: #4ade80;
+  --code-number: #fb923c;
+  --code-title: #60a5fa;
+  --code-type: #facc15;
+  --code-meta: #22d3ee;
 
   --mark: rgb(250 204 21 / 0.22);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
@@ -109,8 +124,17 @@
   --warning-soft: rgb(217 119 6 / 0.12);
   --danger: #dc2626;
   --danger-soft: rgb(220 38 38 / 0.09);
-  --info: #0284c7;
+  --info: #027cbb;
   --info-soft: rgb(2 132 199 / 0.1);
+  --violet: #7c3aed;
+
+  --code-bg: #f7f7f9;
+  --code-keyword: #9333ea;
+  --code-string: #15803d;
+  --code-number: #c2410c;
+  --code-title: #1d4ed8;
+  --code-type: #a16207;
+  --code-meta: #0e7490;
 
   --mark: rgb(250 204 21 / 0.35);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);

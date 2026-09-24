@@ -377,6 +377,8 @@ const ENTRIES = {
   "set.editor.defaultIcon": ["Symbol neuer Seiten", "Icon of new pages"],
   "set.editor.defaultIconDesc": ["Kann je Seite geändert werden.", "Can be changed per page."],
   "set.editor.iconNone": ["Standard (Dokument)", "Default (document)"],
+  "editor.taskCheckbox": ["Aufgabe: {text}", "Task: {text}"],
+  "editor.taskEmpty": ["leere Aufgabe", "empty task"],
 
   // notes
   "set.notes.title": ["Notizen", "Notes"],

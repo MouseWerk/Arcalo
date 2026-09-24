@@ -348,6 +348,7 @@ function AccentRow({ a, set, light, dark, shown }: { a: AppearancePrefs; set: (p
         />
       </div>
       <div className="accent-preview small">
+        {/* White on --accent-strong, like the primary buttons (the accent tokens guarantee 4.5:1). */}
         <span className="accent-chip" style={{ background: now["--accent-strong"], color: "#fff" }}>
           {t("set.appearance.button")}
         </span>

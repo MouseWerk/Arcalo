@@ -742,7 +742,8 @@ export const Callouts = Extension.create({
             );
           }
           // A custom title replaces the type label (Obsidian shows one or the other).
-          const hasTitle = first!.firstChild?.isText === true && (first!.firstChild.text ?? "").slice(m[0].length).trim() !== "";
+          // Only the first line counts: `> [!question]\n> Text` has no title, the body follows.
+          const hasTitle = first!.firstChild?.isText === true && (first!.firstChild.text ?? "").slice(m[0].length).split("\n")[0].trim() !== "";
           const label = hasTitle ? "" : (CALLOUT_LABELS[type] ?? type);
           // Covers the trailing space too, so the hidden marker leaves no gap before the title.
           decos.push(Decoration.inline(start, start + m[0].length, { class: "callout-marker", "data-label": label }));

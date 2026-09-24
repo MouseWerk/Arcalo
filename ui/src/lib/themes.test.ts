@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { contrast } from "./color";
 import { BUILTIN_THEMES, contrastChecks, customDef, effectiveAccent, findTheme, isDarkColor, themeCss, themeTokens } from "./themes";
 import type { CustomTheme } from "./types";
@@ -56,6 +58,43 @@ describe("color themes", () => {
       // Borders are visible, but quieter than text.
       expect(contrast(k["--border-strong"], canvas), `${t.id} border`).toBeGreaterThan(1.15);
       expect(k["color-scheme"]).toBe(t.dark ? "dark" : "light");
+    }
+  });
+
+  it("code blocks, syntax colors and the violet callout are readable in every theme", () => {
+    for (const t of BUILTIN_THEMES) {
+      const k = themeTokens(t);
+      const code = k["--code-bg"];
+      // The block stands out from the page a little (it also has a border).
+      expect(contrast(code, k["--bg-canvas"]), `${t.id} code background`).toBeGreaterThanOrEqual(1.04);
+      expect(contrast(k["--text"], code), `${t.id} code text`).toBeGreaterThanOrEqual(4.5);
+      for (const s of ["--code-keyword", "--code-string", "--code-number", "--code-title", "--code-type", "--code-meta"]) {
+        expect(contrast(k[s], code), `${t.id} ${s}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(k["--violet"], k["--bg-canvas"]), `${t.id} --violet`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("tokens.css (the Annalo themes) defines every derived token and keeps the same contrast", () => {
+    const css = readFileSync(resolve(__dirname, "../styles/tokens.css"), "utf8");
+    const block = (sel: string) => {
+      const body = css.slice(css.indexOf(sel)).split("}")[0];
+      return Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+    };
+    const derived = Object.keys(themeTokens(BUILTIN_THEMES[0])).filter((key) => key.startsWith("--"));
+    for (const [name, k] of [
+      ["dark", block(':root[data-theme="dark"] {')],
+      ["light", block(':root[data-theme="light"] {')],
+    ] as const) {
+      for (const key of derived) expect(k[key], `tokens.css ${name} ${key}`).toBeDefined();
+      const canvas = k["--bg-canvas"];
+      for (const s of ["--text", "--text-2", "--accent-text", "--success", "--warning", "--danger", "--info", "--violet"]) {
+        expect(contrast(k[s], canvas), `tokens.css ${name} ${s}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(k["--text-3"], canvas), `tokens.css ${name} --text-3`).toBeGreaterThanOrEqual(3);
+      for (const s of ["--code-keyword", "--code-string", "--code-number", "--code-title", "--code-type", "--code-meta"]) {
+        expect(contrast(k[s], k["--code-bg"]), `tokens.css ${name} ${s}`).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 

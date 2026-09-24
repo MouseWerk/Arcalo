@@ -53,6 +53,57 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   kanban: KanbanSquare,
 };
 
+/** German names of the page icons (menus, tooltips, screen readers). */
+export const PAGE_ICON_LABELS: Record<string, string> = {
+  "file-text": "Dokument",
+  notebook: "Notizbuch",
+  folder: "Ordner",
+  "folder-kanban": "Projektordner",
+  briefcase: "Aktentasche",
+  blocks: "Bausteine",
+  users: "Personen",
+  "book-open": "Buch",
+  library: "Bibliothek",
+  calendar: "Kalender",
+  "calendar-days": "Kalendertage",
+  "list-todo": "Aufgabenliste",
+  "clipboard-list": "Checkliste",
+  "message-square": "Nachricht",
+  lightbulb: "Idee",
+  target: "Ziel",
+  flag: "Flagge",
+  rocket: "Rakete",
+  sparkles: "Funken",
+  star: "Stern",
+  bug: "Fehler",
+  code: "Code",
+  database: "Datenbank",
+  globe: "Globus",
+  layers: "Ebenen",
+  box: "Paket",
+  map: "Karte",
+  shield: "Schild",
+  zap: "Blitz",
+  heart: "Herz",
+  "graduation-cap": "Abschluss",
+  "layout-template": "Vorlage",
+  link: "Link",
+  mail: "E-Mail",
+  server: "Server",
+  cloud: "Cloud",
+  terminal: "Terminal",
+  ticket: "Ticket",
+  chart: "Diagramm",
+  video: "Video",
+  wrench: "Werkzeug",
+  newspaper: "Zeitung",
+  home: "Startseite",
+  kanban: "Kanban",
+};
+
+/** The German name of a page icon (the stored name for unknown icons). */
+export const iconLabel = (name: string) => PAGE_ICON_LABELS[name] ?? name.replace(/-/g, " ");
+
 export function PageIcon({ name, size = 16, className }: { name: string | null | undefined; size?: number; className?: string }) {
   const Icon = (name && PAGE_ICONS[name]) || FileText;
   return <Icon size={size} strokeWidth={1.75} className={className} aria-hidden />;
