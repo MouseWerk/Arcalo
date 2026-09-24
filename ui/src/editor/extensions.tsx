@@ -9,7 +9,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import Image from "@tiptap/extension-image";
 import {
-  AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen,
+  AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool,
 } from "lucide-react";
 import { isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
@@ -151,6 +151,8 @@ export interface SlashOptions {
   onAi: ((editor: Editor) => void) | null;
   /** „Besprechung zusammenfassen“ for the page. */
   onSummary: ((editor: Editor) => void) | null;
+  /** Creates a drawing, embeds it and opens the drawing editor. */
+  onDrawing: ((editor: Editor) => void) | null;
 }
 
 function slashItems(o: SlashOptions): SlashItem[] {
@@ -182,6 +184,9 @@ function slashItems(o: SlashOptions): SlashItem[] {
     { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
       ? [{ id: "image", title: "Bild", subtitle: `Datei wählen, oder einfügen mit ${keys("Mod V")}`, icon: ic(ImagePlus), section: "Einfügen", keywords: "bild image foto screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
+      : []),
+    ...(o.onDrawing
+      ? [{ id: "drawing", title: "Zeichnung", subtitle: "Skizze oder Diagramm (Excalidraw)", icon: ic(PenTool), section: "Einfügen", keywords: "zeichnung drawing excalidraw diagramm skizze whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
       : []),
     ...(o.onTemplate
       ? [{ id: "template", title: "Vorlage einfügen", subtitle: "Seite aus „Vorlagen“", icon: ic(LayoutTemplate), section: "Einfügen", keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
@@ -226,7 +231,7 @@ export function fuzzyIncludes(text: string, query: string) {
 export const SlashCommand = Extension.create<SlashOptions>({
   name: "slashCommand",
   addOptions() {
-    return { onTemplate: null, onImage: null, onAi: null, onSummary: null };
+    return { onTemplate: null, onImage: null, onAi: null, onSummary: null, onDrawing: null };
   },
   addProseMirrorPlugins() {
     const opts = this.options;

@@ -12,6 +12,7 @@ import { Markdown } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
 import { Callouts, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
+import { DrawingEmbed } from "./drawing";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 
@@ -140,6 +141,10 @@ export interface SchemaOptions {
   onAi?: (editor: Editor) => void;
   /** Slash „Zusammenfassung“: meeting summary of the page. */
   onSummary?: (editor: Editor) => void;
+  /** Slash „Zeichnung“: new drawing at the caret. */
+  onInsertDrawing?: (editor: Editor) => void;
+  /** Click on a drawing embed: opens the drawing editor. */
+  onOpenDrawing?: (name: string) => void;
   /** `/zeit` autocomplete: Netzplan/Vorgang options for the typed query. */
   zeitRefs?: (query: string) => Promise<ZeitSuggestItem[]>;
   /** `/zeit` autocomplete: Leistungsarten after `#`. */
@@ -170,9 +175,10 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     MarkdownFidelity,
     WikiLink.configure({ onOpen: o.onOpenLink ?? (() => {}), isKnown: o.isKnown ?? (() => true) }),
     WikiLinkSuggest.configure({ search: o.searchPages ?? (async () => []) }),
-    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null }),
+    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null }),
     ImageEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), upload: o.uploadImage ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),
+    DrawingEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), onOpen: o.onOpenDrawing ?? (() => {}) }),
     TimeEntryChip,
     ZeitCommand.configure({ book: o.book ?? (async () => null), onLost: o.onZeitLost ?? (() => {}) }),
     ZeitSuggest.configure({ refs: o.zeitRefs ?? (async () => []), leistungsarten: o.zeitLeistungsarten ?? (async () => []) }),

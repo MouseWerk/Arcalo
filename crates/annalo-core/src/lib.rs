@@ -16,6 +16,7 @@
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
 //! * [`vault`] – Obsidian vault import / Markdown export
 //! * [`attachments`] – pasted and imported images
+//! * [`drawings`] – Excalidraw drawings (scene + SVG preview) embedded in notes
 //! * [`templates`] – page templates with `{{datum}}`-style placeholders
 //! * [`settings`] – application settings
 //! * [`tasks`] – task items across all notes (due dates, priorities)
@@ -39,6 +40,7 @@ pub mod datadir;
 pub mod db;
 pub mod demo;
 pub mod desktop;
+pub mod drawings;
 pub mod error;
 pub mod export;
 pub mod gitsync;

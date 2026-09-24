@@ -29,6 +29,7 @@ use annalo_core::attachments::{self, SavedAttachment};
 use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
 use annalo_core::db::EntryFilter;
+use annalo_core::drawings;
 use annalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
 use annalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
 use annalo_core::mirror::{self, MirrorReport};
@@ -410,6 +411,24 @@ fn attachment_save(
     attachments::save(&state.attachments_dir(), &bytes, &name, mime.as_deref().unwrap_or(""))
 }
 
+/// Creates an empty drawing (`<title>.excalidraw`) and returns its `![[name]]` embed.
+#[tauri::command]
+fn drawing_create(state: State<AppState>, title: String) -> Result<SavedAttachment> {
+    drawings::create(&state.attachments_dir(), &title)
+}
+
+/// The Excalidraw scene (JSON) of a drawing.
+#[tauri::command]
+fn drawing_read(state: State<AppState>, name: String) -> Result<String> {
+    drawings::read(&state.attachments_dir(), &name)
+}
+
+/// Stores a drawing's scene and its SVG preview (none for an empty drawing).
+#[tauri::command]
+fn drawing_save(state: State<AppState>, name: String, scene: String, svg: Option<String>) -> Result<()> {
+    drawings::save(&state.attachments_dir(), &name, &scene, svg.as_deref())
+}
+
 /// Decodes base64 (optionally a `data:` URL, possibly line-wrapped). Oversized input is
 /// rejected before anything is decoded, so a huge paste cannot allocate the decoded bytes.
 fn decode_attachment(data: &str) -> Result<Vec<u8>> {
@@ -431,8 +450,9 @@ fn serve_attachment(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) ->
             .status(status)
             .header("Content-Type", mime)
             .header("X-Content-Type-Options", "nosniff")
-            // SVGs are images here, never documents that run scripts.
-            .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+            // SVGs are images here, never documents that run scripts. Drawing previews
+            // (Excalidraw) carry their fonts inline as `data:` URLs.
+            .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; font-src data:")
             .body(body)
             .unwrap_or_default()
     };
@@ -2269,6 +2289,9 @@ pub fn run() {
             template_render,
             page_from_template,
             attachment_save,
+            drawing_create,
+            drawing_read,
+            drawing_save,
             wbs_tree,
             project_create,
             project_update,

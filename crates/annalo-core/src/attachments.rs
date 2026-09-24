@@ -1,7 +1,8 @@
-//! Attachments (pasted screenshots, imported vault images): plain files in
+//! Attachments (pasted screenshots, imported vault images, drawings): plain files in
 //! `<data_dir>/attachments/`, referenced from Markdown as `![[name.png]]`
-//! (Obsidian embed syntax). New files get content-hash names, so pasting the
-//! same image twice stores it once.
+//! (Obsidian embed syntax). New images get content-hash names, so pasting the
+//! same image twice stores it once. Drawings are `name.excalidraw` scenes with a
+//! `name.excalidraw.svg` preview next to them (see [`crate::drawings`]).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,9 @@ pub const DIR_NAME: &str = "attachments";
 
 /// Image types embedded as `![[…]]`; other files are not attachments here.
 pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg"];
+
+/// Excalidraw scenes, embedded as `![[name.excalidraw]]` (Obsidian Excalidraw plugin).
+pub const DRAWING_EXTENSION: &str = "excalidraw";
 
 /// Upper bound for one attachment.
 pub const MAX_BYTES: usize = 50 * 1024 * 1024;
@@ -41,6 +45,16 @@ pub fn image_extension(name: &str) -> Option<String> {
     IMAGE_EXTENSIONS.contains(&ext.as_str()).then_some(ext)
 }
 
+/// A drawing scene (`.excalidraw`, any case).
+pub fn is_drawing(name: &str) -> bool {
+    Path::new(name).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(DRAWING_EXTENSION))
+}
+
+/// Files that `![[name]]` embeds instead of linking a page: images and drawings.
+pub fn embeddable(name: &str) -> bool {
+    image_extension(name).is_some() || is_drawing(name)
+}
+
 fn ext_for_mime(mime: &str) -> Option<&'static str> {
     Some(match mime.to_ascii_lowercase().as_str() {
         "image/png" => "png",
@@ -54,6 +68,9 @@ fn ext_for_mime(mime: &str) -> Option<&'static str> {
 
 /// MIME type served for an attachment file name.
 pub fn mime_for(name: &str) -> &'static str {
+    if is_drawing(name) {
+        return "application/json";
+    }
     match image_extension(name).as_deref() {
         Some("png") => "image/png",
         Some("jpg" | "jpeg") => "image/jpeg",
@@ -99,11 +116,7 @@ pub fn save(attachments_dir: &Path, bytes: &[u8], name: &str, mime: &str) -> Res
 /// Resolves a requested file name to a file inside `attachments_dir`.
 /// Only plain names are accepted: no separators, no `..`, no hidden files.
 pub fn resolve(attachments_dir: &Path, name: &str) -> Option<PathBuf> {
-    if name.is_empty()
-        || name.starts_with('.')
-        || name.contains(['/', '\\', ':', '\0'])
-        || image_extension(name).is_none()
-    {
+    if name.is_empty() || name.starts_with('.') || name.contains(['/', '\\', ':', '\0']) || !embeddable(name) {
         return None;
     }
     let path = attachments_dir.join(name);
@@ -131,7 +144,8 @@ pub fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// Image names embedded as `![[name]]` (the part before `|`, without folders).
+/// Attachment names embedded as `![[name]]` (the part before `|`, without folders).
+/// A drawing brings its SVG preview along.
 pub fn embeds(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     let mut rest = markdown;
@@ -140,8 +154,11 @@ pub fn embeds(markdown: &str) -> Vec<String> {
         let Some(end) = after.find("]]") else { break };
         let target = after[..end].split('|').next().unwrap_or("").trim();
         let base = target.rsplit(['/', '\\']).next().unwrap_or(target);
-        if image_extension(base).is_some() && !out.iter().any(|n| n == base) {
+        if embeddable(base) && !out.iter().any(|n| n == base) {
             out.push(base.to_owned());
+            if is_drawing(base) {
+                out.push(format!("{base}.svg"));
+            }
         }
         rest = &after[end + 2..];
     }
@@ -187,6 +204,7 @@ mod tests {
             ".hidden.png",
             "",
             "x.txt",
+            "x.excalidraw.md",
             "C:secret.png",
             "missing.png",
         ] {
@@ -199,7 +217,9 @@ mod tests {
 
     #[test]
     fn finds_image_embeds() {
-        let md = "![[a.png]] ![[Ordner/b.JPG|300]] ![[Notiz]] [[c.png]] ![[a.png]]";
-        assert_eq!(embeds(md), ["a.png", "b.JPG"]);
+        let md = "![[a.png]] ![[Ordner/b.JPG|300]] ![[Notiz]] [[c.png]] ![[a.png]] ![[Skizze 1.excalidraw]]";
+        assert_eq!(embeds(md), ["a.png", "b.JPG", "Skizze 1.excalidraw", "Skizze 1.excalidraw.svg"]);
+        assert!(embeddable("x.Excalidraw") && embeddable("x.excalidraw.svg") && !embeddable("x.excalidraw.md"));
+        assert_eq!(mime_for("x.excalidraw"), "application/json");
     }
 }
