@@ -414,14 +414,61 @@ fn attachment_save(
     attachments::save(&state.attachments_dir(), &bytes, &name, mime.as_deref().unwrap_or(""))
 }
 
-/// Opens an image of the attachments folder in its default app, or shows it in the file
-/// manager (`reveal`). Only names inside that folder are accepted.
+/// Header with the percent-encoded file name of [`attachment_store`] (header values are ASCII).
+const NAME_HEADER: &str = "x-annalo-name";
+
+/// Stores a dropped or pasted file under its own (sanitized) name. The body is the raw file
+/// (no base64 round trip for files up to 100 MB), the name comes in [`NAME_HEADER`].
+/// Async, so hashing and writing a large file does not block the main thread.
+#[tauri::command]
+async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<SavedAttachment> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(Error::State("Dateiinhalt fehlt".into()));
+    };
+    let name = request
+        .headers()
+        .get(NAME_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(attachments::percent_decode)
+        .ok_or_else(|| Error::State("Dateiname fehlt".into()))?;
+    attachments::store_file(&state.attachments_dir(), &name, bytes)
+}
+
+/// Copies a file chosen in the file dialog into the attachments folder (streamed, by path).
+#[tauri::command]
+async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<SavedAttachment> {
+    let dir = state.attachments_dir();
+    tauri::async_runtime::spawn_blocking(move || attachments::import_file(&dir, std::path::Path::new(&path)))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+}
+
+/// The bytes of an attachment as a raw IPC response (PDF preview and viewer).
+#[tauri::command]
+async fn attachment_read(state: State<'_, AppState>, name: String) -> Result<tauri::ipc::Response> {
+    let path = attachments::resolve(&state.attachments_dir(), &name)
+        .ok_or_else(|| Error::not_found("attachment", name.clone()))?;
+    if std::fs::metadata(&path)?.len() > attachments::MAX_FILE_BYTES {
+        return Err(Error::State(format!("„{name}“ ist zu groß für die Vorschau")));
+    }
+    Ok(tauri::ipc::Response::new(std::fs::read(path)?))
+}
+
+/// Size in bytes of an attachment, `None` when the file is missing (file chips).
+#[tauri::command]
+fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
+    attachments::resolve(&state.attachments_dir(), &name).and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len())
+}
+
+/// Opens a file of the attachments folder in its default app, or shows it in the file
+/// manager (`reveal`). Only names inside that folder are accepted. Programs and scripts are
+/// always only shown in the file manager, never started.
 #[tauri::command]
 fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     let path = attachments::resolve(&state.attachments_dir(), &name)
         .ok_or_else(|| Error::not_found("attachment", name.clone()))?;
-    let opened = if reveal {
+    let opened = if reveal || attachments::is_executable(&name) {
         app.opener().reveal_item_in_dir(&path)
     } else {
         app.opener().open_path(path.display().to_string(), None::<&str>)
@@ -2386,6 +2433,10 @@ pub fn run() {
             template_render,
             page_from_template,
             attachment_save,
+            attachment_store,
+            attachment_import,
+            attachment_read,
+            attachment_size,
             drawing_create,
             drawing_read,
             drawing_save,

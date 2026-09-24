@@ -35,7 +35,7 @@ Notizen auch ohne Annalo lesbar bleiben. Er wird bei jeder Sicherung\r
 vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 \r
 - Jede Seite ist eine Markdown-Datei (.md), Unterseiten liegen im gleichnamigen Ordner.\r
-- Eingebettete Bilder liegen in attachments/.\r
+- Eingebettete Bilder, Zeichnungen und Dateien liegen in attachments/.\r
 - Zeiterfassung/JJJJ-MM.csv enthält die abgeschlossenen Buchungen je Monat\r
   (Semikolon getrennt, Dezimalkomma, UTF-8 – lässt sich direkt in Excel öffnen).\r
 \r
@@ -53,7 +53,7 @@ pub struct MirrorReport {
     pub created_at: DateTime<Local>,
 }
 
-/// Rebuilds the mirror at `target` from `db` (images from `attachments_dir`).
+/// Rebuilds the mirror at `target` from `db` (attachments from `attachments_dir`).
 /// `offset` decides the local day and month of each booking.
 pub fn write_mirror<Tz: TimeZone>(
     db: &Database,
