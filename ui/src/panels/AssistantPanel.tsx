@@ -2,12 +2,12 @@
 // sources, cost/speed metrics and approval-gated tools.
 
 import { streamingOn, warnCost, withCostLimit } from "../lib/aicost";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X, AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw, History } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
 import { aiErrorSummary } from "../lib/aierror";
-import { renderMarkdown } from "../lib/markdown";
+import { renderMarkdown, renderMarkdownCached } from "../lib/markdown";
 import { citedNumbers, linkCitations } from "../lib/citations";
 import { revealText } from "../editor/reveal";
 import { previewMarkdown } from "../components/LinkPreview";
@@ -92,7 +92,9 @@ export function AssistantPanel() {
   const s = useApp.getState;
 
   const pageContext = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
-  const suggestions = useSuggestions(pageContext);
+  // Suggestions are shown in an empty chat of the visible assistant tab only.
+  const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
+  const suggestions = useSuggestions(pageContext, shown && turns.length === 0);
 
   const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Turn) : t)));
 
@@ -642,7 +644,8 @@ function ErrorNote({ message }: { message: string }) {
   );
 }
 
-function TurnView({ turn }: { turn: Turn }) {
+// Earlier turns keep their objects while an answer streams in, so only the streaming one renders.
+const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
   const s = useApp.getState;
   const [copied, setCopied] = useState(false);
   const [cite, setCite] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -703,7 +706,7 @@ function TurnView({ turn }: { turn: Turn }) {
   // A huge answer is shown shortened (rendering megabytes of Markdown freezes the window).
   const cut = turn.text.length > MAX_SHOWN;
   const shown = cut ? turn.text.slice(0, MAX_SHOWN) : turn.text;
-  const html = turn.streaming ? renderMarkdown(shown) : linkCitations(renderMarkdown(shown), sources.length);
+  const html = turn.streaming ? renderMarkdown(shown) : linkCitations(renderMarkdownCached(shown), sources.length);
   const chipSources = dedupeSources([...cited.map((n) => sources[n - 1]), ...sources]);
   const numberOf = (src: ContextChunk) => sources.indexOf(src) + 1;
   return (
@@ -821,7 +824,7 @@ function TurnView({ turn }: { turn: Turn }) {
       )}
     </div>
   );
-}
+});
 
 function dedupeSources(src: ContextChunk[]) {
   const seen = new Set<string>();

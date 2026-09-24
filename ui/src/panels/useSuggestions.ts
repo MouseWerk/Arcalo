@@ -1,5 +1,6 @@
 // Loads what the assistant's suggestions are built from (tasks, this week's bookings, budget
-// warnings, the open page's Vorgang). Reloaded when entries or the open page change.
+// warnings, the open page's Vorgang). Reloaded when entries or the open page change, and only
+// while the suggestions are shown: a hidden assistant does no work on every page switch.
 
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
@@ -11,15 +12,20 @@ import type { PageDoc } from "../lib/types";
 
 const FALLBACK: Suggestion[] = buildSuggestions({ now: new Date(), page: null, overdue: 0, dueToday: 0, openTasks: 0, gapDays: [], budget: null, hasBookings: false });
 
-export function useSuggestions(page: PageDoc | null): Suggestion[] {
+/** Pause after a page change before loading (a tab switch changes the page twice). */
+const SETTLE_MS = 250;
+
+export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[] {
   const entriesVersion = useApp((s) => s.entriesVersion);
   const settings = useApp((s) => s.settings?.settings);
   const [list, setList] = useState<Suggestion[]>(FALLBACK);
   const pageId = page?.id ?? null;
   const pageTitle = page?.title ?? null;
   useEffect(() => {
+    if (!shown) return;
     let alive = true;
-    (async () => {
+    const timer = window.setTimeout(async () => {
+      if (!alive) return;
       const now = new Date();
       const today = isoDay(now);
       const monday = weekStart(now);
@@ -47,10 +53,11 @@ export function useSuggestions(page: PageDoc | null): Suggestion[] {
         hasBookings: week.bookedMinutes > 0,
       });
       if (alive) setList(next);
-    })();
+    }, SETTLE_MS);
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
-  }, [pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays]);
+  }, [shown, pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays]);
   return list;
 }

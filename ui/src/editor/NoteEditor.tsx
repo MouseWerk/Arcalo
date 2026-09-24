@@ -37,6 +37,8 @@ import type { PageDoc } from "../lib/types";
 import { keys } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
+import { flushAllEditors, registerFlusher, trackSave } from "./saves";
+import { titleSet } from "../lib/links";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -93,6 +95,9 @@ async function largePaste(editor: Editor, text: string, from: number, to: number
   }
 }
 
+/** Document size above which the outline and word count wait for a pause in typing. */
+const LONG_NOTE = 20_000;
+
 /** Autosave delay after the last change (Settings → Editor, 250–3000 ms). */
 const saveDelay = () => Math.min(3000, Math.max(250, useApp.getState().settings?.settings.editor?.autosave_ms ?? 450));
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
@@ -111,34 +116,8 @@ export interface NoteEditorHandle {
 /** Asks the page view of `pageId` for „Besprechung zusammenfassen“ (slash command). */
 export const MEETING_SUMMARY_EVENT = "annalo:meeting-summary";
 
-// Flush handles of all mounted editors (rename, window close).
-const flushers = new Set<() => Promise<void>>();
-
-// Saves still on their way, also of editors that were closed meanwhile: whoever reads the
-// page next (a mode switch, a reload) waits for them.
-const pendingSaves = new Set<Promise<unknown>>();
-
-/** Registers a running save with `flushAllEditors`. */
-export function trackSave<T>(p: Promise<T>): Promise<T> {
-  pendingSaves.add(p);
-  p.then(
-    () => pendingSaves.delete(p),
-    () => pendingSaves.delete(p),
-  );
-  return p;
-}
-
-/** Saves pending edits of every open editor; rejects if one of them could not be saved. */
-export async function flushAllEditors() {
-  await Promise.all([...flushers].map((f) => f()));
-  await Promise.allSettled([...pendingSaves]);
-}
-
-/** Adds a save handle to `flushAllEditors` (the Markdown source editor); returns the removal. */
-export function registerFlusher(f: () => Promise<void>) {
-  flushers.add(f);
-  return () => void flushers.delete(f);
-}
+// Pending saves live in saves.ts (a small module the page modes can import directly).
+export { flushAllEditors, registerFlusher, trackSave };
 
 /** Editors showing one of `ids` (all when omitted) refetch their page, unless they hold unsaved edits. */
 export function reloadEditors(ids?: number[]) {
@@ -159,7 +138,8 @@ export function NoteEditor({
   /** Where the toolbar goes (the page's header row); in the note itself without one. */
   toolbarSlot?: HTMLElement | null;
   doc: PageDoc;
-  onSaved: (doc: PageDoc) => void;
+  /** After a save: what the server answered and the Markdown that was stored. */
+  onSaved: (saved: PageDoc, content: string) => void;
   onOpenLink: (target: string, newTab: boolean) => void;
   onOpenTag: (tag: string) => void;
   /** The frontmatter changed from outside (another pane, a reload). */
@@ -196,6 +176,13 @@ export function NoteEditor({
   };
 
   const busy = () => dirty.current || saving.current !== null;
+  // Outline and word count after typing: at once in short notes, after a pause in long ones.
+  const outlineTimer = useRef<number | undefined>(undefined);
+  const scheduleOutline = (editor: Editor) => {
+    window.clearTimeout(outlineTimer.current);
+    if (editor.state.doc.content.size < LONG_NOTE) return publishOutline(editor);
+    outlineTimer.current = window.setTimeout(() => !editor.isDestroyed && activeRef.current && publishOutline(editor), 300);
+  };
   // The page as last stored in common with other panes: the base when both changed it.
   const base = useRef(doc.content);
   // Counts merges of other panes' content; a save started before one does not become the base.
@@ -256,7 +243,7 @@ export function NoteEditor({
       .then((saved) => {
         failed.current = false;
         if (merges.current === mergesBefore) base.current = md;
-        cb.current.onSaved(saved);
+        cb.current.onSaved(saved, md);
         // Other panes showing the same page pick up the new content.
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
         if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");
@@ -285,11 +272,7 @@ export function NoteEditor({
       extensions: buildExtensions({
         onOpenLink: (t, newTab) => cb.current.onOpenLink(t, newTab),
         onOpenTag: (t) => cb.current.onOpenTag(t),
-        isKnown: (t) => {
-          const lower = t.toLowerCase();
-          for (const p of useApp.getState().pages.values()) if (p.title.toLowerCase() === lower) return true;
-          return false;
-        },
+        isKnown: (t) => titleSet(useApp.getState().pages).has(t.toLowerCase()),
         searchPages: async (q) => {
           const pages = [...useApp.getState().pages.values()];
           const lower = q.toLowerCase().trim();
@@ -303,7 +286,7 @@ export function NoteEditor({
             .slice(0, 8)
             .map((p) => pageSuggestItem(p, p.parent_id ? useApp.getState().pages.get(p.parent_id)?.title : undefined));
           const items: LinkSuggestItem[] = matches;
-          if (lower && !pages.some((p) => p.title.toLowerCase() === lower)) {
+          if (lower && !titleSet(useApp.getState().pages).has(lower)) {
             items.push({ id: "create", title: `„${q.trim()}“ neu verlinken`, subtitle: "Seite wird beim Öffnen angelegt", target: q.trim(), create: true });
           }
           return items;
@@ -481,12 +464,15 @@ export function NoteEditor({
           return false;
         },
       },
-      onUpdate: ({ editor }) => {
+      onUpdate: ({ editor, transaction }) => {
+        // Only what a plugin added on its own (the empty paragraph after a final code block or
+        // table when the note opens): nothing of the note changed, nothing to save.
+        if (!transaction.docChanged) return;
         dirty.current = true;
         setStatus("dirty");
         window.clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
-        if (activeRef.current) publishOutline(editor);
+        if (activeRef.current) scheduleOutline(editor);
       },
       onCreate: ({ editor }) => activeRef.current && publishOutline(editor),
       // Other panes with this page store their edits first, so we continue from them.
@@ -515,7 +501,7 @@ export function NoteEditor({
       saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
     };
     handleRef?.({ editor, flush: flushNow, setFrontmatter });
-    flushers.add(flushNow);
+    const unflush = registerFlusher(flushNow);
     const unregister = registerEditor(doc.id, editor);
     const flush = () => {
       window.clearTimeout(saveTimer.current);
@@ -525,11 +511,12 @@ export function NoteEditor({
     unmounted.current = false;
     return () => {
       unregister();
-      flushers.delete(flushNow);
+      unflush();
       window.removeEventListener("blur", flush);
       flush();
       unmounted.current = true;
       window.clearTimeout(saveTimer.current);
+      window.clearTimeout(outlineTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
@@ -538,15 +525,19 @@ export function NoteEditor({
   useEffect(() => {
     if (!editor || !active) return;
     publishOutline(editor);
-    useApp.getState().set({
-      scrollToPos: (pos) => {
-        editor.chain().focus().setTextSelection(pos + 1).run();
-        const dom = editor.view.domAtPos(pos + 1).node as HTMLElement;
-        (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      },
-    });
-    // No stale count once this editor is gone or another pane is focused (that one publishes its own).
-    return () => useApp.getState().set({ editorStats: null });
+    const scrollToPos = (pos: number) => {
+      if (editor.isDestroyed) return;
+      editor.chain().focus().setTextSelection(pos + 1).run();
+      const dom = editor.view.domAtPos(pos + 1).node as HTMLElement;
+      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    useApp.getState().set({ scrollToPos });
+    // No stale count once this editor is gone or another pane is focused (that one publishes its own),
+    // and no jump function that keeps a closed editor alive.
+    return () => {
+      const st = useApp.getState();
+      st.set(st.scrollToPos === scrollToPos ? { editorStats: null, scrollToPos: null } : { editorStats: null });
+    };
   }, [editor, active]);
 
   // Same page open in another pane: take over its saved content unless we have unsaved

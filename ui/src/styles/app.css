@@ -1694,3 +1694,8 @@ body.presenter-window .presenter { height: 100vh; }
 .slide-content .slide-footnotes { margin-top: 1.4em; padding-top: 0.5em; border-top: 1px solid var(--border-strong); font-size: 0.56em; line-height: 1.45; color: var(--text-2); }
 .slide-content .slide-footnotes > * + * { margin-top: 0.25em; }
 .slide-content .slide-footnotes sup.slide-fn { font-size: 0.8em; }
+
+/* ---- large lists (virtualized) ---- */
+
+.tree.is-virtual { position: relative; }
+.view-loading { min-height: 40vh; }

@@ -8,17 +8,22 @@ import { Home, TabIcon, tabTitle } from "./Shell";
 import { Resizer } from "./Resizer";
 import { ViewHeader } from "./ViewHeader";
 import { PageView } from "../views/PageView";
-import { TimesheetView } from "../views/TimesheetView";
-import { ProjectsView } from "../views/ProjectsView";
-import { SettingsView } from "../views/SettingsView";
-import { TagView } from "../views/TagView";
 import { TrashView } from "../views/TrashView";
-import { TasksView } from "../views/TasksView";
-import { ActivityView } from "../views/ActivityView";
-import { AttachmentsView } from "../views/AttachmentsView";
 import { ConflictView } from "../views/ConflictView";
 import { storeFile } from "../lib/api";
 import { isPdfName } from "../editor/fileEmbed";
+import { lazyView, preloadWhenIdle } from "./lazyView";
+
+// Views other than pages load when first opened (a smaller script at start), or in the
+// background once the app is idle.
+const TimesheetView = lazyView(() => import("../views/TimesheetView").then((m) => m.TimesheetView));
+const ProjectsView = lazyView(() => import("../views/ProjectsView").then((m) => m.ProjectsView));
+const SettingsView = lazyView(() => import("../views/SettingsView").then((m) => m.SettingsView));
+const TagView = lazyView<{ tag: string }>(() => import("../views/TagView").then((m) => m.TagView));
+const TasksView = lazyView(() => import("../views/TasksView").then((m) => m.TasksView));
+const ActivityView = lazyView(() => import("../views/ActivityView").then((m) => m.ActivityView));
+const AttachmentsView = lazyView(() => import("../views/AttachmentsView").then((m) => m.AttachmentsView));
+const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView];
 
 // The PDF viewer (with pdf.js) loads when a PDF tab is shown.
 const PdfPane = lazy(() => import("../editor/PdfViewer").then((m) => ({ default: m.PdfPane })));
@@ -55,6 +60,7 @@ export function Workspace() {
   const activePaneId = useApp((s) => s.activePaneId);
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<number[] | null>(null);
+  useEffect(() => preloadWhenIdle(LAZY_VIEWS), []);
 
   const resize = (i: number, dx: number) => {
     const width = box.current?.clientWidth ?? 1;
@@ -158,7 +164,9 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
         <>
           <ViewHeader tab={tab} title="" />
           <div className="view-body">
-            <ActivityView />
+            <Suspense fallback={<div className="view-loading" aria-busy="true" />}>
+              <ActivityView />
+            </Suspense>
           </div>
         </>
       );
@@ -174,6 +182,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
           {/* These views open with their own heading; the tab names them too. */}
           <ViewHeader tab={tab} title="" />
           <div className="view-body">
+            <Suspense fallback={<div className="view-loading" aria-busy="true" />}>
             {tab.kind === "timesheet" && <TimesheetView />}
             {tab.kind === "projects" && <ProjectsView />}
             {tab.kind === "settings" && <SettingsView />}
@@ -182,6 +191,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "tasks" && <TasksView />}
             {tab.kind === "attachments" && <AttachmentsView />}
             {tab.kind === "conflict" && <ConflictView pageId={tab.pageId!} />}
+            </Suspense>
           </div>
         </>
       );

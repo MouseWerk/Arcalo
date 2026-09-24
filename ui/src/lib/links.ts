@@ -21,3 +21,16 @@ export function outgoingLinks(md: string): OutgoingLinks {
   }
   return { pages: [...pages.values()], files: [...files.values()] };
 }
+
+const titleSets = new WeakMap<Map<number, { title: string }>, Set<string>>();
+
+/** Lower-cased titles of `pages`, built once per page map (the store replaces it on changes). */
+export function titleSet(pages: Map<number, { title: string }>): Set<string> {
+  let set = titleSets.get(pages);
+  if (!set) {
+    set = new Set();
+    for (const p of pages.values()) set.add(p.title.toLowerCase());
+    titleSets.set(pages, set);
+  }
+  return set;
+}

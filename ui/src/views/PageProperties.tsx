@@ -10,7 +10,7 @@ import { Badge, Button, IconButton, Progress, useMenu, type MenuEntry } from "..
 import { DATE_RE, LIST_KEYS, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
 import { dateShort, fmtHours, fmtMinutes } from "../lib/format";
 import { NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
-import { LEVEL } from "./ProjectsView";
+import { LEVEL } from "./wbs";
 import type { PageWork } from "../lib/types";
 import { SuggestionPopup, type PopupHandle } from "../editor/suggestion-popup";
 import { pickDate } from "../components/CalendarPopover";

@@ -1,6 +1,7 @@
 // Per-page view choices kept on this device: full width, and the Markdown source mode.
 
 import { useSyncExternalStore } from "react";
+import { flushAllEditors } from "../editor/saves";
 
 type Mode = "full" | "source";
 const KEY: Record<Mode, string> = { full: "annalo.page-full", source: "annalo.page-source" };
@@ -49,7 +50,6 @@ export const requestPageCommand = (cmd: PageCommand) => window.dispatchEvent(new
 
 /** Visual editor or Markdown source: every editor saves first, so neither shows an old state. */
 export async function togglePageSource(id: number) {
-  const { flushAllEditors } = await import("../editor/NoteEditor");
   await flushAllEditors().catch(() => {});
   setPageMode("source", id, !pageMode("source", id));
 }

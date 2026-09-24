@@ -19,7 +19,8 @@ import {
 } from "../lib/activity";
 import type { Activity, FeedSummary } from "../lib/types";
 
-const PREF = "annalo.activity";
+import { ACTIVITY_PREF as PREF } from "./activityDay";
+export { openActivityDay } from "./activityDay";
 interface Prefs {
   preset: RangePreset;
   from: string;
@@ -44,17 +45,6 @@ const GROUP_ICON: Record<KindGroup, typeof FileText> = {
   focus: Target,
   system: Database,
 };
-
-/** Opens the feed on `iso` („Was habe ich am … gemacht?“). */
-export function openActivityDay(iso: string) {
-  try {
-    localStorage.setItem(PREF, JSON.stringify({ preset: "day", from: iso, to: iso }));
-  } catch {
-    /* ignore */
-  }
-  window.dispatchEvent(new CustomEvent("annalo:activity-day", { detail: iso }));
-  useApp.getState().openTab({ kind: "activity" });
-}
 
 export function ActivityView() {
   const s = useApp.getState;

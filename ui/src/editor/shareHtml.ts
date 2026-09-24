@@ -7,6 +7,7 @@
 import { Editor } from "@tiptap/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { buildExtensions, lowlight } from "./schema";
+import { ensureLanguages } from "./languages";
 import { splitFrontmatter } from "./extensions";
 import { tocTree, type TocTree } from "./blocks";
 import { baseName, formatSize } from "./fileEmbed";
@@ -237,7 +238,9 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   // Columns and code highlighting.
   for (const c of root.querySelectorAll("div[data-columns]")) c.removeAttribute("data-columns");
   for (const c of root.querySelectorAll("div[data-column]")) c.removeAttribute("data-column");
-  for (const code of root.querySelectorAll<HTMLElement>("pre > code")) {
+  const codes = [...root.querySelectorAll<HTMLElement>("pre > code")];
+  await ensureLanguages(codes.map((code) => /language-([\w-]+)/.exec(code.className)?.[1] ?? ""));
+  for (const code of codes) {
     const lang = /language-([\w-]+)/.exec(code.className)?.[1];
     if (!lang || !lowlight.registered(lang)) continue;
     const tree = lowlight.highlight(lang, code.textContent ?? "");

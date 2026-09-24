@@ -15,3 +15,21 @@ export function renderMarkdown(md: string): string {
   const html = marked.parse(withLinks, { async: false }) as string;
   return DOMPurify.sanitize(html, { ADD_ATTR: ["data-wikilink", "data-target", "target"] });
 }
+
+// Rendered answers by text: a long conversation renders each finished answer once.
+const cache = new Map<string, string>();
+const CACHE_SIZE = 300;
+
+/** `renderMarkdown`, remembered for the last few hundred texts. */
+export function renderMarkdownCached(md: string): string {
+  const hit = cache.get(md);
+  if (hit !== undefined) {
+    cache.delete(md);
+    cache.set(md, hit);
+    return hit;
+  }
+  const html = renderMarkdown(md);
+  cache.set(md, html);
+  if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
+  return html;
+}

@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Select } from "../components/ui";
-import type { ProjectTree } from "../lib/types";
+import { Select, type Tone } from "../components/ui";
+import type { AlertLevel, ProjectTree } from "../lib/types";
+
+/** Budget levels as badges show them. */
+export const LEVEL: Record<AlertLevel, { label: string; tone: Tone }> = {
+  ok: { label: "Im Plan", tone: "success" },
+  warning: { label: "Warnung", tone: "warning" },
+  critical: { label: "Kritisch", tone: "danger" },
+  exceeded: { label: "Überschritten", tone: "danger" },
+};
 
 export function useWbs() {
   const version = useApp((s) => s.wbsVersion);

@@ -11,14 +11,21 @@ import type { PageDoc } from "../lib/types";
 /** Settings → Editor: hover preview on/off and its delay. */
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
 const PREVIEW_CHARS = 900;
+// Pages previewed in the last seconds; expired ones are dropped (they hold whole pages).
 const cache = new Map<string, { at: number; doc: PageDoc | null }>();
+const CACHE_MS = 10_000;
+const CACHE_MAX = 30;
 
 async function load(target: string): Promise<PageDoc | null> {
   const hit = cache.get(target.toLowerCase());
-  if (hit && Date.now() - hit.at < 10_000) return hit.doc;
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.doc;
   const page = await api.resolvePage(target, false);
   const doc = page ? await api.page(page.id) : null;
-  cache.set(target.toLowerCase(), { at: Date.now(), doc });
+  const now = Date.now();
+  for (const [k, v] of cache) if (now - v.at >= CACHE_MS) cache.delete(k);
+  cache.delete(target.toLowerCase());
+  cache.set(target.toLowerCase(), { at: now, doc });
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return doc;
 }
 

@@ -29,6 +29,7 @@ import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
 import { keys } from "../lib/shortcut";
 import { hint, withHint } from "../lib/keymap";
+import { withSaved } from "../lib/pagesave";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   const [doc, setDoc] = useState<PageDoc | null>(null);
@@ -51,6 +52,12 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   const root = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
+  // The Markdown this page's editor stored last: its own save event needs no reload.
+  const ownSave = useRef<string | null>(null);
+  const onOwnSave = useCallback((saved: PageDoc, content: string) => {
+    ownSave.current = content;
+    setDoc((cur) => (cur ? withSaved(cur, saved, content) : cur));
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -179,7 +186,10 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   useEffect(() => {
     const refresh = () =>
       api.page(pageId).then((fresh) => setDoc((cur) => (cur ? { ...cur, tags: fresh.tags, backlinks: fresh.backlinks, unresolved_links: fresh.unresolved_links, content: fresh.content, updated_at: fresh.updated_at } : cur))).catch(() => {});
-    const onSaved = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === pageId && refresh();
+    const onSaved = (e: Event) => {
+      const d = (e as CustomEvent<{ id: number; content?: string }>).detail;
+      if (d.id === pageId && d.content !== ownSave.current) refresh();
+    };
     const onReload = (e: Event) => {
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
       if (!ids || ids.includes(pageId)) refresh();
@@ -273,10 +283,9 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
             key={`source-${doc.id}`}
             active={active}
             doc={doc}
-            onSaved={(d) => {
-              setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
-              setFm(splitFrontmatter(d.content).frontmatter);
-              if (activeRef.current) useApp.getState().set({ activeDoc: d });
+            onSaved={(saved, content) => {
+              onOwnSave(saved, content);
+              setFm(splitFrontmatter(content).frontmatter);
             }}
           />
         ) : (
@@ -285,10 +294,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           key={doc.id}
           active={active}
           doc={doc}
-          onSaved={(d) => {
-            setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
-            if (activeRef.current) useApp.getState().set({ activeDoc: d });
-          }}
+          onSaved={onOwnSave}
           onOpenLink={openLink}
           onOpenTag={openTag}
           handleRef={(h) => (handle.current = h)}

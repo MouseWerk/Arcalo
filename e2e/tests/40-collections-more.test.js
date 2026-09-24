@@ -12,6 +12,19 @@ after(async () => app?.close());
 const content = async (id) => (await app.invoke("page_get", { id })).content;
 const ready = () => app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
 const openTree = async (title) => {
+  // A large tree renders only the rows in view: scroll through it until the row is there.
+  await app.browser.executeAsync((t, done) => {
+    const sc = document.querySelector(".sidebar .sidebar-scroll");
+    const has = () => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.textContent.trim() === t);
+    const step = (top) => {
+      const row = has();
+      if (row) return (row.scrollIntoView({ block: "nearest" }), setTimeout(done, 100));
+      if (top > sc.scrollHeight) return done();
+      sc.scrollTop = top;
+      setTimeout(() => step(top + sc.clientHeight / 2), 60);
+    };
+    step(0);
+  }, title);
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === title) return r.click();
   throw new Error(`no ${title}`);
 };

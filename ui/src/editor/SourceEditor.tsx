@@ -35,7 +35,7 @@ export function mapCaret(a: string, b: string, at: number): number {
   return b.length - tail;
 }
 
-export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; onSaved: (d: PageDoc) => void; active?: boolean }) {
+export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; onSaved: (saved: PageDoc, content: string) => void; active?: boolean }) {
   const [value, setValue] = useState(doc.content);
   const ref = useRef<HTMLTextAreaElement>(null);
   const dirty = useRef(false);
@@ -61,7 +61,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       .then(() => api.savePage(doc.id, content))
       .then((saved) => {
         if (merges.current === mergesBefore) base.current = content;
-        cb.current(saved);
+        cb.current(saved, content);
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
       })
       .catch((e) => {

@@ -1,6 +1,6 @@
 // Left sidebar: navigation, favorites, page tree (drag & drop), tags, timer.
 
-import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, MoreHorizontal, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
   ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
@@ -18,6 +18,7 @@ import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
 import { stripMarkdown } from "../lib/plaintext";
+import { treeWindow } from "../lib/treeWindow";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -305,6 +306,9 @@ function TodayHours() {
 
 type DropPos = "before" | "inside" | "after";
 
+/** Trees with this many visible rows render only the rows in view (plus a margin). */
+const VIRTUAL_ROWS = 150;
+
 /** Handlers of a tree row; one stable object, so rows can skip re-rendering. */
 interface RowActions {
   toggle: (id: number) => void;
@@ -312,6 +316,7 @@ interface RowActions {
   menu: (n: PageNode, e: React.MouseEvent) => void;
   menuAt: (n: PageNode, e: React.MouseEvent) => void;
   key: (n: PageNode, e: React.KeyboardEvent<HTMLDivElement>) => void;
+  focus: (n: PageNode) => void;
   dragStart: (n: PageNode, e: DragEvent) => void;
   dragEnd: () => void;
   dragOver: (n: PageNode, e: DragEvent<HTMLDivElement>) => void;
@@ -321,7 +326,8 @@ interface RowActions {
 
 /**
  * The visible rows are rendered flat (with `aria-level`), each memoized: switching tabs only
- * re-renders the old and the new active row, collapsing one folder only that row.
+ * re-renders the old and the new active row, collapsing one folder only that row. A large tree
+ * renders only the rows in view, positioned in a box of the full height.
  */
 function PageTree({
   nodes,
@@ -523,11 +529,24 @@ function PageTree({
 
   // Keyboard: arrows move between visible rows, Left/Right collapse/expand, Enter opens.
   const treeRef = useRef<HTMLDivElement>(null);
-  const focusRow = (id: number | null | undefined) => id != null && treeRef.current?.querySelector<HTMLElement>(`.tree-row[data-id="${id}"]`)?.focus();
+  // A row to focus once it is rendered (a large tree renders only the rows in view).
+  const pendingFocus = useRef<number | null>(null);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const focusRow = (id: number | null | undefined) => {
+    if (id == null) return;
+    const el = treeRef.current?.querySelector<HTMLElement>(`.tree-row[data-id="${id}"]`);
+    if (el) {
+      el.focus();
+      if (virtual) el.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    pendingFocus.current = id;
+    setFocusedId(id);
+  };
   const onRowKey = (e: React.KeyboardEvent<HTMLDivElement>, n: PageNode) => {
     if (menu || e.target !== e.currentTarget) return;
-    const rows = [...(treeRef.current?.querySelectorAll<HTMLElement>(".tree-row[data-id]") ?? [])];
-    const i = rows.indexOf(e.currentTarget);
+    const i = rows.findIndex((r) => r.node.id === n.id);
+    const at = (k: number) => rows[k]?.node.id;
     const open = n.children.length > 0 && !collapsed.has(n.id);
     const key = e.key;
     if ((e.shiftKey && key === "F10") || key === "ContextMenu") {
@@ -536,10 +555,10 @@ function PageTree({
     }
     const handled = () => e.preventDefault();
     if (key === "Enter" || key === " ") (handled(), s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }));
-    else if (key === "ArrowDown") (handled(), rows[i + 1]?.focus());
-    else if (key === "ArrowUp") (handled(), rows[i - 1]?.focus());
-    else if (key === "Home") (handled(), rows[0]?.focus());
-    else if (key === "End") (handled(), rows[rows.length - 1]?.focus());
+    else if (key === "ArrowDown") (handled(), focusRow(at(i + 1)));
+    else if (key === "ArrowUp") (handled(), focusRow(at(i - 1)));
+    else if (key === "Home") (handled(), focusRow(at(0)));
+    else if (key === "End") (handled(), focusRow(at(rows.length - 1)));
     else if (key === "ArrowRight") {
       handled();
       if (n.children.length && !open) toggle(n.id);
@@ -552,8 +571,8 @@ function PageTree({
   };
 
   // The latest closures, reached through one stable object.
-  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag });
-  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag };
+  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId });
+  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId };
   const actions = useMemo<RowActions>(
     () => ({
       toggle: (id) => latest.current.toggle(id),
@@ -561,6 +580,7 @@ function PageTree({
       menu: (n, e) => latest.current.openMenu(e, latest.current.menuItems(n)),
       menuAt: (n, e) => latest.current.openMenuAt(e, latest.current.menuItems(n)),
       key: (n, e) => latest.current.onRowKey(e, n),
+      focus: (n) => latest.current.setFocusedId(n.id),
       dragStart: (n, e) => {
         e.dataTransfer.effectAllowed = "move";
         // Own type, so dropping into the editor does not paste the id as text.
@@ -605,20 +625,86 @@ function PageTree({
 
   const focusable = activePageId != null && s().pages.has(activePageId) ? activePageId : nodes[0]?.id;
 
+  // Large trees: the scroll position of the sidebar decides which rows exist.
+  const virtual = rows.length >= VIRTUAL_ROWS;
+  const [view, setView] = useState({ top: 0, height: 900, rowH: 28 });
+  useLayoutEffect(() => {
+    const tree = treeRef.current;
+    const scroller = tree?.closest<HTMLElement>(".sidebar-scroll");
+    if (!virtual || !tree || !scroller) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const offset = tree.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      const rowH = parseFloat(getComputedStyle(tree).getPropertyValue("--tree-row-h")) || 28;
+      const next = { top: scroller.scrollTop - offset, height: scroller.clientHeight, rowH };
+      setView((v) => (v.top === next.top && v.height === next.height && v.rowH === next.rowH ? v : next));
+    };
+    const schedule = () => (frame ||= requestAnimationFrame(update));
+    update();
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    const ro = new ResizeObserver(schedule);
+    ro.observe(scroller);
+    // Density (Settings → Darstellung) changes the row height.
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.documentElement, { attributes: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", schedule);
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, [virtual]);
+
+  // WebKit anchors the scroll position to a row when the rendered rows change (overflow-anchor
+  // is not supported there): the position before the commit is the one to keep.
+  const beforeCommit = useRef<number | null>(null);
+  beforeCommit.current = virtual ? (treeRef.current?.closest(".sidebar-scroll")?.scrollTop ?? null) : null;
+  useLayoutEffect(() => {
+    const scroller = treeRef.current?.closest(".sidebar-scroll");
+    if (scroller && beforeCommit.current != null && scroller.scrollTop !== beforeCommit.current) scroller.scrollTop = beforeCommit.current;
+  });
+
+  // A row to be focused that is out of view: scroll it in (it is rendered then, see below).
+  useLayoutEffect(() => {
+    const id = pendingFocus.current;
+    if (id == null) return;
+    const el = treeRef.current?.querySelector<HTMLElement>(`.tree-row[data-id="${id}"]`);
+    if (!el) return;
+    pendingFocus.current = null;
+    el.focus();
+    el.scrollIntoView({ block: "nearest" });
+  });
+
+  // Shared by all rows (one store subscription instead of one per row).
+  const conflicts = useApp((st) => st.conflicts);
+  const conflictIds = useMemo(() => new Set(conflicts.map((c) => c.page_id)), [conflicts]);
+
+  // The dragged, the focused and the tab-reachable row stay rendered when scrolled away.
+  const shown = virtual
+    ? treeWindow(rows.length, view, [drag?.id, focusedId, focusable].map((id) => (id == null ? -1 : rows.findIndex((r) => r.node.id === id))))
+    : null;
+  const row = (i: number) => {
+    const { node, depth } = rows[i];
+    return (
+      <TreeRow
+        key={node.id}
+        node={node}
+        depth={depth}
+        top={shown ? i * view.rowH : undefined}
+        active={activePageId === node.id}
+        open={!collapsed.has(node.id)}
+        drop={drag?.over === node.id ? drag.pos : undefined}
+        focusable={focusable === node.id}
+        conflict={conflictIds.has(node.id)}
+        act={actions}
+      />
+    );
+  };
+
   return (
-    <div className="tree" role="tree" aria-label="Seiten" ref={treeRef}>
-      {rows.map(({ node, depth }) => (
-        <TreeRow
-          key={node.id}
-          node={node}
-          depth={depth}
-          active={activePageId === node.id}
-          open={!collapsed.has(node.id)}
-          drop={drag?.over === node.id ? drag.pos : undefined}
-          focusable={focusable === node.id}
-          act={actions}
-        />
-      ))}
+    <div className={`tree ${shown ? "is-virtual" : ""}`} role="tree" aria-label="Seiten" ref={treeRef} style={shown ? { height: rows.length * view.rowH } : undefined}>
+      {shown ? shown.map(row) : rows.map((_, i) => row(i))}
       {menu}
     </div>
   );
@@ -627,30 +713,44 @@ function PageTree({
 const TreeRow = memo(function TreeRow({
   node: n,
   depth,
+  top,
   active,
   open,
   drop,
   focusable,
+  conflict,
   act,
 }: {
   node: PageNode;
   depth: number;
+  /** Position in a virtualized tree. */
+  top?: number;
   active: boolean;
   open: boolean;
   drop?: DropPos;
   focusable: boolean;
+  conflict: boolean;
   act: RowActions;
 }) {
+  // The action buttons exist only while the row is hovered or has the focus.
+  const [hot, setHot] = useState(false);
   return (
     <div
       role="treeitem"
       aria-level={depth + 1}
       aria-expanded={n.children.length ? open : undefined}
       className={`tree-row ${active ? "active" : ""} ${drop ? `drop-${drop}` : ""}`}
-      style={{ paddingLeft: 6 + depth * 14 }}
+      style={top == null ? { paddingLeft: 6 + depth * 14 } : { paddingLeft: 6 + depth * 14, position: "absolute", top, left: 0, right: 0 }}
       data-id={n.id}
       tabIndex={focusable ? 0 : -1}
       aria-current={active ? "page" : undefined}
+      onMouseEnter={() => setHot(true)}
+      onMouseLeave={(e) => !e.currentTarget.contains(document.activeElement) && setHot(false)}
+      onFocus={(e) => {
+        setHot(true);
+        if (e.target === e.currentTarget) act.focus(n);
+      }}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && !e.currentTarget.matches(":hover") && setHot(false)}
       draggable
       onDragStart={(e) => act.dragStart(n, e)}
       onDragEnd={act.dragEnd}
@@ -673,8 +773,8 @@ const TreeRow = memo(function TreeRow({
       </span>
       <PageIcon name={n.icon} size={15} className="tree-icon" />
       <span className="tree-label">{n.title}</span>
-      <ConflictDot pageId={n.id} />
-      <span className="tree-row-actions">
+      {conflict && <span className="tree-conflict" title="Konflikt: hier und auf dem Server geändert" aria-label="Konflikt" />}
+      {hot && <span className="tree-row-actions">
         <IconButton
           icon={MoreHorizontal}
           label={tStatic("sidebar.pageActions")}
@@ -695,7 +795,7 @@ const TreeRow = memo(function TreeRow({
             createSubpage(n.id);
           }}
         />
-      </span>
+      </span>}
     </div>
   );
 });
@@ -755,10 +855,4 @@ export async function stopTimer() {
   } catch (e) {
     s.error("Timer konnte nicht gestoppt werden", e);
   }
-}
-
-/** Marks a page with an undecided sync conflict („Konflikt“). */
-function ConflictDot({ pageId }: { pageId: number }) {
-  const on = useApp((st) => st.conflicts.some((c) => c.page_id === pageId));
-  return on ? <span className="tree-conflict" title="Konflikt: hier und auf dem Server geändert" aria-label="Konflikt" /> : null;
 }

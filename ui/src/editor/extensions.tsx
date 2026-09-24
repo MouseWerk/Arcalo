@@ -4,7 +4,7 @@
 import { Extension, Node, mergeAttributes, type Editor, type Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
@@ -18,6 +18,7 @@ import { FIRST_LINE_RE } from "../lib/frontmatter";
 import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
+import { blockDecorations, updateBlockDecorations } from "./incremental";
 
 // ------------------------------------------------------------- wiki links
 
@@ -573,10 +574,12 @@ export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>(
   },
   addProseMirrorPlugins() {
     const onOpen = this.options.onOpen;
-    const build = (doc: PMNode) => {
+    // Decorations of one top-level block; an edit rebuilds only the blocks it touched.
+    const build = (block: PMNode, at: number) => {
       const decos: Decoration[] = [];
-      doc.descendants((node, pos, parent) => {
+      block.descendants((node, offset, parent) => {
         if (!node.isText || parent?.type.spec.code || node.marks.some((m) => m.type.name === "code")) return;
+        const pos = at + 1 + offset;
         const text = node.text ?? "";
         for (const m of text.matchAll(TAG_RE)) {
           const from = pos + (m.index ?? 0) + m[1].length;
@@ -588,14 +591,14 @@ export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>(
           decos.push(Decoration.inline(from, from + m[0].length, { class: "due-date", nodeName: "span" }));
         }
       });
-      return DecorationSet.create(doc, decos);
+      return decos;
     };
     return [
       new Plugin({
         key: new PluginKey("tagHighlight"),
         state: {
-          init: (_, { doc }) => build(doc),
-          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old),
+          init: (_, { doc }) => blockDecorations(doc, build),
+          apply: (tr, old) => updateBlockDecorations(old, tr, build),
         },
         props: {
           decorations(state) {
@@ -706,9 +709,10 @@ export function insertFoldable(editor: Editor, range: Range) {
 export const Callouts = Extension.create({
   name: "callouts",
   addProseMirrorPlugins() {
-    const build = (doc: PMNode) => {
+    // Decorations of the callouts in one top-level block (the outermost quotes only).
+    const build = (block: PMNode, at: number) => {
       const decos: Decoration[] = [];
-      doc.descendants((node, pos) => {
+      const visit = (node: PMNode, pos: number) => {
         if (node.type.name !== "blockquote") return true;
         const first = node.firstChild;
         const m = first?.isTextblock ? CALLOUT_RE.exec(first.textContent) : null;
@@ -773,15 +777,16 @@ export const Callouts = Extension.create({
           }
         }
         return false;
-      });
-      return DecorationSet.create(doc, decos);
+      };
+      if (visit(block, at)) block.descendants((node, offset) => visit(node, at + 1 + offset));
+      return decos;
     };
     return [
       new Plugin({
         key: new PluginKey("callouts"),
         state: {
-          init: (_, { doc }) => build(doc),
-          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old),
+          init: (_, { doc }) => blockDecorations(doc, build),
+          apply: (tr, old) => updateBlockDecorations(old, tr, build),
         },
         props: {
           decorations(state) {

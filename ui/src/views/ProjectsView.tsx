@@ -6,17 +6,12 @@ import { Briefcase, MoreHorizontal, Pencil, Play, Plus, Trash2, Target } from "l
 import { openFocusDialog } from "../components/Focus";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, Spinner, useMenu, type Tone } from "../components/ui";
+import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, Spinner, useMenu } from "../components/ui";
 import { compact, h1, parseGermanNumber } from "../lib/format";
-import { useWbs } from "./wbs";
-import type { AlertLevel, BudgetStatus, NetzplanTree, ProjectTree, Schedule, Vorgang } from "../lib/types";
+import { LEVEL, useWbs } from "./wbs";
+import type { BudgetStatus, NetzplanTree, ProjectTree, Schedule, Vorgang } from "../lib/types";
 
-export const LEVEL: Record<AlertLevel, { label: string; tone: Tone }> = {
-  ok: { label: "Im Plan", tone: "success" },
-  warning: { label: "Warnung", tone: "warning" },
-  critical: { label: "Kritisch", tone: "danger" },
-  exceeded: { label: "Überschritten", tone: "danger" },
-};
+export { LEVEL };
 
 type DialogState =
   | { kind: "project"; project?: ProjectTree }

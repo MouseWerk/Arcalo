@@ -4,7 +4,6 @@ import { Extension, type Editor, type Extensions } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { common, createLowlight } from "lowlight";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import Highlight from "@tiptap/extension-highlight";
@@ -21,8 +20,11 @@ import { SmartPaste } from "./smartPaste";
 import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
+import { CHUNK_LINES, chunkedLex } from "./chunkedLex";
+import { LazyHighlight, lowlight } from "./languages";
+import type { Lexer } from "marked";
 
-export const lowlight = createLowlight(common);
+export { lowlight };
 
 /**
  * Escapes only what would change meaning when the Markdown is parsed again.
@@ -75,8 +77,20 @@ function markTableCells(node: JsonNode): JsonNode {
   };
 }
 
+/** Tiptap's table start(): whether the rest starts with a header and a separator row. */
+export function tableStart(src: string): number {
+  // Same as splitting the rest into lines and looking at the first two, without the split.
+  const a = src.indexOf("\n");
+  if (a < 0) return -1;
+  const b = src.indexOf("\n", a + 1);
+  const sep = src.slice(a + 1, b < 0 ? src.length : b);
+  if (!/^[ \t|:]*-[ \t|:-]*$/.test(sep) || !sep.includes("|")) return -1;
+  return src.slice(0, a).includes("|") ? 0 : -1;
+}
+
 const MarkdownTable = Table.extend({
   renderMarkdown: (node, h) => renderTableToMarkdown(markTableCells(node as JsonNode) as typeof node, h),
+  markdownTokenizer: Table.config.markdownTokenizer && { ...Table.config.markdownTokenizer, start: tableStart },
 });
 
 type RenderSpec = { renderMarkdown?: (node: JsonNode, ...rest: unknown[]) => string };
@@ -85,6 +99,13 @@ interface SerializerInternals {
   codeTypes: Set<string>;
   nodeTypeRegistry: Map<string, RenderSpec[]>;
   encodeTextForMarkdown: (text: string, node: JsonNode, parent?: JsonNode) => string;
+}
+
+let chunkLines = CHUNK_LINES;
+
+/** Lines per lexed piece; 0 lexes notes as a whole (tests compare both). */
+export function setChunkedLexing(lines: number) {
+  chunkLines = lines;
 }
 
 // Parsing: every manager (the editor's initial content is parsed before extensions can
@@ -97,6 +118,14 @@ interface SerializerInternals {
     return parse.call(this, openEmptyTasks(md));
   };
   proto.parseHTMLToken = rawHtmlNode;
+  // Long notes are lexed in pieces (see chunkedLex.ts); the tokens are the same.
+  const managerProto = MarkdownManager.prototype as unknown as { createLexer: () => Lexer };
+  const createLexer = managerProto.createLexer;
+  managerProto.createLexer = function (this: unknown) {
+    const lexer = createLexer.call(this);
+    lexer.lex = (src: string) => (chunkLines > 0 ? chunkedLex(lexer, src, chunkLines) : Object.getPrototypeOf(lexer).lex.call(lexer, src));
+    return lexer;
+  };
 }
 
 /** The plain text inside a serialized node (code block content). */
@@ -255,6 +284,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     ImageParagraph,
     MarkdownLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true, HTMLAttributes: { rel: "noopener noreferrer", target: null } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
+    LazyHighlight,
     TaskList,
     TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
     Highlight,

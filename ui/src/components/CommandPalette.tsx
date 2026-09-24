@@ -25,7 +25,7 @@ import { t, useT } from "../lib/i18n";
 import { hint } from "../lib/keymap";
 import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
-import { openActivityDay } from "../views/ActivityView";
+import { openActivityDay } from "../views/activityDay";
 import { reloadEditors } from "../editor/NoteEditor";
 
 interface Item {

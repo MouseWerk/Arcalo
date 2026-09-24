@@ -3,6 +3,7 @@
 // drawing editor (drawings.tsx, lazy-loaded Excalidraw) in a full-window overlay.
 
 import { Node, type Editor } from "@tiptap/core";
+import { api } from "../lib/api";
 
 /** `name.excalidraw`: a plain file name (no folders, not hidden), like the Rust side checks. */
 export function isDrawingName(name: string): boolean {
@@ -120,8 +121,8 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
         dom.classList.add("is-empty");
         empty.textContent = "Leere Zeichnung – klicken zum Zeichnen";
         // A drawing made elsewhere (or before previews existed) has no preview but is not empty.
-        import("../lib/api")
-          .then(({ api }) => api.readDrawing(name))
+        api
+          .readDrawing(name)
           .then((scene) => {
             if (sceneHasContent(scene)) empty.textContent = "Noch keine Vorschau – klicken zum Öffnen";
           })

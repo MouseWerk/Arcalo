@@ -17,8 +17,32 @@ import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { touchesNodes } from "./incremental";
 
 // ---------------------------------------------------------------- columns
+
+// Block start() functions get the whole rest of the note, once per paragraph: they look for
+// their marker with indexOf instead of running a multiline regex over every line.
+
+/** Line terminators as `^`/`$` of a multiline regex know them. */
+const isLineBreak = (c: number) => c === 10 || c === 13 || c === 0x2028 || c === 0x2029;
+const isBlank = (c: number) => c === 32 || c === 9;
+
+/**
+ * Start of the first line that is `marker` with only spaces or tabs behind it (and before it
+ * when `lead`), or -1: the same as `/^[ \t]*marker[ \t]*$/m.exec(src)?.index`.
+ */
+export function markerLine(src: string, marker: string, lead: boolean): number {
+  for (let i = src.indexOf(marker); i >= 0; i = src.indexOf(marker, i + 1)) {
+    let s = i;
+    if (lead) while (s > 0 && isBlank(src.charCodeAt(s - 1))) s--;
+    if (s > 0 && !isLineBreak(src.charCodeAt(s - 1))) continue;
+    let e = i + marker.length;
+    while (e < src.length && isBlank(src.charCodeAt(e))) e++;
+    if (e === src.length || isLineBreak(src.charCodeAt(e))) return s;
+  }
+  return -1;
+}
 
 export const COLUMNS_OPEN = "<!-- spalten -->";
 export const COLUMN_BREAK = "<!-- spalte -->";
@@ -82,10 +106,7 @@ export const Columns = Node.create({
   markdownTokenizer: {
     name: "columns",
     level: "block",
-    start: (src: string) => {
-      const m = /^[ \t]*<!-- spalten -->[ \t]*$/m.exec(src);
-      return m ? m.index : -1;
-    },
+    start: (src: string) => markerLine(src, COLUMNS_OPEN, true),
     tokenize(src, _tokens, lexer) {
       if (!src.startsWith(COLUMNS_OPEN)) return undefined;
       const s = splitColumns(src);
@@ -178,10 +199,7 @@ export const TableOfContents = Node.create({
   markdownTokenizer: {
     name: "tableOfContents",
     level: "block",
-    start: (src: string) => {
-      const m = /^\[TOC\][ \t]*$/m.exec(src);
-      return m ? m.index : -1;
-    },
+    start: (src: string) => markerLine(src, TOC_MARKER, false),
     tokenize(src) {
       const m = /^\[TOC\][ \t]*(?:\n|$)/.exec(src);
       return m ? { type: "tableOfContents", raw: m[0] } : undefined;
@@ -262,6 +280,7 @@ export const TableOfContents = Node.create({
 
 const REF_RE = /^\[\^([^\]\s^]+)\](?!:)/;
 const DEF_RE = /^\[\^([^\]\s^]+)\]:(?:[ \t]+|(?=\n)|$)/;
+const DEF_AT = /\[\^[^\]\s^]+\]:/y;
 
 /** Consumes a definition `[^x]: text` with its continuation lines (indented by 4 spaces or a tab). */
 export function matchDefinition(src: string): { raw: string; label: string; text: string } | null {
@@ -336,8 +355,13 @@ export const FootnoteDefinition = Node.create({
     name: "footnoteDefinition",
     level: "block",
     start: (src: string) => {
-      const m = /^\[\^[^\]\s^]+\]:/m.exec(src);
-      return m ? m.index : -1;
+      // As `/^\[\^[^\]\s^]+\]:/m`, without running a regex over every line of the rest.
+      for (let i = src.indexOf("[^"); i >= 0; i = src.indexOf("[^", i + 1)) {
+        if (i > 0 && !isLineBreak(src.charCodeAt(i - 1))) continue;
+        DEF_AT.lastIndex = i;
+        if (DEF_AT.test(src)) return i;
+      }
+      return -1;
     },
     tokenize(src, tokens, lexer) {
       const d = matchDefinition(src);
@@ -451,6 +475,8 @@ const BACK_ICON =
 
 const footnoteKey = new PluginKey<DecorationSet>("footnotes");
 
+const isFootnote = (node: PMNode) => node.type.name === "footnoteRef" || node.type.name === "footnoteDefinition";
+
 function buildDecorations(doc: PMNode): DecorationSet {
   const nums = footnoteNumbers(doc);
   const defined = new Set<string>();
@@ -557,7 +583,8 @@ export const Footnotes = Extension.create({
         key: footnoteKey,
         state: {
           init: (_, { doc }) => buildDecorations(doc),
-          apply: (tr, old) => (tr.docChanged ? buildDecorations(tr.doc) : old),
+          // Numbers depend on the whole note, but most edits touch no footnote: those only map.
+          apply: (tr, old) => (!tr.docChanged ? old : touchesNodes(tr, isFootnote) ? buildDecorations(tr.doc) : old.map(tr.mapping, tr.doc)),
         },
         props: {
           decorations(state) {
