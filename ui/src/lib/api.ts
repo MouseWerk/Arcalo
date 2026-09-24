@@ -11,6 +11,12 @@ export const api = {
   tree: () => call<T.PageNode[]>("workspace_tree"),
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
   savePage: (id: number, content: string) => call<T.PageDoc>("page_save", { id, content }),
+  /** The child pages of a page with their typed properties (table and board views). */
+  pageCollection: (parentId: number) => call<T.PageCollection>("page_collection", { parentId }),
+  /** The schema a page's properties follow (its parent's), with the parent's id. */
+  pageSchema: (pageId: number) => call<[number, T.PropSchema] | null>("page_schema", { pageId }),
+  /** Names for person properties: person values and @mentions, most used first. */
+  knownPersons: () => call<string[]>("known_persons"),
   versions: (pageId: number) => call<T.VersionInfo[]>("page_versions", { pageId }),
   versionContent: (versionId: number) => call<string>("page_version_content", { versionId }),
   /** Stores the page's current content as a version; null when it equals the newest one. */

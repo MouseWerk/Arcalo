@@ -63,7 +63,57 @@ pub fn fts_query(input: &str) -> Option<String> {
 /// Title matches are boosted so that typing a page name finds the page first.
 const TITLE_BOOST: f64 = 10.0;
 
+/// Splits `status:Offen` terms off the input: a term counts when some page schema defines the
+/// property (`crate::properties`). Returns the filters and the remaining text.
+fn property_terms(db: &Database, input: &str) -> Result<(Vec<(String, String)>, String)> {
+    if !input.contains(':') {
+        return Ok((vec![], input.to_owned()));
+    }
+    let keys = db.schema_property_keys()?;
+    let mut filters = vec![];
+    let mut rest = vec![];
+    for term in input.split_whitespace() {
+        match term.split_once(':') {
+            Some((k, v)) if !v.is_empty() && keys.iter().any(|key| key.to_lowercase() == k.to_lowercase()) => {
+                filters.push((k.to_owned(), v.to_owned()));
+            }
+            _ => rest.push(term),
+        }
+    }
+    Ok((filters, rest.join(" ")))
+}
+
 pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>> {
+    let (filters, text) = property_terms(db, input)?;
+    if !filters.is_empty() {
+        // Pages whose properties match every term; other text narrows them further.
+        let today = chrono::Local::now().date_naive();
+        let mut allowed: Option<Vec<crate::model::Page>> = None;
+        for (k, v) in &filters {
+            let op = if v.contains(['*', '~']) { "enthält" } else { "ist" };
+            let found = db.pages_with_property(k, op, v.trim_matches(['*', '~']), today)?;
+            allowed = Some(match allowed {
+                None => found,
+                Some(prev) => prev.into_iter().filter(|p| found.iter().any(|f| f.id == p.id)).collect(),
+            });
+        }
+        let allowed = allowed.unwrap_or_default();
+        if text.trim().is_empty() {
+            return Ok(allowed
+                .into_iter()
+                .take(limit)
+                .map(|p| SearchHit::Page { page_id: p.id, title: p.title, icon: p.icon, score: TITLE_BOOST })
+                .collect());
+        }
+        let ids: std::collections::HashSet<i64> = allowed.iter().map(|p| p.id).collect();
+        let mut hits = search(db, &text, limit * 4)?;
+        hits.retain(|h| match h {
+            SearchHit::Page { page_id, .. } | SearchHit::Note { page_id, .. } => ids.contains(page_id),
+            SearchHit::TimeEntry { .. } => false,
+        });
+        hits.truncate(limit);
+        return Ok(hits);
+    }
     let Some(q) = fts_query(input) else { return Ok(vec![]) };
     let conn = db.conn();
     let limit_i = limit as i64;
@@ -181,5 +231,38 @@ mod tests {
         // Saving replaces the index.
         db.save_page_content(page.id, "nichts mehr").unwrap();
         assert!(search(&db, "prufen", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn property_terms_filter_pages_of_a_schema() {
+        let db = Database::open_in_memory().unwrap();
+        let parent = db.create_page(None, "Aufgaben", None).unwrap();
+        db.save_page_content(
+            parent.id,
+            "---\neigenschaften:\n  status: {typ: auswahl, optionen: [Offen, Fertig]}\n---\n",
+        )
+        .unwrap();
+        for (title, status, body) in
+            [("Login", "Offen", "Formular bauen"), ("Export", "Fertig", "Formular prüfen"), ("Suche", "offen", "Index")]
+        {
+            let p = db.create_page(Some(parent.id), title, None).unwrap();
+            db.save_page_content(p.id, &format!("---\nstatus: {status}\n---\n{body}")).unwrap();
+        }
+        let titles = |q: &str| -> Vec<String> {
+            let mut t: Vec<String> = search(&db, q, 10)
+                .unwrap()
+                .into_iter()
+                .filter_map(|h| match h {
+                    SearchHit::Page { title, .. } | SearchHit::Note { title, .. } => Some(title),
+                    SearchHit::TimeEntry { .. } => None,
+                })
+                .collect();
+            t.sort();
+            t
+        };
+        assert_eq!(titles("status:offen"), ["Login", "Suche"]);
+        assert_eq!(titles("status:Offen formular"), ["Login"]);
+        // Unknown keys stay plain search text.
+        assert!(titles("phase:offen").is_empty());
     }
 }

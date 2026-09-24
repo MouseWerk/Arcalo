@@ -28,6 +28,21 @@ export interface PageDoc extends Page {
   unresolved_links: string[];
 }
 
+/** Typed page properties (`properties.rs`); `kind` and `value` as in lib/collection.ts. */
+export interface PropSchema {
+  props: { key: string; kind: import("./collection").PropKind; options: { name: string; color: string }[] }[];
+}
+export interface CollectionRow extends Page {
+  /** The frontmatter block with its `---` lines. */
+  frontmatter: string;
+  cells: { key: string; text: string; value: import("./collection").Typed | null; error: string | null }[];
+}
+export interface PageCollection {
+  parent_id: number;
+  schema: PropSchema | null;
+  rows: CollectionRow[];
+}
+
 export type SearchHit =
   | { kind: "page"; page_id: number; title: string; icon: string | null; score: number }
   | { kind: "note"; page_id: number; title: string; icon: string | null; snippet: string; score: number }

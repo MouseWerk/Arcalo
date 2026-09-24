@@ -1,7 +1,7 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Table2, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -17,7 +17,10 @@ import type { PageDoc } from "../lib/types";
 import { restorePage } from "./TrashView";
 import { SourceEditor } from "../editor/SourceEditor";
 import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
-import { ADD_PROPERTY_EVENT, PropertyEditor, WorkCard, pageReference } from "./PageProperties";
+import { ADD_PROPERTY_EVENT, PropertyEditor, WorkCard, pageReference, type FolderSchema } from "./PageProperties";
+import { CollectionView } from "./collection/CollectionView";
+import { FRONTMATTER_EVENT, registerFrontmatterOwner } from "./collection/write";
+import { isManagedKey, parseSchema, parseView, setView, type ViewType } from "../lib/collection";
 import { VersionsDialog } from "./VersionsDialog";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
@@ -29,6 +32,10 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   const [missing, setMissing] = useState(false);
   // The frontmatter as the editor holds it (it saves it with the body).
   const [fm, setFm] = useState("");
+  const fmRef = useRef(fm);
+  fmRef.current = fm;
+  // The schema of the folder this page is in (its parent's `eigenschaften:`).
+  const [folder, setFolder] = useState<FolderSchema | null>(null);
   const [addingProp, setAddingProp] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const closeSummary = useCallback(() => setSummaryOpen(false), []);
@@ -63,6 +70,51 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       handle.current?.flush();
     };
   }, [pageId]);
+
+  // Frontmatter changes from the table/board or a property menu go through this page's editor.
+  // Only once the page is loaded: before that, the frontmatter here is not the page's yet.
+  const sourceMode = usePageMode("source", pageId);
+  const loaded = doc?.id === pageId;
+  useEffect(() => {
+    if (sourceMode || !loaded) return;
+    return registerFrontmatterOwner(pageId, {
+      get: () => fmRef.current,
+      set: (next) => {
+        fmRef.current = next;
+        setFm(next);
+        handle.current?.setFrontmatter(next);
+      },
+    });
+  }, [pageId, sourceMode, loaded]);
+
+  const parentId = useApp((st) => st.pages.get(pageId)?.parent_id ?? null);
+  const hasChildren = useApp((st) => (st.pages.get(pageId)?.children.length ?? 0) > 0);
+  const parentTitle = useApp((st) => (parentId != null ? (st.pages.get(parentId)?.title ?? "") : ""));
+  useEffect(() => {
+    if (parentId == null) return setFolder(null);
+    let alive = true;
+    const load = () =>
+      api
+        .pageSchema(pageId)
+        .then((r) => alive && setFolder(r ? { parentId: r[0], parentTitle, defs: r[1].props } : null))
+        .catch(() => {});
+    load();
+    // The parent's schema changed (its pane, a table, a property menu).
+    const onFm = (e: Event) => {
+      const d = (e as CustomEvent<{ id: number; fm: string }>).detail;
+      if (d.id !== parentId) return;
+      const defs = parseSchema(d.fm);
+      setFolder(defs ? { parentId, parentTitle, defs } : null);
+    };
+    const onSaved = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === parentId && load();
+    window.addEventListener(FRONTMATTER_EVENT, onFm);
+    window.addEventListener("annalo:page-saved", onSaved);
+    return () => {
+      alive = false;
+      window.removeEventListener(FRONTMATTER_EVENT, onFm);
+      window.removeEventListener("annalo:page-saved", onSaved);
+    };
+  }, [pageId, parentId, parentTitle]);
 
   // Full width and Markdown source mode, per page. Switching the mode saves every editor
   // first, then shows what was saved.
@@ -172,23 +224,40 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     );
 
   const reference = pageReference(fm);
+  // Frontmatter edits of this page: through the editor's save path, so body and properties never overwrite each other.
+  const changeFm = (next: string) => {
+    fmRef.current = next;
+    setFm(next);
+    handle.current?.setFrontmatter(next);
+  };
   const node = pages.get(doc.id);
   const crumbs: { id: number; title: string }[] = [];
   for (let p = node?.parent_id != null ? pages.get(node.parent_id) : undefined; p; p = p.parent_id != null ? pages.get(p.parent_id) : undefined) crumbs.unshift(p);
 
   return (
     <div className="page-view" ref={root}>
-      <PageHeader tab={tab} root={root} doc={doc} crumbs={crumbs} onChange={(d) => setDoc({ ...doc, ...d })} onSummary={() => setSummaryOpen(true)} toolbarSlot={setToolbarSlot} full={full} source={source}>
-        {!source && <Properties doc={doc} fm={fm} onAdd={() => setAddingProp(true)} />}
+      <PageHeader
+        tab={tab}
+        root={root}
+        doc={doc}
+        crumbs={crumbs}
+        onChange={(d) => setDoc({ ...doc, ...d })}
+        onSummary={() => setSummaryOpen(true)}
+        toolbarSlot={setToolbarSlot}
+        full={full}
+        source={source}
+        // Table and board views are offered for pages with subpages (or a view already set up).
+        viewType={source || (!hasChildren && parseView(fm).type === "liste" && !parseSchema(fm)) ? null : parseView(fm).type}
+        onViewType={(t) => changeFm(setView(fmRef.current, { ...parseView(fmRef.current), type: t }))}
+      >
+        {!source && <Properties doc={doc} fm={fm} typed={!!folder?.defs.length} onAdd={() => setAddingProp(true)} />}
         {!source && <PropertyEditor
           fm={fm}
           adding={addingProp}
           onAdded={() => setAddingProp(false)}
-          onChange={(next) => {
-            // Through the editor's save path, so body and properties never overwrite each other.
-            setFm(next);
-            handle.current?.setFrontmatter(next);
-          }}
+          folder={folder}
+          parentId={parentId}
+          onChange={changeFm}
         />}
         {reference && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
         {source ? (
@@ -217,6 +286,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           toolbarSlot={toolbarSlot}
         />
         )}
+        {!source && <CollectionView pageId={doc.id} fm={fm} onFm={changeFm} />}
         <Backlinks doc={doc} />
         <MeetingSummaryDialog open={summaryOpen} page={doc} reference={reference} getEditor={getEditor} flush={flushEditor} onClose={closeSummary} />
       </PageHeader>
@@ -234,8 +304,12 @@ function PageHeader({
   toolbarSlot,
   full,
   source,
+  viewType,
+  onViewType,
   children,
 }: {
+  viewType: ViewType | null;
+  onViewType: (t: ViewType) => void;
   tab: Tab;
   root: React.RefObject<HTMLDivElement | null>;
   doc: PageDoc;
@@ -361,6 +435,13 @@ function PageHeader({
             { label: "Versionen…", icon: History, onSelect: () => setVersionsOpen(true) },
             { label: "Besprechung zusammenfassen", icon: NotebookPen, onSelect: onSummary },
             { label: "Unterseite anlegen", icon: CornerDownRight, onSelect: () => createSubpage(doc.id) },
+            ...(viewType === null
+              ? []
+              : [
+                  viewType !== "tabelle" ? { label: "Als Tabelle anzeigen", icon: Table2, onSelect: () => onViewType("tabelle") } : null,
+                  viewType !== "board" ? { label: "Als Board anzeigen", icon: KanbanSquare, onSelect: () => onViewType("board") } : null,
+                  viewType !== "liste" ? { label: "Als Liste anzeigen", icon: List, onSelect: () => onViewType("liste") } : null,
+                ].filter((x) => x !== null)),
             "separator",
             { label: "Seite löschen", icon: Trash2, danger: true, onSelect: () => deletePage(doc) },
           ])
@@ -456,7 +537,7 @@ function PageHeader({
   );
 }
 
-function Properties({ doc, fm, onAdd }: { doc: PageDoc; fm: string; onAdd: () => void }) {
+function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed: boolean; onAdd: () => void }) {
   const { body } = splitFrontmatter(doc.content);
   // Inline #tags are already clickable in the text; only show the others (frontmatter tags).
   const lower = body.toLowerCase();
@@ -472,7 +553,7 @@ function Properties({ doc, fm, onAdd }: { doc: PageDoc; fm: string; onAdd: () =>
           {t}
         </button>
       ))}
-      {!fm && (
+      {!typed && !parseFrontmatter(fm).some((p) => (p.key || p.value.trim()) && !isManagedKey(p.key)) && (
         <button type="button" className="prop-add" onClick={onAdd} title={`Eigenschaft hinzufügen (${keys("Mod ;")})`}>
           <Plus size={13} /> Eigenschaft hinzufügen
         </button>

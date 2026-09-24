@@ -216,6 +216,71 @@ Migration v2 converts the old block model: blocks are concatenated into
 - Templates are the pages below the top-level page „Vorlagen“ (`templates.rs`); placeholders are filled by `apply_template`.
   The daily note uses `settings.daily_template` when set.
 
+## Typed properties and table/board views (`properties.rs`, `ui/src/lib/collection.ts`, `ui/src/views/collection/`)
+
+The child pages of a page share a schema; the page itself can show them as a table or a board below its
+text (like an inline database). Everything is plain frontmatter, so it syncs and exports as Markdown:
+
+```yaml
+# parent page
+eigenschaften:
+  status: {typ: auswahl, optionen: {Offen: grau, In Arbeit: blau, Fertig: grün}}
+  themen: {typ: mehrfachauswahl, optionen: {UI: lila, API: orange}}
+  aufwand: zahl
+  fällig: datum
+  wer: person
+  erledigt: checkbox
+  quelle: link
+ansicht:
+  typ: board                      # liste | tabelle | board; just `ansicht: tabelle` without settings
+  sortierung: {feld: fällig, richtung: auf}          # auf | ab; feld `titel` is the page title
+  filter: [{feld: status, op: ist nicht, wert: Fertig}, {feld: fällig, op: vor, wert: heute}]
+  spalten: [titel, status, fällig]                   # column order (table)
+  ausgeblendet: [quelle]                             # hidden columns
+  breiten: {titel: 260, status: 140}                 # column widths in px
+  gruppierung: status                                # board columns
+  karten: [fällig, wer]                              # properties on board cards
+  eingeklappt: [Fertig, ""]                          # collapsed board columns ("" = „Ohne Wert“)
+
+# child page
+status: In Arbeit
+themen: [UI, API]
+aufwand: 2.5
+fällig: 2026-10-01
+wer: Anna
+erledigt: false
+quelle: "[[Konzept]]"
+```
+
+- Types: `text`, `auswahl`, `mehrfachauswahl`, `zahl`, `datum`, `person`, `checkbox`, `link` (English names such as
+  `select`, `number`, `date`, `url` are read too). A property is either its bare type or a flow map with `typ` and, for
+  selects, `optionen` (name → color, or a plain list: colors then follow the order). Colors: `grau braun orange gelb grün
+  blau lila rosa rot`. Property names follow the property editor's key rules (no colon, no leading YAML indicator), so
+  they are written unquoted; option names and values are quoted only when YAML would read them differently.
+- The YAML subset is the same in the core and the UI (`properties.rs` `parse_entries`/`parse_inline`, `ui/src/lib/yaml.ts`):
+  scalars, flow lists and maps, indented block lists and maps. Writing is canonical (one line per property, flow style for
+  settings) and round-trip tested in both; keys of `ansicht:` this version does not know are written back unchanged, all
+  other frontmatter lines keep their original text. `ansicht` without settings is removed again for the plain list.
+- Values are validated, never rewritten: a value that does not fit (`aufwand: viel`, an unknown option, `fällig: 30.02.`)
+  is shown as written with a red wavy underline and the reason as tooltip; the core reports it as `Cell.error`. Numbers
+  accept German input (`1,5`, `1.234,5`) and are stored as YAML numbers (`1.5`); dates are `YYYY-MM-DD` and shown German.
+  Pages without a schema keep the free-text property editor; properties of the children that the schema does not know
+  appear as text columns and can be typed from the column menu.
+- Core: `Schema::from_markdown`, `validate`, `page_cells`, `matches` (filters, `heute` for dates) and
+  `Database::page_collection` (children in sidebar order with frontmatter and typed cells), `page_schema` (the parent's
+  schema for a page's property editor), `known_persons` (person values and `@Name` mentions, most used first) and
+  `pages_with_property`. The workspace search reads `status:Offen` terms for properties a schema defines (`*`/`~` in the
+  value: contains) and narrows the other terms' hits to those pages.
+- Writes: an edit changes only that page's frontmatter (`ui/src/views/collection/write.ts`). A page shown in an editor
+  pane is written through that editor (`registerFrontmatterOwner`, the same path as the property editor), so body and
+  properties never overwrite each other; otherwise all editors are flushed, the page is read, only the block is replaced
+  and saved, and `annalo:page-saved` updates open panes. The parent's own schema and view settings go through its
+  editor. Card order in a board column is the folder's page order (`page_move`), i.e. the sidebar order.
+- Table: its own scroll box (header and title column sticky, sideways scrolling in narrow panes); folders above 80 pages
+  render only the visible rows plus a margin. WebKit anchors the scroll position when rows are swapped and ignores
+  `overflow-anchor`, so the table restores the position it had before each commit. Keyboard: arrows, Tab, Home/End move
+  between cells, Enter/F2 edits (Ctrl+Enter on a title opens the page in a new tab), typing starts editing, Delete clears, Escape leaves.
+
 ## Large workspaces
 
 - `page_tree` groups the rows by parent in one `HashMap` pass and moves them into their nodes: O(n)
