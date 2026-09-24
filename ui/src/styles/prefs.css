@@ -79,7 +79,7 @@
 .settings-hit-section[hidden] { display: none; }
 .settings-hit-title { justify-self: start; border: 0; background: none; padding: 0; color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .settings-hit-title:hover { text-decoration: underline; }
-.settings-hit-body { display: grid; gap: 28px; }
+.settings-hit-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .settings-hit-body .settings-head { display: none; }
 .settings-search-empty { margin: 0; }
 .set-group[hidden] { display: none; }
@@ -130,3 +130,6 @@
 .set-group .map-row { flex-wrap: wrap; }
 .set-group .map-row > .grow { flex: 1 1 160px; min-width: 0; }
 .set-row-control { min-width: 0; }
+/* A tier names a model the server does not offer (Settings → KI & LiteLLM). */
+.model-missing { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; margin: 10px 0 2px; padding: 10px 12px; border-radius: var(--r-md); background: var(--warning-soft, color-mix(in srgb, var(--warning) 12%, transparent)); }
+.model-missing > span { flex: 1 1 220px; min-width: 0; }

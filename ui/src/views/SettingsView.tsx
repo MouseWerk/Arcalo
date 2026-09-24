@@ -18,6 +18,7 @@ import { NOT_CONFIGURED } from "../lib/updates";
 import { checkForUpdates, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
+import { autoAssign } from "../lib/models";
 import type { BackupInfo, MirrorStatus, ConnectionTest, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, Row } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
@@ -358,6 +359,23 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
       </Group>
 
       <Group title={t("set.ai.models")} description="Welche Modelle des Servers für welche Aufgaben verwendet werden.">
+        {(() => {
+          // Tiers naming a model the server does not have: requests would fail with
+          // "No deployments available for selected model" (they fall back, but say so here).
+          const missing = models.length ? (["local_model", "standard_model", "reasoning_model"] as const).filter((k) => !models.includes(router[k])) : [];
+          if (!missing.length) return null;
+          return (
+            <div className="warn-note model-missing" role="status">
+              <span>
+                {missing.length === 1 ? "Ein Modell" : `${missing.length} Modelle`} gibt es auf dem Server nicht ({missing.map((k) => router[k] || "leer").join(", ")}). Anfragen weichen
+                auf ein vorhandenes Modell aus.
+              </span>
+              <Button variant="secondary" size="sm" onClick={() => setRouter(autoAssign(router, models))}>
+                Automatisch zuordnen
+              </Button>
+            </div>
+          );
+        })()}
         <Row label={t("set.ai.autoRoute")} description="Einfache Aufgaben gehen an das lokale Modell, komplexe an stärkere Modelle.">
           <Switch checked={draft.auto_route} onChange={(v) => update({ auto_route: v })} label="Automatisches Routing" />
         </Row>

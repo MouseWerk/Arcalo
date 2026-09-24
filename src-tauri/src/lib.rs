@@ -17,7 +17,6 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use annalo_core::activity::{self, IdleAccumulator, WindowUsage};
-use annalo_core::ai::LiteLlmClient;
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
 use annalo_core::ai::metrics::SessionMeter;
 use annalo_core::ai::rag::{self, ContextChunk};
@@ -25,6 +24,7 @@ use annalo_core::ai::router::{ModelRouter, RouteDecision, RouteInput, RouterConf
 use annalo_core::ai::tools::{self, Risk, SystemCall};
 use annalo_core::ai::transform;
 use annalo_core::ai::zeitguess::{self, ZeitGuess};
+use annalo_core::ai::{LiteLlmClient, availability};
 use annalo_core::attachments::{self, SavedAttachment};
 use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
@@ -93,6 +93,8 @@ impl AiRuntime {
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let rt = AiRuntime::new(settings, state.secrets.get(), state.proxy_secret.get());
     *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
+    // Another server or key may offer other models.
+    *lock(&state.server_models) = None;
 }
 
 pub struct AppState {
@@ -113,6 +115,8 @@ pub struct AppState {
     idle: Mutex<IdleAccumulator>,
     usage: Mutex<WindowUsage>,
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// Models the LiteLLM server offers (base URL, when fetched, names); `None` = not asked yet.
+    server_models: Mutex<Option<(String, Instant, Vec<String>)>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -1292,6 +1296,9 @@ async fn ai_test_connection(
     Ok(match res {
         Ok(mut models) => {
             models.sort();
+            if url.trim().trim_end_matches('/') == settings.litellm_base_url.trim().trim_end_matches('/') {
+                *lock(&state.server_models) = Some((settings.litellm_base_url.clone(), Instant::now(), models.clone()));
+            }
             ConnectionTest { ok: true, latency_ms, models, error: None }
         }
         Err(e) => ConnectionTest { ok: false, latency_ms, models: vec![], error: Some(e.to_string()) },
@@ -1447,7 +1454,7 @@ async fn ai_chat(
         max_tokens: settings.ai.max_tokens,
     };
 
-    let (completion, meter) = stream_completion(&app, &state, &client, &request_id, &req).await?;
+    let (completion, meter, route) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
     Ok(ChatOutcome { completion, route, context, meter, cost_warning: cost_warning(&state) })
 }
 
@@ -1478,6 +1485,70 @@ async fn stream_completion(
     };
     let _ = app.emit("ai://meter", &meter);
     Ok((completion, meter))
+}
+
+/// The models the LiteLLM server offers, cached for a few minutes; empty when unknown (the
+/// server does not list them or cannot be reached: the request then shows the real error).
+async fn server_models(state: &AppState, client: &LiteLlmClient) -> Vec<String> {
+    let url = state.settings().litellm_base_url;
+    if let Some((u, at, models)) = lock(&state.server_models).as_ref()
+        && *u == url
+        && at.elapsed() < Duration::from_secs(300)
+    {
+        return models.clone();
+    }
+    // The client's connect/read timeouts (Settings → Netzwerk) bound the wait.
+    match client.models().await {
+        Ok(models) => {
+            *lock(&state.server_models) = Some((url, Instant::now(), models.clone()));
+            models
+        }
+        _ => vec![],
+    }
+}
+
+/// Streams `req` on the route's model. A model the server does not offer is replaced by
+/// another configured model before sending; when LiteLLM still has no deployment for it, the
+/// request is repeated once on another model. Private content never leaves the local model.
+async fn complete_routed(
+    app: &AppHandle,
+    state: &AppState,
+    client: &LiteLlmClient,
+    request_id: &str,
+    mut req: ChatRequest,
+    route: RouteDecision,
+) -> Result<(Completion, SessionMeter, RouteDecision)> {
+    let settings = state.settings();
+    let local_only = settings.privacy.local_only;
+    let available = server_models(state, client).await;
+    let mut route = availability::resolve(&settings.router, &route, &available, local_only).map_err(Error::State)?;
+    req.model = route.model.clone();
+    match stream_completion(app, state, client, request_id, &req).await {
+        Err(Error::Provider { status, body }) if availability::model_unavailable(status, &body) => {
+            let retry = if availability::local_required(&route, local_only) {
+                None
+            } else {
+                // The list may be stale: ask again before picking another model.
+                *lock(&state.server_models) = None;
+                let available = server_models(state, client).await;
+                availability::fallback(&settings.router, route.tier, &available, &[&route.model])
+            };
+            let Some(model) = retry else {
+                return Err(Error::State(availability::unavailable_message(&route.model, &body)));
+            };
+            route.reasons.push(format!("„{}“ ohne erreichbare Instanz → {model}", route.model));
+            route.model = model.clone();
+            req.model = model;
+            match stream_completion(app, state, client, request_id, &req).await {
+                Ok((c, m)) => Ok((c, m, route)),
+                Err(Error::Provider { status, body }) if availability::model_unavailable(status, &body) => {
+                    Err(Error::State(availability::unavailable_message(&req.model, &body)))
+                }
+                Err(e) => Err(e),
+            }
+        }
+        other => other.map(|(c, m)| (c, m, route)),
+    }
 }
 
 /// Rewrites `text` according to `instruction` (inline AI bar, meeting summary) and streams the
@@ -1521,7 +1592,7 @@ async fn ai_transform(
         temperature: Some(0.2),
         max_tokens: state.settings().ai.max_tokens,
     };
-    let (mut completion, meter) = stream_completion(&app, &state, &client, &request_id, &req).await?;
+    let (mut completion, meter, route) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
     completion.content = transform::clean_output(&completion.content);
     Ok(ChatOutcome { completion, route, context: vec![], meter, cost_warning: cost_warning(&state) })
 }
@@ -1573,7 +1644,7 @@ async fn zeit_suggest_ai(
     };
     let request_id = format!("zeitguess-{}", Utc::now().timestamp_nanos_opt().unwrap_or_default());
     let client = state.client();
-    let (completion, _) = stream_completion(&app, &state, &client, &request_id, &req).await?;
+    let (completion, _, _) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
     let raw = zeitguess::parse_answer(&completion.content)?;
     zeitguess::validate(&line, &raw, &candidates, &las, Local::now().date_naive()).map(Some)
 }
@@ -2126,6 +2197,7 @@ pub fn run() {
                 idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
                 usage: Mutex::new(WindowUsage::default()),
                 cancels: Mutex::new(HashMap::new()),
+                server_models: Mutex::new(None),
             });
 
             app.manage(desktop::Desktop::default());

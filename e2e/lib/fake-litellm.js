@@ -6,6 +6,9 @@ import http from "node:http";
 
 export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}) {
   const requests = [];
+  const MODELS = ["firma-schnell", "firma-standard", "firma-reasoning", "firma-embed"];
+  // Listed models without a working deployment (LiteLLM's cooldown after provider errors).
+  const cooldown = new Set();
   const server = http.createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -18,12 +21,17 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
     }
     if (req.url === "/v1/models") {
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ data: ["firma-schnell", "firma-standard", "firma-reasoning", "firma-embed"].map((id) => ({ id, object: "model" })) }));
+      return res.end(JSON.stringify({ data: MODELS.map((id) => ({ id, object: "model" })) }));
     }
     if (req.url === "/v1/embeddings") {
       const vec = (t) => Array.from({ length: 8 }, (_, i) => ((t.charCodeAt(i % t.length) || 1) % 7) / 7 + (t.length % (i + 2)) / 10);
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ data: json.input.map((t, index) => ({ index, embedding: vec(t) })) }));
+    }
+    if (req.url === "/v1/chat/completions" && (!MODELS.includes(json.model) || cooldown.has(json.model))) {
+      // What LiteLLM answers for an unknown model group or one whose deployments all cool down.
+      res.writeHead(429, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: { message: `No deployments available for selected model, Try again in 60 seconds. Passed model=${json.model}`, type: "None", param: "None", code: "429" } }));
     }
     if (req.url === "/v1/chat/completions") {
       const msgs = json.messages;
@@ -97,5 +105,5 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
     res.writeHead(404);
     res.end();
   });
-  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, cooldown, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
 }

@@ -4,6 +4,7 @@
 //! local runtimes (Ollama, vLLM) and cloud providers are addressed the same
 //! way and only differ in the model name the [`router`] picks.
 
+pub mod availability;
 pub mod client;
 pub mod metrics;
 pub mod rag;

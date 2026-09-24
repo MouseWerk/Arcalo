@@ -146,3 +146,35 @@ test("removing the token disables access", async () => {
 test("no console errors", async () => {
   assert.deepEqual(await app.consoleErrors(), []);
 });
+
+// "Verbunden", but "No deployments available for selected model": a tier still names a model the
+// server does not have (the defaults are placeholders), or its deployments are cooling down.
+test("a model the server does not offer falls back to one it has", async () => {
+  await app.invoke("api_key_set", { key: llm.apiKey });
+  const view = await app.invoke("settings_get");
+  const settings = { ...view.settings, auto_route: true, router: { ...view.settings.router, local_model: "ollama/llama3.2" } };
+  await app.invoke("settings_save", { settings });
+  const before = llm.requests.length;
+  const out = await app.invoke("ai_chat", { requestId: "fallback-1", messages: [{ role: "user", content: "Hallo" }], useTools: false, tier: "local", pageId: null, overrideLimit: null });
+  assert.notEqual(out.route.model, "ollama/llama3.2");
+  assert.ok(out.route.reasons.some((r) => r.includes("ollama/llama3.2")), out.route.reasons.join(" | "));
+  assert.ok(out.completion.content.length > 0);
+  const sent = llm.requests.slice(before).filter((r) => r.url === "/v1/chat/completions").map((r) => r.body.model);
+  assert.ok(!sent.includes("ollama/llama3.2"), `never sent the missing model: ${sent}`);
+
+  // Listed but cooling down: one retry on another model.
+  llm.cooldown.add("firma-standard");
+  const out2 = await app.invoke("ai_chat", { requestId: "fallback-2", messages: [{ role: "user", content: "Hallo" }], useTools: false, tier: "standard", pageId: null, overrideLimit: null });
+  assert.notEqual(out2.route.model, "firma-standard");
+  assert.ok(out2.route.reasons.some((r) => r.includes("ohne erreichbare Instanz")), out2.route.reasons.join(" | "));
+
+  // Private content stays local: a clear message instead of a cloud model.
+  const priv = { ...settings, privacy: { ...settings.privacy, local_only: true } };
+  await app.invoke("settings_save", { settings: priv });
+  await assert.rejects(
+    app.invoke("ai_chat", { requestId: "fallback-3", messages: [{ role: "user", content: "Hallo" }], useTools: false, tier: null, pageId: null, overrideLimit: null }),
+    /lokale Modell „ollama\/llama3.2“ gibt es auf dem LiteLLM-Server nicht/,
+  );
+  llm.cooldown.clear();
+  await app.invoke("settings_save", { settings: view.settings });
+});
