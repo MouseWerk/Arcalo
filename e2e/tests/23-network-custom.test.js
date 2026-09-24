@@ -202,7 +202,7 @@ test("English UI: ribbon tooltips, sidebar and settings are translated", async (
   await clickText('[aria-label="Sprache der Oberfläche"] button', /^English$/);
   await app.waitText(".settings-head h1", /Language & format/);
   const labels = await app.browser.execute(() => ({
-    settings: document.querySelector(".ribbon .icon-btn:last-child")?.getAttribute("aria-label"),
+    settings: document.querySelector(".ribbon > .icon-btn:last-child")?.getAttribute("aria-label"),
     timesheet: [...document.querySelectorAll(".ribbon .icon-btn")].map((b) => b.getAttribute("aria-label")),
     sideTabs: [...document.querySelectorAll(".side-tabs .icon-btn")].map((b) => b.getAttribute("aria-label")),
     nav: [...document.querySelectorAll(".settings-nav-item")].map((b) => b.textContent),

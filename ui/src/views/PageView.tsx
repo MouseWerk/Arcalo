@@ -50,6 +50,9 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         setDoc(d);
         setFm(splitFrontmatter(d.content).frontmatter);
         if (activeRef.current) useApp.getState().set({ activeDoc: d });
+        // Created elsewhere (another window, quick capture, the assistant): the tab and the tree
+        // take their titles from the tree, so load it.
+        if (!useApp.getState().pages.has(d.id)) useApp.getState().refreshTree();
       })
       .catch(() => alive && setMissing(true));
     return () => {
