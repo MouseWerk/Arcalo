@@ -62,11 +62,15 @@ pub fn import_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
     })
 }
 
-/// Copies an image or drawing by its file name (Obsidian resolves embeds by name). An existing
-/// file with the same name is kept, so importing twice does not duplicate anything.
+/// Copies an attachment (image, drawing, PDF or any other file with an extension) by its file
+/// name (Obsidian resolves embeds by name). An existing file with the same name is kept, so
+/// importing twice does not duplicate anything. Files above the attachment limit are skipped.
 fn import_attachment(path: &Path, attachments_dir: &Path) -> Result<bool> {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Ok(false) };
     if !attachments::embeddable(name) || name.contains(':') {
+        return Ok(false);
+    }
+    if fs::metadata(path)?.len() > attachments::MAX_FILE_BYTES {
         return Ok(false);
     }
     fs::create_dir_all(attachments_dir)?;
@@ -185,7 +189,7 @@ fn unique(dir: &Path, base: &str, ext: &str) -> PathBuf {
     candidate
 }
 
-/// Writes every page as a Markdown file below `dir` and the embedded images to
+/// Writes every page as a Markdown file below `dir` and the embedded attachments to
 /// `dir/attachments/`. Returns the number of Markdown files.
 pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<usize> {
     fs::create_dir_all(dir)?;
@@ -252,18 +256,25 @@ mod tests {
         fs::create_dir_all(vault.join("Projekte/Rollout")).unwrap();
         fs::write(vault.join("Projekte.md"), "Übersicht aller [[Rollout]]-Themen #projekt").unwrap();
         fs::write(vault.join("Projekte/Rollout/Plan.md"), "# Plan\n\nSiehe [[Projekte]]").unwrap();
-        fs::write(vault.join("Inbox.md"), "- [ ] Aufgabe\n\n![[bild.png]]\n\n![[Skizze.excalidraw]]").unwrap();
+        fs::write(
+            vault.join("Inbox.md"),
+            "- [ ] Aufgabe\n\n![[bild.png]]\n\n![[Skizze.excalidraw]]\n\n![[handbuch.pdf#page=2]]",
+        )
+        .unwrap();
         fs::create_dir_all(vault.join("assets")).unwrap();
         fs::write(vault.join("assets/bild.png"), [7u8; 4]).unwrap();
         // Drawings: the scene and its SVG preview travel like images.
         fs::write(vault.join("assets/Skizze.excalidraw"), r#"{"elements":[]}"#).unwrap();
         fs::write(vault.join("assets/Skizze.excalidraw.svg"), "<svg/>").unwrap();
+        // Any file with an extension is an attachment (Obsidian embeds PDFs and other files too).
         fs::write(vault.join("handbuch.pdf"), [0u8; 4]).unwrap();
+        fs::write(vault.join("LIESMICH"), "ohne Endung").unwrap();
 
         let db = Database::open_in_memory().unwrap();
         let att = tmp("att");
         let r = import_vault(&db, &vault, &att).unwrap();
-        assert_eq!((r.pages, r.folders, r.attachments, r.skipped), (3, 2, 3, 1));
+        assert_eq!((r.pages, r.folders, r.attachments, r.skipped), (3, 2, 4, 1));
+        assert_eq!(fs::read(att.join("handbuch.pdf")).unwrap(), [0u8; 4]);
         assert_eq!(fs::read(att.join("bild.png")).unwrap(), [7u8; 4]);
         assert!(att.join("Skizze.excalidraw").is_file() && att.join("Skizze.excalidraw.svg").is_file());
         let projekte = db.page_by_title("Projekte").unwrap().unwrap();
@@ -275,6 +286,7 @@ mod tests {
         assert_eq!(fs::read(out.join("attachments/bild.png")).unwrap(), [7u8; 4]);
         assert_eq!(fs::read_to_string(out.join("attachments/Skizze.excalidraw")).unwrap(), r#"{"elements":[]}"#);
         assert_eq!(fs::read_to_string(out.join("attachments/Skizze.excalidraw.svg")).unwrap(), "<svg/>");
+        assert_eq!(fs::read(out.join("attachments/handbuch.pdf")).unwrap(), [0u8; 4]);
         let root = out.join(vault.file_name().unwrap());
         assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]");
         assert!(root.join("Projekte.md").is_file());

@@ -5,7 +5,10 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight } from "lucide-react";
-import { api, attachmentUrl, errorText, uploadAttachment } from "../lib/api";
+import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
+import { drawPdfPreview } from "../lib/pdf";
+import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
+import { fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
@@ -326,6 +329,19 @@ export function NoteEditor({
           };
           input.click();
         },
+        uploadFile: async (file) => {
+          try {
+            return (await storeFile(file)).name;
+          } catch (e) {
+            useApp.getState().error(`„${file.name}“ nicht gespeichert`, e);
+            return null;
+          }
+        },
+        onPickFile: (editor) => void pickFiles(editor),
+        attachmentSize: (name) => api.attachmentSize(name),
+        onOpenFile: openFile,
+        onOpenPdf: openPdfViewer,
+        renderPdfPreview: drawPdfPreview,
         onPickTemplate: (editor) => insertTemplate(editor, useApp.getState().pages.get(doc.id)?.title ?? doc.title),
         onInsertDrawing: insertDrawing,
         onOpenDrawing: openDrawing,
@@ -356,8 +372,14 @@ export function NoteEditor({
           return true;
         },
         handleDOMEvents: {
-          // Right-click on an image: size, full view, open, copy, remove.
+          // Right-click on an image: size, full view, open, copy, remove. On a file: open, show, copy, remove.
           contextmenu: (view, event) => {
+            const file = (event.target as HTMLElement).closest?.<HTMLElement>(".ProseMirror .file-embed, .ProseMirror .pdf-embed");
+            const fileAt = file && editorRef.current ? fileEmbedAt(editorRef.current, file) : null;
+            if (fileAt && editorRef.current) {
+              openImgMenu(event, fileMenu(editorRef.current, fileAt.pos));
+              return true;
+            }
             const img = (event.target as HTMLElement).closest?.<HTMLImageElement>(".ProseMirror img");
             if (!img || !editorRef.current) return false;
             let pos = view.posAtDOM(img, 0);

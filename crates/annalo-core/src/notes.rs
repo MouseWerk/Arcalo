@@ -75,7 +75,7 @@ pub fn wiki_links(markdown: &str) -> Vec<String> {
             let Some(end) = after.find("]]") else { break };
             let inner = &after[..end];
             let target = inner.split(['|', '#']).next().unwrap_or("").trim();
-            // `![[bild.png]]` / `![[x.excalidraw]]` embed an attachment, they do not link a page.
+            // `![[bild.png]]`, `![[x.excalidraw]]`, `![[doc.pdf]]` embed an attachment, they do not link a page.
             let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(target);
             if !embed && !target.is_empty() && !out.iter().any(|t| t.to_lowercase() == target.to_lowercase()) {
                 out.push(target.to_owned());
@@ -689,10 +689,13 @@ mod tests {
     }
 
     #[test]
-    fn image_embeds_are_not_page_links() {
+    fn attachment_embeds_are_not_page_links() {
         assert_eq!(
-            wiki_links("![[bild.png]] ![[Notiz]] [[foto.jpg]] ![[a/b.webp|200]] ![[Skizze.excalidraw]]"),
-            ["Notiz", "foto.jpg"]
+            wiki_links(
+                "![[bild.png]] ![[Notiz]] [[foto.jpg]] ![[a/b.webp|200]] ![[Skizze.excalidraw]] \
+                 ![[Handbuch.pdf#page=2]] ![[Angebot.docx]] ![[Version 1.2]] [[Plan.pdf]]"
+            ),
+            ["Notiz", "foto.jpg", "Version 1.2", "Plan.pdf"]
         );
     }
 

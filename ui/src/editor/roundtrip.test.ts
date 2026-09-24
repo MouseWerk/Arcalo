@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildExtensions, toMarkdown } from "./schema";
 import { splitFrontmatter } from "./extensions";
+import { anchorPage, fileExtension, fileKind, formatSize, isFileEmbedName } from "./fileEmbed";
 
 function roundtrip(md: string) {
   const el = document.createElement("div");
@@ -68,6 +69,14 @@ const CASES: Record<string, string> = {
   hashMidLine: "Nummer # 5 und 3. Platz - gut\n",
   bareUrlParens: "Siehe https://de.wikipedia.org/wiki/Foo_(Bar) hier\n",
   linkTitleQuotes: 'Mit [t](https://example.com "x \\"y\\"") hier\n',
+  filePdf: "![[file.pdf]]\n",
+  fileDocx: "Angebot: ![[report.docx]] bitte prüfen\n",
+  fileNames: "![[Bericht Q3 (final) v2.xlsx]] ![[archiv.tar.gz]] ![[Ordner/Plan.PDF]]\n",
+  filePage: "![[Handbuch.pdf#page=3]] und ![[Handbuch.pdf#page=3|Seite drei]]\n",
+  fileAlias: "![[daten.csv|Rohdaten]]\n",
+  fileNotAFile: "Notiz ![[Version 1.2]] und ![[x.md]]\n",
+  tablePipeFile: "| A                         | B   |\n| ------------------------- | --- |\n| ![[report.docx\\|Bericht]] | 2   |\n",
+  tableFilePdf: "| A             | B   |\n| ------------- | --- |\n| ![[file.pdf]] | 2   |\n",
 };
 
 describe("markdown round-trip", () => {
@@ -143,6 +152,52 @@ describe("drawing embeds", () => {
     const editor = editorFor("![[Plan.excalidraw.svg]]\n");
     expect(editor.getHTML()).toContain('data-embed="Plan.excalidraw.svg"');
     editor.destroy();
+  });
+});
+
+describe("file embeds", () => {
+  const editorFor = (md: string) => new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: md, contentType: "markdown" });
+  const nodes = (editor: Editor) => {
+    const out: { type: string; attrs: Record<string, unknown> }[] = [];
+    editor.state.doc.descendants((n) => void (n.isAtom && !n.isText && out.push({ type: n.type.name, attrs: n.attrs })));
+    return out;
+  };
+  it("parses files as file embeds, images and drawings keep their nodes", () => {
+    const editor = editorFor("![[a.pdf]] ![[b.png]] ![[c.excalidraw]] ![[d.docx#x|y]] ![[Notiz]]\n");
+    expect(nodes(editor).map((n) => n.type)).toEqual(["fileEmbed", "imageEmbed", "drawingEmbed", "fileEmbed", "wikiLink"]);
+    expect(nodes(editor)[3].attrs).toMatchObject({ name: "d.docx", anchor: "#x", alt: "y" });
+    editor.destroy();
+  });
+  it("serializes an inserted file to exactly its embed", () => {
+    const editor = editorFor("");
+    editor.commands.insertContent({ type: "fileEmbed", attrs: { name: "Angebot 2.pdf" } });
+    expect(toMarkdown(editor)).toBe("![[Angebot 2.pdf]]\n");
+    editor.destroy();
+  });
+  it("parses a file embed in a table cell with an escaped pipe", () => {
+    const editor = editorFor("| A |\n| --- |\n| ![[report.docx\\|Bericht]] |\n");
+    expect(nodes(editor)).toEqual([{ type: "fileEmbed", attrs: expect.objectContaining({ name: "report.docx", alt: "Bericht" }) }]);
+    editor.destroy();
+  });
+});
+
+describe("file names", () => {
+  it("uses the core's extension rule", () => {
+    expect(fileExtension("Bericht.PDF")).toBe("pdf");
+    expect(fileExtension("x.tar.gz")).toBe("gz");
+    for (const no of ["Notiz", "Version 1.2", "x.md", ".pdf", "Dr. Müller", "a.toolongextension"]) expect(fileExtension(no)).toBeNull();
+    expect(isFileEmbedName("a.pdf") && isFileEmbedName("a.zip")).toBe(true);
+    expect(isFileEmbedName("a.png") || isFileEmbedName("a.excalidraw") || isFileEmbedName("Notiz")).toBe(false);
+  });
+  it("formats sizes and kinds", () => {
+    expect(formatSize(12)).toBe("12 B");
+    expect(formatSize(1234)).toBe("1,2 kB");
+    expect(formatSize(34_500_000)).toBe("35 MB");
+    expect(fileKind("a.xlsx")).toBe("sheet");
+    expect(fileKind("a.PDF")).toBe("text");
+    expect(fileKind("a.unbekannt")).toBe("file");
+    expect(anchorPage("#page=4")).toBe(4);
+    expect(anchorPage(null)).toBeNull();
   });
 });
 

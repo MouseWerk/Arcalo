@@ -6,10 +6,9 @@ import Suggestion from "@tiptap/suggestion";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import type { EditorView } from "@tiptap/pm/view";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool,
+  type LucideIcon, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
 } from "lucide-react";
 import { isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
@@ -155,6 +154,8 @@ export interface SlashOptions {
   onSummary: ((editor: Editor) => void) | null;
   /** Creates a drawing, embeds it and opens the drawing editor. */
   onDrawing: ((editor: Editor) => void) | null;
+  /** Opens the file dialog and embeds the chosen files (`![[Angebot.pdf]]`). */
+  onFile: ((editor: Editor) => void) | null;
 }
 
 export function slashItems(o: SlashOptions): SlashItem[] {
@@ -186,6 +187,9 @@ export function slashItems(o: SlashOptions): SlashItem[] {
     { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), Icon: FilePlus2, section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
       ? [{ id: "image", title: "Bild", subtitle: `Datei wählen, oder einfügen mit ${keys("Mod V")}`, icon: ic(ImagePlus), Icon: ImagePlus, section: "Einfügen", keywords: "bild image foto screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
+      : []),
+    ...(o.onFile
+      ? [{ id: "file", title: "Datei einfügen", subtitle: "PDF, Word, Excel, … oder in die Notiz ziehen", icon: ic(Paperclip), Icon: Paperclip, section: "Einfügen", keywords: "datei file anhang pdf dokument word excel anhängen attachment", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onFile!(e)) }]
       : []),
     ...(o.onDrawing
       ? [{ id: "drawing", title: "Zeichnung", subtitle: "Skizze oder Diagramm (Excalidraw)", icon: ic(PenTool), section: "Einfügen", keywords: "zeichnung drawing excalidraw diagramm skizze whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
@@ -233,7 +237,7 @@ export function fuzzyIncludes(text: string, query: string) {
 export const SlashCommand = Extension.create<SlashOptions>({
   name: "slashCommand",
   addOptions() {
-    return { onTemplate: null, onImage: null, onAi: null, onSummary: null, onDrawing: null };
+    return { onTemplate: null, onImage: null, onAi: null, onSummary: null, onDrawing: null, onFile: null };
   },
   addProseMirrorPlugins() {
     const opts = this.options;
@@ -268,8 +272,6 @@ export const SlashCommand = Extension.create<SlashOptions>({
 export interface ImageOptions {
   /** URL for an attachment name (`bild.png`). */
   resolve: (name: string) => string;
-  /** Stores a pasted or dropped file; returns its attachment name. */
-  upload: ((file: File) => Promise<string | null>) | null;
 }
 
 const IMAGE_EXT = "png|jpe?g|gif|webp|svg";
@@ -290,7 +292,7 @@ export const ImageEmbed = Node.create<ImageOptions>({
   draggable: true,
 
   addOptions() {
-    return { resolve: (name) => `attachments/${encodeURIComponent(name)}`, upload: null };
+    return { resolve: (name) => `attachments/${encodeURIComponent(name)}` };
   },
   addAttributes() {
     return { name: { default: "" }, alt: { default: null } };
@@ -331,50 +333,13 @@ export const ImageEmbed = Node.create<ImageOptions>({
   parseMarkdown: (token) => ({ type: "imageEmbed", attrs: { name: token.name, alt: token.alt } }),
   renderMarkdown: (node, _h, ctx) =>
     `![[${node.attrs?.name}${node.attrs?.alt != null ? (ctx?.meta?.parentAttrs?.__inTableCell ? "\\|" : "|") + node.attrs.alt : ""}]]`,
-
-  addProseMirrorPlugins() {
-    const upload = this.options.upload;
-    if (!upload) return [];
-    const type = this.type;
-    const imageFiles = (list?: FileList | null) => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
-    const insert = async (view: EditorView, files: File[], at?: number) => {
-      for (const file of files) {
-        const name = await upload(file);
-        if (!name || view.isDestroyed) continue;
-        const pos = at ?? view.state.selection.from;
-        view.dispatch(view.state.tr.insert(Math.min(pos, view.state.doc.content.size), type.create({ name })).scrollIntoView());
-        if (at != null) at += 1;
-      }
-    };
-    return [
-      new Plugin({
-        key: new PluginKey("imagePaste"),
-        props: {
-          handlePaste(view, event) {
-            const files = imageFiles(event.clipboardData?.files);
-            if (!files.length) return false;
-            event.preventDefault();
-            insert(view, files);
-            return true;
-          },
-          handleDrop(view, event, _slice, moved) {
-            if (moved) return false;
-            const files = imageFiles(event.dataTransfer?.files);
-            if (!files.length) return false;
-            event.preventDefault();
-            insert(view, files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
-            return true;
-          },
-        },
-      }),
-    ];
-  },
+  // Dropped and pasted images are stored by `AttachmentDrop` (fileEmbed.ts), together with other files.
 });
 
 /** Standard Markdown images `![alt](src)`; relative paths (`attachments/x.png`) show the stored attachment. */
 export const MarkdownImage = Image.extend<ImageOptions & { inline: boolean; allowBase64: boolean; HTMLAttributes: Record<string, unknown> }>({
   addOptions() {
-    return { ...this.parent!(), inline: true, resolve: (name: string) => name, upload: null };
+    return { ...this.parent!(), inline: true, resolve: (name: string) => name };
   },
   renderHTML({ HTMLAttributes }) {
     const src = String(HTMLAttributes.src ?? "");

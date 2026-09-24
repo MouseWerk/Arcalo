@@ -49,6 +49,12 @@ export const api = {
   pageFromTemplate: (templateId: number, title: string, parentId: number | null = null) =>
     call<T.Page>("page_from_template", { templateId, title, parentId }),
   saveAttachment: (data: string, name: string, mime: string) => call<T.SavedAttachment>("attachment_save", { data, name, mime }),
+  /** Copies a file (path from the file dialog) into the attachments folder, keeping its name. */
+  importAttachment: (path: string) => call<T.SavedAttachment>("attachment_import", { path }),
+  /** An attachment's bytes (PDF preview and viewer). */
+  readAttachment: (name: string) => call<ArrayBuffer>("attachment_read", { name }),
+  /** Size in bytes, `null` when the file is missing. */
+  attachmentSize: (name: string) => call<number | null>("attachment_size", { name }),
   /** Creates an empty `<title>.excalidraw` drawing (a free name: `title 2`, …). */
   createDrawing: (title: string) => call<T.SavedAttachment>("drawing_create", { title }),
   /** Excalidraw scene JSON of a drawing. */
@@ -212,6 +218,16 @@ export async function uploadAttachment(file: File): Promise<T.SavedAttachment> {
   return api.saveAttachment(dataUrl.slice(dataUrl.indexOf(",") + 1), file.name || "bild", file.type);
 }
 
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+
+/** Stores any file under its own name: the raw bytes as the IPC body (no base64), the name as a header. */
+export async function storeFile(file: File): Promise<T.SavedAttachment> {
+  // Same limit as the core (attachments::MAX_FILE_BYTES), checked before the file is read into memory.
+  if (file.size > MAX_FILE_BYTES) throw new Error(`Datei ist größer als ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return invoke<T.SavedAttachment>("attachment_store", bytes, { headers: { "x-annalo-name": encodeURIComponent(file.name || "Datei") } });
+}
+
 /** Errors from Rust arrive as plain strings. */
 const KINDS: Record<string, string> = {
   netzplan: "Netzplan",
@@ -224,6 +240,7 @@ const KINDS: Record<string, string> = {
   entry: "Eintrag",
   backup: "Sicherung",
   version: "Version",
+  attachment: "Anhang",
 };
 
 /** Backend errors in German: `netzplan 'NP-1' not found` → `Netzplan „NP-1“ nicht gefunden`. */
