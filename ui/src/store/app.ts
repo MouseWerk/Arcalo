@@ -239,6 +239,9 @@ export function savePref(key: string, v: boolean) {
 const initial = loadLayout();
 const initialPane = initial.panes.find((p) => p.id === initial.activePaneId) ?? initial.panes[0];
 let toastSeq = 0;
+// `refreshTree` requests: the number of the latest one and when its tree is in place.
+let treeSeq = 0;
+let treeLatest: Promise<void> = Promise.resolve();
 
 export const useApp = create<State>((set, get) => ({
   confirmRequest: null,
@@ -429,18 +432,31 @@ export const useApp = create<State>((set, get) => ({
     set(layoutPatch(panes, activePaneId, sizes));
   },
   refreshTree: async () => {
-    const tree = await api.tree();
-    const pages = new Map<number, PageNode>();
-    const walk = (list: PageNode[]) => list.forEach((p) => (pages.set(p.id, p), walk(p.children)));
-    walk(tree);
-    // Drop tabs of deleted pages and history entries pointing to them.
-    const alive = (l: Loc) => l.kind !== "page" || pages.has(l.pageId!);
-    const panes = get().panes.map((p) => {
-      const tabs = p.tabs.filter(alive).map((t) => ({ ...t, back: t.back.filter(alive), forward: t.forward.filter(alive) }));
-      const activeTabId = tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : (tabs[tabs.length - 1]?.id ?? "");
-      return { ...p, tabs, activeTabId };
-    });
-    set({ tree, pages, ...layoutPatch(panes, get().activePaneId, get().paneSizes) });
+    // An older answer arriving after a newer one must not win (it could close fresh tabs):
+    // only the latest request applies its tree; earlier callers wait for that one.
+    const seq = ++treeSeq;
+    let done!: () => void;
+    treeLatest = new Promise<void>((r) => (done = r));
+    try {
+      const tree = await api.tree();
+      if (seq !== treeSeq) {
+        for (let last: Promise<void> | null = null; last !== treeLatest; ) await (last = treeLatest);
+        return;
+      }
+      const pages = new Map<number, PageNode>();
+      const walk = (list: PageNode[]) => list.forEach((p) => (pages.set(p.id, p), walk(p.children)));
+      walk(tree);
+      // Drop tabs of deleted pages and history entries pointing to them.
+      const alive = (l: Loc) => l.kind !== "page" || pages.has(l.pageId!);
+      const panes = get().panes.map((p) => {
+        const tabs = p.tabs.filter(alive).map((t) => ({ ...t, back: t.back.filter(alive), forward: t.forward.filter(alive) }));
+        const activeTabId = tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : (tabs[tabs.length - 1]?.id ?? "");
+        return { ...p, tabs, activeTabId };
+      });
+      set({ tree, pages, ...layoutPatch(panes, get().activePaneId, get().paneSizes) });
+    } finally {
+      done();
+    }
   },
   refreshTimer: async () => set({ timer: await api.timerStatus() }),
   refreshSettings: async () => set({ settings: await api.settings() }),

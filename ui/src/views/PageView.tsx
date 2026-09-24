@@ -70,13 +70,38 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       .catch(() => alive && setMissing(true));
     return () => {
       alive = false;
-      handle.current?.flush();
+      handle.current?.flush().catch(() => {});
     };
   }, [pageId]);
 
+  // Full width and Markdown source mode, per page. Switching the mode saves every editor
+  // first; the other editor then starts from the page as stored after that, fetched before
+  // it is shown (never from the content this view loaded earlier).
+  const full = usePageMode("full", pageId);
+  const wantSource = usePageMode("source", pageId);
+  const [source, setSource] = useState(wantSource);
+  const switching = source !== wantSource;
+  useEffect(() => {
+    if (!switching) return;
+    let alive = true;
+    flushAllEditors()
+      .catch(() => {})
+      .then(() => api.page(pageId))
+      .then((d) => {
+        if (!alive) return;
+        setDoc(d);
+        setFm(splitFrontmatter(d.content).frontmatter);
+        setSource(wantSource);
+      })
+      .catch(() => alive && setMissing(true));
+    return () => {
+      alive = false;
+    };
+  }, [switching, wantSource, pageId]);
+
   // Frontmatter changes from the table/board or a property menu go through this page's editor.
   // Only once the page is loaded: before that, the frontmatter here is not the page's yet.
-  const sourceMode = usePageMode("source", pageId);
+  const sourceMode = source || switching;
   const loaded = doc?.id === pageId;
   useEffect(() => {
     if (sourceMode || !loaded) return;
@@ -119,30 +144,6 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     };
   }, [pageId, parentId, parentTitle]);
 
-  // Full width and Markdown source mode, per page. Switching the mode saves every editor
-  // first, then shows what was saved.
-  const full = usePageMode("full", pageId);
-  const source = usePageMode("source", pageId);
-  const firstMode = useRef(true);
-  useEffect(() => {
-    if (firstMode.current) {
-      firstMode.current = false;
-      return;
-    }
-    let alive = true;
-    api
-      .page(pageId)
-      .then((d) => {
-        if (!alive) return;
-        setDoc(d);
-        setFm(splitFrontmatter(d.content).frontmatter);
-      })
-      .catch(() => alive && setMissing(true));
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
   useEffect(() => {
     if (!active) return;
     const onCmd = (e: Event) => {
@@ -264,7 +265,10 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           onChange={changeFm}
         />}
         {reference && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
-        {source ? (
+        {switching ? (
+          // Between the two editors while the page is fetched: typing here would be lost.
+          <div className="editor-switching" aria-busy="true" />
+        ) : source ? (
           <SourceEditor
             key={`source-${doc.id}`}
             active={active}

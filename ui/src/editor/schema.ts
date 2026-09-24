@@ -9,7 +9,7 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import Highlight from "@tiptap/extension-highlight";
 import { Placeholder } from "@tiptap/extensions";
-import { Markdown } from "@tiptap/markdown";
+import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
 import { Callouts, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
@@ -20,6 +20,7 @@ import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
 import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
+import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
 
 export const lowlight = createLowlight(common);
 
@@ -42,7 +43,8 @@ export function escapeText(t: string, atLineStart = true): string {
     .replace(/~~/g, "\\~\\~")
     .replace(/==/g, "\\=\\=")
     .replace(/&(?=#?\w+;)/g, "&amp;")
-    .replace(/<(?=[A-Za-z/!])/g, "&lt;");
+    // `<` only where it would start HTML, a comment or an autolink (`a < b`, `Map<K, V>` stay).
+    .replace(/<(?=[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>|\/[A-Za-z][A-Za-z0-9-]*\s*>|[!?]|[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|[^\s<>@]+@[^\s<>]+>)/g, "&lt;");
   return s
     .split("\n")
     .map((line, i) => (i > 0 || atLineStart ? escapeLineStart(line) : line))
@@ -85,12 +87,54 @@ interface SerializerInternals {
   encodeTextForMarkdown: (text: string, node: JsonNode, parent?: JsonNode) => string;
 }
 
+// Parsing: every manager (the editor's initial content is parsed before extensions can
+// adjust their own manager). Raw HTML and comments are kept verbatim instead of being
+// converted or dropped; `- [ ]` without text is an empty task.
+{
+  const proto = MarkdownManager.prototype as unknown as { parse: (md: string) => unknown; parseHTMLToken: typeof rawHtmlNode };
+  const parse = proto.parse;
+  proto.parse = function (this: unknown, md: string) {
+    return parse.call(this, openEmptyTasks(md));
+  };
+  proto.parseHTMLToken = rawHtmlNode;
+}
+
+/** The plain text inside a serialized node (code block content). */
+const textOf = (node: JsonNode): string => (node.content ?? []).map((c) => (c as { text?: string }).text ?? textOf(c)).join("");
+
 /** Installs the minimal escaping on the editor's Markdown serializer. */
 const MarkdownFidelity = Extension.create({
   name: "markdownFidelity",
+  addGlobalAttributes() {
+    // A `<br>` written in the file stays `<br>` (instead of becoming two trailing spaces).
+    return [{ types: ["hardBreak"], attributes: { raw: { default: null, rendered: false } } }];
+  },
   onBeforeCreate() {
     const manager = (this.editor as unknown as { markdown?: SerializerInternals }).markdown;
     if (!manager) return;
+    for (const spec of manager.nodeTypeRegistry.get("hardBreak") ?? []) {
+      const render = spec.renderMarkdown;
+      if (!render) continue;
+      spec.renderMarkdown = (node, ...rest) => (typeof node.attrs?.raw === "string" ? node.attrs.raw : render(node, ...rest));
+    }
+    // Code containing ``` gets a longer fence, so the block does not end early.
+    for (const spec of manager.nodeTypeRegistry.get("codeBlock") ?? []) {
+      spec.renderMarkdown = (node) => {
+        const language = String(node.attrs?.language ?? "");
+        const text = textOf(node);
+        const fence = codeFence(text);
+        return `${fence}${language}\n${text}\n${fence}`;
+      };
+    }
+    // An empty task keeps the space after its box, which makes it a task when read again.
+    for (const spec of manager.nodeTypeRegistry.get("taskItem") ?? []) {
+      const render = spec.renderMarkdown;
+      if (!render) continue;
+      spec.renderMarkdown = (node, ...rest) => {
+        const out = render(node, ...rest);
+        return typeof out === "string" ? out.replace(/^(- \[[ x]\])(?=\n|$)/, "$1 ") : out;
+      };
+    }
     // Empty paragraphs at the end of a quote (a fresh foldable callout) would leave bare `>` lines.
     for (const spec of manager.nodeTypeRegistry.get("blockquote") ?? []) {
       const render = spec.renderMarkdown;
@@ -242,6 +286,9 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
     FindInPage,
     Callouts,
+    HtmlInline,
+    HtmlBlock,
+    LiteralHash,
     Columns,
     Column,
     TableOfContents,
@@ -277,6 +324,8 @@ export function cleanMarkdown(md: string): string {
       .replace(new RegExp(TIGHT_MARK, "g"), "")
       .replace(/\n{3,}/g, "\n\n")
       .replace(/^\n+/, "")
-      .trimEnd() + "\n"
+      .trimEnd()
+      // A final empty task keeps the space after its box.
+      .replace(/(^|\n)(\s*[-+*] \[[ xX]\])$/, "$1$2 ") + "\n"
   );
 }

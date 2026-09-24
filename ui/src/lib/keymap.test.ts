@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, DEFAULT_KEYMAP, comboFromEvent, comboLabel, comboProblem, commandFor, effectiveKeymap, findConflicts, keymapOverrides, normalizeCombo } from "./keymap";
+import { COMMANDS, DEFAULT_KEYMAP, commandAllowed, comboFromEvent, comboLabel, comboProblem, commandFor, defaultKeymap, effectiveKeymap, findConflicts, isTextTarget, keymapOverrides, normalizeCombo } from "./keymap";
 
 const ev = (key: string, code: string, mods: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean; altGr?: boolean } = {}) => ({
   key,
@@ -49,6 +49,45 @@ describe("keymap", () => {
     expect(comboLabel("Ctrl+Shift+D")).toBe("Ctrl Shift D");
     expect(comboLabel("Alt+ArrowLeft")).toBe("Alt ←");
     expect(comboLabel("")).toBe("");
+  });
+
+  it("macOS: back/forward default to Cmd+[ / Cmd+] (Option+arrows jump by word there)", () => {
+    const mac = defaultKeymap(true);
+    const other = defaultKeymap(false);
+    expect(mac.back).toBe("Ctrl+[");
+    expect(mac.forward).toBe("Ctrl+]");
+    expect(other.back).toBe("Alt+ArrowLeft");
+    expect(other.forward).toBe("Alt+ArrowRight");
+    expect(findConflicts(mac)).toEqual([]);
+    for (const c of Object.values(mac)) expect(comboProblem(c)).toBeNull();
+    // Cmd+[ by key position (Ü on German keyboards), as the recorder in Settings sees it.
+    expect(comboFromEvent(ev("[", "BracketLeft", { meta: true }))).toBe("Ctrl+[");
+    expect(comboFromEvent(ev("ü", "BracketLeft", { meta: true }))).toBe("Ctrl+[");
+    expect(commandFor(ev("]", "BracketRight", { meta: true }), mac)).toBe("forward");
+    expect(commandFor(ev("ArrowLeft", "ArrowLeft", { alt: true }), mac)).toBeNull();
+    expect(normalizeCombo("cmd+[")).toBe("Ctrl+[");
+    expect(comboLabel("Ctrl+[", true)).toContain("[");
+  });
+
+  it("back/forward stay with text fields and the editor", () => {
+    const input = document.createElement("input");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    const area = document.createElement("textarea");
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+    document.body.append(editable);
+    const button = document.createElement("button");
+    for (const el of [input, area, editable]) {
+      expect(isTextTarget(el)).toBe(true);
+      expect(commandAllowed("back", el)).toBe(false);
+      expect(commandAllowed("forward", el)).toBe(false);
+      expect(commandAllowed("palette", el)).toBe(true);
+    }
+    expect(commandAllowed("back", box)).toBe(true);
+    expect(commandAllowed("back", button)).toBe(true);
+    expect(commandAllowed("back", document.body)).toBe(true);
+    editable.remove();
   });
 
   it("defaults match the documented shortcuts and have no conflicts", () => {

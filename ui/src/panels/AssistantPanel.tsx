@@ -61,6 +61,8 @@ const SUGGESTION_ICON: Record<SuggestionKind, typeof Search> = {
 const FOLLOW_UPS = ["Kürzer", "Als Stichpunkte", "Als Tabelle", "Auf Englisch"];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/** Characters of an answer shown in the chat; the rest stays available for copying and saving. */
+const MAX_SHOWN = 100_000;
 const tierLabel: Record<Tier, string> = { local: "Lokal", standard: "Standard", reasoning: "Reasoning" };
 
 export function AssistantPanel() {
@@ -76,6 +78,13 @@ export function AssistantPanel() {
   const [preview, setPreview] = useState<RouteDecision | null>(null);
   const history = useRef<ChatMessage[]>([]);
   const requestId = useRef<string | null>(null);
+  // Every send belongs to a run; „Stoppen“ and „Neuer Chat“ end it. After each wait a send
+  // checks that its run is still the current one.
+  const run = useRef(0);
+  // Tool calls waiting for the user's approval: ended runs reject them.
+  const approvals = useRef(new Set<(ok: boolean) => void>());
+  // The send that owns `busy` (a send of an abandoned chat no longer clears it).
+  const activeSend = useRef<object | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
@@ -87,25 +96,35 @@ export function AssistantPanel() {
 
   const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Turn) : t)));
 
-  // Stream deltas into the current assistant turn, batched per frame.
+  // Stream deltas into the current assistant turn, batched per frame. Only into a turn that is
+  // still streaming for the same request: a batch left over when the complete answer arrives
+  // is dropped (it would show the answer twice).
+  const stream = useRef({ buffer: "", frame: 0, rid: null as string | null });
+  const endStream = () => {
+    cancelAnimationFrame(stream.current.frame);
+    stream.current = { buffer: "", frame: 0, rid: null };
+  };
   useEffect(() => {
-    let buffer = "";
-    let frame = 0;
-    let target: string | null = null;
+    const st = stream.current;
     const un = on<{ request_id: string; event: StreamEvent }>("ai://stream", ({ request_id, event }) => {
       if (request_id !== requestId.current) return;
       // Settings → KI „Antworten live anzeigen“ off: the answer appears when complete.
       if (event.type === "delta" && streamingOn()) {
-        buffer += event.text;
-        target = request_id;
-        if (!frame)
-          frame = requestAnimationFrame(() => {
-            frame = 0;
-            const chunk = buffer;
-            buffer = "";
+        const cur = stream.current;
+        if (cur.rid !== request_id) {
+          cancelAnimationFrame(cur.frame);
+          stream.current = { buffer: "", frame: 0, rid: request_id };
+        }
+        stream.current.buffer += event.text;
+        if (!stream.current.frame)
+          stream.current.frame = requestAnimationFrame(() => {
+            const { buffer: chunk, rid } = stream.current;
+            stream.current.frame = 0;
+            stream.current.buffer = "";
+            if (!chunk || rid !== requestId.current) return;
             setTurns((ts) => {
               const last = ts[ts.length - 1];
-              if (!last || last.kind !== "assistant" || !target) return ts;
+              if (!last || last.kind !== "assistant" || !last.streaming) return ts;
               return [...ts.slice(0, -1), { ...last, text: last.text + chunk }];
             });
           });
@@ -115,7 +134,8 @@ export function AssistantPanel() {
     return () => {
       un.then((f) => f());
       un2.then((f) => f());
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(st.frame);
+      cancelAnimationFrame(stream.current.frame);
     };
   }, [s]);
 
@@ -141,9 +161,14 @@ export function AssistantPanel() {
     return () => clearTimeout(t);
   }, [input, tier, useTools]);
 
-  const runTools = async (calls: ToolCall[]): Promise<ChatMessage[]> => {
+  const runTools = async (calls: ToolCall[], live: () => boolean): Promise<ChatMessage[]> => {
     const results: ChatMessage[] = [];
     for (const c of calls) {
+      // Stopped: the remaining calls are answered without running them.
+      if (!live()) {
+        results.push({ role: "tool", tool_call_id: c.id, content: "Abgebrochen." });
+        continue;
+      }
       const id = uid();
       const meta = TOOL_META[c.function.name];
       setTurns((ts) => [...ts, { id, kind: "tool", name: c.function.name, label: meta?.label ?? c.function.name, status: "running" }]);
@@ -162,7 +187,15 @@ export function AssistantPanel() {
           }
           update(id, { status: "done", summary: summarizeArgs(c) });
         } else {
-          const ok = await new Promise<boolean>((resolve) => update(id, { status: "pending", summary: plan.summary, decide: resolve }));
+          const ok = await new Promise<boolean>((resolve) => {
+            const decide = (v: boolean) => {
+              approvals.current.delete(decide);
+              resolve(v);
+            };
+            approvals.current.add(decide);
+            if (!live()) decide(false);
+            else update(id, { status: "pending", summary: plan.summary, decide });
+          });
           if (!ok) {
             update(id, { status: "rejected", decide: undefined });
             out = "Der Nutzer hat die Ausführung abgelehnt.";
@@ -187,10 +220,17 @@ export function AssistantPanel() {
     if (!text || busy) return;
     setInput("");
     setBusy(true);
+    const me = {};
+    activeSend.current = me;
+    const myRun = run.current;
+    const live = () => run.current === myRun;
+    // The chat this send writes to; „Neuer Chat“ starts another one.
+    const chat = history.current;
+    const current = () => history.current === chat;
     stick.current = true;
     setTurns((ts) => [...ts, { id: uid(), kind: "user", text: opts.display ?? text }]);
-    const turnStart = history.current.length;
-    history.current.push({ role: "user", content: text });
+    const turnStart = chat.length;
+    chat.push({ role: "user", content: text });
     try {
       for (let round = 0; round < 5; round++) {
         const aid = uid();
@@ -198,15 +238,18 @@ export function AssistantPanel() {
         requestId.current = rid;
         setTurns((ts) => [...ts, { id: aid, kind: "assistant", text: "", streaming: true, pageTitle: opts.pageTitle }]);
         const out = await withCostLimit((overrideLimit) =>
-          api.chat({ requestId: rid, messages: history.current, useTools: tools, tier, pageId: includePage && pageContext ? pageContext.id : null, overrideLimit }),
+          api.chat({ requestId: rid, messages: chat, useTools: tools, tier, pageId: includePage && pageContext ? pageContext.id : null, overrideLimit }),
         );
+        // A new chat meanwhile: this answer belongs to the old one.
+        if (!current()) return;
         warnCost(out.cost_warning);
         const c = out.completion;
-        requestId.current = null;
+        if (requestId.current === rid) requestId.current = null;
+        endStream();
         update(aid, {
           text: c.content,
           streaming: false,
-          cancelled: c.finish_reason === "cancelled",
+          cancelled: c.finish_reason === "cancelled" || !live(),
           // All of them, in order: `[n]` in the answer is `sources[n - 1]`.
           sources: out.context,
           meta: {
@@ -222,26 +265,45 @@ export function AssistantPanel() {
           },
         });
         s().set({ meter: out.meter });
-        history.current.push({ role: "assistant", content: c.content || null, tool_calls: c.tool_calls.length ? c.tool_calls : undefined });
-        if (!c.tool_calls.length || c.finish_reason === "cancelled") break;
+        // Stopped: tool calls of this answer are not run (and not kept in the history).
+        if (!live() && c.tool_calls.length) {
+          chat.push({ role: "assistant", content: c.content || "" });
+          break;
+        }
+        chat.push({ role: "assistant", content: c.content || null, tool_calls: c.tool_calls.length ? c.tool_calls : undefined });
+        if (!c.tool_calls.length || c.finish_reason === "cancelled" || !live()) break;
         if (!c.content) setTurns((ts) => ts.filter((t) => t.id !== aid));
-        history.current.push(...(await runTools(c.tool_calls)));
+        const results = await runTools(c.tool_calls, live);
+        if (!current()) return;
+        chat.push(...results);
+        if (!live()) break;
       }
     } catch (e) {
+      if (!current()) return;
       requestId.current = null;
+      endStream();
       setTurns((ts) => {
         const last = ts[ts.length - 1];
         if (last?.kind === "assistant" && last.streaming) return [...ts.slice(0, -1), { ...last, streaming: false, error: errorText(e) }];
         return [...ts, { id: uid(), kind: "assistant", text: "", streaming: false, error: errorText(e) }];
       });
-      history.current.length = turnStart;
+      chat.splice(turnStart);
     } finally {
-      setBusy(false);
-      textarea.current?.focus();
+      if (activeSend.current === me) {
+        activeSend.current = null;
+        setBusy(false);
+        textarea.current?.focus();
+      }
     }
   }
 
-  const stop = () => requestId.current && api.cancelChat(requestId.current);
+  /** Ends the running answer: cancels the request and rejects waiting tool approvals. */
+  const stop = () => {
+    run.current++;
+    const rid = requestId.current;
+    if (rid) api.cancelChat(rid).catch(() => {});
+    for (const decide of [...approvals.current]) decide(false);
+  };
   // Right-click in the chat: the selection, the message under the pointer, the chat.
   const chatMenu = (target: HTMLElement): MenuEntry[] => {
     const out: MenuEntry[] = [];
@@ -334,7 +396,12 @@ export function AssistantPanel() {
 
   const newChat = () => {
     if (busy) stop();
+    // A reply still on its way belongs to the old chat and is dropped.
+    requestId.current = null;
+    endStream();
     history.current = [];
+    activeSend.current = null;
+    setBusy(false);
     setTurns([]);
   };
 
@@ -482,7 +549,8 @@ export function AssistantPanel() {
               e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Enter during IME composition picks the candidate, it does not send.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
               }
@@ -632,6 +700,10 @@ function TurnView({ turn }: { turn: Turn }) {
   };
   // Cited sources first for the chips below the answer.
   const cited = citedNumbers(turn.text, sources.length);
+  // A huge answer is shown shortened (rendering megabytes of Markdown freezes the window).
+  const cut = turn.text.length > MAX_SHOWN;
+  const shown = cut ? turn.text.slice(0, MAX_SHOWN) : turn.text;
+  const html = turn.streaming ? renderMarkdown(shown) : linkCitations(renderMarkdown(shown), sources.length);
   const chipSources = dedupeSources([...cited.map((n) => sources[n - 1]), ...sources]);
   const numberOf = (src: ContextChunk) => sources.indexOf(src) + 1;
   return (
@@ -647,7 +719,7 @@ function TurnView({ turn }: { turn: Turn }) {
       ) : (
         <div
           className={`prose prose-chat ${turn.streaming ? "streaming" : ""}`}
-          dangerouslySetInnerHTML={{ __html: turn.streaming ? renderMarkdown(turn.text) : linkCitations(renderMarkdown(turn.text), sources.length) }}
+          dangerouslySetInnerHTML={{ __html: html }}
           onMouseOver={(e) => {
             const el = citeOf(e.target);
             if (!el) return;
@@ -678,6 +750,11 @@ function TurnView({ turn }: { turn: Turn }) {
       )}
       {cite && sources[cite.n - 1] && (
         <CiteCard src={sources[cite.n - 1]} n={cite.n} rect={cite.rect} onEnter={() => window.clearTimeout(hideTimer.current)} onLeave={hideSoon} />
+      )}
+      {cut && (
+        <div className="faint small msg-cut">
+          Sehr lange Antwort: angezeigt werden die ersten {MAX_SHOWN.toLocaleString("de-DE")} von {turn.text.length.toLocaleString("de-DE")} Zeichen. Kopieren und „Als neue Seite speichern“ übernehmen alles.
+        </div>
       )}
       {turn.cancelled && <div className="faint small">Abgebrochen</div>}
       {!turn.streaming && !turn.error && turn.sources && turn.sources.length > 0 && (

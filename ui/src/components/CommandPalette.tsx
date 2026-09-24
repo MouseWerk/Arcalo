@@ -305,7 +305,7 @@ export function CommandPalette() {
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setSel((v) => (v - 1 + items.length) % Math.max(items.length, 1));
-              } else if (e.key === "Enter") {
+              } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 run(sel, e.ctrlKey || e.metaKey);
               } else if (e.key === "Escape") {

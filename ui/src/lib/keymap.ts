@@ -40,7 +40,18 @@ export const COMMANDS: CommandDef[] = [
   { id: "settings", label: "cmd.settings", combo: "Ctrl+," },
 ];
 
-export const DEFAULT_KEYMAP: Record<string, string> = Object.fromEntries(COMMANDS.map((c) => [c.id, c.combo]));
+/**
+ * Defaults that differ on macOS: Option+←/→ jumps by word there, so back/forward use ⌘[ and
+ * ⌘] (as Safari and Finder do).
+ */
+export const MAC_DEFAULTS: Record<string, string> = { back: "Ctrl+[", forward: "Ctrl+]" };
+
+/** The default combos of the platform (Settings → Tastatur shows and resets to these). */
+export function defaultKeymap(mac = IS_MAC): Record<string, string> {
+  return Object.fromEntries(COMMANDS.map((c) => [c.id, (mac && MAC_DEFAULTS[c.id]) || c.combo]));
+}
+
+export const DEFAULT_KEYMAP: Record<string, string> = defaultKeymap();
 
 /** Combos the editor and the system use; binding them to a command is a conflict. */
 export const RESERVED: Record<string, TKey> = {
@@ -68,6 +79,9 @@ const NAMED: Record<string, string> = {
   ArrowUp: "ArrowUp",
   ArrowDown: "ArrowDown",
   Backslash: "\\",
+  // By position, like the backslash: ⌘[ is the key right of P (Ü on German keyboards).
+  BracketLeft: "[",
+  BracketRight: "]",
   Backspace: "Backspace",
   Delete: "Delete",
   Home: "Home",
@@ -209,6 +223,24 @@ export function commandFor(e: KeyEventLike, map: Record<string, string>): string
   if (!combo) return null;
   for (const [id, c] of Object.entries(map)) if (c === combo) return id;
   return null;
+}
+
+/** Commands that stay with a text field or the editor when the focus is in one (word jumps). */
+const TEXT_KEEPS = new Set(["back", "forward"]);
+
+/** The focus is where text is typed: an input, a text area or the editor. */
+export function isTextTarget(el: Element | null): boolean {
+  if (!el) return false;
+  if ((el as HTMLElement).isContentEditable) return true;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = ((el as HTMLInputElement).type || "text").toLowerCase();
+  return !["button", "checkbox", "radio", "range", "color", "file", "submit", "reset", "image"].includes(type);
+}
+
+/** Whether command `id` runs for a key event with the focus on `target`. */
+export function commandAllowed(id: string, target: Element | null): boolean {
+  return !(TEXT_KEEPS.has(id) && isTextTarget(target));
 }
 
 /** Current keymap for hints outside React (set by `applyPrefs`). */

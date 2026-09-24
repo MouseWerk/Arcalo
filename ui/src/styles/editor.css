@@ -1051,3 +1051,23 @@
 .sugg, .menu, .pal-list { padding-right: 0; scrollbar-gutter: stable; }
 .sugg::-webkit-scrollbar, .menu::-webkit-scrollbar, .pal-list::-webkit-scrollbar { width: 5px; }
 .sugg::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb, .pal-list::-webkit-scrollbar-thumb { border-width: 1px; }
+
+/* ---- raw HTML kept verbatim ---- */
+/* Shown as its source (never rendered); edited in the Markdown source mode. */
+.prose .md-html { font-family: var(--font-mono); font-size: 0.84em; padding: 0.1em 0.35em; border-radius: 4px; color: var(--text-3); background: color-mix(in srgb, var(--bg-active) 60%, transparent); border: 1px dashed var(--border); white-space: pre-wrap; cursor: default; }
+.prose pre.md-html-block { margin: 0.6em 0; padding: 8px 12px; font-family: var(--font-mono); font-size: 0.8em; line-height: 1.55; color: var(--text-3); background: transparent; border: 1px dashed var(--border-strong); white-space: pre-wrap; overflow-wrap: anywhere; cursor: default; }
+.prose .md-html.ProseMirror-selectednode, .prose pre.md-html-block.ProseMirror-selectednode { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+
+/* ---- editor mode switch ---- */
+/* Holds the place of the editor while the page is fetched for the other mode. */
+.editor-switching { min-height: 50vh; }
+
+/* ---- damaged drawing ---- */
+.drawing-broken { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; text-align: center; color: var(--text-2); }
+.drawing-broken svg { color: var(--warning); }
+.drawing-broken-title { font-size: var(--fs-lg, 16px); font-weight: 600; color: var(--text); }
+.drawing-broken p { margin: 0; max-width: 460px; line-height: 1.5; overflow-wrap: anywhere; }
+.drawing-broken-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ---- long assistant answers ---- */
+.msg-cut { margin-top: 6px; }

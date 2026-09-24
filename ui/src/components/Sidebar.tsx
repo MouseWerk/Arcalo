@@ -193,7 +193,7 @@ function SearchPane() {
           placeholder={tr("sidebar.searchPlaceholder")}
           aria-label={tr("sidebar.fulltext")}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               const first = [...byPage.keys()][0];
               if (first) s().openPage(first, { newTab: e.ctrlKey || e.metaKey });
             }

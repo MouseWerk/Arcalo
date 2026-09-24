@@ -7,6 +7,7 @@ import { Extension, type Editor, type JSONContent } from "@tiptap/core";
 import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { closeHistory } from "@tiptap/pm/history";
 import { classifyPaste, type ChatMessage, type PasteKind } from "./paste";
 
 export interface SmartPasteOptions {
@@ -128,7 +129,13 @@ function pastePlain(view: EditorView, text: string) {
 function insert(editor: Editor, view: EditorView, kind: PasteKind, text: string, seq: number): Hint | null {
   const { from, to } = view.state.selection;
   const size = view.state.doc.content.size;
-  const ok = editor.chain().insertContent(pasteContent(kind), { updateSelection: true }).scrollIntoView().run();
+  // A history step of its own: „Als Text einfügen“ undoes exactly the paste, not the typing before it.
+  const ok = editor
+    .chain()
+    .command(({ tr }) => (closeHistory(tr), true))
+    .insertContent(pasteContent(kind), { updateSelection: true })
+    .scrollIntoView()
+    .run();
   if (!ok) return null;
   const end = from + (view.state.doc.content.size - size) + (to - from);
   return { from, to: Math.min(end, view.state.doc.content.size), text, url: kind.kind === "url" ? kind.url : null, link: kind.kind === "url", id: seq };

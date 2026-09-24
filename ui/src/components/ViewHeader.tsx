@@ -4,13 +4,14 @@ import type { ReactNode } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useApp, type Tab } from "../store/app";
 import { IconButton } from "./ui";
+import { withHint } from "../lib/keymap";
 
 export function NavButtons({ tab }: { tab: Tab }) {
   const s = useApp.getState;
   return (
     <div className="vh-nav">
-      <IconButton icon={ArrowLeft} label="Zurück (Alt ←)" size="md" disabled={!tab.back.length} onClick={() => s().goBack()} />
-      <IconButton icon={ArrowRight} label="Vorwärts (Alt →)" size="md" disabled={!tab.forward.length} onClick={() => s().goForward()} />
+      <IconButton icon={ArrowLeft} label={withHint("Zurück", "back")} size="md" disabled={!tab.back.length} onClick={() => s().goBack()} />
+      <IconButton icon={ArrowRight} label={withHint("Vorwärts", "forward")} size="md" disabled={!tab.forward.length} onClick={() => s().goForward()} />
     </div>
   );
 }
