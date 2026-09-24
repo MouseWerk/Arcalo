@@ -16,6 +16,7 @@
 //! * [`gitsync`] – pushes the Markdown mirror to a Git remote (system `git`, token via environment)
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
 //! * [`vault`] – Obsidian vault import / Markdown export
+//! * [`linktitle`] – titles of web pages for pasted links
 //! * [`attachments`] – pasted and imported images
 //! * [`drawings`] – Excalidraw drawings (scene + SVG preview) embedded in notes
 //! * [`templates`] – page templates with `{{datum}}`-style placeholders
@@ -45,6 +46,7 @@ pub mod drawings;
 pub mod error;
 pub mod export;
 pub mod gitsync;
+pub mod linktitle;
 pub mod mirror;
 pub mod model;
 pub mod network;

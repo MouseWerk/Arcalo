@@ -23,6 +23,12 @@ describe("stripMarkdown", () => {
   it("can leave wiki links for the caller", () => {
     expect(stripMarkdown("- **Siehe** [[Architektur|Arch]]", { keepWikilinks: true })).toBe("Siehe [[Architektur|Arch]]");
   });
+  it("drops footnote marks, column markers and [TOC]", () => {
+    expect(stripMarkdown("Aussage[^1] hier")).toBe("Aussage hier");
+    expect(stripMarkdown("[^1]: Die Quelle")).toBe("Die Quelle");
+    expect(stripMarkdown("<!-- spalten -->")).toBe("");
+    expect(stripMarkdown("[TOC]")).toBe("");
+  });
   it("keeps FTS hit markers", () => {
     expect(stripMarkdown("…mit **\u0002fett\u0003** und")).toBe("…mit \u0002fett\u0003 und");
   });

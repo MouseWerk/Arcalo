@@ -187,6 +187,27 @@ Migration v2 converts the old block model: blocks are concatenated into
 
 - The editor (TipTap/ProseMirror) loads and saves Markdown via `@tiptap/markdown`. Custom nodes serialize to portable syntax:
   `[[Target#Heading|Alias]]` for links and `<time-entry id=… hours=… target=…>text</time-entry>` for booked time.
+- Layout blocks (`ui/src/editor/blocks.ts`, round-trip cases in `roundtrip.test.ts`), all plain Markdown that other tools show
+  sensibly: foldable callouts are Obsidian's `> [!note]- Titel` (collapsed) / `> [!note]+ Titel` (expanded), the chevron rewrites
+  the marker; columns are ordinary Markdown between HTML comments on their own lines (`<!-- spalten -->`, `<!-- spalte -->`
+  between columns, `<!-- /spalten -->`; nestable, markers inside code fences ignored), which Obsidian and GitHub hide, so the
+  columns read one after another there; the table of contents is a `[TOC]` line (Typora/MkDocs marker), rendered live from the
+  headings; footnotes are `[^1]` / `[^1]: Text` (continuation lines indented by four spaces), numbered by first reference, a
+  definition directly under another stays without blank line. Vault import/export and the mirror copy the text unchanged.
+- Smart paste (`ui/src/editor/paste.ts` classifiers, `smartPaste.ts`): TSV or an HTML `<table>` becomes a table (first row
+  header), Teams chat copies (`[10:32] Name`, `[Datum Zeit] Name: Text`, `Name 10:32`, name line + time line) a list
+  `**Name** (10:32): Text` (the time is shown muted), a stack trace (Java, .NET, Python, JavaScript) or a log with timestamps
+  and levels a code block, a lone URL on an empty selection a link whose text becomes the page title (`link_title`:
+  `annalo_core::linktitle`, the tools HTTP client with the network settings, http/https only, 4 s, at most 256 KB, `og:title`
+  before `<title>`, the URL when there is none). A hint „Als Text einfügen“ undoes it into a plain paste; Ctrl+Shift+V and
+  pastes copied inside the editor are never converted, files stay with `AttachmentDrop`.
+- „Als HTML-Datei teilen…“ (`ui/src/editor/shareHtml.ts`, `ui/src/lib/htmlExport.ts`): the page (optionally with its
+  subpages and a table of contents) is rendered by a headless editor with the same schema, then made static: images and
+  drawing previews as data URIs, attachments up to 1 MB as embedded download links and larger ones by name (both also
+  listed under „Anhänge“), `[[links]]` as anchors when the target page is in the file and as text otherwise, callouts
+  (foldable ones as `<details>`), footnotes at the end with back-links, highlighted code. Inline CSS with the reading
+  typography (light, dark via `prefers-color-scheme`, print rules), system fonts, a CSP meta that allows only `data:`
+  images, so the file loads nothing from elsewhere; web images become links. `html_file_write` only writes `.html`/`.htm`.
 - YAML frontmatter is split off before editing and re-attached on save, so imported Obsidian notes keep their properties.
   The property editor under the title (`ui/src/lib/frontmatter.ts`) reads `key: value`, dates and lists; anything more complex
   stays a raw YAML row and is written back verbatim. Its edits go through the editor's save path (one writer per page).

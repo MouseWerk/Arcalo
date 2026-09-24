@@ -348,6 +348,7 @@ export function NoteEditor({
         onAi: (editor) => openAi(editor),
         onSummary: () => window.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { detail: { id: doc.id } })),
         typing: typingPrefs,
+        fetchTitle: (url) => api.linkTitle(url).catch(() => null),
         onZeitLost: (res) =>
           useApp.getState().toast({ tone: "warning", title: "Gebucht, aber Zeile nicht mehr gefunden", detail: `${res.hours} h · ${res.target} – kein Chip eingefügt` }),
       }),

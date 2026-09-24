@@ -16,8 +16,10 @@ import { DrawingEmbed } from "./drawing";
 import { AttachmentDrop, FileEmbed } from "./fileEmbed";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
+import { SmartPaste } from "./smartPaste";
+import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 
-const lowlight = createLowlight(common);
+export const lowlight = createLowlight(common);
 
 /**
  * Escapes only what would change meaning when the Markdown is parsed again.
@@ -29,6 +31,7 @@ export function escapeText(t: string, atLineStart = true): string {
     .replace(/\\(?=[\\`*_[\]~=#<>!|.)+-])/g, "\\\\")
     .replace(/`/g, "\\`")
     .replace(/\[\[/g, "\\[\\[")
+    .replace(/\[\^/g, "\\[^")
     .replace(/\[([^\]\n]*)\]\(/g, "\\[$1\\](")
     .replace(/(^|[^\p{L}\p{N}*\\])\*(?=\S)/gu, "$1\\*")
     .replace(/([^\s\\])\*(?=$|[^\p{L}\p{N}*])/gu, "$1\\*")
@@ -72,8 +75,11 @@ const MarkdownTable = Table.extend({
   renderMarkdown: (node, h) => renderTableToMarkdown(markTableCells(node as JsonNode) as typeof node, h),
 });
 
+type RenderSpec = { renderMarkdown?: (node: JsonNode, ...rest: unknown[]) => string };
+
 interface SerializerInternals {
   codeTypes: Set<string>;
+  nodeTypeRegistry: Map<string, RenderSpec[]>;
   encodeTextForMarkdown: (text: string, node: JsonNode, parent?: JsonNode) => string;
 }
 
@@ -83,12 +89,23 @@ const MarkdownFidelity = Extension.create({
   onBeforeCreate() {
     const manager = (this.editor as unknown as { markdown?: SerializerInternals }).markdown;
     if (!manager) return;
+    // Empty paragraphs at the end of a quote (a fresh foldable callout) would leave bare `>` lines.
+    for (const spec of manager.nodeTypeRegistry.get("blockquote") ?? []) {
+      const render = spec.renderMarkdown;
+      if (!render) continue;
+      spec.renderMarkdown = (node, ...rest) => {
+        const content = [...(node.content ?? [])];
+        while (content.length > 1 && content[content.length - 1].type === "paragraph" && !content[content.length - 1].content?.length) content.pop();
+        return render({ ...node, content }, ...rest);
+      };
+    }
     manager.encodeTextForMarkdown = (text, node, parent) => {
       const inCode = (parent?.type != null && manager.codeTypes.has(parent.type)) || (node.marks ?? []).some((m) => manager.codeTypes.has(typeof m === "string" ? m : m.type));
       if (inCode) return text;
       const siblings = parent?.content ?? [];
       const idx = siblings.indexOf(node);
-      const atLineStart = !node.marks?.length && (idx === 0 || (idx > 0 && siblings[idx - 1].type === "hardBreak"));
+      // A footnote definition's text follows `[^1]: `, never at the start of a line.
+      const atLineStart = !node.marks?.length && parent?.type !== "footnoteDefinition" && (idx === 0 || (idx > 0 && siblings[idx - 1].type === "hardBreak"));
       const out = escapeText(text, atLineStart);
       return parent?.attrs?.[IN_TABLE_CELL] ? out.replace(/\|/g, "\\|") : out;
     };
@@ -162,6 +179,8 @@ export interface SchemaOptions {
   zeitRefs?: (query: string) => Promise<ZeitSuggestItem[]>;
   /** `/zeit` autocomplete: Leistungsarten after `#`. */
   zeitLeistungsarten?: (query: string) => Promise<ZeitSuggestItem[]>;
+  /** Smart paste of a lone URL: the page's title (null: keep the URL). */
+  fetchTitle?: (url: string) => Promise<string | null>;
   /** Typing aids (Settings → Editor), read on every keystroke. */
   typing?: () => TypingPrefs;
 }
@@ -197,6 +216,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       renderPdfPreview: o.renderPdfPreview ?? null,
     }),
     AttachmentDrop.configure({ uploadImage: o.uploadImage ?? null, uploadFile: o.uploadFile ?? null }),
+    SmartPaste.configure({ fetchTitle: o.fetchTitle ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),
     DrawingEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), onOpen: o.onOpenDrawing ?? (() => {}) }),
     TimeEntryChip,
@@ -205,6 +225,12 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
     FindInPage,
     Callouts,
+    Columns,
+    Column,
+    TableOfContents,
+    FootnoteRef,
+    FootnoteDefinition,
+    Footnotes,
     CiteFlash,
     TypingAids.configure({ prefs: o.typing ?? (() => TYPING_DEFAULTS) }),
   ];
@@ -222,9 +248,16 @@ export function toMarkdown(editor: Editor): string {
 export function cleanMarkdown(md: string): string {
   return (
     md
-      .replace(LINK_RE, (_m, text: string, href: string, title?: string) => linkMarkdown(text, href, title))
+      .replace(LINK_RE, (m, text: string, href: string, title: string | undefined, at: number, all: string) => {
+        const out = linkMarkdown(text, href, title);
+        // A bare URL would swallow a footnote reference right behind it (`https://x.de[^1]`).
+        return out === href && all.startsWith("[^", at + m.length) ? `[${text}](${href})` : out;
+      })
       .replace(new RegExp(`[${LINK_OPEN}${LINK_CLOSE}]`, "g"), "")
       .replace(/^((?:>\s?)+)\\\[!(\w+)\\\]/gm, "$1[!$2]")
+      // Footnote definitions written one per line stay together.
+      .replace(new RegExp(`\n+${TIGHT_MARK}`, "g"), "\n")
+      .replace(new RegExp(TIGHT_MARK, "g"), "")
       .replace(/\n{3,}/g, "\n\n")
       .replace(/^\n+/, "")
       .trimEnd() + "\n"
