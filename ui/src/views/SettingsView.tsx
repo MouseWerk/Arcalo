@@ -74,6 +74,11 @@ export function SettingsView() {
   const t = useT();
   const view = useApp((s) => s.settings);
   const [section, setSection] = useState<Section>("ai");
+  const nav = useRef<HTMLElement>(null);
+  // In a narrow pane the menu is a scrolling bar: keep the open section in view.
+  useEffect(() => {
+    nav.current?.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [section]);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
@@ -177,7 +182,7 @@ export function SettingsView() {
   const all = NAV.flatMap((g) => g.items).filter((x) => x.id !== "about" && x.id !== "admin");
   return (
     <div className="settings">
-      <nav className="settings-nav" aria-label={t("settings.title")}>
+      <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
         <div className="settings-search">
           <Search size={13} className="faint" />

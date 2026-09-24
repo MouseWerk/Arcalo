@@ -729,7 +729,6 @@ button.side-section-title:hover { color: var(--text-2); }
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .stat { padding: 12px 16px; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--bg-raised); }
 .stat-label { font-size: var(--fs-sm); color: var(--text-3); }
-.stat-sub { color: var(--text-3); opacity: 0.8; }
 .stat-value { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; }
 .stat-accent .stat-value { color: var(--accent-text); }
 .stat-success .stat-value { color: var(--success); }
@@ -804,12 +803,12 @@ button.side-section-title:hover { color: var(--text-2); }
 .settings-nav-item:hover { background: var(--bg-hover); color: var(--text); }
 .settings-nav-item.active { background: var(--bg-active); color: var(--text); }
 .settings-scroll { overflow-y: auto; position: relative; }
-.settings-body { max-width: 780px; padding: 32px 40px 120px; display: grid; gap: 28px; }
+.settings-body { max-width: 780px; padding: 32px 40px 120px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .settings-head h1 { margin: 0; font-size: var(--fs-display); font-weight: 650; letter-spacing: -0.02em; }
 .settings-head p { margin: 6px 0 0; color: var(--text-2); max-width: 600px; line-height: 1.6; }
 .set-group-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .set-group-head p { margin: 2px 0 0; color: var(--text-3); font-size: var(--fs-sm); }
-.set-group-body { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); padding: 4px 16px; display: grid; }
+.set-group-body { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); padding: 4px 16px; display: grid; grid-template-columns: minmax(0, 1fr); }
 .set-group-body > .field { padding: 14px 0; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 13px 0; }
 .set-row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -835,7 +834,8 @@ button.side-section-title:hover { color: var(--text-2); }
 .unit-input { display: flex; align-items: center; gap: 8px; }
 .unit-input .input { width: 80px; text-align: right; }
 .unit-input .input.time-input { width: calc(7ch + 20px); text-align: left; }
-.shortcut-input .input { width: 220px; text-align: left; caret-color: transparent; }
+.shortcut-input { flex-wrap: wrap; min-width: 0; }
+.shortcut-input .input { width: min(220px, 100%); text-align: left; caret-color: transparent; }
 .map-list { display: grid; padding: 8px 0; gap: 4px; }
 .map-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
 .map-row .input { flex: 1; }
@@ -854,7 +854,7 @@ button.side-section-title:hover { color: var(--text-2); }
   animation: pop-in var(--dur) var(--ease-out);
 }
 .savebar span { flex: 1; font-weight: 500; }
-.shortcut-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; padding: 8px 0; }
+.shortcut-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 0 32px; padding: 8px 0; }
 .shortcut { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .shortcut .keys { display: flex; gap: 4px; }
 
@@ -1148,3 +1148,79 @@ body.search-mode { background: transparent; }
 .qs-list { flex: 1; max-height: none; }
 .qs-notice { color: var(--text-2); }
 .pal-foot.qs-error .qs-notice { color: var(--danger); }
+
+/* ------------------------------------------------ narrow panes (split view, side panel) */
+
+/* Dropdowns: the width of number fields does not apply; long values end in "…". */
+.unit-input .select { width: auto; max-width: 100%; text-align: left; }
+.select { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+/* Fields side by side start at the same height, whatever hint sits below one of them. */
+.form-grid { align-items: start; }
+
+/* Settings rows: the control moves below the text when both do not fit side by side. */
+.set-row { flex-wrap: wrap; row-gap: 10px; }
+.set-row-text { flex: 1 1 220px; }
+.set-row-control { flex-wrap: wrap; }
+
+/* Zeiterfassung */
+.view-actions { flex-wrap: wrap; row-gap: 8px; }
+.stat-row { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+.stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-note { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
+.week-grid th:first-child, .week-grid td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-raised); }
+/* The pinned column stays opaque while the days scroll underneath (also on hover). */
+.week-grid tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
+
+@container pane (max-width: 760px) {
+  /* The settings menu becomes a scrollable bar above the content. */
+  .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings > .settings-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: thin;
+  }
+  .settings > .settings-nav .settings-nav-title, .settings > .settings-nav .settings-nav-group-label { display: none; }
+  .settings > .settings-nav .settings-search { flex: 0 0 170px; margin: 0 6px 0 0; }
+  .settings > .settings-nav .settings-nav-group { display: flex; gap: 2px; flex: none; }
+  .settings > .settings-nav .settings-nav-group + .settings-nav-group { margin-top: 0; padding-left: 6px; border-left: 1px solid var(--border); }
+  .settings > .settings-nav .settings-nav-item { flex: none; height: 30px; white-space: nowrap; }
+  .settings-body { padding: 20px 20px 120px; }
+  .set-row-control { max-width: 100%; }
+}
+
+@container pane (max-width: 600px) {
+  .view { padding: 20px 16px 56px; }
+  .view-header { flex-direction: column; align-items: stretch; }
+  .timer-form { grid-template-columns: minmax(0, 1fr); }
+  .timer-form > :last-child { grid-column: auto; justify-self: end; }
+  .settings-body { padding: 16px 16px 120px; }
+  .set-group-body { padding: 4px 12px; }
+  /* Entries: booking, status, hours and menu on the first line; time and text below. */
+  .entry {
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "chk wbs wbs status dur menu" ". time desc desc desc desc";
+    row-gap: 2px;
+    padding: 6px 8px;
+  }
+  .entry > .check { grid-area: chk; }
+  .entry > .entry-time { grid-area: time; white-space: nowrap; }
+  .entry > .entry-wbs { grid-area: wbs; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry > .entry-la { display: none; }
+  .entry > .entry-desc { grid-area: desc; }
+  .entry > .badge { grid-area: status; justify-self: end; white-space: nowrap; }
+  .entry > .entry-dur { grid-area: dur; }
+  .entry > .icon-btn { grid-area: menu; }
+  .card-head { flex-wrap: wrap; }
+}
+
+/* Controls in a settings row never get wider than the row. */
+.set-row-control > * { max-width: 100%; min-width: 0; }
+.model-input { display: grid; gap: 4px; min-width: 0; max-width: 100%; }
+.set-row-control .w-360 { width: min(360px, 100%); }

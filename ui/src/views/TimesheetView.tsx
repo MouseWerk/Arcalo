@@ -155,11 +155,9 @@ export function TimesheetView() {
 function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: Tone; sub?: string }) {
   return (
     <div className={`stat ${tone ? `stat-${tone}` : ""}`}>
-      <div className="stat-label">
-        {label}
-        {sub && <span className="stat-sub"> · {sub}</span>}
-      </div>
+      <div className="stat-label">{label}</div>
       <div className="stat-value num">{value}</div>
+      {sub && <div className="stat-note">{sub}</div>}
     </div>
   );
 }
