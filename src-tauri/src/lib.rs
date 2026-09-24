@@ -1235,6 +1235,8 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> 
     // The start page saves its widgets itself (`dashboard_save`); a settings draft opened
     // earlier must not overwrite them.
     settings.dashboard = state.settings().dashboard;
+    // The same for the sidebar's links (`quick_links_save`).
+    settings.quick_links = state.settings().quick_links;
     let specs = |s: &Settings| {
         [s.capture_shortcut.clone(), s.palette_shortcut.clone().unwrap_or_default(), s.search_shortcut.clone()]
     };
@@ -1276,6 +1278,42 @@ fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<Settin
     state.db().save_settings(&settings)?;
     state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
     Ok(settings_get(state))
+}
+
+/// Saves only the sidebar's links (the rest of the settings stays as it is).
+#[tauri::command]
+fn quick_links_save(
+    app: AppHandle,
+    state: State<AppState>,
+    links: Vec<annalo_core::settings::QuickLink>,
+) -> Result<SettingsView> {
+    let mut settings = state.settings();
+    settings.quick_links = annalo_core::settings::normalize_quick_links(links);
+    state.db().save_settings(&settings)?;
+    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    let _ = app.emit("settings://changed", ());
+    Ok(settings_get(state))
+}
+
+/// Opens the sidebar link at `index`. Only saved links can be opened this way; the page cannot
+/// hand in arbitrary paths.
+#[tauri::command]
+fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize) -> Result<()> {
+    use annalo_core::settings::LinkTarget;
+    use tauri_plugin_opener::OpenerExt;
+    let link =
+        state.settings().quick_links.get(index).cloned().ok_or_else(|| Error::not_found("link", index.to_string()))?;
+    let opened = match link.target() {
+        LinkTarget::Url(u) => app.opener().open_url(u, None::<&str>),
+        LinkTarget::Path(p) => {
+            let p = match p.strip_prefix("~/") {
+                Some(rest) => app.path().home_dir().map(|h| h.join(rest).display().to_string()).unwrap_or(p),
+                None => p,
+            };
+            app.opener().open_path(p, None::<&str>)
+        }
+    };
+    opened.map_err(|e| Error::State(format!("„{}“ ließ sich nicht öffnen: {e}", link.name)))
 }
 
 /// Stores (or with `None`, removes) the LiteLLM API key in the OS credential store.
@@ -2395,6 +2433,8 @@ pub fn run() {
             desktop::search_open,
             desktop::timer_resume_last,
             dashboard_save,
+            quick_links_save,
+            quick_link_open,
             desktop::desktop_info,
             desktop::autostart_set,
             updates::update_status,

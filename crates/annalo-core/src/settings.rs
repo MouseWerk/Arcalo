@@ -89,6 +89,71 @@ pub struct Settings {
     pub search_shortcut: String,
     /// Widgets of the start page (and of new tabs).
     pub dashboard: Dashboard,
+    /// Links at the top of the sidebar (web pages, tools, folders).
+    pub quick_links: Vec<QuickLink>,
+}
+
+/// A link in the sidebar: a web address, `mailto:` or a local folder or file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuickLink {
+    pub name: String,
+    pub url: String,
+    /// Name of a page icon (`globe`, `folder`, …).
+    #[serde(default)]
+    pub icon: String,
+}
+
+/// Where a quick link leads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LinkTarget {
+    /// Opened by the default app for the scheme (browser, mail, Teams, …).
+    Url(String),
+    /// A local folder or file, opened in the file manager or its app.
+    Path(String),
+}
+
+impl QuickLink {
+    /// A web address (with or without scheme), another scheme such as `mailto:`, or a local path.
+    pub fn target(&self) -> LinkTarget {
+        let u = self.url.trim();
+        let lower = u.to_ascii_lowercase();
+        if let Some(rest) = lower.strip_prefix("file://") {
+            let rest = &u[u.len() - rest.len()..];
+            // file:///C:/x → C:/x, file:///home/x → /home/x
+            let path = if rest.len() > 3 && rest.as_bytes()[2] == b':' { &rest[1..] } else { rest };
+            return LinkTarget::Path(path.replace("%20", " "));
+        }
+        let drive = u.len() > 2 && u.as_bytes()[1] == b':' && matches!(u.as_bytes()[2], b'\\' | b'/');
+        if drive || u.starts_with("\\\\") || u.starts_with('/') || u.starts_with("~/") {
+            return LinkTarget::Path(u.to_owned());
+        }
+        let has_scheme = lower
+            .split_once(':')
+            .is_some_and(|(s, _)| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)));
+        if has_scheme { LinkTarget::Url(u.to_owned()) } else { LinkTarget::Url(format!("https://{u}")) }
+    }
+}
+
+/// At most this many links: the sidebar is for the handful used every day.
+pub const MAX_QUICK_LINKS: usize = 40;
+
+/// Trimmed links with an address; the name falls back to the address.
+pub fn normalize_quick_links(links: Vec<QuickLink>) -> Vec<QuickLink> {
+    links
+        .into_iter()
+        .filter_map(|l| {
+            let url = l.url.trim().to_owned();
+            if url.is_empty() {
+                return None;
+            }
+            let name = match l.name.trim() {
+                "" => url.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/').to_owned(),
+                n => n.to_owned(),
+            };
+            Some(QuickLink { name, url, icon: l.icon.trim().to_owned() })
+        })
+        .take(MAX_QUICK_LINKS)
+        .collect()
 }
 
 /// Width of a dashboard widget in the start page's grid: one, two or all four columns.
@@ -199,6 +264,7 @@ impl Default for Settings {
             git_sync: GitSyncSettings::default(),
             search_shortcut: DEFAULT_SEARCH_SHORTCUT.into(),
             dashboard: Dashboard::default(),
+            quick_links: vec![],
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -457,6 +523,31 @@ mod tests {
         assert_eq!(db.load_settings().unwrap().reminder_time, None);
         db.conn().execute("UPDATE settings SET value = '{\"palette_shortcut\":null}'", []).unwrap();
         assert_eq!(db.load_settings().unwrap().palette_shortcut, None);
+    }
+
+    #[test]
+    fn quick_link_targets() {
+        let t = |u: &str| QuickLink { name: String::new(), url: u.into(), icon: String::new() }.target();
+        assert_eq!(t("jira.firma.de"), LinkTarget::Url("https://jira.firma.de".into()));
+        assert_eq!(t("mailto:team@firma.de"), LinkTarget::Url("mailto:team@firma.de".into()));
+        assert_eq!(t("msteams://teams.microsoft.com/l/x"), LinkTarget::Url("msteams://teams.microsoft.com/l/x".into()));
+        assert_eq!(t("C:\\Projekte"), LinkTarget::Path("C:\\Projekte".into()));
+        assert_eq!(t("\\\\server\\share"), LinkTarget::Path("\\\\server\\share".into()));
+        assert_eq!(t("/home/anna/Dokumente"), LinkTarget::Path("/home/anna/Dokumente".into()));
+        assert_eq!(t("file:///C:/Daten/Plan.xlsx"), LinkTarget::Path("C:/Daten/Plan.xlsx".into()));
+        assert_eq!(t("file:///home/anna/a%20b"), LinkTarget::Path("/home/anna/a b".into()));
+    }
+
+    #[test]
+    fn quick_links_are_trimmed_and_named() {
+        let got = normalize_quick_links(vec![
+            QuickLink { name: "  ".into(), url: " https://jira.firma.de/ ".into(), icon: "bug".into() },
+            QuickLink { name: "Leer".into(), url: "  ".into(), icon: String::new() },
+            QuickLink { name: " SAP ".into(), url: "C:\\SAP".into(), icon: String::new() },
+        ]);
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].name.as_str(), got[0].url.as_str()), ("jira.firma.de", "https://jira.firma.de/"));
+        assert_eq!(got[1].name, "SAP");
     }
 
     #[test]

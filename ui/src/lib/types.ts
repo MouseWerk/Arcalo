@@ -158,6 +158,13 @@ export interface ExportResult {
 }
 
 export type Tier = "local" | "standard" | "reasoning";
+/** A link at the top of the sidebar. */
+export interface QuickLink {
+  name: string;
+  url: string;
+  icon: string;
+}
+
 export interface RouterConfig {
   local_model: string;
   standard_model: string;
@@ -200,6 +207,7 @@ export interface Settings {
   search_shortcut: string;
   /** Widgets of the start page. */
   dashboard: Dashboard;
+  quick_links: QuickLink[];
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */

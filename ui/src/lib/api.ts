@@ -161,6 +161,8 @@ export const api = {
   timerResumeLast: () => call<void>("timer_resume_last"),
   /** Saves the start page's widgets and scratch note only. */
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
+  saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
+  openQuickLink: (index: number) => call<void>("quick_link_open", { index }),
 
   // AI
   routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null) => call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier }),
