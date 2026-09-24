@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Table2, Trash2 } from "lucide-react";
 import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
+import { ConflictBanner } from "./ConflictView";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
 import { ScrollOutline } from "../components/ScrollOutline";
@@ -252,6 +253,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         viewType={source || (!hasChildren && parseView(fm).type === "liste" && !parseSchema(fm)) ? null : parseView(fm).type}
         onViewType={(t) => changeFm(setView(fmRef.current, { ...parseView(fmRef.current), type: t }))}
       >
+        <ConflictBanner pageId={doc.id} />
         {!source && <Properties doc={doc} fm={fm} typed={!!folder?.defs.length} onAdd={() => setAddingProp(true)} />}
         {!source && <PropertyEditor
           fm={fm}

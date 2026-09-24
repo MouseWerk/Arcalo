@@ -4,6 +4,12 @@
 //! Windows: Credential Manager, macOS: Keychain. Elsewhere (Linux
 //! and other systems) the secrets are written to `secrets.json` in the app data directory
 //! with owner-only permissions, one JSON field per secret.
+//!
+//! Portable mode: the credential store belongs to the user of the computer, not to the data
+//! folder on the stick. A portable copy names its entries `<account>@<namespace>`
+//! (`datadir::secret_namespace` of its data folder), so it neither reads nor overwrites the
+//! secrets of an installed Annalo or of another portable copy. Secrets therefore do not travel
+//! with the folder: on another computer they are entered once more (the settings say so).
 
 use std::path::{Path, PathBuf};
 
@@ -22,7 +28,11 @@ pub struct SecretStore {
 
 impl SecretStore {
     fn named(data_dir: &Path, account: &str, field: &str) -> Self {
-        SecretStore { account: account.into(), field: field.into(), file: data_dir.join("secrets.json") }
+        SecretStore {
+            account: account_name(account, data_dir, crate::portable::active()),
+            field: field.into(),
+            file: data_dir.join("secrets.json"),
+        }
     }
 
     /// The LiteLLM API key: the key of the provider migrated from the LiteLLM settings.
@@ -51,8 +61,13 @@ impl SecretStore {
 
     /// Human-readable name of the backend, shown in the settings.
     pub fn backend(&self) -> &'static str {
-        if cfg!(windows) {
+        let portable = crate::portable::active();
+        if cfg!(windows) && portable {
+            "Windows-Anmeldeinformationsverwaltung dieses Rechners (portabler Modus: nicht auf dem Datenträger)"
+        } else if cfg!(windows) {
             "Windows-Anmeldeinformationsverwaltung"
+        } else if cfg!(target_os = "macos") && portable {
+            "macOS-Schlüsselbund dieses Rechners (portabler Modus: nicht auf dem Datenträger)"
         } else if cfg!(target_os = "macos") {
             "macOS-Schlüsselbund"
         } else {
@@ -117,6 +132,31 @@ impl SecretStore {
             let _ = std::fs::set_permissions(&self.file, std::fs::Permissions::from_mode(0o600));
         }
         Ok(())
+    }
+}
+
+/// The credential's account name: a portable copy adds the namespace of its data folder.
+fn account_name(account: &str, data_dir: &Path, portable: bool) -> String {
+    if portable {
+        format!("{account}@{}", annalo_core::datadir::secret_namespace(data_dir))
+    } else {
+        account.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::*;
+
+    #[test]
+    fn portable_copies_use_their_own_credentials() {
+        let a = std::env::temp_dir().join(format!("annalo-ns-a-{}", std::process::id()));
+        let b = std::env::temp_dir().join(format!("annalo-ns-b-{}", std::process::id()));
+        assert_eq!(account_name("git-token", &a, false), "git-token", "installed: as before");
+        let pa = account_name("git-token", &a, true);
+        assert!(pa.starts_with("git-token@") && pa.len() == "git-token@".len() + 12, "{pa}");
+        assert_ne!(pa, account_name("git-token", &b, true));
+        assert_eq!(pa, account_name("git-token", &a, true));
     }
 }
 

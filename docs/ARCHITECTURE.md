@@ -64,7 +64,22 @@ Migration v2 converts the old block model: blocks are concatenated into
   working tree `<data dir>/git-sync`, brings it to the mirror's state like rsync (removals first, `.git`, `.gitattributes`,
   `README.md` and `annalo-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
   A fresh working tree adopts the remote history only when its `.gitattributes` carries the sync's marker. A rejected push
-  is rebased onto the remote when the histories are related; otherwise (or on a conflict) it goes to `annalo-sync-<host>`.
+  is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
+  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `annalo-sync-<host>`. Files only
+  the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
+  repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and deletions keep this
+  side. The shell (`syncmerge.rs`) maps paths to pages with `vault::page_paths` (the export's naming, case-insensitive) and
+  takes pulled notes over through `save_page_content` after a snapshot (new files become pages below the page of their
+  folder, deletions go to the trash, attachments the repository has and the data folder lacks are copied). A note edited
+  here since the mirror was written, or changed on both sides, becomes a conflict in the meta row `gitsync.conflicts`
+  (page, path, base, theirs; mine is the page itself): the page is marked („Konflikt“ banner, dot in the tree), and until
+  it is merged its path is held at the committed (server) version in the working tree (`SyncRequest::hold`), so nothing
+  is overwritten on either side. The conflict view (tab kind `conflict`) shows `merge::merge3` of base, current content
+  and theirs: blocks of whole lines (heading, list item with continuation lines, paragraph, fenced code, front matter,
+  blank lines attached to the block before), matched by LCS against the base; one-sided and identical changes merge by
+  themselves, different changes are conflicts decided per block (Meine / Andere / Beide / own text, `ui/src/lib/conflict.ts`).
+  „Übernehmen“ (`git_conflict_resolve`) snapshots, saves, closes the conflict and syncs; `gitsync://pulled` tells the UI
+  which editors to reload.
   The system `git` runs without a shell (`CREATE_NO_WINDOW` on Windows), with `GIT_TERMINAL_PROMPT=0` and a 120 s
   timeout. The HTTPS token comes from the credential store (account `git-token`) and is passed as
   `GIT_CONFIG_KEY_n=http.extraHeader` (`Authorization: Basic base64(x-access-token:TOKEN)`), only to HTTP(S) remotes;
@@ -76,6 +91,17 @@ Migration v2 converts the old block model: blocks are concatenated into
   rename link rewrites in other pages always snapshot first; „Jetzt Version sichern“ (`page_snapshot`)
   stores the current state. At most 50 per page; older than 30 days are pruned on start. A restore saves
   through `save_page_content`, so search, links, tags and tasks follow. The dialog shows a line diff (LCS).
+- **Portable mode** (`datadir::portable_data_dir`, shell `portable.rs`): a file `annalo-portable` next to the executable
+  (or `data/.annalo-portable`) puts everything in `<exe dir>/data` (`ANNALO_EXE_DIR` stands in for the executable's folder in
+  tests; `ANNALO_DATA_DIR` still wins); `location.json` is ignored and „Speicherort ändern“ refused. Nothing is written into
+  the user profile: no autostart entry (`autostart_set` refuses, the switch explains why), no taskbar jump list, the
+  webview profile in `data/webview`, and updates are downloaded from the release page instead of installed
+  (`update_install` refuses; the UI shows „Neue Version herunterladen“). Secrets stay in the OS credential store, which
+  belongs to the user and not to the stick: a portable copy names its entries `<account>@<12 hex of the data path's
+  SHA-256>` (`datadir::secret_namespace`), so it never reads or overwrites an installed copy's secrets; they are entered
+  again on another computer (an encrypted file on the stick would need a password prompt at every start). The release
+  workflow publishes `Annalo_<version>_x64-portable.zip` (Annalo.exe, marker, LIESMICH.txt) next to the installer; it is
+  not part of `latest.json`.
 - **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
   (`wal_checkpoint(TRUNCATE)`) while holding the database lock, copies `workspace.db` (+ `-wal`/`-shm`),
@@ -260,7 +286,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   `window.EXCALIDRAW_ASSET_PATH` points there. Excalidraw still lists its CDN (esm.sh) as a second font source; the CSP blocks
   it, so nothing is fetched from the network. CSP `connect-src 'self'` is needed because the SVG export `fetch`es those bundled
   fonts to inline them into the preview (the asset protocol allows `font-src data:` for that). Excalidraw would subset those
-  fonts with WebAssembly in a worker; the CSP allows neither (`worker-src 'none'`, no `unsafe-eval`), so previews carry the
+  fonts with WebAssembly in a worker; the CSP allows neither (`worker-src` names only pdf.js's worker file, no `unsafe-eval`), so previews carry the
   whole font files (a few 10 kB each).
 - Files (`attachments.rs`: `clean_name`, `store_file`, `import_file`; `ui/src/editor/fileEmbed.ts`, `files.tsx`): any other file
   is embedded as `![[Angebot.pdf]]`. `![[x]]` counts as a file when the name has an extension of 1–10 ASCII letters/digits with a
@@ -277,13 +303,31 @@ Migration v2 converts the old block model: blocks are concatenated into
   - A click on a chip opens the file with the default app (`attachment_open`); programs and scripts (`attachments::is_executable`)
     are only shown in the file manager, never started.
   - PDFs (`ui/src/lib/pdf.ts`, `PdfViewer.tsx`): pdf.js (`pdfjs-dist`, legacy build for older WebViews) is a lazy chunk loaded
-    when a PDF card scrolls into view or the viewer opens. It runs without a web worker: the worker module is preloaded as
-    `globalThis.pdfjsWorker`, so pdf.js uses its main-thread "fake worker" and never tries `new Worker` (CSP `worker-src 'none'`
-    stays). The PDF's bytes come through IPC (`attachment_read`, a raw `ipc::Response`), not `fetch`, so `connect-src` needs no
-    `annalo-asset:`; the asset protocol still serves `.pdf` as `application/pdf` and every non-image type as
-    `application/octet-stream`. The standard fonts and the JavaScript image-decoder fallbacks are copied to `ui/public/pdfjs/` at
-    build time (`ui/scripts/pdfjs-assets.mjs`); the WebAssembly decoders are left out (no `wasm-unsafe-eval`), as are the CJK CMaps.
-    First pages are cached per name as canvases (up to 24).
+    when a PDF card scrolls into view or the viewer opens. Parsing runs in one shared Web Worker: `scripts/pdfjs-assets.mjs`
+    copies the worker to `public/pdfjs/pdf.worker.js` (a `.js` name, so every WebView serves it as JavaScript), and the CSP
+    allows exactly that file (`worker-src tauri://localhost/pdfjs/pdf.worker.js http://tauri.localhost/pdfjs/pdf.worker.js`);
+    Excalidraw's subsetting worker stays refused as before. Should the worker not start, pdf.js parses in the main thread by
+    itself. The PDF's bytes come through IPC (`attachment_read`, a raw `ipc::Response`), not `fetch`; the asset protocol
+    still serves `.pdf` as `application/pdf` and every non-image type as `application/octet-stream`. The standard fonts,
+    the CMaps (`cmaps/*.bcmap`, `cMapPacked`, for Chinese/Japanese/Korean text in fonts that are not embedded) and the
+    JavaScript image-decoder fallbacks are copied to `ui/public/pdfjs/` at build time; the WebAssembly decoders are left out
+    (no `wasm-unsafe-eval`). First pages are cached per name as canvases (up to 24).
+  - Viewer: every page is a sized placeholder (first page's size, the real sizes follow in the background); pages within
+    one viewport height render (a render is cancelled when its page leaves that band), pages beyond three viewport heights
+    release canvas, text layer and the page's parsed resources. A pdf.js `TextLayer` over each rendered page (CSS after
+    `pdf_viewer.css`, `--total-scale-factor` on the page) makes text selectable; search (`lib/pdfsearch.ts`) numbers every
+    hit by page, text item and match and wraps them in `.highlight` spans (current one `.selected`), with next/previous.
+    The viewer opens as an overlay from a note or in a tab (`kind: "pdf"`, file name in `tag`): PDFs dropped on the tab bar
+    or on a pane without a note are stored and opened there.
+- Attachment manager (`attachment_manager.rs`, `views/AttachmentsView.tsx`, tab kind `attachments`): lists the attachments
+  folder (drawing previews with their scene) with kind, size, modification time and usage. Usage is one query over pages
+  whose content contains `![[` or `](` (trashed pages included and marked), parsed for `![[name]]`, `![[name|…]]`,
+  `![[name#page=N]]` and `![alt](path/name)` (percent-decoded), matched case-insensitively. Rename checks the new name
+  like `clean_name` (same extension, drawings keep `.excalidraw`, no collision in any case), renames the file (a drawing
+  with its preview) and rewrites every reference (folder prefix, anchor and alias kept; image links re-encoded) in every
+  page through `save_page_content` after `store_version`, all or nothing (files are renamed back on failure); editors
+  reload via `data://pages`. Delete moves files to `<data dir>/trash/files/<timestamp>/` (restore, purge, expiry with the
+  page trash retention; listed in the trash view); „Unbenutzte aufräumen“ offers files no page (not even a trashed one) uses.
 - Templates are the pages below the top-level page „Vorlagen“ (`templates.rs`); placeholders are filled by `apply_template`.
   The daily note uses `settings.daily_template` when set.
 

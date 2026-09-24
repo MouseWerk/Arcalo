@@ -1,36 +1,58 @@
 // pdf.js for PDF previews in notes and the PDF viewer, loaded on first use (a lazy chunk, not part
-// of app start). It runs without a web worker: the CSP keeps `worker-src 'none'`, and pdf.js then
-// parses in the main thread ("fake worker", set up by preloading the worker module as
-// `globalThis.pdfjsWorker`, so no Worker is even attempted). The legacy build carries polyfills for
-// older WebViews (macOS 11). PDFs come through IPC (`attachment_read`), the standard fonts from
-// `public/pdfjs/` (scripts/pdfjs-assets.mjs): nothing is fetched from the network.
+// of app start). Parsing runs in one shared Web Worker, so a large PDF never blocks the UI: the
+// worker script is copied to `public/pdfjs/pdf.worker.js` (scripts/pdfjs-assets.mjs) and served
+// from the app's own origin, which is all the CSP allows (`worker-src 'self'`). Should the worker
+// not start, pdf.js falls back to parsing in the main thread by itself. The legacy build carries
+// polyfills for older WebViews (macOS 11). PDFs come through IPC (`attachment_read`); standard
+// fonts and the CMaps for Chinese, Japanese and Korean text come from `public/pdfjs/`: nothing is
+// fetched from the network.
 
-import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
+import type { PDFDocumentProxy, PDFPageProxy, PDFWorker } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { api } from "./api";
 
 type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 let lib: Promise<PdfJs> | null = null;
+let worker: PDFWorker | null = null;
+
+const assets = () => new URL(`${import.meta.env.BASE_URL}pdfjs/`, document.baseURI).href;
 
 export function loadPdfjs(): Promise<PdfJs> {
   if (!lib) {
-    lib = (async () => {
-      (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
-      return import("pdfjs-dist/legacy/build/pdf.mjs");
-    })();
+    lib = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `${assets()}pdf.worker.js`;
+      return pdfjs;
+    });
     lib.catch(() => (lib = null));
   }
   return lib;
 }
 
-/** Opens a PDF of the attachments folder; the caller destroys it. */
+/** The worker all documents share (one parser thread instead of one per PDF). */
+async function sharedWorker(pdfjs: PdfJs): Promise<PDFWorker> {
+  if (!worker || worker.destroyed) worker = new pdfjs.PDFWorker();
+  await worker.promise;
+  return worker;
+}
+
+/** Where pdf.js parses: in its Web Worker, or in the main thread when the worker could not start. */
+export async function pdfWorkerKind(): Promise<"worker" | "main"> {
+  const w = await sharedWorker(await loadPdfjs());
+  return typeof Worker !== "undefined" && w.port instanceof Worker ? "worker" : "main";
+}
+
+/** Opens a PDF of the attachments folder; the caller destroys it (`doc.loadingTask.destroy()`). */
 export async function openPdf(name: string): Promise<PDFDocumentProxy> {
   const [pdfjs, data] = await Promise.all([loadPdfjs(), api.readAttachment(name)]);
-  const assets = new URL(`${import.meta.env.BASE_URL}pdfjs/`, document.baseURI).href;
+  const base = assets();
   return pdfjs.getDocument({
     data: new Uint8Array(data),
-    standardFontDataUrl: `${assets}standard_fonts/`,
+    worker: await sharedWorker(pdfjs),
+    // CJK text in fonts that are not embedded needs the character maps.
+    cMapUrl: `${base}cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${base}standard_fonts/`,
     // Only the JavaScript fallbacks of the image decoders are bundled: the CSP allows no WebAssembly.
-    wasmUrl: `${assets}wasm/`,
+    wasmUrl: `${base}wasm/`,
     enableXfa: false,
     verbosity: 0,
   }).promise;
@@ -78,4 +100,9 @@ export async function drawPdfPreview(name: string, canvas: HTMLCanvasElement, wi
   canvas.style.width = image.style.width;
   canvas.getContext("2d")?.drawImage(image, 0, 0);
   return pages;
+}
+
+/** Forgets the cached first page of `name` (the file was renamed or deleted). */
+export function forgetPdfPreview(name: string) {
+  previews.delete(name);
 }

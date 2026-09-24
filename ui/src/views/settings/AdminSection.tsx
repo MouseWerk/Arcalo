@@ -2,7 +2,7 @@
 // preview of the changes, reset one section or everything.
 
 import { useState } from "react";
-import { Download, RotateCcw, Upload } from "lucide-react";
+import { Download, Paperclip, RotateCcw, Upload } from "lucide-react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Button, Dialog, Select } from "../../components/ui";
 import { api } from "../../lib/api";
@@ -85,6 +85,13 @@ export function AdminSection({ save }: { save: (next: Settings) => Promise<boole
         <Row label={t("admin.import")} description={t("admin.importDesc")}>
           <Button icon={Upload} onClick={doImport}>
             {t("admin.importButton")}
+          </Button>
+        </Row>
+      </Group>
+      <Group title={t("admin.files")}>
+        <Row label={t("admin.files")} description={t("admin.filesDesc")}>
+          <Button icon={Paperclip} onClick={() => s().openTab({ kind: "attachments" }, { newTab: true })}>
+            {t("admin.filesButton")}
           </Button>
         </Row>
       </Group>

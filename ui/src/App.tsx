@@ -16,7 +16,7 @@ import { WindowControls } from "./components/WindowControls";
 import { createSubpage } from "./views/PageView";
 import { requestAddProperty } from "./views/PageProperties";
 import { flushAllEditors, reloadEditors } from "./editor/NoteEditor";
-import type { ActivityTick, SearchTarget } from "./lib/types";
+import type { ActivityTick, GitPulled, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
@@ -53,6 +53,7 @@ export function App() {
         s.openPage(p.id);
       } else if (open === "dashboard") s.openTab({ kind: "home" });
       document.body.classList.add("ready");
+      void s.refreshConflicts();
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
       void refreshPac(view);
     })().catch((e) => s.error("Start fehlgeschlagen", e));
@@ -80,6 +81,11 @@ export function App() {
       on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: "Automatische Sicherung fehlgeschlagen", detail: msg })),
       // Git sync: only failures are shown (successes appear in the settings' status line).
       on<string>("gitsync://failed", (msg) => notify("git_failed") && useApp.getState().toast({ tone: "warning", title: "Git-Synchronisierung fehlgeschlagen", detail: msg })),
+      // Git sync took over notes from the server; notes changed on both sides are conflicts.
+      on<GitPulled>("gitsync://pulled", (p) => void onPulled(p)),
+      on("gitsync://conflicts", () => void useApp.getState().refreshConflicts()),
+      // Pages rewritten elsewhere (an attachment renamed): open editors reload them.
+      on<number[]>("data://pages", (ids) => reloadEditors(ids)),
       // Saved elsewhere (another window, a test, an import): take over the new settings.
       on("settings://changed", async () => {
         const next = await api.settings().catch(() => null);
@@ -296,6 +302,27 @@ export function App() {
       <TemplateHost />
     </div>
   );
+}
+
+/** Notes the Git sync took over: tree, open editors and the conflict marks follow; conflicts are announced. */
+async function onPulled(p: GitPulled) {
+  const st = useApp.getState();
+  await st.refreshTree().catch(() => {});
+  reloadEditors([...p.pages, ...p.created]);
+  await st.refreshConflicts();
+  if (!p.conflicts.length) return;
+  const first = p.conflicts[0];
+  const title = st.pages.get(first)?.title ?? "Eine Notiz";
+  st.toast({
+    tone: "warning",
+    persistent: true,
+    title: p.conflicts.length === 1 ? "Konflikt bei der Git-Synchronisierung" : `${p.conflicts.length} Konflikte bei der Git-Synchronisierung`,
+    detail:
+      p.conflicts.length === 1
+        ? `„${title}“ wurde hier und auf einem anderen Rechner geändert. Beide Fassungen sind erhalten.`
+        : "Diese Notizen wurden hier und auf einem anderen Rechner geändert. Beide Fassungen sind erhalten.",
+    action: { label: "Zusammenführen", run: () => useApp.getState().openTab({ kind: "conflict", pageId: first }, { newTab: true }) },
+  });
 }
 
 /** Whether a notification kind is switched on (Settings → Benachrichtigungen). */

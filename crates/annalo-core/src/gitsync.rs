@@ -652,6 +652,24 @@ pub struct SyncRequest<'a> {
     /// Computer name for the fallback branch.
     pub host: &'a str,
     pub now: DateTime<Local>,
+    /// Paths (`/` separated) of notes with an undecided conflict: they keep the committed
+    /// (server's) version in the working tree until the user has merged them.
+    pub hold: &'a [String],
+}
+
+/// A note the server changed since the last common state, pulled by a sync.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteChange {
+    /// Path in the repository (`/` separated), as the mirror writes it.
+    pub path: String,
+    /// Content at the common base; `None` when the server added the file.
+    pub base: Option<String>,
+    /// This computer's content as committed; `None` when it does not have the file.
+    pub mine: Option<String>,
+    /// The server's content; `None` when the server deleted the file.
+    pub theirs: Option<String>,
+    /// Changed differently on both sides: the user decides (see [`crate::merge`]).
+    pub conflict: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -666,6 +684,9 @@ pub struct SyncOutcome {
     /// The configured branch had other history: pushed to [`fallback_branch`] instead.
     pub fallback: bool,
     pub message: String,
+    /// Notes the server changed (Markdown files only), for the shell to take over.
+    #[serde(default, skip_serializing)]
+    pub remote_changes: Vec<RemoteChange>,
 }
 
 /// Last run, as shown in the settings.
@@ -756,20 +777,19 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     }
 
     prepare_tree(req.source, repo, req.database)?;
+    if has_head(git, repo)? {
+        for path in req.hold {
+            hold_path(git, repo, path)?;
+        }
+    }
     git.check(Some(repo), &["add", "-A"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
     let identity = [format!("user.name={}", s.author_name), format!("user.email={}", s.author_email)];
-    let with_identity = |rest: &[&str]| -> Vec<String> {
-        let mut v = vec!["-c".to_owned(), identity[0].clone(), "-c".to_owned(), identity[1].clone()];
-        v.extend(rest.iter().map(|x| (*x).to_owned()));
-        v
-    };
     let committed = changed > 0;
     if committed {
         let msg = commit_message(&req.now, changed);
-        let args = with_identity(&["commit", "-q", "--no-verify", "-m", &msg]);
-        git.check(Some(repo), &args.iter().map(String::as_str).collect::<Vec<_>>())?;
+        git.check(Some(repo), &with_identity(&identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
     }
     let Some(head) = rev(git, repo, "HEAD")? else {
         return Ok(SyncOutcome {
@@ -779,58 +799,214 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             branch: branch.to_owned(),
             fallback: false,
             message: "Nichts zu synchronisieren".into(),
+            remote_changes: vec![],
         });
     };
     let short = |git: &Git| -> Result<Option<String>> {
         Ok(Some(git.check(Some(repo), &["rev-parse", "--short", "HEAD"])?.trim().to_owned()))
     };
-    let done = |commit, target: &str, fallback: bool| {
+    let done = |commit, target: &str, fallback: bool, remote_changes: Vec<RemoteChange>| {
+        let pulled = remote_changes.len();
+        let conflicts = remote_changes.iter().filter(|c| c.conflict).count();
         let message = match (committed, fallback) {
             (_, true) => {
                 format!("Der Branch „{branch}“ auf dem Server enthält einen anderen Stand – gesichert in „{target}“")
             }
+            _ if conflicts > 0 => {
+                let noun = if conflicts == 1 { "Notiz wurde" } else { "Notizen wurden" };
+                format!("{conflicts} {noun} hier und auf dem Server geändert – bitte zusammenführen")
+            }
+            _ if pulled > 0 => {
+                let noun = if pulled == 1 { "Notiz" } else { "Notizen" };
+                format!("{pulled} {noun} vom Server übernommen")
+            }
             (true, false) => commit_message(&req.now, changed),
             (false, false) => "Keine Änderungen seit der letzten Synchronisierung".into(),
         };
-        SyncOutcome { commit, committed, changed_files: changed, branch: target.to_owned(), fallback, message }
+        SyncOutcome {
+            commit,
+            committed,
+            changed_files: changed,
+            branch: target.to_owned(),
+            fallback,
+            message,
+            remote_changes,
+        }
     };
 
     if tip.as_deref() == Some(head.as_str()) {
-        return Ok(done(short(git)?, branch, false));
+        return Ok(done(short(git)?, branch, false, vec![]));
     }
     let target = format!("HEAD:refs/heads/{branch}");
     let push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
     if push.ok {
-        return Ok(done(short(git)?, branch, false));
+        return Ok(done(short(git)?, branch, false, vec![]));
     }
     if !rejected(&push) {
         return Err(git.failure(&["push"], &push));
     }
 
-    // The remote moved on: rebase onto it when the histories are related, else (or on a
-    // conflict) keep the remote untouched and push to a branch of this computer.
-    fetch(git, repo, branch)?;
-    tip = rev(git, repo, &format!("refs/remotes/origin/{branch}"))?;
-    let related = match &tip {
-        Some(t) => git.run(Some(repo), &["merge-base", "HEAD", t])?.ok,
-        None => false,
-    };
-    if related {
-        let onto = format!("origin/{branch}");
-        let args = with_identity(&["rebase", "-q", &onto]);
-        let rebased = git.run(Some(repo), &args.iter().map(String::as_str).collect::<Vec<_>>())?;
-        if rebased.ok {
-            let again = git.run(Some(repo), &["push", "-q", "origin", &target])?;
-            if again.ok {
-                return Ok(done(short(git)?, branch, false));
+    // The remote moved on. Related histories are merged file by file: what only the server
+    // changed is taken over, notes changed on both sides keep the server's version in the
+    // repository and come back as conflicts for the user to merge (nothing is lost on
+    // either side). Unrelated histories stay untouched: this computer pushes to a branch of
+    // its own. A second rejection (someone pushed meanwhile) is merged once more.
+    let mut pulled: Vec<RemoteChange> = Vec::new();
+    for _ in 0..2 {
+        fetch(git, repo, branch)?;
+        tip = rev(git, repo, &format!("refs/remotes/origin/{branch}"))?;
+        let Some(theirs) = tip.clone() else { break };
+        let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
+        let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
+        let fresh = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
+        // A path pulled twice keeps the newest server state, and stays a conflict once it was one.
+        for c in fresh {
+            match pulled.iter_mut().find(|p| p.path == c.path) {
+                Some(p) => {
+                    p.theirs = c.theirs;
+                    p.conflict |= c.conflict;
+                }
+                None => pulled.push(c),
             }
-        } else {
-            let _ = git.run(Some(repo), &["rebase", "--abort"]);
         }
+        if rev(git, repo, "HEAD")? == tip {
+            return Ok(done(short(git)?, branch, false, pulled));
+        }
+        let again = git.run(Some(repo), &["push", "-q", "origin", &target])?;
+        if again.ok {
+            return Ok(done(short(git)?, branch, false, pulled));
+        }
+        if !rejected(&again) {
+            return Err(git.failure(&["push"], &again));
+        }
+    }
+    if !pulled.is_empty() {
+        // Merged, but the server moved on again: taken over here, pushed with the next sync.
+        let mut out = done(short(git)?, branch, false, pulled);
+        out.message.push_str(
+            " – der Server hat sich währenddessen erneut geändert, die nächste Synchronisierung überträgt den Stand",
+        );
+        return Ok(out);
     }
     let fb = fallback_branch(req.host);
     git.check(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
-    Ok(done(short(git)?, &fb, true))
+    Ok(done(short(git)?, &fb, true, vec![]))
+}
+
+fn with_identity<'a>(identity: &'a [String; 2], rest: &[&'a str]) -> Vec<&'a str> {
+    let mut v = vec!["-c", identity[0].as_str(), "-c", identity[1].as_str()];
+    v.extend_from_slice(rest);
+    v
+}
+
+fn merge_base(git: &Git, repo: &Path, a: &str, b: &str) -> Result<Option<String>> {
+    let out = git.run(Some(repo), &["merge-base", a, b])?;
+    Ok(out.ok.then(|| out.stdout.trim().to_owned()).filter(|s| !s.is_empty()))
+}
+
+/// Paths changed between two commits (renames as delete + add).
+fn changed_paths(git: &Git, repo: &Path, from: &str, to: &str) -> Result<BTreeSet<String>> {
+    let out = git.check(Some(repo), &["diff", "--name-only", "--no-renames", "-z", from, to, "--"])?;
+    Ok(out.split('\0').filter(|n| !n.is_empty()).map(str::to_owned).collect())
+}
+
+/// The object id of `path` in commit `rev`, `None` when the file is not there.
+fn blob_id(git: &Git, repo: &Path, rev: &str, path: &str) -> Result<Option<String>> {
+    let out = git.run(Some(repo), &["rev-parse", "-q", "--verify", &format!("{rev}:{path}")])?;
+    Ok(out.ok.then(|| out.stdout.trim().to_owned()).filter(|s| !s.is_empty()))
+}
+
+/// The text of `path` in commit `rev`, `None` when the file is not there.
+fn blob_text(git: &Git, repo: &Path, rev: &str, path: &str) -> Result<Option<String>> {
+    if blob_id(git, repo, rev, path)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(git.check(Some(repo), &["cat-file", "blob", &format!("{rev}:{path}")])?))
+}
+
+fn is_note(path: &str) -> bool {
+    path.to_ascii_lowercase().ends_with(".md")
+}
+
+/// Makes the index and working tree hold `path` as in commit `rev` (removed when it has none).
+fn take_path(git: &Git, repo: &Path, rev: &str, path: &str) -> Result<()> {
+    if blob_id(git, repo, rev, path)?.is_some() {
+        git.check(Some(repo), &["checkout", "-q", rev, "--", path])?;
+    } else {
+        git.check(Some(repo), &["rm", "-q", "-f", "--ignore-unmatch", "--", path])?;
+    }
+    Ok(())
+}
+
+/// A held path (see [`SyncRequest::hold`]) as committed; paths leaving the tree are ignored.
+fn hold_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
+    let p = Path::new(path);
+    if path.is_empty() || p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return Ok(());
+    }
+    if blob_id(git, repo, "HEAD", path)?.is_some() {
+        git.check(Some(repo), &["checkout", "-q", "HEAD", "--", path])?;
+    } else if repo.join(p).is_file() {
+        fs::remove_file(repo.join(p))?;
+    }
+    Ok(())
+}
+
+/// Merges the server's commit `theirs` into `ours` (both descend from `base`), see [`sync`].
+/// Returns the notes the server changed.
+fn merge_remote(
+    git: &Git,
+    repo: &Path,
+    identity: &[String; 2],
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    now: &DateTime<Local>,
+) -> Result<Vec<RemoteChange>> {
+    let remote = changed_paths(git, repo, base, theirs)?;
+    let pulled = |path: &String| -> Result<RemoteChange> {
+        let old = blob_text(git, repo, base, path)?;
+        let new = blob_text(git, repo, theirs, path)?;
+        Ok(RemoteChange { path: path.clone(), base: old.clone(), mine: old, theirs: new, conflict: false })
+    };
+    let mut changes = Vec::new();
+    if base == ours {
+        // Nothing new here: the server's state is taken as it is.
+        for path in remote.iter().filter(|p| is_note(p)) {
+            changes.push(pulled(path)?);
+        }
+        git.check(Some(repo), &["reset", "-q", "--hard", theirs])?;
+        return Ok(changes);
+    }
+    let local = changed_paths(git, repo, base, ours)?;
+    git.check(Some(repo), &with_identity(identity, &["merge", "-q", "--no-ff", "--no-commit", "-s", "ours", theirs]))?;
+    for path in &remote {
+        let note = is_note(path);
+        if !local.contains(path) {
+            if note {
+                changes.push(pulled(path)?);
+            }
+            take_path(git, repo, theirs, path)?;
+            continue;
+        }
+        let (mine_id, theirs_id) = (blob_id(git, repo, ours, path)?, blob_id(git, repo, theirs, path)?);
+        // Same change on both sides, a deletion on one side, or not a note: this side's state stays.
+        if mine_id == theirs_id || mine_id.is_none() || theirs_id.is_none() || !note {
+            continue;
+        }
+        changes.push(RemoteChange {
+            path: path.clone(),
+            base: blob_text(git, repo, base, path)?,
+            mine: blob_text(git, repo, ours, path)?,
+            theirs: blob_text(git, repo, theirs, path)?,
+            conflict: true,
+        });
+        // Until the user has merged it, the server keeps its version.
+        take_path(git, repo, theirs, path)?;
+    }
+    let msg = format!("Abgleich mit dem Server {}", now.format("%d.%m.%Y %H:%M"));
+    git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
+    Ok(changes)
 }
 
 /// Files that would change with the next sync (mirror vs. working tree), without git.
@@ -1055,6 +1231,7 @@ mod tests {
                         settings: &settings,
                         host: "pc1",
                         now: Local::now(),
+                        hold: &[],
                     },
                 )
             }
@@ -1091,11 +1268,14 @@ mod tests {
         assert_eq!(other.changed_files, 1);
         assert_eq!(sh(&bare, &["rev-list", "--count", "main"]).trim(), "3");
 
-        // The first computer is now behind: it rebases onto the remote and pushes.
+        // The first computer is now behind: it merges the remote (same new note on both
+        // sides: nothing to pull) and pushes its commit with a merge commit.
         write(&src.join("Notiz.md"), "dritte Fassung");
         let behind = req(&repo, None)(&git).unwrap();
         assert!(!behind.fallback, "{behind:?}");
-        assert_eq!(sh(&bare, &["rev-list", "--count", "main"]).trim(), "4");
+        assert!(behind.remote_changes.is_empty(), "{behind:?}");
+        assert_eq!(sh(&bare, &["rev-list", "--count", "main"]).trim(), "5");
+        assert_eq!(sh(&bare, &["rev-list", "--count", "--merges", "main"]).trim(), "1");
 
         // Restore: a shallow clone has the notes.
         let restore = base.join("restore");
@@ -1104,6 +1284,109 @@ mod tests {
         strip_sync_files(&restore).unwrap();
         assert!(!restore.join(README_FILE).exists());
         assert!(git.ls_remote(&settings.remote_url).unwrap().contains(&"main".to_owned()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn divergent_edits_are_pulled_and_conflicts_kept() {
+        if !git_available() {
+            eprintln!("git not available, skipped");
+            return;
+        }
+        let base = tmp("conflict");
+        let bare = base.join("remote.git");
+        sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
+        let settings =
+            GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
+        let git = Git::new(None, &settings.remote_url);
+        let run = |pc: &str, hold: &[String]| {
+            sync(
+                &git,
+                &SyncRequest {
+                    repo: &base.join(format!("{pc}/git-sync")),
+                    source: &base.join(format!("{pc}/mirror")),
+                    database: None,
+                    settings: &settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold,
+                },
+            )
+            .unwrap()
+        };
+        let put = |pc: &str, file: &str, text: &str| write(&base.join(format!("{pc}/mirror/{file}")), text);
+        for pc in ["a", "b"] {
+            put(pc, "Notiz.md", "# Notiz\n\nGemeinsam.\n");
+            put(pc, "Ordner/Andere.md", "alt\n");
+            put(pc, "Weg.md", "wird gelöscht\n");
+        }
+        assert!(run("a", &[]).committed);
+        assert!(!run("b", &[]).committed, "b continues a's history, nothing new");
+
+        // b edits the note, another note and adds and deletes one; a edits the same note.
+        put("b", "Notiz.md", "# Notiz\n\nGemeinsam, von B.\n");
+        put("b", "Ordner/Andere.md", "von B\n");
+        put("b", "Neu.md", "neu von B\n");
+        fs::remove_file(base.join("b/mirror/Weg.md")).unwrap();
+        assert!(run("b", &[]).committed);
+        put("a", "Notiz.md", "# Notiz\n\nGemeinsam, von A.\n");
+        let out = run("a", &[]);
+        assert!(!out.fallback, "{out:?}");
+        assert!(out.message.contains("1 Notiz wurde hier und auf dem Server geändert"), "{}", out.message);
+        let mut ch = out.remote_changes.clone();
+        ch.sort_by(|x, y| x.path.cmp(&y.path));
+        let expect = |path: &str, b: Option<&str>, m: Option<&str>, t: Option<&str>| RemoteChange {
+            path: path.into(),
+            base: b.map(Into::into),
+            mine: m.map(Into::into),
+            theirs: t.map(Into::into),
+            conflict: path == "Notiz.md",
+        };
+        assert_eq!(
+            ch,
+            [
+                expect("Neu.md", None, None, Some("neu von B\n")),
+                expect(
+                    "Notiz.md",
+                    Some("# Notiz\n\nGemeinsam.\n"),
+                    Some("# Notiz\n\nGemeinsam, von A.\n"),
+                    Some("# Notiz\n\nGemeinsam, von B.\n")
+                ),
+                expect("Ordner/Andere.md", Some("alt\n"), Some("alt\n"), Some("von B\n")),
+                expect("Weg.md", Some("wird gelöscht\n"), Some("wird gelöscht\n"), None),
+            ]
+        );
+        // Nothing is lost: the server keeps its version of the conflict, gets a merge commit.
+        assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "# Notiz\n\nGemeinsam, von B.\n");
+        assert_eq!(sh(&bare, &["show", "main:Ordner/Andere.md"]), "von B\n");
+        assert_eq!(sh(&bare, &["rev-list", "--count", "--merges", "main"]).trim(), "1");
+        assert!(sh(&bare, &["log", "-1", "--format=%s", "main"]).starts_with("Abgleich mit dem Server"));
+
+        // Until merged, the held note keeps the server's version (the shell has taken over the rest).
+        put("a", "Ordner/Andere.md", "von B\n");
+        put("a", "Neu.md", "neu von B\n");
+        fs::remove_file(base.join("a/mirror/Weg.md")).unwrap();
+        let hold = vec!["Notiz.md".to_owned(), "../ausserhalb.md".to_owned()];
+        let held = run("a", &hold);
+        assert!(!held.committed, "{held:?}");
+        assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "# Notiz\n\nGemeinsam, von B.\n");
+
+        // Merged: the next sync pushes the result.
+        put("a", "Notiz.md", "# Notiz\n\nGemeinsam, von A und B.\n");
+        let merged = run("a", &[]);
+        assert!(merged.committed && merged.remote_changes.is_empty(), "{merged:?}");
+        assert_eq!(sh(&bare, &["show", "main:Notiz.md"]), "# Notiz\n\nGemeinsam, von A und B.\n");
+
+        // b has no changes of its own: it fast-forwards and pulls the merged note.
+        let pulled = run("b", &[]);
+        assert!(!pulled.committed, "{pulled:?}");
+        assert_eq!(pulled.remote_changes.len(), 1);
+        let c = &pulled.remote_changes[0];
+        assert_eq!((c.path.as_str(), c.conflict), ("Notiz.md", false));
+        assert_eq!(c.theirs.as_deref(), Some("# Notiz\n\nGemeinsam, von A und B.\n"));
+        assert_eq!(c.mine, c.base);
+        assert!(pulled.message.contains("1 Notiz vom Server übernommen"), "{}", pulled.message);
+        assert_eq!(sh(&base.join("b/git-sync"), &["rev-parse", "HEAD"]), sh(&bare, &["rev-parse", "main"]));
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -1137,6 +1420,7 @@ mod tests {
                 settings: &settings,
                 host: "Büro-PC",
                 now: Local::now(),
+                hold: &[],
             },
         )
         .unwrap();
@@ -1157,6 +1441,7 @@ mod tests {
                 settings: &broken,
                 host: "pc",
                 now: Local::now(),
+                hold: &[],
             },
         )
         .unwrap_err()

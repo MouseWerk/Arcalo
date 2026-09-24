@@ -14,10 +14,12 @@
 //! * [`network`] – proxy (manual, system, PAC), extra root CA and timeouts for all connections
 //! * [`prefs`] – user preferences (appearance, editor, notes, time, AI, notifications, …)
 //! * [`gitsync`] – pushes the Markdown mirror to a Git remote (system `git`, token via environment)
+//! * [`merge`] – three-way merge of notes by blocks (Git sync conflicts)
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
 //! * [`vault`] – Obsidian vault import / Markdown export
 //! * [`linktitle`] – titles of web pages for pasted links
 //! * [`attachments`] – pasted and imported images
+//! * [`attachment_manager`] – the attachment manager: usage, safe renames, file trash
 //! * [`drawings`] – Excalidraw drawings (scene + SVG preview) embedded in notes
 //! * [`templates`] – page templates with `{{datum}}`-style placeholders
 //! * [`settings`] – application settings
@@ -37,6 +39,7 @@
 
 pub mod activity;
 pub mod ai;
+pub mod attachment_manager;
 pub mod attachments;
 pub mod backup;
 pub mod calendar;
@@ -51,6 +54,7 @@ pub mod feed;
 pub mod focus;
 pub mod gitsync;
 pub mod linktitle;
+pub mod merge;
 pub mod mirror;
 pub mod model;
 pub mod network;

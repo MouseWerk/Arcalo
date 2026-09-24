@@ -179,24 +179,81 @@ fn file_name(title: &str) -> String {
     if cleaned.is_empty() { "Ohne Titel".into() } else { cleaned }
 }
 
-fn unique(dir: &Path, base: &str, ext: &str) -> PathBuf {
-    let mut candidate = dir.join(format!("{base}{ext}"));
-    let mut n = 2;
-    while candidate.exists() {
-        candidate = dir.join(format!("{base} ({n}){ext}"));
-        n += 1;
+/// Where the export puts one page, relative to the export folder (`/` separated).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PagePath {
+    pub page_id: i64,
+    /// `Ordner/Titel.md`, `None` for a page with subpages and no content of its own.
+    pub file: Option<String>,
+    /// `Ordner/Titel` for a page with subpages.
+    pub folder: Option<String>,
+}
+
+/// Chooses file and folder names like the export: `Titel.md`, then `Titel (2).md`, … when a
+/// name is taken (case-insensitive, as on Windows; with `root`, existing files count too).
+struct Planner<'a> {
+    root: Option<&'a Path>,
+    taken: std::collections::HashSet<String>,
+}
+
+impl Planner<'_> {
+    fn unique(&mut self, dir: &str, base: &str, ext: &str) -> String {
+        let join = |name: String| if dir.is_empty() { name } else { format!("{dir}/{name}") };
+        let mut candidate = join(format!("{base}{ext}"));
+        let mut n = 2;
+        while self.taken.contains(&candidate.to_lowercase()) || self.root.is_some_and(|r| r.join(&candidate).exists()) {
+            candidate = join(format!("{base} ({n}){ext}"));
+            n += 1;
+        }
+        self.taken.insert(candidate.to_lowercase());
+        candidate
     }
-    candidate
+
+    fn plan(&mut self, db: &Database, nodes: &[PageNode], dir: &str, out: &mut Vec<(PagePath, String)>) -> Result<()> {
+        for node in nodes {
+            let base = file_name(&node.page.title);
+            let content = db.page_doc(node.page.id)?.content;
+            let written = !content.is_empty() || node.children.is_empty();
+            let file = written.then(|| self.unique(dir, &base, ".md"));
+            let folder = (!node.children.is_empty()).then(|| self.unique(dir, &base, ""));
+            out.push((PagePath { page_id: node.page.id, file, folder: folder.clone() }, content));
+            if let Some(sub) = folder {
+                self.plan(db, &node.children, &sub, out)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The path of every page in an export into an empty folder (the Markdown mirror), in tree
+/// order. The Git sync maps changed files back to pages with it.
+pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
+    let mut out = Vec::new();
+    Planner { root: None, taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut out)?;
+    Ok(out.into_iter().map(|(p, _)| p).collect())
 }
 
 /// Writes every page as a Markdown file below `dir` and the embedded attachments to
 /// `dir/attachments/`. Returns the number of Markdown files.
 pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<usize> {
     fs::create_dir_all(dir)?;
+    let mut planned = Vec::new();
+    Planner { root: Some(dir), taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut planned)?;
     let mut count = 0;
     let mut embedded: Vec<String> = vec![];
-    for node in db.page_tree()? {
-        export_node(db, &node, dir, &mut count, &mut embedded)?;
+    for (path, content) in &planned {
+        for name in attachments::embeds(content) {
+            if !embedded.contains(&name) {
+                embedded.push(name);
+            }
+        }
+        if let Some(folder) = &path.folder {
+            fs::create_dir_all(dir.join(folder))?;
+        }
+        if let Some(file) = &path.file {
+            fs::write(dir.join(file), content)?;
+            count += 1;
+        }
     }
     let out = dir.join(attachments::DIR_NAME);
     for name in embedded {
@@ -206,35 +263,6 @@ pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
         }
     }
     Ok(count)
-}
-
-fn export_node(
-    db: &Database,
-    node: &PageNode,
-    dir: &Path,
-    count: &mut usize,
-    embedded: &mut Vec<String>,
-) -> Result<()> {
-    let base = file_name(&node.page.title);
-    let content = db.page_doc(node.page.id)?.content;
-    for name in attachments::embeds(&content) {
-        if !embedded.contains(&name) {
-            embedded.push(name);
-        }
-    }
-    let file = unique(dir, &base, ".md");
-    if !content.is_empty() || node.children.is_empty() {
-        fs::write(&file, content)?;
-        *count += 1;
-    }
-    if !node.children.is_empty() {
-        let sub = unique(dir, &base, "");
-        fs::create_dir_all(&sub)?;
-        for child in &node.children {
-            export_node(db, child, &sub, count, embedded)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -310,6 +338,37 @@ mod tests {
         export_vault(&db, &out, &att).unwrap();
         let root = out.join(vault.file_name().unwrap());
         assert_eq!(fs::read_to_string(root.join("Layout.md")).unwrap(), page);
+    }
+
+    #[test]
+    fn page_paths_match_the_export() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.create_page(None, "Projekt", None).unwrap();
+        let c = db.create_page(Some(a.id), "Plan: v2", None).unwrap();
+        db.save_page_content(c.id, "Plan").unwrap();
+        let d = db.create_page(None, "projekt", None).unwrap();
+        db.save_page_content(d.id, "Doppelt").unwrap();
+        let e = db.create_page(None, "Leer mit Kind", None).unwrap();
+        db.create_page(Some(e.id), "Kind", None).unwrap();
+        db.save_page_content(a.id, "Übersicht").unwrap();
+
+        let paths = page_paths(&db).unwrap();
+        let file = |id: i64| paths.iter().find(|p| p.page_id == id).unwrap().clone();
+        assert_eq!(
+            file(a.id),
+            PagePath { page_id: a.id, file: Some("Projekt.md".into()), folder: Some("Projekt".into()) }
+        );
+        assert_eq!(file(c.id).file.as_deref(), Some("Projekt/Plan- v2.md"));
+        assert_eq!(file(d.id).file.as_deref(), Some("projekt (2).md"), "names differing in case only");
+        assert_eq!((file(e.id).file, file(e.id).folder.as_deref()), (None, Some("Leer mit Kind")));
+
+        let out = tmp("paths");
+        export_vault(&db, &out, &tmp("paths-att")).unwrap();
+        for p in &paths {
+            if let Some(f) = &p.file {
+                assert_eq!(fs::read_to_string(out.join(f)).unwrap(), db.page_doc(p.page_id).unwrap().content, "{f}");
+            }
+        }
     }
 
     #[test]

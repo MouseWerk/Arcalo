@@ -55,7 +55,7 @@ export function guarded(test, getApp) {
     });
 }
 
-export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
+export async function launch({ demo = true, width = 1480, height = 920, env: extraEnv = {} } = {}) {
   ensureXvfb();
   fs.mkdirSync(SHOTS, { recursive: true });
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
@@ -71,6 +71,8 @@ export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
     WEBKIT_DISABLE_COMPOSITING_MODE: "1",
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
+    // Extra variables of one test (e.g. ANNALO_EXE_DIR for portable mode).
+    ...extraEnv,
   };
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";

@@ -152,7 +152,8 @@ static SHOWN: Mutex<Option<Content>> = Mutex::new(None);
 
 /// Brings the jump list up to date (timer, language, recent pages). Cheap when nothing changed.
 pub fn refresh(app: &AppHandle) {
-    if !cfg!(windows) {
+    // A portable copy writes nothing into the user profile (the jump list lives there).
+    if !cfg!(windows) || crate::portable::active() {
         return;
     }
     let Some(state) = app.try_state::<AppState>() else { return };

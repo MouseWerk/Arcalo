@@ -1,6 +1,6 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
-import { Fragment, useEffect, useRef, useState, type DragEvent } from "react";
+import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
 import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Plus, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { IconButton, useMenu, type MenuEntry } from "./ui";
@@ -15,6 +15,35 @@ import { TagView } from "../views/TagView";
 import { TrashView } from "../views/TrashView";
 import { TasksView } from "../views/TasksView";
 import { ActivityView } from "../views/ActivityView";
+import { AttachmentsView } from "../views/AttachmentsView";
+import { ConflictView } from "../views/ConflictView";
+import { storeFile } from "../lib/api";
+import { isPdfName } from "../editor/fileEmbed";
+
+// The PDF viewer (with pdf.js) loads when a PDF tab is shown.
+const PdfPane = lazy(() => import("../editor/PdfViewer").then((m) => ({ default: m.PdfPane })));
+
+const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+
+/**
+ * Files dropped on the tab bar, or on a pane without a note: PDFs are stored as attachments and
+ * open in a viewer tab of that pane. Other files belong into a note.
+ */
+async function openDroppedFiles(files: File[], paneId: string) {
+  const s = useApp.getState();
+  const pdfs = files.filter((f) => isPdfName(f.name));
+  if (pdfs.length < files.length)
+    s.toast({ tone: "info", title: "Nur PDFs öffnen sich im Tab", detail: "Andere Dateien in eine Notiz ziehen, um sie dort einzufügen." });
+  for (const file of pdfs) {
+    try {
+      const saved = await storeFile(file);
+      s.focusPane(paneId);
+      s.openTab({ kind: "pdf", tag: saved.name }, { newTab: true });
+    } catch (e) {
+      s.error(`„${file.name}“ ließ sich nicht öffnen`, e);
+    }
+  }
+}
 import { useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 
@@ -64,19 +93,36 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
   const s = useApp.getState;
   // A tab dragged from another pane can be dropped onto this pane's content.
   const [dropHere, setDropHere] = useState(false);
+  const [fileDrop, setFileDrop] = useState(false);
   const foreignTab = (e: DragEvent) => e.dataTransfer.types.includes(TAB_MIME) && !pane.tabs.some((t) => t.id === draggedTab);
+  // Files open in a tab when they land on the tab bar or on a pane without a note (a note's
+  // editor embeds them itself).
+  const fileTarget = (e: DragEvent) => hasFiles(e) && (!!(e.target as HTMLElement).closest(".tabbar") || tab?.kind !== "page");
   return (
     <section
-      className={`pane ${active ? "active" : ""} ${multi ? "multi" : ""} ${dropHere ? "tab-drop" : ""}`}
+      className={`pane ${active ? "active" : ""} ${multi ? "multi" : ""} ${dropHere ? "tab-drop" : ""} ${fileDrop ? "file-drop" : ""}`}
       onDragOver={(e) => {
+        if (fileTarget(e)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setFileDrop(true);
+          return;
+        }
+        if (fileDrop) setFileDrop(false);
         if (!foreignTab(e) || (e.target as HTMLElement).closest(".tabbar")) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setDropHere(true);
       }}
-      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropHere(false)}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && (setDropHere(false), setFileDrop(false))}
       onDrop={(e) => {
         setDropHere(false);
+        setFileDrop(false);
+        if (fileTarget(e) && !e.defaultPrevented) {
+          e.preventDefault();
+          void openDroppedFiles([...e.dataTransfer.files], pane.id);
+          return;
+        }
         const id = e.dataTransfer.getData(TAB_MIME);
         if (!id || (e.target as HTMLElement).closest(".tabbar")) return;
         e.preventDefault();
@@ -116,6 +162,12 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
           </div>
         </>
       );
+    case "pdf":
+      return (
+        <Suspense fallback={<div className="pdf-message pdf-tab-loading">PDF wird geladen…</div>}>
+          <PdfPane key={tab.tag} name={tab.tag!} onClose={() => useApp.getState().closeTab(tab.id)} />
+        </Suspense>
+      );
     default:
       return (
         <>
@@ -128,6 +180,8 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "tag" && <TagView tag={tab.tag!} />}
             {tab.kind === "trash" && <TrashView />}
             {tab.kind === "tasks" && <TasksView />}
+            {tab.kind === "attachments" && <AttachmentsView />}
+            {tab.kind === "conflict" && <ConflictView pageId={tab.pageId!} />}
           </div>
         </>
       );

@@ -3,14 +3,16 @@
 import { create } from "zustand";
 import { api, errorText } from "../lib/api";
 import { logUi } from "../lib/devlog";
-import type { BudgetStatus, FocusState, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
+import type { BudgetStatus, FocusState, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 
-export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity";
+export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict";
 /** A place a tab can show. */
 export interface Loc {
   kind: TabKind;
+  /** The page (page tabs, the conflict view of a page). */
   pageId?: number;
+  /** The tag (tag tabs) or the attachment's file name (PDF tabs). */
   tag?: string;
 }
 export interface Tab extends Loc {
@@ -114,6 +116,9 @@ interface State {
   focusDialog: { reference?: string; goal?: string } | null;
   /** The page shown as a presentation. */
   presenting: { pageId: number } | null;
+  /** Pages with an undecided Git sync conflict („Konflikt“). */
+  conflicts: GitConflictInfo[];
+  refreshConflicts: () => Promise<void>;
 
   openTab: (loc: Loc, opts?: OpenOpts) => void;
   openPage: (pageId: number, opts?: OpenOpts) => void;
@@ -286,6 +291,8 @@ export const useApp = create<State>((set, get) => ({
   heldToasts: [],
   focusDialog: null,
   presenting: null,
+  conflicts: [],
+  refreshConflicts: async () => set({ conflicts: await api.gitConflicts().catch(() => get().conflicts) }),
 
   openTab: (loc, opts) => {
     const { panes, activePaneId, paneSizes } = get();

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, Target, NotebookPen,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, Target, NotebookPen,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
@@ -226,6 +226,7 @@ export function CommandPalette() {
       { id: "assistant", title: t("cmd.askAssistant"), icon: ic(Sparkles), hint: hint("assistant"), run: () => openAssistant() },
       { id: "weekly-report", title: t("cmd.weeklyReport"), subtitle: t("cmd.weeklyReportSub"), icon: ic(Mail), run: () => askWeeklyReport() },
       { id: "trash", title: t("cmd.trash"), icon: ic(Trash2), run: () => s().openTab({ kind: "trash" }) },
+      { id: "attachments", title: t("cmd.attachments"), subtitle: t("cmd.attachmentsSub"), icon: ic(Paperclip), run: () => s().openTab({ kind: "attachments" }) },
       { id: "settings", title: t("cmd.settings"), icon: ic(Settings), hint: hint("settings"), run: () => s().openTab({ kind: "settings" }) },
       { id: "sidebar", title: t("cmd.toggleSidebar"), icon: ic(PanelLeft), hint: hint("toggle_sidebar"), run: () => { const v = !s().sidebarOpen; s().set({ sidebarOpen: v }); savePref("annalo.sidebar", v); } },
       { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("annalo.panel", v); } },

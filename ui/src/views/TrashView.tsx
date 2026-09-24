@@ -1,13 +1,14 @@
 // Trash: deleted pages (with their subpages) until restored, purged or 30 days old.
 
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, Trash2, X } from "lucide-react";
+import { Paperclip, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Button, EmptyState, IconButton, Spinner } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { relative } from "../lib/format";
-import type { TrashEntry } from "../lib/types";
+import type { TrashEntry, TrashedFile } from "../lib/types";
+import { formatSize } from "../editor/fileEmbed";
 
 export async function restorePage(id: number, title: string) {
   const s = useApp.getState();
@@ -94,7 +95,57 @@ export function TrashView() {
             ))}
           </div>
         )}
+        <FileTrash />
       </div>
     </div>
+  );
+}
+
+/** Files deleted in the attachment manager (`<data dir>/trash/files`), until restored or expired. */
+function FileTrash() {
+  const [files, setFiles] = useState<TrashedFile[]>([]);
+  const s = useApp.getState;
+  const reload = useCallback(() => api.trashedAttachments().then(setFiles).catch(() => setFiles([])), []);
+  useEffect(() => void reload(), [reload]);
+  if (!files.length) return null;
+  const restore = async (f: TrashedFile) => {
+    try {
+      await api.restoreAttachment(f.id, f.name);
+      s().toast({ tone: "success", title: "Datei wiederhergestellt", detail: f.name, action: { label: "Anhänge", run: () => s().openTab({ kind: "attachments" }) } });
+    } catch (e) {
+      s().error("Wiederherstellen fehlgeschlagen", e);
+    }
+    reload();
+  };
+  const purge = async (f: TrashedFile) => {
+    if (!(await s().confirm({ title: "Endgültig löschen?", message: `„${f.name}“ wird endgültig gelöscht. Das kann nicht rückgängig gemacht werden.`, confirmLabel: "Endgültig löschen", danger: true }))) return;
+    try {
+      await api.purgeAttachment(f.id, f.name);
+    } catch (e) {
+      s().error("Löschen fehlgeschlagen", e);
+    }
+    reload();
+  };
+  return (
+    <section className="trash-files" aria-label="Gelöschte Dateien">
+      <h2 className="trash-files-title">Gelöschte Dateien</h2>
+      <div className="trash-list" role="list">
+        {files.map((f) => (
+          <div key={`${f.id}/${f.name}`} className="trash-item" role="listitem" data-file={f.name}>
+            <Paperclip size={16} />
+            <div className="trash-item-text">
+              <span className="trash-item-title">{f.name}</span>
+              <span className="trash-item-meta">
+                Gelöscht {relative(f.deleted_at)} · {formatSize(f.size)}
+              </span>
+            </div>
+            <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)}>
+              Wiederherstellen
+            </Button>
+            <IconButton icon={X} label="Endgültig löschen" size="md" onClick={() => void purge(f)} />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
