@@ -2,6 +2,7 @@
 
 import { Extension, type Editor, type Extensions } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import Paragraph from "@tiptap/extension-paragraph";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
@@ -166,13 +167,28 @@ export interface SchemaOptions {
   typing?: () => TypingPrefs;
 }
 
+/**
+ * Paragraphs as in StarterKit, except that a line with only `![alt](src)` stays a paragraph:
+ * Tiptap unwraps it for block images, but images are inline here (`MarkdownImage`), and an
+ * image directly in the document is invalid content that breaks the first edit.
+ */
+const ImageParagraph = Paragraph.extend({
+  parseMarkdown: (token, helpers) => {
+    const tokens = token.tokens ?? [];
+    if (tokens.length === 1 && tokens[0].type === "image") return helpers.createNode("paragraph", undefined, helpers.parseInline(tokens));
+    return Paragraph.config.parseMarkdown!(token, helpers);
+  },
+});
+
 export function buildExtensions(o: SchemaOptions = {}): Extensions {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4, 5, 6] },
       codeBlock: false,
       link: false,
+      paragraph: false,
     }),
+    ImageParagraph,
     MarkdownLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true, HTMLAttributes: { rel: "noopener noreferrer", target: null } }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     TaskList,

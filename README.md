@@ -39,6 +39,7 @@ Get the latest version from the [**Releases page**](https://github.com/mauricekl
 | System | File | Notes |
 |---|---|---|
 | **Windows 10/11** (x64) | `Annalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
+| **Windows 10/11** portable | `Annalo_<version>_x64-portable.zip` | Unpack anywhere (a USB stick) and start `Annalo.exe`: all data stays in `data` next to it, nothing is written to the user profile (no autostart, no jump list). Updates: unpack the new ZIP over the folder. API keys and tokens are kept in each computer's Credential Manager, not on the stick |
 | **macOS 11+** Apple Silicon | `Annalo_<version>_aarch64.dmg` | Drag into *Programme*. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
 | **macOS 11+** Intel | `Annalo_<version>_x64.dmg` | Same as above |
 | **Linux** (x64) | `Annalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Annalo_*.deb` |
@@ -368,6 +369,12 @@ lives in `git-sync` in the data folder. Optionally the latest database backup is
 different history (for example another computer's or an unrelated project), nothing there is overwritten: the commit
 goes to the branch `annalo-sync-<computer name>` and the settings say so. A new computer with the same remote continues
 the existing history. Failures appear as a notification and in the status line.
+
+**Several computers**: notes another computer pushed are taken over into your workspace with the next sync (earlier
+states stay in the version history). A note changed on both computers is not overwritten: both versions are kept, the
+page shows „Konflikt“, and **Zusammenführen** opens a view with both versions side by side, paragraph by paragraph.
+Changes made on one side only are merged automatically; for the rest you pick „Meine“, „Andere“, „Beide“ or write the
+text yourself. „Übernehmen“ saves the result and syncs it.
 
 **Restore**: „Aus Git wiederherstellen…“ clones the repository and imports it as a new top-level page
 „Git-Import <Datum>“ (images included); existing pages are left alone.

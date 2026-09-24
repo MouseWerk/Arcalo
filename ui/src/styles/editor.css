@@ -891,3 +891,61 @@
   .coll-table-wrap { max-height: none; overflow: visible; }
 }
 .coll-spacer td { padding: 0; border: 0; }
+
+/* ---- PDF: text layer, search hits, viewer tab, file drop ---- */
+/* pdf.js text layer (after pdfjs-dist/web/pdf_viewer.css): transparent text over the canvas,
+   selectable; the page element carries --total-scale-factor. */
+.pdf-page { position: relative; }
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-page .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; -webkit-user-select: text; }
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-page .textLayer .markedContent { display: contents; }
+.pdf-page .textLayer ::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: transparent; }
+.pdf-page .textLayer br::selection { background: transparent; }
+.pdf-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; -webkit-user-select: none; }
+.pdf-page .textLayer .highlight { position: static; margin: -1px; padding: 1px; border-radius: 3px; background: rgb(250 204 21 / 0.45); color: transparent; }
+.pdf-page .textLayer .highlight.selected { background: rgb(234 88 12 / 0.55); box-shadow: 0 0 0 1px rgb(234 88 12 / 0.9); }
+.pdf-page canvas { position: relative; z-index: 0; }
+.pdf-hit-prev, .pdf-hit-next { margin-left: -2px; }
+
+/* The viewer in a tab: the same layout inside the pane. */
+.pdf-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas); outline: none; }
+.pdf-pane .pdf-header { flex-wrap: wrap; row-gap: 4px; }
+.pane-content > .pdf-pane, .pane-content > .pdf-tab-loading { flex: 1; min-height: 0; }
+.pdf-tab-loading { display: grid; place-items: center; }
+@container pane (max-width: 860px) {
+  .pdf-pane .pdf-zoom, .pdf-pane .pdf-sep { display: none; }
+  .pdf-pane .pdf-search-input { width: 100px; }
+}
+@container pane (max-width: 560px) {
+  .pdf-pane .pdf-title { flex-basis: 100%; }
+}
+
+/* Files dragged over the tab bar or a pane without a note: they open as PDF tabs. */
+.pane.file-drop > .tabbar { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.pane.file-drop > .pane-content { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -8px; border-radius: var(--r-md); }

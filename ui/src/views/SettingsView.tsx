@@ -15,7 +15,7 @@ import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } fro
 import { formatShortcut, keys, recordShortcut } from "../lib/shortcut";
 import { IS_MAC } from "../lib/platform";
 import { NOT_CONFIGURED } from "../lib/updates";
-import { checkForUpdates, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
+import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
@@ -1009,8 +1009,19 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         >
           <Switch label={desk.closeLabel} checked={draft.close_to_tray} onChange={(v) => update({ close_to_tray: v })} />
         </Row>
-        <Row label={desk.autostartLabel} description={desk.autostartHint}>
-          <Switch label={desk.autostartLabel} checked={!!info?.autostart} onChange={setAutostart} />
+        <Row
+          label={desk.autostartLabel}
+          description={
+            info?.portable ? (
+              <>
+                {desk.autostartHint} <Badge tone="info">Im portablen Modus aus</Badge> Ein Autostart-Eintrag würde in das Benutzerprofil dieses Rechners geschrieben und auf den Datenträger zeigen, der beim nächsten Start fehlen kann.
+              </>
+            ) : (
+              desk.autostartHint
+            )
+          }
+        >
+          <Switch label={desk.autostartLabel} checked={!!info?.autostart} onChange={setAutostart} disabled={!!info?.portable} />
         </Row>
       </Group>
       <Group title="Befehlspalette">
@@ -1177,7 +1188,14 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   else if (checkedAt) (state = `Annalo ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`), (tone = "success");
   else state = "Noch nicht geprüft.";
   return (
-    <Group title={t("set.about.updates")} description="Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert.">
+    <Group
+      title={t("set.about.updates")}
+      description={
+        status.portable
+          ? "Portabler Modus: Neue Versionen werden nicht installiert (der Installer würde Annalo in das Benutzerprofil installieren). „Neue Version herunterladen“ öffnet die Release-Seite; das ZIP über den Ordner entpacken, der Ordner „data“ bleibt erhalten."
+          : "Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert."
+      }
+    >
       {/* Status and actions: the buttons wrap below the text as soon as they do not fit beside it. */}
       <Row stack label="Status" description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
         <div className="set-actions">
@@ -1186,9 +1204,15 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 Was ist neu?
               </Button>
-              <Button variant="primary" icon={RefreshCw} loading={busy} onClick={() => void installUpdate()}>
-                Installieren und neu starten
-              </Button>
+              {status.portable ? (
+                <Button variant="primary" icon={Download} onClick={() => void downloadPortable(available.url)}>
+                  Neue Version herunterladen
+                </Button>
+              ) : (
+                <Button variant="primary" icon={RefreshCw} loading={busy} onClick={() => void installUpdate()}>
+                  Installieren und neu starten
+                </Button>
+              )}
             </>
           )}
           <Button
@@ -1240,6 +1264,17 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
       </header>
       <UpdatesGroup draft={draft} update={update} />
       <Group title={t("set.about.data")}>
+        {status?.portable && (
+          <Row
+            stack
+            label={t("set.about.portable")}
+            description="Alle Daten liegen im Ordner „data“ neben Annalo.exe und wandern mit dem Ordner mit. Nichts wird in das Benutzerprofil dieses Rechners geschrieben: kein Autostart, keine Sprungliste, Updates werden von Hand heruntergeladen. Zugangsdaten (API-Schlüssel, Token, Passwörter) bleiben in der Anmeldeinformationsverwaltung dieses Rechners und müssen auf einem anderen Rechner neu eingegeben werden."
+          >
+            <span className="portable-badge">
+              <Badge tone="info">{t("set.about.portable")}</Badge>
+            </span>
+          </Row>
+        )}
         <Row stack label={t("set.about.dataDir")} description="Datenbank, Einstellungen und Schlüsselablage (unter Linux).">
           <PathValue value={view.data_dir} className="data-dir" />
         </Row>
@@ -1263,8 +1298,15 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
             </div>
           </Row>
         )}
-        <Row label={t("set.about.moveData")} description="Kopiert Datenbank, Bilder und Sicherungen beim nächsten Start in einen anderen Ordner. Der alte Ordner bleibt unverändert. Kein OneDrive-, Dropbox- oder Netzwerkordner.">
-          <Button icon={FolderInput} onClick={() => moveDataDir(loadStatus)}>
+        <Row
+          label={t("set.about.moveData")}
+          description={
+            status?.portable
+              ? "Im portablen Modus liegen die Daten immer neben Annalo.exe. Zum Umziehen den ganzen Ordner kopieren."
+              : "Kopiert Datenbank, Bilder und Sicherungen beim nächsten Start in einen anderen Ordner. Der alte Ordner bleibt unverändert. Kein OneDrive-, Dropbox- oder Netzwerkordner."
+          }
+        >
+          <Button icon={FolderInput} onClick={() => moveDataDir(loadStatus)} disabled={!!status?.portable}>
             Speicherort ändern…
           </Button>
         </Row>

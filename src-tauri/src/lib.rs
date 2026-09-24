@@ -5,10 +5,13 @@
 mod appmenu;
 mod desktop;
 mod devlog;
+mod files;
 mod jumplist;
 mod network;
+mod portable;
 mod prefs;
 mod secrets;
+mod syncmerge;
 mod updates;
 
 use std::collections::HashMap;
@@ -29,6 +32,7 @@ use annalo_core::ai::tools::{self, Risk, SystemCall};
 use annalo_core::ai::transform;
 use annalo_core::ai::zeitguess::{self, ZeitGuess};
 use annalo_core::ai::{AiClient, availability};
+use annalo_core::attachment_manager;
 use annalo_core::attachments::{self, SavedAttachment};
 use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
@@ -1043,6 +1047,8 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
     let settings = state.settings();
     let token = state.git_secret.get();
     devlog::remember_secret(token.as_deref());
+    // Notes with an open conflict keep the server's version until merged.
+    let hold = syncmerge::hold_paths(&state.db());
     let res = (|| {
         let source = state.git_source_dir();
         if settings.markdown_mirror {
@@ -1068,9 +1074,15 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
                 settings: &settings.git_sync,
                 host: &gitsync::hostname(),
                 now: Local::now(),
+                hold: &hold,
             },
         )
     })();
+    if let Ok(out) = &res
+        && !out.remote_changes.is_empty()
+    {
+        take_over_pulled(app, &state, out);
+    }
     let db = state.db();
     match &res {
         Ok(out) => {
@@ -1096,6 +1108,34 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
         }
     }
     res
+}
+
+/// Takes over the notes a sync pulled from the server (and the attachments they embed) and
+/// tells the UI (`gitsync://pulled`: pages to reload, conflicts to show).
+fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
+    let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
+    match pulled {
+        Ok(p) => {
+            let files = state.git_repo_dir().join(attachments::DIR_NAME);
+            if files.is_dir()
+                && let Err(e) = copy_new_attachments(&files, &state.attachments_dir())
+            {
+                devlog::warn("git", format!("attachments from the server not copied: {e}"));
+            }
+            devlog::info(
+                "git",
+                format!(
+                    "pulled from the server: {} changed, {} new, {} trashed, {} conflicts",
+                    p.pages.len(),
+                    p.created.len(),
+                    p.trashed.len(),
+                    p.conflicts.len()
+                ),
+            );
+            let _ = app.emit("gitsync://pulled", &p);
+        }
+        Err(e) => devlog::error("git", format!("taking over the server's notes failed: {e}")),
+    }
 }
 
 /// Syncs now (also when the automatic sync is off, as long as a remote is set).
@@ -2512,6 +2552,7 @@ fn create_main_window(
     geometry: Option<prefs::WindowState>,
     mica_on: bool,
     custom_frame: bool,
+    webview_dir: Option<PathBuf>,
 ) -> tauri::Result<tauri::WebviewWindow> {
     // Transparent whenever Mica is possible, so switching it on later needs no restart.
     let mica = supports_mica();
@@ -2521,6 +2562,10 @@ fn create_main_window(
         .min_inner_size(900.0, 560.0)
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
+    // Portable: the webview's profile stays in the data folder, not in the user profile.
+    if let Some(dir) = webview_dir {
+        builder = builder.data_directory(dir);
+    }
     builder = match geometry {
         Some(g) => {
             builder.inner_size(g.width as f64, g.height as f64).position(g.x as f64, g.y as f64).maximized(g.maximized)
@@ -2628,6 +2673,8 @@ struct AppInfo {
     version: &'static str,
     data_dir: String,
     platform: &'static str,
+    /// Portable mode (data next to the executable, see `portable.rs`).
+    portable: bool,
 }
 
 #[tauri::command]
@@ -2636,6 +2683,7 @@ fn app_info(state: State<AppState>) -> AppInfo {
         version: env!("CARGO_PKG_VERSION"),
         data_dir: state.data_dir.display().to_string(),
         platform: std::env::consts::OS,
+        portable: portable::active(),
     }
 }
 
@@ -2650,6 +2698,8 @@ struct DataDirStatus {
     pending_move: Option<String>,
     /// Result of a move or a fallback at startup.
     notice: Option<datadir::Notice>,
+    /// Portable mode: the data folder is fixed next to the executable.
+    portable: bool,
 }
 
 fn config_dir(app: &AppHandle) -> Result<PathBuf> {
@@ -2664,6 +2714,7 @@ fn data_dir_status_of(app: &AppHandle, state: &AppState) -> DataDirStatus {
         data_dir: dir,
         pending_move: pending,
         notice: state.data_dir_notice.clone(),
+        portable: portable::active(),
     }
 }
 
@@ -2673,6 +2724,9 @@ fn data_dir_status(app: AppHandle, state: State<AppState>) -> DataDirStatus {
 }
 
 fn data_dir_env_guard() -> Result<()> {
+    if portable::active() {
+        return Err(Error::State("Im portablen Modus liegen die Daten immer im Ordner „data“ neben Annalo.exe".into()));
+    }
     if std::env::var_os("ANNALO_DATA_DIR").is_some() {
         return Err(Error::State("Der Speicherort ist über ANNALO_DATA_DIR festgelegt".into()));
     }
@@ -2823,9 +2877,11 @@ pub fn run() {
         .setup(move |app| {
             // ANNALO_DATA_DIR lets tests run against a throw-away workspace; otherwise
             // `location.json` in the config folder may point to a chosen data folder.
-            // A pending move is carried out here, before the database is opened.
-            let startup = datadir::prepare(
+            // A pending move is carried out here, before the database is opened. A portable
+            // copy (marker next to the executable) keeps its data in `<exe dir>/data`.
+            let startup = datadir::prepare_portable(
                 std::env::var_os("ANNALO_DATA_DIR").map(PathBuf::from),
+                portable::detect(),
                 app.path().app_config_dir().ok().as_deref(),
                 app.path().app_data_dir()?,
             );
@@ -2835,11 +2891,12 @@ pub fn run() {
             devlog::info(
                 "core",
                 format!(
-                    "Annalo {} started ({} {}), data folder {}",
+                    "Annalo {} started ({} {}), data folder {}{}",
                     env!("CARGO_PKG_VERSION"),
                     std::env::consts::OS,
                     std::env::consts::ARCH,
-                    dir.display()
+                    dir.display(),
+                    if portable::active() { " (portable)" } else { "" }
                 ),
             );
             if let Some(n) = &startup.notice {
@@ -2856,6 +2913,10 @@ pub fn run() {
             }
             if let Err(e) = db.prune_versions(Utc::now()) {
                 devlog::warn("core", format!("version cleanup failed: {e}"));
+            }
+            let trash_days = db.load_settings().map(|s| s.notes.trash_retention_days as i64).unwrap_or(30);
+            if let Err(e) = attachment_manager::purge_expired_files(&dir, trash_days.max(1), Utc::now()) {
+                devlog::warn("core", format!("file trash cleanup failed: {e}"));
             }
             if let Err(e) = db.migrate_palette_default() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
@@ -2908,10 +2969,14 @@ pub fn run() {
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
             let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
             let minimized = tray && wants_minimized;
-            jumplist::set_app_id(&app.config().identifier);
+            // A portable copy leaves the taskbar alone (the jump list lives in the user profile).
+            if !portable::active() {
+                jumplist::set_app_id(&app.config().identifier);
+            }
             // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
             // Windows showed the unstyled page, then the webview's white, then the splash.
-            let window = create_main_window(app, false, geometry, mica_on, custom_frame)?;
+            let webview_dir = portable::webview_dir(&app.state::<AppState>().data_dir);
+            let window = create_main_window(app, false, geometry, mica_on, custom_frame, webview_dir)?;
             PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
             // Should the UI never report (a script error), the window still appears.
             let handle = app.handle().clone();
@@ -2985,6 +3050,12 @@ pub fn run() {
             drawing_create,
             drawing_read,
             drawing_save,
+            files::attachments_list,
+            files::attachment_rename,
+            files::attachment_trash,
+            files::attachments_trashed,
+            files::attachment_restore,
+            files::attachment_purge,
             wbs_tree,
             project_create,
             project_update,
@@ -3021,6 +3092,9 @@ pub fn run() {
             git_token_set,
             git_sync_test,
             git_restore_import,
+            syncmerge::git_conflicts,
+            syncmerge::git_conflict_get,
+            syncmerge::git_conflict_resolve,
             settings_get,
             settings_save,
             api_key_set,

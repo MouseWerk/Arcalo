@@ -9,6 +9,10 @@
 //! pending move (`{"data_dir": old, "pending_move": new}`); the next start copies the
 //! closed workspace before the database is opened ([`prepare`]). The old folder is left
 //! untouched.
+//!
+//! Portable mode: a file `annalo-portable` next to the executable (or a folder `data/` there
+//! holding the marker `.annalo-portable`) keeps everything in `<exe dir>/data`, and
+//! `location.json` is neither read nor written ([`portable_data_dir`], [`prepare_portable`]).
 
 use std::path::{Path, PathBuf};
 
@@ -73,6 +77,51 @@ pub fn write_pending_move(config_dir: &Path, from: &Path, to: &Path) -> Result<(
 /// The data folder to open: `env` (ANNALO_DATA_DIR) wins, then `location.json`, then `default`.
 pub fn resolve(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf) -> PathBuf {
     env.filter(|p| !p.as_os_str().is_empty()).or_else(|| config_dir.and_then(read_location)).unwrap_or(default)
+}
+
+/// Marker file next to the executable that switches on portable mode.
+pub const PORTABLE_MARKER: &str = "annalo-portable";
+/// The data folder of a portable copy, next to the executable.
+pub const PORTABLE_DATA: &str = "data";
+/// Marker inside `data/`: the folder alone (without [`PORTABLE_MARKER`]) also means portable.
+pub const PORTABLE_DATA_MARKER: &str = ".annalo-portable";
+
+/// The folder of the running executable; `env` (`ANNALO_EXE_DIR`, tests) stands in for it.
+pub fn exe_dir(env: Option<PathBuf>) -> Option<PathBuf> {
+    env.filter(|p| !p.as_os_str().is_empty())
+        .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)))
+}
+
+/// `<exe dir>/data` when the copy next to `exe_dir` is portable, else `None`.
+pub fn portable_data_dir(exe_dir: &Path) -> Option<PathBuf> {
+    let data = exe_dir.join(PORTABLE_DATA);
+    (exe_dir.join(PORTABLE_MARKER).is_file() || data.join(PORTABLE_DATA_MARKER).is_file()).then_some(data)
+}
+
+/// Like [`prepare`], with a portable data folder first: `env` still wins (tests), then
+/// `portable` (`location.json` is ignored), then the usual order.
+pub fn prepare_portable(
+    env: Option<PathBuf>,
+    portable: Option<PathBuf>,
+    config_dir: Option<&Path>,
+    default: PathBuf,
+) -> Startup {
+    let env = env.filter(|p| !p.as_os_str().is_empty());
+    match (env, portable) {
+        (None, Some(dir)) => Startup { dir, notice: None },
+        (env, _) => prepare(env, config_dir, default),
+    }
+}
+
+/// Suffix for credential-store entries of a portable copy (`git-token@3f2a…`): the Windows
+/// credential store and the macOS keychain belong to the user, not to the folder, so two
+/// portable copies (or a portable and an installed one) must not share or overwrite secrets.
+/// Derived from the data folder's path; secrets do not travel with the folder.
+pub fn secret_namespace(data_dir: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let path = data_dir.canonicalize().unwrap_or_else(|_| data_dir.to_path_buf());
+    let key = path.display().to_string().to_lowercase();
+    Sha256::digest(key.as_bytes()).iter().take(6).map(|b| format!("{b:02x}")).collect()
 }
 
 /// Whether `path` is a network share or inside a OneDrive/Dropbox folder. SQLite's locking
@@ -309,6 +358,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn portable_marker_decides_the_data_folder() {
+        let base = temp("portable");
+        let (exe, cfg, default) = (base.join("stick"), base.join("cfg"), base.join("default"));
+        std::fs::create_dir_all(&exe).unwrap();
+        assert_eq!(portable_data_dir(&exe), None, "no marker: installed");
+        write_location(&cfg, &base.join("anderswo")).unwrap();
+        let start = |portable| prepare_portable(None, portable, Some(&cfg), default.clone());
+        assert_eq!(start(portable_data_dir(&exe)).dir, default, "location.json of a missing folder: default");
+
+        std::fs::write(exe.join(PORTABLE_MARKER), b"").unwrap();
+        assert_eq!(portable_data_dir(&exe), Some(exe.join("data")));
+        assert_eq!(
+            start(portable_data_dir(&exe)),
+            Startup { dir: exe.join("data"), notice: None },
+            "location.json ignored"
+        );
+        // The environment variable (tests) still wins; an empty one does not count.
+        let env = prepare_portable(Some(base.join("env")), portable_data_dir(&exe), Some(&cfg), default.clone());
+        assert_eq!(env.dir, base.join("env"));
+        let empty = prepare_portable(Some(PathBuf::new()), portable_data_dir(&exe), Some(&cfg), default.clone());
+        assert_eq!(empty.dir, exe.join("data"));
+
+        // A marker inside data/ alone also counts; a folder data/ without it does not.
+        std::fs::remove_file(exe.join(PORTABLE_MARKER)).unwrap();
+        std::fs::create_dir_all(exe.join("data")).unwrap();
+        assert_eq!(portable_data_dir(&exe), None);
+        std::fs::write(exe.join("data").join(PORTABLE_DATA_MARKER), b"").unwrap();
+        assert_eq!(portable_data_dir(&exe), Some(exe.join("data")));
+        // A marker that is a folder is not a marker.
+        std::fs::remove_file(exe.join("data").join(PORTABLE_DATA_MARKER)).unwrap();
+        std::fs::create_dir_all(exe.join(PORTABLE_MARKER)).unwrap();
+        assert_eq!(portable_data_dir(&exe), None);
+
+        assert_eq!(exe_dir(Some(exe.clone())), Some(exe.clone()));
+        assert!(exe_dir(None).is_some_and(|d| d.is_dir()));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn secret_namespace_is_per_folder() {
+        let (a, b) = (temp("ns-a"), temp("ns-b"));
+        let na = secret_namespace(&a);
+        assert_eq!(na.len(), 12);
+        assert!(na.bytes().all(|c| c.is_ascii_hexdigit()));
+        std::fs::create_dir_all(a.join("x")).unwrap();
+        assert_eq!(na, secret_namespace(&a.join("x").join("..")), "same folder, same namespace");
+        assert_ne!(na, secret_namespace(&b));
+        let _ = (std::fs::remove_dir_all(&a), std::fs::remove_dir_all(&b));
     }
 
     #[test]

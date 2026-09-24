@@ -3,14 +3,16 @@
 import { create } from "zustand";
 import { api, errorText } from "../lib/api";
 import { logUi } from "../lib/devlog";
-import type { BudgetStatus, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
+import type { BudgetStatus, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 
-export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks";
+export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "attachments" | "pdf" | "conflict";
 /** A place a tab can show. */
 export interface Loc {
   kind: TabKind;
+  /** The page (page tabs, the conflict view of a page). */
   pageId?: number;
+  /** The tag (tag tabs) or the attachment's file name (PDF tabs). */
   tag?: string;
 }
 export interface Tab extends Loc {
@@ -104,6 +106,9 @@ interface State {
   onboarding: boolean;
   /** Question from the palette, consumed by the assistant panel once it is mounted. */
   pendingAsk: string | PendingAsk | null;
+  /** Pages with an undecided Git sync conflict („Konflikt“). */
+  conflicts: GitConflictInfo[];
+  refreshConflicts: () => Promise<void>;
 
   openTab: (loc: Loc, opts?: OpenOpts) => void;
   openPage: (pageId: number, opts?: OpenOpts) => void;
@@ -272,6 +277,8 @@ export const useApp = create<State>((set, get) => ({
   focusMode: false,
   onboarding: false,
   pendingAsk: null,
+  conflicts: [],
+  refreshConflicts: async () => set({ conflicts: await api.gitConflicts().catch(() => get().conflicts) }),
 
   openTab: (loc, opts) => {
     const { panes, activePaneId, paneSizes } = get();

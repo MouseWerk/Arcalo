@@ -1,8 +1,9 @@
 name: Release
 
-# Pushing a tag `v1.2.3` builds the Windows installer (per-user NSIS, no admin rights), the
-# Linux packages (.deb, .AppImage) and the macOS disk images (Apple Silicon and Intel) and
-# publishes them as a GitHub release.
+# Pushing a tag `v1.2.3` builds the Windows installer (per-user NSIS, no admin rights) and the
+# portable Windows ZIP (Annalo.exe + marker file, data next to the executable), the Linux
+# packages (.deb, .AppImage) and the macOS disk images (Apple Silicon and Intel) and publishes
+# them as a GitHub release.
 #
 # Automatic updates: the public key is committed (src-tauri/updater.pub). With the repository
 # secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (README →
@@ -224,6 +225,26 @@ jobs:
             if [ -f "$(ls "$B"/nsis/*.exe.sig 2>/dev/null | head -1)" ]; then
               cp "$B"/nsis/*.exe.sig dist/Annalo_${VERSION}_x64-setup.exe.sig
             fi
+            # Portable ZIP: the same executable with the marker file next to it (all data then
+            # lives in data\ beside Annalo.exe). Not part of latest.json: portable copies are
+            # updated by hand from the release page.
+            P="$RUNNER_TEMP/Annalo-portable"
+            rm -rf "$P" && mkdir -p "$P"
+            cp target/release/annalo.exe "$P/Annalo.exe"
+            printf 'Annalo portabel\r\n' > "$P/annalo-portable"
+            {
+              printf 'Annalo %s – portable Version\r\n\r\n' "$VERSION"
+              printf 'Den Ordner an einen beliebigen Ort entpacken (z. B. auf einen USB-Stick) und Annalo.exe starten.\r\n'
+              printf 'Die Datei „annalo-portable“ schaltet den portablen Modus ein: alle Daten (Datenbank, Einstellungen,\r\n'
+              printf 'Anhänge, Sicherungen, Protokoll, WebView-Daten) liegen im Ordner „data“ neben Annalo.exe.\r\n\r\n'
+              printf 'Im portablen Modus schreibt Annalo nichts in das Benutzerprofil des Rechners: kein Autostart,\r\n'
+              printf 'keine Sprungliste, kein Installer. Zugangsdaten (API-Schlüssel, Git-Token, Proxy-Passwort) bleiben\r\n'
+              printf 'in der Windows-Anmeldeinformationsverwaltung des jeweiligen Rechners und werden auf einem anderen\r\n'
+              printf 'Rechner neu eingegeben.\r\n\r\n'
+              printf 'Update: die neue ZIP-Datei herunterladen und über diesen Ordner entpacken; der Ordner „data“ bleibt.\r\n'
+              printf 'Voraussetzung: Microsoft Edge WebView2 Runtime (unter Windows 10 und 11 vorinstalliert).\r\n'
+            } > "$P/LIESMICH.txt"
+            (cd "$P" && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist/Annalo_${VERSION}_x64-portable.zip" Annalo.exe annalo-portable LIESMICH.txt >/dev/null)
           else
             cp "$B"/deb/*.deb dist/Annalo_${VERSION}_amd64.deb
             cp "$B"/appimage/*.AppImage dist/Annalo_${VERSION}_amd64.AppImage

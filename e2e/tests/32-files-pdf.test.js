@@ -1,5 +1,5 @@
 // File attachments and PDFs: raw-byte storing, the file chip and its menu, a dropped file,
-// the PDF preview card (pdf.js without a worker) and the PDF viewer (pages, search, Esc).
+// the PDF preview card (pdf.js in its worker) and the PDF viewer (pages, search, Esc).
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -205,8 +205,8 @@ test("a PDF shows its first page and opens in the viewer", async () => {
   assert.equal(await content("Anhänge"), `Handbuch:\n\n![[Handbuch.pdf]]\n`);
 });
 
-test("PDFs need no worker, no network and log no errors", async () => {
-  // pdf.js runs in the main thread: the CSP (worker-src 'none') is never hit.
+test("PDFs need no network, their worker is not refused, and they log no errors", async () => {
+  // pdf.js parses in its Web Worker, which the CSP allows by name: nothing is refused.
   const csp = await app.browser.execute(() => window.__csp);
   assert.deepEqual(csp.filter((v) => !v.startsWith("style-src")), []);
   assert.deepEqual(await app.consoleErrors(), []);

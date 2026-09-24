@@ -81,9 +81,9 @@ export function TextArea({ className = "", autoGrow, ...rest }: TextareaHTMLAttr
 /** Dropdown with the API of a controlled <select> (components/Select.tsx). */
 export { Select, type SelectOption, type SelectChange } from "./Select";
 
-export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`switch ${checked ? "on" : ""}`} onClick={() => onChange(!checked)}>
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`switch ${checked ? "on" : ""}`} onClick={() => onChange(!checked)} disabled={disabled}>
       <span className="switch-knob" />
     </button>
   );

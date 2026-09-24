@@ -63,6 +63,15 @@ export const api = {
   attachmentSize: (name: string) => call<number | null>("attachment_size", { name }),
   /** Creates an empty `<title>.excalidraw` drawing (a free name: `title 2`, …). */
   createDrawing: (title: string) => call<T.SavedAttachment>("drawing_create", { title }),
+  /** Attachment manager: every file with type, size, date and usage. */
+  attachments: () => call<T.AttachmentList>("attachments_list"),
+  /** Renames a file and rewrites its embeds in all pages. */
+  renameAttachment: (name: string, newName: string) => call<T.RenameOutcome>("attachment_rename", { name, newName }),
+  /** Moves files into the file trash. */
+  trashAttachments: (names: string[]) => call<string[]>("attachment_trash", { names }),
+  trashedAttachments: () => call<T.TrashedFile[]>("attachments_trashed"),
+  restoreAttachment: (id: string, name: string) => call<void>("attachment_restore", { id, name }),
+  purgeAttachment: (id: string, name: string) => call<void>("attachment_purge", { id, name }),
   /** Excalidraw scene JSON of a drawing. */
   readDrawing: (name: string) => call<string>("drawing_read", { name }),
   /** Stores the scene and its SVG preview (`null`: empty drawing, no preview). */
@@ -136,7 +145,13 @@ export const api = {
   setGitToken: (token: string | null) => call<T.GitSyncStatus>("git_token_set", { token }),
   gitSyncTest: (url: string | null, token: string | null) => call<T.GitTest>("git_sync_test", { url, token }),
   gitRestoreImport: (url: string) => call<T.ImportReport>("git_restore_import", { url }),
-  appInfo: () => call<{ version: string; data_dir: string; platform: string }>("app_info"),
+  /** Pages with an undecided Git sync conflict. */
+  gitConflicts: () => call<T.GitConflictInfo[]>("git_conflicts"),
+  gitConflict: (pageId: number) => call<T.GitConflictView>("git_conflict_get", { pageId }),
+  /** Saves the merged content, closes the conflict and syncs again. */
+  resolveGitConflict: (pageId: number, content: string) =>
+    call<{ doc: T.PageDoc; sync: T.GitSyncOutcome | null; sync_error: string | null }>("git_conflict_resolve", { pageId, content }),
+  appInfo: () => call<{ version: string; data_dir: string; platform: string; portable: boolean }>("app_info"),
   dataDirStatus: () => call<T.DataDirStatus>("data_dir_status"),
   inspectDataDir: (path: string) => call<T.DataDirTarget>("data_dir_inspect", { path }),
   /** Takes effect at the next start; `useExisting` opens a workspace already in `path`. */

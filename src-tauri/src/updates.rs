@@ -62,6 +62,8 @@ pub struct UpdateStatus {
     current_version: String,
     /// Found by an earlier check and not installed yet.
     available: Option<UpdateInfo>,
+    /// Portable copy: a new version is downloaded from the release page, not installed.
+    portable: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -87,6 +89,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         enabled: pubkey().is_some(),
         current_version: app.package_info().version.to_string(),
         available: lock(&updates.pending).as_ref().map(UpdateInfo::of),
+        portable: crate::portable::active(),
     }
 }
 
@@ -132,6 +135,13 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
 pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Result<()> {
     if pubkey().is_none() {
         return Err(not_configured());
+    }
+    if crate::portable::active() {
+        // The installer would install Annalo into the user profile instead of updating the stick.
+        return Err(Error::State(
+            "Im portablen Modus wird nicht automatisch installiert – bitte die neue Version von der Release-Seite herunterladen"
+                .into(),
+        ));
     }
     let update = lock(&updates.pending).clone().ok_or_else(|| Error::State("Kein Update gefunden".into()))?;
     if updates.installing.swap(true, Ordering::SeqCst) {

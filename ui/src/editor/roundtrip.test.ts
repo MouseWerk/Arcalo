@@ -129,6 +129,15 @@ describe("image embeds", () => {
     expect(html("![a](attachments/x.png)\n")).toContain('src="asset://attachments/x.png"');
     expect(html("![a](https://example.com/x.png)\n")).toContain('src="https://example.com/x.png"');
   });
+  it("an image alone on its line stays inside a paragraph (valid document, editable)", () => {
+    const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: "Text\n\n![Plan](attachments/x.png)\n", contentType: "markdown" });
+    expect(() => editor.state.doc.check()).not.toThrow();
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+    // The first edit used to fail („contentMatchAt on a node with invalid content“).
+    expect(() => editor.commands.insertContentAt(editor.state.doc.content.size, { type: "paragraph", content: [{ type: "text", text: "neu" }] })).not.toThrow();
+    expect(toMarkdown(editor)).toBe("Text\n\n![Plan](attachments/x.png)\n\nneu\n");
+    editor.destroy();
+  });
 });
 
 describe("drawing embeds", () => {

@@ -1,87 +1,198 @@
-// The PDF viewer: all pages in a scrolling column (rendered when they come into view), page
-// navigation, zoom, search (jumps between pages containing the text) and „Extern öffnen“.
-// Lazy-loaded (pdfViewer.tsx) with pdf.js; Esc closes it.
+// The PDF viewer: all pages in a scrolling column, page navigation, zoom, search with every hit
+// highlighted (next/previous) and „Extern öffnen“. As an overlay over a note (Esc closes it) or
+// in a tab of its own (`PdfPane`). Lazy-loaded with pdf.js, which parses in a Web Worker.
+//
+// Large PDFs stay light: pages render only near the viewport, a render is cancelled when its
+// page scrolls away, and canvases and text layers of pages far from the viewport are released
+// (at most a few screens of pages hold pixels). A text layer (pdf.js TextLayer) over each
+// rendered page makes the text selectable and carries the search highlights.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { ChevronDown, ChevronUp, ExternalLink, MoveHorizontal, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PDFDocumentProxy, RenderTask, TextLayer } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { ChevronDown, ChevronUp, ExternalLink, MoveHorizontal, PanelTop, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton } from "../components/ui";
 import { api, errorText } from "../lib/api";
-import { openPdf } from "../lib/pdf";
+import { loadPdfjs, openPdf, pdfWorkerKind } from "../lib/pdf";
+import { findHits, matchOffsets, type PdfHit } from "../lib/pdfsearch";
 import { useApp } from "../store/app";
 
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
 /** Gap between pages and around the column (px, as in the CSS). */
 const GAP = 16;
+/** Pages within this many viewport heights render; beyond `KEEP` they give their pixels back. */
+const NEAR = "100%";
+const KEEP = "300%";
 
 /** `auto`: fit to width, at most 125 % (wide windows); `fit`: always the full width. */
 type Zoom = number | "fit" | "auto";
 const AUTO_MAX = 1.25;
 
-function PdfPage({ doc, index, scale, size, root }: { doc: PDFDocumentProxy; index: number; scale: number; size: { w: number; h: number }; root: HTMLElement | null }) {
+type Size = { w: number; h: number };
+/** What a page highlights: the query and, when the current hit is on it, which one. */
+type Mark = { query: string; current: { item: number; n: number } | null };
+
+/** Wraps the hits of `query` in the text layer's spans; the current one gets `selected`. */
+function highlight(layer: TextLayer, mark: Mark | null): HTMLElement | null {
+  let current: HTMLElement | null = null;
+  layer.textDivs.forEach((div, i) => {
+    const text = layer.textContentItemsStr[i] ?? "";
+    const offsets = mark ? matchOffsets(text, mark.query) : [];
+    if (!offsets.length) {
+      if (div.childElementCount) div.textContent = text;
+      return;
+    }
+    const q = mark!.query.length;
+    const parts: (string | HTMLElement)[] = [];
+    let at = 0;
+    offsets.forEach((o, n) => {
+      if (o > at) parts.push(text.slice(at, o));
+      const hit = document.createElement("span");
+      hit.className = "highlight appended";
+      hit.textContent = text.slice(o, o + q);
+      if (mark!.current?.item === i && mark!.current.n === n) {
+        hit.classList.add("selected");
+        current = hit;
+      }
+      parts.push(hit);
+      at = o + q;
+    });
+    if (at < text.length) parts.push(text.slice(at));
+    div.replaceChildren(...parts);
+  });
+  return current;
+}
+
+function PdfPage({ doc, index, scale, size, root, mark }: { doc: PDFDocumentProxy; index: number; scale: number; size: Size; root: HTMLElement | null; mark: Mark | null }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [visible, setVisible] = useState(false);
+  const textBox = useRef<HTMLDivElement>(null);
+  const layer = useRef<TextLayer | null>(null);
+  const [near, setNear] = useState(false);
+  const [keep, setKeep] = useState(false);
+  const [layerScale, setLayerScale] = useState<number | null>(null);
 
   useEffect(() => {
     const el = box.current;
     if (!el || !root) return;
-    const io = new IntersectionObserver((entries) => setVisible(entries.some((e) => e.isIntersecting)), { root, rootMargin: "600px 0px" });
-    io.observe(el);
-    return () => io.disconnect();
+    const nearIo = new IntersectionObserver((e) => setNear(e.some((x) => x.isIntersecting)), { root, rootMargin: `${NEAR} 0px` });
+    const keepIo = new IntersectionObserver((e) => setKeep(e.some((x) => x.isIntersecting)), { root, rootMargin: `${KEEP} 0px` });
+    nearIo.observe(el);
+    keepIo.observe(el);
+    return () => {
+      nearIo.disconnect();
+      keepIo.disconnect();
+    };
   }, [root]);
 
+  // Far away: give the pixels and the text layer back.
   useEffect(() => {
-    if (!visible || !canvas.current) return;
+    if (keep) return;
+    const c = canvas.current;
+    if (c && c.width) {
+      c.width = 0;
+      c.height = 0;
+    }
+    layer.current?.cancel();
+    layer.current = null;
+    textBox.current?.replaceChildren();
+    setLayerScale(null);
+    box.current?.classList.remove("is-rendered");
+    // The page object frees its parsed fonts and images too.
+    void doc.getPage(index + 1).then((p) => p.cleanup(), () => {});
+  }, [keep, doc, index]);
+
+  useEffect(() => {
+    if (!near || !canvas.current) return;
     let task: RenderTask | null = null;
+    let text: TextLayer | null = null;
     let alive = true;
     const target = canvas.current;
-    void doc.getPage(index + 1).then((page) => {
+    void Promise.all([doc.getPage(index + 1), loadPdfjs()]).then(async ([p, pdfjs]) => {
       if (!alive) return;
       const ratio = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: scale * ratio });
+      const viewport = p.getViewport({ scale: scale * ratio });
       // Render off-screen, then swap: the old rendering stays visible while zooming.
       const next = document.createElement("canvas");
       next.width = Math.floor(viewport.width);
       next.height = Math.floor(viewport.height);
-      task = page.render({ canvas: next, viewport });
-      task.promise.then(
-        () => {
-          if (!alive) return;
-          target.width = next.width;
-          target.height = next.height;
-          target.getContext("2d")?.drawImage(next, 0, 0);
-        },
-        () => {},
-      );
+      task = p.render({ canvas: next, viewport });
+      try {
+        await task.promise;
+      } catch {
+        next.width = next.height = 0;
+        return; // cancelled: scrolled away or zoomed again
+      }
+      if (!alive) return;
+      target.width = next.width;
+      target.height = next.height;
+      target.getContext("2d")?.drawImage(next, 0, 0);
+      next.width = next.height = 0;
+      box.current?.classList.add("is-rendered");
+      const host = textBox.current;
+      if (!host || layerScale === scale) return;
+      host.replaceChildren();
+      text = new pdfjs.TextLayer({ textContentSource: p.streamTextContent(), container: host, viewport: p.getViewport({ scale }) });
+      try {
+        await text.render();
+      } catch {
+        return;
+      }
+      if (!alive) return;
+      layer.current = text;
+      setLayerScale(scale);
     });
     return () => {
       alive = false;
       task?.cancel();
+      if (text && text !== layer.current) text.cancel();
     };
-  }, [visible, doc, index, scale]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [near, doc, index, scale]);
 
+  // Search highlights follow the query and the current hit; the view moves to a hit once, not
+  // again whenever the page comes back into view.
+  const scrolledFor = useRef<Mark | null>(null);
+  useEffect(() => {
+    if (!layer.current || layerScale !== scale) return;
+    const current = highlight(layer.current, mark);
+    if (current && scrolledFor.current !== mark) {
+      scrolledFor.current = mark;
+      current.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }, [mark, layerScale, scale]);
+
+  const style = {
+    width: Math.floor(size.w * scale),
+    height: Math.floor(size.h * scale),
+    "--total-scale-factor": scale,
+    "--scale-factor": scale,
+    "--scale-round-x": "1px",
+    "--scale-round-y": "1px",
+  } as React.CSSProperties;
   return (
-    <div ref={box} className="pdf-page" data-page={index + 1} style={{ width: Math.floor(size.w * scale), height: Math.floor(size.h * scale) }}>
+    <div ref={box} className="pdf-page" data-page={index + 1} style={style}>
       <canvas ref={canvas} aria-label={`Seite ${index + 1}`} />
+      <div ref={textBox} className="textLayer" />
     </div>
   );
 }
 
-export default function PdfViewer({ name, page: startPage, onClose }: { name: string; page: number | null; onClose: () => void }) {
+function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; page: number | null; onClose: () => void; mode: "overlay" | "tab" }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
-  const [sizes, setSizes] = useState<{ w: number; h: number }[]>([]);
+  const [sizes, setSizes] = useState<Size[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState<Zoom>("auto");
   const [width, setWidth] = useState(0);
   const [current, setCurrent] = useState(1);
   const [pageInput, setPageInput] = useState("1");
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<{ query: string; pages: number[]; at: number } | null>(null);
-  const overlay = useRef<HTMLDivElement>(null);
+  const [hits, setHits] = useState<{ query: string; list: PdfHit[]; at: number } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [workerKind, setWorkerKind] = useState<string>("");
+  const frame = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const texts = useRef(new Map<number, string>());
+  const texts = useRef(new Map<number, string[]>());
   // The scroll container, also the pages' IntersectionObserver root.
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const scrollRef = useCallback((el: HTMLDivElement | null) => {
@@ -92,18 +203,29 @@ export default function PdfViewer({ name, page: startPage, onClose }: { name: st
   useEffect(() => {
     let alive = true;
     let opened: PDFDocumentProxy | null = null;
+    void pdfWorkerKind().then((k) => alive && setWorkerKind(k), () => {});
     openPdf(name).then(
       async (d) => {
         opened = d;
         if (!alive) return void d.loadingTask.destroy();
-        const out: { w: number; h: number }[] = [];
-        for (let i = 1; i <= d.numPages; i++) {
-          const vp = (await d.getPage(i)).getViewport({ scale: 1 });
-          out.push({ w: vp.width, h: vp.height });
-        }
+        // Every page starts with the first page's size; the real sizes follow in the background.
+        const first = (await d.getPage(1)).getViewport({ scale: 1 });
         if (!alive) return;
-        setSizes(out);
+        const out: Size[] = Array.from({ length: d.numPages }, () => ({ w: first.width, h: first.height }));
+        setSizes([...out]);
         setDoc(d);
+        let changed = false;
+        for (let i = 2; i <= d.numPages && alive; i++) {
+          const vp = (await d.getPage(i)).getViewport({ scale: 1 });
+          if (vp.width !== out[i - 1].w || vp.height !== out[i - 1].h) {
+            out[i - 1] = { w: vp.width, h: vp.height };
+            changed = true;
+          }
+          if (changed && (i % 25 === 0 || i === d.numPages)) {
+            changed = false;
+            if (alive) setSizes([...out]);
+          }
+        }
       },
       (e) => alive && setError(errorText(e)),
     );
@@ -170,63 +292,88 @@ export default function PdfViewer({ name, page: startPage, onClose }: { name: st
     zoomTo(next);
   };
 
-  const pageText = async (n: number) => {
+  const pageItems = async (n: number) => {
     let t = texts.current.get(n);
     if (t == null && doc) {
       const content = await (await doc.getPage(n)).getTextContent();
-      t = content.items.map((it) => ("str" in it ? it.str : "")).join(" ").toLowerCase();
+      t = content.items.map((it) => ("str" in it ? it.str : ""));
       texts.current.set(n, t);
     }
-    return t ?? "";
+    return t ?? [];
   };
 
   const search = async (back: boolean) => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     if (!q || !doc) return setHits(null);
     let found = hits;
     if (!found || found.query !== q) {
-      const pages: number[] = [];
-      for (let n = 1; n <= doc.numPages; n++) if ((await pageText(n)).includes(q)) pages.push(n);
-      found = { query: q, pages, at: -1 };
+      setSearching(true);
+      const pages: string[][] = [];
+      for (let n = 1; n <= doc.numPages; n++) pages.push(await pageItems(n));
+      setSearching(false);
+      found = { query: q, list: findHits(pages, q), at: -1 };
     }
-    if (!found.pages.length) return setHits(found);
+    if (!found.list.length) return setHits(found);
     let at: number;
     if (found.at < 0) {
-      at = found.pages.findIndex((p) => p >= current);
+      at = found.list.findIndex((h) => h.page >= current);
       if (at < 0) at = 0;
     } else {
-      at = (found.at + (back ? -1 : 1) + found.pages.length) % found.pages.length;
+      at = (found.at + (back ? -1 : 1) + found.list.length) % found.list.length;
     }
     setHits({ ...found, at });
-    goTo(found.pages[at]);
+    const hit = found.list[at];
+    // Far pages are not rendered yet: jump there, the highlight scrolls the hit into view.
+    if (Math.abs(hit.page - current) > 1 || !scroller.current?.querySelector(`.pdf-page[data-page="${hit.page}"].is-rendered`)) goTo(hit.page);
   };
 
-  // The focus moves from the note into the viewer.
-  useEffect(() => {
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && !overlay.current?.contains(active)) active.blur();
-    overlay.current?.focus();
-  }, []);
+  // What each page highlights (stable objects, so unchanged pages do not redo their spans).
+  const marks = useMemo(() => {
+    const out = new Map<number, Mark>();
+    if (!hits || !hits.list.length) return out;
+    const cur = hits.list[hits.at];
+    for (const h of hits.list) if (!out.has(h.page)) out.set(h.page, { query: hits.query, current: null });
+    if (cur) out.set(cur.page, { query: hits.query, current: { item: cur.item, n: cur.n } });
+    return out;
+  }, [hits]);
 
-  // Esc closes; keys never reach the note or the app's shortcuts behind the viewer.
+  // The focus moves from the note into the viewer (overlay).
   useEffect(() => {
+    if (mode !== "overlay") return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && !frame.current?.contains(active)) active.blur();
+    frame.current?.focus();
+  }, [mode]);
+
+  const handleKey = (e: KeyboardEvent, inside: boolean) => {
+    const el = frame.current;
+    if (!el) return false;
+    const mod = e.ctrlKey || e.metaKey;
+    const inInput = e.target instanceof HTMLInputElement;
+    // Copying selected text works as everywhere else.
+    if (mod && e.key.toLowerCase() === "c") return false;
+    let handled = true;
+    if (e.key === "Escape" && mode === "overlay") onClose();
+    else if (e.key === "Escape" && inInput && query) (setQuery(""), setHits(null));
+    else if (mod && e.key.toLowerCase() === "f") searchInput.current?.select();
+    else if (mod && (e.key === "+" || e.key === "=")) step(1);
+    else if (mod && e.key === "-") step(-1);
+    else if (mod && e.key === "0") zoomTo("auto");
+    else if (!inInput && !mod && (e.key === "PageDown" || e.key === "ArrowRight")) goTo(current + 1);
+    else if (!inInput && !mod && (e.key === "PageUp" || e.key === "ArrowLeft")) goTo(current - 1);
+    else if (!inInput && !mod && e.key === "Home") goTo(1);
+    else if (!inInput && !mod && e.key === "End") goTo(sizes.length);
+    else if (mode === "overlay") handled = !inside;
+    else handled = false;
+    return handled;
+  };
+
+  // Overlay: Esc closes; keys never reach the note or the app's shortcuts behind the viewer.
+  useEffect(() => {
+    if (mode !== "overlay") return;
     const onKey = (e: KeyboardEvent) => {
-      const el = overlay.current;
-      if (!el) return;
-      const mod = e.ctrlKey || e.metaKey;
-      const inInput = e.target instanceof HTMLInputElement;
-      let handled = true;
-      if (e.key === "Escape") onClose();
-      else if (mod && e.key.toLowerCase() === "f") searchInput.current?.select();
-      else if (mod && (e.key === "+" || e.key === "=")) step(1);
-      else if (mod && e.key === "-") step(-1);
-      else if (mod && e.key === "0") zoomTo("auto");
-      else if (!inInput && !mod && (e.key === "PageDown" || e.key === "ArrowRight")) goTo(current + 1);
-      else if (!inInput && !mod && (e.key === "PageUp" || e.key === "ArrowLeft")) goTo(current - 1);
-      else if (!inInput && !mod && e.key === "Home") goTo(1);
-      else if (!inInput && !mod && e.key === "End") goTo(sizes.length);
-      else handled = !(e.target instanceof Node && el.contains(e.target));
-      if (handled) {
+      const inside = e.target instanceof Node && !!frame.current?.contains(e.target);
+      if (handleKey(e, inside)) {
         e.preventDefault();
         e.stopImmediatePropagation();
       }
@@ -236,16 +383,26 @@ export default function PdfViewer({ name, page: startPage, onClose }: { name: st
   });
 
   const openExternal = () => api.openAttachment(name).catch((e) => useApp.getState().error("PDF ließ sich nicht öffnen", e));
+  const hit = hits?.list[hits.at];
+  const overlay = mode === "overlay";
 
   return (
     <div
-      ref={overlay}
-      className="pdf-overlay"
-      role="dialog"
-      aria-modal="true"
+      ref={frame}
+      className={overlay ? "pdf-overlay" : "pdf-pane"}
+      role={overlay ? "dialog" : "region"}
+      aria-modal={overlay ? true : undefined}
       aria-label={`PDF ${name}`}
+      data-worker={workerKind}
       tabIndex={-1}
-      onKeyDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (overlay) return e.stopPropagation();
+        // In a tab the viewer's keys win while the focus is inside it (Ctrl+F searches the PDF).
+        if (handleKey(e.nativeEvent, true)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
     >
       <header className="pdf-header">
         <span className="pdf-title" title={name}>
@@ -292,30 +449,47 @@ export default function PdfViewer({ name, page: startPage, onClose }: { name: st
                 void search(e.shiftKey);
               }}
             />
-            {hits && (
+            {(hits || searching) && (
               <span className="pdf-hits" aria-live="polite">
-                {hits.pages.length ? `Seite ${hits.pages[hits.at]} · ${hits.at + 1}/${hits.pages.length}` : "Keine Treffer"}
+                {searching ? "Suche…" : hit ? `Seite ${hit.page} · ${hits!.at + 1}/${hits!.list.length}` : "Keine Treffer"}
               </span>
             )}
           </label>
+          <IconButton icon={ChevronUp} label="Vorheriger Treffer" size="sm" onClick={() => void search(true)} disabled={!doc || !query.trim()} className="pdf-hit-prev" />
+          <IconButton icon={ChevronDown} label="Nächster Treffer" size="sm" onClick={() => void search(false)} disabled={!doc || !query.trim()} className="pdf-hit-next" />
           <span className="pdf-sep" />
+          {overlay && (
+            <IconButton
+              icon={PanelTop}
+              label="In einem Tab öffnen"
+              onClick={() => {
+                onClose();
+                useApp.getState().openTab({ kind: "pdf", tag: name }, { newTab: true });
+              }}
+            />
+          )}
           <IconButton icon={ExternalLink} label="Extern öffnen" onClick={openExternal} />
-          <IconButton icon={X} label="Schließen" onClick={onClose} className="pdf-close" />
+          {overlay && <IconButton icon={X} label="Schließen" onClick={onClose} className="pdf-close" />}
         </div>
       </header>
-      <div
-        ref={scrollRef}
-        className="pdf-scroll"
-        onScroll={onScroll}
-      >
+      <div ref={scrollRef} className="pdf-scroll" onScroll={onScroll}>
         {error ? (
           <div className="pdf-message is-error">PDF ließ sich nicht anzeigen: {error}</div>
         ) : !doc ? (
           <div className="pdf-message">PDF wird geladen…</div>
         ) : (
-          sizes.map((s, i) => <PdfPage key={i} doc={doc} index={i} scale={scale} size={s} root={root} />)
+          sizes.map((s, i) => <PdfPage key={i} doc={doc} index={i} scale={scale} size={s} root={root} mark={marks.get(i + 1) ?? null} />)
         )}
       </div>
     </div>
   );
+}
+
+export default function PdfViewer({ name, page, onClose }: { name: string; page: number | null; onClose: () => void }) {
+  return <PdfDocument name={name} page={page} onClose={onClose} mode="overlay" />;
+}
+
+/** The viewer in a tab (a PDF dropped on the tab bar, „In einem Tab öffnen“, the attachment manager). */
+export function PdfPane({ name, onClose }: { name: string; onClose: () => void }) {
+  return <PdfDocument name={name} page={null} onClose={onClose} mode="tab" />;
 }

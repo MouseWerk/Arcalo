@@ -490,6 +490,8 @@ export interface DesktopInfo {
   capture_shortcut_active: boolean;
   palette_shortcut_active: boolean;
   search_shortcut_active: boolean;
+  /** Portable mode: no autostart entry. */
+  portable?: boolean;
 }
 export interface CaptureOutcome {
   appended: { page_id: number; tasks: number; notes: number } | null;
@@ -711,6 +713,8 @@ export interface DataDirStatus {
   pending_move: string | null;
   /** Result of a move or a fallback at startup. */
   notice: { kind: "info" | "warning" | "error"; message: string } | null;
+  /** Portable mode: the data folder is fixed next to the executable. */
+  portable?: boolean;
 }
 export interface DataDirTarget {
   /** The folder already holds a workspace. */
@@ -739,9 +743,72 @@ export interface UpdateStatus {
   enabled: boolean;
   current_version: string;
   available: UpdateInfo | null;
+  /** Portable copy: new versions are downloaded from the release page, not installed. */
+  portable?: boolean;
 }
 export interface UpdateProgress {
   downloaded: number;
   total: number | null;
   percent: number | null;
+}
+
+// ---- attachment manager ----
+export type AttachmentKind = "image" | "drawing" | "pdf" | "other";
+export interface PageUse {
+  id: number;
+  title: string;
+  /** The page is in the trash. */
+  trashed: boolean;
+}
+export interface AttachmentInfo {
+  name: string;
+  kind: AttachmentKind;
+  /** Bytes; a drawing counts scene and preview. */
+  size: number;
+  modified: string | null;
+  /** SVG preview of a drawing. */
+  preview: string | null;
+  used_in: PageUse[];
+}
+export interface AttachmentList {
+  files: AttachmentInfo[];
+  total_size: number;
+}
+export interface RenameOutcome {
+  name: string;
+  /** Pages whose embeds were rewritten. */
+  pages: number[];
+}
+export interface TrashedFile {
+  id: string;
+  name: string;
+  size: number;
+  deleted_at: string;
+}
+
+// ---- git sync conflicts ----
+export interface GitConflictInfo {
+  page_id: number;
+  title: string;
+  path: string;
+  at: string;
+}
+export type MergeChunk =
+  | { kind: "stable"; text: string }
+  | { kind: "merged"; text: string; from: "mine" | "theirs" | "both" }
+  | { kind: "conflict"; base: string | null; mine: string; theirs: string };
+export interface GitConflictView {
+  page_id: number;
+  title: string;
+  at: string;
+  base: string | null;
+  mine: string;
+  theirs: string;
+  merge: { chunks: MergeChunk[]; conflicts: number };
+}
+export interface GitPulled {
+  pages: number[];
+  created: number[];
+  trashed: number[];
+  conflicts: number[];
 }

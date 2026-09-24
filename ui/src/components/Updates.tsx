@@ -92,6 +92,28 @@ export async function installUpdate() {
   }
 }
 
+/** Portable copy: the release page, where the portable ZIP is downloaded by hand (nothing is installed). */
+export async function downloadPortable(url?: string) {
+  const target = url ?? useUpdates.getState().available?.url;
+  if (!target) return;
+  useUpdates.setState({ notesOpen: false });
+  await openUrl(target).catch((e) => useApp.getState().error("Release-Seite ließ sich nicht öffnen", e));
+}
+
+/** The update action: install and restart, or (portable) download from the release page. */
+function UpdateAction({ size }: { size?: "sm" | "md" }) {
+  const portable = useUpdates((s) => !!s.status?.portable);
+  return portable ? (
+    <Button size={size} variant="primary" icon={Download} onClick={() => void downloadPortable()}>
+      Neue Version herunterladen
+    </Button>
+  ) : (
+    <Button size={size} variant="primary" icon={RefreshCw} onClick={() => void installUpdate()}>
+      Installieren und neu starten
+    </Button>
+  );
+}
+
 /** Checks shortly after start and every 6 hours (if enabled); returns the cleanup. */
 export function startUpdateChecks(): () => void {
   const auto = () => {
@@ -128,11 +150,11 @@ export function UpdateToast() {
         ) : (
           <>
             <div className="toast-title">Version {available.version} verfügbar</div>
-            <div className="toast-detail">Offene Notizen werden vor dem Neustart gespeichert.</div>
+            <div className="toast-detail">
+              {useUpdates.getState().status?.portable ? "Portabler Modus: das ZIP von der Release-Seite über den Ordner entpacken." : "Offene Notizen werden vor dem Neustart gespeichert."}
+            </div>
             <div className="toast-actions">
-              <Button size="sm" variant="primary" icon={RefreshCw} onClick={() => void installUpdate()}>
-                Installieren und neu starten
-              </Button>
+              <UpdateAction size="sm" />
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 Was ist neu?
               </Button>
@@ -162,9 +184,7 @@ function ReleaseNotes() {
           <Button variant="ghost" icon={ExternalLink} onClick={() => void openUrl(available.url).catch(() => {})}>
             Changelog auf GitHub
           </Button>
-          <Button variant="primary" icon={RefreshCw} onClick={() => void installUpdate()}>
-            Installieren und neu starten
-          </Button>
+          <UpdateAction />
         </>
       }
     >

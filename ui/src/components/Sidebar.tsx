@@ -673,6 +673,7 @@ const TreeRow = memo(function TreeRow({
       </span>
       <PageIcon name={n.icon} size={15} className="tree-icon" />
       <span className="tree-label">{n.title}</span>
+      <ConflictDot pageId={n.id} />
       <span className="tree-row-actions">
         <IconButton
           icon={MoreHorizontal}
@@ -754,4 +755,10 @@ export async function stopTimer() {
   } catch (e) {
     s.error("Timer konnte nicht gestoppt werden", e);
   }
+}
+
+/** Marks a page with an undecided sync conflict („Konflikt“). */
+function ConflictDot({ pageId }: { pageId: number }) {
+  const on = useApp((st) => st.conflicts.some((c) => c.page_id === pageId));
+  return on ? <span className="tree-conflict" title="Konflikt: hier und auf dem Server geändert" aria-label="Konflikt" /> : null;
 }

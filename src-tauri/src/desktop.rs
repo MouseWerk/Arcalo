@@ -263,6 +263,13 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<()> {
             // macOS needs the private-API feature for transparent windows.
             #[cfg(not(target_os = "macos"))]
             let b = b.transparent(p.transparent);
+            // Portable: the same webview profile as the main window, in the data folder.
+            let webview_dir =
+                app.try_state::<crate::AppState>().and_then(|s| crate::portable::webview_dir(&s.data_dir));
+            let b = match webview_dir {
+                Some(dir) => b.data_directory(dir),
+                None => b,
+            };
             b.build()?
         }
     };
@@ -542,17 +549,21 @@ pub struct DesktopInfo {
     capture_shortcut_active: bool,
     palette_shortcut_active: bool,
     search_shortcut_active: bool,
+    /// Portable mode: no autostart entry (it would point into the user profile).
+    portable: bool,
 }
 
 #[tauri::command]
 pub fn desktop_info(app: AppHandle) -> DesktopInfo {
     let d = desktop(&app);
+    let portable = crate::portable::active();
     let autostart = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>().map(|m| m.is_enabled());
     // Copied out: one lock per statement (temporaries live until its end).
     let slots = *lock(&d.shortcuts);
     DesktopInfo {
-        autostart: matches!(autostart, Some(Ok(true))),
-        autostart_available: matches!(autostart, Some(Ok(_))),
+        autostart: !portable && matches!(autostart, Some(Ok(true))),
+        autostart_available: !portable && matches!(autostart, Some(Ok(_))),
+        portable,
         tray: d.has_tray(),
         capture_shortcut_active: slots[Role::Capture as usize].is_some(),
         palette_shortcut_active: slots[Role::Palette as usize].is_some(),
@@ -562,6 +573,9 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
 
 #[tauri::command]
 pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<DesktopInfo> {
+    if crate::portable::active() {
+        return Err(Error::State(crate::portable::NOT_PORTABLE.into()));
+    }
     let m = app.autolaunch();
     let res = if enabled { m.enable() } else { m.disable() };
     res.map_err(|e| Error::State(format!("Autostart konnte nicht geändert werden: {e}")))?;
