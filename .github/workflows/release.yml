@@ -121,10 +121,10 @@ jobs:
           fi
           export VERSION
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          export SIGN=0
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ "${{ matrix.updater }}" = "true" ]; then SIGN=1; fi
-          echo "SIGN=$SIGN" >> "$GITHUB_ENV"
-          if [ "$SIGN" = "1" ]; then
+          export UPDATER_SIGN=0
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ "${{ matrix.updater }}" = "true" ]; then UPDATER_SIGN=1; fi
+          echo "UPDATER_SIGN=$UPDATER_SIGN" >> "$GITHUB_ENV"
+          if [ "$UPDATER_SIGN" = "1" ]; then
             # Compiled into the app (option_env!): switches the updater on in this build.
             ANNALO_UPDATER_PUBKEY="$(tr -d '\r\n' < src-tauri/updater.pub)"
             export ANNALO_UPDATER_PUBKEY
@@ -135,7 +135,7 @@ jobs:
             const p = "src-tauri/tauri.conf.json";
             const c = JSON.parse(fs.readFileSync(p, "utf8"));
             c.version = process.env.VERSION;
-            if (process.env.SIGN === "1") {
+            if (process.env.UPDATER_SIGN === "1") {
               c.bundle.createUpdaterArtifacts = true;
               c.plugins.updater.pubkey = process.env.ANNALO_UPDATER_PUBKEY.trim();
             }
@@ -143,7 +143,7 @@ jobs:
             const t = "Cargo.toml";
             fs.writeFileSync(t, fs.readFileSync(t, "utf8").replace(/^version = "[^"]*"/m, `version = "${process.env.VERSION}"`));
           '
-          if [ "$SIGN" = "0" ]; then
+          if [ "$UPDATER_SIGN" = "0" ]; then
             # Unsigned build: the updater stays off (it is only enabled with a public key).
             echo "TAURI_SIGNING_PRIVATE_KEY=" >> "$GITHUB_ENV"
             echo "::notice::Building without updater signing (secrets not set)."
