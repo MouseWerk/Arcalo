@@ -283,8 +283,10 @@ export function Menu({
   const actionable = items.map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
 
   useLayoutEffect(() => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
+    const el = ref.current;
+    if (!el) return;
+    // Layout size: the pop-in animation scales the box, which getBoundingClientRect would include.
+    const r = { width: el.offsetWidth, height: el.offsetHeight };
     if (anchor) return setPos(anchorMenu(anchor, r, { width: window.innerWidth, height: window.innerHeight }));
     const nx = x + r.width > window.innerWidth - 8 && flipX != null ? Math.max(8, flipX - r.width) : Math.min(x, window.innerWidth - r.width - 8);
     setPos({ x: nx, y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
