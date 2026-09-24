@@ -3,12 +3,12 @@
 
 import { Extension, Node, mergeAttributes, type Editor, type Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
+  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
 } from "lucide-react";
 import { isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
@@ -17,6 +17,7 @@ import { zeitToken } from "./zeit-suggest";
 import { FIRST_LINE_RE } from "../lib/frontmatter";
 import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
+import { insertColumns, insertFootnote } from "./blocks";
 
 // ------------------------------------------------------------- wiki links
 
@@ -172,6 +173,10 @@ export function slashItems(o: SlashOptions): SlashItem[] {
     { id: "quote", title: "Zitat", icon: ic(Quote), Icon: Quote, hint: ">", section: "Blöcke", keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
     { id: "callout", title: "Hinweisbox", subtitle: "Obsidian-Callout", icon: ic(Info), Icon: Info, section: "Blöcke", keywords: "callout hinweis info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
     { id: "warn", title: "Warnbox", icon: ic(AlertTriangle), Icon: AlertTriangle, section: "Blöcke", keywords: "callout warnung warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
+    { id: "fold", title: "Aufklappbar", subtitle: "Titel, Inhalt ein- und ausklappbar", icon: ic(ListCollapse), Icon: ListCollapse, section: "Blöcke", keywords: "aufklappbar einklappen toggle details collapsible falten callout", run: (e, r) => insertFoldable(e, r) },
+    { id: "columns2", title: "2 Spalten", subtitle: "Inhalt nebeneinander", icon: ic(Columns2), Icon: Columns2, section: "Blöcke", keywords: "spalten columns layout nebeneinander zwei", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 2)) },
+    { id: "columns3", title: "3 Spalten", subtitle: "Inhalt nebeneinander", icon: ic(Columns3), Icon: Columns3, section: "Blöcke", keywords: "spalten columns layout nebeneinander drei", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 3)) },
+    { id: "toc", title: "Inhaltsverzeichnis", subtitle: "Überschriften der Seite", icon: ic(ListTree), Icon: ListTree, section: "Blöcke", keywords: "inhaltsverzeichnis toc inhalt gliederung überschriften", run: (e, r) => e.chain().focus().deleteRange(r).insertContent({ type: "tableOfContents" }).run() },
     { id: "code", title: "Codeblock", icon: ic(Code2), Icon: Code2, hint: "```", section: "Blöcke", keywords: "code snippet", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
     { id: "table", title: "Tabelle", icon: ic(Table2), Icon: Table2, section: "Blöcke", keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
     { id: "hr", title: "Trennlinie", icon: ic(Minus), Icon: Minus, hint: "---", section: "Blöcke", keywords: "divider linie hr", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
@@ -183,6 +188,7 @@ export function slashItems(o: SlashOptions): SlashItem[] {
       const before = r.from > 1 ? e.state.doc.textBetween(r.from - 1, r.from) : "";
       e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}due:${isoToday} `).run();
     } },
+    { id: "footnote", title: "Fußnote", subtitle: "Verweis [^1] mit Text am Seitenende", icon: ic(Superscript), Icon: Superscript, hint: "[^1]", section: "Einfügen", keywords: "fußnote footnote anmerkung quelle", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertFootnote(e)) },
     { id: "zeit", title: "Zeit buchen", subtitle: "NP-8801/1020 2.5h Beschreibung", icon: ic(Timer), Icon: Timer, hint: "/zeit", section: "Zeiterfassung", keywords: "zeit time buchen stunden", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
     { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), Icon: FilePlus2, section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
@@ -235,6 +241,13 @@ export function fuzzyIncludes(text: string, query: string) {
   return hay.includes(q) || hay.includes(qAscii);
 }
 
+/** A word of `text` starts with `query` (umlaut-tolerant like `fuzzyIncludes`). */
+export function wordStarts(text: string, query: string) {
+  const q = query.toLowerCase();
+  const qAscii = q.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return text.split(/\s+/).some((w) => fold(w).split(" ").some((f) => f.startsWith(q) || f.startsWith(qAscii)));
+}
+
 export const SlashCommand = Extension.create<SlashOptions>({
   name: "slashCommand",
   addOptions() {
@@ -259,7 +272,10 @@ export const SlashCommand = Extension.create<SlashOptions>({
         items: ({ query, editor }) => {
           const q = query.toLowerCase().trim();
           const all = editor.isActive("table") ? [...tableSlashItems(editor), ...slashItems(opts)] : slashItems(opts);
-          return all.filter((i) => !q || fuzzyIncludes(`${i.title} ${i.keywords}`, q) || i.id.startsWith(q));
+          const hits = all.filter((i) => !q || fuzzyIncludes(`${i.title} ${i.keywords}`, q) || i.id.startsWith(q));
+          // A title word starting with the query first („/zeichn“: Zeichnung before Inhaltsverzeichnis).
+          const rank = (i: SlashItem) => (!q || i.id.startsWith(q) || wordStarts(i.title, q) ? 0 : 1);
+          return hits.map((i, n) => ({ i, n, r: rank(i) })).sort((a, b) => a.r - b.r || a.n - b.n).map((x) => x.i);
         },
         command: ({ editor, range, props }) => props.run(editor, range),
         render: popupRenderer<SlashItem>("Kein Befehl gefunden"),
@@ -609,7 +625,7 @@ export function splitFrontmatter(md: string): { frontmatter: string; body: strin
 
 // ------------------------------------------------------------- callouts
 
-const CALLOUT_RE = /^\[!(\w+)\][+-]?[ \t]*/;
+const CALLOUT_RE = /^\[!(\w+)\]([+-]?)[ \t]*/;
 const CALLOUT_LABELS: Record<string, string> = {
   note: "Notiz",
   info: "Info",
@@ -631,7 +647,58 @@ const CALLOUT_LABELS: Record<string, string> = {
   failure: "Fehlschlag",
 };
 
-/** Styles Obsidian callouts (`> [!note] Title`) without changing the Markdown. */
+const CHEVRON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+/**
+ * Toggles a foldable callout (`> [!note]- Titel` collapsed, `+` expanded) at `pos` (the
+ * blockquote) by rewriting its marker; a caret inside the hidden part moves to the title.
+ */
+export function toggleCalloutFold(view: EditorView, pos: number): boolean {
+  const node = view.state.doc.nodeAt(pos);
+  const first = node?.type.name === "blockquote" ? node.firstChild : null;
+  const m = first?.isTextblock ? CALLOUT_RE.exec(first.textContent) : null;
+  if (!m || !m[2]) return false;
+  const at = pos + 2 + 2 + m[1].length + 1; // blockquote + paragraph open, "[!", type, "]"
+  const folding = m[2] === "+";
+  const tr = view.state.tr.insertText(folding ? "-" : "+", at, at + 1);
+  if (folding) {
+    const titleEnd = pos + 2 + first!.content.size;
+    const nl = first!.textContent.indexOf("\n");
+    const end = nl >= 0 ? pos + 2 + nl : titleEnd;
+    const { from } = tr.selection;
+    if (from > end && from < pos + node!.nodeSize) tr.setSelection(TextSelection.create(tr.doc, end));
+  }
+  view.dispatch(tr);
+  return true;
+}
+
+/** `/Aufklappbar`: an expanded foldable callout with a selected title and an empty line for the content. */
+export function insertFoldable(editor: Editor, range: Range) {
+  editor
+    .chain()
+    .focus()
+    .deleteRange(range)
+    .insertContent({
+      type: "blockquote",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "[!note]+ Aufklappbar" }] },
+        { type: "paragraph" },
+      ],
+    })
+    .run();
+  // Select the title so typing replaces it.
+  const { $from } = editor.state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.name !== "blockquote") continue;
+    const start = $from.before(d) + 2;
+    const marker = "[!note]+ ".length;
+    editor.commands.setTextSelection({ from: start + marker, to: start + $from.node(d).firstChild!.content.size });
+    return;
+  }
+}
+
+/** Styles Obsidian callouts (`> [!note] Title`) without changing the Markdown; `[!x]-`/`[!x]+` fold. */
 export const Callouts = Extension.create({
   name: "callouts",
   addProseMirrorPlugins() {
@@ -643,8 +710,33 @@ export const Callouts = Extension.create({
         const m = first?.isTextblock ? CALLOUT_RE.exec(first.textContent) : null;
         if (m) {
           const type = m[1].toLowerCase();
-          decos.push(Decoration.node(pos, pos + node.nodeSize, { class: `callout callout-${type}`, "data-callout": type }));
+          const fold = m[2];
+          const folded = fold === "-";
+          decos.push(
+            Decoration.node(pos, pos + node.nodeSize, {
+              class: `callout callout-${type}${fold ? " is-foldable" : ""}${folded ? " is-folded" : ""}`,
+              "data-callout": type,
+            }),
+          );
           const start = pos + 2; // blockquote open + paragraph open
+          if (fold) {
+            decos.push(
+              Decoration.widget(
+                start,
+                () => {
+                  const b = document.createElement("button");
+                  b.type = "button";
+                  b.className = "callout-fold";
+                  b.contentEditable = "false";
+                  b.setAttribute("aria-label", folded ? "Aufklappen" : "Zuklappen");
+                  b.setAttribute("aria-expanded", String(!folded));
+                  b.innerHTML = CHEVRON;
+                  return b;
+                },
+                { side: -1, key: `fold-${folded ? "-" : "+"}`, ignoreSelection: true },
+              ),
+            );
+          }
           // A custom title replaces the type label (Obsidian shows one or the other).
           const hasTitle = first!.firstChild?.isText === true && (first!.firstChild.text ?? "").slice(m[0].length).trim() !== "";
           const label = hasTitle ? "" : (CALLOUT_LABELS[type] ?? type);
@@ -666,6 +758,14 @@ export const Callouts = Extension.create({
           });
           const titleFrom = start + m[0].length;
           if (end > titleFrom) decos.push(Decoration.inline(titleFrom, end, { class: "callout-title" }));
+          if (folded) {
+            // Hide everything after the title: the rest of the first paragraph and the other blocks.
+            const firstEnd = start + first!.content.size;
+            if (firstEnd > end) decos.push(Decoration.inline(end, firstEnd, { class: "callout-folded-rest" }));
+            node.forEach((child, offset, i) => {
+              if (i > 0) decos.push(Decoration.node(pos + 1 + offset, pos + 1 + offset + child.nodeSize, { class: "callout-folded-rest" }));
+            });
+          }
         }
         return false;
       });
@@ -681,6 +781,23 @@ export const Callouts = Extension.create({
         props: {
           decorations(state) {
             return this.getState(state);
+          },
+          handleDOMEvents: {
+            mousedown(view, event) {
+              const b = (event.target as HTMLElement).closest?.<HTMLElement>(".callout-fold");
+              if (!b || event.button !== 0) return false;
+              event.preventDefault();
+              const quote = b.closest("blockquote");
+              if (!quote) return true;
+              let pos: number;
+              try {
+                pos = view.posAtDOM(quote, 0) - 1;
+              } catch {
+                return true;
+              }
+              toggleCalloutFold(view, pos);
+              return true;
+            },
           },
         },
       }),

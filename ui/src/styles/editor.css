@@ -705,3 +705,94 @@
 @media (max-width: 1000px) {
   .pdf-search-input { width: 90px; }
 }
+
+/* ---- foldable callouts, columns, table of contents, footnotes ---- */
+
+/* `> [!note]- Titel`: a chevron before the title; collapsed hides everything after the title line. */
+.callout-fold {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 4px 0 -4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--c, var(--text-3));
+  vertical-align: -4px;
+  cursor: pointer;
+  user-select: none;
+}
+.callout-fold:hover { background: color-mix(in srgb, var(--c, var(--text-3)) 16%, transparent); }
+.callout-fold svg { transition: transform var(--dur-fast) var(--ease-out); transform: rotate(90deg); }
+.is-folded .callout-fold svg { transform: rotate(0deg); }
+.prose .callout-folded-rest { display: none; }
+@media print { .prose .callout-folded-rest { display: revert; } .callout-fold { display: none; } }
+
+/* Columns: side by side, stacked in narrow panes. */
+.prose .columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 28px; margin: 1em 0; }
+.prose .column { min-width: 0; padding: 2px 0; }
+.prose .column > * + * { margin-top: 0.55em; }
+.prose .column > :first-child { margin-top: 0; }
+/* A faint rule between the columns while the pointer is over them (where they start and end). */
+.ProseMirror .columns > .column + .column { box-shadow: -14px 0 0 -13px transparent; transition: box-shadow var(--dur-fast); }
+.ProseMirror .columns:hover > .column + .column { box-shadow: -14px 0 0 -13px var(--border-strong); }
+@container pane (max-width: 620px) {
+  .prose .columns { grid-auto-flow: row; gap: 10px; }
+  .ProseMirror .columns:hover > .column + .column { box-shadow: 0 -5px 0 -4px var(--border-strong); }
+}
+
+/* [TOC]: the page's headings, live. */
+.prose .toc-block { margin: 1em 0; padding: 10px 14px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); font-size: var(--fs-md); line-height: 1.5; user-select: none; }
+.prose .toc-block.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toc-head { margin-bottom: 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.prose .toc-block ul { list-style: none; margin: 0; padding: 0; }
+.prose .toc-block ul ul { margin-left: 6px; padding-left: 12px; border-left: 1px solid var(--border); }
+.prose .toc-block li + li { margin-top: 0; }
+.toc-link { display: block; max-width: 100%; margin-left: -6px; padding: 2px 6px; border: 0; border-radius: var(--r-xs); background: none; color: var(--text-2); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.toc-link:hover { background: var(--bg-hover); color: var(--accent-text); }
+.toc-link.toc-l1 { color: var(--text); font-weight: 550; }
+.toc-empty { color: var(--text-3); font-style: italic; }
+
+/* Footnotes: superscript numbers, the list at the end with back-links. */
+.prose .footnote-ref { display: inline-block; min-width: 0.9em; margin: 0 0 0 1px; padding: 0 2px; border-radius: 3px; color: var(--accent-text); font-size: 0.72em; font-weight: 600; line-height: 1; text-align: center; vertical-align: super; cursor: pointer; font-variant-numeric: tabular-nums; }
+.prose .footnote-ref::after { content: attr(data-num); }
+.prose .footnote-ref:hover { background: var(--accent-soft); }
+.prose .footnote-ref.is-missing { color: var(--text-3); text-decoration: underline dashed; }
+.prose .footnote-ref.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.footnotes-head { margin: 2.2em 0 0.4em; padding-top: 12px; border-top: 1px solid var(--border); font-size: var(--fs-sm); font-weight: 600; color: var(--text-3); user-select: none; }
+.prose .footnote-def { position: relative; padding-left: 2em; font-size: 0.9em; color: var(--text-2); }
+.prose .footnote-def + .footnote-def { margin-top: 0.2em; }
+.prose .footnote-def::before { content: attr(data-num) "."; position: absolute; left: 0; width: 1.5em; text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.footnote-back { display: inline-grid; place-items: center; width: 20px; height: 18px; margin-left: 4px; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--text-3); vertical-align: -3px; cursor: pointer; }
+.footnote-back:hover { background: var(--bg-hover); color: var(--accent-text); }
+.footnote-preview { flex-direction: row; gap: 8px; max-height: 240px; padding: 10px 14px; font-size: var(--fs-sm); line-height: 1.55; color: var(--text); pointer-events: none; }
+.footnote-preview-num { flex: none; color: var(--accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.footnote-preview-body { min-width: 0; overflow: hidden; white-space: pre-wrap; }
+.footnote-preview-body.is-empty { color: var(--text-3); }
+
+/* ---- smart paste ---- */
+
+.paste-hint {
+  position: fixed;
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-md);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  animation: pop-in var(--dur-fast) var(--ease-out);
+}
+.paste-hint:hover { color: var(--text); border-color: var(--accent); }
+.paste-hint svg { color: var(--text-3); }
+/* `- **Name** (10:32): …` from a pasted chat: the time small and muted. */
+.prose .chat-time { color: var(--text-3); font-size: 0.8em; font-variant-numeric: tabular-nums; }

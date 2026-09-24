@@ -294,6 +294,25 @@ mod tests {
     }
 
     #[test]
+    fn layout_blocks_survive_import_and_export() {
+        // Columns, [TOC], footnotes and foldable callouts (editor 1.3) are plain Markdown text.
+        let page = "[TOC]\n\n## Plan\n\n<!-- spalten -->\n\n- [ ] Links [[Ziel]]\n\n<!-- spalte -->\n\nRechts[^1]\n\n<!-- /spalten -->\n\n> [!note]- Details\n> Versteckt\n\n[^1]: Quelle.\n[^2]: Zweite.\n";
+        let vault = tmp("layout-in");
+        fs::write(vault.join("Layout.md"), page).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let att = tmp("layout-att");
+        import_vault(&db, &vault, &att).unwrap();
+        let id = db.page_by_title("Layout").unwrap().unwrap().id;
+        assert_eq!(db.page_doc(id).unwrap().content, page);
+        // A task and a link inside a column are still found.
+        assert_eq!(db.page_doc(id).unwrap().unresolved_links, vec!["Ziel".to_string()]);
+        let out = tmp("layout-out");
+        export_vault(&db, &out, &att).unwrap();
+        let root = out.join(vault.file_name().unwrap());
+        assert_eq!(fs::read_to_string(root.join("Layout.md")).unwrap(), page);
+    }
+
+    #[test]
     fn sanitizes_file_names() {
         assert_eq!(file_name("A/B: C?"), "A-B- C-");
         assert_eq!(file_name("  ...  "), "Ohne Titel");

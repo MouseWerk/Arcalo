@@ -516,6 +516,34 @@ fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
     attachments::resolve(&state.attachments_dir(), &name).and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len())
 }
 
+/// Title of the web page `url` for a pasted link (smart paste), through the client with the
+/// network settings; the URL itself when there is none or the page cannot be read.
+#[tauri::command]
+async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
+    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    match annalo_core::linktitle::fetch_title(&http, &url).await {
+        Ok(Some(title)) => Ok(title),
+        Ok(None) => Ok(url),
+        Err(_) => {
+            // Without the error: it carries the URL, which may hold a token.
+            devlog::debug("net", "link title not available");
+            Ok(url)
+        }
+    }
+}
+
+/// Writes a page shared as one HTML file (the path comes from the save dialog).
+#[tauri::command]
+fn html_file_write(path: String, html: String) -> Result<()> {
+    let p = std::path::Path::new(&path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ext != "html" && ext != "htm" {
+        return Err(Error::State("Nur .html-Dateien können so gespeichert werden".into()));
+    }
+    std::fs::write(p, html)?;
+    Ok(())
+}
+
 /// Opens a file of the attachments folder in its default app, or shows it in the file
 /// manager (`reveal`). Only names inside that folder are accepted. Programs and scripts are
 /// always only shown in the file manager, never started.
@@ -2955,6 +2983,8 @@ pub fn run() {
             attachment_import,
             attachment_read,
             attachment_size,
+            link_title,
+            html_file_write,
             drawing_create,
             drawing_read,
             drawing_save,

@@ -1,7 +1,7 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, Share2, SmilePlus, Star, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -19,6 +19,7 @@ import { SourceEditor } from "../editor/SourceEditor";
 import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
 import { ADD_PROPERTY_EVENT, PropertyEditor, WorkCard, pageReference } from "./PageProperties";
 import { VersionsDialog } from "./VersionsDialog";
+import { sharePageAsHtml } from "../editor/shareHtml";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
 import { keys } from "../lib/shortcut";
@@ -358,6 +359,10 @@ function PageHeader({
             { label: "Rechts daneben öffnen", icon: Columns2, onSelect: () => s().splitTab(tab.id) },
             { label: "Link kopieren", icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
             { label: "Drucken / als PDF", icon: Printer, onSelect: () => printActivePane() },
+            { label: "Als HTML-Datei teilen…", icon: Share2, onSelect: () => sharePageAsHtml(doc.id, false) },
+            ...(s().pages.get(doc.id)?.children.length
+              ? [{ label: "Mit Unterseiten als HTML teilen…", icon: Share2, onSelect: () => sharePageAsHtml(doc.id, true) }]
+              : []),
             { label: "Versionen…", icon: History, onSelect: () => setVersionsOpen(true) },
             { label: "Besprechung zusammenfassen", icon: NotebookPen, onSelect: onSummary },
             { label: "Unterseite anlegen", icon: CornerDownRight, onSelect: () => createSubpage(doc.id) },

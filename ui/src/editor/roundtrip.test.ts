@@ -76,6 +76,18 @@ const CASES: Record<string, string> = {
   fileAlias: "![[daten.csv|Rohdaten]]\n",
   fileNotAFile: "Notiz ![[Version 1.2]] und ![[x.md]]\n",
   tablePipeFile: "| A                         | B   |\n| ------------------------- | --- |\n| ![[report.docx\\|Bericht]] | 2   |\n",
+  calloutFolded: "> [!note]- Details\n> Versteckter Inhalt\n",
+  calloutExpanded: "> [!tip]+ Mehr dazu\n>\n> Erster Absatz\n>\n> - Punkt\n",
+  calloutFoldNoTitle: "> [!faq]-\n> Antwort\n",
+  columns2: "<!-- spalten -->\n\nLinks mit **fett**\n\n<!-- spalte -->\n\nRechts\n\n- Punkt\n\n<!-- /spalten -->\n",
+  columns3: "Davor\n\n<!-- spalten -->\n\n## Eins\n\n<!-- spalte -->\n\n## Zwei\n\n<!-- spalte -->\n\n```ts\nconst x = 1;\n```\n\n<!-- /spalten -->\n\nDanach\n",
+  columnsNested: "<!-- spalten -->\n\nA\n\n<!-- spalten -->\n\nB1\n\n<!-- spalte -->\n\nB2\n\n<!-- /spalten -->\n\n<!-- spalte -->\n\nC\n\n<!-- /spalten -->\n",
+  toc: "# Titel\n\n[TOC]\n\n## Abschnitt\n",
+  footnotes: "Text mit Fußnote[^1] und zweiter[^note].\n\n[^1]: Erste Fußnote.\n[^note]: Zweite mit **fett** und [[Seite]].\n",
+  footnotesLoose: "Siehe[^a].\n\n[^a]: Eins.\n\n[^b]: Zwei.\n",
+  footnoteMultiline: "Hier[^1].\n\n[^1]: Erste Zeile\n    zweite Zeile\n",
+  footnoteInTable: "| A     | B   |\n| ----- | --- |\n| x[^1] | 2   |\n\n[^1]: Zelle.\n",
+  literalFootnote: "Kein \\[^1] Verweis\n",
   tableFilePdf: "| A             | B   |\n| ------------- | --- |\n| ![[file.pdf]] | 2   |\n",
 };
 

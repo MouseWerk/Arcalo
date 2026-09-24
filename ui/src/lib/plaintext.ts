@@ -12,8 +12,13 @@ export function stripMarkdown(line: string, opts: { keepWikilinks?: boolean } = 
     .replace(/^\[![\w-]+\][+-]?\s*/, "")
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
     .replace(/^\[[ xX]\]\s+/, "")
-    .replace(/^#{1,6}\s+/, "");
+    .replace(/^#{1,6}\s+/, "")
+    // Footnote definitions and references, column markers, the [TOC] line.
+    .replace(/^\[\^[^\]\s]+\]:\s*/, "")
+    .replace(/^\[TOC\]\s*$/, "");
   s = s
+    .replace(/\[\^[^\]\s]+\]/g, "")
+    .replace(/<!--\s*\/?spalten?\s*-->/g, "")
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")
     .replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, "$1")
     .replace(/!\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g, (_, name: string) => name.trim());

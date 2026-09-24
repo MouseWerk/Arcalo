@@ -185,6 +185,10 @@ export const api = {
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
   openQuickLink: (index: number) => call<void>("quick_link_open", { index }),
   openAttachment: (name: string, reveal = false) => call<void>("attachment_open", { name, reveal }),
+  /** Title of a web page (smart paste of a URL); the URL itself when there is none. */
+  linkTitle: (url: string) => call<string>("link_title", { url }),
+  /** Writes a page shared as a single HTML file to `path` (from the save dialog). */
+  writeHtmlFile: (path: string, html: string) => call<void>("html_file_write", { path, html }),
 
   // AI
   routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null) => call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier }),
