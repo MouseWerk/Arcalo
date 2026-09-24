@@ -18,6 +18,11 @@ function sweepSection(done) {
   const out = { problems: [], switches: 0, radios: 0, selects: 0 };
   const label = (el) => el.getAttribute("aria-label") || el.closest(".set-row")?.querySelector(".set-row-label")?.textContent || el.textContent;
   const wait = () => new Promise((r) => setTimeout(r, 60));
+  // Polls a condition for up to a second (React renders later under load).
+  const until = async (cond) => {
+    for (let i = 0; i < 20 && !cond(); i++) await new Promise((r) => setTimeout(r, 50));
+    return cond();
+  };
   (async () => {
     for (const sw of body.querySelectorAll('[role="switch"]:not([disabled])')) {
       const before = sw.getAttribute("aria-checked");
@@ -31,7 +36,7 @@ function sweepSection(done) {
         continue;
       }
       if (!sw.isConnected) continue;
-      if (sw.getAttribute("aria-checked") === before) out.problems.push(`switch did not toggle: ${label(sw)}`);
+      if (!(await until(() => sw.getAttribute("aria-checked") !== before))) out.problems.push(`switch did not toggle: ${label(sw)}`);
       else {
         sw.click();
         await wait();
@@ -46,7 +51,7 @@ function sweepSection(done) {
       other.click();
       await wait();
       if (!other.isConnected) continue;
-      if (other.getAttribute("aria-checked") !== "true") out.problems.push(`option not selected: ${label(group)} → ${other.textContent}`);
+      if (!(await until(() => other.getAttribute("aria-checked") === "true"))) out.problems.push(`option not selected: ${label(group)} → ${other.textContent}`);
       current?.click();
       await wait();
       out.radios++;
@@ -60,7 +65,7 @@ function sweepSection(done) {
       sel.dispatchEvent(new Event("change", { bubbles: true }));
       await wait();
       if (!sel.isConnected) continue;
-      if (sel.value !== other.value) out.problems.push(`select did not change: ${label(sel)}`);
+      if (!(await until(() => sel.value === other.value))) out.problems.push(`select did not change: ${label(sel)}`);
       setValue.call(sel, before);
       sel.dispatchEvent(new Event("change", { bubbles: true }));
       await wait();
