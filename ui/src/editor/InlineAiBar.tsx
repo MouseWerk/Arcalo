@@ -98,9 +98,16 @@ export function InlineAiBar({
       requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
     };
     place();
-    const ro = new ResizeObserver(place);
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(place);
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

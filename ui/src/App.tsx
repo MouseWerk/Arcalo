@@ -20,6 +20,7 @@ import type { ActivityTick, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
+import { sidebarShown, toggleSidebar, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
 import { commandFor, currentKeymap } from "./lib/keymap";
@@ -101,10 +102,8 @@ export function App() {
       on<string>("menu://action", (action) => {
         const st = useApp.getState();
         if (action === "settings") st.openTab({ kind: "settings" });
-        else if (action === "sidebar") {
-          st.set({ sidebarOpen: !st.sidebarOpen });
-          savePref("annalo.sidebar", !st.sidebarOpen);
-        } else if (action === "focus") st.set({ focusMode: !st.focusMode });
+        else if (action === "sidebar") toggleSidebar();
+        else if (action === "focus") st.set({ focusMode: !st.focusMode });
         else if (action === "palette") st.set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" });
         // Taskbar jump list (Windows).
         else if (action === "today") void openToday();
@@ -234,10 +233,11 @@ export function App() {
     }
   };
 
-  const showSidebar = sidebarOpen && !focus;
   // The welcome choice fills the window: no assistant/outline panel next to it.
   const onboardingShown = useApp((st) => st.onboarding && st.tree.length === 0 && (st.tabs.find((t) => t.id === st.activeTabId)?.kind ?? "home") === "home");
   const showPanel = panelOpen && !focus && !onboardingShown;
+  const narrow = useNarrowWindow();
+  const showSidebar = sidebarShown(sidebarOpen, showPanel, narrow) && !focus;
   const style = { "--sidebar-w": `${sideW}px`, "--panel-w": `${panelW}px` } as React.CSSProperties;
   return (
     <div className={`app ${focus ? "focus" : ""} ${showPanel ? "with-panel" : ""}`} style={style}>
@@ -313,11 +313,6 @@ async function refreshPac(view: SettingsView) {
   }
 }
 
-const toggleSidebar = () => {
-  const st = useApp.getState();
-  st.set({ sidebarOpen: !st.sidebarOpen });
-  savePref("annalo.sidebar", !st.sidebarOpen);
-};
 const togglePanel = () => {
   const st = useApp.getState();
   st.set({ panelOpen: !st.panelOpen });

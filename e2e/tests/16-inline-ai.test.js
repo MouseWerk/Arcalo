@@ -141,6 +141,7 @@ test("KI in the toolbar on an empty line writes new text there, with the page as
   await app.waitText(".ai-bar-preview", /Neuer Abschnitt/);
   const sent = transforms().at(-1).body.messages.at(-1).content;
   assert.match(sent, /Middleware verbindet/, "the page goes along as context");
+  await app.waitText(".ai-bar-actions", /Einfügen/);
   await clickText(".ai-bar-actions button", /^Einfügen$/);
   await app.browser.waitUntil(async () => (await content("Architektur")).includes("Neuer Abschnitt: Testplan mit dem Fachbereich abstimmen."), { timeoutMsg: "not inserted" });
   const c = await content("Architektur");
@@ -149,14 +150,14 @@ test("KI in the toolbar on an empty line writes new text there, with the page as
 
 test("near the bottom of the window the bar opens above the selection and stays in view", async () => {
   const size = await app.browser.getWindowSize();
-  await app.browser.setWindowSize(size.width, 620);
+  await app.browser.setWindowSize(size.width, 560);
   await openFromTree("Architektur");
   await app.waitFor(".ProseMirror h2");
   await app.browser.execute(() => {
     const s = document.querySelector(".pane.active .page-scroll");
     s.scrollTop = s.scrollHeight;
   });
-  await selectText("Restart-Service");
+  await selectText("Verzug verschiebt die Abnahme.");
   await app.keys(["Control", "j"]);
   const bar = await app.waitFor(".ai-bar");
   await app.browser.pause(400);

@@ -169,7 +169,7 @@ export function TasksView() {
                           )}
                           <button type="button" className="task-page" onClick={(e) => s().openPage(t.page_id, { newTab: e.ctrlKey || e.metaKey })} title={`${t.page_title} öffnen`}>
                             <PageIcon name={t.page_icon} size={13} />
-                            {t.page_title}
+                            <span className="task-page-label">{t.page_title}</span>
                           </button>
                         </span>
                       </div>

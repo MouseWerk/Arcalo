@@ -331,12 +331,10 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 :root[data-theme="light"] .prose pre .hljs-title, :root[data-theme="light"] .prose pre .hljs-function { color: #1d4ed8; }
 :root[data-theme="light"] .prose pre .hljs-type { color: #a16207; }
 
-/* Zero-height sticky anchor: the find bar floats over the text without reflowing it. */
-.find-anchor { position: sticky; top: 8px; height: 0; z-index: 20; }
+/* Top right of the pane, below the header row; the replace bar stacks under the find bar. */
+.find-anchor { position: absolute; top: 8px; right: 20px; z-index: 20; }
+.find-stack { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .find-bar {
-  position: absolute;
-  top: -8px;
-  right: -24px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -493,12 +491,14 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .tb-menu:hover { background: var(--bg-hover); color: var(--text); }
 .tb-ai { color: var(--accent-text); }
 .tb-url { height: 26px; width: 220px; margin-left: 4px; font-size: var(--fs-sm); }
-.find-replace { margin-top: 6px; }
 .find-replace .btn { flex: none; }
 @media print { .editor-toolbar { display: none; } }
 
 /* In the header row (instead of the page's small title): one line, centered, no frame. Scrolls
    sideways when the pane is too narrow even for icons. */
+.vh-center { display: flex; justify-content: center; align-items: center; min-width: 0; height: 100%; }
+.vh-center > .vh-toolbar { flex: 1; }
+.vh-toolbar[hidden] { display: none; }
 .vh-toolbar { display: flex; justify-content: center; min-width: 0; height: 100%; align-items: center; }
 .vh-toolbar .editor-toolbar {
   position: static;
@@ -611,6 +611,7 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   caret-color: var(--accent);
+}
 
 /* ---- file attachments ---- */
 /* `![[Angebot.docx]]`: a chip with type icon, name and size; a click opens the file in its app. */

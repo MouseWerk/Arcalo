@@ -1,6 +1,6 @@
 // The Markdown note editor (TipTap, live preview, autosave).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -555,6 +555,11 @@ export function NoteEditor({
       };
     },
   });
+  // The find bars sit at the top right of the pane (below the header row), not above the note.
+  const findLayer = (node: ReactNode) => {
+    const host = wrapRef.current?.closest<HTMLElement>(".page-scroll-wrap");
+    return host ? createPortal(<div className="find-anchor">{node}</div>, host) : <div className="find-anchor">{node}</div>;
+  };
   const closeFind = () => {
     setFind(null);
     setReplace(null);
@@ -569,8 +574,8 @@ export function NoteEditor({
           ? createPortal(<EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />, toolbarSlot)
           : <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />)}
       {zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
-      {find !== null && (
-        <div className="find-anchor">
+      {find !== null && findLayer(
+        <div className="find-stack">
           <div className="find-bar" role="search">
           <Search size={14} className="faint" />
           <input

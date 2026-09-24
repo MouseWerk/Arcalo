@@ -12,6 +12,7 @@ const ENTRIES = {
   "set.editor.toolbarDesc": ["Formatierung, Listen, „Einfügen“ und „Werkzeuge“ über jeder Notiz.", "Formatting, lists, Insert and Tools above every note."],
   "tabs.moveToOther": ["In den anderen Bereich", "Move to the other pane"],
   "tabs.moveToPane": ["In Bereich", "Move to pane"],
+  "tabs.all": ["Alle Tabs", "All tabs"],
   "tabs.duplicate": ["Tab duplizieren", "Duplicate tab"],
   "tabs.moveLeft": ["Nach links", "Move left"],
   "tabs.moveRight": ["Nach rechts", "Move right"],

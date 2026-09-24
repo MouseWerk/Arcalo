@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
 import { QuickLinks } from "./QuickLinks";
+import { sidebarShown, toggleSidebar, useNarrowWindow } from "../lib/layout";
 import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
 import { useT } from "../lib/i18n";
@@ -76,6 +77,8 @@ function DailyButton() {
 export function Ribbon() {
   const t = useT();
   const sidebarOpen = useApp((s) => s.sidebarOpen);
+  const panelOpen = useApp((s) => s.panelOpen);
+  const shown = sidebarShown(sidebarOpen, panelOpen, useNarrowWindow());
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const s = useApp.getState;
   const side = "right" as const;
@@ -85,15 +88,12 @@ export function Ribbon() {
       <div className="ribbon-titlebar" data-tauri-drag-region />
       <IconButton
         icon={PanelLeft}
-        label={withHint(t(sidebarOpen ? "ribbon.hideSidebar" : "ribbon.showSidebar"), "toggle_sidebar")}
-        active={sidebarOpen}
+        label={withHint(t(shown ? "ribbon.hideSidebar" : "ribbon.showSidebar"), "toggle_sidebar")}
+        active={shown}
         tooltipSide={side}
         size={32}
         iconSize={17}
-        onClick={() => {
-          s().set({ sidebarOpen: !sidebarOpen });
-          savePref("annalo.sidebar", !sidebarOpen);
-        }}
+        onClick={toggleSidebar}
       />
       <span className="ribbon-sep" />
       <IconButton icon={FilePlus2} label={withHint(t("ribbon.newPage"), "new_page")} tooltipSide={side} size={32} iconSize={17} onClick={() => createSubpage(null)} />

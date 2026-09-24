@@ -1,7 +1,7 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
 import { Fragment, useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, Columns2, Copy, PanelRight, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Plus, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { IconButton, useMenu, type MenuEntry } from "./ui";
 import { Home, TabIcon, tabTitle } from "./Shell";
@@ -191,9 +191,36 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   };
   // The active tab stays in view when there are more tabs than room.
   const tabsRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
   useEffect(() => {
-    tabsRef.current?.querySelector<HTMLElement>(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const el = tabsRef.current;
+    if (!el) return;
+    // Fades at the edges that have hidden tabs; the list button when not all fit.
+    const edges = () => {
+      el.classList.toggle("fade-left", el.scrollLeft > 1);
+      el.classList.toggle("fade-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+    const fit = () => {
+      el.querySelector<HTMLElement>(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      setOverflow(el.scrollWidth > el.clientWidth + 1);
+      edges();
+    };
+    fit();
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    });
+    ro.observe(el);
+    el.addEventListener("scroll", edges, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      el.removeEventListener("scroll", edges);
+    };
   }, [pane.activeTabId, pane.tabs.length]);
+  const allTabs = (): MenuEntry[] =>
+    pane.tabs.map((t) => ({ label: tabTitle(t, pages), checked: t.id === pane.activeTabId, onSelect: () => s().activateTab(t.id) }));
 
   return (
     <div
@@ -274,8 +301,20 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
             </div>
           );
         })}
-        <IconButton icon={Plus} label={withHint(tr("tabs.newTab"), "new_tab")} size={26} iconSize={15} onClick={() => s().openTab({ kind: "home" }, { newTab: true })} />
       </div>
+      {overflow && (
+        <IconButton
+          icon={ChevronDown}
+          label={tr("tabs.all")}
+          size={26}
+          iconSize={15}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            openMenu({ clientX: r.left, clientY: r.bottom + 4 }, allTabs());
+          }}
+        />
+      )}
+      <IconButton icon={Plus} label={withHint(tr("tabs.newTab"), "new_tab")} size={26} iconSize={15} onClick={() => s().openTab({ kind: "home" }, { newTab: true })} />
       <span className="tabbar-drag" data-tauri-drag-region />
       {pane.tabs.length > 0 && (
         <IconButton

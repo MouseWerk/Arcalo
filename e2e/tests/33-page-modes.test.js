@@ -16,6 +16,10 @@ const width = () => app.browser.execute(() => document.querySelector(".pane.acti
 const content = async (title) => (await app.invoke("page_get", { id: (await app.invoke("page_resolve", { title, create: false })).id })).content;
 
 test("full width: the text uses the whole pane, per page, and comes back", async () => {
+  // Without the side panel the pane is wider than the normal text width.
+  await app.browser.execute(() => {
+    if (document.querySelector(".app > .panel")) document.querySelector(".workspace > .pane:last-child .tabbar > button:last-of-type").click();
+  });
   await openTree("Architektur");
   await app.waitFor(".pane.active .ProseMirror h2");
   const normal = await width();

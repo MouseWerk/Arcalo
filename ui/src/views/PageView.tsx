@@ -293,9 +293,20 @@ function PageHeader({
   useEffect(() => {
     const el = titleInput.current;
     if (!el) return;
-    const ro = new ResizeObserver(fitTitle);
+    // Only a new width changes the wrapping; fitting changes the height, which must not re-trigger.
+    let width = el.clientWidth;
+    let frame = 0;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitTitle);
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
   }, []);
   const actions = (
     <>
@@ -373,7 +384,16 @@ function PageHeader({
           </span>
         ))}
         title={doc.title}
-        center={source ? <div className="vh-mode">Markdown-Quelltext</div> : toolbarOn ? <div className="vh-toolbar" ref={toolbarSlot} /> : undefined}
+        // The toolbar's slot stays mounted: the editor portals into it and unmounts after the header
+        // has switched to the source mode label.
+        center={
+          toolbarOn || source ? (
+            <div className="vh-center">
+              {toolbarOn && <div className="vh-toolbar" ref={toolbarSlot} hidden={source} />}
+              {source && <div className="vh-mode">Markdown-Quelltext</div>}
+            </div>
+          ) : undefined
+        }
         actions={actions}
       />
       <div className="page-scroll-wrap">

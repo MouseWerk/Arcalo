@@ -66,15 +66,12 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>,
 );
 
-// The main window starts hidden and appears once this first frame (the splash) is on screen:
-// no unstyled page and no white flash before it.
+// The main window starts hidden and appears once the app script runs: the page and the splash
+// styles are loaded by then, so there is no unstyled page and no white flash before the splash.
+// (Not after a requestAnimationFrame: hidden webviews do not run frames.)
 if (!captureMode && !searchMode) {
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      import("@tauri-apps/api/core")
-        .then(({ invoke }) => invoke("window_ready"))
-        .catch(() => {})
-        .finally(splashShown);
-    }),
-  );
+  import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke("window_ready"))
+    .catch(() => {})
+    .finally(splashShown);
 }
