@@ -198,7 +198,8 @@ export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
       } catch {
         /* already gone */
       }
-      fs.rmSync(dataDir, { recursive: true, force: true });
+      // Helpers the app started (xdg-open, WebKit caches) may still write for a moment.
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       if (driverErr.includes("panicked")) throw new Error(driverErr);
     },
   };

@@ -89,7 +89,13 @@ test("settings: every switch, option and dropdown reacts; Verwerfen restores the
     for (const k of Object.keys(totals)) totals[k] += r[k];
     // Undo: the save bar offers „Verwerfen“, afterwards nothing is unsaved.
     if (await app.browser.execute(() => !!document.querySelector(".savebar"))) {
-      await app.browser.execute(() => [...document.querySelectorAll(".savebar button")].find((b) => /Verwerfen/.test(b.textContent)).click());
+      // The bar may still be sliding in or re-rendering: wait for its button instead of assuming it.
+      const discard = () => app.browser.execute(() => {
+        const b = [...document.querySelectorAll(".savebar button")].find((x) => /Verwerfen/.test(x.textContent));
+        b?.click();
+        return !!b || !document.querySelector(".savebar");
+      });
+      await app.browser.waitUntil(discard, { timeoutMsg: `no Verwerfen in ${s}: ${await app.browser.execute(() => document.querySelector(".savebar")?.textContent)}` });
       await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".savebar"))), { timeoutMsg: `savebar stays in ${s}` });
     }
   }
