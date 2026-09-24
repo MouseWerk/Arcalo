@@ -339,9 +339,33 @@ export function toMarkdown(editor: Editor): string {
   return cleanMarkdown(editor.getMarkdown());
 }
 
+/** Runs of blank lines become one, except inside fenced code, which stays as written. */
+export function collapseBlankLines(md: string): string {
+  const out: string[] = [];
+  let fence: { ch: string; len: number } | null = null;
+  let blanks = 0;
+  for (const line of md.split("\n")) {
+    if (fence) {
+      const close = line.match(/^\s*(`{3,}|~{3,})\s*$/);
+      if (close && close[1][0] === fence.ch && close[1].length >= fence.len) fence = null;
+      out.push(line);
+      continue;
+    }
+    if (line === "") {
+      if (++blanks > 1) continue;
+    } else {
+      blanks = 0;
+      const open = line.match(/^\s*(`{3,}|~{3,})/);
+      if (open) fence = { ch: open[1][0], len: open[1].length };
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 export function cleanMarkdown(md: string): string {
   return (
-    md
+    collapseBlankLines(md
       .replace(LINK_RE, (m, text: string, href: string, title: string | undefined, at: number, all: string) => {
         const out = linkMarkdown(text, href, title);
         // A bare URL would swallow a footnote reference right behind it (`https://x.de[^1]`).
@@ -351,8 +375,8 @@ export function cleanMarkdown(md: string): string {
       .replace(/^((?:>\s?)+)\\\[!(\w+)\\\]/gm, "$1[!$2]")
       // Footnote definitions written one per line stay together.
       .replace(new RegExp(`\n+${TIGHT_MARK}`, "g"), "\n")
-      .replace(new RegExp(TIGHT_MARK, "g"), "")
-      .replace(/\n{3,}/g, "\n\n")
+      .replace(new RegExp(TIGHT_MARK, "g"), ""),
+    )
       .replace(/^\n+/, "")
       .trimEnd()
       // A final empty task keeps the space after its box.

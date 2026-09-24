@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
-import { buildExtensions, toMarkdown } from "./schema";
+import { buildExtensions, collapseBlankLines, toMarkdown } from "./schema";
 import { splitFrontmatter } from "./extensions";
 import { anchorPage, fileExtension, fileKind, formatSize, isFileEmbedName } from "./fileEmbed";
 
@@ -29,6 +29,7 @@ const CASES: Record<string, string> = {
   callout: "> [!note] Hinweis\n> Callout-Text\n",
   calloutWarning: "> [!warning] Achtung\n> Nicht löschen\n",
   code: "```ts\nconst x = 42;\n```\n",
+  codeBlankLines: "```py\nimport os\n\n\ndef main():\n    pass\n```\n\nDanach\n",
   table: "| A   | B   |\n| --- | --- |\n| 1   | 2   |\n",
   link: "Web: [Anthropic](https://www.anthropic.com)\n",
   bareUrl: "Siehe https://example.com/pfad?a=1 für Details\n",
@@ -332,5 +333,12 @@ describe("markdown the editor has no block for (kept verbatim)", () => {
     expect(breaks).toBe(1);
     expect(toMarkdown(editor)).toContain("eins<br>zwei");
     editor.destroy();
+  });
+
+  it("blank lines collapse outside fenced code only", () => {
+    expect(collapseBlankLines("a\n\n\n\nb")).toBe("a\n\nb");
+    expect(collapseBlankLines("~~~\na\n\n\n\nb\n~~~\n\n\nc")).toBe("~~~\na\n\n\n\nb\n~~~\n\nc");
+    expect(collapseBlankLines("````\n```\n\n\nx\n````\n\n\ny")).toBe("````\n```\n\n\nx\n````\n\ny");
+    expect(collapseBlankLines("  ```\n\n\n  ```\n\n\nz")).toBe("  ```\n\n\n  ```\n\nz");
   });
 });
