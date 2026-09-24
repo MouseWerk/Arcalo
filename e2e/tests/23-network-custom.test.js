@@ -271,13 +271,13 @@ test("export and import of all settings (no secrets) round-trip", async () => {
   // The UI follows settings saved elsewhere.
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.documentElement.dataset.density)) === "compact");
 
-  // Section defaults and „Alles zurücksetzen“ keep the connection.
+  // Section defaults and „Alles zurücksetzen“ keep the connection (the default accent is the color theme's own).
   const appearance = await app.invoke("settings_defaults", { section: "appearance" });
-  assert.equal(appearance.appearance.accent, "indigo");
+  assert.equal(appearance.appearance.accent, "theme");
   assert.equal(appearance.appearance.density, "normal");
   const all = await app.invoke("settings_defaults", { section: null });
   assert.equal(all.litellm_base_url, llm.url);
-  assert.equal(all.appearance.accent, "indigo");
+  assert.equal(all.appearance.accent, "theme");
   await assert.rejects(app.invoke("settings_defaults", { section: "gibt-es-nicht" }), /Unbekannter Abschnitt/);
 
   // The Verwaltung section previews a reset.
@@ -287,6 +287,6 @@ test("export and import of all settings (no secrets) round-trip", async () => {
   assert.match(await app.text(".settings-diff"), /appearance\.accent/);
   await clickText(".dialog button", /^Übernehmen$/);
   await app.waitText(".toast-title", /Einstellungen gespeichert/);
-  assert.equal((await app.invoke("settings_get")).settings.appearance.accent, "indigo");
+  assert.equal((await app.invoke("settings_get")).settings.appearance.accent, "theme");
   assert.deepEqual(await app.consoleErrors(), []);
 });

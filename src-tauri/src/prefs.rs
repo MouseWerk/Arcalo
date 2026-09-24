@@ -56,6 +56,23 @@ pub fn settings_file_read(path: String) -> Result<String> {
     Ok(std::fs::read_to_string(&path)?)
 }
 
+/// Writes a custom theme as a theme file (Settings → Darstellung → Exportieren).
+#[tauri::command(async)]
+pub fn theme_export(path: String, theme: prefs::CustomTheme) -> Result<()> {
+    let theme = prefs::normalize_custom_themes(vec![theme])
+        .pop()
+        .ok_or_else(|| Error::State("Das Theme enthält ungültige Farben".into()))?;
+    std::fs::write(path.trim(), prefs::theme_file_json(&theme))?;
+    Ok(())
+}
+
+/// Reads and checks a theme file; the UI adds the theme to the custom themes.
+#[tauri::command(async)]
+pub fn theme_file_read(path: String) -> Result<prefs::CustomTheme> {
+    let text = settings_file_read(path)?;
+    prefs::parse_theme_file(&text).map_err(Error::State)
+}
+
 /// The defaults of one settings section (`network`, `appearance`, …), or of all settings
 /// with `section = None`; the UI saves them through `settings_save`.
 #[tauri::command]

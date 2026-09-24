@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCENT_PRESETS, CANVAS, accentCss, accentHex, accentTokens, contrast, ensureContrast, parseHex } from "./color";
+import { ACCENT_PRESETS, CANVAS, accentHex, accentTokens, contrast, ensureContrast, parseHex } from "./color";
 
 describe("colors", () => {
   it("parses hex and presets", () => {
@@ -36,15 +36,5 @@ describe("colors", () => {
         expect(t["--accent-soft"]).toMatch(/^rgb\(\d+ \d+ \d+ \/ 0\.1/);
       }
     }
-  });
-
-  it("CSS covers both themes; the built-in indigo keeps tokens.css", () => {
-    expect(accentCss("indigo")).toBe("");
-    expect(accentCss("kaputt")).toBe("");
-    const css = accentCss("teal");
-    expect(css).toContain(':root[data-theme="light"]');
-    expect(css).toContain(':root[data-theme="dark"]');
-    expect(css).toMatch(/--accent: #[0-9a-f]{6};/);
-    expect(css).toContain("--accent-strong");
   });
 });

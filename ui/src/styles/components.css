@@ -108,7 +108,6 @@
   background-repeat: no-repeat;
   background-position: right 9px center;
 }
-.select option, .select optgroup { background: var(--bg-overlay); color: var(--text); }
 .w-360 { width: 360px; max-width: 100%; }
 .w-120 { width: 120px; }
 .w-date { width: 148px; }
@@ -397,3 +396,46 @@
 .link-preview-body > :first-child { margin-top: 0; }
 .link-preview-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, var(--bg-overlay)); pointer-events: none; }
 .link-preview-empty { padding: 14px; color: var(--text-3); font-size: var(--fs-sm); }
+
+/* ---- dropdown (components/Select.tsx) ---- */
+/* The trigger looks like an input; it is as wide as its longest option unless a width is set. */
+.select { display: inline-flex; align-items: center; gap: 7px; text-align: left; font: inherit; cursor: default; }
+.select.open { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.select:focus-visible { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.select-icon { flex: none; color: var(--text-2); }
+.select-value { display: grid; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.select-value > span { grid-area: 1 / 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-sizer { visibility: hidden; }
+.select-label.placeholder { color: var(--text-3); }
+.select-pop {
+  position: fixed;
+  z-index: 90;
+  max-height: min(340px, calc(100vh - 16px));
+  max-width: calc(100vw - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur-fast) var(--ease-out);
+  font-size: var(--fs-md);
+  user-select: none;
+}
+.select-pop.above { animation-name: pop-in-up; }
+@keyframes pop-in-up { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
+.select-option { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 10px 5px 6px; border-radius: var(--r-sm); color: var(--text); }
+.select-option.active { background: var(--bg-hover); }
+.select-option.selected { color: var(--accent-text); }
+.select-option.selected.active { background: var(--accent-soft); }
+.select-option.disabled { opacity: 0.45; }
+.select-check { width: 16px; flex: none; display: grid; place-items: center; color: var(--accent-text); }
+.select-option-icon { flex: none; color: var(--text-2); }
+.select-option.selected .select-option-icon { color: inherit; }
+.select-option-text { display: grid; min-width: 0; }
+.select-option-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.select-option.selected .select-option-label { font-weight: 500; }
+.select-option-desc { color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; white-space: normal; }
+.select-group { padding: 8px 10px 3px 30px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; }
+.select-sep { height: 1px; margin: 4px 6px; background: var(--border); }

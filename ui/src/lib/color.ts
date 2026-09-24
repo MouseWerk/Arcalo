@@ -1,4 +1,5 @@
-// Accent colors: presets, WCAG contrast and the accent tokens for light and dark mode.
+// Accent colors: presets, WCAG contrast and the accent tokens for light and dark mode (applied
+// on top of the color theme by lib/themes.ts).
 
 export type Rgb = [number, number, number];
 
@@ -81,10 +82,10 @@ const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`
  * `--accent` (icons, borders, focus) ≥ 3:1, and white text on `--accent-strong` (primary
  * buttons, switches) ≥ 4.5:1.
  */
-export function accentTokens(hex: string, mode: "light" | "dark"): AccentTokens {
+export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: string = CANVAS[mode]): AccentTokens {
   const base = parseHex(hex) ?? parseHex("#6366f1")!;
   const white: Rgb = [255, 255, 255];
-  const canvas = parseHex(CANVAS[mode])!;
+  const canvas = parseHex(canvasHex) ?? parseHex(CANVAS[mode])!;
   const light = mode === "light";
   const accent = ensureContrast(light ? base : mix(base, white, 0.18), canvas, 3, !light);
   const text = ensureContrast(light ? mix(base, [0, 0, 0], 0.08) : mix(base, white, 0.35), canvas, 4.5, !light);
@@ -97,15 +98,4 @@ export function accentTokens(hex: string, mode: "light" | "dark"): AccentTokens 
     "--border-focus": toHex(accent),
     "--bg-selected": rgba(accent, light ? 0.1 : 0.14),
   };
-}
-
-/** CSS for both modes; empty for the built-in indigo (tokens.css keeps its tuned values). */
-export function accentCss(accent: string): string {
-  const hex = accentHex(accent);
-  if (!hex || accent.trim().toLowerCase() === "indigo") return "";
-  const block = (mode: "light" | "dark") =>
-    Object.entries(accentTokens(hex, mode))
-      .map(([k, v]) => `${k}: ${v};`)
-      .join(" ");
-  return `:root, :root[data-theme="dark"] { ${block("dark")} }\n:root[data-theme="light"] { ${block("light")} }`;
 }

@@ -43,10 +43,10 @@ test("filters by status and tag", async () => {
   assert.ok(!(await (await app.$(row(0))).isExisting()));
   await app.click('.tasks-view .segmented [role="radio"]:nth-child(1)');
   await app.waitFor(row(0));
-  await app.select(".tasks-view select", "e2e");
+  await app.select('.tasks-view [role="combobox"]', "e2e");
   await app.browser.waitUntil(async () => !(await (await app.$(row(0))).isExisting()), { timeoutMsg: "tag filter not applied" });
   assert.ok(await (await app.$(row(1))).isExisting());
-  await app.select(".tasks-view select", "");
+  await app.select('.tasks-view [role="combobox"]', "");
   await app.waitFor(row(0));
 });
 

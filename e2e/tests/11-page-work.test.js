@@ -137,7 +137,7 @@ test("the Vorgang field suggests references (↓ Enter)", async () => {
 test("the Vorgang picker rewrites the reference and the card follows", async () => {
   await app.click(`${row("vorgang")} [aria-label="Vorgang wählen"]`);
   await app.waitFor(".pane.active .prop-picker");
-  await app.select('.pane.active .prop-picker select[aria-label="Vorgang"]', "1030");
+  await app.select('.pane.active .prop-picker [role="combobox"][aria-label="Vorgang"]', "1030");
   await saved(/^---\nvorgang: NP-8801\/1030\n/, "picked Vorgang not saved");
   await app.waitText(".pane.active .work-card .work-title", /NP-8801\/1030 · Schnittstellen-Design/);
 });

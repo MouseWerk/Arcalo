@@ -2398,6 +2398,9 @@ pub fn run() {
             if let Err(e) = db.migrate_palette_default() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
+            if let Err(e) = db.migrate_appearance_defaults() {
+                devlog::warn("core", format!("appearance migration failed: {e}"));
+            }
             let settings = db.load_settings()?;
             devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
@@ -2574,6 +2577,8 @@ pub fn run() {
             network::proxy_password_set,
             prefs::settings_export,
             prefs::settings_file_read,
+            prefs::theme_export,
+            prefs::theme_file_read,
             prefs::settings_defaults,
             prefs::window_state_save,
             prefs::ai_cost_status,

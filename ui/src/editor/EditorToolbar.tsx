@@ -10,7 +10,7 @@ import {
   ListOrdered, MoveDown, MoveUp, Plus, Quote, Redo2, Replace, SquareArrowOutUpRight, SquareCode, Strikethrough, Undo2, Wrench,
   ArrowDownAZ, ArrowUpAZ, ListX, Clock, BarChart3, Sparkles, MoreHorizontal, Heading,
 } from "lucide-react";
-import { IconButton, useMenu, type MenuEntry } from "../components/ui";
+import { IconButton, Select, useMenu, type MenuEntry } from "../components/ui";
 import { keys } from "../lib/shortcut";
 import { slashItems, type SlashOptions } from "./extensions";
 import { changeSelectionCase, clearFormatting, dedupeSelectedLines, moveBlock, sortSelectedLines, statsText, textStats } from "./tools";
@@ -221,13 +221,7 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
         <IconButton icon={Redo2} label={`Wiederholen (${keys("Mod Shift Z")})`} disabled={!st.canRedo} onClick={() => c().redo().run()} size={28} iconSize={15} />
       </div>}
       {shown(5) && <div className="tb-group" data-collapse={5}>
-        <select className="input select tb-select" aria-label="Absatzformat" value={st.block} onChange={(e) => setBlock(e.target.value as Block)}>
-          {BLOCKS.map((b) => (
-            <option key={b.value} value={b.value}>
-              {b.label}
-            </option>
-          ))}
-        </select>
+        <Select className="tb-select" aria-label="Absatzformat" value={st.block} options={BLOCKS} onChange={(e) => setBlock(e.target.value as Block)} />
       </div>}
       {shown(6) && <div className="tb-group" data-collapse={6}>
         <IconButton icon={Bold} label={`Fett (${keys("Mod B")})`} active={st.bold} onClick={() => c().toggleBold().run()} size={28} iconSize={15} />

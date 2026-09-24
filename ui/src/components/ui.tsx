@@ -1,6 +1,6 @@
 // Small, dependency-free UI primitives in the app's design language.
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Loader2, X, type LucideIcon } from "lucide-react";
 
@@ -78,13 +78,8 @@ export function TextArea({ className = "", autoGrow, ...rest }: TextareaHTMLAttr
   return <textarea ref={ref} className={`input textarea ${autoGrow ? "textarea-auto" : ""} ${className}`} {...rest} />;
 }
 
-export function Select({ className = "", children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select className={`input select ${className}`} {...rest}>
-      {children}
-    </select>
-  );
-}
+/** Dropdown with the API of a controlled <select> (components/Select.tsx). */
+export { Select, type SelectOption, type SelectChange } from "./Select";
 
 export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -180,7 +175,7 @@ export function Dialog({
     const onKey = (e: KeyboardEvent) => {
       const box = ref.current;
       // A newer dialog (a confirm on top) or a menu/calendar opened from this one handles its own keys.
-      const above = [...document.querySelectorAll(".dialog, .menu, .calendar")].some((el) => el !== box && !box?.contains(el) && !!(box && box.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+      const above = [...document.querySelectorAll(".dialog, .menu, .calendar, .select-pop")].some((el) => el !== box && !box?.contains(el) && !!(box && box.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
       if (above) return;
       if (e.key === "Escape") {
         e.stopPropagation();

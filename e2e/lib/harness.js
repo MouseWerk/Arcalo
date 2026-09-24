@@ -158,21 +158,31 @@ export async function launch({ demo = true, width = 1480, height = 920 } = {}) {
       await browser.pause(60);
       await browser.keys(["End"]);
     },
-    /** Sets a <select> value and notifies React (native click on options is unreliable in WebKit). */
+    /**
+     * Chooses `value` in a dropdown (components/Select.tsx) like a user: clicks the combobox,
+     * then the option in the list it opened, and waits until the combobox shows the value.
+     */
     async select(sel, value) {
-      const ok = await browser.execute(
-        (s, v) => {
-          const el = document.querySelector(s);
-          if (!el || ![...el.options].some((o) => o.value === v)) return false;
-          const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-          setter.call(el, v);
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
-        },
-        sel,
-        value,
-      );
-      if (!ok) throw new Error(`cannot select ${value} in ${sel}`);
+      const trigger = await browser.$(sel);
+      await trigger.waitForClickable({ timeout: 8000 });
+      await trigger.click();
+      const list = await browser.waitUntil(async () => browser.execute((s) => document.querySelector(s)?.getAttribute("aria-controls"), sel), {
+        timeout: 4000,
+        timeoutMsg: `${sel} did not open`,
+      });
+      // Options that load later (templates, server models) appear in the open list.
+      const option = await browser.$(`#${list} [role="option"][data-value="${value}"]`);
+      if (!(await option.waitForExist({ timeout: 4000 }).catch(() => false))) {
+        await browser.keys(["Escape"]);
+        throw new Error(`cannot select ${value} in ${sel}`);
+      }
+      // Long lists scroll inside the popup; WebDriver does not scroll it by itself.
+      await browser.execute((el) => el.scrollIntoView({ block: "nearest" }), option);
+      await option.click();
+      await browser.waitUntil(async () => (await browser.execute((s) => document.querySelector(s)?.dataset.value, sel)) === value, {
+        timeout: 4000,
+        timeoutMsg: `${sel} does not show ${value}`,
+      });
     },
     async waitFor(sel, timeout = 8000) {
       const el = await browser.$(sel);

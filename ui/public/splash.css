@@ -1,7 +1,9 @@
 /* Startup animation (markup in index.html): shown before the app code loads, removed once
    the app is ready (lib/splash.ts). A file, not a <style> block in index.html: Tauri adds
    hashes for inline styles to the CSP, and then browsers ignore 'unsafe-inline', which would
-   block every style the app sets at runtime (accent color, popup positions). */
+   block every style the app sets at runtime (accent color, popup positions).
+   The colors below are the Annalo theme; lib/splash.ts sets --splash-bg/-text/-muted/-accent
+   from the color theme of the last start (Settings → Darstellung). */
 #splash {
   --splash-bg: #f4f4f5;
   --splash-text: #18181b;
