@@ -46,6 +46,7 @@ export const api = {
     call<void>("task_set_done", { pageId, ordinal, done, expectedText: expectedText ?? null }),
   search: (query: string, limit = 30) => call<T.SearchHit[]>("search_workspace", { query, limit }),
   importVault: (path: string) => call<T.ImportReport>("vault_import", { path }),
+  cancelVaultImport: () => call<void>("vault_import_cancel"),
   exportVault: (path: string) => call<number>("vault_export", { path }),
 
   // templates + attachments
@@ -311,8 +312,9 @@ export const errorText = (e: unknown) => {
   const raw = typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
   const nf = /^(\w+) '(.+)' not found$/.exec(raw);
   if (nf) return `${KINDS[nf[1]] ?? nf[1]} „${nf[2]}“ nicht gefunden`;
+  // The core writes German messages; older texts (and re-wrapped ones) may still carry prefixes.
   return raw
-    .replace(/^invalid state: /, "")
+    .replace(/^(invalid state: )+/, "")
     .replace(/^could not parse command: /, "Eingabe nicht verstanden: ")
     .replace(/^i\/o error: /, "Dateifehler: ")
     .replace(/^database error: /, "Datenbankfehler: ")

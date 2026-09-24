@@ -536,6 +536,8 @@ export interface DevLogStats {
   errors_week: number;
   /** The log folder. */
   dir: string;
+  /** Why the log file cannot be written, if it cannot (full or read-only disk). */
+  write_error?: string | null;
 }
 export interface MirrorStatus {
   enabled: boolean;
@@ -667,6 +669,8 @@ export interface ImportReport {
   attachments: number;
   skipped: number;
   root_page_id: number;
+  /** Notes cut because of their size, files read as Windows-1252. */
+  warnings?: string[];
 }
 export type TaskStatus = "open" | "done" | "all";
 export interface Task {
@@ -714,7 +718,7 @@ export interface DataDirStatus {
   /** Folder the workspace moves to on the next start. */
   pending_move: string | null;
   /** Result of a move or a fallback at startup. */
-  notice: { kind: "info" | "warning" | "error"; message: string } | null;
+  notice: { kind: "info" | "warning" | "error"; message: string; title?: string } | null;
   /** Portable mode: the data folder is fixed next to the executable. */
   portable?: boolean;
 }

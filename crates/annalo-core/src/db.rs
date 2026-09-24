@@ -45,6 +45,9 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
     })
 }
 
+/// Part of the error for a database written by a newer Annalo (start-up tells it apart).
+pub const NEWER_SCHEMA: &str = "neueren Annalo-Version";
+
 pub struct Database {
     conn: Connection,
     /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
@@ -105,7 +108,7 @@ impl Database {
         let current = self.schema_version()?;
         if current > MIGRATIONS.len() {
             return Err(Error::State(format!(
-                "database schema v{current} is newer than this build (v{})",
+                "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{current}, diese kennt v{}). Bitte Annalo aktualisieren.",
                 MIGRATIONS.len()
             )));
         }
@@ -476,7 +479,7 @@ impl Database {
 
     pub fn insert_time_entry(&self, e: &NewTimeEntry) -> Result<TimeEntry> {
         if e.duration_minutes < 0 {
-            return Err(Error::State("duration must not be negative".into()));
+            return Err(Error::State("Die Dauer darf nicht negativ sein".into()));
         }
         let end = e.start_time + chrono::Duration::minutes(e.duration_minutes);
         self.conn.execute(
@@ -535,7 +538,7 @@ impl Database {
         at: DateTime<Utc>,
     ) -> Result<TimeEntry> {
         if let Some(t) = self.running_timer()? {
-            return Err(Error::State(format!("timer #{} is already running", t.id)));
+            return Err(Error::State(format!("Es läuft bereits ein Timer (Eintrag #{})", t.id)));
         }
         self.conn.execute(
             "INSERT INTO time_entries (netzplan_id, vorgang_nr, leistungsart, start_time, description, status_flag, source)
@@ -548,9 +551,9 @@ impl Database {
     /// Stops the running timer. `idle_minutes` is subtracted from the booked
     /// duration (idle detection); the wall-clock end time is kept.
     pub fn stop_timer(&self, at: DateTime<Utc>, idle_minutes: i64) -> Result<TimeEntry> {
-        let running = self.running_timer()?.ok_or_else(|| Error::State("no timer is running".into()))?;
+        let running = self.running_timer()?.ok_or_else(|| Error::State("Es läuft kein Timer".into()))?;
         if at < running.start_time {
-            return Err(Error::State("stop time is before start time".into()));
+            return Err(Error::State("Das Ende liegt vor dem Beginn".into()));
         }
         let minutes = ((at - running.start_time).num_seconds() as f64 / 60.0).round() as i64;
         // Rounding (Settings → Zeiterfassung) applies to what is booked; nothing booked stays nothing.
@@ -584,12 +587,22 @@ impl Database {
     ) -> Result<TimeEntry> {
         let e = self.time_entry(id)?;
         match e.status_flag {
-            StatusFlag::Running => return Err(Error::State("stop the timer before editing it".into())),
-            StatusFlag::Exported => return Err(Error::State("exported entries cannot be edited".into())),
+            StatusFlag::Running => {
+                return Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into()));
+            }
+            StatusFlag::Exported => {
+                return Err(Error::State("Exportierte Einträge können nicht geändert werden".into()));
+            }
             _ => {}
         }
-        if !(1..=24 * 60).contains(&duration_minutes) {
-            return Err(Error::State("duration must be between 1 minute and 24 hours".into()));
+        // A timer that ran over night may have booked more than a day: other fields of such an
+        // entry can still be edited, and its duration corrected.
+        let unchanged = e.duration_minutes == Some(duration_minutes);
+        if !unchanged && !(1..=24 * 60).contains(&duration_minutes) {
+            return Err(Error::State(
+                "Die Dauer muss zwischen 1 Minute und 24 Stunden liegen (längere Zeiten auf mehrere Tage verteilen)"
+                    .into(),
+            ));
         }
         let end = start_time + chrono::Duration::minutes(duration_minutes);
         self.conn.execute(
@@ -621,7 +634,7 @@ impl Database {
 
     pub fn set_entry_status(&self, ids: &[i64], status: StatusFlag) -> Result<usize> {
         if status == StatusFlag::Running {
-            return Err(Error::State("entries cannot be set to running".into()));
+            return Err(Error::State("Einträge können nicht auf „läuft“ gesetzt werden".into()));
         }
         self.atomic(|| {
             let mut n = 0;
@@ -706,7 +719,7 @@ impl Database {
     pub fn create_page(&self, parent_id: Option<i64>, title: &str, icon: Option<&str>) -> Result<Page> {
         let title = crate::notes::clean_title(title);
         if title.is_empty() {
-            return Err(Error::State("title must not be empty".into()));
+            return Err(Error::State("Der Titel darf nicht leer sein".into()));
         }
         if let Some(p) = parent_id
             && self.page(p)?.deleted_at.is_some()
@@ -915,6 +928,20 @@ mod tests {
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
         }
+    }
+
+    #[test]
+    fn an_overnight_timer_entry_can_still_be_edited() {
+        let (db, np) = seeded();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        db.start_timer(np.id, None, None, "vergessen", t0).unwrap();
+        let e = db.stop_timer(t0 + chrono::Duration::hours(50), 0).unwrap();
+        assert_eq!(e.duration_minutes, Some(3000));
+        // Other fields change, the duration stays.
+        let e = db.update_time_entry(e.id, None, None, t0, 3000, "über Nacht").unwrap();
+        assert_eq!(e.description, "über Nacht");
+        assert!(db.update_time_entry(e.id, None, None, t0, 2000, "x").is_err(), "still more than a day");
+        assert_eq!(db.update_time_entry(e.id, None, None, t0, 480, "korrigiert").unwrap().duration_minutes, Some(480));
     }
 
     #[test]

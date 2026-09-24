@@ -92,24 +92,27 @@ impl SecretStore {
         }
     }
 
+    /// The stored secrets; `Err` when the file exists but cannot be read as such (damaged).
     #[cfg(not(any(windows, target_os = "macos")))]
-    fn read_file(&self) -> serde_json::Map<String, serde_json::Value> {
-        std::fs::read_to_string(&self.file)
-            .ok()
-            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-            .and_then(|v| v.as_object().cloned())
-            .unwrap_or_default()
+    fn read_file(&self) -> Result<serde_json::Map<String, serde_json::Value>, ()> {
+        let Ok(raw) = std::fs::read_to_string(&self.file) else { return Ok(Default::default()) };
+        serde_json::from_str::<serde_json::Value>(&raw).ok().and_then(|v| v.as_object().cloned()).ok_or(())
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
     pub fn get(&self) -> Option<String> {
         let _ = (SERVICE, &self.account);
-        self.read_file().get(&self.field)?.as_str().filter(|k| !k.is_empty()).map(str::to_owned)
+        self.read_file().ok()?.get(&self.field)?.as_str().filter(|k| !k.is_empty()).map(str::to_owned)
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
     pub fn set(&self, key: Option<&str>) -> Result<(), String> {
-        let mut map = self.read_file();
+        let mut map = self.read_file().unwrap_or_else(|()| {
+            // A damaged file is kept for a look, never silently overwritten.
+            let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+            let _ = std::fs::rename(&self.file, self.file.with_extension(format!("json.broken-{stamp}")));
+            Default::default()
+        });
         match key.filter(|k| !k.is_empty()) {
             Some(k) => {
                 map.insert(self.field.clone(), k.into());
@@ -125,14 +128,34 @@ impl SecretStore {
                 Err(e) => Err(e.to_string()),
             };
         }
-        std::fs::write(&self.file, serde_json::Value::Object(map).to_string()).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&self.file, std::fs::Permissions::from_mode(0o600));
-        }
-        Ok(())
+        write_private(&self.file, serde_json::Value::Object(map).to_string().as_bytes()).map_err(|e| e.to_string())
     }
+}
+
+/// Writes `bytes` to `path` readable by the user only from the first byte on (never world
+/// readable, not even briefly), through a synced temporary file and a rename, so a crash leaves
+/// the old file or the new one, never half of it.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension("json.part");
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let res = (|| {
+        let mut f = opts.open(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
 }
 
 /// The credential's account name: a portable copy adds the namespace of its data folder.
@@ -183,6 +206,27 @@ mod tests {
         assert_eq!((ai.get().as_deref(), git.get()), (Some("sk-1"), None));
         ai.set(None).unwrap();
         assert!(!dir.join("secrets.json").exists(), "empty file removed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_file_is_private_and_a_damaged_one_is_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("annalo-secrets2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = SecretStore::git(&dir);
+        git.set(Some("ghp-1")).unwrap();
+        let mode = std::fs::metadata(dir.join("secrets.json")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        // Cut off by a crash in an earlier version: nothing is read, and nothing overwritten.
+        std::fs::write(dir.join("secrets.json"), "{\"git-token\": \"ghp").unwrap();
+        assert_eq!(git.get(), None);
+        SecretStore::new(&dir).set(Some("sk-2")).unwrap();
+        let broken =
+            std::fs::read_dir(&dir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains("broken"));
+        assert!(broken, "the damaged file is kept");
+        assert_eq!(SecretStore::new(&dir).get().as_deref(), Some("sk-2"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

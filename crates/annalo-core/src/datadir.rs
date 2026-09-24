@@ -149,11 +149,19 @@ pub struct Notice {
     /// `info`, `warning` or `error`.
     pub kind: &'static str,
     pub message: String,
+    /// Heading of the notice; without one the UI names a data-folder move.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 impl Notice {
     fn new(kind: &'static str, message: String) -> Self {
-        Notice { kind, message }
+        Notice { kind, message, title: None }
+    }
+
+    /// Another start-up problem (`kind` `warning` or `error`) with its own heading.
+    pub fn titled(kind: &'static str, title: &str, message: String) -> Self {
+        Notice { kind, message, title: Some(title.to_owned()) }
     }
 }
 

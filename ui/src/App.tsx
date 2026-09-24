@@ -64,8 +64,8 @@ export function App() {
         // A move at startup, or a chosen folder that is not reachable (fallback to the default).
         const n = d.notice;
         if (n?.kind === "info") s.toast({ tone: "success", title: "Speicherort geändert", detail: n.message });
-        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: "Datenordner nicht verfügbar", detail: n.message });
-        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: "Daten nicht verschoben", detail: n.message });
+        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: n.title ?? "Datenordner nicht verfügbar", detail: n.message });
+        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: n.title ?? "Daten nicht verschoben", detail: n.message });
         if (d.synced) s.toast({ tone: "warning", persistent: true, title: "Datenbank im synchronisierten Ordner", detail: `Die Datenbank liegt in einem synchronisierten/Netzwerkordner – das kann sie beschädigen. Sicherungen dorthin sind unbedenklich. (${d.data_dir})` });
       })
       .catch(() => {});

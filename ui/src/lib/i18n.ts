@@ -773,6 +773,7 @@ const ENTRIES = {
   "devlog.errorsWeek": ["{n} Fehler in 7 Tagen", "{n} errors in 7 days"],
   "devlog.errorsWeekOne": ["1 Fehler in 7 Tagen", "1 error in 7 days"],
   "devlog.show": ["Protokoll anzeigen", "Show log"],
+  "devlog.writeError": ["Das Protokoll kann nicht geschrieben werden: {msg}", "The log cannot be written: {msg}"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type TKey = keyof typeof ENTRIES;

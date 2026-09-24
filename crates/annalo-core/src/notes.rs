@@ -366,7 +366,7 @@ impl Database {
         let title = clean_title(title);
         let title = title.as_str();
         if title.is_empty() {
-            return Err(Error::State("title must not be empty".into()));
+            return Err(Error::State("Der Titel darf nicht leer sein".into()));
         }
         let old = self.page(id)?.title;
         // All or nothing: a failure must not leave some links rewritten and others not.
@@ -402,7 +402,7 @@ impl Database {
         let mut cursor = parent_id;
         while let Some(p) = cursor {
             if p == id {
-                return Err(Error::State("a page cannot be moved into itself".into()));
+                return Err(Error::State("Eine Seite kann nicht in sich selbst verschoben werden".into()));
             }
             let parent = self.page(p)?;
             if parent.deleted_at.is_some() {

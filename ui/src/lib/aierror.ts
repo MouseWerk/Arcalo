@@ -30,6 +30,14 @@ export function aiErrorSummary(message: string): AiErrorSummary {
     return { title: "Das Modell gibt es auf dem KI-Server nicht.", hint: "Modellzuordnung in den KI-Einstellungen prüfen.", settings: true };
   if (status >= 500 && /connection ?(refused|error)|apiconnectionerror|unreachable|errno 111/.test(m))
     return { title: "Der KI-Server erreicht das Modell nicht.", hint: "Läuft der Modelldienst (z. B. Ollama)? Sonst die Administration fragen.", settings: false };
+  if (/zertifikat|certificate/.test(m))
+    return { title: "Das Zertifikat des KI-Servers wird nicht anerkannt.", hint: "Das Firmenzertifikat unter Einstellungen → Netzwerk hinterlegen.", settings: true };
+  if (/proxy/.test(m)) return { title: "Der Proxy ist nicht erreichbar.", hint: "Proxy-Einstellungen unter Einstellungen → Netzwerk prüfen.", settings: true };
+  if (/netzwerkeinstellungen ungültig/.test(m)) return { title: "Die Netzwerkeinstellungen sind ungültig.", hint: "Einstellungen → Netzwerk prüfen.", settings: true };
+  if (/brach während der antwort ab|antwort unvollständig/.test(m))
+    return { title: "Die Antwort wurde unterbrochen.", hint: "Erneut versuchen.", settings: false };
+  if (/leere antwort|keine antwort im erwarteten format/.test(m))
+    return { title: "Der KI-Server hat keine verwertbare Antwort geliefert.", hint: "Erneut versuchen; bleibt es so, Server-URL und Anmeldung (z. B. WLAN-Portal) prüfen.", settings: true };
   if (/^verbindungsfehler|connection refused|error sending request|dns|connect|nicht erreichbar/.test(m))
     return { title: "Der KI-Server ist nicht erreichbar.", hint: "Server-URL und Netzwerk in den Einstellungen prüfen.", settings: true };
   if (status >= 500) return { title: "Der KI-Server meldet einen internen Fehler.", hint: "Später erneut versuchen.", settings: false };

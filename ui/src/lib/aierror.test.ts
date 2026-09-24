@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aiErrorSummary } from "./aierror";
+import { errorText } from "./api";
 
 describe("aiErrorSummary", () => {
   it("names a model backend the proxy cannot reach", () => {
@@ -22,5 +23,18 @@ describe("aiErrorSummary", () => {
   it("falls back to a general message", () => {
     expect(aiErrorSummary("irgendwas").title).toBe("Die Anfrage ist fehlgeschlagen.");
     expect(aiErrorSummary("KI-Server meldet Fehler 502: Bad Gateway").title).toBe("Der KI-Server meldet einen internen Fehler.");
+  });
+  it("tells proxy, certificate and broken answers apart from an unreachable server", () => {
+    expect(aiErrorSummary("Verbindungsfehler: Proxy nicht erreichbar oder er lehnt die Verbindung ab (error sending request: …)").title).toBe("Der Proxy ist nicht erreichbar.");
+    expect(aiErrorSummary("Verbindungsfehler: Das Zertifikat des Servers wird nicht anerkannt (invalid peer certificate: UnknownIssuer)").title).toMatch(/Zertifikat/);
+    expect(aiErrorSummary("Verbindungsfehler: Die Verbindung brach während der Antwort ab (error decoding response body)").title).toBe("Die Antwort wurde unterbrochen.");
+    expect(aiErrorSummary("Leere Antwort des KI-Servers").settings).toBe(true);
+  });
+});
+
+describe("errorText", () => {
+  it("drops repeated technical prefixes", () => {
+    expect(errorText("invalid state: invalid state: Kein Netz")).toBe("Kein Netz");
+    expect(errorText("Dateifehler: Der Datenträger ist voll")).toBe("Dateifehler: Der Datenträger ist voll");
   });
 });

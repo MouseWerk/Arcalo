@@ -13,6 +13,7 @@ mod network;
 mod portable;
 mod prefs;
 mod present;
+mod recovery;
 mod secrets;
 mod syncmerge;
 mod updates;
@@ -80,8 +81,12 @@ struct AiRuntime {
     /// Clients of the switched-on AI providers, by provider id.
     clients: HashMap<String, Arc<AiClient>>,
     router: Arc<ModelRouter>,
-    /// Client of the assistant's `http_request` tool.
-    tools_http: tools::HttpClient,
+    /// Client of the assistant's `http_request` tool (and link titles); `None` when the network
+    /// settings cannot be applied.
+    tools_http: Option<tools::HttpClient>,
+    /// Why the network settings cannot be applied (a missing CA file): requests fail with this
+    /// instead of going out without proxy and certificates.
+    network_error: Option<String>,
 }
 
 /// A client of `provider`: its key, the network settings (without proxy when it bypasses
@@ -96,6 +101,7 @@ fn provider_client(
     let http = annalo_core::network::http_client(&net, proxy_password, Purpose::Ai)?;
     let mut client = AiClient::for_provider(provider.clone(), key, http);
     client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
+    client.request_timeout = net.timeout();
     Ok(client)
 }
 
@@ -110,27 +116,28 @@ impl AiRuntime {
             devlog::remember_secret(Some(k));
         }
         devlog::remember_secret(proxy_password.as_deref());
+        let mut network_error = None;
+        let mut failed = |e: Error| {
+            let msg = format!("Netzwerkeinstellungen ungültig: {e} (Einstellungen → Netzwerk)");
+            devlog::error("net", &msg);
+            network_error = Some(msg);
+        };
         let tools_http =
             annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), Purpose::Tools)
-                .unwrap_or_else(|e| {
-                    devlog::warn("net", format!("network settings not applied: {e}"));
-                    tools::HttpClient::new()
-                });
-        let clients = settings
-            .providers
-            .iter()
-            .filter(|p| p.enabled)
-            .map(|p| {
-                let key = keys.get(&p.id).cloned();
-                let client =
-                    provider_client(&settings, p, key.clone(), proxy_password.as_deref()).unwrap_or_else(|e| {
-                        devlog::warn("net", format!("network settings not applied to „{}“: {e}", p.display_name()));
-                        AiClient::for_provider(p.clone(), key, tools::HttpClient::new())
-                    });
-                (p.id.clone(), Arc::new(client))
-            })
-            .collect();
-        AiRuntime { clients, router: Arc::new(ModelRouter::new(settings.router.clone())), tools_http, settings }
+                .map_err(&mut failed)
+                .ok();
+        let mut clients = HashMap::new();
+        for p in settings.providers.iter().filter(|p| p.enabled) {
+            let key = keys.get(&p.id).cloned();
+            match provider_client(&settings, p, key, proxy_password.as_deref()) {
+                Ok(client) => {
+                    clients.insert(p.id.clone(), Arc::new(client));
+                }
+                Err(e) => failed(e),
+            }
+        }
+        let router = Arc::new(ModelRouter::new(settings.router.clone()));
+        AiRuntime { clients, router, tools_http, network_error, settings }
     }
 }
 
@@ -188,10 +195,11 @@ impl AppState {
             "" => ai.settings.providers.iter().find(|p| p.enabled).map(|p| p.id.as_str()).unwrap_or_default(),
             id => id,
         };
-        ai.clients.get(id).cloned().ok_or_else(|| {
-            Error::State(format!(
+        ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
+            Some(e) => Error::State(e.clone()),
+            None => Error::State(format!(
                 "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)"
-            ))
+            )),
         })
     }
     /// The clients of the switched-on providers, in the order of the settings.
@@ -435,13 +443,37 @@ fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>)
     search::search(&state.db(), &query, limit.unwrap_or(30))
 }
 
+/// Set by `vault_import_cancel`; the running import stops at the next file.
+static VAULT_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Imports a vault off the main thread: the files are read (and attachments copied) without
+/// the database lock, with `vault://progress` events; only creating the pages takes the lock.
 #[tauri::command]
-fn vault_import(state: State<AppState>, path: String) -> Result<ImportReport> {
+async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(Error::State(format!("„{path}“ ist kein Ordner")));
     }
-    vault::import_vault(&state.db(), &dir, &state.attachments_dir())
+    VAULT_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut progress = |p: vault::ImportProgress| {
+            let _ = app.emit("vault://progress", p);
+        };
+        let plan = vault::plan_import(&dir, &state.attachments_dir(), &mut progress, &VAULT_CANCEL)?;
+        let report = vault::apply_import(&state.db(), plan)?;
+        for w in &report.warnings {
+            devlog::warn("import", w);
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))?
+}
+
+#[tauri::command]
+fn vault_import_cancel() {
+    VAULT_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -558,7 +590,9 @@ fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
 /// network settings; the URL itself when there is none or the page cannot be read.
 #[tauri::command]
 async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let Some(http) = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone() else {
+        return Ok(url);
+    };
     match annalo_core::linktitle::fetch_title(&http, &url).await {
         Ok(Some(title)) => Ok(title),
         Ok(None) => Ok(url),
@@ -1113,6 +1147,10 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
             None
         };
         let git = network::git(&state, token.clone(), &settings.git_sync.remote_url);
+        // Locks of a git that was stopped (timeout, crash) would block every sync from now on.
+        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
+            devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
+        }
         gitsync::sync(
             &git,
             &SyncRequest {
@@ -1740,7 +1778,9 @@ async fn ai_provider_test(
     provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
     let has_key = key.is_some();
-    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let mut client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    // A test must end: a server that accepts but never answers fails the step after a minute.
+    client.first_byte_timeout = Duration::from_secs(60);
     let mut steps = vec![];
     let step = |id, ok: Option<bool>, detail: String, start: Instant| TestStep {
         id,
@@ -1814,6 +1854,10 @@ async fn ai_provider_test(
     };
     let start = Instant::now();
     match client.chat_stream(&ask(vec![]), None, |_| {}).await {
+        // A model that spends its 16 tokens on thinking answers with nothing: it still answers.
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            steps.push(step("chat", Some(true), format!("{chat_model}: antwortet (ohne Text)"), start));
+        }
         Ok(c) => {
             let answer: String = c.content.trim().chars().take(40).collect();
             let detail = if answer.is_empty() { chat_model.clone() } else { format!("{chat_model}: „{answer}“") };
@@ -1841,6 +1885,9 @@ async fn ai_provider_test(
     let start = Instant::now();
     steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
         Ok(_) => step("tools", Some(true), "Werkzeuge werden angenommen".into(), start),
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            step("tools", Some(true), "Werkzeuge werden angenommen".into(), start)
+        }
         Err(Error::Provider { status, body }) => {
             let unsupported =
                 matches!(availability::retry_for(status, &body, true, false), availability::Retry::Without { .. });
@@ -2040,7 +2087,7 @@ async fn ai_chat(
         .rev()
         .find(|m| m.role == "user")
         .and_then(|m| m.content.clone())
-        .ok_or_else(|| Error::State("no user message".into()))?;
+        .ok_or_else(|| Error::State("Keine Nachricht".into()))?;
     let settings = state.settings();
 
     // Retrieval: embeddings are optional; keyword search always works offline. A private
@@ -2139,7 +2186,11 @@ async fn stream_completion(
         })
         .await;
     lock(&state.cancels).remove(request_id);
-    let completion = result.inspect_err(|e| devlog::error("ai", e.to_string()))?;
+    let completion =
+        result.inspect_err(|e| devlog::error("ai", format!("{} ({}): {e}", req.model, client.provider().id)))?;
+    for w in &completion.warnings {
+        devlog::warn("ai", format!("{} ({}): {w}", req.model, client.provider().id));
+    }
     let u = &completion.usage;
     devlog::debug(
         "ai",
@@ -2485,7 +2536,7 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             pages.extend(list.iter().map(|t| t.page_id));
             serde_json::to_string(&list)?
         }
-        other => return Err(Error::State(format!("'{other}' is not a workspace tool"))),
+        other => return Err(Error::State(format!("„{other}“ ist kein Werkzeug des Arbeitsbereichs"))),
     };
     let markers = state.settings().router.private_markers;
     let private = privacy::private_pages(&db, pages, &markers)?;
@@ -2503,7 +2554,11 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
     };
     let settings = state.settings();
     tools::check_allowed(name, &settings.ai.allowed_tools)?;
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let (http, network_error) = {
+        let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
+        (ai.tools_http.clone(), ai.network_error.clone())
+    };
+    let http = http.ok_or_else(|| Error::State(network_error.unwrap_or_default()))?;
     tools::execute_system_tool(&call, &http, settings.network.timeout()).await
 }
 
@@ -2887,7 +2942,11 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
         }
     }
     // Otherwise the new process would only focus this one.
-    tauri_plugin_single_instance::destroy(app);
+    if portable::active() {
+        portable::unlock_instance();
+    } else {
+        tauri_plugin_single_instance::destroy(app);
+    }
 }
 
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
@@ -2912,7 +2971,16 @@ pub fn run() {
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
     // use their own workspace each and may overlap.
-    if std::env::var_os("ANNALO_DATA_DIR").is_none() {
+    // A portable copy checks its own data folder instead (the identifier is shared with the
+    // installed copy, which may run at the same time on its own data).
+    let portable = portable::detect().filter(|_| std::env::var_os("ANNALO_DATA_DIR").is_none());
+    if let Some(dir) = &portable
+        && !portable::lock_instance(dir)
+    {
+        eprintln!("Annalo already runs on {}", dir.display());
+        return;
+    }
+    if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match jumplist::parse(&args) {
             // A taskbar jump-list entry while the app runs.
             Some(action) => jumplist::run(app, action, true),
@@ -2980,8 +3048,12 @@ pub fn run() {
                 app.path().app_data_dir()?,
             );
             let dir = startup.dir.clone();
-            std::fs::create_dir_all(&dir)?;
+            let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir, false);
+            if let Some(e) = folder_error {
+                recovery::show(app.handle(), &dir, recovery::Failure::Folder(annalo_core::error::io_text(&e)));
+                return Ok(());
+            }
             devlog::info(
                 "core",
                 format!(
@@ -2998,7 +3070,24 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-            let db = Database::open(dir.join(datadir::DB_FILE))?;
+            let db = match Database::open(dir.join(datadir::DB_FILE)) {
+                Ok(db) => db,
+                Err(e) => {
+                    recovery::show(app.handle(), &dir, recovery::Failure::of_database(&e));
+                    return Ok(());
+                }
+            };
+            // A read-only folder (write-protected stick, permissions) still shows the notes,
+            // with a notice that nothing is saved.
+            let mut notice = startup.notice.clone();
+            if !recovery::writable(&dir) {
+                devlog::error("core", format!("data folder is not writable: {}", dir.display()));
+                notice = Some(datadir::Notice::titled("error", "Datenordner schreibgeschützt", format!(
+                    "In den Datenordner {} kann nicht geschrieben werden (schreibgeschützt oder voll) – Änderungen \
+                     werden nicht gespeichert.",
+                    dir.display()
+                )));
+            }
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
             }
@@ -3025,7 +3114,32 @@ pub fn run() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
             feed::backfill(&db, &attachments::dir(&dir));
-            let settings = db.load_settings()?;
+            let (settings, unreadable) = db.load_settings_checked()?;
+            if !unreadable.is_empty() {
+                // Kept for a look (and a fix by hand); the defaults are used meanwhile.
+                if let Ok(Some(raw)) = db.conn().query_row("SELECT value FROM settings WHERE key = 'app'", [], |r| {
+                    r.get::<_, String>(0).map(Some)
+                }) {
+                    let _ = db.meta_set("settings.broken", &raw);
+                }
+                devlog::warn("core", format!("settings not readable, defaults used for: {}", unreadable.join(", ")));
+                if notice.is_none() {
+                    notice = Some(datadir::Notice::titled("warning", "Einstellungen zurückgesetzt", format!(
+                        "Einige Einstellungen waren nicht lesbar und stehen wieder auf dem Standard ({}).",
+                        unreadable.join(", ")
+                    )));
+                }
+            }
+            // Network settings that cannot be applied (a missing CA file): requests fail with the
+            // reason instead of going out without the proxy.
+            if let Err(e) = annalo_core::network::http_client(&settings.network, None, Purpose::Tools)
+                && notice.is_none()
+            {
+                notice = Some(datadir::Notice::titled("warning", "Netzwerkeinstellungen ungültig", format!(
+                    "Netzwerkeinstellungen ungültig: {e} – KI-Anfragen und Links werden nicht gesendet, bis das unter \
+                     Einstellungen → Netzwerk korrigiert ist."
+                )));
+            }
             devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
                 settings.capture_shortcut.clone(),
@@ -3050,7 +3164,7 @@ pub fn run() {
                 proxy_secret,
                 git_lock: Mutex::new(()),
                 data_dir: dir,
-                data_dir_notice: startup.notice,
+                data_dir_notice: notice,
                 meter: Mutex::new(SessionMeter::default()),
                 session_id: Utc::now().format("%Y%m%dT%H%M%S").to_string(),
                 idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
@@ -3138,6 +3252,7 @@ pub fn run() {
             task_set_done,
             search_workspace,
             vault_import,
+            vault_import_cancel,
             vault_export,
             templates_list,
             templates_root,

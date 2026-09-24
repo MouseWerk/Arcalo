@@ -480,6 +480,105 @@ fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>) -> Resul
 
 // ------------------------------------------------------------------ runner
 
+/// The git subcommand of `args` (`-c key=value` pairs and other options skipped).
+fn subcommand<'a>(args: &[&'a str]) -> &'a str {
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match *a {
+            "-c" | "-C" => {
+                it.next();
+            }
+            a if a.starts_with('-') => {}
+            a => return a,
+        }
+    }
+    ""
+}
+
+/// The German message for a failed git run: the last lines of its output (plus the first
+/// `fatal:`/`error:` line, which names the cause), classified when the cause is clear.
+fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str>) -> String {
+    let raw = if stderr.trim().is_empty() { stdout } else { stderr };
+    let lines: Vec<&str> = raw.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("hint:")).collect();
+    let mut shown: Vec<&str> = lines[lines.len().saturating_sub(4)..].to_vec();
+    if let Some(first) = lines.iter().find(|l| l.starts_with("fatal:") || l.starts_with("error:"))
+        && !shown.contains(first)
+    {
+        shown.insert(0, first);
+    }
+    let mut detail = shown.join(" · ");
+    if detail.chars().count() > 500 {
+        detail = detail.chars().take(500).collect::<String>() + "…";
+    }
+    let detail = redact(&detail, token);
+    let lower = detail.to_ascii_lowercase();
+    let any = |ps: &[&str]| ps.iter().any(|p| lower.contains(p));
+    if any(&["index.lock", ".lock': file exists"]) {
+        format!(
+            "Git ist gesperrt: eine frühere Synchronisierung wurde unterbrochen. Die Sperre wird bei der nächsten \
+             Synchronisierung entfernt ({detail})"
+        )
+    } else if any(&[
+        "authentication failed",
+        "could not read username",
+        "could not read password",
+        "terminal prompts disabled",
+        "permission denied (publickey",
+        "access denied",
+        "the requested url returned error: 403",
+        "the requested url returned error: 401",
+        "invalid username or password",
+    ]) {
+        format!("Anmeldung am Git-Server fehlgeschlagen – Zugangstoken bzw. SSH-Schlüssel prüfen ({detail})")
+    } else if any(&[
+        "could not resolve host",
+        "couldn't connect",
+        "could not connect",
+        "failed to connect",
+        "unable to access",
+        "connection refused",
+        "connection timed out",
+        "network is unreachable",
+        "repository not found",
+        "does not appear to be a git repository",
+        "not found",
+    ]) {
+        format!("Git-Repository nicht erreichbar ({detail})")
+    } else if any(&["permission denied", "read-only file system", "no space left"]) {
+        format!("Git kann im Sync-Ordner nicht schreiben ({detail})")
+    } else {
+        format!("git {} fehlgeschlagen: {detail}", subcommand(args))
+    }
+}
+
+/// Removes git lock files in `repo` older than `max_age`: left by a git that was stopped
+/// (timeout, crash, power loss) they would block every later sync. Only called while the
+/// sync holds its lock, so no git of this app is running there. Returns the removed files.
+pub fn remove_stale_locks(repo: &Path, max_age: Duration) -> Vec<PathBuf> {
+    fn walk(dir: &Path, max_age: Duration, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() {
+                // Objects hold no locks worth the walk.
+                if e.file_name() != "objects" {
+                    walk(&p, max_age, out);
+                }
+            } else if ft.is_file()
+                && p.extension().is_some_and(|x| x == "lock")
+                && e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t.elapsed().is_ok_and(|a| a >= max_age))
+                && fs::remove_file(&p).is_ok()
+            {
+                out.push(p);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&repo.join(".git"), max_age, &mut out);
+    out
+}
+
 /// Result of one git invocation (already redacted).
 #[derive(Debug, Clone)]
 pub struct GitOutput {
@@ -623,7 +722,7 @@ impl Git {
                 let _ = child.wait();
                 return Err(Error::State(format!(
                     "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
-                    args.first().copied().unwrap_or(""),
+                    subcommand(args),
                     self.timeout.as_secs().max(1)
                 )));
             }
@@ -645,45 +744,7 @@ impl Git {
     }
 
     fn failure(&self, args: &[&str], out: &GitOutput) -> Error {
-        let raw = if out.stderr.trim().is_empty() { out.stdout.as_str() } else { out.stderr.as_str() };
-        let lines: Vec<&str> =
-            raw.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("hint:")).collect();
-        let mut detail = lines[lines.len().saturating_sub(4)..].join(" · ");
-        if detail.chars().count() > 500 {
-            detail = detail.chars().take(500).collect::<String>() + "…";
-        }
-        let detail = redact(&detail, self.token());
-        let lower = detail.to_ascii_lowercase();
-        let sub = args.iter().find(|a| !a.starts_with('-')).copied().unwrap_or("");
-        let msg = if [
-            "authentication failed",
-            "could not read username",
-            "could not read password",
-            "terminal prompts disabled",
-            "permission denied",
-            "access denied",
-            "403",
-            "401",
-            "invalid username or password",
-        ]
-        .iter()
-        .any(|p| lower.contains(p))
-        {
-            format!("Anmeldung am Git-Server fehlgeschlagen – Zugangstoken bzw. SSH-Schlüssel prüfen ({detail})")
-        } else if [
-            "could not resolve host",
-            "repository not found",
-            "does not appear to be a git repository",
-            "not found",
-        ]
-        .iter()
-        .any(|p| lower.contains(p))
-        {
-            format!("Git-Repository nicht erreichbar ({detail})")
-        } else {
-            format!("git {sub} fehlgeschlagen: {detail}")
-        };
-        Error::State(msg)
+        Error::State(failure_message(args, &out.stdout, &out.stderr, self.token()))
     }
 
     /// `git --version`, or [`NOT_INSTALLED`].
@@ -1323,7 +1384,7 @@ mod tests {
     #[test]
     fn missing_git_and_timeouts_are_reported() {
         let git = Git::new(None, "").with_program("annalo-kein-git-hier");
-        assert_eq!(git.version().unwrap_err().to_string(), format!("invalid state: {NOT_INSTALLED}"));
+        assert_eq!(git.version().unwrap_err().to_string(), NOT_INSTALLED);
         #[cfg(unix)]
         if git_available() {
             // A git alias that runs far longer than the timeout.
@@ -1764,6 +1825,38 @@ mod safety_tests {
         assert_eq!(r.tree(), before, "nothing pushed");
         // A folder vanishing while the tree is read is an error, not a deletion.
         assert!(sync_tree(&r.base.join("fehlt"), &r.base.join("x"), false).is_err());
+    }
+
+    #[test]
+    fn stale_locks_are_removed_and_errors_are_classified() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("locks");
+        let a = r.mirror("a");
+        mark(&a);
+        put(&a.join("Notiz.md"), "eins");
+        r.sync("a").unwrap();
+        let repo = r.base.join("a").join(REPO_DIR);
+        let lock = repo.join(".git/index.lock");
+        fs::write(&lock, "").unwrap();
+        put(&a.join("Notiz.md"), "zwei");
+        let err = r.sync("a").unwrap_err().to_string();
+        assert!(err.starts_with("Git ist gesperrt"), "{err}");
+        // A fresh lock stays (a git may be running); an old one is removed.
+        assert!(remove_stale_locks(&repo, DEFAULT_TIMEOUT).is_empty());
+        let old = std::time::SystemTime::now() - Duration::from_secs(600);
+        fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
+        assert_eq!(remove_stale_locks(&repo, DEFAULT_TIMEOUT), std::slice::from_ref(&lock));
+        assert!(r.sync("a").unwrap().committed);
+
+        assert_eq!(subcommand(&["-c", "user.name=x", "-c", "user.email=y", "commit", "-q"]), "commit");
+        let msg = |e: &str| failure_message(&["push"], "", e, None);
+        assert!(msg("fatal: unable to access 'https://x/': Couldn't connect to server").contains("nicht erreichbar"));
+        assert!(msg("fatal: Authentication failed for 'https://x/'").starts_with("Anmeldung"));
+        assert!(msg("error: unable to create file a.md: Permission denied").starts_with("Git kann"));
+        let long = format!("fatal: the cause\n{}", "zeile\n".repeat(10));
+        assert!(msg(&long).contains("fatal: the cause"), "the first fatal line is kept");
     }
 
     #[test]

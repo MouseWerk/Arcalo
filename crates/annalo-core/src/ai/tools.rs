@@ -130,25 +130,30 @@ pub enum SystemCall {
 impl SystemCall {
     /// Parses and validates a model tool call. Rejects anything outside policy.
     pub fn from_tool_call(name: &str, arguments: &str) -> Result<Self> {
-        let args: Value = serde_json::from_str(arguments).map_err(|e| Error::Parse(format!("tool arguments: {e}")))?;
+        let args: Value = serde_json::from_str(arguments)
+            .map_err(|e| Error::Parse(format!("Ungültige Werkzeug-Argumente vom Modell ({e})")))?;
         let s = |k: &str| args[k].as_str().map(str::to_owned);
         let call = match name {
             "run_powershell" => SystemCall::RunPowershell {
-                script: s("script").ok_or_else(|| Error::Parse("script missing".into()))?,
+                script: s("script").ok_or_else(|| Error::Parse("Skript fehlt".into()))?,
                 cwd: s("cwd"),
             },
             "git" => {
                 let list: Vec<String> = args["args"]
                     .as_array()
-                    .ok_or_else(|| Error::Parse("args missing".into()))?
+                    .ok_or_else(|| Error::Parse("git-Argumente fehlen".into()))?
                     .iter()
                     .map(|a| {
-                        a.as_str().map(str::to_owned).ok_or_else(|| Error::Parse("git args must be strings".into()))
+                        a.as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| Error::Parse("git-Argumente müssen Texte sein".into()))
                     })
                     .collect::<Result<_>>()?;
                 let sub = list.first().map(String::as_str).unwrap_or("");
                 if !GIT_ALLOWED.contains(&sub) {
-                    return Err(Error::State(format!("git subcommand '{sub}' is not allowed")));
+                    return Err(Error::State(format!(
+                        "Der git-Befehl „{sub}“ ist nicht erlaubt (nur lesende Befehle)"
+                    )));
                 }
                 // Options that can execute programs or write files.
                 if list.iter().any(|a| {
@@ -158,18 +163,18 @@ impl SystemCall {
                         || a.starts_with("-c")
                         || a.starts_with("--exec")
                 }) {
-                    return Err(Error::State("git option not allowed".into()));
+                    return Err(Error::State("Diese git-Option ist nicht erlaubt".into()));
                 }
-                SystemCall::Git { args: list, repo: s("repo").ok_or_else(|| Error::Parse("repo missing".into()))? }
+                SystemCall::Git { args: list, repo: s("repo").ok_or_else(|| Error::Parse("Repository fehlt".into()))? }
             }
             "http_request" => {
                 let method = s("method").unwrap_or_else(|| "GET".into()).to_uppercase();
                 if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
-                    return Err(Error::State(format!("HTTP method {method} not allowed")));
+                    return Err(Error::State(format!("Die HTTP-Methode {method} ist nicht erlaubt")));
                 }
-                let url = s("url").ok_or_else(|| Error::Parse("url missing".into()))?;
+                let url = s("url").ok_or_else(|| Error::Parse("URL fehlt".into()))?;
                 if !(url.starts_with("https://") || url.starts_with("http://")) {
-                    return Err(Error::State("only http(s) URLs are allowed".into()));
+                    return Err(Error::State("Nur http- und https-Adressen sind erlaubt".into()));
                 }
                 SystemCall::HttpRequest { method, url, body: args.get("body").filter(|b| !b.is_null()).cloned() }
             }
@@ -368,7 +373,7 @@ async fn run_git(args: &[String], repo: &str) -> Result<String> {
         )));
     }
     let mut cmd = git_command(repo);
-    let (sub, rest) = args.split_first().ok_or_else(|| Error::Parse("args missing".into()))?;
+    let (sub, rest) = args.split_first().ok_or_else(|| Error::Parse("git-Argumente fehlen".into()))?;
     cmd.arg(sub).args(safe_flags(sub)).args(rest);
     run(cmd).await
 }

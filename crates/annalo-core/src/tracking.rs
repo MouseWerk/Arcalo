@@ -100,7 +100,7 @@ pub fn log_slash_command_in<Tz: TimeZone>(
         (d, None) => local_to_utc(offset, d.resolve(today).and_time(DEFAULT_START))?,
     };
     if !clamped && start + duration > now + chrono::Duration::minutes(1) {
-        return Err(Error::State("time entries cannot end in the future".into()));
+        return Err(Error::State("Buchungen dürfen nicht in der Zukunft enden".into()));
     }
 
     let entry = db.insert_time_entry(&NewTimeEntry {
