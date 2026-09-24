@@ -160,6 +160,14 @@ test("embeddings of private pages stay with local providers", async () => {
   await app.invoke("settings_save", { settings: view.settings });
 });
 
+test("saving settings without the provider list keeps the providers", async () => {
+  const before = (await app.invoke("settings_get")).settings;
+  const { providers, ...rest } = before;
+  await app.invoke("settings_save", { settings: rest });
+  const after = (await app.invoke("settings_get")).settings;
+  assert.deepEqual(after.providers.map((p) => p.id), providers.map((p) => p.id));
+});
+
 test("no console errors", async () => {
   assert.deepEqual(await app.consoleErrors(), []);
 });

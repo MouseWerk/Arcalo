@@ -1358,9 +1358,15 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 
 /// Saves settings and applies them immediately (no restart needed).
 #[tauri::command]
-fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<SettingsView> {
+fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::Value) -> Result<SettingsView> {
     let previous = state.settings();
-    let mut settings = settings;
+    // Settings without the provider list (scripts, an older settings page) keep the stored
+    // providers and their keys instead of falling back to the default one.
+    let has_providers = settings.get("providers").is_some();
+    let mut settings: Settings = serde_json::from_value(settings).map_err(|e| Error::Parse(e.to_string()))?;
+    if !has_providers {
+        settings.providers = previous.providers.clone();
+    }
     // Scripts and older settings pages set only `litellm_base_url`; it moves the LiteLLM provider.
     settings.sync_legacy(&previous);
     settings.normalize_ai()?;
