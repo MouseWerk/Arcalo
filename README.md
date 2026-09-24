@@ -64,6 +64,28 @@ shows a preview of the linked page.
   <img src="docs/screenshots/versions-diff.png" width="49%" alt="Version history with diff">
 </p>
 
+### Tables, boards and page layouts
+
+Give the subpages of a page typed properties (selection, number, date, person, …) and show them as a sortable,
+filterable table or as a Kanban board: drag a card to another column and its status changes. Notes get foldable
+sections, columns, a live table of contents and footnotes, all plain Markdown that Obsidian reads too.
+
+<p align="center">
+  <img src="docs/screenshots/board-view.png" width="49%" alt="Subpages as a Kanban board">
+  <img src="docs/screenshots/table-view.png" width="49%" alt="Subpages as a table with typed properties">
+</p>
+<p align="center"><img src="docs/screenshots/editor-blocks.png" width="90%" alt="Table of contents, columns, foldable callouts and footnotes"></p>
+
+### Present, focus, look back
+
+Any note becomes a full-screen presentation, split at `---`, with speaker notes and a presenter view. Focus sessions
+book their time on a Vorgang by themselves, and the activity feed answers "Was habe ich am Dienstag gemacht?".
+
+<p align="center">
+  <img src="docs/screenshots/presentation.png" width="49%" alt="A note as a presentation">
+  <img src="docs/screenshots/activity-feed.png" width="49%" alt="Activity feed with the day summary">
+</p>
+
 ### Your own start page
 
 Widgets for today's tasks, booked hours this week, budget warnings, recent pages, bookmarks, the timer, a note and the
@@ -114,13 +136,17 @@ quick search (Ctrl Shift O) works from any program.
 
 ### Made to fit you
 
-Light or dark mode, any accent color, fonts, density, language (German/English) and rebindable shortcuts. The
+20 themes (Nord, Catppuccin, Dracula, Solarized, Gruvbox, Tokyo Night, GitHub, Rosé Pine, Everforest, high contrast
+and more) plus your own, accent colors, fonts, density, language (German/English) and rebindable shortcuts. The
 settings also cover proxy and certificates for company networks and Git backup.
 
 <p align="center">
-  <img src="docs/screenshots/settings-appearance-teal.png" width="32%" alt="Appearance settings">
-  <img src="docs/screenshots/settings-network.png" width="32%" alt="Network and proxy settings">
-  <img src="docs/screenshots/settings-git-sync.png" width="32%" alt="Git sync settings">
+  <img src="docs/screenshots/theme-picker.png" width="49%" alt="Theme picker">
+  <img src="docs/screenshots/theme-tokyo-night.png" width="49%" alt="Annalo in the Tokyo Night theme">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings-network.png" width="49%" alt="Network and proxy settings">
+  <img src="docs/screenshots/settings-git-sync.png" width="49%" alt="Git sync settings">
 </p>
 
 ## What you get

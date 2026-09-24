@@ -21,6 +21,7 @@ import { findKey } from "./find";
 import { TableToolbar } from "./TableToolbar";
 import { EditorToolbar } from "./EditorToolbar";
 import { createPortal } from "react-dom";
+import { NodeSelection } from "@tiptap/pm/state";
 import { moveBlock } from "./tools";
 import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
@@ -631,7 +632,8 @@ export function NoteEditor({
         </div>
       )}
       {editor && (
-        <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, state }) => find === null && !aiOpen.current && !state.selection.empty && !e.isActive("codeBlock") && !e.isActive("wikiLink") && !e.isActive("timeEntry") && !e.isActive("imageEmbed") && !e.isActive("image")}>
+        // A selected block (table of contents, image, drawing, file) has no text to format.
+        <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, state }) => find === null && !aiOpen.current && !state.selection.empty && !(state.selection instanceof NodeSelection) && !e.isActive("codeBlock") && !e.isActive("wikiLink") && !e.isActive("timeEntry") && !e.isActive("imageEmbed") && !e.isActive("image")}>
           <IconButton icon={Bold} label={`Fett (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
           <IconButton icon={Italic} label={`Kursiv (${keys("Mod I")})`} active={ui?.italic} onClick={() => editor.chain().focus().toggleItalic().run()} tooltipSide="top" />
           <IconButton icon={Strikethrough} label="Durchgestrichen" active={ui?.strike} onClick={() => editor.chain().focus().toggleStrike().run()} tooltipSide="top" />
