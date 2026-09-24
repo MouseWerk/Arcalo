@@ -151,6 +151,7 @@ fn resume_last(app: &AppHandle) -> Result<()> {
 
 /// Updates the tooltip (running timer) and which timer entry is enabled.
 pub fn refresh_tray(app: &AppHandle) {
+    crate::jumplist::refresh(app);
     let Some(state) = app.try_state::<AppState>() else { return };
     let (running, has_last) = {
         let db = state.db();
@@ -189,6 +190,8 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 let _ = app.emit_to(MAIN, "nav://timesheet", ());
             }
         }
+        // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
+        (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
         // Without close-to-tray the UI destroys the main window; a hidden capture window
         // must not keep the process alive then.
         (MAIN, WindowEvent::Destroyed) => app.exit(0),
@@ -461,7 +464,7 @@ pub fn shortcut_role(app: &AppHandle, shortcut: &Shortcut) -> Option<Role> {
 
 // ---------------------------------------------------------------- reminders
 
-fn notify(app: &AppHandle, title: &str, body: &str) {
+pub fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         eprintln!("notification failed: {e}");
     }

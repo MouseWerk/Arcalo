@@ -148,6 +148,8 @@ settings also cover proxy and certificates for company networks and Git backup.
 
 **Desktop**
 - Tray icon: open, stop the timer or restart the last booking, quick capture, quit; the tooltip shows the running timer (`NP-8801/1020 · 01:23`)
+- Taskbar jump list (Windows, right-click the taskbar button): Heutige Notiz, Neue Seite, Schnellerfassung, Suchen…, stop the running timer or start the last one, and the recently edited pages
+- Own title bar on Windows: the tabs sit at the top edge like in Obsidian, with the app's own window buttons (Settings → Darstellung switches back to the system title bar)
 - Closing hides the window to the tray (Settings → Desktop), start with Windows (minimized), one instance per workspace
 - Quick capture (Ctrl Shift Space, global): one line into today's daily note, `todo …` / `- [ ] …` as a task, `/zeit …` books time
 - Quick search (Ctrl Shift O, global, or „Suchen…“ in the tray): a small window above all programs that finds pages, passages and bookings, opens today's daily note, creates a page, starts/stops the timer or books `/zeit …`; Enter opens the result in the main window

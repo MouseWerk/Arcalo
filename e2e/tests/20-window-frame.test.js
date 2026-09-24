@@ -39,3 +39,17 @@ test("own title bar: window buttons top right, the top row makes room for them",
   assert.ok(second.maxRight <= second.controls.left, `top row runs under the buttons: ${JSON.stringify(second)}`);
   await app.browser.execute(() => document.querySelector(".workspace > .pane:last-child .tabbar > button:last-of-type").click());
 });
+
+// Taskbar jump list (Windows): its entries reach the main window as these events.
+test("jump-list entries open today's note and a new page", async () => {
+  const emit = (action) => app.browser.execute((a) => window.__TAURI__.event.emit("menu://action", a), action);
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  await emit("today");
+  await app.waitText(".pane.active .vh-title-text", new RegExp(iso));
+  const before = await app.browser.execute(() => document.querySelectorAll(".pane.active .tab").length);
+  await emit("new_page");
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelectorAll(".pane.active .tab").length)) > before || !(await app.browser.execute(() => document.querySelector(".pane.active .vh-title-text")?.textContent ?? "")).includes(iso), { timeoutMsg: "no new page" });
+  // Nothing pending: the shell's hand-over is a no-op.
+  await app.invoke("jump_take", {});
+});

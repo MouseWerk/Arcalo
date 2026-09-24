@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod desktop;
+mod jumplist;
 mod network;
 mod prefs;
 mod secrets;
@@ -2012,7 +2013,11 @@ pub fn run() {
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
     // use their own workspace each and may overlap.
     if std::env::var_os("ANNALO_DATA_DIR").is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match jumplist::parse(&args) {
+            // A taskbar jump-list entry while the app runs.
+            Some(action) => jumplist::run(app, action, true),
+            None => desktop::show_main(app),
+        }));
     }
     // Only in release builds with an update key; others never contact the update server.
     if let Some(updater) = updates::plugin() {
@@ -2134,7 +2139,13 @@ pub fn run() {
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
             let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
             let minimized = tray && wants_minimized;
+            jumplist::set_app_id(&app.config().identifier);
             let window = create_main_window(app, !minimized, geometry, mica_on, custom_frame)?;
+            // Started from a taskbar jump-list entry: runs once the UI listens (`jump_take`).
+            if let Some(action) = jumplist::parse(&std::env::args().collect::<Vec<_>>()) {
+                jumplist::run(app.handle(), action, false);
+            }
+            jumplist::refresh(app.handle());
             if wants_minimized && !tray {
                 let _ = window.minimize();
             }
@@ -2258,6 +2269,7 @@ pub fn run() {
             onboarding_finish,
             window_backdrop,
             window_frame,
+            jumplist::jump_take,
             window_set_theme,
             desktop::window_hide,
             desktop::app_quit,

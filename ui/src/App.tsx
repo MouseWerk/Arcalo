@@ -105,6 +105,9 @@ export function App() {
           savePref("annalo.sidebar", !st.sidebarOpen);
         } else if (action === "focus") st.set({ focusMode: !st.focusMode });
         else if (action === "palette") st.set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" });
+        // Taskbar jump list (Windows).
+        else if (action === "today") void openToday();
+        else if (action === "new_page") void createSubpage(null);
       }),
       // Clicked the end-of-day reminder (or came back after it).
       on("nav://timesheet", () => useApp.getState().openTab({ kind: "timesheet" })),
@@ -126,6 +129,8 @@ export function App() {
         st.set({ paletteOpen: foreground ? !st.paletteOpen : true, paletteMode: "all", paletteQuery: "" });
       }),
     ];
+    // Started from a taskbar jump-list entry: the shell sends it once everything listens.
+    void Promise.all(unlisten).then(() => import("@tauri-apps/api/core").then(({ invoke }) => invoke("jump_take")));
     return () => {
       stopUpdates();
       media.removeEventListener("change", onMedia);

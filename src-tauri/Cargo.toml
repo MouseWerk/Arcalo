@@ -29,6 +29,17 @@ tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_System_SystemInformation"] }
+# Taskbar jump list (COM).
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Storage_EnhancedStorage",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
