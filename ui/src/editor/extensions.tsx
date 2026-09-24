@@ -626,7 +626,7 @@ export function splitFrontmatter(md: string): { frontmatter: string; body: strin
 // ------------------------------------------------------------- callouts
 
 const CALLOUT_RE = /^\[!(\w+)\]([+-]?)[ \t]*/;
-const CALLOUT_LABELS: Record<string, string> = {
+export const CALLOUT_LABELS: Record<string, string> = {
   note: "Notiz",
   info: "Info",
   tip: "Tipp",
@@ -645,6 +645,10 @@ const CALLOUT_LABELS: Record<string, string> = {
   summary: "Zusammenfassung",
   bug: "Fehler",
   failure: "Fehlschlag",
+  // Speaker notes of the presentation mode (hidden on the slides).
+  notiz: "Sprechernotiz",
+  speaker: "Sprechernotiz",
+  sprecher: "Sprechernotiz",
 };
 
 const CHEVRON =

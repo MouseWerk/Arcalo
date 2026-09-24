@@ -222,7 +222,8 @@ impl Database {
                 "UPDATE pages SET content = ?2, updated_at = ?3 WHERE id = ?1",
                 params![id, content, crate::db::ts(now)],
             )?;
-            self.reindex_page(id, content)
+            self.reindex_page(id, content)?;
+            self.feed_page_saved(id, &old, content, now)
         })
     }
 

@@ -5,9 +5,12 @@
 mod appmenu;
 mod desktop;
 mod devlog;
+mod feed;
+mod focus;
 mod jumplist;
 mod network;
 mod prefs;
+mod present;
 mod secrets;
 mod updates;
 
@@ -488,7 +491,9 @@ fn attachment_save(
     mime: Option<String>,
 ) -> Result<SavedAttachment> {
     let bytes = decode_attachment(&data)?;
-    attachments::save(&state.attachments_dir(), &bytes, &name, mime.as_deref().unwrap_or(""))
+    let saved = attachments::save(&state.attachments_dir(), &bytes, &name, mime.as_deref().unwrap_or(""))?;
+    feed::file_added(&state, &saved.name);
+    Ok(saved)
 }
 
 /// Header with the percent-encoded file name of [`attachment_store`] (header values are ASCII).
@@ -508,16 +513,21 @@ async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Reque
         .and_then(|v| v.to_str().ok())
         .and_then(attachments::percent_decode)
         .ok_or_else(|| Error::State("Dateiname fehlt".into()))?;
-    attachments::store_file(&state.attachments_dir(), &name, bytes)
+    let saved = attachments::store_file(&state.attachments_dir(), &name, bytes)?;
+    feed::file_added(&state, &saved.name);
+    Ok(saved)
 }
 
 /// Copies a file chosen in the file dialog into the attachments folder (streamed, by path).
 #[tauri::command]
 async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<SavedAttachment> {
     let dir = state.attachments_dir();
-    tauri::async_runtime::spawn_blocking(move || attachments::import_file(&dir, std::path::Path::new(&path)))
-        .await
-        .map_err(|e| Error::State(e.to_string()))?
+    let saved =
+        tauri::async_runtime::spawn_blocking(move || attachments::import_file(&dir, std::path::Path::new(&path)))
+            .await
+            .map_err(|e| Error::State(e.to_string()))??;
+    feed::file_added(&state, &saved.name);
+    Ok(saved)
 }
 
 /// The bytes of an attachment as a raw IPC response (PDF preview and viewer).
@@ -584,7 +594,9 @@ fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal:
 /// Creates an empty drawing (`<title>.excalidraw`) and returns its `![[name]]` embed.
 #[tauri::command]
 fn drawing_create(state: State<AppState>, title: String) -> Result<SavedAttachment> {
-    drawings::create(&state.attachments_dir(), &title)
+    let saved = drawings::create(&state.attachments_dir(), &title)?;
+    feed::file_added(&state, &saved.name);
+    Ok(saved)
 }
 
 /// The Excalidraw scene (JSON) of a drawing.
@@ -1023,6 +1035,7 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
     let info = backup::backup_to(&state.db(), &dir, keep)?;
+    feed::record(&state, "backup", &info.file_name, "");
     // Images live next to the database; names are content hashes, so copying new ones suffices.
     let src = state.attachments_dir();
     if src.is_dir() {
@@ -1102,6 +1115,9 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
     let db = state.db();
     match &res {
         Ok(out) => {
+            drop(db);
+            feed::record(&state, "sync", &out.branch, out.commit.as_deref().unwrap_or(""));
+            let db = state.db();
             db.meta_set(GIT_LAST, &Local::now().to_rfc3339())?;
             db.meta_set(GIT_COMMIT, out.commit.as_deref().unwrap_or(""))?;
             db.meta_set(GIT_BRANCH, &out.branch)?;
@@ -2381,6 +2397,15 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             };
             serde_json::to_string(&report::time_summary(&db, date("from")?, date("to")?, &Local)?)?
         }
+        "activity_log" => {
+            let date = |k: &str| {
+                NaiveDate::parse_from_str(arg(k).trim(), "%Y-%m-%d")
+                    .map_err(|_| Error::Parse(format!("'{k}' muss ein Datum YYYY-MM-DD sein")))
+            };
+            let from = date("from")?;
+            let to = if arg("to").trim().is_empty() { from } else { date("to")? };
+            annalo_core::feed::describe_days(&db, from, to, &Local)?
+        }
         "list_tasks" => {
             let filter: TaskFilter = serde_json::from_value(args.clone())?;
             let mut list = db.list_tasks(&filter)?;
@@ -2891,6 +2916,10 @@ pub fn run() {
             if let Err(e) = db.migrate_appearance_defaults() {
                 devlog::warn("core", format!("appearance migration failed: {e}"));
             }
+            if let Err(e) = db.migrate_activity_tool() {
+                devlog::warn("core", format!("settings migration failed: {e}"));
+            }
+            feed::backfill(&db, &attachments::dir(&dir));
             let settings = db.load_settings()?;
             devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
@@ -3110,6 +3139,21 @@ pub fn run() {
             attachment_open,
             desktop::desktop_info,
             desktop::autostart_set,
+            focus::focus_state,
+            focus::focus_start,
+            focus::focus_finish,
+            focus::focus_abort,
+            focus::focus_end_break,
+            focus::focus_report,
+            focus::focus_daily_line,
+            focus::focus_entry_ids,
+            feed::activity_list,
+            feed::activity_summary,
+            feed::activity_people,
+            present::presentation_begin,
+            present::presentation_end,
+            present::presenter_open,
+            present::presenter_close,
             updates::update_status,
             updates::update_check,
             updates::update_install,

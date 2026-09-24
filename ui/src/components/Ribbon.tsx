@@ -1,7 +1,7 @@
 // Obsidian-style ribbon: a slim column of global actions left of the sidebar.
 
 import { useRef } from "react";
-import { Briefcase, CalendarCheck2, ChevronDown, FilePlus2, Search, ListChecks, PanelLeft, Settings, Sparkles, Timer } from "lucide-react";
+import { Activity, Briefcase, CalendarCheck2, ChevronDown, FilePlus2, Search, ListChecks, PanelLeft, Settings, Sparkles, Target, Timer } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
@@ -11,6 +11,7 @@ import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
 import { useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
+import { openFocusDialog } from "./Focus";
 
 export async function openToday() {
   const s = useApp.getState();
@@ -79,6 +80,7 @@ export function Ribbon() {
   const panelOpen = useApp((s) => s.panelOpen);
   const shown = sidebarShown(sidebarOpen, panelOpen, useNarrowWindow());
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
+  const focus = useApp((s) => s.focus);
   const s = useApp.getState;
   const side = "right" as const;
   return (
@@ -101,6 +103,8 @@ export function Ribbon() {
       <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />
       <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
       <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />
+      <IconButton icon={Activity} label={t("ribbon.activity")} active={tab?.kind === "activity"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "activity" })} />
+      <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
       <span className="ribbon-sep" />
       <QuickLinks />

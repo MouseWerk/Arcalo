@@ -1,7 +1,8 @@
 // Page properties (frontmatter) editor and the work card of a page linked to a Vorgang.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Braces, CalendarDays, ChevronDown, ChevronRight, FolderInput, FolderMinus, FolderTree, Play, Plus, Settings2, Tags, Trash2, TriangleAlert, Type, Workflow, X, type LucideIcon } from "lucide-react";
+import { Braces, CalendarDays, ChevronDown, ChevronRight, FolderInput, FolderMinus, FolderTree, Play, Plus, Settings2, Tags, Target, Trash2, TriangleAlert, Type, Workflow, X, type LucideIcon } from "lucide-react";
+import { openFocusDialog } from "../components/Focus";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -593,6 +594,7 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
         <Button size="sm" icon={Play} disabled={!!timer} onClick={start}>
           {timer ? "Timer läuft" : "Timer starten"}
         </Button>
+        <IconButton icon={Target} label="Fokussitzung auf diesem Vorgang" size="md" onClick={() => openFocusDialog({ reference: work.label, goal: title })} />
       </div>
       {work.planned_hours > 0 && <Progress value={work.consumed} tone={level.tone} />}
       <div className="work-stats">

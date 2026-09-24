@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Timer, Trash2, X,
+  AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, X,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -16,6 +16,7 @@ import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs
 import { catsGrid, weekGaps } from "../lib/cats";
 import type { ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
+import { openFocusDialog } from "../components/Focus";
 
 const STATUS: Record<StatusFlag, { label: string; tone: Tone }> = {
   running: { label: "Läuft", tone: "info" },
@@ -259,9 +260,19 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         <LeistungsartSelect las={las} value={la} onChange={setLa} />
         <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Woran arbeitest du?" onKeyDown={(e) => e.key === "Enter" && start()} aria-label="Beschreibung" />
-        <Button variant="primary" icon={Play} onClick={start} disabled={np == null}>
-          Starten
-        </Button>
+        <span className="timer-start">
+          <Button variant="primary" icon={Play} onClick={start} disabled={np == null}>
+            Starten
+          </Button>
+          <IconButton
+            icon={Target}
+            label="Fokussitzung auf diesem Vorgang"
+            onClick={() => {
+              const n = all.find((x) => x.id === np);
+              openFocusDialog({ reference: n ? `${n.netzplan_nr}${vorgang ? `/${vorgang}` : ""}` : "", goal: desc });
+            }}
+          />
+        </span>
       </div>
       <div className="quick-book">
         <span className="faint small">Schnell buchen</span>
@@ -400,6 +411,11 @@ function WeekGrid({ rows, week, todayKey, target, workdays }: { rows: TimeEntryR
 function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEntryRow[]; selected: Set<number>; setSelected: (s: Set<number>) => void; onEdit: (r: TimeEntryRow) => void; week: Date }) {
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
+  // Entries booked by focus sessions carry a mark.
+  const [focusIds, setFocusIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    api.focusEntryIds().then((ids) => setFocusIds(new Set(ids)), () => {});
+  }, [rows]);
   const groups = useMemo(() => {
     const g = new Map<string, TimeEntryRow[]>();
     for (const r of [...rows].sort((a, b) => b.start_time.localeCompare(a.start_time))) {
@@ -457,7 +473,14 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                   {r.vorgang_nr ? `/${r.vorgang_nr}` : ""}
                 </span>
                 <span className="entry-la">{r.leistungsart && <Badge>{r.leistungsart}</Badge>}</span>
-                <span className="entry-desc">{r.description || <span className="faint">Ohne Beschreibung</span>}</span>
+                <span className="entry-desc">
+                  {r.description || <span className="faint">Ohne Beschreibung</span>}
+                  {focusIds.has(r.id) && (
+                    <span className="entry-focus" title="Aus einer Fokussitzung">
+                      <Target size={11} aria-hidden /> Fokus
+                    </span>
+                  )}
+                </span>
                 <Badge tone={STATUS[r.status_flag].tone}>{STATUS[r.status_flag].label}</Badge>
                 <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : "läuft"}</span>
                 <IconButton
@@ -471,6 +494,11 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                       r.status_flag === "released"
                         ? { label: "Zurück auf Entwurf", icon: RotateCcw, onSelect: () => setStatus(r.id, "draft") }
                         : { label: "Freigeben", icon: Check, disabled: r.status_flag === "exported", onSelect: () => setStatus(r.id, "released") },
+                      {
+                        label: "Fokussitzung starten…",
+                        icon: Target,
+                        onSelect: () => openFocusDialog({ reference: `${r.netzplan_nr}${r.vorgang_nr ? `/${r.vorgang_nr}` : ""}`, goal: r.description }),
+                      },
                       "separator",
                       {
                         label: "Löschen",

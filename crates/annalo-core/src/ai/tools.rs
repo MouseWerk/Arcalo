@@ -66,6 +66,13 @@ pub fn definitions() -> Vec<Value> {
                 "to": { "type": "string", "description": "Letzter Tag einschließlich, YYYY-MM-DD" } }, "required": ["from", "to"] }),
         ),
         f(
+            "activity_log",
+            "Was im Arbeitsbereich an einem Tag oder in einem Zeitraum passiert ist (nur lesend): angelegte und bearbeitete Seiten, neue und erledigte Aufgaben, Buchungen, Freigaben, Dateien und Fokussitzungen, mit Uhrzeit. Für Fragen wie „Was habe ich am Dienstag gemacht?“.",
+            json!({ "type": "object", "properties": {
+                "from": { "type": "string", "description": "Erster Tag, YYYY-MM-DD" },
+                "to": { "type": "string", "description": "Letzter Tag einschließlich, YYYY-MM-DD (Standard: wie from)" } }, "required": ["from"] }),
+        ),
+        f(
             "run_powershell",
             "Führt ein PowerShell-Skript aus. Der Nutzer muss jede Ausführung bestätigen.",
             json!({ "type": "object", "properties": { "script": { "type": "string" }, "cwd": { "type": "string" } }, "required": ["script"] }),
@@ -104,7 +111,9 @@ pub fn check_allowed(tool: &str, allowed: &[String]) -> Result<()> {
 
 pub fn classify(tool: &str) -> Risk {
     match tool {
-        "log_time" | "search_workspace" | "budget_status" | "list_tasks" | "time_summary" => Risk::Workspace,
+        "log_time" | "search_workspace" | "budget_status" | "list_tasks" | "time_summary" | "activity_log" => {
+            Risk::Workspace
+        }
         _ => Risk::RequiresApproval,
     }
 }
@@ -277,6 +286,12 @@ mod tests {
         assert!(!names.contains(&"git".to_owned()));
         assert!(check_allowed("git", &allowed).is_err());
         assert!(check_allowed("log_time", &allowed).is_ok());
+    }
+
+    #[test]
+    fn activity_log_is_a_read_only_workspace_tool() {
+        assert!(definitions().iter().any(|d| d["function"]["name"] == "activity_log"));
+        assert_eq!(classify("activity_log"), Risk::Workspace);
     }
 
     #[test]

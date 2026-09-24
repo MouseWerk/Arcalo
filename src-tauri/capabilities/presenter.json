@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "presenter",
+  "description": "Permissions of the presenter view of a presentation (a second window with the current and next slide and the notes; it steers the slides through events only)",
+  "windows": ["presenter"],
+  "permissions": [
+    "core:default",
+    "core:event:default"
+  ]
+}

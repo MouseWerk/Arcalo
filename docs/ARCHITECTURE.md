@@ -37,6 +37,8 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `settings` | Application settings as JSON. The API keys of the AI providers are **not** stored here; the shell keeps them in the Windows Credential Manager / macOS Keychain |
 | `notes_blocks_fts`, `time_entries_fts` | FTS5 external-content indexes (unicode61, diacritics removed), kept in sync by triggers |
 | `ai_usage` | Per-request tokens, cost, TTFT and tokens/s |
+| `activity` | Activity feed (v7): `at`, `kind`, optional `page_id`/`entry_id`/`netzplan_id`/`vorgang_nr`, `title`, `detail`, `amount` (characters, minutes or a count), `count` (merged edits), `people` |
+| `focus_sessions` | Focus sessions (v7): Vorgang, goal, start, planned minutes (fractional), break, status (`running`/`done`/`aborted`, one running at a time), worked and booked minutes, the booked `entry_id`, `break_until` |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
@@ -85,6 +87,38 @@ Migration v2 converts the old block model: blocks are concatenated into
 - **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
   „Beenden“ in the tray emits `app://quit-requested`, the UI flushes (asking if that fails) and calls
   `app_quit`. Without it the UI destroys the main window and the shell exits.
+
+## Activity, focus sessions and presentations (`feed.rs`, `focus.rs`; shell `feed.rs`, `focus.rs`, `present.rs`)
+
+- **Activity feed**: the store writes events itself – `create_page` (`page_created`), `save_page_content_at`
+  (`page_edited`, merged per page and UTC hour into one row with `count` edits and `amount` characters changed = the longer
+  differing middle after the common prefix/suffix; a page created within the hour takes its first edits), tasks added and checked
+  off (parsed from the old and new Markdown; an event of the hour whose text is gone takes the new text, so typing a task gives one
+  event; unchecking within the hour removes the check-off), `insert_time_entry`/`stop_timer` (`entry_created`), `update_time_entry`
+  (`entry_changed`) and `set_entry_status` (one `entry_released`/`entry_exported` event per call). The shell adds files (once per
+  name), backups and Git syncs. `@name` mentions (not in code or `/zeit` lines) and `owner:`/`verantwortlich:`/`person:` go to
+  `people`; a page's `vorgang:` to `netzplan_id`/`vorgang_nr`. Migration v7 stores `feed.since`; `feed::backfill` derives the
+  history before it once at start (pages, edit sessions and task changes between version snapshots, time entries, attachment
+  mtimes) and skips what the journal already has. `feed::list` filters by range, kinds, project/Netzplan/Vorgang, person and search
+  words (all must match); `feed::summary` counts pages, tasks, booked minutes (from `time_entries`) and focus sessions. The assistant's
+  read-only `activity_log` tool (`describe_days`) lists the events of local days; settings from before it allow it once
+  (`migrate_activity_tool`).
+- **Focus sessions**: `focus::start` resolves the reference like `/zeit`; the UI counts down and calls `focus_finish` at the end,
+  `focus::state` completes a session that ran out while the app was closed (also every 30 s in the shell's reminder loop). A
+  completed session books `max(1, round(planned))` minutes, an aborted one the minutes so far when asked. The entry is a draft
+  `timer` entry on the Vorgang with the goal as description; a later session of the same local day with the same Vorgang and goal
+  extends it (duration = rounding of the summed worked minutes). While a session is in its work phase the shell holds desktop
+  notifications back (`focus::hold` in `desktop::notify`) and the UI holds non-error toasts and budget alerts (`heldToasts`); both
+  are summed up in the message after the session. The end is announced as a silent notification „Pause“. `focus::write_daily_line`
+  writes or replaces „Fokus heute: …“ in the daily note, on demand or once after the reminder time (default 18:00).
+- **Presentation** (`ui/src/lib/slides.ts`, `components/Presentation.tsx`): slides are split at horizontal rules outside code
+  fences (`---` directly under text is a setext heading and does not split), without rules at level-1 headings. Speaker notes are
+  `> [!notiz]` callouts (also `[!notes]`, `[!speaker]`, `[!sprecher]`) and paragraphs starting with `Notiz:`. A slide is rendered
+  with `marked` + DOMPurify into a 1600 px wide stage with the box's aspect, scaled to the box; content that does not fit is scaled
+  down further (binary search, never cut). Embeds become placeholders filled after rendering (images, drawing previews, PDF first
+  pages, file chips). `presentation_begin`/`presentation_end` switch the main window to full screen and back; with two monitors
+  `presenter_open` moves the slides to the other monitor and opens the presenter window (`index.html#presenter`, capability
+  `presenter`), which mirrors the deck through `presentation://state` and steers it with `presentation://nav`.
 
 ## Desktop integration (`desktop.rs` in core and shell)
 

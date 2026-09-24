@@ -196,8 +196,9 @@ pub struct Dashboard {
 }
 
 /// Widget kinds of the start page: Heute, Woche, Budgets, Zuletzt bearbeitet, Lesezeichen,
-/// Timer, Notiz, Kalender.
-pub const WIDGET_KINDS: [&str; 8] = ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar"];
+/// Timer, Notiz, Kalender, Fokus.
+pub const WIDGET_KINDS: [&str; 9] =
+    ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar", "focus"];
 
 /// At most this many widgets are kept.
 pub const MAX_WIDGETS: usize = 24;
@@ -548,6 +549,25 @@ impl Database {
                 s.appearance.accent = crate::prefs::ACCENT_THEME.into();
             }
             if s.appearance != before {
+                self.save_settings(&s)?;
+            }
+        }
+        self.meta_set(FLAG, "1")
+    }
+
+    /// Settings saved before the activity feed allow the read-only `activity_log` tool once, so
+    /// „Was habe ich am Dienstag gemacht?“ works without a trip to the settings.
+    pub fn migrate_activity_tool(&self) -> Result<()> {
+        const FLAG: &str = "activity_tool_on";
+        if self.meta_get(FLAG)?.is_some() {
+            return Ok(());
+        }
+        let raw: Option<String> =
+            self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
+        if raw.is_some() {
+            let mut s = self.load_settings()?;
+            if !s.ai.allowed_tools.iter().any(|t| t == "activity_log") {
+                s.ai.allowed_tools.push("activity_log".into());
                 self.save_settings(&s)?;
             }
         }
@@ -911,5 +931,19 @@ mod tests {
         s.reset_section("appearance").unwrap();
         assert_eq!(s.appearance.theme_dark, "annalo-dark");
         assert_eq!(s.appearance.custom_themes.len(), 1);
+    }
+
+    #[test]
+    fn the_activity_tool_is_allowed_once_for_older_settings() {
+        let db = Database::open_in_memory().unwrap();
+        let mut s = Settings::default();
+        s.ai.allowed_tools = vec!["list_tasks".into()];
+        db.save_settings(&s).unwrap();
+        db.migrate_activity_tool().unwrap();
+        assert_eq!(db.load_settings().unwrap().ai.allowed_tools, ["list_tasks", "activity_log"]);
+        // Switched off afterwards: stays off.
+        db.save_settings(&s).unwrap();
+        db.migrate_activity_tool().unwrap();
+        assert_eq!(db.load_settings().unwrap().ai.allowed_tools, ["list_tasks"]);
     }
 }

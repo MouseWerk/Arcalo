@@ -469,7 +469,7 @@ export interface GitTest {
   branches: string[];
   error: string | null;
 }
-export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar";
+export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar" | "focus";
 export type WidgetSize = "s" | "m" | "l";
 export interface Widget {
   id: string;
@@ -744,4 +744,105 @@ export interface UpdateProgress {
   downloaded: number;
   total: number | null;
   percent: number | null;
+}
+
+// ---- focus sessions ----
+export interface FocusSession {
+  id: number;
+  netzplan_id: number | null;
+  vorgang_nr: string | null;
+  /** `NP-8801/1020`; "" without Vorgang. */
+  reference: string;
+  goal: string;
+  started_at: string;
+  planned_minutes: number;
+  break_minutes: number;
+  ended_at: string | null;
+  status: "running" | "done" | "aborted";
+  worked_minutes: number;
+  booked_minutes: number;
+  entry_id: number | null;
+  break_until: string | null;
+}
+export interface FocusOutcome {
+  session: FocusSession;
+  entry: TimeEntry | null;
+  extended: boolean;
+}
+/** A desktop notification held back during a session. */
+export interface HeldNotification {
+  title: string;
+  body: string;
+}
+export interface FocusState {
+  session: FocusSession;
+  phase: "work" | "break";
+  ends_at: string;
+  /** The session ran out meanwhile (app closed) and was completed by this call. */
+  completed: FocusOutcome | null;
+  held?: HeldNotification[];
+}
+export interface FocusDone extends FocusOutcome {
+  held: HeldNotification[];
+}
+export interface FocusShare {
+  reference: string;
+  sessions: number;
+  minutes: number;
+}
+export interface FocusReport {
+  sessions: number;
+  minutes: number;
+  by_reference: FocusShare[];
+}
+
+// ---- activity feed ----
+export type ActivityKind =
+  | "page_created"
+  | "page_edited"
+  | "task_added"
+  | "task_done"
+  | "entry_created"
+  | "entry_changed"
+  | "entry_released"
+  | "entry_exported"
+  | "file_added"
+  | "focus_session"
+  | "backup"
+  | "sync";
+export interface Activity {
+  id: number;
+  at: string;
+  kind: ActivityKind;
+  page_id: number | null;
+  page_title: string | null;
+  page_icon: string | null;
+  entry_id: number | null;
+  netzplan_id: number | null;
+  reference: string | null;
+  project_code: string | null;
+  title: string;
+  detail: string;
+  amount: number;
+  count: number;
+  people: string[];
+}
+export interface FeedFilter {
+  from?: string | null;
+  to?: string | null;
+  kinds?: ActivityKind[];
+  project_id?: number | null;
+  netzplan_id?: number | null;
+  vorgang_nr?: string | null;
+  person?: string | null;
+  query?: string | null;
+  limit?: number | null;
+}
+export interface FeedSummary {
+  pages_edited: number;
+  tasks_done: number;
+  tasks_added: number;
+  booked_minutes: number;
+  focus_sessions: number;
+  focus_minutes: number;
 }

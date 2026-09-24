@@ -12,6 +12,7 @@ export const WIDGETS: Record<WidgetKind, { label: string; hint: string; size: Wi
   timer: { label: "Timer", hint: "Laufender Timer oder schneller Start", size: "s" },
   note: { label: "Notiz", hint: "Ein Notizzettel für schnelle Gedanken", size: "m" },
   calendar: { label: "Kalender", hint: "Monat mit Tagesnotizen und Buchungen", size: "s" },
+  focus: { label: "Fokus", hint: "Fokussitzungen heute und diese Woche, je Vorgang", size: "s" },
 };
 
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];

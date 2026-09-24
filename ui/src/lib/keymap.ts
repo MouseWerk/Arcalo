@@ -36,6 +36,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "focus_mode", label: "cmd.focusMode", combo: "Ctrl+." },
   { id: "toggle_source", label: "cmd.toggleSource", combo: "Ctrl+Shift+M" },
   { id: "full_width", label: "cmd.fullWidth", combo: "Ctrl+Shift+L" },
+  { id: "present", label: "cmd.present", combo: "Ctrl+Shift+P" },
   { id: "settings", label: "cmd.settings", combo: "Ctrl+," },
 ];
 

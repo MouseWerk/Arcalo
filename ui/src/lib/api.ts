@@ -199,6 +199,32 @@ export const api = {
   /** Writes a page shared as a single HTML file to `path` (from the save dialog). */
   writeHtmlFile: (path: string, html: string) => call<void>("html_file_write", { path, html }),
 
+  // focus sessions
+  /** The current phase; completes a session that ran out meanwhile. */
+  focusState: () => call<T.FocusState | null>("focus_state"),
+  /** `minutes` may be fractional (tests use 0.05). */
+  focusStart: (start: { reference: string; minutes: number; break_minutes: number; goal: string }) => call<T.FocusState>("focus_start", { start }),
+  focusFinish: () => call<T.FocusDone>("focus_finish"),
+  focusAbort: (book: boolean) => call<T.FocusDone>("focus_abort", { book }),
+  focusEndBreak: () => call<void>("focus_end_break"),
+  /** Local days `from..=to` (YYYY-MM-DD). */
+  focusReport: (from: string, to: string) => call<T.FocusReport>("focus_report", { from, to }),
+  /** Writes „Fokus heute: …“ into the daily note; returns its page id. */
+  focusDailyLine: (date?: string) => call<number>("focus_daily_line", { date: date ?? null }),
+  focusEntryIds: () => call<number[]>("focus_entry_ids"),
+
+  // activity feed
+  activity: (filter: T.FeedFilter) => call<T.Activity[]>("activity_list", { filter }),
+  activitySummary: (from: string, to: string) => call<T.FeedSummary>("activity_summary", { from, to }),
+  activityPeople: () => call<string[]>("activity_people"),
+
+  // presentation
+  presentationBegin: () => call<{ monitors: number }>("presentation_begin"),
+  presentationEnd: () => call<void>("presentation_end"),
+  /** Opens the presenter window with two monitors; false with one (overlay instead). */
+  presenterOpen: () => call<boolean>("presenter_open"),
+  presenterClose: () => call<void>("presenter_close"),
+
   // AI
   routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null) => call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier }),
   meter: () => call<T.SessionMeter>("ai_meter"),

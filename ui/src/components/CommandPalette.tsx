@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, Target, NotebookPen,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
@@ -23,6 +23,10 @@ import { snippetHtml } from "../lib/quicksearch";
 import { keys } from "../lib/shortcut";
 import { t, useT } from "../lib/i18n";
 import { hint } from "../lib/keymap";
+import { startPresentation } from "./Presentation";
+import { abortFocus, openFocusDialog } from "./Focus";
+import { openActivityDay } from "../views/ActivityView";
+import { reloadEditors } from "../editor/NoteEditor";
 
 interface Item {
   id: string;
@@ -175,6 +179,17 @@ export function CommandPalette() {
             { id: "toggle-source", title: t("cmd.toggleSource"), icon: ic(FileCode2), hint: hint("toggle_source"), run: () => setTimeout(() => requestPageCommand("source"), 0) },
             { id: "full-width", title: t("cmd.fullWidth"), icon: ic(MoveHorizontal), hint: hint("full_width"), run: () => setTimeout(() => requestPageCommand("full"), 0) },
             { id: "drawing", title: t("cmd.insertDrawing"), subtitle: t("cmd.insertDrawingSub"), icon: ic(PenTool), run: () => setTimeout(insertDrawingInActiveNote, 0) },
+            {
+              id: "present",
+              title: t("cmd.present"),
+              subtitle: t("cmd.presentSub"),
+              icon: ic(Presentation),
+              hint: hint("present"),
+              run: () => {
+                const id = s().tabs.find((x) => x.id === s().activeTabId)?.pageId;
+                if (id != null) void startPresentation(id);
+              },
+            },
           ]
         : []),
       { id: "newtab", title: t("cmd.newTab"), icon: ic(Plus), hint: hint("new_tab"), run: () => s().openTab({ kind: "home" }, { newTab: true }) },
@@ -188,6 +203,26 @@ export function CommandPalette() {
       { id: "timesheet", title: t("cmd.timesheet"), icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) },
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
+      { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },
+      { id: "activity-day", title: t("cmd.activityDay"), icon: ic(CalendarSearch), run: () => setTimeout(() => s().set({ calendar: { onPick: openActivityDay } }), 0) },
+      s().focus?.phase === "work"
+        ? { id: "focus-session", title: t("cmd.focusAbort"), icon: ic(Square), run: () => void abortFocus() }
+        : { id: "focus-session", title: t("cmd.focusStart"), subtitle: t("cmd.focusStartSub"), icon: ic(Target), run: () => openFocusDialog() },
+      {
+        id: "focus-note",
+        title: t("cmd.focusNote"),
+        icon: ic(NotebookPen),
+        run: async () => {
+          try {
+            const id = await api.focusDailyLine();
+            await s().refreshTree();
+            reloadEditors([id]);
+            s().toast({ tone: "success", title: "In die Tagesnotiz eingetragen", action: { label: "Öffnen", run: () => s().openPage(id) } });
+          } catch (e) {
+            s().error("Nicht eingetragen", e);
+          }
+        },
+      },
       { id: "assistant", title: t("cmd.askAssistant"), icon: ic(Sparkles), hint: hint("assistant"), run: () => openAssistant() },
       { id: "weekly-report", title: t("cmd.weeklyReport"), subtitle: t("cmd.weeklyReportSub"), icon: ic(Mail), run: () => askWeeklyReport() },
       { id: "trash", title: t("cmd.trash"), icon: ic(Trash2), run: () => s().openTab({ kind: "trash" }) },
