@@ -129,6 +129,8 @@ const ENTRIES = {
   "cmd.calendarSub": ["Tagesnotiz eines anderen Tages öffnen", "Open the daily note of another day"],
   "cmd.addProperty": ["Eigenschaft hinzufügen", "Add property"],
   "cmd.addPropertySub": ["Zur aktuellen Seite", "To the current page"],
+  "cmd.insertDrawing": ["Neue Zeichnung einfügen", "Insert new drawing"],
+  "cmd.insertDrawingSub": ["Skizze oder Diagramm in die aktuelle Seite", "Sketch or diagram in the current page"],
   "cmd.newTab": ["Neuer Tab", "New tab"],
   "cmd.closeTab": ["Tab schließen", "Close tab"],
   "cmd.nextTab": ["Nächster Tab", "Next tab"],

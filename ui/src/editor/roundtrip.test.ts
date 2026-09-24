@@ -47,6 +47,11 @@ const CASES: Record<string, string> = {
   embedInline: "Screenshot ![[Bild 1.PNG]] vom Fehler\n",
   embedSize: "![[assets/diagramm.webp|300]] und ![[foto.jpg|Kunde vor Ort]]\n",
   embedNote: "Kein Bild: ![[Notiz]]\n",
+  drawing: "![[Zeichnung 2026-09-24 14.05.excalidraw]]\n",
+  drawingInline: "Ablauf ![[Plan.excalidraw]] siehe oben\n",
+  drawingAlt: "![[Skizzen/Netz.Excalidraw|400]]\n",
+  drawingPreview: "![[Plan.excalidraw.svg]]\n",
+  tablePipeDrawing: "| A                      | B   |\n| ---------------------- | --- |\n| ![[x.excalidraw\\|300]] | 2   |\n",
   image: "![Logo](https://example.com/logo.png)\n",
   imageRelative: "![Plan](attachments/plan.png \"Titel\")\n",
   tablePipeWiki: "| A                | B   |\n| ---------------- | --- |\n| [[Seite\\|Alias]] | 2   |\n",
@@ -114,6 +119,30 @@ describe("image embeds", () => {
   it("maps relative image paths to attachments, keeps web images", () => {
     expect(html("![a](attachments/x.png)\n")).toContain('src="asset://attachments/x.png"');
     expect(html("![a](https://example.com/x.png)\n")).toContain('src="https://example.com/x.png"');
+  });
+});
+
+describe("drawing embeds", () => {
+  const editorFor = (md: string) => new Editor({ element: document.createElement("div"), extensions: buildExtensions({ attachmentUrl: (n) => `asset://${n}` }), content: md, contentType: "markdown" });
+  it("parses ![[x.excalidraw]] as a drawing showing its SVG preview", () => {
+    const editor = editorFor("Vorher ![[Plan 1.excalidraw]] nachher\n");
+    const types: string[] = [];
+    editor.state.doc.descendants((n) => void types.push(n.type.name));
+    expect(types).toContain("drawingEmbed");
+    expect(editor.getHTML()).toContain('src="asset://Plan 1.excalidraw.svg"');
+    expect(toMarkdown(editor)).toBe("Vorher ![[Plan 1.excalidraw]] nachher\n");
+    editor.destroy();
+  });
+  it("serializes an inserted drawing to exactly its embed", () => {
+    const editor = editorFor("");
+    editor.commands.insertContent({ type: "drawingEmbed", attrs: { name: "Zeichnung 2026-09-24 14.05.excalidraw" } });
+    expect(toMarkdown(editor)).toBe("![[Zeichnung 2026-09-24 14.05.excalidraw]]\n");
+    editor.destroy();
+  });
+  it("keeps the preview SVG an ordinary image", () => {
+    const editor = editorFor("![[Plan.excalidraw.svg]]\n");
+    expect(editor.getHTML()).toContain('data-embed="Plan.excalidraw.svg"');
+    editor.destroy();
   });
 });
 

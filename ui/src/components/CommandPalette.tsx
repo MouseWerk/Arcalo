@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus,
+  ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
@@ -17,6 +17,7 @@ import { hoursFromMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
 import type { SearchHit } from "../lib/types";
 import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
+import { insertDrawingInActiveNote } from "../editor/drawings";
 import { snippetHtml } from "../lib/quicksearch";
 import { keys } from "../lib/shortcut";
 import { t, useT } from "../lib/i18n";
@@ -168,7 +169,10 @@ export function CommandPalette() {
       },
       { id: "calendar", title: t("cmd.calendar"), subtitle: t("cmd.calendarSub"), icon: ic(CalendarDays), hint: hint("calendar"), run: () => setTimeout(() => openCalendar(), 0) },
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
-        ? [{ id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) }]
+        ? [
+            { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },
+            { id: "drawing", title: t("cmd.insertDrawing"), subtitle: t("cmd.insertDrawingSub"), icon: ic(PenTool), run: () => setTimeout(insertDrawingInActiveNote, 0) },
+          ]
         : []),
       { id: "newtab", title: t("cmd.newTab"), icon: ic(Plus), hint: hint("new_tab"), run: () => s().openTab({ kind: "home" }, { newTab: true }) },
       { id: "split", title: t("cmd.split"), icon: ic(Columns2), run: () => s().activeTabId && s().splitTab(s().activeTabId) },

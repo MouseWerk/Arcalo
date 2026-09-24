@@ -75,8 +75,8 @@ pub fn wiki_links(markdown: &str) -> Vec<String> {
             let Some(end) = after.find("]]") else { break };
             let inner = &after[..end];
             let target = inner.split(['|', '#']).next().unwrap_or("").trim();
-            // `![[bild.png]]` embeds an attachment, it does not link a page.
-            let embed = rest[..start].ends_with('!') && crate::attachments::image_extension(target).is_some();
+            // `![[bild.png]]` / `![[x.excalidraw]]` embed an attachment, they do not link a page.
+            let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(target);
             if !embed && !target.is_empty() && !out.iter().any(|t| t.to_lowercase() == target.to_lowercase()) {
                 out.push(target.to_owned());
             }
@@ -690,7 +690,10 @@ mod tests {
 
     #[test]
     fn image_embeds_are_not_page_links() {
-        assert_eq!(wiki_links("![[bild.png]] ![[Notiz]] [[foto.jpg]] ![[a/b.webp|200]]"), ["Notiz", "foto.jpg"]);
+        assert_eq!(
+            wiki_links("![[bild.png]] ![[Notiz]] [[foto.jpg]] ![[a/b.webp|200]] ![[Skizze.excalidraw]]"),
+            ["Notiz", "foto.jpg"]
+        );
     }
 
     #[test]

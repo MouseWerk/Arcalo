@@ -49,6 +49,12 @@ export const api = {
   pageFromTemplate: (templateId: number, title: string, parentId: number | null = null) =>
     call<T.Page>("page_from_template", { templateId, title, parentId }),
   saveAttachment: (data: string, name: string, mime: string) => call<T.SavedAttachment>("attachment_save", { data, name, mime }),
+  /** Creates an empty `<title>.excalidraw` drawing (a free name: `title 2`, …). */
+  createDrawing: (title: string) => call<T.SavedAttachment>("drawing_create", { title }),
+  /** Excalidraw scene JSON of a drawing. */
+  readDrawing: (name: string) => call<string>("drawing_read", { name }),
+  /** Stores the scene and its SVG preview (`null`: empty drawing, no preview). */
+  saveDrawing: (name: string, scene: string, svg: string | null) => call<void>("drawing_save", { name, scene, svg }),
 
   // WBS
   wbs: () => call<T.ProjectTree[]>("wbs_tree"),

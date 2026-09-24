@@ -181,6 +181,16 @@ Migration v2 converts the old block model: blocks are concatenated into
   and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `annalo-asset:` URI scheme, which
   only answers plain file names inside that folder (no separators, `..` or hidden files; canonical path checked). Regular
   `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes the embedded ones to `attachments/`.
+- Drawings (`drawings.rs`, `ui/src/editor/drawing.ts`, `DrawingEditor.tsx`) are Excalidraw scenes `<name>.excalidraw` in the same
+  folder plus a rendered preview `<name>.excalidraw.svg`, embedded as `![[name.excalidraw]]` like the Obsidian Excalidraw plugin
+  does; vault import/export and the mirror carry both files. Scene and preview are written atomically (temp file + rename) on
+  every autosave (800 ms) and when the overlay closes. Excalidraw is a lazy chunk; its fonts are copied from the npm package to
+  `ui/public/excalidraw-assets/` at build time (`ui/scripts/excalidraw-assets.mjs`, without the 13 MB CJK font Xiaolai) and
+  `window.EXCALIDRAW_ASSET_PATH` points there. Excalidraw still lists its CDN (esm.sh) as a second font source; the CSP blocks
+  it, so nothing is fetched from the network. CSP `connect-src 'self'` is needed because the SVG export `fetch`es those bundled
+  fonts to inline them into the preview (the asset protocol allows `font-src data:` for that). Excalidraw would subset those
+  fonts with WebAssembly in a worker; the CSP allows neither (`worker-src 'none'`, no `unsafe-eval`), so previews carry the
+  whole font files (a few 10 kB each).
 - Templates are the pages below the top-level page „Vorlagen“ (`templates.rs`); placeholders are filled by `apply_template`.
   The daily note uses `settings.daily_template` when set.
 

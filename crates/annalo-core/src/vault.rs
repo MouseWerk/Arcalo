@@ -62,11 +62,11 @@ pub fn import_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
     })
 }
 
-/// Copies an image by its file name (Obsidian resolves embeds by name). An existing
+/// Copies an image or drawing by its file name (Obsidian resolves embeds by name). An existing
 /// file with the same name is kept, so importing twice does not duplicate anything.
 fn import_attachment(path: &Path, attachments_dir: &Path) -> Result<bool> {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return Ok(false) };
-    if attachments::image_extension(name).is_none() || name.contains(':') {
+    if !attachments::embeddable(name) || name.contains(':') {
         return Ok(false);
     }
     fs::create_dir_all(attachments_dir)?;
@@ -252,16 +252,20 @@ mod tests {
         fs::create_dir_all(vault.join("Projekte/Rollout")).unwrap();
         fs::write(vault.join("Projekte.md"), "Übersicht aller [[Rollout]]-Themen #projekt").unwrap();
         fs::write(vault.join("Projekte/Rollout/Plan.md"), "# Plan\n\nSiehe [[Projekte]]").unwrap();
-        fs::write(vault.join("Inbox.md"), "- [ ] Aufgabe\n\n![[bild.png]]").unwrap();
+        fs::write(vault.join("Inbox.md"), "- [ ] Aufgabe\n\n![[bild.png]]\n\n![[Skizze.excalidraw]]").unwrap();
         fs::create_dir_all(vault.join("assets")).unwrap();
         fs::write(vault.join("assets/bild.png"), [7u8; 4]).unwrap();
+        // Drawings: the scene and its SVG preview travel like images.
+        fs::write(vault.join("assets/Skizze.excalidraw"), r#"{"elements":[]}"#).unwrap();
+        fs::write(vault.join("assets/Skizze.excalidraw.svg"), "<svg/>").unwrap();
         fs::write(vault.join("handbuch.pdf"), [0u8; 4]).unwrap();
 
         let db = Database::open_in_memory().unwrap();
         let att = tmp("att");
         let r = import_vault(&db, &vault, &att).unwrap();
-        assert_eq!((r.pages, r.folders, r.attachments, r.skipped), (3, 2, 1, 1));
+        assert_eq!((r.pages, r.folders, r.attachments, r.skipped), (3, 2, 3, 1));
         assert_eq!(fs::read(att.join("bild.png")).unwrap(), [7u8; 4]);
+        assert!(att.join("Skizze.excalidraw").is_file() && att.join("Skizze.excalidraw.svg").is_file());
         let projekte = db.page_by_title("Projekte").unwrap().unwrap();
         assert_eq!(db.page_doc(projekte.id).unwrap().backlinks.len(), 1, "Plan links to Projekte");
         assert_eq!(db.pages_with_tag("projekt").unwrap().len(), 1);
@@ -269,6 +273,8 @@ mod tests {
         let out = tmp("out");
         assert_eq!(export_vault(&db, &out, &att).unwrap(), 3);
         assert_eq!(fs::read(out.join("attachments/bild.png")).unwrap(), [7u8; 4]);
+        assert_eq!(fs::read_to_string(out.join("attachments/Skizze.excalidraw")).unwrap(), r#"{"elements":[]}"#);
+        assert_eq!(fs::read_to_string(out.join("attachments/Skizze.excalidraw.svg")).unwrap(), "<svg/>");
         let root = out.join(vault.file_name().unwrap());
         assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]");
         assert!(root.join("Projekte.md").is_file());

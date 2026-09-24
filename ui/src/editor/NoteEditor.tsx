@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight } from "lucide-react";
 import { api, attachmentUrl, errorText, uploadAttachment } from "../lib/api";
 import { insertTemplate } from "../components/Templates";
+import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
 import { hoursFromMinutes } from "../lib/format";
 import { pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
@@ -316,6 +317,8 @@ export function NoteEditor({
           input.click();
         },
         onPickTemplate: (editor) => insertTemplate(editor, useApp.getState().pages.get(doc.id)?.title ?? doc.title),
+        onInsertDrawing: insertDrawing,
+        onOpenDrawing: openDrawing,
         onAi: (editor) => openAi(editor),
         onSummary: () => window.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { detail: { id: doc.id } })),
         typing: typingPrefs,
