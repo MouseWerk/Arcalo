@@ -59,11 +59,13 @@ export function TrashView() {
             <h1>Papierkorb</h1>
             <div className="view-sub">Gelöschte Seiten werden nach {useApp.getState().settings?.settings.notes?.trash_retention_days ?? 30} Tagen endgültig entfernt.</div>
           </div>
-          <div className="view-actions">
-            <Button variant="danger" icon={Trash2} onClick={empty} disabled={!list?.length}>
-              Papierkorb leeren
-            </Button>
-          </div>
+          {!!list?.length && (
+            <div className="view-actions">
+              <Button variant="danger" icon={Trash2} onClick={empty}>
+                Papierkorb leeren
+              </Button>
+            </div>
+          )}
         </header>
         {!list ? (
           <Spinner />
@@ -87,7 +89,7 @@ export function TrashView() {
                 <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)}>
                   Wiederherstellen
                 </Button>
-                <IconButton icon={X} label="Endgültig löschen" size={28} iconSize={15} onClick={() => purge(e)} />
+                <IconButton icon={X} label="Endgültig löschen" size="md" onClick={() => purge(e)} />
               </div>
             ))}
           </div>

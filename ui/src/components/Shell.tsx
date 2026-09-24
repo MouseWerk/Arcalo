@@ -129,14 +129,17 @@ function StartPage() {
   return (
     <div className="home">
       <div className="home-inner home-dash">
-        <header className="home-head">
-          <AnnaloLogo size={30} className="home-logo" />
-          <div>
-            <h1>{greeting}</h1>
-            <p className="muted">{new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</p>
-          </div>
-        </header>
-        <Dashboard />
+        <Dashboard
+          head={
+            <header className="home-head">
+              <AnnaloLogo size={30} className="home-logo" />
+              <div>
+                <h1>{greeting}</h1>
+                <p className="muted">{new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</p>
+              </div>
+            </header>
+          }
+        />
       </div>
     </div>
   );
@@ -170,7 +173,7 @@ export function Toasts() {
                 {t.action.label}
               </Button>
             )}
-            <IconButton icon={X} label="Schließen" size={22} iconSize={13} onClick={() => dismiss(t.id)} />
+            <IconButton icon={X} label="Schließen" size="sm" onClick={() => dismiss(t.id)} />
           </div>
         );
       })}

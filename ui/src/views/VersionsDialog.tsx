@@ -46,6 +46,9 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
   }, [selected]);
 
   const text = selected != null ? content[selected] : undefined;
+  // Restoring the state the page already has would only add a version.
+  const same = text != null && current != null && text === current;
+  const interval = useApp.getState().settings?.settings.notes?.version_interval_minutes ?? 10;
   const diff = useMemo(() => (mode === "diff" && text != null && current != null ? lineDiff(current, text) : null), [mode, text, current]);
   const changes = diff?.filter((l) => l.kind !== "same").length ?? 0;
   const rows = useMemo(() => (diff ? collapseDiff(diff) : null), [diff]);
@@ -100,7 +103,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
       open={open}
       onClose={onClose}
       title="Versionen"
-      description={`Frühere Stände von „${page.title}“. Beim Bearbeiten wird höchstens alle ${useApp.getState().settings?.settings.notes?.version_interval_minutes ?? 10} Minuten eine Version gesichert; sie bleiben 30 Tage.`}
+      description={`Frühere Stände von „${page.title}“`}
       width={860}
       footer={
         <>
@@ -109,7 +112,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
           </Button>
           <span className="spacer" style={{ flex: 1 }} />
           <Button onClick={onClose}>Schließen</Button>
-          <Button variant="primary" icon={RotateCcw} onClick={restore} disabled={busy || selected == null || text == null}>
+          <Button variant="primary" icon={RotateCcw} onClick={restore} disabled={busy || selected == null || text == null || same} title={same ? "Entspricht dem aktuellen Stand" : undefined}>
             Wiederherstellen
           </Button>
         </>
@@ -138,13 +141,16 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
               >
                 <span className="versions-when num">
                   {labels[i]}
-                  {i === 0 && <span className="versions-tag">Neueste</span>}
+                  {i === 0 && <span className="versions-tag">{content[v.id] != null && content[v.id] === current ? "Aktuell" : "Neueste"}</span>}
                 </span>
                 <span className="versions-meta faint">
                   {relative(v.created_at)} · {fileSize(v.size)}
                 </span>
               </button>
             ))}
+            <p className="versions-note faint">
+              Beim Bearbeiten höchstens alle {interval} Min. gesichert, 30 Tage aufbewahrt.
+            </p>
           </div>
           <div className="versions-preview">
             <Segmented

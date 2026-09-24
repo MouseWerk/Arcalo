@@ -45,6 +45,28 @@ export function fmtDate(d: Date | string, style = prefs.dateFormat): string {
   return `${String(x.getDate()).padStart(2, "0")}.${String(x.getMonth() + 1).padStart(2, "0")}.${x.getFullYear()}`;
 }
 
+/** A typed day: „1.10.2026“, „01.10.26“, „1.10.“ (this year) or „2026-10-01“ as YYYY-MM-DD; null when it is no date. */
+export function parseDayInput(text: string, now = new Date()): string | null {
+  const t = text.trim();
+  let y: number, m: number, d: number;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  const de = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})?$/.exec(t);
+  if (iso) [y, m, d] = [+iso[1], +iso[2], +iso[3]];
+  else if (de) [y, m, d] = [de[3] ? (de[3].length === 2 ? 2000 + +de[3] : +de[3]) : now.getFullYear(), +de[2], +de[1]];
+  else return null;
+  const x = new Date(y, m - 1, d);
+  return x.getFullYear() === y && x.getMonth() === m - 1 && x.getDate() === d ? isoDay(x) : null;
+}
+
+/** A typed time of day: „9“, „930“, „9:30“, „9.30“ or „09:30“ as HH:MM (24 h); null when it is no time. */
+export function parseTimeInput(text: string): string | null {
+  const m = /^(\d{1,2})(?:[:.]?(\d{2}))?$/.exec(text.trim());
+  if (!m) return null;
+  const h = +m[1];
+  const min = m[2] ? +m[2] : 0;
+  return h < 24 && min < 60 ? `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}` : null;
+}
+
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
 export const isoWeekday = (d: Date) => ((d.getDay() + 6) % 7) + 1;
 

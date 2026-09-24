@@ -27,6 +27,8 @@ export function AppearanceSection({ draft, update }: SectionProps) {
   };
   const light = accentTokens(hex, "light");
   const dark = accentTokens(hex, "dark");
+  // The preview sits on the current theme's background, so it shows that theme's tokens.
+  const shown = document.documentElement.dataset.theme === "light" ? light : dark;
   const ratio = (fg: string, bg: string) => contrast(fg, bg).toFixed(1).replace(".", ",");
 
   return (
@@ -79,10 +81,10 @@ export function AppearanceSection({ draft, update }: SectionProps) {
             />
           </div>
           <div className="accent-preview small">
-            <span className="accent-chip" style={{ background: light["--accent-strong"], color: "#fff" }}>
+            <span className="accent-chip" style={{ background: shown["--accent-strong"], color: "#fff" }}>
               {t("set.appearance.button")}
             </span>
-            <span style={{ color: light["--accent-text"] }}>{t("set.appearance.link")}</span>
+            <span style={{ color: shown["--accent-text"] }}>{t("set.appearance.link")}</span>
             <span className="faint">
               {t("set.appearance.contrast", { light: ratio(light["--accent-text"], "#ffffff"), dark: ratio(dark["--accent-text"], "#16171a") })}
             </span>

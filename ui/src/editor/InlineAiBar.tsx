@@ -201,9 +201,9 @@ export function InlineAiBar({
           }}
         />
         {ai.busy ? (
-          <IconButton icon={Square} label="Stoppen" size={26} iconSize={12} onClick={() => ai.cancel()} />
+          <IconButton icon={Square} label="Stoppen" size="md" onClick={() => ai.cancel()} />
         ) : (
-          <IconButton icon={ArrowUp} label="Ausführen" size={26} iconSize={15} disabled={!input.trim()} onClick={submitInput} />
+          <IconButton icon={ArrowUp} label="Ausführen" size="md" disabled={!input.trim()} onClick={submitInput} />
         )}
       </div>
       {!ai.busy && !ai.text && !ai.error && (

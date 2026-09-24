@@ -9,14 +9,20 @@ import { useApp } from "../store/app";
 import { addDays, dateLong, isoDay, weekdayLabels } from "../lib/format";
 import { addMonths, dayTone, hoursLabel, monthGrid, weekNumber } from "../lib/calendar";
 import type { DayOverview } from "../lib/types";
-import { Button, IconButton } from "./ui";
+import { Button, IconButton, MENU_GAP } from "./ui";
 
 
 /** Opens the calendar next to `el` (or centered without an element), showing `date` (default today). */
 export function openCalendar(el?: Element | null, date?: string, side: "below" | "right" = "below") {
   const r = el?.getBoundingClientRect();
-  const at = !r ? {} : side === "right" ? { x: r.right + 8, y: r.top } : { x: r.left, y: r.bottom + 6 };
+  const at = !r ? {} : side === "right" ? { x: r.right + 8, y: r.top } : { x: r.left, y: r.bottom + MENU_GAP };
   useApp.getState().set({ calendar: { ...at, date } });
+}
+
+/** The calendar as a date picker below `el`: `onPick` gets the chosen day (YYYY-MM-DD). */
+export function pickDate(el: Element, date: string | undefined, onPick: (iso: string) => void) {
+  const r = el.getBoundingClientRect();
+  useApp.getState().set({ calendar: { x: r.left, y: r.bottom + MENU_GAP, date: date || undefined, onPick } });
 }
 
 /** Opens (or creates) the daily note of `iso` (YYYY-MM-DD). */
@@ -39,10 +45,10 @@ const parseDay = (iso?: string) => {
 export function CalendarPopover() {
   const anchor = useApp((s) => s.calendar);
   if (!anchor) return null;
-  return <Calendar key={`${anchor.x}-${anchor.y}-${anchor.date}`} x={anchor.x} y={anchor.y} date={anchor.date} />;
+  return <Calendar key={`${anchor.x}-${anchor.y}-${anchor.date}`} x={anchor.x} y={anchor.y} date={anchor.date} onPick={anchor.onPick} />;
 }
 
-function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
+function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: string; onPick?: (iso: string) => void }) {
   const settings = useApp((s) => s.settings?.settings);
   const entriesVersion = useApp((s) => s.entriesVersion);
   const [cursor, setCursor] = useState(() => parseDay(date));
@@ -95,8 +101,10 @@ function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
 
   const open = (d: Date, newTab = false) => {
     close();
-    openDailyNote(isoDay(d), newTab);
+    if (onPick) onPick(isoDay(d));
+    else openDailyNote(isoDay(d), newTab);
   };
+  const picked = onPick && date ? date : null;
 
   const onKey = (e: React.KeyboardEvent) => {
     const move = (d: Date) => {
@@ -132,7 +140,7 @@ function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
       className={`calendar ${pos ? "calendar-anchored" : ""}`}
       style={pos ? { left: pos.left, top: pos.top } : undefined}
       role="dialog"
-      aria-label="Kalender"
+      aria-label={onPick ? "Datum wählen" : "Kalender"}
       tabIndex={-1}
       onKeyDown={onKey}
     >
@@ -140,11 +148,11 @@ function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
         <div className="cal-month" aria-live="polite">
           {monthLabel}
         </div>
-        <IconButton icon={ChevronLeft} label="Vorheriger Monat (Bild ↑)" size={26} iconSize={15} onClick={() => setCursor(addMonths(cursor, -1))} />
+        <IconButton icon={ChevronLeft} label="Vorheriger Monat (Bild ↑)" size="md" onClick={() => setCursor(addMonths(cursor, -1))} />
         <Button size="sm" variant="ghost" onClick={() => setCursor(new Date())}>
           Heute
         </Button>
-        <IconButton icon={ChevronRight} label="Nächster Monat (Bild ↓)" size={26} iconSize={15} onClick={() => setCursor(addMonths(cursor, 1))} />
+        <IconButton icon={ChevronRight} label="Nächster Monat (Bild ↓)" size="md" onClick={() => setCursor(addMonths(cursor, 1))} />
       </div>
       <div className="cal-grid" role="grid" aria-label={monthLabel}>
         <div className="cal-row cal-weekdays" role="row">
@@ -181,6 +189,7 @@ function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
                 d.getMonth() !== month && "outside",
                 !workdays.includes(weekday) && "weekend",
                 iso === todayIso && "today",
+                iso === picked && "picked",
                 iso === cursorIso && "focus",
                 info?.has_note && "has-note",
                 tone !== "none" && `tone-${tone}`,
@@ -225,8 +234,8 @@ function Calendar({ x, y, date }: { x?: number; y?: number; date?: string }) {
           <span className="cal-task" /> Aufgabe fällig
         </span>
         <span className="grow" />
-        <span className="faint" title="Pfeiltasten: Tag · Bild ↑/↓: Monat · Pos1: heute · Enter: öffnen · Esc: schließen">
-          <kbd>Enter</kbd> öffnen
+        <span className="faint" title={`Pfeiltasten: Tag · Bild ↑/↓: Monat · Pos1: heute · Enter: ${onPick ? "übernehmen" : "öffnen"} · Esc: schließen`}>
+          <kbd>Enter</kbd> {onPick ? "übernehmen" : "öffnen"}
         </span>
       </div>
     </div>

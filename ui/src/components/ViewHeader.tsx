@@ -9,8 +9,8 @@ export function NavButtons({ tab }: { tab: Tab }) {
   const s = useApp.getState;
   return (
     <div className="vh-nav">
-      <IconButton icon={ArrowLeft} label="Zurück (Alt ←)" size={26} iconSize={15} disabled={!tab.back.length} onClick={() => s().goBack()} />
-      <IconButton icon={ArrowRight} label="Vorwärts (Alt →)" size={26} iconSize={15} disabled={!tab.forward.length} onClick={() => s().goForward()} />
+      <IconButton icon={ArrowLeft} label="Zurück (Alt ←)" size="md" disabled={!tab.back.length} onClick={() => s().goBack()} />
+      <IconButton icon={ArrowRight} label="Vorwärts (Alt →)" size="md" disabled={!tab.forward.length} onClick={() => s().goForward()} />
     </div>
   );
 }

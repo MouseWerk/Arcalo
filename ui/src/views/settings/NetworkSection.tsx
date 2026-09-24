@@ -200,7 +200,7 @@ export function NetworkSection({ draft, update }: SectionProps) {
                 spellCheck={false}
                 onKeyDown={(e) => e.key === "Enter" && password && savePassword(password)}
               />
-              <IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? t("common.hide") : t("common.show")} size={24} iconSize={14} onClick={() => setShowPassword(!showPassword)} />
+              <IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowPassword(!showPassword)} />
             </div>
             <Button variant="primary" onClick={() => savePassword(password)} disabled={!password}>
               {t("common.save")}

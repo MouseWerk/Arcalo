@@ -6,9 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X,
-  ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw,
+  AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw,
 } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
+import { aiErrorSummary } from "../lib/aierror";
 import { renderMarkdown } from "../lib/markdown";
 import { citedNumbers, linkCitations } from "../lib/citations";
 import { revealText } from "../editor/reveal";
@@ -79,7 +80,7 @@ export function AssistantPanel() {
   const scroller = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
-  const [menu, openMenu] = useMenu();
+  const [menu, openMenu, openMenuAt] = useMenu();
   const s = useApp.getState;
 
   const pageContext = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
@@ -353,8 +354,8 @@ export function AssistantPanel() {
           type="button"
           className="model-pill"
           onClick={(e) =>
-            openMenu(
-              { clientX: (e.currentTarget as HTMLElement).getBoundingClientRect().left, clientY: (e.currentTarget as HTMLElement).getBoundingClientRect().bottom + 4 },
+            openMenuAt(
+              e,
               [
                 ...tierOptions.map((o) => ({
                   label: `${o.label}${o.model ? ` · ${o.model}` : ""}`,
@@ -384,7 +385,7 @@ export function AssistantPanel() {
           <ChevronDown size={13} className="faint" />
         </button>
         <span className="grow" />
-        <IconButton icon={Plus} label="Neuer Chat" size={26} iconSize={15} onClick={newChat} />
+        <IconButton icon={Plus} label="Neuer Chat" size="md" onClick={newChat} />
       </div>
 
       <div
@@ -547,6 +548,29 @@ function CiteCard({ src, n, rect, onEnter, onLeave }: { src: ContextChunk; n: nu
   );
 }
 
+/** A failed request: the cause in plain words and what to do; the server's message under „Details“. */
+function ErrorNote({ message }: { message: string }) {
+  const e = aiErrorSummary(message);
+  return (
+    <div className="msg-error" role="alert">
+      <div className="msg-error-head">
+        <AlertTriangle size={14} aria-hidden />
+        <span>{e.title}</span>
+      </div>
+      <div className="msg-error-hint">{e.hint}</div>
+      <details className="msg-error-details">
+        <summary>Details</summary>
+        <div className="mono">{message}</div>
+      </details>
+      {e.settings && (
+        <Button size="sm" icon={Settings2} onClick={() => useApp.getState().openTab({ kind: "settings" })}>
+          Verbindung prüfen
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function TurnView({ turn }: { turn: Turn }) {
   const s = useApp.getState;
   const [copied, setCopied] = useState(false);
@@ -610,13 +634,7 @@ function TurnView({ turn }: { turn: Turn }) {
   return (
     <div className="msg-ai" data-turn={turn.id}>
       {turn.error ? (
-        <div className="msg-error">
-          <div>Die Anfrage ist fehlgeschlagen.</div>
-          <div className="faint small mono">{turn.error}</div>
-          <Button size="sm" icon={Settings2} onClick={() => s().openTab({ kind: "settings" })}>
-            Verbindung prüfen
-          </Button>
-        </div>
+        <ErrorNote message={turn.error} />
       ) : turn.streaming && !turn.text ? (
         <div className="thinking">
           <span />
@@ -694,8 +712,7 @@ function TurnView({ turn }: { turn: Turn }) {
           <IconButton
             icon={copied ? Check : Copy}
             label="Kopieren"
-            size={22}
-            iconSize={12}
+            size="sm"
             tooltipSide="top"
             onClick={() => {
               navigator.clipboard.writeText(turn.text);
@@ -706,8 +723,7 @@ function TurnView({ turn }: { turn: Turn }) {
           <IconButton
             icon={FilePlus2}
             label={turn.pageTitle ? "In neue Seite einfügen" : "Als Seite speichern"}
-            size={22}
-            iconSize={12}
+            size="sm"
             tooltipSide="top"
             onClick={async () => {
               const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");

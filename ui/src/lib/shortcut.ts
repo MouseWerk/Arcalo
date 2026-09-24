@@ -73,6 +73,8 @@ const MAC_KEYS: Record<string, string> = {
   left: "←",
   right: "→",
 };
+/** Arrow keys by their DOM name are shown as arrows everywhere („Alt ↑“, not „Alt ArrowUp“). */
+const ARROWS: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
 
 /**
  * Shows a shortcut the platform's way. `spec` is a global-shortcut spec (`"Ctrl+Shift+Space"`,
@@ -85,7 +87,7 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
   for (const t of spec.trim().split(/\s+|\+(?=.)/).filter(Boolean)) {
     const m = MODS[t.toLowerCase()];
     if (m) mods.push(m === "mod" ? (mac ? "cmd" : "ctrl") : m);
-    else rest.push(t.length === 1 ? t.toUpperCase() : t);
+    else rest.push(ARROWS[t.toLowerCase()] ?? (t.length === 1 ? t.toUpperCase() : t));
   }
   if (!mac) return [...mods.map((m) => NAME[m]), ...rest].join(sep);
   const glyphs = MAC_ORDER.filter((m) => mods.includes(m))

@@ -8,6 +8,7 @@ import {
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
+import { DateInput, TimeInput } from "../components/DateInput";
 import { addDays, clock, fmtHours, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer } from "../components/Sidebar";
@@ -102,8 +103,9 @@ export function TimesheetView() {
         <div className="stat-row">
           <Stat label="Woche gesamt" value={`${fmtMinutes(total)} h`} sub={`Soll ${fmtHours(target * workdays.length)} h`} />
           <Stat label="Entwurf" value={`${fmtMinutes(byStatus("draft"))} h`} />
-          <Stat label="Freigegeben" value={`${fmtMinutes(byStatus("released"))} h`} tone="accent" />
-          <Stat label="Exportiert" value={`${fmtMinutes(byStatus("exported"))} h`} tone="success" />
+          {/* Colored only when there is something: a green „0,00 h“ reads like a result. */}
+          <Stat label="Freigegeben" value={`${fmtMinutes(byStatus("released"))} h`} tone={byStatus("released") ? "accent" : undefined} />
+          <Stat label="Exportiert" value={`${fmtMinutes(byStatus("exported"))} h`} tone={byStatus("exported") ? "success" : undefined} />
         </div>
 
         <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} />
@@ -396,7 +398,7 @@ function WeekGrid({ rows, week, todayKey, target, workdays }: { rows: TimeEntryR
 // ------------------------------------------------------------- entry list
 
 function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEntryRow[]; selected: Set<number>; setSelected: (s: Set<number>) => void; onEdit: (r: TimeEntryRow) => void; week: Date }) {
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   const groups = useMemo(() => {
     const g = new Map<string, TimeEntryRow[]>();
@@ -461,10 +463,10 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                 <IconButton
                   icon={MoreHorizontal}
                   label="Aktionen"
-                  size={26}
+                  size="md"
                   disabled={r.status_flag === "running"}
                   onClick={(e) =>
-                    openMenu(e, [
+                    openMenuAt(e, [
                       { label: "Bearbeiten", icon: Pencil, disabled: r.status_flag === "exported", onSelect: () => onEdit(r) },
                       r.status_flag === "released"
                         ? { label: "Zurück auf Entwurf", icon: RotateCcw, onSelect: () => setStatus(r.id, "draft") }
@@ -562,10 +564,10 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
           <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         </Field>
         <Field label="Datum">
-          <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+          <DateInput value={day} onChange={setDay} aria-label="Datum" />
         </Field>
         <Field label="Beginn">
-          <Input type="time" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <TimeInput value={from} onChange={setFrom} aria-label="Beginn" />
         </Field>
         <Field label="Dauer" hint={minutes == null ? "z. B. 1,5 oder 1:30 oder 90m" : `${fmtMinutes(minutes)} h`}>
           <Input value={dur} onChange={(e) => setDur(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
@@ -660,9 +662,9 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
         <Segmented value={format} options={FORMATS} onChange={setFormat} />
         <div className="row-gap">
           <CalendarDays size={14} className="faint" />
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Von" />
+          <DateInput value={from} onChange={setFrom} aria-label="Von" className="w-date" />
           <span className="faint">bis</span>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Bis" />
+          <DateInput value={to} onChange={setTo} aria-label="Bis" className="w-date" />
         </div>
         <label className="row-gap small">
           <Switch checked={onlyReleased} onChange={setOnlyReleased} label="Nur freigegebene" /> Nur freigegebene Einträge

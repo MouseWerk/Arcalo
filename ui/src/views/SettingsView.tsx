@@ -77,14 +77,28 @@ export function SettingsView() {
   const view = useApp((s) => s.settings);
   const [section, setSection] = useState<Section>("ai");
   const nav = useRef<HTMLElement>(null);
-  // In a narrow pane the menu is a scrolling bar: keep the open section in view.
-  useEffect(() => {
-    nav.current?.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [section]);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const s = useApp.getState;
+  // In a narrow pane the menu is a scrolling bar without a scrollbar (its edges fade, see
+  // app.css): the open section is centered.
+  useEffect(() => {
+    const center = () => {
+      const el = nav.current;
+      const item = el?.querySelector<HTMLElement>(`[data-section="${section}"]`);
+      if (!el || !item) return;
+      if (el.scrollWidth <= el.clientWidth) return item.scrollIntoView({ block: "nearest" });
+      const r = item.getBoundingClientRect();
+      el.scrollTo({ left: el.scrollLeft + r.left - el.getBoundingClientRect().left - (el.clientWidth - r.width) / 2 });
+    };
+    center();
+    // The bar appears when the window gets narrow: center again once resizing settles.
+    let t: number | undefined;
+    const soon = () => (window.clearTimeout(t), (t = window.setTimeout(center, 200)));
+    window.addEventListener("resize", soon);
+    return () => (window.clearTimeout(t), window.removeEventListener("resize", soon));
+  }, [section, !!draft]);
 
   useEffect(() => {
     if (!view) s().refreshSettings();
@@ -191,7 +205,7 @@ export function SettingsView() {
         <div className="settings-search">
           <Search size={13} className="faint" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("settings.search")} aria-label={t("settings.search")} spellCheck={false} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
-          {searching && <IconButton icon={X} label={t("common.clear")} size={20} iconSize={12} onClick={() => setQuery("")} />}
+          {searching && <IconButton icon={X} label={t("common.clear")} size="sm" onClick={() => setQuery("")} />}
         </div>
         {NAV.map((g) => (
           <div key={g.label} className="settings-nav-group" role="group" aria-label={t(g.label)}>
@@ -337,7 +351,7 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
               spellCheck={false}
               onKeyDown={(e) => e.key === "Enter" && key.trim() && saveKey(key.trim())}
             />
-            <IconButton icon={showKey ? EyeOff : Eye} label={showKey ? "Verbergen" : "Anzeigen"} size={24} iconSize={14} onClick={() => setShowKey(!showKey)} />
+            <IconButton icon={showKey ? EyeOff : Eye} label={showKey ? "Verbergen" : "Anzeigen"} size="sm" onClick={() => setShowKey(!showKey)} />
           </div>
           <Button variant="primary" onClick={() => saveKey(key.trim())} disabled={!key.trim()}>
             Speichern
@@ -521,8 +535,7 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
               <IconButton
                 icon={Trash2}
                 label="Entfernen"
-                size={24}
-                iconSize={13}
+                size="sm"
                 onClick={() => {
                   const m = { ...draft.jira_issue_map };
                   delete m[k];
@@ -559,8 +572,7 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
               <IconButton
                 icon={Trash2}
                 label="Löschen"
-                size={24}
-                iconSize={13}
+                size="sm"
                 onClick={async () => {
                   try {
                     await api.deleteLeistungsart(code);
@@ -938,7 +950,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
             spellCheck={false}
             onKeyDown={(e) => e.key === "Enter" && token.trim() && saveToken(token.trim())}
           />
-          <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? "Verbergen" : "Anzeigen"} size={24} iconSize={14} onClick={() => setShowToken(!showToken)} />
+          <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? "Verbergen" : "Anzeigen"} size="sm" onClick={() => setShowToken(!showToken)} />
         </div>
         <Button variant="primary" onClick={() => saveToken(token.trim())} disabled={!token.trim()}>
           Speichern

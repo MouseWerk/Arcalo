@@ -251,7 +251,7 @@ function PageHeader({
   const [title, setTitle] = useState(doc.title);
   const [iconOpen, setIconOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   useEffect(() => setTitle(doc.title), [doc.title]);
 
@@ -312,25 +312,23 @@ function PageHeader({
     <>
       {daily && (
         <>
-          <IconButton icon={ChevronLeft} label="Vorheriger Tag" size={26} iconSize={15} onClick={() => goDay(-1)} />
-          <IconButton icon={CalendarDays} label={`Kalender (${keys("Mod Shift C")})`} size={26} iconSize={15} onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
-          <IconButton icon={ChevronRight} label="Nächster Tag" size={26} iconSize={15} onClick={() => goDay(1)} />
+          <IconButton icon={ChevronLeft} label="Vorheriger Tag" size="md" onClick={() => goDay(-1)} />
+          <IconButton icon={CalendarDays} label={`Kalender (${keys("Mod Shift C")})`} size="md" onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
+          <IconButton icon={ChevronRight} label="Nächster Tag" size="md" onClick={() => goDay(1)} />
         </>
       )}
       <IconButton
         icon={source ? Eye : FileCode2}
         label={withHint(source ? "Normaler Editor" : "Markdown-Quelltext", "toggle_source")}
         active={source}
-        size={26}
-        iconSize={15}
+        size="md"
         onClick={() => togglePageSource(doc.id)}
       />
       <IconButton
         icon={full ? Minimize2 : MoveHorizontal}
         label={withHint(full ? "Normale Breite" : "Volle Breite", "full_width")}
         active={full}
-        size={26}
-        iconSize={15}
+        size="md"
         onClick={() => setPageMode("full", doc.id, !full)}
       />
       <IconButton
@@ -338,8 +336,7 @@ function PageHeader({
         label={doc.favorite ? "Lesezeichen entfernen" : "Lesezeichen setzen"}
         active={doc.favorite}
         className={doc.favorite ? "star-on" : ""}
-        size={26}
-        iconSize={15}
+        size="md"
         onClick={async () => {
           try {
             await api.setFavorite(doc.id, !doc.favorite);
@@ -353,10 +350,9 @@ function PageHeader({
       <IconButton
         icon={MoreHorizontal}
         label="Weitere Aktionen"
-        size={26}
-        iconSize={15}
+        size="md"
         onClick={(e) =>
-          openMenu(e, [
+          openMenuAt(e, [
             { label: "Umbenennen", icon: PencilLine, onSelect: () => titleInput.current?.select() },
             { label: "Symbol ändern", icon: SmilePlus, onSelect: () => setIconOpen(true) },
             { label: "Rechts daneben öffnen", icon: Columns2, onSelect: () => s().splitTab(tab.id) },

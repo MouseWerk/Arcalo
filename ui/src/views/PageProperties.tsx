@@ -12,6 +12,8 @@ import { NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
 import { LEVEL } from "./ProjectsView";
 import type { PageWork } from "../lib/types";
 import { SuggestionPopup, type PopupHandle } from "../editor/suggestion-popup";
+import { pickDate } from "../components/CalendarPopover";
+import { dayLabel } from "../components/DateInput";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
 
@@ -126,7 +128,7 @@ function PropertyRow({ prop, onChange, onRename, onRemove }: { prop: Property; o
       <div className="prop-value">
         <PropertyValue prop={prop} onChange={onChange} />
       </div>
-      <IconButton icon={X} label="Eigenschaft entfernen" size={22} iconSize={13} className="prop-remove" onClick={onRemove} />
+      <IconButton icon={X} label="Eigenschaft entfernen" size="sm" className="prop-remove" onClick={onRemove} />
       {invalid && (
         <span className="prop-key-hint" role="alert">
           {KEY_HINT}
@@ -139,16 +141,20 @@ function PropertyRow({ prop, onChange, onRename, onRemove }: { prop: Property; o
 function PropertyValue({ prop, onChange }: { prop: Property; onChange: (c: Partial<Property>) => void }) {
   if (prop.type === "list") return <ListValue items={prop.items} hashed={isTagsKey(prop.key)} onChange={(items) => onChange({ items })} />;
   if (prop.type === "raw") return <RawValue value={prop.value} onChange={(value) => onChange({ value })} />;
-  if (prop.type === "date")
+  if (prop.type === "date") {
+    const iso = DATE_RE.test(prop.value) ? prop.value : "";
     return (
-      <input
-        type="date"
-        className="prop-value-input"
-        value={DATE_RE.test(prop.value) ? prop.value : ""}
-        aria-label={prop.key}
-        onChange={(e) => onChange({ value: e.target.value })}
-      />
+      <button
+        type="button"
+        className="prop-value-input prop-date"
+        aria-label={`${prop.key}: ${iso ? dayLabel(iso) : "kein Datum"}, Datum wählen`}
+        aria-haspopup="dialog"
+        onClick={(e) => pickDate(e.currentTarget, iso, (value) => onChange({ value }))}
+      >
+        {iso ? dayLabel(iso) : <span className="faint">Datum wählen</span>}
+      </button>
     );
+  }
   return <TextValue prop={prop} onChange={(value) => onChange({ value })} />;
 }
 
@@ -180,7 +186,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
     <>
       {input}
       {isWbsKey(prop.key) && (
-        <IconButton icon={FolderTree} label={key === "netzplan" ? "Netzplan wählen" : "Vorgang wählen"} size={22} iconSize={13} className="prop-pick" active={picker} onClick={() => setPicker((v) => !v)} />
+        <IconButton icon={FolderTree} label={key === "netzplan" ? "Netzplan wählen" : "Vorgang wählen"} size="sm" className="prop-pick" active={picker} onClick={() => setPicker((v) => !v)} />
       )}
       {picker && <WbsPicker value={prop.value} netzplanOnly={key === "netzplan"} onChange={onChange} onClose={() => setPicker(false)} />}
     </>

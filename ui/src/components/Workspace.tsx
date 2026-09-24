@@ -109,7 +109,8 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
     default:
       return (
         <>
-          <ViewHeader tab={tab} title={<TabLabel tab={tab} />} />
+          {/* These views open with their own heading; the tab names them too. */}
+          <ViewHeader tab={tab} title="" />
           <div className="view-body">
             {tab.kind === "timesheet" && <TimesheetView />}
             {tab.kind === "projects" && <ProjectsView />}
@@ -123,12 +124,6 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
   }
 }
 
-function TabLabel({ tab }: { tab: Tab }) {
-  useT();
-  const pages = useApp((s) => s.pages);
-  return <>{tabTitle(tab, pages)}</>;
-}
-
 const TAB_MIME = "application/x-annalo-tab";
 /** The tab being dragged (dataTransfer content is not readable during dragover). */
 let draggedTab: string | null = null;
@@ -140,7 +135,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   const pages = useApp((s) => s.pages);
   const panelOpen = useApp((s) => s.panelOpen);
   const paneCount = useApp((s) => s.panes.length);
-  const [menu, openMenu] = useMenu();
+  const [menu, openMenu, openMenuAt] = useMenu();
   const [dropAt, setDropAt] = useState<number | null>(null);
   const s = useApp.getState;
 
@@ -279,8 +274,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
                 else if (e.key === "ArrowLeft") (e.preventDefault(), sibling(-1));
                 else if (e.key === "Delete") (e.preventDefault(), s().closeTab(t.id));
                 else if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  openMenu({ clientX: r.left + 12, clientY: r.bottom, preventDefault: () => e.preventDefault() }, tabMenu(t));
+                  openMenuAt(e, tabMenu(t));
                 }
               }}
               title={title}

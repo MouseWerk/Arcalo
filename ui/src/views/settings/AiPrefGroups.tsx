@@ -115,14 +115,15 @@ export function AiPrefGroups({ draft, update }: SectionProps) {
                 />
                 <TextArea
                   rows={2}
+                  autoGrow
                   value={p.instruction}
                   onChange={(e) => setPresets(presets.map((x, j) => (j === i ? { ...x, instruction: e.target.value } : x)))}
                   aria-label={t("set.ai.presetInstruction", { n: i + 1 })}
                 />
                 <div className="preset-actions">
-                  <IconButton icon={ArrowUp} label={t("common.up")} size={24} iconSize={13} disabled={i === 0} onClick={() => movePreset(i, -1)} />
-                  <IconButton icon={ArrowDown} label={t("common.down")} size={24} iconSize={13} disabled={i === presets.length - 1} onClick={() => movePreset(i, 1)} />
-                  <IconButton icon={Trash2} label={t("common.remove")} size={24} iconSize={13} onClick={() => setPresets(presets.filter((_, j) => j !== i))} />
+                  <IconButton icon={ArrowUp} label={t("common.up")} size="sm" disabled={i === 0} onClick={() => movePreset(i, -1)} />
+                  <IconButton icon={ArrowDown} label={t("common.down")} size="sm" disabled={i === presets.length - 1} onClick={() => movePreset(i, 1)} />
+                  <IconButton icon={Trash2} label={t("common.remove")} size="sm" onClick={() => setPresets(presets.filter((_, j) => j !== i))} />
                 </div>
               </div>
             ))}
@@ -142,6 +143,7 @@ export function AiPrefGroups({ draft, update }: SectionProps) {
         <Unfiltered>
           <TextArea
             rows={12}
+            autoGrow
             className="mono small"
             value={ai.meeting_template ?? meetingSummaryInstruction()}
             onChange={(e) => set({ meeting_template: e.target.value })}

@@ -137,7 +137,7 @@ export function UpdateToast() {
           </>
         )}
       </div>
-      {!busy && <IconButton icon={X} label="Später" size={22} iconSize={13} onClick={() => useUpdates.setState({ dismissed: available.version })} />}
+      {!busy && <IconButton icon={X} label="Später" size="sm" onClick={() => useUpdates.setState({ dismissed: available.version })} />}
       <ReleaseNotes />
     </div>
   );

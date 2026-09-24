@@ -4,6 +4,7 @@
   --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", "Cascadia Code", Consolas, ui-monospace, monospace;
 
+  --fs-2xs: 10px;
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-md: 13px;
@@ -39,6 +40,8 @@
   --bg-hover: rgb(255 255 255 / 0.045);
   --bg-active: rgb(255 255 255 / 0.075);
   --bg-selected: rgb(129 140 248 / 0.14);
+  /* The current item of a list or menu (open page, section, panel): clearly above hover. */
+  --bg-current: rgb(255 255 255 / 0.11);
 
   --border: rgb(255 255 255 / 0.07);
   --border-strong: rgb(255 255 255 / 0.12);
@@ -46,7 +49,7 @@
 
   --text: #ececef;
   --text-2: #a7a9b1;
-  --text-3: #858892;
+  --text-3: #8b8e98;
   --star: #facc15;
   --warning-fill: #fbbf24;
   --text-inverse: #0e0f11;
@@ -82,6 +85,7 @@
   --bg-hover: rgb(15 15 20 / 0.04);
   --bg-active: rgb(15 15 20 / 0.07);
   --bg-selected: rgb(99 102 241 / 0.1);
+  --bg-current: rgb(15 15 20 / 0.095);
 
   --border: rgb(15 15 20 / 0.09);
   --border-strong: rgb(15 15 20 / 0.14);
@@ -89,7 +93,7 @@
 
   --text: #18181b;
   --text-2: #52525b;
-  --text-3: #71717a;
+  --text-3: #6b6b74;
   --star: #f59e0b;
   --warning-fill: #f59e0b;
   --text-inverse: #ffffff;
@@ -99,9 +103,9 @@
   --accent-soft: rgb(99 102 241 / 0.1);
   --accent-text: #4f46e5;
 
-  --success: #15803d;
+  --success: #157034;
   --success-soft: rgb(21 128 61 / 0.1);
-  --warning: #b45309;
+  --warning: #a14a08;
   --warning-soft: rgb(217 119 6 / 0.12);
   --danger: #dc2626;
   --danger-soft: rgb(220 38 38 / 0.09);

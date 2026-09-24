@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileSize, importSummary, parseGermanNumber, versionTimes } from "./format";
+import { fileSize, importSummary, parseDayInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
   const ok: [string, number][] = [
@@ -40,5 +40,34 @@ describe("importSummary", () => {
     expect(importSummary({ pages: 1, folders: 1, attachments: 1, skipped: 1 })).toBe("1 Seite, 1 Ordner, 1 Bild, 1 Datei übersprungen");
     expect(importSummary({ pages: 12, folders: 3, attachments: 2, skipped: 4 })).toBe("12 Seiten, 3 Ordner, 2 Bilder, 4 Dateien übersprungen");
     expect(importSummary({ pages: 0, folders: 0, attachments: 0, skipped: 0 })).toBe("0 Seiten, 0 Ordner");
+  });
+});
+
+describe("parseDayInput", () => {
+  const now = new Date(2026, 8, 24);
+  it("reads German and ISO dates", () => {
+    expect(parseDayInput("1.10.2026", now)).toBe("2026-10-01");
+    expect(parseDayInput("01.10.26", now)).toBe("2026-10-01");
+    expect(parseDayInput("3.2.", now)).toBe("2026-02-03");
+    expect(parseDayInput(" 2026-10-01 ", now)).toBe("2026-10-01");
+  });
+  it("refuses impossible days", () => {
+    expect(parseDayInput("31.02.2026", now)).toBeNull();
+    expect(parseDayInput("morgen", now)).toBeNull();
+    expect(parseDayInput("", now)).toBeNull();
+  });
+});
+
+describe("parseTimeInput", () => {
+  it("reads 24-hour times", () => {
+    expect(parseTimeInput("9")).toBe("09:00");
+    expect(parseTimeInput("930")).toBe("09:30");
+    expect(parseTimeInput("9.30")).toBe("09:30");
+    expect(parseTimeInput("17:05")).toBe("17:05");
+  });
+  it("refuses what is no time", () => {
+    expect(parseTimeInput("24:00")).toBeNull();
+    expect(parseTimeInput("9:75")).toBeNull();
+    expect(parseTimeInput("9 Uhr")).toBeNull();
   });
 });

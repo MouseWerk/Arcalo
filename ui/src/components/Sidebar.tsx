@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
-  ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
+  ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, MoreHorizontal, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
   ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -17,6 +17,7 @@ import { t as tStatic, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
+import { stripMarkdown } from "../lib/plaintext";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -81,7 +82,7 @@ export function Sidebar() {
     <aside className="sidebar" aria-label={t("sidebar.label")}>
       <div className="side-tabs" role="tablist" data-tauri-drag-region>
         {tabs.map((t) => (
-          <IconButton key={t.id} icon={t.icon} label={t.label} active={tab === t.id} size={30} iconSize={16} onClick={() => setTab(t.id)} role="tab" aria-selected={tab === t.id} />
+          <IconButton key={t.id} icon={t.icon} label={t.label} active={tab === t.id} size="md" onClick={() => setTab(t.id)} role="tab" aria-selected={tab === t.id} />
         ))}
       </div>
 
@@ -89,12 +90,11 @@ export function Sidebar() {
         <>
           <div className="side-toolbar">
             <span className="side-title">{t("sidebar.files")}</span>
-            <IconButton icon={FilePlus2} label={t("sidebar.newPage")} size={26} iconSize={15} onClick={() => createSubpage(null)} />
+            <IconButton icon={FilePlus2} label={t("sidebar.newPage")} size="md" onClick={() => createSubpage(null)} />
             <IconButton
               icon={allCollapsed ? ChevronsUpDown : ChevronsDownUp}
               label={allCollapsed ? t("sidebar.expandAll") : t("sidebar.collapseAll")}
-              size={26}
-              iconSize={15}
+              size="md"
               onClick={() => saveCollapsed(allCollapsed ? new Set() : new Set(withChildren))}
             />
           </div>
@@ -143,8 +143,7 @@ function SidebarFooter() {
         icon={Trash2}
         label={trashed ? `${t("sidebar.trash")} (${trashed})` : t("sidebar.trash")}
         tooltipSide="top"
-        size={24}
-        iconSize={14}
+        size="sm"
         onClick={() => s().openTab({ kind: "trash" })}
       />
     </div>
@@ -201,7 +200,7 @@ function SearchPane() {
             if (e.key === "Escape") setQ("");
           }}
         />
-        {q && <IconButton icon={X} label={tr("common.clear")} size={22} iconSize={13} onClick={() => setQ("")} />}
+        {q && <IconButton icon={X} label={tr("common.clear")} size="sm" onClick={() => setQ("")} />}
       </div>
       <div className="sidebar-scroll">
         {hits && (
@@ -237,7 +236,7 @@ function SearchPane() {
 }
 
 const escHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const markHits = (sn: string) => escHtml(sn).replace(/\u0002([^\u0003]*)\u0003/g, "<mark>$1</mark>");
+const markHits = (sn: string) => escHtml(stripMarkdown(sn)).replace(/\u0002([^\u0003]*)\u0003/g, "<mark>$1</mark>");
 
 function Bookmarks({ activePageId }: { activePageId?: number }) {
   const t = useT();
@@ -311,6 +310,7 @@ interface RowActions {
   toggle: (id: number) => void;
   open: (n: PageNode, e: React.MouseEvent) => void;
   menu: (n: PageNode, e: React.MouseEvent) => void;
+  menuAt: (n: PageNode, e: React.MouseEvent) => void;
   key: (n: PageNode, e: React.KeyboardEvent<HTMLDivElement>) => void;
   dragStart: (n: PageNode, e: DragEvent) => void;
   dragEnd: () => void;
@@ -335,7 +335,7 @@ function PageTree({
   setCollapsed: (s: Set<number>) => void;
 }) {
   const [drag, setDrag] = useState<{ id: number; over?: number; pos?: DropPos } | null>(null);
-  const [menu, openMenu] = useMenu();
+  const [menu, openMenu, openMenuAt] = useMenu();
   const s = useApp.getState;
 
   const toggle = (id: number) => {
@@ -531,8 +531,7 @@ function PageTree({
     const open = n.children.length > 0 && !collapsed.has(n.id);
     const key = e.key;
     if ((e.shiftKey && key === "F10") || key === "ContextMenu") {
-      const r = e.currentTarget.getBoundingClientRect();
-      openMenu({ clientX: r.left + 24, clientY: r.bottom, preventDefault: () => e.preventDefault() }, menuItems(n));
+      openMenuAt(e, menuItems(n));
       return;
     }
     const handled = () => e.preventDefault();
@@ -553,13 +552,14 @@ function PageTree({
   };
 
   // The latest closures, reached through one stable object.
-  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, drag, setDrag });
-  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, drag, setDrag };
+  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag });
+  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag };
   const actions = useMemo<RowActions>(
     () => ({
       toggle: (id) => latest.current.toggle(id),
       open: (n, e) => s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }),
       menu: (n, e) => latest.current.openMenu(e, latest.current.menuItems(n)),
+      menuAt: (n, e) => latest.current.openMenuAt(e, latest.current.menuItems(n)),
       key: (n, e) => latest.current.onRowKey(e, n),
       dragStart: (n, e) => {
         e.dataTransfer.effectAllowed = "move";
@@ -675,10 +675,19 @@ const TreeRow = memo(function TreeRow({
       <span className="tree-label">{n.title}</span>
       <span className="tree-row-actions">
         <IconButton
+          icon={MoreHorizontal}
+          label={tStatic("sidebar.pageActions")}
+          size="sm"
+          tooltipSide="right"
+          onClick={(e) => {
+            e.stopPropagation();
+            act.menuAt(n, e);
+          }}
+        />
+        <IconButton
           icon={Plus}
           label={tStatic("sidebar.subpage")}
-          size={20}
-          iconSize={13}
+          size="sm"
           tooltipSide="right"
           onClick={(e) => {
             e.stopPropagation();
@@ -716,7 +725,7 @@ function TimerDock() {
         <span className="timer-dock-time num">{clock(seconds)}</span>
         <span className="timer-dock-label">{e.description || `${e.vorgang_nr ?? "Timer"}`}</span>
       </button>
-      <IconButton icon={Square} label={t("status.stopTimer")} size={26} iconSize={13} onClick={() => stopTimer()} />
+      <IconButton icon={Square} label={t("status.stopTimer")} size="md" onClick={() => stopTimer()} />
     </div>
   );
 }

@@ -64,7 +64,7 @@ export function ProjectsView() {
 }
 
 function ProjectCard({ project, open }: { project: ProjectTree; open: (d: DialogState) => void }) {
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   return (
     <section className="project">
@@ -79,7 +79,7 @@ function ProjectCard({ project, open }: { project: ProjectTree; open: (d: Dialog
           icon={MoreHorizontal}
           label="Projektaktionen"
           onClick={(e) =>
-            openMenu(e, [
+            openMenuAt(e, [
               { label: "Umbenennen", icon: Pencil, onSelect: () => open({ kind: "project", project }) },
               "separator",
               {
@@ -113,7 +113,7 @@ function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: D
   const entriesVersion = useApp((s) => s.entriesVersion);
   const [budget, setBudget] = useState<BudgetStatus[]>([]);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   useEffect(() => {
     api.budget(netzplan.id).then(setBudget).catch(() => {});
@@ -159,7 +159,7 @@ function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: D
             icon={MoreHorizontal}
             label="Netzplanaktionen"
             onClick={(e) =>
-              openMenu(e, [
+              openMenuAt(e, [
                 { label: "Bearbeiten", icon: Pencil, onSelect: () => open({ kind: "netzplan", projectId: netzplan.project_id, netzplan }) },
                 "separator",
                 {
@@ -239,8 +239,8 @@ function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: D
                       <Badge tone={lv.tone}>{lv.label}</Badge>
                     </td>
                     <td className="row-actions">
-                      <IconButton icon={Play} label="Timer starten" size={24} iconSize={13} onClick={() => startTimer(v)} />
-                      <IconButton icon={Pencil} label="Bearbeiten" size={24} iconSize={13} onClick={() => open({ kind: "vorgang", netzplan, vorgang: v })} />
+                      <IconButton icon={Play} label="Timer starten" size="sm" onClick={() => startTimer(v)} />
+                      <IconButton icon={Pencil} label="Bearbeiten" size="sm" onClick={() => open({ kind: "vorgang", netzplan, vorgang: v })} />
                     </td>
                   </tr>
                 );

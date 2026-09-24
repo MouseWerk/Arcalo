@@ -135,6 +135,8 @@ export interface CalendarAnchor {
   y?: number;
   /** Month and day to show first (YYYY-MM-DD); default today. */
   date?: string;
+  /** Date picker: a chosen day is handed here instead of opening its daily note. */
+  onPick?: (iso: string) => void;
 }
 
 export interface OpenOpts {

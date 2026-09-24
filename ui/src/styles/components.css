@@ -38,6 +38,9 @@
   position: relative;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
+.icon-btn-sm { width: 22px; height: 22px; border-radius: var(--r-xs); }
+.icon-btn-md { width: 28px; height: 28px; }
+.icon-btn-lg { width: 32px; height: 32px; }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
 .icon-btn.active { background: var(--bg-active); color: var(--text); }
 .icon-btn:disabled { opacity: 0.35; pointer-events: none; }
@@ -85,7 +88,19 @@
 .input:hover { border-color: color-mix(in srgb, var(--border-strong) 50%, var(--text-3)); }
 .input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
 .input:disabled { opacity: 0.55; }
+.input[aria-invalid="true"], .input[data-invalid] { border-color: color-mix(in srgb, var(--danger) 60%, transparent); }
+/* Number fields: no spinner buttons (the arrow keys still step); the value stays readable. */
+.input[type="number"] { appearance: textfield; -moz-appearance: textfield; font-variant-numeric: tabular-nums; }
+.input[type="number"]::-webkit-inner-spin-button, .input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* An input with a trailing icon button (date field). */
+.affix-input { display: inline-flex; align-items: center; gap: 4px; padding: 0 3px 0 10px; }
+.affix-input:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.affix-input > input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; outline: none; font-variant-numeric: tabular-nums; }
+.affix-input > input::placeholder { color: var(--text-3); }
+.affix-input > .icon-btn { color: var(--text-3); }
+.time-input { font-variant-numeric: tabular-nums; }
 .textarea { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+.textarea-auto { resize: none; max-height: 260px; overflow-y: auto; }
 .select {
   appearance: none;
   padding-right: 28px;
@@ -96,6 +111,7 @@
 .select option, .select optgroup { background: var(--bg-overlay); color: var(--text); }
 .w-360 { width: 360px; max-width: 100%; }
 .w-120 { width: 120px; }
+.w-date { width: 148px; }
 
 .field { display: grid; gap: 5px; min-width: 0; }
 .field-label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
@@ -220,6 +236,9 @@
 .tpl-picker { display: grid; gap: 12px; }
 .tpl-list { display: grid; gap: 1px; max-height: 300px; overflow-y: auto; outline: none; }
 .tpl-loading { min-height: 120px; }
+/* Page icons as in the tree and the palette, not the boxed command icons of the slash menu. */
+.tpl-list .sugg-icon { width: 20px; border: 0; background: none; color: var(--text-3); }
+.tpl-list .sugg-item.sel .sugg-icon { color: var(--text-2); }
 .dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(0.985); } }
@@ -336,7 +355,8 @@
 .versions-list { overflow: auto; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border); padding-right: 8px; }
 .versions-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px; border: 0; background: none; font: inherit; border-radius: var(--r-sm); text-align: left; color: var(--text-2); cursor: pointer; }
 .versions-item:hover { background: var(--bg-hover); color: var(--text); }
-.versions-item.on { background: var(--bg-active); color: var(--text); }
+.versions-item.on { background: var(--bg-current); color: var(--text); }
+.versions-note { margin: auto 0 0; padding: 10px 8px 2px; font-size: var(--fs-xs); line-height: 1.45; }
 .versions-when { font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
 .versions-tag { font-size: var(--fs-xs); font-weight: 500; color: var(--accent); }
 .versions-meta { font-size: var(--fs-xs); }

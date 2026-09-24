@@ -30,7 +30,7 @@ const MORE_W = 38;
 const MAX_LEVEL = 6;
 
 export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind: (replace: boolean) => void; onAi: () => void }) {
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const [url, setUrl] = useState<string | null>(null);
   // In the header row: groups that do not fit move into „Weitere Formatierung“, the least used
   // first (lists, then quote and code block, then the rarer marks, then undo/redo).
@@ -204,11 +204,6 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
     return out;
   };
 
-  const at = (e: React.MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    return { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() };
-  };
-
   return (
     <div
       ref={bar}
@@ -270,16 +265,16 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
       </div>}
       {level > 0 && (
         <div className="tb-group">
-          <IconButton icon={MoreHorizontal} label="Weitere Formatierung" aria-haspopup="menu" onClick={(e) => openMenu(at(e), moreMenu())} size={28} iconSize={15} />
+          <IconButton icon={MoreHorizontal} label="Weitere Formatierung" aria-haspopup="menu" onClick={(e) => openMenuAt(e, moreMenu())} size={28} iconSize={15} />
         </div>
       )}
       <div className="tb-group">
-        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Einfügen" data-tooltip="Einfügen" onClick={(e) => openMenu(at(e), insertMenu())}>
+        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Einfügen" data-tooltip="Einfügen" onClick={(e) => openMenuAt(e, insertMenu())}>
           <Plus size={15} strokeWidth={1.75} aria-hidden />
           <span className="tb-label">Einfügen</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />
         </button>
-        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Werkzeuge" data-tooltip="Werkzeuge" onClick={(e) => openMenu(at(e), toolsMenu())}>
+        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Werkzeuge" data-tooltip="Werkzeuge" onClick={(e) => openMenuAt(e, toolsMenu())}>
           <Wrench size={15} strokeWidth={1.75} aria-hidden />
           <span className="tb-label">Werkzeuge</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />

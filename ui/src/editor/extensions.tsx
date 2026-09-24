@@ -192,7 +192,7 @@ export function slashItems(o: SlashOptions): SlashItem[] {
       ? [{ id: "file", title: "Datei einfügen", subtitle: "PDF, Word, Excel, … oder in die Notiz ziehen", icon: ic(Paperclip), Icon: Paperclip, section: "Einfügen", keywords: "datei file anhang pdf dokument word excel anhängen attachment", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onFile!(e)) }]
       : []),
     ...(o.onDrawing
-      ? [{ id: "drawing", title: "Zeichnung", subtitle: "Skizze oder Diagramm (Excalidraw)", icon: ic(PenTool), section: "Einfügen", keywords: "zeichnung drawing excalidraw diagramm skizze whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
+      ? [{ id: "drawing", title: "Zeichnung", subtitle: "Skizze oder Diagramm (Excalidraw)", icon: ic(PenTool), Icon: PenTool, section: "Einfügen", keywords: "zeichnung drawing excalidraw diagramm skizze whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
       : []),
     ...(o.onTemplate
       ? [{ id: "template", title: "Vorlage einfügen", subtitle: "Seite aus „Vorlagen“", icon: ic(LayoutTemplate), Icon: LayoutTemplate, section: "Einfügen", keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
@@ -212,6 +212,7 @@ function tableSlashItems(editor: Editor): SlashItem[] {
     id: `table-${a.id}`,
     title: a.title,
     icon: ic(a.icon),
+    Icon: a.icon,
     section: "Tabelle",
     keywords: a.keywords,
     run: (e: Editor, r: Range) => a.run(e.chain().focus().deleteRange(r)).run(),

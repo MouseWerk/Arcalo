@@ -23,34 +23,41 @@ export function Button({
   );
 }
 
+/** The three icon button sizes: row actions and chips, headers and toolbars, the ribbon. */
+const ICON_BTN = { sm: { box: 22, icon: 13 }, md: { box: 28, icon: 15 }, lg: { box: 32, icon: 17 } } as const;
+export type IconButtonSize = keyof typeof ICON_BTN;
+
 export function IconButton({
   icon: Icon,
   label,
   active,
-  size = 28,
-  iconSize = 16,
+  size = "md",
+  iconSize,
   tooltipSide = "bottom",
   className = "",
+  style,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   icon: LucideIcon;
   label: string;
   active?: boolean;
-  size?: number;
+  /** A named size; a pixel box is still accepted for special cases. */
+  size?: IconButtonSize | number;
   iconSize?: number;
   tooltipSide?: "bottom" | "top" | "right" | "left";
 }) {
+  const named = typeof size === "string" ? ICON_BTN[size] : null;
   return (
     <button
       type="button"
       aria-label={label}
       data-tooltip={label}
       data-tooltip-side={tooltipSide}
-      className={`icon-btn ${active ? "active" : ""} ${className}`}
-      style={{ width: size, height: size }}
+      className={`icon-btn ${named ? `icon-btn-${size}` : ""} ${active ? "active" : ""} ${className}`}
+      style={named ? style : { width: size, height: size, ...style }}
       {...rest}
     >
-      <Icon size={iconSize} strokeWidth={1.75} aria-hidden />
+      <Icon size={iconSize ?? named?.icon ?? 16} strokeWidth={1.75} aria-hidden />
     </button>
   );
 }
@@ -59,8 +66,16 @@ export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInput
   return <input className={`input ${className}`} spellCheck={false} {...rest} />;
 }
 
-export function TextArea({ className = "", ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`input textarea ${className}`} {...rest} />;
+/** `autoGrow`: as tall as its text (up to a limit in CSS), so no line is cut off mid-sentence. */
+export function TextArea({ className = "", autoGrow, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { autoGrow?: boolean }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!autoGrow || !el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+  }, [autoGrow, rest.value]);
+  return <textarea ref={ref} className={`input textarea ${autoGrow ? "textarea-auto" : ""} ${className}`} {...rest} />;
 }
 
 export function Select({ className = "", children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
@@ -163,9 +178,24 @@ export function Dialog({
       first?.focus();
     }, 20);
     const onKey = (e: KeyboardEvent) => {
+      const box = ref.current;
+      // A newer dialog (a confirm on top) or a menu/calendar opened from this one handles its own keys.
+      const above = [...document.querySelectorAll(".dialog, .menu, .calendar")].some((el) => el !== box && !box?.contains(el) && !!(box && box.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+      if (above) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+      } else if (e.key === "Tab" && box) {
+        // Focus stays inside the dialog: Tab from the last control wraps to the first and back.
+        const all = [...box.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], summary, [tabindex]")].filter(
+          (el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+        );
+        if (!all.length) return;
+        const first = all[0];
+        const last = all[all.length - 1];
+        const inside = box.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === first || !inside)) (e.preventDefault(), last.focus());
+        else if (!e.shiftKey && (document.activeElement === last || !inside)) (e.preventDefault(), first.focus());
       }
     };
     window.addEventListener("keydown", onKey, true);
@@ -208,6 +238,20 @@ export interface MenuItem {
 }
 export type MenuEntry = MenuItem | "separator";
 
+/** Gap between a trigger and the menu it opens. */
+export const MENU_GAP = 4;
+
+type Box = { left: number; right: number; top: number; bottom: number };
+
+/** Where a menu opened from `anchor` goes: below it and left-aligned; right-aligned near the right edge, above it near the bottom. */
+export function anchorMenu(anchor: Box, size: { width: number; height: number }, view: { width: number; height: number }) {
+  const x = anchor.left + size.width > view.width - 8 ? anchor.right - size.width : anchor.left;
+  const below = anchor.bottom + MENU_GAP;
+  const above = anchor.top - MENU_GAP - size.height;
+  const y = below + size.height > view.height - 8 && above >= 8 ? above : below;
+  return { x: Math.max(8, Math.min(x, view.width - size.width - 8)), y: Math.max(8, Math.min(y, view.height - size.height - 8)) };
+}
+
 export function Menu({
   x,
   y,
@@ -215,6 +259,8 @@ export function Menu({
   onClose,
   onBack,
   flipX,
+  anchor,
+  preselect,
 }: {
   x: number;
   y: number;
@@ -224,19 +270,25 @@ export function Menu({
   onBack?: () => void;
   /** Where a submenu goes when there is no room on the right: the parent item's left edge. */
   flipX?: number;
+  /** The trigger's rect: the menu opens below it instead of at x/y. */
+  anchor?: Box;
+  /** Highlight the first item right away (the menu was opened from the keyboard). */
+  preselect?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x, y });
-  const [sel, setSel] = useState(onBack ? firstActionable(items) : -1);
+  // An anchored menu is measured at the left edge first, where nothing squeezes it.
+  const [pos, setPos] = useState(anchor ? { x: 0, y: 0 } : { x, y });
+  const [sel, setSel] = useState(onBack || preselect ? firstActionable(items) : -1);
   const [sub, setSub] = useState<{ index: number; x: number; y: number; left: number } | null>(null);
   const actionable = items.map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
 
   useLayoutEffect(() => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
+    if (anchor) return setPos(anchorMenu(anchor, r, { width: window.innerWidth, height: window.innerHeight }));
     const nx = x + r.width > window.innerWidth - 8 && flipX != null ? Math.max(8, flipX - r.width) : Math.min(x, window.innerWidth - r.width - 8);
     setPos({ x: nx, y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
-  }, [x, y, flipX]);
+  }, [x, y, flipX, anchor]);
 
   const openSub = (i: number) => {
     const el = ref.current?.querySelector<HTMLElement>(`[data-index="${i}"]`);
@@ -325,13 +377,29 @@ function firstActionable(items: MenuEntry[]): number {
   return items.findIndex((it) => it !== "separator" && !it.disabled);
 }
 
-/** State helper for context menus: `const [menu, openMenu, closeMenu] = useMenu()`. */
+type Trigger = { currentTarget: EventTarget | null; detail?: number; preventDefault?: () => void };
+
+/**
+ * State helper for menus: `const [menu, openMenu, openMenuAt] = useMenu()`.
+ * `openMenu` opens at the pointer (context menus). `openMenuAt` opens below the trigger
+ * (an element, or the event whose currentTarget it is) and highlights the first item when
+ * the trigger was used from the keyboard (key events and clicks with detail 0).
+ */
 export function useMenu() {
-  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[] } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[]; anchor?: Box; preselect?: boolean } | null>(null);
   const open = (e: { clientX: number; clientY: number; preventDefault?: () => void }, items: MenuEntry[]) => {
     e.preventDefault?.();
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
-  const node = menu ? <Menu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} /> : null;
-  return [node, open] as const;
+  const openAt = (target: Element | Trigger, items: MenuEntry[], opts: { keyboard?: boolean } = {}) => {
+    const event = target instanceof Element ? null : target;
+    const el = event ? event.currentTarget : target;
+    if (!(el instanceof Element)) return;
+    event?.preventDefault?.();
+    const r = el.getBoundingClientRect();
+    const anchor = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    setMenu({ x: r.left, y: r.bottom + MENU_GAP, items, anchor, preselect: opts.keyboard ?? event?.detail === 0 });
+  };
+  const node = menu ? <Menu x={menu.x} y={menu.y} anchor={menu.anchor} preselect={menu.preselect} items={menu.items} onClose={() => setMenu(null)} /> : null;
+  return [node, open, openAt] as const;
 }

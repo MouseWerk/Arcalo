@@ -16,16 +16,17 @@ import { openDailyNote } from "./CalendarPopover";
 
 const WIDGET_MIME = "application/x-annalo-widget";
 
-export function Dashboard() {
+/** The start page widgets; `head` (the greeting) shares its row with „Anpassen“. */
+export function Dashboard({ head }: { head?: ReactNode }) {
   const view = useApp((s) => s.settings);
   const saved = view?.settings.dashboard.widgets;
   const [draft, setDraft] = useState<Widget[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropBefore, setDropBefore] = useState<string | null | undefined>(undefined);
-  const [menu, openMenu] = useMenu();
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
-  if (!saved) return null;
+  if (!saved) return <div className="dash-top">{head}</div>;
   const editing = draft != null;
   const widgets = draft ?? saved;
   const dispatch = (a: LayoutAction) => setDraft((d) => layoutReducer(d ?? saved, a));
@@ -42,13 +43,11 @@ export function Dashboard() {
       setSaving(false);
     }
   };
-  const addMenu = (e: React.MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu(
-      { clientX: r.left, clientY: r.bottom + 4 },
+  const addMenu = (e: React.MouseEvent) =>
+    openMenuAt(
+      e,
       WIDGET_KINDS.map((k) => ({ label: WIDGETS[k].label, onSelect: () => dispatch({ type: "add", kind: k }) })),
     );
-  };
 
   const drag = (w: Widget) =>
     editing
@@ -83,25 +82,28 @@ export function Dashboard() {
 
   return (
     <section className={`dash ${editing ? "editing" : ""}`} aria-label="Übersicht">
-      <div className="dash-bar">
-        {editing ? (
-          <>
-            <span className="faint dash-hint">Ziehen oder mit den Pfeilen verschieben</span>
-            <Button size="sm" icon={Plus} onClick={addMenu}>
-              Widget hinzufügen
+      <div className="dash-top">
+        {head}
+        <div className="dash-bar">
+          {editing ? (
+            <>
+              <span className="faint dash-hint">Ziehen oder mit den Pfeilen verschieben</span>
+              <Button size="sm" icon={Plus} onClick={addMenu}>
+                Widget hinzufügen
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
+                Abbrechen
+              </Button>
+              <Button size="sm" variant="primary" onClick={finish} loading={saving}>
+                Fertig
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setDraft(saved.map((w) => ({ ...w })))}>
+              Anpassen
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
-              Abbrechen
-            </Button>
-            <Button size="sm" variant="primary" onClick={finish} loading={saving}>
-              Fertig
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setDraft(saved.map((w) => ({ ...w })))}>
-            Anpassen
-          </Button>
-        )}
+          )}
+        </div>
       </div>
       <div className="dash-grid">
         {widgets.map((w, i) => (
@@ -125,9 +127,9 @@ export function Dashboard() {
                       </button>
                     ))}
                   </div>
-                  <IconButton icon={ArrowUp} label="Nach vorn" size={24} iconSize={13} disabled={i === 0} onClick={() => dispatch({ type: "move", id: w.id, delta: -1 })} />
-                  <IconButton icon={ArrowDown} label="Nach hinten" size={24} iconSize={13} disabled={i === widgets.length - 1} onClick={() => dispatch({ type: "move", id: w.id, delta: 1 })} />
-                  <IconButton icon={X} label="Entfernen" size={24} iconSize={13} onClick={() => dispatch({ type: "remove", id: w.id })} />
+                  <IconButton icon={ArrowUp} label="Nach vorn" size="sm" disabled={i === 0} onClick={() => dispatch({ type: "move", id: w.id, delta: -1 })} />
+                  <IconButton icon={ArrowDown} label="Nach hinten" size="sm" disabled={i === widgets.length - 1} onClick={() => dispatch({ type: "move", id: w.id, delta: 1 })} />
+                  <IconButton icon={X} label="Entfernen" size="sm" onClick={() => dispatch({ type: "remove", id: w.id })} />
                 </div>
               )}
             </header>
@@ -389,7 +391,7 @@ function PageRows({ pages, when }: { pages: Page[]; when?: boolean }) {
 
 function RecentWidget({ size }: { size: WidgetSize }) {
   const pages = useApp((s) => s.pages);
-  const [recent] = useLoad(() => api.recentPages(size === "s" ? 5 : 8), [pages, size]);
+  const [recent] = useLoad(() => api.recentPages(size === "l" ? 8 : size === "m" ? 6 : 5), [pages, size]);
   if (!recent) return null;
   return recent.length ? <PageRows pages={recent} when={size !== "s"} /> : <Empty>Noch keine Seiten.</Empty>;
 }
@@ -537,8 +539,8 @@ function CalendarWidget() {
     <div className="dw-cal">
       <div className="dw-cal-head">
         <span className="grow">{new Date(year, month, 1).toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</span>
-        <IconButton icon={ChevronLeft} label="Vorheriger Monat" size={22} iconSize={13} onClick={() => setCursor(addMonths(cursor, -1))} />
-        <IconButton icon={ChevronRight} label="Nächster Monat" size={22} iconSize={13} onClick={() => setCursor(addMonths(cursor, 1))} />
+        <IconButton icon={ChevronLeft} label="Vorheriger Monat" size="sm" onClick={() => setCursor(addMonths(cursor, -1))} />
+        <IconButton icon={ChevronRight} label="Nächster Monat" size="sm" onClick={() => setCursor(addMonths(cursor, 1))} />
       </div>
       <div className="dw-cal-grid" role="grid">
         {WEEKDAYS.map((w) => (

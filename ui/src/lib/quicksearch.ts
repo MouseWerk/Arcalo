@@ -2,6 +2,7 @@
 // the full-text search, time entries and a few quick actions. Pure, so it can be tested.
 
 import type { Page, SearchHit } from "./types";
+import { stripMarkdown } from "./plaintext";
 
 export type QsAction =
   | { type: "page"; pageId: number }
@@ -98,4 +99,4 @@ export function quickItems(query: string, ctx: QsContext): QsItem[] {
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** FTS snippets wrap hits in STX/ETX control characters: escaped HTML with <mark>. */
-export const snippetHtml = (sn: string) => esc(sn).replace(/\u0002([^\u0003]*)\u0003/g, "<mark>$1</mark>");
+export const snippetHtml = (sn: string) => esc(stripMarkdown(sn)).replace(/\u0002([^\u0003]*)\u0003/g, "<mark>$1</mark>");

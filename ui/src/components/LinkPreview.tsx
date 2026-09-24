@@ -1,6 +1,6 @@
 // Obsidian-style page preview: hovering a [[link]] shows a card with the start of that page.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
 import { splitFrontmatter } from "../editor/extensions";
@@ -91,6 +91,14 @@ export function LinkPreview() {
     };
   }, []);
 
+  // The card is cut at its height as well as at PREVIEW_CHARS: fade whenever text is hidden.
+  const body = useRef<HTMLDivElement>(null);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = body.current;
+    setCut(!!el && el.scrollHeight > el.clientHeight + 1);
+  }, [shown]);
+
   if (!shown) return null;
   const W = 380;
   const H = 300;
@@ -114,11 +122,11 @@ export function LinkPreview() {
             {doc.title}
           </button>
           {preview!.text ? (
-            <div className="prose prose-chat link-preview-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview!.text) }} />
+            <div ref={body} className="prose prose-chat link-preview-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview!.text) }} />
           ) : (
             <div className="link-preview-empty">Leere Seite</div>
           )}
-          {preview!.more && <div className="link-preview-fade" aria-hidden />}
+          {(preview!.more || cut) && <div className="link-preview-fade" aria-hidden />}
         </>
       ) : (
         <div className="link-preview-empty">„{shown.target}“ existiert noch nicht – Klick auf den Link legt die Seite an.</div>

@@ -45,8 +45,7 @@ function DailyButton() {
         icon={CalendarCheck2}
         label={`${withHint(t("ribbon.daily"), "daily_note")} – ${t("ribbon.rightClickCalendar")}`}
         tooltipSide="right"
-        size={32}
-        iconSize={17}
+        size="lg"
         onClick={() => {
           if (press.current?.fired) return;
           openToday();
@@ -91,23 +90,22 @@ export function Ribbon() {
         label={withHint(t(shown ? "ribbon.hideSidebar" : "ribbon.showSidebar"), "toggle_sidebar")}
         active={shown}
         tooltipSide={side}
-        size={32}
-        iconSize={17}
+        size="lg"
         onClick={toggleSidebar}
       />
       <span className="ribbon-sep" />
-      <IconButton icon={FilePlus2} label={withHint(t("ribbon.newPage"), "new_page")} tooltipSide={side} size={32} iconSize={17} onClick={() => createSubpage(null)} />
+      <IconButton icon={FilePlus2} label={withHint(t("ribbon.newPage"), "new_page")} tooltipSide={side} size="lg" onClick={() => createSubpage(null)} />
       <DailyButton />
-      <IconButton icon={Search} label={withHint(t("ribbon.palette"), "palette")} tooltipSide={side} size={32} iconSize={17} onClick={() => s().set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" })} />
+      <IconButton icon={Search} label={withHint(t("ribbon.palette"), "palette")} tooltipSide={side} size="lg" onClick={() => s().set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" })} />
       <span className="ribbon-sep" />
-      <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "timesheet" })} />
-      <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "tasks" })} />
-      <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "projects" })} />
-      <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size={32} iconSize={17} onClick={openAssistant} />
+      <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />
+      <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
+      <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />
+      <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
       <span className="ribbon-sep" />
       <QuickLinks />
       <span className="grow" />
-      <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} tooltipSide={side} size={32} iconSize={17} onClick={() => s().openTab({ kind: "settings" })} />
+      <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "settings" })} />
     </nav>
   );
 }

@@ -72,3 +72,11 @@ describe("formatShortcut", () => {
     expect(modLabel(false)).toBe("Ctrl");
   });
 });
+
+describe("arrow keys", () => {
+  it("shows DOM arrow names as arrows on every platform", () => {
+    expect(keys("Alt ArrowUp", false)).toBe("Alt ↑");
+    expect(keys("Alt ArrowDown", true)).toBe("⌥↓");
+    expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Ctrl+←");
+  });
+});

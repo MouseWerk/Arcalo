@@ -284,6 +284,8 @@ export function CommandPalette() {
         </div>
         <div className="pal-list" ref={list} role="listbox">
           {items.length === 0 && <div className="pal-empty">Keine Ergebnisse</div>}
+          {/* Only „anlegen“ left: say so, instead of offering it as if it were a match. */}
+          {query.trim() !== "" && items.length > 0 && items.every((it) => it.id === "create") && <div className="pal-nohits">Keine Treffer für „{query.trim()}“</div>}
           {items.map((it, i) => {
             const header = it.section !== lastSection ? it.section : null;
             lastSection = it.section;

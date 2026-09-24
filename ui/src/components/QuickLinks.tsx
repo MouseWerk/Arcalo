@@ -82,7 +82,7 @@ export function QuickLinks() {
           </button>
         );
       })}
-      <IconButton icon={Plus} label={t("links.add")} className="quick-link-add" tooltipSide="right" size={28} iconSize={14} onClick={add} />
+      <IconButton icon={Plus} label={t("links.add")} className="quick-link-add" tooltipSide="right" size="md" onClick={add} />
       {menu}
       {editing && (
         <LinkDialog

@@ -79,7 +79,8 @@
 .properties { display: grid; gap: 1px; margin: -10px 0 22px; font-size: var(--fs-md); }
 .properties-head, .work-toggle { display: inline-flex; align-items: center; gap: 4px; justify-self: start; margin-bottom: 4px; padding: 2px 4px 2px 0; border: 0; background: none; color: var(--text-3); font-size: var(--fs-sm); font-weight: 500; }
 .properties-head:hover, .work-toggle:hover { color: var(--text-2); }
-.prop-row { position: relative; display: grid; grid-template-columns: 20px minmax(90px, 150px) minmax(0, 1fr) 22px; align-items: start; gap: 6px; min-height: 30px; padding: 2px 4px; border-radius: var(--r-sm); }
+/* The name column shrinks with the page (narrow windows, side panel) so values keep room. */
+.prop-row { position: relative; display: grid; grid-template-columns: 20px clamp(80px, 26%, 150px) minmax(0, 1fr) 22px; align-items: start; gap: 6px; min-height: 30px; padding: 2px 4px; border-radius: var(--r-sm); }
 .prop-row:hover, .prop-row:focus-within { background: var(--bg-hover); }
 .prop-icon { display: grid; place-items: center; height: 26px; color: var(--text-3); }
 .prop-key, .prop-value-input { width: 100%; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text); font: inherit; outline: none; }
@@ -89,17 +90,18 @@
 .prop-value-input::placeholder { color: var(--text-3); }
 .prop-value { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .prop-value > .prop-value-input:first-child:not(.prop-raw) { flex: 1; }
-input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
+.prop-date { width: auto; text-align: left; cursor: pointer; font-variant-numeric: tabular-nums; }
+.prop-date:hover { background: var(--bg-active); }
 .prop-raw { height: auto; min-height: 26px; padding: 4px 6px; resize: none; font: var(--fs-sm) / 1.55 var(--font-mono); color: var(--text-2); white-space: pre; overflow-x: auto; }
 .prop-remove { opacity: 0; margin-top: 2px; }
 .prop-row:hover .prop-remove, .prop-row:focus-within .prop-remove { opacity: 1; }
 .prop-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%; min-height: 26px; }
 /* Like .tag-chip in the meta line. */
 .prop-chip { display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 3px 0 7px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-xs); font-weight: 500; }
-.prop-chip-hash { margin-right: -1px; opacity: 0.75; }
+.prop-chip-hash { margin-right: -1px; }
 .prop-chip button { display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 3px; background: none; color: inherit; opacity: 0.7; }
 .prop-chip button:hover { opacity: 1; background: var(--bg-hover); }
-.prop-list-input { flex: 1; width: auto; min-width: 80px; }
+.prop-list-input { flex: 1 1 48px; width: auto; min-width: 48px; }
 .prop-row.is-wbs .prop-value-input { font-family: var(--font-mono); font-size: var(--fs-sm); }
 .prop-row.is-wbs .prop-value > .prop-value-input:first-child { flex: 0 1 26ch; min-width: 0; }
 /* As wide as its text (14–26ch), so the picker icon sits right next to it. */
@@ -130,6 +132,9 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .prose { outline: none; font-size: var(--fs-lg); line-height: 1.72; color: var(--text); user-select: text; caret-color: var(--accent); overflow-wrap: break-word; }
 .prose > * + * { margin-top: 0.55em; }
 .prose p { margin: 0; }
+/* Paragraphs sit flush (line height does the spacing); one holding an image, drawing or PDF card gets air around it. */
+.prose p:has(> img.embed-image, > .drawing-embed, > .pdf-embed) { margin-block: 14px; }
+.prose p:has(> .file-embed) { margin-block: 6px; }
 .prose img.embed-image { display: inline-block; max-width: 100%; height: auto; vertical-align: bottom; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-raised); }
 .prose img.embed-image.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
 .prose h1, .prose h2, .prose h3, .prose h4 { letter-spacing: -0.015em; line-height: 1.3; margin: 1.5em 0 0.3em; font-weight: 650; }
@@ -306,7 +311,7 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .prose-chat > * + * { margin-top: 0.6em; }
 .prose-chat h1, .prose-chat h2, .prose-chat h3 { font-size: 1.05em; margin-top: 1em; }
 .prose-chat pre { padding: 10px 12px; }
-.prose-chat pre code { font-size: 12px; }
+.prose-chat pre code { font-size: var(--fs-sm); }
 .prose-chat ul, .prose-chat ol { padding-left: 1.3em; }
 .prose-chat.streaming > :last-child::after { content: ""; display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--accent); animation: caret 1s steps(2) infinite; }
 @keyframes caret { 50% { opacity: 0; } }
@@ -350,9 +355,9 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .find-hit.current { background: rgb(251 146 60 / 0.55); }
 
 /* Obsidian callouts */
-.prose blockquote.callout { --c: var(--info); border-left: 0; padding: 10px 14px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c) 10%, transparent); color: var(--text); box-shadow: inset 3px 0 0 var(--c); }
+.prose blockquote.callout { --c: var(--info); border-left: 0; padding: 10px 14px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c-fill, var(--c)) 10%, transparent); color: var(--text); box-shadow: inset 3px 0 0 var(--c-fill, var(--c)); }
 .prose blockquote.callout-tip, .prose blockquote.callout-success, .prose blockquote.callout-check, .prose blockquote.callout-done { --c: var(--success); }
-.prose blockquote.callout-warning, .prose blockquote.callout-caution, .prose blockquote.callout-attention, .prose blockquote.callout-todo { --c: var(--warning); }
+.prose blockquote.callout-warning, .prose blockquote.callout-caution, .prose blockquote.callout-attention, .prose blockquote.callout-todo { --c: var(--warning); --c-fill: var(--warning-fill); }
 .prose blockquote.callout-danger, .prose blockquote.callout-error, .prose blockquote.callout-bug, .prose blockquote.callout-failure { --c: var(--danger); }
 .prose blockquote.callout-question, .prose blockquote.callout-faq, .prose blockquote.callout-example, .prose blockquote.callout-abstract { --c: #a78bfa; }
 .prose blockquote.callout-quote { --c: var(--text-3); }
@@ -366,7 +371,8 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 
 .page-scroll-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .page-scroll-wrap > .page-scroll { flex: 1; min-height: 0; }
-.scroll-outline { position: absolute; top: 10px; bottom: 10px; right: 6px; width: 16px; z-index: 5; cursor: pointer; opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
+/* Left of the page scrollbar (10px), so the two never overlap. */
+.scroll-outline { position: absolute; top: 10px; bottom: 10px; right: 12px; width: 14px; z-index: 5; cursor: pointer; opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
 .scroll-outline:hover { opacity: 1; }
 .so-view { position: absolute; left: 1px; right: 1px; border-radius: 3px; background: color-mix(in srgb, var(--text-3) 18%, transparent); pointer-events: none; }
 .so-mark { position: absolute; right: 2px; height: 3px; padding: 0; border: 0; border-radius: 2px; background: var(--text-3); transform: translateY(-1px); cursor: pointer; }

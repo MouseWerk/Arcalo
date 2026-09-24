@@ -1,0 +1,10 @@
+import { describe, expect, it } from "vitest";
+import { slashItems } from "./extensions";
+
+describe("slashItems", () => {
+  it("gives every command an icon for the toolbar menus", () => {
+    const on = () => {};
+    const items = slashItems({ onTemplate: on, onImage: on, onAi: on, onSummary: on, onDrawing: on, onFile: on });
+    expect(items.filter((it) => !it.Icon).map((it) => it.id)).toEqual([]);
+  });
+});

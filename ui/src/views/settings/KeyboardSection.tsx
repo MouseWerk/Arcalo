@@ -95,8 +95,8 @@ export function KeyboardSection({ draft, update }: SectionProps) {
                   )}
                 </button>
                 {changed && <Badge tone="accent">{t("keys.custom")}</Badge>}
-                {combo && <IconButton icon={X} label={t("keys.clear")} size={24} iconSize={13} onClick={() => setCombo(c.id, "")} />}
-                {changed && <IconButton icon={RotateCcw} label={t("keys.resetOne")} size={24} iconSize={13} onClick={() => setCombo(c.id, DEFAULT_KEYMAP[c.id])} />}
+                {combo && <IconButton icon={X} label={t("keys.clear")} size="sm" onClick={() => setCombo(c.id, "")} />}
+                {changed && <IconButton icon={RotateCcw} label={t("keys.resetOne")} size="sm" onClick={() => setCombo(c.id, DEFAULT_KEYMAP[c.id])} />}
               </div>
             </Row>
           );

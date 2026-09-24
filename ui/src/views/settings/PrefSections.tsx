@@ -143,8 +143,7 @@ export function TimePrefGroups({ draft, update }: SectionProps) {
                 <IconButton
                   icon={Trash2}
                   label={t("common.remove")}
-                  size={24}
-                  iconSize={13}
+                  size="sm"
                   onClick={() => {
                     const m = { ...tp.default_leistungsart };
                     delete m[k];

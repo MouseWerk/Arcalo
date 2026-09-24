@@ -84,12 +84,13 @@ const ENTRIES = {
   "sidebar.timeEntries": ["Zeiteinträge", "time entries"],
   "sidebar.noHits": ["Keine Treffer für „{q}“", "No results for “{q}”"],
   "sidebar.searchHint": [
-    "Durchsucht Titel, Notizen und Zeiteinträge. Umlaute und Groß-/Kleinschreibung egal.",
-    "Searches titles, notes and time entries. Accents and case do not matter.",
+    "Durchsucht Titel, Notizen und Zeiteinträge, unabhängig von Groß-/Kleinschreibung und Akzenten.",
+    "Searches titles, notes and time entries, ignoring case and accents.",
   ],
   "sidebar.bookmarksEmpty": ["Markiere Seiten mit dem Stern, um sie hier zu sammeln.", "Star pages to collect them here."],
   "sidebar.tagsEmpty": ["Schreibe #tag in eine Notiz, um sie zu verschlagworten.", "Write #tag in a note to tag it."],
   "sidebar.subpage": ["Unterseite", "Subpage"],
+  "sidebar.pageActions": ["Seitenaktionen", "Page actions"],
 
   // tabs
   "tabs.home": ["Neuer Tab", "New tab"],
