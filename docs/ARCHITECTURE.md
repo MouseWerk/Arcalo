@@ -162,6 +162,22 @@ Migration v2 converts the old block model: blocks are concatenated into
   buttons, ≥ 3 for UI accents), the webview zoom, the language (`i18n.ts`, typed German/English dictionary) and the
   keymap (`keymap.ts`: commands, defaults, recording from key events with AltGr protection, conflicts with other
   commands, editor keys and global shortcuts). The App's keydown handler looks commands up in the keymap.
+- Color themes (`ui/src/lib/themes.ts`): `settings.theme` picks the mode (system/light/dark), `appearance.theme_light` /
+  `theme_dark` the theme per mode (built-in id or `custom-…`, unknown ids show Annalo). A theme is nine main colors
+  (`ThemeColors`: background, surface, text, muted, border, accent, success, warning, danger) plus optional tuning;
+  `themeTokens` derives the full token set of `tokens.css` (hover/selection tints, strong borders, raised surfaces, soft
+  status colors, shadows) and raises text/muted/status colors that miss 4.5:1 / 3:1. The active theme's CSS goes into
+  one `<style id="annalo-theme">` (`:root:root`, empty for the Annalo themes, which are `tokens.css`), followed by the
+  accent on top (`accent: "theme"` = the theme's own; high contrast keeps its accent). `data-theme` follows the
+  theme's kind, `data-theme-id` names it; the splash remembers its background, text and accent. `themes.test.ts` checks
+  the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid
+  hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "annalo-theme", version: 1, name, dark,
+  colors}` (`theme_export` / `theme_file_read`, checked by `prefs::parse_theme_file`).
+- Mica (Windows 11) is off by default; `migrate_appearance_defaults` switches it off once for settings saved with the
+  old default (and turns the old default accent `indigo` into `theme`). When on, sidebar and ribbon are the theme's
+  sidebar color at 93 %.
+- Dropdowns are `components/Select.tsx` (combobox + listbox in a portal) with the API of a controlled `<select>`; the
+  e2e harness `app.select(selector, value)` opens it and clicks the option.
 - Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the
   current settings in the UI (`settingsio.ts`: same keys and types, unknown or mistyped fields skipped with a warning),
   previewed as a diff and saved through `settings_save`. `settings://changed` is emitted on every save so the UI

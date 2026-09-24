@@ -68,22 +68,6 @@
 }
 
 /* ------------------------------------------------------ settings shell */
-.settings-nav { overflow-y: auto; max-height: 100%; padding-top: 18px; }
-.settings-search { display: flex; align-items: center; gap: 6px; height: 30px; margin: 0 2px 8px; padding: 0 4px 0 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg-input); }
-.settings-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.settings-search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; color: var(--text); font-size: var(--fs-sm); user-select: text; }
-.settings-nav-group { display: grid; gap: 2px; }
-.settings-nav-group + .settings-nav-group { margin-top: 10px; }
-.settings-nav-group-label { font-size: var(--fs-xs); color: var(--text-3); padding: 4px 10px 2px; font-weight: 500; }
-.settings-hit-section { display: grid; gap: 16px; }
-.settings-hit-section[hidden] { display: none; }
-.settings-hit-title { justify-self: start; border: 0; background: none; padding: 0; color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.settings-hit-title:hover { text-decoration: underline; }
-.settings-hit-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
-.settings-hit-body .settings-head { display: none; }
-.settings-search-empty { margin: 0; }
-.set-group[hidden] { display: none; }
-.set-row { padding: var(--set-row-pad) 0; }
 
 /* accent */
 .accent-swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

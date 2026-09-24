@@ -56,19 +56,31 @@ function sweepSection(done) {
       await wait();
       out.radios++;
     }
-    const setValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-    for (const sel of body.querySelectorAll("select:not([disabled])")) {
-      const before = sel.value;
-      const other = [...sel.options].find((o) => !o.disabled && o.value !== before);
-      if (!other) continue;
-      setValue.call(sel, other.value);
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    // Dropdowns (components/Select.tsx): open the list, choose another option, then the old one again.
+    const choose = async (sel, pick) => {
+      sel.click();
       await wait();
-      if (!sel.isConnected) continue;
-      if (!(await until(() => sel.value === other.value))) out.problems.push(`select did not change: ${label(sel)}`);
-      setValue.call(sel, before);
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      const list = document.getElementById(sel.getAttribute("aria-controls") ?? "");
+      if (!list) return null;
+      const option = pick([...list.querySelectorAll('[role="option"]:not([aria-disabled])')]);
+      if (!option) {
+        sel.click();
+        await wait();
+        return undefined;
+      }
+      const value = option.dataset.value;
+      option.click();
       await wait();
+      return value;
+    };
+    for (const sel of body.querySelectorAll('[role="combobox"]:not([disabled])')) {
+      const before = sel.dataset.value;
+      const value = await choose(sel, (options) => options.find((o) => o.dataset.value !== before));
+      if (value === null) out.problems.push(`dropdown did not open: ${label(sel)}`);
+      if (value == null || !sel.isConnected) continue;
+      if (!(await until(() => sel.dataset.value === value))) out.problems.push(`select did not change: ${label(sel)}`);
+      await choose(sel, (options) => options.find((o) => o.dataset.value === before));
+      if (!(await until(() => sel.dataset.value === before))) out.problems.push(`select did not change back: ${label(sel)}`);
       out.selects++;
     }
     return out;
@@ -124,13 +136,15 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
   const n0 = await count();
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active .view-actions button")].find((b) => /Eintrag/.test(b.textContent)).click());
   await app.waitFor(".dialog");
+  // The first dropdown (Netzplan): open it and choose the first real option.
+  const netzplan = '.dialog [role="combobox"]';
+  await app.click(netzplan);
+  const list = await app.browser.waitUntil(() => app.browser.execute((s) => document.querySelector(s).getAttribute("aria-controls"), netzplan), { timeoutMsg: "Netzplan list" });
+  await app.click(`#${list} [role="option"]:not([data-value=""])`);
+  await app.browser.waitUntil(() => app.browser.execute((s) => !!document.querySelector(s).dataset.value, netzplan), { timeoutMsg: "Netzplan chosen" });
   await app.browser.execute(() => {
     const d = document.querySelector(".dialog");
-    const setSel = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
     const setIn = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    const sel = d.querySelector("select");
-    setSel.call(sel, [...sel.options].find((o) => o.value)?.value);
-    sel.dispatchEvent(new Event("change", { bubbles: true }));
     const desc = [...d.querySelectorAll("input")].find((i) => /Was wurde gemacht/.test(i.placeholder));
     setIn.call(desc, "Kontrolltest Buchung");
     desc.dispatchEvent(new Event("input", { bubbles: true }));

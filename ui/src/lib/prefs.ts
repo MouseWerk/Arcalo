@@ -2,13 +2,11 @@
 // Zeiterfassung, Tastatur) to the document and the formatting helpers.
 
 import type { Settings } from "./types";
-import { accentCss, accentHex } from "./color";
 import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
 import { rememberSplash } from "./splash";
-
-const STYLE_ID = "annalo-accent";
+import { applyThemeState } from "./themes";
 
 /** Applies appearance, language, formats and keymap. Safe to call repeatedly. */
 export function applyPrefs(s: Settings) {
@@ -21,18 +19,12 @@ export function applyPrefs(s: Settings) {
     root.dataset.uiFont = a.ui_font;
     root.dataset.codeFont = a.code_font;
     root.dataset.reduceMotion = a.reduce_motion ? "on" : "off";
-    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-    if (!style) {
-      style = document.createElement("style");
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
-    }
-    const css = accentCss(a.accent);
-    if (style.textContent !== css) style.textContent = css;
+    // Color theme and accent (they also remember the splash colors).
+    applyThemeState({ mode: s.theme, appearance: a });
     setZoom(a.ui_scale);
     // The startup animation of the next start uses these (written only when they change:
     // this runs often, and the page must not do any extra work while typing).
-    rememberSplash({ accent: accentHex(a.accent) ?? undefined, off: a.startup_animation === false, reduced: a.reduce_motion });
+    rememberSplash({ off: a.startup_animation === false, reduced: a.reduce_motion });
   }
   if (s.locale) {
     setLang(s.locale.language);

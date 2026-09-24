@@ -4,7 +4,7 @@
 
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CheckCircle2, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -19,7 +19,7 @@ import { checkForUpdates, installUpdate, loadUpdateStatus, useUpdates } from "..
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
-import { CommitInput, FilterContext, Group, NumberInput, Row } from "./settings/common";
+import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
 import { LocaleSection, NotesPrefGroups, NotificationsSection, PrivacySection, StartSection, TimePrefGroups } from "./settings/PrefSections";
@@ -80,29 +80,41 @@ export function SettingsView() {
   const [draft, setDraft] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [hits, setHits] = useState(0);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const pending = useRef(0);
+  const scroll = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const s = useApp.getState;
-  // In a narrow pane the menu is a scrolling bar without a scrollbar (its edges fade, see
-  // app.css): the open section is centered.
+  // The open section stays visible in a long menu (only the menu scrolls, never the pane).
   useEffect(() => {
-    const center = () => {
-      const el = nav.current;
-      const item = el?.querySelector<HTMLElement>(`[data-section="${section}"]`);
-      if (!el || !item) return;
-      if (el.scrollWidth <= el.clientWidth) return item.scrollIntoView({ block: "nearest" });
-      const r = item.getBoundingClientRect();
-      el.scrollTo({ left: el.scrollLeft + r.left - el.getBoundingClientRect().left - (el.clientWidth - r.width) / 2 });
-    };
-    center();
-    // The bar appears when the window gets narrow: center again once resizing settles.
-    let t: number | undefined;
-    const soon = () => (window.clearTimeout(t), (t = window.setTimeout(center, 200)));
-    window.addEventListener("resize", soon);
-    return () => (window.clearTimeout(t), window.removeEventListener("resize", soon));
+    const list = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
+    const item = list?.querySelector<HTMLElement>(`.settings-nav-item[data-section="${section}"]`);
+    if (!list || !item || list.scrollHeight <= list.clientHeight) return;
+    const r = item.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    if (r.top < box.top || r.bottom > box.bottom) list.scrollTop += r.top - box.top - (list.clientHeight - r.height) / 2;
   }, [section, !!draft]);
+  // A new section starts at its top.
+  useLayoutEffect(() => {
+    scroll.current?.scrollTo({ top: 0 });
+  }, [section]);
+  // Search results: how many rows match (sections and groups hide themselves when none do).
+  const searching = query.trim().length > 0;
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (!el || !searching) return;
+    const count = () => setHits(el.querySelectorAll(".settings-hit-section:not([hidden]) .set-group:not([hidden]) .set-row").length);
+    count();
+    const watch = new MutationObserver(count);
+    watch.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+    return () => watch.disconnect();
+  }, [searching, !!draft]);
 
   useEffect(() => {
     if (!view) s().refreshSettings();
-    else setDraft(structuredClone(view.settings));
+    // While instant saves are still running the draft is ahead of the stored settings: keep it.
+    else if (!pending.current) setDraft(structuredClone(view.settings));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -139,7 +151,17 @@ export function SettingsView() {
   const instant = (p: Partial<Settings>) => {
     const next = { ...draft, ...p };
     setDraft(next);
-    void save(next);
+    // One save after the other: with quick clicks the last choice is the one that stays.
+    pending.current++;
+    queue.current = queue.current
+      .then(() => save(next))
+      .finally(() => {
+        // The last one done: the draft follows what is stored now.
+        if (--pending.current === 0) {
+          const stored = useApp.getState().settings;
+          if (stored) setDraft(structuredClone(stored.settings));
+        }
+      });
   };
   const updaterFor = (id: Section) => (INSTANT.has(id) ? instant : update);
 
@@ -196,49 +218,95 @@ export function SettingsView() {
     }
   };
 
-  const searching = query.trim().length > 0;
-  const all = NAV.flatMap((g) => g.items).filter((x) => x.id !== "about" && x.id !== "admin");
+  const all = NAV.flatMap((g) => g.items);
+  const open = (id: Section) => {
+    setQuery("");
+    setSection(id);
+  };
+  const search = (
+    <div className="settings-search">
+      <Search size={14} className="faint" aria-hidden />
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t("settings.searchShort")}
+        aria-label={t("settings.search")}
+        spellCheck={false}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setQuery("");
+          // Enter opens the first section with a hit.
+          if (e.key === "Enter") {
+            const first = body.current?.querySelector<HTMLElement>(".settings-hit-section:not([hidden])")?.dataset.section as Section | undefined;
+            if (first) open(first);
+          }
+        }}
+      />
+      {searching ? <IconButton icon={X} label={t("common.clear")} size="sm" onClick={() => setQuery("")} /> : <kbd className="settings-search-key">{keys("Mod F")}</kbd>}
+    </div>
+  );
   return (
-    <div className="settings">
+    <div
+      className={`settings ${searching ? "searching" : ""}`}
+      onKeyDown={(e) => {
+        // Mod+F inside the settings goes to their search.
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
+          e.preventDefault();
+          e.currentTarget.querySelector<HTMLInputElement>(".settings-search input")?.focus();
+        }
+      }}
+    >
       <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
-        <div className="settings-search">
-          <Search size={13} className="faint" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("settings.search")} aria-label={t("settings.search")} spellCheck={false} onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
-          {searching && <IconButton icon={X} label={t("common.clear")} size="sm" onClick={() => setQuery("")} />}
-        </div>
-        {NAV.map((g) => (
-          <div key={g.label} className="settings-nav-group" role="group" aria-label={t(g.label)}>
-            <div className="settings-nav-group-label">{t(g.label)}</div>
-            {g.items.map((x) => (
-              <button
-                key={x.id}
-                type="button"
-                data-section={x.id}
-                className={`settings-nav-item ${!searching && section === x.id ? "active" : ""}`}
-                onClick={() => {
-                  setQuery("");
-                  setSection(x.id);
-                }}
-              >
-                <x.icon size={15} strokeWidth={1.75} />
-                {t(x.label)}
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
-      <div className="settings-scroll">
-        <div className="settings-body">
-          {searching ? (
-            <FilterContext.Provider value={query}>
-              {all.map((x) => (
-                <SearchSection key={x.id} title={t(x.label)} onOpen={() => (setQuery(""), setSection(x.id))}>
-                  {render(x.id)}
-                </SearchSection>
+        {search}
+        <div className="settings-nav-list">
+          {NAV.map((g) => (
+            <div key={g.label} className="settings-nav-group" role="group" aria-label={t(g.label)}>
+              <div className="settings-nav-group-label">{t(g.label)}</div>
+              {g.items.map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  data-section={x.id}
+                  aria-current={!searching && section === x.id ? "page" : undefined}
+                  className={`settings-nav-item ${!searching && section === x.id ? "active" : ""}`}
+                  onClick={() => open(x.id)}
+                >
+                  <x.icon size={15} strokeWidth={1.75} aria-hidden />
+                  {t(x.label)}
+                </button>
               ))}
-              <p className="faint small settings-search-empty">{t("settings.noHits", { query })}</p>
-            </FilterContext.Provider>
+            </div>
+          ))}
+        </div>
+      </nav>
+      {/* Narrow panes: the menu becomes a section dropdown next to the search. */}
+      <div className="settings-topbar">
+        {search}
+        <Select
+          className="settings-section-select"
+          aria-label={t("settings.section")}
+          value={searching ? "" : section}
+          placeholder={t("settings.results", { n: hits })}
+          options={NAV.flatMap((g) => g.items.map((x, i) => ({ value: x.id, label: t(x.label), icon: x.icon, ...(i === 0 ? { group: t(g.label) } : {}) })))}
+          onChange={(e) => open(e.target.value as Section)}
+        />
+      </div>
+      <div className="settings-scroll" ref={scroll}>
+        <div className="settings-body" ref={body}>
+          {searching ? (
+            <>
+              <div className="settings-search-head" role="status">
+                {hits ? t("settings.results", { n: hits }) : t("settings.noHits", { query: query.trim() })}
+              </div>
+              {all.map((x) => (
+                // A section whose name matches shows all its rows.
+                <FilterContext.Provider key={x.id} value={matches(query, t(x.label)) ? "" : query}>
+                  <SearchSection id={x.id} icon={x.icon} title={t(x.label)} onOpen={() => open(x.id)}>
+                    {render(x.id)}
+                  </SearchSection>
+                </FilterContext.Provider>
+              ))}
+            </>
           ) : (
             render(section)
           )}
@@ -260,16 +328,16 @@ export function SettingsView() {
 }
 
 /** One section in the search results; hidden when none of its rows match. */
-function SearchSection({ title, onOpen, children }: { title: string; onOpen: () => void; children: React.ReactNode }) {
+function SearchSection({ id, icon: Icon, title, onOpen, children }: { id: Section; icon: typeof Server; title: string; onOpen: () => void; children: React.ReactNode }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
-  const [empty, setEmpty] = useState(false);
-  useLayoutEffect(() => {
-    setEmpty(!ref.current?.querySelector(".set-group:not([hidden]) .set-row"));
-  });
+  const empty = useNoneBelow(ref, ".set-group:not([hidden]) .set-row", true);
   return (
-    <div className="settings-hit-section" hidden={empty} ref={ref}>
-      <button type="button" className="settings-hit-title" onClick={onOpen}>
-        {title}
+    <div className="settings-hit-section" hidden={empty} ref={ref} data-section={id}>
+      <button type="button" className="settings-hit-title" onClick={onOpen} title={t("settings.openSection")}>
+        <Icon size={14} strokeWidth={1.75} aria-hidden />
+        <span>{title}</span>
+        <ChevronRight size={14} className="settings-hit-arrow" aria-hidden />
       </button>
       <div className="settings-hit-body">{children}</div>
     </div>
@@ -598,7 +666,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
           description={
             <>
               <span>{draft.backup_dir ? "Eigener Ordner, z. B. ein Netzlaufwerk:" : "Standard, im Datenordner:"}</span>
-              <span className="mono selectable backup-path">{view.backup_dir}</span>
+              <PathValue value={view.backup_dir} className="backup-path" />
             </>
           }
         >
@@ -632,7 +700,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
               description={
                 <>
                   <span>{draft.markdown_mirror_dir ? "Eigener Ordner (leer oder eine frühere Kopie):" : "Standard, im Sicherungsordner:"}</span>
-                  <span className="mono selectable backup-path mirror-path">{mirror?.path ?? ""}</span>
+                  {mirror?.path ? <PathValue value={mirror.path} className="backup-path mirror-path" /> : null}
                 </>
               }
             >
@@ -1102,15 +1170,17 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   if (!status) return null;
   const busy = phase === "downloading" || phase === "installing";
   let state: React.ReactNode;
+  let tone: "neutral" | "success" | "info" | "busy" = "neutral";
   if (!status.enabled) state = NOT_CONFIGURED + ".";
-  else if (available) state = `Version ${available.version} ist verfügbar.`;
-  else if (phase === "checking") state = "Suche nach Updates …";
-  else if (checkedAt) state = `Annalo ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`;
+  else if (available) (state = `Version ${available.version} ist verfügbar.`), (tone = "info");
+  else if (phase === "checking") (state = "Suche nach Updates …"), (tone = "busy");
+  else if (checkedAt) (state = `Annalo ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`), (tone = "success");
   else state = "Noch nicht geprüft.";
   return (
     <Group title={t("set.about.updates")} description="Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert.">
-      <Row label="Status" description={<span className="update-state">{state}</span>}>
-        <div className="unit-input">
+      {/* Status and actions: the buttons wrap below the text as soon as they do not fit beside it. */}
+      <Row stack label="Status" description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
+        <div className="set-actions">
           {available && status.enabled && (
             <>
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
@@ -1122,6 +1192,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
             </>
           )}
           <Button
+            variant={available ? "ghost" : "secondary"}
             icon={RefreshCw}
             disabled={!status.enabled || busy}
             loading={phase === "checking"}
@@ -1169,13 +1240,13 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
       </header>
       <UpdatesGroup draft={draft} update={update} />
       <Group title={t("set.about.data")}>
-        <Row label={t("set.about.dataDir")} description="Datenbank, Einstellungen und Schlüsselablage (unter Linux).">
-          <span className="mono small selectable">{view.data_dir}</span>
+        <Row stack label={t("set.about.dataDir")} description="Datenbank, Einstellungen und Schlüsselablage (unter Linux).">
+          <PathValue value={view.data_dir} className="data-dir" />
         </Row>
         {status?.pending_move && (
-          <Row label="Beim nächsten Start" description="Der Speicherort wechselt beim nächsten Start. Bis dahin bleibt alles im bisherigen Ordner.">
-            <div className="unit-input">
-              <span className="mono small selectable">{status.pending_move}</span>
+          <Row stack label="Beim nächsten Start" description="Der Speicherort wechselt beim nächsten Start. Bis dahin bleibt alles im bisherigen Ordner.">
+            <PathValue value={status.pending_move} />
+            <div className="set-actions">
               <Button onClick={() => void restartApp()}>Jetzt neu starten</Button>
               <Button
                 variant="ghost"

@@ -169,6 +169,9 @@ export const api = {
   // settings files and defaults
   exportSettings: (path: string) => call<void>("settings_export", { path }),
   readSettingsFile: (path: string) => call<string>("settings_file_read", { path }),
+  exportTheme: (path: string, theme: T.CustomTheme) => call<void>("theme_export", { path, theme }),
+  /** A checked theme file (without id). */
+  readThemeFile: (path: string) => call<T.CustomTheme>("theme_file_read", { path }),
   /** Current settings with one section (or, with null, everything but the connections) at its defaults. */
   settingsDefaults: (section: string | null) => call<T.Settings>("settings_defaults", { section }),
   saveWindowState: () => call<void>("window_state_save"),

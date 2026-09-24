@@ -10,9 +10,15 @@ const FADE_MS = 450;
 interface SplashPrefs {
   dark?: boolean;
   accent?: string;
+  /** Colors of the color theme (Settings → Darstellung). */
+  bg?: string;
+  text?: string;
+  muted?: string;
   off?: boolean;
   reduced?: boolean;
 }
+
+const HEX = /^#[0-9a-f]{6}$/i;
 
 function read(): SplashPrefs {
   try {
@@ -53,7 +59,10 @@ export function startSplash(popup: boolean) {
     return;
   }
   if (p.dark !== undefined) el.dataset.theme = p.dark ? "dark" : "light";
-  if (p.accent) el.style.setProperty("--splash-accent", p.accent);
+  // Only well-formed colors: the stored value ends up in a style property.
+  for (const [key, v] of [["accent", p.accent], ["bg", p.bg], ["text", p.text], ["muted", p.muted]] as const) {
+    if (v && HEX.test(v)) el.style.setProperty(`--splash-${key}`, v);
+  }
   if (p.reduced) el.dataset.reduced = "";
   // The window is still hidden: the animation waits for `splashShown` (splash.css pauses it).
   let started = performance.now();

@@ -67,11 +67,7 @@ test("toolbar: formatting, block type, insert menu", async () => {
 
   // Heading from the block-type dropdown.
   await selectBlocks("p", 0, 0);
-  await app.browser.execute(() => {
-    const s = document.querySelector('.pane.active .editor-toolbar select[aria-label="Absatzformat"]');
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "h2");
-    s.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await app.select('.pane.active .editor-toolbar [role="combobox"][aria-label="Absatzformat"]', "h2");
   await saved((c) => c.startsWith("## Titelzeile"), "heading not applied");
 
   // Bold on a selection.

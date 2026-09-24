@@ -48,7 +48,7 @@ export function SearchApp() {
     document.body.classList.add("search-mode");
     api
       .settings()
-      .then((v) => applyTheme(v.settings.theme))
+      .then((v) => applyTheme(v.settings.theme, v.settings.appearance))
       .catch(() => {});
     const refresh = () => {
       api.recentPages(6).then(setRecent, () => {});

@@ -45,7 +45,7 @@ export function CaptureApp() {
     document.body.classList.add("capture-mode");
     api
       .settings()
-      .then((v) => applyTheme(v.settings.theme))
+      .then((v) => applyTheme(v.settings.theme, v.settings.appearance))
       .catch(() => {});
     const focus = () => {
       setError(null);

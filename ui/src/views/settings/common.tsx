@@ -2,7 +2,9 @@
 // number and text inputs that commit on blur.
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Input } from "../../components/ui";
+import { AlertTriangle, Check, CheckCircle2, Copy, Info, Loader2, XCircle } from "lucide-react";
+import { IconButton, Input } from "../../components/ui";
+import { useT } from "../../lib/i18n";
 import type { Settings } from "../../lib/types";
 
 export type Update = (p: Partial<Settings>) => void;
@@ -36,15 +38,30 @@ export function nodeText(n: React.ReactNode): string {
   return "";
 }
 
+/**
+ * Whether nothing below `ref` matches `selector` (while `active`). Re-checked on every change
+ * below it: rows and groups of the search results hide themselves in their own renders.
+ */
+export function useNoneBelow(ref: React.RefObject<HTMLElement | null>, selector: string, active: boolean): boolean {
+  const [none, setNone] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !active) return setNone(false);
+    const check = () => setNone(!el.querySelector(selector));
+    check();
+    const watch = new MutationObserver(check);
+    watch.observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+    return () => watch.disconnect();
+  }, [ref, selector, active]);
+  return none;
+}
+
 export function Group({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   const query = useContext(FilterContext);
   const body = useRef<HTMLDivElement>(null);
-  const [empty, setEmpty] = useState(false);
   // A matching group title shows the whole group.
   const titleHit = !!query && matches(query, title, description);
-  useLayoutEffect(() => {
-    setEmpty(!!query && !titleHit && !body.current?.querySelector(".set-row"));
-  });
+  const empty = useNoneBelow(body, ".set-row", !!query && !titleHit);
   return (
     <section className="set-group" hidden={empty} data-group={title}>
       <div className="set-group-head">
@@ -117,6 +134,54 @@ export function CommitInput({ value, onCommit, ...rest }: { value: string; onCom
   useEffect(() => setRaw(value), [value]);
   const commit = () => raw.trim() !== value && onCommit(raw.trim());
   return <Input {...rest} value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} />;
+}
+
+/** Start and end of a long path or URL: the end (file or folder name) always stays visible. */
+export function splitPath(value: string): [string, string] {
+  if (value.length <= 32) return [value, ""];
+  const cut = Math.max(value.lastIndexOf("\\"), value.lastIndexOf("/"));
+  const tail = cut > 0 && value.length - cut <= 28 ? value.slice(cut) : value.slice(-20);
+  return [value.slice(0, value.length - tail.length), tail];
+}
+
+/**
+ * A path or URL on one line: shortened in the middle when it does not fit (the full value is
+ * in the tooltip), selectable, with a copy button.
+ */
+export function PathValue({ value, className = "" }: { value: string; className?: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const [head, tail] = splitPath(value);
+  useEffect(() => {
+    if (!copied) return;
+    const id = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+  return (
+    <span className="path-value">
+      <span className={`path-text mono selectable ${className}`} title={value}>
+        <span className="path-head">{head}</span>
+        {tail && <span className="path-tail">{tail}</span>}
+      </span>
+      <IconButton
+        icon={copied ? Check : Copy}
+        size="sm"
+        label={copied ? t("common.copied") : t("common.copy")}
+        onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})}
+      />
+    </span>
+  );
+}
+
+/** An inline status message in a row (update state, connection, last run). */
+export function StatusNote({ tone = "neutral", children, className = "" }: { tone?: "neutral" | "success" | "warning" | "danger" | "info" | "busy"; children: React.ReactNode; className?: string }) {
+  const Icon = { neutral: Info, success: CheckCircle2, warning: AlertTriangle, danger: XCircle, info: Info, busy: Loader2 }[tone];
+  return (
+    <span className={`set-status tone-${tone} ${className}`} role="status">
+      <Icon size={14} className={tone === "busy" ? "spin" : ""} aria-hidden />
+      <span>{children}</span>
+    </span>
+  );
 }
 
 export function SectionHead({ title, intro }: { title: string; intro?: string }) {

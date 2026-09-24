@@ -57,10 +57,9 @@ test("slash command inserts a template at the caret", async () => {
 test("settings pick the template for new daily notes", async () => {
   await app.keys(["Control", ","]);
   for (const b of await app.$$(".settings-nav-item")) if ((await app.textOf(b)) === "Notizen") await b.click();
-  const sel = 'select[aria-label="Vorlage für Tagesnotizen"]';
+  const sel = '[role="combobox"][aria-label="Vorlage für Tagesnotizen"]';
   await app.waitFor(sel);
   const id = String(await pageId("Kundentermin"));
-  await app.browser.waitUntil(() => app.browser.execute((s, v) => [...document.querySelector(s).options].some((o) => o.value === v), sel, id));
   await app.select(sel, id);
   await app.click(".savebar .btn-primary");
   await app.waitText(".toast", /gespeichert/);

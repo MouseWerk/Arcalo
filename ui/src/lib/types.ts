@@ -292,8 +292,31 @@ export interface NetworkSettings {
   timeout_secs: number;
   apply_to: { ai: boolean; git: boolean; updates: boolean; tools: boolean };
 }
-export interface AppearancePrefs {
+/** The main colors of a color theme (`#rrggbb`); lib/themes.ts derives the other tokens. */
+export interface ThemeColors {
+  background: string;
+  surface: string;
+  text: string;
+  muted: string;
+  border: string;
   accent: string;
+  success: string;
+  warning: string;
+  danger: string;
+}
+export interface CustomTheme {
+  /** `custom-…`; empty for a new one (the core assigns it when saving). */
+  id: string;
+  name: string;
+  dark: boolean;
+  colors: ThemeColors;
+}
+export interface AppearancePrefs {
+  /** `theme` (the color theme's accent), a preset id or `#rrggbb`. */
+  accent: string;
+  theme_light: string;
+  theme_dark: string;
+  custom_themes: CustomTheme[];
   ui_font: "system" | "inter";
   editor_font: "sans" | "serif" | "mono";
   code_font: "jetbrains" | "system";

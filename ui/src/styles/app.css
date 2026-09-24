@@ -8,11 +8,12 @@
   transition: opacity 160ms ease-out;
 }
 body.ready .app { opacity: 1; }
-/* Windows 11: let the Mica backdrop show through the chrome. */
+/* Windows 11 with Mica switched on: the backdrop shows only faintly through the chrome. The
+   tint is the theme's own sidebar color at 93 %, so text keeps its contrast even when the
+   window is inactive (then Windows replaces Mica with a flat grey). Off: solid theme colors. */
 :root.os-windows body { background: transparent; }
 :root.os-windows .app { background: transparent; }
-:root.os-windows[data-theme="dark"] :is(.sidebar, .ribbon) { background: rgb(18 19 22 / 0.72); }
-:root.os-windows[data-theme="light"] :is(.sidebar, .ribbon) { background: rgb(247 247 248 / 0.72); }
+:root.os-windows :is(.sidebar, .ribbon) { background: color-mix(in srgb, var(--bg-sidebar) 93%, transparent); }
 /* macOS: the window content reaches into the title bar (overlay); the traffic lights sit in the
    top-left corner, so the column below them and the row next to them make room. */
 .ribbon-titlebar { display: none; }
@@ -824,35 +825,6 @@ button.side-section-title:hover { color: var(--text-2); }
 
 /* --------------------------------------------------------------- settings */
 
-.settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; }
-.settings-nav { border-right: 1px solid var(--border); padding: 24px 10px; display: grid; gap: 2px; align-content: start; }
-.settings-nav-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); padding: 0 10px 8px; }
-.settings-nav-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); text-align: left; }
-.settings-nav-item svg { color: var(--text-3); flex: none; }
-.settings-nav-item:hover { background: var(--bg-hover); color: var(--text); }
-.settings-nav-item.active { background: var(--bg-current); color: var(--text); font-weight: 500; }
-.settings-nav-item:hover svg { color: var(--text-2); }
-.settings-nav-item.active svg { color: var(--text); }
-.settings-scroll { overflow-y: auto; position: relative; }
-.settings-body { max-width: 780px; padding: 32px 40px 120px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
-.settings-head h1 { margin: 0; font-size: var(--fs-display); font-weight: 650; letter-spacing: -0.02em; }
-.settings-head p { margin: 6px 0 0; color: var(--text-2); max-width: 600px; line-height: 1.6; }
-.set-group-head h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
-.set-group-head p { margin: 2px 0 0; color: var(--text-3); font-size: var(--fs-sm); }
-.set-group-body { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); padding: 4px 16px; display: grid; grid-template-columns: minmax(0, 1fr); }
-.set-group-body > .field { padding: 14px 0; }
-.set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 13px 0; }
-.set-row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
-.set-row.stack .set-row-control { width: 100%; }
-.set-row-control .grow { flex: 1; min-width: 0; }
-.set-row + .set-row, .set-group-body > .set-row + .field, .set-group-body > .error-note { border-top: 1px solid var(--border); }
-.set-group-body > .error-note { margin: 0 0 12px; }
-.set-row-text { min-width: 0; flex: 1 1 260px; }
-.set-row-label { font-weight: 500; }
-.set-row-desc { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.set-row-control { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; max-width: 340px; min-width: 0; justify-content: flex-end; }
-.set-row-control .select { width: 240px; max-width: 100%; }
-.set-row.stack > .set-row-text, .set-row.stack > .set-row-control { flex: none; max-width: none; }
 .key-input { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 3px 0 10px; flex: 1; min-width: 0; border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--bg-input); }
 .key-input:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
 .key-input input:placeholder-shown { font-family: var(--font-ui); }
@@ -870,21 +842,6 @@ button.side-section-title:hover { color: var(--text-2); }
 .map-list { display: grid; padding: 8px 0; gap: 4px; }
 .map-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
 .map-row .input { flex: 1; }
-.savebar {
-  position: sticky;
-  bottom: 16px;
-  margin: 0 40px;
-  max-width: 700px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px 10px 16px;
-  border-radius: var(--r-lg);
-  background: var(--bg-overlay);
-  box-shadow: var(--shadow-lg);
-  animation: pop-in var(--dur) var(--ease-out);
-}
-.savebar span { flex: 1; font-weight: 500; }
 .shortcut-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 0 32px; padding: 8px 0; }
 .shortcut { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .shortcut .keys { display: flex; gap: 4px; }
@@ -908,8 +865,6 @@ button.side-section-title:hover { color: var(--text-2); }
   .quick-book { grid-template-columns: 1fr; gap: 4px; }
   .entry { grid-template-columns: auto 84px 112px minmax(0, 1fr) auto 64px auto; }
   .entry-la { display: none; }
-  .settings { grid-template-columns: 180px minmax(0, 1fr); }
-  .settings-body { padding: 28px 28px 120px; }
 }
 .tree-row:focus-visible { outline-offset: -2px; }
 .tree-row:focus-visible .tree-row-actions, .tree-row-actions:focus-within { display: flex; }
@@ -1192,10 +1147,6 @@ body.search-mode { background: transparent; }
 /* Fields side by side start at the same height, whatever hint sits below one of them. */
 .form-grid { align-items: start; }
 
-/* Settings rows: the control moves below the text when both do not fit side by side. */
-.set-row { flex-wrap: wrap; row-gap: 10px; }
-.set-row-text { flex: 1 1 220px; }
-.set-row-control { flex-wrap: wrap; }
 
 /* Zeiterfassung */
 .view-actions { flex-wrap: wrap; row-gap: 8px; }
@@ -1206,41 +1157,12 @@ body.search-mode { background: transparent; }
 /* The pinned column stays opaque while the days scroll underneath (also on hover). */
 .week-grid tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
 
-@container pane (max-width: 760px) {
-  /* The settings menu becomes a scrollable bar above the content. */
-  .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .settings > .settings-nav {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px 24px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-    scrollbar-width: none;
-    /* No scrollbar: items fade out at the edges; at either end only the padding is faded. */
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
-    mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
-  }
-  .settings > .settings-nav::-webkit-scrollbar { display: none; }
-  .settings > .settings-nav .settings-nav-title, .settings > .settings-nav .settings-nav-group-label { display: none; }
-  .settings > .settings-nav .settings-search { flex: 0 0 170px; margin: 0 6px 0 0; }
-  .settings > .settings-nav .settings-nav-group { display: flex; gap: 2px; flex: none; }
-  .settings > .settings-nav .settings-nav-group + .settings-nav-group { margin-top: 0; padding-left: 6px; border-left: 1px solid var(--border); }
-  .settings > .settings-nav .settings-nav-item { flex: none; height: 30px; white-space: nowrap; }
-  .settings-body { padding: 20px 20px 120px; }
-  .set-row-control { max-width: 100%; }
-}
 
 @container pane (max-width: 600px) {
   .view { padding: 20px 16px 56px; }
   .view-header { flex-direction: column; align-items: stretch; }
   .timer-form { grid-template-columns: minmax(0, 1fr); }
   .timer-form > :last-child { grid-column: auto; justify-self: end; }
-  .settings-body { padding: 16px 16px 120px; }
-  .set-group-body { padding: 4px 12px; }
   /* Entries: booking, status, hours and menu on the first line; time and text below. */
   .entry {
     grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
@@ -1259,8 +1181,6 @@ body.search-mode { background: transparent; }
   .card-head { flex-wrap: wrap; }
 }
 
-/* Controls in a settings row never get wider than the row. */
-.set-row-control > * { max-width: 100%; min-width: 0; }
 .model-input { display: grid; gap: 4px; min-width: 0; max-width: 100%; }
 .set-row-control .w-360 { width: min(360px, 100%); }
 

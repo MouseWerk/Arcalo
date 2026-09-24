@@ -51,12 +51,12 @@ test("settings: server URL, token and connection test", async () => {
 });
 
 test("settings: models are picked from the server list", async () => {
-  const selects = await app.$$(".set-row select");
+  const selects = await app.$$('.set-row [role="combobox"]');
   assert.ok(selects.length >= 3, "model selects appear once connected");
-  await app.select('select[aria-label="Lokales Modell"]', "firma-schnell");
-  await app.select('select[aria-label="Standardmodell"]', "firma-standard");
-  await app.select('select[aria-label="Reasoning-Modell"]', "firma-reasoning");
-  await app.select('select[aria-label="Embedding-Modell"]', "firma-embed");
+  await app.select('[role="combobox"][aria-label="Lokales Modell"]', "firma-schnell");
+  await app.select('[role="combobox"][aria-label="Standardmodell"]', "firma-standard");
+  await app.select('[role="combobox"][aria-label="Reasoning-Modell"]', "firma-reasoning");
+  await app.select('[role="combobox"][aria-label="Embedding-Modell"]', "firma-embed");
   await app.shot("settings-models");
   await app.click(".savebar .btn-primary");
   await app.waitText(".toast-title", /Einstellungen gespeichert/);

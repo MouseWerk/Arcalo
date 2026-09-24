@@ -37,6 +37,9 @@ export const useUpdates = create<UpdateState>(() => ({
   notesOpen: false,
 }));
 
+// End-to-end runs (WebDriver) drive the update states: their builds have no update key.
+if (typeof navigator !== "undefined" && navigator.webdriver) (window as unknown as { __annaloUpdates?: typeof useUpdates }).__annaloUpdates = useUpdates;
+
 export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
   try {
     const status = await api.updateStatus();

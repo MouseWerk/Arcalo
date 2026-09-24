@@ -338,6 +338,9 @@ impl Settings {
         let a = &mut self.appearance;
         a.accent = crate::prefs::normalize_accent(&a.accent).unwrap_or(d.appearance.accent);
         a.ui_scale = a.ui_scale.clamp(90, 125);
+        a.theme_light = crate::prefs::normalize_theme_id(&a.theme_light, &d.appearance.theme_light);
+        a.theme_dark = crate::prefs::normalize_theme_id(&a.theme_dark, &d.appearance.theme_dark);
+        a.custom_themes = crate::prefs::normalize_custom_themes(std::mem::take(&mut a.custom_themes));
         let e = &mut self.editor;
         e.autosave_ms = e.autosave_ms.clamp(250, 3000);
         e.tab_size = e.tab_size.clamp(2, 8);
@@ -405,7 +408,9 @@ impl Settings {
         match section {
             "network" => self.network = d.network,
             "appearance" => {
-                self.appearance = d.appearance;
+                // Custom themes are the user's work, not a setting: they stay.
+                let custom = std::mem::take(&mut self.appearance.custom_themes);
+                self.appearance = AppearancePrefs { custom_themes: custom, ..d.appearance };
                 self.theme = d.theme;
             }
             "editor" => self.editor = d.editor,
@@ -518,6 +523,31 @@ impl Database {
             let mut s = self.load_settings()?;
             if s.palette_shortcut.as_deref() == Some(OLD_PALETTE_DEFAULT) {
                 s.palette_shortcut = None;
+                self.save_settings(&s)?;
+            }
+        }
+        self.meta_set(FLAG, "1")
+    }
+
+    /// Annalo 1.3, once: Mica was on by default and washed out the sidebar behind bright
+    /// desktops, so saved settings that still have it on (the old default) switch it off; the
+    /// old default accent `indigo` becomes `theme` (the same color in the Annalo theme, and
+    /// the matching accent in every other theme).
+    pub fn migrate_appearance_defaults(&self) -> Result<()> {
+        const FLAG: &str = "appearance_defaults_1_3";
+        if self.meta_get(FLAG)?.is_some() {
+            return Ok(());
+        }
+        let raw: Option<String> =
+            self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
+        if raw.is_some() {
+            let mut s = self.load_settings()?;
+            let before = s.appearance.clone();
+            s.appearance.mica = false;
+            if s.appearance.accent == "indigo" {
+                s.appearance.accent = crate::prefs::ACCENT_THEME.into();
+            }
+            if s.appearance != before {
                 self.save_settings(&s)?;
             }
         }
@@ -821,5 +851,65 @@ mod tests {
         db.save_settings(&s).unwrap();
         db.migrate_palette_default().unwrap();
         assert_eq!(db.load_settings().unwrap(), s);
+    }
+
+    #[test]
+    fn mica_and_old_accent_default_are_migrated_once() {
+        let db = Database::open_in_memory().unwrap();
+        // Settings saved by 1.2: Mica on (its old default) and the old default accent.
+        let old = r#"{"theme":"dark","appearance":{"accent":"indigo","mica":true,"density":"compact"}}"#;
+        db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [old]).unwrap();
+        db.migrate_appearance_defaults().unwrap();
+        let s = db.load_settings().unwrap();
+        assert!(!s.appearance.mica);
+        assert_eq!((s.appearance.accent.as_str(), s.appearance.density), ("theme", crate::prefs::Density::Compact));
+        assert_eq!((s.theme.as_str(), s.appearance.theme_dark.as_str()), ("dark", "annalo-dark"));
+        // Switched on again afterwards: kept.
+        let mut on = s.clone();
+        on.appearance.mica = true;
+        on.appearance.accent = "indigo".into();
+        db.save_settings(&on).unwrap();
+        db.migrate_appearance_defaults().unwrap();
+        assert_eq!(db.load_settings().unwrap(), on);
+        // A chosen accent is never touched; a fresh workspace has nothing to migrate.
+        let db = Database::open_in_memory().unwrap();
+        let mut teal = Settings::default();
+        teal.appearance.accent = "teal".into();
+        db.save_settings(&teal).unwrap();
+        db.migrate_appearance_defaults().unwrap();
+        assert_eq!(db.load_settings().unwrap(), teal);
+        let fresh = Database::open_in_memory().unwrap();
+        fresh.migrate_appearance_defaults().unwrap();
+        assert_eq!(fresh.load_settings().unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn appearance_reset_keeps_custom_themes_and_normalize_checks_them() {
+        let mut s = Settings::default();
+        let colors = crate::prefs::ThemeColors {
+            background: "#FDF6E3".into(),
+            surface: "#eee8d5".into(),
+            text: "#073642".into(),
+            muted: "#586e75".into(),
+            border: "#d9d2c0".into(),
+            accent: "#268bd2".into(),
+            success: "#5f7a00".into(),
+            warning: "#9a6500".into(),
+            danger: "#c42e2b".into(),
+        };
+        s.appearance.custom_themes =
+            vec![crate::prefs::CustomTheme { id: String::new(), name: " Sand ".into(), dark: false, colors }];
+        s.appearance.theme_light = " ".into();
+        s.appearance.theme_dark = "nord-dark".into();
+        s.normalize();
+        let t = &s.appearance.custom_themes[0];
+        assert_eq!((t.id.as_str(), t.name.as_str(), t.colors.background.as_str()), ("custom-1", "Sand", "#fdf6e3"));
+        assert_eq!(
+            (s.appearance.theme_light.as_str(), s.appearance.theme_dark.as_str()),
+            ("annalo-light", "nord-dark")
+        );
+        s.reset_section("appearance").unwrap();
+        assert_eq!(s.appearance.theme_dark, "annalo-dark");
+        assert_eq!(s.appearance.custom_themes.len(), 1);
     }
 }

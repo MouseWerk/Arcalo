@@ -2,16 +2,15 @@
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
-import { rememberSplash } from "./splash";
+import { applyThemeState } from "./themes";
+import type { AppearancePrefs } from "./types";
 import { useApp } from "../store/app";
 import { collapsePages, foldersBelow } from "./collapsed";
 import { importSummary } from "./format";
 
-export function applyTheme(theme: "system" | "light" | "dark") {
-  const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
-  rememberSplash({ dark });
-  import("@tauri-apps/api/core").then(({ invoke }) => invoke("window_set_theme", { dark })).catch(() => {});
+/** Light, dark or the OS: picks the light or dark color theme (Settings → Darstellung). */
+export function applyTheme(theme: "system" | "light" | "dark", appearance?: AppearancePrefs) {
+  applyThemeState({ mode: theme, ...(appearance ? { appearance } : {}) });
 }
 
 export async function toggleTheme() {

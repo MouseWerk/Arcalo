@@ -8,7 +8,16 @@ export function auditLayout(rootSelector) {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return false;
     const s = getComputedStyle(el);
-    return s.visibility !== "hidden" && s.display !== "none" && Number(s.opacity) > 0.05;
+    if (s.visibility === "hidden" || s.display === "none" || Number(s.opacity) <= 0.05) return false;
+    // Scrolled out of its scroll container (e.g. a long menu): not on screen.
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const ps = getComputedStyle(p);
+      if (!/(auto|scroll|hidden)/.test(ps.overflowY)) continue;
+      const pr = p.getBoundingClientRect();
+      if (r.bottom <= pr.top + 1 || r.top >= pr.bottom - 1) return false;
+      break;
+    }
+    return true;
   };
   const name = (el) => {
     const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).slice(0, 2).join(".") : "";
@@ -88,6 +97,12 @@ export function auditLayout(rootSelector) {
     const text = el.selectedOptions[0]?.textContent ?? "";
     const room = el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
     if (ctx.measureText(text).width > room + 1) out.push(`select too narrow: ${name(el)} "${text}" (${Math.round(ctx.measureText(text).width)}>${Math.round(room)})`);
+  }
+  // The app's dropdowns (components/Select.tsx): the shown value ends in "…" when it does not fit.
+  for (const el of root.querySelectorAll('[role="combobox"]')) {
+    const label = el.querySelector(".select-label");
+    if (!visible(el) || !label) continue;
+    if (label.scrollWidth > label.clientWidth + 1) out.push(`select too narrow: ${name(el)} "${label.textContent}" (${label.scrollWidth}>${label.clientWidth})`);
   }
   return [...new Set(out)];
 }

@@ -46,8 +46,15 @@ choice!(LineWidth { Narrow = "narrow", #[default] Normal = "normal", Wide = "wid
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearancePrefs {
-    /// A preset name (`indigo`, `blue`, …) or `#rrggbb`.
+    /// `theme` (the color theme's own accent), a preset name (`indigo`, `blue`, …) or `#rrggbb`.
     pub accent: String,
+    /// Color theme shown in light mode: a built-in id (`annalo-light`, `nord-light`, …) or the
+    /// id of a custom theme. Unknown ids show the default theme.
+    pub theme_light: String,
+    /// Color theme shown in dark mode.
+    pub theme_dark: String,
+    /// Themes made in Settings → Darstellung or imported from a theme file.
+    pub custom_themes: Vec<CustomTheme>,
     pub ui_font: UiFont,
     pub editor_font: EditorFont,
     pub code_font: CodeFont,
@@ -56,7 +63,8 @@ pub struct AppearancePrefs {
     pub density: Density,
     pub line_width: LineWidth,
     pub reduce_motion: bool,
-    /// Mica backdrop on Windows 11.
+    /// Mica backdrop on Windows 11. Off by default: behind a bright desktop it washes out the
+    /// sidebar (older settings are switched off once, see `Database::migrate_appearance_defaults`).
     pub mica: bool,
     /// Windows: own title bar (the tabs sit at the top edge, own window buttons) instead of the
     /// system one. Takes effect at the next start.
@@ -68,7 +76,10 @@ pub struct AppearancePrefs {
 impl Default for AppearancePrefs {
     fn default() -> Self {
         AppearancePrefs {
-            accent: "indigo".into(),
+            accent: ACCENT_THEME.into(),
+            theme_light: DEFAULT_THEME_LIGHT.into(),
+            theme_dark: DEFAULT_THEME_DARK.into(),
+            custom_themes: Vec::new(),
             ui_font: UiFont::Inter,
             editor_font: EditorFont::Sans,
             code_font: CodeFont::JetBrains,
@@ -76,20 +87,35 @@ impl Default for AppearancePrefs {
             density: Density::Normal,
             line_width: LineWidth::Normal,
             reduce_motion: false,
-            mica: true,
+            mica: false,
             custom_titlebar: true,
             startup_animation: true,
         }
     }
 }
 
+/// Accent value that uses the color theme's own accent.
+pub const ACCENT_THEME: &str = "theme";
+pub const DEFAULT_THEME_LIGHT: &str = "annalo-light";
+pub const DEFAULT_THEME_DARK: &str = "annalo-dark";
+/// At most this many custom themes are kept.
+pub const MAX_CUSTOM_THEMES: usize = 40;
+const MAX_THEME_NAME: usize = 60;
+
 /// `#rrggbb` (lower case) or a known preset name; anything else is `None`.
 pub fn normalize_accent(s: &str) -> Option<String> {
-    const PRESETS: &[&str] = &["indigo", "blue", "teal", "green", "amber", "orange", "rose", "violet", "graphite"];
+    const PRESETS: &[&str] =
+        &[ACCENT_THEME, "indigo", "blue", "teal", "green", "amber", "orange", "rose", "violet", "graphite"];
     let t = s.trim().to_ascii_lowercase();
     if PRESETS.contains(&t.as_str()) {
         return Some(t);
     }
+    normalize_hex(&t)
+}
+
+/// `#rgb` / `#rrggbb` (any case, `#` required) as lower-case `#rrggbb`.
+pub fn normalize_hex(s: &str) -> Option<String> {
+    let t = s.trim().to_ascii_lowercase();
     let hex = t.strip_prefix('#')?;
     match hex.len() {
         6 if hex.chars().all(|c| c.is_ascii_hexdigit()) => Some(format!("#{hex}")),
@@ -98,6 +124,147 @@ pub fn normalize_accent(s: &str) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// A theme id as stored: trimmed, the default when empty or absurdly long.
+pub fn normalize_theme_id(id: &str, default: &str) -> String {
+    let t = id.trim();
+    if t.is_empty() || t.len() > 64 { default.to_owned() } else { t.to_owned() }
+}
+
+/// The main colors of a custom theme; the UI derives the remaining tokens (hover, strong
+/// borders, soft tints, shadows) from them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeColors {
+    /// Page and editor background.
+    pub background: String,
+    /// Sidebar, ribbon and tab bar.
+    pub surface: String,
+    pub text: String,
+    /// Secondary text (descriptions, hints).
+    pub muted: String,
+    pub border: String,
+    pub accent: String,
+    pub success: String,
+    pub warning: String,
+    pub danger: String,
+}
+
+impl ThemeColors {
+    /// Every color as lower-case `#rrggbb`; the name of the first invalid one otherwise.
+    pub fn normalized(mut self) -> std::result::Result<Self, &'static str> {
+        for (name, value) in [
+            ("background", &mut self.background),
+            ("surface", &mut self.surface),
+            ("text", &mut self.text),
+            ("muted", &mut self.muted),
+            ("border", &mut self.border),
+            ("accent", &mut self.accent),
+            ("success", &mut self.success),
+            ("warning", &mut self.warning),
+            ("danger", &mut self.danger),
+        ] {
+            *value = normalize_hex(value).ok_or(name)?;
+        }
+        Ok(self)
+    }
+}
+
+/// A color theme made by the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomTheme {
+    /// `custom-…`; assigned when saved if missing, foreign or taken.
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    /// Shown in dark mode (and listed with the dark themes).
+    pub dark: bool,
+    pub colors: ThemeColors,
+}
+
+impl CustomTheme {
+    /// Trimmed name, normalized colors; `None` when a color is unusable.
+    fn normalized(mut self) -> Option<Self> {
+        self.colors = self.colors.normalized().ok()?;
+        self.name = self.name.trim().chars().take(MAX_THEME_NAME).collect::<String>().trim_end().to_owned();
+        if self.name.is_empty() {
+            self.name = "Eigenes Theme".into();
+        }
+        self.id = self.id.trim().to_owned();
+        Some(self)
+    }
+}
+
+/// Custom themes as saved: unusable ones dropped, at most [`MAX_CUSTOM_THEMES`], ids unique
+/// (`custom-N` for missing, foreign or duplicate ones).
+pub fn normalize_custom_themes(themes: Vec<CustomTheme>) -> Vec<CustomTheme> {
+    let mut out: Vec<CustomTheme> =
+        themes.into_iter().filter_map(CustomTheme::normalized).take(MAX_CUSTOM_THEMES).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut renumber = Vec::new();
+    for (i, t) in out.iter().enumerate() {
+        let valid = t.id.len() > "custom-".len()
+            && t.id.len() <= 64
+            && t.id.starts_with("custom-")
+            && t.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !valid || !seen.insert(t.id.clone()) {
+            renumber.push(i);
+        }
+    }
+    let mut n = 1;
+    for i in renumber {
+        while seen.contains(&format!("custom-{n}")) {
+            n += 1;
+        }
+        out[i].id = format!("custom-{n}");
+        seen.insert(out[i].id.clone());
+    }
+    out
+}
+
+/// Marker of an exported theme file.
+pub const THEME_FILE_FORMAT: &str = "annalo-theme";
+
+#[derive(Serialize)]
+struct ThemeFile<'a> {
+    format: &'static str,
+    version: u32,
+    name: &'a str,
+    dark: bool,
+    colors: &'a ThemeColors,
+}
+
+/// A theme as a `.json` file: `{ format: "annalo-theme", version: 1, name, dark, colors }`
+/// (without the id, which is local to one installation).
+pub fn theme_file_json(t: &CustomTheme) -> String {
+    let file = ThemeFile { format: THEME_FILE_FORMAT, version: 1, name: &t.name, dark: t.dark, colors: &t.colors };
+    serde_json::to_string_pretty(&file).unwrap_or_default() + "\n"
+}
+
+/// Reads a theme file. Refuses other files, newer versions and missing or invalid colors;
+/// without `dark` the background decides. The result has no id yet.
+pub fn parse_theme_file(json: &str) -> std::result::Result<CustomTheme, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|_| "Die Datei ist kein gültiges JSON".to_owned())?;
+    if value.get("format").and_then(|f| f.as_str()) != Some(THEME_FILE_FORMAT) {
+        return Err("Keine Annalo-Theme-Datei".into());
+    }
+    if value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) > 1 {
+        return Err("Die Theme-Datei stammt aus einer neueren Annalo-Version".into());
+    }
+    let colors: ThemeColors = serde_json::from_value(value.get("colors").cloned().unwrap_or_default())
+        .map_err(|e| format!("Farben unvollständig: {e}"))?;
+    let colors = colors.normalized().map_err(|name| format!("Ungültige Farbe „{name}“"))?;
+    let name = value.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_owned();
+    let dark = value.get("dark").and_then(|d| d.as_bool()).unwrap_or_else(|| is_dark(&colors.background));
+    CustomTheme { id: String::new(), name, dark, colors }.normalized().ok_or_else(|| "Ungültige Farben".to_owned())
+}
+
+/// Whether a `#rrggbb` color is dark (WCAG relative luminance below 0.18).
+fn is_dark(hex: &str) -> bool {
+    let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0) as f64 / 255.0;
+    let lin = |v: f64| if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+    0.2126 * lin(channel(1)) + 0.7152 * lin(channel(3)) + 0.0722 * lin(channel(5)) < 0.18
 }
 
 // -------------------------------------------------------------------- editor
@@ -553,6 +720,84 @@ mod tests {
         assert_eq!(normalize_accent("#AbC").as_deref(), Some("#aabbcc"));
         assert_eq!(normalize_accent("#12345g"), None);
         assert_eq!(normalize_accent("red"), None);
+    }
+
+    fn colors() -> ThemeColors {
+        ThemeColors {
+            background: "#FFF".into(),
+            surface: "#f4f4f5".into(),
+            text: "#18181b".into(),
+            muted: "#6b6b74".into(),
+            border: "#e4e4e7".into(),
+            accent: "#6366f1".into(),
+            success: "#157034".into(),
+            warning: "#a14a08".into(),
+            danger: "#dc2626".into(),
+        }
+    }
+
+    #[test]
+    fn appearance_defaults_and_older_settings() {
+        let d = AppearancePrefs::default();
+        assert_eq!(
+            (d.accent.as_str(), d.theme_light.as_str(), d.theme_dark.as_str()),
+            ("theme", "annalo-light", "annalo-dark")
+        );
+        assert!(!d.mica && d.custom_themes.is_empty());
+        // Settings from before themes load with the new fields at their defaults.
+        let old: AppearancePrefs =
+            serde_json::from_str(r#"{"accent":"teal","mica":true,"density":"compact"}"#).unwrap();
+        assert_eq!((old.accent.as_str(), old.mica, old.theme_dark.as_str()), ("teal", true, "annalo-dark"));
+        assert_eq!(normalize_accent(" THEME ").as_deref(), Some("theme"));
+        assert_eq!(normalize_theme_id("  ", DEFAULT_THEME_DARK), "annalo-dark");
+        assert_eq!(normalize_theme_id(" nord-dark ", DEFAULT_THEME_DARK), "nord-dark");
+    }
+
+    #[test]
+    fn custom_themes_are_validated_and_get_unique_ids() {
+        let t = |id: &str, name: &str| CustomTheme { id: id.into(), name: name.into(), dark: false, colors: colors() };
+        let mut broken = t("custom-x", "Kaputt");
+        broken.colors.text = "schwarz".into();
+        let out = normalize_custom_themes(vec![
+            t("custom-a", "  Papier  "),
+            t("custom-a", "Doppelt"),
+            t("", ""),
+            t("nord-light", "Fremd"),
+            broken,
+        ]);
+        assert_eq!(
+            out.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            ["custom-a", "custom-1", "custom-2", "custom-3"]
+        );
+        assert_eq!((out[0].name.as_str(), out[2].name.as_str()), ("Papier", "Eigenes Theme"));
+        assert_eq!(out[0].colors.background, "#ffffff");
+        let many = (0..60).map(|i| t(&format!("custom-{i}"), "x")).collect();
+        assert_eq!(normalize_custom_themes(many).len(), MAX_CUSTOM_THEMES);
+    }
+
+    #[test]
+    fn theme_files_round_trip_and_are_checked() {
+        let theme = CustomTheme { id: "custom-7".into(), name: "Papier".into(), dark: false, colors: colors() };
+        let json = theme_file_json(&theme);
+        assert!(json.contains(r#""format": "annalo-theme""#));
+        assert!(!json.contains("custom-7"), "ids are local to one installation");
+        let back = parse_theme_file(&json).unwrap();
+        assert_eq!((back.id.as_str(), back.name.as_str(), back.dark), ("", "Papier", false));
+        assert_eq!(back.colors, colors().normalized().unwrap());
+
+        assert!(parse_theme_file("nicht json").unwrap_err().contains("JSON"));
+        assert!(parse_theme_file(r#"{"format":"annalo-settings","version":1}"#).unwrap_err().contains("Keine"));
+        assert!(parse_theme_file(&json.replace(r#""version": 1"#, r#""version": 2"#)).unwrap_err().contains("neueren"));
+        assert!(parse_theme_file(&json.replace("#18181b", "#18181")).unwrap_err().contains("text"));
+        assert!(parse_theme_file(&json.replace(r#""danger""#, r#""gefahr""#)).unwrap_err().contains("unvollständig"));
+        // Without "dark" the background decides.
+        let file = serde_json::json!({
+            "format": "annalo-theme",
+            "version": 1,
+            "name": "Nacht",
+            "colors": {"background":"#1e1e2e","surface":"#181825","text":"#cdd6f4","muted":"#a6adc8","border":"#313244","accent":"#cba6f7","success":"#a6e3a1","warning":"#f9e2af","danger":"#f38ba8"}
+        });
+        assert!(parse_theme_file(&file.to_string()).unwrap().dark);
     }
 
     #[test]
