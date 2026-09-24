@@ -67,7 +67,7 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
   const insertMenu = (): MenuEntry[] => {
     const opts = (editor.extensionManager.extensions.find((x) => x.name === "slashCommand")?.options ?? {}) as SlashOptions;
     const at = editor.state.selection.from;
-    const items = slashItems({ onTemplate: opts.onTemplate ?? null, onImage: opts.onImage ?? null, onAi: opts.onAi ?? null, onSummary: opts.onSummary ?? null });
+    const items = slashItems({ onTemplate: opts.onTemplate ?? null, onImage: opts.onImage ?? null, onAi: opts.onAi ?? null, onSummary: opts.onSummary ?? null, onDrawing: opts.onDrawing ?? null });
     const out: MenuEntry[] = [];
     let section = "";
     for (const it of items) {
