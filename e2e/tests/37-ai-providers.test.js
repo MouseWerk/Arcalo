@@ -91,14 +91,14 @@ test("an OpenAI-compatible provider is added with its key in the credential stor
 });
 
 test("tiers are assigned across both providers and saved", async () => {
-  await app.select('select[aria-label="Anbieter für Lokales Modell"]', "ollama");
-  await app.select('select[aria-label="Lokales Modell"]', "llama3.2:latest");
-  await app.select('select[aria-label="Anbieter für Standardmodell"]', "openai");
-  await app.select('select[aria-label="Standardmodell"]', "gpt-4o-mini");
-  await app.select('select[aria-label="Anbieter für Reasoning-Modell"]', "openai");
-  await app.select('select[aria-label="Reasoning-Modell"]', "o3");
-  await app.select('select[aria-label="Anbieter für Embedding-Modell"]', "ollama");
-  await app.select('select[aria-label="Embedding-Modell"]', "nomic-embed-text");
+  await app.select('[role="combobox"][aria-label="Anbieter für Lokales Modell"]', "ollama");
+  await app.select('[role="combobox"][aria-label="Lokales Modell"]', "llama3.2:latest");
+  await app.select('[role="combobox"][aria-label="Anbieter für Standardmodell"]', "openai");
+  await app.select('[role="combobox"][aria-label="Standardmodell"]', "gpt-4o-mini");
+  await app.select('[role="combobox"][aria-label="Anbieter für Reasoning-Modell"]', "openai");
+  await app.select('[role="combobox"][aria-label="Reasoning-Modell"]', "o3");
+  await app.select('[role="combobox"][aria-label="Anbieter für Embedding-Modell"]', "ollama");
+  await app.select('[role="combobox"][aria-label="Embedding-Modell"]', "nomic-embed-text");
   // The price of the standard model comes from the built-in table.
   await app.waitText(".model-picker-price", /0,15\s\$ \/ 0,60\s\$ je 1 Mio\. Tokens/);
   await app.waitText(".model-picker-price", /Kostenlos \(lokal\)/);
@@ -147,7 +147,7 @@ test("the price table is editable and saved", async () => {
   const input = await app.$(`input[aria-label="Eingabepreis (Zeile ${n})"]`);
   await input.setValue("1.5");
   await app.keys(["Tab"]);
-  await app.select(`select[aria-label="Anbieter (Zeile ${n})"]`, "openai");
+  await app.select(`[role="combobox"][aria-label="Anbieter (Zeile ${n})"]`, "openai");
   await app.shot("settings-prices");
   await app.click(".savebar .btn-primary");
   await app.waitText(".toast-title", /Einstellungen gespeichert/);
