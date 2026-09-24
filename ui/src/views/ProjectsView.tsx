@@ -2,7 +2,8 @@
 // facts (critical path, float) as tables. Create, edit and delete everything here.
 
 import { useEffect, useState } from "react";
-import { Briefcase, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Briefcase, MoreHorizontal, Pencil, Play, Plus, Trash2, Target } from "lucide-react";
+import { openFocusDialog } from "../components/Focus";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, Spinner, useMenu, type Tone } from "../components/ui";
@@ -240,6 +241,7 @@ function NetzplanBlock({ netzplan, open }: { netzplan: NetzplanTree; open: (d: D
                     </td>
                     <td className="row-actions">
                       <IconButton icon={Play} label="Timer starten" size="sm" onClick={() => startTimer(v)} />
+                      <IconButton icon={Target} label="Fokussitzung starten" size="sm" onClick={() => openFocusDialog({ reference: `${netzplan.netzplan_nr}/${v.vorgang_nr}` })} />
                       <IconButton icon={Pencil} label="Bearbeiten" size="sm" onClick={() => open({ kind: "vorgang", netzplan, vorgang: v })} />
                     </td>
                   </tr>

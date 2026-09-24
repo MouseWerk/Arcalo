@@ -11,6 +11,7 @@ import "./styles/prefs.css";
 import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
+import { PresenterApp } from "./components/Presentation";
 import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
@@ -21,8 +22,10 @@ import { describeError, logUi } from "./lib/devlog";
 // the quick-search window with `#search`.
 const captureMode = location.hash === "#capture" || new URLSearchParams(location.search).has("capture");
 const searchMode = !captureMode && (location.hash === "#search" || new URLSearchParams(location.search).has("search"));
+// The presenter view of a presentation on a second monitor.
+const presenterMode = location.hash === "#presenter";
 
-startSplash(captureMode || searchMode);
+startSplash(captureMode || searchMode || presenterMode);
 trackModKey();
 installTooltips();
 
@@ -50,26 +53,26 @@ document.documentElement.dataset.theme = window.matchMedia("(prefers-color-schem
 // Windows 11: the window has a Mica backdrop that the chrome lets show through.
 import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_backdrop"))
-  .then((mica) => mica && !captureMode && !searchMode && document.documentElement.classList.add("os-windows"))
+  .then((mica) => mica && !captureMode && !searchMode && !presenterMode && document.documentElement.classList.add("os-windows"))
   .catch(() => {});
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
 import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_frame"))
-  .then((custom) => custom && !captureMode && !searchMode && document.documentElement.classList.add("frame-custom"))
+  .then((custom) => custom && !captureMode && !searchMode && !presenterMode && document.documentElement.classList.add("frame-custom"))
   .catch(() => {});
 // macOS: the tab bar sits in the title bar (overlay); the chrome leaves room for the traffic lights.
 if (IS_MAC && !captureMode) document.documentElement.classList.add("os-macos");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {captureMode ? <CaptureApp /> : searchMode ? <SearchApp /> : <App />}
+    {captureMode ? <CaptureApp /> : searchMode ? <SearchApp /> : presenterMode ? <PresenterApp /> : <App />}
   </StrictMode>,
 );
 
 // The main window starts hidden and appears once the app script runs: the page and the splash
 // styles are loaded by then, so there is no unstyled page and no white flash before the splash.
 // (Not after a requestAnimationFrame: hidden webviews do not run frames.)
-if (!captureMode && !searchMode) {
+if (!captureMode && !searchMode && !presenterMode) {
   import("@tauri-apps/api/core")
     .then(({ invoke }) => invoke("window_ready"))
     .catch(() => {})

@@ -4,10 +4,7 @@
 import { streamingOn, warnCost, withCostLimit } from "../lib/aicost";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X,
-  AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw,
-} from "lucide-react";
+import { ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X, AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw, History } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
 import { aiErrorSummary } from "../lib/aierror";
 import { renderMarkdown } from "../lib/markdown";
@@ -45,6 +42,7 @@ const TOOL_META: Record<string, { label: string; icon: typeof Search }> = {
   budget_status: { label: "Budget abfragen", icon: Gauge },
   list_tasks: { label: "Aufgaben abfragen", icon: ListChecks },
   time_summary: { label: "Zeitübersicht abfragen", icon: CalendarRange },
+  activity_log: { label: "Aktivität abfragen", icon: History },
   run_powershell: { label: "PowerShell ausführen", icon: Terminal },
   git: { label: "Git-Befehl", icon: GitBranch },
   http_request: { label: "HTTP-Anfrage", icon: Globe },

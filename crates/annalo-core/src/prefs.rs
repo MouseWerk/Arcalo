@@ -338,7 +338,8 @@ pub struct AiPreset {
 
 /// Workspace tools; the system tools (`run_powershell`, `git`, `http_request`) must be
 /// allowed explicitly.
-pub const WORKSPACE_TOOLS: &[&str] = &["log_time", "search_workspace", "budget_status", "list_tasks", "time_summary"];
+pub const WORKSPACE_TOOLS: &[&str] =
+    &["log_time", "search_workspace", "budget_status", "list_tasks", "time_summary", "activity_log"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

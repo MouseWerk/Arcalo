@@ -1,7 +1,7 @@
 // Tab bar, status bar, start screen, toasts and the confirm dialog host.
 
 import {
-  AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
+  Activity, AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
 } from "lucide-react";
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
@@ -12,6 +12,7 @@ import { Onboarding } from "./Onboarding";
 import { AnnaloLogo } from "./Logo";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
+import { FocusStatus } from "./Focus";
 import { t, useT } from "../lib/i18n";
 import { modelLabel, usableProvider } from "../lib/providers";
 
@@ -33,6 +34,8 @@ export function tabTitle(tab: Tab, pages: Map<number, { title: string }>) {
       return t("tabs.trash");
     case "tasks":
       return t("tabs.tasks");
+    case "activity":
+      return t("tabs.activity");
   }
 }
 
@@ -55,6 +58,8 @@ export function TabIcon({ t }: { t: Tab }) {
       return <Trash2 size={14} strokeWidth={1.75} />;
     case "tasks":
       return <ListChecks size={14} strokeWidth={1.75} />;
+    case "activity":
+      return <Activity size={14} strokeWidth={1.75} />;
   }
 }
 
@@ -84,6 +89,7 @@ export function StatusBar() {
           <Play size={12} /> {t("status.startTimer")}
         </button>
       )}
+      <FocusStatus />
       <span className="sb-spacer" />
       {focusMode && (
         <button type="button" className="sb-item" onClick={() => s().set({ focusMode: false })} title={t("status.endFocus")}>

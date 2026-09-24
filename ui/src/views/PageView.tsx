@@ -1,7 +1,8 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, Link2, MoreHorizontal, NotebookPen, Plus, PencilLine, SmilePlus, Star, Trash2, Presentation } from "lucide-react";
+import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -22,7 +23,7 @@ import { VersionsDialog } from "./VersionsDialog";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
 import { keys } from "../lib/shortcut";
-import { withHint } from "../lib/keymap";
+import { hint, withHint } from "../lib/keymap";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   const [doc, setDoc] = useState<PageDoc | null>(null);
@@ -357,6 +358,7 @@ function PageHeader({
             { label: "Symbol ändern", icon: SmilePlus, onSelect: () => setIconOpen(true) },
             { label: "Rechts daneben öffnen", icon: Columns2, onSelect: () => s().splitTab(tab.id) },
             { label: "Link kopieren", icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
+            { label: "Präsentieren", icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
             { label: "Drucken / als PDF", icon: Printer, onSelect: () => printActivePane() },
             { label: "Versionen…", icon: History, onSelect: () => setVersionsOpen(true) },
             { label: "Besprechung zusammenfassen", icon: NotebookPen, onSelect: onSummary },

@@ -18,6 +18,7 @@ export const TOOL_OPTIONS: { name: string; label: TKey; system: boolean }[] = [
   { name: "budget_status", label: "tool.budget_status", system: false },
   { name: "list_tasks", label: "tool.list_tasks", system: false },
   { name: "time_summary", label: "tool.time_summary", system: false },
+  { name: "activity_log", label: "tool.activity_log", system: false },
   { name: "run_powershell", label: "tool.run_powershell", system: true },
   { name: "git", label: "tool.git", system: true },
   { name: "http_request", label: "tool.http_request", system: true },

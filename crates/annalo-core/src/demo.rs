@@ -179,6 +179,11 @@ const DEMO_PAGES: &[&str] = &[
 pub fn remove(db: &Database) -> Result<usize> {
     db.atomic(|| {
         if let Ok(p) = db.project_by_code("PRJ-2026-X") {
+            // The feed forgets the sample bookings too.
+            db.conn().execute(
+                "DELETE FROM activity WHERE netzplan_id IN (SELECT id FROM netzplaene WHERE project_id = ?1)",
+                [p.id],
+            )?;
             db.conn().execute(
                 "DELETE FROM time_entries WHERE netzplan_id IN (SELECT id FROM netzplaene WHERE project_id = ?1)",
                 [p.id],
@@ -202,6 +207,13 @@ pub fn remove(db: &Database) -> Result<usize> {
                              SELECT ?1 UNION ALL
                              SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id WHERE p.deleted_at IS NULL)
                          UPDATE pages SET parent_id = NULL WHERE deleted_at IS NOT NULL AND parent_id IN sub",
+                        [n.page.id],
+                    )?;
+                    db.conn().execute(
+                        "WITH RECURSIVE sub(id) AS (
+                             SELECT ?1 UNION ALL
+                             SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id)
+                         DELETE FROM activity WHERE page_id IN sub",
                         [n.page.id],
                     )?;
                     db.delete_page(n.page.id)?;
@@ -265,5 +277,9 @@ mod tests {
         assert_eq!(db.page(mine.id).unwrap().parent_id, None);
         assert_eq!(db.page(sub.id).unwrap().parent_id, Some(mine.id));
         assert_eq!(db.restore_page(mine.id).unwrap().parent_id, None);
+        // The feed keeps the user's pages and forgets the samples.
+        let feed = crate::feed::list(&db, &Default::default()).unwrap();
+        assert!(feed.iter().any(|a| a.page_id == Some(mine.id)));
+        assert!(!feed.iter().any(|a| a.title == "SAP CATS Leitfaden" || a.kind.starts_with("entry_")), "{feed:?}");
     }
 }

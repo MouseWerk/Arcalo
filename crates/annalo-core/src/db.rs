@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_tasks.sql"),
     include_str!("../migrations/0005_entry_page.sql"),
     include_str!("../migrations/0006_page_versions.sql"),
+    include_str!("../migrations/0007_activity_focus.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -479,7 +480,9 @@ impl Database {
                 e.page_id
             ],
         )?;
-        self.time_entry(self.conn.last_insert_rowid())
+        let entry = self.time_entry(self.conn.last_insert_rowid())?;
+        self.feed_entry("entry_created", &entry, Utc::now())?;
+        Ok(entry)
     }
 
     /// The most recently started entry that is not running (for „Zuletzt verwendet starten“).
@@ -542,7 +545,11 @@ impl Database {
             "UPDATE time_entries SET end_time = ?2, duration_minutes = ?3, status_flag = 'draft' WHERE id = ?1",
             params![running.id, ts(at), booked],
         )?;
-        self.time_entry(running.id)
+        let entry = self.time_entry(running.id)?;
+        if booked > 0 {
+            self.feed_entry("entry_created", &entry, at)?;
+        }
+        Ok(entry)
     }
 
     pub fn discard_timer(&self) -> Result<()> {
@@ -575,7 +582,9 @@ impl Database {
                     duration_minutes = ?6, description = ?7 WHERE id = ?1",
             params![id, vorgang_nr, leistungsart, ts(start_time), ts(end), duration_minutes, description],
         )?;
-        self.time_entry(id)
+        let entry = self.time_entry(id)?;
+        self.feed_entry("entry_changed", &entry, Utc::now())?;
+        Ok(entry)
     }
 
     pub fn delete_time_entry(&self, id: i64) -> Result<()> {
@@ -592,9 +601,14 @@ impl Database {
             let mut st = self.conn.prepare_cached(
                 "UPDATE time_entries SET status_flag = ?2 WHERE id = ?1 AND status_flag <> 'running'",
             )?;
+            let mut changed = Vec::new();
             for id in ids {
-                n += st.execute(params![id, status.as_str()])?;
+                if st.execute(params![id, status.as_str()])? > 0 {
+                    changed.push(*id);
+                    n += 1;
+                }
             }
+            self.feed_status(&changed, status, Utc::now())?;
             Ok(n)
         })
     }
@@ -681,7 +695,9 @@ impl Database {
             "INSERT INTO pages (parent_id, title, icon, position) VALUES (?1, ?2, ?3, ?4)",
             params![parent_id, title, icon, position],
         )?;
-        self.page(self.conn.last_insert_rowid())
+        let page = self.page(self.conn.last_insert_rowid())?;
+        self.feed_page_created(page.id, &page.title, Utc::now())?;
+        Ok(page)
     }
 
     pub fn rename_page(&self, id: i64, title: &str) -> Result<()> {

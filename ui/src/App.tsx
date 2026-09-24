@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, on } from "./lib/api";
-import { useApp, savePref } from "./store/app";
+import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { Sidebar, stopTimer } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
@@ -26,6 +26,8 @@ import { startUpdateChecks } from "./components/Updates";
 import { commandFor, currentKeymap } from "./lib/keymap";
 import { withPacResults } from "./views/settings/NetworkSection";
 import type { SettingsView } from "./lib/types";
+import { FocusDialogHost, useFocusEngine } from "./components/Focus";
+import { PresentationHost, startPresentation } from "./components/Presentation";
 
 export function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen);
@@ -34,6 +36,7 @@ export function App() {
   const tabs = useApp((s) => s.tabs);
   const activeId = useApp((s) => s.activeTabId);
   const active = tabs.find((t) => t.id === activeId) ?? null;
+  useFocusEngine();
 
   useEffect(() => {
     const s = useApp.getState();
@@ -287,6 +290,8 @@ export function App() {
       <CalendarPopover />
       <WindowControls />
       <Toasts />
+      <FocusDialogHost />
+      <PresentationHost />
       <ConfirmHost />
       <TemplateHost />
     </div>
@@ -366,4 +371,8 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   full_width: () => requestPageCommand("full"),
   focus_mode: () => useApp.getState().set({ focusMode: !useApp.getState().focusMode }),
   settings: () => useApp.getState().openTab({ kind: "settings" }),
+  present: () => {
+    const tab = activeTab();
+    if (tab?.kind === "page" && tab.pageId != null) void startPresentation(tab.pageId);
+  },
 };

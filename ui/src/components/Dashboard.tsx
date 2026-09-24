@@ -13,6 +13,7 @@ import { Badge, Button, IconButton, Progress, useMenu, type Tone } from "./ui";
 import { PageIcon } from "./icons";
 import { stopTimer, useTimerSeconds } from "./Sidebar";
 import { openDailyNote } from "./CalendarPopover";
+import { FocusWidget } from "./Focus";
 
 const WIDGET_MIME = "application/x-annalo-widget";
 
@@ -167,6 +168,8 @@ function WidgetBody({ widget }: { widget: Widget }) {
       return <NoteWidget />;
     case "calendar":
       return <CalendarWidget />;
+    case "focus":
+      return <FocusWidget />;
   }
 }
 

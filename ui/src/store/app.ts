@@ -3,10 +3,10 @@
 import { create } from "zustand";
 import { api, errorText } from "../lib/api";
 import { logUi } from "../lib/devlog";
-import type { BudgetStatus, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
+import type { BudgetStatus, FocusState, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 
-export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks";
+export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity";
 /** A place a tab can show. */
 export interface Loc {
   kind: TabKind;
@@ -35,6 +35,8 @@ export interface Toast {
   action?: { label: string; run: () => void };
   /** Stays until closed. */
   persistent?: boolean;
+  /** Shown even during a focus session (the session's own messages). */
+  urgent?: boolean;
 }
 
 export interface ConfirmRequest {
@@ -104,6 +106,14 @@ interface State {
   onboarding: boolean;
   /** Question from the palette, consumed by the assistant panel once it is mounted. */
   pendingAsk: string | PendingAsk | null;
+  /** The focus session (work phase or break), null without. */
+  focus: FocusState | null;
+  /** Toasts held back during a focus session, shown as a summary afterwards. */
+  heldToasts: Omit<Toast, "id">[];
+  /** The focus dialog is open (with a preset Vorgang and goal). */
+  focusDialog: { reference?: string; goal?: string } | null;
+  /** The page shown as a presentation. */
+  presenting: { pageId: number } | null;
 
   openTab: (loc: Loc, opts?: OpenOpts) => void;
   openPage: (pageId: number, opts?: OpenOpts) => void;
@@ -272,6 +282,10 @@ export const useApp = create<State>((set, get) => ({
   focusMode: false,
   onboarding: false,
   pendingAsk: null,
+  focus: null,
+  heldToasts: [],
+  focusDialog: null,
+  presenting: null,
 
   openTab: (loc, opts) => {
     const { panes, activePaneId, paneSizes } = get();
@@ -430,6 +444,11 @@ export const useApp = create<State>((set, get) => ({
   bumpWbs: () => set({ wbsVersion: get().wbsVersion + 1 }),
   set: (patch) => set(patch),
   toast: (t) => {
+    // Focus session: everything but errors waits for the end of the session.
+    if (get().focus?.phase === "work" && !t.urgent && t.tone !== "danger") {
+      set({ heldToasts: [...get().heldToasts, t].slice(-50) });
+      return;
+    }
     const id = ++toastSeq;
     set({ toasts: [...get().toasts, { ...t, id }].filter((x, i, all) => x.persistent || i >= all.length - 3) });
     const ms = t.tone === "danger" ? 8000 : t.action ? 7000 : t.tone === "success" ? 3200 : 4500;
@@ -444,15 +463,19 @@ export const useApp = create<State>((set, get) => ({
   alerts: (alerts) => {
     // Settings → Benachrichtigungen.
     if (get().settings?.settings.notifications?.budget === false) return;
+    // Focus session: budget alerts wait for its end like other messages.
+    const hold = get().focus?.phase === "work";
     for (const a of alerts) {
       const pct = Math.round(a.consumed * 100);
       const title =
         a.level === "exceeded" ? `Budget überschritten: ${a.label}` : a.level === "critical" ? `Budget kritisch: ${a.label}` : `Budget-Warnung: ${a.label}`;
-      get().toast({
+      const toast: Omit<Toast, "id"> = {
         tone: a.level === "warning" ? "warning" : "danger",
         title,
         detail: `${a.booked_hours.toFixed(1).replace(".", ",")} von ${a.planned_hours.toFixed(1).replace(".", ",")} h gebucht (${pct} %), Restaufwand ${a.etc_hours.toFixed(1).replace(".", ",")} h`,
-      });
+      };
+      if (hold) set({ heldToasts: [...get().heldToasts, toast].slice(-50) });
+      else get().toast(toast);
     }
   },
 }));

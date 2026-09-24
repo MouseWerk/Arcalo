@@ -14,6 +14,7 @@ import { SettingsView } from "../views/SettingsView";
 import { TagView } from "../views/TagView";
 import { TrashView } from "../views/TrashView";
 import { TasksView } from "../views/TasksView";
+import { ActivityView } from "../views/ActivityView";
 import { useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 
@@ -104,6 +105,15 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
         <>
           <ViewHeader tab={tab} title="" />
           <Home />
+        </>
+      );
+    case "activity":
+      return (
+        <>
+          <ViewHeader tab={tab} title="" />
+          <div className="view-body">
+            <ActivityView />
+          </div>
         </>
       );
     default:

@@ -465,6 +465,10 @@ pub fn shortcut_role(app: &AppHandle, shortcut: &Shortcut) -> Option<Role> {
 // ---------------------------------------------------------------- reminders
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    // Held back during a focus session and shown in its summary.
+    if crate::focus::hold(app, title, body) {
+        return;
+    }
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         crate::devlog::warn("desktop", format!("notification failed: {e}"));
     }
@@ -488,6 +492,7 @@ fn booked_today(db: &Database) -> Result<i64> {
 /// Called every ~30 s: tray tooltip and reminder notifications.
 pub fn periodic(app: &AppHandle) {
     refresh_tray(app);
+    crate::focus::periodic(app);
     let state = app.state::<AppState>();
     let settings = state.settings();
     let now = Local::now().naive_local();

@@ -15,7 +15,7 @@ describe("dashboard layout", () => {
     expect(ws.at(-1)!.id).toBe("week-3");
     expect(layoutReducer([], { type: "add", kind: "budgets" })).toEqual([W("budgets", "budgets", "s")]);
     expect(newWidgetId("note", [W("note"), W("note-3")])).toBe("note-2");
-    expect(WIDGET_KINDS).toHaveLength(8);
+    expect(WIDGET_KINDS).toHaveLength(9);
   });
 
   it("removes and resizes by id, leaving unknown ids alone", () => {

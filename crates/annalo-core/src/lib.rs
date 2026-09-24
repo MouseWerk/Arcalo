@@ -29,6 +29,8 @@
 //! * [`datadir`] – data folder location (`location.json`), synced-folder check
 //! * [`update`] – auto-update gating (compiled-in key), release links, download progress
 //! * [`activity`] – idle detection and active window probing (Win32 on Windows)
+//! * [`feed`] – activity feed („Aktivität“): what happened when (pages, tasks, bookings, files)
+//! * [`focus`] – focus sessions (Pomodoro) booked on a Vorgang
 //! * [`ai`] – LiteLLM client, model router, token/cost metrics, local RAG
 
 pub mod activity;
@@ -43,6 +45,8 @@ pub mod desktop;
 pub mod drawings;
 pub mod error;
 pub mod export;
+pub mod feed;
+pub mod focus;
 pub mod gitsync;
 pub mod mirror;
 pub mod model;
