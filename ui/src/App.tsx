@@ -23,7 +23,7 @@ import { requestPageCommand } from "./lib/pageModes";
 import { sidebarShown, toggleSidebar, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
-import { commandFor, currentKeymap } from "./lib/keymap";
+import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
 import { withPacResults } from "./views/settings/NetworkSection";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
@@ -157,6 +157,8 @@ export function App() {
       const id = commandFor(e, currentKeymap());
       const command = id ? COMMAND_RUNNERS[id] : undefined;
       if (!command) return;
+      // Back/forward never while typing: there the keys move the caret (word jumps on macOS).
+      if (!commandAllowed(id!, document.activeElement)) return;
       // The editor takes Ctrl+J on a selection (inline AI) and marks the event handled.
       if (id === "assistant" && e.defaultPrevented) return;
       e.preventDefault();

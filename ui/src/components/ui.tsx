@@ -165,6 +165,10 @@ export function Dialog({
   width?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers often pass a new close function on every render: the effect below must not
+  // re-run for that (it would hand the focus back to the element behind the dialog).
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
@@ -179,7 +183,7 @@ export function Dialog({
       if (above) return;
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        close.current();
       } else if (e.key === "Tab" && box) {
         // Focus stays inside the dialog: Tab from the last control wraps to the first and back.
         const all = [...box.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], summary, [tabindex]")].filter(
@@ -199,7 +203,7 @@ export function Dialog({
       window.removeEventListener("keydown", onKey, true);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

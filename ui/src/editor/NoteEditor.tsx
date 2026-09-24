@@ -35,6 +35,8 @@ import type { ZeitGuess } from "../lib/types";
 import { ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
 import type { PageDoc } from "../lib/types";
 import { keys } from "../lib/shortcut";
+import { merge3 } from "../lib/merge3";
+import { replaceChanged } from "./replaceChanged";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -63,6 +65,34 @@ function chooseOtherRef(editor: Editor, line: string) {
 
 const NO_REF_HINT = "Schreibe die Referenz dazu, z. B. /zeit NP-8801/1020 2h Beschreibung.";
 
+/** Pasted text above this size is offered as an attached file (megabytes of text slow the editor down). */
+export const LARGE_PASTE = 1_000_000;
+
+/** Very large pasted text: attached as a text file, or pasted anyway, as the user chooses. */
+async function largePaste(editor: Editor, text: string, from: number, to: number) {
+  const mb = (text.length / 1_000_000).toLocaleString("de-DE", { maximumFractionDigits: 1 });
+  const choice = await useApp.getState().choose({
+    title: "Sehr großer Text",
+    message: `Der eingefügte Text ist etwa ${mb} MB groß. Als Datei angehängt bleibt die Notiz schnell; als Text eingefügt kann das Bearbeiten spürbar langsamer werden.`,
+    confirmLabel: "Als Datei anhängen",
+    altLabel: "Als Text einfügen",
+  });
+  if (editor.isDestroyed || choice === "cancel") return;
+  const at = { from: Math.min(from, editor.state.doc.content.size), to: Math.min(to, editor.state.doc.content.size) };
+  if (choice === "alt") {
+    editor.chain().focus().setTextSelection(at).run();
+    editor.view.pasteText(text);
+    return;
+  }
+  try {
+    const stamp = new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(/[/:]/g, ".").replace(",", "");
+    const saved = await storeFile(new File([text], `Eingefügter Text ${stamp}.txt`, { type: "text/plain" }));
+    if (!editor.isDestroyed) editor.chain().focus().insertContentAt(at, { type: "fileEmbed", attrs: { name: saved.name } }).run();
+  } catch (e) {
+    useApp.getState().error("Text nicht als Datei gespeichert", e);
+  }
+}
+
 /** Autosave delay after the last change (Settings → Editor, 250–3000 ms). */
 const saveDelay = () => Math.min(3000, Math.max(250, useApp.getState().settings?.settings.editor?.autosave_ms ?? 450));
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
@@ -84,9 +114,24 @@ export const MEETING_SUMMARY_EVENT = "annalo:meeting-summary";
 // Flush handles of all mounted editors (rename, window close).
 const flushers = new Set<() => Promise<void>>();
 
+// Saves still on their way, also of editors that were closed meanwhile: whoever reads the
+// page next (a mode switch, a reload) waits for them.
+const pendingSaves = new Set<Promise<unknown>>();
+
+/** Registers a running save with `flushAllEditors`. */
+export function trackSave<T>(p: Promise<T>): Promise<T> {
+  pendingSaves.add(p);
+  p.then(
+    () => pendingSaves.delete(p),
+    () => pendingSaves.delete(p),
+  );
+  return p;
+}
+
 /** Saves pending edits of every open editor; rejects if one of them could not be saved. */
 export async function flushAllEditors() {
   await Promise.all([...flushers].map((f) => f()));
+  await Promise.allSettled([...pendingSaves]);
 }
 
 /** Adds a save handle to `flushAllEditors` (the Markdown source editor); returns the removal. */
@@ -150,9 +195,14 @@ export function NoteEditor({
     if (range) setAi((cur) => ({ range, seq: (cur?.seq ?? 0) + 1 }));
   };
 
-  // Another pane saved this page while we had edits: reload once ours are stored.
-  const foreignPending = useRef(false);
   const busy = () => dirty.current || saving.current !== null;
+  // The page as last stored in common with other panes: the base when both changed it.
+  const base = useRef(doc.content);
+  // Counts merges of other panes' content; a save started before one does not become the base.
+  const merges = useRef(0);
+  // Gone (tab closed): a failed save is not retried in the background.
+  const unmounted = useRef(false);
+  const failed = useRef(false);
 
   const apply = (editor: Editor, content: string) => {
     const { frontmatter: fm, body } = splitFrontmatter(content);
@@ -161,21 +211,34 @@ export function NoteEditor({
       cb.current.onFrontmatter?.(fm);
     }
     if (toMarkdown(editor) === body) return;
-    const { from, to } = editor.state.selection;
-    editor.commands.setContent(body, { contentType: "markdown", emitUpdate: false });
-    const max = editor.state.doc.content.size;
-    editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
+    replaceChanged(editor, body);
     if (activeRef.current) publishOutline(editor);
   };
 
+  // Content of another pane (or a reload): taken over as it is, or merged with our unsaved
+  // (or still saving) edits, which are then saved again.
+  const absorb = (editor: Editor, theirs: string) => {
+    if (!busy()) {
+      base.current = theirs;
+      apply(editor, theirs);
+      return;
+    }
+    const mine = frontmatter.current + toMarkdown(editor);
+    const merged = merge3(base.current, mine, theirs);
+    base.current = theirs;
+    merges.current++;
+    apply(editor, merged);
+    dirty.current = true;
+    setStatus("dirty");
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
+  };
+
   const reload = async (editor: Editor) => {
-    if (busy()) return void (foreignPending.current = true);
-    foreignPending.current = false;
     try {
       const fresh = await api.page(doc.id);
       if (editor.isDestroyed) return;
-      if (busy()) return void (foreignPending.current = true);
-      apply(editor, fresh.content);
+      absorb(editor, fresh.content);
     } catch {
       /* page gone: the view shows that */
     }
@@ -186,29 +249,34 @@ export function NoteEditor({
     dirty.current = false;
     setStatus("saving");
     const md = frontmatter.current + toMarkdown(editor);
+    const mergesBefore = merges.current;
     // Saves run one after another so an older one never lands last.
     const p: Promise<void> = (saving.current ?? Promise.resolve())
       .then(() => api.savePage(doc.id, md))
       .then((saved) => {
+        failed.current = false;
+        if (merges.current === mergesBefore) base.current = md;
         cb.current.onSaved(saved);
         // Other panes showing the same page pick up the new content.
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
-        setStatus(dirty.current ? "dirty" : "saved");
+        if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");
       })
       .catch((e) => {
         dirty.current = true;
+        // Reported once per failure series, not on every retry.
+        if (!failed.current) useApp.getState().error("Speichern fehlgeschlagen", e);
+        failed.current = true;
+        if (unmounted.current) return;
         setStatus("dirty");
-        useApp.getState().error("Speichern fehlgeschlagen", e);
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => save(editor), 5000);
       })
       .finally(() => {
-        if (saving.current !== p) return;
-        saving.current = null;
-        if (foreignPending.current && !dirty.current && !editor.isDestroyed) reload(editor);
+        if (saving.current === p) saving.current = null;
       });
     saving.current = p;
+    trackSave(p);
     await p;
   };
 
@@ -373,6 +441,17 @@ export function NoteEditor({
           openAi(editorRef.current);
           return true;
         },
+        // A paste of megabytes of text: offered as an attached file first (see `largePaste`).
+        handlePaste: (view, event) => {
+          const data = event.clipboardData;
+          if (!data || data.files?.length || !editorRef.current) return false;
+          const text = data.getData("text/plain");
+          if (text.length <= LARGE_PASTE) return false;
+          event.preventDefault();
+          const { from, to } = view.state.selection;
+          void largePaste(editorRef.current, text, from, to);
+          return true;
+        },
         handleDOMEvents: {
           // Right-click on an image: size, full view, open, copy, remove. On a file: open, show, copy, remove.
           contextmenu: (view, event) => {
@@ -443,11 +522,14 @@ export function NoteEditor({
       save(editor);
     };
     window.addEventListener("blur", flush);
+    unmounted.current = false;
     return () => {
       unregister();
       flushers.delete(flushNow);
       window.removeEventListener("blur", flush);
       flush();
+      unmounted.current = true;
+      window.clearTimeout(saveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
@@ -472,8 +554,7 @@ export function NoteEditor({
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
       if (d.id !== doc.id || d.from === instance.current) return;
-      if (busy()) foreignPending.current = true;
-      else apply(editor, d.content);
+      absorb(editor, d.content);
     };
     const onReload = (e: Event) => {
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
@@ -529,6 +610,12 @@ export function NoteEditor({
     const onKey = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (k === "f" || k === "h") && activeRef.current) {
+        // Not while typing somewhere else (a dialog, the sidebar, the assistant).
+        const el = document.activeElement as HTMLElement | null;
+        const pane = wrapRef.current?.closest(".pane") ?? wrapRef.current?.closest(".page-scroll-wrap");
+        const inside = !!el && !!pane?.contains(el);
+        const editable = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+        if (!inside && (editable || document.querySelector(".overlay"))) return;
         e.preventDefault();
         openFind(k === "h");
       }

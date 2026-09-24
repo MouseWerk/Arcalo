@@ -6,10 +6,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Excalidraw, MainMenu, WelcomeScreen, exportToSvg, hashElementsVersion, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, LibraryItems } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
-import { api, errorText } from "../lib/api";
+import { api, errorText, storeFile } from "../lib/api";
 import { currentLang } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { DRAWING_SAVED_EVENT, drawingLabel } from "./drawing";
+import { parseDrawing } from "./drawingFormat";
+import { FileWarning } from "lucide-react";
 
 const SAVE_DELAY = 800;
 /** Shapes the user added to Excalidraw's library, kept across drawings. */
@@ -66,6 +68,10 @@ async function render(elements: Elements, appState: AppState, files: BinaryFiles
 
 export default function DrawingEditor({ name, onClose }: { name: string; onClose: () => void }) {
   const [initial, setInitial] = useState<ExcalidrawInitialDataState | null>(null);
+  // A file that could not be read as a drawing: shown as such, never overwritten.
+  const [broken, setBroken] = useState<{ reason: string; raw: string | null } | null>(null);
+  // Read from another format (Obsidian): a copy of the original is kept before the first save.
+  const original = useRef<string | null>(null);
   const [theme, setTheme] = useState(appTheme);
   const [status, setStatus] = useState<Status>("saved");
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -75,21 +81,46 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
   const closing = useRef(false);
   const overlay = useRef<HTMLDivElement>(null);
 
+  const start = (data: ExcalidrawInitialDataState) =>
+    setInitial({ ...data, appState: { ...data.appState, theme: appTheme() }, libraryItems: loadLibrary(), scrollToContent: true });
+
   useEffect(() => {
     let alive = true;
-    api
-      .readDrawing(name)
-      .then((raw) => JSON.parse(raw) as ExcalidrawInitialDataState)
-      // Missing (e.g. an embed from an imported vault without the file): start empty.
-      .catch(() => ({ elements: [] }) as ExcalidrawInitialDataState)
-      .then((data) => {
+    api.readDrawing(name).then(
+      (raw) => {
         if (!alive) return;
-        setInitial({ ...data, appState: { ...data.appState, theme: appTheme() }, libraryItems: loadLibrary(), scrollToContent: true });
-      });
+        const load = parseDrawing(raw);
+        if (!load.ok) return setBroken({ reason: load.reason, raw });
+        if (load.converted) original.current = raw;
+        start(load.scene as ExcalidrawInitialDataState);
+      },
+      (e) => {
+        if (!alive) return;
+        // Missing (e.g. an embed from an imported vault without the file): start empty.
+        if (/nicht gefunden|not found/i.test(errorText(e))) start({ elements: [] });
+        else setBroken({ reason: `Die Datei kann nicht gelesen werden: ${errorText(e)}`, raw: null });
+      },
+    );
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
+
+  /** Keeps `raw` next to the drawing as `<name>.bak` (a new name when that exists); the stored name. */
+  const keepCopy = async (raw: string) => (await storeFile(new File([raw], `${name}.bak`, { type: "application/octet-stream" }))).name;
+
+  /** „Neu beginnen“ on a damaged file: a copy of it stays, then an empty drawing replaces it. */
+  const startOver = async () => {
+    try {
+      const kept = broken?.raw ? await keepCopy(broken.raw) : null;
+      if (kept) useApp.getState().toast({ tone: "info", title: "Kopie der alten Datei behalten", detail: kept });
+      setBroken(null);
+      start({ elements: [] });
+    } catch (e) {
+      useApp.getState().error("Kopie nicht möglich – die Datei bleibt unverändert", e);
+    }
+  };
 
   // Follow the app's light/dark switch while the editor is open.
   useEffect(() => {
@@ -113,6 +144,11 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
       }
       setStatus("saving");
       try {
+        // First save of a drawing read from Obsidian's format: keep the original file.
+        if (original.current !== null) {
+          await keepCopy(original.current);
+          original.current = null;
+        }
         const out = await render(elements, x.getAppState(), files);
         await api.saveDrawing(name, out.scene, out.svg);
         savedKey.current = key;
@@ -185,7 +221,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
     void close();
   };
 
-  const statusText = { saved: "Gespeichert", saving: "Speichert…", dirty: "Ungespeichert", error: "Nicht gespeichert" }[status];
+  const statusText = broken ? "Nicht geöffnet" : { saved: "Gespeichert", saving: "Speichert…", dirty: "Ungespeichert", error: "Nicht gespeichert" }[status];
 
   return (
     // Keys stay inside the overlay: the app's global shortcuts (Ctrl K, Ctrl N, …) must not fire while drawing.
@@ -208,6 +244,22 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
         </button>
       </header>
       <div className="drawing-canvas">
+        {broken && (
+          <div className="drawing-broken" role="alert">
+            <FileWarning size={28} strokeWidth={1.5} aria-hidden />
+            <div className="drawing-broken-title">Zeichnung kann nicht geöffnet werden</div>
+            <p>{broken.reason}</p>
+            <p className="faint">Die Datei bleibt unverändert. Mit „Neu beginnen“ wird eine Kopie als {`${name}.bak`} behalten und eine leere Zeichnung angelegt.</p>
+            <div className="drawing-broken-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => void startOver()}>
+                Neu beginnen
+              </button>
+              <button type="button" className="btn btn-primary" onClick={onClose} autoFocus>
+                Schließen
+              </button>
+            </div>
+          </div>
+        )}
         {initial && (
           <Excalidraw
             initialData={initial}

@@ -245,3 +245,92 @@ describe("splitFrontmatter", () => {
     expect(splitFrontmatter("# Titel\n")).toEqual({ frontmatter: "", body: "# Titel\n" });
   });
 });
+
+describe("markdown the editor has no block for (kept verbatim)", () => {
+  const editorFor = (md: string) => new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: md, contentType: "markdown" });
+  const KEPT: Record<string, string> = {
+    htmlInline: "Text mit <kbd>Strg</kbd> und <br> Umbruch\n",
+    htmlBlock: "<div>Block</div>\n\nText\n",
+    htmlComment: "Text\n\n<!-- Kommentar -->\n\nMehr\n",
+    htmlCommentInline: "Text <!-- leise --> weiter\n",
+    details: "<details>\n<summary>Mehr</summary>\n\nInhalt\n\n</details>\n",
+    lessThan: "wenn a<b und c>d\n",
+    angleInText: "a <b> c\n",
+    placeholder: "Hallo <Kunde>, danke\n",
+    generics: "Typ List<String> und Map<K, V>\n",
+    comparison: "wenn x < 3 und y > 2\n",
+    codeFenceLong: "````md\n```\ninnen\n```\n````\n",
+    codeFenceFive: "`````\n````\nx\n````\n`````\n",
+    emptyTask: "- [ ] \n",
+    emptyTaskBetween: "- [ ] eins\n- [ ] \n- [x] drei\n",
+    escapedHash: "Kein \\#tag hier\n",
+    escapedHashAndTag: "\\#nein aber #ja\n",
+    columnsWithComment: "<!-- spalten -->\n\nLinks\n\n<!-- Notiz -->\n\n<!-- spalte -->\n\nRechts\n\n<!-- /spalten -->\n",
+  };
+  for (const [name, md] of Object.entries(KEPT)) {
+    it(name, () => {
+      expect(roundtrip(md)).toBe(md);
+      expect(roundtrip(roundtrip(md))).toBe(md);
+    });
+  }
+
+  it("code containing ``` in a ~~~ fence gets a longer backtick fence (same code)", () => {
+    const out = roundtrip("~~~\n```\nx\n```\n~~~\n");
+    expect(out).toBe("````\n```\nx\n```\n````\n");
+    const editor = editorFor(out);
+    expect(editor.state.doc.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("```\nx\n```");
+    editor.destroy();
+  });
+
+  it("a code block that gets ``` typed into it is saved with a longer fence", () => {
+    const editor = editorFor("```\nx\n```\n");
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, "\n```");
+    expect(toMarkdown(editor)).toBe("````\nx\n```\n````\n");
+    editor.destroy();
+  });
+
+  it("reads `- [ ]` without text as an empty task, also without a trailing space", () => {
+    for (const md of ["- [ ]\n", "- [ ] \n", "- [x]\n"]) {
+      const editor = editorFor(md);
+      expect(editor.state.doc.firstChild?.type.name).toBe("taskList");
+      expect(editor.state.doc.textContent).toBe("");
+      editor.destroy();
+    }
+    // Inside code it stays as it is.
+    expect(roundtrip("```\n- [ ]\n```\n")).toBe("```\n- [ ]\n```\n");
+  });
+
+  it("an escaped hash is no tag, a typed one is", () => {
+    const editor = editorFor("Kein \\#tag, aber #echt\n");
+    expect([...editor.view.dom.querySelectorAll(".tag")].map((t) => t.textContent)).toEqual(["#echt"]);
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, " #neu");
+    expect(toMarkdown(editor)).toBe("Kein \\#tag, aber #echt #neu\n");
+    editor.destroy();
+  });
+
+  it("raw HTML shows as its source text (nothing is rendered as HTML)", () => {
+    const editor = editorFor('Vorher <img src="x" onerror="alert(1)"> nachher\n\n<script>alert(1)</script>\n');
+    expect(editor.view.dom.querySelector("img, script")).toBeNull();
+    expect(editor.view.dom.querySelector(".md-html")?.textContent).toBe('<img src="x" onerror="alert(1)">');
+    expect(editor.view.dom.querySelector(".md-html-block")?.textContent).toBe("<script>alert(1)</script>");
+    editor.destroy();
+  });
+
+  it("text typed with angle brackets is still escaped where it would become HTML", () => {
+    const editor = editorFor("");
+    editor.commands.insertContent({ type: "text", text: "Tag <b> und a < b" });
+    expect(toMarkdown(editor)).toBe("Tag &lt;b> und a < b\n");
+    editor.destroy();
+  });
+
+  it("line breaks in table cells stay <br>", () => {
+    const md = "| A            | B   |\n| ------------ | --- |\n| eins<br>zwei | 2   |\n";
+    const editor = editorFor(md);
+    let breaks = 0;
+    editor.state.doc.descendants((n) => void (n.type.name === "hardBreak" && breaks++));
+    expect(breaks).toBe(1);
+    expect(toMarkdown(editor)).toContain("eins<br>zwei");
+    editor.destroy();
+  });
+});

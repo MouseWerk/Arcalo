@@ -194,7 +194,7 @@ export function InlineAiBar({
           aria-label="Anweisung an die KI"
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) {
+            if (e.key === "Enter" && !(e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submitInput();
             }

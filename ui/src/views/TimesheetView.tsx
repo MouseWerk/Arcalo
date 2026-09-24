@@ -259,7 +259,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} />
         <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         <LeistungsartSelect las={las} value={la} onChange={setLa} />
-        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Woran arbeitest du?" onKeyDown={(e) => e.key === "Enter" && start()} aria-label="Beschreibung" />
+        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Woran arbeitest du?" onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && start()} aria-label="Beschreibung" />
         <span className="timer-start">
           <Button variant="primary" icon={Play} onClick={start} disabled={np == null}>
             Starten
@@ -281,7 +281,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
           placeholder="NP-8801/1020 1.5h #DEV Review @gestern"
-          onKeyDown={(e) => e.key === "Enter" && quick.trim() && book()}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && quick.trim() && book()}
           aria-label="Schnell buchen"
         />
       </div>
@@ -543,11 +543,14 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
   const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : "1,00");
   const [desc, setDesc] = useState(entry?.description ?? "");
   const [busy, setBusy] = useState(false);
+  // Enter and a click right after each other must not book twice.
+  const submitting = useRef(false);
   const s = useApp.getState;
   const minutes = parseDurationInput(dur);
 
   const submit = async () => {
-    if (np == null || minutes == null) return;
+    if (np == null || minutes == null || minutes <= 0 || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       const startTime = new Date(`${day}T${from}:00`).toISOString();
@@ -563,8 +566,13 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
     } catch (e) {
       s().error("Speichern fehlgeschlagen", e);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
+  };
+  // Enter submits, except while an input method composes a word.
+  const onEnter = (e: { key: string; nativeEvent: { isComposing: boolean } }) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
   };
 
   return (
@@ -598,14 +606,14 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
           <TimeInput value={from} onChange={setFrom} aria-label="Beginn" />
         </Field>
         <Field label="Dauer" hint={minutes == null ? "z. B. 1,5 oder 1:30 oder 90m" : `${fmtMinutes(minutes)} h`}>
-          <Input value={dur} onChange={(e) => setDur(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
+          <Input value={dur} onChange={(e) => setDur(e.target.value)} onKeyDown={onEnter} />
         </Field>
         <Field label="Leistungsart">
           <LeistungsartSelect las={las} value={la} onChange={setLa} />
         </Field>
       </div>
       <Field label="Beschreibung">
-        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Was wurde gemacht?" onKeyDown={(e) => e.key === "Enter" && submit()} />
+        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Was wurde gemacht?" onKeyDown={onEnter} />
       </Field>
     </Dialog>
   );

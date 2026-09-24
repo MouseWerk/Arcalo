@@ -68,6 +68,17 @@ describe("smart paste", () => {
     editor.destroy();
   });
 
+  it("„Als Text einfügen“ right after typing keeps the typed text", () => {
+    const editor = setup("Start\n\n");
+    editor.commands.insertContent("Getippt: ");
+    paste(editor, "Name\tStunden\nAnna\t2,5\n");
+    document.querySelector<HTMLElement>(".paste-hint")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(editor.state.doc.textContent).toContain("Getippt: ");
+    expect(editor.state.doc.textContent).toContain("Name\tStunden");
+    expect(editor.getJSON().content?.some((n) => n.type === "table")).toBe(false);
+    editor.destroy();
+  });
+
   it("leaves prose, pastes inside code and in-editor copies to the normal paste", () => {
     const editor = setup("```\nx\n```\n");
     expect(paste(editor, "A\tB\nC\tD")).toBe(false);
