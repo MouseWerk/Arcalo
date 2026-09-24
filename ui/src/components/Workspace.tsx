@@ -1,7 +1,7 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
-import { Fragment, useRef, useState, type DragEvent } from "react";
-import { Columns2, PanelRight, Plus, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState, type DragEvent } from "react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, Columns2, Copy, PanelRight, Plus, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { IconButton, useMenu, type MenuEntry } from "./ui";
 import { Home, TabIcon, tabTitle } from "./Shell";
@@ -61,9 +61,26 @@ export function Workspace() {
 function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: number; active: boolean; last: boolean; multi: boolean }) {
   const tab = pane.tabs.find((t) => t.id === pane.activeTabId) ?? null;
   const s = useApp.getState;
+  // A tab dragged from another pane can be dropped onto this pane's content.
+  const [dropHere, setDropHere] = useState(false);
+  const foreignTab = (e: DragEvent) => e.dataTransfer.types.includes(TAB_MIME) && !pane.tabs.some((t) => t.id === draggedTab);
   return (
     <section
-      className={`pane ${active ? "active" : ""} ${multi ? "multi" : ""}`}
+      className={`pane ${active ? "active" : ""} ${multi ? "multi" : ""} ${dropHere ? "tab-drop" : ""}`}
+      onDragOver={(e) => {
+        if (!foreignTab(e) || (e.target as HTMLElement).closest(".tabbar")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDropHere(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropHere(false)}
+      onDrop={(e) => {
+        setDropHere(false);
+        const id = e.dataTransfer.getData(TAB_MIME);
+        if (!id || (e.target as HTMLElement).closest(".tabbar")) return;
+        e.preventDefault();
+        s().moveTab(id, pane.id, pane.tabs.length);
+      }}
       style={{ flexGrow: size, flexBasis: 0 }}
       onMouseDownCapture={() => s().focusPane(pane.id)}
       onFocusCapture={() => s().focusPane(pane.id)}
@@ -113,6 +130,8 @@ function TabLabel({ tab }: { tab: Tab }) {
 }
 
 const TAB_MIME = "application/x-annalo-tab";
+/** The tab being dragged (dataTransfer content is not readable during dragover). */
+let draggedTab: string | null = null;
 
 const titleBarInTabs = () => document.documentElement.matches(".os-macos, .frame-custom");
 
@@ -125,14 +144,22 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   const [dropAt, setDropAt] = useState<number | null>(null);
   const s = useApp.getState;
 
-  const onDragOver = (e: DragEvent, index: number) => {
+  // Over a tab its right half means "after it". Worked out from the event itself on drop too:
+  // the marker state may not have caught up with the last dragover yet.
+  const slot = (e: DragEvent, index: number, overTab: boolean) => {
+    if (!overTab) return index;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return e.clientX > r.left + r.width / 2 ? index + 1 : index;
+  };
+  const onDragOver = (e: DragEvent, index: number, overTab = false) => {
     if (!e.dataTransfer.types.includes(TAB_MIME)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
-    setDropAt(index);
+    setDropAt(slot(e, index, overTab));
   };
-  const onDrop = (e: DragEvent, index: number) => {
+  const onDrop = (e: DragEvent, at: number, overTab = false) => {
+    const index = slot(e, at, overTab);
     const id = e.dataTransfer.getData(TAB_MIME);
     setDropAt(null);
     if (!id) return;
@@ -141,12 +168,32 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
     s().moveTab(id, pane.id, index);
   };
 
-  const tabMenu = (t: Tab): MenuEntry[] => [
-    { label: tr("tabs.openRight"), icon: Columns2, disabled: paneCount >= 3 && last, onSelect: () => s().splitTab(t.id) },
-    "separator",
-    { label: tr("tabs.close"), icon: X, onSelect: () => s().closeTab(t.id) },
-    { label: tr("tabs.closeOthers"), onSelect: () => s().closeOthers(t.id), disabled: pane.tabs.length < 2 },
-  ];
+  const panes = useApp((st) => st.panes);
+  const tabMenu = (t: Tab): MenuEntry[] => {
+    const i = pane.tabs.findIndex((x) => x.id === t.id);
+    const others = panes.filter((p) => p.id !== pane.id);
+    return [
+      { label: tr("tabs.openRight"), icon: Columns2, disabled: paneCount >= 3 && last, onSelect: () => s().splitTab(t.id) },
+      ...others.map((p, n): MenuEntry => ({
+        label: others.length > 1 ? `${tr("tabs.moveToPane")} ${n + 1}` : tr("tabs.moveToOther"),
+        icon: ArrowRightLeft,
+        onSelect: () => s().moveTab(t.id, p.id, p.tabs.length),
+      })),
+      { label: tr("tabs.duplicate"), icon: Copy, onSelect: () => s().duplicateTab(t.id) },
+      "separator",
+      { label: tr("tabs.moveLeft"), icon: ArrowLeft, disabled: i <= 0, onSelect: () => s().moveTab(t.id, pane.id, i - 1) },
+      { label: tr("tabs.moveRight"), icon: ArrowRight, disabled: i >= pane.tabs.length - 1, onSelect: () => s().moveTab(t.id, pane.id, i + 2) },
+      "separator",
+      { label: tr("tabs.close"), icon: X, onSelect: () => s().closeTab(t.id) },
+      { label: tr("tabs.closeOthers"), onSelect: () => s().closeOthers(t.id), disabled: pane.tabs.length < 2 },
+      { label: tr("tabs.closeRight"), onSelect: () => pane.tabs.slice(i + 1).forEach((x) => s().closeTab(x.id)), disabled: i >= pane.tabs.length - 1 },
+    ];
+  };
+  // The active tab stays in view when there are more tabs than room.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabsRef.current?.querySelector<HTMLElement>(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pane.activeTabId, pane.tabs.length]);
 
   return (
     <div
@@ -154,12 +201,21 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       role="tablist"
       data-tauri-drag-region
       onDragOver={(e) => onDragOver(e, pane.tabs.length)}
-      onDragLeave={() => setDropAt(null)}
+      // Leaving for a child (a tab) is not leaving the bar: no flicker of the marker.
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropAt(null)}
       onDrop={(e) => onDrop(e, pane.tabs.length)}
       // Where the tab bar is the title bar (macOS, own title bar on Windows) a double-click maximizes.
       onDoubleClick={(e) => e.target === e.currentTarget && !titleBarInTabs() && s().openTab({ kind: "home" }, { newTab: true })}
     >
-      <div className="tabs" data-tauri-drag-region>
+      <div
+        className="tabs"
+        data-tauri-drag-region
+        ref={tabsRef}
+        // The mouse wheel scrolls the tab row sideways.
+        onWheel={(e) => {
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+        }}
+      >
         {pane.tabs.map((t, i) => {
           const title = tabTitle(t, pages);
           const selected = t.id === pane.activeTabId;
@@ -168,15 +224,19 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
               key={t.id}
               role="tab"
               aria-selected={selected}
-              className={`tab ${selected ? "active" : ""} ${dropAt === i ? "drop-before" : ""}`}
+              className={`tab ${selected ? "active" : ""} ${dropAt === i ? "drop-before" : ""} ${dropAt === pane.tabs.length && i === pane.tabs.length - 1 ? "drop-after" : ""}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(TAB_MIME, t.id);
                 e.dataTransfer.effectAllowed = "move";
+                draggedTab = t.id;
               }}
-              onDragEnd={() => setDropAt(null)}
-              onDragOver={(e) => onDragOver(e, i)}
-              onDrop={(e) => onDrop(e, i)}
+              onDragEnd={() => {
+                setDropAt(null);
+                draggedTab = null;
+              }}
+              onDragOver={(e) => onDragOver(e, i, true)}
+              onDrop={(e) => onDrop(e, i, true)}
               onMouseDown={(e) => e.button === 0 && s().activateTab(t.id)}
               onAuxClick={(e) => e.button === 1 && s().closeTab(t.id)}
               onContextMenu={(e) => openMenu(e, tabMenu(t))}

@@ -3,11 +3,12 @@
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
+  ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { PageIcon } from "./icons";
-import { Button, IconButton, useMenu } from "./ui";
+import { PAGE_ICONS, PageIcon } from "./icons";
+import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
 import { clock, fmtMinutes } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
 import { COLLAPSED_EVENT, readCollapsed, writeCollapsed } from "../lib/collapsed";
@@ -16,6 +17,7 @@ import { t as tStatic, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
 import { QuickLinks } from "./QuickLinks";
+import { newPageFromTemplate } from "./Templates";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -382,10 +384,120 @@ function PageTree({
     }
   };
 
-  const menuItems = (n: PageNode) => [
+  const siblingsOf = (n: PageNode) => (n.parent_id == null ? s().tree : (s().pages.get(n.parent_id)?.children ?? []));
+  const move = async (n: PageNode, parentId: number | null, position: number) => {
+    try {
+      await api.movePage(n.id, parentId, position);
+      await s().refreshTree();
+    } catch (e) {
+      s().error("Verschieben nicht möglich", e);
+    }
+  };
+  const copy = (text: string, what: string) =>
+    navigator.clipboard.writeText(text).then(
+      () => s().toast({ tone: "success", title: `${what} kopiert` }),
+      (e) => s().error("Kopieren nicht möglich", e),
+    );
+  const descendants = (n: PageNode): number[] => n.children.flatMap((c) => (c.children.length ? [c.id, ...descendants(c)] : []));
+
+  const menuItems = (n: PageNode): MenuEntry[] => {
+    const sibs = siblingsOf(n);
+    const i = sibs.findIndex((x) => x.id === n.id);
+    const parent = n.parent_id != null ? s().pages.get(n.parent_id) : undefined;
+    return [
     { label: "In neuem Tab öffnen", icon: CornerDownRight, shortcut: keys("Mod Klick"), onSelect: () => s().openPage(n.id, { newTab: true }) },
     { label: "Rechts daneben öffnen", icon: Columns2, shortcut: keys("Alt Klick"), onSelect: () => s().openPage(n.id, { split: true }) },
-    { label: "Unterseite anlegen", icon: FilePlus2, onSelect: () => createSubpage(n.id) },
+    "separator",
+    {
+      label: "Neu",
+      icon: FilePlus2,
+      submenu: [
+        { label: "Unterseite", icon: CornerDownRight, onSelect: () => createSubpage(n.id) },
+        {
+          label: "Seite daneben",
+          icon: FilePlus2,
+          onSelect: async () => {
+            try {
+              const p = await api.createPage("Unbenannt", n.parent_id, s().settings?.settings.editor?.default_icon ?? "file-text");
+              await api.movePage(p.id, n.parent_id, i + 1);
+              await s().refreshTree();
+              s().openPage(p.id);
+              setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 120);
+            } catch (e) {
+              s().error("Seite konnte nicht angelegt werden", e);
+            }
+          },
+        },
+        { label: "Unterseite aus Vorlage…", icon: LayoutTemplate, onSelect: () => newPageFromTemplate(n.id) },
+      ],
+    },
+    {
+      label: "Duplizieren",
+      icon: Copy,
+      onSelect: async () => {
+        try {
+          const doc = await api.page(n.id);
+          const p = await api.createPage(`${n.title} (Kopie)`, n.parent_id, n.icon, doc.content);
+          await api.movePage(p.id, n.parent_id, i + 1);
+          await s().refreshTree();
+          s().openPage(p.id);
+        } catch (e) {
+          s().error("Duplizieren nicht möglich", e);
+        }
+      },
+    },
+    {
+      label: "Symbol ändern",
+      icon: Shapes,
+      submenu: Object.entries(PAGE_ICONS).map(([name, Icon]) => ({
+        label: name.replace(/-/g, " "),
+        icon: Icon,
+        checked: n.icon === name,
+        onSelect: async () => {
+          try {
+            await api.setIcon(n.id, name);
+            await s().refreshTree();
+          } catch (e) {
+            s().error("Symbol konnte nicht geändert werden", e);
+          }
+        },
+      })),
+    },
+    {
+      label: "Verschieben",
+      icon: MoveVertical,
+      submenu: [
+        { label: "Nach oben", icon: ArrowUp, disabled: i <= 0, onSelect: () => move(n, n.parent_id, i - 1) },
+        { label: "Nach unten", icon: ArrowDown, disabled: i < 0 || i >= sibs.length - 1, onSelect: () => move(n, n.parent_id, i + 1) },
+        {
+          label: "Eine Ebene höher",
+          icon: CornerLeftUp,
+          disabled: !parent,
+          onSelect: () => {
+            if (!parent) return;
+            const up = siblingsOf(parent).filter((x) => x.id !== n.id);
+            move(n, parent.parent_id, up.findIndex((x) => x.id === parent.id) + 1);
+          },
+        },
+        { label: "Auf die oberste Ebene", icon: ArrowUpToLine, disabled: n.parent_id == null, onSelect: () => move(n, null, s().tree.length) },
+      ],
+    },
+    {
+      label: "Kopieren",
+      icon: ClipboardCopy,
+      submenu: [
+        { label: "Link [[…]]", icon: Link2, onSelect: () => copy(`[[${n.title}]]`, "Link") },
+        { label: "Titel", icon: Type, onSelect: () => copy(n.title, "Titel") },
+        { label: "Inhalt als Markdown", icon: FileText, onSelect: () => api.page(n.id).then((d) => copy(d.content, "Inhalt"), (e) => s().error("Kopieren nicht möglich", e)) },
+      ],
+    },
+    ...(n.children.length
+      ? [
+          { label: "Alle Unterseiten aufklappen", icon: ChevronsUpDown, onSelect: () => setCollapsed(new Set([...collapsed].filter((id) => id !== n.id && !descendants(n).includes(id)))) },
+          { label: "Alle Unterseiten einklappen", icon: ChevronsDownUp, onSelect: () => setCollapsed(new Set([...collapsed, ...descendants(n)])) },
+        ]
+      : []),
+    "separator",
     {
       label: n.favorite ? "Aus Favoriten entfernen" : "Zu Favoriten",
       icon: n.favorite ? StarOff : Star,
@@ -408,7 +520,8 @@ function PageTree({
     },
     "separator" as const,
     { label: "Löschen", icon: Trash2, danger: true, onSelect: () => deletePage(n) },
-  ];
+    ];
+  };
 
   // Keyboard: arrows move between visible rows, Left/Right collapse/expand, Enter opens.
   const treeRef = useRef<HTMLDivElement>(null);

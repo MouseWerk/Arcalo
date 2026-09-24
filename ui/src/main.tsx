@@ -14,6 +14,7 @@ import { SearchApp } from "./components/SearchApp";
 import { IS_MAC } from "./lib/platform";
 import { startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
+import { installTooltips } from "./lib/tooltip";
 import { describeError, logUi } from "./lib/devlog";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
@@ -23,6 +24,7 @@ const searchMode = !captureMode && (location.hash === "#search" || new URLSearch
 
 startSplash(captureMode || searchMode);
 trackModKey();
+installTooltips();
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
 // the developer log (Settings → Protokoll).

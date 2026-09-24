@@ -413,6 +413,21 @@ fn attachment_save(
     attachments::save(&state.attachments_dir(), &bytes, &name, mime.as_deref().unwrap_or(""))
 }
 
+/// Opens an image of the attachments folder in its default app, or shows it in the file
+/// manager (`reveal`). Only names inside that folder are accepted.
+#[tauri::command]
+fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = attachments::resolve(&state.attachments_dir(), &name)
+        .ok_or_else(|| Error::not_found("attachment", name.clone()))?;
+    let opened = if reveal {
+        app.opener().reveal_item_in_dir(&path)
+    } else {
+        app.opener().open_path(path.display().to_string(), None::<&str>)
+    };
+    opened.map_err(|e| Error::State(format!("„{name}“ ließ sich nicht öffnen: {e}")))
+}
+
 /// Decodes base64 (optionally a `data:` URL, possibly line-wrapped). Oversized input is
 /// rejected before anything is decoded, so a huge paste cannot allocate the decoded bytes.
 fn decode_attachment(data: &str) -> Result<Vec<u8>> {
@@ -2435,6 +2450,7 @@ pub fn run() {
             dashboard_save,
             quick_links_save,
             quick_link_open,
+            attachment_open,
             desktop::desktop_info,
             desktop::autostart_set,
             updates::update_status,

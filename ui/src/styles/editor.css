@@ -494,3 +494,9 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .find-replace { margin-top: 6px; }
 .find-replace .btn { flex: none; }
 @media print { .editor-toolbar { display: none; } }
+
+/* ------------------------------------------------------------ image full view */
+.image-viewer { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 48px 32px 64px; background: rgb(0 0 0 / 0.78); cursor: zoom-out; animation: fade-in var(--dur-fast) ease-out; }
+.image-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-sm); box-shadow: var(--shadow-lg); cursor: default; }
+.image-viewer-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 12px; border-radius: var(--r-md); background: var(--bg-overlay); color: var(--text); box-shadow: var(--shadow-md); max-width: calc(100vw - 32px); }
+.image-viewer-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

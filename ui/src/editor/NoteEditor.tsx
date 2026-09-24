@@ -12,11 +12,12 @@ import { hoursFromMinutes } from "../lib/format";
 import { pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, toMarkdown } from "./schema";
 import { zeitLaItems, zeitRefItems } from "./zeit-source";
-import { IconButton } from "../components/ui";
+import { IconButton, useMenu } from "../components/ui";
 import { findKey } from "./find";
 import { TableToolbar } from "./TableToolbar";
 import { EditorToolbar } from "./EditorToolbar";
 import { moveBlock } from "./tools";
+import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
 import { aiRange, type AiRange } from "./ai-insert";
 import { registerEditor } from "./reveal";
@@ -126,6 +127,9 @@ export function NoteEditor({
   const zeitSeq = useRef(0);
   const [zeitPos, setZeitPos] = useState<{ top: number; left: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Right-click menu and full view of images.
+  const [imgMenu, openImgMenu] = useMenu();
+  const [viewer, setViewer] = useState<{ src: string; name: string } | null>(null);
   const openAi = (editor: Editor) => {
     const range = aiRange(editor);
     if (range) setAi((cur) => ({ range, seq: (cur?.seq ?? 0) + 1 }));
@@ -337,6 +341,20 @@ export function NoteEditor({
           event.stopPropagation();
           openAi(editorRef.current);
           return true;
+        },
+        handleDOMEvents: {
+          // Right-click on an image: size, full view, open, copy, remove.
+          contextmenu: (view, event) => {
+            const img = (event.target as HTMLElement).closest?.<HTMLImageElement>(".ProseMirror img");
+            if (!img || !editorRef.current) return false;
+            let pos = view.posAtDOM(img, 0);
+            const at = view.state.doc.nodeAt(pos);
+            if (!at || !/^(imageEmbed|image)$/.test(at.type.name)) pos = Math.max(0, pos - 1);
+            if (!/^(imageEmbed|image)$/.test(view.state.doc.nodeAt(pos)?.type.name ?? "")) return false;
+            event.preventDefault();
+            openImgMenu(event, imageMenu(editorRef.current, pos, img, (src, name) => setViewer({ src, name })));
+            return true;
+          },
         },
         handleClickOn: (_view, _pos, _node, _nodePos, event) => {
           const a = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
@@ -638,6 +656,8 @@ export function NoteEditor({
         />
       )}
       <EditorContent editor={editor} />
+      {imgMenu}
+      {viewer && <ImageViewer src={viewer.src} name={viewer.name} onClose={() => setViewer(null)} />}
     </div>
   );
 }

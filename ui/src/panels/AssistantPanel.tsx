@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X,
+  ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw,
 } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
@@ -13,7 +14,8 @@ import { citedNumbers, linkCitations } from "../lib/citations";
 import { revealText } from "../editor/reveal";
 import { previewMarkdown } from "../components/LinkPreview";
 import { useApp } from "../store/app";
-import { Button, IconButton, useMenu } from "../components/ui";
+import { Button, IconButton, useMenu, type MenuEntry } from "../components/ui";
+import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { h1, usd } from "../lib/format";
 import type { ChatMessage, ContextChunk, RouteDecision, StreamEvent, Tier, ToolCall } from "../lib/types";
 import type { SuggestionKind } from "../lib/suggestions";
@@ -239,6 +241,96 @@ export function AssistantPanel() {
   }
 
   const stop = () => requestId.current && api.cancelChat(requestId.current);
+  // Right-click in the chat: the selection, the message under the pointer, the chat.
+  const chatMenu = (target: HTMLElement): MenuEntry[] => {
+    const out: MenuEntry[] = [];
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    const copy = (text: string, what: string) =>
+      navigator.clipboard.writeText(text).then(
+        () => s().toast({ tone: "success", title: `${what} kopiert` }),
+        (err) => s().error("Kopieren nicht möglich", err),
+      );
+    if (selected) {
+      out.push(
+        { label: "Auswahl kopieren", icon: Copy, onSelect: () => copy(selected, "Auswahl") },
+        {
+          label: "Auswahl zitieren",
+          icon: Quote,
+          onSelect: () => {
+            setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`);
+            textarea.current?.focus();
+          },
+        },
+        "separator",
+      );
+    }
+    const id = target.closest<HTMLElement>("[data-turn]")?.dataset.turn;
+    const turn = turns.find((t) => t.id === id);
+    const idx = turns.findIndex((t) => t.id === id);
+    if (turn?.kind === "assistant" && turn.text && !turn.streaming) {
+      const plain = target.closest<HTMLElement>("[data-turn]")?.querySelector<HTMLElement>(".prose-chat")?.innerText ?? turn.text;
+      const lastUser = [...turns.slice(0, idx)].reverse().find((t) => t.kind === "user");
+      out.push(
+        { label: "Antwort kopieren (Markdown)", icon: Copy, onSelect: () => copy(turn.text, "Antwort") },
+        { label: "Als reinen Text kopieren", icon: ClipboardType, onSelect: () => copy(plain, "Text") },
+        ...(pageContext
+          ? [
+              {
+                label: `An „${pageContext.title}“ anhängen`,
+                icon: FileInput,
+                onSelect: async () => {
+                  try {
+                    await flushAllEditors();
+                    const doc = await api.page(pageContext.id);
+                    await api.savePage(pageContext.id, `${doc.content.trimEnd()}\n\n${turn.text.trim()}\n`);
+                    reloadEditors([pageContext.id]);
+                    s().toast({ tone: "success", title: `An „${pageContext.title}“ angehängt` });
+                  } catch (err) {
+                    s().error("Anhängen nicht möglich", err);
+                  }
+                },
+              } as MenuEntry,
+            ]
+          : []),
+        {
+          label: "Als neue Seite speichern",
+          icon: FilePlus2,
+          onSelect: async () => {
+            const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");
+            try {
+              const p = await api.createPage(title, null, "sparkles", turn.text);
+              await s().refreshTree();
+              s().openPage(p.id, { newTab: true });
+            } catch (err) {
+              s().error("Seite nicht angelegt", err);
+            }
+          },
+        },
+        "separator",
+        { label: "Neu generieren", icon: RefreshCw, disabled: busy || !lastUser || idx !== turns.length - 1, onSelect: () => lastUser && send((lastUser as { text: string }).text) },
+        { label: "Nachfragen", icon: MessageSquarePlus, disabled: busy, submenu: FOLLOW_UPS.map((f) => ({ label: f, onSelect: () => send(`${f}, bitte.`) })) },
+        "separator",
+      );
+    } else if (turn?.kind === "user") {
+      out.push(
+        { label: "Kopieren", icon: Copy, onSelect: () => copy(turn.text, "Nachricht") },
+        {
+          label: "Bearbeiten",
+          icon: PencilLine,
+          onSelect: () => {
+            setInput(turn.text);
+            textarea.current?.focus();
+          },
+        },
+        { label: "Erneut senden", icon: RefreshCw, disabled: busy, onSelect: () => send(turn.text) },
+        "separator",
+      );
+    }
+    if (turns.length) out.push({ label: "Neuer Chat", icon: Plus, onSelect: () => newChat() });
+    while (out[out.length - 1] === "separator") out.pop();
+    return out;
+  };
+
   const newChat = () => {
     if (busy) stop();
     history.current = [];
@@ -301,6 +393,12 @@ export function AssistantPanel() {
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+        onContextMenu={(e) => {
+          const items = chatMenu(e.target as HTMLElement);
+          if (!items.length) return;
+          e.preventDefault();
+          openMenu(e, items);
         }}
         onClick={(e) => {
           const a = (e.target as HTMLElement).closest<HTMLElement>("a[data-wikilink]");
@@ -462,7 +560,7 @@ function TurnView({ turn }: { turn: Turn }) {
     },
     [],
   );
-  if (turn.kind === "user") return <div className="msg-user">{turn.text}</div>;
+  if (turn.kind === "user") return <div className="msg-user" data-turn={turn.id}>{turn.text}</div>;
 
   if (turn.kind === "tool") {
     const Icon = TOOL_META[turn.name]?.icon ?? Wrench;
@@ -510,7 +608,7 @@ function TurnView({ turn }: { turn: Turn }) {
   const chipSources = dedupeSources([...cited.map((n) => sources[n - 1]), ...sources]);
   const numberOf = (src: ContextChunk) => sources.indexOf(src) + 1;
   return (
-    <div className="msg-ai">
+    <div className="msg-ai" data-turn={turn.id}>
       {turn.error ? (
         <div className="msg-error">
           <div>Die Anfrage ist fehlgeschlagen.</div>

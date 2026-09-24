@@ -45,14 +45,14 @@
 .icon-btn.star-on:hover { background: var(--bg-hover); }
 .icon-btn.star-on svg { fill: currentColor; }
 
-/* Tooltips from data-tooltip, shown after a short delay. */
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  z-index: 60;
-  left: 50%;
-  top: calc(100% + 6px);
-  transform: translate(-50%, -2px);
+/* Tooltips for data-tooltip (lib/tooltip.ts): one layer above everything, so no scroll area
+   or neighbouring pane can clip or cover them. */
+.tooltip {
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: 0;
+  max-width: min(360px, calc(100vw - 16px));
   padding: 4px 8px;
   border-radius: var(--r-xs);
   background: var(--bg-overlay);
@@ -60,17 +60,12 @@
   box-shadow: var(--shadow-md);
   font-size: var(--fs-xs);
   font-weight: 500;
-  white-space: nowrap;
-  opacity: 0;
+  line-height: 1.4;
   pointer-events: none;
-  transition: opacity var(--dur-fast), transform var(--dur-fast);
+  opacity: 0;
+  transition: opacity var(--dur-fast);
 }
-[data-tooltip]:hover::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 450ms; }
-[data-tooltip-side="top"]::after { top: auto; bottom: calc(100% + 6px); }
-[data-tooltip-side="right"]::after { left: calc(100% + 6px); top: 50%; transform: translate(-2px, -50%); }
-[data-tooltip-side="right"]:hover::after { transform: translate(0, -50%); }
-[data-tooltip-side="left"]::after { left: auto; right: calc(100% + 6px); top: 50%; transform: translate(2px, -50%); }
-[data-tooltip-side="left"]:hover::after { transform: translate(0, -50%); }
+.tooltip.on { opacity: 1; }
 
 /* ----------------------------------------------------------------- inputs */
 
@@ -254,7 +249,7 @@
   color: var(--text);
   text-align: left;
 }
-.menu-item.sel { background: var(--bg-active); }
+.menu-item.sel, .menu-item.open { background: var(--bg-active); }
 .menu-item:disabled { opacity: 0.4; }
 .menu-item.danger { color: var(--danger); }
 .menu-icon { width: 16px; display: grid; place-items: center; color: var(--text-2); }

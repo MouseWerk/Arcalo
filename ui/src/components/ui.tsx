@@ -208,29 +208,63 @@ export interface MenuItem {
 }
 export type MenuEntry = MenuItem | "separator";
 
-export function Menu({ x, y, items, onClose }: { x: number; y: number; items: MenuEntry[]; onClose: () => void }) {
+export function Menu({
+  x,
+  y,
+  items,
+  onClose,
+  onBack,
+  flipX,
+}: {
+  x: number;
+  y: number;
+  items: MenuEntry[];
+  onClose: () => void;
+  /** Set on a submenu: closes only this level (Escape, ArrowLeft). */
+  onBack?: () => void;
+  /** Where a submenu goes when there is no room on the right: the parent item's left edge. */
+  flipX?: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
-  const [sel, setSel] = useState(-1);
+  const [sel, setSel] = useState(onBack ? firstActionable(items) : -1);
+  const [sub, setSub] = useState<{ index: number; x: number; y: number; left: number } | null>(null);
   const actionable = items.map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
 
   useLayoutEffect(() => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
-    setPos({ x: Math.min(x, window.innerWidth - r.width - 8), y: Math.min(y, window.innerHeight - r.height - 8) });
-  }, [x, y]);
+    const nx = x + r.width > window.innerWidth - 8 && flipX != null ? Math.max(8, flipX - r.width) : Math.min(x, window.innerWidth - r.width - 8);
+    setPos({ x: nx, y: Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) });
+  }, [x, y, flipX]);
+
+  const openSub = (i: number) => {
+    const el = ref.current?.querySelector<HTMLElement>(`[data-index="${i}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setSub({ index: i, x: r.right - 2, y: r.top - 5, left: r.left + 2 });
+  };
+
   useEffect(() => {
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    // Clicks inside any menu level are not "outside"; the submenu lives in its own portal.
+    const onDown = (e: MouseEvent) => !(e.target instanceof Element && e.target.closest(".menu")) && onClose();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (sub) return; // the open submenu handles the keyboard
+      if (e.key === "Escape" || (e.key === "ArrowLeft" && onBack)) {
+        e.preventDefault();
+        e.stopPropagation();
+        (onBack ?? onClose)();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const i = actionable.indexOf(sel);
         const next = e.key === "ArrowDown" ? actionable[(i + 1) % actionable.length] : actionable[(i - 1 + actionable.length) % actionable.length];
         setSel(next);
-      } else if (e.key === "Enter" && sel >= 0) {
+      } else if ((e.key === "Enter" || e.key === "ArrowRight") && sel >= 0) {
         const it = items[sel];
-        if (it !== "separator") {
+        if (it === "separator") return;
+        e.preventDefault();
+        if (it.submenu) openSub(sel);
+        else if (e.key === "Enter") {
           onClose();
           it.onSelect?.();
         }
@@ -245,34 +279,50 @@ export function Menu({ x, y, items, onClose }: { x: number; y: number; items: Me
       window.removeEventListener("blur", onClose);
     };
   });
+  const subItems = sub ? (items[sub.index] as MenuItem).submenu : undefined;
   return createPortal(
-    <div className="menu" role="menu" ref={ref} style={{ left: pos.x, top: pos.y }}>
-      {items.map((it, i) =>
-        it === "separator" ? (
-          <div key={i} className="menu-sep" />
-        ) : (
-          <button
-            key={i}
-            type="button"
-            role="menuitem"
-            disabled={it.disabled}
-            className={`menu-item ${it.danger ? "danger" : ""} ${sel === i ? "sel" : ""}`}
-            onMouseEnter={() => setSel(i)}
-            onClick={() => {
-              onClose();
-              it.onSelect?.();
-            }}
-          >
-            <span className="menu-icon">{it.checked ? <Check size={14} /> : it.icon ? <it.icon size={14} strokeWidth={1.75} /> : null}</span>
-            <span className="menu-label">{it.label}</span>
-            {it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
-            {it.submenu && <ChevronRight size={14} className="faint" />}
-          </button>
-        ),
-      )}
-    </div>,
+    <>
+      <div className="menu" role="menu" ref={ref} style={{ left: pos.x, top: pos.y }}>
+        {items.map((it, i) =>
+          it === "separator" ? (
+            <div key={i} className="menu-sep" />
+          ) : (
+            <button
+              key={i}
+              type="button"
+              role="menuitem"
+              data-index={i}
+              aria-haspopup={it.submenu ? "menu" : undefined}
+              aria-expanded={it.submenu ? sub?.index === i : undefined}
+              disabled={it.disabled}
+              className={`menu-item ${it.danger ? "danger" : ""} ${sel === i ? "sel" : ""} ${sub?.index === i ? "open" : ""}`}
+              onMouseEnter={() => {
+                setSel(i);
+                if (it.submenu) openSub(i);
+                else setSub(null);
+              }}
+              onClick={() => {
+                if (it.submenu) return openSub(i);
+                onClose();
+                it.onSelect?.();
+              }}
+            >
+              <span className="menu-icon">{it.checked ? <Check size={14} /> : it.icon ? <it.icon size={14} strokeWidth={1.75} /> : null}</span>
+              <span className="menu-label">{it.label}</span>
+              {it.shortcut && <span className="menu-shortcut">{it.shortcut}</span>}
+              {it.submenu && <ChevronRight size={14} className="faint" />}
+            </button>
+          ),
+        )}
+      </div>
+      {sub && subItems && <Menu key={sub.index} x={sub.x} y={sub.y} flipX={sub.left} items={subItems} onClose={onClose} onBack={() => setSub(null)} />}
+    </>,
     document.body,
   );
+}
+
+function firstActionable(items: MenuEntry[]): number {
+  return items.findIndex((it) => it !== "separator" && !it.disabled);
 }
 
 /** State helper for context menus: `const [menu, openMenu, closeMenu] = useMenu()`. */

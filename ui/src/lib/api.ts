@@ -163,6 +163,7 @@ export const api = {
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
   openQuickLink: (index: number) => call<void>("quick_link_open", { index }),
+  openAttachment: (name: string, reveal = false) => call<void>("attachment_open", { name, reveal }),
 
   // AI
   routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null) => call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier }),

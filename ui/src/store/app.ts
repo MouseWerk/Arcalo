@@ -114,6 +114,8 @@ interface State {
   goForward: () => void;
   splitTab: (tabId: string) => void;
   moveTab: (tabId: string, toPaneId: string, index: number) => void;
+  /** A copy of the tab (same place, fresh history) right after it. */
+  duplicateTab: (tabId: string) => void;
   closeOthers: (tabId: string) => void;
   setPaneSizes: (sizes: number[]) => void;
   refreshTree: () => Promise<void>;
@@ -382,6 +384,15 @@ export const useApp = create<State>((set, get) => ({
       return { ...p, tabs, activeTabId };
     });
     set(layoutPatch(next, toPaneId, paneSizes));
+  },
+  duplicateTab: (tabId) => {
+    const { panes, paneSizes } = get();
+    const pane = panes.find((p) => p.tabs.some((t) => t.id === tabId));
+    const i = pane?.tabs.findIndex((t) => t.id === tabId) ?? -1;
+    if (!pane || i < 0) return;
+    const copy = newTab(locOf(pane.tabs[i]));
+    const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs: [...p.tabs.slice(0, i + 1), copy, ...p.tabs.slice(i + 1)], activeTabId: copy.id } : p));
+    set(layoutPatch(next, pane.id, paneSizes));
   },
   closeOthers: (tabId) => {
     const { panes, paneSizes } = get();
