@@ -69,7 +69,7 @@ jobs:
           [ -f "$NOTES" ] || { echo "Annalo $VERSION" > /tmp/notes.md; NOTES=/tmp/notes.md; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -F "$NOTES"
+          git tag -a --cleanup=verbatim "$TAG" -F "$NOTES"  # keep "## New" headings: # is not a comment here
           git push origin "refs/tags/$TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
