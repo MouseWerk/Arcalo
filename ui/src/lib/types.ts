@@ -245,6 +245,7 @@ export interface AppearancePrefs {
   reduce_motion: boolean;
   mica: boolean;
   custom_titlebar: boolean;
+  startup_animation: boolean;
 }
 export interface EditorPrefs {
   spellcheck: "de" | "en" | "de-en" | "off";

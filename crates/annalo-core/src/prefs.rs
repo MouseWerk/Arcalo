@@ -61,6 +61,8 @@ pub struct AppearancePrefs {
     /// Windows: own title bar (the tabs sit at the top edge, own window buttons) instead of the
     /// system one. Takes effect at the next start.
     pub custom_titlebar: bool,
+    /// The animated logo while the app starts.
+    pub startup_animation: bool,
 }
 
 impl Default for AppearancePrefs {
@@ -76,6 +78,7 @@ impl Default for AppearancePrefs {
             reduce_motion: false,
             mica: true,
             custom_titlebar: true,
+            startup_animation: true,
         }
     }
 }

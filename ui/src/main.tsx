@@ -12,11 +12,14 @@ import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
 import { IS_MAC } from "./lib/platform";
+import { startSplash } from "./lib/splash";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
 const captureMode = location.hash === "#capture" || new URLSearchParams(location.search).has("capture");
 const searchMode = !captureMode && (location.hash === "#search" || new URLSearchParams(location.search).has("search"));
+
+startSplash(captureMode || searchMode);
 
 // Collect runtime errors so end-to-end tests can assert a clean console.
 const w = window as unknown as { __annaloErrors: string[] };

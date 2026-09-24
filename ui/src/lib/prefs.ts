@@ -6,6 +6,7 @@ import { accentCss } from "./color";
 import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
+import { rememberSplash } from "./splash";
 
 const STYLE_ID = "annalo-accent";
 
@@ -29,6 +30,15 @@ export function applyPrefs(s: Settings) {
     const css = accentCss(a.accent);
     if (style.textContent !== css) style.textContent = css;
     setZoom(a.ui_scale);
+    // The startup animation of the next start uses the theme and accent color of now.
+    requestAnimationFrame(() =>
+      rememberSplash({
+        dark: root.dataset.theme === "dark",
+        accent: getComputedStyle(root).getPropertyValue("--accent").trim(),
+        off: a.startup_animation === false,
+        reduced: a.reduce_motion,
+      }),
+    );
   }
   if (s.locale) {
     setLang(s.locale.language);

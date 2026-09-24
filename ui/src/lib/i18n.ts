@@ -209,6 +209,8 @@ const ENTRIES = {
   "set.appearance.reduceMotion": ["Bewegungen reduzieren", "Reduce motion"],
   "set.appearance.reduceMotionDesc": ["Keine Animationen und Übergänge.", "No animations and transitions."],
   "set.appearance.mica": ["Transparenz (Mica)", "Transparency (Mica)"],
+  "set.appearance.startup": ["Startanimation", "Startup animation"],
+  "set.appearance.startupDesc": ["Das Annalo-Logo zeichnet sich beim Start, bis die App bereit ist.", "The Annalo logo draws itself while the app starts."],
   "set.appearance.titlebar": ["Eigene Titelleiste", "Custom title bar"],
   "set.appearance.titlebarDesc": [
     "Die Tabs sitzen am oberen Fensterrand, mit eigenen Fensterknöpfen (wie Obsidian). Wirkt nach einem Neustart.",

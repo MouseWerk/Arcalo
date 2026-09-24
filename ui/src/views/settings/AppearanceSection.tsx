@@ -165,6 +165,9 @@ export function AppearanceSection({ draft, update }: SectionProps) {
         <Row label={t("set.appearance.reduceMotion")} description={t("set.appearance.reduceMotionDesc")}>
           <Switch label={t("set.appearance.reduceMotion")} checked={a.reduce_motion} onChange={(v) => set({ reduce_motion: v })} />
         </Row>
+        <Row label={t("set.appearance.startup")} description={t("set.appearance.startupDesc")}>
+          <Switch label={t("set.appearance.startup")} checked={a.startup_animation} onChange={(v) => set({ startup_animation: v })} />
+        </Row>
         {platform === "windows" && (
           <Row label={t("set.appearance.mica")} description={t("set.appearance.micaDesc")}>
             <Switch label={t("set.appearance.mica")} checked={a.mica} onChange={(v) => set({ mica: v })} />
