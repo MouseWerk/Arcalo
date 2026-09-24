@@ -173,10 +173,10 @@ function slashItems(o: SlashOptions): SlashItem[] {
     { id: "mark", title: "Hervorheben", icon: ic(Highlighter), hint: "==", section: "Blöcke", keywords: "highlight markieren", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },
     { id: "link", title: "Seitenlink", icon: ic(Link2), hint: "[[", section: "Einfügen", keywords: "link verknüpfung wiki", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     { id: "date", title: "Heutiges Datum", icon: ic(CalendarDays), hint: today, section: "Einfügen", keywords: "datum date heute", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(today + " ").run() },
-    { id: "due", title: "Fälligkeitsdatum", subtitle: "Für Aufgaben: 📅 JJJJ-MM-TT", icon: ic(CalendarClock), hint: `📅 ${isoToday}`, section: "Einfügen", keywords: "fällig due termin deadline aufgabe", run: (e, r) => {
+    { id: "due", title: "Fälligkeitsdatum", subtitle: "Für Aufgaben: due:JJJJ-MM-TT", icon: ic(CalendarClock), hint: `due:${isoToday}`, section: "Einfügen", keywords: "fällig due termin deadline aufgabe", run: (e, r) => {
       // Separate from preceding text, but no double space.
       const before = r.from > 1 ? e.state.doc.textBetween(r.from - 1, r.from) : "";
-      e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}📅 ${isoToday} `).run();
+      e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}due:${isoToday} `).run();
     } },
     { id: "zeit", title: "Zeit buchen", subtitle: "NP-8801/1020 2.5h Beschreibung", icon: ic(Timer), hint: "/zeit", section: "Zeiterfassung", keywords: "zeit time buchen stunden", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
     { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
@@ -574,7 +574,8 @@ export const ZeitSuggest = Extension.create<{
 // ---------------------------------------------------------------- #tags
 
 const TAG_RE = /(^|[\s(])#([\p{L}\p{N}_/-]*[\p{L}_][\p{L}\p{N}_/-]*)/gu;
-const DUE_RE = /(?:📅\s?|\bdue:)\d{4}-\d{2}-\d{2}\b/gu;
+// `due:` and the calendar marker of Obsidian Tasks (imported notes).
+const DUE_RE = /(?:\u{1F4C5}\s?|\bdue:)\d{4}-\d{2}-\d{2}\b/gu;
 
 export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>({
   name: "tagHighlight",
@@ -592,7 +593,7 @@ export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>(
           const from = pos + (m.index ?? 0) + m[1].length;
           decos.push(Decoration.inline(from, from + m[2].length + 1, { class: "tag", "data-tag": m[2].toLowerCase(), nodeName: "span" }));
         }
-        // Task due dates (📅 2026-09-30, due:2026-09-30).
+        // Task due dates (due:2026-09-30).
         for (const m of text.matchAll(DUE_RE)) {
           const from = pos + (m.index ?? 0);
           decos.push(Decoration.inline(from, from + m[0].length, { class: "due-date", nodeName: "span" }));

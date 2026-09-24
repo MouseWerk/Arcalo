@@ -20,7 +20,7 @@ test("Ctrl+Shift+A lists tasks from all notes grouped by due date", async () => 
     parentId: null,
     title: "Aufgaben-Test",
     icon: null,
-    content: `# Plan\n\n\`\`\`\n- [ ] im Code\n\`\`\`\n\n- [ ] Angebot an [[Architektur]] senden 📅 ${yesterday} !!\n- [ ] Aufräumen #e2e\n- [x] Schon erledigt\n`,
+    content: `# Plan\n\n\`\`\`\n- [ ] im Code\n\`\`\`\n\n- [ ] Angebot an [[Architektur]] senden due:${yesterday} !!\n- [ ] Aufräumen #e2e\n- [x] Schon erledigt\n`,
   });
   await app.keys(["Control", "Shift", "a"]);
   await app.waitFor(".tasks-view");
@@ -61,7 +61,7 @@ test("toggling a task rewrites its checkbox and reloads the open editor", async 
   await app.waitFor(row(0));
 
   await app.click(`${row(0)} .task-check`);
-  await app.browser.waitUntil(async () => (await content()).includes(`- [x] Angebot an [[Architektur]] senden 📅 ${yesterday} !!`), {
+  await app.browser.waitUntil(async () => (await content()).includes(`- [x] Angebot an [[Architektur]] senden due:${yesterday} !!`), {
     timeoutMsg: "page content not rewritten",
   });
   const md = await content();
@@ -92,7 +92,7 @@ test("slash menu inserts a due date and the palette opens Aufgaben", async () =>
   await app.type("[ ] Neue Aufgabe /faellig");
   await app.waitText(".sugg-item.sel", /Fälligkeitsdatum/);
   await app.keys(["Enter"]);
-  await app.browser.waitUntil(async () => (await content()).includes(`- [ ] Neue Aufgabe 📅 ${today}`), { timeoutMsg: "due date not saved" });
+  await app.browser.waitUntil(async () => (await content()).includes(`- [ ] Neue Aufgabe due:${today}`), { timeoutMsg: "due date not saved" });
   await app.waitText(`.tasks-view .task-group-today .task-row[data-page="${page.id}"]`, /Neue Aufgabe/);
 
   await app.click(".pane:first-child .tab");

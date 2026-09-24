@@ -23,7 +23,7 @@ const CASES: Record<string, string> = {
   bullets: "- eins\n- zwei\n  - verschachtelt\n- drei\n",
   ordered: "1. eins\n2. zwei\n3. drei\n",
   tasks: "- [ ] offen\n- [x] erledigt\n",
-  taskMeta: "- [ ] Angebot an [[Kunde X]] 📅 2026-09-30 !! #vertrieb\n- [x] Review due:2026-09-01 !\n",
+  taskMeta: "- [ ] Angebot an [[Kunde X]] due:2026-09-30 !! #vertrieb\n- [x] Review due:2026-09-01 !\n",
   quote: "> Ein Zitat\n> über zwei Zeilen\n",
   callout: "> [!note] Hinweis\n> Callout-Text\n",
   calloutWarning: "> [!warning] Achtung\n> Nicht löschen\n",

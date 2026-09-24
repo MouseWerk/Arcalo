@@ -1,5 +1,5 @@
 //! Tasks across all notes: `- [ ] text` / `- [x] text` items with an optional
-//! due date (`📅 2026-09-30` or `due:2026-09-30`) and priority (`!!` hoch,
+//! due date (`due:2026-09-30`; the calendar marker of Obsidian Tasks is read too) and priority (`!!` hoch,
 //! `!` mittel). The `tasks` table is derived from page content on every save.
 
 use std::collections::HashSet;
@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
 use crate::error::{Error, Result};
+
+/// The calendar marker Obsidian Tasks puts before a due date; read for imported notes,
+/// never written (Annalo writes `due:`).
+pub const OBSIDIAN_DUE: &str = "\u{1F4C5}";
 
 /// A task item as found in a page's Markdown.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,12 +139,12 @@ pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
         let mut i = 0;
         while i < toks.len() {
             let t = toks[i];
-            if t == "📅" && i + 1 < toks.len() && parse_date(toks[i + 1]).is_some() {
+            if t == OBSIDIAN_DUE && i + 1 < toks.len() && parse_date(toks[i + 1]).is_some() {
                 due = parse_date(toks[i + 1]);
                 i += 2;
                 continue;
             }
-            if let Some(d) = t.strip_prefix("📅").or_else(|| t.strip_prefix("due:")).and_then(parse_date) {
+            if let Some(d) = t.strip_prefix(OBSIDIAN_DUE).or_else(|| t.strip_prefix("due:")).and_then(parse_date) {
                 due = Some(d);
             } else if t == "!!" {
                 priority = 2;
@@ -301,15 +305,15 @@ mod tests {
 
     #[test]
     fn parses_due_dates_priorities_and_tags() {
-        let md = "# Plan\n- [ ] Angebot an [[Kunde X]] 📅 2026-09-30 !! #vertrieb\n\
+        let md = "# Plan\n- [ ] Angebot an [[Kunde X]] due:2026-09-30 !! #vertrieb\n\
                   * [x] Review due:2026-09-01 !\n  - [ ] Unterpunkt\n1. [X] Nummeriert\n\
                   - [ ] \n- [] kein Task\n- normal\n- [ ]ohne Leerzeichen\n\
-                  ```\n- [ ] im Code\n```\n- [ ] 📅2026-10-01 ungültig 📅 2026-13-01";
+                  ```\n- [ ] im Code\n```\n- [ ] \u{1F4C5}2026-10-01 ungültig due:2026-13-01";
         let t = parse_tasks(md);
         let texts: Vec<_> = t.iter().map(|t| t.text.as_str()).collect();
         assert_eq!(
             texts,
-            ["Angebot an [[Kunde X]] #vertrieb", "Review", "Unterpunkt", "Nummeriert", "ungültig 📅 2026-13-01"]
+            ["Angebot an [[Kunde X]] #vertrieb", "Review", "Unterpunkt", "Nummeriert", "ungültig due:2026-13-01"]
         );
         assert_eq!((t[0].due.as_deref(), t[0].priority, t[0].done), (Some("2026-09-30"), 2, false));
         assert_eq!(t[0].tags, ["vertrieb"]);
@@ -334,9 +338,9 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let a = db.create_page(None, "Projekt", None).unwrap();
         let b = db.create_page(None, "Privat", None).unwrap();
-        db.save_page_content(a.id, "#kunde\n\n- [ ] Später\n- [ ] Bald 📅 2026-09-20 !\n- [x] Fertig 📅 2026-09-01")
+        db.save_page_content(a.id, "#kunde\n\n- [ ] Später\n- [ ] Bald due:2026-09-20 !\n- [x] Fertig due:2026-09-01")
             .unwrap();
-        db.save_page_content(b.id, "- [ ] Einkaufen #haushalt 📅 2026-09-25 !!\n- [ ] Putzen").unwrap();
+        db.save_page_content(b.id, "- [ ] Einkaufen #haushalt due:2026-09-25 !!\n- [ ] Putzen").unwrap();
 
         let open = db.list_tasks(&TaskFilter::default()).unwrap();
         let texts: Vec<_> = open.iter().map(|t| t.text.as_str()).collect();
@@ -355,7 +359,7 @@ mod tests {
         db.set_task_done(a.id, 0, true, None).unwrap();
         assert_eq!(
             db.page_doc(a.id).unwrap().content,
-            "#kunde\n\n- [x] Später\n- [ ] Bald 📅 2026-09-20 !\n- [x] Fertig 📅 2026-09-01"
+            "#kunde\n\n- [x] Später\n- [ ] Bald due:2026-09-20 !\n- [x] Fertig due:2026-09-01"
         );
         let done = db.list_tasks(&TaskFilter { status: TaskStatus::Done, ..Default::default() }).unwrap();
         assert_eq!(done.len(), 2);

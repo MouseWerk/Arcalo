@@ -45,7 +45,7 @@ describe("citeNeedles", () => {
   });
 
   it("strips list markers, tasks, quotes and callouts", () => {
-    expect(citeNeedles("- [ ] Angebot senden 📅 2026-09-30 !!")[0]).toBe("Angebot senden 📅 2026-09-30 !!");
+    expect(citeNeedles("- [ ] Angebot senden due:2026-09-30 !!")[0]).toBe("Angebot senden due:2026-09-30 !!");
     expect(citeNeedles("> [!note] Wichtig: bitte lesen")[0]).toBe("Wichtig: bitte lesen");
     expect(citeNeedles("1. Erster Schritt")[0]).toBe("Erster Schritt");
   });

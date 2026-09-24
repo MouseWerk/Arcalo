@@ -17,7 +17,7 @@ pub fn system_prompt(today: &str) -> String {
          Führe die Anweisung des Nutzers auf den Text zwischen <text> und </text> aus. Antworte \
          ausschließlich mit dem Ergebnis in Markdown: keine Einleitung, keine Erklärung, kein \
          umschließender Codeblock. Behalte Links ([[Seite]], [Text](URL)), #Tags, Aufgaben \
-         (- [ ] …, 📅 JJJJ-MM-TT, !/!!) und /zeit-Zeilen unverändert bei, sofern die Anweisung \
+         (- [ ] …, due:JJJJ-MM-TT, !/!!) und /zeit-Zeilen unverändert bei, sofern die Anweisung \
          nichts anderes verlangt. Behalte die Sprache des Textes bei, außer beim Übersetzen."
     )
 }

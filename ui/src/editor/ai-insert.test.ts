@@ -98,7 +98,7 @@ describe("insertMarkdownBelow / appendMarkdown", () => {
 
   it("appends a summary with headings and tasks at the end", () => {
     const e = make("Notizen.\n");
-    appendMarkdown(e, "## Zusammenfassung\n\nKurz.\n\n## Aufgaben\n\n- [ ] Angebot senden @Max 📅 2026-09-30 !!");
-    expect(toMarkdown(e)).toBe("Notizen.\n\n## Zusammenfassung\n\nKurz.\n\n## Aufgaben\n\n- [ ] Angebot senden @Max 📅 2026-09-30 !!\n");
+    appendMarkdown(e, "## Zusammenfassung\n\nKurz.\n\n## Aufgaben\n\n- [ ] Angebot senden @Max due:2026-09-30 !!");
+    expect(toMarkdown(e)).toBe("Notizen.\n\n## Zusammenfassung\n\nKurz.\n\n## Aufgaben\n\n- [ ] Angebot senden @Max due:2026-09-30 !!\n");
   });
 });

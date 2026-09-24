@@ -122,7 +122,7 @@ export function TasksView() {
           <Spinner />
         ) : list.length === 0 ? (
           <EmptyState icon={ListChecks} title={status === "done" ? "Keine erledigten Aufgaben" : "Keine offenen Aufgaben"}>
-            Aufgaben sind Listenpunkte wie <code>- [ ] Angebot senden 📅 2026-09-30 !!</code> in beliebigen Seiten. <code>!!</code> = hoch, <code>!</code> = mittel.
+            Aufgaben sind Listenpunkte wie <code>- [ ] Angebot senden due:2026-09-30 !!</code> in beliebigen Seiten. <code>!!</code> = hoch, <code>!</code> = mittel.
           </EmptyState>
         ) : (
           groups.map((g) => (

@@ -34,7 +34,7 @@ describe("meeting summary", () => {
   it("asks for the four sections and our task syntax", () => {
     const p = meetingSummaryInstruction();
     for (const h of ["## Zusammenfassung", "## Entscheidungen", "## Aufgaben", "## Offene Punkte"]) expect(p).toContain(h);
-    expect(p).toContain("- [ ] Text @Person 📅 JJJJ-MM-TT");
+    expect(p).toContain("- [ ] Text @Person due:JJJJ-MM-TT");
     expect(p).toMatch(/!! \(hoch\) oder ! \(mittel\)/);
     expect(p).toMatch(/3–5 Sätze/);
   });

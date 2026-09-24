@@ -46,7 +46,9 @@ fn stem(p: &Path) -> String {
 fn read_text(p: &Path) -> Result<String> {
     let bytes = fs::read(p)?;
     let text = String::from_utf8_lossy(&bytes);
-    Ok(text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n"))
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n");
+    // Obsidian Tasks marks due dates with a calendar symbol; Annalo writes `due:`.
+    Ok(text.replace(&format!("{} ", crate::tasks::OBSIDIAN_DUE), "due:").replace(crate::tasks::OBSIDIAN_DUE, "due:"))
 }
 
 /// Imports `dir` under a new top-level page named after the folder; images go to `attachments_dir`.

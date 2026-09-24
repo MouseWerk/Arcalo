@@ -65,7 +65,7 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
         const leistungsart = best.match(/Leistungsarten: ([A-Z]+)/)?.[1] ?? null;
         text = JSON.stringify({ reference, leistungsart, confidence: 0.82, reason: `„${activity}“ passt zu den letzten Buchungen auf ${reference}` });
       } else if (transform && /Besprechungsnotiz/.test(instruction)) {
-        text = `## Zusammenfassung\n\nIm Jour fixe wurde der Rollout besprochen. Der Termin bleibt.\n\n## Entscheidungen\n\n- Go-Live bleibt am 1. Oktober\n\n## Aufgaben\n\n- [ ] Testplan an [[Architektur]] anpassen @Max 📅 2026-09-30 !!\n\n## Offene Punkte\n\n- Schulungstermin`;
+        text = `## Zusammenfassung\n\nIm Jour fixe wurde der Rollout besprochen. Der Termin bleibt.\n\n## Entscheidungen\n\n- Go-Live bleibt am 1. Oktober\n\n## Aufgaben\n\n- [ ] Testplan an [[Architektur]] anpassen @Max due:2026-09-30 !!\n\n## Offene Punkte\n\n- Schulungstermin`;
       } else if (transform && /^Kürze/.test(instruction)) {
         text = `**Kurz:** ${source.split(/\s+/).slice(0, 3).join(" ")} [[Architektur]]`;
       } else if (transform) {

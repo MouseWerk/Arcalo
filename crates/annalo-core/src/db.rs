@@ -869,7 +869,7 @@ mod tests {
                 c.execute_batch(m).unwrap();
             }
             c.pragma_update(None, "user_version", before as i64).unwrap();
-            c.execute("INSERT INTO pages (id, title, content) VALUES (1, 'Alt', '- [ ] offen 📅 2026-10-01')", [])
+            c.execute("INSERT INTO pages (id, title, content) VALUES (1, 'Alt', '- [ ] offen due:2026-10-01')", [])
                 .unwrap();
         }
         let db = Database::open(&path).unwrap();

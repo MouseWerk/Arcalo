@@ -79,7 +79,7 @@ test("a changed note leads to a new commit with the note", async () => {
   const page = flat(tree).find((n) => n.title === "Architektur");
   assert.ok(page, "demo page Architektur");
   const doc = await app.invoke("page_get", { id: page.id });
-  await app.invoke("page_save", { id: page.id, content: `${doc.content}\n\nGit-Sync-Test ✓` });
+  await app.invoke("page_save", { id: page.id, content: `${doc.content}\n\nGit-Sync-Test ok` });
   const status = await app.invoke("git_sync_status");
   // The mirror is refreshed with the sync itself, so nothing is pending in the old mirror yet.
   assert.equal(typeof status.pending_changes, "number");
@@ -89,7 +89,7 @@ test("a changed note leads to a new commit with the note", async () => {
   assert.ok(out.changed_files >= 1);
   assert.equal(git("rev-list", "--count", "main").trim(), "2");
   const arch = git("ls-tree", "-r", "--name-only", "main").split("\n").find((f) => f.endsWith("Architektur.md"));
-  assert.match(git("show", `main:${arch}`), /Git-Sync-Test ✓/);
+  assert.match(git("show", `main:${arch}`), /Git-Sync-Test ok/);
   assert.match(git("log", "-1", "--format=%s", "main"), /– \d+ Datei(en)? geändert/);
 });
 
@@ -169,6 +169,6 @@ test("restore imports the repository as a new page „Git-Import <Datum>“", as
   const flat = (nodes) => nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
   const arch = flat(root.children ?? []).find((n) => n.title === "Architektur");
   assert.ok(arch, "notes imported");
-  assert.match((await app.invoke("page_get", { id: arch.id })).content, /Git-Sync-Test ✓/);
+  assert.match((await app.invoke("page_get", { id: arch.id })).content, /Git-Sync-Test ok/);
   assert.ok(!flat(root.children ?? []).some((n) => n.title === "README"), "the sync's README is not imported");
 });

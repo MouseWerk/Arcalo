@@ -126,7 +126,7 @@ mod tests {
         let t = db.create_page(None, "Aufgaben", None).unwrap();
         db.save_page_content(
             t.id,
-            "- [ ] A 📅 2026-09-22\n- [ ] B due:2026-09-22\n- [x] C 📅 2026-09-22\n- [ ] D 📅 2026-09-20\n- [ ] E 📅 2026-09-23",
+            "- [ ] A due:2026-09-22\n- [ ] B due:2026-09-22\n- [x] C due:2026-09-22\n- [ ] D due:2026-09-20\n- [ ] E due:2026-09-23",
         )
         .unwrap();
 

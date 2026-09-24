@@ -142,7 +142,7 @@ test("page menu „Besprechung zusammenfassen“ streams a summary and inserts i
   await app.waitText(".toast-title", /Zusammenfassung eingefügt/);
   await app.browser.waitUntil(async () => /## Zusammenfassung\n\nIm Jour fixe/.test(await content("Jour fixe 22.09.")), { timeout: 5000, timeoutMsg: "summary saved" });
   const md = await content("Jour fixe 22.09.");
-  assert.match(md, /^- \[ \] Testplan an \[\[Architektur\]\] anpassen @Max 📅 2026-09-30 !!$/m);
+  assert.match(md, /^- \[ \] Testplan an \[\[Architektur\]\] anpassen @Max due:2026-09-30 !!$/m);
   assert.ok(md.indexOf("## Zusammenfassung") > md.indexOf("Schulungstermine 2010 fixieren"), "appended after the notes");
   // The new task is picked up like any other.
   const tasks = await app.invoke("tasks_list", { filter: null });
