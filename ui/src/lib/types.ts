@@ -169,15 +169,48 @@ export interface RouterConfig {
   local_model: string;
   standard_model: string;
   reasoning_model: string;
+  /** Provider ids of the tiers ("" = the first provider). */
+  local_provider: string;
+  standard_provider: string;
+  reasoning_provider: string;
   standard_threshold: number;
   reasoning_threshold: number;
   private_markers: string[];
 }
+/** litellm: LiteLLM proxy; openai: any OpenAI-compatible API; azure: Azure OpenAI (deployments, api-version, api-key); ollama: local Ollama. */
+export type ProviderKind = "litellm" | "openai" | "azure" | "ollama";
+/** An AI provider (Settings → KI). Its key lives in the credential store under its id. */
+export interface AiProvider {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  base_url: string;
+  /** May receive private content; costs nothing. */
+  local: boolean;
+  enabled: boolean;
+  /** Connect directly, not through the proxy of Settings → Netzwerk. */
+  bypass_proxy: boolean;
+  /** Azure OpenAI: api-version. */
+  api_version: string;
+  /** Model (Azure: deployment) names added by hand. */
+  models: string[];
+}
+/** Price per 1M tokens in USD for a model (`*` at the end = prefix) on one provider or any (""). */
+export interface PriceRule {
+  provider: string;
+  model: string;
+  input_per_mtok: number;
+  output_per_mtok: number;
+}
 export interface Settings {
   litellm_base_url: string;
+  providers: AiProvider[];
   router: RouterConfig;
   auto_route: boolean;
   embedding_model: string | null;
+  /** Provider of the embedding model. */
+  embedding_provider: string;
+  prices: PriceRule[];
   assistant_instructions: string;
   thresholds: { warning: number; critical: number };
   idle_threshold_minutes: number;
@@ -428,6 +461,8 @@ export interface SettingsView {
   settings: Settings;
   api_key_set: boolean;
   api_key_storage: string;
+  /** Ids of the providers with a stored key. */
+  provider_keys: string[];
   data_dir: string;
   /** Effective backup folder. */
   backup_dir: string;
@@ -481,8 +516,34 @@ export interface ConnectionTest {
   models: string[];
   error: string | null;
 }
+/** One step of a provider's connection test; ok null = skipped. */
+export interface ProviderTestStep {
+  id: "reach" | "auth" | "chat" | "tools" | "embed";
+  ok: boolean | null;
+  detail: string;
+  latency_ms: number;
+}
+export interface ProviderTest {
+  steps: ProviderTestStep[];
+  models: string[];
+  model: string | null;
+}
+export interface OllamaDetect {
+  found: boolean;
+  url: string;
+  version: string | null;
+  models: string[];
+}
+export interface PullProgress {
+  request_id: string;
+  status: string;
+  total: number | null;
+  completed: number | null;
+}
 export interface RouteDecision {
   tier: Tier;
+  /** Id of the provider the request went to. */
+  provider?: string;
   model: string;
   score: number;
   reasons: string[];

@@ -56,6 +56,35 @@ pub fn pending_blocks(db: &Database, limit: usize) -> Result<Vec<(i64, String)>>
     Ok(rows)
 }
 
+/// [`pending_blocks`] without the blocks of private pages: pages tagged with one of `markers`
+/// (`#privat` → tag `privat`) and blocks whose text contains one. They stay unembedded (found by
+/// keyword search only) when the embedding model is not on a local provider.
+pub fn pending_public_blocks(db: &Database, limit: usize, markers: &[String]) -> Result<Vec<(i64, String)>> {
+    let markers: Vec<String> =
+        markers.iter().map(|m| m.trim().to_lowercase()).filter(|m| !m.is_empty() && m != "#").collect();
+    let mut sql = String::from(
+        "SELECT b.id, b.content_markdown FROM notes_blocks b JOIN pages p ON p.id = b.page_id
+         WHERE b.vector_embedding IS NULL AND trim(b.content_markdown) <> '' AND p.deleted_at IS NULL",
+    );
+    let mut args: Vec<String> = vec![];
+    for m in &markers {
+        args.push(m.trim_start_matches('#').to_owned());
+        let tag = args.len();
+        args.push(m.clone());
+        let text = args.len();
+        sql.push_str(&format!(
+            " AND NOT EXISTS (SELECT 1 FROM page_tags t WHERE t.page_id = b.page_id AND lower(t.tag) = ?{tag})
+              AND instr(lower(b.content_markdown), ?{text}) = 0"
+        ));
+    }
+    sql.push_str(&format!(" ORDER BY b.id LIMIT {}", limit.max(1)));
+    let mut st = db.conn().prepare(&sql)?;
+    let rows = st
+        .query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextChunk {
     pub source: String,
@@ -336,6 +365,26 @@ mod tests {
         let ids: Vec<_> = chunks.iter().filter_map(|c| c.block_id).collect();
         assert!(ids.contains(&a) && ids.contains(&b), "{chunks:?}");
         assert!(format_context(&chunks).contains("[1] (Seite: Architektur"));
+    }
+
+    #[test]
+    fn private_pages_are_not_embedded_by_other_providers() {
+        let db = Database::open_in_memory().unwrap();
+        let secret = db.create_page(None, "Gehälter", None).unwrap();
+        db.save_page_content(secret.id, "# Team\n\nGehaltsrunde 2026.\n\n# Tags\n\n#Privat").unwrap();
+        let marked = db.create_page(None, "Notiz", None).unwrap();
+        db.save_page_content(marked.id, "Offen: Rollout. Vertraulich, siehe #vertraulich-Liste").unwrap();
+        let open = db.create_page(None, "Projekt", None).unwrap();
+        db.save_page_content(open.id, "Der Rollout startet im Oktober.").unwrap();
+        let markers = vec!["#privat".to_string(), "#vertraulich".to_string()];
+        let page_of = |id: i64| -> i64 {
+            db.conn().query_row("SELECT page_id FROM notes_blocks WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+        };
+        let got: Vec<i64> =
+            pending_public_blocks(&db, 10, &markers).unwrap().iter().map(|(id, _)| page_of(*id)).collect();
+        assert_eq!(got, [open.id]);
+        // Without markers every block is pending, as before.
+        assert_eq!(pending_public_blocks(&db, 10, &[]).unwrap(), pending_blocks(&db, 10).unwrap());
     }
 
     #[test]

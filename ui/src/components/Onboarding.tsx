@@ -88,7 +88,7 @@ export function Onboarding() {
           ))}
         </div>
         <button type="button" className="onb-server" onClick={() => s().openTab({ kind: "settings" })}>
-          <Server size={14} strokeWidth={1.75} /> KI-Server (LiteLLM) jetzt einrichten
+          <Server size={14} strokeWidth={1.75} /> KI-Anbieter jetzt einrichten (LiteLLM, OpenAI, Ollama …)
         </button>
       </div>
     </div>

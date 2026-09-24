@@ -10,6 +10,7 @@ describe("aiErrorSummary", () => {
     expect(aiErrorSummary("Verbindungsfehler: error sending request for url (http://127.0.0.1:4000/)")).toMatchObject({ title: "Der KI-Server ist nicht erreichbar.", settings: true });
     expect(aiErrorSummary('KI-Server meldet Fehler 401: {"error":"Unauthorized"}').settings).toBe(true);
     expect(aiErrorSummary("KI-Server meldet Fehler 404: model not found").title).toBe("Das Modell gibt es auf dem KI-Server nicht.");
+    expect(aiErrorSummary("Das lokale Modell „llama3.2“ gibt es auf dem Ollama-Server nicht. Vertrauliche Inhalte bleiben lokal").settings).toBe(true);
   });
   it("recognizes timeouts, limits and long requests", () => {
     expect(aiErrorSummary("KI-Server meldet Fehler 0: Keine Antwort vom Modell (Zeitüberschreitung)").title).toMatch(/nicht rechtzeitig/);

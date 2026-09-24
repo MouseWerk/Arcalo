@@ -1,4 +1,5 @@
-//! Storage for secrets: the LiteLLM API key and the Git access token.
+//! Storage for secrets: the API keys of the AI providers, the Git access token and the proxy
+//! password.
 //!
 //! Windows: Credential Manager, macOS: Keychain. Elsewhere (Linux
 //! and other systems) the secrets are written to `secrets.json` in the app data directory
@@ -11,32 +12,41 @@ const SERVICE: &str = "Annalo";
 pub struct SecretStore {
     /// Credential account name (Windows/macOS).
     #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
-    account: &'static str,
+    account: String,
     /// Field in the fallback file.
     #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
-    field: &'static str,
+    field: String,
     #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
     file: PathBuf,
 }
 
 impl SecretStore {
-    /// The LiteLLM API key.
+    fn named(data_dir: &Path, account: &str, field: &str) -> Self {
+        SecretStore { account: account.into(), field: field.into(), file: data_dir.join("secrets.json") }
+    }
+
+    /// The LiteLLM API key: the key of the provider migrated from the LiteLLM settings.
     pub fn new(data_dir: &Path) -> Self {
-        SecretStore { account: "litellm-api-key", field: "litellm_api_key", file: data_dir.join("secrets.json") }
+        Self::named(data_dir, "litellm-api-key", "litellm_api_key")
+    }
+
+    /// The API key of the AI provider `id` (`[a-z0-9-]`); the provider `litellm` keeps the
+    /// credential of earlier versions.
+    pub fn provider(data_dir: &Path, id: &str) -> Self {
+        if id == annalo_core::ai::provider::LEGACY_ID {
+            return Self::new(data_dir);
+        }
+        Self::named(data_dir, &format!("ai-provider-{id}"), &format!("ai_provider_{}", id.replace('-', "_")))
     }
 
     /// The access token of the Git sync.
     pub fn git(data_dir: &Path) -> Self {
-        SecretStore { account: "git-token", field: "git_token", file: data_dir.join("secrets.json") }
+        Self::named(data_dir, "git-token", "git_token")
     }
 
     /// The password of the proxy (Settings → Netzwerk).
     pub fn proxy(data_dir: &Path) -> Self {
-        SecretStore {
-            account: annalo_core::network::PASSWORD_ACCOUNT,
-            field: "proxy_password",
-            file: data_dir.join("secrets.json"),
-        }
+        Self::named(data_dir, annalo_core::network::PASSWORD_ACCOUNT, "proxy_password")
     }
 
     /// Human-readable name of the backend, shown in the settings.
@@ -52,12 +62,12 @@ impl SecretStore {
 
     #[cfg(any(windows, target_os = "macos"))]
     pub fn get(&self) -> Option<String> {
-        keyring::Entry::new(SERVICE, self.account).ok()?.get_password().ok().filter(|k| !k.is_empty())
+        keyring::Entry::new(SERVICE, &self.account).ok()?.get_password().ok().filter(|k| !k.is_empty())
     }
 
     #[cfg(any(windows, target_os = "macos"))]
     pub fn set(&self, key: Option<&str>) -> Result<(), String> {
-        let entry = keyring::Entry::new(SERVICE, self.account).map_err(|e| e.to_string())?;
+        let entry = keyring::Entry::new(SERVICE, &self.account).map_err(|e| e.to_string())?;
         match key.filter(|k| !k.is_empty()) {
             Some(k) => entry.set_password(k).map_err(|e| e.to_string()),
             None => match entry.delete_credential() {
@@ -78,8 +88,8 @@ impl SecretStore {
 
     #[cfg(not(any(windows, target_os = "macos")))]
     pub fn get(&self) -> Option<String> {
-        let _ = (SERVICE, self.account);
-        self.read_file().get(self.field)?.as_str().filter(|k| !k.is_empty()).map(str::to_owned)
+        let _ = (SERVICE, &self.account);
+        self.read_file().get(&self.field)?.as_str().filter(|k| !k.is_empty()).map(str::to_owned)
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -87,10 +97,10 @@ impl SecretStore {
         let mut map = self.read_file();
         match key.filter(|k| !k.is_empty()) {
             Some(k) => {
-                map.insert(self.field.to_owned(), k.into());
+                map.insert(self.field.clone(), k.into());
             }
             None => {
-                map.remove(self.field);
+                map.remove(&self.field);
             }
         }
         if map.is_empty() {
@@ -123,6 +133,12 @@ mod tests {
         ai.set(Some("sk-1")).unwrap();
         git.set(Some("ghp-2")).unwrap();
         assert_eq!((ai.get().as_deref(), git.get().as_deref()), (Some("sk-1"), Some("ghp-2")));
+        // One key per provider; the LiteLLM provider reads the key of earlier versions.
+        let (openai, mistral) = (SecretStore::provider(&dir, "openai"), SecretStore::provider(&dir, "mistral-ai"));
+        openai.set(Some("sk-o")).unwrap();
+        assert_eq!(SecretStore::provider(&dir, "litellm").get().as_deref(), Some("sk-1"));
+        assert_eq!((openai.get().as_deref(), mistral.get()), (Some("sk-o"), None));
+        openai.set(None).unwrap();
         git.set(None).unwrap();
         assert_eq!((ai.get().as_deref(), git.get()), (Some("sk-1"), None));
         ai.set(None).unwrap();

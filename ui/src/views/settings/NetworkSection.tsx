@@ -17,7 +17,8 @@ export async function withPacResults(s: Settings): Promise<Settings> {
   const net = s.network;
   if (net.mode !== "pac" || !net.pac_url.trim()) return s;
   const pac = await api.fetchPac(net.pac_url.trim(), net);
-  const others = [UPDATE_URL, s.git_sync.remote_url].filter((u) => /^https?:\/\//i.test(u));
+  const providers = s.providers.filter((p) => p.enabled).map((p) => p.base_url);
+  const others = [UPDATE_URL, s.git_sync.remote_url, ...providers].filter((u) => /^https?:\/\//i.test(u));
   const pac_results = await resolvePac(pac, s.litellm_base_url, others);
   return { ...s, network: { ...net, pac_results } };
 }

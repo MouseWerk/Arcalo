@@ -18,14 +18,17 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use annalo_core::activity::{self, IdleAccumulator, WindowUsage};
+use annalo_core::ai::availability::{Catalog, Exclude};
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
+use annalo_core::ai::metrics::PriceTable;
 use annalo_core::ai::metrics::SessionMeter;
+use annalo_core::ai::provider::AiProvider;
 use annalo_core::ai::rag::{self, ContextChunk};
-use annalo_core::ai::router::{ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
+use annalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
 use annalo_core::ai::tools::{self, Risk, SystemCall};
 use annalo_core::ai::transform;
 use annalo_core::ai::zeitguess::{self, ZeitGuess};
-use annalo_core::ai::{LiteLlmClient, availability};
+use annalo_core::ai::{AiClient, availability};
 use annalo_core::attachments::{self, SavedAttachment};
 use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
@@ -65,41 +68,74 @@ type Result<T> = std::result::Result<T, Error>;
 /// settings: proxy, extra CA and timeouts apply to both HTTP clients).
 struct AiRuntime {
     settings: Settings,
-    client: Arc<LiteLlmClient>,
+    /// Clients of the switched-on AI providers, by provider id.
+    clients: HashMap<String, Arc<AiClient>>,
     router: Arc<ModelRouter>,
     /// Client of the assistant's `http_request` tool.
     tools_http: tools::HttpClient,
 }
 
+/// A client of `provider`: its key, the network settings (without proxy when it bypasses
+/// it) and the price table.
+fn provider_client(
+    settings: &Settings,
+    provider: &AiProvider,
+    key: Option<String>,
+    proxy_password: Option<&str>,
+) -> Result<AiClient> {
+    let net = provider.network(&settings.network);
+    let http = annalo_core::network::http_client(&net, proxy_password, Purpose::Ai)?;
+    let mut client = AiClient::for_provider(provider.clone(), key, http);
+    client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
+    Ok(client)
+}
+
+/// The stored keys of `providers`, by id.
+fn provider_keys(data_dir: &std::path::Path, providers: &[AiProvider]) -> HashMap<String, String> {
+    providers.iter().filter_map(|p| SecretStore::provider(data_dir, &p.id).get().map(|k| (p.id.clone(), k))).collect()
+}
+
 impl AiRuntime {
-    fn new(settings: Settings, api_key: Option<String>, proxy_password: Option<String>) -> Self {
-        devlog::remember_secret(api_key.as_deref());
+    fn new(settings: Settings, keys: &HashMap<String, String>, proxy_password: Option<String>) -> Self {
+        for k in keys.values() {
+            devlog::remember_secret(Some(k));
+        }
         devlog::remember_secret(proxy_password.as_deref());
-        let http = |purpose| {
-            annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), purpose).unwrap_or_else(
-                |e| {
+        let tools_http =
+            annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), Purpose::Tools)
+                .unwrap_or_else(|e| {
                     devlog::warn("net", format!("network settings not applied: {e}"));
                     tools::HttpClient::new()
-                },
-            )
-        };
-        let client = LiteLlmClient::with_http(settings.litellm_base_url.clone(), api_key, http(Purpose::Ai));
-        AiRuntime {
-            client: Arc::new(client),
-            router: Arc::new(ModelRouter::new(settings.router.clone())),
-            tools_http: http(Purpose::Tools),
-            settings,
-        }
+                });
+        let clients = settings
+            .providers
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| {
+                let key = keys.get(&p.id).cloned();
+                let client =
+                    provider_client(&settings, p, key.clone(), proxy_password.as_deref()).unwrap_or_else(|e| {
+                        devlog::warn("net", format!("network settings not applied to „{}“: {e}", p.display_name()));
+                        AiClient::for_provider(p.clone(), key, tools::HttpClient::new())
+                    });
+                (p.id.clone(), Arc::new(client))
+            })
+            .collect();
+        AiRuntime { clients, router: Arc::new(ModelRouter::new(settings.router.clone())), tools_http, settings }
     }
 }
 
 /// Rebuilds the AI runtime (clients, router) from `settings` and the stored secrets.
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
-    let rt = AiRuntime::new(settings, state.secrets.get(), state.proxy_secret.get());
+    let keys = provider_keys(&state.data_dir, &settings.providers);
+    let rt = AiRuntime::new(settings, &keys, state.proxy_secret.get());
     *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
     // Another server or key may offer other models.
-    *lock(&state.server_models) = None;
+    lock(&state.server_models).clear();
 }
+
+/// When a provider was asked for its models, and the answer (`None` = it could not be asked).
+type ModelList = (Instant, Option<Vec<String>>);
 
 pub struct AppState {
     db: Mutex<Database>,
@@ -119,8 +155,9 @@ pub struct AppState {
     idle: Mutex<IdleAccumulator>,
     usage: Mutex<WindowUsage>,
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    /// Models the LiteLLM server offers (base URL, when fetched, names); `None` = not asked yet.
-    server_models: Mutex<Option<(String, Instant, Vec<String>)>>,
+    /// Models each provider offers, by provider id: when asked, and the names (`None` = it could
+    /// not be asked). Cleared whenever the clients are rebuilt.
+    server_models: Mutex<HashMap<String, ModelList>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -135,8 +172,27 @@ impl AppState {
     fn settings(&self) -> Settings {
         self.ai.read().unwrap_or_else(|e| e.into_inner()).settings.clone()
     }
-    fn client(&self) -> Arc<LiteLlmClient> {
-        self.ai.read().unwrap_or_else(|e| e.into_inner()).client.clone()
+    /// The client of the provider `id` (`""` = the first one); an error when it is missing or off.
+    fn client_for(&self, id: &str) -> Result<Arc<AiClient>> {
+        let ai = self.ai.read().unwrap_or_else(|e| e.into_inner());
+        let id = match id {
+            "" => ai.settings.providers.iter().find(|p| p.enabled).map(|p| p.id.as_str()).unwrap_or_default(),
+            id => id,
+        };
+        ai.clients.get(id).cloned().ok_or_else(|| {
+            Error::State(format!(
+                "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)"
+            ))
+        })
+    }
+    /// The clients of the switched-on providers, in the order of the settings.
+    fn clients(&self) -> Vec<(String, Arc<AiClient>)> {
+        let ai = self.ai.read().unwrap_or_else(|e| e.into_inner());
+        ai.settings.providers.iter().filter_map(|p| ai.clients.get(&p.id).map(|c| (p.id.clone(), c.clone()))).collect()
+    }
+    /// The credential of the provider `id`.
+    fn provider_secret(&self, id: &str) -> SecretStore {
+        SecretStore::provider(&self.data_dir, id)
     }
     fn router(&self) -> Arc<ModelRouter> {
         self.ai.read().unwrap_or_else(|e| e.into_inner()).router.clone()
@@ -1268,8 +1324,11 @@ fn spawn_backup_scheduler(app: AppHandle) {
 #[derive(Serialize)]
 struct SettingsView {
     settings: Settings,
+    /// Whether the key of the provider `litellm` (the LiteLLM token of earlier versions) is set.
     api_key_set: bool,
     api_key_storage: &'static str,
+    /// Ids of the providers with a stored key (the keys themselves never leave the shell).
+    provider_keys: Vec<String>,
     data_dir: String,
     /// Effective backup folder (the configured one or the default).
     backup_dir: String,
@@ -1282,6 +1341,15 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         settings: state.settings(),
         api_key_set: state.secrets.get().is_some(),
         api_key_storage: state.secrets.backend(),
+        provider_keys: {
+            let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
+            ai.settings
+                .providers
+                .iter()
+                .filter(|p| state.provider_secret(&p.id).get().is_some())
+                .map(|p| p.id.clone())
+                .collect()
+        },
         data_dir: state.data_dir.display().to_string(),
         backup_dir: state.backup_dir().display().to_string(),
         version: env!("CARGO_PKG_VERSION"),
@@ -1291,12 +1359,11 @@ fn settings_get(state: State<AppState>) -> SettingsView {
 /// Saves settings and applies them immediately (no restart needed).
 #[tauri::command]
 fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<SettingsView> {
-    let url = settings.litellm_base_url.trim().to_owned();
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err(Error::State("Die Server-URL muss mit http:// oder https:// beginnen".into()));
-    }
+    let previous = state.settings();
     let mut settings = settings;
-    settings.litellm_base_url = url.trim_end_matches('/').to_owned();
+    // Scripts and older settings pages set only `litellm_base_url`; it moves the LiteLLM provider.
+    settings.sync_legacy(&previous);
+    settings.normalize_ai()?;
     settings.backup_keep = settings.backup_keep.clamp(1, 365);
     settings.backup_dir = settings.backup_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
     settings.markdown_mirror_dir = settings.markdown_mirror_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
@@ -1346,6 +1413,12 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: Settings) -> 
     }
     lock(&state.idle).set_threshold(Duration::from_secs(settings.idle_threshold_minutes * 60));
     devlog::set_verbose(settings.dev_log_verbose);
+    // Keys of removed providers are deleted with them.
+    for gone in previous.providers.iter().filter(|p| !settings.providers.iter().any(|n| n.id == p.id)) {
+        if let Err(e) = state.provider_secret(&gone.id).set(None) {
+            devlog::warn("ai", format!("key of the removed provider „{}“ not deleted: {e}", gone.id));
+        }
+    }
     rebuild_ai(&state, settings);
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
@@ -1406,6 +1479,19 @@ fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsVi
     Ok(settings_get(state))
 }
 
+/// Stores (or with `None`, removes) the API key of the provider `id` in the OS credential store.
+/// The provider need not be saved yet (the dialog stores the key before the settings).
+#[tauri::command]
+fn provider_key_set(state: State<AppState>, id: String, key: Option<String>) -> Result<SettingsView> {
+    let id = annalo_core::ai::provider::slug(&id);
+    if id.is_empty() {
+        return Err(Error::State("Anbieter ohne Kennung".into()));
+    }
+    state.provider_secret(&id).set(key.as_deref().map(str::trim)).map_err(Error::State)?;
+    rebuild_ai(&state, state.settings());
+    Ok(settings_get(state))
+}
+
 #[derive(Serialize)]
 struct ConnectionTest {
     ok: bool,
@@ -1422,26 +1508,306 @@ async fn ai_test_connection(
     api_key: Option<String>,
 ) -> Result<ConnectionTest> {
     let settings = state.settings();
-    let url = base_url.unwrap_or_else(|| settings.litellm_base_url.clone());
-    let key = api_key.filter(|k| !k.is_empty()).or_else(|| state.secrets.get());
-    let http = annalo_core::network::http_client(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
-    let client = LiteLlmClient::with_http(url.trim().trim_end_matches('/').to_owned(), key, http);
+    let mut provider = settings
+        .providers
+        .iter()
+        .find(|p| p.id == annalo_core::ai::provider::LEGACY_ID)
+        .cloned()
+        .unwrap_or_else(|| AiProvider::litellm(&settings.litellm_base_url));
+    if let Some(url) = base_url {
+        provider.base_url = url.trim().trim_end_matches('/').to_owned();
+    }
+    provider_models(&state, provider, api_key).await
+}
+
+/// Lists the models of a provider, saved or not (the dialog tests unsaved values); a new key
+/// can be tried before it is stored. The answer of a saved, unchanged provider is cached.
+async fn provider_models(state: &AppState, provider: AiProvider, key: Option<String>) -> Result<ConnectionTest> {
+    let settings = state.settings();
+    let unchanged = key.as_deref().is_none_or(str::is_empty) && settings.providers.contains(&provider);
+    let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
+    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
     let start = Instant::now();
     let res = client.models().await;
     let latency_ms = start.elapsed().as_millis() as u64;
     Ok(match res {
         Ok(mut models) => {
             models.sort();
-            if url.trim().trim_end_matches('/') == settings.litellm_base_url.trim().trim_end_matches('/') {
-                *lock(&state.server_models) = Some((settings.litellm_base_url.clone(), Instant::now(), models.clone()));
+            if unchanged {
+                lock(&state.server_models).insert(provider.id.clone(), (Instant::now(), Some(models.clone())));
             }
             ConnectionTest { ok: true, latency_ms, models, error: None }
         }
         Err(e) => {
-            devlog::warn("ai", format!("connection test failed: {e}"));
+            devlog::warn("ai", format!("model list of „{}“ failed: {e}", provider.display_name()));
             ConnectionTest { ok: false, latency_ms, models: vec![], error: Some(e.to_string()) }
         }
     })
+}
+
+/// The models of a provider (Settings → KI: status dots and model pickers).
+#[tauri::command]
+async fn ai_provider_models(
+    state: State<'_, AppState>,
+    provider: AiProvider,
+    key: Option<String>,
+) -> Result<ConnectionTest> {
+    provider_models(&state, provider, key).await
+}
+
+#[derive(Serialize)]
+struct TestStep {
+    /// `reach`, `auth`, `chat`, `tools` or `embed`.
+    id: &'static str,
+    /// `None` = skipped (nothing to test, or an earlier step failed).
+    ok: Option<bool>,
+    detail: String,
+    latency_ms: u64,
+}
+
+#[derive(Serialize)]
+struct ProviderTest {
+    steps: Vec<TestStep>,
+    models: Vec<String>,
+    /// The chat model the test used.
+    model: Option<String>,
+}
+
+/// Short form of a provider error for the test steps.
+fn short_error(e: &Error) -> String {
+    let text = match e {
+        Error::Provider { status: 0, body } => body.clone(),
+        Error::Provider { status, body } => format!("HTTP {status}: {body}"),
+        Error::Http(e) => {
+            let mut msg = e.to_string();
+            let mut source = std::error::Error::source(e);
+            while let Some(s) = source {
+                msg.push_str(&format!(": {s}"));
+                source = s.source();
+            }
+            msg
+        }
+        e => e.to_string(),
+    };
+    text.chars().take(240).collect()
+}
+
+/// „Verbindung testen“ of a provider (saved or not): reachability, key, a short chat, tool
+/// support and embeddings, each with its own result. Nothing is recorded as usage.
+#[tauri::command]
+async fn ai_provider_test(
+    state: State<'_, AppState>,
+    provider: AiProvider,
+    key: Option<String>,
+    model: Option<String>,
+) -> Result<ProviderTest> {
+    let settings = state.settings();
+    let mut provider = provider;
+    provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
+    let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
+    let has_key = key.is_some();
+    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let mut steps = vec![];
+    let step = |id, ok: Option<bool>, detail: String, start: Instant| TestStep {
+        id,
+        ok,
+        detail,
+        latency_ms: start.elapsed().as_millis() as u64,
+    };
+    let skipped = |id, why: &str| TestStep { id, ok: None, detail: why.into(), latency_ms: 0 };
+
+    // 1 + 2: the model list answers (reachable) and accepts the key.
+    let start = Instant::now();
+    let listed = if provider.kind == annalo_core::ai::ProviderKind::Ollama {
+        client.ollama_version().await.map(|v| format!("Ollama {v}"))
+    } else {
+        Ok(String::new())
+    };
+    let models = match (listed, client.models().await) {
+        (Err(e), _) | (_, Err(e @ Error::Http(_))) => {
+            steps.push(step("reach", Some(false), short_error(&e), start));
+            for id in ["auth", "chat", "tools", "embed"] {
+                steps.push(skipped(id, "Nicht erreichbar"));
+            }
+            return Ok(ProviderTest { steps, models: vec![], model: None });
+        }
+        (Ok(version), Err(e)) => {
+            steps.push(step("reach", Some(true), version, start));
+            let denied = matches!(e, Error::Provider { status: 401 | 403, .. });
+            let detail = if denied && !has_key { "Kein API-Schlüssel hinterlegt".into() } else { short_error(&e) };
+            steps.push(step("auth", Some(false), detail, start));
+            for id in ["chat", "tools", "embed"] {
+                steps.push(skipped(id, if denied { "Zugang abgelehnt" } else { "Modellliste nicht lesbar" }));
+            }
+            return Ok(ProviderTest { steps, models: vec![], model: None });
+        }
+        (Ok(version), Ok(mut models)) => {
+            models.sort();
+            steps.push(step("reach", Some(true), version, start));
+            let detail = match (provider.models_url().is_some(), has_key) {
+                (false, _) => "Wird beim Chat geprüft".into(),
+                (true, true) => format!("Schlüssel angenommen · {} Modelle", models.len()),
+                (true, false) if !provider.needs_key() => format!("Kein Schlüssel nötig · {} Modelle", models.len()),
+                (true, false) => format!("Ohne Schlüssel · {} Modelle", models.len()),
+            };
+            steps.push(step("auth", Some(true), detail, start));
+            models
+        }
+    };
+
+    // 3: a short chat on the given model, a tier's model of this provider or the first chat model.
+    let tiers = [Tier::Local, Tier::Standard, Tier::Reasoning].map(|t| settings.router.tier_ref(t));
+    let chat_model = model.filter(|m| !m.trim().is_empty()).or_else(|| {
+        tiers
+            .iter()
+            .filter(|r| r.provider == provider.id && !r.model.is_empty())
+            .map(|r| r.model.clone())
+            .find(|m| models.is_empty() || models.contains(m))
+            .or_else(|| models.iter().find(|m| !m.to_lowercase().contains("embed")).cloned())
+    });
+    let Some(chat_model) = chat_model else {
+        steps.push(skipped("chat", "Kein Chat-Modell bekannt"));
+        steps.push(skipped("tools", "Kein Chat-Modell bekannt"));
+        steps.push(embed_step(&client, &settings, &provider, &models).await);
+        return Ok(ProviderTest { steps, models, model: None });
+    };
+    let ask = |tools: Vec<serde_json::Value>| ChatRequest {
+        model: chat_model.clone(),
+        messages: vec![ChatMessage::user("Antworte nur mit: OK")],
+        tools,
+        temperature: None,
+        max_tokens: Some(16),
+    };
+    let start = Instant::now();
+    match client.chat_stream(&ask(vec![]), None, |_| {}).await {
+        Ok(c) => {
+            let answer: String = c.content.trim().chars().take(40).collect();
+            let detail = if answer.is_empty() { chat_model.clone() } else { format!("{chat_model}: „{answer}“") };
+            steps.push(step("chat", Some(true), detail, start));
+        }
+        Err(e) => {
+            let auth = matches!(e, Error::Provider { status: 401 | 403, .. });
+            steps.push(step("chat", Some(false), short_error(&e), start));
+            if auth && let Some(s) = steps.iter_mut().find(|s| s.id == "auth") {
+                s.ok = Some(false);
+                s.detail =
+                    if has_key { "Schlüssel abgelehnt".into() } else { "Kein API-Schlüssel hinterlegt".into() };
+            }
+            steps.push(skipped("tools", "Chat fehlgeschlagen"));
+            steps.push(embed_step(&client, &settings, &provider, &models).await);
+            return Ok(ProviderTest { steps, models, model: Some(chat_model) });
+        }
+    }
+
+    // 4: tools: the request with a tool definition is accepted.
+    let ping = serde_json::json!({
+        "type": "function",
+        "function": {"name": "ping", "description": "Antwortet mit pong", "parameters": {"type": "object", "properties": {}}}
+    });
+    let start = Instant::now();
+    steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
+        Ok(_) => step("tools", Some(true), "Werkzeuge werden angenommen".into(), start),
+        Err(Error::Provider { status, body }) => {
+            let unsupported =
+                matches!(availability::retry_for(status, &body, true, false), availability::Retry::Without { .. });
+            let detail =
+                if unsupported { "Das Modell unterstützt keine Werkzeuge".into() } else { format!("HTTP {status}") };
+            step("tools", Some(false), detail, start)
+        }
+        Err(e) => step("tools", Some(false), short_error(&e), start),
+    });
+
+    // 5: embeddings.
+    steps.push(embed_step(&client, &settings, &provider, &models).await);
+    Ok(ProviderTest { steps, models, model: Some(chat_model) })
+}
+
+/// The embedding step of the provider test: the configured embedding model when it is on this
+/// provider, else a listed model with "embed" in its name.
+async fn embed_step(client: &AiClient, settings: &Settings, provider: &AiProvider, models: &[String]) -> TestStep {
+    let configured =
+        settings.embedding_model.clone().filter(|m| !m.is_empty() && settings.embedding_provider == provider.id);
+    let Some(model) = configured.or_else(|| models.iter().find(|m| m.to_lowercase().contains("embed")).cloned()) else {
+        return TestStep { id: "embed", ok: None, detail: "Kein Embedding-Modell".into(), latency_ms: 0 };
+    };
+    let start = Instant::now();
+    let res = client.embed(&model, &["Annalo".to_string()]).await;
+    let latency_ms = start.elapsed().as_millis() as u64;
+    match res {
+        Ok(v) => TestStep {
+            id: "embed",
+            ok: Some(true),
+            detail: format!("{model}: {} Dimensionen", v.first().map_or(0, Vec::len)),
+            latency_ms,
+        },
+        Err(e) => {
+            TestStep { id: "embed", ok: Some(false), detail: format!("{model}: {}", short_error(&e)), latency_ms }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct OllamaDetect {
+    found: bool,
+    url: String,
+    version: Option<String>,
+    models: Vec<String>,
+}
+
+/// Looks for an Ollama at `base_url` (default `http://localhost:11434`), directly and briefly.
+#[tauri::command]
+async fn ollama_detect(state: State<'_, AppState>, base_url: Option<String>) -> Result<OllamaDetect> {
+    let url = base_url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| annalo_core::ai::provider::OLLAMA_URL.into());
+    let provider = AiProvider::ollama("ollama", url.trim());
+    let url = provider.root();
+    let client = provider_client(&state.settings(), &provider, None, None)?;
+    let probe = async {
+        let version = client.ollama_version().await?;
+        let models = client.models().await.unwrap_or_default();
+        Ok::<_, Error>((version, models))
+    };
+    Ok(match tokio::time::timeout(Duration::from_secs(3), probe).await {
+        Ok(Ok((version, models))) => OllamaDetect { found: true, url, version: Some(version), models },
+        _ => OllamaDetect { found: false, url, version: None, models: vec![] },
+    })
+}
+
+#[derive(Serialize, Clone)]
+struct PullPayload<'a> {
+    request_id: &'a str,
+    status: &'a str,
+    total: Option<u64>,
+    completed: Option<u64>,
+}
+
+/// Downloads `model` into an Ollama (saved or not), reporting progress as `ai://pull` events;
+/// cancellable through `ai_cancel`.
+#[tauri::command]
+async fn ollama_pull(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request_id: String,
+    provider: AiProvider,
+    model: String,
+) -> Result<()> {
+    let model = model.trim().to_owned();
+    if model.is_empty() {
+        return Err(Error::State("Kein Modellname".into()));
+    }
+    let client = provider_client(&state.settings(), &provider, None, state.proxy_secret.get().as_deref())?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    lock(&state.cancels).insert(request_id.clone(), cancel.clone());
+    let res = client
+        .ollama_pull(&model, Some(&cancel), |p| {
+            let _ = app.emit(
+                "ai://pull",
+                PullPayload { request_id: &request_id, status: &p.status, total: p.total, completed: p.completed },
+            );
+        })
+        .await;
+    lock(&state.cancels).remove(&request_id);
+    lock(&state.server_models).remove(&provider.id);
+    res.inspect(|()| devlog::info("ai", format!("pulled „{model}“ into {}", provider.root())))
 }
 
 // ----------------------------------------------------------------------- AI
@@ -1542,12 +1908,16 @@ async fn ai_chat(
         .and_then(|m| m.content.clone())
         .ok_or_else(|| Error::State("no user message".into()))?;
     let settings = state.settings();
-    let client = state.client();
 
-    // Retrieval: embeddings are optional; keyword search always works offline.
-    let query_embedding = match &settings.embedding_model {
+    // Retrieval: embeddings are optional; keyword search always works offline. A private
+    // question is not sent to an embedding model of a provider that is not local.
+    let lower = prompt.to_lowercase();
+    let private = settings.privacy.local_only
+        || settings.router.private_markers.iter().any(|m| !m.trim().is_empty() && lower.contains(&m.to_lowercase()));
+    let embedder = embedding_client(&state).filter(|(c, _)| !private || c.provider().local);
+    let query_embedding = match &embedder {
         // Bounded: a slow or missing embedding model must not hold up the answer.
-        Some(m) if !m.is_empty() => {
+        Some((client, m)) => {
             match tokio::time::timeout(Duration::from_secs(8), client.embed(m, std::slice::from_ref(&prompt))).await {
                 Ok(Ok(mut v)) => v.pop(),
                 Ok(Err(e)) => {
@@ -1606,8 +1976,15 @@ async fn ai_chat(
         max_tokens: settings.ai.max_tokens,
     };
 
-    let (completion, meter, route) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
+    let (completion, meter, route) = complete_routed(&app, &state, &request_id, req, route).await?;
     Ok(ChatOutcome { completion, route, context, meter, cost_warning: cost_warning(&state) })
+}
+
+/// The client and model for embeddings, when an embedding model is set and its provider is on.
+fn embedding_client(state: &AppState) -> Option<(Arc<AiClient>, String)> {
+    let settings = state.settings();
+    let model = settings.embedding_model.filter(|m| !m.trim().is_empty())?;
+    state.client_for(&settings.embedding_provider).ok().map(|c| (c, model))
 }
 
 /// Streams `req` as `ai://stream` events for `request_id` (cancellable through `ai_cancel`)
@@ -1615,7 +1992,7 @@ async fn ai_chat(
 async fn stream_completion(
     app: &AppHandle,
     state: &AppState,
-    client: &LiteLlmClient,
+    client: &AiClient,
     request_id: &str,
     req: &ChatRequest,
 ) -> Result<(Completion, SessionMeter)> {
@@ -1632,8 +2009,12 @@ async fn stream_completion(
     devlog::debug(
         "ai",
         format!(
-            "{}: {} + {} tokens, finish {:?}",
-            u.model, u.prompt_tokens, u.completion_tokens, completion.finish_reason
+            "{} ({}): {} + {} tokens, finish {:?}",
+            u.model,
+            client.provider().id,
+            u.prompt_tokens,
+            u.completion_tokens,
+            completion.finish_reason
         ),
     );
 
@@ -1647,71 +2028,91 @@ async fn stream_completion(
     Ok((completion, meter))
 }
 
-/// The models the LiteLLM server offers, cached for a few minutes; empty when unknown (the
-/// server does not list them or cannot be reached: the request then shows the real error).
-async fn server_models(state: &AppState, client: &LiteLlmClient) -> Vec<String> {
-    let url = state.settings().litellm_base_url;
-    if let Some((u, at, models)) = lock(&state.server_models).as_ref()
-        && *u == url
-        && at.elapsed() < Duration::from_secs(300)
+/// What the switched-on providers offer: their model lists, cached for a few minutes (a
+/// provider that could not be asked for half a minute). A list is empty when unknown (the
+/// provider does not list its models or cannot be reached: the request then shows the real error).
+async fn catalog(state: &AppState) -> Catalog {
+    const FRESH: Duration = Duration::from_secs(300);
+    const RETRY: Duration = Duration::from_secs(30);
+    let settings = state.settings();
+    let mut models = HashMap::new();
+    let mut ask = vec![];
     {
-        return models.clone();
-    }
-    // The client's connect/read timeouts (Settings → Netzwerk) bound the wait.
-    match client.models().await {
-        Ok(models) => {
-            *lock(&state.server_models) = Some((url, Instant::now(), models.clone()));
-            models
+        let cache = lock(&state.server_models);
+        for (id, client) in state.clients() {
+            match cache.get(&id) {
+                Some((at, list)) if at.elapsed() < if list.is_some() { FRESH } else { RETRY } => {
+                    models.insert(id, list.clone().unwrap_or_default());
+                }
+                _ => ask.push((id, client)),
+            }
         }
-        _ => vec![],
     }
+    // The client's connect/read timeouts (Settings → Netzwerk) bound the wait, and so does this.
+    for (id, res) in annalo_core::ai::client::list_models(&ask, Duration::from_secs(10)).await {
+        let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of „{id}“: {e}"))).ok();
+        lock(&state.server_models).insert(id.clone(), (Instant::now(), list.clone()));
+        models.insert(id, list.unwrap_or_default());
+    }
+    Catalog::new(settings.providers, models)
 }
 
-/// Streams `req` on the route's model. A model the server does not offer is replaced by
-/// another configured model before sending; when LiteLLM still has no deployment for it, the
-/// request is repeated once on another model. Private content never leaves the local model.
+/// Streams `req` on the route's provider and model. A model its provider does not offer is
+/// replaced by another configured model before sending; when the provider still has no
+/// deployment for it or its backend fails, the request is repeated on another model, and when
+/// the provider cannot be reached at all, on the next provider. Private content only ever goes
+/// to the local tier's model or to providers marked local.
 async fn complete_routed(
     app: &AppHandle,
     state: &AppState,
-    client: &LiteLlmClient,
     request_id: &str,
     mut req: ChatRequest,
     route: RouteDecision,
 ) -> Result<(Completion, SessionMeter, RouteDecision)> {
     let settings = state.settings();
     let local_only = settings.privacy.local_only;
-    let available = server_models(state, client).await;
-    let requested = route.model.clone();
-    let mut route = availability::resolve(&settings.router, &route, &available, local_only).map_err(Error::State)?;
-    if route.model != requested {
-        devlog::warn("ai", format!("model „{requested}“ is not offered by the server, used „{}“ instead", route.model));
+    let mut catalog = catalog(state).await;
+    let requested = format!("{} ({})", route.model, route.provider);
+    let mut route = availability::resolve(&settings.router, &route, &catalog, local_only).map_err(Error::State)?;
+    if format!("{} ({})", route.model, route.provider) != requested {
+        devlog::warn(
+            "ai",
+            format!("„{requested}“ is not offered, used „{} ({})“ instead", route.model, route.provider),
+        );
     }
     req.model = route.model.clone();
-    let mut tried: Vec<String> = vec![];
+    let mut exclude = Exclude::default();
     let mut attempts = 0;
     loop {
         attempts += 1;
-        let (status, body) = match stream_completion(app, state, client, request_id, &req).await {
+        let client = state.client_for(&route.provider)?;
+        let err = match stream_completion(app, state, &client, request_id, &req).await {
             Ok((c, m)) => return Ok((c, m, route)),
-            Err(Error::Provider { status, body }) => (status, body),
-            Err(e) => return Err(e),
+            Err(e) => e,
         };
-        let give_up = |status: u16, body: String| {
-            if availability::model_unavailable(status, &body) {
-                Error::State(availability::unavailable_message(&req.model, &body))
-            } else {
-                Error::Provider { status, body }
+        let down = availability::unreachable(&err);
+        let retry = match &err {
+            _ if down => availability::Retry::OtherModel,
+            Error::Provider { status, body } => {
+                availability::retry_for(*status, body, !req.tools.is_empty(), req.temperature.is_some())
             }
+            _ => return Err(err),
         };
-        if attempts >= 4 {
-            return Err(give_up(status, body));
+        let give_up = |err: Error| match err {
+            Error::Provider { status, body } if availability::model_unavailable(status, &body) => {
+                Error::State(availability::unavailable_message(&req.model, &body))
+            }
+            e => e,
+        };
+        if attempts >= 5 {
+            return Err(give_up(err));
         }
-        match availability::retry_for(status, &body, !req.tools.is_empty(), req.temperature.is_some()) {
+        match retry {
             availability::Retry::Without { tools, temperature } => {
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ rejects {} ({status}), repeating without",
+                        "„{}“ rejects {}, repeating without",
                         req.model,
                         if tools { "tools" } else { "the temperature" }
                     ),
@@ -1725,25 +2126,46 @@ async fn complete_routed(
                 }
             }
             availability::Retry::OtherModel => {
-                tried.push(req.model.clone());
-                let next = if availability::local_required(&route, local_only) {
-                    None
+                let failed = ModelRef::new(&route.provider, &route.model);
+                if down {
+                    exclude.providers.push(failed.provider.clone());
                 } else {
-                    // The list may be stale: ask again before picking another model.
-                    *lock(&state.server_models) = None;
-                    let available = server_models(state, client).await;
-                    let exclude: Vec<&str> = tried.iter().map(String::as_str).collect();
-                    availability::fallback(&settings.router, route.tier, &available, &exclude)
+                    exclude.models.push(failed.clone());
+                    // The list may be stale: ask this provider again before picking another model.
+                    lock(&state.server_models).remove(&failed.provider);
+                    catalog = self::catalog(state).await;
+                }
+                let private = availability::local_required(&route, local_only);
+                let Some(next) = availability::fallback(&settings.router, route.tier, &catalog, &exclude, private)
+                else {
+                    if private && down {
+                        devlog::warn(
+                            "ai",
+                            format!("„{}“ not reachable, private content not sent elsewhere: {err}", failed.provider),
+                        );
+                        return Err(Error::State(format!(
+                            "{} ist nicht erreichbar. Vertrauliche Inhalte bleiben lokal: sie gehen nicht an Anbieter, \
+                             die nicht als lokal markiert sind.",
+                            catalog.name(&failed.provider)
+                        )));
+                    }
+                    return Err(give_up(err));
                 };
-                let Some(model) = next else {
-                    return Err(give_up(status, body));
-                };
-                devlog::warn("ai", format!("„{}“ failed ({status}), retrying on „{model}“", req.model));
-                route.reasons.push(format!("„{}“ ohne erreichbare Instanz → {model}", route.model));
-                route.model = model.clone();
-                req.model = model;
+                let label = catalog.label(&next);
+                devlog::warn(
+                    "ai",
+                    format!("„{}“ ({}) failed: {err}; retrying on „{label}“", failed.model, failed.provider),
+                );
+                route.reasons.push(if down {
+                    format!("{} nicht erreichbar → {label}", catalog.name(&failed.provider))
+                } else {
+                    format!("„{}“ ohne erreichbare Instanz → {label}", failed.model)
+                });
+                route.provider = next.provider;
+                route.model = next.model.clone();
+                req.model = next.model;
             }
-            availability::Retry::No => return Err(give_up(status, body)),
+            availability::Retry::No => return Err(give_up(err)),
         }
     }
 }
@@ -1767,7 +2189,6 @@ async fn ai_transform(
         return Err(Error::State("Keine Anweisung".into()));
     }
     prefs::check_cost_limit(&state, override_limit.unwrap_or(false))?;
-    let client = state.client();
     let page = match page_id {
         Some(id) => {
             let db = state.db();
@@ -1789,7 +2210,7 @@ async fn ai_transform(
         temperature: Some(0.2),
         max_tokens: state.settings().ai.max_tokens,
     };
-    let (mut completion, meter, route) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
+    let (mut completion, meter, route) = complete_routed(&app, &state, &request_id, req, route).await?;
     completion.content = transform::clean_output(&completion.content);
     Ok(ChatOutcome { completion, route, context: vec![], meter, cost_warning: cost_warning(&state) })
 }
@@ -1821,8 +2242,9 @@ async fn zeit_suggest_ai(
     if candidates.is_empty() {
         return Err(Error::State("Keine Netzpläne oder Vorgänge angelegt".into()));
     }
-    if state.secrets.get().is_none() {
-        return Err(Error::State("Keine KI verbunden (LiteLLM-Token fehlt)".into()));
+    // Without a usable provider (none, or all lack their key) there is nothing to ask.
+    if !state.clients().iter().any(|(_, c)| c.has_key() || !c.provider().needs_key()) {
+        return Err(Error::State("Keine KI verbunden (API-Schlüssel fehlt)".into()));
     }
     prefs::check_cost_limit(&state, false)?;
     let messages = zeitguess::messages(&line, &candidates, &las, page.as_ref().map(|d| d.page.title.as_str()));
@@ -1840,8 +2262,7 @@ async fn zeit_suggest_ai(
         max_tokens: Some(300),
     };
     let request_id = format!("zeitguess-{}", Utc::now().timestamp_nanos_opt().unwrap_or_default());
-    let client = state.client();
-    let (completion, _, _) = complete_routed(&app, &state, &client, &request_id, req, route).await?;
+    let (completion, _, _) = complete_routed(&app, &state, &request_id, req, route).await?;
     let raw = zeitguess::parse_answer(&completion.content)?;
     zeitguess::validate(&line, &raw, &candidates, &las, Local::now().date_naive()).map(Some)
 }
@@ -1931,18 +2352,32 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
     tools::execute_system_tool(&call, &http, settings.network.timeout()).await
 }
 
-/// Embeds note chunks that have no embedding yet. Returns the number indexed.
+/// Embeds note chunks that have no embedding yet. Returns the number indexed. An embedding
+/// model on a provider that is not local gets no private pages (they stay keyword-searchable),
+/// and nothing at all with Settings → Datenschutz „Nur lokal“.
 #[tauri::command]
 async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
-    let model = state
-        .settings()
-        .embedding_model
-        .filter(|m| !m.is_empty())
-        .ok_or_else(|| Error::State("Kein Embedding-Modell in den Einstellungen gewählt".into()))?;
-    let client = state.client();
+    let settings = state.settings();
+    if settings.embedding_model.as_deref().is_none_or(|m| m.trim().is_empty()) {
+        return Err(Error::State("Kein Embedding-Modell in den Einstellungen gewählt".into()));
+    }
+    let (client, model) = embedding_client(&state).ok_or_else(|| {
+        Error::State("Der Anbieter des Embedding-Modells ist nicht eingerichtet oder ausgeschaltet".into())
+    })?;
+    let local = client.provider().local;
+    if !local && settings.privacy.local_only {
+        return Err(Error::State(
+            "Datenschutz „Nur lokal“: das Embedding-Modell liegt bei einem Anbieter, der nicht als lokal markiert ist"
+                .into(),
+        ));
+    }
     let mut total = 0;
     loop {
-        let batch = rag::pending_blocks(&state.db(), 32)?;
+        let batch = if local {
+            rag::pending_blocks(&state.db(), 32)?
+        } else {
+            rag::pending_public_blocks(&state.db(), 32, &settings.router.private_markers)?
+        };
         if batch.is_empty() {
             return Ok(total);
         }
@@ -2412,7 +2847,8 @@ pub fn run() {
             let mica_on = settings.appearance.mica;
             let custom_frame = settings.appearance.custom_titlebar;
             let geometry = prefs::saved_window(app.handle(), &settings);
-            let ai = AiRuntime::new(settings, secrets.get(), proxy_secret.get());
+            let keys = provider_keys(&dir, &settings.providers);
+            let ai = AiRuntime::new(settings, &keys, proxy_secret.get());
 
             app.manage(AppState {
                 db: Mutex::new(db),
@@ -2428,7 +2864,7 @@ pub fn run() {
                 idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
                 usage: Mutex::new(WindowUsage::default()),
                 cancels: Mutex::new(HashMap::new()),
-                server_models: Mutex::new(None),
+                server_models: Mutex::new(HashMap::new()),
             });
 
             app.manage(desktop::Desktop::default());
@@ -2556,6 +2992,11 @@ pub fn run() {
             settings_save,
             api_key_set,
             ai_test_connection,
+            provider_key_set,
+            ai_provider_models,
+            ai_provider_test,
+            ollama_detect,
+            ollama_pull,
             ai_route_preview,
             ai_models,
             ai_meter,

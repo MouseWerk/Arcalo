@@ -108,6 +108,15 @@ export const api = {
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),
   setApiKey: (key: string | null) => call<T.SettingsView>("api_key_set", { key }),
   testConnection: (baseUrl: string | null, apiKey: string | null) => call<T.ConnectionTest>("ai_test_connection", { baseUrl, apiKey }),
+  /** Stores (null: removes) the key of an AI provider in the credential store. */
+  setProviderKey: (id: string, key: string | null) => call<T.SettingsView>("provider_key_set", { id, key }),
+  /** Models of a provider (saved or not); an unsaved key can be tried. */
+  providerModels: (provider: T.AiProvider, key: string | null = null) => call<T.ConnectionTest>("ai_provider_models", { provider, key }),
+  /** Reachability, key, chat, tools and embeddings of a provider. */
+  testProvider: (provider: T.AiProvider, key: string | null = null, model: string | null = null) => call<T.ProviderTest>("ai_provider_test", { provider, key, model }),
+  detectOllama: (baseUrl: string | null = null) => call<T.OllamaDetect>("ollama_detect", { baseUrl }),
+  /** Downloads a model into Ollama; progress arrives as `ai://pull` events. */
+  pullOllama: (requestId: string, provider: T.AiProvider, model: string) => call<void>("ollama_pull", { requestId, provider, model }),
   removeDemo: () => call<number>("demo_remove"),
   onboardingNeeded: () => call<boolean>("onboarding_needed"),
   finishOnboarding: (samples: boolean) => call<void>("onboarding_finish", { samples }),

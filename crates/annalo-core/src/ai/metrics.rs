@@ -31,8 +31,86 @@ impl Default for PriceTable {
     }
 }
 
+/// One row of the editable price table (Settings → KI → Preise): per 1M input/output tokens
+/// in USD, for a model name (`*` at the end = prefix) on one provider or on any (`""`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PriceRule {
+    #[serde(default)]
+    pub provider: String,
+    pub model: String,
+    pub input_per_mtok: f64,
+    pub output_per_mtok: f64,
+}
+
+/// Starting values of the price table: list prices of common cloud models. Prices change;
+/// the table is meant to be edited. LiteLLM reports its own cost, local providers are free.
+pub fn default_price_rules() -> Vec<PriceRule> {
+    [
+        ("gpt-4o*", 2.5, 10.0),
+        ("gpt-4o-mini*", 0.15, 0.6),
+        ("gpt-4.1*", 2.0, 8.0),
+        ("gpt-4.1-mini*", 0.4, 1.6),
+        ("gpt-4.1-nano*", 0.1, 0.4),
+        ("o3*", 2.0, 8.0),
+        ("o3-mini*", 1.1, 4.4),
+        ("o4-mini*", 1.1, 4.4),
+        ("text-embedding-3-small*", 0.02, 0.0),
+        ("text-embedding-3-large*", 0.13, 0.0),
+        ("mistral-large*", 2.0, 6.0),
+        ("mistral-small*", 0.1, 0.3),
+        ("mistral-embed*", 0.1, 0.0),
+        ("llama-3.3-70b*", 0.59, 0.79),
+        ("llama-3.1-8b*", 0.05, 0.08),
+    ]
+    .into_iter()
+    .map(|(model, i, o)| PriceRule {
+        provider: String::new(),
+        model: model.into(),
+        input_per_mtok: i,
+        output_per_mtok: o,
+    })
+    .collect()
+}
+
+/// Rules with an empty model or unusable prices are dropped; prices are at least 0.
+pub fn normalize_price_rules(rules: Vec<PriceRule>) -> Vec<PriceRule> {
+    rules
+        .into_iter()
+        .filter_map(|mut r| {
+            r.model = r.model.trim().to_owned();
+            r.provider = r.provider.trim().to_owned();
+            let ok = |v: f64| v.is_finite().then_some(v.max(0.0));
+            r.input_per_mtok = ok(r.input_per_mtok)?;
+            r.output_per_mtok = ok(r.output_per_mtok)?;
+            (!r.model.is_empty()).then_some(r)
+        })
+        .collect()
+}
+
 impl PriceTable {
+    /// The table for one provider: the built-in free local runtimes plus the rules for this
+    /// provider or for any; rules for this provider win over general ones of the same name.
+    pub fn from_rules(rules: &[PriceRule], provider: &str) -> PriceTable {
+        let mut table = PriceTable::default();
+        let own = rules.iter().filter(|r| r.provider == provider);
+        let general = rules.iter().filter(|r| r.provider.is_empty());
+        for r in own.chain(general) {
+            if !table.rules.iter().any(|(k, _)| *k == r.model) {
+                table.rules.push((
+                    r.model.clone(),
+                    ModelPrice { input_per_mtok: r.input_per_mtok, output_per_mtok: r.output_per_mtok },
+                ));
+            }
+        }
+        table
+    }
+
     pub fn price(&self, model: &str) -> Option<ModelPrice> {
+        // A vendor prefix (OpenRouter's `openai/gpt-4o`) is tried without it as well.
+        self.price_exact(model).or_else(|| model.rsplit_once('/').and_then(|(_, m)| self.price_exact(m)))
+    }
+
+    fn price_exact(&self, model: &str) -> Option<ModelPrice> {
         // Exact matches win over prefixes; longer prefixes over shorter ones.
         if let Some((_, p)) = self.rules.iter().find(|(k, _)| k == model) {
             return Some(*p);
@@ -162,6 +240,34 @@ mod tests {
         assert_eq!(t.cost("openai/small", 1_000_000, 500_000), Some(2.0));
         assert_eq!(t.cost("openai/big", 1_000_000, 0), Some(10.0));
         assert_eq!(t.cost("unknown", 1, 1), None);
+    }
+
+    #[test]
+    fn price_table_from_settings() {
+        let mut rules = default_price_rules();
+        rules.push(PriceRule {
+            provider: "azure".into(),
+            model: "gpt-4o*".into(),
+            input_per_mtok: 5.0,
+            output_per_mtok: 15.0,
+        });
+        let openai = PriceTable::from_rules(&rules, "openai");
+        assert_eq!(openai.cost("gpt-4o-2024-08-06", 1_000_000, 0), Some(2.5));
+        assert_eq!(openai.cost("gpt-4o-mini", 1_000_000, 1_000_000), Some(0.75), "longer prefix wins");
+        assert_eq!(openai.cost("openai/gpt-4o", 0, 1_000_000), Some(10.0), "vendor prefix");
+        assert_eq!(openai.cost("ollama/llama3.2", 1000, 1000), Some(0.0));
+        assert_eq!(openai.cost("mein-modell", 1000, 1000), None);
+        let azure = PriceTable::from_rules(&rules, "azure");
+        assert_eq!(azure.cost("gpt-4o", 1_000_000, 0), Some(5.0), "provider rule wins");
+        let cleaned = normalize_price_rules(vec![
+            PriceRule { provider: " ".into(), model: " m ".into(), input_per_mtok: -1.0, output_per_mtok: 2.0 },
+            PriceRule { provider: String::new(), model: "".into(), input_per_mtok: 1.0, output_per_mtok: 1.0 },
+            PriceRule { provider: String::new(), model: "x".into(), input_per_mtok: f64::NAN, output_per_mtok: 1.0 },
+        ]);
+        assert_eq!(
+            cleaned,
+            [PriceRule { provider: String::new(), model: "m".into(), input_per_mtok: 0.0, output_per_mtok: 2.0 }]
+        );
     }
 
     #[test]

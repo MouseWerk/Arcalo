@@ -10,10 +10,10 @@
                                              crates/annalo-core
             ┌─────────┬──────────┬───────────┬──────────┬──────────┬───────────────┐
             │ db      │ zeit     │ tracking  │ netzplan │ export   │ ai::{client,  │
-            │ search  │ (parser) │ (budget)  │ (CPM)    │          │ router, rag,  │
-            │ graph   │          │ activity  │          │          │ metrics,tools}│
+            │ search  │ (parser) │ (budget)  │ (CPM)    │          │ provider,rag, │
+            │ graph   │          │ activity  │          │          │ router, tools}│
             └─────────┴──────────┴───────────┴──────────┴──────────┴───────────────┘
-                      SQLite (WAL, FTS5, f32 BLOB embeddings)     LiteLLM proxy (HTTP/SSE)
+                      SQLite (WAL, FTS5, f32 BLOB embeddings)     AI providers (HTTP/SSE)
 ```
 
 All logic lives in `annalo-core` and is tested there; the shell only wires state,
@@ -34,7 +34,7 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `tasks` | Task items (`- [ ] …` outside code blocks) per page: ordinal, line, text, done, due date (`due:YYYY-MM-DD` / `due:YYYY-MM-DD`), priority (`!!` hoch, `!` mittel), tags. Rebuilt with links and tags on every save; checking a task off rewrites exactly that checkbox and saves the page |
 | `pages_fts` | FTS5 over page titles (title hits rank first in search) |
 | `page_versions` | Earlier contents of a page (v6): `page_id` (cascade on purge), `content`, `created_at` |
-| `settings` | Application settings as JSON. The LiteLLM API key is **not** stored here; the shell keeps it in the Windows Credential Manager |
+| `settings` | Application settings as JSON. The API keys of the AI providers are **not** stored here; the shell keeps them in the Windows Credential Manager / macOS Keychain |
 | `notes_blocks_fts`, `time_entries_fts` | FTS5 external-content indexes (unicode61, diacritics removed), kept in sync by triggers |
 | `ai_usage` | Per-request tokens, cost, TTFT and tokens/s |
 
@@ -132,7 +132,7 @@ Migration v2 converts the old block model: blocks are concatenated into
 - `Prepared` resolves the settings once (CA file read and parsed, plan built) and applies them to any
   `reqwest::ClientBuilder`: connect timeout, `tls_certs_merge` (platform verifier plus the extra roots),
   `danger_accept_invalid_certs` when switched on, and a `Proxy::custom` that asks the plan (credentials in the proxy URL
-  → Basic auth). The LiteLLM client and the HTTP tool client live in `AiRuntime` and are rebuilt with it on every
+  → Basic auth). The clients of the AI providers and the HTTP tool client live in `AiRuntime` and are rebuilt with it on every
   settings save, API-key or proxy-password change; the updater gets it through `configure_client` for check and
   download; the connection test builds one from unsaved settings and reports the proxy the plan chose.
 - Git: `git_network` turns the plan for the remote URL into `http_proxy`/`https_proxy`/`no_proxy` (or removes the proxy
@@ -141,7 +141,7 @@ Migration v2 converts the old block model: blocks are concatenated into
   `GIT_CONFIG_*`; the proxy password is redacted from git's output.
 - PAC: the UI evaluates the script (`ui/src/lib/pac.ts`, standard helpers without DNS) in an iframe served by the
   `annalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
-  `unsafe-eval`. Answers are stored per host in `network.pac_results` (`*` = LiteLLM host, used for other hosts) on
+  `unsafe-eval`. Answers are stored per host in `network.pac_results` (`*` = LiteLLM host, used for other hosts; every AI provider host has its own) on
   save, test and start.
 - The proxy password lives in the credential store (account `proxy-password`), never in the settings or exports.
 
@@ -254,7 +254,39 @@ Migration v2 converts the old block model: blocks are concatenated into
   (hours, deduplicated descriptions) plus a total per day; offered to the assistant as the `time_summary` tool.
 - **Streaming** (`ai/client.rs`): SSE decoder tolerant of split chunks and keep-alives;
   tool-call deltas are merged by index; `stream_options.include_usage` for exact counts,
-  LiteLLM's `x-litellm-response-cost` header preferred for cost, the price table as fallback.
+  LiteLLM's `x-litellm-response-cost` header preferred for cost, the price table as fallback, 0 for local providers.
+
+## AI providers (`ai/provider.rs`, `ai/availability.rs`, shell `AiRuntime`)
+
+- `settings.providers`: `{id, name, kind, base_url, local, enabled, bypass_proxy, api_version, models}` in order of preference.
+  Kinds: `litellm` (`<root>/v1/…`, bearer), `openai` (any OpenAI-compatible API, base URL with version, `…/chat/completions`,
+  bearer), `azure` (`<endpoint>/openai/deployments/<deployment>/…?api-version=…`, `api-key` header, deployments listed by
+  hand in `models` because an API key cannot list them) and `ollama` (`<root>/v1/…` for chat and embeddings, native
+  `/api/tags`, `/api/version`, `/api/pull`, no key). Unknown kinds load as `openai`. `normalize` checks the addresses and gives
+  every provider a unique `[a-z0-9-]` id.
+- Keys: one credential per provider id (account `ai-provider-<id>`); the provider `litellm` keeps the account of the earlier
+  single LiteLLM token (`litellm-api-key`), so nothing has to be re-entered. Keys of removed providers are deleted on save.
+- Migration: settings without `providers` (1.2 and older) get one provider `litellm` from `litellm_base_url`, and the tiers and
+  the embedding model point at it. `litellm_base_url` stays as a mirror of that provider's address (`Settings::sync_legacy`):
+  when only the old field changed (older versions, scripts), it moves the provider; otherwise the provider's address wins.
+- Tiers: `router.{local,standard,reasoning}_provider` + `_model`, `embedding_provider` + `embedding_model`; `""` = the first
+  provider. `RouteDecision.provider` names the provider a request went to.
+- `AiRuntime` holds one `AiClient` per enabled provider, each with its key, its price table (`PriceTable::from_rules`:
+  rules for this provider, then general ones, plus free local runtimes) and its HTTP client: `bypass_proxy` uses the network
+  settings with mode `none` (default for addresses on localhost), otherwise Settings → Netzwerk applies as for everything else.
+- `Catalog`: the model list of every enabled provider, asked in parallel (10 s each), cached 5 minutes (failures 30 s).
+  `resolve` replaces a model its provider does not list; `complete_routed` retries without tools/temperature when a model
+  rejects them, on another model after a model error or 5xx, and on the next provider when one cannot be reached
+  (`unreachable`: connect error or connect timeout), at most 5 attempts.
+- Privacy: content with a private marker or with Datenschutz „Nur lokal“ (`local_required`) only goes to the local tier's
+  configured model or to providers marked `local` (`private_allowed`), in `resolve` and in every fallback; when none is left the
+  request is refused with a message instead of going to a cloud provider. The query embedding of a private question and the
+  embeddings of pages carrying a private marker (`rag::pending_public_blocks`) are not sent to an embedding provider that is
+  not local; with „Nur lokal“ such a provider does not index at all.
+- Settings → KI (`AiProvidersSection.tsx`, `ProviderDialog.tsx`): the status of every provider (`ai_provider_models`, works for
+  unsaved providers), an offer to add an Ollama found at `http://localhost:11434` (`ollama_detect`), the dialog's
+  step-by-step test (`ai_provider_test`: reach, auth, chat, tools, embeddings; nothing is recorded as usage), `ollama_pull`
+  with `ai://pull` progress events, the tier pickers and the price table.
 
 ## How the concept spec maps to this implementation
 
@@ -271,7 +303,7 @@ Migration v2 converts the old block model: blocks are concatenated into
 
 ## Verification status
 
-- `annalo-core`: unit and integration tests (including a fake LiteLLM SSE server); `cargo clippy` clean.
+- `annalo-core`: unit and integration tests (including fake LiteLLM, Ollama, OpenAI-compatible and Azure servers); `cargo clippy` clean.
 - End-to-end: `e2e/run.sh` builds the desktop app with the production frontend embedded and drives it through
   WebDriver (`tauri-driver` + WebKitWebDriver under Xvfb): notes, links, rename, tags, palette, tabs, find,
   daily notes, `/zeit`, timer, timesheet, export, projects, settings (LiteLLM URL, token, models), the assistant

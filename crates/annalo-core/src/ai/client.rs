@@ -1,4 +1,5 @@
-//! Client for a LiteLLM proxy (OpenAI-compatible `/v1/chat/completions`).
+//! Client for the OpenAI chat protocol (`/chat/completions`, `/embeddings`, `/models`) as
+//! spoken by LiteLLM, OpenAI-compatible APIs, Azure OpenAI and Ollama.
 
 use std::time::{Duration, Instant};
 
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::metrics::{PriceTable, StreamTimer, UsageRecord, estimate_tokens};
+use super::provider::{AiProvider, ProviderKind, PullProgress, parse_model_list};
 use crate::error::{Error, Result};
 
 /// A stream that delivers nothing for this long is treated as dead.
@@ -92,35 +94,41 @@ pub struct Completion {
     pub exact_usage: bool,
 }
 
-pub struct LiteLlmClient {
-    base_url: String,
+/// Client of one provider ([`AiProvider`]): LiteLLM, an OpenAI-compatible API, Azure OpenAI or Ollama.
+pub struct AiClient {
+    provider: AiProvider,
     api_key: Option<String>,
     http: reqwest::Client,
     pub prices: PriceTable,
 }
 
-impl LiteLlmClient {
-    /// `base_url` is the proxy root, e.g. `http://localhost:4000`.
+impl AiClient {
+    /// A LiteLLM proxy at `base_url` (its root, e.g. `http://localhost:4000`).
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Self {
         Self::with_http(base_url, api_key, reqwest::Client::new())
     }
 
-    /// With a configured HTTP client (proxy, extra CA, timeouts: [`crate::network::http_client`]).
+    /// A LiteLLM proxy with a configured HTTP client (proxy, extra CA, timeouts:
+    /// [`crate::network::http_client`]).
     pub fn with_http(base_url: impl Into<String>, api_key: Option<String>, http: reqwest::Client) -> Self {
-        LiteLlmClient {
-            base_url: base_url.into().trim_end_matches('/').to_owned(),
-            api_key,
-            http,
-            prices: PriceTable::default(),
-        }
+        Self::for_provider(AiProvider::litellm(&base_url.into()), api_key, http)
     }
 
-    fn post(&self, path: &str) -> reqwest::RequestBuilder {
-        let req = self.http.post(format!("{}{path}", self.base_url));
-        match &self.api_key {
-            Some(k) => req.bearer_auth(k),
-            None => req,
-        }
+    /// A client of `provider`; the HTTP client should come from its [`AiProvider::network`].
+    pub fn for_provider(provider: AiProvider, api_key: Option<String>, http: reqwest::Client) -> Self {
+        AiClient { provider, api_key: api_key.filter(|k| !k.is_empty()), http, prices: PriceTable::default() }
+    }
+
+    pub fn provider(&self) -> &AiProvider {
+        &self.provider
+    }
+
+    pub fn has_key(&self) -> bool {
+        self.api_key.is_some()
+    }
+
+    fn auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        self.provider.authorize(req, self.api_key.as_deref())
     }
 
     async fn check(resp: reqwest::Response) -> Result<reqwest::Response> {
@@ -159,12 +167,12 @@ impl LiteLlmClient {
         };
         let mut acc = StreamAccumulator::new(StreamTimer::start_at(timer_start));
 
-        let send = self.post("/v1/chat/completions").json(&body).send();
+        let send = self.auth(self.http.post(self.provider.chat_url(&req.model))).json(&body).send();
         let resp = tokio::select! {
             r = send => Self::check(r?).await?,
             _ = wait_cancel() => {
                 acc.finish_reason = Some("cancelled".into());
-                return Ok(acc.finish(&req.model, &req.messages, None, &self.prices));
+                return Ok(self.finish(acc, req, None));
             }
         };
         // LiteLLM reports its own cost calculation in this header.
@@ -199,10 +207,16 @@ impl LiteLlmClient {
                 acc.apply(&serde_json::from_str(&data)?, &mut on_event);
             }
         }
-        Ok(acc.finish(&req.model, &req.messages, header_cost, &self.prices))
+        Ok(self.finish(acc, req, header_cost))
     }
 
-    /// Embeds a batch of texts via `/v1/embeddings`.
+    /// Local providers cost nothing, whatever the price table says.
+    fn finish(&self, acc: StreamAccumulator, req: &ChatRequest, header_cost: Option<f64>) -> Completion {
+        let free = self.provider.local.then_some(0.0);
+        acc.finish(&req.model, &req.messages, free.or(header_cost), &self.prices)
+    }
+
+    /// Embeds a batch of texts via `/embeddings`.
     pub async fn embed(&self, model: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
         #[derive(Deserialize)]
         struct Item {
@@ -213,9 +227,8 @@ impl LiteLlmClient {
         struct Resp {
             data: Vec<Item>,
         }
-        let resp =
-            Self::check(self.post("/v1/embeddings").json(&json!({ "model": model, "input": inputs })).send().await?)
-                .await?;
+        let req = self.auth(self.http.post(self.provider.embeddings_url(model)));
+        let resp = Self::check(req.json(&json!({ "model": model, "input": inputs })).send().await?).await?;
         let mut data = resp.json::<Resp>().await?.data;
         data.sort_by_key(|i| i.index);
         if data.len() != inputs.len() {
@@ -227,18 +240,80 @@ impl LiteLlmClient {
         Ok(data.into_iter().map(|i| i.embedding).collect())
     }
 
-    /// Lists the models the proxy exposes.
+    /// Lists the models the provider offers, plus the ones added by hand. Ollama is asked
+    /// through its native `/api/tags` first; Azure cannot list its deployments, so only the
+    /// hand-added names are returned.
     pub async fn models(&self) -> Result<Vec<String>> {
-        let mut req = self.http.get(format!("{}/v1/models", self.base_url));
-        if let Some(k) = &self.api_key {
-            req = req.bearer_auth(k);
+        let mut listed = match (self.provider.kind, self.provider.models_url()) {
+            (_, None) => vec![],
+            (ProviderKind::Ollama, Some(url)) => match self.get_json(&self.provider.ollama_url("tags")).await {
+                Ok(v) => parse_model_list(&v),
+                Err(Error::Provider { .. }) => parse_model_list(&self.get_json(&url).await?),
+                Err(e) => return Err(e),
+            },
+            (_, Some(url)) => parse_model_list(&self.get_json(&url).await?),
+        };
+        for m in &self.provider.models {
+            if !listed.contains(m) {
+                listed.push(m.clone());
+            }
         }
-        let v: Value = Self::check(req.send().await?).await?.json().await?;
-        Ok(v["data"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(str::to_owned)).collect())
-            .unwrap_or_default())
+        Ok(listed)
     }
+
+    async fn get_json(&self, url: &str) -> Result<Value> {
+        Ok(Self::check(self.auth(self.http.get(url)).send().await?).await?.json().await?)
+    }
+
+    /// Ollama's version (`/api/version`): whether an Ollama answers at the address.
+    pub async fn ollama_version(&self) -> Result<String> {
+        let v = self.get_json(&self.provider.ollama_url("version")).await?;
+        Ok(v["version"].as_str().unwrap_or_default().to_owned())
+    }
+
+    /// Downloads `model` into Ollama (`/api/pull`), reporting every progress line.
+    pub async fn ollama_pull(
+        &self,
+        model: &str,
+        cancel: Option<&std::sync::atomic::AtomicBool>,
+        mut on_progress: impl FnMut(&PullProgress),
+    ) -> Result<()> {
+        let req = self.http.post(self.provider.ollama_url("pull")).json(&json!({ "model": model, "stream": true }));
+        let resp = Self::check(req.send().await?).await?;
+        let mut stream = resp.bytes_stream();
+        let mut buf: Vec<u8> = vec![];
+        while let Some(chunk) = stream.next().await {
+            if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+                return Err(Error::State("Download abgebrochen".into()));
+            }
+            buf.extend_from_slice(&chunk?);
+            while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=nl).collect();
+                let Ok(p) = serde_json::from_slice::<PullProgress>(&line) else { continue };
+                if let Some(e) = &p.error {
+                    return Err(Error::Provider { status: 200, body: e.clone() });
+                }
+                on_progress(&p);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Asks every client for its models at once, each bounded by `timeout`; returns the answers in
+/// the order of `clients`.
+pub async fn list_models(
+    clients: &[(String, std::sync::Arc<AiClient>)],
+    timeout: Duration,
+) -> Vec<(String, Result<Vec<String>>)> {
+    let asks = clients.iter().map(|(id, c)| async move {
+        let r = match tokio::time::timeout(timeout, c.models()).await {
+            Ok(r) => r,
+            Err(_) => Err(Error::Provider { status: 0, body: "Keine Antwort (Zeitüberschreitung)".into() }),
+        };
+        (id.clone(), r)
+    });
+    futures_util::future::join_all(asks).await
 }
 
 /// Splits a byte stream into Server-Sent-Event `data:` payloads.

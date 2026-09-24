@@ -1,6 +1,6 @@
-//! End-to-end test of the LiteLLM client against a minimal fake proxy.
+//! End-to-end test of the AI client against a minimal fake proxy.
 
-use annalo_core::ai::client::{ChatMessage, ChatRequest, LiteLlmClient, StreamEvent};
+use annalo_core::ai::client::{AiClient, ChatMessage, ChatRequest, StreamEvent};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -51,7 +51,7 @@ async fn streams_deltas_and_reports_usage_and_cost() {
         "data: [DONE]\n\n",
     );
     let (url, server) = fake_proxy(body, "x-litellm-response-cost: 0.0042\r\n").await;
-    let client = LiteLlmClient::new(url, Some("sk-test".into()));
+    let client = AiClient::new(url, Some("sk-test".into()));
     let req = ChatRequest {
         model: "cloud-standard".into(),
         messages: vec![ChatMessage::user("Was ist ein Netzplan?")],
@@ -93,7 +93,7 @@ async fn surfaces_provider_errors() {
             format!("HTTP/1.1 404 Not Found\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
         sock.write_all(resp.as_bytes()).await.unwrap();
     });
-    let client = LiteLlmClient::new(format!("http://{addr}"), None);
+    let client = AiClient::new(format!("http://{addr}"), None);
     let err = client
         .chat_stream(
             &ChatRequest { model: "nope".into(), messages: vec![ChatMessage::user("hi")], ..Default::default() },

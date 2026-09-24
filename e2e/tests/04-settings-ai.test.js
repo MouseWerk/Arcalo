@@ -14,24 +14,34 @@ after(async () => {
   await llm?.close();
 });
 
+// The LiteLLM server is the provider „LiteLLM“ (Settings → KI & Modelle → KI-Anbieter); its
+// address and token are edited in the provider dialog.
+const editLiteLLM = async () => {
+  await app.click('[data-provider="litellm"] button[aria-label="LiteLLM bearbeiten"]');
+  await app.waitFor(".dialog");
+};
+
 test("settings: server URL, token and connection test", async () => {
   await app.keys(["Control", ","]);
-  await app.waitText(".settings-head h1", /KI & LiteLLM/);
-  const url = await app.$('input[aria-label="Server-URL"]');
+  await app.waitText(".settings-head h1", /KI & Modelle/);
+  await editLiteLLM();
+  const url = await app.$('.dialog input[aria-label="Server-URL"]');
   await url.setValue(llm.url);
+  await app.click(".dialog .btn-primary");
   await app.waitFor(".savebar");
   await app.click(".savebar .btn-primary");
   await app.waitText(".toast-title", /Einstellungen gespeichert/);
 
   // Without a token the server refuses.
-  await app.click(".set-row .btn-secondary");
-  await app.waitText(".conn", /Keine Verbindung/);
+  await app.click('button[aria-label="Verbindungen prüfen"]');
+  await app.waitText('[data-provider="litellm"] .conn', /Keine Verbindung/);
 
-  const key = await app.$('input[aria-label="API-Token"]');
+  await editLiteLLM();
+  const key = await app.$('.dialog input[aria-label="API-Token"]');
   await key.setValue(llm.apiKey);
-  await app.click(".key-input + .btn-primary");
+  await app.click(".dialog .btn-primary");
   await app.waitText(".toast-title", /API-Token gespeichert/);
-  await app.waitText(".conn", /Verbunden · 4 Modelle/);
+  await app.waitText('[data-provider="litellm"] .conn', /Verbunden · 4 Modelle/);
   await app.shot("settings-ai");
   const view = await app.invoke("settings_get");
   assert.equal(view.api_key_set, true);
@@ -138,9 +148,11 @@ test("status bar shows session tokens and cost", async () => {
 
 test("removing the token disables access", async () => {
   await app.keys(["Control", ","]);
-  await app.click('button[aria-label="Token entfernen"]');
+  await editLiteLLM();
+  await app.click('.dialog button[aria-label="Token entfernen"]');
   await app.waitText(".toast-title", /API-Token entfernt/);
-  await app.waitText(".conn", /Keine Verbindung/);
+  await app.click('.dialog button[aria-label="Schließen"]');
+  await app.waitText('[data-provider="litellm"] .conn', /Keine Verbindung/);
 });
 
 test("no console errors", async () => {
