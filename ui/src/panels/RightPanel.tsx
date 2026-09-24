@@ -1,8 +1,8 @@
 // Right panel: assistant, outline and links of the active page.
 
-import { ListTree, Link2, Sparkles, X } from "lucide-react";
-import { useApp, savePref, type PanelTab } from "../store/app";
-import { IconButton, EmptyState } from "../components/ui";
+import { ListTree, Link2, Sparkles } from "lucide-react";
+import { useApp, type PanelTab } from "../store/app";
+import { EmptyState } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { AssistantPanel } from "./AssistantPanel";
 import { api } from "../lib/api";
@@ -25,17 +25,6 @@ export function RightPanel() {
             <span>{t.label}</span>
           </button>
         ))}
-        <span className="grow" />
-        <IconButton
-          icon={X}
-          label="Panel schließen"
-          size={24}
-          iconSize={14}
-          onClick={() => {
-            s().set({ panelOpen: false });
-            savePref("annalo.panel", false);
-          }}
-        />
       </div>
       <div className="panel-body">
         <div hidden={tab !== "assistant"} className="panel-fill">

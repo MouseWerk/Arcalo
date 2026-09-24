@@ -454,3 +454,6 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 .zeit-confirm-conf.conf-unsicher { color: var(--warning); }
 .zeit-confirm-reason { color: var(--text-2); font-size: var(--fs-xs); padding-left: 22px; }
 .zeit-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 22px; }
+
+/* Ctrl (⌘) held: web links in notes open on click, so they show the hand cursor and underline. */
+:root.mod-held .ProseMirror a[href]:not([data-wikilink]) { cursor: pointer; text-decoration-thickness: 2px; }
