@@ -22,10 +22,14 @@ function read(): SplashPrefs {
   }
 }
 
-/** Remembered for the next start (called whenever the appearance settings apply). */
+let last = "";
+/** Remembered for the next start; merged with what is stored, written only on a change. */
 export function rememberSplash(p: SplashPrefs) {
+  const next = JSON.stringify({ ...read(), ...p });
+  if (next === last) return;
+  last = next;
   try {
-    localStorage.setItem(KEY, JSON.stringify(p));
+    localStorage.setItem(KEY, next);
   } catch {
     // Private mode or full storage: the next start uses the system colors.
   }

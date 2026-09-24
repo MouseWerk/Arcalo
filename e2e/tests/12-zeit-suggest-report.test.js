@@ -40,7 +40,7 @@ test("/zeit suggests Netzplan/Vorgang, Enter picks it, then books", async () => 
   await app.shot("zeit-suggest");
   // Typing narrows the list (description text matches too).
   await app.type("01/102");
-  await app.browser.waitUntil(async () => (await popupItems()).length === 1, { timeout: 4000 });
+  await app.browser.waitUntil(async () => (await popupItems()).length === 1, { timeout: 4000, timeoutMsg: `narrowed to ${JSON.stringify(await popupItems())}` });
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await caretLine()) === "/zeit NP-8801/1020 ", { timeout: 4000, timeoutMsg: `line is ${await caretLine()}` });
   assert.equal((await entries()).filter((e) => e.description === "Test").length, 0, "Enter picked, did not book");

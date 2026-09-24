@@ -2,6 +2,7 @@
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
+import { rememberSplash } from "./splash";
 import { useApp } from "../store/app";
 import { collapsePages, foldersBelow } from "./collapsed";
 import { importSummary } from "./format";
@@ -9,6 +10,7 @@ import { importSummary } from "./format";
 export function applyTheme(theme: "system" | "light" | "dark") {
   const dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  rememberSplash({ dark });
   import("@tauri-apps/api/core").then(({ invoke }) => invoke("window_set_theme", { dark })).catch(() => {});
 }
 

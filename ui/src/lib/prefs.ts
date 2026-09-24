@@ -2,7 +2,7 @@
 // Zeiterfassung, Tastatur) to the document and the formatting helpers.
 
 import type { Settings } from "./types";
-import { accentCss } from "./color";
+import { accentCss, accentHex } from "./color";
 import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
@@ -30,15 +30,9 @@ export function applyPrefs(s: Settings) {
     const css = accentCss(a.accent);
     if (style.textContent !== css) style.textContent = css;
     setZoom(a.ui_scale);
-    // The startup animation of the next start uses the theme and accent color of now.
-    requestAnimationFrame(() =>
-      rememberSplash({
-        dark: root.dataset.theme === "dark",
-        accent: getComputedStyle(root).getPropertyValue("--accent").trim(),
-        off: a.startup_animation === false,
-        reduced: a.reduce_motion,
-      }),
-    );
+    // The startup animation of the next start uses these (written only when they change:
+    // this runs often, and the page must not do any extra work while typing).
+    rememberSplash({ accent: accentHex(a.accent) ?? undefined, off: a.startup_animation === false, reduced: a.reduce_motion });
   }
   if (s.locale) {
     setLang(s.locale.language);
