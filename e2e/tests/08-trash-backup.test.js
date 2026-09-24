@@ -7,7 +7,8 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-before(async () => (app = await launch()));
+// The daily backup waits 3 minutes after the start; shortened here.
+before(async () => (app = await launch({ env: { ANNALO_BACKUP_DELAY_SECS: "2" } })));
 after(async () => app?.close());
 
 const PAGE = "Jour fixe 22.09.";
@@ -67,7 +68,7 @@ test("purging from the trash deletes the page for good", async () => {
 });
 
 test("the database is backed up on start and on demand", async () => {
-  // The daily backup runs right after start.
+  // The daily backup runs shortly after start.
   await app.browser.waitUntil(async () => (await app.invoke("backup_list")).length > 0, { timeout: 10000, timeoutMsg: "no startup backup" });
   const b = await app.invoke("backup_now");
   assert.match(b.file_name, /^annalo-\d{8}-\d{6}\.db$/);

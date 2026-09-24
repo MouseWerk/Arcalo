@@ -49,7 +49,7 @@ use annalo_core::mirror::{self, MirrorReport};
 use annalo_core::model::*;
 use annalo_core::network::Purpose;
 use annalo_core::netzplan::{self, Schedule};
-use annalo_core::notes::PageDoc;
+use annalo_core::notes::{PageDoc, SavedPage};
 use annalo_core::pagework::{self, PageWork};
 use annalo_core::properties;
 use annalo_core::report;
@@ -155,6 +155,10 @@ type ModelList = (Instant, Option<Vec<String>>);
 
 pub struct AppState {
     db: Mutex<Database>,
+    /// Read-only second connection for commands that only read (WAL: they see the last
+    /// committed state and neither wait for a save nor hold one up). `None` when it could not
+    /// be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    reader: Option<Mutex<Database>>,
     ai: RwLock<AiRuntime>,
     secrets: SecretStore,
     /// Access token of the Git sync.
@@ -184,6 +188,15 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl AppState {
     fn db(&self) -> MutexGuard<'_, Database> {
         lock(&self.db)
+    }
+    /// The connection for commands that only read (see [`AppState::reader`]).
+    fn reader(&self) -> MutexGuard<'_, Database> {
+        self.reader.as_ref().map_or_else(|| lock(&self.db), lock)
+    }
+    /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
+    /// neither connection above is held meanwhile; `None` falls back to the main one.
+    fn snapshot_db(&self) -> Option<Database> {
+        Database::open_read_only(self.data_dir.join(datadir::DB_FILE)).ok()
     }
     fn settings(&self) -> Settings {
         self.ai.read().unwrap_or_else(|e| e.into_inner()).settings.clone()
@@ -237,69 +250,72 @@ impl AppState {
 
 // ------------------------------------------------------------------- pages
 
-#[tauri::command]
+// Commands that touch the database run off the main thread (`async`): the main thread
+// handles the window (title, focus, drag), which must never wait for the database.
+
+#[tauri::command(async)]
 fn workspace_tree(state: State<AppState>) -> Result<Vec<PageNode>> {
-    state.db().page_tree()
+    state.reader().page_tree()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
-    state.db().page_doc(id)
+    state.reader().page_doc(id)
 }
 
-#[tauri::command]
-fn page_save(state: State<AppState>, id: i64, content: String) -> Result<PageDoc> {
-    let db = state.db();
-    db.save_page_content(id, &content)?;
-    db.page_doc(id)
+/// Saves a page. Returns tags, unresolved links and the new time only: the caller has the
+/// content, and a save does not change the page's backlinks.
+#[tauri::command(async)]
+fn page_save(state: State<AppState>, id: i64, content: String) -> Result<SavedPage> {
+    state.db().save_page(id, &content)
 }
 
 // ---------------------------------------------------------------- typed properties
 
-/// The child pages of a page with their typed properties (table and board views).
-#[tauri::command]
-fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties::Collection> {
-    state.db().page_collection(parent_id)
+/// The child pages of a page with their frontmatter (table and board views).
+#[tauri::command(async)]
+fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties::CollectionView> {
+    state.reader().page_collection_view(parent_id)
 }
 
 /// The schema a page's properties follow (its parent's) and the parent's id.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_schema(state: State<AppState>, page_id: i64) -> Result<Option<(i64, properties::Schema)>> {
     state.db().page_schema(page_id)
 }
 
 /// Names for person properties: person values and `@mentions`, most used first.
-#[tauri::command]
+#[tauri::command(async)]
 fn known_persons(state: State<AppState>) -> Result<Vec<String>> {
-    state.db().known_persons()
+    state.reader().known_persons()
 }
 
 // ---------------------------------------------------------------- versions
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_versions(state: State<AppState>, page_id: i64) -> Result<Vec<VersionInfo>> {
-    state.db().list_versions(page_id)
+    state.reader().list_versions(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_version_content(state: State<AppState>, version_id: i64) -> Result<String> {
     state.db().version_content(version_id)
 }
 
 /// Snapshots the page now („Jetzt Version sichern“); `None` when nothing changed.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_snapshot(state: State<AppState>, page_id: i64) -> Result<Option<i64>> {
     state.db().snapshot_page(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_version_restore(state: State<AppState>, page_id: i64, version_id: i64) -> Result<PageDoc> {
     let db = state.db();
     db.restore_version(page_id, version_id)?;
     db.page_doc(page_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_create(
     state: State<AppState>,
     parent_id: Option<i64>,
@@ -327,7 +343,7 @@ fn unique_title(db: &Database, title: &str) -> Result<String> {
     Ok(name)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_rename(state: State<AppState>, id: i64, title: String, update_links: bool) -> Result<usize> {
     let db = state.db();
     // `[ ] | # ^` are replaced (see `notes::clean_title`); the UI applies the same rule while typing.
@@ -341,48 +357,48 @@ fn page_rename(state: State<AppState>, id: i64, title: String, update_links: boo
 }
 
 /// Moves a page and its subpages to the trash. Returns the number of pages moved.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_delete(state: State<AppState>, id: i64) -> Result<usize> {
     state.db().trash_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_restore(state: State<AppState>, id: i64) -> Result<Page> {
     state.db().restore_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_purge(state: State<AppState>, id: i64) -> Result<usize> {
     state.db().purge_page(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn trash_list(state: State<AppState>) -> Result<Vec<TrashEntry>> {
     state.db().list_trash()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn trash_empty(state: State<AppState>) -> Result<usize> {
     state.db().empty_trash()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_move(state: State<AppState>, id: i64, parent_id: Option<i64>, position: i64) -> Result<()> {
     state.db().move_page(id, parent_id, position)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_set_favorite(state: State<AppState>, id: i64, favorite: bool) -> Result<()> {
     state.db().set_favorite(id, favorite)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_set_icon(state: State<AppState>, id: i64, icon: Option<String>) -> Result<()> {
     state.db().set_page_icon(id, icon.as_deref())
 }
 
 /// Resolves a [[link]] target; with `create`, a missing page is created at the top level.
-#[tauri::command]
+#[tauri::command(async)]
 fn page_resolve(state: State<AppState>, title: String, create: bool) -> Result<Option<Page>> {
     let db = state.db();
     match db.page_by_title(&title)? {
@@ -392,39 +408,39 @@ fn page_resolve(state: State<AppState>, title: String, create: bool) -> Result<O
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn recent_pages(state: State<AppState>, limit: usize) -> Result<Vec<Page>> {
-    state.db().recent_pages(limit)
+    state.reader().recent_pages(limit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn daily_note(state: State<AppState>, date: Option<NaiveDate>) -> Result<Page> {
     state.db().daily_note(date.unwrap_or_else(|| Local::now().date_naive()))
 }
 
 /// Per day `from..=to` (local): daily note, booked minutes and open tasks due, for the calendar.
-#[tauri::command]
+#[tauri::command(async)]
 fn daily_overview(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<Vec<DayOverview>> {
-    calendar::daily_overview(&state.db(), from, to, &Local)
+    calendar::daily_overview(&state.reader(), from, to, &Local)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tags_list(state: State<AppState>) -> Result<Vec<(String, i64)>> {
-    state.db().tag_counts()
+    state.reader().tag_counts()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tag_pages(state: State<AppState>, tag: String) -> Result<Vec<Page>> {
-    state.db().pages_with_tag(&tag)
+    state.reader().pages_with_tag(&tag)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn tasks_list(state: State<AppState>, filter: Option<TaskFilter>) -> Result<Vec<Task>> {
-    state.db().list_tasks(&filter.unwrap_or_default())
+    state.reader().list_tasks(&filter.unwrap_or_default())
 }
 
 /// Checks or unchecks one task in its page's Markdown; the UI then reloads open editors of that page.
-#[tauri::command]
+#[tauri::command(async)]
 fn task_set_done(
     app: AppHandle,
     state: State<AppState>,
@@ -438,9 +454,9 @@ fn task_set_done(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>) -> Result<Vec<SearchHit>> {
-    search::search(&state.db(), &query, limit.unwrap_or(30))
+    search::search(&state.reader(), &query, limit.unwrap_or(30))
 }
 
 /// Set by `vault_import_cancel`; the running import stops at the next file.
@@ -476,9 +492,20 @@ fn vault_import_cancel() {
     VAULT_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Exports off the main thread; the pages are read at once through a connection of its own,
+/// then the files are written without holding the database.
 #[tauri::command]
-fn vault_export(state: State<AppState>, path: String) -> Result<usize> {
-    vault::export_vault(&state.db(), &PathBuf::from(path), &state.attachments_dir())
+async fn vault_export(app: AppHandle, path: String) -> Result<usize> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let snap = match state.snapshot_db() {
+            Some(db) => db.read_snapshot(vault::VaultSnapshot::read)?,
+            None => vault::VaultSnapshot::read(&state.db())?,
+        };
+        vault::export_snapshot(&snap, &PathBuf::from(path), &state.attachments_dir())
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))?
 }
 
 // ------------------------------------------------------------- templates
@@ -489,24 +516,24 @@ fn template_vars(title: &str) -> TemplateVars {
 }
 
 /// Pages below „Vorlagen“.
-#[tauri::command]
+#[tauri::command(async)]
 fn templates_list(state: State<AppState>) -> Result<Vec<Page>> {
-    state.db().list_templates()
+    state.reader().list_templates()
 }
 
 /// The „Vorlagen“ page, created on first use.
-#[tauri::command]
+#[tauri::command(async)]
 fn templates_root(state: State<AppState>) -> Result<Page> {
     state.db().templates_root()
 }
 
 /// Markdown of a template with its placeholders filled in.
-#[tauri::command]
+#[tauri::command(async)]
 fn template_render(state: State<AppState>, id: i64, title: Option<String>) -> Result<String> {
     state.db().render_template(id, &template_vars(title.as_deref().unwrap_or("")))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn page_from_template(state: State<AppState>, template_id: i64, title: String, parent_id: Option<i64>) -> Result<Page> {
     let db = state.db();
     let name = unique_title(&db, &title)?;
@@ -705,9 +732,9 @@ struct ProjectTree {
 }
 
 /// Projects → Netzpläne → Vorgänge.
-#[tauri::command]
+#[tauri::command(async)]
 fn wbs_tree(state: State<AppState>) -> Result<Vec<ProjectTree>> {
-    let db = state.db();
+    let db = state.reader();
     db.list_projects()?
         .into_iter()
         .map(|p| {
@@ -726,22 +753,22 @@ fn required(value: &str, what: &str) -> Result<String> {
     if v.is_empty() { Err(Error::State(format!("{what} fehlt"))) } else { Ok(v.to_owned()) }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
     state.db().create_project(&required(&code, "Projekt-ID")?, &required(&name, "Name")?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
     state.db().update_project(id, &required(&name, "Name")?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn project_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_project(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_create(
     state: State<AppState>,
     project_id: i64,
@@ -755,7 +782,7 @@ fn netzplan_create(
     state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_update(
     state: State<AppState>,
     id: i64,
@@ -766,13 +793,13 @@ fn netzplan_update(
     state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn netzplan_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_netzplan(id)
 }
 
 /// Adds a Vorgang; `predecessors` are Vorgang numbers of the same Netzplan.
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_create(
     state: State<AppState>,
     netzplan_id: i64,
@@ -807,7 +834,7 @@ fn vorgang_create(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_update(
     state: State<AppState>,
     id: i64,
@@ -819,29 +846,29 @@ fn vorgang_update(
     state.db().update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vorgang_delete(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_vorgang(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsarten_list(state: State<AppState>) -> Result<Vec<(String, String)>> {
-    state.db().list_leistungsarten()
+    state.reader().list_leistungsarten()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsart_save(state: State<AppState>, code: String, description: String) -> Result<()> {
     state.db().upsert_leistungsart(&code, &description)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
     state.db().delete_leistungsart(&code)
 }
 
 // ---------------------------------------------------------- time tracking
 
-#[tauri::command]
+#[tauri::command(async)]
 fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Result<LogOutcome> {
     let t = state.settings().thresholds;
     let db = state.db();
@@ -852,7 +879,7 @@ fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Resul
 }
 
 /// Budget and bookings of the Vorgang a page is linked to (`vorgang:` property).
-#[tauri::command]
+#[tauri::command(async)]
 fn page_work(state: State<AppState>, page_id: i64) -> Result<Option<PageWork>> {
     let t = state.settings().thresholds;
     pagework::page_work(&state.db(), page_id, &t)
@@ -865,14 +892,14 @@ struct TimerStatus {
     is_idle: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_status(state: State<AppState>) -> Result<Option<TimerStatus>> {
-    let running = state.db().running_timer()?;
+    let running = state.reader().running_timer()?;
     let idle = lock(&state.idle);
     Ok(running.map(|entry| TimerStatus { entry, idle_minutes: idle.idle_minutes(Utc::now()), is_idle: idle.is_idle() }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_start(
     app: AppHandle,
     state: State<AppState>,
@@ -908,7 +935,7 @@ struct StopOutcome {
 }
 
 /// Stops the timer. With `subtract_idle` the detected idle time is not booked.
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Result<StopOutcome> {
     let now = Utc::now();
     let idle_minutes = lock(&state.idle).idle_minutes(now);
@@ -928,7 +955,7 @@ fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Re
     Ok(StopOutcome { entry, idle_minutes, alerts, discarded: false })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn timer_discard(app: AppHandle, state: State<AppState>) -> Result<()> {
     state.db().discard_timer()?;
     let _ = app.emit("data://entries", ());
@@ -936,16 +963,21 @@ fn timer_discard(app: AppHandle, state: State<AppState>) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn time_entries(
     state: State<AppState>,
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
 ) -> Result<Vec<TimeEntryRow>> {
-    state.db().list_time_entries(&EntryFilter { from, to, ..Default::default() })
+    // Without a range: the last year, not years of entries (megabytes) nobody looks at at once.
+    let from = from.or_else(|| to.is_none().then(|| Utc::now() - chrono::TimeDelta::days(DEFAULT_ENTRY_DAYS)));
+    state.reader().list_time_entries(&EntryFilter { from, to, ..Default::default() })
 }
 
-#[tauri::command]
+/// Days of entries `time_entries` returns when asked without any range.
+const DEFAULT_ENTRY_DAYS: i64 = 366;
+
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 fn time_entry_create(
     state: State<AppState>,
@@ -982,7 +1014,7 @@ fn time_entry_create(
     Ok(LogOutcome { entry, alerts, reference })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn time_entry_update(
     state: State<AppState>,
     id: i64,
@@ -1002,28 +1034,70 @@ fn time_entry_update(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_entry_status(state: State<AppState>, ids: Vec<i64>, status: StatusFlag) -> Result<usize> {
     state.db().set_entry_status(&ids, status)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_time_entry(state: State<AppState>, id: i64) -> Result<()> {
     state.db().delete_time_entry(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn budget(state: State<AppState>, netzplan_id: i64) -> Result<Vec<BudgetStatus>> {
     let t = state.settings().thresholds;
-    tracking::budget_status(&state.db(), netzplan_id, &t)
+    tracking::budget_status(&state.reader(), netzplan_id, &t)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn schedule(state: State<AppState>, netzplan_id: i64) -> Result<Schedule> {
-    netzplan::schedule(&state.db().list_vorgaenge(netzplan_id)?)
+    netzplan::schedule(&state.reader().list_vorgaenge(netzplan_id)?)
 }
 
-#[tauri::command]
+/// Budget and schedule of every Netzplan (Projekte), instead of two calls per Netzplan.
+#[tauri::command(async)]
+fn netzplan_overview(state: State<AppState>) -> Result<Vec<tracking::NetzplanOverview>> {
+    let t = state.settings().thresholds;
+    tracking::netzplan_overview(&state.reader(), &t, true)
+}
+
+/// The budget rows of every Netzplan (dashboard, `/zeit` completion) in one call.
+#[tauri::command(async)]
+fn budgets_all(state: State<AppState>) -> Result<Vec<BudgetStatus>> {
+    let t = state.settings().thresholds;
+    tracking::all_budgets(&state.reader(), &t)
+}
+
+/// What the assistant's suggestions are built from, counted in the database.
+#[derive(Serialize)]
+struct SuggestionFacts {
+    open_tasks: i64,
+    overdue: i64,
+    due_today: i64,
+    /// Open tasks on `page_id` (0 without one).
+    page_open_tasks: i64,
+    /// Label of the most critical budget that is not OK (`NP-8801/1020`).
+    worst_budget: Option<String>,
+}
+
+/// Counts of open tasks (`today` is the local day, `YYYY-MM-DD`) and the most critical budget.
+#[tauri::command(async)]
+fn suggestion_facts(state: State<AppState>, today: String, page_id: Option<i64>) -> Result<SuggestionFacts> {
+    let t = state.settings().thresholds;
+    let db = state.reader();
+    let counts = db.open_task_counts(today.trim(), page_id)?;
+    let budgets = tracking::all_budgets(&db, &t)?;
+    Ok(SuggestionFacts {
+        open_tasks: counts.open,
+        overdue: counts.overdue,
+        due_today: counts.due_today,
+        page_open_tasks: counts.on_page,
+        worst_budget: tracking::worst_budget(&budgets).map(|b| b.label.clone()),
+    })
+}
+
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)] // IPC arguments map 1:1 to the UI call
 fn export_entries(
     state: State<AppState>,
@@ -1076,7 +1150,11 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
-    let info = backup::backup_to(&state.db(), &dir, keep)?;
+    // `VACUUM INTO` through a connection of its own: saves are not held up by the snapshot.
+    let info = match state.snapshot_db() {
+        Some(db) => backup::backup_to(&db, &dir, keep)?,
+        None => backup::backup_to(&state.db(), &dir, keep)?,
+    };
     feed::record(&state, "backup", &info.file_name, "");
     // Images live next to the database; names are content hashes, so copying new ones suffices.
     let src = state.attachments_dir();
@@ -1138,8 +1216,7 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
                 run_mirror(&state)?;
             }
         } else {
-            let db = state.db();
-            mirror::write_mirror(&db, &source, &state.attachments_dir(), &Local)?;
+            mirror::write_snapshot(&mirror_snapshot(&state)?, &source, &state.attachments_dir(), &Local)?;
         }
         let database = if settings.git_sync.include_database {
             backup::list_backups(&state.backup_dir())?.into_iter().next().map(|b| PathBuf::from(b.path))
@@ -1368,11 +1445,22 @@ async fn git_restore_import(app: AppHandle, url: String) -> Result<ImportReport>
 const MIRROR_LAST: &str = "mirror.last";
 const MIRROR_ERROR: &str = "mirror.error";
 
+/// What the Markdown mirror holds, read through a connection of its own (saves go on
+/// meanwhile); the main one when that cannot be opened.
+fn mirror_snapshot(state: &AppState) -> Result<mirror::MirrorSnapshot> {
+    match state.snapshot_db() {
+        Some(db) => mirror::MirrorSnapshot::read(&db),
+        None => mirror::MirrorSnapshot::read(&state.db()),
+    }
+}
+
 /// Rebuilds the Markdown mirror and records the outcome (time or error) for the settings.
+/// The files are written without holding the database.
 fn run_mirror(state: &AppState) -> Result<MirrorReport> {
     let dir = state.mirror_dir();
+    let res =
+        mirror_snapshot(state).and_then(|snap| mirror::write_snapshot(&snap, &dir, &state.attachments_dir(), &Local));
     let db = state.db();
-    let res = mirror::write_mirror(&db, &dir, &state.attachments_dir(), &Local);
     match &res {
         Ok(r) => {
             db.meta_set(MIRROR_LAST, &r.created_at.to_rfc3339())?;
@@ -1392,7 +1480,7 @@ struct MirrorStatus {
     error: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn mirror_status(state: State<AppState>) -> Result<MirrorStatus> {
     let db = state.db();
     let last_at =
@@ -1449,16 +1537,18 @@ async fn backup_now(app: AppHandle) -> Result<BackupInfo> {
         .map_err(|e| Error::State(e.to_string()))?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn backup_list(state: State<AppState>) -> Result<Vec<BackupInfo>> {
     backup::list_backups(&state.backup_dir())
 }
 
-/// Backs up once a day: on start when the newest backup is older than 24 h, then checks hourly.
-/// The hourly Git sync (mode `hourly`) runs in the same loop.
+/// Backs up once a day: a few minutes after the start when the newest backup is older than
+/// 24 h, then checks hourly. The hourly Git sync (mode `hourly`) runs in the same loop.
 fn spawn_backup_scheduler(app: AppHandle) {
     const DAY: chrono::TimeDelta = chrono::TimeDelta::hours(24);
     std::thread::spawn(move || {
+        // Not while the app starts and the first notes open (the mirror writes every page).
+        std::thread::sleep(startup_backup_delay());
         loop {
             let state = app.state::<AppState>();
             let due = match backup::list_backups(&state.backup_dir()) {
@@ -1483,6 +1573,13 @@ fn spawn_backup_scheduler(app: AppHandle) {
             std::thread::sleep(Duration::from_secs(3600));
         }
     });
+}
+
+/// How long after the start the scheduler first looks for a due backup: 3 minutes, or
+/// `ANNALO_BACKUP_DELAY_SECS` (tests).
+fn startup_backup_delay() -> Duration {
+    let secs = std::env::var("ANNALO_BACKUP_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(180);
+    Duration::from_secs(secs)
 }
 
 // ---------------------------------------------------------------- settings
@@ -2468,7 +2565,7 @@ enum ToolPlan {
 }
 
 /// Classifies a tool call so the UI knows whether to ask the user first.
-#[tauri::command]
+#[tauri::command(async)]
 fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Result<ToolPlan> {
     tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
     Ok(match tools::classify(&name) {
@@ -2480,7 +2577,7 @@ fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Resu
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, arguments: String) -> Result<String> {
     tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
     let args: serde_json::Value = serde_json::from_str(&arguments)?;
@@ -2653,7 +2750,7 @@ fn spawn_activity_sampler(app: AppHandle) {
 }
 
 /// Whether to show the first-run choice: nothing in the workspace yet and not answered before.
-#[tauri::command]
+#[tauri::command(async)]
 fn onboarding_needed(state: State<AppState>) -> Result<bool> {
     let db = state.db();
     Ok(db.meta_get("onboarded")?.is_none() && db.list_projects()?.is_empty() && db.page_tree()?.is_empty())
@@ -2672,7 +2769,7 @@ fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> R
 }
 
 /// Removes the sample project and pages created on first start.
-#[tauri::command]
+#[tauri::command(async)]
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     let n = demo::remove(&state.db())?;
     let _ = app.emit("data://entries", ());
@@ -2940,6 +3037,12 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
         if let Ok(mem) = Database::open_in_memory() {
             *db = mem;
         }
+        drop(db);
+        if let Some(reader) = &state.reader
+            && let Ok(mem) = Database::open_in_memory()
+        {
+            *lock(reader) = mem;
+        }
     }
     // Otherwise the new process would only focus this one.
     if portable::active() {
@@ -3156,8 +3259,16 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, proxy_secret.get());
 
+            let reader = match Database::open_read_only(dir.join(datadir::DB_FILE)) {
+                Ok(r) => Some(Mutex::new(r)),
+                Err(e) => {
+                    devlog::warn("core", format!("no second connection for reading, reads share the main one: {e}"));
+                    None
+                }
+            };
             app.manage(AppState {
                 db: Mutex::new(db),
+                reader,
                 ai: RwLock::new(ai),
                 secrets,
                 git_secret: SecretStore::git(&dir),
@@ -3226,6 +3337,9 @@ pub fn run() {
             page_get,
             page_save,
             page_collection,
+            netzplan_overview,
+            budgets_all,
+            suggestion_facts,
             page_schema,
             known_persons,
             page_versions,

@@ -174,7 +174,7 @@ pub struct ConflictInfo {
 }
 
 /// Pages with an undecided conflict („Konflikt“).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_conflicts(state: State<AppState>) -> Result<Vec<ConflictInfo>> {
     let db = state.db();
     Ok(live(&db)?
@@ -196,7 +196,7 @@ pub struct ConflictView {
 }
 
 /// Both versions of a conflicted page and their block merge.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_conflict_get(state: State<AppState>, page_id: i64) -> Result<ConflictView> {
     let db = state.db();
     let c = live(&db)?

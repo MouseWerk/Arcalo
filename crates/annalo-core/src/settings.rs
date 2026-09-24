@@ -483,11 +483,19 @@ impl Database {
     pub fn load_settings_checked(&self) -> Result<(Settings, Vec<String>)> {
         let raw: Option<String> =
             self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
-        let (mut s, bad) = match raw {
-            Some(json) => Self::parse_settings_lenient(&json),
+        // Unchanged JSON (the usual case, e.g. on every page save) is not parsed again.
+        if let (Some(json), Some((cached, s))) = (&raw, &*self.settings_cache.borrow())
+            && json == cached
+        {
+            return Ok((s.clone(), vec![]));
+        }
+        let (mut s, bad) = match &raw {
+            Some(json) => Self::parse_settings_lenient(json),
             None => (Settings::default(), vec![]),
         };
         s.dashboard = s.dashboard.normalized();
+        // Only settings that parsed cleanly are kept: the caller must learn about unreadable ones.
+        *self.settings_cache.borrow_mut() = raw.filter(|_| bad.is_empty()).map(|json| (json, s.clone()));
         Ok((s, bad))
     }
 

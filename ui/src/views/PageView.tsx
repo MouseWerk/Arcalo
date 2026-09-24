@@ -16,7 +16,7 @@ import { PAGE_ICONS, PageIcon, iconLabel } from "../components/icons";
 import { Button, EmptyState, IconButton, Spinner, useMenu } from "../components/ui";
 import { addDays, dateLong, isoDay, relative } from "../lib/format";
 import { linkContext } from "../components/linkContext";
-import type { PageDoc } from "../lib/types";
+import type { PageDoc, SavedPage } from "../lib/types";
 import { restorePage } from "./TrashView";
 import { SourceEditor } from "../editor/SourceEditor";
 import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
@@ -228,6 +228,12 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       </>
     );
 
+  // A save of this pane: tags, unresolved links and time change; backlinks do not.
+  const tookSave = (d: SavedPage & { content: string }) => {
+    const next = { ...doc, tags: d.tags, unresolved_links: d.unresolved_links, updated_at: d.updated_at };
+    setDoc((cur) => (cur ? { ...cur, tags: d.tags, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : cur));
+    if (activeRef.current) useApp.getState().set({ activeDoc: { ...next, content: d.content } });
+  };
   const reference = pageReference(fm);
   // Frontmatter edits of this page: through the editor's save path, so body and properties never overwrite each other.
   const changeFm = (next: string) => {
@@ -275,9 +281,8 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
             active={active}
             doc={doc}
             onSaved={(d) => {
-              setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
+              tookSave(d);
               setFm(splitFrontmatter(d.content).frontmatter);
-              if (activeRef.current) useApp.getState().set({ activeDoc: d });
             }}
           />
         ) : (
@@ -286,10 +291,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           key={doc.id}
           active={active}
           doc={doc}
-          onSaved={(d) => {
-            setDoc((cur) => (cur ? { ...cur, tags: d.tags, backlinks: d.backlinks, unresolved_links: d.unresolved_links, updated_at: d.updated_at } : d));
-            if (activeRef.current) useApp.getState().set({ activeDoc: d });
-          }}
+          onSaved={tookSave}
           onOpenLink={openLink}
           onOpenTag={openTag}
           handleRef={(h) => (handle.current = h)}

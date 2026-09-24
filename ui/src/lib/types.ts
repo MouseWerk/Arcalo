@@ -32,10 +32,16 @@ export interface PageDoc extends Page {
 export interface PropSchema {
   props: { key: string; kind: import("./collection").PropKind; options: { name: string; color: string }[] }[];
 }
+/** What `page_save` returns: what the save derived (the content is the caller's). */
+export interface SavedPage {
+  id: number;
+  updated_at: string;
+  tags: string[];
+  unresolved_links: string[];
+}
 export interface CollectionRow extends Page {
-  /** The frontmatter block with its `---` lines. */
+  /** The frontmatter block with its `---` lines (the views derive the cells from it). */
   frontmatter: string;
-  cells: { key: string; text: string; value: import("./collection").Typed | null; error: string | null }[];
 }
 export interface PageCollection {
   parent_id: number;
@@ -125,6 +131,20 @@ export interface ScheduleNode {
   gp: number;
   fp: number;
   critical: boolean;
+}
+/** Budget and schedule of one Netzplan (`netzplan_overview`); `schedule` is null for a cycle. */
+export interface NetzplanOverview {
+  netzplan_id: number;
+  budget: BudgetStatus[];
+  schedule: Schedule | null;
+}
+/** What the assistant's suggestions are built from (`suggestion_facts`). */
+export interface SuggestionFacts {
+  open_tasks: number;
+  overdue: number;
+  due_today: number;
+  page_open_tasks: number;
+  worst_budget: string | null;
 }
 export interface Schedule {
   nodes: ScheduleNode[];

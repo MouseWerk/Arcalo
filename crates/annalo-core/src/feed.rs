@@ -113,12 +113,21 @@ pub struct FeedSummary {
 /// Characters changed between two texts: the longer of the differing middles once the common
 /// prefix and suffix are removed (one edit session is usually one contiguous change).
 pub fn changed_chars(old: &str, new: &str) -> i64 {
-    let a: Vec<char> = old.chars().collect();
-    let b: Vec<char> = new.chars().collect();
-    let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
-    let max_suffix = a.len().min(b.len()) - prefix;
-    let suffix = a.iter().rev().zip(b.iter().rev()).take(max_suffix).take_while(|(x, y)| x == y).count();
-    (a.len() - prefix - suffix).max(b.len() - prefix - suffix) as i64
+    // Compared as bytes (a save of a long note runs this every time), counted in characters:
+    // equal bytes up to a character boundary are equal characters.
+    let (a, b) = (old.as_bytes(), new.as_bytes());
+    let mut pb = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    while !old.is_char_boundary(pb) {
+        pb -= 1;
+    }
+    let mut sb = a.iter().rev().zip(b.iter().rev()).take_while(|(x, y)| x == y).count();
+    while !old.is_char_boundary(old.len() - sb) {
+        sb -= 1;
+    }
+    let (la, lb) = (old.chars().count(), new.chars().count());
+    let prefix = old[..pb].chars().count();
+    let suffix = old[old.len() - sb..].chars().count().min(la.min(lb) - prefix);
+    (la - prefix - suffix).max(lb - prefix - suffix) as i64
 }
 
 /// `@name` mentions (outside code, not in `/zeit` lines where `@` starts a date or time) and the
@@ -145,7 +154,8 @@ pub fn people(markdown: &str) -> Vec<String> {
             fence = !fence;
             continue;
         }
-        if fence || t.starts_with("/zeit") || t.starts_with("/time") || t.contains("<time-entry") {
+        if fence || !line.contains('@') || t.starts_with("/zeit") || t.starts_with("/time") || t.contains("<time-entry")
+        {
             continue;
         }
         let chars: Vec<(usize, char)> = line.char_indices().collect();
@@ -818,6 +828,29 @@ mod tests {
         assert_eq!(changed_chars("abc", "abc"), 0);
         assert_eq!(changed_chars("", "neu"), 3);
         assert_eq!(changed_chars("aaaa", "aa"), 2);
+        // Characters, not bytes; the same as comparing character by character.
+        let by_chars = |old: &str, new: &str| {
+            let a: Vec<char> = old.chars().collect();
+            let b: Vec<char> = new.chars().collect();
+            let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+            let max_suffix = a.len().min(b.len()) - prefix;
+            let suffix = a.iter().rev().zip(b.iter().rev()).take(max_suffix).take_while(|(x, y)| x == y).count();
+            (a.len() - prefix - suffix).max(b.len() - prefix - suffix) as i64
+        };
+        for (old, new) in [
+            ("Grüße", "Grüne"),
+            ("ä", "äxä"),
+            ("äöü", "äü"),
+            ("xäy", "xöy"),
+            ("Straße 1", "Strasse 1"),
+            ("🙂🙂", "🙂"),
+            ("aé", "aè"),
+            ("", ""),
+            ("éé", "é"),
+        ] {
+            assert_eq!(changed_chars(old, new), by_chars(old, new), "{old} → {new}");
+            assert_eq!(changed_chars(new, old), by_chars(new, old), "{new} → {old}");
+        }
     }
 
     #[test]

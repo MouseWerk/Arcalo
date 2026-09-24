@@ -12,21 +12,21 @@ use crate::AppState;
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn activity_list(state: State<AppState>, filter: Option<FeedFilter>) -> Result<Vec<Activity>> {
-    feed::list(&state.db(), &filter.unwrap_or_default())
+    feed::list(&state.reader(), &filter.unwrap_or_default())
 }
 
 /// Totals of `from..to` (UTC instants of the local day bounds).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn activity_summary(state: State<AppState>, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<FeedSummary> {
-    feed::summary(&state.db(), from, to)
+    feed::summary(&state.reader(), from, to)
 }
 
 /// People mentioned in the feed (filter).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn activity_people(state: State<AppState>) -> Result<Vec<String>> {
-    state.db().feed_people()
+    state.reader().feed_people()
 }
 
 /// Derives the history from before the journal once (pages, versions, entries, attachments).

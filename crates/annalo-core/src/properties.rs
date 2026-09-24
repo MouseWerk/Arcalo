@@ -753,6 +753,23 @@ pub struct Collection {
     pub rows: Vec<CollectionRow>,
 }
 
+/// A child page as the table and board views load it, see [`Database::page_collection_view`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CollectionViewRow {
+    #[serde(flatten)]
+    pub page: Page,
+    /// The frontmatter block as stored (with `---` lines).
+    pub frontmatter: String,
+}
+
+/// [`Collection`] without the cells, for the table and board views.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CollectionView {
+    pub parent_id: i64,
+    pub schema: Option<Schema>,
+    pub rows: Vec<CollectionViewRow>,
+}
+
 /// The frontmatter block of a Markdown text with its `---` lines (line endings normalized).
 fn frontmatter_block(markdown: &str) -> String {
     let Some(lines) = frontmatter_lines(markdown) else { return String::new() };
@@ -814,6 +831,29 @@ impl Database {
             })
             .collect();
         Ok(Collection { parent_id, schema, rows })
+    }
+
+    /// What the table and board views load: the child pages of `parent_id` (sidebar order)
+    /// with their frontmatter only. The views derive the cells from it, so neither the
+    /// pages' text nor server-side cells are sent (an 800-page folder: 0.5 MB less).
+    pub fn page_collection_view(&self, parent_id: i64) -> Result<CollectionView> {
+        let schema = Schema::from_markdown(&self.page_content(parent_id)?);
+        let conn = self.conn();
+        // Only pages that start with a frontmatter block hand their text out of SQLite.
+        let mut st = conn.prepare_cached(&format!(
+            "SELECT {}, CASE WHEN substr(content, 1, 3) = '---' THEN content ELSE '' END
+             FROM pages WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY position, id",
+            crate::db::PAGE_COLS
+        ))?;
+        let rows = st
+            .query_map([parent_id], |r| {
+                Ok(CollectionViewRow {
+                    page: crate::db::map_page(r)?,
+                    frontmatter: frontmatter_block(&r.get::<_, String>(9)?),
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(CollectionView { parent_id, schema, rows })
     }
 
     /// The schema a page's properties follow: its parent's, with the parent's id.
@@ -1074,5 +1114,27 @@ mod tests {
         assert_eq!(db.known_persons().unwrap(), ["Anna", "Max"]);
         let hits = db.pages_with_property("status", "ist", "offen", day("2026-09-24")).unwrap();
         assert_eq!(hits.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), ["A"]);
+    }
+
+    #[test]
+    fn collection_view_has_the_frontmatter_of_the_full_collection() {
+        let db = Database::open_in_memory().unwrap();
+        let parent = db.create_page(None, "Aufgaben", None).unwrap();
+        db.save_page_content(parent.id, PARENT).unwrap();
+        let a = db.create_page(Some(parent.id), "Mit", None).unwrap();
+        db.save_page_content(a.id, "---\nstatus: Offen\naufwand: 3\n---\nLanger Text\n").unwrap();
+        let b = db.create_page(Some(parent.id), "Ohne", None).unwrap();
+        db.save_page_content(b.id, "--- kein Frontmatter\nText").unwrap();
+        db.create_page(Some(parent.id), "Leer", None).unwrap();
+        let full = db.page_collection(parent.id).unwrap();
+        let view = db.page_collection_view(parent.id).unwrap();
+        assert_eq!(view.schema, full.schema);
+        assert_eq!(view.rows.len(), 3);
+        for (v, f) in view.rows.iter().zip(&full.rows) {
+            assert_eq!((&v.page, &v.frontmatter), (&f.page, &f.frontmatter));
+        }
+        assert_eq!(view.rows[0].frontmatter, "---\nstatus: Offen\naufwand: 3\n---\n");
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("Langer Text") && !json.contains("cells"), "{json}");
     }
 }

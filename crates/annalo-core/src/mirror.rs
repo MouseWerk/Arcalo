@@ -64,10 +64,40 @@ pub fn write_mirror<Tz: TimeZone>(
 where
     Tz::Offset: std::fmt::Display,
 {
+    write_snapshot(&MirrorSnapshot::read(db)?, target, attachments_dir, offset)
+}
+
+/// What the mirror holds, read from the database in one consistent state. Writing it
+/// ([`write_snapshot`]) needs no database, so the files are written while saves go on.
+pub struct MirrorSnapshot {
+    vault: vault::VaultSnapshot,
+    rows: Vec<TimeEntryRow>,
+}
+
+impl MirrorSnapshot {
+    pub fn read(db: &Database) -> Result<Self> {
+        db.read_snapshot(|db| {
+            Ok(MirrorSnapshot {
+                vault: vault::VaultSnapshot::read(db)?,
+                rows: db.list_time_entries(&EntryFilter::default())?,
+            })
+        })
+    }
+}
+
+/// [`write_mirror`] from a [`MirrorSnapshot`].
+pub fn write_snapshot<Tz: TimeZone>(
+    snap: &MirrorSnapshot,
+    target: &Path,
+    attachments_dir: &Path,
+    offset: &Tz,
+) -> Result<MirrorReport>
+where
+    Tz::Offset: std::fmt::Display,
+{
     let (pages, csv_files) = replace_dir(target, |dir| {
-        let pages = vault::export_vault(db, dir, attachments_dir)?;
-        let rows = db.list_time_entries(&EntryFilter::default())?;
-        let months = time_entries_csv(&rows, offset);
+        let pages = vault::export_snapshot(&snap.vault, dir, attachments_dir)?;
+        let months = time_entries_csv(&snap.rows, offset);
         if !months.is_empty() {
             let out = dir.join(TIME_DIR);
             fs::create_dir_all(&out)?;

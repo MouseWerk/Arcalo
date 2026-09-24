@@ -45,6 +45,8 @@ the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
+Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
+and by `entry_id`.
 
 ## Data safety
 
@@ -448,6 +450,28 @@ quelle: "[[Konzept]]"
 - The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
   re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
   collapsed (`annalo.collapsed` in localStorage).
+- Database commands are `#[tauri::command(async)]` (or `spawn_blocking`): they run off the main thread,
+  which handles the window (`set_title`, drag, focus) and never waits for the database. Pure reads
+  (`page_get`, `workspace_tree`, lists, search, budgets) use a second, read-only connection
+  (`Database::open_read_only`, `AppState::reader`): in WAL mode it sees the last committed state and
+  neither waits for a save nor holds one up. The two locks are never held together. Backups
+  (`VACUUM INTO`), the Markdown mirror and the vault export open a read-only connection of their own:
+  the mirror and the export read the tree, all contents (one `SELECT id, content`) and the time entries
+  in one read transaction (`MirrorSnapshot`, `VaultSnapshot`), then write the files without any
+  database lock. The scheduler's first backup check runs 3 minutes after the start
+  (`ANNALO_BACKUP_DELAY_SECS` for tests).
+- `page_save` returns `SavedPage` (tags, unresolved links, `updated_at`), not the page: the editor has
+  the content and a save does not change backlinks. A save writes only what changed: chunk rows whose
+  text is still on the page keep their row, search entry and embedding; links and tags are diffed.
+  Unresolved links are found with one indexed query (`idx_pages_title`, `title COLLATE NOCASE IN (…)`)
+  plus one pass over all titles only for non-ASCII targets. `latest_version` reads only the time, and
+  parsed settings are cached by their JSON (`Database::settings_cache`).
+- Batch reads for views that listed per Netzplan: `netzplan_overview` (budget and schedule of every
+  Netzplan; booked hours in one grouped query, Vorgänge in two), `budgets_all` (dashboard, `/zeit`
+  completion) and `suggestion_facts` (counts of open, overdue and due tasks and the most critical
+  budget, for the assistant's suggestions). `page_collection` sends each child's frontmatter only (the
+  views derive the cells). Filters of `list_time_entries` and `list_tasks` are built from the set
+  fields so SQLite uses the indexes; `time_entries` without a range returns the last 366 days.
 
 ## Key algorithms
 

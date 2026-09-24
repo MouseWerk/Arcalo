@@ -36,6 +36,17 @@ pub struct PageDoc {
     pub unresolved_links: Vec<String>,
 }
 
+/// What a save returns: the facts the save derived, not the content (the caller has it) and
+/// not the backlinks (other pages' links, which a save of this page does not change).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedPage {
+    pub id: i64,
+    pub updated_at: String,
+    pub tags: Vec<String>,
+    /// Outgoing links whose target page does not exist yet.
+    pub unresolved_links: Vec<String>,
+}
+
 // ------------------------------------------------------------------ parsing
 
 /// Lines outside fenced code blocks, with their fence state resolved.
@@ -67,7 +78,12 @@ fn strip_inline_code(line: &str) -> String {
 /// Link targets of `[[Target]]`, `[[Target|Alias]]` and `[[Target#Heading]]`.
 pub fn wiki_links(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
+    // Lower-cased targets already in `out` (a long note has thousands of links).
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in prose_lines(markdown) {
+        if !line.contains("[[") {
+            continue;
+        }
         let line = strip_inline_code(line);
         let mut rest = line.as_str();
         while let Some(start) = rest.find("[[") {
@@ -77,7 +93,7 @@ pub fn wiki_links(markdown: &str) -> Vec<String> {
             let target = inner.split(['|', '#']).next().unwrap_or("").trim();
             // `![[bild.png]]`, `![[x.excalidraw]]`, `![[doc.pdf]]` embed an attachment, they do not link a page.
             let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(target);
-            if !embed && !target.is_empty() && !out.iter().any(|t| t.to_lowercase() == target.to_lowercase()) {
+            if !embed && !target.is_empty() && seen.insert(target.to_lowercase()) {
                 out.push(target.to_owned());
             }
             rest = &after[end + 2..];
@@ -122,6 +138,9 @@ fn frontmatter_tags(markdown: &str) -> Vec<String> {
 pub fn tags(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = frontmatter_tags(markdown);
     for line in prose_lines(markdown) {
+        if !line.contains('#') {
+            continue;
+        }
         let line = strip_inline_code(line);
         let chars: Vec<char> = line.chars().collect();
         let mut i = 0;
@@ -200,6 +219,24 @@ pub fn chunks(markdown: &str) -> Vec<String> {
 
 // ---------------------------------------------------------------- documents
 
+/// Makes the rows `(id, value)` of a derived table equal `wanted`: removes the ones no longer
+/// wanted and inserts the new ones, leaving the rest untouched.
+fn sync_rows(db: &Database, id: i64, wanted: &[String], select: &str, delete: &str, insert: &str) -> Result<()> {
+    let conn = db.conn();
+    let have: std::collections::HashSet<String> =
+        conn.prepare_cached(select)?.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let want: std::collections::HashSet<&str> = wanted.iter().map(String::as_str).collect();
+    let mut del = conn.prepare_cached(delete)?;
+    for gone in have.iter().filter(|h| !want.contains(h.as_str())) {
+        del.execute(params![id, gone])?;
+    }
+    let mut ins = conn.prepare_cached(insert)?;
+    for new in wanted.iter().filter(|w| !have.contains(*w)) {
+        ins.execute(params![id, new])?;
+    }
+    Ok(())
+}
+
 impl Database {
     /// Saves a page's Markdown and refreshes its chunks, links and tags. The previous
     /// content may be kept as a version (see [`crate::versions`]).
@@ -227,44 +264,116 @@ impl Database {
         })
     }
 
-    /// Rebuilds chunk rows, links, tags and tasks of one page. Embeddings of chunks
-    /// whose text did not change are kept, so editing a long note only
-    /// re-embeds the edited section.
+    /// Saves like [`Database::save_page_content`] and returns what the editor shows of the
+    /// save: tags, unresolved links and the new time (no content, no backlinks).
+    pub fn save_page(&self, id: i64, content: &str) -> Result<SavedPage> {
+        self.save_page_content(id, content)?;
+        let updated_at: String =
+            self.conn().query_row("SELECT updated_at FROM pages WHERE id = ?1", [id], |r| r.get(0))?;
+        Ok(SavedPage {
+            id,
+            updated_at,
+            tags: self.page_tags(id)?,
+            unresolved_links: self.unresolved_links(wiki_links(content))?,
+        })
+    }
+
+    /// Rebuilds chunk rows, links, tags and tasks of one page. Only what changed is written:
+    /// chunks whose text is still on the page keep their row (and so their search entry and
+    /// embedding), so editing a long note rewrites and re-embeds only the edited section.
     pub(crate) fn reindex_page(&self, id: i64, content: &str) -> Result<()> {
         let conn = self.conn();
-        let mut old: HashMap<String, Vec<u8>> = HashMap::new();
+        // Old chunk rows by text (a text may occur more than once).
+        let mut old: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
         {
             let mut st = conn.prepare_cached(
-                "SELECT content_markdown, vector_embedding FROM notes_blocks WHERE page_id = ?1 AND vector_embedding IS NOT NULL",
+                "SELECT id, position, content_markdown FROM notes_blocks WHERE page_id = ?1 ORDER BY position DESC, id DESC",
             )?;
-            for row in st.query_map([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)))? {
-                let (text, emb) = row?;
-                old.insert(text, emb);
+            for row in st.query_map([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))? {
+                let (row_id, pos, text) = row?;
+                old.entry(text).or_default().push((row_id, pos));
             }
         }
-        conn.execute("DELETE FROM notes_blocks WHERE page_id = ?1", [id])?;
+        let mut fresh: Vec<(i64, String)> = vec![];
         {
-            let mut ins = conn.prepare_cached(
-                "INSERT INTO notes_blocks (page_id, position, block_type, content_markdown, vector_embedding)
-                 VALUES (?1, ?2, 'chunk', ?3, ?4)",
-            )?;
+            let mut mv = conn.prepare_cached("UPDATE notes_blocks SET position = ?2 WHERE id = ?1")?;
             for (i, chunk) in chunks(content).into_iter().enumerate() {
-                let emb = old.get(&chunk);
-                ins.execute(params![id, i as i64, chunk, emb])?;
+                match old.get_mut(&chunk).and_then(|rows| rows.pop()) {
+                    Some((_, pos)) if pos == i as i64 => {}
+                    Some((row_id, _)) => {
+                        mv.execute(params![row_id, i as i64])?;
+                    }
+                    None => fresh.push((i as i64, chunk)),
+                }
             }
         }
-        conn.execute("DELETE FROM page_links WHERE from_page = ?1", [id])?;
-        for target in wiki_links(content) {
-            conn.execute(
-                "INSERT OR IGNORE INTO page_links (from_page, target) VALUES (?1, ?2)",
-                params![id, target.to_lowercase()],
+        {
+            let mut del = conn.prepare_cached("DELETE FROM notes_blocks WHERE id = ?1")?;
+            for (row_id, _) in old.into_values().flatten() {
+                del.execute([row_id])?;
+            }
+            let mut ins = conn.prepare_cached(
+                "INSERT INTO notes_blocks (page_id, position, block_type, content_markdown) VALUES (?1, ?2, 'chunk', ?3)",
             )?;
+            for (pos, chunk) in fresh {
+                ins.execute(params![id, pos, chunk])?;
+            }
         }
-        conn.execute("DELETE FROM page_tags WHERE page_id = ?1", [id])?;
-        for tag in tags(content) {
-            conn.execute("INSERT OR IGNORE INTO page_tags (page_id, tag) VALUES (?1, ?2)", params![id, tag])?;
-        }
+        // Links and tags: only added and removed rows.
+        let links: Vec<String> = wiki_links(content).into_iter().map(|t| t.to_lowercase()).collect();
+        sync_rows(
+            self,
+            id,
+            &links,
+            "SELECT target FROM page_links WHERE from_page = ?1",
+            "DELETE FROM page_links WHERE from_page = ?1 AND target = ?2",
+            "INSERT OR IGNORE INTO page_links (from_page, target) VALUES (?1, ?2)",
+        )?;
+        sync_rows(
+            self,
+            id,
+            &tags(content),
+            "SELECT tag FROM page_tags WHERE page_id = ?1",
+            "DELETE FROM page_tags WHERE page_id = ?1 AND tag = ?2",
+            "INSERT OR IGNORE INTO page_tags (page_id, tag) VALUES (?1, ?2)",
+        )?;
         self.reindex_tasks(id, content)
+    }
+
+    /// The link targets among `targets` that name no page (outside the trash), in their
+    /// order. One indexed query for all of them (not one per link); titles that differ only
+    /// beyond ASCII case (`[[übersicht]]` → „Übersicht“) are matched like [`Database::page_by_title`].
+    pub fn unresolved_links(&self, targets: Vec<String>) -> Result<Vec<String>> {
+        if targets.is_empty() {
+            return Ok(targets);
+        }
+        let conn = self.conn();
+        let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Well below SQLite's limit of bound parameters.
+        for part in targets.chunks(500) {
+            let marks = vec!["?"; part.len()].join(",");
+            let mut st = conn.prepare_cached(&format!(
+                "SELECT title FROM pages WHERE deleted_at IS NULL AND title COLLATE NOCASE IN ({marks})"
+            ))?;
+            let titles =
+                st.query_map(rusqlite::params_from_iter(part.iter().map(|t| t.trim())), |r| r.get::<_, String>(0))?;
+            for t in titles {
+                found.insert(t?.to_lowercase());
+            }
+        }
+        let mut missing: Vec<String> =
+            targets.into_iter().filter(|t| !found.contains(&t.trim().to_lowercase())).collect();
+        if missing.iter().any(|t| !t.trim().is_ascii()) {
+            // SQLite's NOCASE folds ASCII only: compare the other titles once, in Rust.
+            let mut st = conn.prepare_cached("SELECT title FROM pages WHERE deleted_at IS NULL")?;
+            let all: std::collections::HashSet<String> =
+                st.query_map([], |r| r.get::<_, String>(0))?.filter_map(|t| t.ok()).map(|t| t.to_lowercase()).collect();
+            missing.retain(|t| {
+                let needle = t.trim().to_lowercase();
+                needle.is_ascii() || !all.contains(&needle)
+            });
+        }
+        Ok(missing)
     }
 
     /// Rebuilds the derived indexes of every page (used after migrating).
@@ -355,8 +464,7 @@ impl Database {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
         };
-        let unresolved_links =
-            wiki_links(&content).into_iter().filter(|t| self.page_by_title(t).ok().flatten().is_none()).collect();
+        let unresolved_links = self.unresolved_links(wiki_links(&content))?;
         Ok(PageDoc { page, content, tags, backlinks, unresolved_links })
     }
 
@@ -784,5 +892,120 @@ mod tests {
         assert_eq!(tags("---\ntags: [kunde, \"Projekt\"]\n---\nText #inline\n"), ["kunde", "projekt", "inline"]);
         assert_eq!(tags("---\nstatus: x\ntags:\n  - a\n  - '#b'\n---\n"), ["a", "b"]);
         assert!(tags("---\n\nNur eine Linie\n\n---\n").is_empty());
+    }
+
+    #[test]
+    fn unresolved_links_in_one_query_match_the_lookup_per_link() {
+        let db = Database::open_in_memory().unwrap();
+        for t in ["Architektur", "Übersicht", "Jour fixe", "Straße"] {
+            db.create_page(None, t, None).unwrap();
+        }
+        let trashed = db.create_page(None, "Weg", None).unwrap();
+        db.trash_page(trashed.id).unwrap();
+        let mut links: Vec<String> = [
+            "architektur",
+            "ARCHITEKTUR",
+            "übersicht",
+            "ÜBERSICHT",
+            "jour FIXE",
+            "Weg",
+            "Fehlt",
+            "strasse",
+            "STRASSE",
+            "straße",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        // Many links: more than one chunk of bound parameters.
+        links.extend((0..1200).map(|i| format!("Neu {i}")));
+        let one_by_one: Vec<String> =
+            links.iter().filter(|t| db.page_by_title(t).unwrap().is_none()).cloned().collect();
+        let batched = db.unresolved_links(links).unwrap();
+        assert_eq!(batched, one_by_one);
+        assert_eq!(&batched[..4], ["Weg", "Fehlt", "strasse", "STRASSE"]);
+    }
+
+    #[test]
+    fn save_returns_what_the_editor_needs() {
+        let db = Database::open_in_memory().unwrap();
+        db.create_page(None, "Ziel", None).unwrap();
+        let p = db.create_page(None, "Quelle", None).unwrap();
+        let saved = db.save_page(p.id, "[[Ziel]] [[Fehlt]] #b #a").unwrap();
+        let doc = db.page_doc(p.id).unwrap();
+        assert_eq!(saved.id, p.id);
+        assert_eq!(saved.tags, doc.tags);
+        assert_eq!(saved.tags, ["a", "b"]);
+        assert_eq!(saved.unresolved_links, doc.unresolved_links);
+        assert_eq!(saved.unresolved_links, ["Fehlt"]);
+        assert_eq!(saved.updated_at, doc.page.updated_at);
+    }
+
+    #[test]
+    fn a_save_rewrites_only_changed_chunks_and_keeps_search_in_step() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Lang", None).unwrap();
+        let sections: Vec<String> = (0..6).map(|i| format!("# Teil {i}\n\nAbschnitt{i} Inhalt")).collect();
+        db.save_page_content(p.id, &sections.join("\n\n")).unwrap();
+        let rows = |db: &Database| -> Vec<(i64, i64, String)> {
+            let mut st = db
+                .conn()
+                .prepare("SELECT id, position, content_markdown FROM notes_blocks WHERE page_id = ?1 ORDER BY position")
+                .unwrap();
+            st.query_map([p.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(|r| r.unwrap()).collect()
+        };
+        let before = rows(&db);
+        assert_eq!(before.len(), 6);
+        for (id, _) in crate::ai::rag::pending_blocks(&db, 10).unwrap() {
+            crate::ai::rag::store_embedding(&db, id, &[1.0]).unwrap();
+        }
+        // Edit section 2, drop section 4, insert a new first section and repeat section 0.
+        let mut next = sections.clone();
+        next[2] = "# Teil 2\n\nAbschnitt2 geändert".into();
+        next.remove(4);
+        next.insert(0, "# Vorwort\n\nNeuanfang".into());
+        next.push(sections[0].clone());
+        db.save_page_content(p.id, &next.join("\n\n")).unwrap();
+        let after = rows(&db);
+        assert_eq!(after.iter().map(|r| r.2.clone()).collect::<Vec<_>>(), chunks(&next.join("\n\n")));
+        assert_eq!(after.iter().map(|r| r.1).collect::<Vec<_>>(), (0..after.len() as i64).collect::<Vec<_>>());
+        // Unchanged sections keep their rows (and embeddings); only new text waits for one.
+        let kept = |text: &str| before.iter().find(|r| r.2 == text).map(|r| r.0);
+        assert_eq!(after.iter().find(|r| r.2 == sections[5]).map(|r| r.0), kept(&sections[5]));
+        let pending: Vec<String> =
+            crate::ai::rag::pending_blocks(&db, 10).unwrap().into_iter().map(|(_, t)| t).collect();
+        assert_eq!(pending.len(), 3, "{pending:?}");
+        // The search index follows: new text found, removed text gone.
+        let hits = |q: &str| crate::search::search(&db, q, 10).unwrap().len();
+        assert!(hits("Neuanfang") > 0);
+        assert!(hits("geändert") > 0);
+        let fts = |q: &str| -> i64 {
+            db.conn()
+                .query_row("SELECT COUNT(*) FROM notes_blocks_fts WHERE notes_blocks_fts MATCH ?1", [q], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(fts("Abschnitt4"), 0);
+        assert_eq!(fts("Abschnitt0"), 2);
+        // The same result as indexing from scratch.
+        db.reindex_all().unwrap();
+        assert_eq!(rows(&db).into_iter().map(|r| r.2).collect::<Vec<_>>(), chunks(&next.join("\n\n")));
+    }
+
+    #[test]
+    fn links_and_tags_follow_edits() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "P", None).unwrap();
+        db.save_page_content(p.id, "[[A]] [[B]] #x #y").unwrap();
+        db.save_page_content(p.id, "[[b]] [[C]] #y #z").unwrap();
+        let links: Vec<String> = db
+            .conn()
+            .prepare("SELECT target FROM page_links WHERE from_page = ?1 ORDER BY target")
+            .unwrap()
+            .query_map([p.id], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(links, ["b", "c"]);
+        assert_eq!(db.page_tags(p.id).unwrap(), ["y", "z"]);
     }
 }

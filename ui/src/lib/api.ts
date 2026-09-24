@@ -10,7 +10,8 @@ export const api = {
   // pages
   tree: () => call<T.PageNode[]>("workspace_tree"),
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
-  savePage: (id: number, content: string) => call<T.PageDoc>("page_save", { id, content }),
+  /** Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content. */
+  savePage: (id: number, content: string) => call<T.SavedPage>("page_save", { id, content }),
   /** The child pages of a page with their typed properties (table and board views). */
   pageCollection: (parentId: number) => call<T.PageCollection>("page_collection", { parentId }),
   /** The schema a page's properties follow (its parent's), with the parent's id. */
@@ -116,6 +117,12 @@ export const api = {
   deleteEntry: (id: number) => call<void>("delete_time_entry", { id }),
   budget: (netzplanId: number) => call<T.BudgetStatus[]>("budget", { netzplanId }),
   schedule: (netzplanId: number) => call<T.Schedule>("schedule", { netzplanId }),
+  /** Budget and schedule of every Netzplan in one call (Projekte). */
+  netzplanOverview: () => call<T.NetzplanOverview[]>("netzplan_overview"),
+  /** The budget rows of every Netzplan (each: the total first, then its Vorgänge) in one call. */
+  budgetsAll: () => call<T.BudgetStatus[]>("budgets_all"),
+  /** Open-task counts and the most critical budget for the assistant's suggestions; `today` is the local day. */
+  suggestionFacts: (today: string, pageId: number | null) => call<T.SuggestionFacts>("suggestion_facts", { today, pageId }),
   exportEntries: (a: { format: T.ExportFormat; from: string | null; to: string | null; onlyReleased: boolean; markExported: boolean; path: string | null }) =>
     call<T.ExportResult>("export_entries", a),
 

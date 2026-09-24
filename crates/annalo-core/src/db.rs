@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005_entry_page.sql"),
     include_str!("../migrations/0006_page_versions.sql"),
     include_str!("../migrations/0007_activity_focus.sql"),
+    include_str!("../migrations/0008_lookup_indexes.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -52,6 +53,9 @@ pub struct Database {
     conn: Connection,
     /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
     depth: std::sync::atomic::AtomicUsize,
+    /// The stored settings JSON and what it parsed to: a save reads the settings (version
+    /// policy), and parsing them each time costs more than the save itself for small pages.
+    pub(crate) settings_cache: std::cell::RefCell<Option<(String, crate::settings::Settings)>>,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {
@@ -71,6 +75,21 @@ fn booked_guard(e: rusqlite::Error, what: &str) -> Error {
             Error::State(format!("{what} hat gebuchte Zeiten und kann nicht gelöscht werden"))
         }
         other => Error::Db(other),
+    }
+}
+
+/// Booked minutes of one Netzplan, see [`Database::booked_minutes_all`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BookedMinutes {
+    pub total: i64,
+    /// By Vorgang number in ASCII lower case.
+    pub by_vorgang: HashMap<String, i64>,
+}
+
+impl BookedMinutes {
+    /// Minutes booked on the Vorgang `nr` (compared like `COLLATE NOCASE`).
+    pub fn vorgang(&self, nr: &str) -> i64 {
+        self.by_vorgang.get(&nr.to_ascii_lowercase()).copied().unwrap_or(0)
     }
 }
 
@@ -99,9 +118,39 @@ impl Database {
              PRAGMA foreign_keys = ON;
              PRAGMA temp_store = MEMORY;",
         )?;
-        let mut db = Database { conn, depth: Default::default() };
+        let mut db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
         db.migrate()?;
         Ok(db)
+    }
+
+    /// A second, read-only connection to the workspace at `path` (already opened and migrated
+    /// by [`Database::open`]). In WAL mode it reads the last committed state while the main
+    /// connection writes, so long reads (lists, the Markdown mirror) never wait for a save
+    /// and a save never waits for them. Refuses a database this build cannot read.
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
+        let db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
+        if db.schema_version()? != MIGRATIONS.len() {
+            return Err(Error::State("Datenbank noch nicht auf dem aktuellen Stand".into()));
+        }
+        Ok(db)
+    }
+
+    /// Runs `f` inside one read transaction, so everything it reads is one consistent state
+    /// (the Markdown mirror reads the tree, all pages and all time entries).
+    pub fn read_snapshot<T>(&self, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        if !self.conn.is_autocommit() {
+            return f(self);
+        }
+        self.conn.execute_batch("BEGIN DEFERRED")?;
+        let res = f(self);
+        let _ = self.conn.execute_batch("COMMIT");
+        res
     }
 
     fn migrate(&mut self) -> Result<()> {
@@ -277,11 +326,21 @@ impl Database {
     }
 
     pub fn list_netzplaene(&self, project_id: Option<i64>) -> Result<Vec<Netzplan>> {
-        let mut st = self.conn.prepare_cached(&format!(
-            "SELECT {} FROM netzplaene WHERE ?1 IS NULL OR project_id = ?1 ORDER BY netzplan_nr",
-            Self::NETZPLAN_COLS
-        ))?;
-        let rows = st.query_map([project_id], Self::map_netzplan)?.collect::<rusqlite::Result<_>>()?;
+        let rows = match project_id {
+            Some(p) => self
+                .conn
+                .prepare_cached(&format!(
+                    "SELECT {} FROM netzplaene WHERE project_id = ?1 ORDER BY netzplan_nr",
+                    Self::NETZPLAN_COLS
+                ))?
+                .query_map([p], Self::map_netzplan)?
+                .collect::<rusqlite::Result<_>>()?,
+            None => self
+                .conn
+                .prepare_cached(&format!("SELECT {} FROM netzplaene ORDER BY netzplan_nr", Self::NETZPLAN_COLS))?
+                .query_map([], Self::map_netzplan)?
+                .collect::<rusqlite::Result<_>>()?,
+        };
         Ok(rows)
     }
 
@@ -654,20 +713,38 @@ impl Database {
     }
 
     pub fn list_time_entries(&self, f: &EntryFilter) -> Result<Vec<TimeEntryRow>> {
+        // Only the filters that are set go into the query, so SQLite can use the index on
+        // start_time (`?1 IS NULL OR …` hides it from the planner).
+        let mut conds: Vec<&str> = vec![];
+        let mut args: Vec<rusqlite::types::Value> = vec![];
+        if let Some(from) = f.from {
+            conds.push("e.start_time >= ?");
+            args.push(ts(from).into());
+        }
+        if let Some(to) = f.to {
+            conds.push("e.start_time < ?");
+            args.push(ts(to).into());
+        }
+        if let Some(np) = f.netzplan_id {
+            conds.push("e.netzplan_id = ?");
+            args.push(np.into());
+        }
+        if let Some(status) = f.status {
+            conds.push("e.status_flag = ?");
+            args.push(status.as_str().to_owned().into());
+        }
+        let filter = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
         let mut st = self.conn.prepare_cached(&format!(
             "SELECT {}, p.project_code, n.netzplan_nr, n.wbs_element
              FROM time_entries e
              JOIN netzplaene n ON n.id = e.netzplan_id
              JOIN projects p ON p.id = n.project_id
-             WHERE (?1 IS NULL OR e.start_time >= ?1)
-               AND (?2 IS NULL OR e.start_time < ?2)
-               AND (?3 IS NULL OR e.netzplan_id = ?3)
-               AND (?4 IS NULL OR e.status_flag = ?4)
+             {filter}
              ORDER BY e.start_time, e.id",
             Self::ENTRY_COLS
         ))?;
         let rows = st
-            .query_map(params![f.from.map(ts), f.to.map(ts), f.netzplan_id, f.status.map(StatusFlag::as_str)], |r| {
+            .query_map(rusqlite::params_from_iter(args), |r| {
                 Ok(TimeEntryRow {
                     entry: Self::map_entry(r)?,
                     project_code: r.get(11)?,
@@ -681,13 +758,81 @@ impl Database {
 
     /// Booked hours (finished entries only) on a Netzplan, optionally for one Vorgang.
     pub fn booked_hours(&self, netzplan_id: i64, vorgang_nr: Option<&str>) -> Result<f64> {
-        let minutes: i64 = self.conn.query_row(
-            "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
-             WHERE netzplan_id = ?1 AND status_flag <> 'running' AND (?2 IS NULL OR vorgang_nr = ?2 COLLATE NOCASE)",
-            params![netzplan_id, vorgang_nr],
-            |r| r.get(0),
-        )?;
+        let minutes: i64 = match vorgang_nr {
+            Some(v) => self.conn.query_row(
+                "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
+                 WHERE netzplan_id = ?1 AND status_flag <> 'running' AND vorgang_nr = ?2 COLLATE NOCASE",
+                params![netzplan_id, v],
+                |r| r.get(0),
+            )?,
+            None => self.conn.query_row(
+                "SELECT COALESCE(SUM(duration_minutes), 0) FROM time_entries
+                 WHERE netzplan_id = ?1 AND status_flag <> 'running'",
+                [netzplan_id],
+                |r| r.get(0),
+            )?,
+        };
         Ok(minutes as f64 / 60.0)
+    }
+
+    /// Booked minutes (finished entries only) of every Netzplan in one grouped query: the
+    /// total and per Vorgang number (keys in ASCII lower case, matching like `COLLATE NOCASE`).
+    pub fn booked_minutes_all(&self) -> Result<HashMap<i64, BookedMinutes>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT netzplan_id, vorgang_nr, SUM(duration_minutes) FROM time_entries
+             WHERE status_flag <> 'running' GROUP BY netzplan_id, vorgang_nr",
+        )?;
+        let mut out: HashMap<i64, BookedMinutes> = HashMap::new();
+        for row in st.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0)))
+        })? {
+            let (np, vorgang, minutes) = row?;
+            let b = out.entry(np).or_default();
+            b.total += minutes;
+            if let Some(v) = vorgang {
+                *b.by_vorgang.entry(v.to_ascii_lowercase()).or_default() += minutes;
+            }
+        }
+        Ok(out)
+    }
+
+    /// All Vorgänge by Netzplan (each list like [`Database::list_vorgaenge`]), in two queries.
+    pub fn vorgaenge_by_netzplan(&self) -> Result<HashMap<i64, Vec<Vorgang>>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT id, netzplan_id, vorgang_nr, description, duration_days, planned_hours, remaining_hours
+             FROM vorgaenge ORDER BY netzplan_id, vorgang_nr",
+        )?;
+        let mut out: HashMap<i64, Vec<Vorgang>> = HashMap::new();
+        let mut at: HashMap<i64, (i64, usize)> = HashMap::new();
+        for v in st.query_map([], |r| {
+            Ok(Vorgang {
+                id: r.get(0)?,
+                netzplan_id: r.get(1)?,
+                vorgang_nr: r.get(2)?,
+                description: r.get(3)?,
+                duration_days: r.get(4)?,
+                planned_hours: r.get(5)?,
+                remaining_hours: r.get(6)?,
+                predecessors: vec![],
+            })
+        })? {
+            let v = v?;
+            let list = out.entry(v.netzplan_id).or_default();
+            at.insert(v.id, (v.netzplan_id, list.len()));
+            list.push(v);
+        }
+        let mut links = self
+            .conn
+            .prepare_cached("SELECT successor_id, predecessor_id FROM vorgang_links ORDER BY predecessor_id")?;
+        for link in links.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+            let (succ, pred) = link?;
+            if let Some((np, i)) = at.get(&succ)
+                && let Some(v) = out.get_mut(np).and_then(|l| l.get_mut(*i))
+            {
+                v.predecessors.push(pred);
+            }
+        }
+        Ok(out)
     }
 
     /// The latest finished entries on a Netzplan (optionally one Vorgang), newest first.
@@ -1072,5 +1217,127 @@ mod tests {
         assert_eq!(tree[3].children[7].page.title, "Seite 3-7", "siblings keep their order");
         // The old filter-per-parent build took seconds here in debug builds.
         assert!(took < std::time::Duration::from_millis(200), "page_tree took {took:?}");
+    }
+
+    #[test]
+    fn entry_filters_match_filtering_all_entries() {
+        let (db, np) = seeded();
+        let p = db.project_by_code("PRJ-2026-X").unwrap();
+        let other = db.create_netzplan(p.id, "NP-8802", "NP-8802-1", "Zweiter", 10.0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
+        for i in 0..12i64 {
+            let e = db
+                .insert_time_entry(&NewTimeEntry {
+                    netzplan_id: if i % 3 == 0 { other.id } else { np.id },
+                    vorgang_nr: None,
+                    leistungsart: None,
+                    start_time: t0 + chrono::Duration::days(i),
+                    duration_minutes: 30,
+                    description: format!("e{i}"),
+                    source: EntrySource::Manual,
+                    page_id: None,
+                })
+                .unwrap();
+            if i % 2 == 0 {
+                db.set_entry_status(&[e.id], StatusFlag::Released).unwrap();
+            }
+        }
+        let all = db.list_time_entries(&EntryFilter::default()).unwrap();
+        assert_eq!(all.len(), 12);
+        let from = Some(t0 + chrono::Duration::days(3));
+        let to = Some(t0 + chrono::Duration::days(9));
+        for from in [None, from] {
+            for to in [None, to] {
+                for netzplan_id in [None, Some(np.id)] {
+                    for status in [None, Some(StatusFlag::Released)] {
+                        let f = EntryFilter { from, to, netzplan_id, status };
+                        let want: Vec<i64> = all
+                            .iter()
+                            .filter(|r| from.is_none_or(|t| r.entry.start_time >= t))
+                            .filter(|r| to.is_none_or(|t| r.entry.start_time < t))
+                            .filter(|r| netzplan_id.is_none_or(|n| r.entry.netzplan_id == n))
+                            .filter(|r| status.is_none_or(|s| r.entry.status_flag == s))
+                            .map(|r| r.entry.id)
+                            .collect();
+                        let got: Vec<i64> = db.list_time_entries(&f).unwrap().iter().map(|r| r.entry.id).collect();
+                        assert_eq!(got, want, "{f:?}");
+                    }
+                }
+            }
+        }
+        assert_eq!(db.list_netzplaene(None).unwrap().len(), 2);
+        assert_eq!(db.list_netzplaene(Some(p.id)).unwrap().len(), 2);
+        assert!(db.list_netzplaene(Some(p.id + 1)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn vorgaenge_of_all_netzplaene_match_one_by_one() {
+        let (db, np) = seeded();
+        let p = db.project_by_code("PRJ-2026-X").unwrap();
+        let other = db.create_netzplan(p.id, "NP-8802", "NP-8802-1", "Zweiter", 10.0).unwrap();
+        let a = db.create_vorgang(np.id, "1020", "B", 1.0, 2.0).unwrap();
+        let b = db.create_vorgang(np.id, "1010", "A", 1.0, 2.0).unwrap();
+        let c = db.create_vorgang(np.id, "1030", "C", 1.0, 2.0).unwrap();
+        db.create_vorgang(other.id, "9", "X", 1.0, 2.0).unwrap();
+        db.link_vorgaenge(b.id, c.id).unwrap();
+        db.link_vorgaenge(a.id, c.id).unwrap();
+        let all = db.vorgaenge_by_netzplan().unwrap();
+        for n in [np.id, other.id] {
+            assert_eq!(all[&n], db.list_vorgaenge(n).unwrap());
+        }
+        assert_eq!(all[&np.id][2].predecessors, [a.id, b.id]);
+    }
+
+    #[test]
+    fn a_read_only_connection_sees_commits_and_cannot_write() {
+        let path = std::env::temp_dir().join(format!("annalo-reader-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let db = Database::open(&path).unwrap();
+        let reader = Database::open_read_only(&path).unwrap();
+        let p = db.create_page(None, "Neu", None).unwrap();
+        db.save_page_content(p.id, "gespeichert").unwrap();
+        assert_eq!(reader.page_doc(p.id).unwrap().content, "gespeichert");
+        assert!(reader.create_page(None, "Nicht", None).is_err());
+        // One consistent state inside a snapshot, the newest one after it.
+        reader
+            .read_snapshot(|r| {
+                assert_eq!(r.list_pages()?.len(), 1);
+                db.create_page(None, "Später", None)?;
+                assert_eq!(r.list_pages()?.len(), 1);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(reader.list_pages().unwrap().len(), 2);
+        // A backup through the read-only connection.
+        let dir = std::env::temp_dir().join(format!("annalo-reader-bak-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let info = crate::backup::backup_to(&reader, &dir, 2).unwrap();
+        assert_eq!(Database::open(&info.path).unwrap().list_pages().unwrap().len(), 2);
+        drop((db, reader));
+        let _ = std::fs::remove_dir_all(&dir);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    #[test]
+    fn cached_settings_follow_every_change() {
+        let db = Database::open_in_memory().unwrap();
+        let mut s = db.load_settings().unwrap();
+        s.notes.max_versions = 7;
+        db.save_settings(&s).unwrap();
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 7);
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 7, "from the cache");
+        // Changed behind its back (another connection, a migration): read again.
+        db.conn()
+            .execute("UPDATE settings SET value = json_set(value, '$.notes.max_versions', 9) WHERE key = 'app'", [])
+            .unwrap();
+        assert_eq!(db.load_settings().unwrap().notes.max_versions, 9);
+        // Unreadable settings are reported every time, not hidden by the cache.
+        db.conn().execute("UPDATE settings SET value = '[1]' WHERE key = 'app'", []).unwrap();
+        assert!(!db.load_settings_checked().unwrap().1.is_empty());
+        assert!(!db.load_settings_checked().unwrap().1.is_empty());
     }
 }

@@ -378,41 +378,82 @@ impl Planner<'_> {
         candidate
     }
 
-    fn plan(&mut self, db: &Database, nodes: &[PageNode], dir: &str, out: &mut Vec<(PagePath, String)>) -> Result<()> {
+    /// Paths of `nodes` and their subpages; `has_content` tells whether a page has text.
+    fn plan(&mut self, has_content: &dyn Fn(i64) -> bool, nodes: &[PageNode], dir: &str, out: &mut Vec<PagePath>) {
         for node in nodes {
             let base = file_name(&node.page.title);
-            let content = db.page_doc(node.page.id)?.content;
-            let written = !content.is_empty() || node.children.is_empty();
+            let written = has_content(node.page.id) || node.children.is_empty();
             let file = written.then(|| self.unique(dir, &base, ".md"));
             let folder = (!node.children.is_empty()).then(|| self.unique(dir, &base, ""));
-            out.push((PagePath { page_id: node.page.id, file, folder: folder.clone() }, content));
+            out.push(PagePath { page_id: node.page.id, file, folder: folder.clone() });
             if let Some(sub) = folder {
-                self.plan(db, &node.children, &sub, out)?;
+                self.plan(has_content, &node.children, &sub, out);
             }
         }
-        Ok(())
     }
 }
 
 /// The path of every page in an export into an empty folder (the Markdown mirror), in tree
 /// order. The Git sync maps changed files back to pages with it.
 pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
+    // Only whether a page has text matters here, not the text.
+    let filled: std::collections::HashSet<i64> = db
+        .conn()
+        .prepare_cached("SELECT id FROM pages WHERE deleted_at IS NULL AND content <> ''")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     let mut out = Vec::new();
-    Planner { root: None, taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut out)?;
-    Ok(out.into_iter().map(|(p, _)| p).collect())
+    Planner { root: None, taken: Default::default() }.plan(&|id| filled.contains(&id), &db.page_tree()?, "", &mut out);
+    Ok(out)
+}
+
+/// What an export needs from the database, read at once: the page tree and every page's
+/// Markdown (one query, not one per page). Writing the files then needs no database, so
+/// the Markdown mirror is written without holding the database.
+pub struct VaultSnapshot {
+    tree: Vec<PageNode>,
+    contents: std::collections::HashMap<i64, String>,
+}
+
+impl VaultSnapshot {
+    pub fn read(db: &Database) -> Result<Self> {
+        let tree = db.page_tree()?;
+        let contents = db
+            .conn()
+            .prepare_cached("SELECT id, content FROM pages WHERE deleted_at IS NULL")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(VaultSnapshot { tree, contents })
+    }
+
+    fn content(&self, id: i64) -> &str {
+        self.contents.get(&id).map_or("", String::as_str)
+    }
 }
 
 /// Writes every page as a Markdown file below `dir` and the embedded attachments to
 /// `dir/attachments/`. Returns the number of Markdown files.
 pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<usize> {
+    export_snapshot(&VaultSnapshot::read(db)?, dir, attachments_dir)
+}
+
+/// [`export_vault`] from a [`VaultSnapshot`] (no database access).
+pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path) -> Result<usize> {
     fs::create_dir_all(dir)?;
     let mut planned = Vec::new();
-    Planner { root: Some(dir), taken: Default::default() }.plan(db, &db.page_tree()?, "", &mut planned)?;
+    Planner { root: Some(dir), taken: Default::default() }.plan(
+        &|id| !snap.content(id).is_empty(),
+        &snap.tree,
+        "",
+        &mut planned,
+    );
     let mut count = 0;
     let mut embedded: Vec<String> = vec![];
-    for (path, content) in &planned {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for path in &planned {
+        let content = snap.content(path.page_id);
         for name in crate::attachment_manager::export_files(content) {
-            if !embedded.contains(&name) {
+            if seen.insert(name.clone()) {
                 embedded.push(name);
             }
         }
