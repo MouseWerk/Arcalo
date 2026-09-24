@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catsGrid, weekGaps } from "./cats";
+import { catsGrid, undeletableReason, weekGaps } from "./cats";
 import type { TimeEntryRow } from "./types";
 
 const week = new Date(2026, 8, 21); // Monday
@@ -36,5 +36,14 @@ describe("weekGaps", () => {
       [22, 120],
       [23, 480],
     ]);
+  });
+});
+
+describe("undeletableReason", () => {
+  it("blocks exported and running entries only", () => {
+    expect(undeletableReason("exported")).toBe("bereits exportiert");
+    expect(undeletableReason("running")).toContain("stoppen");
+    expect(undeletableReason("draft")).toBeNull();
+    expect(undeletableReason("released")).toBeNull();
   });
 });

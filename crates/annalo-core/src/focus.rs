@@ -315,15 +315,14 @@ fn book_session<Tz: TimeZone>(
         .optional()?;
     let (entry, extended) = match existing {
         Some(id) => {
-            let before: i64 = db.conn().query_row(
-                "SELECT IFNULL(SUM(worked_minutes), 0) FROM focus_sessions WHERE entry_id = ?1 AND id <> ?2",
-                params![id, s.id],
-                |r| r.get(0),
-            )?;
-            let total = settings.time.rounding.apply(before + worked);
+            // The entry as it is now (the user may have corrected it): the session's minutes are
+            // added to its duration, the start stays and the end follows (start + duration = end).
+            let current = db.time_entry(id)?;
+            let total = settings.time.rounding.apply(current.duration_minutes.unwrap_or(0) + worked);
+            let new_end = current.start_time + chrono::Duration::minutes(total);
             db.conn().execute(
                 "UPDATE time_entries SET duration_minutes = ?2, end_time = ?3 WHERE id = ?1",
-                params![id, total, ts(end)],
+                params![id, total, ts(new_end)],
             )?;
             let e = db.time_entry(id)?;
             db.feed_entry("entry_changed", &e, end)?;
@@ -476,6 +475,29 @@ mod tests {
     fn begin(db: &Database, reference: &str, minutes: f64, goal: &str, now: DateTime<Utc>) -> FocusSession {
         let s = FocusStart { reference: reference.into(), minutes, break_minutes: 5, goal: goal.into() };
         start(db, &s, now).unwrap()
+    }
+
+    #[test]
+    fn a_corrected_entry_keeps_the_correction_when_a_session_extends_it() {
+        let (db, r) = setup();
+        let t0 = whole(Utc::now() - chrono::Duration::hours(3));
+        begin(&db, &r, 25.0, "Konzept", t0);
+        let e = finish(&db, t0 + chrono::Duration::minutes(25), &cet()).unwrap().entry.unwrap();
+        // The user books 40 minutes instead, starting 15 minutes earlier.
+        let start = e.start_time - chrono::Duration::minutes(15);
+        db.conn()
+            .execute(
+                "UPDATE time_entries SET start_time = ?2, duration_minutes = 40, end_time = ?3 WHERE id = ?1",
+                params![e.id, ts(start), ts(start + chrono::Duration::minutes(40))],
+            )
+            .unwrap();
+        let t1 = t0 + chrono::Duration::minutes(31);
+        begin(&db, &r, 25.0, "Konzept", t1);
+        let e2 = finish(&db, t1 + chrono::Duration::minutes(25), &cet()).unwrap().entry.unwrap();
+        assert_eq!(e2.id, e.id);
+        assert_eq!(e2.duration_minutes, Some(65), "40 corrected + 25");
+        assert_eq!(e2.start_time, start);
+        assert_eq!(e2.end_time, Some(start + chrono::Duration::minutes(65)));
     }
 
     #[test]

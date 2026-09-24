@@ -132,7 +132,7 @@ impl AiProvider {
             ProviderKind::Openai => &[],
         };
         for s in strip {
-            if u.len() > s.len() && u[u.len() - s.len()..].eq_ignore_ascii_case(s) {
+            if u.len() > s.len() && u.get(u.len() - s.len()..).is_some_and(|t| t.eq_ignore_ascii_case(s)) {
                 u.truncate(u.len() - s.len());
                 u = u.trim_end_matches('/').to_owned();
             }
@@ -338,6 +338,16 @@ mod tests {
 
     fn p(kind: ProviderKind, url: &str) -> AiProvider {
         AiProvider { id: "x".into(), kind, base_url: url.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn root_with_non_ascii_tail_does_not_panic() {
+        let o = p(ProviderKind::Ollama, "http://localhost:11434/öö");
+        assert_eq!(o.root(), "http://localhost:11434/öö");
+        assert_eq!(p(ProviderKind::Azure, "https://x/ä/openai").root(), "https://x/ä");
+        let mut s = crate::settings::Settings::default();
+        s.providers.push(p(ProviderKind::Ollama, "http://localhost:11434/öö"));
+        let _ = s.normalize_ai();
     }
 
     #[test]

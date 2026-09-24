@@ -11,6 +11,7 @@ import { ScrollOutline } from "../components/ScrollOutline";
 import { MEETING_SUMMARY_EVENT, NoteEditor, flushAllEditors, reloadEditors, type NoteEditorHandle } from "../editor/NoteEditor";
 import { splitFrontmatter } from "../editor/extensions";
 import { parseFrontmatter } from "../lib/frontmatter";
+import { cleanTitleChars } from "../lib/links";
 import { PAGE_ICONS, PageIcon, iconLabel } from "../components/icons";
 import { Button, EmptyState, IconButton, Spinner, useMenu } from "../components/ui";
 import { addDays, dateLong, isoDay, relative } from "../lib/format";
@@ -332,6 +333,8 @@ function PageHeader({
 }) {
   const toolbarOn = useApp((st) => st.settings?.settings.editor?.toolbar ?? true);
   const [title, setTitle] = useState(doc.title);
+  // `[ ] | # ^` were typed and replaced (they belong to the link syntax).
+  const [titleHint, setTitleHint] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [menu, , openMenuAt] = useMenu();
@@ -339,6 +342,7 @@ function PageHeader({
   useEffect(() => setTitle(doc.title), [doc.title]);
 
   const commitTitle = async () => {
+    setTitleHint(false);
     const t = title.trim();
     if (!t || t === doc.title) return setTitle(doc.title);
     try {
@@ -502,7 +506,12 @@ function PageHeader({
                 value={title}
                 spellCheck={false}
                 aria-label="Seitentitel"
-                onChange={(e) => setTitle(e.target.value.replace(/\n/g, " "))}
+                onChange={(e) => {
+                  const typed = e.target.value.replace(/\n/g, " ");
+                  const clean = cleanTitleChars(typed);
+                  setTitle(clean);
+                  if (clean !== typed) setTitleHint(true);
+                }}
                 onBlur={commitTitle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -514,6 +523,11 @@ function PageHeader({
                 }}
               />
             </div>
+            {titleHint && (
+              <div className="page-subtitle page-title-hint" role="status">
+                [ ] | # ^ gehören zur Link-Schreibweise und werden in Titeln ersetzt.
+              </div>
+            )}
             {daily && <div className="page-subtitle">{dateLong(daily.toISOString())}</div>}
             {iconOpen && (
               <div className="icon-picker" role="listbox" aria-label="Symbol wählen">

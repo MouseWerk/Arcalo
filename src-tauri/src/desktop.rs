@@ -517,7 +517,9 @@ pub fn periodic(app: &AppHandle) {
             (late_allowed && core::late_timer_reminder(now, since, meta_date(&db, "late_timer.day"))).then(|| {
                 let e = running.as_ref().expect("late reminder implies a running timer");
                 let nr = db.netzplan_by_id(e.netzplan_id).map(|n| n.netzplan_nr).unwrap_or_default();
-                let start = e.start_time.with_timezone(&Local).format("%H:%M");
+                let local = e.start_time.with_timezone(&Local);
+                // Left running from an earlier day: the date says so.
+                let start = local.format(if local.date_naive() < now.date() { "%d.%m. %H:%M" } else { "%H:%M" });
                 format!(
                     "{} läuft seit {start} Uhr – stoppen nicht vergessen.",
                     core::timer_label(&nr, e.vorgang_nr.as_deref())

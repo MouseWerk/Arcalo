@@ -86,14 +86,21 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     }
 
     let duration = chrono::Duration::minutes(cmd.duration_minutes);
+    let today = local_now.date_naive();
+    // Today without a start time: the work just ended. Shortly after midnight it still counts
+    // for today (the day the user books on), so the start is not moved before midnight.
+    let mut clamped = false;
     let start = match (cmd.date, cmd.start) {
-        (_, Some(t)) => local_to_utc(offset, cmd.date.resolve(local_now.date_naive()).and_time(t))?,
-        // Today without a start time: the work just ended.
-        (d, None) if d.resolve(local_now.date_naive()) == local_now.date_naive() => now - duration,
-        (d, None) => local_to_utc(offset, d.resolve(local_now.date_naive()).and_time(DEFAULT_START))?,
+        (_, Some(t)) => local_to_utc(offset, cmd.date.resolve(today).and_time(t))?,
+        (d, None) if d.resolve(today) == today => {
+            let midnight = local_to_utc(offset, today.and_time(NaiveTime::MIN))?;
+            clamped = now - duration < midnight;
+            (now - duration).max(midnight)
+        }
+        (d, None) => local_to_utc(offset, d.resolve(today).and_time(DEFAULT_START))?,
     };
-    if start + duration > now + chrono::Duration::minutes(1) {
-        return Err(Error::State("time entries cannot end in the future".into()));
+    if !clamped && start + duration > now + chrono::Duration::minutes(1) {
+        return Err(Error::State("Buchungen dürfen nicht in der Zukunft enden".into()));
     }
 
     let entry = db.insert_time_entry(&NewTimeEntry {
@@ -115,13 +122,18 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     Ok(LogOutcome { entry, alerts, reference })
 }
 
-/// Resolves a local wall-clock time in the given zone (per date, so DST is honoured).
+/// Resolves a local wall-clock time in the given zone (per date, so DST is honoured). A time
+/// that occurs twice (clocks go back) is the first one; a time the clocks skip (spring
+/// forward, 02:30 does not exist) is taken an hour later, as the clock showed it then.
 fn local_to_utc<Tz: TimeZone>(offset: &Tz, dt: chrono::NaiveDateTime) -> Result<DateTime<Utc>> {
     offset
         .from_local_datetime(&dt)
         .earliest()
+        .or_else(|| offset.from_local_datetime(&(dt + chrono::Duration::hours(1))).earliest())
         .map(|t| t.with_timezone(&Utc))
-        .ok_or_else(|| Error::State(format!("ambiguous local time {dt}")))
+        .ok_or_else(|| {
+            Error::State(format!("Die Uhrzeit {} gibt es wegen der Zeitumstellung nicht", dt.format("%d.%m.%Y %H:%M")))
+        })
 }
 
 // ------------------------------------------------------------------- budgets
@@ -403,5 +415,59 @@ mod tests {
         // Netzplan: 7h booked of 10h, ETC = 4h (1010) + 3h (1020 manual) → EAC 14h > 10h.
         assert_eq!(total.level, AlertLevel::Critical);
         assert!((total.eac_hours - 14.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn booking_shortly_after_midnight_stays_on_today() {
+        let (db, _) = setup();
+        // 00:30 local time on the 24th.
+        let now = Utc.with_ymd_and_hms(2026, 9, 23, 22, 30, 0).unwrap();
+        let out = log_slash_command(&db, "/zeit NP-8801 2h Nachtschicht", now, &cet(), &Thresholds::default()).unwrap();
+        let start = out.entry.start_time.with_timezone(&cet());
+        assert_eq!(start.format("%d.%m. %H:%M").to_string(), "24.09. 00:00");
+        assert_eq!(out.entry.duration_minutes, Some(120));
+        // Earlier in the day nothing changes: the work just ended.
+        let later = Utc.with_ymd_and_hms(2026, 9, 24, 10, 0, 0).unwrap();
+        let out = log_slash_command(&db, "/zeit NP-8801 2h x", later, &cet(), &Thresholds::default()).unwrap();
+        assert_eq!(out.entry.start_time, later - chrono::Duration::hours(2));
+    }
+
+    /// Central European time with the switch to summer time on 29.03.2026 at 02:00.
+    #[derive(Clone, Copy, Debug)]
+    struct Berlin;
+
+    impl TimeZone for Berlin {
+        type Offset = chrono::FixedOffset;
+        fn from_offset(_: &chrono::FixedOffset) -> Self {
+            Berlin
+        }
+        fn offset_from_local_date(&self, d: &chrono::NaiveDate) -> chrono::LocalResult<chrono::FixedOffset> {
+            self.offset_from_local_datetime(&d.and_time(NaiveTime::MIN))
+        }
+        fn offset_from_local_datetime(&self, dt: &chrono::NaiveDateTime) -> chrono::LocalResult<chrono::FixedOffset> {
+            let switch = chrono::NaiveDate::from_ymd_opt(2026, 3, 29).unwrap().and_hms_opt(2, 0, 0).unwrap();
+            if *dt < switch {
+                chrono::LocalResult::Single(chrono::FixedOffset::east_opt(3600).unwrap())
+            } else if *dt < switch + chrono::Duration::hours(1) {
+                chrono::LocalResult::None
+            } else {
+                chrono::LocalResult::Single(chrono::FixedOffset::east_opt(7200).unwrap())
+            }
+        }
+        fn offset_from_utc_date(&self, d: &chrono::NaiveDate) -> chrono::FixedOffset {
+            self.offset_from_utc_datetime(&d.and_time(NaiveTime::MIN))
+        }
+        fn offset_from_utc_datetime(&self, dt: &chrono::NaiveDateTime) -> chrono::FixedOffset {
+            let switch = chrono::NaiveDate::from_ymd_opt(2026, 3, 29).unwrap().and_hms_opt(1, 0, 0).unwrap();
+            chrono::FixedOffset::east_opt(if *dt < switch { 3600 } else { 7200 }).unwrap()
+        }
+    }
+
+    #[test]
+    fn a_time_skipped_by_the_clock_change_is_taken_an_hour_later() {
+        let gap = chrono::NaiveDate::from_ymd_opt(2026, 3, 29).unwrap().and_hms_opt(2, 30, 0).unwrap();
+        assert_eq!(local_to_utc(&Berlin, gap).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 1, 30, 0).unwrap());
+        let before = gap - chrono::Duration::hours(1);
+        assert_eq!(local_to_utc(&Berlin, before).unwrap(), Utc.with_ymd_and_hms(2026, 3, 29, 0, 30, 0).unwrap());
     }
 }

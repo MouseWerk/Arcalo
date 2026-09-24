@@ -68,7 +68,7 @@ pub fn time_summary<Tz: TimeZone>(db: &Database, from: NaiveDate, to: NaiveDate,
     }
     let start_of =
         |d: NaiveDate| day_start(d, |dt| offset.from_local_datetime(dt).earliest().map(|t| t.with_timezone(&Utc)));
-    let end_day = to.succ_opt().ok_or_else(|| Error::State("date out of range".into()))?;
+    let end_day = to.succ_opt().ok_or_else(|| Error::State("Datum außerhalb des gültigen Bereichs".into()))?;
     let rows = db.list_time_entries(&EntryFilter {
         from: Some(start_of(from)?),
         to: Some(start_of(end_day)?),

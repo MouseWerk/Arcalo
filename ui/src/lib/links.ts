@@ -21,3 +21,12 @@ export function outgoingLinks(md: string): OutgoingLinks {
   }
   return { pages: [...pages.values()], files: [...files.values()] };
 }
+
+/** Characters a page title cannot hold (they end or split a `[[link]]`) and what replaces them.
+ *  Same rule as the core (`notes::clean_title`), which applies it to every title it stores. */
+const TITLE_REPLACEMENTS: Record<string, string> = { "[": "(", "]": ")", "|": "｜", "#": "＃", "^": "＾" };
+
+/** The characters of `TITLE_REPLACEMENTS` replaced (no trimming, so it can run while typing). */
+export function cleanTitleChars(title: string): string {
+  return title.replace(/[[\]|#^]/g, (c) => TITLE_REPLACEMENTS[c] ?? c);
+}

@@ -13,7 +13,7 @@ import { addDays, clock, fmtHours, fmtMinutes, isoDay, isoWeek, isoWeekday, pars
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
-import { catsGrid, weekGaps } from "../lib/cats";
+import { catsGrid, undeletableReason, weekGaps } from "../lib/cats";
 import type { ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
 import { openFocusDialog } from "../components/Focus";
@@ -128,8 +128,16 @@ export function TimesheetView() {
                   icon={Trash2}
                   variant="danger"
                   onClick={async () => {
-                    if (!(await s().confirm({ title: "Einträge löschen?", message: `${selected.size} Einträge werden endgültig gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
-                    act(() => Promise.all([...selected].map((id) => api.deleteEntry(id))), "Einträge gelöscht");
+                    // Exported and running entries stay (the core refuses to delete them).
+                    const kept = rows.filter((r) => selected.has(r.id) && undeletableReason(r.status_flag));
+                    const ids = [...selected].filter((id) => !kept.some((r) => r.id === id));
+                    if (!ids.length) {
+                      s().toast({ tone: "warning", title: "Nicht löschbar", detail: "Exportierte Einträge bleiben erhalten; ein laufender Eintrag wird zuerst gestoppt." });
+                      return;
+                    }
+                    const note = kept.length ? ` ${kept.length} exportierte bzw. laufende ${kept.length === 1 ? "bleibt" : "bleiben"} erhalten.` : "";
+                    if (!(await s().confirm({ title: "Einträge löschen?", message: `${ids.length} Einträge werden endgültig gelöscht.${note}`, confirmLabel: "Löschen", danger: true }))) return;
+                    act(() => Promise.all(ids.map((id) => api.deleteEntry(id))), "Einträge gelöscht");
                   }}
                 >
                   Löschen
@@ -501,9 +509,10 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                       },
                       "separator",
                       {
-                        label: "Löschen",
+                        label: undeletableReason(r.status_flag) ? `Löschen nicht möglich – ${undeletableReason(r.status_flag)}` : "Löschen",
                         icon: Trash2,
                         danger: true,
+                        disabled: undeletableReason(r.status_flag) != null,
                         onSelect: async () => {
                           if (!(await s().confirm({ title: "Eintrag löschen?", message: `${r.description || r.netzplan_nr} (${fmtMinutes(r.duration_minutes)} h) wird gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
                           try {

@@ -64,8 +64,8 @@ export function App() {
         // A move at startup, or a chosen folder that is not reachable (fallback to the default).
         const n = d.notice;
         if (n?.kind === "info") s.toast({ tone: "success", title: "Speicherort geändert", detail: n.message });
-        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: "Datenordner nicht verfügbar", detail: n.message });
-        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: "Daten nicht verschoben", detail: n.message });
+        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: n.title ?? "Datenordner nicht verfügbar", detail: n.message });
+        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: n.title ?? "Daten nicht verschoben", detail: n.message });
         if (d.synced) s.toast({ tone: "warning", persistent: true, title: "Datenbank im synchronisierten Ordner", detail: `Die Datenbank liegt in einem synchronisierten/Netzwerkordner – das kann sie beschädigen. Sicherungen dorthin sind unbedenklich. (${d.data_dir})` });
       })
       .catch(() => {});
@@ -312,6 +312,14 @@ async function onPulled(p: GitPulled) {
   await st.refreshTree().catch(() => {});
   reloadEditors([...p.pages, ...p.created]);
   await st.refreshConflicts();
+  if (p.kept?.length) {
+    st.toast({
+      tone: "warning",
+      persistent: true,
+      title: "Löschungen vom Server nicht übernommen",
+      detail: `Auf dem Server fehlen ${p.kept.length} Seiten auf einmal. Sie bleiben hier erhalten und werden bei der nächsten Synchronisierung wieder übertragen. Wenn sie gelöscht werden sollen, hier löschen.`,
+    });
+  }
   if (!p.conflicts.length) return;
   const first = p.conflicts[0];
   const title = st.pages.get(first)?.title ?? "Eine Notiz";

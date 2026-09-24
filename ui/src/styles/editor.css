@@ -1071,3 +1071,6 @@
 
 /* ---- long assistant answers ---- */
 .msg-cut { margin-top: 6px; }
+
+/* ---- Title rule (link characters) ---- */
+.page-title-hint { font-size: 12.5px; }

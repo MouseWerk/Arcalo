@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileSize, importSummary, parseDayInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
+import { fileSize, importProgress, longTimerHours, importSummary, parseDayInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
   const ok: [string, number][] = [
@@ -32,6 +32,21 @@ describe("versionTimes", () => {
     const now = new Date(2026, 8, 24, 16, 0);
     const at = (d: number, h: number, m: number, s: number) => new Date(2026, 8, d, h, m, s).toISOString();
     expect(versionTimes([at(24, 14, 3, 5), at(24, 14, 3, 50), at(24, 9, 7, 0), at(21, 9, 7, 0)], now)).toEqual(["14:03:05", "14:03:50", "09:07", "21.09., 09:07"]);
+  });
+});
+
+describe("longTimerHours", () => {
+  it("flags a timer forgotten over night", () => {
+    const now = new Date("2026-09-24T09:00:00Z");
+    expect(longTimerHours("2026-09-23T15:00:00Z", now)).toBe(18);
+    expect(longTimerHours("2026-09-24T01:00:00Z", now)).toBeNull();
+  });
+});
+
+describe("importProgress", () => {
+  it("counts the files read", () => {
+    expect(importProgress({ done: 120, total: 480 })).toBe("120 von 480 Dateien gelesen");
+    expect(importProgress({ done: 0, total: 0 })).toBe("Dateien werden gelesen …");
   });
 });
 

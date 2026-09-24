@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use annalo_core::gitsync::{RemoteChange, SyncOutcome};
+use annalo_core::gitsync::{self, RemoteChange, SyncOutcome};
 use annalo_core::merge::{self, MergeResult};
 use annalo_core::notes::PageDoc;
 use annalo_core::{Database, Error, vault};
@@ -57,12 +57,19 @@ pub struct Pulled {
     pub trashed: Vec<i64>,
     /// Pages with a new or updated conflict.
     pub conflicts: Vec<i64>,
+    /// Pages the server deleted that stay here: too many at once (see `gitsync::mass_deletion`).
+    /// The next sync uploads them again.
+    pub kept: Vec<i64>,
 }
 
 fn stem(path: &str) -> String {
     let name = path.rsplit('/').next().unwrap_or(path);
-    let stem = name.len().checked_sub(3).map_or(name, |n| &name[..n]);
+    let stem = name.len().checked_sub(3).and_then(|n| name.get(..n)).unwrap_or(name);
     if stem.trim().is_empty() { "Ohne Titel".into() } else { stem.to_owned() }
+}
+
+fn is_page_path(lower: &str) -> bool {
+    lower.ends_with(".md") && lower != "readme.md" && !lower.starts_with("zeiterfassung/")
 }
 
 /// Takes over the notes the server changed. A note unchanged here since the last sync gets
@@ -74,13 +81,21 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
         let paths = vault::page_paths(db)?;
         let by_file: HashMap<String, i64> =
             paths.iter().filter_map(|p| Some((p.file.as_ref()?.to_lowercase(), p.page_id))).collect();
-        let by_folder: HashMap<String, i64> =
+        let mut by_folder: HashMap<String, i64> =
             paths.iter().filter_map(|p| Some((p.folder.as_ref()?.to_lowercase(), p.page_id))).collect();
         let mut conflicts = load(db);
         let mut out = Pulled::default();
+        // Deleting many pages at once (another computer's mirror went missing, a wrong folder)
+        // is not taken over: the pages stay and go back to the server with the next sync.
+        let deletions = changes
+            .iter()
+            .filter(|c| c.theirs.is_none() && !c.conflict && by_file.contains_key(&c.path.to_lowercase()))
+            .count();
+        let tracked = by_file.keys().filter(|k| is_page_path(k)).count();
+        let refuse_deletions = gitsync::mass_deletion(deletions, tracked);
         for c in changes {
             let lower = c.path.to_lowercase();
-            if !lower.ends_with(".md") || lower == "readme.md" || lower.starts_with("zeiterfassung/") {
+            if !is_page_path(&lower) {
                 continue;
             }
             match by_file.get(&lower) {
@@ -95,6 +110,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                                 out.pages.push(id);
                             }
                         }
+                        (None, false) if refuse_deletions => out.kept.push(id),
                         (None, false) => {
                             db.trash_page(id)?;
                             out.trashed.push(id);
@@ -126,6 +142,10 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
                     db.save_page_content(page.id, theirs)?;
                     out.created.push(page.id);
+                    // Its subpages (later in the list) go below it.
+                    if let Some(folder) = lower.strip_suffix(".md") {
+                        by_folder.entry(folder.to_owned()).or_insert(page.id);
+                    }
                 }
             }
         }
@@ -219,7 +239,7 @@ pub async fn git_conflict_resolve(app: AppHandle, page_id: i64, content: String)
         let (sync, sync_error) = if gs.remote_url.trim().is_empty() {
             (None, None)
         } else {
-            match crate::run_git_sync(&app, false) {
+            match crate::run_git_sync(&app, false, false) {
                 Ok(out) => (Some(out), None),
                 Err(e) => (None, Some(e.to_string())),
             }
@@ -307,5 +327,106 @@ mod tests {
         db.trash_page(edited.id).unwrap();
         assert_eq!(live(&db).unwrap().len(), 1);
         assert_eq!(hold_paths(&db), ["Notiz.md"]);
+    }
+
+    #[test]
+    fn many_deletions_from_the_server_are_kept() {
+        let db = Database::open_in_memory().unwrap();
+        let mut changes = Vec::new();
+        for i in 0..12 {
+            let p = db.create_page(None, &format!("Notiz {i}"), None).unwrap();
+            db.save_page_content(p.id, "x").unwrap();
+            changes.push(change(&format!("Notiz {i}.md"), Some("x"), Some("x"), None, false));
+        }
+        let out = apply(&db, &changes, Local::now()).unwrap();
+        assert!(out.trashed.is_empty());
+        assert_eq!(out.kept.len(), 12);
+        assert_eq!(db.list_pages().unwrap().iter().filter(|p| p.deleted_at.is_none()).count(), 12);
+        // One deletion is taken over as before.
+        let out = apply(&db, &changes[..1], Local::now()).unwrap();
+        assert_eq!((out.trashed.len(), out.kept.len()), (1, 0));
+    }
+
+    /// Two computers (two data folders) with one bare remote, end to end: mirror, sync, take over.
+    #[test]
+    fn two_computers_share_one_remote_without_losing_notes() {
+        use annalo_core::gitsync::{Git, GitSyncSettings, SyncRequest};
+        use std::path::Path;
+        use std::process::Command;
+        if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("annalo-two-pcs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let bare = base.join("remote.git");
+        assert!(Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap().success());
+        let settings = GitSyncSettings { enabled: true, remote_url: bare.display().to_string(), ..Default::default() };
+        let run = |db: &Database, pc: &str, mirror: Option<&Path>| {
+            let dir = base.join(pc);
+            let files = dir.join("attachments");
+            std::fs::create_dir_all(&files).unwrap();
+            let own = dir.join("mirror");
+            annalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
+            let out = annalo_core::gitsync::sync(
+                &Git::new(None, &settings.remote_url),
+                &SyncRequest {
+                    repo: &dir.join("git-sync"),
+                    source: mirror.unwrap_or(&own),
+                    database: None,
+                    settings: &settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &hold_paths(db),
+                    allow_deletions: false,
+                },
+            )?;
+            apply(db, &out.remote_changes, Local::now())
+        };
+        let live_titles = |db: &Database| {
+            let mut t: Vec<String> =
+                db.list_pages().unwrap().into_iter().filter(|p| p.deleted_at.is_none()).map(|p| p.title).collect();
+            t.sort();
+            t
+        };
+
+        let a = Database::open_in_memory().unwrap();
+        let projekt = a.create_page(None, "Projekt", None).unwrap();
+        a.save_page_content(projekt.id, "Übersicht").unwrap();
+        let plan = a.create_page(Some(projekt.id), "Plan", None).unwrap();
+        a.save_page_content(plan.id, "Schritte").unwrap();
+        let notiz = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(notiz.id, "eins").unwrap();
+        run(&a, "a", None).unwrap();
+
+        // A new second computer: its first sync creates the server's notes here.
+        let b = Database::open_in_memory().unwrap();
+        let heute = b.create_page(None, "Heute", None).unwrap();
+        b.save_page_content(heute.id, "## Fokus").unwrap();
+        let pulled = run(&b, "b", None).unwrap();
+        assert_eq!(pulled.created.len(), 3, "{pulled:?}");
+        assert!(pulled.trashed.is_empty());
+        assert_eq!(live_titles(&b), ["Heute", "Notiz", "Plan", "Projekt"]);
+        let plan_b = b.page_by_title("Plan").unwrap().unwrap();
+        assert_eq!(plan_b.parent_id, b.page_by_title("Projekt").unwrap().map(|p| p.id), "hierarchy kept");
+
+        // The first computer syncs: it gets B's page and trashes nothing.
+        let pulled = run(&a, "a", None).unwrap();
+        assert!(pulled.trashed.is_empty() && pulled.kept.is_empty(), "{pulled:?}");
+        assert_eq!(live_titles(&a), ["Heute", "Notiz", "Plan", "Projekt"]);
+        // B syncs again: nothing to delete, nothing new.
+        let pulled = run(&b, "b", None).unwrap();
+        assert!(pulled.trashed.is_empty() && pulled.created.is_empty(), "{pulled:?}");
+
+        // Missing and foreign mirror folders are refused on B; A still has everything.
+        let err = run(&b, "b", Some(&base.join("fehlt"))).unwrap_err().to_string();
+        assert!(err.contains("keine Markdown-Kopie"), "{err}");
+        let foreign = base.join("Dokumente");
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::write(foreign.join("Brief.txt"), "privat").unwrap();
+        assert!(run(&b, "b", Some(&foreign)).is_err());
+        run(&a, "a", None).unwrap();
+        assert_eq!(live_titles(&a), ["Heute", "Notiz", "Plan", "Projekt"]);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

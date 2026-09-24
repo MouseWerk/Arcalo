@@ -24,7 +24,7 @@ use crate::vault;
 /// Marker file at the root of a mirror.
 pub const README_NAME: &str = "README.txt";
 /// First line of [`README_NAME`]; identifies a folder as a mirror that may be replaced.
-const MARKER: &str = "Annalo – Markdown-Kopie";
+pub(crate) const MARKER: &str = "Annalo – Markdown-Kopie";
 /// Folder for the monthly time-entry CSV files.
 pub const TIME_DIR: &str = "Zeiterfassung";
 
@@ -86,6 +86,16 @@ pub fn is_mirror(dir: &Path) -> bool {
     fs::read_to_string(dir.join(README_NAME)).is_ok_and(|s| s.starts_with(MARKER))
 }
 
+/// Held while a mirror folder is swapped, and by readers that need one complete state
+/// (the Git sync copies the mirror under it), so a reader never sees the gap between the
+/// two renames or a half-removed old folder.
+static SWAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Blocks mirror swaps until the guard is dropped.
+pub fn hold_swaps() -> std::sync::MutexGuard<'static, ()> {
+    SWAP.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Sibling paths used while swapping: `.name.staging` and `.name.old`.
 fn siblings(target: &Path) -> Result<(PathBuf, PathBuf)> {
     let invalid = || Error::State(format!("Ungültiger Ordner für die Markdown-Kopie: {}", target.display()));
@@ -101,6 +111,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
     let (staging, old) = siblings(target)?;
     // An interrupted swap left the previous mirror as `.old`: put it back first.
     if !target.exists() && old.is_dir() {
+        let _swap = hold_swaps();
         fs::rename(&old, target)?;
     }
     if target.exists() {
@@ -126,6 +137,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
             return Err(e);
         }
     };
+    let _swap = hold_swaps();
     if old.exists() {
         fs::remove_dir_all(&old)?;
     }

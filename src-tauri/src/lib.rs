@@ -13,6 +13,7 @@ mod network;
 mod portable;
 mod prefs;
 mod present;
+mod recovery;
 mod secrets;
 mod syncmerge;
 mod updates;
@@ -28,6 +29,7 @@ use annalo_core::ai::availability::{Catalog, Exclude};
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
 use annalo_core::ai::metrics::PriceTable;
 use annalo_core::ai::metrics::SessionMeter;
+use annalo_core::ai::privacy;
 use annalo_core::ai::provider::AiProvider;
 use annalo_core::ai::rag::{self, ContextChunk};
 use annalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
@@ -79,8 +81,12 @@ struct AiRuntime {
     /// Clients of the switched-on AI providers, by provider id.
     clients: HashMap<String, Arc<AiClient>>,
     router: Arc<ModelRouter>,
-    /// Client of the assistant's `http_request` tool.
-    tools_http: tools::HttpClient,
+    /// Client of the assistant's `http_request` tool (and link titles); `None` when the network
+    /// settings cannot be applied.
+    tools_http: Option<tools::HttpClient>,
+    /// Why the network settings cannot be applied (a missing CA file): requests fail with this
+    /// instead of going out without proxy and certificates.
+    network_error: Option<String>,
 }
 
 /// A client of `provider`: its key, the network settings (without proxy when it bypasses
@@ -95,6 +101,7 @@ fn provider_client(
     let http = annalo_core::network::http_client(&net, proxy_password, Purpose::Ai)?;
     let mut client = AiClient::for_provider(provider.clone(), key, http);
     client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
+    client.request_timeout = net.timeout();
     Ok(client)
 }
 
@@ -109,27 +116,28 @@ impl AiRuntime {
             devlog::remember_secret(Some(k));
         }
         devlog::remember_secret(proxy_password.as_deref());
+        let mut network_error = None;
+        let mut failed = |e: Error| {
+            let msg = format!("Netzwerkeinstellungen ungültig: {e} (Einstellungen → Netzwerk)");
+            devlog::error("net", &msg);
+            network_error = Some(msg);
+        };
         let tools_http =
             annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), Purpose::Tools)
-                .unwrap_or_else(|e| {
-                    devlog::warn("net", format!("network settings not applied: {e}"));
-                    tools::HttpClient::new()
-                });
-        let clients = settings
-            .providers
-            .iter()
-            .filter(|p| p.enabled)
-            .map(|p| {
-                let key = keys.get(&p.id).cloned();
-                let client =
-                    provider_client(&settings, p, key.clone(), proxy_password.as_deref()).unwrap_or_else(|e| {
-                        devlog::warn("net", format!("network settings not applied to „{}“: {e}", p.display_name()));
-                        AiClient::for_provider(p.clone(), key, tools::HttpClient::new())
-                    });
-                (p.id.clone(), Arc::new(client))
-            })
-            .collect();
-        AiRuntime { clients, router: Arc::new(ModelRouter::new(settings.router.clone())), tools_http, settings }
+                .map_err(&mut failed)
+                .ok();
+        let mut clients = HashMap::new();
+        for p in settings.providers.iter().filter(|p| p.enabled) {
+            let key = keys.get(&p.id).cloned();
+            match provider_client(&settings, p, key, proxy_password.as_deref()) {
+                Ok(client) => {
+                    clients.insert(p.id.clone(), Arc::new(client));
+                }
+                Err(e) => failed(e),
+            }
+        }
+        let router = Arc::new(ModelRouter::new(settings.router.clone()));
+        AiRuntime { clients, router, tools_http, network_error, settings }
     }
 }
 
@@ -187,10 +195,11 @@ impl AppState {
             "" => ai.settings.providers.iter().find(|p| p.enabled).map(|p| p.id.as_str()).unwrap_or_default(),
             id => id,
         };
-        ai.clients.get(id).cloned().ok_or_else(|| {
-            Error::State(format!(
+        ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
+            Some(e) => Error::State(e.clone()),
+            None => Error::State(format!(
                 "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)"
-            ))
+            )),
         })
     }
     /// The clients of the switched-on providers, in the order of the settings.
@@ -308,7 +317,7 @@ fn page_create(
 
 /// Avoid duplicate titles so [[links]] stay unambiguous.
 fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = title.trim().to_owned();
+    let base = annalo_core::notes::clean_title(title);
     let mut name = base.clone();
     let mut n = 2;
     while db.page_by_title(&name)?.is_some() {
@@ -321,6 +330,8 @@ fn unique_title(db: &Database, title: &str) -> Result<String> {
 #[tauri::command]
 fn page_rename(state: State<AppState>, id: i64, title: String, update_links: bool) -> Result<usize> {
     let db = state.db();
+    // `[ ] | # ^` are replaced (see `notes::clean_title`); the UI applies the same rule while typing.
+    let title = annalo_core::notes::clean_title(&title);
     if let Some(other) = db.page_by_title(&title)?
         && other.id != id
     {
@@ -432,13 +443,37 @@ fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>)
     search::search(&state.db(), &query, limit.unwrap_or(30))
 }
 
+/// Set by `vault_import_cancel`; the running import stops at the next file.
+static VAULT_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Imports a vault off the main thread: the files are read (and attachments copied) without
+/// the database lock, with `vault://progress` events; only creating the pages takes the lock.
 #[tauri::command]
-fn vault_import(state: State<AppState>, path: String) -> Result<ImportReport> {
+async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(Error::State(format!("„{path}“ ist kein Ordner")));
     }
-    vault::import_vault(&state.db(), &dir, &state.attachments_dir())
+    VAULT_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut progress = |p: vault::ImportProgress| {
+            let _ = app.emit("vault://progress", p);
+        };
+        let plan = vault::plan_import(&dir, &state.attachments_dir(), &mut progress, &VAULT_CANCEL)?;
+        let report = vault::apply_import(&state.db(), plan)?;
+        for w in &report.warnings {
+            devlog::warn("import", w);
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| Error::State(e.to_string()))?
+}
+
+#[tauri::command]
+fn vault_import_cancel() {
+    VAULT_CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -555,7 +590,9 @@ fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
 /// network settings; the URL itself when there is none or the page cannot be read.
 #[tauri::command]
 async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let Some(http) = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone() else {
+        return Ok(url);
+    };
     match annalo_core::linktitle::fetch_title(&http, &url).await {
         Ok(Some(title)) => Ok(title),
         Ok(None) => Ok(url),
@@ -1025,16 +1062,17 @@ fn export_entries(
 
 // ----------------------------------------------------------------- backups
 
-fn run_backup(app: &AppHandle) -> Result<BackupInfo> {
+/// Backs up; the flag tells whether the Markdown mirror was refreshed as well.
+fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let res = backup_once(app);
     match &res {
-        Ok(info) => devlog::debug("backup", format!("backup written: {}", info.path)),
+        Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
         Err(e) => devlog::error("backup", e.to_string()),
     }
     res
 }
 
-fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
+fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
     let keep = state.settings().backup_keep;
@@ -1048,6 +1086,8 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
         // The backup itself succeeded; a failed mirror is reported in the settings, not as a failed backup.
+        // Mirror and Git sync never run at the same time (both use the mirror folder).
+        let _running = lock(&state.git_lock);
         match run_mirror(&state) {
             Ok(_) => mirror_fresh = true,
             Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
@@ -1056,9 +1096,9 @@ fn backup_once(app: &AppHandle) -> Result<BackupInfo> {
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
         // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
-        let _ = run_git_sync(app, mirror_fresh);
+        let _ = run_git_sync(app, mirror_fresh, false);
     }
-    Ok(info)
+    Ok((info, mirror_fresh))
 }
 
 // ----------------------------------------------------------------- git sync
@@ -1082,7 +1122,8 @@ impl AppState {
 
 /// Refreshes the source (unless the mirror was just written), syncs, records the outcome
 /// and emits `gitsync://done` or `gitsync://failed`. Never holds the database lock while git runs.
-fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
+/// `allow_deletions`: the user confirmed a commit that deletes many notes.
+pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions: bool) -> Result<SyncOutcome> {
     let state = app.state::<AppState>();
     let _running = lock(&state.git_lock);
     let settings = state.settings();
@@ -1106,6 +1147,10 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
             None
         };
         let git = network::git(&state, token.clone(), &settings.git_sync.remote_url);
+        // Locks of a git that was stopped (timeout, crash) would block every sync from now on.
+        for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
+            devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
+        }
         gitsync::sync(
             &git,
             &SyncRequest {
@@ -1116,6 +1161,7 @@ fn run_git_sync(app: &AppHandle, mirror_fresh: bool) -> Result<SyncOutcome> {
                 host: &gitsync::hostname(),
                 now: Local::now(),
                 hold: &hold,
+                allow_deletions,
             },
         )
     })();
@@ -1176,6 +1222,15 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
                     p.conflicts.len()
                 ),
             );
+            if !p.kept.is_empty() {
+                devlog::warn(
+                    "git",
+                    format!(
+                        "the server deleted {} pages at once: too many, kept here and uploaded again",
+                        p.kept.len()
+                    ),
+                );
+            }
             let _ = app.emit("gitsync://pulled", &p);
         }
         Err(e) => devlog::error("git", format!("taking over the server's notes failed: {e}")),
@@ -1183,12 +1238,14 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
 }
 
 /// Syncs now (also when the automatic sync is off, as long as a remote is set).
+/// `allow_deletions`: „Löschungen übertragen“ after a sync stopped before deleting many notes.
 #[tauri::command]
-async fn git_sync_now(app: AppHandle) -> Result<SyncOutcome> {
+async fn git_sync_now(app: AppHandle, allow_deletions: Option<bool>) -> Result<SyncOutcome> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
         return Err(Error::State("Bitte zuerst die Remote-URL eintragen und speichern".into()));
     }
-    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false))
+    let allow = allow_deletions.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false, allow))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }
@@ -1211,6 +1268,7 @@ fn git_status_of(state: &AppState) -> Result<GitSyncStatus> {
         last_at,
         last_commit,
         last_branch,
+        blocked_deletions: last_error.as_deref().and_then(gitsync::guard_count),
         last_error,
         pending_changes: gitsync::pending_changes(&state.git_source_dir(), &state.git_repo_dir()),
         token_set: state.git_secret.get().is_some(),
@@ -1386,7 +1444,9 @@ fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<
 /// Async so the snapshot and the Markdown mirror do not block the main (UI) thread.
 #[tauri::command]
 async fn backup_now(app: AppHandle) -> Result<BackupInfo> {
-    tauri::async_runtime::spawn_blocking(move || run_backup(&app)).await.map_err(|e| Error::State(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || run_backup(&app).map(|(info, _)| info))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
 }
 
 #[tauri::command]
@@ -1405,11 +1465,12 @@ fn spawn_backup_scheduler(app: AppHandle) {
                 Ok(list) => list.first().is_none_or(|b| Local::now() - b.created_at >= DAY),
                 Err(_) => true,
             };
-            let mut backed_up = false;
+            // Whether the backup also refreshed the mirror (a failed mirror is written again by the sync).
+            let mut mirror_fresh = false;
             if due {
                 // Failures are logged by `run_backup` and `run_git_sync`.
                 match run_backup(&app) {
-                    Ok(_) => backed_up = true,
+                    Ok((_, fresh)) => mirror_fresh = fresh,
                     Err(e) => {
                         let _ = app.emit("backup://failed", e.to_string());
                     }
@@ -1417,7 +1478,7 @@ fn spawn_backup_scheduler(app: AppHandle) {
             }
             let gs = state.settings().git_sync;
             if gs.enabled && gs.mode == SyncMode::Hourly && !gs.remote_url.is_empty() {
-                let _ = run_git_sync(&app, backed_up && state.settings().markdown_mirror);
+                let _ = run_git_sync(&app, mirror_fresh, false);
             }
             std::thread::sleep(Duration::from_secs(3600));
         }
@@ -1717,7 +1778,9 @@ async fn ai_provider_test(
     provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
     let has_key = key.is_some();
-    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let mut client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    // A test must end: a server that accepts but never answers fails the step after a minute.
+    client.first_byte_timeout = Duration::from_secs(60);
     let mut steps = vec![];
     let step = |id, ok: Option<bool>, detail: String, start: Instant| TestStep {
         id,
@@ -1791,6 +1854,10 @@ async fn ai_provider_test(
     };
     let start = Instant::now();
     match client.chat_stream(&ask(vec![]), None, |_| {}).await {
+        // A model that spends its 16 tokens on thinking answers with nothing: it still answers.
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            steps.push(step("chat", Some(true), format!("{chat_model}: antwortet (ohne Text)"), start));
+        }
         Ok(c) => {
             let answer: String = c.content.trim().chars().take(40).collect();
             let detail = if answer.is_empty() { chat_model.clone() } else { format!("{chat_model}: „{answer}“") };
@@ -1818,6 +1885,9 @@ async fn ai_provider_test(
     let start = Instant::now();
     steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
         Ok(_) => step("tools", Some(true), "Werkzeuge werden angenommen".into(), start),
+        Err(Error::State(m)) if m.starts_with("Leere Antwort") => {
+            step("tools", Some(true), "Werkzeuge werden angenommen".into(), start)
+        }
         Err(Error::Provider { status, body }) => {
             let unsupported =
                 matches!(availability::retry_for(status, &body, true, false), availability::Retry::Without { .. });
@@ -2017,7 +2087,7 @@ async fn ai_chat(
         .rev()
         .find(|m| m.role == "user")
         .and_then(|m| m.content.clone())
-        .ok_or_else(|| Error::State("no user message".into()))?;
+        .ok_or_else(|| Error::State("Keine Nachricht".into()))?;
     let settings = state.settings();
 
     // Retrieval: embeddings are optional; keyword search always works offline. A private
@@ -2043,35 +2113,36 @@ async fn ai_chat(
         }
         _ => None,
     };
-    let (context, active, source_tags) = {
+    let (context, active, source_marker) = {
         let db = state.db();
         let context = rag::retrieve(&db, &prompt, query_embedding.as_deref(), 6)?;
         // Settings → Datenschutz: the open page is only sent when allowed.
+        // Its tags count as well (front matter `tags: [privat]` is not in the text as #privat).
         let active = match page_id.filter(|_| settings.privacy.read_open_page) {
-            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content)),
+            Some(id) => db.page_doc(id).ok().map(|d| (d.page.title, d.content, privacy::tag_text(&d.tags))),
             None => None,
         };
-        // A chunk rarely contains its page's #privat tag, so the tags of every source page count too.
-        let mut ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        let mut tags = vec![];
-        for id in ids {
-            tags.extend(db.page_tags(id)?.into_iter().map(|t| format!("#{t}")));
-        }
-        (context, active, tags.join(" "))
+        // A chunk rarely contains its page's #privat tag, so the privacy of every source page counts too.
+        let ids: Vec<i64> = context.iter().filter_map(|c| c.page_id).collect();
+        let private = privacy::private_pages(&db, ids, &settings.router.private_markers)?;
+        (
+            context,
+            active,
+            privacy::mark_tool_result(String::new(), !private.is_empty(), &settings.router.private_markers),
+        )
     };
     let mut context_texts: Vec<String> = context.iter().map(|c| c.text.clone()).collect();
-    if let Some((_, text)) = &active {
+    if let Some((_, text, tags)) = &active {
         context_texts.push(text.clone());
+        context_texts.push(tags.clone());
     }
-    context_texts.push(source_tags);
+    context_texts.push(source_marker);
     // Earlier turns (and tool results) of the conversation are sent again, so they count as well.
     context_texts.extend(messages.iter().filter_map(|m| m.content.clone()));
     let route = route_for(&state, &prompt, &context_texts, use_tools, tier);
 
     let mut full = vec![ChatMessage::system(system_prompt(&settings))];
-    if let Some((title, text)) = &active {
+    if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
         full.push(ChatMessage::system(format!("Aktuell geöffnete Seite „{title}“:\n\n{text}")));
     }
@@ -2115,7 +2186,11 @@ async fn stream_completion(
         })
         .await;
     lock(&state.cancels).remove(request_id);
-    let completion = result.inspect_err(|e| devlog::error("ai", e.to_string()))?;
+    let completion =
+        result.inspect_err(|e| devlog::error("ai", format!("{} ({}): {e}", req.model, client.provider().id)))?;
+    for w in &completion.warnings {
+        devlog::warn("ai", format!("{} ({}): {w}", req.model, client.provider().id));
+    }
     let u = &completion.usage;
     devlog::debug(
         "ai",
@@ -2310,7 +2385,7 @@ async fn ai_transform(
     let mut context = vec![text.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &instruction, &context, false, tier);
     let today = Local::now().format("%A, %d.%m.%Y").to_string();
@@ -2362,7 +2437,7 @@ async fn zeit_suggest_ai(
     let mut context = vec![line.clone()];
     if let Some(doc) = &page {
         context.push(doc.content.clone());
-        context.push(doc.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "));
+        context.push(privacy::tag_text(&doc.tags));
     }
     let route = route_for(&state, &line, &context, false, None);
     let req = ChatRequest {
@@ -2412,6 +2487,8 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     let arg = |k: &str| args[k].as_str().unwrap_or_default().to_owned();
     let t = state.settings().thresholds;
     let db = state.db();
+    // Pages whose text the result carries: a private one keeps the conversation local.
+    let mut pages: Vec<i64> = vec![];
     let out = match name.as_str() {
         "log_time" => {
             let mut line = arg("command");
@@ -2423,9 +2500,14 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             res
         }
         // Snippets mark hits with STX/ETX; the model does not need them.
-        "search_workspace" => serde_json::to_string(&search::search(&db, &arg("query"), 10)?)?
-            .replace("\\u0002", "")
-            .replace("\\u0003", ""),
+        "search_workspace" => {
+            let hits = search::search(&db, &arg("query"), 10)?;
+            pages.extend(hits.iter().filter_map(|h| match h {
+                search::SearchHit::Page { page_id, .. } | search::SearchHit::Note { page_id, .. } => Some(*page_id),
+                search::SearchHit::TimeEntry { .. } => None,
+            }));
+            serde_json::to_string(&hits)?.replace("\\u0002", "").replace("\\u0003", "")
+        }
         "budget_status" => {
             let np = db.netzplan_by_ref(&arg("netzplan"))?;
             serde_json::to_string(&tracking::budget_status(&db, np.id, &t)?)?
@@ -2444,17 +2526,21 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             };
             let from = date("from")?;
             let to = if arg("to").trim().is_empty() { from } else { date("to")? };
+            pages = annalo_core::feed::day_pages(&db, from, to, &Local)?;
             annalo_core::feed::describe_days(&db, from, to, &Local)?
         }
         "list_tasks" => {
             let filter: TaskFilter = serde_json::from_value(args.clone())?;
             let mut list = db.list_tasks(&filter)?;
             list.truncate(100);
+            pages.extend(list.iter().map(|t| t.page_id));
             serde_json::to_string(&list)?
         }
-        other => return Err(Error::State(format!("'{other}' is not a workspace tool"))),
+        other => return Err(Error::State(format!("„{other}“ ist kein Werkzeug des Arbeitsbereichs"))),
     };
-    Ok(out)
+    let markers = state.settings().router.private_markers;
+    let private = privacy::private_pages(&db, pages, &markers)?;
+    Ok(privacy::mark_tool_result(out, !private.is_empty(), &markers))
 }
 
 /// Executes a system tool. The UI calls this only after the user approved
@@ -2468,7 +2554,11 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
     };
     let settings = state.settings();
     tools::check_allowed(name, &settings.ai.allowed_tools)?;
-    let http = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone();
+    let (http, network_error) = {
+        let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
+        (ai.tools_http.clone(), ai.network_error.clone())
+    };
+    let http = http.ok_or_else(|| Error::State(network_error.unwrap_or_default()))?;
     tools::execute_system_tool(&call, &http, settings.network.timeout()).await
 }
 
@@ -2493,6 +2583,10 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     }
     let mut total = 0;
     loop {
+        // Indexing counts toward the monthly cost limit like any other request (a local model costs nothing).
+        if !local {
+            prefs::check_cost_limit(&state, false)?;
+        }
         let batch = if local {
             rag::pending_blocks(&state.db(), 32)?
         } else {
@@ -2503,7 +2597,9 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
         }
         let texts: Vec<String> = batch.iter().map(|(_, t)| t.clone()).collect();
         let vectors = client.embed(&model, &texts).await?;
+        let usage = annalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
         let db = state.db();
+        db.record_ai_usage(&state.session_id, &usage)?;
         for ((id, _), v) in batch.iter().zip(&vectors) {
             rag::store_embedding(&db, *id, v)?;
         }
@@ -2846,7 +2942,11 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
         }
     }
     // Otherwise the new process would only focus this one.
-    tauri_plugin_single_instance::destroy(app);
+    if portable::active() {
+        portable::unlock_instance();
+    } else {
+        tauri_plugin_single_instance::destroy(app);
+    }
 }
 
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
@@ -2871,7 +2971,16 @@ pub fn run() {
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
     // use their own workspace each and may overlap.
-    if std::env::var_os("ANNALO_DATA_DIR").is_none() {
+    // A portable copy checks its own data folder instead (the identifier is shared with the
+    // installed copy, which may run at the same time on its own data).
+    let portable = portable::detect().filter(|_| std::env::var_os("ANNALO_DATA_DIR").is_none());
+    if let Some(dir) = &portable
+        && !portable::lock_instance(dir)
+    {
+        eprintln!("Annalo already runs on {}", dir.display());
+        return;
+    }
+    if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match jumplist::parse(&args) {
             // A taskbar jump-list entry while the app runs.
             Some(action) => jumplist::run(app, action, true),
@@ -2939,8 +3048,12 @@ pub fn run() {
                 app.path().app_data_dir()?,
             );
             let dir = startup.dir.clone();
-            std::fs::create_dir_all(&dir)?;
+            let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir, false);
+            if let Some(e) = folder_error {
+                recovery::show(app.handle(), &dir, recovery::Failure::Folder(annalo_core::error::io_text(&e)));
+                return Ok(());
+            }
             devlog::info(
                 "core",
                 format!(
@@ -2957,7 +3070,24 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-            let db = Database::open(dir.join(datadir::DB_FILE))?;
+            let db = match Database::open(dir.join(datadir::DB_FILE)) {
+                Ok(db) => db,
+                Err(e) => {
+                    recovery::show(app.handle(), &dir, recovery::Failure::of_database(&e));
+                    return Ok(());
+                }
+            };
+            // A read-only folder (write-protected stick, permissions) still shows the notes,
+            // with a notice that nothing is saved.
+            let mut notice = startup.notice.clone();
+            if !recovery::writable(&dir) {
+                devlog::error("core", format!("data folder is not writable: {}", dir.display()));
+                notice = Some(datadir::Notice::titled("error", "Datenordner schreibgeschützt", format!(
+                    "In den Datenordner {} kann nicht geschrieben werden (schreibgeschützt oder voll) – Änderungen \
+                     werden nicht gespeichert.",
+                    dir.display()
+                )));
+            }
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
             }
@@ -2966,6 +3096,9 @@ pub fn run() {
             }
             if let Err(e) = db.prune_versions(Utc::now()) {
                 devlog::warn("core", format!("version cleanup failed: {e}"));
+            }
+            if let Err(e) = db.prune_history(Utc::now()) {
+                devlog::warn("core", format!("activity cleanup failed: {e}"));
             }
             let trash_days = db.load_settings().map(|s| s.notes.trash_retention_days as i64).unwrap_or(30);
             if let Err(e) = attachment_manager::purge_expired_files(&dir, trash_days.max(1), Utc::now()) {
@@ -2981,7 +3114,32 @@ pub fn run() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
             feed::backfill(&db, &attachments::dir(&dir));
-            let settings = db.load_settings()?;
+            let (settings, unreadable) = db.load_settings_checked()?;
+            if !unreadable.is_empty() {
+                // Kept for a look (and a fix by hand); the defaults are used meanwhile.
+                if let Ok(Some(raw)) = db.conn().query_row("SELECT value FROM settings WHERE key = 'app'", [], |r| {
+                    r.get::<_, String>(0).map(Some)
+                }) {
+                    let _ = db.meta_set("settings.broken", &raw);
+                }
+                devlog::warn("core", format!("settings not readable, defaults used for: {}", unreadable.join(", ")));
+                if notice.is_none() {
+                    notice = Some(datadir::Notice::titled("warning", "Einstellungen zurückgesetzt", format!(
+                        "Einige Einstellungen waren nicht lesbar und stehen wieder auf dem Standard ({}).",
+                        unreadable.join(", ")
+                    )));
+                }
+            }
+            // Network settings that cannot be applied (a missing CA file): requests fail with the
+            // reason instead of going out without the proxy.
+            if let Err(e) = annalo_core::network::http_client(&settings.network, None, Purpose::Tools)
+                && notice.is_none()
+            {
+                notice = Some(datadir::Notice::titled("warning", "Netzwerkeinstellungen ungültig", format!(
+                    "Netzwerkeinstellungen ungültig: {e} – KI-Anfragen und Links werden nicht gesendet, bis das unter \
+                     Einstellungen → Netzwerk korrigiert ist."
+                )));
+            }
             devlog::set_verbose(settings.dev_log_verbose);
             let shortcuts = [
                 settings.capture_shortcut.clone(),
@@ -3006,7 +3164,7 @@ pub fn run() {
                 proxy_secret,
                 git_lock: Mutex::new(()),
                 data_dir: dir,
-                data_dir_notice: startup.notice,
+                data_dir_notice: notice,
                 meter: Mutex::new(SessionMeter::default()),
                 session_id: Utc::now().format("%Y%m%dT%H%M%S").to_string(),
                 idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
@@ -3094,6 +3252,7 @@ pub fn run() {
             task_set_done,
             search_workspace,
             vault_import,
+            vault_import_cancel,
             vault_export,
             templates_list,
             templates_root,

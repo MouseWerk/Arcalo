@@ -9,7 +9,7 @@ import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
-import { clock, fmtMinutes } from "../lib/format";
+import { clock, fmtMinutes, longTimerHours } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
 import { COLLAPSED_EVENT, readCollapsed, writeCollapsed } from "../lib/collapsed";
 import type { PageNode, SearchHit } from "../lib/types";
@@ -737,6 +737,16 @@ export async function stopTimer() {
   if (!t) return;
   try {
     let subtract = false;
+    // Forgotten over night: ask before booking a whole day or more.
+    const long = longTimerHours(t.entry.start_time, new Date());
+    if (long != null) {
+      const ok = await s.confirm({
+        title: "Timer lief sehr lange",
+        message: `Der Timer läuft seit ${long} Stunden. Trotzdem so buchen? Die Buchung lässt sich danach in der Zeiterfassung korrigieren.`,
+        confirmLabel: `${long} h buchen`,
+      });
+      if (!ok) return; // timer keeps running
+    }
     if (t.idle_minutes > 0) {
       const choice = await s.choose({
         title: "Leerlauf erkannt",

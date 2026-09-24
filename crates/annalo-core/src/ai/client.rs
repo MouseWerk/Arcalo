@@ -11,6 +11,8 @@ use super::metrics::{PriceTable, StreamTimer, UsageRecord, estimate_tokens};
 use super::provider::{AiProvider, ProviderKind, PullProgress, parse_model_list};
 use crate::error::{Error, Result};
 
+/// Tool calls kept from one streamed answer (higher indexes are ignored).
+const MAX_TOOL_CALLS: u64 = 64;
 /// A stream that delivers nothing for this long is treated as dead.
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -92,7 +94,15 @@ pub struct Completion {
     pub usage: UsageRecord,
     /// Whether token counts came from the provider (`false` = estimated).
     pub exact_usage: bool,
+    /// Problems with the stream that did not stop the answer (for the log).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
+
+/// Default of [`AiClient::first_byte_timeout`]: a model may need a while to load.
+pub const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Default of [`AiClient::request_timeout`].
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Client of one provider ([`AiProvider`]): LiteLLM, an OpenAI-compatible API, Azure OpenAI or Ollama.
 pub struct AiClient {
@@ -100,6 +110,11 @@ pub struct AiClient {
     api_key: Option<String>,
     http: reqwest::Client,
     pub prices: PriceTable,
+    /// How long a chat may take until the server starts answering.
+    pub first_byte_timeout: Duration,
+    /// How long a short request (model list, version) may take in all (embeddings: four times, at
+    /// least two minutes).
+    pub request_timeout: Duration,
 }
 
 impl AiClient {
@@ -116,7 +131,23 @@ impl AiClient {
 
     /// A client of `provider`; the HTTP client should come from its [`AiProvider::network`].
     pub fn for_provider(provider: AiProvider, api_key: Option<String>, http: reqwest::Client) -> Self {
-        AiClient { provider, api_key: api_key.filter(|k| !k.is_empty()), http, prices: PriceTable::default() }
+        AiClient {
+            provider,
+            api_key: api_key.filter(|k| !k.is_empty()),
+            http,
+            prices: PriceTable::default(),
+            first_byte_timeout: FIRST_BYTE_TIMEOUT,
+            request_timeout: REQUEST_TIMEOUT,
+        }
+    }
+
+    /// Embeddings of a batch take longer than a model list, on a local model especially.
+    fn embed_timeout(&self) -> Duration {
+        (self.request_timeout * 4).max(Duration::from_secs(120))
+    }
+
+    fn timed_out(what: &str, after: Duration) -> Error {
+        Error::Provider { status: 0, body: format!("{what} (Zeitüberschreitung nach {} s)", after.as_secs().max(1)) }
     }
 
     pub fn provider(&self) -> &AiProvider {
@@ -168,8 +199,13 @@ impl AiClient {
         let mut acc = StreamAccumulator::new(StreamTimer::start_at(timer_start));
 
         let send = self.auth(self.http.post(self.provider.chat_url(&req.model))).json(&body).send();
+        // A server that accepts the connection but never answers must not keep the request open.
+        let send = tokio::time::timeout(self.first_byte_timeout, send);
         let resp = tokio::select! {
-            r = send => Self::check(r?).await?,
+            r = send => match r {
+                Ok(r) => Self::check(r?).await?,
+                Err(_) => return Err(Self::timed_out("Keine Antwort vom Modell", self.first_byte_timeout)),
+            },
             _ = wait_cancel() => {
                 acc.finish_reason = Some("cancelled".into());
                 return Ok(self.finish(acc, req, None));
@@ -181,6 +217,26 @@ impl AiClient {
             .get("x-litellm-response-cost")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<f64>().ok());
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if content_type.contains("json") {
+            // A backend that ignores `stream`: the whole answer at once.
+            let v: Value = resp.json().await?;
+            acc.apply_message(&v, &mut on_event);
+            return self.checked(acc, req, header_cost, vec![]);
+        }
+        if !content_type.is_empty() && !content_type.contains("event-stream") {
+            // A login page of a hotel WLAN or a proxy error page, not an answer.
+            let text = resp.text().await.unwrap_or_default();
+            let start: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
+            return Err(Error::State(format!(
+                "Keine Antwort im erwarteten Format vom KI-Server ({content_type}): {start} – Anmeldeseite eines WLANs oder Proxys?"
+            )));
+        }
 
         let mut decoder = SseDecoder::default();
         let mut stream = resp.bytes_stream();
@@ -188,26 +244,72 @@ impl AiClient {
         // timer every time and never fire while chunks keep arriving.
         let cancel_wait = wait_cancel();
         tokio::pin!(cancel_wait);
+        let mut done = false;
+        let mut bad_events = 0;
+        let mut warnings = vec![];
         'outer: loop {
             let chunk = tokio::select! {
                 c = tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()) => match c {
                     Ok(Some(c)) => c,
                     Ok(None) => break,
-                    Err(_) => return Err(Error::Provider { status: 0, body: "Keine Antwort vom Modell (Zeitüberschreitung)".into() }),
+                    Err(_) => return Err(Self::timed_out("Keine Antwort vom Modell", STREAM_IDLE_TIMEOUT)),
                 },
                 _ = &mut cancel_wait => {
                     acc.finish_reason = Some("cancelled".into());
+                    done = true;
                     break;
                 }
             };
             for data in decoder.push(&chunk?) {
                 if data == "[DONE]" {
+                    done = true;
                     break 'outer;
                 }
-                acc.apply(&serde_json::from_str(&data)?, &mut on_event);
+                // One broken event does not throw away the answer.
+                match serde_json::from_str::<Value>(&data) {
+                    Ok(v) => acc.apply(&v, &mut on_event),
+                    Err(e) => {
+                        bad_events += 1;
+                        if bad_events == 1 {
+                            warnings.push(format!("unreadable stream event skipped: {e}"));
+                        }
+                    }
+                }
             }
         }
-        Ok(self.finish(acc, req, header_cost))
+        if bad_events > 1 {
+            warnings.push(format!("{bad_events} unreadable stream events skipped"));
+        }
+        if !done && acc.finish_reason.is_none() {
+            // The connection ended without the end of the answer.
+            if acc.content.trim().is_empty() && acc.tool_calls.is_empty() {
+                return Err(Error::State(
+                    "Die Verbindung brach während der Antwort ab – es kam keine Antwort an".into(),
+                ));
+            }
+            acc.content.push_str("\n\n*[Antwort unvollständig: die Verbindung zum KI-Server brach vorzeitig ab]*");
+            acc.finish_reason = Some("incomplete".into());
+            warnings.push("stream ended without [DONE] or finish_reason".into());
+        }
+        self.checked(acc, req, header_cost, warnings)
+    }
+
+    /// The completion, or an error for an empty answer (nothing to show, nothing to bill).
+    fn checked(
+        &self,
+        acc: StreamAccumulator,
+        req: &ChatRequest,
+        header_cost: Option<f64>,
+        warnings: Vec<String>,
+    ) -> Result<Completion> {
+        let cancelled = acc.finish_reason.as_deref() == Some("cancelled");
+        if !cancelled && acc.content.trim().is_empty() && acc.tool_calls.iter().all(|c| c.function.name.is_empty()) {
+            let why = acc.finish_reason.as_deref().map(|r| format!(" (Grund: {r})")).unwrap_or_default();
+            return Err(Error::State(format!("Leere Antwort des KI-Servers{why}")));
+        }
+        let mut c = self.finish(acc, req, header_cost);
+        c.warnings = warnings;
+        Ok(c)
     }
 
     /// Local providers cost nothing, whatever the price table says.
@@ -228,7 +330,8 @@ impl AiClient {
             data: Vec<Item>,
         }
         let req = self.auth(self.http.post(self.provider.embeddings_url(model)));
-        let resp = Self::check(req.json(&json!({ "model": model, "input": inputs })).send().await?).await?;
+        let req = req.json(&json!({ "model": model, "input": inputs })).timeout(self.embed_timeout());
+        let resp = Self::check(req.send().await?).await?;
         let mut data = resp.json::<Resp>().await?.data;
         data.sort_by_key(|i| i.index);
         if data.len() != inputs.len() {
@@ -262,7 +365,7 @@ impl AiClient {
     }
 
     async fn get_json(&self, url: &str) -> Result<Value> {
-        Ok(Self::check(self.auth(self.http.get(url)).send().await?).await?.json().await?)
+        Ok(Self::check(self.auth(self.http.get(url)).timeout(self.request_timeout).send().await?).await?.json().await?)
     }
 
     /// Ollama's version (`/api/version`): whether an Ollama answers at the address.
@@ -279,10 +382,17 @@ impl AiClient {
         mut on_progress: impl FnMut(&PullProgress),
     ) -> Result<()> {
         let req = self.http.post(self.provider.ollama_url("pull")).json(&json!({ "model": model, "stream": true }));
-        let resp = Self::check(req.send().await?).await?;
+        let resp = match tokio::time::timeout(self.first_byte_timeout, req.send()).await {
+            Ok(r) => Self::check(r?).await?,
+            Err(_) => return Err(Self::timed_out("Ollama antwortet nicht", self.first_byte_timeout)),
+        };
         let mut stream = resp.bytes_stream();
         let mut buf: Vec<u8> = vec![];
-        while let Some(chunk) = stream.next().await {
+        loop {
+            let Ok(next) = tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await else {
+                return Err(Self::timed_out("Der Download steht still", STREAM_IDLE_TIMEOUT));
+            };
+            let Some(chunk) = next else { break };
             if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
                 return Err(Error::State("Download abgebrochen".into()));
             }
@@ -360,6 +470,21 @@ impl StreamAccumulator {
         StreamAccumulator { timer, content: String::new(), tool_calls: vec![], finish_reason: None, usage: None }
     }
 
+    /// A complete (non-streamed) chat response, as sent by a backend that ignores `stream`.
+    pub fn apply_message(&mut self, resp: &Value, on_event: &mut impl FnMut(StreamEvent)) {
+        let mut chunk = resp.clone();
+        if let Some(choice) = chunk["choices"].get_mut(0) {
+            let mut delta = choice["message"].take();
+            if let Some(calls) = delta["tool_calls"].as_array_mut() {
+                for (i, c) in calls.iter_mut().enumerate() {
+                    c["index"] = json!(i);
+                }
+            }
+            choice["delta"] = delta;
+        }
+        self.apply(&chunk, on_event);
+    }
+
     pub fn apply(&mut self, chunk: &Value, on_event: &mut impl FnMut(StreamEvent)) {
         if let Some(u) = chunk.get("usage").filter(|u| !u.is_null()) {
             self.usage = Some((u["prompt_tokens"].as_u64().unwrap_or(0), u["completion_tokens"].as_u64().unwrap_or(0)));
@@ -384,7 +509,12 @@ impl StreamAccumulator {
         }
         if let Some(calls) = delta["tool_calls"].as_array() {
             for c in calls {
-                let idx = c["index"].as_u64().unwrap_or(self.tool_calls.len() as u64) as usize;
+                let idx = c["index"].as_u64().unwrap_or(self.tool_calls.len() as u64);
+                // The index comes from the server: a huge one must not allocate millions of calls.
+                if idx >= MAX_TOOL_CALLS {
+                    continue;
+                }
+                let idx = idx as usize;
                 while self.tool_calls.len() <= idx {
                     self.tool_calls.push(ToolCall {
                         id: String::new(),
@@ -445,6 +575,7 @@ impl StreamAccumulator {
                 .collect(),
             finish_reason: self.finish_reason,
             exact_usage: exact,
+            warnings: vec![],
         }
     }
 }
@@ -485,6 +616,19 @@ mod tests {
         assert!(c.exact_usage);
         assert!(matches!(events[0], StreamEvent::FirstToken { .. }));
         assert_eq!(events.iter().filter(|e| matches!(e, StreamEvent::Delta { .. })).count(), 2);
+    }
+
+    #[test]
+    fn huge_tool_call_index_is_ignored() {
+        let mut acc = StreamAccumulator::new(StreamTimer::start());
+        let chunk = json!({"choices":[{"delta":{"tool_calls":[
+            {"index":100000000,"id":"x","function":{"name":"evil","arguments":"{}"}},
+            {"index":0,"id":"a","function":{"name":"search_notes","arguments":"{}"}}
+        ]}}]});
+        acc.apply(&chunk, &mut |_| {});
+        assert_eq!(acc.tool_calls.len(), 1);
+        let c = acc.finish("m", &[], None, &PriceTable::default());
+        assert_eq!(c.tool_calls[0].function.name, "search_notes");
     }
 
     #[test]

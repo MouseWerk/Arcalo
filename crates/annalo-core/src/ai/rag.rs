@@ -57,8 +57,8 @@ pub fn pending_blocks(db: &Database, limit: usize) -> Result<Vec<(i64, String)>>
 }
 
 /// [`pending_blocks`] without the blocks of private pages: pages tagged with one of `markers`
-/// (`#privat` → tag `privat`) and blocks whose text contains one. They stay unembedded (found by
-/// keyword search only) when the embedding model is not on a local provider.
+/// (`#privat` → tag `privat`) and pages whose text contains one (see [`super::privacy`]). They
+/// stay unembedded (found by keyword search only) when the embedding model is not on a local provider.
 pub fn pending_public_blocks(db: &Database, limit: usize, markers: &[String]) -> Result<Vec<(i64, String)>> {
     let markers: Vec<String> =
         markers.iter().map(|m| m.trim().to_lowercase()).filter(|m| !m.is_empty() && m != "#").collect();
@@ -74,7 +74,7 @@ pub fn pending_public_blocks(db: &Database, limit: usize, markers: &[String]) ->
         let text = args.len();
         sql.push_str(&format!(
             " AND NOT EXISTS (SELECT 1 FROM page_tags t WHERE t.page_id = b.page_id AND lower(t.tag) = ?{tag})
-              AND instr(lower(b.content_markdown), ?{text}) = 0"
+              AND instr(lower(p.content), ?{text}) = 0"
         ));
     }
     sql.push_str(&format!(" ORDER BY b.id LIMIT {}", limit.max(1)));
@@ -265,7 +265,7 @@ pub fn retrieve(
                         let desc: String = r.get(4)?;
                         let target = v.map_or(np.clone(), |v| format!("{np}/{v}"));
                         let hours = minutes.map_or("läuft".to_owned(), |m| format!("{:.2}h", m as f64 / 60.0));
-                        Ok(format!("{} {target} {hours}: {desc}", &start[..10.min(start.len())]))
+                        Ok(format!("{} {target} {hours}: {desc}", start.get(..10).unwrap_or(&start)))
                     },
                 )
                 .optional()?
