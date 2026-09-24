@@ -61,6 +61,9 @@ export function EditorSection({ draft, update }: SectionProps) {
             <Switch label={t("set.editor.hoverPreview")} checked={e.hover_preview} onChange={(v) => set({ hover_preview: v })} />
           </div>
         </Row>
+        <Row label={t("set.editor.toolbar")} description={t("set.editor.toolbarDesc")}>
+          <Switch label={t("set.editor.toolbar")} checked={e.toolbar} onChange={(v) => set({ toolbar: v })} />
+        </Row>
         <Row label={t("set.editor.scrollOutline")} description={t("set.editor.scrollOutlineDesc")}>
           <Switch label={t("set.editor.scrollOutline")} checked={e.scroll_outline} onChange={(v) => set({ scroll_outline: v })} />
         </Row>

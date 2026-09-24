@@ -15,6 +15,8 @@ import { zeitLaItems, zeitRefItems } from "./zeit-source";
 import { IconButton } from "../components/ui";
 import { findKey } from "./find";
 import { TableToolbar } from "./TableToolbar";
+import { EditorToolbar } from "./EditorToolbar";
+import { moveBlock } from "./tools";
 import { InlineAiBar } from "./InlineAiBar";
 import { aiRange, type AiRange } from "./ai-insert";
 import { registerEditor } from "./reveal";
@@ -23,7 +25,7 @@ import { spellcheckAttrs } from "../lib/prefs";
 import { ZeitConfirm, type ZeitChoice } from "./ZeitConfirm";
 import { lacksReference, referenceOffset } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
 import type { PageDoc } from "../lib/types";
 import { keys } from "../lib/shortcut";
 
@@ -323,6 +325,12 @@ export function NoteEditor({
         attributes: () => ({ class: "prose", ...spellcheckAttrs(editorPrefs()?.spellcheck), "aria-label": "Notiz", style: `tab-size: ${editorPrefs()?.tab_size ?? 4}` }),
         // Ctrl+J on a selection: inline AI instead of the assistant panel (App's global Ctrl+J).
         handleKeyDown: (view, event) => {
+          // Alt+↑/↓: move the block (list item, paragraph, heading) with the cursor.
+          if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && editorRef.current) {
+            event.preventDefault();
+            moveBlock(editorRef.current, event.key === "ArrowUp" ? -1 : 1);
+            return true;
+          }
           if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== "j") return false;
           if (view.state.selection.empty || !editorRef.current) return false;
           event.preventDefault();
@@ -451,16 +459,23 @@ export function NoteEditor({
   zeitAskRef.current = zeitAsk;
   useEffect(() => () => zeitAskRef.current?.resolve("cancel"), []);
 
-  // Ctrl+F: find in this page.
+  // Ctrl+F: find in this page, Ctrl+H: find and replace.
   const [find, setFind] = useState<string | null>(null);
+  const [replace, setReplace] = useState<string | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
+  const openFind = (withReplace: boolean) => {
+    const sel = editor?.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ").trim();
+    setFind((f) => (sel && sel.length < 60 ? sel : (f ?? "")));
+    setReplace((r) => (withReplace ? (r ?? "") : null));
+    setTimeout(() => findInput.current?.select(), 10);
+  };
+  const toolbarOn = useApp((s) => s.settings?.settings.editor?.toolbar ?? true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f" && activeRef.current) {
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (k === "f" || k === "h") && activeRef.current) {
         e.preventDefault();
-        const sel = editor?.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ").trim();
-        setFind((f) => (sel && sel.length < 60 ? sel : (f ?? "")));
-        setTimeout(() => findInput.current?.select(), 10);
+        openFind(k === "h");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -489,11 +504,13 @@ export function NoteEditor({
   });
   const closeFind = () => {
     setFind(null);
+    setReplace(null);
     editor?.commands.focus();
   };
 
   return (
     <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
+      {editor && toolbarOn && <EditorToolbar editor={editor} onFind={openFind} onAi={() => openAi(editor)} />}
       {zeitAsk && zeitPos && <ZeitConfirm guess={zeitAsk.guess} onChoice={zeitAsk.resolve} style={{ top: zeitPos.top, left: zeitPos.left }} />}
       {find !== null && (
         <div className="find-anchor">
@@ -518,8 +535,36 @@ export function NoteEditor({
           <span className="find-count num">{find ? (ui?.findCount ? `${ui.findIndex + 1}/${ui.findCount}` : "0") : ""}</span>
           <IconButton icon={ChevronUp} label="Vorheriger Treffer" size={24} iconSize={14} onClick={() => editor?.commands.findStep(-1)} />
           <IconButton icon={ChevronDown} label="Nächster Treffer" size={24} iconSize={14} onClick={() => editor?.commands.findStep(1)} />
+          <IconButton icon={Replace} label={`Ersetzen (${keys("Mod H")})`} active={replace !== null} size={24} iconSize={14} onClick={() => setReplace((r) => (r === null ? "" : null))} />
           <IconButton icon={X} label="Schließen" size={24} iconSize={14} onClick={closeFind} />
         </div>
+        {replace !== null && (
+          <div className="find-bar find-replace" role="group" aria-label="Ersetzen">
+            <Replace size={14} className="faint" />
+            <input
+              value={replace}
+              placeholder="Ersetzen durch"
+              aria-label="Ersetzen durch"
+              onChange={(e) => setReplace(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (e.ctrlKey || e.metaKey) editor?.commands.replaceAll(replace);
+                  else editor?.commands.replaceCurrent(replace);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeFind();
+                }
+              }}
+            />
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!ui?.findCount} onClick={() => editor?.commands.replaceCurrent(replace)}>
+              Ersetzen
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!ui?.findCount} onClick={() => editor?.commands.replaceAll(replace)} title={`Alle ersetzen (${keys("Mod Enter")})`}>
+              Alle
+            </button>
+          </div>
+        )}
         </div>
       )}
       {editor && (

@@ -8,6 +8,8 @@ import { useSyncExternalStore } from "react";
 const ENTRIES = {
   // common
   "common.save": ["Speichern", "Save"],
+  "set.editor.toolbar": ["Werkzeugleiste", "Toolbar"],
+  "set.editor.toolbarDesc": ["Formatierung, Listen, „Einfügen“ und „Werkzeuge“ über jeder Notiz.", "Formatting, lists, Insert and Tools above every note."],
   "links.title": ["Links", "Links"],
   "links.add": ["Link hinzufügen", "Add link"],
   "links.edit": ["Link bearbeiten", "Edit link"],

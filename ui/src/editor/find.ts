@@ -33,6 +33,10 @@ declare module "@tiptap/core" {
     find: {
       setFindQuery: (query: string) => ReturnType;
       findStep: (delta: 1 | -1) => ReturnType;
+      /** Replaces the current match and moves to the next one. */
+      replaceCurrent: (text: string) => ReturnType;
+      /** Replaces every match (one undo step). */
+      replaceAll: (text: string) => ReturnType;
     };
   }
 }
@@ -45,6 +49,36 @@ export const FindInPage = Extension.create({
         (query) =>
         ({ tr, dispatch }) => {
           if (dispatch) dispatch(tr.setMeta(findKey, { query, index: 0 }));
+          return true;
+        },
+      replaceCurrent:
+        (text) =>
+        ({ state, tr, dispatch }) => {
+          const st = findKey.getState(state);
+          if (!st || !st.matches.length) return false;
+          const m = st.matches[Math.min(st.index, st.matches.length - 1)];
+          if (dispatch) {
+            tr.insertText(text, m.from, m.to);
+            const matches = search(tr.doc, st.query);
+            // The next match after the replaced one (the list shrank by one unless the
+            // replacement contains the query itself).
+            const next = matches.findIndex((x) => x.from >= m.from + text.length);
+            const index = next < 0 ? 0 : next;
+            tr.setMeta(findKey, { query: st.query, index });
+            if (matches[index]) tr.setSelection(TextSelection.create(tr.doc, matches[index].from, matches[index].to));
+            dispatch(tr.scrollIntoView());
+          }
+          return true;
+        },
+      replaceAll:
+        (text) =>
+        ({ state, tr, dispatch }) => {
+          const st = findKey.getState(state);
+          if (!st || !st.matches.length) return false;
+          if (dispatch) {
+            for (const m of [...st.matches].reverse()) tr.insertText(text, m.from, m.to);
+            dispatch(tr.setMeta(findKey, { query: st.query, index: 0 }));
+          }
           return true;
         },
       findStep:

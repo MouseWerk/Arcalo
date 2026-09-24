@@ -9,7 +9,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import Image from "@tiptap/extension-image";
 import {
-  AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen,
+  type LucideIcon, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen,
 } from "lucide-react";
 import { isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
@@ -135,9 +135,11 @@ export function pageSuggestItem(p: { id: number; title: string; icon: string | n
 
 // ----------------------------------------------------------- slash menu
 
-interface SlashItem extends PopupItem {
+export interface SlashItem extends PopupItem {
   keywords: string;
   run: (editor: Editor, range: Range) => void;
+  /** The icon as a component (menus of the editor toolbar). */
+  Icon?: LucideIcon;
 }
 
 const ic = (C: typeof Text) => <C size={15} strokeWidth={1.75} />;
@@ -153,44 +155,44 @@ export interface SlashOptions {
   onSummary: ((editor: Editor) => void) | null;
 }
 
-function slashItems(o: SlashOptions): SlashItem[] {
+export function slashItems(o: SlashOptions): SlashItem[] {
   const today = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
   const isoToday = isoDay(new Date());
   return [
-    { id: "text", title: "Text", icon: ic(Text), section: "Grundlagen", keywords: "absatz paragraph text", run: (e, r) => e.chain().focus().deleteRange(r).setParagraph().run() },
-    { id: "h1", title: "Überschrift 1", icon: ic(Heading1), hint: "#", section: "Grundlagen", keywords: "heading titel h1", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 1 }).run() },
-    { id: "h2", title: "Überschrift 2", icon: ic(Heading2), hint: "##", section: "Grundlagen", keywords: "heading h2", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 2 }).run() },
-    { id: "h3", title: "Überschrift 3", icon: ic(Heading3), hint: "###", section: "Grundlagen", keywords: "heading h3", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
-    { id: "todo", title: "Aufgabenliste", icon: ic(CheckSquare), hint: "[ ]", section: "Listen", keywords: "todo task checkbox aufgabe", run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
-    { id: "ul", title: "Aufzählung", icon: ic(List), hint: "-", section: "Listen", keywords: "bullet liste", run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
-    { id: "ol", title: "Nummerierte Liste", icon: ic(ListOrdered), hint: "1.", section: "Listen", keywords: "ordered nummer", run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
-    { id: "quote", title: "Zitat", icon: ic(Quote), hint: ">", section: "Blöcke", keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
-    { id: "callout", title: "Hinweisbox", subtitle: "Obsidian-Callout", icon: ic(Info), section: "Blöcke", keywords: "callout hinweis info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
-    { id: "warn", title: "Warnbox", icon: ic(AlertTriangle), section: "Blöcke", keywords: "callout warnung warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
-    { id: "code", title: "Codeblock", icon: ic(Code2), hint: "```", section: "Blöcke", keywords: "code snippet", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
-    { id: "table", title: "Tabelle", icon: ic(Table2), section: "Blöcke", keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-    { id: "hr", title: "Trennlinie", icon: ic(Minus), hint: "---", section: "Blöcke", keywords: "divider linie hr", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
-    { id: "mark", title: "Hervorheben", icon: ic(Highlighter), hint: "==", section: "Blöcke", keywords: "highlight markieren", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },
-    { id: "link", title: "Seitenlink", icon: ic(Link2), hint: "[[", section: "Einfügen", keywords: "link verknüpfung wiki", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
-    { id: "date", title: "Heutiges Datum", icon: ic(CalendarDays), hint: today, section: "Einfügen", keywords: "datum date heute", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(today + " ").run() },
-    { id: "due", title: "Fälligkeitsdatum", subtitle: "Für Aufgaben: due:JJJJ-MM-TT", icon: ic(CalendarClock), hint: `due:${isoToday}`, section: "Einfügen", keywords: "fällig due termin deadline aufgabe", run: (e, r) => {
+    { id: "text", title: "Text", icon: ic(Text), Icon: Text, section: "Grundlagen", keywords: "absatz paragraph text", run: (e, r) => e.chain().focus().deleteRange(r).setParagraph().run() },
+    { id: "h1", title: "Überschrift 1", icon: ic(Heading1), Icon: Heading1, hint: "#", section: "Grundlagen", keywords: "heading titel h1", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 1 }).run() },
+    { id: "h2", title: "Überschrift 2", icon: ic(Heading2), Icon: Heading2, hint: "##", section: "Grundlagen", keywords: "heading h2", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 2 }).run() },
+    { id: "h3", title: "Überschrift 3", icon: ic(Heading3), Icon: Heading3, hint: "###", section: "Grundlagen", keywords: "heading h3", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
+    { id: "todo", title: "Aufgabenliste", icon: ic(CheckSquare), Icon: CheckSquare, hint: "[ ]", section: "Listen", keywords: "todo task checkbox aufgabe", run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
+    { id: "ul", title: "Aufzählung", icon: ic(List), Icon: List, hint: "-", section: "Listen", keywords: "bullet liste", run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
+    { id: "ol", title: "Nummerierte Liste", icon: ic(ListOrdered), Icon: ListOrdered, hint: "1.", section: "Listen", keywords: "ordered nummer", run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
+    { id: "quote", title: "Zitat", icon: ic(Quote), Icon: Quote, hint: ">", section: "Blöcke", keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
+    { id: "callout", title: "Hinweisbox", subtitle: "Obsidian-Callout", icon: ic(Info), Icon: Info, section: "Blöcke", keywords: "callout hinweis info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
+    { id: "warn", title: "Warnbox", icon: ic(AlertTriangle), Icon: AlertTriangle, section: "Blöcke", keywords: "callout warnung warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
+    { id: "code", title: "Codeblock", icon: ic(Code2), Icon: Code2, hint: "```", section: "Blöcke", keywords: "code snippet", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
+    { id: "table", title: "Tabelle", icon: ic(Table2), Icon: Table2, section: "Blöcke", keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { id: "hr", title: "Trennlinie", icon: ic(Minus), Icon: Minus, hint: "---", section: "Blöcke", keywords: "divider linie hr", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
+    { id: "mark", title: "Hervorheben", icon: ic(Highlighter), Icon: Highlighter, hint: "==", section: "Blöcke", keywords: "highlight markieren", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },
+    { id: "link", title: "Seitenlink", icon: ic(Link2), Icon: Link2, hint: "[[", section: "Einfügen", keywords: "link verknüpfung wiki", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
+    { id: "date", title: "Heutiges Datum", icon: ic(CalendarDays), Icon: CalendarDays, hint: today, section: "Einfügen", keywords: "datum date heute", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(today + " ").run() },
+    { id: "due", title: "Fälligkeitsdatum", subtitle: "Für Aufgaben: due:JJJJ-MM-TT", icon: ic(CalendarClock), Icon: CalendarClock, hint: `due:${isoToday}`, section: "Einfügen", keywords: "fällig due termin deadline aufgabe", run: (e, r) => {
       // Separate from preceding text, but no double space.
       const before = r.from > 1 ? e.state.doc.textBetween(r.from - 1, r.from) : "";
       e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}due:${isoToday} `).run();
     } },
-    { id: "zeit", title: "Zeit buchen", subtitle: "NP-8801/1020 2.5h Beschreibung", icon: ic(Timer), hint: "/zeit", section: "Zeiterfassung", keywords: "zeit time buchen stunden", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
-    { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
+    { id: "zeit", title: "Zeit buchen", subtitle: "NP-8801/1020 2.5h Beschreibung", icon: ic(Timer), Icon: Timer, hint: "/zeit", section: "Zeiterfassung", keywords: "zeit time buchen stunden", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
+    { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), Icon: FilePlus2, section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
-      ? [{ id: "image", title: "Bild", subtitle: `Datei wählen, oder einfügen mit ${keys("Mod V")}`, icon: ic(ImagePlus), section: "Einfügen", keywords: "bild image foto screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
+      ? [{ id: "image", title: "Bild", subtitle: `Datei wählen, oder einfügen mit ${keys("Mod V")}`, icon: ic(ImagePlus), Icon: ImagePlus, section: "Einfügen", keywords: "bild image foto screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
       : []),
     ...(o.onTemplate
-      ? [{ id: "template", title: "Vorlage einfügen", subtitle: "Seite aus „Vorlagen“", icon: ic(LayoutTemplate), section: "Einfügen", keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
+      ? [{ id: "template", title: "Vorlage einfügen", subtitle: "Seite aus „Vorlagen“", icon: ic(LayoutTemplate), Icon: LayoutTemplate, section: "Einfügen", keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
       : []),
     ...(o.onAi
-      ? [{ id: "ki", title: "KI bearbeiten", subtitle: "Absatz verbessern, kürzen, übersetzen …", hint: keys("Mod J"), icon: ic(Sparkles), section: "KI", keywords: "ki ai assistent umschreiben verbessern kürzen übersetzen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onAi!(e)) }]
+      ? [{ id: "ki", title: "KI bearbeiten", subtitle: "Absatz verbessern, kürzen, übersetzen …", hint: keys("Mod J"), icon: ic(Sparkles), Icon: Sparkles, section: "KI", keywords: "ki ai assistent umschreiben verbessern kürzen übersetzen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onAi!(e)) }]
       : []),
     ...(o.onSummary
-      ? [{ id: "summary", title: "Zusammenfassung", subtitle: "Besprechung zusammenfassen: Entscheidungen, Aufgaben", icon: ic(NotebookPen), section: "KI", keywords: "besprechung meeting protokoll summary ki aufgaben entscheidungen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onSummary!(e)) }]
+      ? [{ id: "summary", title: "Zusammenfassung", subtitle: "Besprechung zusammenfassen: Entscheidungen, Aufgaben", icon: ic(NotebookPen), Icon: NotebookPen, section: "KI", keywords: "besprechung meeting protokoll summary ki aufgaben entscheidungen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onSummary!(e)) }]
       : []),
   ];
 }

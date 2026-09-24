@@ -457,3 +457,40 @@ input.prop-value-input[type="date"] { width: auto; color-scheme: light dark; }
 
 /* Ctrl (⌘) held: web links in notes open on click, so they show the hand cursor and underline. */
 :root.mod-held .ProseMirror a[href]:not([data-wikilink]) { cursor: pointer; text-decoration-thickness: 2px; }
+
+/* ------------------------------------------------------------ editor toolbar */
+/* Stays at the top of the note while scrolling; scrolls sideways in narrow panes. */
+.editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 14px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+  backdrop-filter: blur(8px);
+  /* Wraps to a second row instead of hiding buttons at the right edge. */
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.tb-group { display: flex; align-items: center; gap: 1px; flex: none; }
+.tb-group + .tb-group { margin-left: 3px; padding-left: 4px; border-left: 1px solid var(--border); }
+/* Narrow panes: the menus show their icon only (the tooltip names them). */
+@container pane (max-width: 820px) {
+  .tb-menu .tb-label, .tb-menu .tb-caret { display: none; }
+  .tb-menu { padding: 0 6px; }
+  .tb-select { width: 104px; }
+}
+.tb-select { height: 28px; width: 118px; padding-top: 0; padding-bottom: 0; font-size: var(--fs-sm); border-color: transparent; background-color: transparent; }
+.tb-select:hover { background-color: var(--bg-hover); }
+.tb-menu { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
+.tb-menu:hover { background: var(--bg-hover); color: var(--text); }
+.tb-ai { color: var(--accent-text); }
+.tb-url { height: 26px; width: 220px; margin-left: 4px; font-size: var(--fs-sm); }
+.find-replace { margin-top: 6px; }
+.find-replace .btn { flex: none; }
+@media print { .editor-toolbar { display: none; } }

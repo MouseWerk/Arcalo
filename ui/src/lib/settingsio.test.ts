@@ -45,7 +45,7 @@ const current = (): Settings =>
       apply_to: { ai: true, git: true, updates: true, tools: true },
     },
     appearance: { accent: "indigo", ui_font: "inter", editor_font: "sans", code_font: "jetbrains", ui_scale: 100, density: "normal", line_width: "normal", reduce_motion: false, mica: true, custom_titlebar: true, startup_animation: true },
-    editor: { spellcheck: "de", autosave_ms: 450, smart_quotes: false, auto_pair: false, tab_size: 4, code_line_numbers: false, hover_preview: true, hover_delay_ms: 450, scroll_outline: true, default_icon: null, new_page_location: "top", inbox_title: "Inbox" },
+    editor: { spellcheck: "de", autosave_ms: 450, smart_quotes: false, auto_pair: false, tab_size: 4, code_line_numbers: false, hover_preview: true, hover_delay_ms: 450, scroll_outline: true, default_icon: null, new_page_location: "top", inbox_title: "Inbox", toolbar: true },
     notes: { daily_title: "iso", daily_folder: "Journal", trash_retention_days: 30, version_interval_minutes: 10, max_versions: 50 },
     time: { week_start: "monday", rounding: { step_minutes: 0, mode: "up", min_minutes: 0 }, hours_display: "decimal", default_leistungsart: {}, cats_delimiter: "semicolon", cats_columns: "standard", export_file_pattern: "zeiten-{von}-{bis}" },
     ai: { temperature: 0.3, max_tokens: null, inline_presets: null, meeting_template: null, monthly_cost_limit_usd: null, citations: true, streaming: true, allowed_tools: ["log_time"] },

@@ -270,6 +270,7 @@ export interface EditorPrefs {
   default_icon: string | null;
   new_page_location: "top" | "current" | "inbox";
   inbox_title: string;
+  toolbar: boolean;
 }
 export interface NotesPrefs {
   daily_title: "iso" | "de" | "long";

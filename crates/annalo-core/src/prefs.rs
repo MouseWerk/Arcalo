@@ -128,6 +128,8 @@ pub struct EditorPrefs {
     pub new_page_location: NewPageLocation,
     /// Title of the page that collects new pages with [`NewPageLocation::Inbox`].
     pub inbox_title: String,
+    /// Formatting toolbar above notes.
+    pub toolbar: bool,
 }
 
 impl Default for EditorPrefs {
@@ -145,6 +147,7 @@ impl Default for EditorPrefs {
             default_icon: None,
             new_page_location: NewPageLocation::Top,
             inbox_title: "Inbox".into(),
+            toolbar: true,
         }
     }
 }

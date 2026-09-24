@@ -16,6 +16,8 @@ import { useApp } from "../store/app";
 import { Button, IconButton, useMenu } from "../components/ui";
 import { h1, usd } from "../lib/format";
 import type { ChatMessage, ContextChunk, RouteDecision, StreamEvent, Tier, ToolCall } from "../lib/types";
+import type { SuggestionKind } from "../lib/suggestions";
+import { useSuggestions } from "./useSuggestions";
 
 type Turn =
   | { id: string; kind: "user"; text: string }
@@ -44,12 +46,17 @@ const TOOL_META: Record<string, { label: string; icon: typeof Search }> = {
   http_request: { label: "HTTP-Anfrage", icon: Globe },
 };
 
-const SUGGESTIONS = [
-  "Fasse die aktuelle Seite zusammen",
-  "Welche Aufgaben sind noch offen?",
-  "Wie steht das Budget von NP-8801?",
-  "Was habe ich diese Woche gebucht?",
-];
+const SUGGESTION_ICON: Record<SuggestionKind, typeof Search> = {
+  page: FileText,
+  tasks: ListChecks,
+  time: Timer,
+  budget: Gauge,
+  report: CalendarRange,
+  plan: Sparkles,
+};
+
+/** Quick follow-ups under the last answer. */
+const FOLLOW_UPS = ["Kürzer", "Als Stichpunkte", "Als Tabelle", "Auf Englisch"];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const tierLabel: Record<Tier, string> = { local: "Lokal", standard: "Standard", reasoning: "Reasoning" };
@@ -74,6 +81,7 @@ export function AssistantPanel() {
   const s = useApp.getState;
 
   const pageContext = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
+  const suggestions = useSuggestions(pageContext);
 
   const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Turn) : t)));
 
@@ -315,15 +323,32 @@ export function AssistantPanel() {
               </button>
             )}
             <div className="suggestions">
-              {SUGGESTIONS.map((q) => (
-                <button key={q} type="button" className="ai-suggestion" onClick={() => send(q)}>
-                  {q}
-                </button>
-              ))}
+              {suggestions.map((q) => {
+                const Icon = SUGGESTION_ICON[q.kind];
+                return (
+                  <button key={q.text} type="button" className="ai-suggestion" onClick={() => send(q.text)}>
+                    <Icon size={14} strokeWidth={1.75} aria-hidden />
+                    <span>{q.text}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (
-          turns.map((t) => <TurnView key={t.id} turn={t} />)
+          <>
+            {turns.map((t) => (
+              <TurnView key={t.id} turn={t} />
+            ))}
+            {!busy && turns[turns.length - 1]?.kind === "assistant" && !(turns[turns.length - 1] as { error?: string }).error && (
+              <div className="follow-ups" aria-label="Nachfragen">
+                {FOLLOW_UPS.map((f) => (
+                  <button key={f} type="button" className="follow-up" onClick={() => send(`${f}, bitte.`)}>
+                    {f}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

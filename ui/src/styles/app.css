@@ -1243,3 +1243,11 @@ body.search-mode { background: transparent; }
 .quick-links-empty { margin: 2px 10px 4px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.45; }
 .link-form { display: grid; gap: 12px; }
 .icon-picker.inline { position: static; display: grid; grid-template-columns: repeat(auto-fill, 34px); gap: 2px; box-shadow: none; border: 1px solid var(--border); border-radius: var(--r-md); padding: 6px; width: auto; max-height: 180px; overflow: auto; }
+
+/* ------------------------------------------------------------ assistant suggestions */
+.ai-suggestion { display: flex; align-items: center; gap: 9px; }
+.ai-suggestion svg { flex: none; color: var(--accent-text); }
+.ai-suggestion span { min-width: 0; }
+.follow-ups { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.follow-up { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 13px; background: var(--bg-raised); color: var(--text-2); font-size: var(--fs-xs); }
+.follow-up:hover { color: var(--text); border-color: var(--border-strong); }
