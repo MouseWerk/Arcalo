@@ -7,6 +7,7 @@
 //! ---
 //! ```
 
+use crate::trf;
 use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
@@ -176,7 +177,7 @@ pub fn page_work(db: &Database, page_id: i64, t: &Thresholds) -> Result<Option<P
         Err(Error::NotFound { .. }) => {
             return Ok(Some(PageWork::unresolved(
                 reference,
-                format!("Netzplan „{np_ref}“ nicht gefunden"),
+                trf!("Netzplan „{np_ref}“ nicht gefunden", "Network “{np_ref}” not found"),
                 page_hours,
             )));
         }
@@ -190,7 +191,7 @@ pub fn page_work(db: &Database, page_id: i64, t: &Thresholds) -> Result<Option<P
             // A Netzplan without modelled Vorgänge accepts free activity codes (like `/zeit`).
             None if vorgaenge.is_empty() => None,
             None => {
-                let msg = format!("Vorgang „{}/{v}“ nicht gefunden", np.netzplan_nr);
+                let msg = trf!("Vorgang „{}/{v}“ nicht gefunden", "Activity “{}/{v}” not found", np.netzplan_nr);
                 return Ok(Some(PageWork::unresolved(reference, msg, page_hours)));
             }
         },

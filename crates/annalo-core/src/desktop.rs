@@ -2,6 +2,8 @@
 //! (text → daily note or time booking; other targets in [`crate::capture`]) and the reminder
 //! decisions for native notifications (end of day, timer still running late in the evening).
 
+use crate::tr;
+use crate::trf;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use serde::Serialize;
 
@@ -84,13 +86,12 @@ pub struct Appended {
 pub fn append_to_daily(db: &Database, date: NaiveDate, text: &str) -> Result<Appended> {
     let (md, tasks, notes) = capture::format_capture(text);
     if md.is_empty() {
-        return Err(Error::State("Nichts zu erfassen".into()));
+        return Err(Error::State(tr!("Nichts zu erfassen", "Nothing to capture").into()));
     }
     db.atomic(|| {
         let page = db.daily_note(date)?;
         let content = db.page_doc(page.id)?.content;
-        let next = capture::insert_in_section(&content, "Notizen", &md)
-            .unwrap_or_else(|| capture::append_markdown(&content, &md));
+        let next = capture::insert_in_notes(&content, &md).unwrap_or_else(|| capture::append_markdown(&content, &md));
         db.save_page_content(page.id, &next)?;
         Ok(Appended { page_id: page.id, tasks, notes, title: page.title, created: false })
     })
@@ -166,8 +167,9 @@ pub fn end_of_day_reminder(
         return None;
     }
     ((booked_minutes as f64) < target).then(|| {
-        format!(
+        trf!(
             "Heute {} von {} h gebucht",
+            "{} of {} h booked today",
             format_hours(booked_minutes as f64),
             format_hours(settings.daily_target_hours * 60.0)
         )

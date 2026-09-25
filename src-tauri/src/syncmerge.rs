@@ -65,7 +65,7 @@ pub struct Pulled {
 fn stem(path: &str) -> String {
     let name = path.rsplit('/').next().unwrap_or(path);
     let stem = name.len().checked_sub(3).and_then(|n| name.get(..n)).unwrap_or(name);
-    if stem.trim().is_empty() { "Ohne Titel".into() } else { stem.to_owned() }
+    if stem.trim().is_empty() { annalo_core::tr!("Ohne Titel", "Untitled").into() } else { stem.to_owned() }
 }
 
 fn is_page_path(lower: &str) -> bool {
@@ -199,10 +199,15 @@ pub struct ConflictView {
 #[tauri::command(async)]
 pub fn git_conflict_get(state: State<AppState>, page_id: i64) -> Result<ConflictView> {
     let db = state.db();
-    let c = live(&db)?
-        .into_iter()
-        .find(|c| c.page_id == page_id)
-        .ok_or_else(|| Error::State("Für diese Seite gibt es keinen Konflikt (mehr)".into()))?;
+    let c = live(&db)?.into_iter().find(|c| c.page_id == page_id).ok_or_else(|| {
+        Error::State(
+            annalo_core::tr!(
+                "Für diese Seite gibt es keinen Konflikt (mehr)",
+                "There is no conflict (any more) for this page"
+            )
+            .into(),
+        )
+    })?;
     let mine = db.page_doc(page_id)?.content;
     let merge = merge::merge3(c.base.as_deref(), &mine, &c.theirs);
     Ok(ConflictView { page_id, title: db.page(page_id)?.title, at: c.at, base: c.base, mine, theirs: c.theirs, merge })
@@ -225,7 +230,13 @@ pub async fn git_conflict_resolve(app: AppHandle, page_id: i64, content: String)
         {
             let db = state.db();
             if !live(&db)?.iter().any(|c| c.page_id == page_id) {
-                return Err(Error::State("Für diese Seite gibt es keinen Konflikt (mehr)".into()));
+                return Err(Error::State(
+                    annalo_core::tr!(
+                        "Für diese Seite gibt es keinen Konflikt (mehr)",
+                        "There is no conflict (any more) for this page"
+                    )
+                    .into(),
+                ));
             }
             db.atomic(|| {
                 db.snapshot_page(page_id)?;

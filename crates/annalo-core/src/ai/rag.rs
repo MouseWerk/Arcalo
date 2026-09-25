@@ -9,6 +9,7 @@
 //! Indexing is split into sync DB steps and one async embedding call so the
 //! caller never holds the database across an `.await`.
 
+use crate::{tr, trf};
 use std::collections::HashMap;
 
 use rusqlite::{OptionalExtension, params};
@@ -243,7 +244,7 @@ pub fn retrieve(
                 )
                 .optional()?
                 .map(|(title, text, page_id)| ContextChunk {
-                    source: format!("Seite: {title}"),
+                    source: trf!("Seite: {title}", "Page: {title}"),
                     page_id: Some(page_id),
                     text,
                     score,
@@ -264,7 +265,7 @@ pub fn retrieve(
                         let minutes: Option<i64> = r.get(3)?;
                         let desc: String = r.get(4)?;
                         let target = v.map_or(np.clone(), |v| format!("{np}/{v}"));
-                        let hours = minutes.map_or("läuft".to_owned(), |m| format!("{:.2}h", m as f64 / 60.0));
+                        let hours = minutes.map_or(tr!("läuft", "running").to_owned(), |m| format!("{:.2}h", m as f64 / 60.0));
                         Ok(format!("{} {target} {hours}: {desc}", start.get(..10).unwrap_or(&start)))
                     },
                 )
@@ -291,9 +292,16 @@ pub fn retrieve(
 }
 
 /// How the model cites the numbered sources of [`format_context`].
-pub const CITATION_RULES: &str = "Belege jede Aussage, die auf einer dieser Quellen beruht, direkt danach \
-     mit ihrer Nummer in eckigen Klammern, z. B. „… wird im Oktober freigegeben [2].“ – mehrere Quellen als [1][3]. \
-     Verwende nur die Nummern der Quellen oben, erfinde keine und schreibe kein Quellenverzeichnis.";
+pub fn citation_rules() -> &'static str {
+    tr!(
+        "Belege jede Aussage, die auf einer dieser Quellen beruht, direkt danach \
+         mit ihrer Nummer in eckigen Klammern, z. B. „… wird im Oktober freigegeben [2].“ – mehrere Quellen als [1][3]. \
+         Verwende nur die Nummern der Quellen oben, erfinde keine und schreibe kein Quellenverzeichnis.",
+        "Back every statement based on one of these sources right after it with its number in square \
+         brackets, e.g. “… will be released in October [2].” – several sources as [1][3]. Use only the \
+         numbers of the sources above, invent none and write no list of sources."
+    )
+}
 
 /// Renders retrieved chunks as a system-prompt section: numbered sources `[1]`, `[2]` … with
 /// page title and heading path, followed by the citation rules. The numbers are the 1-based
@@ -308,7 +316,7 @@ pub fn format_context_with(chunks: &[ContextChunk], citations: bool) -> String {
         let mut s = String::from("Relevanter Kontext aus dem lokalen Workspace:\n");
         for c in chunks {
             let label = match (&c.title, &c.heading) {
-                (Some(t), Some(h)) => format!("Seite: {t} › {h}"),
+                (Some(t), Some(h)) => trf!("Seite: {t} › {h}", "Page: {t} › {h}"),
                 _ => c.source.clone(),
             };
             s.push_str(&format!("\n({label})\n{}\n", c.text.trim()));
@@ -318,13 +326,13 @@ pub fn format_context_with(chunks: &[ContextChunk], citations: bool) -> String {
     let mut s = String::from("Relevanter Kontext aus dem lokalen Workspace (nummerierte Quellen):\n");
     for (i, c) in chunks.iter().enumerate() {
         let label = match (&c.title, &c.heading) {
-            (Some(t), Some(h)) => format!("Seite: {t} › {h}"),
+            (Some(t), Some(h)) => trf!("Seite: {t} › {h}", "Page: {t} › {h}"),
             _ => c.source.clone(),
         };
         s.push_str(&format!("\n[{}] ({label})\n{}\n", i + 1, c.text.trim()));
     }
     s.push('\n');
-    s.push_str(CITATION_RULES);
+    s.push_str(citation_rules());
     s
 }
 
@@ -453,6 +461,6 @@ mod tests {
         assert!(ctx.contains("(Seite: Architektur › Plan › Netzplan)"), "{ctx}");
         assert!(ctx.contains("(Seite: Notiz)"), "{ctx}");
         assert!(!ctx.contains("\n[3] ("));
-        assert!(ctx.trim_end().ends_with(CITATION_RULES));
+        assert!(ctx.trim_end().ends_with(citation_rules()));
     }
 }

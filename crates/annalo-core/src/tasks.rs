@@ -2,6 +2,7 @@
 //! due date (`due:2026-09-30`; the calendar marker of Obsidian Tasks is read too) and priority (`!!` hoch,
 //! `!` mittel). The `tasks` table is derived from page content on every save.
 
+use crate::{tr, trf};
 use std::collections::HashSet;
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
@@ -105,7 +106,12 @@ fn changed_since_ts<Tz: TimeZone>(s: &str, tz: &Tz) -> Result<String> {
     } else {
         DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Utc))
     };
-    t.map(crate::db::ts).ok_or_else(|| Error::Parse(format!("'changed_since' muss YYYY-MM-DD oder RFC 3339 sein: {s}")))
+    t.map(crate::db::ts).ok_or_else(|| {
+        Error::Parse(trf!(
+            "'changed_since' muss YYYY-MM-DD oder RFC 3339 sein: {s}",
+            "'changed_since' must be YYYY-MM-DD or RFC 3339: {s}"
+        ))
+    })
 }
 
 fn parse_date(s: &str) -> Option<String> {
@@ -247,7 +253,7 @@ impl Database {
              FROM tasks t JOIN pages p ON p.id = t.page_id
              WHERE p.deleted_at IS NULL AND t.page_id NOT IN tpl AND t.done = 0"
         ))?;
-        Ok(st.query_row(params![crate::templates::TEMPLATES_TITLE, today, page_id], |r| {
+        Ok(st.query_row(params![self.templates_title()?, today, page_id], |r| {
             Ok(TaskCounts { open: r.get(0)?, overdue: r.get(1)?, due_today: r.get(2)?, on_page: r.get(3)? })
         })?)
     }
@@ -269,7 +275,7 @@ impl Database {
         // Only the filters that are set go into the query, so the indexes on (done, due) and
         // (page_id, …) are used (`?1 IS NULL OR …` hides them from the planner).
         let mut conds: Vec<&str> = vec![];
-        let mut args: Vec<rusqlite::types::Value> = vec![crate::templates::TEMPLATES_TITLE.to_owned().into()];
+        let mut args: Vec<rusqlite::types::Value> = vec![self.templates_title()?.into()];
         if let Some(done) = done {
             conds.push("t.done = ?");
             args.push(done.into());
@@ -337,7 +343,15 @@ impl Database {
                 let mut same = tasks.iter().filter(|t| t.text == expected);
                 match (same.next(), same.next()) {
                     (Some(t), None) => ordinal = t.ordinal,
-                    _ => return Err(Error::State("Die Aufgabe wurde inzwischen geändert – Liste neu geladen".into())),
+                    _ => {
+                        return Err(Error::State(
+                            tr!(
+                                "Die Aufgabe wurde inzwischen geändert – Liste neu geladen",
+                                "The task was changed meanwhile – list reloaded"
+                            )
+                            .into(),
+                        ));
+                    }
                 }
             }
         }

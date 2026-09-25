@@ -21,6 +21,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{AppState, Result, lock};
+use annalo_core::{tr, trf};
 
 /// Passed by the autostart entry: start hidden in the tray.
 pub const MINIMIZED_ARG: &str = "--minimized";
@@ -43,8 +44,16 @@ pub enum Role {
 /// Number of global shortcut slots (one per [`Role`]).
 pub const SLOTS: usize = 5;
 const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Selection, Role::Mail];
-const ROLE_NAMES: [&str; SLOTS] =
-    ["Schnellerfassung", "Befehlspalette", "Schnellsuche", "Auswahl übernehmen", "E-Mail übernehmen"];
+/// The name of a shortcut's role (in messages about it).
+fn role_name(i: usize) -> &'static str {
+    match i {
+        0 => tr!("Schnellerfassung", "Quick capture"),
+        1 => tr!("Befehlspalette", "Command palette"),
+        2 => tr!("Schnellsuche", "Quick search"),
+        3 => tr!("Auswahl übernehmen", "Capture selection"),
+        _ => tr!("E-Mail übernehmen", "Capture e-mail"),
+    }
+}
 
 #[derive(Clone)]
 struct TrayHandles {
@@ -90,15 +99,45 @@ pub fn show_main(app: &AppHandle) {
 
 // --------------------------------------------------------------------- tray
 
-pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Öffnen", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Timer stoppen", false, None::<&str>)?;
-    let resume = MenuItem::with_id(app, "resume", "Zuletzt verwendet starten", false, None::<&str>)?;
-    let capture = MenuItem::with_id(app, "capture", "Schnellerfassung", true, None::<&str>)?;
-    let search = MenuItem::with_id(app, "search", "Suchen…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
+/// The tray menu in the current language, with the two items whose state changes.
+fn tray_menu(app: &AppHandle) -> tauri::Result<(Menu<Wry>, MenuItem<Wry>, MenuItem<Wry>)> {
+    let open = MenuItem::with_id(app, "open", tr!("Öffnen", "Open"), true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", tr!("Timer stoppen", "Stop timer"), false, None::<&str>)?;
+    let resume =
+        MenuItem::with_id(app, "resume", tr!("Zuletzt verwendet starten", "Start last used"), false, None::<&str>)?;
+    let capture = MenuItem::with_id(app, "capture", tr!("Schnellerfassung", "Quick capture"), true, None::<&str>)?;
+    let search = MenuItem::with_id(app, "search", tr!("Suchen…", "Search…"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr!("Beenden", "Quit"), true, None::<&str>)?;
     let sep = || PredefinedMenuItem::separator(app);
     let menu = Menu::with_items(app, &[&open, &search, &sep()?, &stop, &resume, &capture, &sep()?, &quit])?;
+    Ok((menu, stop, resume))
+}
+
+/// The display language changed: the tray menu, the macOS menu bar and the taskbar jump list
+/// are built again in the new language.
+pub fn relocalize(app: &AppHandle) {
+    let handles = lock(&desktop(app).tray).clone();
+    if let Some(t) = handles {
+        match tray_menu(app) {
+            Ok((menu, stop, resume)) => {
+                let _ = t.tray.set_menu(Some(menu));
+                *lock(&desktop(app).tray) = Some(TrayHandles { tray: t.tray, stop, resume });
+            }
+            Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    match crate::appmenu::build(app) {
+        Ok(menu) => {
+            let _ = app.set_menu(menu);
+        }
+        Err(e) => crate::devlog::warn("desktop", format!("menu bar not rebuilt: {e}")),
+    }
+    refresh_tray(app);
+}
+
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let (menu, stop, resume) = tray_menu(app)?;
     // macOS: a menu bar extra opens its menu on click (the Dock icon shows the window).
     let mac = cfg!(target_os = "macos");
     let mut builder = TrayIconBuilder::with_id("main")
@@ -136,7 +175,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         }
         "resume" => {
             if let Err(e) = resume_last(app) {
-                notify(app, "Timer nicht gestartet", &e.to_string());
+                notify(app, tr!("Timer nicht gestartet", "Timer not started"), &e.to_string());
             }
         }
         "capture" => open_capture(app, false),
@@ -151,7 +190,9 @@ fn resume_last(app: &AppHandle) -> Result<()> {
     let state = app.state::<AppState>();
     {
         let db = state.db();
-        let last = db.last_finished_entry()?.ok_or_else(|| Error::State("Noch keine Buchung vorhanden".into()))?;
+        let last = db
+            .last_finished_entry()?
+            .ok_or_else(|| Error::State(tr!("Noch keine Buchung vorhanden", "No time entry yet").into()))?;
         db.start_timer(
             last.netzplan_id,
             last.vorgang_nr.as_deref(),
@@ -687,8 +728,9 @@ pub fn capture_undo(app: AppHandle, state: State<AppState>) -> Result<RecentCapt
         let list = lock(&d.captures);
         let last = list.last().cloned();
         last.filter(|(r, _)| Utc::now() <= r.undo_until).ok_or_else(|| {
-            Error::State(format!(
+            Error::State(trf!(
                 "Nur die letzte Erfassung der letzten {} s lässt sich rückgängig machen",
+                "Only the last capture of the last {} s can be undone",
                 cap::UNDO_SECONDS
             ))
         })?
@@ -749,7 +791,11 @@ pub fn apply_shortcuts(app: &AppHandle, specs: [Option<&str>; SLOTS]) -> std::re
             for a in added {
                 let _ = gs.unregister(a);
             }
-            return Err(format!("Tastenkürzel „{}“ ist nicht verfügbar: {e}", sc.into_string()));
+            return Err(trf!(
+                "Tastenkürzel „{}“ ist nicht verfügbar: {e}",
+                "The shortcut “{}” is not available: {e}",
+                sc.into_string()
+            ));
         }
         added.push(sc);
     }
@@ -766,7 +812,12 @@ fn check_distinct(slots: &[Option<Shortcut>; SLOTS]) -> std::result::Result<(), 
     for i in 0..slots.len() {
         for j in i + 1..slots.len() {
             if slots[i].is_some() && slots[i] == slots[j] {
-                return Err(format!("{} und {} brauchen verschiedene Tastenkürzel", ROLE_NAMES[i], ROLE_NAMES[j]));
+                return Err(trf!(
+                    "{} und {} brauchen verschiedene Tastenkürzel",
+                    "{} and {} need different shortcuts",
+                    role_name(i),
+                    role_name(j)
+                ));
             }
         }
     }
@@ -803,14 +854,19 @@ fn parse_shortcut_for(spec: &str, mac: bool) -> std::result::Result<Shortcut, St
         })
         .collect::<Vec<_>>()
         .join("+");
-    let sc = Shortcut::from_str(&normalized).map_err(|e| format!("Tastenkürzel „{spec}“ ungültig: {e}"))?;
+    let sc = Shortcut::from_str(&normalized)
+        .map_err(|e| trf!("Tastenkürzel „{spec}“ ungültig: {e}", "The shortcut “{spec}” is invalid: {e}"))?;
     if mac {
         if sc.mods.contains(Modifiers::ALT) && !sc.mods.intersects(Modifiers::CONTROL | Modifiers::SUPER) {
-            return Err(format!("Tastenkürzel „{spec}“ nicht möglich: ⌥ ohne ⌘ oder Ctrl tippt Zeichen wie @ oder €"));
+            return Err(trf!(
+                "Tastenkürzel „{spec}“ nicht möglich: ⌥ ohne ⌘ oder Ctrl tippt Zeichen wie @ oder €",
+                "The shortcut “{spec}” is not possible: ⌥ without ⌘ or Ctrl types characters like @ or €"
+            ));
         }
     } else if sc.mods.contains(Modifiers::CONTROL | Modifiers::ALT) {
-        return Err(format!(
-            "Tastenkürzel „{spec}“ nicht möglich: Strg+Alt entspricht AltGr und wird zum Tippen von Zeichen wie @ oder € gebraucht"
+        return Err(trf!(
+            "Tastenkürzel „{spec}“ nicht möglich: Strg+Alt entspricht AltGr und wird zum Tippen von Zeichen wie @ oder € gebraucht",
+            "The shortcut “{spec}” is not possible: Ctrl+Alt is AltGr, which types characters like @ or €"
         ));
     }
     Ok(sc)
@@ -874,9 +930,14 @@ pub fn periodic(app: &AppHandle) {
                 let nr = db.netzplan_by_id(e.netzplan_id).map(|n| n.netzplan_nr).unwrap_or_default();
                 let local = e.start_time.with_timezone(&Local);
                 // Left running from an earlier day: the date says so.
-                let start = local.format(if local.date_naive() < now.date() { "%d.%m. %H:%M" } else { "%H:%M" });
-                format!(
+                let start = local.format(match (local.date_naive() < now.date(), annalo_core::i18n::is_en()) {
+                    (true, false) => "%d.%m. %H:%M",
+                    (true, true) => "%b %-d, %H:%M",
+                    (false, _) => "%H:%M",
+                });
+                trf!(
                     "{} läuft seit {start} Uhr – stoppen nicht vergessen.",
+                    "{} has been running since {start} – remember to stop it.",
                     core::timer_label(&nr, e.vorgang_nr.as_deref())
                 )
             });
@@ -889,14 +950,14 @@ pub fn periodic(app: &AppHandle) {
         (eod, late)
     };
     if let Some(msg) = eod {
-        notify(app, &msg, "Zur Zeiterfassung: Annalo öffnen");
+        notify(app, &msg, tr!("Zur Zeiterfassung: Annalo öffnen", "To time tracking: open Annalo"));
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             desktop(app).pending_timesheet.store(true, Ordering::Relaxed);
         }
     }
     if let Some(body) = late {
-        notify(app, "Timer läuft noch", &body);
+        notify(app, tr!("Timer läuft noch", "Timer still running"), &body);
     }
     crate::weekplan::periodic(app);
     crate::dayreview::periodic(app);
@@ -945,11 +1006,13 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
 #[tauri::command]
 pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<DesktopInfo> {
     if crate::portable::active() {
-        return Err(Error::State(crate::portable::NOT_PORTABLE.into()));
+        return Err(Error::State(crate::portable::not_portable().into()));
     }
     let m = app.autolaunch();
     let res = if enabled { m.enable() } else { m.disable() };
-    res.map_err(|e| Error::State(format!("Autostart konnte nicht geändert werden: {e}")))?;
+    res.map_err(|e| {
+        Error::State(trf!("Autostart konnte nicht geändert werden: {e}", "Autostart could not be changed: {e}"))
+    })?;
     Ok(desktop_info(app))
 }
 

@@ -1,6 +1,7 @@
 //! Templates: pages below the top-level page „Vorlagen“. Placeholders like
 //! `{{datum}}` are filled in when a template is inserted or a page is created from it.
 
+use crate::tr;
 use std::collections::HashSet;
 
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
@@ -12,6 +13,8 @@ use crate::model::{Page, PageNode};
 
 /// Parent page that holds the templates.
 pub const TEMPLATES_TITLE: &str = "Vorlagen";
+/// The same folder in an English workspace (an existing one in either language is used).
+pub const TEMPLATES_TITLE_EN: &str = "Templates";
 
 /// Values for the placeholders of a template.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +32,8 @@ fn value(key: &str, v: &TemplateVars) -> Option<String> {
         "date" => v.date.format("%Y-%m-%d").to_string(),
         "zeit" | "time" => format!("{:02}:{:02}", v.time.hour(), v.time.minute()),
         "titel" | "title" => v.title.clone(),
-        "wochentag" | "weekday" => WEEKDAYS[v.date.weekday().num_days_from_monday() as usize].to_owned(),
+        "wochentag" => WEEKDAYS[v.date.weekday().num_days_from_monday() as usize].to_owned(),
+        "weekday" => v.date.format("%A").to_string(),
         "kw" | "week" => v.date.iso_week().week().to_string(),
         _ => return None,
     })
@@ -67,10 +71,11 @@ impl Database {
             .conn()
             .query_row(
                 &format!(
-                    "SELECT {} FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL AND title = ?1 COLLATE NOCASE ORDER BY id LIMIT 1",
+                    "SELECT {} FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL \
+                     AND title COLLATE NOCASE IN (?1, ?2) ORDER BY title = ?3 COLLATE NOCASE DESC, id LIMIT 1",
                     crate::db::PAGE_COLS
                 ),
-                [TEMPLATES_TITLE],
+                [TEMPLATES_TITLE, TEMPLATES_TITLE_EN, tr!(TEMPLATES_TITLE, TEMPLATES_TITLE_EN)],
                 crate::db::map_page,
             )
             .optional()?)
@@ -80,8 +85,13 @@ impl Database {
     pub fn templates_root(&self) -> Result<Page> {
         match self.find_templates_root()? {
             Some(p) => Ok(p),
-            None => self.create_page(None, TEMPLATES_TITLE, Some("layout-template")),
+            None => self.create_page(None, tr!(TEMPLATES_TITLE, TEMPLATES_TITLE_EN), Some("layout-template")),
         }
+    }
+
+    /// The title of the templates folder: the existing one's, else the display language's.
+    pub fn templates_title(&self) -> Result<String> {
+        Ok(self.find_templates_root()?.map_or_else(|| tr!(TEMPLATES_TITLE, TEMPLATES_TITLE_EN).to_owned(), |p| p.title))
     }
 
     /// All pages below „Vorlagen“ (nested ones included), in tree order. Creates nothing.
@@ -118,7 +128,9 @@ impl Database {
     /// Frontmatter of the template is dropped: it describes the template, not the new page.
     pub fn render_template(&self, id: i64, vars: &TemplateVars) -> Result<String> {
         if !self.is_template(id)? {
-            return Err(Error::State("Diese Seite ist keine Vorlage (mehr)".into()));
+            return Err(Error::State(
+                tr!("Diese Seite ist keine Vorlage (mehr)", "This page is not a template (any more)").into(),
+            ));
         }
         let content = self.page_doc(id)?.content;
         Ok(apply_template(strip_frontmatter(&content), vars))

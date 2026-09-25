@@ -3,6 +3,7 @@
 //! One file per workspace, WAL mode, foreign keys on. Schema changes are
 //! numbered migrations tracked through `PRAGMA user_version`.
 
+use crate::{tr, trf};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -51,12 +52,20 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
 
 /// Part of the error for a database written by a newer Annalo (start-up tells it apart).
 pub const NEWER_SCHEMA: &str = "neueren Annalo-Version";
+/// The same in English.
+pub const NEWER_SCHEMA_EN: &str = "newer Annalo version";
+
+/// Whether an error message is the one for a database of a newer Annalo (either language).
+pub fn is_newer_schema(message: &str) -> bool {
+    message.contains(NEWER_SCHEMA) || message.contains(NEWER_SCHEMA_EN)
+}
 
 /// Refuses a schema version this build does not know.
 fn check_not_newer(version: usize) -> Result<()> {
     if version > MIGRATIONS.len() {
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{version}, diese kennt v{}). Bitte Annalo aktualisieren.",
+            "The database comes from a {NEWER_SCHEMA_EN} (schema v{version}, this one knows v{}). Please update Annalo.",
             MIGRATIONS.len()
         )));
     }
@@ -86,7 +95,10 @@ pub(crate) fn parse_ts(s: &str) -> rusqlite::Result<DateTime<Utc>> {
 fn booked_guard(e: rusqlite::Error, what: &str) -> Error {
     match e {
         rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
-            Error::State(format!("{what} hat gebuchte Zeiten und kann nicht gelöscht werden"))
+            Error::State(trf!(
+                "{what} hat gebuchte Zeiten und kann nicht gelöscht werden",
+                "{what} has booked time and cannot be deleted"
+            ))
         }
         other => Error::Db(other),
     }
@@ -153,7 +165,9 @@ impl Database {
         conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
         let db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
         if db.schema_version()? != MIGRATIONS.len() {
-            return Err(Error::State("Datenbank noch nicht auf dem aktuellen Stand".into()));
+            return Err(Error::State(
+                tr!("Datenbank noch nicht auf dem aktuellen Stand", "The database is not up to date yet").into(),
+            ));
         }
         Ok(db)
     }
@@ -442,7 +456,9 @@ impl Database {
 
     /// Deletes a project with its Netzpläne. Refused while time entries reference them.
     pub fn delete_project(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM projects WHERE id = ?1", [id]).map_err(|e| booked_guard(e, "Projekt"))?;
+        self.conn
+            .execute("DELETE FROM projects WHERE id = ?1", [id])
+            .map_err(|e| booked_guard(e, tr!("Projekt", "The project")))?;
         Ok(())
     }
 
@@ -455,7 +471,9 @@ impl Database {
     }
 
     pub fn delete_netzplan(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM netzplaene WHERE id = ?1", [id]).map_err(|e| booked_guard(e, "Netzplan"))?;
+        self.conn
+            .execute("DELETE FROM netzplaene WHERE id = ?1", [id])
+            .map_err(|e| booked_guard(e, tr!("Netzplan", "The network")))?;
         Ok(())
     }
 
@@ -488,7 +506,9 @@ impl Database {
     pub fn upsert_leistungsart(&self, code: &str, description: &str) -> Result<()> {
         let code = code.trim().to_uppercase();
         if code.is_empty() || !code.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            return Err(Error::State("Leistungsart: nur Buchstaben, Ziffern und _".into()));
+            return Err(Error::State(
+                tr!("Leistungsart: nur Buchstaben, Ziffern und _", "Activity type: letters, digits and _ only").into(),
+            ));
         }
         self.conn.execute(
             "INSERT INTO leistungsarten (code, description) VALUES (?1, ?2)
@@ -501,7 +521,7 @@ impl Database {
     pub fn delete_leistungsart(&self, code: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM leistungsarten WHERE code = ?1", [code])
-            .map_err(|e| booked_guard(e, "Leistungsart"))?;
+            .map_err(|e| booked_guard(e, tr!("Leistungsart", "The activity type")))?;
         Ok(())
     }
 
@@ -550,7 +570,9 @@ impl Database {
 
     pub fn insert_time_entry(&self, e: &NewTimeEntry) -> Result<TimeEntry> {
         if e.duration_minutes < 0 {
-            return Err(Error::State("Die Dauer darf nicht negativ sein".into()));
+            return Err(Error::State(
+                tr!("Die Dauer darf nicht negativ sein", "The duration must not be negative").into(),
+            ));
         }
         let end = e.start_time + chrono::Duration::minutes(e.duration_minutes);
         self.conn.execute(
@@ -609,7 +631,11 @@ impl Database {
         at: DateTime<Utc>,
     ) -> Result<TimeEntry> {
         if let Some(t) = self.running_timer()? {
-            return Err(Error::State(format!("Es läuft bereits ein Timer (Eintrag #{})", t.id)));
+            return Err(Error::State(trf!(
+                "Es läuft bereits ein Timer (Eintrag #{})",
+                "A timer is already running (entry #{})",
+                t.id
+            )));
         }
         self.conn.execute(
             "INSERT INTO time_entries (netzplan_id, vorgang_nr, leistungsart, start_time, description, status_flag, source)
@@ -622,9 +648,11 @@ impl Database {
     /// Stops the running timer. `idle_minutes` is subtracted from the booked
     /// duration (idle detection); the wall-clock end time is kept.
     pub fn stop_timer(&self, at: DateTime<Utc>, idle_minutes: i64) -> Result<TimeEntry> {
-        let running = self.running_timer()?.ok_or_else(|| Error::State("Es läuft kein Timer".into()))?;
+        let running = self
+            .running_timer()?
+            .ok_or_else(|| Error::State(tr!("Es läuft kein Timer", "No timer is running").into()))?;
         if at < running.start_time {
-            return Err(Error::State("Das Ende liegt vor dem Beginn".into()));
+            return Err(Error::State(tr!("Das Ende liegt vor dem Beginn", "The end is before the start").into()));
         }
         let minutes = ((at - running.start_time).num_seconds() as f64 / 60.0).round() as i64;
         // Rounding (Settings → Zeiterfassung) applies to what is booked; nothing booked stays nothing.
@@ -659,10 +687,19 @@ impl Database {
         let e = self.time_entry(id)?;
         match e.status_flag {
             StatusFlag::Running => {
-                return Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into()));
+                return Err(Error::State(
+                    tr!(
+                        "Der Eintrag läuft noch – zuerst den Timer stoppen",
+                        "The entry is still running – stop the timer first"
+                    )
+                    .into(),
+                ));
             }
             StatusFlag::Exported => {
-                return Err(Error::State("Exportierte Einträge können nicht geändert werden".into()));
+                return Err(Error::State(
+                    tr!("Exportierte Einträge können nicht geändert werden", "Exported entries cannot be changed")
+                        .into(),
+                ));
             }
             _ => {}
         }
@@ -671,8 +708,11 @@ impl Database {
         let unchanged = e.duration_minutes == Some(duration_minutes);
         if !unchanged && !(1..=24 * 60).contains(&duration_minutes) {
             return Err(Error::State(
-                "Die Dauer muss zwischen 1 Minute und 24 Stunden liegen (längere Zeiten auf mehrere Tage verteilen)"
-                    .into(),
+                tr!(
+                    "Die Dauer muss zwischen 1 Minute und 24 Stunden liegen (längere Zeiten auf mehrere Tage verteilen)",
+                    "The duration must be between 1 minute and 24 hours (spread longer times over several days)"
+                )
+                .into(),
             ));
         }
         let end = start_time + chrono::Duration::minutes(duration_minutes);
@@ -693,9 +733,19 @@ impl Database {
             self.conn.query_row("SELECT status_flag FROM time_entries WHERE id = ?1", [id], |r| r.get(0)).optional()?;
         match status.as_deref() {
             Some("exported") => Err(Error::State(
-                "Exportierte Einträge können nicht gelöscht werden – sie sind bereits im Zeiterfassungssystem".into(),
+                tr!(
+                    "Exportierte Einträge können nicht gelöscht werden – sie sind bereits im Zeiterfassungssystem",
+                    "Exported entries cannot be deleted – they are already in the time tracking system"
+                )
+                .into(),
             )),
-            Some("running") => Err(Error::State("Der Eintrag läuft noch – zuerst den Timer stoppen".into())),
+            Some("running") => Err(Error::State(
+                tr!(
+                    "Der Eintrag läuft noch – zuerst den Timer stoppen",
+                    "The entry is still running – stop the timer first"
+                )
+                .into(),
+            )),
             _ => {
                 self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
                 Ok(())
@@ -705,7 +755,9 @@ impl Database {
 
     pub fn set_entry_status(&self, ids: &[i64], status: StatusFlag) -> Result<usize> {
         if status == StatusFlag::Running {
-            return Err(Error::State("Einträge können nicht auf „läuft“ gesetzt werden".into()));
+            return Err(Error::State(
+                tr!("Einträge können nicht auf „läuft“ gesetzt werden", "Entries cannot be set to “running”").into(),
+            ));
         }
         self.atomic(|| {
             let mut n = 0;
@@ -876,12 +928,14 @@ impl Database {
     pub fn create_page(&self, parent_id: Option<i64>, title: &str, icon: Option<&str>) -> Result<Page> {
         let title = crate::notes::clean_title(title);
         if title.is_empty() {
-            return Err(Error::State("Der Titel darf nicht leer sein".into()));
+            return Err(Error::State(tr!("Der Titel darf nicht leer sein", "The title must not be empty").into()));
         }
         if let Some(p) = parent_id
             && self.page(p)?.deleted_at.is_some()
         {
-            return Err(Error::State("Die übergeordnete Seite liegt im Papierkorb".into()));
+            return Err(Error::State(
+                tr!("Die übergeordnete Seite liegt im Papierkorb", "The parent page is in the trash").into(),
+            ));
         }
         let position: i64 = self.conn.query_row(
             "SELECT COALESCE(MAX(position) + 1, 0) FROM pages WHERE parent_id IS ?1 AND deleted_at IS NULL",

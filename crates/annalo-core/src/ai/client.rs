@@ -1,6 +1,7 @@
 //! Client for the OpenAI chat protocol (`/chat/completions`, `/embeddings`, `/models`) as
 //! spoken by LiteLLM, OpenAI-compatible APIs, Azure OpenAI and Ollama.
 
+use crate::{tr, trf};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -150,7 +151,14 @@ impl AiClient {
     }
 
     fn timed_out(what: &str, after: Duration) -> Error {
-        Error::Provider { status: 0, body: format!("{what} (Zeitüberschreitung nach {} s)", after.as_secs().max(1)) }
+        Error::Provider {
+            status: 0,
+            body: trf!(
+                "{what} (Zeitüberschreitung nach {} s)",
+                "{what} (timed out after {} s)",
+                after.as_secs().max(1)
+            ),
+        }
     }
 
     pub fn provider(&self) -> &AiProvider {
@@ -207,7 +215,7 @@ impl AiClient {
         let resp = tokio::select! {
             r = send => match r {
                 Ok(r) => Self::check(r?).await?,
-                Err(_) => return Err(Self::timed_out("Keine Antwort vom Modell", self.first_byte_timeout)),
+                Err(_) => return Err(Self::timed_out(tr!("Keine Antwort vom Modell", "No answer from the model"), self.first_byte_timeout)),
             },
             _ = wait_cancel() => {
                 acc.finish_reason = Some("cancelled".into());
@@ -236,8 +244,9 @@ impl AiClient {
             // A login page of a hotel WLAN or a proxy error page, not an answer.
             let text = resp.text().await.unwrap_or_default();
             let start: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect();
-            return Err(Error::State(format!(
-                "Keine Antwort im erwarteten Format vom KI-Server ({content_type}): {start} – Anmeldeseite eines WLANs oder Proxys?"
+            return Err(Error::State(trf!(
+                "Keine Antwort im erwarteten Format vom KI-Server ({content_type}): {start} – Anmeldeseite eines WLANs oder Proxys?",
+                "No answer in the expected format from the AI server ({content_type}): {start} – the sign-in page of a Wi-Fi or proxy?"
             )));
         }
 
@@ -255,7 +264,7 @@ impl AiClient {
                 c = tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()) => match c {
                     Ok(Some(c)) => c,
                     Ok(None) => break,
-                    Err(_) => return Err(Self::timed_out("Keine Antwort vom Modell", STREAM_IDLE_TIMEOUT)),
+                    Err(_) => return Err(Self::timed_out(tr!("Keine Antwort vom Modell", "No answer from the model"), STREAM_IDLE_TIMEOUT)),
                 },
                 _ = &mut cancel_wait => {
                     acc.finish_reason = Some("cancelled".into());
@@ -287,10 +296,17 @@ impl AiClient {
             // The connection ended without the end of the answer.
             if acc.content.trim().is_empty() && acc.tool_calls.is_empty() {
                 return Err(Error::State(
-                    "Die Verbindung brach während der Antwort ab – es kam keine Antwort an".into(),
+                    tr!(
+                        "Die Verbindung brach während der Antwort ab – es kam keine Antwort an",
+                        "The connection broke off during the answer – no answer arrived"
+                    )
+                    .into(),
                 ));
             }
-            acc.content.push_str("\n\n*[Antwort unvollständig: die Verbindung zum KI-Server brach vorzeitig ab]*");
+            acc.content.push_str(tr!(
+                "\n\n*[Antwort unvollständig: die Verbindung zum KI-Server brach vorzeitig ab]*",
+                "\n\n*[Answer incomplete: the connection to the AI server broke off early]*"
+            ));
             acc.finish_reason = Some("incomplete".into());
             warnings.push("stream ended without [DONE] or finish_reason".into());
         }
@@ -397,13 +413,21 @@ impl AiClient {
         let req = self.http.post(self.provider.ollama_url("pull")).json(&json!({ "model": model, "stream": true }));
         let resp = match tokio::time::timeout(self.first_byte_timeout, req.send()).await {
             Ok(r) => Self::check(r?).await?,
-            Err(_) => return Err(Self::timed_out("Ollama antwortet nicht", self.first_byte_timeout)),
+            Err(_) => {
+                return Err(Self::timed_out(
+                    tr!("Ollama antwortet nicht", "Ollama does not answer"),
+                    self.first_byte_timeout,
+                ));
+            }
         };
         let mut stream = resp.bytes_stream();
         let mut buf: Vec<u8> = vec![];
         loop {
             let Ok(next) = tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await else {
-                return Err(Self::timed_out("Der Download steht still", STREAM_IDLE_TIMEOUT));
+                return Err(Self::timed_out(
+                    tr!("Der Download steht still", "The download has stalled"),
+                    STREAM_IDLE_TIMEOUT,
+                ));
             };
             let Some(chunk) = next else { break };
             if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
@@ -432,7 +456,10 @@ pub async fn list_models(
     let asks = clients.iter().map(|(id, c)| async move {
         let r = match tokio::time::timeout(timeout, c.models()).await {
             Ok(r) => r,
-            Err(_) => Err(Error::Provider { status: 0, body: "Keine Antwort (Zeitüberschreitung)".into() }),
+            Err(_) => Err(Error::Provider {
+                status: 0,
+                body: tr!("Keine Antwort (Zeitüberschreitung)", "No answer (timed out)").into(),
+            }),
         };
         (id.clone(), r)
     });

@@ -5,10 +5,17 @@
 //! have no key: they never contact the update server.
 
 /// GitHub repository the releases are published to.
+use crate::tr;
+
 pub const REPOSITORY: &str = "MouseWerk/Annalo";
 
 /// Shown when a build has no update key.
 pub const NOT_CONFIGURED: &str = "Automatische Updates sind in diesem Build nicht eingerichtet";
+
+/// [`NOT_CONFIGURED`] in the display language.
+pub fn not_configured() -> &'static str {
+    tr!(NOT_CONFIGURED, "Automatic updates are not set up in this build")
+}
 
 /// The compiled-in public key, if it is usable: blank values count as "not configured".
 pub fn configured_pubkey(raw: Option<&str>) -> Option<&str> {

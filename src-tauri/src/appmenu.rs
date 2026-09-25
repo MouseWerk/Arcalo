@@ -1,10 +1,11 @@
-//! The macOS menu bar (German). Windows and Linux keep a window without a menu bar; the
+//! The macOS menu bar, in the display language (rebuilt when it changes). Windows and Linux keep a window without a menu bar; the
 //! module compiles everywhere so the regular builds check it, but only macOS installs it.
 //!
 //! The Edit menu uses the predefined items: they send the native selectors (`copy:`,
 //! `paste:` …), without which ⌘C/⌘V/⌘Z would not work in the webview. Custom items emit
 //! `menu://action` with the action name; the UI handles it like its own shortcuts.
 
+use annalo_core::tr;
 use tauri::menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Wry};
 
@@ -31,63 +32,63 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         "Annalo",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("Über Annalo"), Some(about))?,
+            &PredefinedMenuItem::about(app, Some(tr!("Über Annalo", "About Annalo")), Some(about))?,
             &sep()?,
-            &item("menu:settings", "Einstellungen …", Some("Cmd+,"))?,
+            &item("menu:settings", tr!("Einstellungen …", "Settings …"), Some("Cmd+,"))?,
             &sep()?,
-            &PredefinedMenuItem::services(app, Some("Dienste"))?,
+            &PredefinedMenuItem::services(app, Some(tr!("Dienste", "Services")))?,
             &sep()?,
-            &PredefinedMenuItem::hide(app, Some("Annalo ausblenden"))?,
-            &PredefinedMenuItem::hide_others(app, Some("Andere ausblenden"))?,
-            &PredefinedMenuItem::show_all(app, Some("Alle einblenden"))?,
+            &PredefinedMenuItem::hide(app, Some(tr!("Annalo ausblenden", "Hide Annalo")))?,
+            &PredefinedMenuItem::hide_others(app, Some(tr!("Andere ausblenden", "Hide Others")))?,
+            &PredefinedMenuItem::show_all(app, Some(tr!("Alle einblenden", "Show All")))?,
             &sep()?,
             // Not the predefined quit (`terminate:`), which would skip storing open editors.
-            &item(QUIT, "Annalo beenden", Some("Cmd+Q"))?,
+            &item(QUIT, tr!("Annalo beenden", "Quit Annalo"), Some("Cmd+Q"))?,
         ],
     )?;
     let edit = Submenu::with_items(
         app,
-        "Bearbeiten",
+        tr!("Bearbeiten", "Edit"),
         true,
         &[
-            &PredefinedMenuItem::undo(app, Some("Widerrufen"))?,
-            &PredefinedMenuItem::redo(app, Some("Wiederholen"))?,
+            &PredefinedMenuItem::undo(app, Some(tr!("Widerrufen", "Undo")))?,
+            &PredefinedMenuItem::redo(app, Some(tr!("Wiederholen", "Redo")))?,
             &sep()?,
-            &PredefinedMenuItem::cut(app, Some("Ausschneiden"))?,
-            &PredefinedMenuItem::copy(app, Some("Kopieren"))?,
-            &PredefinedMenuItem::paste(app, Some("Einsetzen"))?,
-            &PredefinedMenuItem::select_all(app, Some("Alles auswählen"))?,
+            &PredefinedMenuItem::cut(app, Some(tr!("Ausschneiden", "Cut")))?,
+            &PredefinedMenuItem::copy(app, Some(tr!("Kopieren", "Copy")))?,
+            &PredefinedMenuItem::paste(app, Some(tr!("Einsetzen", "Paste")))?,
+            &PredefinedMenuItem::select_all(app, Some(tr!("Alles auswählen", "Select All")))?,
         ],
     )?;
     let view = Submenu::with_items(
         app,
-        "Ansicht",
+        tr!("Ansicht", "View"),
         true,
         &[
-            &item("menu:sidebar", "Seitenleiste ein-/ausblenden", Some("Cmd+\\"))?,
-            &item("menu:focus", "Fokusmodus", Some("Cmd+."))?,
+            &item("menu:sidebar", tr!("Seitenleiste ein-/ausblenden", "Toggle Sidebar"), Some("Cmd+\\"))?,
+            &item("menu:focus", tr!("Fokusmodus", "Focus Mode"), Some("Cmd+."))?,
         ],
     )?;
     let window = Submenu::with_items(
         app,
-        "Fenster",
+        tr!("Fenster", "Window"),
         true,
         &[
-            &PredefinedMenuItem::minimize(app, Some("Minimieren"))?,
-            &PredefinedMenuItem::maximize(app, Some("Zoomen"))?,
-            &PredefinedMenuItem::fullscreen(app, Some("Vollbild"))?,
+            &PredefinedMenuItem::minimize(app, Some(tr!("Minimieren", "Minimize")))?,
+            &PredefinedMenuItem::maximize(app, Some(tr!("Zoomen", "Zoom")))?,
+            &PredefinedMenuItem::fullscreen(app, Some(tr!("Vollbild", "Full Screen")))?,
             &sep()?,
-            &PredefinedMenuItem::bring_all_to_front(app, Some("Alle nach vorne bringen"))?,
+            &PredefinedMenuItem::bring_all_to_front(app, Some(tr!("Alle nach vorne bringen", "Bring All to Front")))?,
         ],
     )?;
     let help = Submenu::with_items(
         app,
-        "Hilfe",
+        tr!("Hilfe", "Help"),
         true,
         &[
             // ⌘K stays with the window (it toggles the palette there).
-            &item("menu:palette", "Befehlspalette", None)?,
-            &item(WEBSITE, "Annalo auf GitHub", None)?,
+            &item("menu:palette", tr!("Befehlspalette", "Command Palette"), None)?,
+            &item(WEBSITE, tr!("Annalo auf GitHub", "Annalo on GitHub"), None)?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &edit, &view, &window, &help])

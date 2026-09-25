@@ -7,6 +7,7 @@
 //! ([`mark_tool_result`]), so the conversation that follows stays on the local model.
 //! Settings → Datenschutz „Nur lokal“ keeps everything local anyway.
 
+use crate::trf;
 use std::collections::HashSet;
 
 use crate::db::Database;
@@ -68,7 +69,9 @@ pub fn tag_text(tags: &[String]) -> String {
 /// keeps the conversation that carries it on the local model.
 pub fn mark_tool_result(out: String, has_private: bool, markers: &[String]) -> String {
     match normalize(markers).first() {
-        Some(m) if has_private => format!("{out}\n\n[Enthält vertrauliche Inhalte: {m}]"),
+        Some(m) if has_private => {
+            trf!("{out}\n\n[Enthält vertrauliche Inhalte: {m}]", "{out}\n\n[Contains confidential content: {m}]")
+        }
         _ => out,
     }
 }

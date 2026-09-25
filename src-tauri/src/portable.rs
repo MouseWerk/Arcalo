@@ -63,8 +63,12 @@ pub fn webview_dir(data_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Why a feature that needs an installation is off.
-pub const NOT_PORTABLE: &str =
-    "Im portablen Modus nicht verfügbar: Annalo schreibt dann nichts in das Benutzerprofil dieses Rechners";
+pub fn not_portable() -> &'static str {
+    annalo_core::tr!(
+        "Im portablen Modus nicht verfügbar: Annalo schreibt dann nichts in das Benutzerprofil dieses Rechners",
+        "Not available in portable mode: Annalo then writes nothing into this computer's user profile"
+    )
+}
 
 #[cfg(test)]
 mod tests {

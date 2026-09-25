@@ -6,6 +6,7 @@
 //!
 //! Blocking: run it off the async runtime.
 
+use crate::{tr, trf};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -55,21 +56,29 @@ pub fn run(script_dir: &Path, script: Script, args: &[OsString], timeout: Durati
     let out = match crate::ai::tools::output_within(cmd, timeout) {
         Ok(o) => o,
         Err(_) if started.elapsed() >= timeout => {
-            return Err(Error::State(format!(
+            return Err(Error::State(trf!(
                 "Outlook hat nicht innerhalb von {} geantwortet. Vielleicht wartet Outlook auf eine Bestätigung \
                  („Ein Programm versucht, auf E-Mail-Adressinformationen zuzugreifen“ – dort den Zugriff erlauben) oder \
                  startet gerade noch. {retry}",
+                "Outlook did not answer within {}. Maybe Outlook is waiting for a confirmation (“A program is \
+                 trying to access e-mail address information” – allow the access there) or is still starting. {retry}",
                 minutes(timeout)
             )));
         }
-        Err(e) => return Err(Error::State(format!("PowerShell ließ sich nicht starten: {e}"))),
+        Err(e) => {
+            return Err(Error::State(trf!(
+                "PowerShell ließ sich nicht starten: {e}",
+                "PowerShell could not be started: {e}"
+            )));
+        }
     };
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     if stdout.trim().is_empty() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err: String = err.trim().chars().take(300).collect();
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "Das Outlook-Skript lieferte kein Ergebnis{}",
+            "The Outlook script returned no result{}",
             if err.is_empty() { String::new() } else { format!(": {err}") }
         )));
     }
@@ -78,9 +87,9 @@ pub fn run(script_dir: &Path, script: Script, args: &[OsString], timeout: Durati
 
 fn minutes(d: Duration) -> String {
     match d.as_secs() {
-        s if s >= 120 && s % 60 == 0 => format!("{} Minuten", s / 60),
-        60 => "einer Minute".into(),
-        s => format!("{s} Sekunden"),
+        s if s >= 120 && s % 60 == 0 => trf!("{} Minuten", "{} minutes", s / 60),
+        60 => tr!("einer Minute", "a minute").into(),
+        s => trf!("{s} Sekunden", "{s} seconds"),
     }
 }
 
@@ -101,9 +110,10 @@ pub fn json(text: &str) -> Result<Value> {
         }
         offset += line.len();
     }
-    Err(Error::State(format!(
+    Err(Error::State(trf!(
         "Die Antwort des Outlook-Skripts ist unlesbar ({})",
-        first_err.unwrap_or_else(|| "kein JSON".into())
+        "The answer of the Outlook script cannot be read ({})",
+        first_err.unwrap_or_else(|| tr!("kein JSON", "no JSON").into())
     )))
 }
 

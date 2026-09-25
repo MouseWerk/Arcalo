@@ -5,6 +5,7 @@
 //! request that asks for the result only, as Markdown, without retrieval.
 
 use super::client::ChatMessage;
+use crate::trf;
 
 /// Longest text sent along (characters); longer pages are cut.
 pub const MAX_TEXT_CHARS: usize = 60_000;
@@ -12,13 +13,19 @@ pub const MAX_TEXT_CHARS: usize = 60_000;
 /// The system prompt of a transformation. `today` is shown to the model so
 /// relative dates („nächsten Freitag“) can become `YYYY-MM-DD`.
 pub fn system_prompt(today: &str) -> String {
-    format!(
+    trf!(
         "Du bearbeitest Texte in Annalo, einem Notizprogramm mit Markdown. Heute ist {today}. \
          Führe die Anweisung des Nutzers auf den Text zwischen <text> und </text> aus. Antworte \
          ausschließlich mit dem Ergebnis in Markdown: keine Einleitung, keine Erklärung, kein \
          umschließender Codeblock. Behalte Links ([[Seite]], [Text](URL)), #Tags, Aufgaben \
          (- [ ] …, due:JJJJ-MM-TT, !/!!) und /zeit-Zeilen unverändert bei, sofern die Anweisung \
-         nichts anderes verlangt. Behalte die Sprache des Textes bei, außer beim Übersetzen."
+         nichts anderes verlangt. Behalte die Sprache des Textes bei, außer beim Übersetzen.",
+        "You edit texts in Annalo, a notes app with Markdown. Today is {today}. Carry out the \
+         user's instruction on the text between <text> and </text>. Answer with the result in \
+         Markdown only: no introduction, no explanation, no code block around it. Keep links \
+         ([[Page]], [Text](URL)), #tags, tasks (- [ ] …, due:YYYY-MM-DD, !/!!) and /zeit lines \
+         unchanged unless the instruction asks otherwise. Keep the language of the text, except \
+         when translating."
     )
 }
 
@@ -27,9 +34,14 @@ pub fn messages(instruction: &str, text: &str, page_title: Option<&str>, today: 
     let text: String = text.chars().take(MAX_TEXT_CHARS).collect();
     let mut user = String::new();
     if let Some(t) = page_title.filter(|t| !t.trim().is_empty()) {
-        user.push_str(&format!("Seite: „{}“\n\n", t.trim()));
+        user.push_str(&trf!("Seite: „{}“\n\n", "Page: “{}”\n\n", t.trim()));
     }
-    user.push_str(&format!("Anweisung: {}\n\n<text>\n{}\n</text>", instruction.trim(), text.trim_end()));
+    user.push_str(&trf!(
+        "Anweisung: {}\n\n<text>\n{}\n</text>",
+        "Instruction: {}\n\n<text>\n{}\n</text>",
+        instruction.trim(),
+        text.trim_end()
+    ));
     vec![ChatMessage::system(system_prompt(today)), ChatMessage::user(user)]
 }
 

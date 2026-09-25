@@ -5,6 +5,7 @@
 //! falls back to the default), so settings written by newer or older versions always load.
 //! Ranges are enforced by [`crate::settings::Settings::normalize`].
 
+use crate::{tr, trf};
 use std::collections::BTreeMap;
 
 use chrono::NaiveTime;
@@ -255,20 +256,26 @@ pub fn theme_file_json(t: &CustomTheme) -> String {
 /// Reads a theme file. Refuses other files, newer versions and missing or invalid colors;
 /// without `dark` the background decides. The result has no id yet.
 pub fn parse_theme_file(json: &str) -> std::result::Result<CustomTheme, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|_| "Die Datei ist kein gültiges JSON".to_owned())?;
+    let value: serde_json::Value = serde_json::from_str(json)
+        .map_err(|_| tr!("Die Datei ist kein gültiges JSON", "The file is not valid JSON").to_owned())?;
     if value.get("format").and_then(|f| f.as_str()) != Some(THEME_FILE_FORMAT) {
-        return Err("Keine Annalo-Theme-Datei".into());
+        return Err(tr!("Keine Annalo-Theme-Datei", "Not an Annalo theme file").into());
     }
     if value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) > 1 {
-        return Err("Die Theme-Datei stammt aus einer neueren Annalo-Version".into());
+        return Err(tr!(
+            "Die Theme-Datei stammt aus einer neueren Annalo-Version",
+            "The theme file comes from a newer Annalo version"
+        )
+        .into());
     }
     let colors: ThemeColors = serde_json::from_value(value.get("colors").cloned().unwrap_or_default())
-        .map_err(|e| format!("Farben unvollständig: {e}"))?;
-    let colors = colors.normalized().map_err(|name| format!("Ungültige Farbe „{name}“"))?;
+        .map_err(|e| trf!("Farben unvollständig: {e}", "Colors incomplete: {e}"))?;
+    let colors = colors.normalized().map_err(|name| trf!("Ungültige Farbe „{name}“", "Invalid color “{name}”"))?;
     let name = value.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_owned();
     let dark = value.get("dark").and_then(|d| d.as_bool()).unwrap_or_else(|| is_dark(&colors.background));
-    CustomTheme { id: String::new(), name, dark, colors }.normalized().ok_or_else(|| "Ungültige Farben".to_owned())
+    CustomTheme { id: String::new(), name, dark, colors }
+        .normalized()
+        .ok_or_else(|| tr!("Ungültige Farben", "Invalid colors").to_owned())
 }
 
 /// Whether a `#rrggbb` color is dark (WCAG relative luminance below 0.18).

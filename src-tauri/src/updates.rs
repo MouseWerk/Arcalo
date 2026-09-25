@@ -74,7 +74,7 @@ struct Progress {
 }
 
 fn not_configured() -> Error {
-    Error::State(core::NOT_CONFIGURED.into())
+    Error::State(core::not_configured().into())
 }
 
 fn failed(what: &str, e: impl std::fmt::Display) -> Error {
@@ -117,8 +117,11 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
         .configure_client(move |b| network.apply(b))
         .on_before_exit(move || crate::prepare_exit(&handle))
         .build()
-        .map_err(|e| failed("Update-Prüfung nicht möglich", e))?;
-    let found = updater.check().await.map_err(|e| failed("Update-Prüfung fehlgeschlagen", e))?;
+        .map_err(|e| failed(annalo_core::tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
+    let found = updater
+        .check()
+        .await
+        .map_err(|e| failed(annalo_core::tr!("Update-Prüfung fehlgeschlagen", "Update check failed"), e))?;
     let info = found.as_ref().map(UpdateInfo::of);
     crate::devlog::debug(
         "update",
@@ -139,13 +142,20 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
     if crate::portable::active() {
         // The installer would install Annalo into the user profile instead of updating the stick.
         return Err(Error::State(
-            "Im portablen Modus wird nicht automatisch installiert – bitte die neue Version von der Release-Seite herunterladen"
-                .into(),
+            annalo_core::tr!(
+                "Im portablen Modus wird nicht automatisch installiert – bitte die neue Version von der Release-Seite herunterladen",
+                "Portable mode does not install automatically – please download the new version from the release page"
+            )
+            .into(),
         ));
     }
-    let update = lock(&updates.pending).clone().ok_or_else(|| Error::State("Kein Update gefunden".into()))?;
+    let update = lock(&updates.pending)
+        .clone()
+        .ok_or_else(|| Error::State(annalo_core::tr!("Kein Update gefunden", "No update found").into()))?;
     if updates.installing.swap(true, Ordering::SeqCst) {
-        return Err(Error::State("Das Update wird bereits installiert".into()));
+        return Err(Error::State(
+            annalo_core::tr!("Das Update wird bereits installiert", "The update is already being installed").into(),
+        ));
     }
     let res = download_and_install(&app, &update).await;
     updates.installing.store(false, Ordering::SeqCst);
@@ -171,6 +181,6 @@ async fn download_and_install(app: &AppHandle, update: &Update) -> Result<()> {
             || {},
         )
         .await
-        .map_err(|e| failed("Download fehlgeschlagen", e))?;
-    update.install(bytes).map_err(|e| failed("Installation fehlgeschlagen", e))
+        .map_err(|e| failed(annalo_core::tr!("Download fehlgeschlagen", "Download failed"), e))?;
+    update.install(bytes).map_err(|e| failed(annalo_core::tr!("Installation fehlgeschlagen", "Installation failed"), e))
 }

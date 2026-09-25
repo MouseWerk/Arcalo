@@ -2,6 +2,7 @@
 //! [`MAX_BYTES`] of an http(s) page, within [`TIMEOUT`]. The shell passes the HTTP client that
 //! carries the network settings (proxy, extra CA).
 
+use crate::tr;
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -28,7 +29,7 @@ pub async fn fetch_title_with(
 ) -> Result<Option<String>> {
     let parsed = reqwest::Url::parse(url).map_err(|e| Error::Parse(format!("URL: {e}")))?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
-        return Err(Error::Parse("nur http- und https-Adressen".into()));
+        return Err(Error::Parse(tr!("nur http- und https-Adressen", "only http and https addresses").into()));
     }
     let work = async {
         let resp = client
@@ -60,7 +61,9 @@ pub async fn fetch_title_with(
         }
         Ok(parse_title(&decode(&body, &content_type)))
     };
-    tokio::time::timeout(timeout, work).await.map_err(|_| Error::State("Zeitüberschreitung".into()))?
+    tokio::time::timeout(timeout, work)
+        .await
+        .map_err(|_| Error::State(tr!("Zeitüberschreitung", "Timed out").into()))?
 }
 
 /// The head is complete once `</head>` or `<body` appeared (the title comes before).
