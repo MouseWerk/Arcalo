@@ -22,6 +22,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_activity_focus.sql"),
     include_str!("../migrations/0008_lookup_indexes.sql"),
     include_str!("../migrations/0009_calendar.sql"),
+    include_str!("../migrations/0010_wbs_memory.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

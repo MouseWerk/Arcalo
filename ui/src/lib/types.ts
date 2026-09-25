@@ -406,6 +406,7 @@ export interface NotificationPrefs {
   backup_failed: boolean;
   git_failed: boolean;
   updates: boolean;
+  week_proposal: boolean;
   quiet_hours: boolean;
   quiet_from: string;
   quiet_to: string;
@@ -1065,4 +1066,68 @@ export interface WbsHint {
   vorgang_nr: string | null;
   leistungsart: string | null;
   reference: string;
+}
+
+// ---- Woche vorschlagen
+export type ProposalSourceKind = "calendar" | "focus" | "page";
+export type ProposalConfidence = "none" | "low" | "medium" | "high";
+export interface ProposalSource {
+  kind: ProposalSourceKind;
+  /** Event key, focus session id or page id. */
+  id: string;
+  label: string;
+}
+export interface WbsGuess {
+  netzplan_id: number;
+  vorgang_nr: string | null;
+  leistungsart: string | null;
+  reference: string;
+  confidence: ProposalConfidence;
+  basis: "learned" | "link" | "history" | "similar";
+  reason: string;
+}
+export interface Proposal {
+  id: string;
+  /** Local day, YYYY-MM-DD. */
+  date: string;
+  start: string;
+  minutes: number;
+  text: string;
+  kind: ProposalSourceKind;
+  wbs: WbsGuess | null;
+  confidence: ProposalConfidence;
+  reason: string;
+  sources: ProposalSource[];
+}
+export interface ProposalDay {
+  date: string;
+  workday: boolean;
+  target_minutes: number;
+  booked_minutes: number;
+  proposed_minutes: number;
+  gap_minutes: number;
+  capped_minutes: number;
+  started: boolean;
+}
+export interface WeekProposal {
+  week_start: string;
+  days: ProposalDay[];
+  proposals: Proposal[];
+  until: string;
+  step_minutes: number;
+}
+export interface AcceptedProposal {
+  start: string;
+  minutes: number;
+  text: string;
+  netzplan_id: number;
+  vorgang_nr: string | null;
+  leistungsart: string | null;
+  sources: ProposalSource[];
+  wbs_changed: boolean;
+  original_text: string;
+}
+export interface AppliedProposals {
+  entry_ids: number[];
+  alerts: BudgetStatus[];
 }

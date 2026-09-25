@@ -18,6 +18,7 @@ mod recovery;
 mod secrets;
 mod syncmerge;
 mod updates;
+mod weekplan;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -3547,6 +3548,8 @@ pub fn run() {
             calsync::calendar_link_entry,
             calsync::calendar_wbs_hint,
             calsync::calendar_meeting_note,
+            weekplan::week_proposal,
+            weekplan::week_proposal_apply,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

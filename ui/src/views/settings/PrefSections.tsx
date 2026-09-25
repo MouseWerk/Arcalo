@@ -290,7 +290,7 @@ export function NotificationsSection({ draft, update }: SectionProps) {
   const t = useT();
   const n = draft.notifications;
   const set = (p: Partial<NotificationPrefs>) => update({ notifications: { ...n, ...p } });
-  const toggle = (key: keyof NotificationPrefs & ("end_of_day" | "late_timer" | "budget" | "backup_failed" | "git_failed" | "updates"), label: string, description?: string) => (
+  const toggle = (key: keyof NotificationPrefs & ("end_of_day" | "late_timer" | "week_proposal" | "budget" | "backup_failed" | "git_failed" | "updates"), label: string, description?: string) => (
     <Row label={label} description={description}>
       <Switch label={label} checked={n[key]} onChange={(v) => set({ [key]: v })} />
     </Row>
@@ -301,6 +301,7 @@ export function NotificationsSection({ draft, update }: SectionProps) {
       <Group title={t("set.notify.desktop")}>
         {toggle("end_of_day", t("set.notify.endOfDay"), draft.reminder_time ? t("set.notify.endOfDayAt", { time: draft.reminder_time }) : t("set.notify.endOfDayOff"))}
         {toggle("late_timer", t("set.notify.lateTimer"), t("set.notify.lateTimerDesc"))}
+        {toggle("week_proposal", t("set.notify.weekProposal"), t("set.notify.weekProposalDesc"))}
       </Group>
       <Group title={t("set.notify.inApp")}>
         {toggle("budget", t("set.notify.budget"), t("set.notify.budgetDesc"))}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, on } from "./lib/api";
+import { requestWeekProposal } from "./lib/weekplan";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { Sidebar, stopTimer } from "./components/Sidebar";
@@ -120,6 +121,11 @@ export function App() {
       }),
       // Clicked the end-of-day reminder (or came back after it).
       on("nav://timesheet", () => useApp.getState().openTab({ kind: "timesheet" })),
+      // Came back after the „Woche vorschlagen“ reminder.
+      on("nav://week-proposal", () => {
+        useApp.getState().openTab({ kind: "timesheet" });
+        requestWeekProposal();
+      }),
       // A result chosen in the quick-search window (it may have created the page).
       on<SearchTarget>("search://open", async (t) => {
         const st = useApp.getState();

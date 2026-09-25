@@ -3,9 +3,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { requestWeekProposal } from "../lib/weekplan";
 import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
@@ -204,6 +205,16 @@ export function CommandPalette() {
         ? { id: "timer", title: t("cmd.stopTimer"), icon: ic(Square), hint: hint("timer"), run: () => stopTimer() }
         : { id: "timer", title: t("cmd.startTimer"), icon: ic(Play), hint: hint("timer"), run: () => s().openTab({ kind: "timesheet" }) },
       { id: "timesheet", title: t("cmd.timesheet"), icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) },
+      {
+        id: "week-proposal",
+        title: t("cmd.weekProposal"),
+        subtitle: t("cmd.weekProposalSub"),
+        icon: ic(WandSparkles),
+        run: () => {
+          s().openTab({ kind: "timesheet" });
+          requestWeekProposal();
+        },
+      },
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
       { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },

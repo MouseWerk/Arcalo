@@ -203,6 +203,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
             if desktop(app).pending_timesheet.swap(false, Ordering::Relaxed) {
                 let _ = app.emit_to(MAIN, "nav://timesheet", ());
             }
+            crate::weekplan::on_focus(app);
         }
         // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
@@ -892,6 +893,7 @@ pub fn periodic(app: &AppHandle) {
     if let Some(body) = late {
         notify(app, "Timer läuft noch", &body);
     }
+    crate::weekplan::periodic(app);
 }
 
 // ---------------------------------------------------------------- autostart
