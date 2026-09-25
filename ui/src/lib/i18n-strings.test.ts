@@ -56,9 +56,11 @@ const TECHNICAL = [
   /^[\w.-]+\/[\w./-]*$/, // path or mime type
   /^https?:\/\//,
   /^(Ctrl|Alt|Shift|Mod|Cmd|Meta)\b[+\w ]*$/, // shortcuts
+  /^\{\}\+(Enter|Tab|[A-Z]|⇧\+[A-Z])$/, // a modifier (filled in) and a key: {}+Enter
   /^[A-Z][A-Z0-9_-]*$/, // codes and placeholders: CODE, AET-12, NP-8801
   /^NP-[\d…]*\/?[\d…]*$/, // WBS placeholders: NP-…/…
   /^\/\w+$/, // slash commands: /zeit
+  /^\{\}\/[\w./-]+$/, // URL paths after a value: {}/v1/models
   /^#[\w-]+$/, // tags: #privat
   /^[\w-]+…$/, // token prefixes: sk-…
   /^[\w.:/-]+(, [\w.:/-]+)+$/, // lists of model names: gpt-4o, text-embedding-3-small
@@ -72,6 +74,7 @@ const NAMES = new Set([
   // Key caps, and the language names, which are written in their own language.
   "Enter",
   "Esc",
+  "Tab",
   "Deutsch",
   "English",
   "CATS",
@@ -116,6 +119,10 @@ const NAMES = new Set([
   "Obsidian",
   "Cc",
   "Hypercare",
+  // Font names and format patterns.
+  "Inter",
+  "JetBrains Mono",
+  "HH:MM",
 ]);
 
 /**
@@ -127,6 +134,11 @@ const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
   { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
   { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
   { file: /^(lib\/dayreview.ts|views\/DayReviewView.tsx)$/, text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
+  {
+    file: "lib/dashquery.ts",
+    text: /^(geändert|fällig|priorität|überfällig|später|läuft|enthält|enthält nicht|ist nicht leer)$/,
+    why: "stored query field names, words and operators (German machine format; English aliases map onto them)",
+  },
 ];
 
 interface Hit {
@@ -178,6 +190,9 @@ function scan(file: string): Hit[] {
     if (ts.isJsxText(n)) {
       const s = n.text.replace(/\s+/g, " ");
       if (LETTERS.test(s)) flag(n, s);
+    } else if (ts.isJsxExpression(n) && n.parent && (ts.isJsxElement(n.parent) || ts.isJsxFragment(n.parent))) {
+      // Text in a child expression: `{busy ? "Saving…" : "Saved"}`.
+      for (const l of literalsIn(n.expression)) flag(l, literalText(l)!);
     } else if (ts.isJsxAttribute(n) && TEXT_PROPS.has(n.name.getText(sf))) {
       for (const l of literalsIn(n.initializer)) flag(l, literalText(l)!);
     } else if (ts.isPropertyAssignment(n) && TEXT_FIELDS.has(n.name.getText(sf).replace(/["']/g, ""))) {
@@ -217,11 +232,12 @@ describe("no hard-coded UI text", () => {
         'toast("Saved");',
         'const c = "Größe";',
         'const d = <div className="x" data-id="y">{t("common.save")}</div>;',
+        'const e = <span>{busy ? "Saving now" : `${n} left`}</span>;',
       ].join("\n"),
     );
     try {
       const found = scan(tmp).map((h) => h.text);
-      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe"]);
+      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left"]);
     } finally {
       fs.rmSync(tmp);
     }

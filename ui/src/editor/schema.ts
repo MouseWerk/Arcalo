@@ -298,7 +298,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TableKit.configure({ table: false }),
     MarkdownTable.configure({ resizable: false }),
     Placeholder.configure({
-      placeholder: ({ node }) => (node.type.name === "heading" ? "Überschrift" : "Schreibe etwas, / für Befehle, [[ für Links"),
+      placeholder: ({ node }) => (node.type.name === "heading" ? t("editor.headingPh") : t("editor.placeholder")),
       showOnlyCurrent: true,
     }),
     Markdown,

@@ -12,9 +12,10 @@ import { renderMarkdown } from "../lib/markdown";
 import { writePresets, inlinePresets, transformInstruction, writeInstruction } from "../lib/aitext";
 import { useApp } from "../store/app";
 import { useAiTransform } from "../lib/useAiTransform";
-import { usd } from "../lib/format";
+import { int, usd } from "../lib/format";
 import { insertMarkdownBelow, rangeMarkdown, replaceWithMarkdown, type AiRange } from "./ai-insert";
 import { keys } from "../lib/shortcut";
+import { useT } from "../lib/i18n";
 
 const BAR_WIDTH = 560;
 
@@ -32,6 +33,7 @@ export function InlineAiBar({
   beforeRun?: () => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useT();
   const ai = useAiTransform();
   const [input, setInput] = useState("");
   const [last, setLast] = useState<string | null>(null);
@@ -171,7 +173,7 @@ export function InlineAiBar({
       ref={root}
       className="ai-bar"
       role="dialog"
-      aria-label="KI-Bearbeitung"
+      aria-label={t("aibar.label")}
       style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: "hidden", width: BAR_WIDTH }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -190,8 +192,8 @@ export function InlineAiBar({
         <input
           ref={inputRef}
           value={input}
-          placeholder={ai.text ? "Weiter anpassen…" : writing.current ? "KI schreiben lassen, z. B. „Agenda für das Kick-off“" : "KI anweisen, z. B. „Als E-Mail an das Team“"}
-          aria-label="Anweisung an die KI"
+          placeholder={ai.text ? t("aibar.refine") : writing.current ? t("aibar.writePh") : t("aibar.editPh")}
+          aria-label={t("aibar.instruction")}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !(e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
@@ -201,13 +203,13 @@ export function InlineAiBar({
           }}
         />
         {ai.busy ? (
-          <IconButton icon={Square} label="Stoppen" size="md" onClick={() => ai.cancel()} />
+          <IconButton icon={Square} label={t("summary.stop")} size="md" onClick={() => ai.cancel()} />
         ) : (
-          <IconButton icon={ArrowUp} label="Ausführen" size="md" disabled={!input.trim()} onClick={submitInput} />
+          <IconButton icon={ArrowUp} label={t("assist.run")} size="md" disabled={!input.trim()} onClick={submitInput} />
         )}
       </div>
       {!ai.busy && !ai.text && !ai.error && (
-        <div className="ai-bar-presets" role="group" aria-label="KI-Aktionen">
+        <div className="ai-bar-presets" role="group" aria-label={t("aibar.actions")}>
           {presets.map((p) => (
             <button key={p.id} type="button" className="ai-chip" onClick={() => submit(p.id)}>
               {p.label}
@@ -219,7 +221,7 @@ export function InlineAiBar({
         <div className="ai-bar-preview" aria-live="polite">
           {ai.error ? (
             <div className="msg-error">
-              <div>Die Anfrage ist fehlgeschlagen.</div>
+              <div>{t("summary.requestFailed")}</div>
               <div className="faint small mono">{ai.error}</div>
             </div>
           ) : ai.busy && !ai.text ? (
@@ -231,7 +233,7 @@ export function InlineAiBar({
           ) : (
             <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(ai.text) }} />
           )}
-          {ai.cancelled && <div className="faint small">Abgebrochen</div>}
+          {ai.cancelled && <div className="faint small">{t("assist.cancelled")}</div>}
         </div>
       )}
       {(done || ai.error || ai.cancelled) && (
@@ -239,21 +241,21 @@ export function InlineAiBar({
           {done && (
             <>
               <Button size="sm" variant="primary" icon={writing.current || !source.current.trim() ? CornerDownLeft : Replace} onClick={() => apply("replace")}>
-                {initialEmpty ? "Einfügen" : "Ersetzen"}
+                {initialEmpty ? t("slash.sec.insert") : t("aibar.replace")}
               </Button>
               {!initialEmpty && (
                 <Button size="sm" icon={CornerDownLeft} onClick={() => apply("below")}>
-                  Darunter einfügen
+                  {t("aibar.insertBelow")}
                 </Button>
               )}
             </>
           )}
           <Button size="sm" variant="ghost" icon={RotateCcw} disabled={!last} onClick={() => last && run(last)}>
-            Erneut
+            {t("summary.again")}
           </Button>
           <span className="grow" />
           <Button size="sm" variant="ghost" icon={X} onClick={() => close()}>
-            Verwerfen
+            {t("common.discard")}
           </Button>
         </div>
       )}
@@ -262,14 +264,16 @@ export function InlineAiBar({
           <span title={ai.meta.reasons.join("\n")}>
             <span className={`tier-dot tier-${ai.meta.tier}`} /> {ai.meta.model}
             {" · "}
-            {ai.meta.tokens.toLocaleString("de-DE")} Tokens{ai.meta.exact ? "" : " (geschätzt)"}
+            {ai.meta.exact ? t("assist.tokens", { n: int(ai.meta.tokens) }) : t("assist.tokensEstimated", { n: int(ai.meta.tokens) })}
             {ai.meta.cost > 0 && ` · ${usd(ai.meta.cost)}`}
           </span>
         ) : (
-          <span>{ai.busy ? "Wird erstellt…" : initialEmpty ? "Neuer Text an dieser Stelle" : "Auswahl wird mit KI bearbeitet"}</span>
+          <span>{ai.busy ? t("aibar.busy") : initialEmpty ? t("aibar.newText") : t("aibar.editing")}</span>
         )}
         <span className="grow" />
-        <span>{done ? `${keys("Mod Enter")} ${initialEmpty ? "einfügen" : "ersetzen"} · ` : ""}Esc verwerfen</span>
+        <span>
+          {done ? t(initialEmpty ? "aibar.keysInsert" : "aibar.keysReplace", { keys: keys("Mod Enter") }) : t("aibar.keysDiscard")}
+        </span>
       </div>
     </div>
   );

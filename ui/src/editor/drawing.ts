@@ -4,6 +4,7 @@
 
 import { Node, type Editor } from "@tiptap/core";
 import { api } from "../lib/api";
+import { t } from "../lib/i18n";
 
 /** `name.excalidraw`: a plain file name (no folders, not hidden), like the Rust side checks. */
 export function isDrawingName(name: string): boolean {
@@ -124,7 +125,7 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
         api
           .readDrawing(name)
           .then((scene) => {
-            if (sceneHasContent(scene)) empty.textContent = "Noch keine Vorschau – klicken zum Öffnen";
+            if (sceneHasContent(scene)) empty.textContent = t("draw.noPreview");
           })
           .catch(() => {});
       };

@@ -18,6 +18,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
+import { t } from "../lib/i18n";
 
 // ---------------------------------------------------------------- columns
 
@@ -229,7 +230,7 @@ export const TableOfContents = Node.create({
         if (!entries.length) {
           const empty = document.createElement("div");
           empty.className = "toc-empty";
-          empty.textContent = "Noch keine Überschriften auf dieser Seite";
+          empty.textContent = t("blocks.noHeadings");
           body.append(empty);
           return;
         }
@@ -505,7 +506,7 @@ function buildDecorations(doc: PMNode): DecorationSet {
               const h = document.createElement("div");
               h.className = "footnotes-head";
               h.contentEditable = "false";
-              h.textContent = "Fußnoten";
+              h.textContent = t("blocks.footnotes");
               return h;
             },
             { side: -1, key: "footnotes-head", ignoreSelection: true },
@@ -522,8 +523,8 @@ function buildDecorations(doc: PMNode): DecorationSet {
               b.className = "footnote-back";
               b.contentEditable = "false";
               b.dataset.label = label;
-              b.title = "Zurück zum Verweis";
-              b.setAttribute("aria-label", "Zurück zum Verweis");
+              b.title = t("blocks.backToRef");
+              b.setAttribute("aria-label", t("blocks.backToRef"));
               b.innerHTML = BACK_ICON;
               return b;
             },
@@ -567,7 +568,7 @@ export const Footnotes = Extension.create({
         body.append(...copy.childNodes);
       } else {
         body.classList.add("is-empty");
-        body.textContent = def ? "Leere Fußnote" : `Fußnote [^${label}] ist nicht definiert`;
+        body.textContent = def ? t("blocks.emptyFootnote") : t("blocks.undefinedFootnote", { label });
       }
       card.append(num, body);
       document.body.append(card);

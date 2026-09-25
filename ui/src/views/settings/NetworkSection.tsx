@@ -136,13 +136,13 @@ export function NetworkSection({ draft, update }: SectionProps) {
         {net.mode === "manual" && (
           <>
             <Row label={t("net.httpProxy")} description={t("net.hostPort")}>
-              <Input value={net.http_proxy} onChange={(e) => set({ http_proxy: e.target.value })} placeholder="proxy.firma.de:8080" aria-label={t("net.httpProxy")} className="mono w-360" />
+              <Input value={net.http_proxy} onChange={(e) => set({ http_proxy: e.target.value })} placeholder={t("net.proxyPh")} aria-label={t("net.httpProxy")} className="mono w-360" />
             </Row>
             <Row label={t("net.httpsProxy")} description={t("net.httpsProxyDesc")}>
-              <Input value={net.https_proxy} onChange={(e) => set({ https_proxy: e.target.value })} placeholder={net.http_proxy || "proxy.firma.de:8080"} aria-label={t("net.httpsProxy")} className="mono w-360" />
+              <Input value={net.https_proxy} onChange={(e) => set({ https_proxy: e.target.value })} placeholder={net.http_proxy || t("net.proxyPh")} aria-label={t("net.httpsProxy")} className="mono w-360" />
             </Row>
             <Row label={t("net.socksProxy")} description={t("net.socksProxyDesc")}>
-              <Input value={net.socks_proxy} onChange={(e) => set({ socks_proxy: e.target.value })} placeholder="socks5://socks.firma.de:1080" aria-label={t("net.socksProxy")} className="mono w-360" />
+              <Input value={net.socks_proxy} onChange={(e) => set({ socks_proxy: e.target.value })} placeholder={t("net.socksPh")} aria-label={t("net.socksProxy")} className="mono w-360" />
             </Row>
           </>
         )}
@@ -169,7 +169,7 @@ export function NetworkSection({ draft, update }: SectionProps) {
         )}
         {(net.mode === "manual" || net.mode === "pac") && (
           <Row stack label={t("net.noProxy")} description={t("net.noProxyDesc")}>
-            <TextArea rows={2} value={net.no_proxy} onChange={(e) => set({ no_proxy: e.target.value })} placeholder="localhost, 127.0.0.1, *.firma.local, 10.0.0.0/8, <local>" aria-label={t("net.noProxy")} className="mono" />
+            <TextArea rows={2} value={net.no_proxy} onChange={(e) => set({ no_proxy: e.target.value })} placeholder={t("net.noProxyPh")} aria-label={t("net.noProxy")} className="mono" />
           </Row>
         )}
       </Group>

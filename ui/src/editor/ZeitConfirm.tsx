@@ -7,10 +7,12 @@ import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "../components/ui";
 import { confidenceLabel } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
+import { useT } from "../lib/i18n";
 
 export type ZeitChoice = "book" | "other" | "cancel";
 
 export function ZeitConfirm({ guess, onChoice, style, className = "" }: { guess: ZeitGuess | null; onChoice: (c: ZeitChoice) => void; style?: CSSProperties; className?: string }) {
+  const t = useT();
   const cb = useRef(onChoice);
   cb.current = onChoice;
   const ready = guess !== null;
@@ -36,32 +38,32 @@ export function ZeitConfirm({ guess, onChoice, style, className = "" }: { guess:
 
   const target = guess ? `${guess.reference}${guess.title ? ` · ${guess.title}` : ""}${guess.leistungsart ? ` (${guess.leistungsart})` : ""}` : "";
   return (
-    <div className={`zeit-confirm ${className}`} role="alertdialog" aria-label="Buchung bestätigen" style={style} onMouseDown={(e) => e.preventDefault()}>
+    <div className={`zeit-confirm ${className}`} role="alertdialog" aria-label={t("zeit.confirm")} style={style} onMouseDown={(e) => e.preventDefault()}>
       {!guess ? (
         <div className="zeit-confirm-line faint">
-          <Loader2 size={14} className="spin" /> KI sucht den passenden Vorgang… (Esc bricht ab)
+          <Loader2 size={14} className="spin" /> {t("zeit.searching")}
         </div>
       ) : (
         <>
           <div className="zeit-confirm-line">
             <Sparkles size={14} className="zeit-confirm-icon" />
             <span>
-              Buchen auf <strong className="zeit-confirm-target">{target}</strong>?
+              {t("zeit.bookOn")} <strong className="zeit-confirm-target">{target}</strong>?
             </span>
-            <span className={`zeit-confirm-conf conf-${confidenceLabel(guess.confidence)}`} title={`Konfidenz ${Math.round(guess.confidence * 100)} %`}>
+            <span className={`zeit-confirm-conf conf-${confidenceLabel(guess.confidence)}`} title={t("zeit.confidence", { pct: Math.round(guess.confidence * 100) })}>
               {confidenceLabel(guess.confidence)}
             </span>
           </div>
-          {guess.reason && <div className="zeit-confirm-reason">Grund: {guess.reason}</div>}
+          {guess.reason && <div className="zeit-confirm-reason">{t("zeit.reason", { reason: guess.reason })}</div>}
           <div className="zeit-confirm-actions">
             <Button size="sm" variant="primary" onClick={() => cb.current("book")}>
-              Buchen · Enter
+              {t("zeit.bookKey")}
             </Button>
             <Button size="sm" onClick={() => cb.current("other")}>
-              Anderen wählen · Tab
+              {t("zeit.otherKey")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => cb.current("cancel")}>
-              Abbrechen · Esc
+              {t("zeit.cancelKey")}
             </Button>
           </div>
         </>

@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions, SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
+import { t } from "../lib/i18n";
 
 export interface PopupItem {
   id: string;
@@ -53,7 +54,7 @@ export const SuggestionPopup = forwardRef<PopupHandle, PopupProps>(({ items, com
   let lastSection: string | undefined;
   return (
     <div className={className ? `sugg ${className}` : "sugg"} ref={list} role="listbox">
-      {items.length === 0 && <div className="sugg-empty">{empty ?? "Keine Treffer"}</div>}
+      {items.length === 0 && <div className="sugg-empty">{empty ?? t("sugg.none")}</div>}
       {items.map((it, i) => {
         const header = it.section && it.section !== lastSection ? it.section : null;
         lastSection = it.section;

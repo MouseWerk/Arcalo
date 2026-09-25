@@ -7,7 +7,7 @@ import { Copy, FolderOpen, RefreshCw, ScrollText, Trash2 } from "lucide-react";
 import { Badge, Button, Segmented, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { entriesText, entryTime, filterEntries, levelTone, type DevLogFilter } from "../../lib/devlog";
-import { useT } from "../../lib/i18n";
+import { t as tr, useT } from "../../lib/i18n";
 import type { DevLogEntry, DevLogStats } from "../../lib/types";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
@@ -18,7 +18,7 @@ async function openFolder() {
   try {
     await api.devlogOpenFolder();
   } catch (e) {
-    useApp.getState().error("Protokollordner nicht geöffnet", e);
+    useApp.getState().error(tr("devlog.openFailed"), e);
   }
 }
 

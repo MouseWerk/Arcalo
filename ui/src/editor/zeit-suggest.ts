@@ -2,6 +2,7 @@
 // which Netzplan/Vorgang or Leistungsart options match, and in which order.
 
 import type { ProjectTree, TimeEntryRow } from "../lib/types";
+import { t } from "../lib/i18n";
 
 /** The token being completed: the reference (first argument) or a `#Leistungsart`. */
 export interface ZeitToken {
@@ -139,12 +140,12 @@ export function referenceOffset(text: string): number {
 
 /** Label of a suggestion's confidence (0..1). */
 export function confidenceLabel(c: number): string {
-  return c >= 0.75 ? "sicher" : c >= 0.45 ? "wahrscheinlich" : "unsicher";
+  return c >= 0.75 ? t("zeit.conf.high") : c >= 0.45 ? t("zeit.conf.medium") : t("zeit.conf.low");
 }
 
 /** Hint text for the remaining plan hours of an option. */
 export function remainingHint(o: RefOption, fmt: (h: number) => string): string | undefined {
   if (o.booked == null || o.planned <= 0) return undefined;
   const rest = o.planned - o.booked;
-  return rest >= 0 ? `${fmt(rest)} h offen` : `${fmt(-rest)} h über Plan`;
+  return rest >= 0 ? t("zeit.hoursOpen", { h: fmt(rest) }) : t("zeit.hoursOver", { h: fmt(-rest) });
 }

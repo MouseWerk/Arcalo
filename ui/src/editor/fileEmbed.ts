@@ -7,6 +7,7 @@
 import { Extension, Node, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+import { t } from "../lib/i18n";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
 
@@ -173,7 +174,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
       dom.className = pdf ? "pdf-embed" : "file-embed";
       dom.contentEditable = "false";
       dom.dataset.file = name;
-      dom.title = pdf ? `${base} – klicken zum Ansehen` : `${base} – klicken zum Öffnen`;
+      dom.title = pdf ? t("file.clickView", { name: base }) : t("file.clickOpen", { name: base });
 
       const bar = document.createElement("span");
       bar.className = pdf ? "pdf-embed-bar" : "file-embed-bar";
@@ -229,7 +230,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
             () => {
               if (!alive) return;
               dom.classList.add("is-failed");
-              status.textContent = bytes == null ? "Datei fehlt" : "Keine Vorschau möglich";
+              status.textContent = bytes == null ? t("file.missing") : t("file.noPreview");
             },
           );
         };

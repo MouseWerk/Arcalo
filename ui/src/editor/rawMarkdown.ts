@@ -6,6 +6,7 @@
 // Plus the helpers for code fences and empty tasks that the serializer uses.
 
 import { Mark, Node } from "@tiptap/core";
+import { t } from "../lib/i18n";
 
 /** Inline raw HTML (a tag, a comment, or a tag with its text up to the closing tag). */
 export const HtmlInline = Node.create({
@@ -21,7 +22,7 @@ export const HtmlInline = Node.create({
     return [{ tag: "span[data-html-inline]", getAttrs: (el) => ({ raw: (el as HTMLElement).textContent ?? "" }) }];
   },
   renderHTML({ node }) {
-    return ["span", { "data-html-inline": "", class: "md-html", title: "HTML – im Quelltext bearbeiten", contenteditable: "false" }, node.attrs.raw];
+    return ["span", { "data-html-inline": "", class: "md-html", title: t("editor.htmlSource"), contenteditable: "false" }, node.attrs.raw];
   },
   renderText: ({ node }) => node.attrs.raw,
   renderMarkdown: (node) => String(node.attrs?.raw ?? ""),
@@ -40,7 +41,7 @@ export const HtmlBlock = Node.create({
     return [{ tag: "pre[data-html-block]", preserveWhitespace: "full", getAttrs: (el) => ({ raw: (el as HTMLElement).textContent ?? "" }) }];
   },
   renderHTML({ node }) {
-    return ["pre", { "data-html-block": "", class: "md-html-block", title: "HTML – im Quelltext bearbeiten", contenteditable: "false" }, node.attrs.raw];
+    return ["pre", { "data-html-block": "", class: "md-html-block", title: t("editor.htmlSource"), contenteditable: "false" }, node.attrs.raw];
   },
   renderText: ({ node }) => node.attrs.raw,
   renderMarkdown: (node) => String(node.attrs?.raw ?? ""),

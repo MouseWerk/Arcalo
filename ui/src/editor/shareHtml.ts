@@ -17,6 +17,7 @@ import { api } from "../lib/api";
 import { fmtDate } from "../lib/format";
 import { useApp } from "../store/app";
 import { flushAllEditors } from "./NoteEditor";
+import { t, type TKey } from "../lib/i18n";
 
 /** Reads attachments for the export (the app: IPC; tests: fakes). */
 export interface AttachmentSource {
@@ -34,7 +35,27 @@ export interface RenderContext {
 
 const ATT = "annalo-attachment:";
 const CALLOUT_RE = /^\[!(\w+)\]([+-]?)[ \t]*/;
-const CALLOUT_LABELS: Record<string, string> = { note: "Notiz", info: "Info", tip: "Tipp", hint: "Tipp", important: "Wichtig", warning: "Warnung", caution: "Vorsicht", danger: "Gefahr", error: "Fehler", success: "Erledigt", question: "Frage", quote: "Zitat", example: "Beispiel", todo: "Aufgabe", abstract: "Zusammenfassung", summary: "Zusammenfassung", bug: "Fehler", failure: "Fehlschlag" };
+/** The label of a callout type in the display language (aliases share their main type's). */
+const CALLOUT_LABELS: Record<string, TKey> = {
+  note: "callout.note",
+  info: "callout.info",
+  tip: "callout.tip",
+  hint: "callout.tip",
+  important: "callout.important",
+  warning: "callout.warning",
+  caution: "callout.caution",
+  danger: "callout.danger",
+  error: "callout.error",
+  success: "callout.success",
+  question: "callout.question",
+  quote: "callout.quote",
+  example: "callout.example",
+  todo: "callout.todo",
+  abstract: "callout.summary",
+  summary: "callout.summary",
+  bug: "callout.error",
+  failure: "callout.failure",
+};
 
 /** The editor's HTML of a page body (Markdown), attachments as `annalo-attachment:` URLs. */
 function editorHtml(markdown: string): string {
@@ -184,7 +205,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
       } else title.append(n);
     }
     const head = m[2] ? el(doc, "summary") : el(doc, "div");
-    if (!title.textContent!.trim()) head.append(el(doc, "span", { class: "callout-label" }, CALLOUT_LABELS[type] ?? type));
+    if (!title.textContent!.trim()) head.append(el(doc, "span", { class: "callout-label" }, CALLOUT_LABELS[type] ? t(CALLOUT_LABELS[type]) : type));
     else head.append(title);
     const box = m[2] ? el(doc, "details", { class: `callout callout-${type}` }) : el(doc, "div", { class: `callout callout-${type}` });
     if (m[2] === "+") box.setAttribute("open", "");
@@ -222,13 +243,13 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   }
   if (defs.length) {
     const section = el(doc, "section", { class: "footnotes" });
-    section.append(el(doc, "h2", {}, "Fußnoten"));
+    section.append(el(doc, "h2", {}, t("blocks.footnotes")));
     const ol = el(doc, "ol");
     for (const d of defs.sort((x, y) => nums.get(x.getAttribute("data-footnote-def")!)! - nums.get(y.getAttribute("data-footnote-def")!)!)) {
       const label = d.getAttribute("data-footnote-def") ?? "";
       const li = el(doc, "li", { id: fid(label), value: String(nums.get(label)) });
       li.append(...d.childNodes);
-      if (seen.has(label)) li.append(el(doc, "a", { class: "back", href: `#${fid(label)}-ref`, "aria-label": "Zurück zum Verweis" }, "↑"));
+      if (seen.has(label)) li.append(el(doc, "a", { class: "back", href: `#${fid(label)}-ref`, "aria-label": t("blocks.backToRef") }, "↑"));
       ol.append(li);
       d.remove();
     }
@@ -244,7 +265,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   // All attachments of the page, once more at its end.
   if (attachments.size) {
     const box = el(doc, "section", { class: "attachments" });
-    box.append(el(doc, "h2", {}, "Anhänge"));
+    box.append(el(doc, "h2", {}, t("share.attachments")));
     const ul = el(doc, "ul");
     for (const [name, href] of attachments) {
       const li = el(doc, "li");
@@ -303,9 +324,9 @@ export async function sharePageAsHtml(pageId: number, withChildren: boolean, pat
     const file = /\.html?$/i.test(chosen) ? chosen : `${chosen}.html`;
     const { html } = await exportPagesHtml(pageId, withChildren);
     await api.writeHtmlFile(file, html);
-    s.toast({ tone: "success", title: "HTML-Datei gespeichert", detail: file });
+    s.toast({ tone: "success", title: t("share.saved"), detail: file });
   } catch (e) {
-    s.error("HTML-Datei konnte nicht gespeichert werden", e);
+    s.error(t("share.failed"), e);
   }
 }
 

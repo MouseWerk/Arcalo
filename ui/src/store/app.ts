@@ -5,6 +5,8 @@ import { api, errorText } from "../lib/api";
 import { logUi } from "../lib/devlog";
 import type { BudgetStatus, FocusState, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
+import { t } from "../lib/i18n";
+import { h1 } from "../lib/format";
 
 export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict" | "calendar" | "review";
 /** A place a tab can show. */
@@ -252,7 +254,7 @@ export const useApp = create<State>((set, get) => ({
         confirmRequest: {
           title: opts.title,
           message: opts.message,
-          confirmLabel: opts.confirmLabel ?? "Bestätigen",
+          confirmLabel: opts.confirmLabel ?? t("common.confirm"),
           cancelLabel: opts.cancelLabel,
           altLabel: opts.altLabel || undefined,
           danger: opts.danger ?? false,
@@ -491,11 +493,15 @@ export const useApp = create<State>((set, get) => ({
     for (const a of alerts) {
       const pct = Math.round(a.consumed * 100);
       const title =
-        a.level === "exceeded" ? `Budget überschritten: ${a.label}` : a.level === "critical" ? `Budget kritisch: ${a.label}` : `Budget-Warnung: ${a.label}`;
+        a.level === "exceeded"
+          ? t("budget.exceeded", { label: a.label })
+          : a.level === "critical"
+            ? t("budget.critical", { label: a.label })
+            : t("budget.warning", { label: a.label });
       const toast: Omit<Toast, "id"> = {
         tone: a.level === "warning" ? "warning" : "danger",
         title,
-        detail: `${a.booked_hours.toFixed(1).replace(".", ",")} von ${a.planned_hours.toFixed(1).replace(".", ",")} h gebucht (${pct} %), Restaufwand ${a.etc_hours.toFixed(1).replace(".", ",")} h`,
+        detail: t("budget.detail", { booked: h1(a.booked_hours), planned: h1(a.planned_hours), pct, etc: h1(a.etc_hours) }),
       };
       if (hold) set({ heldToasts: [...get().heldToasts, toast].slice(-50) });
       else get().toast(toast);

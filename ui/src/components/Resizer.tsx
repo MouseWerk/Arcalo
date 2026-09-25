@@ -1,6 +1,7 @@
 // Drag handle for resizable areas (sidebars and split panes).
 
 import { useRef } from "react";
+import { t } from "../lib/i18n";
 
 export function readSize(key: string, fallback: number) {
   try {
@@ -34,7 +35,7 @@ export function Resizer({
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
-      title={`${label} – ziehen zum Ändern, Doppelklick setzt zurück`}
+      title={t("resizer.title", { label })}
       className={`resizer ${className}`}
       onPointerDown={(e) => {
         e.preventDefault();
