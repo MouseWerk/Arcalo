@@ -29,7 +29,7 @@ export function MailGroup({ draft, update }: SectionProps) {
       description="Eine E-Mail als Aufgabe oder Notiz übernehmen, mit einem Link zurück zur E-Mail. Aus Outlook (klassisch), aus .eml- und .msg-Dateien, die ins Fenster gezogen werden, oder aus eingefügten Kopfzeilen."
     >
       {outlook && (
-        <Row label="Tastenkürzel (global)" description="Übernimmt die in Outlook markierte oder geöffnete E-Mail, auch wenn Annalo im Hintergrund ist. Ins Feld klicken und die Tasten drücken, z. B. Ctrl+Shift+M. Entf = aus.">
+        <Row label="Tastenkürzel (global)" description="Übernimmt die in Outlook markierte oder geöffnete E-Mail, auch wenn Annalo im Hintergrund ist. Ins Feld klicken und die Tasten drücken, z. B. Ctrl+Shift+J. Entf = aus.">
           <ShortcutField
             value={mail.shortcut}
             onChange={(v) => set({ shortcut: v })}

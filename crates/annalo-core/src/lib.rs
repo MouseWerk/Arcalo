@@ -40,6 +40,7 @@
 //! * [`activity`] – idle detection and active window probing (Win32 on Windows)
 //! * [`feed`] – activity feed („Aktivität“): what happened when (pages, tasks, bookings, files)
 //! * [`focus`] – focus sessions (Pomodoro) booked on a Vorgang
+//! * [`dayreview`] – „Tagesrückblick“: one day's pages, bookings, tasks, meetings, focus and files
 //! * [`weekplan`] – „Woche vorschlagen“: a timesheet draft of the week from meetings, focus and page edits
 //! * [`ai`] – LiteLLM client, model router, token/cost metrics, local RAG
 
@@ -50,7 +51,9 @@ pub mod attachments;
 pub mod backup;
 pub mod calendar;
 pub mod calsync;
+pub mod capture;
 pub mod datadir;
+pub mod dayreview;
 pub mod db;
 pub mod demo;
 pub mod desktop;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorText, on } from "./api";
 import { cleanAiMarkdown } from "./aitext";
 import { useApp } from "../store/app";
-import type { StreamEvent, Tier } from "./types";
+import type { ChatOutcome, StreamEvent, Tier } from "./types";
 import { streamingOn, warnCost, withCostLimit } from "./aicost";
 
 export interface TransformMeta {
@@ -54,14 +54,15 @@ export function useAiTransform() {
     };
   }, []);
 
-  const run = useCallback(async (instruction: string, text: string, pageId: number | null) => {
+  /** Runs another streaming request the same way (e.g. the day review's local summary). */
+  const runWith = useCallback(async (call: (requestId: string, overrideLimit: boolean) => Promise<ChatOutcome>) => {
     if (requestId.current) await api.cancelChat(requestId.current).catch(() => {});
     const rid = crypto.randomUUID();
     requestId.current = rid;
     raw.current = "";
     setState({ ...IDLE, busy: true });
     try {
-      const out = await withCostLimit((overrideLimit) => api.transform({ requestId: rid, instruction, text, pageId, overrideLimit }));
+      const out = await withCostLimit((overrideLimit) => call(rid, overrideLimit));
       warnCost(out.cost_warning);
       if (requestId.current !== rid) return;
       const c = out.completion;
@@ -88,6 +89,11 @@ export function useAiTransform() {
     }
   }, []);
 
+  const run = useCallback(
+    (instruction: string, text: string, pageId: number | null) => runWith((requestId, overrideLimit) => api.transform({ requestId, instruction, text, pageId, overrideLimit })),
+    [runWith],
+  );
+
   const cancel = useCallback(() => {
     if (requestId.current) api.cancelChat(requestId.current).catch(() => {});
   }, []);
@@ -98,5 +104,5 @@ export function useAiTransform() {
     setState(IDLE);
   }, []);
 
-  return { ...state, run, cancel, reset };
+  return { ...state, run, runWith, cancel, reset };
 }

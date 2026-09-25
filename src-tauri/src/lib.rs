@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod calsync;
+mod dayreview;
 mod desktop;
 mod devlog;
 mod feed;
@@ -1670,6 +1671,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
             s.capture_shortcut.clone(),
             s.palette_shortcut.clone().unwrap_or_default(),
             s.search_shortcut.clone(),
+            s.capture.selection_shortcut.clone(),
             s.mail.shortcut.clone(),
         ]
     };
@@ -1744,25 +1746,65 @@ fn quick_links_save(
     Ok(settings_get(state))
 }
 
-/// Opens the sidebar link at `index`. Only saved links can be opened this way; the page cannot
-/// hand in arbitrary paths.
+/// Opens the ribbon link at `index` (with `item`: that entry of the group there). Only saved
+/// links can be opened this way; the page cannot hand in arbitrary paths. Programs are started.
+/// Tests set `ANNALO_TEST_OPEN_LOG` to a file: the targets are appended there instead.
 #[tauri::command]
-fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize) -> Result<()> {
-    use annalo_core::settings::LinkTarget;
+fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize, item: Option<usize>) -> Result<()> {
+    use annalo_core::settings::{LinkKind, LinkTarget};
     use tauri_plugin_opener::OpenerExt;
-    let link =
-        state.settings().quick_links.get(index).cloned().ok_or_else(|| Error::not_found("link", index.to_string()))?;
-    let opened = match link.target() {
-        LinkTarget::Url(u) => app.opener().open_url(u, None::<&str>),
-        LinkTarget::Path(p) => {
-            let p = match p.strip_prefix("~/") {
-                Some(rest) => app.path().home_dir().map(|h| h.join(rest).display().to_string()).unwrap_or(p),
-                None => p,
-            };
-            app.opener().open_path(p, None::<&str>)
+    let links = state.settings().quick_links;
+    let link = annalo_core::settings::quick_link_at(&links, index, item)
+        .cloned()
+        .ok_or_else(|| Error::not_found("link", index.to_string()))?;
+    let home = |p: String| match p.strip_prefix("~/") {
+        Some(rest) => app.path().home_dir().map(|h| h.join(rest).display().to_string()).unwrap_or(p),
+        None => p,
+    };
+    let target = match (link.kind, link.target()) {
+        (_, LinkTarget::Url(u)) => ("url", u),
+        (LinkKind::App, LinkTarget::Path(p)) => ("app", home(p)),
+        (_, LinkTarget::Path(p)) => ("path", home(p)),
+    };
+    if let Ok(log) = std::env::var("ANNALO_TEST_OPEN_LOG") {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+        writeln!(f, "{}\t{}", target.0, target.1)?;
+        return Ok(());
+    }
+    let opened = match target {
+        ("url", u) => app.opener().open_url(u, None::<&str>),
+        ("app", p) => {
+            return start_program(&app, &p)
+                .map_err(|e| Error::State(format!("„{}“ ließ sich nicht starten: {e}", link.name)));
         }
+        (_, p) => app.opener().open_path(p, None::<&str>),
     };
     opened.map_err(|e| Error::State(format!("„{}“ ließ sich nicht öffnen: {e}", link.name)))
+}
+
+/// Starts a program from the ribbon. Windows and macOS start programs (`.exe`, `.lnk`, `.app`)
+/// through the shell; on Linux an executable file is run directly (the file manager would only
+/// show it), anything else (a `.desktop` file, a script without the x bit) goes to the shell.
+fn start_program(app: &AppHandle, path: &str) -> std::result::Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
+            let mut child = std::process::Command::new(path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            // Reaped when it ends (no zombie while Annalo runs).
+            std::thread::spawn(move || child.wait());
+            return Ok(());
+        }
+    }
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Stores (or with `None`, removes) the LiteLLM API key in the OS credential store.
@@ -3124,6 +3166,7 @@ fn show_main_once(app: &AppHandle, why: &str) {
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     show_main_once(&app, "ui");
+    desktop::precreate_capture(&app);
 }
 
 /// Whether the main window was created with the app's own title bar (Windows only).
@@ -3359,7 +3402,8 @@ pub fn run() {
                         return;
                     }
                     match desktop::shortcut_role(app, shortcut) {
-                        Some(desktop::Role::Capture) => desktop::open_capture(app),
+                        Some(desktop::Role::Capture) => desktop::open_capture(app, false),
+                        Some(desktop::Role::Selection) => desktop::open_capture(app, true),
                         Some(desktop::Role::Search) => desktop::open_search(app, true),
                         Some(desktop::Role::Mail) => mail::on_shortcut(app),
                         Some(desktop::Role::Palette) => {
@@ -3493,6 +3537,7 @@ pub fn run() {
                 settings.capture_shortcut.clone(),
                 settings.palette_shortcut.clone().unwrap_or_default(),
                 settings.search_shortcut.clone(),
+                settings.capture.selection_shortcut.clone(),
                 settings.mail.shortcut.clone(),
             ];
             let secrets = SecretStore::new(&dir);
@@ -3728,6 +3773,11 @@ pub fn run() {
             desktop::app_quit,
             desktop::capture_submit,
             desktop::capture_hide,
+            desktop::capture_show,
+            desktop::capture_ready,
+            desktop::capture_context,
+            desktop::capture_undo,
+            desktop::capture_open,
             desktop::search_hide,
             desktop::search_open,
             desktop::timer_resume_last,
@@ -3780,6 +3830,8 @@ pub fn run() {
             mail::mail_link_info,
             mail::mail_open,
             mail::mail_suggest,
+            dayreview::day_review,
+            dayreview::day_review_summary,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

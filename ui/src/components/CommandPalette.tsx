@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -27,9 +27,13 @@ import { hint } from "../lib/keymap";
 import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
 import { openActivityDay } from "../views/activityDay";
+import { openDayReview } from "../lib/reviewnav";
 import { reloadEditors } from "../editor/NoteEditor";
 import { syncCalendarsNow } from "../lib/calnav";
 import { captureFromOutlook, openMailDialog } from "./MailImport";
+import { flatLinks, isGroup, normalizeLinks } from "../lib/quicklinks";
+import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
+import { iconOf } from "./LinkDialogs";
 
 interface Item {
   id: string;
@@ -221,6 +225,7 @@ export function CommandPalette() {
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
       { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },
+      { id: "day-review", title: t("cmd.review"), subtitle: t("cmd.reviewSub"), icon: ic(Sunset), run: () => openDayReview() },
       { id: "activity-day", title: t("cmd.activityDay"), icon: ic(CalendarSearch), run: () => setTimeout(() => s().set({ calendar: { onPick: openActivityDay } }), 0) },
       s().focus?.phase === "work"
         ? { id: "focus-session", title: t("cmd.focusAbort"), icon: ic(Square), run: () => void abortFocus() }
@@ -273,6 +278,24 @@ export function CommandPalette() {
         .slice(0, lower ? 5 : 20)
         .map(({ c }) => ({ ...c, section: t("palette.commands") })),
     );
+
+    // Ribbon links and groups (only while searching, so the empty palette stays short).
+    if (lower && mode === "all") {
+      const links = normalizeLinks(s().settings?.settings.quick_links);
+      const linkItems: (Item & { score: number })[] = [];
+      links.forEach((l, i) => {
+        if (!isGroup(l)) return;
+        const title = t("palette.openGroup", { name: l.name });
+        const score = Math.max(fuzzy(l.name, lower), fuzzy(title, lower));
+        if (score > 0) linkItems.push({ id: `lgroup-${i}`, section: t("palette.links"), title, subtitle: t("links.count", { n: l.items?.length ?? 0 }), icon: <PageIcon name={iconOf(l)} size={16} />, run: () => setTimeout(() => openLinkGroup(i), 30), score });
+      });
+      for (const { item, at, group } of flatLinks(links)) {
+        const score = Math.max(fuzzy(item.name, lower), fuzzy(item.url, lower) * 0.8);
+        if (score > 0)
+          linkItems.push({ id: `link-${at.group}-${at.index}`, section: t("palette.links"), title: item.name || item.url, subtitle: group ? `${group} · ${item.url}` : item.url, icon: <PageIcon name={iconOf(item)} size={16} />, run: () => openQuickLinkAt(at), score });
+      }
+      out.push(...linkItems.sort((a, b) => b.score - a.score).slice(0, 6));
+    }
 
     for (const h of hits) {
       if (h.kind === "note")

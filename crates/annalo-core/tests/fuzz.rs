@@ -49,7 +49,7 @@ fn parsers_never_panic() {
             let _ = linktitle::parse_title(&a);
             linktitle::decode_entities(&a);
             let _ = gitsync::redact(&a, Some("tok"));
-            let link = settings::QuickLink { name: String::new(), url: a.clone(), icon: String::new() };
+            let link = settings::QuickLink { url: a.clone(), ..Default::default() };
             let _ = link.target();
             let _ = ai::provider::AiProvider::ollama("o", &a).root();
             let _ = network::ca_info(a.as_bytes());

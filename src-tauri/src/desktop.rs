@@ -4,11 +4,14 @@
 
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
+use annalo_core::calsync::tz::Zone;
+use annalo_core::capture::{self as cap, CaptureTarget, CaptureUndo, QueuedCapture};
 use annalo_core::desktop::{self as core, CaptureOutcome};
 use annalo_core::{Database, Error};
-use chrono::{Local, NaiveDate, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -31,14 +34,17 @@ pub enum Role {
     Capture = 0,
     Palette = 1,
     Search = 2,
+    /// Quick capture with the selection or the clipboard text („Auswahl übernehmen“).
+    Selection = 3,
     /// „Aktuelle E-Mail übernehmen“ (Outlook).
-    Mail = 3,
+    Mail = 4,
 }
 
 /// Number of global shortcut slots (one per [`Role`]).
-pub const SLOTS: usize = 4;
-const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Mail];
-const ROLE_NAMES: [&str; SLOTS] = ["Schnellerfassung", "Befehlspalette", "Schnellsuche", "E-Mail übernehmen"];
+pub const SLOTS: usize = 5;
+const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Selection, Role::Mail];
+const ROLE_NAMES: [&str; SLOTS] =
+    ["Schnellerfassung", "Befehlspalette", "Schnellsuche", "Auswahl übernehmen", "E-Mail übernehmen"];
 
 #[derive(Clone)]
 struct TrayHandles {
@@ -50,11 +56,18 @@ struct TrayHandles {
 #[derive(Default)]
 pub struct Desktop {
     tray: Mutex<Option<TrayHandles>>,
-    /// Registered global shortcuts by [`Role`]: capture, palette, search, mail.
+    /// Registered global shortcuts by [`Role`]: capture, palette, search, selection, mail.
     shortcuts: Mutex<[Option<Shortcut>; SLOTS]>,
     /// A reminder was shown while the app was in the background: the next time the
     /// main window gets focus it opens the timesheet.
     pending_timesheet: AtomicBool,
+    /// The last captures of this session (newest last), with what undo restores.
+    captures: Mutex<Vec<(RecentCapture, CaptureUndo)>>,
+    capture_seq: AtomicU64,
+    /// When the capture window was asked to show, until its UI reports the first frame.
+    capture_requested: Mutex<Option<Instant>>,
+    /// Milliseconds from the request to the capture window's first frame, last time (0 = not yet).
+    capture_open_ms: AtomicU64,
 }
 
 impl Desktop {
@@ -126,7 +139,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
                 notify(app, "Timer nicht gestartet", &e.to_string());
             }
         }
-        "capture" => open_capture(app),
+        "capture" => open_capture(app, false),
         "search" => open_search(app, false),
         "quit" => request_quit(app),
         _ => {}
@@ -194,6 +207,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 let _ = app.emit_to(MAIN, "nav://timesheet", ());
             }
             crate::weekplan::on_focus(app);
+            crate::dayreview::on_focus(app);
         }
         // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
@@ -229,13 +243,31 @@ pub fn app_quit(app: AppHandle) {
 
 // ------------------------------------------------------------ quick capture
 
-/// Shows the quick-capture window, creating it on first use.
-pub fn open_capture(app: &AppHandle) {
+/// Shows the quick-capture window (created hidden at start, see [`precreate_capture`]).
+/// `selection`: „Auswahl übernehmen“ – the window starts with the selection or clipboard text.
+pub fn open_capture(app: &AppHandle, selection: bool) {
+    *lock(&desktop(app).capture_requested) = Some(Instant::now());
     // Creating a webview from an event handler can deadlock on Windows; build it elsewhere.
     let app = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = show_capture(&app) {
+        if let Err(e) = show_capture(&app, selection) {
             crate::devlog::error("desktop", format!("quick capture failed: {e}"));
+        }
+    });
+}
+
+const CAPTURE_POPUP: Popup =
+    Popup { label: CAPTURE, title: "Schnellerfassung – Annalo", size: (640.0, 148.0), transparent: true };
+
+/// Creates the capture window hidden a moment after start, so the shortcut only has to show it.
+pub fn precreate_capture(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1500));
+        if app.get_webview_window(CAPTURE).is_none()
+            && let Err(e) = popup_window(&app, &CAPTURE_POPUP)
+        {
+            crate::devlog::warn("desktop", format!("quick capture window not prepared: {e}"));
         }
     });
 }
@@ -252,8 +284,8 @@ struct Popup {
     transparent: bool,
 }
 
-fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<()> {
-    let w = match app.get_webview_window(p.label) {
+fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow> {
+    Ok(match app.get_webview_window(p.label) {
         Some(w) => w,
         None => {
             let b = WebviewWindowBuilder::new(app, p.label, WebviewUrl::App(format!("index.html#{}", p.label).into()))
@@ -264,7 +296,9 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<()> {
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .center()
-                .visible(false);
+                .visible(false)
+                // Files dropped onto the page arrive as HTML drops (quick capture stores them).
+                .disable_drag_drop_handler();
             // macOS needs the private-API feature for transparent windows.
             #[cfg(not(target_os = "macos"))]
             let b = b.transparent(p.transparent);
@@ -277,25 +311,86 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<()> {
             };
             b.build()?
         }
-    };
+    })
+}
+
+fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow> {
+    let w = popup_window(app, p)?;
     w.center()?;
     w.show()?;
     w.set_focus()?;
-    let _ = app.emit_to(p.label, &format!("{}://shown", p.label), ());
+    // Windows may refuse the foreground to a window shown from the background (focus-stealing
+    // rules): ask again a few times until it has the focus.
+    let retry = w.clone();
+    std::thread::spawn(move || {
+        for _ in 0..4 {
+            std::thread::sleep(Duration::from_millis(70));
+            if !retry.is_visible().unwrap_or(false) || retry.is_focused().unwrap_or(true) {
+                break;
+            }
+            let _ = retry.set_focus();
+        }
+    });
+    Ok(w)
+}
+
+/// Payload of `capture://shown`.
+#[derive(Clone, Serialize)]
+struct CaptureShown {
+    /// Opened by „Auswahl übernehmen“: `clipboard` goes into the field.
+    selection: bool,
+    /// The selection (X11) or the clipboard text at open time; offered as „Zwischenablage einfügen“.
+    clipboard: Option<String>,
+}
+
+fn show_capture(app: &AppHandle, selection: bool) -> tauri::Result<()> {
+    show_popup(app, &CAPTURE_POPUP)?;
+    let clipboard = clipboard_text(selection);
+    let _ = app.emit_to(CAPTURE, "capture://shown", CaptureShown { selection, clipboard });
     Ok(())
 }
 
-fn show_capture(app: &AppHandle) -> tauri::Result<()> {
-    show_popup(
-        app,
-        &Popup { label: CAPTURE, title: "Schnellerfassung – Annalo", size: (620.0, 132.0), transparent: false },
-    )
+/// The text to take over: with `selection` on X11 the current selection (PRIMARY), else the
+/// clipboard. At most 20 000 characters; `None` when empty or not text.
+fn clipboard_text(selection: bool) -> Option<String> {
+    let mut cb = arboard::Clipboard::new().ok()?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if selection {
+        use arboard::{GetExtLinux, LinuxClipboardKind};
+        if let Ok(t) = cb.get().clipboard(LinuxClipboardKind::Primary).text()
+            && !t.trim().is_empty()
+        {
+            return Some(t.chars().take(20_000).collect());
+        }
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    let _ = selection;
+    let t = cb.get_text().ok()?;
+    (!t.trim().is_empty()).then(|| t.chars().take(20_000).collect())
 }
 
 #[tauri::command]
 pub fn capture_hide(app: AppHandle) {
     if let Some(w) = app.get_webview_window(CAPTURE) {
         let _ = w.hide();
+    }
+}
+
+/// Opens the capture window (command palette, tests).
+#[tauri::command]
+pub fn capture_show(app: AppHandle) {
+    open_capture(&app, false);
+}
+
+/// The capture window painted its first frame after `capture://shown`: records how long the
+/// shortcut took (Settings → Desktop, developer log).
+#[tauri::command]
+pub fn capture_ready(app: AppHandle) {
+    let d = desktop(&app);
+    if let Some(t) = lock(&d.capture_requested).take() {
+        let ms = t.elapsed().as_millis() as u64;
+        d.capture_open_ms.store(ms.max(1), Ordering::Relaxed);
+        crate::devlog::debug("desktop", format!("quick capture shown after {ms} ms"));
     }
 }
 
@@ -357,20 +452,273 @@ pub fn timer_resume_last(app: AppHandle) -> Result<()> {
     resume_last(&app)
 }
 
-/// Books `/zeit` lines and appends everything else to today's daily note.
-#[tauri::command]
-pub fn capture_submit(app: AppHandle, state: State<AppState>, text: String) -> Result<CaptureOutcome> {
-    let thresholds = state.settings().thresholds;
-    let out = core::capture(&state.db(), &text, Utc::now(), &Local, &thresholds)?;
+/// A capture in the recent list of the capture window.
+#[derive(Clone, Debug, Serialize)]
+pub struct RecentCapture {
+    pub id: u64,
+    pub at: DateTime<Utc>,
+    /// The page that received the text (`None`: only bookings).
+    pub page_id: Option<i64>,
+    /// Page title, or „Zeiterfassung“.
+    pub title: String,
+    /// The first line of the text.
+    pub preview: String,
+    pub bookings: usize,
+    /// Undo (Ctrl+Z) works until then.
+    pub undo_until: DateTime<Utc>,
+}
+
+/// What `capture_submit` returns: the outcome, and whether it waits in the queue instead.
+#[derive(Serialize)]
+pub struct Submitted {
+    #[serde(flatten)]
+    outcome: CaptureOutcome,
+    /// The id in the recent list (undo).
+    id: Option<u64>,
+    /// The database could not take it now: it is stored and retried.
+    queued: bool,
+}
+
+/// Recent captures kept for the capture window.
+const RECENT: usize = 5;
+
+/// Payload of `capture://stored` (main window: tree, open editors, toasts).
+#[derive(Clone, Serialize)]
+struct Stored {
+    page_id: i64,
+    title: String,
+    created: bool,
+    /// Stored from the queue, after an earlier failure.
+    late: bool,
+}
+
+fn capture_options<'a>(settings: &'a annalo_core::settings::Settings, zone: &'a Zone) -> cap::CaptureOptions<'a> {
+    cap::CaptureOptions { inbox_title: &settings.capture.inbox_title, thresholds: &settings.thresholds, zone }
+}
+
+/// Tells the windows what a capture changed.
+fn announce(app: &AppHandle, out: &CaptureOutcome, late: bool) {
     if !out.bookings.is_empty() {
+        let _ = app.emit("data://entries", ());
+        refresh_tray(app);
+    }
+    if let Some(a) = &out.appended {
+        // Open editors of the page reload; task lists refresh.
+        let _ = app.emit("data://tasks", a.page_id);
+        let stored = Stored { page_id: a.page_id, title: a.title.clone(), created: a.created, late };
+        let _ = app.emit_to(MAIN, "capture://stored", stored);
+    }
+}
+
+/// Test builds: `ANNALO_TEST_CAPTURE_BUSY=n` makes the first n captures fail as if the database
+/// were locked (the queue is tested end to end with it).
+fn simulated_busy() -> Option<Error> {
+    #[cfg(debug_assertions)]
+    {
+        static LEFT: std::sync::OnceLock<std::sync::atomic::AtomicI64> = std::sync::OnceLock::new();
+        let left = LEFT.get_or_init(|| {
+            std::sync::atomic::AtomicI64::new(
+                std::env::var("ANNALO_TEST_CAPTURE_BUSY").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
+            )
+        });
+        if left.fetch_sub(1, Ordering::Relaxed) > 0 {
+            return Some(cap::busy_error());
+        }
+    }
+    None
+}
+
+/// Books `/zeit` lines and puts everything else into `target` (default: today's daily note).
+/// When the database cannot take it now (busy, storage), the capture is queued and retried.
+#[tauri::command]
+pub fn capture_submit(
+    app: AppHandle,
+    state: State<AppState>,
+    text: String,
+    target: Option<CaptureTarget>,
+) -> Result<Submitted> {
+    let settings = state.settings();
+    let target = target.unwrap_or_default();
+    let now = Utc::now();
+    let zone = Zone::Local;
+    let result = match simulated_busy() {
+        Some(e) => Err(e),
+        None => cap::capture_to(&state.db(), &text, &target, &capture_options(&settings, &zone), now, &Local),
+    };
+    match result {
+        Ok((out, undo)) => {
+            announce(&app, &out, false);
+            let id = remember(&app, &text, &out, undo, now);
+            Ok(Submitted { outcome: out, id: Some(id), queued: false })
+        }
+        Err(e) if cap::is_retryable(&e) => {
+            let path = state.data_dir.join(cap::QUEUE_FILE);
+            let mut queue = cap::load_queue(&path);
+            queue.push(QueuedCapture { text, target, at: now, attempts: 1, error: e.to_string() });
+            // Not even the queue file can be written: the window keeps the text and shows why.
+            cap::save_queue(&path, &queue)?;
+            crate::devlog::warn("desktop", format!("capture queued: {e}"));
+            let _ = app.emit_to(MAIN, "capture://queued", e.to_string());
+            schedule_retry(&app, Duration::from_secs(5));
+            Ok(Submitted { outcome: CaptureOutcome { appended: None, bookings: vec![] }, id: None, queued: true })
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn remember(app: &AppHandle, text: &str, out: &CaptureOutcome, undo: CaptureUndo, now: DateTime<Utc>) -> u64 {
+    let d = desktop(app);
+    let id = d.capture_seq.fetch_add(1, Ordering::Relaxed) + 1;
+    let preview: String = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").chars().take(90).collect();
+    let recent = RecentCapture {
+        id,
+        at: now,
+        page_id: out.appended.as_ref().map(|a| a.page_id),
+        title: out.appended.as_ref().map_or_else(|| "Zeiterfassung".to_owned(), |a| a.title.clone()),
+        preview,
+        bookings: out.bookings.len(),
+        undo_until: now + TimeDelta::seconds(cap::UNDO_SECONDS),
+    };
+    let mut list = lock(&d.captures);
+    list.push((recent, undo));
+    let extra = list.len().saturating_sub(RECENT);
+    list.drain(..extra);
+    id
+}
+
+/// Retries the queued captures once after `delay` (the periodic tick retries too).
+fn schedule_retry(app: &AppHandle, delay: Duration) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        retry_queue(&app);
+    });
+}
+
+static RETRYING: AtomicBool = AtomicBool::new(false);
+
+/// Stores queued captures. One whose page is gone goes to the inbox instead; one that cannot be
+/// stored at all (a bad `/zeit` line) is reported with its full text, so nothing is lost silently.
+pub fn retry_queue(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let path = state.data_dir.join(cap::QUEUE_FILE);
+    if !path.exists() || RETRYING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let settings = state.settings();
+    let zone = Zone::Local;
+    let opts = capture_options(&settings, &zone);
+    let mut left = vec![];
+    for mut q in cap::load_queue(&path) {
+        let first = cap::capture_to(&state.db(), &q.text, &q.target, &opts, q.at, &Local);
+        let result = match first {
+            Err(e) if !cap::is_retryable(&e) && !matches!(q.target, CaptureTarget::Inbox | CaptureTarget::Daily) => {
+                cap::capture_to(&state.db(), &q.text, &CaptureTarget::Inbox, &opts, q.at, &Local)
+            }
+            other => other,
+        };
+        match result {
+            Ok((out, undo)) => {
+                announce(app, &out, true);
+                remember(app, &q.text, &out, undo, q.at);
+            }
+            Err(e) if cap::is_retryable(&e) => {
+                q.attempts += 1;
+                q.error = e.to_string();
+                left.push(q);
+            }
+            Err(e) => {
+                crate::devlog::error("desktop", format!("queued capture not stored: {e}"));
+                let _ = app.emit_to(MAIN, "capture://failed", (e.to_string(), q.text.clone()));
+            }
+        }
+    }
+    if let Err(e) = cap::save_queue(&path, &left) {
+        crate::devlog::error("desktop", format!("capture queue not written: {e}"));
+    }
+    RETRYING.store(false, Ordering::Relaxed);
+}
+
+/// The appointment offered as target in the capture window.
+#[derive(Serialize)]
+pub struct MeetingTarget {
+    key: String,
+    title: String,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    note_page_id: Option<i64>,
+}
+
+/// What the capture window shows when it opens.
+#[derive(Serialize)]
+pub struct CaptureContext {
+    meeting: Option<MeetingTarget>,
+    recent: Vec<RecentCapture>,
+    /// Captures waiting in the queue.
+    queued: usize,
+}
+
+#[tauri::command(async)]
+pub fn capture_context(app: AppHandle, state: State<AppState>) -> Result<CaptureContext> {
+    let settings = state.settings();
+    let meeting = if settings.capture.meeting_target {
+        let active = settings.calendar.active_sources(annalo_core::calsync::outlook::available());
+        cap::current_meeting(&state.reader(), Utc::now(), &active)?.map(|e| MeetingTarget {
+            key: e.key,
+            title: e.event.title,
+            start: e.event.start,
+            end: e.event.end,
+            note_page_id: e.note_page_id,
+        })
+    } else {
+        None
+    };
+    let recent = lock(&desktop(&app).captures).iter().rev().map(|(r, _)| r.clone()).collect();
+    let queued = cap::load_queue(&state.data_dir.join(cap::QUEUE_FILE)).len();
+    Ok(CaptureContext { meeting, recent, queued })
+}
+
+/// Undoes the newest capture within [`cap::UNDO_SECONDS`]; returns it.
+#[tauri::command]
+pub fn capture_undo(app: AppHandle, state: State<AppState>) -> Result<RecentCapture> {
+    let d = desktop(&app);
+    let (recent, undo) = {
+        let list = lock(&d.captures);
+        let last = list.last().cloned();
+        last.filter(|(r, _)| Utc::now() <= r.undo_until).ok_or_else(|| {
+            Error::State(format!(
+                "Nur die letzte Erfassung der letzten {} s lässt sich rückgängig machen",
+                cap::UNDO_SECONDS
+            ))
+        })?
+    };
+    cap::undo_capture(&state.db(), &undo)?;
+    {
+        // One step only: the captures before it stay (Ctrl+Z again does not reach them).
+        let mut list = lock(&d.captures);
+        list.retain(|(r, _)| r.id != recent.id);
+        let now = Utc::now();
+        for (r, _) in list.iter_mut() {
+            r.undo_until = r.undo_until.min(now);
+        }
+    }
+    if !undo.entry_ids.is_empty() {
         let _ = app.emit("data://entries", ());
         refresh_tray(&app);
     }
-    if let Some(a) = &out.appended {
-        // Open editors of the daily note reload; task lists refresh.
-        let _ = app.emit("data://tasks", a.page_id);
+    if let Some(p) = &undo.page {
+        let _ = app.emit("data://tasks", p.page_id);
+        let _ = app.emit_to(MAIN, "capture://undone", (p.page_id, p.created));
     }
-    Ok(out)
+    Ok(recent)
+}
+
+/// Hides the capture window and opens `page_id` in the main window („Gespeichert in …“).
+#[tauri::command]
+pub fn capture_open(app: AppHandle, page_id: i64) {
+    capture_hide(app.clone());
+    show_main(&app);
+    let _ = app.emit_to(MAIN, "search://open", SearchTarget::Page { page_id, new_tab: false });
 }
 
 /// Applies the global shortcuts by [`Role`]; `None` keeps a slot as it is, `Some("")` switches
@@ -424,7 +772,7 @@ fn check_distinct(slots: &[Option<Shortcut>; SLOTS]) -> std::result::Result<(), 
     Ok(())
 }
 
-/// Checks the shortcuts of the settings (capture, palette, search, mail; `""` = off) before saving.
+/// Checks the shortcuts of the settings (capture, palette, search, selection, mail; `""` = off) before saving.
 pub fn validate_shortcuts(specs: [&str; SLOTS]) -> std::result::Result<(), String> {
     let mut parsed = [None; SLOTS];
     for (slot, spec) in parsed.iter_mut().zip(specs) {
@@ -505,6 +853,7 @@ fn booked_today(db: &Database) -> Result<i64> {
 pub fn periodic(app: &AppHandle) {
     refresh_tray(app);
     crate::focus::periodic(app);
+    retry_queue(app);
     let state = app.state::<AppState>();
     let settings = state.settings();
     let now = Local::now().naive_local();
@@ -549,6 +898,7 @@ pub fn periodic(app: &AppHandle) {
         notify(app, "Timer läuft noch", &body);
     }
     crate::weekplan::periodic(app);
+    crate::dayreview::periodic(app);
 }
 
 // ---------------------------------------------------------------- autostart
@@ -562,7 +912,10 @@ pub struct DesktopInfo {
     capture_shortcut_active: bool,
     palette_shortcut_active: bool,
     search_shortcut_active: bool,
+    selection_shortcut_active: bool,
     mail_shortcut_active: bool,
+    /// Milliseconds from the last capture request to its first frame (`None`: not opened yet).
+    capture_open_ms: Option<u64>,
     /// Portable mode: no autostart entry (it would point into the user profile).
     portable: bool,
 }
@@ -582,7 +935,9 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         capture_shortcut_active: slots[Role::Capture as usize].is_some(),
         palette_shortcut_active: slots[Role::Palette as usize].is_some(),
         search_shortcut_active: slots[Role::Search as usize].is_some(),
+        selection_shortcut_active: slots[Role::Selection as usize].is_some(),
         mail_shortcut_active: slots[Role::Mail as usize].is_some(),
+        capture_open_ms: Some(d.capture_open_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
     }
 }
 
@@ -639,18 +994,25 @@ mod tests {
 
     #[test]
     fn settings_shortcuts_must_differ() {
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", ""]).is_ok());
-        assert!(validate_shortcuts(["", "", "", ""]).is_ok());
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o ", ""]).unwrap_err();
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", ""]).is_ok());
+        assert!(validate_shortcuts(["", "", "", "", ""]).is_ok());
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o ", "", ""]).unwrap_err();
         assert!(e.contains("Befehlspalette und Schnellsuche"), "{e}");
-        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q", ""]).unwrap_err();
+        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q", "", ""]).unwrap_err();
         assert!(e.contains("Schnellerfassung und Schnellsuche"), "{e}");
-        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F", ""]).unwrap_err().contains("AltGr"));
-        // The mail shortcut is checked like the others.
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+M"]).is_ok());
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "ctrl+shift+space"]).unwrap_err();
+        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F", "", ""]).unwrap_err().contains("AltGr"));
+        // „Auswahl übernehmen“ is a slot of its own: it must differ and follows the same rules.
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "", "ctrl+shift+space", ""]).unwrap_err();
+        assert!(e.contains("Schnellerfassung und Auswahl übernehmen"), "{e}");
+        assert!(validate_shortcuts(["", "", "", "Ctrl+Shift+Alt+C", ""]).unwrap_err().contains("AltGr"));
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", ""]).is_ok());
+        // The mail shortcut is the fifth slot and differs from all others.
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", "Ctrl+Shift+M"]).is_ok());
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", "ctrl+shift+space"]).unwrap_err();
         assert!(e.contains("Schnellerfassung und E-Mail übernehmen"), "{e}");
-        assert!(validate_shortcuts(["", "", "", "Ctrl+Alt+M"]).unwrap_err().contains("AltGr"));
+        let e = validate_shortcuts(["", "", "", "Ctrl+Shift+Y", "ctrl+shift+y"]).unwrap_err();
+        assert!(e.contains("Auswahl übernehmen und E-Mail übernehmen"), "{e}");
+        assert!(validate_shortcuts(["", "", "", "", "Ctrl+Alt+M"]).unwrap_err().contains("AltGr"));
     }
 
     #[test]

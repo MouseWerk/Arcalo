@@ -151,6 +151,12 @@ export const api = {
   /** Books the accepted proposals as drafts in one go and links their sources. */
   weekProposalApply: (items: T.AcceptedProposal[]) => call<T.AppliedProposals>("week_proposal_apply", { items }),
 
+  // Tagesrückblick
+  /** „Tagesrückblick“ of a local day (YYYY-MM-DD). */
+  dayReview: (date: string) => call<T.DayReview>("day_review", { date }),
+  /** Summary of a day by a local model only; streams like `chat`. */
+  dayReviewSummary: (requestId: string, date: string) => call<T.ChatOutcome>("day_review_summary", { requestId, date }),
+
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),
@@ -230,8 +236,18 @@ export const api = {
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
   quit: () => call<void>("app_quit"),
-  captureSubmit: (text: string) => call<T.CaptureOutcome>("capture_submit", { text }),
+  captureSubmit: (text: string, target?: T.CaptureTarget) => call<T.CaptureOutcome>("capture_submit", { text, target: target ?? null }),
   captureHide: () => call<void>("capture_hide"),
+  /** Opens the quick-capture window. */
+  captureShow: () => call<void>("capture_show"),
+  /** The capture window painted its first frame after being shown (open latency). */
+  captureReady: () => call<void>("capture_ready"),
+  /** Meeting running now, recent captures, queued captures. */
+  captureContext: () => call<T.CaptureContext>("capture_context"),
+  /** Takes the newest capture back (within 30 s). */
+  captureUndo: () => call<T.RecentCapture>("capture_undo"),
+  /** Hides the capture window and opens the page in the main window. */
+  captureOpen: (pageId: number) => call<void>("capture_open", { pageId }),
   searchHide: () => call<void>("search_hide"),
   /** Hides the quick search and lets the main window open `target` (`search://open`). */
   searchOpen: (target: T.SearchTarget) => call<void>("search_open", { target }),
@@ -240,7 +256,8 @@ export const api = {
   /** Saves the start page's widgets and scratch note only. */
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
-  openQuickLink: (index: number) => call<void>("quick_link_open", { index }),
+  /** Opens the ribbon link at `index`, or entry `item` of the group there. */
+  openQuickLink: (index: number, item: number | null = null) => call<void>("quick_link_open", { index, item }),
   openAttachment: (name: string, reveal = false) => call<void>("attachment_open", { name, reveal }),
   /** Title of a web page (smart paste of a URL); the URL itself when there is none. */
   linkTitle: (url: string) => call<string>("link_title", { url }),

@@ -13,7 +13,7 @@ import { flushAllEditors } from "../editor/NoteEditor";
 import { fileSize, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } from "../components/ui";
 import { formatShortcut, keys } from "../lib/shortcut";
-import { IS_MAC } from "../lib/platform";
+import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
 import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
@@ -1107,7 +1107,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           </div>
         </Row>
       </Group>
-      <Group title="Schnellerfassung" description="Ein kleines Fenster über allen anderen: Text landet in der heutigen Tagesnotiz, „todo …“ oder „- [ ] …“ als Aufgabe, „/zeit …“ wird gebucht.">
+      <Group
+        title="Schnellerfassung"
+        description="Ein kleines Fenster über allen anderen: Text landet in der Tagesnotiz, im Posteingang, in einer Seite (> am Anfang) oder in der Notiz der laufenden Besprechung. „todo … bis Fr“ wird eine Aufgabe mit Termin, „/zeit …“ wird gebucht. Tab wechselt das Ziel."
+      >
         <Row
           label="Tastenkürzel (global)"
           description={
@@ -1123,6 +1126,67 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             placeholder="Tasten drücken…"
             active={info ? draft.capture_shortcut === view?.settings.capture_shortcut && info.capture_shortcut_active : undefined}
           />
+        </Row>
+        <Row
+          label="Auswahl übernehmen (global)"
+          description={
+            IS_LINUX
+              ? "Öffnet die Schnellerfassung mit dem markierten Text des Programms im Vordergrund (sonst mit der Zwischenablage). Aus, solange kein Kürzel eingetragen ist."
+              : `Öffnet die Schnellerfassung mit dem Text der Zwischenablage: erst ${IS_MAC ? "⌘C" : "Strg+C"} im anderen Programm, dann dieses Kürzel. Aus, solange kein Kürzel eingetragen ist.`
+          }
+        >
+          <ShortcutField
+            value={draft.capture.selection_shortcut}
+            onChange={(v) => update({ capture: { ...draft.capture, selection_shortcut: v } })}
+            label="Tastenkürzel Auswahl übernehmen"
+            placeholder={`z. B. ${IS_MAC ? "Cmd" : "Ctrl"}+Shift+Y`}
+            active={
+              info ? draft.capture.selection_shortcut === view?.settings.capture?.selection_shortcut && !!info.selection_shortcut_active : undefined
+            }
+          />
+        </Row>
+        <Row label="Standardziel" description="Wohin der Text geht, wenn das Fenster aufgeht. Tab wechselt zwischen Tagesnotiz, laufender Besprechung, zuletzt gewählter Seite und Posteingang.">
+          <Select
+            value={draft.capture.default_target}
+            onChange={(e) => update({ capture: { ...draft.capture, default_target: e.target.value as Settings["capture"]["default_target"] } })}
+            aria-label="Standardziel der Schnellerfassung"
+          >
+            <option value="daily">Tagesnotiz</option>
+            <option value="inbox">Posteingang</option>
+            <option value="last">Zuletzt gewählte Seite</option>
+          </Select>
+        </Row>
+        <Row label="Posteingang" description="Seite, die Erfassungen mit Datum und Uhrzeit sammelt. Sie wird beim ersten Mal angelegt.">
+          <CommitInput
+            value={draft.capture.inbox_title}
+            onCommit={(v) => update({ capture: { ...draft.capture, inbox_title: v.trim() || "Posteingang" } })}
+            aria-label="Titel des Posteingangs"
+          />
+        </Row>
+        <Row label="Laufende Besprechung anbieten" description="Läuft ein Termin aus dem Kalender (oder begann er vor weniger als 15 Minuten), bietet das Fenster „Jetzt: …“ als Ziel an – der Text landet in der Besprechungsnotiz.">
+          <Switch
+            label="Laufende Besprechung anbieten"
+            checked={draft.capture.meeting_target}
+            onChange={(v) => update({ capture: { ...draft.capture, meeting_target: v } })}
+          />
+        </Row>
+        <Row
+          label="Ausblenden nach dem Speichern"
+          description={info?.capture_open_ms ? `„Gespeichert in …“ bleibt so lange stehen. Zuletzt erschien das Fenster nach ${info.capture_open_ms} ms.` : "„Gespeichert in …“ bleibt so lange stehen."}
+        >
+          <Select
+            value={String(draft.capture.auto_hide_ms)}
+            onChange={(e) => update({ capture: { ...draft.capture, auto_hide_ms: Number(e.target.value) } })}
+            aria-label="Ausblenden nach dem Speichern"
+          >
+            {[...new Set([0, 800, 1200, 2000, 4000, draft.capture.auto_hide_ms])]
+              .sort((a, b) => a - b)
+              .map((ms) => (
+                <option key={ms} value={String(ms)}>
+                  {ms === 0 ? "Sofort" : `${String(ms / 1000).replace(".", ",")} s`}
+                </option>
+              ))}
+          </Select>
         </Row>
       </Group>
     </>
@@ -1262,6 +1326,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
     ...global(view.settings.palette_shortcut, t("keys.globalPalette")),
     ...global(view.settings.capture_shortcut, t("keys.globalCapture")),
     ...global(view.settings.search_shortcut, t("keys.globalSearch")),
+    ...global(view.settings.capture?.selection_shortcut, t("keys.globalSelection")),
     ...global(view.settings.mail?.shortcut, t("keys.globalMail")),
   ];
   return (

@@ -79,7 +79,10 @@ sections, columns, a live table of contents and footnotes, all plain Markdown th
 ### Present, focus, look back
 
 Any note becomes a full-screen presentation, split at `---`, with speaker notes and a presenter view. Focus sessions
-book their time on a Vorgang by themselves, and the activity feed answers "Was habe ich am Dienstag gemacht?".
+book their time on a Vorgang by themselves, and the activity feed answers "Was habe ich am Dienstag gemacht?". At the
+end of the day the Tagesrückblick puts it on one page: pages edited, hours per WBS against your target with the gaps,
+tasks done and overdue, meetings booked or not, focus sessions and files. One click writes it into the daily note, and
+a local model (never a cloud provider) can add a short summary.
 
 <p align="center">
   <img src="docs/screenshots/presentation.png" width="49%" alt="A note as a presentation">
@@ -183,6 +186,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Slash menu (`/`), formatting toolbar on selection, a table toolbar (rows, columns, header) while the cursor is in a table, find in page (Ctrl F)
 - Version history: „Versionen…“ in the page menu lists earlier states (kept 30 days) with a diff against now, and restores them
 - Tabs, favorites, a drag-and-drop page tree, a command palette (Ctrl K) and a quick switcher (Ctrl O)
+- Links and apps in the ribbon („App / Link hinzufügen“): web pages, folders, `mailto:` and programs, each with an icon, and groups of them (one icon with a count; a click lists the entries next to the ribbon, arrows and Enter open them, longer groups filter as you type). Drag a link onto a group to move it in, drag icons to reorder; right-click for edit, move, remove and „Alle Links öffnen“
 - Import an Obsidian vault (folders, frontmatter, links, tags and images kept), export everything back to Markdown files
 
 **Time tracking**
@@ -192,6 +196,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Timer with idle detection (inactive time can be subtracted), quick booking, manual entries
 - Weekly timesheet with a grid per Netzplan/Vorgang, release workflow, and export to SAP CATS, Jira worklogs, CSV or JSON
 - „Woche vorschlagen“: a timesheet draft of the week from meetings, unbooked focus sessions and page editing, around what is already booked and capped at the daily target; reviewed by day (source, time, length, text, Vorgang with confidence and reason) and taken over in one go as drafts. A Vorgang you change is remembered per page and meeting series; a reminder on the last workday afternoon points to open days
+- Tagesrückblick (ribbon, palette, the daily note's „Rückblick“ link, the Kalender's day header): one day's pages, hours per WBS against the target with the unbooked gaps, tasks, meetings with their booking state, focus sessions and files; every row leads to its place. „In Tagesnotiz übernehmen“ writes (and on repeat replaces) a compact block in the daily note; „Zusammenfassung schreiben“ runs only on a provider marked local. Optional reminder at the end of the workday
 - Projects view: budget, booked hours, remaining effort (ETC), forecast (EAC), critical path and float, as tables
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 
@@ -217,7 +222,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Taskbar jump list (Windows, right-click the taskbar button): Heutige Notiz, Neue Seite, Schnellerfassung, Suchen…, stop the running timer or start the last one, and the recently edited pages
 - Own title bar on Windows: the tabs sit at the top edge like in Obsidian, with the app's own window buttons (Settings → Darstellung switches back to the system title bar)
 - Closing hides the window to the tray (Settings → Desktop), start with Windows (minimized), one instance per workspace
-- Quick capture (Ctrl Shift Space, global): one line into today's daily note, `todo …` / `- [ ] …` as a task, `/zeit …` books time
+- Quick capture (Ctrl Shift Space, global): a small window that appears instantly with the cursor in the field. Text goes into today's daily note, the „Posteingang“ page (each capture with date and time), any page (`>` opens a picker, „Neue Seite: Titel“ or Ctrl Enter creates one) or – while a calendar meeting runs – its meeting note („Jetzt: …“); Tab switches the target. Several lines with Shift Enter, `todo …` / `- [ ] …` as a task (`bis Fr`, `due:morgen` set the due date), `[[` and `#` complete links and tags, `/zeit …` books time. Pasted links get their page title, pasted images and dropped files become attachments. „Gespeichert in …“ links to the page; Esc keeps the draft, Ctrl Z takes the last capture back (30 s), the last five are listed. „Auswahl übernehmen“ (second shortcut, off by default) starts it with the marked text (Linux) or the clipboard. Settings → Desktop → Schnellerfassung
 - Quick search (Ctrl Shift O, global, or „Suchen…“ in the tray): a small window above all programs that finds pages, passages and bookings, opens today's daily note, creates a page, starts/stops the timer or books `/zeit …`; Enter opens the result in the main window
 - Start page with widgets: Heute (due tasks, quick add to the daily note), Woche (booked vs. target per day, gaps), Budgets, Zuletzt bearbeitet, Lesezeichen, Timer, Notiz and Kalender. „Anpassen“ adds, removes, reorders (drag & drop or arrow buttons) and resizes them
 - End-of-day reminder on workdays when less than the daily target is booked (default 17:30), and once when a timer is still running after 20:00
@@ -469,7 +474,7 @@ All in-app shortcuts can be changed under Settings → Tastatur (the defaults ar
 | Keys | Action |
 |---|---|
 | Ctrl K / Alt Space (global, configurable) | Command palette, search, `/zeit …`, `? question` |
-| Ctrl Shift Space (global) | Quick capture |
+| Ctrl Shift Space (global) | Quick capture (Tab: target, `>`: page, Ctrl Z: undo the last capture) |
 | Ctrl Shift O (global, configurable) | Quick search window |
 | Ctrl O | Quick switcher |
 | Ctrl N | New page |

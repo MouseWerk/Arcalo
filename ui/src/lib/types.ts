@@ -196,8 +196,15 @@ export type Tier = "local" | "standard" | "reasoning";
 /** A link at the top of the sidebar. */
 export interface QuickLink {
   name: string;
+  /** Address or path; empty for a group. */
   url: string;
   icon: string;
+  /** Missing on links (and on everything saved before 1.5). */
+  kind?: "link" | "app" | "group";
+  /** A group's icon color (`blau`, `grün`, …). */
+  color?: string;
+  /** A group's links and programs. */
+  items?: QuickLink[];
 }
 
 export interface RouterConfig {
@@ -278,6 +285,8 @@ export interface Settings {
   quick_links: QuickLink[];
   /** Calendar sync; subscription addresses live in the credential store. */
   calendar: CalendarSettings;
+  /** Quick capture: default target, inbox page, „Auswahl übernehmen“, auto-hide. */
+  capture: CapturePrefs;
   /** „E-Mail als Aufgabe / Notiz“ (Settings → Kalender → E-Mail). */
   mail: MailSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
@@ -407,6 +416,9 @@ export interface NotificationPrefs {
   git_failed: boolean;
   updates: boolean;
   week_proposal: boolean;
+  /** „Tagesrückblick ansehen“ once a workday at `day_review_time`. */
+  day_review: boolean;
+  day_review_time: string;
   quiet_hours: boolean;
   quiet_from: string;
   quiet_to: string;
@@ -517,13 +529,49 @@ export interface DesktopInfo {
   capture_shortcut_active: boolean;
   palette_shortcut_active: boolean;
   search_shortcut_active: boolean;
+  selection_shortcut_active?: boolean;
+  /** Milliseconds from the last quick-capture request to its first frame. */
+  capture_open_ms?: number | null;
   mail_shortcut_active?: boolean;
   /** Portable mode: no autostart entry. */
   portable?: boolean;
 }
 export interface CaptureOutcome {
-  appended: { page_id: number; tasks: number; notes: number } | null;
+  appended: { page_id: number; tasks: number; notes: number; title: string; created: boolean } | null;
   bookings: LogOutcome[];
+  /** Id in the recent captures (undo). */
+  id?: number | null;
+  /** The database could not take it now: stored and retried. */
+  queued?: boolean;
+}
+/** Where a quick capture goes (`annalo_core::capture::CaptureTarget`). */
+export type CaptureTarget =
+  | { kind: "daily" }
+  | { kind: "inbox" }
+  | { kind: "page"; page_id: number }
+  | { kind: "new_page"; title: string }
+  | { kind: "meeting"; key: string };
+export interface CapturePrefs {
+  default_target: "daily" | "inbox" | "last";
+  inbox_title: string;
+  /** Global shortcut „Auswahl übernehmen“; "" = off. */
+  selection_shortcut: string;
+  auto_hide_ms: number;
+  meeting_target: boolean;
+}
+export interface RecentCapture {
+  id: number;
+  at: string;
+  page_id: number | null;
+  title: string;
+  preview: string;
+  bookings: number;
+  undo_until: string;
+}
+export interface CaptureContext {
+  meeting: { key: string; title: string; start: string; end: string; note_page_id: number | null } | null;
+  recent: RecentCapture[];
+  queued: number;
 }
 export interface SettingsView {
   settings: Settings;
@@ -1119,4 +1167,107 @@ export interface AcceptedProposal {
 export interface AppliedProposals {
   entry_ids: number[];
   alerts: BudgetStatus[];
+}
+
+// ---- Tagesrückblick (dayreview.rs)
+export interface DayReview {
+  date: string;
+  from: string;
+  to: string;
+  daily_note_id: number | null;
+  pages: ReviewPage[];
+  time: ReviewTime;
+  tasks: ReviewTasks;
+  meetings: ReviewMeeting[];
+  focus: { minutes: number; sessions: ReviewFocusSession[] };
+  files: ReviewFile[];
+}
+export interface ReviewPage {
+  page_id: number | null;
+  title: string;
+  icon: string | null;
+  gone: boolean;
+  created: boolean;
+  daily: boolean;
+  edits: number;
+  chars: number;
+  minutes: number;
+  first_at: string;
+  last_at: string;
+  word_delta: number | null;
+}
+export interface ReviewTime {
+  target_minutes: number;
+  workday: boolean;
+  booked_minutes: number;
+  running_minutes: number;
+  missing_minutes: number;
+  items: ReviewWbs[];
+  entries: ReviewEntry[];
+  gaps: { start: string; end: string; minutes: number }[];
+}
+export interface ReviewWbs {
+  label: string;
+  project_code: string;
+  netzplan_id: number;
+  vorgang_nr: string | null;
+  title: string;
+  minutes: number;
+  entries: number;
+  descriptions: string[];
+}
+export interface ReviewEntry {
+  id: number;
+  label: string;
+  start: string;
+  end: string;
+  minutes: number;
+  description: string;
+  status: string;
+}
+export interface ReviewTasks {
+  done: ReviewTask[];
+  added: ReviewTask[];
+  due: ReviewTask[];
+  overdue: ReviewTask[];
+  done_total: number;
+  added_total: number;
+  due_total: number;
+  overdue_total: number;
+}
+export interface ReviewTask {
+  page_id: number | null;
+  page_title: string;
+  text: string;
+  at: string | null;
+  due: string | null;
+  done: boolean;
+}
+export type MeetingState = "booked" | "skipped" | "open" | "upcoming" | "free";
+export interface ReviewMeeting {
+  key: string;
+  source: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  minutes: number;
+  state: MeetingState;
+  entry_id: number | null;
+  note_page_id: number | null;
+}
+export interface ReviewFocusSession {
+  id: number;
+  reference: string;
+  goal: string;
+  started_at: string;
+  worked_minutes: number;
+  status: string;
+  entry_id: number | null;
+}
+export interface ReviewFile {
+  name: string;
+  kind: string;
+  at: string;
 }

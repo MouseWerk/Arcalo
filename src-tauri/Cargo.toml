@@ -27,6 +27,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tokio = { version = "1.53.1", features = ["time"] }
+# Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
+arboard = { version = "3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_System_SystemInformation"] }

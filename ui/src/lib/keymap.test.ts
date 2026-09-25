@@ -104,6 +104,11 @@ describe("keymap", () => {
     expect(conflicts).toContainEqual({ combo: "Ctrl+K", commands: ["palette", "new_page"] });
     expect(conflicts).toContainEqual({ combo: "Ctrl+B", commands: ["tasks"], other: "keys.reserved.bold" });
     expect(conflicts).toContainEqual({ combo: "Ctrl+Shift+Space", commands: ["timer"], other: "global.capture" });
+    // „Auswahl übernehmen“ is a global shortcut too.
+    const sel = findConflicts({ ...DEFAULT_KEYMAP, timer: "Ctrl+Shift+Y" }, { selection: "ctrl+shift+y" });
+    expect(sel).toContainEqual({ combo: "Ctrl+Shift+Y", commands: ["timer"], other: "global.selection" });
+    const mail = findConflicts({ ...DEFAULT_KEYMAP, timer: "Ctrl+Shift+J" }, { mail: "ctrl+shift+j" });
+    expect(mail).toContainEqual({ combo: "Ctrl+Shift+J", commands: ["timer"], other: "global.mail" });
     // The palette may share its global shortcut with the in-app palette command.
     const same = effectiveKeymap({ palette: "Ctrl+Shift+K" });
     expect(findConflicts(same, { palette: "Ctrl+Shift+K" })).toEqual([]);

@@ -44,8 +44,8 @@ test("the mail settings live in Settings → Kalender", async () => {
 test("the global shortcut is validated like the others", async () => {
   await assert.rejects(saveWith((s) => ({ mail: { ...s.mail, shortcut: "Ctrl+Alt+M" } })), /AltGr/);
   await assert.rejects(saveWith((s) => ({ mail: { ...s.mail, shortcut: s.search_shortcut } })), /Schnellsuche und E-Mail übernehmen/);
-  const saved = await saveWith((s) => ({ mail: { ...s.mail, shortcut: " Ctrl+Shift+M ", notes_parent: "Posteingang", save_attachments: true } }));
-  assert.equal(saved.settings.mail.shortcut, "Ctrl+Shift+M");
+  const saved = await saveWith((s) => ({ mail: { ...s.mail, shortcut: " Ctrl+Shift+J ", notes_parent: "Posteingang", save_attachments: true } }));
+  assert.equal(saved.settings.mail.shortcut, "Ctrl+Shift+J");
   const info = await app.invoke("desktop_info");
   assert.equal(typeof info.mail_shortcut_active, "boolean");
   // Switched off again.

@@ -1,7 +1,7 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Table2, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Sunset, Table2, Trash2 } from "lucide-react";
 import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
@@ -32,6 +32,7 @@ import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
 import { keys } from "../lib/shortcut";
 import { hint, withHint } from "../lib/keymap";
 import { withSaved } from "../lib/pagesave";
+import { openDayReview } from "../lib/reviewnav";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   const [doc, setDoc] = useState<PageDoc | null>(null);
@@ -537,7 +538,15 @@ function PageHeader({
                 [ ] | # ^ gehören zur Link-Schreibweise und werden in Titeln ersetzt.
               </div>
             )}
-            {daily && <div className="page-subtitle">{dateLong(daily.toISOString())}</div>}
+            {daily && (
+              <div className="page-subtitle">
+                {dateLong(daily.toISOString())}
+                <button type="button" className="page-review-link" onClick={(e) => openDayReview(doc.daily_date!, { newTab: e.ctrlKey || e.metaKey })} title="Tagesrückblick dieses Tages öffnen">
+                  <Sunset size={12} aria-hidden />
+                  Rückblick
+                </button>
+              </div>
+            )}
             {iconOpen && (
               <div className="icon-picker" role="listbox" aria-label="Symbol wählen">
                 {Object.entries(PAGE_ICONS).map(([name, Icon]) => (
