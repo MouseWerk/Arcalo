@@ -142,7 +142,7 @@ export function DevLogAboutRow({ onOpen }: { onOpen: () => void }) {
       <div className="devlog-about">
         {stats && (
           <Badge tone={errors > 0 ? "danger" : "success"}>
-            {errors === 1 ? t("devlog.errorsWeekOne") : t("devlog.errorsWeek", { n: errors })}
+            {t("devlog.errorsWeek", { n: errors })}
           </Badge>
         )}
         <Button icon={ScrollText} onClick={onOpen}>
