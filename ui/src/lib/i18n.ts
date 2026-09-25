@@ -315,7 +315,15 @@ const ENTRIES = {
   "set.appearance.full": ["Voll", "Full"],
   "set.appearance.reduceMotion": ["Bewegungen reduzieren", "Reduce motion"],
   "set.appearance.reduceMotionDesc": ["Keine Animationen und Übergänge.", "No animations and transitions."],
-  "set.appearance.mica": ["Transparenz (Mica)", "Transparency (Mica)"],
+  "set.appearance.effect": ["Hintergrundeffekt", "Window backdrop"],
+  "set.appearance.effectNone": ["Aus", "None"],
+  "set.appearance.effectUnavailable": ["Ab Windows 11 verfügbar.", "Available from Windows 11."],
+  "set.appearance.opacity": ["Deckkraft", "Opacity"],
+  "set.appearance.opacityDesc": [
+    "Wie stark das Thema den Effekt abdeckt. Die Seitenleiste bleibt etwas durchscheinender als der Inhalt, bei 100 % ist das Fenster einfarbig.",
+    "How much the theme covers the effect. The sidebar stays a little more see-through than the content; at 100 % the window is solid.",
+  ],
+  "set.appearance.opacityOff": ["Mit einem Hintergrundeffekt einstellbar.", "Adjustable once a window backdrop is on."],
   "set.appearance.startup": ["Startanimation", "Startup animation"],
   "set.appearance.startupDesc": ["Das Annalo-Logo zeichnet sich beim Start, bis die App bereit ist.", "The Annalo logo draws itself while the app starts."],
   "set.appearance.titlebar": ["Eigene Titelleiste", "Custom title bar"],
@@ -328,9 +336,9 @@ const ENTRIES = {
   "win.maximize": ["Maximieren", "Maximize"],
   "win.restore": ["Verkleinern", "Restore down"],
   "win.close": ["Schließen", "Close"],
-  "set.appearance.micaDesc": [
-    "Windows 11: der Desktop scheint leicht durch Seitenleiste und Leiste, getönt in den Farben des Themas. Aus (empfohlen): einfarbige Flächen mit bestem Kontrast.",
-    "Windows 11: the desktop shows faintly through the sidebar and ribbon, tinted in the theme's colors. Off (recommended): solid panels with the best contrast.",
+  "set.appearance.effectDesc": [
+    "Der Desktop scheint getönt in den Farben des Themas durch das Fenster. Mica nimmt die Farben des Hintergrundbilds auf, Acrylic zeigt auch Fenster dahinter verschwommen. Aus: einfarbige Flächen mit dem besten Kontrast.",
+    "The desktop shows through the window, tinted in the theme's colors. Mica picks up the colors of the wallpaper, Acrylic also shows blurred windows behind. None: solid panels with the best contrast.",
   ],
   "set.appearance.themes": ["Farbthema", "Color theme"],
   "set.appearance.themesDesc": [

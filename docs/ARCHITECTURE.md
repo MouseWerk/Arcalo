@@ -440,9 +440,15 @@ and by `entry_id`.
   the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid
   hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "annalo-theme", version: 1, name, dark,
   colors}` (`theme_export` / `theme_file_read`, checked by `prefs::parse_theme_file`).
-- Mica (Windows 11) is off by default; `migrate_appearance_defaults` switches it off once for settings saved with the
-  old default (and turns the old default accent `indigo` into `theme`). When on, sidebar and ribbon are the theme's
-  sidebar color at 93 %.
+- Window backdrop (`appearance.window_effect`: `none`/`mica`/`acrylic`, `window_opacity` 40–100, default 80): off by
+  default; `migrate_appearance_defaults` switches it off once for settings saved with the old default (and turns the
+  old default accent `indigo` into `theme`); the 1.3–1.5 switch `mica: true` becomes `window_effect: "mica"` on load
+  (`upgrade_settings`). `src-tauri/src/backdrop.rs` offers Mica from Windows build 22000 and Acrylic from 22523 (drawn
+  as a system backdrop); only then is the window transparent, so Windows 10, macOS and Linux stay opaque.
+  `window_set_backdrop(effect, dark)` applies it (the Mica variant follows the theme; clearing needs `set_effects(None)`).
+  The UI (`lib/backdrop.ts`) sets `<html data-backdrop>` and `--glass`; app.css ("window backdrop") paints one base
+  layer on the body (sidebar color at `--glass`) and one on `.main` (canvas at `--glass`), everything between is
+  transparent, so splitters and gaps can never be holes. `ANNALO_TEST_BACKDROP=1` simulates both effects (e2e 91).
 - Dropdowns are `components/Select.tsx` (combobox + listbox in a portal) with the API of a controlled `<select>`; the
   e2e harness `app.select(selector, value)` opens it and clicks the option.
 - Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the

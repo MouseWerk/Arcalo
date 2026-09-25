@@ -16,7 +16,7 @@ use crate::gitsync::GitSyncSettings;
 use crate::network::NetworkSettings;
 use crate::prefs::{
     AiPrefs, AppearancePrefs, CapturePrefs, EditorPrefs, LocalePrefs, NotesPrefs, NotificationPrefs, PrivacyPrefs,
-    ROUNDING_STEPS, StartOpen, StartPrefs, TimePrefs,
+    ROUNDING_STEPS, StartOpen, StartPrefs, TimePrefs, WindowEffect,
 };
 use crate::tracking::Thresholds;
 
@@ -425,6 +425,7 @@ impl Settings {
         let a = &mut self.appearance;
         a.accent = crate::prefs::normalize_accent(&a.accent).unwrap_or(d.appearance.accent);
         a.ui_scale = a.ui_scale.clamp(90, 125);
+        a.window_opacity = a.window_opacity.clamp(crate::prefs::WINDOW_OPACITY_MIN, 100);
         a.theme_light = crate::prefs::normalize_theme_id(&a.theme_light, &d.appearance.theme_light);
         a.theme_dark = crate::prefs::normalize_theme_id(&a.theme_dark, &d.appearance.theme_dark);
         a.custom_themes = crate::prefs::normalize_custom_themes(std::mem::take(&mut a.custom_themes));
@@ -658,6 +659,14 @@ impl Database {
             s.router.fill_providers(LEGACY_ID);
             s.embedding_provider = LEGACY_ID.into();
         }
+        // Settings from before the backdrop choice (1.6): the Mica switch becomes the effect,
+        // the opacity starts at its default.
+        let appearance = value.get("appearance");
+        if appearance.is_some_and(|a| a.get("window_effect").is_none())
+            && appearance.and_then(|a| a.get("mica")).and_then(serde_json::Value::as_bool) == Some(true)
+        {
+            s.appearance.window_effect = WindowEffect::Mica;
+        }
     }
 
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
@@ -701,7 +710,7 @@ impl Database {
         if raw.is_some() {
             let mut s = self.load_settings()?;
             let before = s.appearance.clone();
-            s.appearance.mica = false;
+            s.appearance.window_effect = WindowEffect::None;
             if s.appearance.accent == "indigo" {
                 s.appearance.accent = crate::prefs::ACCENT_THEME.into();
             }
@@ -855,13 +864,13 @@ mod tests {
     #[test]
     fn settings_with_a_wrong_value_keep_the_rest() {
         let json = r#"{"theme":"dark","backup_keep":"viele","idle_threshold_minutes":7,
-            "appearance":{"mica":"ja","custom_titlebar":false},"providers":[]}"#;
+            "appearance":{"window_opacity":"ja","custom_titlebar":false},"providers":[]}"#;
         let (s, bad) = Database::parse_settings_lenient(json);
-        assert_eq!(bad, ["appearance.mica", "backup_keep"]);
+        assert_eq!(bad, ["appearance.window_opacity", "backup_keep"]);
         assert_eq!((s.theme.as_str(), s.idle_threshold_minutes), ("dark", 7));
         assert_eq!(s.backup_keep, Settings::default().backup_keep);
         assert!(!s.appearance.custom_titlebar);
-        assert_eq!(s.appearance.mica, AppearancePrefs::default().mica);
+        assert_eq!(s.appearance.window_opacity, AppearancePrefs::default().window_opacity);
         let (d, bad) = Database::parse_settings_lenient("{kaputt");
         assert_eq!((bad, d.backup_keep), (vec!["*".to_owned()], Settings::default().backup_keep));
         // Stored like that, the database still opens.
@@ -1123,12 +1132,12 @@ mod tests {
         db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [old]).unwrap();
         db.migrate_appearance_defaults().unwrap();
         let s = db.load_settings().unwrap();
-        assert!(!s.appearance.mica);
+        assert_eq!(s.appearance.window_effect, WindowEffect::None);
         assert_eq!((s.appearance.accent.as_str(), s.appearance.density), ("theme", crate::prefs::Density::Compact));
         assert_eq!((s.theme.as_str(), s.appearance.theme_dark.as_str()), ("dark", "annalo-dark"));
         // Switched on again afterwards: kept.
         let mut on = s.clone();
-        on.appearance.mica = true;
+        on.appearance.window_effect = WindowEffect::Mica;
         on.appearance.accent = "indigo".into();
         db.save_settings(&on).unwrap();
         db.migrate_appearance_defaults().unwrap();
@@ -1143,6 +1152,57 @@ mod tests {
         let fresh = Database::open_in_memory().unwrap();
         fresh.migrate_appearance_defaults().unwrap();
         assert_eq!(fresh.load_settings().unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn mica_switch_becomes_the_window_effect() {
+        let load = |appearance: &str| {
+            let db = Database::open_in_memory().unwrap();
+            // Saved by 1.3–1.5: the 1.3 migration has run already.
+            db.meta_set("appearance_defaults_1_3", "1").unwrap();
+            let json = format!(r#"{{"theme":"dark","appearance":{appearance}}}"#);
+            db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [json]).unwrap();
+            db.migrate_appearance_defaults().unwrap();
+            db
+        };
+        // Mica on: the effect is Mica at the default opacity, and stays so once saved.
+        let db = load(r#"{"accent":"teal","mica":true}"#);
+        let s = db.load_settings().unwrap();
+        assert_eq!((s.appearance.window_effect, s.appearance.window_opacity), (WindowEffect::Mica, 80));
+        assert_eq!(s.appearance.accent, "teal");
+        db.save_settings(&s).unwrap();
+        let raw: String =
+            db.conn().query_row("SELECT value FROM settings WHERE key = 'app'", [], |r| r.get(0)).unwrap();
+        assert!(raw.contains(r#""window_effect":"mica""#) && !raw.contains(r#""mica":"#), "{raw}");
+        assert_eq!(db.load_settings().unwrap(), s);
+        // Switched off later: the old switch is gone, nothing turns it on again.
+        let mut off = s.clone();
+        off.appearance.window_effect = WindowEffect::None;
+        db.save_settings(&off).unwrap();
+        assert_eq!(db.load_settings().unwrap().appearance.window_effect, WindowEffect::None);
+        // Mica off, or no switch at all: no effect.
+        for a in [r#"{"mica":false}"#, "{}"] {
+            let s = load(a).load_settings().unwrap();
+            assert_eq!((s.appearance.window_effect, s.appearance.window_opacity), (WindowEffect::None, 80), "{a}");
+        }
+        // A stored effect wins over a leftover switch.
+        let s = load(r#"{"mica":true,"window_effect":"acrylic","window_opacity":55}"#).load_settings().unwrap();
+        assert_eq!((s.appearance.window_effect, s.appearance.window_opacity), (WindowEffect::Acrylic, 55));
+        // Settings from 1.2 (before the 1.3 migration): Mica is switched off, as then.
+        let db = Database::open_in_memory().unwrap();
+        db.conn()
+            .execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [r#"{"appearance":{"mica":true}}"#])
+            .unwrap();
+        db.migrate_appearance_defaults().unwrap();
+        assert_eq!(db.load_settings().unwrap().appearance.window_effect, WindowEffect::None);
+        // The opacity is kept within its range when saving or importing.
+        let mut s = Settings::default();
+        s.appearance.window_opacity = 5;
+        s.normalize();
+        assert_eq!(s.appearance.window_opacity, crate::prefs::WINDOW_OPACITY_MIN);
+        s.appearance.window_opacity = 180;
+        s.normalize();
+        assert_eq!(s.appearance.window_opacity, 100);
     }
 
     #[test]

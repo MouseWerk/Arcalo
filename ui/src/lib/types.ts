@@ -357,7 +357,10 @@ export interface AppearancePrefs {
   density: "compact" | "normal" | "comfortable";
   line_width: "narrow" | "normal" | "wide" | "full";
   reduce_motion: boolean;
-  mica: boolean;
+  /** Window backdrop (Windows 11); elsewhere the window stays opaque. */
+  window_effect: "none" | "mica" | "acrylic";
+  /** How much the theme covers the backdrop, in percent (40–100). */
+  window_opacity: number;
   custom_titlebar: boolean;
   startup_animation: boolean;
 }

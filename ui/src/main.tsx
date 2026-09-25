@@ -13,6 +13,7 @@ import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
 import { PresenterApp } from "./components/Presentation";
+import { initBackdrop } from "./lib/backdrop";
 import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
@@ -51,11 +52,8 @@ console.error = (...args: unknown[]) => {
 
 // Follow the OS theme until settings are loaded.
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-// Windows 11: the window has a Mica backdrop that the chrome lets show through.
-import("@tauri-apps/api/core")
-  .then(({ invoke }) => invoke<boolean>("window_backdrop"))
-  .then((mica) => mica && !captureMode && !searchMode && !presenterMode && document.documentElement.classList.add("os-windows"))
-  .catch(() => {});
+// Windows 11: the window can have a Mica or Acrylic backdrop that the app lets show through.
+if (!captureMode && !searchMode && !presenterMode) initBackdrop();
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
 import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_frame"))
