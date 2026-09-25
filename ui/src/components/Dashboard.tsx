@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Play, Plus, SlidersHorizontal, Square, Star, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
-import { addDays, clock, h1, isoDay, relative, weekStart } from "../lib/format";
+import { addDays, clock, dateLocale, h1, isoDay, relative, weekStart, weekdayLabels } from "../lib/format";
 import { hoursLabel, monthGrid, dayTone, addMonths } from "../lib/calendar";
 import { layoutReducer, SIZE_LABELS, weekBars, WIDGET_KINDS, WIDGETS, type LayoutAction } from "../lib/dashboard";
 import type { AlertLevel, BudgetStatus, DayOverview, Page, Task, TimeEntryRow, Widget, WidgetSize } from "../lib/types";
@@ -16,11 +16,13 @@ import { openDailyNote } from "./CalendarPopover";
 import { FocusWidget } from "./Focus";
 import { bookedEntry, hasSources, isAllDayLike, sourceColor, timeRange } from "../lib/agenda";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
+import { useT, type TKey } from "../lib/i18n";
 
 const WIDGET_MIME = "application/x-annalo-widget";
 
 /** The start page widgets; `head` (the greeting) shares its row with „Anpassen“. */
 export function Dashboard({ head }: { head?: ReactNode }) {
+  const t = useT();
   const view = useApp((s) => s.settings);
   const saved = view?.settings.dashboard.widgets;
   const [draft, setDraft] = useState<Widget[] | null>(null);
@@ -41,7 +43,7 @@ export function Dashboard({ head }: { head?: ReactNode }) {
       s().set({ settings: await api.saveDashboard({ ...view.settings.dashboard, widgets: draft }) });
       setDraft(null);
     } catch (e) {
-      s().error("Startseite nicht gespeichert", e);
+      s().error(t("dash.saveFailed"), e);
     } finally {
       setSaving(false);
     }
@@ -84,26 +86,26 @@ export function Dashboard({ head }: { head?: ReactNode }) {
       : {};
 
   return (
-    <section className={`dash ${editing ? "editing" : ""}`} aria-label="Übersicht">
+    <section className={`dash ${editing ? "editing" : ""}`} aria-label={t("review.overview")}>
       <div className="dash-top">
         {head}
         <div className="dash-bar">
           {editing ? (
             <>
-              <span className="faint dash-hint">Ziehen oder mit den Pfeilen verschieben</span>
+              <span className="faint dash-hint">{t("dash.dragHint")}</span>
               <Button size="sm" icon={Plus} onClick={addMenu}>
-                Widget hinzufügen
+                {t("dash.addWidget")}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
-                Abbrechen
+                {t("common.cancel")}
               </Button>
               <Button size="sm" variant="primary" onClick={finish} loading={saving}>
-                Fertig
+                {t("common.done")}
               </Button>
             </>
           ) : (
             <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setDraft(saved.map((w) => ({ ...w })))}>
-              Anpassen
+              {t("dash.customize")}
             </Button>
           )}
         </div>
@@ -123,16 +125,16 @@ export function Dashboard({ head }: { head?: ReactNode }) {
               <h2>{t(WIDGETS[w.kind].label)}</h2>
               {editing && (
                 <div className="dw-tools">
-                  <div className="dw-sizes" role="group" aria-label="Größe">
+                  <div className="dw-sizes" role="group" aria-label={t("att.sort.size")}>
                     {(["s", "m", "l"] as WidgetSize[]).map((sz) => (
                       <button key={sz} type="button" aria-pressed={w.size === sz} title={t(SIZE_LABELS[sz])} aria-label={t("dash.sizeLabel", { size: t(SIZE_LABELS[sz]) })} onClick={() => dispatch({ type: "resize", id: w.id, size: sz })}>
                         {sz.toUpperCase()}
                       </button>
                     ))}
                   </div>
-                  <IconButton icon={ArrowUp} label="Nach vorn" size="sm" disabled={i === 0} onClick={() => dispatch({ type: "move", id: w.id, delta: -1 })} />
-                  <IconButton icon={ArrowDown} label="Nach hinten" size="sm" disabled={i === widgets.length - 1} onClick={() => dispatch({ type: "move", id: w.id, delta: 1 })} />
-                  <IconButton icon={X} label="Entfernen" size="sm" onClick={() => dispatch({ type: "remove", id: w.id })} />
+                  <IconButton icon={ArrowUp} label={t("dash.moveForward")} size="sm" disabled={i === 0} onClick={() => dispatch({ type: "move", id: w.id, delta: -1 })} />
+                  <IconButton icon={ArrowDown} label={t("dash.moveBack")} size="sm" disabled={i === widgets.length - 1} onClick={() => dispatch({ type: "move", id: w.id, delta: 1 })} />
+                  <IconButton icon={X} label={t("common.remove")} size="sm" onClick={() => dispatch({ type: "remove", id: w.id })} />
                 </div>
               )}
             </header>
@@ -143,7 +145,7 @@ export function Dashboard({ head }: { head?: ReactNode }) {
         ))}
         {widgets.length === 0 && (
           <div className="dash-empty faint">
-            {editing ? "Keine Widgets. „Widget hinzufügen“ fügt welche hinzu." : "Die Startseite ist leer. „Anpassen“ fügt Widgets hinzu."}
+            {editing ? t("dash.emptyEditing") : t("dash.empty")}
           </div>
         )}
       </div>
@@ -193,11 +195,11 @@ function useLoad<T>(load: () => Promise<T>, deps: unknown[], events: string[] = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
   useEffect(() => {
-    const un = events.map((ev) => on(ev, () => setTick((t) => t + 1)));
+    const un = events.map((ev) => on(ev, () => setTick((x) => x + 1)));
     return () => un.forEach((u) => u.then((f) => f()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return [data, () => setTick((t) => t + 1)];
+  return [data, () => setTick((x) => x + 1)];
 }
 
 const Empty = ({ children }: { children: ReactNode }) => <div className="dw-empty">{children}</div>;
@@ -205,6 +207,7 @@ const Empty = ({ children }: { children: ReactNode }) => <div className="dw-empt
 // ------------------------------------------------------------------ Heute
 
 function TodayWidget() {
+  const t = useT();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const pages = useApp((s) => s.pages);
   const today = isoDay(new Date());
@@ -215,7 +218,7 @@ function TodayWidget() {
     async () => {
       const [due, [day]] = await Promise.all([api.tasks({ status: "open", due_before: today }), api.dailyOverview(today, today)]);
       const onNote = day?.note_id != null ? await api.tasks({ status: "open", page_id: day.note_id }) : [];
-      const key = (t: Task) => `${t.page_id}:${t.ordinal}`;
+      const key = (x: Task) => `${x.page_id}:${x.ordinal}`;
       const seen = new Set(due.map(key));
       return [...due, ...onNote.filter((t) => !seen.has(key(t)))];
     },
@@ -223,47 +226,47 @@ function TodayWidget() {
     ["data://tasks"],
   );
   const add = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
+    const task = text.trim();
+    if (!task || busy) return;
     setBusy(true);
     try {
-      await api.captureSubmit(`- [ ] ${t}`);
+      await api.captureSubmit(`- [ ] ${task}`);
       setText("");
       await s().refreshTree();
       reload();
     } catch (e) {
-      s().error("Aufgabe nicht angelegt", e);
+      s().error(t("dash.taskFailed"), e);
     } finally {
       setBusy(false);
     }
   };
-  const done = async (t: Task) => {
+  const done = async (task: Task) => {
     try {
-      await api.setTaskDone(t.page_id, t.ordinal, true, t.text);
+      await api.setTaskDone(task.page_id, task.ordinal, true, task.text);
       reload();
     } catch (e) {
-      s().error("Aufgabe nicht abgehakt", e);
+      s().error(t("dash.checkFailed"), e);
     }
   };
   return (
     <div className="dw-today">
-      {tasks && tasks.length === 0 && <Empty>Nichts fällig. Schönen Tag!</Empty>}
+      {tasks && tasks.length === 0 && <Empty>{t("dash.nothingDue")}</Empty>}
       {tasks && tasks.length > 0 && (
-        <ul className="dw-list" aria-label="Fällige Aufgaben">
-          {tasks.slice(0, 8).map((t) => (
-            <li key={`${t.page_id}:${t.ordinal}`} className="dw-task">
-              <button type="button" role="checkbox" aria-checked={false} aria-label={`Erledigt: ${t.text}`} className="dw-check" onClick={() => done(t)} />
-              <button type="button" className="dw-task-text" onClick={() => s().openPage(t.page_id)} title={t.page_title}>
-                <span className="grow ellipsis">{t.text}</span>
-                {t.due && t.due < today && <Badge tone="danger">überfällig</Badge>}
-                {t.priority >= 2 && <Badge tone="warning">hoch</Badge>}
+        <ul className="dw-list" aria-label={t("dash.dueTasks")}>
+          {tasks.slice(0, 8).map((task) => (
+            <li key={`${task.page_id}:${task.ordinal}`} className="dw-task">
+              <button type="button" role="checkbox" aria-checked={false} aria-label={t("dash.doneLabel", { text: task.text })} className="dw-check" onClick={() => done(task)} />
+              <button type="button" className="dw-task-text" onClick={() => s().openPage(task.page_id)} title={task.page_title}>
+                <span className="grow ellipsis">{task.text}</span>
+                {task.due && task.due < today && <Badge tone="danger">{t("dash.overdue")}</Badge>}
+                {task.priority >= 2 && <Badge tone="warning">{t("dash.high")}</Badge>}
               </button>
             </li>
           ))}
           {tasks.length > 8 && (
             <li>
               <button type="button" className="dw-more" onClick={() => s().openTab({ kind: "tasks" })}>
-                {tasks.length - 8} weitere …
+                {t("dash.more", { n: tasks.length - 8 })}
               </button>
             </li>
           )}
@@ -272,8 +275,8 @@ function TodayWidget() {
       <input
         className="input dw-add"
         value={text}
-        placeholder="Aufgabe für heute…"
-        aria-label="Aufgabe zur Tagesnotiz hinzufügen"
+        placeholder={t("dash.taskPlaceholder")}
+        aria-label={t("dash.addTask")}
         disabled={busy}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -290,6 +293,7 @@ function TodayWidget() {
 // ------------------------------------------------------------------ Woche
 
 function WeekWidget() {
+  const t = useT();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const settings = useApp((s) => s.settings?.settings);
   const monday = useMemo(() => weekStart(new Date()), []);
@@ -298,19 +302,19 @@ function WeekWidget() {
   const week = weekBars(days ?? [], monday, target, settings?.workdays ?? [1, 2, 3, 4, 5], new Date());
   const gaps = week.bars.filter((b) => b.gap > 0);
   return (
-    <button type="button" className="dw-week" onClick={() => useApp.getState().openTab({ kind: "timesheet" })} aria-label="Woche in der Zeiterfassung öffnen">
+    <button type="button" className="dw-week" onClick={() => useApp.getState().openTab({ kind: "timesheet" })} aria-label={t("dash.openWeek")}>
       <div className="dw-week-sum">
         <span className="num dw-big">{h1(week.bookedMinutes / 60)}</span>
-        <span className="faint num">von {h1(week.targetMinutes / 60)} h</span>
+        <span className="faint num">{t("dash.ofHours", { h: h1(week.targetMinutes / 60) })}</span>
         <span className="grow" />
-        {gaps.length > 0 ? <Badge tone="warning">{h1(week.gapMinutes / 60)} h Lücke</Badge> : <Badge tone="success">Keine Lücken</Badge>}
+        {gaps.length > 0 ? <Badge tone="warning">{t("dash.gap", { h: h1(week.gapMinutes / 60) })}</Badge> : <Badge tone="success">{t("dash.noGaps")}</Badge>}
       </div>
       <div className="dw-bars" style={{ "--target": week.targetLine } as React.CSSProperties}>
         {week.bars.map((b) => (
           <div
             key={b.date}
             className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
-            title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? ` · ${h1(b.gap / 60)} h fehlen` : ""}`}
+            title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
           >
             <div className="dw-bar-track">
               {b.workday && target > 0 && <span className="dw-bar-target" aria-hidden />}
@@ -327,14 +331,15 @@ function WeekWidget() {
 
 // ---------------------------------------------------------------- Budgets
 
-const LEVEL: Record<AlertLevel, { tone: Tone; label: string; rank: number }> = {
-  ok: { tone: "success", label: "OK", rank: 0 },
-  warning: { tone: "warning", label: "Warnung", rank: 1 },
-  critical: { tone: "danger", label: "Kritisch", rank: 2 },
-  exceeded: { tone: "danger", label: "Überschritten", rank: 3 },
+const LEVEL: Record<AlertLevel, { tone: Tone; label: TKey; rank: number }> = {
+  ok: { tone: "success", label: "dash.ok", rank: 0 },
+  warning: { tone: "warning", label: "wbs.level.warning", rank: 1 },
+  critical: { tone: "danger", label: "wbs.level.critical", rank: 2 },
+  exceeded: { tone: "danger", label: "wbs.level.exceeded", rank: 3 },
 };
 
 function BudgetsWidget({ size }: { size: WidgetSize }) {
+  const t = useT();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const thresholds = useApp((s) => s.settings?.settings.thresholds);
   const [alerts] = useLoad(
@@ -346,16 +351,16 @@ function BudgetsWidget({ size }: { size: WidgetSize }) {
   );
   const open = () => useApp.getState().openTab({ kind: "projects" });
   if (!alerts) return null;
-  if (alerts.length === 0) return <Empty>Alle Budgets im Rahmen.</Empty>;
+  if (alerts.length === 0) return <Empty>{t("dash.budgetsOk")}</Empty>;
   const max = size === "s" ? 4 : 8;
   return (
     <ul className="dw-list">
       {alerts.slice(0, max).map((b: BudgetStatus) => (
         <li key={b.label}>
-          <button type="button" className="dw-budget" onClick={open} title={`${h1(b.booked_hours)} von ${h1(b.planned_hours)} h gebucht, Prognose ${h1(b.eac_hours)} h`}>
+          <button type="button" className="dw-budget" onClick={open} title={t("dash.budgetTitle", { booked: h1(b.booked_hours), planned: h1(b.planned_hours), eac: h1(b.eac_hours) })}>
             <span className="dw-budget-head">
               <span className="mono ellipsis grow">{b.label}</span>
-              <Badge tone={LEVEL[b.level].tone}>{LEVEL[b.level].label}</Badge>
+              <Badge tone={LEVEL[b.level].tone}>{t(LEVEL[b.level].label)}</Badge>
             </span>
             <span className="dw-budget-bar">
               <Progress value={b.consumed} tone={LEVEL[b.level].tone} marker={b.planned_hours > 0 ? b.eac_hours / b.planned_hours : undefined} />
@@ -367,7 +372,7 @@ function BudgetsWidget({ size }: { size: WidgetSize }) {
       {alerts.length > max && (
         <li>
           <button type="button" className="dw-more" onClick={open}>
-            {alerts.length - max} weitere …
+            {t("dash.more", { n: alerts.length - max })}
           </button>
         </li>
       )}
@@ -395,19 +400,21 @@ function PageRows({ pages, when }: { pages: Page[]; when?: boolean }) {
 }
 
 function RecentWidget({ size }: { size: WidgetSize }) {
+  const t = useT();
   const pages = useApp((s) => s.pages);
   const [recent] = useLoad(() => api.recentPages(size === "l" ? 8 : size === "m" ? 6 : 5), [pages, size]);
   if (!recent) return null;
-  return recent.length ? <PageRows pages={recent} when={size !== "s"} /> : <Empty>Noch keine Seiten.</Empty>;
+  return recent.length ? <PageRows pages={recent} when={size !== "s"} /> : <Empty>{t("dash.noPages")}</Empty>;
 }
 
 function FavoritesWidget() {
+  const t = useT();
   const pages = useApp((s) => s.pages);
-  const favs = useMemo(() => [...pages.values()].filter((p) => p.favorite).sort((a, b) => a.title.localeCompare(b.title, "de")), [pages]);
+  const favs = useMemo(() => [...pages.values()].filter((p) => p.favorite).sort((a, b) => a.title.localeCompare(b.title)), [pages]);
   if (!favs.length)
     return (
       <Empty>
-        Keine Lesezeichen. <Star size={12} className="inline-icon" /> im Seitenmenü setzt eins.
+        {t("dash.noFavorites")} <Star size={12} className="inline-icon" /> {t("dash.noFavoritesHint")}
       </Empty>
     );
   return <PageRows pages={favs.slice(0, 10)} />;
@@ -416,6 +423,7 @@ function FavoritesWidget() {
 // ------------------------------------------------------------------ Timer
 
 function TimerWidget() {
+  const t = useT();
   const timer = useApp((s) => s.timer);
   const entriesVersion = useApp((s) => s.entriesVersion);
   const seconds = useTimerSeconds();
@@ -441,7 +449,7 @@ function TimerWidget() {
       await api.timerStart(r.netzplan_id, r.vorgang_nr, r.leistungsart, r.description);
       s().bumpEntries();
     } catch (e) {
-      s().error("Timer nicht gestartet", e);
+      s().error(t("time.timerStartFailed"), e);
     }
   };
   if (timer) {
@@ -451,21 +459,21 @@ function TimerWidget() {
         <span className="rec-dot" aria-hidden />
         <div className="grow dw-timer-main">
           <span className="num dw-big">{clock(seconds)}</span>
-          <span className="faint ellipsis">{e.description || e.vorgang_nr || "Timer"}</span>
+          <span className="faint ellipsis">{e.description || e.vorgang_nr || t("dash.w.timer")}</span>
         </div>
         <Button size="sm" icon={Square} onClick={() => stopTimer()}>
-          Stoppen
+          {t("time.stop")}
         </Button>
       </div>
     );
   }
   if (!refs) return null;
-  if (!refs.length) return <Empty>Noch keine Buchungen. Starte einen Timer in der Zeiterfassung.</Empty>;
+  if (!refs.length) return <Empty>{t("dash.noBookings")}</Empty>;
   return (
-    <ul className="dw-list" aria-label="Zuletzt gebucht">
+    <ul className="dw-list" aria-label={t("dash.lastBooked")}>
       {refs.map((r) => (
         <li key={`${r.netzplan_id}/${r.vorgang_nr}`}>
-          <button type="button" className="dw-page dw-start" onClick={() => start(r)} aria-label={`Timer starten: ${r.netzplan_nr}${r.vorgang_nr ? "/" + r.vorgang_nr : ""}`}>
+          <button type="button" className="dw-page dw-start" onClick={() => start(r)} aria-label={t("dash.startTimerOn", { ref: `${r.netzplan_nr}${r.vorgang_nr ? "/" + r.vorgang_nr : ""}` })}>
             <Play size={13} />
             <span className="mono">{r.netzplan_nr}{r.vorgang_nr ? `/${r.vorgang_nr}` : ""}</span>
             <span className="faint ellipsis grow">{r.description}</span>
@@ -479,6 +487,7 @@ function TimerWidget() {
 // ------------------------------------------------------------------ Notiz
 
 function NoteWidget() {
+  const t = useT();
   const stored = useApp((s) => s.settings?.settings.dashboard.note ?? "");
   const [text, setText] = useState(stored);
   const pending = useRef<string | null>(null);
@@ -495,7 +504,7 @@ function NoteWidget() {
     if (!dash || dash.note === note) return;
     api.saveDashboard({ ...dash, note }).then(
       (v) => useApp.getState().set({ settings: v }),
-      (e) => useApp.getState().error("Notiz nicht gespeichert", e),
+      (e) => useApp.getState().error(t("dash.noteFailed"), e),
     );
   };
   // Another tab changed it: take it over unless something is being typed here.
@@ -508,8 +517,8 @@ function NoteWidget() {
     <textarea
       className="input dw-note"
       value={text}
-      placeholder="Gedanken, Telefonnummern, Zwischenstände…"
-      aria-label="Notiz"
+      placeholder={t("dash.notePlaceholder")}
+      aria-label={t("dash.w.note")}
       spellCheck
       onChange={(e) => {
         setText(e.target.value);
@@ -524,9 +533,8 @@ function NoteWidget() {
 
 // --------------------------------------------------------------- Kalender
 
-const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
 function CalendarWidget() {
+  const t = useT();
   const settings = useApp((s) => s.settings?.settings);
   const entriesVersion = useApp((s) => s.entriesVersion);
   const [cursor, setCursor] = useState(() => new Date());
@@ -543,12 +551,12 @@ function CalendarWidget() {
   return (
     <div className="dw-cal">
       <div className="dw-cal-head">
-        <span className="grow">{new Date(year, month, 1).toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</span>
-        <IconButton icon={ChevronLeft} label="Vorheriger Monat" size="sm" onClick={() => setCursor(addMonths(cursor, -1))} />
-        <IconButton icon={ChevronRight} label="Nächster Monat" size="sm" onClick={() => setCursor(addMonths(cursor, 1))} />
+        <span className="grow">{new Date(year, month, 1).toLocaleDateString(dateLocale(), { month: "long", year: "numeric" })}</span>
+        <IconButton icon={ChevronLeft} label={t("dash.prevMonth")} size="sm" onClick={() => setCursor(addMonths(cursor, -1))} />
+        <IconButton icon={ChevronRight} label={t("dash.nextMonth")} size="sm" onClick={() => setCursor(addMonths(cursor, 1))} />
       </div>
       <div className="dw-cal-grid" role="grid">
-        {WEEKDAYS.map((w) => (
+        {weekdayLabels(1).map((w) => (
           <span key={w} className="dw-cal-wd">
             {w}
           </span>
@@ -565,7 +573,7 @@ function CalendarWidget() {
               type="button"
               className={cls}
               data-date={iso}
-              title={[iso, info?.has_note ? "Tagesnotiz" : null, minutes > 0 ? `${hoursLabel(minutes)} h` : null].filter(Boolean).join(" · ")}
+              title={[iso, info?.has_note ? t("capture.daily") : null, minutes > 0 ? `${hoursLabel(minutes)} h` : null].filter(Boolean).join(" · ")}
               onClick={(e) => openDailyNote(iso, e.ctrlKey || e.metaKey)}
             >
               {d.getDate()}
@@ -581,6 +589,7 @@ function CalendarWidget() {
 
 /** Today's appointments from the calendar sync; a click opens the Kalender on it. */
 function AgendaWidget() {
+  const t = useT();
   const settings = useApp((s) => s.settings?.settings);
   const entriesVersion = useApp((s) => s.entriesVersion);
   const today = isoDay(new Date());
@@ -602,26 +611,26 @@ function AgendaWidget() {
   if (!data.configured)
     return (
       <Empty>
-        Kein Kalender verbunden.{" "}
+        {t("dash.noCalendar")}{" "}
         <button type="button" className="calv-linkbtn" onClick={() => openSettingsSection("calendar")}>
-          Einrichten
+          {t("cal.setUp")}
         </button>
       </Empty>
     );
-  if (!data.events.length) return <Empty>Heute keine Termine.</Empty>;
+  if (!data.events.length) return <Empty>{t("dash.noEventsToday")}</Empty>;
   const nowMs = Date.now();
   return (
-    <ul className="dw-list dw-agenda" aria-label="Termine heute">
+    <ul className="dw-list dw-agenda" aria-label={t("dash.eventsToday")}>
       {data.events.slice(0, 7).map((e) => {
         const past = new Date(e.end).getTime() < nowMs;
         const booked = !!bookedEntry(e, data.entries);
         return (
           <li key={e.key}>
             <button type="button" className={`dw-agenda-row ${past ? "past" : ""}`} style={{ "--ev": sourceColor(e.source, settings?.calendar) } as React.CSSProperties} onClick={() => openCalendarView({ date: today, key: e.key })}>
-              <span className="dw-agenda-time num">{isAllDayLike(e) ? "ganzt." : timeRange(e).slice(0, 5)}</span>
+              <span className="dw-agenda-time num">{isAllDayLike(e) ? t("dash.allDayShort") : timeRange(e).slice(0, 5)}</span>
               <span className="dw-agenda-bar" aria-hidden />
               <span className="grow ellipsis">{e.title}</span>
-              {booked && <Badge tone="success">gebucht</Badge>}
+              {booked && <Badge tone="success">{t("review.meeting.booked")}</Badge>}
             </button>
           </li>
         );
@@ -629,7 +638,7 @@ function AgendaWidget() {
       {data.events.length > 7 && (
         <li>
           <button type="button" className="dw-more" onClick={() => openCalendarView({ date: today })}>
-            {data.events.length - 7} weitere …
+            {t("dash.more", { n: data.events.length - 7 })}
           </button>
         </li>
       )}

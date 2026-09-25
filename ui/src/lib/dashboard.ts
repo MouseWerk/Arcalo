@@ -1,6 +1,6 @@
 // Start-page widgets: catalogue, layout edits (edit mode) and the week bars of the „Woche“ widget.
 
-import { addDays, isoDay } from "./format";
+import { addDays, isoDay, weekdayLabels } from "./format";
 import type { DayOverview, Widget, WidgetKind, WidgetSize } from "./types";
 import { type TKey } from "./i18n";
 
@@ -97,7 +97,6 @@ export interface WeekSummary {
   gapMinutes: number;
 }
 
-const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 /**
  * Bars for the week starting `monday`: booked minutes per day against the daily target.
@@ -107,7 +106,7 @@ export function weekBars(days: DayOverview[], monday: Date, targetHours: number,
   const byDate = new Map(days.map((d) => [d.date, d.booked_minutes]));
   const target = Math.max(0, targetHours) * 60;
   const todayIso = isoDay(today);
-  const raw = WEEKDAY_LABELS.map((label, i) => {
+  const raw = weekdayLabels(1).map((label, i) => {
     const date = isoDay(addDays(monday, i));
     const minutes = Math.max(0, byDate.get(date) ?? 0);
     const workday = workdays.includes(i + 1);

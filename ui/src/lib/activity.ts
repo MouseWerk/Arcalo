@@ -68,7 +68,7 @@ const hours = (minutes: number) => `${decimal(minutes / 60)} h`;
 /** „3 Einträge“ (stored by earlier versions) or „3“: the number of entries. */
 const entryCount = (title: string) => t("time.entriesCount", { n: Number(/^\d+/.exec(title)?.[0] ?? 1) });
 /** The kind of a stored file: a code (`drawing`, `image`, `file`) or the German word of earlier versions. */
-function fileKind(detail: string): string {
+export function fileKind(detail: string): string {
   const k = detail.toLowerCase();
   if (k === "drawing" || k === "zeichnung") return t("feed.kind.drawing");
   if (k === "image" || k === "bild") return t("feed.kind.image");

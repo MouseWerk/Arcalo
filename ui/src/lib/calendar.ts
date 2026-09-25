@@ -1,6 +1,6 @@
 // Month grid and day status for the daily-note calendar.
 
-import { formatPrefs, isoDay, isoWeek } from "./format";
+import { decimal, formatPrefs, isoDay, isoWeek } from "./format";
 
 /** Six weeks (Monday- or Sunday-first per the settings) covering the month of `year`/`month` (0-based). */
 export function monthGrid(year: number, month: number, startsOn: 0 | 1 = formatPrefs().weekStartsOn): Date[][] {
@@ -43,5 +43,5 @@ export function dayTone(day: Date, minutes: number, targetHours: number, workday
 export function hoursLabel(minutes: number): string {
   if (minutes <= 0) return "";
   const h = Math.round((minutes / 60) * 10) / 10;
-  return (h === 0 ? 0.1 : h).toLocaleString("de-DE", { maximumFractionDigits: 1 });
+  return decimal(h === 0 ? 0.1 : h, 1);
 }

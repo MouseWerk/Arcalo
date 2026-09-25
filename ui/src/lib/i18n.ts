@@ -72,6 +72,14 @@ export const t = (key: TKey, vars?: TVars) => translate(lang, key, vars);
 /** Whether a key exists (for keys built at run time). */
 export const hasKey = (key: string): key is TKey => key in DICTS.en;
 
+/**
+ * `fields` plus a `label` that is translated whenever it is read: for option lists defined
+ * once at module level (`[withLabel({ value: "all" }, "att.kind.all"), …]`).
+ */
+export function withLabel<T extends object>(fields: T, key: TKey): T & { readonly label: string } {
+  return Object.defineProperty({ ...fields }, "label", { get: () => t(key), enumerable: true }) as T & { readonly label: string };
+}
+
 const subscribe = (f: () => void) => {
   listeners.add(f);
   return () => {
