@@ -162,5 +162,29 @@ export async function serveTeam() {
   return { server, url, hits };
 }
 
+/**
+ * An .ics file with one meeting that started five minutes ago and runs for an hour (quick
+ * capture offers it as „Jetzt: …“), plus one that is long over. Written into a fresh folder.
+ */
+export function writeMeetingNow(title = "Jour fixe Kunde X") {
+  const now = new Date();
+  const start = new Date(now.getTime() - 5 * 60e3);
+  const old = new Date(now.getTime() - 3 * 3600e3);
+  const ev = (uid, summary, a, minutes) => [
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTART:${ics(a)}`,
+    `DTEND:${ics(new Date(a.getTime() + minutes * 60e3))}`,
+    `SUMMARY:${summary}`,
+    "ATTENDEE;CN=Anna Müller:mailto:anna@example.com",
+    "END:VEVENT",
+  ];
+  const text = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Annalo e2e//DE", ...ev("now@e2e", title, start, 60), ...ev("old@e2e", "Vorbei", old, 30), "END:VCALENDAR", ""].join("\r\n");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-cal-now-"));
+  const file = path.join(dir, "Heute.ics");
+  fs.writeFileSync(file, text);
+  return { dir, file };
+}
+
 /** Environment for the Outlook fixture (only honored with the test switch). */
 export const outlookEnv = (file) => ({ ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_FIXTURE: file, ANNALO_CALENDAR_DELAY_SECS: "3600" });

@@ -598,6 +598,7 @@ const ENTRIES = {
   "keys.resetOne": ["Standard wiederherstellen", "Restore default"],
   "keys.conflictWith": ["Kollidiert mit: {what}", "Conflicts with: {what}"],
   "keys.globalCapture": ["Schnellerfassung (global)", "Quick capture (global)"],
+  "keys.globalSelection": ["Auswahl übernehmen (global)", "Capture selection (global)"],
   "keys.globalSearch": ["Schnellsuche (global)", "Quick search (global)"],
   "keys.globalPalette": ["Befehlspalette (global)", "Command palette (global)"],
   "keys.problem.altgr": ["Ctrl+Alt ist AltGr auf deutschen Tastaturen und nicht erlaubt", "Ctrl+Alt is AltGr on German keyboards and not allowed"],

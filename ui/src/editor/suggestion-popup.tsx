@@ -65,7 +65,8 @@ export const SuggestionPopup = forwardRef<PopupHandle, PopupProps>(({ items, com
               role="option"
               aria-selected={i === sel}
               className={`sugg-item ${i === sel ? "sel" : ""}`}
-              onMouseEnter={() => setSel(i)}
+              // Only a moving mouse selects: items that move under a resting pointer while typing do not.
+              onMouseMove={() => i !== sel && setSel(i)}
               onMouseDown={(e) => {
                 e.preventDefault();
                 command(it);

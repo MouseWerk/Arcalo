@@ -62,7 +62,7 @@ static PENDING: Mutex<Option<Action>> = Mutex::new(None);
 /// the UI of a first start is still loading, then the action waits for `jump_take`.
 pub fn run(app: &AppHandle, action: Action, ready: bool) {
     match action {
-        Action::Capture => desktop::open_capture(app),
+        Action::Capture => desktop::open_capture(app, false),
         Action::Search => desktop::open_search(app, false),
         Action::Timer if !timer_running(app) => {
             if let Err(e) = desktop::timer_resume_last(app.clone()) {

@@ -194,12 +194,33 @@ and by `entry_id`.
 
 - Tray menu (Öffnen, Timer stoppen / Zuletzt verwendet starten, Schnellerfassung, Beenden); the
   activity sampler refreshes the tooltip and checks reminders every 30 s.
-- Quick capture: a second, undecorated always-on-top window (label `capture`, `index.html#capture`)
-  created on first use by the global shortcut (`capture_shortcut`, default Ctrl+Shift+Space – Ctrl+Alt
-  is AltGr on German keyboards). The palette's global shortcut is `palette_shortcut` (default Alt+Space,
-  empty = off); both are re-registered when the settings are saved. `capture_submit` books `/zeit` lines and appends the rest to today's
-  daily note (`desktop::capture`, all or nothing).
-- Global shortcuts live in three slots (capture, palette, `search_shortcut`, default Ctrl+Shift+O);
+- Quick capture: a second, undecorated, transparent always-on-top window (label `capture`, `index.html#capture`),
+  created hidden 1.5 s after the main window's first frame (`precreate_capture`) so the global shortcut
+  (`capture_shortcut`, default Ctrl+Shift+Space – Ctrl+Alt is AltGr on German keyboards) only shows it; the UI reports
+  its first frame after `capture://shown` (`capture_ready`, `desktop_info.capture_open_ms`, 15–25 ms in the e2e runs).
+  Focus: `set_focus` plus up to four retries while the window is visible but not focused (Windows focus-stealing rules),
+  and the UI focuses the field again until `document.hasFocus()`. The palette's global shortcut is `palette_shortcut`
+  (default off); all are re-registered when the settings are saved.
+  `capture_submit(text, target)` books `/zeit` lines and puts the rest into a `capture::CaptureTarget` (`daily`,
+  `inbox`, `page`, `new_page`, `meeting`; all or nothing, `annalo_core::capture`): lines become bullets (`todo` a task),
+  list items keep their indentation, headings/quotes/tables/embeds/code blocks stay blocks. The daily note and meeting
+  notes get it at the end of their „Notizen“ section (else at the end), the inbox page (`settings.capture.inbox_title`,
+  created on first use) under a bold `dd.mm.yyyy, HH:MM` line, other pages at the end. The meeting target is
+  `capture::current_meeting` (not all-day, started, running or started ≤ 15 min ago) and uses
+  `calendar_meeting_note`. The UI normalizes due words (`bis Fr`, `due:morgen` → `due:YYYY-MM-DD`, `ui/src/lib/capture.ts`)
+  before sending. Each capture keeps a `CaptureUndo` (page content before/after, created page, booked entries) in the
+  shell's last five (`capture_context`); `capture_undo` reverts only the newest within 30 s and refuses when the page
+  changed since (a created page goes to the trash). A retryable failure (database busy/locked, storage) writes the capture
+  to `<data dir>/capture-queue.json`; it is retried after 5 s and on every 30 s tick (with its original time), a page that
+  vanished meanwhile falls back to the inbox, and the main window gets `capture://queued` / `capture://stored` (late) /
+  `capture://failed` (with the text) toasts. `ANNALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
+  The draft (text and target) lives in `localStorage` (`annalo.capture.draft`). The popup windows disable the native
+  drag-and-drop handler, so dropped files reach the page and are stored via `attachment_store`.
+- „Auswahl übernehmen“ (`capture.selection_shortcut`, off by default) opens the capture window with text: the X11
+  PRIMARY selection on Linux, else the clipboard (`arboard`, read in the shell; no simulated Ctrl+C – that would stop
+  a program in a console window and needs accessibility permission on macOS). Every open also passes the clipboard text
+  for „Zwischenablage einfügen“ (Ctrl+Shift+V).
+- Global shortcuts live in four slots (capture, palette, `search_shortcut`, default Ctrl+Shift+O, selection);
   `apply_shortcuts` registers new ones before releasing old ones, refuses duplicates across slots and
   rolls back on failure.
 - Quick search: a transparent, undecorated window (label `search`, `index.html#search`, 640×420) built

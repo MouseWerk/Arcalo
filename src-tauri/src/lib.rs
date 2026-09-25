@@ -1659,15 +1659,21 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
     settings.calendar.sources = state.settings().calendar.sources;
     let specs = |s: &Settings| {
-        [s.capture_shortcut.clone(), s.palette_shortcut.clone().unwrap_or_default(), s.search_shortcut.clone()]
+        [
+            s.capture_shortcut.clone(),
+            s.palette_shortcut.clone().unwrap_or_default(),
+            s.search_shortcut.clone(),
+            s.capture.selection_shortcut.clone(),
+        ]
     };
     let new_specs = specs(&settings);
     desktop::validate_shortcuts(new_specs.each_ref().map(String::as_str)).map_err(Error::State)?;
     let old_specs = specs(&state.settings());
     let changed: Vec<bool> = new_specs.iter().zip(&old_specs).map(|(a, b)| a != b).collect();
-    let only_changed =
-        |v: &[String; 3]| -> [Option<String>; 3] { std::array::from_fn(|i| changed[i].then(|| v[i].clone())) };
-    let apply = |v: &[String; 3]| {
+    let only_changed = |v: &[String; desktop::SLOTS]| -> [Option<String>; desktop::SLOTS] {
+        std::array::from_fn(|i| changed[i].then(|| v[i].clone()))
+    };
+    let apply = |v: &[String; desktop::SLOTS]| {
         let v = only_changed(v);
         desktop::apply_shortcuts(&app, v.each_ref().map(Option::as_deref))
     };
@@ -2892,6 +2898,7 @@ fn show_main_once(app: &AppHandle, why: &str) {
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     show_main_once(&app, "ui");
+    desktop::precreate_capture(&app);
 }
 
 /// Whether the main window was created with the app's own title bar (Windows only).
@@ -3127,7 +3134,8 @@ pub fn run() {
                         return;
                     }
                     match desktop::shortcut_role(app, shortcut) {
-                        Some(desktop::Role::Capture) => desktop::open_capture(app),
+                        Some(desktop::Role::Capture) => desktop::open_capture(app, false),
+                        Some(desktop::Role::Selection) => desktop::open_capture(app, true),
                         Some(desktop::Role::Search) => desktop::open_search(app, true),
                         Some(desktop::Role::Palette) => {
                             // In front already: the shortcut toggles the palette; from the
@@ -3260,6 +3268,7 @@ pub fn run() {
                 settings.capture_shortcut.clone(),
                 settings.palette_shortcut.clone().unwrap_or_default(),
                 settings.search_shortcut.clone(),
+                settings.capture.selection_shortcut.clone(),
             ];
             let secrets = SecretStore::new(&dir);
             let proxy_secret = SecretStore::proxy(&dir);
@@ -3335,7 +3344,7 @@ pub fn run() {
             // Another instance may already own the shortcut; Ctrl+K still works in-app.
             // Registered one by one: one taken shortcut must not block the others.
             for (i, spec) in shortcuts.iter().enumerate() {
-                let mut specs = [None; 3];
+                let mut specs = [None; desktop::SLOTS];
                 specs[i] = Some(spec.as_str());
                 if let Err(e) = desktop::apply_shortcuts(app.handle(), specs) {
                     devlog::warn("desktop", format!("global shortcut not available: {e}"));
@@ -3491,6 +3500,11 @@ pub fn run() {
             desktop::app_quit,
             desktop::capture_submit,
             desktop::capture_hide,
+            desktop::capture_show,
+            desktop::capture_ready,
+            desktop::capture_context,
+            desktop::capture_undo,
+            desktop::capture_open,
             desktop::search_hide,
             desktop::search_open,
             desktop::timer_resume_last,

@@ -45,6 +45,7 @@ pub mod attachments;
 pub mod backup;
 pub mod calendar;
 pub mod calsync;
+pub mod capture;
 pub mod datadir;
 pub mod db;
 pub mod demo;
