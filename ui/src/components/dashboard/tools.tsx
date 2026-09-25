@@ -5,9 +5,9 @@ import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
 import { useApp } from "../../store/app";
 import { fmtDate, h1, isoDay, relative, weekStart } from "../../lib/format";
-import { t } from "../../lib/i18n";
+import { currentLang, t } from "../../lib/i18n";
 import { configOf, weekBars } from "../../lib/dashboard";
-import { bars, displayProblem, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
+import { bars, displayProblem, groupLabel, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
 import { buildSuggestions } from "../../lib/suggestions";
 import { openCalendarView } from "../../lib/calnav";
 import { kindOf, normalizeLinks } from "../../lib/quicklinks";
@@ -182,7 +182,7 @@ export function QueryView({ q, display, res, onSettings, title }: { q: WidgetQue
     );
   if (display === "number") return <QueryNumber q={q} res={res} />;
   if (!res.total) return <Empty icon={ListFilter}>{t("dash.q.none")}</Empty>;
-  if (display === "bar") return <BarChart groups={res.groups} unit={q.source === "entries" ? "h" : ""} label={title} />;
+  if (display === "bar") return <BarChart groups={res.groups.map((g) => ({ ...g, label: groupLabel(g.label, q.group, currentLang()) }))} unit={q.source === "entries" ? "h" : ""} label={title} />;
   if (display === "table") return <QueryTable q={q} res={res} />;
   return <QueryList q={q} res={res} />;
 }

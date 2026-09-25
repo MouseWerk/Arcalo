@@ -482,6 +482,14 @@ fn query_tasks_by_due_priority_and_page() {
     assert_eq!((row.ordinal, row.done, row.priority), (Some(0), Some(false), Some(2)));
     // An unknown field matches nothing for „ist“, so a typo shows an empty list.
     assert!(texts(Query { filters: vec![f("farbe", "ist", "rot")], ..Default::default() }).is_empty());
+    // English field names, words and operators run like the German ones.
+    assert_eq!(texts(Query { filters: vec![f("due", "is", "overdue")], ..Default::default() }), ["Alt"]);
+    assert_eq!(texts(Query { filters: vec![f("Priority", "is", "high")], ..Default::default() }), ["Alt", "Später"]);
+    assert_eq!(texts(Query { filters: vec![f("status", "is", "done")], ..Default::default() }), ["Fertig"]);
+    assert_eq!(texts(Query { filters: vec![f("page", "contains", "b")], ..Default::default() }), ["Später"]);
+    assert_eq!(texts(Query { filters: vec![f("due", "before", "2026-09-25")], ..Default::default() }), ["Alt", "Heute"]);
+    let en = w.query(Query { source: Source::Tasks, group: "due".into(), ..Default::default() });
+    assert_eq!(en.groups, r.groups);
 }
 
 #[test]

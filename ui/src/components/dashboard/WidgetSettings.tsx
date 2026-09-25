@@ -6,9 +6,9 @@ import { X } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { isoDay } from "../../lib/format";
-import { t, type TKey } from "../../lib/i18n";
+import { currentLang, t, type TKey } from "../../lib/i18n";
 import { configOf, isKind, titleOf, TODAY_BLOCKS, WIDGETS, type TodayBlock } from "../../lib/dashboard";
-import { applyLine, DISPLAYS, emptyQuery, FIELDS, GROUPS, normalizeQuery, parseQueryLine, queryLine, SOURCES, type QueryDisplay, type QuerySource, type WidgetQuery } from "../../lib/dashquery";
+import { applyLine, canonicalField, DISPLAYS, emptyQuery, fieldName, FIELDS, GROUPS, normalizeQuery, parseQueryLine, queryLine, SOURCES, type QueryDisplay, type QuerySource, type WidgetQuery } from "../../lib/dashquery";
 import { normalizeLinks, isGroup } from "../../lib/quicklinks";
 import { sourceName } from "../../lib/agenda";
 import type { GridWidget } from "../../lib/types";
@@ -88,7 +88,7 @@ const opt = (value: string, label: TKey) => ({ value, label: t(label) });
 function QueryBuilder({ c, set }: { c: Config; set: (patch: Config) => void }) {
   const q = normalizeQuery(c.query);
   const display = (c.display as QueryDisplay) ?? "list";
-  const [line, setLine] = useState(() => queryLine(q));
+  const [line, setLine] = useState(() => queryLine(q, currentLang()));
   const parsed = parseQueryLine(line);
   const setQuery = (next: WidgetQuery) => set({ query: next });
   const [preview, setPreview] = useState<QueryResult | null>(null);
@@ -153,7 +153,7 @@ function QueryBuilder({ c, set }: { c: Config; set: (patch: Config) => void }) {
             </span>
           ))}
         </div>
-        <div className="faint small dws-help">{t("dash.q.fields", { fields: FIELDS[q.source].join(", ") })}</div>
+        <div className="faint small dws-help">{t("dash.q.fields", { fields: FIELDS[q.source].map((f) => fieldName(f, currentLang())).join(", ") })}</div>
       </Row>
       <Row label={t("dash.q.display")}>
         <Segmented label={t("dash.q.display")} value={display} options={DISPLAYS.map((x) => ({ value: x.value, label: t(x.label) }))} onChange={(v: QueryDisplay) => set({ display: v })} />
@@ -161,20 +161,20 @@ function QueryBuilder({ c, set }: { c: Config; set: (patch: Config) => void }) {
       {display === "bar" && (
         <Row label={t("dash.q.group")}>
           {q.source === "pages" ? (
-            <Input value={q.group} aria-label={t("dash.q.group")} placeholder={t("dash.q.groupPh")} onChange={(e) => setQuery({ ...q, group: e.target.value.trim().toLowerCase() })} list="dws-groups" />
+            <Input value={fieldName(q.group, currentLang())} aria-label={t("dash.q.group")} placeholder={t("dash.q.groupPh")} onChange={(e) => setQuery({ ...q, group: e.target.value.trim() ? canonicalField(e.target.value.trim()) : "" })} list="dws-groups" />
           ) : (
-            <Select aria-label={t("dash.q.group")} value={q.group} onChange={(e) => setQuery({ ...q, group: e.target.value })} options={[{ value: "", label: t("dash.q.groupNone") }, ...groups.map((g) => ({ value: g, label: g }))]} />
+            <Select aria-label={t("dash.q.group")} value={q.group} onChange={(e) => setQuery({ ...q, group: e.target.value })} options={[{ value: "", label: t("dash.q.groupNone") }, ...groups.map((g) => ({ value: g, label: fieldName(g, currentLang()) }))]} />
           )}
           <datalist id="dws-groups">
             {groups.map((g) => (
-              <option key={g} value={g} />
+              <option key={g} value={fieldName(g, currentLang())} />
             ))}
           </datalist>
         </Row>
       )}
       {display === "table" && q.source === "pages" && (
         <Row label={t("dash.q.columns")} hint={t("dash.q.columnsHint")}>
-          <Input value={q.columns.join(", ")} aria-label={t("dash.q.columns")} placeholder="status, fällig, wer" onChange={(e) => setQuery({ ...q, columns: e.target.value.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 6) })} />
+          <Input value={q.columns.join(", ")} aria-label={t("dash.q.columns")} placeholder={t("dash.q.columnsPh")} onChange={(e) => setQuery({ ...q, columns: e.target.value.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 6) })} />
         </Row>
       )}
       <Row label={t("dash.q.limit")}>

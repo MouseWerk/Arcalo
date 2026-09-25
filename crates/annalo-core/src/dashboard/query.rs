@@ -100,8 +100,91 @@ pub struct QueryResult {
     pub groups: Vec<Group>,
 }
 
-/// Runs a query.
+/// English field names → the German ones the query stores and runs with (the query line in
+/// the widget accepts both languages; stored queries of 1.x keep working).
+const FIELD_ALIASES: [(&str, &str); 21] = [
+    ("title", "titel"),
+    ("changed", "geändert"),
+    ("modified", "geändert"),
+    ("due", "fällig"),
+    ("priority", "prio"),
+    ("priorität", "prio"),
+    ("page", "seite"),
+    ("parent", "eltern"),
+    ("activity", "vorgang"),
+    ("project", "projekt"),
+    ("activitytype", "leistungsart"),
+    ("hours", "stunden"),
+    ("minutes", "minuten"),
+    ("date", "datum"),
+    ("day", "datum"),
+    ("location", "ort"),
+    ("calendar", "kalender"),
+    ("organizer", "organisator"),
+    ("attendees", "teilnehmer"),
+    ("booked", "gebucht"),
+    ("description", "beschreibung"),
+];
+
+/// English value words → the German ones, by the (German) field they belong to.
+const VALUE_ALIASES: [(&str, &str, &str); 17] = [
+    ("fällig", "overdue", "überfällig"),
+    ("fällig", "today", "heute"),
+    ("fällig", "week", "woche"),
+    ("fällig", "later", "später"),
+    ("fällig", "none", "ohne"),
+    ("prio", "high", "hoch"),
+    ("prio", "medium", "mittel"),
+    ("prio", "none", "keine"),
+    ("status", "open", "offen"),
+    ("status", "done", "erledigt"),
+    ("status", "all", "alle"),
+    ("status", "running", "läuft"),
+    ("status", "draft", "entwurf"),
+    ("status", "released", "freigegeben"),
+    ("status", "exported", "exportiert"),
+    ("gebucht", "yes", "ja"),
+    ("gebucht", "no", "nein"),
+];
+
+/// The German name of a field written in either language (lowercase, trimmed).
+pub fn canonical_field(field: &str) -> String {
+    let f = field.trim().to_lowercase();
+    FIELD_ALIASES.iter().find(|(en, _)| *en == f).map_or(f, |(_, de)| (*de).to_owned())
+}
+
+/// The query with English field names, value words and operators in their German form.
+pub fn canonical(q: &Query) -> Query {
+    let mut q = q.clone();
+    for f in &mut q.filters {
+        f.field = canonical_field(&f.field);
+        f.op = match f.op.trim().to_lowercase().as_str() {
+            "is" => "ist".into(),
+            "is not" => "ist nicht".into(),
+            "contains" => "enthält".into(),
+            "does not contain" => "enthält nicht".into(),
+            "is empty" => "ist leer".into(),
+            "is not empty" => "ist nicht leer".into(),
+            "before" => "vor".into(),
+            "after" => "nach".into(),
+            _ => f.op.clone(),
+        };
+        if f.op == "ist" || f.op == "ist nicht" {
+            let v = f.value.trim().to_lowercase();
+            if let Some((_, _, de)) = VALUE_ALIASES.iter().find(|(field, en, _)| *field == f.field && *en == v) {
+                f.value = (*de).to_owned();
+            }
+        }
+    }
+    if !q.group.trim().is_empty() {
+        q.group = canonical_field(&q.group);
+    }
+    q
+}
+
+/// Runs a query (fields and words in German or English).
 pub fn run<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<QueryResult> {
+    let q = &canonical(q);
     let limit = if q.limit == 0 { 20 } else { q.limit.min(MAX_ROWS) };
     let (rows, groups, minutes) = match q.source {
         Source::Pages => pages(ctx, q)?,
@@ -462,9 +545,9 @@ pub fn range_days(range: &str, today: NaiveDate) -> (NaiveDate, NaiveDate) {
     let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
     match range {
         "today" | "heute" => (today, today),
-        "last7" => (today - Duration::days(6), today),
+        "last7" | "7days" | "7tage" => (today - Duration::days(6), today),
         "month" | "monat" => (today.with_day(1).unwrap_or(today), today),
-        "last30" => (today - Duration::days(29), today),
+        "last30" | "30days" | "30tage" => (today - Duration::days(29), today),
         "year" | "jahr" => (today.with_ordinal(1).unwrap_or(today), today),
         _ => (monday, monday + Duration::days(6)),
     }
