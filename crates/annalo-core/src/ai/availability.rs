@@ -90,7 +90,7 @@ fn preference(config: &RouterConfig, tier: Tier) -> [ModelRef; 3] {
 
 /// Embedding models cannot answer chat requests.
 fn chat_capable(model: &str) -> bool {
-    !model.to_lowercase().contains("embed")
+    super::capability::chat_capable(model, None)
 }
 
 /// Whether private content may go to `r`: the local tier's model (the user's explicit choice
@@ -187,11 +187,46 @@ pub fn unreachable(e: &crate::Error) -> bool {
     matches!(e, crate::Error::Http(e) if e.is_connect() || (e.is_timeout() && !e.is_body()))
 }
 
+/// Longest cooldown worth waiting for on the same model; a longer one moves on to another model.
+pub const MAX_COOLDOWN_WAIT_SECS: u64 = 10;
+
+/// The seconds LiteLLM asks to wait when every deployment of a model group cools down after
+/// failures („No deployments available for selected model, Try again in 5 seconds … cooldown_list=[…]“).
+/// `None` for other errors, and for waits longer than [`MAX_COOLDOWN_WAIT_SECS`] (an unknown
+/// model group or a long cooldown: another model answers sooner).
+pub fn cooldown_wait(status: u16, body: &str) -> Option<u64> {
+    let b = body.to_lowercase();
+    if !(status == 429 || b.contains("cooldown_list")) || !b.contains("no deployments available") {
+        return None;
+    }
+    let rest = &b[b.find("try again in ")? + "try again in ".len()..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let secs: u64 = digits.parse().ok()?;
+    let unit = rest[digits.len()..].trim_start();
+    (unit.starts_with("second") || unit.starts_with("sec"))
+        .then_some(secs.max(1))
+        .filter(|s| *s <= MAX_COOLDOWN_WAIT_SECS)
+}
+
+/// Whether the server rejects the tool definitions of the request. vLLM started without
+/// `--enable-auto-tool-choice` answers 400 „"auto" tool choice requires --enable-auto-tool-choice
+/// and --tool-call-parser to be set“ to every request with tools.
+fn tools_rejected(b: &str) -> bool {
+    b.contains("enable-auto-tool-choice")
+        || b.contains("tool-call-parser")
+        || b.contains("tool choice requires")
+        || b.contains("tool_choice is not supported")
+        || b.contains("tools are not supported")
+        || b.contains("tool use is not supported")
+}
+
 /// What to do after a failed request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Retry {
     /// The model rejects parameters of the request: repeat it on the same model without them.
     Without { tools: bool, temperature: bool },
+    /// The model's deployments cool down for a few seconds: wait and ask the same model again.
+    Wait { seconds: u64 },
     /// The model cannot answer right now (unknown, cooling down, its backend is down): try another.
     OtherModel,
     /// A real error (wrong key, bad request, cost limit): show it.
@@ -204,6 +239,9 @@ pub enum Retry {
 /// e.g. a local Ollama that is not running) move on to another model.
 pub fn retry_for(status: u16, body: &str, has_tools: bool, has_temperature: bool) -> Retry {
     let b = body.to_lowercase();
+    if has_tools && tools_rejected(&b) {
+        return Retry::Without { tools: true, temperature: false };
+    }
     let unsupported = b.contains("unsupportedparams")
         || b.contains("not support")
         || b.contains("unsupported")
@@ -217,10 +255,33 @@ pub fn retry_for(status: u16, body: &str, has_tools: bool, has_temperature: bool
             return Retry::Without { tools, temperature };
         }
     }
+    if let Some(seconds) = cooldown_wait(status, body) {
+        return Retry::Wait { seconds };
+    }
     if model_unavailable(status, body) || status >= 500 || status == 408 {
         return Retry::OtherModel;
     }
     Retry::No
+}
+
+/// A note for the answer when the request fell back from `from` to `to`, a model of the local
+/// tier or of a local provider while `from` was not: usually a much smaller model, so the answer
+/// may be weaker than usual. `None` when the fallback is of the same kind.
+pub fn weaker_fallback_note(
+    config: &RouterConfig,
+    catalog: &Catalog,
+    from: &ModelRef,
+    to: &ModelRef,
+) -> Option<String> {
+    let local_tier = catalog.canonical(config.tier_ref(Tier::Local));
+    let small = |r: &ModelRef| *r == local_tier || catalog.provider(&r.provider).is_some_and(|p| p.local);
+    (small(to) && !small(from)).then(|| {
+        format!(
+            "Ausweichmodell „{}“ ist ein kleineres lokales Modell: die Antwort kann schwächer sein als mit „{}“",
+            catalog.label(to),
+            from.model
+        )
+    })
 }
 
 /// The message shown when the server has no usable deployment of `model`.
@@ -347,6 +408,43 @@ mod tests {
         );
         assert_eq!(retry_for(401, "Authentication Error, Invalid proxy server token passed", true, true), Retry::No);
         assert_eq!(retry_for(400, "context_length_exceeded", true, true), Retry::No);
+    }
+
+    #[test]
+    fn a_short_litellm_cooldown_is_waited_out() {
+        // Exactly as LiteLLM answered in the reported case.
+        let body = r#"{"error":{"message":"No deployments available for selected model, Try again in 5 seconds. Passed model=vllmserver. pre-call-checks=False, cooldown_list=['a5b2301f82622b399c08055cfc4a8ca54ad899d7699f16d8fca8e89cefc957dd']","type":"None","param":"None","code":"429"}}"#;
+        assert_eq!(cooldown_wait(429, body), Some(5));
+        assert_eq!(retry_for(429, body, true, true), Retry::Wait { seconds: 5 });
+        // A long cooldown or an unknown model group: another model answers sooner.
+        let long = "No deployments available for selected model, Try again in 60 seconds. Passed model=gpt-4o";
+        assert_eq!(cooldown_wait(429, long), None);
+        assert_eq!(retry_for(429, long, false, true), Retry::OtherModel);
+        assert_eq!(cooldown_wait(429, "No deployments available for selected model"), None);
+        assert_eq!(cooldown_wait(429, "Rate limit reached. Try again in 5 seconds"), None);
+        assert_eq!(cooldown_wait(429, "No deployments available, try again in 0 seconds"), Some(1));
+        assert_eq!(cooldown_wait(429, "No deployments available, try again in 3 minutes"), None);
+    }
+
+    #[test]
+    fn vllm_without_auto_tool_choice_is_repeated_without_tools() {
+        let body = r#"{"error":{"message":"litellm.BadRequestError: Hosted_vllmException - \"auto\" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set. Received Model Group=vllmserver","code":"400"}}"#;
+        assert_eq!(retry_for(400, body, true, true), Retry::Without { tools: true, temperature: false });
+        // Without tools in the request the same text is a real error.
+        assert_eq!(retry_for(400, body, false, true), Retry::No);
+        let direct = r#"{"object":"error","message":"\"auto\" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set","type":"BadRequestError","code":400}"#;
+        assert_eq!(retry_for(400, direct, true, false), Retry::Without { tools: true, temperature: false });
+    }
+
+    #[test]
+    fn a_fallback_to_a_small_local_model_is_noted() {
+        let (config, catalog) = two();
+        let gpt = ModelRef::new("openai", "gpt-4o");
+        let llama = ModelRef::new("ollama", "llama3.2");
+        let note = weaker_fallback_note(&config, &catalog, &gpt, &llama).unwrap();
+        assert!(note.contains("llama3.2") && note.contains("gpt-4o"), "{note}");
+        assert_eq!(weaker_fallback_note(&config, &catalog, &gpt, &ModelRef::new("openai", "o3")), None);
+        assert_eq!(weaker_fallback_note(&config, &catalog, &llama, &ModelRef::new("ollama", "qwen2.5")), None);
     }
 
     #[test]

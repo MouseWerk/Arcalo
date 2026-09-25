@@ -1933,3 +1933,8 @@ body.presenter-window .presenter { height: 100vh; }
   .ts-meeting { grid-template-columns: 3px minmax(0, 1fr) auto auto; }
   .ts-meeting-when, .ts-meeting > .faint { display: none; }
 }
+
+/* ---- assistant: server cooldown and route notes ---- */
+.msg-waiting { display: flex; align-items: center; gap: 6px; padding: 6px 0; font-size: var(--fs-sm); color: var(--text-2); }
+.msg-route-notes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 2px; font-size: var(--fs-xs); color: var(--text-3); }
+.msg-route-notes span { border-left: 2px solid color-mix(in srgb, var(--warning) 60%, transparent); padding-left: 6px; }

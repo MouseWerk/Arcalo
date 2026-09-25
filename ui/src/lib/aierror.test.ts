@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { aiErrorSummary } from "./aierror";
+import { aiErrorSummary, routeNotes, waitText } from "./aierror";
 import { errorText, shortenPaths } from "./api";
+
+describe("route notes", () => {
+  it("shows fallbacks and waits, not the router's scoring", () => {
+    const reasons = [
+      "forced to Standard by user",
+      "tool use (+10)",
+      "„vllmserver“ ohne erreichbare Instanz → gemma4:e2b · Ollama",
+      "Ausweichmodell „gemma4:e2b · Ollama“ ist ein kleineres lokales Modell: die Antwort kann schwächer sein als mit „vllmserver“",
+      "Embedding-Modell „vllmserver“ nicht nutzbar → nur Stichwortsuche",
+    ];
+    expect(routeNotes(reasons)).toEqual(reasons.slice(2));
+    expect(routeNotes(["prompt ~12 tokens (+0)"])).toEqual([]);
+  });
+  it("counts the wait down", () => {
+    expect(waitText(5)).toBe("Server kurz ausgelastet, neuer Versuch in 5 s");
+    expect(waitText(4.2)).toBe("Server kurz ausgelastet, neuer Versuch in 5 s");
+    expect(waitText(0)).toMatch(/läuft/);
+  });
+});
 
 describe("aiErrorSummary", () => {
   it("names a model backend the proxy cannot reach", () => {
@@ -19,6 +38,16 @@ describe("aiErrorSummary", () => {
     expect(aiErrorSummary('KI-Server meldet Fehler 429: {"error":{"message":"No deployments available for selected model, Try again in 60 seconds."}}').title).toMatch(/kein Server verfügbar/);
     expect(aiErrorSummary("KI-Server meldet Fehler 400: litellm.UnsupportedParamsError: m does not support parameters: ['tools']").title).toMatch(/Werkzeuge/);
     expect(aiErrorSummary("KI-Server meldet Fehler 400: maximum context length is 8192 tokens").title).toMatch(/zu lang/);
+  });
+  it("tells a short LiteLLM cooldown and missing embeddings apart", () => {
+    const cooldown =
+      'Der KI-Server hat für das Modell „vllmserver“ gerade keine erreichbare Instanz.\n\nServer: {"error":{"message":"No deployments available for selected model, Try again in 5 seconds. Passed model=vllmserver. pre-call-checks=False, cooldown_list=[\'a5b2\']","code":"429"}}';
+    expect(aiErrorSummary(cooldown)).toMatchObject({ title: "Der KI-Server pausiert das Modell kurz nach einem Fehler.", settings: false });
+    expect(aiErrorSummary('KI-Server meldet Fehler 429: {"error":{"message":"No deployments available for selected model, Try again in 60 seconds."}}').title).toMatch(/kein Server verfügbar/);
+    const embed = "„vllmserver“ liefert keine Embeddings (der KI-Server meldet Fehler 404). Wähle unter Einstellungen → KI ein Embedding-Modell oder „Keine (nur Stichwortsuche)“.";
+    expect(aiErrorSummary(embed)).toMatchObject({ title: "Das Modell kann keine Embeddings berechnen.", settings: true });
+    expect(aiErrorSummary("„gpt-4o“ ist laut KI-Server kein Embedding-Modell (Typ „chat“).").title).toMatch(/Embeddings/);
+    expect(aiErrorSummary('KI-Server meldet Fehler 400: "auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set').title).toMatch(/Werkzeuge/);
   });
   it("falls back to a general message", () => {
     expect(aiErrorSummary("irgendwas").title).toBe("Die Anfrage ist fehlgeschlagen.");

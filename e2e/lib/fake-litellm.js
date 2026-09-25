@@ -1,12 +1,46 @@
 // Minimal LiteLLM-compatible server for end-to-end tests.
 // Streams chat completions (SSE), supports tool calls, embeddings and model listing,
 // and records every request so tests can assert on headers and payloads.
+//
+// `vllm` lists model groups served by a vLLM backend, emulated the way LiteLLM's router
+// treats them: vLLM has no embeddings for a chat model (404) and, started without
+// --enable-auto-tool-choice, rejects requests with tools (400). Every such failure counts
+// for the deployment; more than `allowedFails` within a minute put it into cooldown for
+// `cooldownSeconds`, during which every call answers 429 "No deployments available … Try
+// again in N seconds … cooldown_list=[…]" (LiteLLM's exact wording). `modes` is what
+// /model/info reports as `model_info.mode` (null when not configured, as in most setups).
 
 import http from "node:http";
 
-export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}) {
+export function startFakeLiteLLM({
+  port = 4999,
+  apiKey = "sk-test-annalo",
+  models = ["firma-schnell", "firma-standard", "firma-reasoning", "firma-embed"],
+  modes = {},
+  vllm = [],
+  vllmTools = false,
+  allowedFails = 0,
+  cooldownSeconds = 5,
+  countStatuses = [404, 400],
+} = {}) {
   const requests = [];
-  const MODELS = ["firma-schnell", "firma-standard", "firma-reasoning", "firma-embed"];
+  const MODELS = models;
+  // vLLM deployments: recent failures and the end of a running cooldown.
+  const fails = new Map();
+  const cooledUntil = new Map();
+  const deploymentId = "a5b2301f82622b399c08055cfc4a8ca54ad899d7699f16d8fca8e89cefc957dd";
+  const failed = (model, status) => {
+    if (!countStatuses.includes(status)) return;
+    const now = Date.now();
+    const recent = (fails.get(model) ?? []).filter((t) => now - t < 60_000);
+    recent.push(now);
+    fails.set(model, recent);
+    if (recent.length > allowedFails) {
+      cooledUntil.set(model, now + cooldownSeconds * 1000);
+      fails.set(model, []);
+    }
+  };
+  const coolingDown = (model) => (cooledUntil.get(model) ?? 0) > Date.now();
   // Listed models without a working deployment (LiteLLM's cooldown after provider errors).
   const cooldown = new Set();
   // Models whose backend rejects tools (LiteLLM without drop_params) or is down (500).
@@ -21,6 +55,29 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
     if (req.headers.authorization !== `Bearer ${apiKey}`) {
       res.writeHead(401, { "content-type": "application/json" });
       return res.end(JSON.stringify({ error: { message: "Authentication Error, invalid API key" } }));
+    }
+    if (req.url === "/model/info" || req.url === "/v1/model/info") {
+      res.writeHead(200, { "content-type": "application/json" });
+      const info = (m) => ({ model_name: m, litellm_params: { model: vllm.includes(m) ? `hosted_vllm/${m}` : m }, model_info: { id: deploymentId, mode: m in modes ? modes[m] : null } });
+      return res.end(JSON.stringify({ data: MODELS.map(info) }));
+    }
+    const cooldownReply = (model) => {
+      const left = Math.max(1, Math.ceil(((cooledUntil.get(model) ?? 0) - Date.now()) / 1000));
+      res.writeHead(429, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: `No deployments available for selected model, Try again in ${Math.min(left, cooldownSeconds)} seconds. Passed model=${model}. pre-call-checks=False, cooldown_list=['${deploymentId}']`, type: "None", param: "None", code: "429" } }));
+    };
+    if ((req.url === "/v1/embeddings" || req.url === "/v1/chat/completions") && vllm.includes(json?.model)) {
+      if (coolingDown(json.model)) return cooldownReply(json.model);
+      if (req.url === "/v1/embeddings") {
+        failed(json.model, 404);
+        res.writeHead(404, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: `litellm.NotFoundError: NotFoundError: OpenAIException - Error code: 404 - {'detail': 'Not Found'}. Received Model Group=${json.model}\nAvailable Model Group Fallbacks=None`, type: null, param: null, code: "404" } }));
+      }
+      if (json.tools?.length && !vllmTools) {
+        failed(json.model, 400);
+        res.writeHead(400, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: `litellm.BadRequestError: Hosted_vllmException - "auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set. Received Model Group=${json.model}\nAvailable Model Group Fallbacks=None`, type: null, param: null, code: "400" } }));
+      }
     }
     if (req.url === "/v1/models") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -119,5 +176,5 @@ export function startFakeLiteLLM({ port = 4999, apiKey = "sk-test-annalo" } = {}
     res.writeHead(404);
     res.end();
   });
-  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, cooldown, noTools, broken, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, requests, cooldown, noTools, broken, cooledUntil, url: `http://127.0.0.1:${port}`, apiKey, close: () => new Promise((r) => server.close(r)) })));
 }

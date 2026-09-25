@@ -22,7 +22,7 @@ import {
   tierRef,
   type ProviderPreset,
 } from "../../lib/providers";
-import type { AiProvider, ConnectionTest, OllamaDetect, PriceRule, RouterConfig, Settings, Tier } from "../../lib/types";
+import type { AiProvider, ConnectionTest, EmbeddingStatus, OllamaDetect, PriceRule, RouterConfig, Settings, Tier } from "../../lib/types";
 import { FilterContext, Group, NumberInput, Row, Unfiltered, matches, type SectionProps } from "./common";
 import { ProviderDialog } from "./ProviderDialog";
 
@@ -56,7 +56,7 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
       setStatus((cur) => ({ ...cur, [p.id]: { state: "checking" } }));
       api
         .providerModels(p)
-        .catch((e): ConnectionTest => ({ ok: false, latency_ms: 0, models: [], error: String(e) }))
+        .catch((e): ConnectionTest => ({ ok: false, latency_ms: 0, models: [], embedding_models: [], error: String(e) }))
         .then((test) => live && setStatus((cur) => ({ ...cur, [p.id]: { state: "done", test } })));
     }
     return () => {
@@ -84,6 +84,28 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
     for (const [id, st] of Object.entries(status)) if (st.state === "done" && st.test.ok) out[id] = st.test.models;
     return out;
   }, [status]);
+  // The models of each provider that compute embeddings: the only ones the embedding picker offers.
+  const embedLists: Record<string, string[]> = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const [id, st] of Object.entries(status)) if (st.state === "done" && st.test.ok) out[id] = st.test.embedding_models ?? [];
+    return out;
+  }, [status]);
+
+  // Whether the saved embedding model is used by the assistant (a chat model or one that failed is not).
+  const [embedStatus, setEmbedStatus] = useState<EmbeddingStatus | null>(null);
+  const savedEmbed = `${view.settings.embedding_provider}/${view.settings.embedding_model ?? ""}`;
+  useEffect(() => {
+    let live = true;
+    api.embeddingStatus().then(
+      (st) => live && setEmbedStatus(st),
+      () => live && setEmbedStatus(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [savedEmbed, round]);
+  const embedProblem =
+    embedStatus && !embedStatus.usable && embedStatus.reason && embedStatus.model === draft.embedding_model && embedStatus.provider === draft.embedding_provider ? embedStatus.reason : null;
 
   const add = (preset: ProviderPreset) => setEditing({ provider: fromPreset(preset, providers), isNew: true, hint: preset.hint });
   const addMenu = (e: React.MouseEvent) =>
@@ -191,17 +213,23 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
                 : "Für Analysen, Planung und Code.";
           return (
             <Row key={tier} label={t(label)} description={desc} keywords="Modell Anbieter">
-              <ModelPicker label={aria} providers={providers} lists={lists} value={r} prices={draft.prices} onChange={(v) => setRouter(setTier(tier, v.provider, v.model))} />
+              <ModelPicker label={aria} providers={providers} lists={lists} embedLists={embedLists} value={r} prices={draft.prices} onChange={(v) => setRouter(setTier(tier, v.provider, v.model))} />
             </Row>
           );
         })}
-        <Row label={t("set.ai.embeddings")} description="Für die semantische Suche in Notizen. Leer = nur Stichwortsuche. Private Seiten gehen nur an lokale Anbieter." keywords="Modell Anbieter">
+        <Row
+          label={t("set.ai.embeddings")}
+          description="Für die semantische Suche in Notizen. Angeboten werden nur Modelle, die Embeddings berechnen (bei LiteLLM: mode: embedding, sonst am Namen erkannt), nie Chat-Modelle. „Keine“ = nur Stichwortsuche. Private Seiten gehen nur an lokale Anbieter."
+          keywords="Modell Anbieter Stichwortsuche"
+        >
           <ModelPicker
             label="Embedding-Modell"
             providers={providers}
             lists={lists}
+            embedLists={embedLists}
             value={{ provider: draft.embedding_provider, model: draft.embedding_model ?? "" }}
             onChange={(v) => update({ embedding_provider: v.provider, embedding_model: v.model || null })}
+            problem={embedProblem}
             embedding
           />
         </Row>
@@ -282,23 +310,33 @@ function ModelPicker({
   label,
   providers,
   lists,
+  embedLists,
   value,
   onChange,
   prices,
+  problem,
   embedding,
 }: {
   label: string;
   providers: AiProvider[];
   lists: Record<string, string[]>;
+  embedLists: Record<string, string[]>;
   value: { provider: string; model: string };
   onChange: (v: { provider: string; model: string }) => void;
   prices?: PriceRule[];
+  /** Why the chosen model is not used (embeddings: a chat model, or it failed). */
+  problem?: string | null;
   embedding?: boolean;
 }) {
   const provider = findProvider(providers, value.provider);
   const pid = provider?.id ?? "";
-  const models = (lists[pid] ?? []).filter((m) => (embedding ? true : !/embed/i.test(m) || m === value.model));
-  const missing = !!value.model && models.length > 0 && !models.includes(value.model);
+  const all = lists[pid] ?? [];
+  const embeds = embedLists[pid] ?? [];
+  // Embeddings: only embedding models; tiers: everything else.
+  const models = embedding ? embeds : all.filter((m) => !embeds.includes(m) || m === value.model);
+  // A chat model chosen as embedding model (older settings) stays visible, marked.
+  const notEmbedding = !!embedding && !!value.model && all.includes(value.model) && !embeds.includes(value.model);
+  const missing = !!value.model && all.length > 0 && !all.includes(value.model);
   const price = prices && value.model ? priceFor(prices, provider, value.model) : null;
   const perM = (x: number) => x.toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 3 });
   return (
@@ -309,8 +347,8 @@ function ModelPicker({
             value={pid}
             onChange={(e) => {
               const id = e.target.value;
-              const list = lists[id] ?? [];
-              const keep = list.includes(value.model) ? value.model : (list.find((m) => (embedding ? /embed/i.test(m) : !/embed/i.test(m))) ?? (embedding ? "" : value.model));
+              const list = embedding ? (embedLists[id] ?? []) : (lists[id] ?? []).filter((m) => !(embedLists[id] ?? []).includes(m));
+              const keep = list.includes(value.model) ? value.model : (list[0] ?? (embedding ? "" : value.model));
               onChange({ provider: id, model: keep });
             }}
             aria-label={`Anbieter für ${label}`}
@@ -325,11 +363,12 @@ function ModelPicker({
             ))}
           </Select>
         )}
-        {models.length ? (
+        {models.length || (embedding && all.length) ? (
           <Select value={value.model} onChange={(e) => onChange({ provider: pid, model: e.target.value })} aria-label={label} className="model-picker-model">
-            {embedding && <option value="">Keines</option>}
+            {embedding && <option value="">Keine (nur Stichwortsuche)</option>}
             {!embedding && !value.model && <option value="">Modell wählen</option>}
             {missing && <option value={value.model}>{value.model} (nicht beim Anbieter)</option>}
+            {notEmbedding && <option value={value.model}>{value.model} (kein Embedding-Modell)</option>}
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -340,7 +379,7 @@ function ModelPicker({
           <Input
             value={value.model}
             onChange={(e) => onChange({ provider: pid, model: e.target.value })}
-            placeholder={embedding ? "Keines" : "Modellname"}
+            placeholder={embedding ? "Keine (nur Stichwortsuche)" : "Modellname"}
             aria-label={label}
             className="model-picker-model"
           />
@@ -348,6 +387,12 @@ function ModelPicker({
       </div>
       {missing ? (
         <span className="warn-note small">Dieses Modell bietet der Anbieter nicht an</span>
+      ) : notEmbedding ? (
+        <span className="warn-note small">Chat-Modell, keine Embeddings: die Suche nutzt nur Stichwörter. „Keine“ oder ein Embedding-Modell wählen.</span>
+      ) : problem ? (
+        <span className="warn-note small embed-problem">{problem}</span>
+      ) : embedding && all.length > 0 && !embeds.length ? (
+        <span className="faint small">Dieser Anbieter meldet kein Embedding-Modell.</span>
       ) : (
         price && !embedding && <span className="faint small model-picker-price">{provider?.local ? "Kostenlos (lokal)" : `${perM(price.input)} / ${perM(price.output)} je 1 Mio. Tokens`}</span>
       )}

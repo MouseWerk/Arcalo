@@ -13,6 +13,8 @@ model_list:
     litellm_params:
       model: ollama/nomic-embed-text
       api_base: http://localhost:11434
+    model_info:
+      mode: embedding                    # Annalo offers only embedding models for its search
 
   - model_name: cloud-standard           # Tier "standard"
     litellm_params:
@@ -23,6 +25,23 @@ model_list:
     litellm_params:
       model: anthropic/claude-opus-5-5
       api_key: os.environ/ANTHROPIC_API_KEY
+
+# A vLLM server as chat model: start vLLM with --enable-auto-tool-choice and a
+# --tool-call-parser so the assistant can use its tools (without, Annalo asks without tools).
+#  - model_name: vllmserver
+#    litellm_params:
+#      model: hosted_vllm/<model>
+#      api_base: http://vllm-host:8000/v1
+#    model_info:
+#      mode: chat
+
+# Every failed request counts against its deployment: after more than `allowed_fails` failures
+# within a minute LiteLLM pauses it for `cooldown_time` seconds and answers 429 "No deployments
+# available". Annalo waits out a short pause, but with one deployment per model a few more
+# allowed failures avoid needless pauses.
+router_settings:
+  allowed_fails: 3
+  cooldown_time: 5
 
 general_settings:
   master_key: os.environ/LITELLM_API_KEY

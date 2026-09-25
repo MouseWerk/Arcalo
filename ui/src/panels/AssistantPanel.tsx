@@ -6,7 +6,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X, AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw, History } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
-import { aiErrorSummary } from "../lib/aierror";
+import { aiErrorSummary, routeNotes, waitText } from "../lib/aierror";
 import { renderMarkdown, renderMarkdownCached } from "../lib/markdown";
 import { citedNumbers, linkCitations } from "../lib/citations";
 import { revealText } from "../editor/reveal";
@@ -31,6 +31,8 @@ type Turn =
       sources?: ContextChunk[];
       error?: string;
       cancelled?: boolean;
+      /** The server pauses the model; the request is repeated at `until` (ms). */
+      waiting?: { until: number; model: string };
       /** Offers „In neue Seite einfügen“ with this title (weekly report). */
       pageTitle?: string;
     }
@@ -110,6 +112,15 @@ export function AssistantPanel() {
     const st = stream.current;
     const un = on<{ request_id: string; event: StreamEvent }>("ai://stream", ({ request_id, event }) => {
       if (request_id !== requestId.current) return;
+      if (event.type === "waiting") {
+        const waiting = { until: Date.now() + event.seconds * 1000, model: event.model };
+        setTurns((ts) => {
+          const last = ts[ts.length - 1];
+          if (!last || last.kind !== "assistant" || !last.streaming) return ts;
+          return [...ts.slice(0, -1), { ...last, waiting }];
+        });
+        return;
+      }
       // Settings → KI „Antworten live anzeigen“ off: the answer appears when complete.
       if (event.type === "delta" && streamingOn()) {
         const cur = stream.current;
@@ -127,7 +138,7 @@ export function AssistantPanel() {
             setTurns((ts) => {
               const last = ts[ts.length - 1];
               if (!last || last.kind !== "assistant" || !last.streaming) return ts;
-              return [...ts.slice(0, -1), { ...last, text: last.text + chunk }];
+              return [...ts.slice(0, -1), { ...last, text: last.text + chunk, waiting: undefined }];
             });
           });
       }
@@ -713,6 +724,8 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
     <div className="msg-ai" data-turn={turn.id}>
       {turn.error ? (
         <ErrorNote message={turn.error} />
+      ) : turn.streaming && !turn.text && turn.waiting ? (
+        <WaitNote until={turn.waiting.until} />
       ) : turn.streaming && !turn.text ? (
         <div className="thinking">
           <span />
@@ -778,6 +791,13 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
           ))}
         </div>
       )}
+      {m && !turn.streaming && routeNotes(m.reasons).length > 0 && (
+        <div className="msg-route-notes" role="note">
+          {routeNotes(m.reasons).map((r) => (
+            <span key={r}>{r}</span>
+          ))}
+        </div>
+      )}
       {m && !turn.streaming && (
         <div className="msg-meta">
           <span className="msg-meta-stats">
@@ -835,4 +855,19 @@ function dedupeSources(src: ContextChunk[]) {
     seen.add(k);
     return true;
   });
+}
+
+/** „Server kurz ausgelastet, neuer Versuch in 5 s“, counting down; Stop cancels the wait. */
+function WaitNote({ until }: { until: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <div className="msg-waiting" role="status">
+      <Loader2 size={13} className="spin" />
+      {waitText((until - now) / 1000)}
+    </div>
+  );
 }

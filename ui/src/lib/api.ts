@@ -281,6 +281,7 @@ export const api = {
   runWorkspaceTool: (name: string, args: string) => call<string>("ai_run_workspace_tool", { name, arguments: args }),
   runSystemTool: (callSpec: unknown) => call<string>("ai_run_system_tool", { call: callSpec }),
   indexPending: () => call<number>("ai_index_pending"),
+  embeddingStatus: () => call<T.EmbeddingStatus>("ai_embedding_status"),
 };
 
 export function on<P>(event: string, handler: (payload: P) => void): Promise<UnlistenFn> {
