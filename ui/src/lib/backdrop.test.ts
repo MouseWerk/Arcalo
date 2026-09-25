@@ -88,7 +88,10 @@ describe("applying", () => {
 
 describe("backdrop styles", () => {
   const css = readFileSync(resolve(__dirname, "../styles/app.css"), "utf8");
-  const block = css.slice(css.indexOf("/* ---- window backdrop"));
+  // The backdrop section only: from its header to the next section header (other features append after it).
+  const start = css.indexOf("/* ---- window backdrop");
+  const end = css.indexOf("/* ---- ", start + 1);
+  const block = css.slice(start, end < 0 ? undefined : end);
   const rule = (selector: string) => {
     const at = block.indexOf(`${selector} {`);
     return at < 0 ? "" : block.slice(at, block.indexOf("}", at));

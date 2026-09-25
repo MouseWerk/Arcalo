@@ -31,6 +31,7 @@ import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
+import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
@@ -669,7 +670,8 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     setBusy(true);
     try {
       const b = await api.backupNow();
-      s().toast({ tone: "success", title: "Sicherung erstellt", detail: `${b.file_name} · ${fileSize(b.size_bytes)}` });
+      const copies = draft.backup_targets.destinations.some((d) => d.enabled) ? ` · ${t("bdest.backupDone")}` : "";
+      s().toast({ tone: "success", title: "Sicherung erstellt", detail: `${b.file_name} · ${fileSize(b.size_bytes)}${copies}` });
       reload();
     } catch (e) {
       s().error("Sicherung fehlgeschlagen", e);
@@ -682,7 +684,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     <>
       <header className="settings-head">
         <h1>{t("set.backup.title")}</h1>
-        <p>Die Datenbank wird einmal täglich automatisch gesichert. Eine Sicherung ist eine vollständige Kopie von workspace.db. Zum Wiederherstellen die Datei bei geschlossener App in den Datenordner kopieren und in workspace.db umbenennen.</p>
+        <p>{t("bdest.contents")}</p>
       </header>
       <Group title={t("set.backup.auto")} description="Wird beim Start und danach stündlich geprüft; gesichert wird, wenn die letzte Sicherung älter als 24 Stunden ist.">
         <Row
@@ -764,17 +766,9 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
             Jetzt sichern
           </Button>
         </Row>
-        <div className="backup-list" aria-label="Vorhandene Sicherungen">
-          {list?.length === 0 && <p className="faint small">Noch keine Sicherung vorhanden.</p>}
-          {list?.map((b) => (
-            <div key={b.path} className="backup-row" title={b.path}>
-              <span className="grow">{new Date(b.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</span>
-              <span className="faint small">{relative(b.created_at)}</span>
-              <span className="faint small num">{fileSize(b.size_bytes)}</span>
-            </div>
-          ))}
-        </div>
+        <BackupList local={list} reloadKey={list} />
       </Group>
+      <BackupDestinationsGroup draft={draft} update={update} />
       <GitSyncGroup draft={draft} update={update} dbSize={list?.[0]?.size_bytes ?? null} onSynced={reload} />
     </>
   );
