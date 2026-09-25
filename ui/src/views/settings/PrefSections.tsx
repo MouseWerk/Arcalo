@@ -268,15 +268,30 @@ export function LocaleSection({ draft, update }: SectionProps) {
             onChange={(v) => update({ locale: { ...l, language: v } })}
           />
         </Row>
+      </Group>
+      <Group title={t("set.locale.region")} description={t("set.locale.regionDesc")}>
         <Row label={t("set.locale.dateFormat")}>
-          <Segmented
-            label={t("set.locale.dateFormat")}
+          <Select
+            aria-label={t("set.locale.dateFormat")}
             value={l.date_format}
             options={[
               { value: "de", label: "24.09.2026" },
+              { value: "en-gb", label: "24/09/2026" },
+              { value: "en-us", label: "09/24/2026" },
               { value: "iso", label: "2026-09-24" },
             ]}
-            onChange={(v) => update({ locale: { ...l, date_format: v } })}
+            onChange={(e) => update({ locale: { ...l, date_format: e.target.value as typeof l.date_format } })}
+          />
+        </Row>
+        <Row label={t("set.locale.numberFormat")}>
+          <Segmented
+            label={t("set.locale.numberFormat")}
+            value={l.number_format ?? "comma"}
+            options={[
+              { value: "comma", label: "1.234,5" },
+              { value: "point", label: "1,234.5" },
+            ]}
+            onChange={(v) => update({ locale: { ...l, number_format: v } })}
           />
         </Row>
       </Group>

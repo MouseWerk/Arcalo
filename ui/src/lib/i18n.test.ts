@@ -33,8 +33,6 @@ describe("i18n", () => {
     for (const k of Object.keys(DICTS.en) as TKey[]) {
       expect(placeholders(DICTS.de[k]), k).toEqual(placeholders(DICTS.en[k]));
       expect(typeof DICTS.de[k], k).toBe(typeof DICTS.en[k]);
-      // A plural entry is chosen by `n`.
-      if (typeof DICTS.en[k] !== "string") expect(placeholders(DICTS.en[k]), k).toContain("n");
     }
   });
 

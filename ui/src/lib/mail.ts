@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { addDays, isoDay } from "./format";
 import type { Page } from "./types";
 import { useApp } from "../store/app";
+import { t } from "./i18n";
 
 export type MailSource = "outlook" | "eml" | "msg" | "text";
 
@@ -121,11 +122,32 @@ export const priorityFromImportance = (importance: number) => (importance >= 2 ?
 
 export type DueChoice = "today" | "tomorrow" | "friday" | "next_week";
 
-export const DUE_CHOICES: { id: DueChoice; label: string }[] = [
-  { id: "today", label: "Heute" },
-  { id: "tomorrow", label: "Morgen" },
-  { id: "friday", label: "Fr" },
-  { id: "next_week", label: "Nächste Woche" },
+/** The quick due dates; labels follow the display language. */
+export const DUE_CHOICES: { id: DueChoice; readonly label: string }[] = [
+  {
+    id: "today",
+    get label() {
+      return t("mail.due.today");
+    },
+  },
+  {
+    id: "tomorrow",
+    get label() {
+      return t("mail.due.tomorrow");
+    },
+  },
+  {
+    id: "friday",
+    get label() {
+      return t("mail.due.friday");
+    },
+  },
+  {
+    id: "next_week",
+    get label() {
+      return t("mail.due.nextWeek");
+    },
+  },
 ];
 
 /** The day of a quick choice: Friday is this week's (next week's from Saturday on), „Nächste Woche“ is next Monday. */
@@ -168,8 +190,8 @@ export async function openMailLink(id: string) {
   try {
     const info = await mailApi.linkInfo(id).catch(() => null);
     await mailApi.open(id);
-    s.toast({ tone: "success", title: info?.source === "outlook" ? "E-Mail in Outlook geöffnet" : "E-Mail geöffnet", detail: info?.subject || undefined });
+    s.toast({ tone: "success", title: info?.source === "outlook" ? t("mail.openedOutlook") : t("mail.opened"), detail: info?.subject || undefined });
   } catch (e) {
-    s.error("E-Mail nicht geöffnet", e);
+    s.error(t("mail.openFailed"), e);
   }
 }

@@ -7,21 +7,22 @@
 
 import { DATE_RE, parseFrontmatter, propertyLines, serializeFrontmatter, type Property } from "./frontmatter";
 import { dumpFlow, flowScalar, isMap, parseEntry, yget, yitems, type Yaml } from "./yaml";
+import { t, type TKey } from "./i18n";
 
 export type PropKind = "text" | "select" | "multi_select" | "number" | "date" | "person" | "checkbox" | "link";
 
-/** The kinds in menu order, with their schema name and label. */
-export const KINDS: { kind: PropKind; name: string; label: string }[] = [
-  { kind: "text", name: "text", label: "Text" },
-  { kind: "select", name: "auswahl", label: "Auswahl" },
-  { kind: "multi_select", name: "mehrfachauswahl", label: "Mehrfachauswahl" },
-  { kind: "number", name: "zahl", label: "Zahl" },
-  { kind: "date", name: "datum", label: "Datum" },
-  { kind: "person", name: "person", label: "Person" },
-  { kind: "checkbox", name: "checkbox", label: "Checkbox" },
-  { kind: "link", name: "link", label: "Link" },
+/** The kinds in menu order, with their schema name (German, as stored) and label. */
+export const KINDS: { kind: PropKind; name: string; label: TKey }[] = [
+  { kind: "text", name: "text", label: "coll.kind.text" },
+  { kind: "select", name: "auswahl", label: "coll.kind.select" },
+  { kind: "multi_select", name: "mehrfachauswahl", label: "coll.kind.multi" },
+  { kind: "number", name: "zahl", label: "coll.kind.number" },
+  { kind: "date", name: "datum", label: "coll.kind.date" },
+  { kind: "person", name: "person", label: "coll.kind.person" },
+  { kind: "checkbox", name: "checkbox", label: "coll.kind.checkbox" },
+  { kind: "link", name: "link", label: "coll.kind.link" },
 ];
-export const kindLabel = (k: PropKind) => KINDS.find((x) => x.kind === k)!.label;
+export const kindLabel = (k: PropKind) => t(KINDS.find((x) => x.kind === k)!.label);
 const ALIASES: Record<string, PropKind> = {
   select: "select",
   "multi-select": "multi_select",
@@ -39,9 +40,22 @@ export function parseKind(s: string): PropKind | null {
   return KINDS.find((k) => k.name === lower)?.kind ?? ALIASES[lower] ?? null;
 }
 
-/** Option colors; the first is the default. CSS: `.opt-<index>`. */
+/** Option colors (German names, as stored); the first is the default. CSS: `.opt-<index>`. */
 export const COLORS = ["grau", "braun", "orange", "gelb", "grün", "blau", "lila", "rosa", "rot"] as const;
-export const COLOR_LABELS = ["Grau", "Braun", "Orange", "Gelb", "Grün", "Blau", "Lila", "Rosa", "Rot"];
+export const colorLabels = () => COLORS.map((c) => t(`coll.color.${c === "grün" ? "gruen" : c}` as TKey));
+/** English color names typed into a schema. */
+const COLOR_ALIASES: Record<string, (typeof COLORS)[number]> = {
+  gray: "grau",
+  grey: "grau",
+  brown: "braun",
+  yellow: "gelb",
+  gruen: "grün",
+  green: "grün",
+  blue: "blau",
+  purple: "lila",
+  pink: "rosa",
+  red: "rot",
+};
 export const colorIndex = (c: string) => Math.max(0, COLORS.indexOf(c as (typeof COLORS)[number]));
 
 export interface SelectOption {
@@ -59,7 +73,7 @@ export const VIEW_KEY = "ansicht";
 /** The page title as a column / filter field. */
 export const TITLE = "titel";
 /** Label of a field in headers, menus and filters. */
-export const fieldLabel = (key: string) => (key === TITLE ? "Titel" : key);
+export const fieldLabel = (key: string) => (key === TITLE ? t("coll.title") : key);
 /** Keys the views manage themselves; the property editor does not list them. */
 export const isManagedKey = (key: string) => /^(eigenschaften|ansicht)$/i.test(key.trim());
 export const hasOptions = (k: PropKind) => k === "select" || k === "multi_select";
@@ -68,7 +82,7 @@ export const hasOptions = (k: PropKind) => k === "select" || k === "multi_select
 
 function colorOf(name: string, index: number): string {
   const lower = name.trim().toLowerCase();
-  const c = lower === "gruen" ? "grün" : lower;
+  const c = COLOR_ALIASES[lower] ?? lower;
   return (COLORS as readonly string[]).includes(c) ? c : COLORS[index % COLORS.length];
 }
 
@@ -323,15 +337,15 @@ export function validate(def: PropDef | undefined, input: { items: string[]; lis
   const s = items[0];
   const option = (n: string) => def?.options.find((o) => o.name.toLowerCase() === n.toLowerCase());
   if (kind === "text") cell.value = { kind, value: cell.text };
-  else if (input.list && kind !== "multi_select") cell.error = "Liste statt einzelnem Wert";
+  else if (input.list && kind !== "multi_select") cell.error = t("coll.err.list");
   else if (kind === "select") {
     const o = option(s);
     if (o) cell.value = { kind, value: o.name };
-    else cell.error = `„${s}“ ist keine Option`;
+    else cell.error = t("coll.err.noOption", { names: t("common.quoted", { text: s }), n: 1 });
   } else if (kind === "multi_select") {
     const unknown = items.filter((i) => !option(i));
     if (!unknown.length) cell.value = { kind, value: items.map((i) => option(i)!.name) };
-    else cell.error = `${unknown.map((u) => `„${u}“`).join(", ")} ${unknown.length === 1 ? "ist" : "sind"} keine Option`;
+    else cell.error = t("coll.err.noOption", { names: unknown.map((u) => t("common.quoted", { text: u })).join(", "), n: unknown.length });
   } else if (kind === "number") {
     const n = parseNumber(s);
     if (n !== null) cell.value = { kind, value: n };
@@ -346,7 +360,7 @@ export function validate(def: PropDef | undefined, input: { items: string[]; lis
   } else if (kind === "checkbox") {
     const b = parseCheckbox(s);
     if (b !== null) cell.value = { kind, value: b };
-    else cell.error = "Weder ja noch nein";
+    else cell.error = t("coll.err.checkbox");
   } else if (kind === "link") {
     if (isLink(s)) cell.value = { kind, value: s };
     else cell.error = "Kein Link (URL oder [[Seite]])";
@@ -406,8 +420,19 @@ export interface OpDef {
   /** Needs a value. */
   value: boolean;
 }
-const op = (o: string, label = o, value = true): OpDef => ({ op: o, label, value });
-const EMPTY_OPS = [op("ist leer", "ist leer", false), op("ist nicht leer", "ist nicht leer", false)];
+/** Labels of the stored (German) operators. */
+const OP_LABELS: Record<string, TKey> = {
+  ist: "coll.op.is",
+  "ist nicht": "coll.op.isNot",
+  enthält: "coll.op.contains",
+  "enthält nicht": "coll.op.notContains",
+  vor: "coll.op.before",
+  nach: "coll.op.after",
+  "ist leer": "coll.op.empty",
+  "ist nicht leer": "coll.op.notEmpty",
+};
+const op = (o: string, label?: string, value = true): OpDef => ({ op: o, label: label ?? (OP_LABELS[o] ? t(OP_LABELS[o]) : o), value });
+const emptyOps = () => [op("ist leer", undefined, false), op("ist nicht leer", undefined, false)];
 
 /** Operators a filter on a field of this kind offers. */
 export function opsFor(kind: PropKind): OpDef[] {
@@ -415,19 +440,19 @@ export function opsFor(kind: PropKind): OpDef[] {
     case "select":
     case "person":
     case "multi_select":
-      return [op("ist"), op("ist nicht"), ...EMPTY_OPS];
+      return [op("ist"), op("ist nicht"), ...emptyOps()];
     case "number":
-      return [op("ist", "="), op("ist nicht", "≠"), op(">"), op("<"), op(">="), op("<="), ...EMPTY_OPS];
+      return [op("ist", "="), op("ist nicht", "≠"), op(">"), op("<"), op(">="), op("<="), ...emptyOps()];
     case "date":
-      return [op("ist"), op("vor"), op("nach"), ...EMPTY_OPS];
+      return [op("ist"), op("vor"), op("nach"), ...emptyOps()];
     case "checkbox":
       return [op("ist")];
     default:
-      return [op("enthält"), op("enthält nicht"), op("ist"), op("ist nicht"), ...EMPTY_OPS];
+      return [op("enthält"), op("enthält nicht"), op("ist"), op("ist nicht"), ...emptyOps()];
   }
 }
 
-/** Whether a cell passes `op wanted` (mirrors the core's `matches`); dates accept `heute`. */
+/** Whether a cell passes `op wanted` (mirrors the core's `matches`); dates accept `heute` / `today`. */
 export function matches(cell: Cell | null, operator: string, wanted: string, today: string): boolean {
   const text = cell?.text ?? "";
   const empty = !text.trim();
@@ -443,7 +468,7 @@ export function matches(cell: Cell | null, operator: string, wanted: string, tod
       return w === null ? null : Math.sign(v.value - w);
     }
     if (v?.kind === "date") {
-      const w = lower === "heute" ? today : wanted.trim();
+      const w = lower === "heute" || lower === "today" ? today : wanted.trim();
       return validDate(w) ? Math.sign(v.value.localeCompare(w)) : null;
     }
     return null;
@@ -538,8 +563,8 @@ export function groupRows(rows: Row[], def: PropDef): Group[] {
   const groups: Group[] = [];
   const find = (key: string) => groups.find((g) => g.key.toLowerCase() === key.toLowerCase());
   if (def.kind === "select") def.options.forEach((o) => groups.push({ key: o.name, label: o.name, color: colorIndex(o.color), rows: [] }));
-  if (def.kind === "checkbox") groups.push({ key: "ja", label: "Ja", color: null, rows: [] }, { key: "nein", label: "Nein", color: null, rows: [] });
-  const none: Group = { key: "", label: "Ohne Wert", color: null, rows: [] };
+  if (def.kind === "checkbox") groups.push({ key: "ja", label: t("common.yes"), color: null, rows: [] }, { key: "nein", label: t("common.no"), color: null, rows: [] });
+  const none: Group = { key: "", label: t("coll.noValue"), color: null, rows: [] };
   const extra: Group[] = [];
   for (const r of rows) {
     const c = cellOf(r, def.key, def);

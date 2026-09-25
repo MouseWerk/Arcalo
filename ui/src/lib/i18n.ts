@@ -11,11 +11,20 @@ import { useMemo, useSyncExternalStore } from "react";
 import { en, type Msg } from "../locales/en";
 import { de } from "../locales/de";
 
-export type TKey = keyof typeof en;
+/**
+ * Strings added as `[Deutsch, English]` pairs, the format before the catalogs: they join both
+ * catalogs, so code written against the old dictionary keeps working. New strings go into
+ * `locales/en.ts` and `locales/de.ts`.
+ */
+const ENTRIES = {} as const satisfies Record<string, readonly [string, string]>;
+
+export type TKey = keyof typeof en | keyof typeof ENTRIES;
 export type Lang = "de" | "en";
 export type TVars = Record<string, string | number>;
 
-export const DICTS: Record<Lang, Record<TKey, Msg>> = { en, de };
+const pairs = (i: 0 | 1) => Object.fromEntries(Object.entries(ENTRIES as Record<string, readonly [string, string]>).map(([k, v]) => [k, v[i]]));
+
+export const DICTS: Record<Lang, Record<TKey, Msg>> = { en: { ...en, ...pairs(1) }, de: { ...de, ...pairs(0) } };
 
 let lang: Lang = "en";
 let version = 0;
@@ -61,7 +70,7 @@ export function translate(l: Lang, key: TKey, vars?: TVars): string {
 export const t = (key: TKey, vars?: TVars) => translate(lang, key, vars);
 
 /** Whether a key exists (for keys built at run time). */
-export const hasKey = (key: string): key is TKey => key in en;
+export const hasKey = (key: string): key is TKey => key in DICTS.en;
 
 const subscribe = (f: () => void) => {
   listeners.add(f);

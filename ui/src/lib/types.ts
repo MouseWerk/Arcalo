@@ -434,7 +434,9 @@ export interface StartPrefs {
 }
 export interface LocalePrefs {
   language: "de" | "en";
-  date_format: "de" | "iso";
+  date_format: "de" | "iso" | "en-gb" | "en-us";
+  /** Decimal separator: comma (1.234,5) or point (1,234.5). */
+  number_format: "comma" | "point";
 }
 export interface SystemProxy {
   http: string | null;

@@ -8,10 +8,12 @@ import { Download, ExternalLink, RefreshCw, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
+import { fmtDate } from "../lib/format";
 import { autoCheckAllowed, CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS, NOT_CONFIGURED, progressLabel, progressValue } from "../lib/updates";
 import type { UpdateInfo, UpdateProgress, UpdateStatus } from "../lib/types";
 import { useApp } from "../store/app";
 import { Button, Dialog, IconButton, Progress } from "./ui";
+import { t, useT } from "../lib/i18n";
 
 type Phase = "idle" | "checking" | "downloading" | "installing";
 
@@ -55,7 +57,7 @@ export async function checkForUpdates(manual: boolean) {
   const status = useUpdates.getState().status ?? (await loadUpdateStatus());
   const toast = useApp.getState().toast;
   if (!status?.enabled) {
-    if (manual) toast({ tone: "info", title: NOT_CONFIGURED });
+    if (manual) toast({ tone: "info", title: t(NOT_CONFIGURED) });
     return;
   }
   if (useUpdates.getState().phase !== "idle") return;
@@ -63,9 +65,9 @@ export async function checkForUpdates(manual: boolean) {
   try {
     const found = await api.updateCheck();
     useUpdates.setState((s) => ({ available: found, checkedAt: new Date(), dismissed: manual ? null : s.dismissed }));
-    if (!found && manual) toast({ tone: "success", title: "Annalo ist aktuell", detail: `Version ${status.current_version} ist die neueste.` });
+    if (!found && manual) toast({ tone: "success", title: t("upd.upToDate"), detail: t("upd.latest", { version: status.current_version }) });
   } catch (e) {
-    if (manual) useApp.getState().error("Update-Prüfung fehlgeschlagen", e);
+    if (manual) useApp.getState().error(t("upd.checkFailed"), e);
     else console.warn("update check failed", e);
   } finally {
     useUpdates.setState({ phase: "idle" });
@@ -77,7 +79,7 @@ export async function installUpdate() {
   const st = useUpdates.getState();
   if (!st.available || st.phase !== "idle") return;
   useUpdates.setState({ notesOpen: false });
-  if (!(await flushBeforeExit("Trotzdem aktualisieren"))) return;
+  if (!(await flushBeforeExit(t("upd.anyway")))) return;
   useUpdates.setState({ phase: "downloading", progress: null });
   const unlisten = on<UpdateProgress>("update://progress", (progress) => useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" }));
   try {
@@ -86,7 +88,7 @@ export async function installUpdate() {
     useUpdates.setState({ phase: "installing" });
   } catch (e) {
     useUpdates.setState({ phase: "idle", progress: null });
-    useApp.getState().error("Update fehlgeschlagen", e);
+    useApp.getState().error(t("upd.failed"), e);
   } finally {
     unlisten.then((f) => f());
   }
@@ -97,19 +99,20 @@ export async function downloadPortable(url?: string) {
   const target = url ?? useUpdates.getState().available?.url;
   if (!target) return;
   useUpdates.setState({ notesOpen: false });
-  await openUrl(target).catch((e) => useApp.getState().error("Release-Seite ließ sich nicht öffnen", e));
+  await openUrl(target).catch((e) => useApp.getState().error(t("upd.releasePageFailed"), e));
 }
 
 /** The update action: install and restart, or (portable) download from the release page. */
 function UpdateAction({ size }: { size?: "sm" | "md" }) {
+  const t = useT();
   const portable = useUpdates((s) => !!s.status?.portable);
   return portable ? (
     <Button size={size} variant="primary" icon={Download} onClick={() => void downloadPortable()}>
-      Neue Version herunterladen
+      {t("upd.download")}
     </Button>
   ) : (
     <Button size={size} variant="primary" icon={RefreshCw} onClick={() => void installUpdate()}>
-      Installieren und neu starten
+      {t("upd.install")}
     </Button>
   );
 }
@@ -131,6 +134,7 @@ export function startUpdateChecks(): () => void {
 
 /** The persistent update toast, shown above the other toasts. */
 export function UpdateToast() {
+  const t = useT();
   const { available, phase, progress, dismissed } = useUpdates();
   // Settings → Benachrichtigungen „Neue Version verfügbar“ (the settings' Über section still shows it).
   const notifyUpdates = useApp((st) => st.settings?.settings.notifications?.updates !== false);
@@ -143,32 +147,31 @@ export function UpdateToast() {
       <div className="toast-body">
         {busy ? (
           <>
-            <div className="toast-title">{phase === "installing" ? `Version ${available.version} wird installiert` : `Version ${available.version} wird geladen`}</div>
-            <div className="toast-detail">{phase === "installing" ? "Annalo startet gleich neu." : progressLabel(progress)}</div>
+            <div className="toast-title">{phase === "installing" ? t("upd.installing", { version: available.version }) : t("upd.downloading", { version: available.version })}</div>
+            <div className="toast-detail">{phase === "installing" ? t("upd.restartSoon") : progressLabel(progress)}</div>
             {phase === "downloading" && <Progress value={progressValue(progress)} />}
           </>
         ) : (
           <>
-            <div className="toast-title">Version {available.version} verfügbar</div>
-            <div className="toast-detail">
-              {useUpdates.getState().status?.portable ? "Portabler Modus: das ZIP von der Release-Seite über den Ordner entpacken." : "Offene Notizen werden vor dem Neustart gespeichert."}
-            </div>
+            <div className="toast-title">{t("upd.availableShort", { version: available.version })}</div>
+            <div className="toast-detail">{useUpdates.getState().status?.portable ? t("upd.portableHint") : t("upd.savedFirst")}</div>
             <div className="toast-actions">
               <UpdateAction size="sm" />
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
-                Was ist neu?
+                {t("upd.whatsNew")}
               </Button>
             </div>
           </>
         )}
       </div>
-      {!busy && <IconButton icon={X} label="Später" size="sm" onClick={() => useUpdates.setState({ dismissed: available.version })} />}
+      {!busy && <IconButton icon={X} label={t("common.later")} size="sm" onClick={() => useUpdates.setState({ dismissed: available.version })} />}
       <ReleaseNotes />
     </div>
   );
 }
 
 function ReleaseNotes() {
+  const t = useT();
   const { available, notesOpen } = useUpdates();
   if (!available) return null;
   const close = () => useUpdates.setState({ notesOpen: false });
@@ -176,13 +179,13 @@ function ReleaseNotes() {
     <Dialog
       open={notesOpen}
       onClose={close}
-      title={`Neu in Version ${available.version}`}
-      description={available.date ? `Veröffentlicht am ${new Date(available.date).toLocaleDateString("de-DE")}` : undefined}
+      title={t("upd.newIn", { version: available.version })}
+      description={available.date ? t("upd.published", { date: fmtDate(available.date) }) : undefined}
       width={520}
       footer={
         <>
           <Button variant="ghost" icon={ExternalLink} onClick={() => void openUrl(available.url).catch(() => {})}>
-            Changelog auf GitHub
+            {t("upd.changelog")}
           </Button>
           <UpdateAction />
         </>
@@ -191,7 +194,7 @@ function ReleaseNotes() {
       {available.notes ? (
         <div className="prose update-notes" dangerouslySetInnerHTML={{ __html: renderMarkdown(available.notes) }} />
       ) : (
-        <p className="muted">Für diese Version sind keine Hinweise hinterlegt.</p>
+        <p className="muted">{t("upd.noNotes")}</p>
       )}
     </Dialog>
   );

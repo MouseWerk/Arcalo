@@ -3,6 +3,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
+import { t, type TKey } from "./i18n";
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
 
@@ -160,6 +161,8 @@ export const api = {
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),
+  /** The operating system's locale tag (e.g. „de-DE“), or null when unknown. */
+  osLocale: () => call<string | null>("os_locale"),
   setApiKey: (key: string | null) => call<T.SettingsView>("api_key_set", { key }),
   testConnection: (baseUrl: string | null, apiKey: string | null) => call<T.ConnectionTest>("ai_test_connection", { baseUrl, apiKey }),
   /** Stores (null: removes) the key of an AI provider in the credential store. */
@@ -337,24 +340,24 @@ export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 /** Stores any file under its own name: the raw bytes as the IPC body (no base64), the name as a header. */
 export async function storeFile(file: File): Promise<T.SavedAttachment> {
   // Same limit as the core (attachments::MAX_FILE_BYTES), checked before the file is read into memory.
-  if (file.size > MAX_FILE_BYTES) throw new Error(`Datei ist größer als ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+  if (file.size > MAX_FILE_BYTES) throw new Error(t("files.tooBig", { mb: MAX_FILE_BYTES / 1024 / 1024 }));
   const bytes = new Uint8Array(await file.arrayBuffer());
-  return invoke<T.SavedAttachment>("attachment_store", bytes, { headers: { "x-annalo-name": encodeURIComponent(file.name || "Datei") } });
+  return invoke<T.SavedAttachment>("attachment_store", bytes, { headers: { "x-annalo-name": encodeURIComponent(file.name || t("feed.kind.file")) } });
 }
 
 /** Errors from Rust arrive as plain strings. */
-const KINDS: Record<string, string> = {
-  netzplan: "Netzplan",
-  vorgang: "Vorgang",
-  leistungsart: "Leistungsart",
-  page: "Seite",
-  project: "Projekt",
-  task: "Aufgabe",
-  tool: "Werkzeug",
-  entry: "Eintrag",
-  backup: "Sicherung",
-  version: "Version",
-  attachment: "Anhang",
+const KINDS: Record<string, TKey> = {
+  netzplan: "wbs.netzplan",
+  vorgang: "wbs.vorgang",
+  leistungsart: "wbs.leistungsart",
+  page: "err.kind.page",
+  project: "err.kind.project",
+  task: "err.kind.task",
+  tool: "err.kind.tool",
+  entry: "time.entry",
+  backup: "err.kind.backup",
+  version: "err.kind.version",
+  attachment: "err.kind.attachment",
 };
 
 // A file path in a message: `C:\…`, `\\server\…` or `/a/b…`, up to the end of the line.
@@ -385,17 +388,21 @@ export function shortenPaths(text: string, max = 56): string {
   });
 }
 
-/** Backend errors in German: `netzplan 'NP-1' not found` → `Netzplan „NP-1“ nicht gefunden`. */
+/**
+ * Backend errors as the user reads them: the core writes its messages in the display language;
+ * a bare `netzplan 'NP-1' not found` becomes „Netzplan „NP-1“ nicht gefunden“ / “Network “NP-1”
+ * not found”.
+ */
 export const errorText = (e: unknown) => {
   const raw = typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
   const nf = /^(\w+) '(.+)' not found$/.exec(raw);
-  if (nf) return `${KINDS[nf[1]] ?? nf[1]} „${nf[2]}“ nicht gefunden`;
-  // The core writes German messages; older texts (and re-wrapped ones) may still carry prefixes.
+  if (nf) return t("err.notFound", { kind: KINDS[nf[1]] ? t(KINDS[nf[1]]) : nf[1], key: nf[2] });
+  // Older texts (and re-wrapped ones) may still carry English prefixes.
   return raw
     .replace(/^(invalid state: )+/, "")
-    .replace(/^could not parse command: /, "Eingabe nicht verstanden: ")
-    .replace(/^i\/o error: /, "Dateifehler: ")
-    .replace(/^database error: /, "Datenbankfehler: ")
-    .replace(/^http error: /, "Verbindungsfehler: ")
-    .replace(/^AI provider error \((\d+)\): /, "KI-Server meldet Fehler $1: ");
+    .replace(/^could not parse command: /, `${t("err.parse")}: `)
+    .replace(/^i\/o error: /, `${t("err.io")}: `)
+    .replace(/^database error: /, `${t("err.db")}: `)
+    .replace(/^http error: /, `${t("err.http")}: `)
+    .replace(/^AI provider error \((\d+)\): /, (_all, code: string) => `${t("err.provider", { code })}: `);
 };

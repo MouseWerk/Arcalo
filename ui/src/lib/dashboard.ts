@@ -2,23 +2,25 @@
 
 import { addDays, isoDay } from "./format";
 import type { DayOverview, Widget, WidgetKind, WidgetSize } from "./types";
+import { type TKey } from "./i18n";
 
-export const WIDGETS: Record<WidgetKind, { label: string; hint: string; size: WidgetSize }> = {
-  today: { label: "Heute", hint: "Fällige und überfällige Aufgaben", size: "m" },
-  week: { label: "Woche", hint: "Gebuchte Stunden gegen das Tagessoll", size: "m" },
-  budgets: { label: "Budgets", hint: "Netzpläne und Vorgänge über der Warnschwelle", size: "s" },
-  recent: { label: "Zuletzt bearbeitet", hint: "Die zuletzt geänderten Seiten", size: "m" },
-  favorites: { label: "Lesezeichen", hint: "Seiten mit Stern", size: "s" },
-  timer: { label: "Timer", hint: "Laufender Timer oder schneller Start", size: "s" },
-  note: { label: "Notiz", hint: "Ein Notizzettel für schnelle Gedanken", size: "m" },
-  calendar: { label: "Kalender", hint: "Monat mit Tagesnotizen und Buchungen", size: "s" },
-  focus: { label: "Fokus", hint: "Fokussitzungen heute und diese Woche, je Vorgang", size: "s" },
-  agenda: { label: "Termine", hint: "Die Termine von heute aus dem Kalender", size: "m" },
+/** Widget catalogue: `label` and `hint` are catalog keys. */
+export const WIDGETS: Record<WidgetKind, { label: TKey; hint: TKey; size: WidgetSize }> = {
+  today: { label: "dash.w.today", hint: "dash.w.todayHint", size: "m" },
+  week: { label: "dash.w.week", hint: "dash.w.weekHint", size: "m" },
+  budgets: { label: "dash.w.budgets", hint: "dash.w.budgetsHint", size: "s" },
+  recent: { label: "dash.w.recent", hint: "dash.w.recentHint", size: "m" },
+  favorites: { label: "dash.w.favorites", hint: "dash.w.favoritesHint", size: "s" },
+  timer: { label: "dash.w.timer", hint: "dash.w.timerHint", size: "s" },
+  note: { label: "dash.w.note", hint: "dash.w.noteHint", size: "m" },
+  calendar: { label: "dash.w.calendar", hint: "dash.w.calendarHint", size: "s" },
+  focus: { label: "dash.w.focus", hint: "dash.w.focusHint", size: "s" },
+  agenda: { label: "dash.w.agenda", hint: "dash.w.agendaHint", size: "m" },
 };
 
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];
 
-export const SIZE_LABELS: Record<WidgetSize, string> = { s: "Klein", m: "Mittel", l: "Breit" };
+export const SIZE_LABELS: Record<WidgetSize, TKey> = { s: "dash.size.s", m: "dash.size.m", l: "dash.size.l" };
 
 /** A new id for `kind` not used by `widgets`: `week`, `week-2`, … */
 export function newWidgetId(kind: WidgetKind, widgets: Widget[]): string {

@@ -28,7 +28,7 @@ export function applyPrefs(s: Settings) {
   }
   if (s.locale) {
     setLang(s.locale.language);
-    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format });
+    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: s.locale.number_format ?? "comma" });
   }
   if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
   const keymap = effectiveKeymap(s.keymap);

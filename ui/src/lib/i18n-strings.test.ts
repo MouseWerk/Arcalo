@@ -56,6 +56,8 @@ const TECHNICAL = [
   /^[\w.-]+\/[\w./-]*$/, // path or mime type
   /^https?:\/\//,
   /^(Ctrl|Alt|Shift|Mod|Cmd|Meta)\b[+\w ]*$/, // shortcuts
+  /^[A-Z][A-Z0-9_-]*$/, // codes and placeholders: CODE, AET-12, NP-8801
+  /^[\w-]+… \/ [\w-]+…$/, // token prefixes: ghp_… / glpat-…
 ];
 
 /** Proper names and technical words that read the same in both languages. */
@@ -94,13 +96,25 @@ const NAMES = new Set([
   "macOS",
   "Linux",
   "Jira",
+  "LM Studio",
+  "Azure OpenAI",
+  "Mistral",
+  "Groq",
+  "OpenRouter",
+  "SAP CATS",
+  "Obsidian",
 ]);
 
 /**
  * Allowed per file: `file` is relative to `ui/src`, `text` matches the whole string. Each entry
  * says why (typed syntax, file formats, sample data, logs).
  */
-const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [];
+const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
+  { file: "lib/capture.ts", text: /^\[Hh\]eute|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
+  { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
+  { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
+  { file: "lib/dayreview.ts", text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
+];
 
 interface Hit {
   file: string;
@@ -147,7 +161,7 @@ function scan(file: string): Hit[] {
     seen.add(n.getStart());
     hits.push({ file: rel, line: sf.getLineAndCharacterOfPosition(n.getStart()).line + 1, text: s.trim().slice(0, 90) });
   };
-  const visit = (n: ts.Node) => {
+  const visit = (n: ts.Node): void => {
     if (ts.isJsxText(n)) {
       const s = n.text.replace(/\s+/g, " ");
       if (LETTERS.test(s)) flag(n, s);
@@ -157,6 +171,8 @@ function scan(file: string): Hit[] {
       for (const l of literalsIn(n.initializer)) flag(l, literalText(l)!);
     } else if (ts.isCallExpression(n)) {
       const callee = ts.isPropertyAccessExpression(n.expression) ? n.expression.name.text : ts.isIdentifier(n.expression) ? n.expression.text : "";
+      // console.* output is for developers.
+      if (ts.isPropertyAccessExpression(n.expression) && n.expression.expression.getText(sf) === "console") return ts.forEachChild(n, visit);
       if (MESSAGE_CALLS.has(callee)) for (const l of literalsIn(n.arguments[0])) flag(l, literalText(l)!);
     }
     const lit = literalText(n);

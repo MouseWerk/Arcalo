@@ -295,7 +295,7 @@ export function DayReviewView() {
                       <span className="rv-title ellipsis">{m.title || "Termin"}</span>
                       {m.location && <span className="rv-sub ellipsis">{m.location}</span>}
                     </span>
-                    <Badge tone={MEETING_TONE[m.state]}>{MEETING_LABEL[m.state]}</Badge>
+                    <Badge tone={MEETING_TONE[m.state]}>{t(MEETING_LABEL[m.state])}</Badge>
                   </button>
                 ))}
                 {openMeetings(r).length > 0 && (

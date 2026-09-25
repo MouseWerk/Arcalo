@@ -49,7 +49,7 @@ export function Dashboard({ head }: { head?: ReactNode }) {
   const addMenu = (e: React.MouseEvent) =>
     openMenuAt(
       e,
-      WIDGET_KINDS.map((k) => ({ label: WIDGETS[k].label, onSelect: () => dispatch({ type: "add", kind: k }) })),
+      WIDGET_KINDS.map((k) => ({ label: t(WIDGETS[k].label), onSelect: () => dispatch({ type: "add", kind: k }) })),
     );
 
   const drag = (w: Widget) =>
@@ -115,17 +115,17 @@ export function Dashboard({ head }: { head?: ReactNode }) {
             className={`card dw dw-${w.size} ${dragId === w.id ? "dragging" : ""} ${dragId && dropBefore === w.id ? "drop-before" : ""} ${dragId && dropBefore === null && i === widgets.length - 1 ? "drop-after" : ""}`}
             data-widget={w.id}
             data-kind={w.kind}
-            aria-label={WIDGETS[w.kind].label}
+            aria-label={t(WIDGETS[w.kind].label)}
             {...drag(w)}
           >
             <header className="dw-head">
               {editing && <GripVertical size={14} className="faint dw-grip" aria-hidden />}
-              <h2>{WIDGETS[w.kind].label}</h2>
+              <h2>{t(WIDGETS[w.kind].label)}</h2>
               {editing && (
                 <div className="dw-tools">
                   <div className="dw-sizes" role="group" aria-label="Größe">
                     {(["s", "m", "l"] as WidgetSize[]).map((sz) => (
-                      <button key={sz} type="button" aria-pressed={w.size === sz} title={SIZE_LABELS[sz]} aria-label={`Größe ${SIZE_LABELS[sz]}`} onClick={() => dispatch({ type: "resize", id: w.id, size: sz })}>
+                      <button key={sz} type="button" aria-pressed={w.size === sz} title={t(SIZE_LABELS[sz])} aria-label={t("dash.sizeLabel", { size: t(SIZE_LABELS[sz]) })} onClick={() => dispatch({ type: "resize", id: w.id, size: sz })}>
                         {sz.toUpperCase()}
                       </button>
                     ))}

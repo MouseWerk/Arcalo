@@ -4,6 +4,7 @@
 import { addDays, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
 import { addMonths, monthGrid } from "./calendar";
 import type { CalendarEvent, CalendarSettings, TimeEntryRow, WbsHint } from "./types";
+import { t } from "./i18n";
 
 export type CalView = "day" | "workweek" | "week" | "month" | "agenda";
 
@@ -192,7 +193,7 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 
 /** „10:00–11:30“, or „ganztägig“. */
 export function timeRange(e: CalendarEvent): string {
-  if (e.all_day) return "ganztägig";
+  if (e.all_day) return t("cal.allDay");
   return `${hhmm(new Date(e.start))}–${hhmm(new Date(e.end))}`;
 }
 
@@ -220,7 +221,7 @@ export function bookingPrefill(e: CalendarEvent, hint: WbsHint | null, targetHou
     day: isoDay(start),
     from: e.all_day ? "09:00" : hhmm(start),
     minutes,
-    description: e.private && e.title === "Privater Termin" ? "Termin" : e.title,
+    description: e.private && (e.title === "Privater Termin" || e.title === "Private appointment") ? t("cal.appointment") : e.title,
     netzplanId: hint?.netzplan_id ?? null,
     vorgangNr: hint?.vorgang_nr ?? null,
     leistungsart: hint?.leistungsart ?? null,

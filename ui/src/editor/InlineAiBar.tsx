@@ -9,7 +9,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ArrowUp, CornerDownLeft, RotateCcw, Replace, Sparkles, Square, X } from "lucide-react";
 import { Button, IconButton } from "../components/ui";
 import { renderMarkdown } from "../lib/markdown";
-import { WRITE_PRESETS, inlinePresets, transformInstruction, writeInstruction } from "../lib/aitext";
+import { writePresets, inlinePresets, transformInstruction, writeInstruction } from "../lib/aitext";
 import { useApp } from "../store/app";
 import { useAiTransform } from "../lib/useAiTransform";
 import { usd } from "../lib/format";
@@ -132,7 +132,7 @@ export function InlineAiBar({
   });
 
   const custom = inlinePresets(useApp((st) => st.settings?.settings.ai?.inline_presets));
-  const presets = writing.current ? WRITE_PRESETS : custom;
+  const presets = writing.current ? writePresets() : custom;
   const done = !ai.busy && !!ai.text && !ai.error;
   const run = async (instruction: string) => {
     setLast(instruction);

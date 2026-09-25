@@ -3,6 +3,7 @@
 
 import { api } from "./api";
 import { useApp } from "../store/app";
+import { t } from "./i18n";
 
 export interface CalendarFocus {
   /** YYYY-MM-DD. */
@@ -43,12 +44,12 @@ export async function syncCalendarsNow() {
     const active = st.sources.filter((x) => x.enabled);
     const failed = active.filter((x) => x.status?.error);
     if (!active.length) {
-      s.toast({ tone: "info", title: "Kein Kalender eingerichtet", detail: "Unter Einstellungen → Kalender Outlook oder einen ICS-Kalender hinzufügen.", action: { label: "Einrichten", run: () => openSettingsSection("calendar") } });
+      s.toast({ tone: "info", title: t("cal.noCalendar"), detail: t("cal.noCalendarText"), action: { label: t("cal.setUp"), run: () => openSettingsSection("calendar") } });
     } else if (failed.length) {
-      s.toast({ tone: "warning", title: "Nicht alle Kalender synchronisiert", detail: failed.map((f) => `${f.name}: ${f.status?.error}`).join("\n") });
-    } else s.toast({ tone: "success", title: "Kalender synchronisiert" });
+      s.toast({ tone: "warning", title: t("cal.notAllSynced"), detail: failed.map((f) => `${f.name}: ${f.status?.error}`).join("\n") });
+    } else s.toast({ tone: "success", title: t("cal.synced") });
   } catch (e) {
-    s.error("Kalender nicht synchronisiert", e);
+    s.error(t("cal.syncFailed"), e);
   }
 }
 

@@ -4,6 +4,7 @@
 
 import { isoDay, parseDayInput } from "./format";
 import type { CaptureTarget, Page } from "./types";
+import { t } from "./i18n";
 
 export type CaptureKind = "zeit" | "task" | "note";
 
@@ -16,17 +17,11 @@ export function captureKind(line: string): CaptureKind {
 }
 
 /** Hint for one line; `where` names the target („in der heutigen Tagesnotiz“, „in „Kunde X““). */
-export function captureHint(kind: CaptureKind, where = "in der heutigen Tagesnotiz"): string {
-  if (kind === "zeit") return "Enter bucht die Zeit";
-  if (kind === "task") return `Enter legt eine Aufgabe ${where} an`;
-  return where === "in der heutigen Tagesnotiz" ? "Enter hängt die Notiz an die heutige Tagesnotiz an" : `Enter speichert die Notiz ${where}`;
+export function captureHint(kind: CaptureKind, where = t("capture.inDaily")): string {
+  if (kind === "zeit") return t("capture.hint.zeit");
+  if (kind === "task") return t("capture.hint.task", { where });
+  return where === t("capture.inDaily") ? t("capture.hint.noteDaily") : t("capture.hint.note", { where });
 }
-
-export const CAPTURE_HINTS: Record<CaptureKind, string> = {
-  zeit: captureHint("zeit"),
-  task: captureHint("task"),
-  note: captureHint("note"),
-};
 
 // ------------------------------------------------------------------ targets
 
@@ -36,17 +31,23 @@ export interface TargetChoice {
   label: string;
 }
 
-export const DAILY: TargetChoice = { target: { kind: "daily" }, label: "Tagesnotiz" };
+/** Today's daily note (the label follows the display language). */
+export const DAILY: TargetChoice = {
+  target: { kind: "daily" },
+  get label() {
+    return t("capture.daily");
+  },
+};
 
-export const inboxChoice = (title: string): TargetChoice => ({ target: { kind: "inbox" }, label: title || "Posteingang" });
+export const inboxChoice = (title: string): TargetChoice => ({ target: { kind: "inbox" }, label: title || t("capture.inbox") });
 
 export const sameTarget = (a: CaptureTarget, b: CaptureTarget) => JSON.stringify(a) === JSON.stringify(b);
 
 /** „in der heutigen Tagesnotiz“ / „in „Kunde X““ for hints. */
 export function targetPhrase(c: TargetChoice): string {
-  if (c.target.kind === "daily") return "in der heutigen Tagesnotiz";
-  if (c.target.kind === "meeting") return `in der Besprechungsnotiz „${c.label}“`;
-  return `in „${c.label}“`;
+  if (c.target.kind === "daily") return t("capture.inDaily");
+  if (c.target.kind === "meeting") return t("capture.inMeeting", { title: c.label });
+  return t("capture.inPage", { title: c.label });
 }
 
 /**
@@ -111,9 +112,9 @@ export function rankPages(query: string, pages: Page[], recentIds: number[], lim
   return scored.slice(0, limit).map(([p]) => p);
 }
 
-/** `Neue Seite: Titel` in the picker: the title of the page to create. */
+/** `Neue Seite: Titel` (or `New page: Title`) in the picker: the title of the page to create. */
 export function newPageTitle(query: string): string | null {
-  const m = /^\s*neue seite\s*:\s*(.+)$/i.exec(query);
+  const m = /^\s*(?:neue seite|new page)\s*:\s*(.+)$/i.exec(query);
   return m ? m[1].trim() || null : null;
 }
 
@@ -132,9 +133,9 @@ const WEEKDAYS: [string[], number][] = [
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
 /**
- * A due date in plain words as YYYY-MM-DD: „heute“, „morgen“, „übermorgen“, a weekday („Fr“,
- * „freitag“ – the next one, a week ahead when it is today), „+3“ (days), „+2w“ (weeks), or a
- * date („3.10.“, „03.10.2026“, „2026-10-03“). null when it is none.
+ * A due date in plain words as YYYY-MM-DD: „heute“/„today“, „morgen“/„tomorrow“, „übermorgen“,
+ * a weekday („Fr“, „freitag“, „fri“, „friday“ – the next one, a week ahead when it is today),
+ * „+3“ (days), „+2w“ (weeks), or a date („3.10.“, „03.10.2026“, „2026-10-03“). null when it is none.
  */
 export function parseDue(word: string, now = new Date()): string | null {
   const w = fold(word.trim()).replace(/[,;!?]+$/, "");
@@ -155,11 +156,14 @@ export function parseDue(word: string, now = new Date()): string | null {
   return parseDayInput(w, now);
 }
 
+// German and English day words. English ones only after „by“/„on“/„due“ („today“ and „monday“
+// end ordinary sentences too); German ones also alone at the end.
 const DAY_WORDS = String.raw`[Hh]eute|[Mm]orgen|[ÜüUu]e?bermorgen|[Mm]ontag|[Dd]ienstag|[Mm]ittwoch|[Dd]onnerstag|[Ff]reitag|[Ss]amstag|[Ss]onntag|\+\d{1,3}[dtw]?|\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})?`;
+const EN_DAY_WORDS = String.raw`[Tt]oday|[Tt]omorrow|[Mm]onday|[Tt]uesday|[Ww]ednesday|[Tt]hursday|[Ff]riday|[Ss]aturday|[Ss]unday|[Mm]on|[Tt]ue|[Ww]ed|[Tt]hu|[Ff]ri|[Ss]at|[Ss]un`;
 // Two-letter weekdays only capitalized („Fr“), or after „bis“/„am“: „so“ and „do“ are words too.
 const SHORT_DAYS = String.raw`Mo|Di|Mi|Do|Fr|Sa|So`;
 const TRAILING_DUE = new RegExp(
-  String.raw`\s+(?:(?:(?:bis|am|zum|fällig)\s+((?:${DAY_WORDS}|${SHORT_DAYS}|mo|di|mi|do|fr|sa|so)))|(${DAY_WORDS}|${SHORT_DAYS}))\.?$`,
+  String.raw`\s+(?:(?:(?:bis|am|zum|fällig|by|on|due)\s+((?:${DAY_WORDS}|${EN_DAY_WORDS}|${SHORT_DAYS}|mo|di|mi|do|fr|sa|so|\+\d{1,3}[dtw]?)))|(${DAY_WORDS}|${SHORT_DAYS}))\.?$`,
 );
 
 /**

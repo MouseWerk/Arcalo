@@ -1,29 +1,54 @@
-/** Display preferences (Settings → Zeiterfassung, Sprache & Format), set by `applyPrefs`. */
+import { t } from "./i18n";
+
+/**
+ * Display preferences (Settings → Zeiterfassung, Sprache & Format), set by `applyPrefs`. Names
+ * of days and months follow the display language (`lang`); the order of day, month and year
+ * (`dateFormat`) and the decimal separator (`numberFormat`) are regional settings of their own.
+ */
 export interface FormatPrefs {
   /** 1 = weeks start on Monday, 0 = on Sunday. */
   weekStartsOn: 0 | 1;
   hours: "decimal" | "clock";
-  dateFormat: "de" | "iso";
+  /** 24.09.2026, 2026-09-24, 24/09/2026 or 09/24/2026. */
+  dateFormat: "de" | "iso" | "en-gb" | "en-us";
+  /** 1.234,5 (comma) or 1,234.5 (point). */
+  numberFormat: "comma" | "point";
   lang: "de" | "en";
 }
-const prefs: FormatPrefs = { weekStartsOn: 1, hours: "decimal", dateFormat: "de", lang: "de" };
+const prefs: FormatPrefs = { weekStartsOn: 1, hours: "decimal", dateFormat: "de", numberFormat: "comma", lang: "en" };
 export const formatPrefs = (): Readonly<FormatPrefs> => prefs;
 export function setFormatPrefs(p: Partial<FormatPrefs>) {
   Object.assign(prefs, p);
 }
-/** Locale for dates (numbers stay German: decimal comma). */
-const dateLocale = () => (prefs.lang === "en" ? "en-GB" : "de-DE");
 
-const nf1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const nf2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
+/** Locale for day and month names: the display language with the region's order. */
+export function dateLocale(): string {
+  const f = prefs.dateFormat;
+  const region = f === "en-us" ? "US" : f === "en-gb" ? "GB" : f === "de" ? "DE" : prefs.lang === "de" ? "DE" : "GB";
+  return `${prefs.lang}-${region}`;
+}
+/** Locale for numbers (decimal and thousands separators only). */
+export const numberLocale = () => (prefs.numberFormat === "point" ? "en-US" : "de-DE");
 
-export const h1 = (x: number) => nf1.format(x);
-export const h2 = (x: number) => nf2.format(x);
-export const int = (x: number) => nf0.format(x);
-/** USD cost in German notation: 0,0024 $ */
-export const usd = (x: number) => x.toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: x < 0.1 ? 4 : 2, maximumFractionDigits: x < 0.1 ? 4 : 2 });
-export const hoursFromMinutes = (m: number | null | undefined) => nf2.format((m ?? 0) / 60);
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function nf(min: number, max: number) {
+  const key = `${numberLocale()}|${min}|${max}`;
+  let f = numberFormats.get(key);
+  if (!f) numberFormats.set(key, (f = new Intl.NumberFormat(numberLocale(), { minimumFractionDigits: min, maximumFractionDigits: max })));
+  return f;
+}
+
+export const h1 = (x: number) => nf(1, 1).format(x);
+export const h2 = (x: number) => nf(2, 2).format(x);
+export const int = (x: number) => nf(0, 0).format(x);
+/** The regional decimal separator. */
+export const decimalSep = () => (prefs.numberFormat === "point" ? "." : ",");
+/** A number with up to `max` decimals in the regional notation: 1,5 or 1.5. */
+export const decimal = (x: number, max = 2) => nf(0, max).format(x);
+/** USD cost in the regional notation: 0,0024 $ or $0.0024 */
+export const usd = (x: number) =>
+  x.toLocaleString(numberLocale(), { style: "currency", currency: "USD", minimumFractionDigits: x < 0.1 ? 4 : 2, maximumFractionDigits: x < 0.1 ? 4 : 2 });
+export const hoursFromMinutes = (m: number | null | undefined) => h2((m ?? 0) / 60);
 
 /** Hours as set in the settings: "1,50" or "1:30". */
 export function fmtHours(hours: number, style = prefs.hours): string {
@@ -33,26 +58,51 @@ export function fmtHours(hours: number, style = prefs.hours): string {
     const m = Math.abs(total);
     return `${sign}${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
   }
-  return nf2.format(hours);
+  return h2(hours);
 }
 /** Minutes shown as hours in the configured style. */
 export const fmtMinutes = (m: number | null | undefined, style = prefs.hours) => fmtHours((m ?? 0) / 60, style);
 
-/** A day in the configured format: "24.09.2026" or "2026-09-24". */
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** A day in the configured format: "24.09.2026", "2026-09-24", "24/09/2026" or "09/24/2026". */
 export function fmtDate(d: Date | string, style = prefs.dateFormat): string {
   const x = typeof d === "string" ? new Date(d) : d;
+  const [dd, mm, yy] = [pad2(x.getDate()), pad2(x.getMonth() + 1), x.getFullYear()];
   if (style === "iso") return isoDay(x);
-  return `${String(x.getDate()).padStart(2, "0")}.${String(x.getMonth() + 1).padStart(2, "0")}.${x.getFullYear()}`;
+  if (style === "en-gb") return `${dd}/${mm}/${yy}`;
+  if (style === "en-us") return `${mm}/${dd}/${yy}`;
+  return `${dd}.${mm}.${yy}`;
 }
 
-/** A typed day: „1.10.2026“, „01.10.26“, „1.10.“ (this year) or „2026-10-01“ as YYYY-MM-DD; null when it is no date. */
+/** Day and month without the year: "24.09.", "09-24", "24/09" or "09/24". */
+export function fmtDayMonth(d: Date, style = prefs.dateFormat): string {
+  const [dd, mm] = [pad2(d.getDate()), pad2(d.getMonth() + 1)];
+  if (style === "iso") return `${mm}-${dd}`;
+  if (style === "en-gb") return `${dd}/${mm}`;
+  if (style === "en-us") return `${mm}/${dd}`;
+  return `${dd}.${mm}.`;
+}
+
+/** Date and time: "24.09.2026, 14:03". */
+export const dateTime = (iso: string) => `${fmtDate(iso)}, ${time(iso)}`;
+
+/**
+ * A typed day: „1.10.2026“, „01.10.26“, „1.10.“ (this year), „2026-10-01“ or with slashes
+ * („1/10/2026“ day first, „10/1/2026“ month first with the US date format) as YYYY-MM-DD; null
+ * when it is no date.
+ */
 export function parseDayInput(text: string, now = new Date()): string | null {
-  const t = text.trim();
+  const s = text.trim();
   let y: number, m: number, d: number;
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
-  const de = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})?$/.exec(t);
+  const year = (v: string | undefined) => (v ? (v.length === 2 ? 2000 + +v : +v) : now.getFullYear());
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  const de = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})?$/.exec(s);
+  const slash = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/.exec(s);
   if (iso) [y, m, d] = [+iso[1], +iso[2], +iso[3]];
-  else if (de) [y, m, d] = [de[3] ? (de[3].length === 2 ? 2000 + +de[3] : +de[3]) : now.getFullYear(), +de[2], +de[1]];
+  else if (de) [y, m, d] = [year(de[3]), +de[2], +de[1]];
+  else if (slash && prefs.dateFormat === "en-us") [y, m, d] = [year(slash[3]), +slash[1], +slash[2]];
+  else if (slash) [y, m, d] = [year(slash[3]), +slash[2], +slash[1]];
   else return null;
   const x = new Date(y, m - 1, d);
   return x.getFullYear() === y && x.getMonth() === m - 1 && x.getDate() === d ? isoDay(x) : null;
@@ -75,6 +125,10 @@ export function weekdayLabels(startsOn: 0 | 1 = prefs.weekStartsOn, lang = prefs
   const names = lang === "en" ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] : ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   return startsOn === 1 ? names : [names[6], ...names.slice(0, 6)];
 }
+/** Day of the month as written after a weekday: „24.“ in German, „24“ in English. */
+export const dayOfMonth = (d: Date) => (prefs.lang === "de" ? `${d.getDate()}.` : String(d.getDate()));
+/** „24. Sep.“ / „24 Sept“, with the year when asked. */
+export const dayMonthName = (d: Date, year = false) => d.toLocaleDateString(dateLocale(), { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) });
 /** Short weekday name of a date. */
 export const weekdayShort = (d: Date, lang = prefs.lang) => weekdayLabels(1, lang)[isoWeekday(d) - 1];
 
@@ -87,15 +141,23 @@ export function clock(totalSeconds: number) {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-export const dateShort = (iso: string) =>
-  prefs.dateFormat === "iso"
-    ? `${weekdayShort(new Date(iso))} ${isoDay(new Date(iso))}`
-    : new Date(iso).toLocaleDateString(dateLocale(), { weekday: "short", day: "2-digit", month: "2-digit" });
+/** "Do., 24.09." / "Thu 24/09" – weekday in the display language, day and month in the regional order. */
+export const dateShort = (iso: string) => {
+  const d = new Date(iso);
+  if (prefs.dateFormat === "iso") return `${weekdayShort(d)} ${isoDay(d)}`;
+  const wd = d.toLocaleDateString(prefs.lang === "de" ? "de-DE" : "en-GB", { weekday: "short" });
+  return prefs.lang === "de" ? `${wd}, ${fmtDayMonth(d)}` : `${wd} ${fmtDayMonth(d)}`;
+};
+/** "Donnerstag, 24. September 2026" / "Thursday, 24 September 2026". */
 export const dateLong = (iso: string) =>
   prefs.dateFormat === "iso"
     ? `${new Date(iso).toLocaleDateString(dateLocale(), { weekday: "long" })}, ${isoDay(new Date(iso))}`
     : new Date(iso).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-export const time = (iso: string) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+/** Time of day, always 24 h: "14:03". */
+export const time = (iso: string) => {
+  const d = new Date(iso);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
 
 /**
  * Main labels of the version list: the time, with seconds when two versions share a minute,
@@ -108,18 +170,18 @@ export function versionTimes(isos: string[], now = new Date()): string[] {
   const count = new Map<string, number>();
   for (const d of dates) count.set(minute(d), (count.get(minute(d)) ?? 0) + 1);
   return dates.map((d) => {
-    let t = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    if ((count.get(minute(d)) ?? 0) > 1) t += `:${pad(d.getSeconds())}`;
-    return d.toDateString() === now.toDateString() ? t : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}., ${t}`;
+    let hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    if ((count.get(minute(d)) ?? 0) > 1) hm += `:${pad(d.getSeconds())}`;
+    return d.toDateString() === now.toDateString() ? hm : `${fmtDayMonth(d)}, ${hm}`;
   });
 }
 
 export function relative(iso: string) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "gerade eben";
-  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min.`;
-  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std.`;
-  if (diff < 7 * 86400) return `vor ${Math.floor(diff / 86400)} Tagen`;
+  if (diff < 60) return t("time.justNow");
+  if (diff < 3600) return t("time.minutesAgo", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t("time.hoursAgo", { n: Math.floor(diff / 3600) });
+  if (diff < 7 * 86400) return t("time.daysAgo", { n: Math.floor(diff / 86400) });
   if (prefs.dateFormat === "iso") return isoDay(new Date(iso));
   return new Date(iso).toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" });
 }
@@ -127,9 +189,9 @@ export function relative(iso: string) {
 /** File size, e.g. "812 KB" or "3,4 MB". */
 export function fileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${nf0.format(bytes / 1024)} KB`;
-  if (bytes < 1024 ** 3) return `${nf1.format(bytes / 1024 ** 2)} MB`;
-  return `${nf1.format(bytes / 1024 ** 3)} GB`;
+  if (bytes < 1024 * 1024) return `${int(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${h1(bytes / 1024 ** 2)} MB`;
+  return `${h1(bytes / 1024 ** 3)} GB`;
 }
 
 /** Local date as YYYY-MM-DD. */
@@ -169,9 +231,9 @@ export function parseDurationInput(s: string): number | null {
 }
 
 /** Days/hours without a trailing ",0" for whole numbers. */
-export const compact = (x: number) => (Number.isInteger(x) ? String(x) : nf1.format(x));
+export const compact = (x: number) => (Number.isInteger(x) ? String(x) : h1(x));
 
-/** Parses German numbers: "1.200,5" → 1200,5, "1,5" → 1,5; without a comma a single dot is the decimal point. Null if invalid. */
+/** Parses typed numbers: "1.200,5" → 1200,5, "1,5" → 1,5; without a comma a single dot is the decimal point. Null if invalid. */
 export function parseGermanNumber(s: string): number | null {
   let v = s.trim().replace(/[\s ']/g, "");
   if (v.includes(",")) {
@@ -186,7 +248,6 @@ export function parseGermanNumber(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** „1 Seite, 2 Ordner, 3 Bilder, 1 Datei übersprungen“ */
 /** Whole hours a timer started at `start` has run by `now`, when that is more than `limit`
  *  (forgotten over night: the stop asks before booking it). */
 export function longTimerHours(start: string, now: Date, limit = 12): number | null {
@@ -196,13 +257,13 @@ export function longTimerHours(start: string, now: Date, limit = 12): number | n
 
 /** „120 von 480 Dateien gelesen“ while a vault is imported. */
 export function importProgress(p: { done: number; total: number }) {
-  return p.total > 0 ? `${Math.min(p.done, p.total)} von ${p.total} Dateien gelesen` : "Dateien werden gelesen …";
+  return p.total > 0 ? t("import.progress", { done: Math.min(p.done, p.total), n: p.total }) : t("import.reading");
 }
 
+/** „12 Seiten, 3 Ordner, 2 Bilder, 4 Dateien übersprungen“ */
 export function importSummary(r: { pages: number; folders: number; attachments: number; skipped: number }) {
-  const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-  const parts = [n(r.pages, "Seite", "Seiten"), n(r.folders, "Ordner", "Ordner")];
-  if (r.attachments) parts.push(n(r.attachments, "Bild", "Bilder"));
-  if (r.skipped) parts.push(`${n(r.skipped, "Datei", "Dateien")} übersprungen`);
+  const parts = [t("import.pages", { n: r.pages }), t("import.folders", { n: r.folders })];
+  if (r.attachments) parts.push(t("import.images", { n: r.attachments }));
+  if (r.skipped) parts.push(t("import.skipped", { n: r.skipped }));
   return parts.join(", ");
 }
