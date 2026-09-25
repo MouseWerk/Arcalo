@@ -2,7 +2,7 @@ import {
   BookOpen, Box, Briefcase, Bug, Calendar, CalendarDays, ClipboardList, Code2, Database, FileText, Flag,
   Folder, FolderKanban, Globe, GraduationCap, Heart, Layers, Library, Lightbulb, ListTodo, Map, MessageSquare,
   Notebook, Rocket, Shield, Sparkles, Star, Target, Users, Zap, Blocks, LayoutTemplate, Mail, Server, Cloud,
-  Terminal, Ticket, BarChart3, Video, Link2, Wrench, Newspaper, Home, KanbanSquare, type LucideIcon,
+  Terminal, Ticket, BarChart3, Video, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, type LucideIcon,
 } from "lucide-react";
 
 /** Page icons users can pick; stored by name in the database. */
@@ -44,6 +44,7 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   server: Server,
   cloud: Cloud,
   terminal: Terminal,
+  "app-window": AppWindow,
   ticket: Ticket,
   chart: BarChart3,
   video: Video,
@@ -92,6 +93,7 @@ export const PAGE_ICON_LABELS: Record<string, string> = {
   server: "Server",
   cloud: "Cloud",
   terminal: "Terminal",
+  "app-window": "Programm",
   ticket: "Ticket",
   chart: "Diagramm",
   video: "Video",

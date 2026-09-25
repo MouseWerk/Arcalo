@@ -70,7 +70,17 @@ export function AdminSection({ save }: { save: (next: Settings) => Promise<boole
 
   const apply = async () => {
     if (!preview) return;
-    if (await save(preview.settings)) setPreview(null);
+    if (!(await save(preview.settings))) return;
+    // The ribbon links are saved on their own (a settings save keeps the current ones).
+    const links = preview.settings.quick_links;
+    if (JSON.stringify(links) !== JSON.stringify(s().settings?.settings.quick_links)) {
+      try {
+        s().set({ settings: await api.saveQuickLinks(links) });
+      } catch (e) {
+        s().error(t("links.saveFailed"), e);
+      }
+    }
+    setPreview(null);
   };
 
   return (

@@ -196,8 +196,15 @@ export type Tier = "local" | "standard" | "reasoning";
 /** A link at the top of the sidebar. */
 export interface QuickLink {
   name: string;
+  /** Address or path; empty for a group. */
   url: string;
   icon: string;
+  /** Missing on links (and on everything saved before 1.5). */
+  kind?: "link" | "app" | "group";
+  /** A group's icon color (`blau`, `grün`, …). */
+  color?: string;
+  /** A group's links and programs. */
+  items?: QuickLink[];
 }
 
 export interface RouterConfig {
