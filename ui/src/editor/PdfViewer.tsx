@@ -395,7 +395,7 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
       className={overlay ? "pdf-overlay" : "pdf-pane"}
       role={overlay ? "dialog" : "region"}
       aria-modal={overlay ? true : undefined}
-      aria-label={`PDF ${name}`}
+      aria-label={t("pdf.aria", { name })}
       data-worker={workerKind}
       tabIndex={-1}
       onKeyDown={(e) => {
@@ -454,7 +454,7 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
             />
             {(hits || searching) && (
               <span className="pdf-hits" aria-live="polite">
-                {searching ? "Suche…" : hit ? `Seite ${hit.page} · ${hits!.at + 1}/${hits!.list.length}` : "Keine Treffer"}
+                {searching ? t("pdf.searching") : hit ? t("pdf.hitAt", { page: hit.page, at: hits!.at + 1, n: hits!.list.length }) : t("links.noHits")}
               </span>
             )}
           </label>

@@ -7,7 +7,7 @@ import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import { exportFileName } from "../../lib/prefs";
-import { fmtHours } from "../../lib/format";
+import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 
@@ -26,7 +26,7 @@ export function NotesPrefGroups({ draft, update }: SectionProps) {
           <Select value={n.daily_title} onChange={(e) => set({ daily_title: e.target.value as NotesPrefs["daily_title"] })} aria-label={t("set.notes.dailyTitle")}>
             <option value="iso">2026-09-24</option>
             <option value="de">24.09.2026</option>
-            <option value="long">{`${sample.toLocaleDateString("de-DE", { weekday: "long" })}, 24.09.2026`}</option>
+            <option value="long">{`${sample.toLocaleDateString(dateLocale(), { weekday: "long" })}, 24.09.2026`}</option>
           </Select>
         </Row>
         <Row label={t("set.notes.dailyFolder")} description={t("set.notes.dailyFolderDesc")}>

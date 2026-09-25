@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::error::Result;
 use crate::model::Page;
+use crate::{tr, trf};
 
 /// Frontmatter key of the schema on the parent page.
 pub const SCHEMA_KEY: &str = "eigenschaften";
@@ -616,35 +617,47 @@ pub fn validate(def: Option<&PropDef>, key: &str, value: Option<&Yaml>) -> Cell 
     let option = |name: &str| def.and_then(|d| d.options.iter().find(|o| o.name.to_lowercase() == name.to_lowercase()));
     let result: std::result::Result<Typed, String> = match kind {
         PropKind::Text => Ok(Typed::Text(cell.text.clone())),
-        _ if !single && kind != PropKind::MultiSelect => Err("Liste statt einzelnem Wert".into()),
-        PropKind::Select => {
-            option(&s).map(|o| Typed::Select(o.name.clone())).ok_or_else(|| format!("„{s}“ ist keine Option"))
+        _ if !single && kind != PropKind::MultiSelect => {
+            Err(tr!("Liste statt einzelnem Wert", "A list instead of a single value").into())
         }
+        PropKind::Select => option(&s)
+            .map(|o| Typed::Select(o.name.clone()))
+            .ok_or_else(|| trf!("„{}“ ist keine Option", "“{}” is not an option", s)),
         PropKind::MultiSelect => {
             let unknown: Vec<&String> = items.iter().filter(|i| option(i).is_none()).collect();
             if unknown.is_empty() {
                 Ok(Typed::MultiSelect(items.iter().filter_map(|i| option(i)).map(|o| o.name.clone()).collect()))
             } else {
-                let names: Vec<String> = unknown.iter().map(|u| format!("„{u}“")).collect();
-                Err(format!("{} {} keine Option", names.join(", "), if unknown.len() == 1 { "ist" } else { "sind" }))
+                let names: Vec<String> = unknown.iter().map(|u| trf!("„{}“", "“{}”", u)).collect();
+                Err(if unknown.len() == 1 {
+                    trf!("{} ist keine Option", "{} is not an option", names.join(", "))
+                } else {
+                    trf!("{} sind keine Optionen", "{} are not options", names.join(", "))
+                })
             }
         }
-        PropKind::Number => parse_number(&s).map(Typed::Number).ok_or_else(|| "Keine Zahl".into()),
+        PropKind::Number => parse_number(&s).map(Typed::Number).ok_or_else(|| tr!("Keine Zahl", "Not a number").into()),
         PropKind::Date => chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
             .ok()
             .filter(|_| s.len() == 10)
             .map(|_| Typed::Date(s.clone()))
-            .ok_or_else(|| "Kein Datum (JJJJ-MM-TT)".into()),
+            .ok_or_else(|| tr!("Kein Datum (JJJJ-MM-TT)", "Not a date (YYYY-MM-DD)").into()),
         PropKind::Person => {
             let name = s.trim_start_matches('@').trim();
-            if name.is_empty() { Err("Keine Person".into()) } else { Ok(Typed::Person(name.to_owned())) }
+            if name.is_empty() {
+                Err(tr!("Keine Person", "No person").into())
+            } else {
+                Ok(Typed::Person(name.to_owned()))
+            }
         }
-        PropKind::Checkbox => checkbox(&s).map(Typed::Checkbox).ok_or_else(|| "Weder ja noch nein".into()),
+        PropKind::Checkbox => {
+            checkbox(&s).map(Typed::Checkbox).ok_or_else(|| tr!("Weder ja noch nein", "Neither yes nor no").into())
+        }
         PropKind::Link => {
             if is_link(&s) {
                 Ok(Typed::Link(s.clone()))
             } else {
-                Err("Kein Link (URL oder [[Seite]])".into())
+                Err(tr!("Kein Link (URL oder [[Seite]])", "Not a link (URL or [[Page]])").into())
             }
         }
     };

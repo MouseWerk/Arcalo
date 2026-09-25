@@ -6,22 +6,23 @@ import { AlertTriangle, CalendarDays, CheckCircle2, FileText, Target, WandSparkl
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Input, Spinner, Switch, type Tone } from "../components/ui";
-import { addDays, fmtDate, fmtMinutes, isoDay, isoWeek, parseDurationInput, time, weekdayShort } from "../lib/format";
+import { addDays, dateLocale, fmtDate, fmtMinutes, isoDay, isoWeek, parseDurationInput, time, weekdayShort } from "../lib/format";
 import { NetzplanSelect, VorgangSelect } from "./wbs";
 import { accepted, dayState, dayTotals, edit, gapSummary, initRows, nextRow, overlaps, rowProblem, selectable, setChecked, toggle, wbsKey, type ReviewRow } from "../lib/weekplan";
 import type { ProjectTree, ProposalConfidence, ProposalSourceKind, TimeEntryRow, WeekProposal } from "../lib/types";
+import { t as tr, useT, withLabel, type TKey } from "../lib/i18n";
 
-const CONFIDENCE: Record<ProposalConfidence, { label: string; tone: Tone }> = {
-  high: { label: "Sicher", tone: "success" },
-  medium: { label: "Wahrscheinlich", tone: "accent" },
-  low: { label: "Unsicher", tone: "warning" },
-  none: { label: "Kein Vorgang", tone: "danger" },
+const CONFIDENCE: Record<ProposalConfidence, { readonly label: string; tone: Tone }> = {
+  high: withLabel({ tone: "success" as Tone }, "wp.conf.high"),
+  medium: withLabel({ tone: "accent" as Tone }, "wp.conf.medium"),
+  low: withLabel({ tone: "warning" as Tone }, "wp.conf.low"),
+  none: withLabel({ tone: "danger" as Tone }, "wp.conf.none"),
 };
 
-const SOURCE: Record<ProposalSourceKind, { icon: typeof CalendarDays; label: string }> = {
-  calendar: { icon: CalendarDays, label: "Kalender" },
-  focus: { icon: Target, label: "Fokus" },
-  page: { icon: FileText, label: "Seite" },
+const SOURCE: Record<ProposalSourceKind, { icon: typeof CalendarDays; label: TKey }> = {
+  calendar: { icon: CalendarDays, label: "tabs.calendar" },
+  focus: { icon: Target, label: "wp.src.focus" },
+  page: { icon: FileText, label: "wp.src.page" },
 };
 
 const dayOf = (iso: string) => new Date(`${iso}T12:00:00`);
@@ -29,6 +30,7 @@ const weekdayOf = (iso: string) => weekdayShort(dayOf(iso));
 const hours = (m: number) => `${fmtMinutes(m)} h`;
 
 export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date; entries: TimeEntryRow[]; wbs: ProjectTree[]; onClose: () => void }) {
+  useT();
   const [data, setData] = useState<WeekProposal | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [failed, setFailed] = useState<string | null>(null);
@@ -69,14 +71,14 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
       const out = await api.weekProposalApply(items);
       s().toast({
         tone: "success",
-        title: `${out.entry_ids.length} ${out.entry_ids.length === 1 ? "Eintrag" : "Einträge"} als Entwurf angelegt`,
-        detail: "Prüfen, freigeben und exportieren wie gewohnt.",
+        title: tr("wp.created", { n: out.entry_ids.length }),
+        detail: tr("wp.createdDetail"),
       });
       s().alerts(out.alerts);
       s().bumpEntries();
       onClose();
     } catch (e) {
-      s().error("Vorschläge nicht übernommen", e);
+      s().error(tr("wp.applyFailed"), e);
     } finally {
       setBusy(false);
     }
@@ -114,8 +116,8 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
     <Dialog
       open
       onClose={onClose}
-      title="Woche vorschlagen"
-      description={`KW ${isoWeek(week)} · ${range} · aus Terminen, Fokus-Sitzungen und bearbeiteten Seiten`}
+      title={tr("wp.title")}
+      description={tr("wp.desc", { week: isoWeek(week), range })}
       width={960}
       footer={
         <>
@@ -123,26 +125,26 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
             {data && rows.length > 0 ? (
               <>
                 <span className="num">
-                  {chosen.length} von {rows.length} ausgewählt · {hours(chosenMinutes)}
+                  {tr("wp.chosen", { chosen: chosen.length, n: rows.length, hours: hours(chosenMinutes) })}
                 </span>
                 {clash.size > 0 && (
                   <span className="wp-foot-warn">
-                    <AlertTriangle size={13} aria-hidden /> {clash.size} überschneiden sich
+                    <AlertTriangle size={13} aria-hidden /> {tr("wp.clashes", { n: clash.size })}
                   </span>
                 )}
               </>
             ) : null}
           </span>
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {tr("common.cancel")}
           </Button>
           {rows.length > 0 && (
             <>
               <Button onClick={applyAll} disabled={busy || !rows.some((r) => rowProblem(r) == null)}>
-                Alle übernehmen
+                {tr("wp.applyAll")}
               </Button>
               <Button variant="primary" onClick={() => void apply(rows)} loading={busy} disabled={!chosen.length}>
-                {chosen.length ? `${chosen.length} übernehmen` : "Übernehmen"}
+                {chosen.length ? tr("wp.applyN", { n: chosen.length }) : tr("cf.apply")}
               </Button>
             </>
           )}
@@ -152,7 +154,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
       <div className="wp" onKeyDown={onKey}>
         {thisWeek && (
           <label className="wp-rest small row-gap">
-            <Switch checked={restOfToday} onChange={setRestOfToday} label="Heutige Termine bis Tagesende" /> Heutige Termine bis Tagesende einbeziehen
+            <Switch checked={restOfToday} onChange={setRestOfToday} label={tr("wp.restLabel")} /> {tr("wp.rest")}
           </label>
         )}
         {failed ? (
@@ -165,8 +167,8 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
           <>
             <WeekStrip totals={totals} today={today} />
             {rows.length === 0 ? (
-              <EmptyState icon={CheckCircle2} title="Nichts vorzuschlagen">
-                {open ? `Keine Termine, Fokus-Sitzungen oder Seitenbearbeitungen ohne Buchung. Offen: ${open}.` : "Alles, was diese Woche passiert ist, ist gebucht."}
+              <EmptyState icon={CheckCircle2} title={tr("wp.nothing")}>
+                {open ? tr("wp.nothingOpen", { open }) : tr("wp.allBooked")}
               </EmptyState>
             ) : (
               <div className="wp-days" ref={listRef}>
@@ -175,7 +177,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
                   const list = rows.filter((r) => r.date === d.date);
                   const state = dayState(rows, d.date);
                   return (
-                    <section key={d.date} className="wp-day" aria-label={dayOf(d.date).toLocaleDateString("de-DE", { weekday: "long" })}>
+                    <section key={d.date} className="wp-day" aria-label={dayOf(d.date).toLocaleDateString(dateLocale(), { weekday: "long" })}>
                       <header className="wp-day-head">
                         <input
                           type="checkbox"
@@ -186,20 +188,20 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
                           }}
                           onChange={() => setRows((rs) => setChecked(rs, state !== "all", d.date))}
                           disabled={!list.some(selectable)}
-                          aria-label="Tag auswählen"
+                          aria-label={tr("wp.selectDay")}
                         />
-                        <span className="wp-day-title">{dayOf(d.date).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</span>
+                        <span className="wp-day-title">{dayOf(d.date).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" })}</span>
                         <span className="grow" />
-                        <span className="wp-day-sum small num" title="Gebucht + ausgewählt von Soll">
+                        <span className="wp-day-sum small num" title={tr("wp.daySum")}>
                           {hours(t.booked)} + {hours(t.selected)}
                           {t.target > 0 && <span className="faint"> / {hours(t.target)}</span>}
                         </span>
                         {t.gap > 0 ? (
-                          <Badge tone="warning" title={t.capped ? `${hours(t.capped)} über dem Soll nicht vorgeschlagen` : undefined}>
-                            {hours(t.gap)} ohne Vorschlag
+                          <Badge tone="warning" title={t.capped ? tr("wp.capped", { hours: hours(t.capped) }) : undefined}>
+                            {tr("wp.gap", { hours: hours(t.gap) })}
                           </Badge>
                         ) : t.target > 0 && d.started ? (
-                          <Badge tone="success">Soll erreicht</Badge>
+                          <Badge tone="success">{tr("wp.targetMet")}</Badge>
                         ) : null}
                       </header>
                       {list.map((r) => (
@@ -212,7 +214,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
                   <div className="wp-bare small" role="note">
                     <AlertTriangle size={14} aria-hidden />
                     <span>
-                      Ohne Vorschlag: {bare.map((t) => `${weekdayOf(t.date)} ${dayOf(t.date).getDate()}. ${hours(t.gap)}`).join(" · ")} – dafür gab es keine Termine, Fokus-Sitzungen oder Seitenbearbeitungen.
+                      {tr("wp.bare", { days: bare.map((x) => `${weekdayOf(x.date)} ${dayOf(x.date).getDate()}. ${hours(x.gap)}`).join(" · ") })}
                     </span>
                   </div>
                 )}
@@ -226,29 +228,30 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
 }
 
 function Row({ r, wbs, clash, change, onToggle }: { r: ReviewRow; wbs: ProjectTree[]; clash: boolean; change: (id: string, patch: Parameters<typeof edit>[2]) => void; onToggle: () => void }) {
+  useT();
   const src = SOURCE[r.proposal.kind];
   const Icon = src.icon;
   // A WBS chosen by hand is remembered for the page or the meeting series.
   const chosen = r.netzplanId != null && wbsKey(r.netzplanId, r.vorgang) !== wbsKey(r.proposal.wbs?.netzplan_id ?? null, r.proposal.wbs?.vorgang_nr);
-  const conf = chosen ? { label: "Gewählt", tone: "accent" as Tone } : CONFIDENCE[r.proposal.confidence];
-  const reason = clash ? "Überschneidet sich mit einer anderen Buchung" : chosen ? "Von dir gewählt – Annalo merkt es sich" : r.proposal.reason;
+  const conf = chosen ? { label: tr("wp.chosenBadge"), tone: "accent" as Tone } : CONFIDENCE[r.proposal.confidence];
+  const reason = clash ? tr("wp.clash") : chosen ? tr("wp.chosenReason") : r.proposal.reason;
   const problem = rowProblem(r);
   const end = new Date(new Date(r.start).getTime() + r.minutes * 60000).toISOString();
-  const sources = r.proposal.sources.map((x) => `${SOURCE[x.kind].label}: ${x.label}`).join("\n");
+  const sources = r.proposal.sources.map((x) => `${tr(SOURCE[x.kind].label)}: ${x.label}`).join("\n");
   return (
     <div className={`wp-row ${r.checked ? "on" : ""} ${clash ? "clash" : ""}`} tabIndex={0} data-id={r.id} aria-selected={r.checked} role="option">
-      <input type="checkbox" className="check wp-row-check" checked={r.checked} disabled={problem != null} onChange={onToggle} aria-label="Übernehmen" title={problem ?? undefined} tabIndex={-1} />
+      <input type="checkbox" className="check wp-row-check" checked={r.checked} disabled={problem != null} onChange={onToggle} aria-label={tr("cf.apply")} title={problem ?? undefined} tabIndex={-1} />
       <span className={`wp-src wp-src-${r.proposal.kind}`} title={sources}>
         <Icon size={14} aria-hidden />
-        <span className="sr-only">{src.label}</span>
+        <span className="sr-only">{tr(src.label)}</span>
         {r.proposal.sources.length > 1 && <span className="wp-src-more num">{r.proposal.sources.length}</span>}
       </span>
       <span className="wp-time num">
         {time(r.start)}–{time(end)}
       </span>
-      <Input className="wp-dur num" value={r.duration} onChange={(e) => change(r.id, { duration: e.target.value })} aria-label="Dauer" title="Dauer in Stunden, z. B. 1,5 oder 1:30" />
+      <Input className="wp-dur num" value={r.duration} onChange={(e) => change(r.id, { duration: e.target.value })} aria-label={tr("wp.duration")} title={tr("wp.durationHint")} />
       <div className="wp-text">
-        <Input value={r.text} onChange={(e) => change(r.id, { text: e.target.value })} aria-label="Beschreibung" />
+        <Input value={r.text} onChange={(e) => change(r.id, { text: e.target.value })} aria-label={tr("wp.description")} />
         <span className="wp-reason" title={r.proposal.reason}>
           {reason}
         </span>
@@ -268,13 +271,14 @@ function Row({ r, wbs, clash, change, onToggle }: { r: ReviewRow; wbs: ProjectTr
 
 /** Seven small bars: booked, selected and what is missing per day. */
 function WeekStrip({ totals, today }: { totals: ReturnType<typeof dayTotals>; today: string }) {
+  useT();
   return (
-    <div className="wp-strip" role="list" aria-label="Woche">
+    <div className="wp-strip" role="list" aria-label={tr("wp.week")}>
       {totals.map((t) => {
         const full = Math.max(t.target, t.booked + t.selected, 1);
         const pct = (m: number) => `${Math.min(100, (m / full) * 100)}%`;
         return (
-          <div key={t.date} role="listitem" className={`wp-strip-day ${t.date === today ? "today" : ""} ${t.workday ? "" : "off"}`} title={`${hours(t.booked)} gebucht, ${hours(t.selected)} ausgewählt${t.target ? `, Soll ${hours(t.target)}` : ""}`}>
+          <div key={t.date} role="listitem" className={`wp-strip-day ${t.date === today ? "today" : ""} ${t.workday ? "" : "off"}`} title={t.target ? tr("wp.stripTarget", { booked: hours(t.booked), selected: hours(t.selected), target: hours(t.target) }) : tr("wp.strip", { booked: hours(t.booked), selected: hours(t.selected) })}>
             <span className="wp-strip-label">
               {weekdayOf(t.date)} <span className="faint">{dayOf(t.date).getDate()}.</span>
             </span>
@@ -292,9 +296,10 @@ function WeekStrip({ totals, today }: { totals: ReturnType<typeof dayTotals>; to
 
 /** The button that opens the proposal (header of the timesheet). */
 export function WeekProposalButton({ onClick }: { onClick: () => void }) {
+  useT();
   return (
     <Button icon={WandSparkles} onClick={onClick} className="wp-open">
-      Woche vorschlagen
+      {tr("wp.title")}
     </Button>
   );
 }

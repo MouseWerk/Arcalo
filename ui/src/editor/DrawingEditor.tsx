@@ -99,7 +99,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
         if (!alive) return;
         // Missing (e.g. an embed from an imported vault without the file): start empty.
         if (/nicht gefunden|not found/i.test(errorText(e))) start({ elements: [] });
-        else setBroken({ reason: `Die Datei kann nicht gelesen werden: ${errorText(e)}`, raw: null });
+        else setBroken({ reason: t("draw.unreadable", { msg: errorText(e) }), raw: null });
       },
     );
     return () => {

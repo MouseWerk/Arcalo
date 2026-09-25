@@ -124,7 +124,7 @@ export function StatusBar() {
         </button>
       )}
       {onPage && stats && (
-        <span className="sb-item sb-static num" title={t("status.chars", { n: stats.chars.toLocaleString("de-DE") })}>
+        <span className="sb-item sb-static num" title={t("status.chars", { n: int(stats.chars) })}>
           {int(stats.words)} {stats.words === 1 ? t("status.word") : t("status.words")}
         </span>
       )}

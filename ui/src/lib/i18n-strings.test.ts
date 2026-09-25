@@ -43,9 +43,11 @@ const TEXT_PROPS = new Set([
   "detail",
 ]);
 /** Object fields that hold text shown to the user. */
-const TEXT_FIELDS = new Set(["label", "title", "description", "message", "placeholder", "hint", "confirmLabel", "cancelLabel", "detail", "tooltip", "heading", "intro", "subtitle", "emptyText", "help", "sub", "desc"]);
+const TEXT_FIELDS = new Set(["label", "title", "description", "message", "placeholder", "hint", "confirmLabel", "cancelLabel", "altLabel", "detail", "tooltip", "heading", "intro", "subtitle", "emptyText", "help", "sub", "desc", "reason", "aria-label"]);
+/** DOM properties that show text when assigned. */
+const DOM_TEXT = new Set(["textContent", "innerText", "title", "alt", "placeholder", "ariaLabel", "error"]);
 /** Functions whose first argument is shown as a message. */
-const MESSAGE_CALLS = new Set(["toast", "success", "info", "warning", "warn", "notify", "alert", "setError", "setStatus", "setMessage", "setHint", "setNotice", "error"]);
+const MESSAGE_CALLS = new Set(["toast", "success", "info", "warning", "warn", "notify", "alert", "setError", "setStatus", "setMessage", "setHint", "setNotice", "error", "withHint"]);
 
 const GERMAN = /[äöüÄÖÜß„“‚‘]/;
 const LETTERS = /[A-Za-zÄÖÜäöüß]{2,}/;
@@ -62,7 +64,8 @@ const TECHNICAL = [
   /^\/\w+$/, // slash commands: /zeit
   /^\{\}\/[\w./-]+$/, // URL paths after a value: {}/v1/models
   /^#[\w-]+$/, // tags: #privat
-  /^[\w-]+…$/, // token prefixes: sk-…
+  /^[a-z0-9]+[-_]…$/, // token prefixes: sk-…, ghp_…
+  /^[a-z][\w.-]*\*$/, // model name patterns: gpt-4o*
   /^[\w.:/-]+(, [\w.:/-]+)+$/, // lists of model names: gpt-4o, text-embedding-3-small
   /^due:/, // due:YYYY-MM-DD
   /^[\w-]+… \/ [\w-]+…$/, // token prefixes: ghp_… / glpat-…
@@ -197,6 +200,9 @@ function scan(file: string): Hit[] {
       for (const l of literalsIn(n.initializer)) flag(l, literalText(l)!);
     } else if (ts.isPropertyAssignment(n) && TEXT_FIELDS.has(n.name.getText(sf).replace(/["']/g, ""))) {
       for (const l of literalsIn(n.initializer)) flag(l, literalText(l)!);
+    } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && DOM_TEXT.has(n.left.name.text)) {
+      // DOM text set directly: `el.textContent = "Loading…"`.
+      for (const l of literalsIn(n.right)) flag(l, literalText(l)!);
     } else if (ts.isCallExpression(n)) {
       const callee = ts.isPropertyAccessExpression(n.expression) ? n.expression.name.text : ts.isIdentifier(n.expression) ? n.expression.text : "";
       // console.* output is for developers.
@@ -233,11 +239,14 @@ describe("no hard-coded UI text", () => {
         'const c = "Größe";',
         'const d = <div className="x" data-id="y">{t("common.save")}</div>;',
         'const e = <span>{busy ? "Saving now" : `${n} left`}</span>;',
+        'el.textContent = "Loading now";',
+        'const f = { reason: "Broken file", altLabel: "Keep both" };',
+        'const g = withHint("Full width", "full_width");',
       ].join("\n"),
     );
     try {
       const found = scan(tmp).map((h) => h.text);
-      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left"]);
+      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left", "Loading now", "Broken file", "Keep both", "Full width"]);
     } finally {
       fs.rmSync(tmp);
     }

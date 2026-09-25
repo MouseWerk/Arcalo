@@ -147,7 +147,7 @@ export function settingsDiff(a: unknown, b: unknown, path = ""): Change[] {
 /** Short display of a value in the diff preview. */
 export function showValue(v: unknown): string {
   if (v === null || v === undefined) return "–";
-  if (typeof v === "boolean") return v ? "an" : "aus";
+  if (typeof v === "boolean") return v ? t("sio.on") : t("sio.off");
   const s = typeof v === "string" ? v : JSON.stringify(v);
   return s.length > 60 ? `${s.slice(0, 57)}…` : s;
 }

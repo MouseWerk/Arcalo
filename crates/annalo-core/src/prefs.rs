@@ -375,6 +375,7 @@ impl Default for NotesPrefs {
 }
 
 const WEEKDAYS: [&str; 7] = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+const WEEKDAYS_EN: [&str; 7] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 impl DailyTitle {
     /// Title of the daily note of `date`.
@@ -384,7 +385,8 @@ impl DailyTitle {
             DailyTitle::Iso => date.format("%Y-%m-%d").to_string(),
             DailyTitle::De => date.format("%d.%m.%Y").to_string(),
             DailyTitle::Long => {
-                format!("{}, {}", WEEKDAYS[date.weekday().num_days_from_monday() as usize], date.format("%d.%m.%Y"))
+                let days = if crate::i18n::is_en() { WEEKDAYS_EN } else { WEEKDAYS };
+                format!("{}, {}", days[date.weekday().num_days_from_monday() as usize], date.format("%d.%m.%Y"))
             }
         }
     }
@@ -880,6 +882,7 @@ mod tests {
         assert_eq!(DailyTitle::Iso.title(d), "2026-09-24");
         assert_eq!(DailyTitle::De.title(d), "24.09.2026");
         assert_eq!(DailyTitle::Long.title(d), "Donnerstag, 24.09.2026");
+        crate::i18n::with_lang(super::Language::En, || assert_eq!(DailyTitle::Long.title(d), "Thursday, 24.09.2026"));
     }
 
     #[test]

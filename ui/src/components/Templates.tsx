@@ -6,6 +6,7 @@ import { create } from "zustand";
 import type { Editor } from "@tiptap/core";
 import { LayoutTemplate } from "lucide-react";
 import { api } from "../lib/api";
+import { fmtDate } from "../lib/format";
 import { useApp } from "../store/app";
 import { fuzzyIncludes } from "../editor/extensions";
 import { PageIcon } from "./icons";
@@ -70,7 +71,7 @@ export async function newPageFromTemplate(parentId: number | null = null) {
   }
 }
 
-const today = () => new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+const today = () => fmtDate(new Date());
 
 export function TemplateHost() {
   const req = usePicker((s) => s.req);

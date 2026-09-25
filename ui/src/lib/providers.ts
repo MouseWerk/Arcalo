@@ -133,8 +133,8 @@ export function usableProvider(view: Pick<SettingsView, "settings" | "provider_k
 /** Problems that keep the dialog from saving (empty = fine). */
 export function validateProvider(p: AiProvider): string | null {
   const url = p.base_url.trim();
-  if (!/^https?:\/\/[^/\s]+/i.test(url)) return "Die Adresse muss mit http:// oder https:// beginnen.";
-  if (p.kind === "azure" && /RESSOURCE/.test(url)) return "Trage den Endpunkt deiner Azure-Ressource ein.";
+  if (!/^https?:\/\/[^/\s]+/i.test(url)) return t("prov.err.url");
+  if (p.kind === "azure" && /RESSOURCE|RESOURCE/.test(url)) return t("prov.err.azure");
   return null;
 }
 

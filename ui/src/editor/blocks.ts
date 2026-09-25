@@ -217,7 +217,7 @@ export const TableOfContents = Node.create({
       dom.contentEditable = "false";
       const head = document.createElement("div");
       head.className = "toc-head";
-      head.textContent = "Inhaltsverzeichnis";
+      head.textContent = t("slash.toc");
       const body = document.createElement("div");
       dom.append(head, body);
       let last = "";

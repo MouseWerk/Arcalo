@@ -91,8 +91,8 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   const headings = [...root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")].filter((h) => h.textContent?.trim());
   headings.forEach((h, i) => h.setAttribute("id", `${ctx.id}-h${i + 1}`));
   for (const nav of root.querySelectorAll("nav[data-toc]")) {
-    const box = el(doc, "nav", { class: "toc", "aria-label": "Inhaltsverzeichnis" });
-    box.append(el(doc, "div", { class: "toc-head" }, "Inhaltsverzeichnis"));
+    const box = el(doc, "nav", { class: "toc", "aria-label": t("slash.toc") });
+    box.append(el(doc, "div", { class: "toc-head" }, t("slash.toc")));
     const entries = headings.map((h, i) => ({ level: Number(h.tagName[1]), text: h.textContent!.trim(), pos: i }));
     const list = (items: TocTree[]): HTMLUListElement => {
       const ul = el(doc, "ul");
@@ -117,7 +117,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
     if (name) {
       const bytes = await ctx.files.read(name).catch(() => null);
       if (bytes) img.setAttribute("src", dataUri(bytes, mimeOf(name)));
-      else img.replaceWith(el(doc, "span", { class: "missing" }, `[Bild fehlt: ${baseName(name)}]`));
+      else img.replaceWith(el(doc, "span", { class: "missing" }, t("share.imageMissing", { name: baseName(name) })));
     } else {
       const src = img.getAttribute("src") ?? "";
       if (/^data:image\//i.test(src)) continue;
@@ -152,7 +152,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
     const label = span.getAttribute("data-alt") || baseName(name);
     const chip = href ? el(doc, "a", { class: "attachment", href, download: baseName(name) }, label) : el(doc, "span", { class: "attachment" }, label);
     if (size != null) chip.append(" ", el(doc, "small", {}, formatSize(size)));
-    else if (!href) chip.append(" ", el(doc, "small", {}, "nicht enthalten"));
+    else if (!href) chip.append(" ", el(doc, "small", {}, t("share.notIncluded")));
     span.replaceWith(chip);
   }
 
@@ -318,7 +318,7 @@ export async function sharePageAsHtml(pageId: number, withChildren: boolean, pat
   const s = useApp.getState();
   try {
     await flushAllEditors().catch(() => {});
-    const title = s.pages.get(pageId)?.title ?? "Seite";
+    const title = s.pages.get(pageId)?.title ?? t("share.page");
     const chosen = path ?? (await saveDialog({ defaultPath: htmlFileName(title), filters: [{ name: "HTML", extensions: ["html"] }] }));
     if (!chosen) return;
     const file = /\.html?$/i.test(chosen) ? chosen : `${chosen}.html`;

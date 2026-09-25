@@ -22,7 +22,7 @@ function fromJson(text: string, converted: boolean): DrawingLoad {
   } catch {
     return { ok: false, reason: t("draw.corrupt") };
   }
-  return isScene(value) ? { ok: true, scene: value, converted } : { ok: false, reason: "Die Datei ist keine Excalidraw-Zeichnung (es fehlen die Elemente)." };
+  return isScene(value) ? { ok: true, scene: value, converted } : { ok: false, reason: t("draw.notScene") };
 }
 
 export function parseDrawing(raw: string): DrawingLoad {
@@ -38,7 +38,7 @@ export function parseDrawing(raw: string): DrawingLoad {
   }
   const plain = /```json[^\n]*\n([\s\S]*?)```/.exec(text);
   if (plain) return fromJson(plain[1], true);
-  return { ok: false, reason: "Das Format der Datei ist unbekannt." };
+  return { ok: false, reason: t("draw.unknownFormat") };
 }
 
 // ------------------------------------------------ lz-string (compressToBase64 counterpart)

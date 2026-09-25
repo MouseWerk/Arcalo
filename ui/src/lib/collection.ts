@@ -349,21 +349,21 @@ export function validate(def: PropDef | undefined, input: { items: string[]; lis
   } else if (kind === "number") {
     const n = parseNumber(s);
     if (n !== null) cell.value = { kind, value: n };
-    else cell.error = "Keine Zahl";
+    else cell.error = t("coll.err.number");
   } else if (kind === "date") {
     if (validDate(s)) cell.value = { kind, value: s };
-    else cell.error = "Kein Datum (JJJJ-MM-TT)";
+    else cell.error = t("coll.err.date");
   } else if (kind === "person") {
     const name = s.replace(/^@+/, "").trim();
     if (name) cell.value = { kind, value: name };
-    else cell.error = "Keine Person";
+    else cell.error = t("coll.err.person");
   } else if (kind === "checkbox") {
     const b = parseCheckbox(s);
     if (b !== null) cell.value = { kind, value: b };
     else cell.error = t("coll.err.checkbox");
   } else if (kind === "link") {
     if (isLink(s)) cell.value = { kind, value: s };
-    else cell.error = "Kein Link (URL oder [[Seite]])";
+    else cell.error = t("coll.err.link");
   }
   return cell;
 }
