@@ -14,11 +14,12 @@ import { previewMarkdown } from "../components/LinkPreview";
 import { useApp } from "../store/app";
 import { Button, IconButton, useMenu, type MenuEntry } from "../components/ui";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
-import { h1, usd } from "../lib/format";
+import { h1, int, usd } from "../lib/format";
 import { modelLabel, usableProvider } from "../lib/providers";
 import type { ChatMessage, ContextChunk, RouteDecision, StreamEvent, Tier, ToolCall } from "../lib/types";
 import type { SuggestionKind } from "../lib/suggestions";
 import { useSuggestions } from "./useSuggestions";
+import { t, useT, type TKey } from "../lib/i18n";
 
 type Turn =
   | { id: string; kind: "user"; text: string }
@@ -38,16 +39,16 @@ type Turn =
     }
   | { id: string; kind: "tool"; name: string; label: string; status: "running" | "done" | "error" | "pending" | "rejected"; summary?: string; output?: string; decide?: (ok: boolean) => void };
 
-const TOOL_META: Record<string, { label: string; icon: typeof Search }> = {
-  log_time: { label: "Zeit buchen", icon: Timer },
-  search_workspace: { label: "Workspace durchsuchen", icon: Search },
-  budget_status: { label: "Budget abfragen", icon: Gauge },
-  list_tasks: { label: "Aufgaben abfragen", icon: ListChecks },
-  time_summary: { label: "Zeitübersicht abfragen", icon: CalendarRange },
-  activity_log: { label: "Aktivität abfragen", icon: History },
-  run_powershell: { label: "PowerShell ausführen", icon: Terminal },
-  git: { label: "Git-Befehl", icon: GitBranch },
-  http_request: { label: "HTTP-Anfrage", icon: Globe },
+const TOOL_META: Record<string, { label: TKey; icon: typeof Search }> = {
+  log_time: { label: "assist.tool.logTime", icon: Timer },
+  search_workspace: { label: "assist.tool.search", icon: Search },
+  budget_status: { label: "assist.tool.budget", icon: Gauge },
+  list_tasks: { label: "assist.tool.tasks", icon: ListChecks },
+  time_summary: { label: "assist.tool.time", icon: CalendarRange },
+  activity_log: { label: "assist.tool.activity", icon: History },
+  run_powershell: { label: "assist.tool.powershell", icon: Terminal },
+  git: { label: "assist.tool.git", icon: GitBranch },
+  http_request: { label: "assist.tool.http", icon: Globe },
 };
 
 const SUGGESTION_ICON: Record<SuggestionKind, typeof Search> = {
@@ -59,15 +60,17 @@ const SUGGESTION_ICON: Record<SuggestionKind, typeof Search> = {
   plan: Sparkles,
 };
 
-/** Quick follow-ups under the last answer. */
-const FOLLOW_UPS = ["Kürzer", "Als Stichpunkte", "Als Tabelle", "Auf Englisch"];
+/** Quick follow-ups under the last answer (the last one asks for the other language). */
+const followUps = () => [t("assist.follow.shorter"), t("assist.follow.bullets"), t("assist.follow.table"), t("assist.follow.language")];
+const followUp = (f: string) => t("assist.follow.ask", { f });
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 /** Characters of an answer shown in the chat; the rest stays available for copying and saving. */
 const MAX_SHOWN = 100_000;
-const tierLabel: Record<Tier, string> = { local: "Lokal", standard: "Standard", reasoning: "Reasoning" };
+const tierLabel: Record<Tier, TKey> = { local: "set.ai.localBadge", standard: "set.ai.standard", reasoning: "set.ai.reasoning" };
 
 export function AssistantPanel() {
+  const t = useT();
   const settings = useApp((s) => s.settings);
   const activeDoc = useApp((s) => s.activeDoc);
   const activeTab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
@@ -98,7 +101,7 @@ export function AssistantPanel() {
   const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
   const suggestions = useSuggestions(pageContext, shown && turns.length === 0);
 
-  const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Turn) : t)));
+  const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((x) => (x.id === id ? ({ ...x, ...patch } as Turn) : x)));
 
   // Stream deltas into the current assistant turn, batched per frame. Only into a turn that is
   // still streaming for the same request: a batch left over when the complete answer arrives
@@ -170,8 +173,8 @@ export function AssistantPanel() {
 
   useEffect(() => {
     if (!input.trim()) return setPreview(null);
-    const t = setTimeout(() => api.routePreview(input, useTools, tier).then(setPreview).catch(() => {}), 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => api.routePreview(input, useTools, tier).then(setPreview).catch(() => {}), 250);
+    return () => clearTimeout(timer);
   }, [input, tier, useTools]);
 
   const runTools = async (calls: ToolCall[], live: () => boolean): Promise<ChatMessage[]> => {
@@ -179,12 +182,12 @@ export function AssistantPanel() {
     for (const c of calls) {
       // Stopped: the remaining calls are answered without running them.
       if (!live()) {
-        results.push({ role: "tool", tool_call_id: c.id, content: "Abgebrochen." });
+        results.push({ role: "tool", tool_call_id: c.id, content: t("assist.toolCancelled") });
         continue;
       }
       const id = uid();
       const meta = TOOL_META[c.function.name];
-      setTurns((ts) => [...ts, { id, kind: "tool", name: c.function.name, label: meta?.label ?? c.function.name, status: "running" }]);
+      setTurns((ts) => [...ts, { id, kind: "tool", name: c.function.name, label: meta ? t(meta.label) : c.function.name, status: "running" }]);
       try {
         const plan = await api.planTool(c.function.name, c.function.arguments);
         let out: string;
@@ -211,7 +214,7 @@ export function AssistantPanel() {
           });
           if (!ok) {
             update(id, { status: "rejected", decide: undefined });
-            out = "Der Nutzer hat die Ausführung abgelehnt.";
+            out = t("assist.toolRejected");
           } else {
             update(id, { status: "running", decide: undefined });
             out = await api.runSystemTool(plan.call);
@@ -221,7 +224,7 @@ export function AssistantPanel() {
         results.push({ role: "tool", tool_call_id: c.id, content: out });
       } catch (e) {
         update(id, { status: "error", output: errorText(e) });
-        results.push({ role: "tool", tool_call_id: c.id, content: `Fehler: ${errorText(e)}` });
+        results.push({ role: "tool", tool_call_id: c.id, content: t("assist.toolError", { msg: errorText(e) }) });
       }
     }
     return results;
@@ -321,16 +324,16 @@ export function AssistantPanel() {
   const chatMenu = (target: HTMLElement): MenuEntry[] => {
     const out: MenuEntry[] = [];
     const selected = window.getSelection()?.toString().trim() ?? "";
-    const copy = (text: string, what: string) =>
+    const copy = (text: string, what: TKey) =>
       navigator.clipboard.writeText(text).then(
-        () => s().toast({ tone: "success", title: `${what} kopiert` }),
-        (err) => s().error("Kopieren nicht möglich", err),
+        () => s().toast({ tone: "success", title: t(what) }),
+        (err) => s().error(t("assist.copyFailed"), err),
       );
     if (selected) {
       out.push(
-        { label: "Auswahl kopieren", icon: Copy, onSelect: () => copy(selected, "Auswahl") },
+        { label: t("assist.copySelection"), icon: Copy, onSelect: () => copy(selected, "assist.copiedSelection") },
         {
-          label: "Auswahl zitieren",
+          label: t("assist.quoteSelection"),
           icon: Quote,
           onSelect: () => {
             setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`);
@@ -341,18 +344,18 @@ export function AssistantPanel() {
       );
     }
     const id = target.closest<HTMLElement>("[data-turn]")?.dataset.turn;
-    const turn = turns.find((t) => t.id === id);
-    const idx = turns.findIndex((t) => t.id === id);
+    const turn = turns.find((x) => x.id === id);
+    const idx = turns.findIndex((x) => x.id === id);
     if (turn?.kind === "assistant" && turn.text && !turn.streaming) {
       const plain = target.closest<HTMLElement>("[data-turn]")?.querySelector<HTMLElement>(".prose-chat")?.innerText ?? turn.text;
-      const lastUser = [...turns.slice(0, idx)].reverse().find((t) => t.kind === "user");
+      const lastUser = [...turns.slice(0, idx)].reverse().find((x) => x.kind === "user");
       out.push(
-        { label: "Antwort kopieren (Markdown)", icon: Copy, onSelect: () => copy(turn.text, "Antwort") },
-        { label: "Als reinen Text kopieren", icon: ClipboardType, onSelect: () => copy(plain, "Text") },
+        { label: t("assist.copyAnswer"), icon: Copy, onSelect: () => copy(turn.text, "assist.copiedAnswer") },
+        { label: t("assist.copyPlain"), icon: ClipboardType, onSelect: () => copy(plain, "assist.copiedText") },
         ...(pageContext
           ? [
               {
-                label: `An „${pageContext.title}“ anhängen`,
+                label: t("assist.appendTo", { title: pageContext.title }),
                 icon: FileInput,
                 onSelect: async () => {
                   try {
@@ -360,49 +363,49 @@ export function AssistantPanel() {
                     const doc = await api.page(pageContext.id);
                     await api.savePage(pageContext.id, `${doc.content.trimEnd()}\n\n${turn.text.trim()}\n`);
                     reloadEditors([pageContext.id]);
-                    s().toast({ tone: "success", title: `An „${pageContext.title}“ angehängt` });
+                    s().toast({ tone: "success", title: t("assist.appended", { title: pageContext.title }) });
                   } catch (err) {
-                    s().error("Anhängen nicht möglich", err);
+                    s().error(t("assist.appendFailed"), err);
                   }
                 },
               } as MenuEntry,
             ]
           : []),
         {
-          label: "Als neue Seite speichern",
+          label: t("assist.saveAsPage"),
           icon: FilePlus2,
           onSelect: async () => {
-            const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");
+            const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || t("assist.answer"));
             try {
               const p = await api.createPage(title, null, "sparkles", turn.text);
               await s().refreshTree();
               s().openPage(p.id, { newTab: true });
             } catch (err) {
-              s().error("Seite nicht angelegt", err);
+              s().error(t("assist.pageFailed"), err);
             }
           },
         },
         "separator",
-        { label: "Neu generieren", icon: RefreshCw, disabled: busy || !lastUser || idx !== turns.length - 1, onSelect: () => lastUser && send((lastUser as { text: string }).text) },
-        { label: "Nachfragen", icon: MessageSquarePlus, disabled: busy, submenu: FOLLOW_UPS.map((f) => ({ label: f, onSelect: () => send(`${f}, bitte.`) })) },
+        { label: t("assist.regenerate"), icon: RefreshCw, disabled: busy || !lastUser || idx !== turns.length - 1, onSelect: () => lastUser && send((lastUser as { text: string }).text) },
+        { label: t("assist.followUp"), icon: MessageSquarePlus, disabled: busy, submenu: followUps().map((f) => ({ label: f, onSelect: () => send(followUp(f)) })) },
         "separator",
       );
     } else if (turn?.kind === "user") {
       out.push(
-        { label: "Kopieren", icon: Copy, onSelect: () => copy(turn.text, "Nachricht") },
+        { label: t("common.copy"), icon: Copy, onSelect: () => copy(turn.text, "assist.copiedMessage") },
         {
-          label: "Bearbeiten",
+          label: t("links.editShort"),
           icon: PencilLine,
           onSelect: () => {
             setInput(turn.text);
             textarea.current?.focus();
           },
         },
-        { label: "Erneut senden", icon: RefreshCw, disabled: busy, onSelect: () => send(turn.text) },
+        { label: t("assist.resend"), icon: RefreshCw, disabled: busy, onSelect: () => send(turn.text) },
         "separator",
       );
     }
-    if (turns.length) out.push({ label: "Neuer Chat", icon: Plus, onSelect: () => newChat() });
+    if (turns.length) out.push({ label: t("assist.newChat"), icon: Plus, onSelect: () => newChat() });
     while (out[out.length - 1] === "separator") out.pop();
     return out;
   };
@@ -423,10 +426,10 @@ export function AssistantPanel() {
   // The tier's model, with its provider when there are several.
   const tierModel = (provider: string | undefined, model: string | undefined) => (model ? modelLabel(providers, provider, model) : undefined);
   const tierOptions: { value: Tier | null; label: string; model?: string }[] = [
-    { value: null, label: "Automatisch", model: settings?.settings.auto_route === false ? tierModel(router?.standard_provider, router?.standard_model) : "nach Aufgabe" },
-    { value: "local", label: "Lokal", model: tierModel(router?.local_provider, router?.local_model) },
-    { value: "standard", label: "Standard", model: tierModel(router?.standard_provider, router?.standard_model) },
-    { value: "reasoning", label: "Reasoning", model: tierModel(router?.reasoning_provider, router?.reasoning_model) },
+    { value: null, label: t("assist.auto"), model: settings?.settings.auto_route === false ? tierModel(router?.standard_provider, router?.standard_model) : t("assist.byTask") },
+    { value: "local", label: t("set.ai.localBadge"), model: tierModel(router?.local_provider, router?.local_model) },
+    { value: "standard", label: t("set.ai.standard"), model: tierModel(router?.standard_provider, router?.standard_model) },
+    { value: "reasoning", label: t("set.ai.reasoning"), model: tierModel(router?.reasoning_provider, router?.reasoning_model) },
   ];
   const currentTier = tierOptions.find((o) => o.value === tier) ?? tierOptions[0];
 
@@ -450,14 +453,14 @@ export function AssistantPanel() {
                 })),
                 "separator" as const,
                 {
-                  label: useTools ? "Werkzeuge deaktivieren" : "Werkzeuge aktivieren",
+                  label: useTools ? t("assist.toolsOff") : t("assist.toolsOn"),
                   icon: Wrench,
                   onSelect: () => {
                     setUseTools(!useTools);
                     localStorage.setItem("annalo.tools", useTools ? "0" : "1");
                   },
                 },
-                { label: "KI-Einstellungen", icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
+                { label: t("review.aiSettings"), icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
               ],
             )
           }
@@ -468,7 +471,7 @@ export function AssistantPanel() {
           <ChevronDown size={13} className="faint" />
         </button>
         <span className="grow" />
-        <IconButton icon={Plus} label="Neuer Chat" size="md" onClick={newChat} />
+        <IconButton icon={Plus} label={t("assist.newChat")} size="md" onClick={newChat} />
       </div>
 
       <div
@@ -497,11 +500,11 @@ export function AssistantPanel() {
             <div className="assistant-empty-icon">
               <Sparkles size={20} strokeWidth={1.5} />
             </div>
-            <div className="assistant-empty-title">Wie kann ich helfen?</div>
-            <p className="faint">Ich kenne deine Notizen, Projekte und Zeitbuchungen und kann für dich buchen.</p>
+            <div className="assistant-empty-title">{t("assist.emptyTitle")}</div>
+            <p className="faint">{t("assist.emptyText")}</p>
             {settings && !usableProvider(settings) && (
               <button type="button" className="setup-hint" onClick={() => s().openTab({ kind: "settings" })}>
-                <Settings2 size={14} /> KI-Anbieter in den Einstellungen verbinden
+                <Settings2 size={14} /> {t("assist.connect")}
               </button>
             )}
             <div className="suggestions">
@@ -518,13 +521,13 @@ export function AssistantPanel() {
           </div>
         ) : (
           <>
-            {turns.map((t) => (
-              <TurnView key={t.id} turn={t} />
+            {turns.map((turn) => (
+              <TurnView key={turn.id} turn={turn} />
             ))}
             {!busy && turns[turns.length - 1]?.kind === "assistant" && !(turns[turns.length - 1] as { error?: string }).error && (
-              <div className="follow-ups" aria-label="Nachfragen">
-                {FOLLOW_UPS.map((f) => (
-                  <button key={f} type="button" className="follow-up" onClick={() => send(`${f}, bitte.`)}>
+              <div className="follow-ups" aria-label={t("assist.followUp")}>
+                {followUps().map((f) => (
+                  <button key={f} type="button" className="follow-up" onClick={() => send(followUp(f))}>
                     {f}
                   </button>
                 ))}
@@ -537,14 +540,14 @@ export function AssistantPanel() {
       <div className="composer">
         {pageContext && (
           <div className="composer-context">
-            <button type="button" className={`context-chip ${includePage ? "" : "off"}`} onClick={() => setIncludePage(!includePage)} title={includePage ? "Seite wird mitgesendet" : "Seite wird nicht mitgesendet"}>
+            <button type="button" className={`context-chip ${includePage ? "" : "off"}`} onClick={() => setIncludePage(!includePage)} title={includePage ? t("assist.pageIncluded") : t("assist.pageExcluded")}>
               <FileText size={12} />
               <span>{pageContext.title}</span>
               {includePage ? <X size={11} /> : <Plus size={11} />}
             </button>
             {preview && (
               <span className="route-hint" title={preview.reasons.join("\n")}>
-                <span className={`tier-dot tier-${preview.tier}`} /> {tierLabel[preview.tier]}
+                <span className={`tier-dot tier-${preview.tier}`} /> {t(tierLabel[preview.tier])}
               </span>
             )}
           </div>
@@ -554,8 +557,8 @@ export function AssistantPanel() {
             ref={textarea}
             rows={1}
             value={input}
-            placeholder="Frage stellen oder Aufgabe beschreiben…"
-            aria-label="Nachricht an den Assistenten"
+            placeholder={t("assist.placeholder")}
+            aria-label={t("assist.inputLabel")}
             onChange={(e) => {
               setInput(e.target.value);
               e.target.style.height = "auto";
@@ -570,18 +573,18 @@ export function AssistantPanel() {
             }}
           />
           {busy ? (
-            <button type="button" className="send-btn stop" aria-label="Antwort stoppen" onClick={stop}>
+            <button type="button" className="send-btn stop" aria-label={t("assist.stop")} onClick={stop}>
               <Square size={12} fill="currentColor" />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Senden" disabled={!input.trim()} onClick={() => send()}>
+            <button type="button" className="send-btn" aria-label={t("assist.send")} disabled={!input.trim()} onClick={() => send()}>
               <ArrowUp size={15} strokeWidth={2.25} />
             </button>
           )}
         </div>
         <div className="composer-foot faint">
-          <span>Enter senden · Shift Enter neue Zeile</span>
-          {!useTools && <span>Werkzeuge aus</span>}
+          <span>{t("assist.keys")}</span>
+          {!useTools && <span>{t("assist.toolsOffShort")}</span>}
         </div>
       </div>
       {menu}
@@ -605,8 +608,10 @@ export function openSource(src: ContextChunk) {
   revealText(src.page_id, src.text, (id) => s.openPage(id)).catch(() => {});
 }
 
+/** The source text without its prefix („Seite: …“ / „Page: …“). */
+const sourceName = (src: ContextChunk) => src.source.replace(/^(Seite|Page): /, "");
 const sourceLabel = (src: ContextChunk) => {
-  const title = src.title ?? src.source.replace(/^Seite: /, "");
+  const title = src.title ?? sourceName(src);
   return src.heading ? `${title} › ${src.heading}` : title;
 };
 
@@ -634,6 +639,7 @@ function CiteCard({ src, n, rect, onEnter, onLeave }: { src: ContextChunk; n: nu
 
 /** A failed request: the cause in plain words and what to do; the server's message under „Details“. */
 function ErrorNote({ message }: { message: string }) {
+  const t = useT();
   const e = aiErrorSummary(message);
   return (
     <div className="msg-error" role="alert">
@@ -643,12 +649,12 @@ function ErrorNote({ message }: { message: string }) {
       </div>
       <div className="msg-error-hint">{e.hint}</div>
       <details className="msg-error-details">
-        <summary>Details</summary>
+        <summary>{t("assist.details")}</summary>
         <div className="mono">{message}</div>
       </details>
       {e.settings && (
         <Button size="sm" icon={Settings2} onClick={() => useApp.getState().openTab({ kind: "settings" })}>
-          Verbindung prüfen
+          {t("assist.checkConnection")}
         </Button>
       )}
     </div>
@@ -657,6 +663,7 @@ function ErrorNote({ message }: { message: string }) {
 
 // Earlier turns keep their objects while an answer streams in, so only the streaming one renders.
 const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
+  const t = useT();
   const s = useApp.getState;
   const [copied, setCopied] = useState(false);
   const [cite, setCite] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -675,18 +682,18 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
     const Icon = TOOL_META[turn.name]?.icon ?? Wrench;
     if (turn.status === "pending")
       return (
-        <div className="tool-approval" role="alertdialog" aria-label="Freigabe erforderlich">
+        <div className="tool-approval" role="alertdialog" aria-label={t("assist.approval")}>
           <div className="tool-approval-head">
             <ShieldAlert size={15} />
-            <span>{turn.label}: Freigabe erforderlich</span>
+            <span>{t("assist.approvalOf", { tool: turn.label })}</span>
           </div>
           <pre className="tool-approval-cmd">{turn.summary}</pre>
           <div className="tool-approval-actions">
             <Button size="sm" variant="ghost" onClick={() => turn.decide?.(false)}>
-              Ablehnen
+              {t("assist.reject")}
             </Button>
             <Button size="sm" variant="primary" onClick={() => turn.decide?.(true)}>
-              Ausführen
+              {t("assist.run")}
             </Button>
           </div>
         </div>
@@ -697,7 +704,7 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
         <span className="tool-step-label">{turn.label}</span>
         {turn.summary && <span className="tool-step-arg mono">{turn.summary}</span>}
         {turn.status === "done" && <Check size={13} className="tool-ok" />}
-        {turn.status === "rejected" && <span className="faint">abgelehnt</span>}
+        {turn.status === "rejected" && <span className="faint">{t("assist.rejected")}</span>}
         {turn.status === "error" && <span className="tool-err">{turn.output}</span>}
         {turn.status === "done" && turn.output && <pre className="tool-output">{turn.output}</pre>}
       </div>
@@ -769,13 +776,13 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
       )}
       {cut && (
         <div className="faint small msg-cut">
-          Sehr lange Antwort: angezeigt werden die ersten {MAX_SHOWN.toLocaleString("de-DE")} von {turn.text.length.toLocaleString("de-DE")} Zeichen. Kopieren und „Als neue Seite speichern“ übernehmen alles.
+          {t("assist.cut", { shown: int(MAX_SHOWN), total: int(turn.text.length) })}
         </div>
       )}
-      {turn.cancelled && <div className="faint small">Abgebrochen</div>}
+      {turn.cancelled && <div className="faint small">{t("assist.cancelled")}</div>}
       {!turn.streaming && !turn.error && turn.sources && turn.sources.length > 0 && (
         <div className="sources">
-          <span className="sources-label">Quellen</span>
+          <span className="sources-label">{t("assist.sources")}</span>
           {chipSources.slice(0, 3).map((src) => (
             <button
               key={numberOf(src)}
@@ -786,7 +793,7 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
               onClick={() => openSource(src)}
             >
               {src.page_id != null ? <FileText size={11} /> : <Timer size={11} />}
-              {src.source.replace(/^Seite: /, "")}
+              {sourceName(src)}
             </button>
           ))}
         </div>
@@ -804,17 +811,15 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
             <span title={m.reasons.join("\n")}>
               <span className={`tier-dot tier-${m.tier}`} /> {m.model}
             </span>
-            {m.ttft != null && <span title="Zeit bis zum ersten Token">{h1(m.ttft / 1000)} s</span>}
-            {m.tps != null && <span title="Tokens pro Sekunde">{Math.round(m.tps)} t/s</span>}
-            <span>
-              {m.tokens.toLocaleString("de-DE")} Tokens{m.exact ? "" : " (geschätzt)"}
-            </span>
+            {m.ttft != null && <span title={t("assist.ttft")}>{h1(m.ttft / 1000)} s</span>}
+            {m.tps != null && <span title={t("assist.tps")}>{Math.round(m.tps)} t/s</span>}
+            <span>{m.exact ? t("assist.tokens", { n: int(m.tokens) }) : t("assist.tokensEstimated", { n: int(m.tokens) })}</span>
             {m.cost > 0 && <span>{usd(m.cost)}</span>}
           </span>
           <span className="msg-actions">
           <IconButton
             icon={copied ? Check : Copy}
-            label="Kopieren"
+            label={t("common.copy")}
             size="sm"
             tooltipSide="top"
             onClick={() => {
@@ -825,17 +830,17 @@ const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
           />
           <IconButton
             icon={FilePlus2}
-            label={turn.pageTitle ? "In neue Seite einfügen" : "Als Seite speichern"}
+            label={turn.pageTitle ? t("assist.intoNewPage") : t("assist.saveAsPageShort")}
             size="sm"
             tooltipSide="top"
             onClick={async () => {
-              const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");
+              const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || t("assist.answer"));
               try {
                 const p = await api.createPage(title, null, turn.pageTitle ? "file-text" : "sparkles", turn.text);
                 await s().refreshTree();
                 s().openPage(p.id, { newTab: true });
               } catch (e) {
-                s().error("Seite nicht angelegt", e);
+                s().error(t("assist.pageFailed"), e);
               }
             }}
           />
@@ -859,6 +864,7 @@ function dedupeSources(src: ContextChunk[]) {
 
 /** „Server kurz ausgelastet, neuer Versuch in 5 s“, counting down; Stop cancels the wait. */
 function WaitNote({ until }: { until: number }) {
+  useT();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 250);
