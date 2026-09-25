@@ -139,6 +139,12 @@ export const api = {
   calendarSourceRemove: (id: string) => call<T.CalendarStatus>("calendar_source_remove", { id }),
   /** Syncs one source (its error is thrown) or all active ones now. */
   calendarSyncNow: (source?: string) => call<T.CalendarStatus>("calendar_sync_now", { source: source ?? null }),
+  /** Lists the calendars of Outlook (default, other folders and stores, shared, rooms, groups). */
+  calendarOutlookDiscover: () => call<T.CalendarStatus>("calendar_outlook_discover"),
+  calendarOutlookUpdate: (id: string, patch: { enabled?: boolean; color?: string; booking?: boolean }) =>
+    call<T.CalendarStatus>("calendar_outlook_update", { id, enabled: patch.enabled ?? null, color: patch.color ?? null, booking: patch.booking ?? null }),
+  /** People whose calendars discovery opens by name; discovers again. */
+  calendarOutlookPeople: (people: string[]) => call<T.CalendarStatus>("calendar_outlook_people", { people }),
   calendarSetSkip: (key: string, skip: boolean) => call<void>("calendar_set_skip", { key, skip }),
   calendarLinkEntry: (key: string, entryId: number) => call<void>("calendar_link_entry", { key, entryId }),
   /** The WBS last booked for this series or subject. */
@@ -175,6 +181,13 @@ export const api = {
   removeDemo: () => call<number>("demo_remove"),
   onboardingNeeded: () => call<boolean>("onboarding_needed"),
   finishOnboarding: (samples: boolean) => call<void>("onboarding_finish", { samples }),
+  /** First-run intro: play it (fresh install) or show the upgrade hint. */
+  onboardingStatus: () => call<T.OnboardingStatus>("onboarding_status"),
+  /** Stores `onboarding.completed_version` / `completed_at`. */
+  onboardingComplete: () => call<T.SettingsView>("onboarding_complete"),
+  onboardingHintShown: () => call<void>("onboarding_hint_shown"),
+  /** Resets the first-run flags only (never data). */
+  onboardingReset: () => call<T.SettingsView>("onboarding_reset"),
   backupNow: () => call<T.BackupInfo>("backup_now"),
   backups: () => call<T.BackupInfo[]>("backup_list"),
   backupDestinations: () => call<B.DestView[]>("backup_destinations"),

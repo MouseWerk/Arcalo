@@ -54,6 +54,9 @@ after(async () => {
 let remoteFile;
 
 test("a backup in the destination is restored from the settings after a checksum check", async () => {
+  // An app of the previous test file that is still ending would take the single-instance lock.
+  killApp();
+  await sleep(1000);
   app = await start();
   await app.invoke("page_create", { parentId: null, title: "Stand auf dem NAS", icon: null, content: "gesichert" });
   const view = await app.invoke("settings_get");

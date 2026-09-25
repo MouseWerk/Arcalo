@@ -1,12 +1,18 @@
-//! Outlook Classic (Windows): the bundled PowerShell script reads the default calendar through
-//! Outlook's COM object model (`Outlook.Application` → MAPI → `GetDefaultFolder(9)`, items sorted
-//! by start with recurrences, restricted to the window) and prints JSON; this module runs it
-//! (hidden, with a timeout, off the async runtime by the caller) and turns its output into
-//! events. No admin rights and no app registration are needed: the script runs as the user,
-//! against the Outlook profile that is already signed in.
+//! Outlook Classic (Windows): the bundled PowerShell script reads calendars through Outlook's
+//! COM object model (`Outlook.Application` → MAPI → `GetDefaultFolder(9)` or
+//! `GetFolderFromID`, items sorted by start with recurrences, restricted to the window) and
+//! prints JSON; this module runs it (hidden, with a timeout, off the async runtime by the
+//! caller) and turns its output into events. All selected calendars are read by one run, each
+//! with its own result. The script's discovery mode lists the calendars there are
+//! ([`discover`]). No admin rights and no app registration are needed: the script runs as the
+//! user, against the Outlook profile that is already signed in.
 //!
 //! For development and tests, `ANNALO_OUTLOOK_FIXTURE` names a JSON file that replaces the
-//! script's output; it is only honored when `ANNALO_TEST_FIXTURES=1` is set as well.
+//! script's output; it is only honored when `ANNALO_TEST_FIXTURES=1` is set as well. The
+//! fixture is either the script's plain output (`{"ok":true,"items":[…]}`, the default
+//! calendar only), or that plus `"discovery"` (the output of discovery) and `"folders"` (per
+//! EntryID or recipient the result of one calendar: `{"ok":true,"items":[…]}`, optionally
+//! `"freeBusy":true`, or `{"ok":false,"error":"denied"}`).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -15,6 +21,7 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
 
+use super::calendars::{self, DiscoveredCalendar, OutlookCalendar};
 use super::tz::Zone;
 use super::{Busy, NewEvent, Privacy, instant_id, meeting_link};
 use crate::error::{Error, Result};
@@ -26,8 +33,17 @@ pub const SCRIPT: &str = include_str!("outlook.ps1");
 /// File name of the script in the data folder (written before each run when it differs).
 pub const SCRIPT_FILE: &str = "outlook-calendar.ps1";
 
+/// The calendars to read, written for the script next to it before each run.
+pub const REQUEST_FILE: &str = "outlook-calendars.json";
+
+/// The people whose calendars discovery opens by name.
+pub const PEOPLE_FILE: &str = "outlook-people.json";
+
 /// Outlook may have to start first; a security prompt may wait for the user.
 pub const TIMEOUT: Duration = Duration::from_secs(120);
+
+/// For each further calendar read in the same run.
+const TIMEOUT_PER_CALENDAR: Duration = Duration::from_secs(20);
 
 /// The fixture file replacing the script (tests and development on other systems).
 pub fn fixture_path() -> Option<PathBuf> {
@@ -160,18 +176,39 @@ pub struct Request {
     pub privacy: Privacy,
 }
 
-/// Reads the Outlook calendar (blocking: run it off the async runtime). `script_dir` receives
-/// the script file.
-pub fn read(script_dir: &Path, req: Request, local: &Zone) -> Result<Vec<NewEvent>> {
+fn only_windows() -> Error {
+    Error::State(
+        "Outlook (klassisch) gibt es nur unter Windows. Hier den Kalender als ICS-Datei oder -Adresse einbinden."
+            .into(),
+    )
+}
+
+/// What one calendar of a run delivered.
+#[derive(Debug)]
+pub struct CalendarRead {
+    /// Source id (`outlook` or `outlook:<hash>`).
+    pub id: String,
+    pub events: Result<Vec<NewEvent>>,
+    /// Only free/busy times could be read.
+    pub free_busy: bool,
+}
+
+/// Reads the calendars `cals` in one run of the script (blocking: run it off the async
+/// runtime). `script_dir` receives the script file and the list of calendars. A calendar
+/// that cannot be read has its own error; the whole run fails only when Outlook does.
+pub fn read_calendars(
+    script_dir: &Path,
+    req: Request,
+    cals: &[OutlookCalendar],
+    local: &Zone,
+) -> Result<Vec<CalendarRead>> {
+    let ids: Vec<String> = cals.iter().map(|c| c.id.clone()).collect();
     if let Some(fixture) = fixture_path() {
-        let text = std::fs::read_to_string(&fixture)?;
-        return parse_output(&text, local, req.privacy);
+        let text = fixture_read(&std::fs::read_to_string(&fixture)?, cals)?;
+        return parse_calendars(&text, local, req.privacy, &ids);
     }
     if !cfg!(windows) {
-        return Err(Error::State(
-            "Outlook (klassisch) gibt es nur unter Windows. Hier den Kalender als ICS-Datei oder -Adresse einbinden."
-                .into(),
-        ));
+        return Err(only_windows());
     }
     let fmt = |t: NaiveDateTime| t.format("%Y-%m-%dT%H:%M:%S").to_string();
     let mut args: Vec<OsString> = vec!["-From".into(), fmt(req.from).into(), "-To".into(), fmt(req.to).into()];
@@ -192,14 +229,151 @@ pub fn read(script_dir: &Path, req: Request, local: &Zone) -> Result<Vec<NewEven
             args.push(flag.into());
         }
     }
+    std::fs::create_dir_all(script_dir)?;
+    let request = script_dir.join(REQUEST_FILE);
+    std::fs::write(&request, request_json(cals).to_string())?;
+    args.extend(["-Calendars".into(), request.into_os_string()]);
+    let extra = TIMEOUT_PER_CALENDAR * cals.len().saturating_sub(1) as u32;
+    let timeout = (TIMEOUT + extra).min(Duration::from_secs(600));
     let stdout = outlookcom::run(
         script_dir,
         Script { file: SCRIPT_FILE, source: SCRIPT },
         &args,
-        TIMEOUT,
+        timeout,
         "Später erneut synchronisieren.",
     )?;
-    parse_output(&stdout, local, req.privacy)
+    parse_calendars(&stdout, local, req.privacy, &ids)
+}
+
+/// The list of calendars for `-Calendars` (ids only; names stay out of the file).
+fn request_json(cals: &[OutlookCalendar]) -> Value {
+    Value::Array(
+        cals.iter()
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "default": c.default,
+                    "entryId": c.entry_id,
+                    "storeId": c.store_id,
+                    "recipient": c.recipient,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Lists the calendars of the Outlook profile (blocking). `people` are names or addresses
+/// whose default calendars are opened by name as well.
+pub fn discover(script_dir: &Path, people: &[String]) -> Result<Vec<DiscoveredCalendar>> {
+    let text = match fixture_path() {
+        Some(fixture) => fixture_discovery(&std::fs::read_to_string(&fixture)?)?,
+        None => {
+            if !cfg!(windows) {
+                return Err(only_windows());
+            }
+            let mut args: Vec<OsString> = vec!["-Mode".into(), "discover".into()];
+            if !people.is_empty() {
+                std::fs::create_dir_all(script_dir)?;
+                let file = script_dir.join(PEOPLE_FILE);
+                std::fs::write(&file, serde_json::to_string(people)?)?;
+                args.extend(["-Recipients".into(), file.into_os_string()]);
+            }
+            outlookcom::run(
+                script_dir,
+                Script { file: SCRIPT_FILE, source: SCRIPT },
+                &args,
+                TIMEOUT,
+                "Später erneut suchen.",
+            )?
+        }
+    };
+    parse_discovery_output(&text)
+}
+
+/// Discovery's output as calendars.
+pub fn parse_discovery_output(text: &str) -> Result<Vec<DiscoveredCalendar>> {
+    let v = outlookcom::json(text)?;
+    if let Some((code, message)) = outlookcom::failure(&v) {
+        return Err(Error::State(error_text(&code, &message)));
+    }
+    Ok(calendars::parse_discovery(&v))
+}
+
+/// Discovery from a fixture: its `discovery`, or just the default calendar (older fixtures).
+fn fixture_discovery(text: &str) -> Result<String> {
+    let v = outlookcom::json(text)?;
+    if outlookcom::failure(&v).is_some() {
+        return Ok(text.to_owned());
+    }
+    if v["discovery"].is_object() {
+        return Ok(v["discovery"].to_string());
+    }
+    let count = outlookcom::items(&v, "items").len();
+    Ok(serde_json::json!({"ok": true, "calendars": [{
+        "entryId": "DEFAULT", "storeId": "STORE", "name": "Kalender", "path": r"\\Postfach\Kalender",
+        "store": "Postfach", "owner": "Postfach", "storeType": 0, "default": true, "items": count,
+    }]})
+    .to_string())
+}
+
+/// What the script would print for `cals`, from a fixture: the default calendar gets the
+/// top-level `items` (or its folder), the others their entry in `folders` by EntryID or
+/// recipient; a calendar not in the fixture is not found.
+fn fixture_read(text: &str, cals: &[OutlookCalendar]) -> Result<String> {
+    let v = outlookcom::json(text)?;
+    if outlookcom::failure(&v).is_some() {
+        return Ok(text.to_owned());
+    }
+    let folders = &v["folders"];
+    let folder = |c: &OutlookCalendar| {
+        [&c.entry_id, &c.recipient].into_iter().filter(|k| !k.is_empty()).find_map(|k| folders.get(k.as_str())).cloned()
+    };
+    let out: Vec<Value> = cals
+        .iter()
+        .map(|c| {
+            let mut r = match folder(c) {
+                Some(f) if f.is_object() => f,
+                _ if c.default => serde_json::json!({"ok": true, "items": v["items"].clone()}),
+                _ => serde_json::json!({"ok": false, "error": "not_found", "message": ""}),
+            };
+            if r.get("ok").is_none() {
+                r["ok"] = Value::Bool(true);
+            }
+            r["id"] = Value::String(c.id.clone());
+            r
+        })
+        .collect();
+    Ok(serde_json::json!({"ok": true, "version": v["version"].clone(), "calendars": out}).to_string())
+}
+
+/// The output of a run as one result per calendar in `ids`. The plain output of the default
+/// calendar alone (without `calendars`) is the result of `outlook`.
+pub fn parse_calendars(text: &str, local: &Zone, privacy: Privacy, ids: &[String]) -> Result<Vec<CalendarRead>> {
+    let v = outlookcom::json(text)?;
+    if let Some((code, message)) = outlookcom::failure(&v) {
+        return Err(Error::State(error_text(&code, &message)));
+    }
+    let results = outlookcom::items(&v, "calendars");
+    let single = v.get("calendars").is_none();
+    let missing = || Err(Error::State(calendars::folder_error_text("not_found", "")));
+    Ok(ids
+        .iter()
+        .map(|id| {
+            if single {
+                let events = if id == super::OUTLOOK { parse_items(&v, local, privacy, false) } else { missing() };
+                return CalendarRead { id: id.clone(), events, free_busy: false };
+            }
+            let Some(r) = results.iter().find(|r| &s(r, "id") == id) else {
+                return CalendarRead { id: id.clone(), events: missing(), free_busy: false };
+            };
+            if let Some((code, message)) = outlookcom::failure(r) {
+                let e = Error::State(calendars::folder_error_text(&code, &message));
+                return CalendarRead { id: id.clone(), events: Err(e), free_busy: false };
+            }
+            let free_busy = b(r, "freeBusy");
+            CalendarRead { id: id.clone(), events: parse_items(r, local, privacy, free_busy), free_busy }
+        })
+        .collect())
 }
 
 /// The German message for an error code of the script.
@@ -240,13 +414,30 @@ fn local_date(raw: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(raw.trim().get(..10)?, "%Y-%m-%d").ok()
 }
 
-/// The script's output as events. Declined and cancelled meetings are left out.
+/// The script's output (the default calendar alone) as events. Declined and cancelled
+/// meetings are left out.
 pub fn parse_output(text: &str, local: &Zone, privacy: Privacy) -> Result<Vec<NewEvent>> {
     let v = outlookcom::json(text)?;
     if let Some((code, message)) = outlookcom::failure(&v) {
         return Err(Error::State(error_text(&code, &message)));
     }
-    let items = outlookcom::items(&v, "items");
+    parse_items(&v, local, privacy, false)
+}
+
+/// Title of a free/busy block (its subject cannot be read).
+fn busy_title(b: Busy) -> &'static str {
+    match b {
+        Busy::Free => "Frei",
+        Busy::Tentative => "Mit Vorbehalt",
+        Busy::Busy => "Beschäftigt",
+        Busy::Oof => "Abwesend",
+        Busy::Elsewhere => "An anderem Ort tätig",
+    }
+}
+
+/// The `items` of one calendar's result as events; `free_busy`: blocks without subjects.
+fn parse_items(v: &Value, local: &Zone, privacy: Privacy, free_busy: bool) -> Result<Vec<NewEvent>> {
+    let items = outlookcom::items(v, "items");
     let mut out = vec![];
     for it in &items {
         // olResponseDeclined; olMeetingCanceled / olMeetingReceivedAndCanceled.
@@ -313,6 +504,9 @@ pub fn parse_output(text: &str, local: &Zone, privacy: Privacy) -> Result<Vec<Ne
             private: sensitivity == 2 || sensitivity == 3,
             categories: list(it, "categories", &[',', ';']),
         };
+        if (free_busy || b(it, "freeBusy")) && ev.title.trim().is_empty() {
+            ev.title = busy_title(ev.busy).into();
+        }
         ev.redact(privacy);
         out.push(ev);
     }
@@ -447,9 +641,109 @@ mod tests {
             "Restrict(",
             "InvariantCulture",
             "StartUTC",
+            // Calendar selection: stores, navigation pane, colleagues, per-folder errors.
+            "$Mode",
+            "$Calendars",
+            "$Recipients",
+            "ExchangeStoreType",
+            "GetNavigationModule(1)",
+            "NavigationFolders",
+            "GetSharedDefaultFolder",
+            "GetFolderFromID",
+            ".FreeBusy(",
+            "DefaultItemType",
         ] {
             assert!(SCRIPT.contains(needle), "{needle}");
         }
+    }
+
+    fn cal(id: &str, entry: &str, recipient: &str) -> OutlookCalendar {
+        OutlookCalendar {
+            id: id.into(),
+            entry_id: entry.into(),
+            recipient: recipient.into(),
+            default: id == super::super::OUTLOOK,
+            enabled: true,
+            ..Default::default()
+        }
+    }
+
+    /// The script's output for three calendars: one read, one refused, one free/busy only.
+    const MULTI: &str = r#"{"ok":true,"version":"16.0","calendars":[
+      {"id":"outlook","ok":true,"mode":"restrict","skipped":0,"freeBusy":false,"items":[
+        {"entryId":"A","globalId":"G1","subject":"Jour fixe","start":"2026-10-21T08:00:00Z","end":"2026-10-21T09:00:00Z","busy":2,"responseStatus":3}]},
+      {"id":"outlook:aaaaaaaaaaaa","ok":false,"error":"denied","message":"Keine Berechtigung"},
+      {"id":"outlook:bbbbbbbbbbbb","ok":true,"mode":"freebusy","freeBusy":true,"items":{"entryId":"","globalId":"fb-20261021T1000","subject":"","start":"2026-10-21T08:00:00Z","end":"2026-10-21T09:30:00Z","busy":3,"freeBusy":true}}
+    ]}"#;
+
+    #[test]
+    fn every_calendar_has_its_own_result() {
+        let ids: Vec<String> = ["outlook", "outlook:aaaaaaaaaaaa", "outlook:bbbbbbbbbbbb", "outlook:cccccccccccc"]
+            .map(String::from)
+            .into();
+        let r = parse_calendars(MULTI, &berlin(), ALL, &ids).unwrap();
+        assert_eq!(r.len(), 4);
+        assert_eq!(r[0].events.as_ref().unwrap()[0].title, "Jour fixe");
+        let denied = r[1].events.as_ref().unwrap_err().to_string();
+        assert!(denied.contains("Kein Zugriff") && denied.contains("Keine Berechtigung"), "{denied}");
+        assert!(r[2].free_busy);
+        let fb = &r[2].events.as_ref().unwrap()[0];
+        assert_eq!((fb.title.as_str(), fb.busy, fb.uid.as_str()), ("Abwesend", Busy::Oof, "fb-20261021T1000"));
+        assert!(r[3].events.as_ref().unwrap_err().to_string().contains("nicht mehr"), "not in the output");
+        // The plain output of before is the default calendar's.
+        let r = parse_calendars(SAMPLE, &berlin(), ALL, &ids[..2]).unwrap();
+        assert_eq!(r[0].events.as_ref().unwrap().len(), 5);
+        assert!(r[1].events.is_err());
+        // Outlook failing as a whole fails the run.
+        assert!(parse_calendars(r#"{"ok":false,"error":"new_outlook"}"#, &berlin(), ALL, &ids).is_err());
+    }
+
+    #[test]
+    fn fixtures_describe_several_calendars_and_old_ones_still_work() {
+        let fixture = r#"{"ok":true,"items":[{"entryId":"A","globalId":"G1","subject":"Standard","start":"2026-10-21T08:00:00Z","end":"2026-10-21T09:00:00Z"}],
+          "discovery":{"ok":true,"calendars":[{"entryId":"D","storeId":"S","name":"Kalender","default":true},{"entryId":"P","storeId":"S","name":"Projekt","storeType":0}]},
+          "folders":{"P":{"items":[{"entryId":"B","globalId":"G2","subject":"Projekt","start":"2026-10-22T08:00:00Z","end":"2026-10-22T09:00:00Z"}]},
+                     "Anna":{"ok":false,"error":"denied"}}}"#;
+        let found = parse_discovery_output(&fixture_discovery(fixture).unwrap()).unwrap();
+        assert_eq!(found.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Kalender", "Projekt"]);
+        let cals = [
+            cal("outlook", "D", ""),
+            cal(&found[1].id, "P", ""),
+            cal("outlook:x", "", "Anna"),
+            cal("outlook:y", "Q", ""),
+        ];
+        let ids: Vec<String> = cals.iter().map(|c| c.id.clone()).collect();
+        let out = fixture_read(fixture, &cals).unwrap();
+        let r = parse_calendars(&out, &berlin(), ALL, &ids).unwrap();
+        assert_eq!(r[0].events.as_ref().unwrap()[0].title, "Standard", "top-level items: the default calendar");
+        assert_eq!(r[1].events.as_ref().unwrap()[0].title, "Projekt");
+        assert!(r[2].events.as_ref().unwrap_err().to_string().contains("Kein Zugriff"));
+        assert!(r[3].events.is_err());
+        // An old fixture: discovery finds the default calendar only, reading works as before.
+        let old = r#"{"ok":true,"items":[{"entryId":"A","subject":"Alt","start":"2026-10-21T08:00:00Z","end":"2026-10-21T09:00:00Z"}]}"#;
+        let found = parse_discovery_output(&fixture_discovery(old).unwrap()).unwrap();
+        assert_eq!((found.len(), found[0].id.as_str(), found[0].items), (1, "outlook", Some(1)));
+        let r = parse_calendars(&fixture_read(old, &cals[..1]).unwrap(), &berlin(), ALL, &ids[..1]).unwrap();
+        assert_eq!(r[0].events.as_ref().unwrap()[0].title, "Alt");
+        // A fixture that fails: the whole run and discovery fail with the German message.
+        let failing = r#"{"ok":false,"error":"new_outlook","message":""}"#;
+        assert!(
+            parse_discovery_output(&fixture_discovery(failing).unwrap())
+                .unwrap_err()
+                .to_string()
+                .contains("neue Outlook")
+        );
+        assert!(parse_calendars(&fixture_read(failing, &cals).unwrap(), &berlin(), ALL, &ids).is_err());
+    }
+
+    #[test]
+    fn the_request_names_ids_not_names() {
+        let mut c = cal("outlook:abc", "E1", "Jörg Weiß");
+        c.name = "Geheimprojekt".into();
+        c.store_id = "S1".into();
+        let j = request_json(&[cal("outlook", "", ""), c]).to_string();
+        assert!(j.contains(r#""default":true"#) && j.contains(r#""entryId":"E1""#) && j.contains(r#""storeId":"S1""#));
+        assert!(j.contains("Jörg Weiß") && !j.contains("Geheimprojekt"));
     }
 
     #[test]

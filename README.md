@@ -45,8 +45,9 @@ Get the latest version from the [**Releases page**](https://github.com/MouseWerk
 | **Linux** (x64) | `Annalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Annalo_*.deb` |
 | **Linux** (x64) | `Annalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Annalo_*.AppImage && ./Annalo_*.AppImage` |
 
-The first start opens a short onboarding (language, theme, LiteLLM server) and seeds a small demo workspace to try
-things out.
+The first start plays a short intro (about half a minute, skippable) and then walks through a setup that writes your
+answers straight into the settings: language, theme, working time, workspace (sample data, Obsidian import or empty),
+AI, calendar, Git sync, backups and desktop. Settings → Über → „Einführung erneut starten“ plays it again.
 
 ## A quick tour
 
@@ -223,7 +224,8 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 
 **Kalender**
-- Outlook Classic on Windows: reads the default calendar of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed
+- Outlook Classic on Windows: reads the calendars you choose of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed. „Kalender auswählen“ lists the default calendar, sub-calendars, further and shared mailboxes, PST files, calendars colleagues shared with you (also free/busy only), rooms and groups; each has its own color and switch for booking proposals
+- A legend hides or shows calendars in the view; a meeting in two calendars appears once
 - ICS: subscribe to a published calendar (Outlook im Web/Exchange „Kalender veröffentlichen“, Google, Nextcloud, …) or add an `.ics` file; series, exceptions and Windows time zones are understood. Subscription addresses are kept in the credential store
 - Day, Arbeitswoche, Woche, Monat and Liste with KW numbers; overlapping meetings side by side; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
 - „Zeit buchen“ from a meeting (prefilled, WBS remembered per series or subject), „Besprechungsnotiz“, „Nicht buchen“; booked meetings get a check mark
@@ -265,8 +267,9 @@ settings also cover proxy and certificates for company networks and Git backup.
 
 <img src="docs/screenshots/onboarding.png" width="42%" align="right" alt="Onboarding">
 
-1. **Install and start.** The onboarding asks for language, theme and (optionally) your LiteLLM server. You can skip
-   anything and change it later under Settings
+1. **Install and start.** A short intro shows what Annalo does, then the setup asks for language, theme, working time,
+   workspace, AI (none, a local Ollama or your company's server), calendar, Git sync, backups and desktop. Every step can
+   be skipped and changed later under Settings; Settings → Über reruns it with your current settings
 2. **Look around the demo workspace.** Press **Ctrl K** for the command palette, **Ctrl O** to jump to a page and
    **Ctrl Shift D** for today's daily note
 3. **Coming from Obsidian?** Use „Obsidian-Vault importieren…“ in the command palette. Folders, frontmatter, links,
@@ -336,7 +339,7 @@ Settings are grouped (Allgemein, Arbeiten, KI, System) and searchable. Besides t
 
 | Section | What |
 |---|---|
-| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, Mica (Windows 11), own title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
+| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, window backdrop Mica or Acrylic with an opacity slider (Windows 11), own title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
 | Sprache & Format | German or English for settings, ribbon, sidebar, tabs, status bar and commands (longer help texts, dialogs and AI prompts stay German), date format |
 | Start | open the last tabs, the start page or today's note; remember window size and position; start minimized |
 | Tastatur | rebind every in-app shortcut, with conflict detection (commands, editor keys, global shortcuts); Ctrl+Alt is rejected (AltGr) |
@@ -481,7 +484,8 @@ e2e/run.sh                     # end-to-end: drives the real desktop app via Web
 ```
 
 The end-to-end suite starts the actual app binary under `tauri-driver`, with a fresh data directory per test file,
-and a fake LiteLLM server for the assistant tests. It also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
+and a fake LiteLLM server for the assistant tests. The harness sets `ANNALO_SKIP_ONBOARDING=1` (honored by debug builds
+only) so the first-run intro stays away; `launch({ onboarding: true })` lets it run (tests 88–90). It also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
 
 The README and website screenshots come from `e2e/readme-shots.test.js` and `e2e/readme-shots-15.test.js` (the 1.5
 features in light and dark, at device scale factor 2 through `GDK_SCALE`, so the X display needs at least

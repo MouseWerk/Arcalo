@@ -260,6 +260,32 @@ and by `entry_id`.
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
 
+## First run (`onboarding.rs` in core, `ui/src/onboarding/`)
+
+- Decision: at start, before anything is saved, `onboarding_classify` records once in the meta row `onboarding.first_seen`
+  whether the workspace existed before the intro (stored settings, the answered welcome choice `meta.onboarded`, pages or
+  projects → `existing`, else `fresh`). `onboarding_status` (`onboarding::decide`, pure) plays intro and setup for a fresh
+  workspace until `settings.onboarding.completed_version` is set; an existing one gets the toast „Neu in 1.6: Einführung
+  ansehen“ once (meta `onboarding.whats_new`). `onboarding_complete` stores `completed_version` (`INTRO_VERSION`) and
+  `completed_at` (closing the setup counts too); `onboarding_reset` („Einrichtung zurücksetzen“, Settings → Über) clears
+  them, `meta.onboarded` and the hint and sets `first_seen = reset` (the intro plays again at the next start without
+  guessing the language). `settings_save` keeps the stored `onboarding` like the dashboard. The flags live in the
+  workspace database, so a portable copy carries them. Debug builds skip everything with `ANNALO_SKIP_ONBOARDING=1` (the
+  e2e harness sets it unless a test asks for the intro).
+- UI: `FirstRun` (rendered by `App` only, so the capture, search and presenter windows never show it) covers the window
+  above the app (z 45: dialogs, menus and toasts stay above), keeps keys inside and traps Tab. `Intro` plays seven scenes
+  (welcome plus notes, `/zeit` and the week, assistant, calendar and „Woche vorschlagen“, quick capture, local-first):
+  CSS-only motion on a 560 × 420 canvas scaled to the free space, one progress segment per scene whose `animationend`
+  advances, paused by hover or focus on the scene, Space or the button; arrows move, Esc and „Überspringen“ go to the
+  setup; reduced motion (OS or Settings → Darstellung) shows static slides that fade. `Intake` has ten steps (`flow.ts`:
+  the order and pure setting patches, tested) with a step list (a compact line below 1000 px), a progress bar and
+  back / skip / next. Every answer is saved at once through `writeSettings` (queued, on top of the newest settings) or the
+  existing commands (`onboarding_finish`, `ollama_detect`, the provider dialog with `provider_key_set`,
+  `calendar_source_add`, `git_token_set` and `git_sync_test`, `autostart_set`, `capture_show`). „Mehr in den
+  Einstellungen“ pauses the flow on that settings section with a toast that resumes it. A fresh install guesses the
+  language from the OS locale (`lang.ts`, the adapter to the i18n layer). `time.enabled = false` („Zeiterfassung
+  verwenden“) hides the ribbon's Zeiterfassung and Projekte and their palette commands.
+
 ## Auto-update (`updates.rs` in the shell, `update.rs` in core)
 
 - `tauri-plugin-updater` is registered only when the build compiled in `ANNALO_UPDATER_PUBKEY`
@@ -318,6 +344,27 @@ and by `entry_id`.
   `new_outlook`, `server_exec`, `constrained`, `folder`, `com`) and become German messages that point to ICS where
   COM cannot work. For development and tests `ANNALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
   `ANNALO_TEST_FIXTURES=1`.
+- Outlook calendars (`calsync/calendars.rs`, 1.6): `-Mode discover` lists calendar folders: the default one, every
+  store of `Namespace.Stores` (primary, delegate and additional mailboxes, PSTs; public folders skipped) walked for
+  `DefaultItemType = 1` (calendars fully, other folders two levels deep, Deleted Items skipped), the calendar module of
+  the navigation pane (`GetNavigationModule(1)` → `NavigationGroups` → `NavigationFolders`, through a never shown
+  explorer when Outlook has none; colleagues' calendars, rooms, groups) and people added by name
+  (`GetSharedDefaultFolder`). Each comes with EntryID, StoreID, name, store/owner, path, store type, navigation group,
+  item count and a per-folder error; a folder that refuses access is tried as free/busy (`Recipient.FreeBusy`). The
+  core classifies them (`own`, `file`, `mailbox`, `shared`, `room`, `group`; everything but own and file counts as
+  shared). The default calendar keeps the source id `outlook` (so events, marks and WBS memory of 1.5 stay); others are
+  `outlook:<12 hex of SHA-256 over StoreID|EntryID>` (uppercased), a person opened by name hashes its name. The
+  choice lives in `settings.calendar.outlook_calendars` (id, ids, name, owner, path, kind, color, enabled, booking,
+  free/busy); `normalized()` (also on loading) adds the default calendar to 1.5 settings with `outlook_color`, which
+  stays its color. Reading: all selected calendars in one run with `-Calendars <json file>` (`GetDefaultFolder(9)`,
+  else `GetFolderFromID`, else `GetSharedDefaultFolder`, else free/busy blocks), each with its own result and status
+  row; the timeout grows by 20 s per calendar. `calendar_events` returns a meeting found in several Outlook calendars
+  (same uid and start) once: the copy with a mark, else the one of the calendar listed first (own before shared),
+  naming the others in `also_in`. Week proposal, day review and the quick capture's „Jetzt“ read
+  `booking_sources()` (calendars with „Für Buchungsvorschläge verwenden“, default off for shared ones). Which
+  calendars the Kalender and the „Termine“ widget show is a view setting (`lib/calvisibility.ts`, localStorage).
+  Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
+  describe the default calendar alone.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
   TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
   Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed
@@ -463,9 +510,15 @@ and by `entry_id`.
   the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid
   hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "annalo-theme", version: 1, name, dark,
   colors}` (`theme_export` / `theme_file_read`, checked by `prefs::parse_theme_file`).
-- Mica (Windows 11) is off by default; `migrate_appearance_defaults` switches it off once for settings saved with the
-  old default (and turns the old default accent `indigo` into `theme`). When on, sidebar and ribbon are the theme's
-  sidebar color at 93 %.
+- Window backdrop (`appearance.window_effect`: `none`/`mica`/`acrylic`, `window_opacity` 40–100, default 80): off by
+  default; `migrate_appearance_defaults` switches it off once for settings saved with the old default (and turns the
+  old default accent `indigo` into `theme`); the 1.3–1.5 switch `mica: true` becomes `window_effect: "mica"` on load
+  (`upgrade_settings`). `src-tauri/src/backdrop.rs` offers Mica from Windows build 22000 and Acrylic from 22523 (drawn
+  as a system backdrop); only then is the window transparent, so Windows 10, macOS and Linux stay opaque.
+  `window_set_backdrop(effect, dark)` applies it (the Mica variant follows the theme; clearing needs `set_effects(None)`).
+  The UI (`lib/backdrop.ts`) sets `<html data-backdrop>` and `--glass`; app.css ("window backdrop") paints one base
+  layer on the body (sidebar color at `--glass`) and one on `.main` (canvas at `--glass`), everything between is
+  transparent, so splitters and gaps can never be holes. `ANNALO_TEST_BACKDROP=1` simulates both effects (e2e 91).
 - Dropdowns are `components/Select.tsx` (combobox + listbox in a portal) with the API of a controlled `<select>`; the
   e2e harness `app.select(selector, value)` opens it and clicks the option.
 - Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the

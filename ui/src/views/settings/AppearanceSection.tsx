@@ -1,12 +1,14 @@
 // Settings → Darstellung: mode, color themes (a light and a dark one, previews in the theme's
 // colors), custom themes (editor, import/export), accent color, fonts, UI scale, density, line
-// width, reduced motion and (Windows 11) the Mica backdrop. Changes apply and save immediately.
+// width, reduced motion and (Windows 11) the window backdrop with its opacity. Changes apply and
+// save immediately.
 
 import { useEffect, useState } from "react";
 import { Check, Download, Palette, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
+import { OPACITY_DEFAULT, OPACITY_MIN, backdropState, onBackdrop, previewOpacity, type Backdrop } from "../../lib/backdrop";
 import { ACCENT_PRESETS, accentHex, accentTokens, contrast } from "../../lib/color";
 import { useT, type TKey } from "../../lib/i18n";
 import { BUILTIN_THEMES, allThemes, effectiveAccent, findTheme, type ThemeDef } from "../../lib/themes";
@@ -260,11 +262,7 @@ export function AppearanceSection({ draft, update }: SectionProps) {
         <Row label={t("set.appearance.startup")} description={t("set.appearance.startupDesc")}>
           <Switch label={t("set.appearance.startup")} checked={a.startup_animation} onChange={(v) => set({ startup_animation: v })} />
         </Row>
-        {platform === "windows" && (
-          <Row label={t("set.appearance.mica")} description={t("set.appearance.micaDesc")}>
-            <Switch label={t("set.appearance.mica")} checked={a.mica} onChange={(v) => set({ mica: v })} />
-          </Row>
-        )}
+        <BackdropRows a={a} set={set} windows={platform === "windows"} />
         {platform === "windows" && (
           <Row label={t("set.appearance.titlebar")} description={t("set.appearance.titlebarDesc")}>
             <Switch label={t("set.appearance.titlebar")} checked={a.custom_titlebar} onChange={(v) => set({ custom_titlebar: v })} />
@@ -273,6 +271,70 @@ export function AppearanceSection({ draft, update }: SectionProps) {
       </Group>
       {editing && <ThemeEditor theme={editing} themes={themes} accent={a.accent} onCancel={() => setEditing(null)} onSave={saveCustom} onExport={a.custom_themes.some((c) => c.id === editing.id) ? exportCustom : undefined} />}
     </>
+  );
+}
+
+/** Hintergrundeffekt and Deckkraft: only the effects this system offers (Windows 11). */
+function BackdropRows({ a, set, windows }: { a: AppearancePrefs; set: (p: Partial<AppearancePrefs>) => void; windows: boolean }) {
+  const t = useT();
+  const [backdrop, setBackdrop] = useState<Backdrop>(backdropState);
+  useEffect(() => onBackdrop(setBackdrop), []);
+  if (!backdrop.effects.length) {
+    return windows ? (
+      <Row label={t("set.appearance.effect")} description={t("set.appearance.effectUnavailable")}>
+        {null}
+      </Row>
+    ) : null;
+  }
+  const names: Record<string, string> = { none: t("set.appearance.effectNone"), mica: "Mica", acrylic: "Acrylic" };
+  const effect = backdrop.effects.includes(a.window_effect) ? a.window_effect : "none";
+  const off = effect === "none";
+  return (
+    <>
+      <Row label={t("set.appearance.effect")} description={t("set.appearance.effectDesc")}>
+        <Segmented
+          label={t("set.appearance.effect")}
+          value={effect}
+          options={(["none", ...backdrop.effects] as const).map((v) => ({ value: v, label: names[v] }))}
+          onChange={(v) => set({ window_effect: v })}
+        />
+      </Row>
+      <Row label={t("set.appearance.opacity")} description={t(off ? "set.appearance.opacityOff" : "set.appearance.opacityDesc")}>
+        <OpacitySlider value={a.window_opacity ?? OPACITY_DEFAULT} disabled={off} label={t("set.appearance.opacity")} onCommit={(v) => set({ window_opacity: v })} />
+      </Row>
+    </>
+  );
+}
+
+/** Applies while dragged (nothing saved yet), saves once let go. */
+function OpacitySlider({ value, disabled, label, onCommit }: { value: number; disabled: boolean; label: string; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  const live = (n: number) => {
+    setV(n);
+    previewOpacity(n);
+  };
+  const commit = () => v !== value && onCommit(v);
+  const fill = ((v - OPACITY_MIN) / (100 - OPACITY_MIN)) * 100;
+  return (
+    <span className={`opacity-slider ${disabled ? "off" : ""}`}>
+      <input
+        type="range"
+        min={OPACITY_MIN}
+        max={100}
+        step={1}
+        value={v}
+        disabled={disabled}
+        aria-label={label}
+        aria-valuetext={`${v} %`}
+        style={{ "--fill": `${fill}%` } as React.CSSProperties}
+        onChange={(e) => live(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+      <output className="opacity-value num">{v} %</output>
+    </span>
   );
 }
 

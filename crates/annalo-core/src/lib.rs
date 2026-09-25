@@ -72,6 +72,7 @@ pub mod model;
 pub mod network;
 pub mod netzplan;
 pub mod notes;
+pub mod onboarding;
 pub mod outlookcom;
 pub mod pagework;
 pub mod prefs;
