@@ -15,7 +15,7 @@ const ACTIONS: [(&str, &str); 4] =
     [("menu:settings", "settings"), ("menu:sidebar", "sidebar"), ("menu:focus", "focus"), ("menu:palette", "palette")];
 const QUIT: &str = "menu:quit";
 const WEBSITE: &str = "menu:website";
-const WEBSITE_URL: &str = "https://github.com/mauricekleindienst/annalo";
+const WEBSITE_URL: &str = "https://github.com/MouseWerk/Annalo";
 
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item = |id: &str, text: &str, accel: Option<&str>| MenuItem::with_id(app, id, text, true, accel);

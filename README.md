@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mauricekleindienst/annalo/actions/workflows/ci.yml"><img src="https://github.com/mauricekleindienst/annalo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://github.com/mauricekleindienst/annalo/releases/latest"><img src="https://img.shields.io/github/v/release/mauricekleindienst/annalo?label=release" alt="Latest release"></a>
+  <a href="https://github.com/MouseWerk/Annalo/actions/workflows/ci.yml"><img src="https://github.com/MouseWerk/Annalo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/MouseWerk/Annalo/releases/latest"><img src="https://img.shields.io/github/v/release/MouseWerk/Annalo?label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6b5bd6" alt="Platforms">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20Rust%20%C2%B7%20React-2f2f3a" alt="Tauri 2, Rust, React">
 </p>
@@ -34,7 +34,7 @@ against this repository's releases.
 
 ## Download
 
-Get the latest version from the [**Releases page**](https://github.com/mauricekleindienst/annalo/releases/latest).
+Get the latest version from the [**Releases page**](https://github.com/MouseWerk/Annalo/releases/latest).
 
 | System | File | Notes |
 |---|---|---|
@@ -366,7 +366,7 @@ The first three sign the app; with all six it is also notarized and stapled, and
 
 The app updates itself from GitHub releases: at start, every 6 hours (Settings → Über → „Automatisch nach Updates
 suchen“) and via „Jetzt nach Updates suchen“ it reads
-`https://github.com/mauricekleindienst/annalo/releases/latest/download/latest.json`. A newer version shows a toast
+`https://github.com/MouseWerk/Annalo/releases/latest/download/latest.json`. A newer version shows a toast
 „Version X verfügbar“ with „Installieren und neu starten“ and the release notes („Was ist neu?“); nothing is installed
 without that click. Before installing, all open editors are saved; the signed NSIS installer then runs passively and
 restarts the app (on macOS the signed `.app.tar.gz` replaces the app bundle, then it restarts).
