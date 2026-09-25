@@ -2,7 +2,7 @@
 // and a list; a meeting opens a side panel to book it (prefilled, WBS remembered per series or
 // subject), write its meeting note or mark it „nicht buchen“.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle, CalendarDays, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Timer, User, Users, Video, X,
@@ -24,7 +24,7 @@ import type { CalendarEvent, CalendarSettings, CalendarStatus, DayOverview, Time
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
 const VIEW_LABELS: Record<CalView, string> = { day: "Tag", workweek: "Arbeitswoche", week: "Woche", month: "Monat", agenda: "Liste" };
-const BUSY_LABELS: Record<CalendarEvent["busy"], string> = { free: "Frei", tentative: "Mit Vorbehalt", busy: "Gebucht", oof: "Abwesend", elsewhere: "An anderem Ort tätig" };
+const BUSY_LABELS: Record<CalendarEvent["busy"], string> = { free: "Frei", tentative: "Mit Vorbehalt", busy: "Beschäftigt", oof: "Abwesend", elsewhere: "An anderem Ort tätig" };
 
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -42,6 +42,9 @@ function store(key: string, v: string) {
   }
 }
 
+/** What the view showed last in this session (the view is unmounted when its tab is left). */
+const session: { anchor: Date | null; selected: string | null } = { anchor: null, selected: null };
+
 const entryEnd = (x: TimeEntryRow) => new Date(new Date(x.start_time).getTime() + (x.duration_minutes ?? 0) * 60000).toISOString();
 const entryRef = (x: TimeEntryRow) => `${x.netzplan_nr}${x.vorgang_nr ? `/${x.vorgang_nr}` : ""}`;
 
@@ -50,13 +53,24 @@ export function CalendarView() {
   const cal = settings?.calendar;
   const version = useApp((s) => s.entriesVersion);
   const [view, setViewState] = useState<CalView>(() => stored("annalo.calendar.view", ["day", "workweek", "week", "month", "agenda"] as const, "workweek"));
-  const [anchor, setAnchor] = useState(() => new Date());
+  // The day and appointment shown survive switching tabs (this session only).
+  const [anchor, setAnchorState] = useState(() => session.anchor ?? new Date());
+  const setAnchor = (next: Date | ((d: Date) => Date)) =>
+    setAnchorState((d) => {
+      const v = typeof next === "function" ? next(d) : next;
+      session.anchor = v;
+      return v;
+    });
   const [showBookings, setShowBookings] = useState(() => stored("annalo.calendar.bookings", ["1", "0"] as const, "1") === "1");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [entries, setEntries] = useState<TimeEntryRow[]>([]);
   const [overview, setOverview] = useState<Map<string, DayOverview>>(new Map());
   const [status, setStatus] = useState<CalendarStatus | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedState] = useState<string | null>(() => session.selected);
+  const setSelected = (k: string | null) => {
+    session.selected = k;
+    setSelectedState(k);
+  };
   const [booking, setBooking] = useState<{ event: CalendarEvent; prefill: BookingPrefill; hint: WbsHint | null } | null>(null);
   const [syncTick, setSyncTick] = useState(0);
   const [now, setNow] = useState(() => new Date());
@@ -81,7 +95,8 @@ export function CalendarView() {
     const last = new Date(range.to.getTime() - 1);
     Promise.all([
       api.calendarEvents(range.from.toISOString(), range.to.toISOString()),
-      api.entries(range.from.toISOString(), range.to.toISOString()),
+      // From the day before: an entry that ran past midnight shows on the first day too.
+      api.entries(new Date(range.from.getTime() - 86400e3).toISOString(), range.to.toISOString()),
       api.dailyOverview(isoDay(range.from), isoDay(last)).catch(() => [] as DayOverview[]),
     ])
       .then(([ev, en, ov]) => {
@@ -141,21 +156,38 @@ export function CalendarView() {
     setView("day");
   };
 
-  const onKey = (e: ReactKeyboardEvent) => {
-    const t = e.target as HTMLElement;
-    if (e.ctrlKey || e.metaKey || e.altKey || t.closest("input, textarea, [contenteditable='true'], .select, [role='combobox']")) return;
-    if (e.key === "Escape" && selected) {
+  // Keys work while this pane is the active one and nothing else (a field, a dialog, a menu) has them.
+  const keyState = useRef({ selected, go, today, setView });
+  keyState.current = { selected, go, today, setView };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = root.current;
+      const t = document.activeElement as HTMLElement | null;
+      if (!el || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!el.closest(".pane")?.classList.contains("active")) return;
+      // Not while another pane (a note) has the focus.
+      const pane = t?.closest(".pane");
+      if (pane && !pane.contains(el)) return;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='combobox']")) return;
+      if (document.querySelector(".dialog, .menu, .palette, .calendar, .select-pop")) return;
+      const k = keyState.current;
+      if (e.key === "Escape") {
+        if (k.selected) {
+          e.preventDefault();
+          setSelected(null);
+        }
+        return;
+      }
+      const a = keyAction(e.key);
+      if (!a) return;
       e.preventDefault();
-      setSelected(null);
-      return;
-    }
-    const a = keyAction(e.key);
-    if (!a) return;
-    e.preventDefault();
-    if (a.move) go(a.move);
-    if (a.today) today();
-    if (a.view) setView(a.view);
-  };
+      if (a.move) k.go(a.move);
+      if (a.today) k.today();
+      if (a.view) k.setView(a.view);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const sync = async () => {
     try {
@@ -203,7 +235,7 @@ export function CalendarView() {
   const pickerDay = isoDay(anchor);
 
   return (
-    <div className={`calv ${current ? "with-detail" : ""}`} ref={root} tabIndex={-1} onKeyDown={onKey} aria-label="Kalender">
+    <div className={`calv ${current ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label="Kalender">
       <header className="calv-head">
         <div className="calv-heading">
           <h1>{title}</h1>
@@ -477,7 +509,7 @@ function TimeGrid(props: {
             );
             const weekend = [0, 6].includes(d.getDay());
             return (
-              <div key={iso} className={`calv-col ${weekend ? "weekend" : ""} ${iso === todayIso ? "today" : ""}`} data-date={iso}>
+              <div key={iso} className={`calv-col ${weekend ? "weekend" : ""} ${iso === todayIso ? "today" : ""} ${lane.length ? "has-lane" : ""}`} data-date={iso}>
                 <div className="calv-meetings">
                   {placed.map((p) => {
                     const e = p.item;
@@ -500,7 +532,7 @@ function TimeGrid(props: {
                     );
                   })}
                 </div>
-                {withLane && (
+                {lane.length > 0 && (
                   <div className="calv-lane" aria-label="Gebuchte Zeit">
                     {lane.map((p) => {
                       const x = p.item.x;
@@ -509,6 +541,7 @@ function TimeGrid(props: {
                         <button
                           type="button"
                           key={x.id}
+                          data-entry={x.id}
                           className={`calv-entry status-${x.status_flag}`}
                           style={{ top: (p.top / 60) * HOUR, height: Math.max((p.height / 60) * HOUR - 1, 6), left: `${(p.col / p.cols) * 100}%`, width: `${100 / p.cols}%` }}
                           data-tooltip={label}

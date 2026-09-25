@@ -292,6 +292,7 @@
 @media (max-height: 820px) {
   .settings-nav { padding-top: 14px; }
   .settings-nav-title { display: none; }
-  .settings-nav-group + .settings-nav-group { margin-top: 8px; }
-  .settings-nav-item { height: 28px; }
+  .settings-nav-group + .settings-nav-group { margin-top: 6px; }
+  .settings-nav-group-label { padding: 4px 10px 3px; }
+  .settings-nav-item { height: 26px; }
 }

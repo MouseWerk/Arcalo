@@ -637,11 +637,28 @@ impl Database {
         let vars = crate::templates::TemplateVars { date, time: start.time(), title: e.title.clone() };
         let template = self.list_templates()?.into_iter().find(|p| p.title.eq_ignore_ascii_case("Besprechung"));
         let body = match template {
-            Some(t) => self
-                .render_template(t.id, &vars)?
-                .replace("{{teilnehmer}}", &attendees)
-                .replace("{{ort}}", &e.location)
-                .replace("{{uhrzeit}}", &time),
+            Some(t) => {
+                let mut b = self
+                    .render_template(t.id, &vars)?
+                    .replace("{{teilnehmer}}", &attendees)
+                    .replace("{{ort}}", &e.location)
+                    .replace("{{uhrzeit}}", &time);
+                // An empty attendee list in the template is filled in.
+                if !e.attendees.is_empty() {
+                    let list: String = e.attendees.iter().map(|a| format!("- {a}\n")).collect();
+                    for empty in ["## Teilnehmer\n\n- \n", "## Teilnehmer\n- \n"] {
+                        if let Some(at) = b.find(empty) {
+                            let head = &empty[..empty.len() - 3];
+                            b.replace_range(at..at + empty.len(), &format!("{head}{list}"));
+                            break;
+                        }
+                    }
+                }
+                if let Some(link) = &e.link {
+                    b = format!("[Besprechung beitreten]({link})\n\n{b}");
+                }
+                b
+            }
             None => {
                 let mut b = format!("# {}\n\n", e.title);
                 b.push_str(&format!("{} · {time}", date.format("%d.%m.%Y")));
@@ -840,6 +857,25 @@ mod tests {
         let (fresh, created) = db.calendar_meeting_note(&key, &zone).unwrap();
         assert!(created && fresh.id != page.id);
         assert_eq!(db.calendar_event(&key).unwrap().note_page_id, Some(fresh.id));
+
+        // The user's template „Besprechung“ is used; its empty attendee list is filled in.
+        let root = db.templates_root().unwrap();
+        let t = db.create_page(Some(root.id), "Besprechung", None).unwrap();
+        db.save_page_content(
+            t.id,
+            "{{wochentag}}, {{datum}} · {{zeit}} Uhr\n\n## Teilnehmer\n\n- \n\n## Agenda\n\n1. \n",
+        )
+        .unwrap();
+        let mut other = ev("t", "", 25, 12, "Review");
+        other.link = Some("https://teams.microsoft.com/l/meetup-join/x".into());
+        db.calendar_replace("ics:s1", at(25, 0), at(26, 0), &[other]).unwrap();
+        let (page, _) = db.calendar_meeting_note(&event_key("ics:s1", "t", ""), &zone).unwrap();
+        let content = db.page_doc(page.id).unwrap().content;
+        assert!(
+            content.contains("[Besprechung beitreten](https://teams.microsoft.com/l/meetup-join/x)\n\nFreitag, 25.09.2026 · 14:00 Uhr"),
+            "{content}"
+        );
+        assert!(content.contains("## Teilnehmer\n\n- Jörg\n- Zoë\n\n## Agenda"), "{content}");
     }
 
     #[test]
@@ -857,6 +893,15 @@ mod tests {
         kept.redact(Privacy { private_details: true, include_body: false, meeting_links: true });
         assert_eq!((kept.title.as_str(), kept.body.as_deref()), ("Arzt", None));
         assert!(kept.link.is_some());
+    }
+
+    #[test]
+    fn the_assistant_has_no_tool_that_reads_the_calendar() {
+        // Appointments are local data; a later feature has to add AI access deliberately.
+        for d in crate::ai::tools::definitions() {
+            let text = d.to_string().to_lowercase();
+            assert!(!text.contains("calendar_events") && !text.contains("termin"), "{}", d["function"]["name"]);
+        }
     }
 
     #[test]

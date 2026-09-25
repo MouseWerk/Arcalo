@@ -39,12 +39,16 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `ai_usage` | Per-request tokens, cost, TTFT and tokens/s |
 | `activity` | Activity feed (v7): `at`, `kind`, optional `page_id`/`entry_id`/`netzplan_id`/`vorgang_nr`, `title`, `detail`, `amount` (characters, minutes or a count), `count` (merged edits), `people` |
 | `focus_sessions` | Focus sessions (v7): Vorgang, goal, start, planned minutes (fractional), break, status (`running`/`done`/`aborted`, one running at a time), worked and booked minutes, the booked `entry_id`, `break_until` |
+| `calendar_events` | Appointments of the calendar sources (v9), one row per instance: `source` (`outlook`, `ics:<id>`), `uid`, `instance` (original start of an instance of a series, `''` for single appointments; unique with source and uid), start/end (UTC), all-day, title, place, organizer, attendees and categories (JSON), optional text and meeting link, busy state, private flag |
+| `calendar_marks` | What the user decided about an appointment (v9), by key `source\|uid\|instance`: `skip` („nicht buchen“), `note_page_id` (meeting note, set null on purge), `entry_id` (booked entry, set null on delete), subject and series of the booking for the WBS suggestion. Never touched by a sync |
+| `calendar_sync` | Status of the last sync per source (v9): last success, last attempt, error, number of events |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
+Migration v9 adds the calendar tables above (no data changes).
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 
@@ -244,6 +248,54 @@ and by `entry_id`.
   `unsafe-eval`. Answers are stored per host in `network.pac_results` (`*` = LiteLLM host, used for other hosts; every AI provider host has its own) on
   save, test and start.
 - The proxy password lives in the credential store (account `proxy-password`), never in the settings or exports.
+
+## Calendar sync (`calsync/` in core, `calsync.rs` in the shell, `ui/src/views/CalendarView.tsx`)
+
+- Sources (Settings → Kalender, `settings.calendar`): Outlook Classic (Windows) and ICS subscriptions or files. A
+  subscription's address may carry a secret token: it lives in the credential store (account `calendar-ics-<id>`,
+  `SecretStore::calendar`), the settings keep only id, name, kind, file path, color and the switch. The source list is
+  saved by its own commands (`calendar_source_add/update/remove`); `settings_save` keeps the stored list like it keeps
+  the dashboard, and re-syncs when Outlook is switched on or the window or privacy rules change.
+- Outlook (`calsync/outlook.rs`, `outlook.ps1`): the script is embedded with `include_str!` (so every build carries
+  it), written to `<data>/scripts/outlook-calendar.ps1` when it differs and run with `powershell.exe -NoProfile
+  -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File …` (no console window, 120 s timeout, off the async
+  runtime) as the user: `New-Object -ComObject Outlook.Application` → `GetNamespace("MAPI").GetDefaultFolder(9)` →
+  `Items.Sort("[Start]")`, `IncludeRecurrences = $true`, `Restrict("[Start] < 'to' AND [End] > 'from'")`. Outlook
+  reads Restrict dates in the user's regional format, so the shell formats them from `HKCU\Control Panel\International`
+  (`sShortDate`, `sShortTime`, AM/PM; `restrict_value` is a tested pure function) and the script checks every item
+  against the real range again; if Restrict fails or finds nothing it walks the sorted items. Dates are written with the
+  invariant culture (`StartUTC` + `Z`, local start/end for all-day), the output is one line of JSON in ASCII (other
+  characters as `\uXXXX`, the script file itself is ASCII: Windows PowerShell reads BOM-less scripts as ANSI). Private
+  appointments (sensitivity private/confidential) lose everything but their time unless allowed; the text is read only
+  for „Termintext übernehmen“ (kept) or „Besprechungslinks“ (only `https://` addresses leave the script, the core keeps
+  one meeting link). Declined and cancelled meetings are left out. Errors come back as codes (`not_installed`,
+  `new_outlook`, `server_exec`, `constrained`, `folder`, `com`) and become German messages that point to ICS where
+  COM cannot work. For development and tests `ANNALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
+  `ANNALO_TEST_FIXTURES=1`.
+- ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
+  TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
+  Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed
+  offsets, and for anything else the file's `VTIMEZONE` (STANDARD/DAYLIGHT rules expanded to transitions 1970–2100;
+  Outlook's 1601 start is moved). Series are expanded with the `rrule` crate in wall-clock time of their zone (a
+  meeting at 10:00 stays at 10:00 across DST; `UNTIL` in UTC is converted to wall time first), then placed in UTC;
+  `RDATE`, `EXDATE` (date-times and whole days), `RECURRENCE-ID` overrides (moved or `STATUS:CANCELLED`) and overrides
+  whose original lies outside the expansion are handled. Floating times and all-day dates use the local zone; all-day
+  events are stored as local midnights with an exclusive end. Subscriptions are fetched with the tools HTTP client (proxy,
+  CA and timeout of Settings → Netzwerk, „Anwenden auf“ tools), `webcal://` becomes `https://`, at most 30 MB, and
+  errors never contain the address.
+- Sync (`calsync.rs`): a scheduler task (first run 20 s after start, `ANNALO_CALENDAR_DELAY_SECS` for tests, then every
+  minute) syncs each active source whose last attempt is older than the interval (default 15 min); „Jetzt
+  synchronisieren“ runs it at once. One sync per source at a time. The source is read and parsed without any database
+  lock; then one transaction replaces the source's events that overlap the window (default 30 days back, 90 ahead)
+  and records the status. `calendar://syncing`/`calendar://synced` tell the UI.
+- Privacy: appointments are local data. No assistant tool reads them (a core test checks the tool definitions).
+- UI: `lib/agenda.ts` (tested) has the ranges (day, work week from the configured workdays, week, 6-week month, 14-day
+  list), the overlap layout (groups of overlapping items, first free column, a minimum height), month cells with
+  „+n weitere“, the booking prefill and the booked detection (linked entry, or a finished entry overlapping the
+  meeting that carries its subject). Booking opens the timesheet's `EntryDialog` with a prefill and links the new
+  entry (`calendar_link_entry`); the next booking of the same series or subject gets that WBS
+  (`calendar_wbs_hint`). `calendar_meeting_note` creates the note below „Besprechungen“ (frontmatter with date, time,
+  place, organizer, attendees and the remembered `vorgang:`), from the template „Besprechung“ when there is one.
 
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 
@@ -590,6 +642,8 @@ quelle: "[[Konzept]]"
   daily notes, `/zeit`, timer, timesheet, export, projects, settings (LiteLLM URL, token, models), the assistant
   (streaming, tool calls, approvals, cancel), embeddings, vault import/export, and screenshots in both themes.
 - The Windows build (WebView2, Credential Manager, Win32 idle probe) is built in CI on `windows-latest`.
+- Outlook Classic: the script's output parsing, the Restrict date format and the privacy rules are unit-tested and the
+  e2e tests run the Outlook source from a fixture; the COM script itself needs a Windows computer with Outlook Classic.
 - The macOS build (WKWebView, Keychain, CoreGraphics idle probe, menu bar, title bar overlay, Dock reopen) is
   linted and bundled in CI on `macos-14` (Apple Silicon); release builds add the Intel app by cross-compiling.
   macOS-only code paths (`cfg(target_os = "macos")`) are compiled only there. The menu bar (`appmenu.rs`) is

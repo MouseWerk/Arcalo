@@ -123,6 +123,14 @@ AI which Vorgang the time belongs to and books only after you confirm.
   <img src="docs/screenshots/smart-zeit-confirm.png" width="49%" alt="Smart /zeit asks before booking">
 </p>
 
+### Meetings next to your booked time
+
+The Kalender (Ctrl Shift E) shows your meetings from Outlook Classic or any ICS calendar next to the time you booked:
+day, work week, week, month and a list. Click a meeting and „Zeit buchen“ opens the entry prefilled with its day,
+time, length and subject; the WBS of the last meeting of the same series or subject is suggested. „Besprechungsnotiz“
+creates a note with date, attendees and the Teams link. Meetings you do not book can be marked „nicht buchen“, and the
+timesheet lists the week's meetings that are not booked yet.
+
 ### Tasks, calendar and quick search
 
 Tasks from all notes are grouped by due date. The calendar shows your daily notes and booked hours per day. The global
@@ -179,6 +187,14 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Weekly timesheet with a grid per Netzplan/Vorgang, release workflow, and export to SAP CATS, Jira worklogs, CSV or JSON
 - Projects view: budget, booked hours, remaining effort (ETC), forecast (EAC), critical path and float, as tables
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
+
+**Kalender**
+- Outlook Classic on Windows: reads the default calendar of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed
+- ICS: subscribe to a published calendar (Outlook im Web/Exchange „Kalender veröffentlichen“, Google, Nextcloud, …) or add an `.ics` file; series, exceptions and Windows time zones are understood. Subscription addresses are kept in the credential store
+- Day, Arbeitswoche, Woche, Monat and Liste with KW numbers; overlapping meetings side by side; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
+- „Zeit buchen“ from a meeting (prefilled, WBS remembered per series or subject), „Besprechungsnotiz“, „Nicht buchen“; booked meetings get a check mark
+- Background sync every 15 minutes (Settings → Kalender); private appointments keep only their time unless you allow more; the assistant does not see your appointments
+- Start page widget „Termine“ and „Termine übernehmen“ in the timesheet
 
 **Desktop**
 - Tray icon: open, stop the timer or restart the last booking, quick capture, quit; the tooltip shows the running timer (`NP-8801/1020 · 01:23`)
@@ -375,7 +391,7 @@ with the old key must be updated once by hand.
   pages, images and bookings (`Zeiterfassung/YYYY-MM.csv`, Excel-ready)
 - **Trash** keeps deleted pages for 30 days. **Version history** keeps earlier states of every page, with a diff
 - **Git sync** pushes the Markdown copy to your own private repository (see below)
-- **Secrets** (AI provider keys, Git token, proxy password) are stored in the Windows Credential Manager or the macOS
+- **Secrets** (AI provider keys, Git token, proxy password, calendar subscription addresses) are stored in the Windows Credential Manager or the macOS
   Keychain (on Linux in `secrets.json` in the data folder, readable only by your user). They are never written to the
   database, settings exports or logs
 - **Export** everything back to plain Markdown files at any time
@@ -442,6 +458,7 @@ All in-app shortcuts can be changed under Settings → Tastatur (the defaults ar
 | Ctrl N | New page |
 | Ctrl Shift D | Today's daily note |
 | Ctrl Shift C | Calendar of daily notes |
+| Ctrl Shift E | Kalender (meetings and booked time); inside it ← → move, T today, D/A/W/M/L change the view |
 | Ctrl Shift A | Tasks |
 | Ctrl Shift T | Start/stop timer |
 | Ctrl J | Assistant; with text selected in a note: inline AI |
