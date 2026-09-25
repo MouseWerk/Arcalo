@@ -182,7 +182,7 @@ function scan(file: string): Hit[] {
     }
     const lit = literalText(n);
     // Search keywords list both languages on purpose.
-    const keywords = ts.isPropertyAssignment(n.parent) && n.parent.name.getText(sf) === "keywords";
+    const keywords = !!n.parent && ts.isPropertyAssignment(n.parent) && n.parent.name.getText(sf) === "keywords";
     if (lit !== null && GERMAN.test(lit) && !keywords && !ts.isTemplateExpression(n.parent)) flag(n, lit);
     ts.forEachChild(n, visit);
   };
