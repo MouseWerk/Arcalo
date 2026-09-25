@@ -5,7 +5,7 @@
 //! have no key: they never contact the update server.
 
 /// GitHub repository the releases are published to.
-pub const REPOSITORY: &str = "mauricekleindienst/annalo";
+pub const REPOSITORY: &str = "MouseWerk/Annalo";
 
 /// Shown when a build has no update key.
 pub const NOT_CONFIGURED: &str = "Automatische Updates sind in diesem Build nicht eingerichtet";
@@ -41,7 +41,7 @@ mod tests {
 
     #[test]
     fn release_links_use_the_tag() {
-        let url = "https://github.com/mauricekleindienst/annalo/releases/tag/v1.2.0";
+        let url = "https://github.com/MouseWerk/Annalo/releases/tag/v1.2.0";
         assert_eq!(release_url("1.2.0"), url);
         assert_eq!(release_url("v1.2.0"), url);
     }
