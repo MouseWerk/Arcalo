@@ -84,6 +84,9 @@ pub enum StreamEvent {
     Delta { text: String, tokens_per_second: Option<f64> },
     /// First token arrived.
     FirstToken { ttft_ms: f64 },
+    /// The server is briefly busy (a LiteLLM cooldown): the request is repeated on `model`
+    /// after `seconds`.
+    Waiting { seconds: u64, model: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -362,6 +365,16 @@ impl AiClient {
             }
         }
         Ok(listed)
+    }
+
+    /// What LiteLLM's `/model/info` says about each model (`model_info.mode`: `chat`,
+    /// `embedding`, …; only models that have one). Empty for other providers, which do not say.
+    pub async fn model_modes(&self) -> Result<std::collections::HashMap<String, String>> {
+        if self.provider.kind != ProviderKind::Litellm {
+            return Ok(Default::default());
+        }
+        let v = self.get_json(&format!("{}/model/info", self.provider.root())).await?;
+        Ok(super::capability::parse_model_modes(&v))
     }
 
     async fn get_json(&self, url: &str) -> Result<Value> {

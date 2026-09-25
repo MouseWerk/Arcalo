@@ -615,8 +615,17 @@ quelle: "[[Konzept]]"
   settings with mode `none` (default for addresses on localhost), otherwise Settings → Netzwerk applies as for everything else.
 - `Catalog`: the model list of every enabled provider, asked in parallel (10 s each), cached 5 minutes (failures 30 s).
   `resolve` replaces a model its provider does not list; `complete_routed` retries without tools/temperature when a model
-  rejects them, on another model after a model error or 5xx, and on the next provider when one cannot be reached
-  (`unreachable`: connect error or connect timeout), at most 5 attempts.
+  rejects them (also vLLM's 400 without `--enable-auto-tool-choice`; remembered per model for the session), waits out a
+  short LiteLLM cooldown (`cooldown_wait`: 429 „No deployments available … Try again in N seconds“, N ≤ 10, twice per model,
+  a `waiting` stream event, cancellable) before moving on, on another model after a model error or 5xx, and on the next
+  provider when one cannot be reached (`unreachable`: connect error or connect timeout), at most 6 attempts. A fallback to
+  the local tier's model or a local provider adds a visible note (`weaker_fallback_note`).
+- Embeddings (`ai::capability`): only a model the provider reports as an embedding model (LiteLLM `/model/info`,
+  `model_info.mode`) or, when it does not say, whose name looks like one (embed, bge, e5, gte, nomic, minilm, mxbai) is asked;
+  a chat model never is (on LiteLLM its 404 counts against the model and puts it into cooldown for the chat right after).
+  A lasting failure (4xx, not found) is remembered per provider and model until the settings change; the query then uses
+  keyword search only, noted once in the answer and in Settings → KI (`ai_embedding_status`). The assistant's request
+  carries one system message (prompt, open page, sources), as the inline AI's does.
 - Privacy: content with a private marker or with Datenschutz „Nur lokal“ (`local_required`) only goes to the local tier's
   configured model or to providers marked `local` (`private_allowed`), in `resolve` and in every fallback; when none is left the
   request is refused with a message instead of going to a cloud provider. The query embedding of a private question and the

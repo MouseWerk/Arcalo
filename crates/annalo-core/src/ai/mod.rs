@@ -5,6 +5,7 @@
 //! only picks a tier (local / standard / reasoning) and each tier names a provider and a model.
 
 pub mod availability;
+pub mod capability;
 pub mod client;
 pub mod metrics;
 pub mod privacy;

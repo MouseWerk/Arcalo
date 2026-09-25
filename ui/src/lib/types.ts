@@ -581,7 +581,16 @@ export interface ConnectionTest {
   ok: boolean;
   latency_ms: number;
   models: string[];
+  /** The models that compute embeddings (by the provider's word, else by name). */
+  embedding_models: string[];
   error: string | null;
+}
+/** Whether the configured embedding model is used by the assistant's search, and why not. */
+export interface EmbeddingStatus {
+  model: string | null;
+  provider: string;
+  usable: boolean;
+  reason: string | null;
 }
 /** One step of a provider's connection test; ok null = skipped. */
 export interface ProviderTestStep {
@@ -682,7 +691,9 @@ export interface ChatOutcome {
 }
 export type StreamEvent =
   | { type: "delta"; text: string; tokens_per_second: number | null }
-  | { type: "first_token"; ttft_ms: number };
+  | { type: "first_token"; ttft_ms: number }
+  /** The server is briefly busy (cooldown): the same model is asked again after `seconds`. */
+  | { type: "waiting"; seconds: number; model: string };
 export type ToolPlan =
   | { risk: "workspace" }
   | { risk: "requires_approval"; call: unknown; summary: string };

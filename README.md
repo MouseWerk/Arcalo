@@ -253,13 +253,16 @@ Settings → **KI & Modelle** → **KI-Anbieter**. Any number of providers, in o
   **Proxy umgehen** connects directly (default for addresses on localhost)
 - **Verbindung testen** in the provider dialog checks reachability, the key, a short chat, tool support and embeddings, each with its own result.
   For Ollama, **Modell laden** downloads a model (`/api/pull`) with progress
-- **Modelle**: each tier (*Lokal*, *Standard*, *Reasoning*) and the embeddings pick a provider and a model from its list
+- **Modelle**: each tier (*Lokal*, *Standard*, *Reasoning*) and the embeddings pick a provider and a model from its list;
+  the embedding picker offers only embedding models (LiteLLM: `mode: embedding`, otherwise recognized by name) and
+  „Keine (nur Stichwortsuche)“
 - **Preise**: an editable table (per 1M input/output tokens) for providers that do not report costs; LiteLLM reports its own, local providers are free
 
 Settings of earlier versions become one LiteLLM provider with the same address, models and token. Changes apply immediately.
 A tier whose model its provider does not offer is flagged with „Automatisch zuordnen“; requests fall back to another configured
-model, a model whose deployments are cooling down or whose backend fails is retried on another one, and an unreachable provider
-hands over to the next. `#privat` content and Settings → Datenschutz „Nur lokal“ only ever go to the local tier's model or to providers
+model, a short LiteLLM cooldown („Try again in 5 seconds“) is waited out on the same model (shown in the assistant, Stop ends
+it), a model whose deployments stay unavailable or whose backend fails is retried on another one (a smaller local fallback is
+said in the answer), and an unreachable provider hands over to the next. `#privat` content and Settings → Datenschutz „Nur lokal“ only ever go to the local tier's model or to providers
 marked **Lokal**, never to a cloud fallback; semantic search does not send private pages to an embedding model that is not local.
 `config/litellm.config.example.yaml` shows a matching LiteLLM configuration.
 

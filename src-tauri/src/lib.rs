@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 
 use annalo_core::activity::{self, IdleAccumulator, WindowUsage};
 use annalo_core::ai::availability::{Catalog, Exclude};
+use annalo_core::ai::capability::{self, Capabilities};
 use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
 use annalo_core::ai::metrics::PriceTable;
 use annalo_core::ai::metrics::SessionMeter;
@@ -149,8 +150,9 @@ pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let keys = provider_keys(&state.data_dir, &settings.providers);
     let rt = AiRuntime::new(settings, &keys, state.proxy_secret.get());
     *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
-    // Another server or key may offer other models.
+    // Another server or key may offer other models, and a fixed server gets another chance.
     lock(&state.server_models).clear();
+    lock(&state.caps).clear();
 }
 
 /// When a provider was asked for its models, and the answer (`None` = it could not be asked).
@@ -181,6 +183,9 @@ pub struct AppState {
     /// Models each provider offers, by provider id: when asked, and the names (`None` = it could
     /// not be asked). Cleared whenever the clients are rebuilt.
     server_models: Mutex<HashMap<String, ModelList>>,
+    /// What this session learned about the models: embedding support, rejected parameters.
+    /// Cleared whenever the clients are rebuilt.
+    caps: Mutex<Capabilities>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -1779,6 +1784,9 @@ struct ConnectionTest {
     ok: bool,
     latency_ms: u64,
     models: Vec<String>,
+    /// The models that compute embeddings (by the provider's word, else by name): the only
+    /// ones the embedding picker offers.
+    embedding_models: Vec<String>,
     error: Option<String>,
 }
 
@@ -1815,16 +1823,55 @@ async fn provider_models(state: &AppState, provider: AiProvider, key: Option<Str
     Ok(match res {
         Ok(mut models) => {
             models.sort();
+            let modes = model_modes(&client).await;
             if unchanged {
                 lock(&state.server_models).insert(provider.id.clone(), (Instant::now(), Some(models.clone())));
+                if let Some(modes) = &modes {
+                    lock(&state.caps).set_modes(&provider.id, modes.clone());
+                }
             }
-            ConnectionTest { ok: true, latency_ms, models, error: None }
+            let modes = modes.unwrap_or_default();
+            let embedding_models = models
+                .iter()
+                .filter(|m| capability::embedding_capable(m, modes.get(*m).map(String::as_str)))
+                .cloned()
+                .collect();
+            ConnectionTest { ok: true, latency_ms, models, embedding_models, error: None }
         }
         Err(e) => {
             devlog::warn("ai", format!("model list of „{}“ failed: {e}", provider.display_name()));
-            ConnectionTest { ok: false, latency_ms, models: vec![], error: Some(e.to_string()) }
+            ConnectionTest {
+                ok: false,
+                latency_ms,
+                models: vec![],
+                embedding_models: vec![],
+                error: Some(e.to_string()),
+            }
         }
     })
+}
+
+/// What the provider says about its models' kinds (LiteLLM's `/model/info`), briefly; `None`
+/// when it could not be asked (older LiteLLM, a key without access): names decide then.
+async fn model_modes(client: &AiClient) -> Option<HashMap<String, String>> {
+    match tokio::time::timeout(Duration::from_secs(5), client.model_modes()).await {
+        Ok(Ok(modes)) => Some(modes),
+        Ok(Err(e)) => {
+            devlog::debug("ai", format!("model info of „{}“: {e}", client.provider().id));
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+/// Asks a provider for its models' kinds once per session (see [`model_modes`]).
+async fn learn_modes(state: &AppState, client: &AiClient) {
+    let id = client.provider().id.clone();
+    if lock(&state.caps).has_modes(&id) {
+        return;
+    }
+    let modes = model_modes(client).await.unwrap_or_default();
+    lock(&state.caps).set_modes(&id, modes);
 }
 
 /// The models of a provider (Settings → KI: status dots and model pickers).
@@ -1947,7 +1994,7 @@ async fn ai_provider_test(
             .filter(|r| r.provider == provider.id && !r.model.is_empty())
             .map(|r| r.model.clone())
             .find(|m| models.is_empty() || models.contains(m))
-            .or_else(|| models.iter().find(|m| !m.to_lowercase().contains("embed")).cloned())
+            .or_else(|| models.iter().find(|m| capability::chat_capable(m, None)).cloned())
     });
     let Some(chat_model) = chat_model else {
         steps.push(skipped("chat", "Kein Chat-Modell bekannt"));
@@ -2018,7 +2065,15 @@ async fn ai_provider_test(
 async fn embed_step(client: &AiClient, settings: &Settings, provider: &AiProvider, models: &[String]) -> TestStep {
     let configured =
         settings.embedding_model.clone().filter(|m| !m.is_empty() && settings.embedding_provider == provider.id);
-    let Some(model) = configured.or_else(|| models.iter().find(|m| m.to_lowercase().contains("embed")).cloned()) else {
+    // A chat model is not asked for embeddings, not even here: on LiteLLM the failure would put
+    // it into cooldown.
+    let modes = model_modes(client).await.unwrap_or_default();
+    let capable = |m: &String| capability::embedding_capable(m, modes.get(m).map(String::as_str));
+    if let Some(m) = configured.as_ref().filter(|m| !capable(m)) {
+        let detail = format!("„{m}“ ist kein Embedding-Modell – nur Stichwortsuche");
+        return TestStep { id: "embed", ok: None, detail, latency_ms: 0 };
+    }
+    let Some(model) = configured.or_else(|| models.iter().find(|m| capable(m)).cloned()) else {
         return TestStep { id: "embed", ok: None, detail: "Kein Embedding-Modell".into(), latency_ms: 0 };
     };
     let start = Instant::now();
@@ -2205,14 +2260,49 @@ async fn ai_chat(
     let lower = prompt.to_lowercase();
     let private = settings.privacy.local_only
         || settings.router.private_markers.iter().any(|m| !m.trim().is_empty() && lower.contains(&m.to_lowercase()));
-    let embedder = embedding_client(&state).filter(|(c, _)| !private || c.provider().local);
+    // A chat model is never asked for embeddings, and a model that failed is not asked again:
+    // on a LiteLLM proxy each failure counts against the model and can put it into cooldown.
+    let (embedder, mut embed_note) = match embedding_client(&state).filter(|(c, _)| !private || c.provider().local) {
+        Some((client, r)) => {
+            learn_modes(&state, &client).await;
+            let mut caps = lock(&state.caps);
+            match caps.embedding_usable(&r) {
+                Ok(()) => (Some((client, r)), None),
+                Err(why) => {
+                    let note = caps.tell_once(&r).then(|| {
+                        devlog::warn("ai", format!("no embeddings with „{}“, keyword search only: {why}", r.model));
+                        format!("Embedding-Modell „{}“ nicht nutzbar → nur Stichwortsuche", r.model)
+                    });
+                    (None, note)
+                }
+            }
+        }
+        None => (None, None),
+    };
     let query_embedding = match &embedder {
         // Bounded: a slow or missing embedding model must not hold up the answer.
-        Some((client, m)) => {
+        Some((client, r)) => {
+            let m = &r.model;
             match tokio::time::timeout(Duration::from_secs(8), client.embed(m, std::slice::from_ref(&prompt))).await {
-                Ok(Ok(mut v)) => v.pop(),
+                Ok(Ok(mut v)) => {
+                    lock(&state.caps).embed_succeeded(r);
+                    v.pop()
+                }
                 Ok(Err(e)) => {
-                    devlog::warn("ai", format!("embedding with „{m}“ failed, keyword search only: {e}"));
+                    let mut caps = lock(&state.caps);
+                    if caps.embed_failed(r, &e) {
+                        caps.tell_once(r);
+                        devlog::warn(
+                            "ai",
+                            format!("embedding with „{m}“ failed, keyword search only for this session: {e}"),
+                        );
+                        embed_note = Some(format!(
+                            "Embedding-Modell „{m}“ antwortet nicht ({}) → nur Stichwortsuche",
+                            capability::embedding_failure_text(&e)
+                        ));
+                    } else {
+                        devlog::warn("ai", format!("embedding with „{m}“ failed, keyword search only: {e}"));
+                    }
                     None
                 }
                 Err(_) => {
@@ -2251,14 +2341,18 @@ async fn ai_chat(
     context_texts.extend(messages.iter().filter_map(|m| m.content.clone()));
     let route = route_for(&state, &prompt, &context_texts, use_tools, tier);
 
-    let mut full = vec![ChatMessage::system(system_prompt(&settings))];
+    // One system message, as in the inline AI: chat templates of many models (vLLM, Mistral,
+    // Gemma) accept a system message only at the very start.
+    let mut system = system_prompt(&settings);
     if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
-        full.push(ChatMessage::system(format!("Aktuell geöffnete Seite „{title}“:\n\n{text}")));
+        system.push_str(&format!("\n\nAktuell geöffnete Seite „{title}“:\n\n{text}"));
     }
     if !context.is_empty() {
-        full.push(ChatMessage::system(rag::format_context_with(&context, settings.ai.citations)));
+        system.push_str("\n\n");
+        system.push_str(&rag::format_context_with(&context, settings.ai.citations));
     }
+    let mut full = vec![ChatMessage::system(system)];
     full.extend(messages);
     let req = ChatRequest {
         model: route.model.clone(),
@@ -2268,15 +2362,43 @@ async fn ai_chat(
         max_tokens: settings.ai.max_tokens,
     };
 
-    let (completion, meter, route) = complete_routed(&app, &state, &request_id, req, route).await?;
+    let (completion, meter, mut route) = complete_routed(&app, &state, &request_id, req, route).await?;
+    route.reasons.extend(embed_note);
     Ok(ChatOutcome { completion, route, context, meter, cost_warning: cost_warning(&state) })
 }
 
 /// The client and model for embeddings, when an embedding model is set and its provider is on.
-fn embedding_client(state: &AppState) -> Option<(Arc<AiClient>, String)> {
+fn embedding_client(state: &AppState) -> Option<(Arc<AiClient>, ModelRef)> {
     let settings = state.settings();
     let model = settings.embedding_model.filter(|m| !m.trim().is_empty())?;
-    state.client_for(&settings.embedding_provider).ok().map(|c| (c, model))
+    let client = state.client_for(&settings.embedding_provider).ok()?;
+    let r = ModelRef::new(&client.provider().id, model.trim());
+    Some((client, r))
+}
+
+#[derive(Serialize)]
+struct EmbeddingStatus {
+    model: Option<String>,
+    provider: String,
+    /// Whether the assistant uses the model for its search.
+    usable: bool,
+    /// Why not (German), when a model is set.
+    reason: Option<String>,
+}
+
+/// Whether the configured embedding model is used (Settings → KI shows why not, once).
+#[tauri::command]
+async fn ai_embedding_status(state: State<'_, AppState>) -> Result<EmbeddingStatus> {
+    let settings = state.settings();
+    let provider = settings.embedding_provider.clone();
+    let Some((client, r)) = embedding_client(&state) else {
+        let model = settings.embedding_model.filter(|m| !m.trim().is_empty());
+        let reason = model.as_ref().map(|_| "Der Anbieter des Embedding-Modells ist ausgeschaltet oder fehlt.".into());
+        return Ok(EmbeddingStatus { model, provider, usable: false, reason });
+    };
+    learn_modes(&state, &client).await;
+    let usable = lock(&state.caps).embedding_usable(&r);
+    Ok(EmbeddingStatus { model: Some(r.model), provider, usable: usable.is_ok(), reason: usable.err() })
 }
 
 /// Streams `req` as `ai://stream` events for `request_id` (cancellable through `ai_cancel`)
@@ -2356,8 +2478,10 @@ async fn catalog(state: &AppState) -> Catalog {
 /// Streams `req` on the route's provider and model. A model its provider does not offer is
 /// replaced by another configured model before sending; when the provider still has no
 /// deployment for it or its backend fails, the request is repeated on another model, and when
-/// the provider cannot be reached at all, on the next provider. Private content only ever goes
-/// to the local tier's model or to providers marked local.
+/// the provider cannot be reached at all, on the next provider. A short cooldown of the model
+/// (LiteLLM: „Try again in 5 seconds“) is waited out on the same model first. Parameters a
+/// model rejected (tools, temperature) are left out for it from then on. Private content only
+/// ever goes to the local tier's model or to providers marked local.
 async fn complete_routed(
     app: &AppHandle,
     state: &AppState,
@@ -2365,6 +2489,8 @@ async fn complete_routed(
     mut req: ChatRequest,
     route: RouteDecision,
 ) -> Result<(Completion, SessionMeter, RouteDecision)> {
+    /// Waits for one model's cooldown per request.
+    const MAX_WAITS: u32 = 2;
     let settings = state.settings();
     let local_only = settings.privacy.local_only;
     let mut catalog = catalog(state).await;
@@ -2377,17 +2503,33 @@ async fn complete_routed(
         );
     }
     req.model = route.model.clone();
+    let tools = std::mem::take(&mut req.tools);
+    let temperature = req.temperature;
     let mut exclude = Exclude::default();
     let mut attempts = 0;
+    let mut waits = 0;
     loop {
         attempts += 1;
+        let current = ModelRef::new(&route.provider, &route.model);
+        {
+            let caps = lock(&state.caps);
+            let skip_tools = !tools.is_empty() && caps.rejects_tools(&current);
+            req.tools = if skip_tools { vec![] } else { tools.clone() };
+            req.temperature = temperature.filter(|_| !caps.rejects_temperature(&current));
+            // Said visibly once (when the server rejects them), later only in the route details.
+            let told = format!("„{}“ unterstützt keine Werkzeuge → ohne", route.model);
+            let note = format!("„{}“ ohne Werkzeuge (vom Server abgelehnt)", route.model);
+            if skip_tools && !route.reasons.contains(&told) && !route.reasons.contains(&note) {
+                route.reasons.push(note);
+            }
+        }
         let client = state.client_for(&route.provider)?;
         let err = match stream_completion(app, state, &client, request_id, &req).await {
             Ok((c, m)) => return Ok((c, m, route)),
             Err(e) => e,
         };
         let down = availability::unreachable(&err);
-        let retry = match &err {
+        let mut retry = match &err {
             _ if down => availability::Retry::OtherModel,
             Error::Provider { status, body } => {
                 availability::retry_for(*status, body, !req.tools.is_empty(), req.temperature.is_some())
@@ -2400,29 +2542,48 @@ async fn complete_routed(
             }
             e => e,
         };
-        if attempts >= 5 {
+        if attempts >= 6 {
             return Err(give_up(err));
+        }
+        if matches!(retry, availability::Retry::Wait { .. }) && waits >= MAX_WAITS {
+            retry = availability::Retry::OtherModel;
         }
         match retry {
             availability::Retry::Without { tools, temperature } => {
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ rejects {}, repeating without",
+                        "„{}“ rejects {}, repeating without (remembered for this session)",
                         req.model,
                         if tools { "tools" } else { "the temperature" }
                     ),
                 );
+                lock(&state.caps).rejected(&current, tools, temperature);
                 if tools {
-                    req.tools.clear();
                     route.reasons.push(format!("„{}“ unterstützt keine Werkzeuge → ohne", route.model));
                 }
-                if temperature {
-                    req.temperature = None;
+            }
+            availability::Retry::Wait { seconds } => {
+                waits += 1;
+                devlog::warn(
+                    "ai",
+                    format!(
+                        "„{}“ ({}) is cooling down on the server, retrying in {seconds} s",
+                        req.model, route.provider
+                    ),
+                );
+                let event = StreamEvent::Waiting { seconds, model: route.model.clone() };
+                let _ = app.emit("ai://stream", StreamPayload { request_id, event: &event });
+                if !wait_cancellable(state, request_id, Duration::from_secs(seconds)).await {
+                    let completion = cancelled_completion(&req.model);
+                    return Ok((completion, lock(&state.meter).clone(), route));
+                }
+                if !route.reasons.iter().any(|r| r.starts_with("Server kurz ausgelastet")) {
+                    route.reasons.push(format!("Server kurz ausgelastet → nach {seconds} s erneut „{}“", route.model));
                 }
             }
             availability::Retry::OtherModel => {
-                let failed = ModelRef::new(&route.provider, &route.model);
+                let failed = current;
                 if down {
                     exclude.providers.push(failed.provider.clone());
                 } else {
@@ -2457,12 +2618,50 @@ async fn complete_routed(
                 } else {
                     format!("„{}“ ohne erreichbare Instanz → {label}", failed.model)
                 });
+                route.reasons.extend(availability::weaker_fallback_note(&settings.router, &catalog, &failed, &next));
                 route.provider = next.provider;
                 route.model = next.model.clone();
                 req.model = next.model;
+                waits = 0;
             }
             availability::Retry::No => return Err(give_up(err)),
         }
+    }
+}
+
+/// Sleeps for `wait` unless the request is cancelled through `ai_cancel` meanwhile (then `false`).
+async fn wait_cancellable(state: &AppState, request_id: &str, wait: Duration) -> bool {
+    let cancel = Arc::new(AtomicBool::new(false));
+    lock(&state.cancels).insert(request_id.to_owned(), cancel.clone());
+    let end = Instant::now() + wait;
+    let mut done = true;
+    while Instant::now() < end {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            done = false;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100).min(end - Instant::now())).await;
+    }
+    lock(&state.cancels).remove(request_id);
+    done && !cancel.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The answer of a request stopped before anything arrived.
+fn cancelled_completion(model: &str) -> Completion {
+    Completion {
+        content: String::new(),
+        tool_calls: vec![],
+        finish_reason: Some("cancelled".into()),
+        usage: annalo_core::ai::UsageRecord {
+            model: model.to_owned(),
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            cost_usd: 0.0,
+            ttft_ms: None,
+            tokens_per_second: None,
+        },
+        exact_usage: false,
+        warnings: vec![],
     }
 }
 
@@ -2681,9 +2880,20 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     if settings.embedding_model.as_deref().is_none_or(|m| m.trim().is_empty()) {
         return Err(Error::State("Kein Embedding-Modell in den Einstellungen gewählt".into()));
     }
-    let (client, model) = embedding_client(&state).ok_or_else(|| {
+    let (client, r) = embedding_client(&state).ok_or_else(|| {
         Error::State("Der Anbieter des Embedding-Modells ist nicht eingerichtet oder ausgeschaltet".into())
     })?;
+    // Indexing is asked for explicitly, so a model with an unusual name is tried; one the
+    // provider reports as a chat model is not (its failures would count against it).
+    learn_modes(&state, &client).await;
+    if let Some(mode) = lock(&state.caps).mode(&r).filter(|m| !capability::embedding_capable(&r.model, Some(m))) {
+        return Err(Error::State(format!(
+            "„{}“ ist laut KI-Server kein Embedding-Modell (Typ „{mode}“). Wähle unter Einstellungen → KI ein \
+             Embedding-Modell oder „Keine (nur Stichwortsuche)“.",
+            r.model
+        )));
+    }
+    let model = r.model.clone();
     let local = client.provider().local;
     if !local && settings.privacy.local_only {
         return Err(Error::State(
@@ -2706,7 +2916,21 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
             return Ok(total);
         }
         let texts: Vec<String> = batch.iter().map(|(_, t)| t.clone()).collect();
-        let vectors = client.embed(&model, &texts).await?;
+        let vectors = match client.embed(&model, &texts).await {
+            Ok(v) => {
+                lock(&state.caps).embed_succeeded(&r);
+                v
+            }
+            Err(e) if lock(&state.caps).embed_failed(&r, &e) => {
+                devlog::warn("ai", format!("indexing with „{model}“ failed: {e}"));
+                return Err(Error::State(format!(
+                    "„{model}“ liefert keine Embeddings ({}). Wähle unter Einstellungen → KI ein Embedding-Modell \
+                     oder „Keine (nur Stichwortsuche)“.",
+                    capability::embedding_failure_text(&e)
+                )));
+            }
+            Err(e) => return Err(e),
+        };
         let usage = annalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
         let db = state.db();
         db.record_ai_usage(&state.session_id, &usage)?;
@@ -3295,6 +3519,7 @@ pub fn run() {
                 usage: Mutex::new(WindowUsage::default()),
                 cancels: Mutex::new(HashMap::new()),
                 server_models: Mutex::new(HashMap::new()),
+                caps: Mutex::new(Capabilities::default()),
             });
 
             app.manage(desktop::Desktop::default());
@@ -3462,6 +3687,7 @@ pub fn run() {
             ai_run_workspace_tool,
             ai_run_system_tool,
             ai_index_pending,
+            ai_embedding_status,
             network::network_status,
             network::network_test,
             network::network_fetch_pac,
