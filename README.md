@@ -45,8 +45,9 @@ Get the latest version from the [**Releases page**](https://github.com/MouseWerk
 | **Linux** (x64) | `Annalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Annalo_*.deb` |
 | **Linux** (x64) | `Annalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Annalo_*.AppImage && ./Annalo_*.AppImage` |
 
-The first start opens a short onboarding (language, theme, LiteLLM server) and seeds a small demo workspace to try
-things out.
+The first start plays a short intro (about half a minute, skippable) and then walks through a setup that writes your
+answers straight into the settings: language, theme, working time, workspace (sample data, Obsidian import or empty),
+AI, calendar, Git sync, backups and desktop. Settings → Über → „Einführung erneut starten“ plays it again.
 
 ## A quick tour
 
@@ -266,8 +267,9 @@ settings also cover proxy and certificates for company networks and Git backup.
 
 <img src="docs/screenshots/onboarding.png" width="42%" align="right" alt="Onboarding">
 
-1. **Install and start.** The onboarding asks for language, theme and (optionally) your LiteLLM server. You can skip
-   anything and change it later under Settings
+1. **Install and start.** A short intro shows what Annalo does, then the setup asks for language, theme, working time,
+   workspace, AI (none, a local Ollama or your company's server), calendar, Git sync, backups and desktop. Every step can
+   be skipped and changed later under Settings; Settings → Über reruns it with your current settings
 2. **Look around the demo workspace.** Press **Ctrl K** for the command palette, **Ctrl O** to jump to a page and
    **Ctrl Shift D** for today's daily note
 3. **Coming from Obsidian?** Use „Obsidian-Vault importieren…“ in the command palette. Folders, frontmatter, links,
@@ -477,7 +479,8 @@ e2e/run.sh                     # end-to-end: drives the real desktop app via Web
 ```
 
 The end-to-end suite starts the actual app binary under `tauri-driver`, with a fresh data directory per test file,
-and a fake LiteLLM server for the assistant tests. It also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
+and a fake LiteLLM server for the assistant tests. The harness sets `ANNALO_SKIP_ONBOARDING=1` (honored by debug builds
+only) so the first-run intro stays away; `launch({ onboarding: true })` lets it run (tests 88–90). It also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
 
 The README and website screenshots come from `e2e/readme-shots.test.js` and `e2e/readme-shots-15.test.js` (the 1.5
 features in light and dark, at device scale factor 2 through `GDK_SCALE`, so the X display needs at least

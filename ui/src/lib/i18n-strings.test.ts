@@ -59,6 +59,9 @@ const TECHNICAL = [
   /^[A-Z][A-Z0-9_-]*$/, // codes and placeholders: CODE, AET-12, NP-8801
   /^NP-[\d…]*\/?[\d…]*$/, // WBS placeholders: NP-…/…
   /^\/\w+$/, // slash commands: /zeit
+  /^#[\w-]+$/, // tags: #privat
+  /^[\w-]+…$/, // token prefixes: sk-…
+  /^[\w.:/-]+(, [\w.:/-]+)+$/, // lists of model names: gpt-4o, text-embedding-3-small
   /^due:/, // due:YYYY-MM-DD
   /^[\w-]+… \/ [\w-]+…$/, // token prefixes: ghp_… / glpat-…
 ];
@@ -66,6 +69,11 @@ const TECHNICAL = [
 /** Proper names and technical words that read the same in both languages. */
 const NAMES = new Set([
   "Annalo",
+  // Key caps, and the language names, which are written in their own language.
+  "Enter",
+  "Esc",
+  "Deutsch",
+  "English",
   "CATS",
   "SAP",
   "LiteLLM",

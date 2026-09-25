@@ -4,13 +4,13 @@
 
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CalendarRange, CheckCircle2, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
+import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
 import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions";
 import { flushAllEditors } from "../editor/NoteEditor";
-import { dateTime, decimal, fileSize, importSummary, relative, weekdayLabels } from "../lib/format";
+import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } from "../components/ui";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
@@ -32,6 +32,7 @@ import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
 import { takeSettingsSection } from "../lib/calnav";
+import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
 type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
@@ -405,6 +406,11 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
         <h1>{t("set.time.title")}</h1>
         <p>{t("set.time.intro")}</p>
       </header>
+      <Group title={t("set.time.use")}>
+        <Row label={t("set.time.useLabel")} description={t("set.time.useDesc")}>
+          <Switch label={t("set.time.useLabel")} checked={draft.time.enabled !== false} onChange={(v) => update({ time: { ...draft.time, enabled: v } })} />
+        </Row>
+      </Group>
       <Group title={t("set.time.timer")}>
         <Row label={t("set.time.idle")} description={t("set.time.idleDesc")}>
           <div className="unit-input">
@@ -1344,6 +1350,21 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           </Button>
         </Row>
         <DevLogAboutRow onOpen={onOpenLog} />
+      </Group>
+      <Group title={t("fr.about.group")}>
+        <Row
+          label={t("fr.about.rerun")}
+          description={view.settings.onboarding?.completed_at ? t("fr.about.rerunDescAt", { date: fmtDate(view.settings.onboarding.completed_at) }) : t("fr.about.rerunDesc")}
+        >
+          <Button variant="ghost" icon={Compass} onClick={() => startFirstRun("rerun")} className="fr-rerun">
+            {t("fr.about.rerunButton")}
+          </Button>
+        </Row>
+        <Row label={t("fr.about.reset")} description={t("fr.about.resetDesc")}>
+          <Button variant="ghost" onClick={() => void resetOnboarding()} className="fr-reset">
+            {t("fr.about.resetButton")}
+          </Button>
+        </Row>
       </Group>
       <Group title={t("set.about.shortcuts")}>
         <div className="shortcut-list">
