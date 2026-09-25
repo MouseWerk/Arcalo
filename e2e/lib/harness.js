@@ -55,12 +55,10 @@ export function guarded(test, getApp) {
     });
 }
 
-export async function launch({ demo = true, width = 1480, height = 920, env: extraEnv = {} } = {}) {
+/** The environment the app runs with on `dataDir` (also for starting it without WebDriver). */
+export function appEnv(dataDir, { demo = true, env: extraEnv = {} } = {}) {
   ensureXvfb();
-  fs.mkdirSync(SHOTS, { recursive: true });
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
-  const port = 4444 + Math.floor(Math.random() * 500);
-  const env = {
+  return {
     ...process.env,
     DISPLAY,
     ANNALO_DATA_DIR: dataDir,
@@ -74,6 +72,17 @@ export async function launch({ demo = true, width = 1480, height = 920, env: ext
     // Extra variables of one test (e.g. ANNALO_EXE_DIR for portable mode).
     ...extraEnv,
   };
+}
+
+/**
+ * Starts the app under WebDriver. `dataDir`: an existing data folder to use (kept on close),
+ * else a fresh one that is removed on close.
+ */
+export async function launch({ demo = true, width = 1480, height = 920, env: extraEnv = {}, dataDir: given = null } = {}) {
+  fs.mkdirSync(SHOTS, { recursive: true });
+  const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
+  const port = 4444 + Math.floor(Math.random() * 500);
+  const env = appEnv(dataDir, { demo, env: extraEnv });
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
   driver.stderr.on("data", (d) => (driverErr += d));
@@ -211,7 +220,7 @@ export async function launch({ demo = true, width = 1480, height = 920, env: ext
         /* already gone */
       }
       // Helpers the app started (xdg-open, WebKit caches) may still write for a moment.
-      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      if (!given) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       if (driverErr.includes("panicked")) throw new Error(driverErr);
     },
   };

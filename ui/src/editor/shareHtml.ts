@@ -6,11 +6,12 @@
 
 import { Editor } from "@tiptap/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { buildExtensions, lowlight } from "./schema";
-import { ensureLanguages } from "./languages";
+import { buildExtensions } from "./schema";
+import { highlightCodeBlocks } from "./languages";
 import { splitFrontmatter } from "./extensions";
 import { tocTree, type TocTree } from "./blocks";
-import { baseName, formatSize } from "./fileEmbed";
+import { baseName, formatSize, isFileLinkTarget } from "./fileEmbed";
+import { titleSet } from "../lib/links";
 import { EMBED_FILE_BYTES, buildHtmlDocument, dataUri, htmlFileName, mimeOf, type ExportSection } from "../lib/htmlExport";
 import { api } from "../lib/api";
 import { fmtDate } from "../lib/format";
@@ -59,15 +60,6 @@ function el<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, attrs:
   return e;
 }
 
-/** hast (lowlight) → DOM. */
-function hastToDom(doc: Document, node: { type: string; value?: string; tagName?: string; properties?: { className?: string[] }; children?: unknown[] }): Node {
-  if (node.type === "text") return doc.createTextNode(node.value ?? "");
-  const out = node.type === "element" ? doc.createElement(node.tagName ?? "span") : doc.createDocumentFragment();
-  if (out instanceof HTMLElement && node.properties?.className) out.className = node.properties.className.join(" ");
-  for (const c of (node.children ?? []) as (typeof node)[]) out.appendChild(hastToDom(doc, c));
-  return out;
-}
-
 /** Renders one page body to static HTML for the file. */
 export async function renderPageHtml(markdown: string, ctx: RenderContext): Promise<string> {
   const doc = new DOMParser().parseFromString(`<!DOCTYPE html><body>${editorHtml(markdown)}</body>`, "text/html");
@@ -111,6 +103,15 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
       const a = el(doc, "a", { href: src }, img.getAttribute("alt") || src);
       img.replaceWith(/^https?:/i.test(src) ? a : el(doc, "span", { class: "missing" }, `[Bild: ${img.getAttribute("alt") || src}]`));
     }
+  }
+
+  // `[[Angebot.pdf]]` links to a file (no page of that title) travel like file embeds.
+  const titles = titleSet(useApp.getState().pages);
+  for (const a of root.querySelectorAll<HTMLElement>("a[data-wikilink]")) {
+    const target = (a.getAttribute("data-target") ?? "").trim();
+    if (!isFileLinkTarget(target) || ctx.anchors.has(target.toLowerCase()) || titles.has(target.toLowerCase())) continue;
+    const label = a.textContent ?? "";
+    a.replaceWith(el(doc, "span", { "data-file": baseName(target), ...(label && label !== target ? { "data-alt": label } : {}) }));
   }
 
   // File embeds → a chip; small files embedded as download links.
@@ -238,15 +239,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   // Columns and code highlighting.
   for (const c of root.querySelectorAll("div[data-columns]")) c.removeAttribute("data-columns");
   for (const c of root.querySelectorAll("div[data-column]")) c.removeAttribute("data-column");
-  const codes = [...root.querySelectorAll<HTMLElement>("pre > code")];
-  await ensureLanguages(codes.map((code) => /language-([\w-]+)/.exec(code.className)?.[1] ?? ""));
-  for (const code of codes) {
-    const lang = /language-([\w-]+)/.exec(code.className)?.[1];
-    if (!lang || !lowlight.registered(lang)) continue;
-    const tree = lowlight.highlight(lang, code.textContent ?? "");
-    code.replaceChildren(hastToDom(doc, tree as never));
-    code.classList.add("hljs");
-  }
+  await highlightCodeBlocks(root);
 
   // All attachments of the page, once more at its end.
   if (attachments.size) {

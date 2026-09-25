@@ -35,6 +35,13 @@ export function isFileEmbedName(name: string): boolean {
 /** File name without folders (`![[Ordner/a.pdf]]` shows `a.pdf`). */
 export const baseName = (name: string) => name.split(/[\\/]/).pop() ?? name;
 
+/**
+ * Whether a `[[target]]` link names a file (`[[Angebot.pdf]]`, `[[Ordner/Daten.xlsx]]`) rather than a
+ * page: its last segment has a file extension. Where a page has that title, the page wins (callers
+ * check that). Same rule as `attachment_manager::is_file_link` in the core.
+ */
+export const isFileLinkTarget = (target: string) => fileExtension(baseName(target.trim())) != null;
+
 /** `1,2 MB`, `340 kB`, `12 B` (German decimal comma). */
 export function formatSize(bytes: number): string {
   if (bytes < 1000) return `${bytes} B`;

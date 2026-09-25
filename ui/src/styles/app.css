@@ -330,7 +330,7 @@ button.side-section-title:hover { color: var(--text-2); }
   align-items: center;
   gap: 7px;
   height: 28px;
-  max-width: 220px;
+  max-width: 360px;
   min-width: 0;
   padding: 0 4px 0 10px;
   border-radius: var(--r-sm);

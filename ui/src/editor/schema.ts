@@ -13,7 +13,7 @@ import Link from "@tiptap/extension-link";
 import { Callouts, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
-import { AttachmentDrop, FileEmbed } from "./fileEmbed";
+import { AttachmentDrop, FileEmbed, anchorPage, isPdfName } from "./fileEmbed";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
@@ -296,7 +296,13 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     }),
     Markdown,
     MarkdownFidelity,
-    WikiLink.configure({ onOpen: o.onOpenLink ?? (() => {}), isKnown: o.isKnown ?? (() => true) }),
+    WikiLink.configure({
+      onOpen: o.onOpenLink ?? (() => {}),
+      isKnown: o.isKnown ?? (() => true),
+      fileSize: o.attachmentSize ?? (async () => null),
+      // Like a file embed: PDFs in the viewer, other files in their default app.
+      onOpenFile: (name, anchor) => (isPdfName(name) ? o.onOpenPdf?.(name, anchorPage(anchor == null ? null : `#${anchor}`)) : o.onOpenFile?.(name)),
+    }),
     WikiLinkSuggest.configure({ search: o.searchPages ?? (async () => []) }),
     SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null, onFile: o.onPickFile ?? null }),
     ImageEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`) }),

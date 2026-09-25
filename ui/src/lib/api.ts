@@ -314,6 +314,34 @@ const KINDS: Record<string, string> = {
   attachment: "Anhang",
 };
 
+// A file path in a message: `C:\…`, `\\server\…` or `/a/b…`, up to the end of the line.
+const PATH_RE = /(?<![\w:/.\\])(?:[A-Za-z]:[\\/]|\\\\[^\\\s]+\\|\/(?=[^/\s]+\/))[^\n"“”„]*/g;
+
+/**
+ * Shortens long file paths in a message in the middle, keeping the drive (or first folder) and the
+ * file name: `C:\Users\m\…\Kunde\Angebot.pdf`. The full text stays in the developer log.
+ */
+export function shortenPaths(text: string, max = 56): string {
+  return text.replace(PATH_RE, (path) => {
+    const trimmed = path.replace(/[\s.,;)]+$/, "");
+    const rest = path.slice(trimmed.length);
+    if (trimmed.length <= max) return path;
+    const sep = trimmed.includes("\\") ? "\\" : "/";
+    const parts = trimmed.split(sep);
+    // Leading empty parts: `/home` and `\\server` keep their separators.
+    let lead = 0;
+    while (lead < parts.length - 1 && parts[lead] === "") lead++;
+    const head = parts.slice(0, lead + 1).join(sep);
+    const tail: string[] = [parts[parts.length - 1]];
+    for (let i = parts.length - 2; i > lead; i--) {
+      if (head.length + tail.join(sep).length + parts[i].length + 4 > max) break;
+      tail.unshift(parts[i]);
+    }
+    if (tail.length >= parts.length - lead - 1) return path;
+    return `${head}${sep}…${sep}${tail.join(sep)}${rest}`;
+  });
+}
+
 /** Backend errors in German: `netzplan 'NP-1' not found` → `Netzplan „NP-1“ nicht gefunden`. */
 export const errorText = (e: unknown) => {
   const raw = typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);

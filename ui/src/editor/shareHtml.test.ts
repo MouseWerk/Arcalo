@@ -28,6 +28,13 @@ describe("share as HTML", () => {
     expect(html).toContain("<h2>Anhänge</h2>");
   });
 
+  it("carries linked files like embedded ones", async () => {
+    const html = await render("Siehe [[Ordner/a.pdf|das Angebot]] und [[fehlt.docx]].\n", { "a.pdf": new Uint8Array([1, 2, 3, 4]) });
+    expect(html).toMatch(/<a class="attachment" href="data:application\/pdf;base64,[^"]+" download="a.pdf">das Angebot <small>4 B<\/small><\/a>/);
+    expect(html).toContain('<span class="attachment">fehlt.docx <small>nicht enthalten</small></span>');
+    expect(html).not.toContain('class="wikilink"');
+  });
+
   it("links pages in the file, others stay text", async () => {
     const html = await render("[[Kind]] und [[Anderswo|woanders]]\n", {}, new Map([["kind", "page-2"]]));
     expect(html).toContain('<a class="wikilink" href="#page-2">Kind</a>');

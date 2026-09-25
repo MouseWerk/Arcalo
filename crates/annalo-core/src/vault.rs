@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::attachments;
 use crate::db::Database;
-use crate::error::Result;
+use crate::error::{IoAt, Result};
 use crate::model::PageNode;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -77,7 +77,7 @@ pub fn decode_text(bytes: &[u8]) -> (String, bool) {
 
 /// Reads a note; see [`decode_text`] and [`MAX_NOTE_BYTES`].
 fn read_text(p: &Path, rel: &Path, warnings: &mut Vec<String>) -> Result<String> {
-    let bytes = fs::read(p)?;
+    let bytes = fs::read(p).at(p)?;
     let (text, converted) = decode_text(&bytes);
     if converted {
         warnings.push(format!("{}: kein UTF-8, als Windows-1252 gelesen", rel.display()));
@@ -279,7 +279,7 @@ impl Walk<'_> {
         };
         if !attachments::embeddable(name)
             || name.contains(':')
-            || fs::metadata(path)?.len() > attachments::MAX_FILE_BYTES
+            || fs::metadata(path).at(path)?.len() > attachments::MAX_FILE_BYTES
         {
             self.report.skipped += 1;
             return Ok(());
@@ -292,7 +292,7 @@ impl Walk<'_> {
                 self.report.attachments += 1;
                 Ok(())
             }
-            Err(crate::Error::Io(e)) => Err(e.into()),
+            Err(e @ (crate::Error::Io(_) | crate::Error::File { .. })) => Err(e),
             Err(_) => {
                 self.report.skipped += 1;
                 Ok(())
@@ -304,7 +304,8 @@ impl Walk<'_> {
 /// Visible files and folders of `dir`. Symlinks are skipped entirely: following them could
 /// copy files from outside the vault (e.g. `~/.ssh`) or recurse forever.
 fn visible_entries(dir: &Path) -> Result<Vec<PathBuf>> {
-    Ok(fs::read_dir(dir)?
+    Ok(fs::read_dir(dir)
+        .at(dir)?
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_ok_and(|t| !t.is_symlink()))
         .map(|e| e.path())
@@ -439,7 +440,7 @@ pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
 
 /// [`export_vault`] from a [`VaultSnapshot`] (no database access).
 pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path) -> Result<usize> {
-    fs::create_dir_all(dir)?;
+    fs::create_dir_all(dir).at(dir)?;
     let mut planned = Vec::new();
     Planner { root: Some(dir), taken: Default::default() }.plan(
         &|id| !snap.content(id).is_empty(),
@@ -458,18 +459,18 @@ pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path)
             }
         }
         if let Some(folder) = &path.folder {
-            fs::create_dir_all(dir.join(folder))?;
+            fs::create_dir_all(dir.join(folder)).at(dir.join(folder))?;
         }
         if let Some(file) = &path.file {
-            fs::write(dir.join(file), content)?;
+            fs::write(dir.join(file), content).at(dir.join(file))?;
             count += 1;
         }
     }
     let out = dir.join(attachments::DIR_NAME);
     for name in embedded {
         if let Some(src) = attachments::resolve(attachments_dir, &name) {
-            fs::create_dir_all(&out)?;
-            fs::copy(src, out.join(&name))?;
+            fs::create_dir_all(&out).at(&out)?;
+            crate::error::copy_file(&src, &out.join(&name))?;
         }
     }
     Ok(count)

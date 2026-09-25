@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aiErrorSummary } from "./aierror";
-import { errorText } from "./api";
+import { errorText, shortenPaths } from "./api";
 
 describe("aiErrorSummary", () => {
   it("names a model backend the proxy cannot reach", () => {
@@ -29,6 +29,25 @@ describe("aiErrorSummary", () => {
     expect(aiErrorSummary("Verbindungsfehler: Das Zertifikat des Servers wird nicht anerkannt (invalid peer certificate: UnknownIssuer)").title).toMatch(/Zertifikat/);
     expect(aiErrorSummary("Verbindungsfehler: Die Verbindung brach während der Antwort ab (error decoding response body)").title).toBe("Die Antwort wurde unterbrochen.");
     expect(aiErrorSummary("Leere Antwort des KI-Servers").settings).toBe(true);
+  });
+});
+
+describe("shortenPaths", () => {
+  it("shortens long paths in the middle and keeps the file name", () => {
+    const win = "Datei nicht gefunden: C:\\Users\\maurice.kleindienst\\OneDrive - Firma GmbH\\Projekte\\Kunde Nord\\Angebote 2026\\Angebot.pdf";
+    const short = shortenPaths(win);
+    expect(short).toMatch(/^Datei nicht gefunden: C:\\…\\.*\\Angebot\.pdf$/);
+    expect(short.length).toBeLessThan(win.length);
+    expect(short.length).toBeLessThanOrEqual("Datei nicht gefunden: ".length + 56);
+    expect(shortenPaths("Keine Berechtigung für den Ordner /home/maurice/Dokumente/Annalo/Daten/sehr/tief/verschachtelt/attachments")).toBe(
+      "Keine Berechtigung für den Ordner /home/…/Annalo/Daten/sehr/tief/verschachtelt/attachments",
+    );
+    // Short paths and text without paths stay as they are.
+    expect(shortenPaths("Datei nicht gefunden: C:\\Daten\\a.pdf")).toBe("Datei nicht gefunden: C:\\Daten\\a.pdf");
+    expect(shortenPaths("Stunden 1/2 und 3/4 gebucht")).toBe("Stunden 1/2 und 3/4 gebucht");
+    // A single very long file name is kept whole.
+    const long = `Datei nicht gefunden: C:\\${"x".repeat(80)}.pdf`;
+    expect(shortenPaths(long)).toBe(long);
   });
 });
 

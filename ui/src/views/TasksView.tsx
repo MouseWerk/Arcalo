@@ -4,6 +4,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, ChevronUp, ChevronsUp, ListChecks } from "lucide-react";
 import { api } from "../lib/api";
+import { openIfFileLink } from "../editor/files";
 import { useApp } from "../store/app";
 import { Badge, EmptyState, Segmented, Select, Spinner } from "../components/ui";
 import { PageIcon } from "../components/icons";
@@ -89,6 +90,7 @@ export function TasksView() {
   };
 
   const openLink = async (target: string, newTab: boolean) => {
+    if (openIfFileLink(target)) return;
     try {
       const page = await api.resolvePage(target, true);
       if (!page) return;

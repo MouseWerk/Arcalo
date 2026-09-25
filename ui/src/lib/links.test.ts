@@ -9,6 +9,15 @@ describe("outgoingLinks", () => {
       files: ["Bild.png", "Skizze.excalidraw", "Angebot.pdf"],
     });
   });
+
+  it("lists links to files as files unless a page has that title", () => {
+    const md = "[[Angebot.pdf]] [[Ordner/Daten.xlsx|die Daten]] [[plan.pdf#page=2]] [[Node.js]] [[Fehlt]] ![[Angebot.pdf]]";
+    const pages = new Set(["node.js"]);
+    expect(outgoingLinks(md, (t) => pages.has(t.toLowerCase()))).toEqual({
+      pages: ["Node.js", "Fehlt"],
+      files: ["Angebot.pdf", "Ordner/Daten.xlsx", "plan.pdf"],
+    });
+  });
 });
 
 describe("cleanTitleChars", () => {

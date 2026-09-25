@@ -8,7 +8,7 @@ import { PageIcon } from "../components/icons";
 import { AssistantPanel } from "./AssistantPanel";
 import { api } from "../lib/api";
 import { linkContext } from "../components/linkContext";
-import { outgoingLinks } from "../lib/links";
+import { outgoingLinks, titleSet } from "../lib/links";
 import { baseName, fileExtension, isImageName, isPdfName } from "../editor/fileEmbed";
 import { openFile, openPdfViewer } from "../editor/files";
 
@@ -98,7 +98,8 @@ function LinksPanel() {
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const pages = useApp((s) => s.pages);
   if (tab?.kind !== "page" || !doc) return <EmptyState icon={Link2} title="Keine Seite geöffnet" />;
-  const { pages: unique, files } = outgoingLinks(doc.content);
+  const titles = titleSet(pages);
+  const { pages: unique, files } = outgoingLinks(doc.content, (t) => titles.has(t.toLowerCase()));
   const find = (t: string) => [...pages.values()].find((p) => p.title.toLowerCase() === t.toLowerCase());
   const s = useApp.getState;
   return (

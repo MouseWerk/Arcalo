@@ -49,6 +49,17 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
 /// Part of the error for a database written by a newer Annalo (start-up tells it apart).
 pub const NEWER_SCHEMA: &str = "neueren Annalo-Version";
 
+/// Refuses a schema version this build does not know.
+fn check_not_newer(version: usize) -> Result<()> {
+    if version > MIGRATIONS.len() {
+        return Err(Error::State(format!(
+            "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{version}, diese kennt v{}). Bitte Annalo aktualisieren.",
+            MIGRATIONS.len()
+        )));
+    }
+    Ok(())
+}
+
 pub struct Database {
     conn: Connection,
     /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
@@ -112,6 +123,9 @@ impl Database {
     }
 
     fn init(conn: Connection) -> Result<Self> {
+        // A database of a newer Annalo is refused before anything (even the journal mode) is written.
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        check_not_newer(version.max(0) as usize)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
@@ -155,12 +169,7 @@ impl Database {
 
     fn migrate(&mut self) -> Result<()> {
         let current = self.schema_version()?;
-        if current > MIGRATIONS.len() {
-            return Err(Error::State(format!(
-                "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{current}, diese kennt v{}). Bitte Annalo aktualisieren.",
-                MIGRATIONS.len()
-            )));
-        }
+        check_not_newer(current)?;
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
             // v2 turned blocks into a derived chunk index (and created the settings table);
             // build it (and later derived indexes) from page content.
@@ -1286,6 +1295,21 @@ mod tests {
             assert_eq!(all[&n], db.list_vorgaenge(n).unwrap());
         }
         assert_eq!(all[&np.id][2].predecessors, [a.id, b.id]);
+    }
+
+    #[test]
+    fn a_newer_database_is_refused_without_being_written() {
+        let path = std::env::temp_dir().join(format!("annalo-newer-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let c = rusqlite::Connection::open(&path).unwrap();
+            c.execute_batch("CREATE TABLE x (a); PRAGMA user_version = 999;").unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let e = Database::open(&path).err().expect("refused");
+        assert!(e.to_string().contains(NEWER_SCHEMA) && e.to_string().contains("Schema v999"), "{e}");
+        assert_eq!(std::fs::read(&path).unwrap(), before, "not even switched to WAL");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

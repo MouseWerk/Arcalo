@@ -11,7 +11,8 @@ import { Copy, ExternalLink, Eye, FolderOpen, Trash2 } from "lucide-react";
 import type { MenuEntry } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { baseName, isFileEmbedName, isImageName, isPdfName } from "./fileEmbed";
+import { anchorPage, baseName, isFileEmbedName, isFileLinkTarget, isImageName, isPdfName } from "./fileEmbed";
+import { titleSet } from "../lib/links";
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 let root: Root | null = null;
@@ -37,6 +38,18 @@ export function openPdfViewer(name: string, page: number | null = null) {
 /** Opens a file in its default app (programs are only shown in the file manager, see the shell). */
 export function openFile(name: string) {
   api.openAttachment(baseName(name)).catch((e) => useApp.getState().error("Datei ließ sich nicht öffnen", e));
+}
+
+/**
+ * A `[[Angebot.pdf]]` link whose target is a file (no page has that title) opens like a file embed:
+ * PDFs in the viewer, other files in their default app. Returns false for a page link.
+ */
+export function openIfFileLink(target: string, anchor: string | null = null): boolean {
+  if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(target.trim().toLowerCase())) return false;
+  const name = baseName(target.trim());
+  if (isPdfName(name)) openPdfViewer(name, anchorPage(anchor == null ? null : `#${anchor}`));
+  else openFile(name);
+  return true;
 }
 
 /** Inserts the embed of a stored attachment at the caret: image, drawing or file. */

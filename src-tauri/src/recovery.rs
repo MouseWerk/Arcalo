@@ -1,6 +1,10 @@
 //! Start-up failures: a broken or newer database, a data folder that cannot be written. A
 //! native dialog explains it and offers a way out (restore the last backup, open the folder,
 //! quit) instead of an app that closes without a window.
+//!
+//! WebDriver cannot press the buttons of a native dialog: in debug builds the end-to-end tests
+//! answer it through `ANNALO_TEST_RECOVERY_CHOICE` (`restore`, `open` or `quit`), which skips the
+//! dialog and takes that way out. Release builds ignore the variable.
 
 use std::path::{Path, PathBuf};
 
@@ -75,17 +79,42 @@ fn backups_dir(dir: &Path) -> PathBuf {
     dir.join("backups")
 }
 
+/// The answer the end-to-end tests give instead of a click (debug builds only).
+fn test_choice(restore: bool) -> Option<&'static str> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let choice = std::env::var("ANNALO_TEST_RECOVERY_CHOICE").ok()?;
+    // Only the first dialog: a failed restore shows it again, and that one quits.
+    static ANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let again = ANSWERED.swap(true, std::sync::atomic::Ordering::Relaxed);
+    Some(match choice.trim() {
+        _ if again => QUIT,
+        "restore" if restore => RESTORE,
+        "open" => OPEN,
+        _ => QUIT,
+    })
+}
+
 /// Shows the dialog; the app ends (or restarts after a restore) when it is answered.
 pub fn show(app: &AppHandle, dir: &Path, failure: Failure) {
     devlog::error("core", format!("start failed: {failure:?}"));
     let backups = backup::list_backups(&backups_dir(dir)).map(|l| l.len()).unwrap_or(0);
     let (title, text, restore) = failure.texts(dir, backups);
+    devlog::info("core", format!("recovery dialog „{title}“: {text}"));
+    if let Some(choice) = test_choice(restore) {
+        devlog::info("core", format!("recovery dialog answered by the test: {choice}"));
+        // Like a click: once the event loop runs (an exit requested during setup loses its code).
+        let (app2, dir) = (app.clone(), dir.to_path_buf());
+        let _ = app.run_on_main_thread(move || answer(&app2, &dir, choice));
+        return;
+    }
     let buttons = if restore {
         MessageDialogButtons::YesNoCancelCustom(RESTORE.into(), OPEN.into(), QUIT.into())
     } else {
         MessageDialogButtons::OkCancelCustom(OPEN.into(), QUIT.into())
     };
-    let app2 = app.clone();
+    let handle = app.clone();
     let dir = dir.to_path_buf();
     app.dialog()
         .message(text)
@@ -100,26 +129,37 @@ pub fn show(app: &AppHandle, dir: &Path, failure: Failure) {
                 MessageDialogResult::No if restore => OPEN.to_owned(),
                 _ => QUIT.to_owned(),
             };
-            match pressed.as_str() {
-                RESTORE => match backup::restore_latest(&dir.join(datadir::DB_FILE), &backups_dir(&dir), Utc::now()) {
-                    Ok(b) => {
-                        devlog::warn("core", format!("database restored from backup {}", b.file_name));
-                        crate::portable::unlock_instance();
-                        app2.restart();
-                    }
-                    Err(e) => {
-                        devlog::error("core", format!("restore failed: {e}"));
-                        show(&app2, &dir, Failure::Database(format!("Wiederherstellen fehlgeschlagen: {e}")));
-                    }
-                },
-                OPEN => {
-                    use tauri_plugin_opener::OpenerExt;
-                    let _ = app2.opener().open_path(dir.display().to_string(), None::<&str>);
-                    app2.exit(1);
-                }
-                _ => app2.exit(1),
-            }
+            answer(&handle, &dir, &pressed);
         });
+}
+
+/// Carries out the chosen way out: restore and restart, open the folder, or quit (exit code 1).
+fn answer(app: &AppHandle, dir: &Path, pressed: &str) {
+    match pressed {
+        RESTORE => match backup::restore_latest(&dir.join(datadir::DB_FILE), &backups_dir(dir), Utc::now()) {
+            Ok(b) => {
+                devlog::warn("core", format!("database restored from backup {}", b.file_name));
+                crate::portable::unlock_instance();
+                app.restart();
+            }
+            Err(e) => {
+                devlog::error("core", format!("restore failed: {}", e.detail()));
+                show(app, dir, Failure::Database(format!("Wiederherstellen fehlgeschlagen: {e}")));
+            }
+        },
+        OPEN => {
+            use tauri_plugin_opener::OpenerExt;
+            let _ = app.opener().open_path(dir.display().to_string(), None::<&str>);
+            quit(app);
+        }
+        _ => quit(app),
+    }
+}
+
+/// Ends Annalo with exit code 1 (`AppHandle::exit` ends `App::run` with code 0).
+fn quit(app: &AppHandle) {
+    app.cleanup_before_exit();
+    std::process::exit(1);
 }
 
 /// Whether Annalo can write into `dir` (a read-only drive or folder permissions).

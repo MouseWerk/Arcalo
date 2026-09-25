@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use thiserror::Error;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -14,6 +16,14 @@ pub enum Error {
     Http(#[from] reqwest::Error),
     #[error("Dateifehler: {}", io_text(.0))]
     Io(#[from] std::io::Error),
+    /// An I/O error of one file or folder: the message names it (see [`IoAt::at`]).
+    #[error("{}", file_text(path, *dir, source))]
+    File {
+        path: PathBuf,
+        /// The path is (or would be) a folder: „Ordner“ instead of „Datei“ in the message.
+        dir: bool,
+        source: std::io::Error,
+    },
     #[error("Eingabe nicht verstanden: {0}")]
     Parse(String),
     #[error("{} „{key}“ nicht gefunden", kind_name(kind))]
@@ -29,11 +39,41 @@ impl Error {
         Error::NotFound { kind, key: key.into() }
     }
 
+    /// An I/O error of `path`. Whether it is a folder is taken from the disk, or, for a path that
+    /// does not exist, from the name (no extension: a folder). A file that is missing because its
+    /// folder is names the folder.
+    pub fn file(path: impl AsRef<Path>, source: std::io::Error) -> Self {
+        let mut path = path.as_ref();
+        if source.kind() == std::io::ErrorKind::NotFound {
+            while let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty() && !p.exists()) {
+                path = parent;
+            }
+        }
+        let dir = path.is_dir() || (!path.exists() && path.extension().is_none());
+        Error::File { path: path.to_path_buf(), dir, source }
+    }
+
+    /// The error with `path` attached when it is a bare I/O error (other errors stay as they are).
+    pub fn with_path(self, path: impl AsRef<Path>) -> Self {
+        match self {
+            Error::Io(e) => Error::file(path, e),
+            other => other,
+        }
+    }
+
+    /// The text for the developer log: the message plus the operating system's own words.
+    pub fn detail(&self) -> String {
+        match self {
+            Error::File { source, .. } => format!("{self} ({source})"),
+            _ => self.to_string(),
+        }
+    }
+
     /// Whether the storage is the problem (read-only, full, cannot be opened), not the data.
     pub fn is_storage(&self) -> bool {
         use rusqlite::ErrorCode as C;
         match self {
-            Error::Io(_) => true,
+            Error::Io(_) | Error::File { .. } => true,
             Error::Db(rusqlite::Error::SqliteFailure(f, _)) => {
                 matches!(f.code, C::ReadOnly | C::CannotOpen | C::DiskFull | C::PermissionDenied)
             }
@@ -84,6 +124,58 @@ pub fn io_text(e: &std::io::Error) -> String {
         _ => return e.to_string(),
     };
     format!("{what} ({e})")
+}
+
+/// An I/O error of one file or folder, short and with its path: „Datei nicht gefunden: C:\…\a.pdf“.
+fn file_text(path: &Path, dir: bool, e: &std::io::Error) -> String {
+    use std::io::ErrorKind as K;
+    let p = path.display();
+    let (noun, the) = if dir { ("Ordner", "den Ordner") } else { ("Datei", "die Datei") };
+    // Windows reports a file open in another program as a sharing or lock violation.
+    if cfg!(windows) && matches!(e.raw_os_error(), Some(32 | 33)) {
+        return format!("Die Datei ist in einem anderen Programm geöffnet: {p}");
+    }
+    match e.kind() {
+        K::NotFound => format!("{noun} nicht gefunden: {p}"),
+        K::PermissionDenied => format!("Keine Berechtigung für {the} {p}"),
+        K::AlreadyExists => format!("{noun} existiert bereits: {p}"),
+        K::StorageFull | K::QuotaExceeded => format!("Der Datenträger ist voll: {p}"),
+        K::ReadOnlyFilesystem => format!("Der Datenträger ist schreibgeschützt: {p}"),
+        K::IsADirectory => format!("Ein Ordner, keine Datei: {p}"),
+        K::NotADirectory => format!("Kein Ordner, sondern eine Datei: {p}"),
+        K::DirectoryNotEmpty => format!("Der Ordner ist nicht leer: {p}"),
+        K::ResourceBusy => format!("{noun} wird von einem anderen Programm verwendet: {p}"),
+        K::FileTooLarge => format!("Die Datei ist zu groß: {p}"),
+        K::InvalidFilename => format!("Ungültiger Name: {p}"),
+        K::CrossesDevices => format!("Verschieben auf ein anderes Laufwerk nicht möglich: {p}"),
+        K::UnexpectedEof => format!("Die Datei ist unvollständig: {p}"),
+        K::InvalidData => format!("Die Datei hat ein unerwartetes Format: {p}"),
+        K::TimedOut => format!("Zeitüberschreitung bei {p}"),
+        _ => format!("Dateifehler bei {p}: {e}"),
+    }
+}
+
+/// Attaches the path to an I/O result: `fs::read(&p).at(&p)?`.
+pub trait IoAt<T> {
+    fn at(self, path: impl AsRef<Path>) -> Result<T>;
+}
+
+impl<T> IoAt<T> for std::io::Result<T> {
+    fn at(self, path: impl AsRef<Path>) -> Result<T> {
+        self.map_err(|e| Error::file(path, e))
+    }
+}
+
+impl<T> IoAt<T> for Result<T> {
+    fn at(self, path: impl AsRef<Path>) -> Result<T> {
+        self.map_err(|e| e.with_path(path))
+    }
+}
+
+/// Copies a file; an error names the side that failed (the source when it cannot be read,
+/// else the target).
+pub fn copy_file(from: &Path, to: &Path) -> Result<u64> {
+    std::fs::copy(from, to).map_err(|e| Error::file(if std::fs::File::open(from).is_ok() { to } else { from }, e))
 }
 
 /// A SQLite error with the causes a user can do something about named in German.
@@ -172,6 +264,33 @@ mod tests {
         assert!(full.to_string().contains("Datenträger ist voll"));
         assert_eq!(Error::Parse("x".into()).to_string(), "Eingabe nicht verstanden: x");
         assert_eq!(Error::Provider { status: 500, body: "b".into() }.to_string(), "KI-Server meldet Fehler 500: b");
+    }
+
+    #[test]
+    fn file_errors_name_the_file_and_folder() {
+        use std::io::ErrorKind as K;
+        let root = std::env::temp_dir().join(format!("annalo-error-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let missing = root.join("Angebot.pdf");
+        let e = std::fs::read(&missing).at(&missing).unwrap_err();
+        assert_eq!(e.to_string(), format!("Datei nicht gefunden: {}", missing.display()));
+        assert!(e.is_storage());
+        // The log keeps the operating system's text too.
+        assert!(e.detail().starts_with(&e.to_string()) && e.detail().len() > e.to_string().len(), "{}", e.detail());
+        let e = Error::file(&root, std::io::Error::from(K::PermissionDenied));
+        assert_eq!(e.to_string(), format!("Keine Berechtigung für den Ordner {}", root.display()));
+        let e = Error::file(root.join("neu"), std::io::Error::from(K::NotFound));
+        assert!(e.to_string().starts_with("Ordner nicht gefunden: "), "{e}");
+        // A file in a folder that is not there: the first missing folder is named.
+        let e = Error::file(root.join("fehlt/tiefer/Seite.html"), std::io::Error::from(K::NotFound));
+        assert_eq!(e.to_string(), format!("Ordner nicht gefunden: {}", root.join("fehlt").display()));
+        let e = Error::from(std::io::Error::from(K::StorageFull)).with_path(&missing);
+        assert_eq!(e.to_string(), format!("Der Datenträger ist voll: {}", missing.display()));
+        // Other errors keep their text.
+        assert_eq!(Error::State("x".into()).with_path(&missing).to_string(), "x");
+        let r: Result<()> = Err(Error::from(std::io::Error::from(K::AlreadyExists)));
+        assert!(r.at(&missing).unwrap_err().to_string().starts_with("Datei existiert bereits: "));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
