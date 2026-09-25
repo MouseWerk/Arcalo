@@ -995,8 +995,8 @@ body.capture-mode { background: transparent; }
 .capture-chip-label { overflow: hidden; text-overflow: ellipsis; }
 .capture-chip.target { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
 .capture-chip.target:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
-.capture-chip.meeting { border-style: dashed; }
-.capture-chip.meeting > svg { color: var(--success); }
+.capture-chip.meeting, .capture-chip.target-meeting { border-style: dashed; }
+.capture-chip.meeting > svg, .capture-chip.target-meeting > svg { color: var(--success); }
 .capture-chip.clip kbd { margin-left: 2px; }
 .capture-new {
   padding: 0 5px;

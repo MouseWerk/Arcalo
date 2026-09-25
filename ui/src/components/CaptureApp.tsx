@@ -619,10 +619,15 @@ export function CaptureApp() {
   const Icon = picker ? Search : ICONS[kind];
   const lines = text.split("\n").filter((l) => l.trim()).length;
   const where = targetPhrase(target);
+  const daily = target.target.kind === "daily";
+  // Only name /zeit when a line books time.
+  const multi = /^\s*\/zeit\b/m.test(text)
+    ? `/zeit bucht, der Rest ${daily ? "geht in die Tagesnotiz" : `wird ${where} gespeichert`}`
+    : `sie ${daily ? "gehen in die Tagesnotiz" : `werden ${where} gespeichert`}`;
   const hint = !text.trim()
     ? "Enter speichert · Shift+Enter neue Zeile · Esc schließt"
     : lines > 1
-      ? `Enter erfasst ${lines} Zeilen: /zeit bucht, der Rest ${target.target.kind === "daily" ? "geht in die Tagesnotiz" : `wird ${where} gespeichert`} · Esc schließt`
+      ? `Enter erfasst ${lines} Zeilen${multi.startsWith("/") ? ": " : ", "}${multi} · Esc schließt`
       : `${captureHint(kind, where)} · Esc schließt`;
   const due = picker ? null : firstDue(text);
   const embeds = [...text.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1]);
@@ -670,7 +675,7 @@ export function CaptureApp() {
         <div className="capture-targets" role="toolbar" aria-label="Ziel">
           <button
             type="button"
-            className={`capture-chip target ${target.target.kind}`}
+            className={`capture-chip target target-${target.target.kind}`}
             onClick={() => (picker ? closePicker() : openPicker())}
             title="Ziel wählen (> am Anfang)"
             aria-label={`Ziel: ${target.label}`}
