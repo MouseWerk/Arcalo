@@ -16,6 +16,7 @@
 //! * [`gitsync`] – pushes the Markdown mirror to a Git remote (system `git`, token via environment)
 //! * [`merge`] – three-way merge of notes by blocks (Git sync conflicts)
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
+//! * [`dashboard`] – the start page's widgets: their data in one call, saved queries
 //! * [`calsync`] – calendar sync: Outlook Classic (COM via PowerShell) and ICS files/subscriptions
 //! * [`mail`] – „E-Mail als Aufgabe / Notiz“: Outlook, .eml/.msg and pasted mails, links back to the mail
 //! * [`outlookcom`] – runs the bundled Outlook scripts (hidden PowerShell, timeout, JSON)
@@ -52,6 +53,7 @@ pub mod backup;
 pub mod calendar;
 pub mod calsync;
 pub mod capture;
+pub mod dashboard;
 pub mod datadir;
 pub mod dayreview;
 pub mod db;

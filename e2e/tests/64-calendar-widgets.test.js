@@ -47,11 +47,12 @@ test("the start page widget lists today's meetings and opens the calendar on one
   await button("Anpassen");
   await app.waitText(".pane.active .dash-bar .btn", /Widget hinzufügen/);
   await button("Widget hinzufügen");
-  await app.waitText(".menu-item", /^Termine$/);
-  await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((b) => b.textContent.trim() === "Termine").click());
+  // The widget gallery (1.6); „Termine“ is on the default board already, this adds a second one.
+  await app.click('.dash-gallery-card[data-kind="agenda"]');
   await button("Fertig");
   await app.waitText('.dw[data-kind="agenda"] .dw-agenda-row', /Daily Standup/);
-  assert.deepEqual((await app.invoke("settings_get")).settings.dashboard.widgets.filter((w) => w.kind === "agenda").length, 1);
+  const boards = (await app.invoke("settings_get")).settings.dashboard.boards;
+  assert.equal(boards[0].widgets.filter((w) => w.kind === "agenda").length, 2);
   await app.browser.execute(() => document.querySelector('.dw[data-kind="agenda"]').scrollIntoView({ block: "center" }));
   await app.shot("64-dashboard-agenda");
   await app.click('.dw[data-kind="agenda"] .dw-agenda-row');

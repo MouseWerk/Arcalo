@@ -1,18 +1,16 @@
-// Focus sessions (Pomodoro): the start dialog, the countdown engine, the status bar ring and
-// the start-page widget. The session itself lives in the core (it survives restarts); the UI
-// counts down, completes it on time and shows what was booked and held back.
+// Focus sessions (Pomodoro): the start dialog, the countdown engine and the status bar ring
+// (the start-page widget is in components/dashboard). The session itself lives in the core (it
+// survives restarts); the UI counts down, completes it on time and shows what was booked and held back.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Coffee, NotebookPen, Play, Square, Target, X } from "lucide-react";
+import { Coffee, Play, Square, Target, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { Button, Dialog, Field, Input, Segmented, Switch, useMenu } from "./ui";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
-import { BREAKS, LENGTHS, countdown, hm, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
-import { addDays, isoDay, weekStart } from "../lib/format";
-import { reloadEditors } from "../editor/NoteEditor";
-import type { FocusDone, FocusReport } from "../lib/types";
+import { BREAKS, LENGTHS, countdown, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
+import type { FocusDone } from "../lib/types";
 
 const s = useApp.getState;
 
@@ -366,89 +364,6 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
         {timer && <p className="faint small focus-note">Ein Timer läuft – die Fokuszeit wird zusätzlich gebucht.</p>}
       </div>
     </Dialog>
-  );
-}
-
-// ------------------------------------------------------------------ widget
-
-/** Start page „Fokus“: sessions and minutes today and this week, per Vorgang. */
-export function FocusWidget() {
-  const entriesVersion = useApp((st) => st.entriesVersion);
-  const focus = useApp((st) => st.focus);
-  const [today, setToday] = useState<FocusReport | null>(null);
-  const [week, setWeek] = useState<FocusReport | null>(null);
-  const [writing, setWriting] = useState(false);
-  const now = useNow(!!focus, 1000);
-  useEffect(() => {
-    let alive = true;
-    const d = new Date();
-    const monday = weekStart(d);
-    Promise.all([api.focusReport(isoDay(d), isoDay(d)), api.focusReport(isoDay(monday), isoDay(addDays(monday, 6)))])
-      .then(([a, b]) => alive && (setToday(a), setWeek(b)))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [entriesVersion, focus?.session.id, focus?.phase]);
-  const toNote = async () => {
-    setWriting(true);
-    try {
-      const id = await api.focusDailyLine();
-      await s().refreshTree();
-      reloadEditors([id]);
-      s().toast({ tone: "success", title: "In die Tagesnotiz eingetragen", action: { label: "Öffnen", run: () => s().openPage(id) } });
-    } catch (e) {
-      s().error("Nicht eingetragen", e);
-    } finally {
-      setWriting(false);
-    }
-  };
-  if (!today || !week) return null;
-  const max = Math.max(1, ...today.by_reference.map((r) => r.minutes));
-  return (
-    <div className="dw-focus">
-      <div className="dw-focus-sum">
-        <div>
-          <span className="num dw-big">{today.sessions}</span>
-          <span className="faint">{today.sessions === 1 ? "Sitzung" : "Sitzungen"} heute · {hm(today.minutes)}</span>
-        </div>
-        <span className="faint small num">Woche: {week.sessions} · {hm(week.minutes)}</span>
-      </div>
-      {focus ? (
-        <div className={`dw-focus-live ${focus.phase}`}>
-          <FocusRing progress={phaseProgress(focus, now)} size={22} stroke={2.5} tone={focus.phase === "work" ? "accent" : "break"} />
-          <span className="num">{countdown(remainingMs(focus, now))}</span>
-          <span className="faint ellipsis grow">{focus.phase === "work" ? focus.session.goal || focus.session.reference || "Fokus" : "Pause"}</span>
-        </div>
-      ) : today.by_reference.length === 0 ? (
-        <div className="dw-empty">Heute noch keine Fokussitzung.</div>
-      ) : null}
-      {today.by_reference.length > 0 && (
-        <ul className="dw-list dw-focus-list" aria-label="Fokus je Vorgang heute">
-          {today.by_reference.slice(0, 4).map((r) => (
-            <li key={r.reference || "-"}>
-              <span className="mono ellipsis">{r.reference || "ohne Vorgang"}</span>
-              <span className="dw-focus-bar" aria-hidden>
-                <span style={{ width: `${(r.minutes / max) * 100}%` }} />
-              </span>
-              <span className="num faint">{hm(r.minutes)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="dw-focus-actions">
-        {!focus && (
-          <Button size="sm" icon={Target} onClick={() => openFocusDialog()}>
-            Fokus starten
-          </Button>
-        )}
-        {today.sessions > 0 && (
-          <Button size="sm" variant="ghost" icon={NotebookPen} onClick={toNote} loading={writing}>
-            In Tagesnotiz
-          </Button>
-        )}
-      </div>
-    </div>
   );
 }
 
