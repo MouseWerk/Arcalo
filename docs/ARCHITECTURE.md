@@ -42,13 +42,14 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `calendar_events` | Appointments of the calendar sources (v9), one row per instance: `source` (`outlook`, `ics:<id>`), `uid`, `instance` (original start of an instance of a series, `''` for single appointments; unique with source and uid), start/end (UTC), all-day, title, place, organizer, attendees and categories (JSON), optional text and meeting link, busy state, private flag |
 | `calendar_marks` | What the user decided about an appointment (v9), by key `source\|uid\|instance`: `skip` („nicht buchen“), `note_page_id` (meeting note, set null on purge), `entry_id` (booked entry, set null on delete), subject and series of the booking for the WBS suggestion. Never touched by a sync |
 | `calendar_sync` | Status of the last sync per source (v9): last success, last attempt, error, number of events |
+| `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes).
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 
@@ -296,6 +297,34 @@ and by `entry_id`.
   entry (`calendar_link_entry`); the next booking of the same series or subject gets that WBS
   (`calendar_wbs_hint`). `calendar_meeting_note` creates the note below „Besprechungen“ (frontmatter with date, time,
   place, organizer, attendees and the remembered `vorgang:`), from the template „Besprechung“ when there is one.
+
+## Woche vorschlagen (`weekplan.rs` in core and shell, `ui/src/views/WeekProposal.tsx`, `ui/src/lib/weekplan.ts`)
+
+- Signals of a local week (`weekplan::collect`): appointments that are over (the „Termine übernehmen“ rules: not all-day,
+  free, out of office, private without details, „nicht buchen“, linked or booked by hand that day), finished focus sessions
+  without `entry_id`, and page edits from `activity` (one row per page and UTC hour: a session ending at the last save,
+  about 2 min per save, 10–60 min; daily notes, a single tiny edit and edits on days off do not count). Existing entries
+  (a running timer until now) are busy time.
+- WBS (`WbsContext`, in this order): learned (calendar marks of the series or subject, `wbs_memory`), explicit links
+  (`vorgang:` of the page, of a parent page, of the meeting note; the focus session's Vorgang), what a page mentions
+  (`NP-8801/1020` in its text, a `#np-8801` tag), history (entries with the page's `page_id` or described like the text),
+  similarity (words of Vorgang names, Netzplan/project and recent booking texts; unique best score ≥ 2), else none. Each
+  guess has a confidence (high/medium/low) and a German reason. The Leistungsart comes from that booking, the Netzplan's
+  default or the one most booked on the reference.
+- Time (`weekplan::build`, pure): each day is cut into slots of the rounding step (5 min when off), aligned to local
+  midnight (DST days have 23/25 h). Slots touched by a booking or after `until` (now, or the end of today with
+  „Heutige Termine bis Tagesende“) are never proposed. A slot goes to the signal covering most of it (with rounding
+  „nearest“ at least half), then focus > calendar > page. Runs of the same WBS (without WBS: the same source) become one
+  proposal; holes up to 15 min between them are bridged. On workdays the proposals are capped at target minus booked
+  (lowest priority and confidence, latest slots first); the day summary reports booked, proposed, gap and capped minutes.
+- `week_proposal_apply` (`weekplan::apply`) books the accepted items as draft entries (source `auto`, `page_id` of a page
+  source) in one transaction: the Vorgang is canonicalized, rounding applies, appointments are linked
+  (`calendar_link_entry`: booked mark, series and subject for next time), focus sessions get the `entry_id`, and a WBS the
+  user changed is stored in `wbs_memory` for the pages (and the text of single non-page sources).
+- Reminder (`weekplan::week_reminder`, shell `weekplan::periodic` in the reminder loop): on the last configured workday
+  from 14:00, once per ISO week (meta `week_proposal.week`), when earlier workdays are below the target, unless
+  `notifications.week_proposal` is off or it is quiet time. The next focus of the main window emits
+  `nav://week-proposal`; the UI opens the timesheet and the review (`requestWeekProposal`).
 
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, X,
+  AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { bookingPrefill, durationMinutes, sourceColor, timeRange, unbooked } from "../lib/agenda";
@@ -18,6 +18,8 @@ import { catsGrid, undeletableReason, weekGaps } from "../lib/cats";
 import type { CalendarEvent, ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow, WbsHint } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
 import { openFocusDialog } from "../components/Focus";
+import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
+import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 
 const STATUS: Record<StatusFlag, { label: string; tone: Tone }> = {
   running: { label: "Läuft", tone: "info" },
@@ -33,8 +35,21 @@ export function TimesheetView() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editing, setEditing] = useState<TimeEntryRow | "new" | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [proposing, setProposing] = useState(false);
   const { wbs, las } = useWbs();
   const s = useApp.getState;
+  // „Woche vorschlagen“ from the palette, the reminder or elsewhere: opened here.
+  useEffect(() => {
+    const take = () => {
+      if (takeWeekProposalRequest()) {
+        setWeek(weekStart(new Date()));
+        setProposing(true);
+      }
+    };
+    take();
+    window.addEventListener(OPEN_EVENT, take);
+    return () => window.removeEventListener(OPEN_EVENT, take);
+  }, []);
 
   // Only the latest request may update the list (fast week switching).
   const seq = useRef(0);
@@ -94,6 +109,7 @@ export function TimesheetView() {
             <Button icon={Download} onClick={() => setExporting(true)}>
               Export
             </Button>
+            <WeekProposalButton onClick={() => setProposing(true)} />
             <Button icon={Plus} variant="primary" onClick={() => setEditing("new")}>
               Eintrag
             </Button>
@@ -110,9 +126,9 @@ export function TimesheetView() {
           <Stat label="Exportiert" value={`${fmtMinutes(byStatus("exported"))} h`} tone={byStatus("exported") ? "success" : undefined} />
         </div>
 
-        <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} />
+        <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} onPropose={() => setProposing(true)} />
 
-        <MeetingSuggestions week={week} rows={rows} wbs={wbs} las={las} />
+        <MeetingSuggestions week={week} rows={rows} wbs={wbs} las={las} onPropose={() => setProposing(true)} />
 
         <section className="card">
           <div className="card-head">
@@ -162,6 +178,7 @@ export function TimesheetView() {
       </div>
       {editing && <EntryDialog entry={editing === "new" ? null : editing} wbs={wbs} las={las} onClose={() => setEditing(null)} defaultDay={week} />}
       {exporting && <ExportDialog week={week} onClose={() => setExporting(false)} />}
+      {proposing && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
     </div>
   );
 }
@@ -302,7 +319,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
 
 // -------------------------------------------------------------- week grid
 
-function WeekGrid({ rows, week, todayKey, target, workdays }: { rows: TimeEntryRow[]; week: Date; todayKey: string; target: number; workdays: number[] }) {
+function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows: TimeEntryRow[]; week: Date; todayKey: string; target: number; workdays: number[]; onPropose: () => void }) {
   const weekend = (i: number) => !workdays.includes(isoWeekday(addDays(week, i)));
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
   const keys = days.map(isoDay);
@@ -370,6 +387,10 @@ function WeekGrid({ rows, week, todayKey, target, workdays }: { rows: TimeEntryR
               {weekdayShort(g.day)} {g.day.getDate()}. −{fmtMinutes(g.missingMinutes)} h
             </span>
           ))}
+          <span className="grow" />
+          <Button size="sm" variant="ghost" icon={WandSparkles} onClick={onPropose}>
+            Lücken füllen
+          </Button>
         </div>
       )}
       <div className="table-wrap">
@@ -652,7 +673,7 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
  * „Termine übernehmen“: meetings of the week from the calendar sync that are over and not booked
  * yet; each can be booked (prefilled like in the Kalender) or marked „nicht buchen“.
  */
-function MeetingSuggestions({ week, rows, wbs, las }: { week: Date; rows: TimeEntryRow[]; wbs: ProjectTree[]; las: [string, string][] }) {
+function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; rows: TimeEntryRow[]; wbs: ProjectTree[]; las: [string, string][]; onPropose: () => void }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [booking, setBooking] = useState<{ event: CalendarEvent; prefill: EntryPrefill; hint: WbsHint | null } | null>(null);
   const [tick, setTick] = useState(0);
@@ -691,7 +712,10 @@ function MeetingSuggestions({ week, rows, wbs, las }: { week: Date; rows: TimeEn
     <section className="card ts-meetings" aria-label="Termine übernehmen">
       <div className="card-head">
         <h2>Termine übernehmen</h2>
-        <span className="faint">{list.length} {list.length === 1 ? "Termin" : "Termine"} dieser Woche noch nicht gebucht</span>
+        <span className="faint grow">{list.length} {list.length === 1 ? "Termin" : "Termine"} dieser Woche noch nicht gebucht</span>
+        <Button size="sm" icon={WandSparkles} onClick={onPropose} title="Woche vorschlagen: alle Termine mit Fokus-Sitzungen und bearbeiteten Seiten auf einmal prüfen und übernehmen">
+          Alle übernehmen…
+        </Button>
       </div>
       <ul className="ts-meeting-list">
         {shown.map((e) => (

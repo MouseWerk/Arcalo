@@ -129,7 +129,8 @@ The Kalender (Ctrl Shift E) shows your meetings from Outlook Classic or any ICS 
 day, work week, week, month and a list. Click a meeting and „Zeit buchen“ opens the entry prefilled with its day,
 time, length and subject; the WBS of the last meeting of the same series or subject is suggested. „Besprechungsnotiz“
 creates a note with date, attendees and the Teams link. Meetings you do not book can be marked „nicht buchen“, and the
-timesheet lists the week's meetings that are not booked yet.
+timesheet lists the week's meetings that are not booked yet. „Woche vorschlagen“ turns the week's meetings, focus
+sessions and page editing into a timesheet draft that you check by day and take over in one go.
 
 ### Tasks, calendar and quick search
 
@@ -185,6 +186,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Link a note to a Vorgang with the property `vorgang: NP-8801/1020` (or `netzplan: NP-8801`): the page shows a work card with budget, ETC, the latest bookings and a timer button, and `/zeit 1.5h Abstimmung` there books on that Vorgang
 - Timer with idle detection (inactive time can be subtracted), quick booking, manual entries
 - Weekly timesheet with a grid per Netzplan/Vorgang, release workflow, and export to SAP CATS, Jira worklogs, CSV or JSON
+- „Woche vorschlagen“: a timesheet draft of the week from meetings, unbooked focus sessions and page editing, around what is already booked and capped at the daily target; reviewed by day (source, time, length, text, Vorgang with confidence and reason) and taken over in one go as drafts. A Vorgang you change is remembered per page and meeting series; a reminder on the last workday afternoon points to open days
 - Projects view: budget, booked hours, remaining effort (ETC), forecast (EAC), critical path and float, as tables
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 

@@ -590,6 +590,8 @@ pub struct NotificationPrefs {
     pub git_failed: bool,
     /// „Version X verfügbar“.
     pub updates: bool,
+    /// „Woche vorschlagen“ on the last workday of the week from 14:00 when days are open.
+    pub week_proposal: bool,
     /// No desktop notifications between `quiet_from` and `quiet_to`.
     pub quiet_hours: bool,
     pub quiet_from: String,
@@ -605,6 +607,7 @@ impl Default for NotificationPrefs {
             backup_failed: true,
             git_failed: true,
             updates: true,
+            week_proposal: true,
             quiet_hours: false,
             quiet_from: "22:00".into(),
             quiet_to: "07:00".into(),
