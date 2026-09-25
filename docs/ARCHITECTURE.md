@@ -315,6 +315,17 @@ and by `entry_id`.
   on „Jetzt nach Updates suchen“. Installing always needs a click: editors are flushed (`lib/exit.ts`, shared
   with quit/close), the download reports `update://progress`, and `prepare_exit` closes the workspace and
   releases the single-instance lock right before the NSIS installer takes over and relaunches the app.
+- `prepare_exit` waits for a running backup (a cut-off `VACUUM INTO` would be the newest backup a recovery
+  restores), and the update's exit hook also runs `cleanup_before_exit` (tray icon). If the installer or the
+  new process cannot be started, `resume_after_failed_exit` opens the workspace again.
+- `core::update::is_newer` decides (semver precedence; a release build is never offered a pre-release).
+  Portable copies and .deb/.rpm installs (`bundle_type`) never install: `manual_update_reason`, and the UI
+  opens the release page. The feed's `linux-x86_64` entry is the AppImage, which the plugin replaces in place.
+- Right before installing, `.annalo-update` (target version) is written into the data folder; the next start
+  reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
+  version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Debug builds only: `ANNALO_UPDATE_ENDPOINT`, `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_BUNDLE=deb` point the
+  updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
 ## Network (`network.rs` in core and shell)
 

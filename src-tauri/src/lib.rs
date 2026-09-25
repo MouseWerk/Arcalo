@@ -1149,6 +1149,7 @@ fn export_entries(
 
 /// Backs up; the flag tells whether the Markdown mirror was refreshed as well.
 fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
+    let _running = lock(&BACKUP_RUNNING);
     let res = backup_once(app);
     match &res {
         Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
@@ -3345,6 +3346,12 @@ fn app_restart(app: AppHandle) -> Result<()> {
 /// Closes the workspace and releases the single-instance lock before this process ends
 /// and another one (a restart, or the update installer's relaunch) takes over.
 pub(crate) fn prepare_exit(app: &AppHandle) {
+    // A backup cut off by the exit would be a truncated newest backup, the one a recovery restores.
+    let until = Instant::now() + Duration::from_secs(30);
+    while matches!(BACKUP_RUNNING.try_lock(), Err(std::sync::TryLockError::WouldBlock)) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    EXIT_PREPARED.store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(state) = app.try_state::<AppState>() {
         let mut db = state.db();
         let _ = db.checkpoint();
@@ -3367,11 +3374,43 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
     }
 }
 
+/// Held while a backup is written (see [`prepare_exit`]).
+static BACKUP_RUNNING: Mutex<()> = Mutex::new(());
+/// [`prepare_exit`] ran; [`resume_after_failed_exit`] undoes it.
+static EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
+
+/// The process did not end after all (the update installer or the new process could not be
+/// started): opens the workspace again, so edits are not written into the in-memory stand-in.
+pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
+    if !EXIT_PREPARED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        let file = state.data_dir.join(datadir::DB_FILE);
+        match Database::open(&file) {
+            Ok(db) => *state.db() = db,
+            Err(e) => devlog::error("core", format!("workspace not reopened after a failed restart: {e}")),
+        }
+        if let Some(reader) = &state.reader
+            && let Ok(r) = Database::open_read_only(&file)
+        {
+            *lock(reader) = r;
+        }
+        if portable::active() {
+            portable::lock_instance(&state.data_dir);
+        }
+    }
+    desktop::show_main(app);
+}
+
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
     let exe = tauri::process::current_binary(&app.env())?;
     prepare_exit(app);
     let args = std::env::args_os().skip(1).filter(|a| a != desktop::MINIMIZED_ARG);
-    std::process::Command::new(exe).args(args).spawn()?;
+    if let Err(e) = std::process::Command::new(exe).args(args).spawn() {
+        resume_after_failed_exit(app);
+        return Err(e.into());
+    }
     app.exit(0);
     Ok(())
 }
@@ -3487,6 +3526,13 @@ pub fn run() {
             );
             if let Some(n) = &startup.notice {
                 devlog::warn("core", format!("data folder: {}", n.message));
+            }
+            // Started by the update (or after an installer that did not finish).
+            let after_update =
+                annalo_core::update::take_restart_marker(&dir, &app.package_info().version.to_string());
+            if let Some(a) = &after_update {
+                let how = if a.installed { "installed" } else { "not installed, still the old version" };
+                devlog::info("update", format!("first start after the update to {}: {how}", a.version));
             }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
@@ -3612,7 +3658,9 @@ pub fn run() {
 
             app.manage(desktop::Desktop::default());
             app.manage(calsync::CalendarSync::default());
-            app.manage(updates::Updates::default());
+            // The window after an update always shows: the user clicked „Installieren“ and waits for it.
+            let updated = after_update.is_some();
+            app.manage(updates::Updates::after(after_update));
             app.manage(backupdest::Destinations::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
@@ -3621,7 +3669,8 @@ pub fn run() {
             }
             let tray = app.state::<desktop::Desktop>().has_tray();
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
-            let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
+            let wants_minimized =
+                !updated && (start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG));
             let minimized = tray && wants_minimized;
             // A portable copy leaves the taskbar alone (the jump list lives in the user profile).
             if !portable::active() {

@@ -880,6 +880,10 @@ export interface UpdateStatus {
   available: UpdateInfo | null;
   /** Portable copy: new versions are downloaded from the release page, not installed. */
   portable?: boolean;
+  /** Installed as .deb/.rpm: the package manager updates it, the release page has the package. */
+  package?: boolean;
+  /** Reported once after a start that followed an update: the version, and whether it runs now. */
+  restarted?: { version: string; installed: boolean } | null;
 }
 export interface UpdateProgress {
   downloaded: number;

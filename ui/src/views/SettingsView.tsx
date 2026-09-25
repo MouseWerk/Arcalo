@@ -16,7 +16,7 @@ import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
-import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
+import { checkForUpdates, loadUpdateStatus, UpdateAction, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
@@ -1255,7 +1255,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   const { status, available, phase, checkedAt } = useUpdates();
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
-  const busy = phase === "downloading" || phase === "installing";
+  const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   let state: React.ReactNode;
   let tone: "neutral" | "success" | "info" | "busy" = "neutral";
   if (!status.enabled) state = NOT_CONFIGURED + ".";
@@ -1267,7 +1267,9 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
     <Group
       title={t("set.about.updates")}
       description={
-        status.portable
+        status.package && !status.portable
+          ? t("upd.packageDesc")
+          : status.portable
           ? "Portabler Modus: Neue Versionen werden nicht installiert (der Installer würde Annalo in das Benutzerprofil installieren). „Neue Version herunterladen“ öffnet die Release-Seite; das ZIP über den Ordner entpacken, der Ordner „data“ bleibt erhalten."
           : "Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert."
       }
@@ -1280,15 +1282,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 Was ist neu?
               </Button>
-              {status.portable ? (
-                <Button variant="primary" icon={Download} onClick={() => void downloadPortable(available.url)}>
-                  Neue Version herunterladen
-                </Button>
-              ) : (
-                <Button variant="primary" icon={RefreshCw} loading={busy} onClick={() => void installUpdate()}>
-                  Installieren und neu starten
-                </Button>
-              )}
+              <UpdateAction />
             </>
           )}
           <Button
