@@ -237,6 +237,32 @@ and by `entry_id`.
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
 
+## First run (`onboarding.rs` in core, `ui/src/onboarding/`)
+
+- Decision: at start, before anything is saved, `onboarding_classify` records once in the meta row `onboarding.first_seen`
+  whether the workspace existed before the intro (stored settings, the answered welcome choice `meta.onboarded`, pages or
+  projects → `existing`, else `fresh`). `onboarding_status` (`onboarding::decide`, pure) plays intro and setup for a fresh
+  workspace until `settings.onboarding.completed_version` is set; an existing one gets the toast „Neu in 1.6: Einführung
+  ansehen“ once (meta `onboarding.whats_new`). `onboarding_complete` stores `completed_version` (`INTRO_VERSION`) and
+  `completed_at` (closing the setup counts too); `onboarding_reset` („Einrichtung zurücksetzen“, Settings → Über) clears
+  them, `meta.onboarded` and the hint and sets `first_seen = reset` (the intro plays again at the next start without
+  guessing the language). `settings_save` keeps the stored `onboarding` like the dashboard. The flags live in the
+  workspace database, so a portable copy carries them. Debug builds skip everything with `ANNALO_SKIP_ONBOARDING=1` (the
+  e2e harness sets it unless a test asks for the intro).
+- UI: `FirstRun` (rendered by `App` only, so the capture, search and presenter windows never show it) covers the window
+  above the app (z 45: dialogs, menus and toasts stay above), keeps keys inside and traps Tab. `Intro` plays seven scenes
+  (welcome plus notes, `/zeit` and the week, assistant, calendar and „Woche vorschlagen“, quick capture, local-first):
+  CSS-only motion on a 560 × 420 canvas scaled to the free space, one progress segment per scene whose `animationend`
+  advances, paused by hover or focus on the scene, Space or the button; arrows move, Esc and „Überspringen“ go to the
+  setup; reduced motion (OS or Settings → Darstellung) shows static slides that fade. `Intake` has ten steps (`flow.ts`:
+  the order and pure setting patches, tested) with a step list (a compact line below 1000 px), a progress bar and
+  back / skip / next. Every answer is saved at once through `writeSettings` (queued, on top of the newest settings) or the
+  existing commands (`onboarding_finish`, `ollama_detect`, the provider dialog with `provider_key_set`,
+  `calendar_source_add`, `git_token_set` and `git_sync_test`, `autostart_set`, `capture_show`). „Mehr in den
+  Einstellungen“ pauses the flow on that settings section with a toast that resumes it. A fresh install guesses the
+  language from the OS locale (`lang.ts`, the adapter to the i18n layer). `time.enabled = false` („Zeiterfassung
+  verwenden“) hides the ribbon's Zeiterfassung and Projekte and their palette commands.
+
 ## Auto-update (`updates.rs` in the shell, `update.rs` in core)
 
 - `tauri-plugin-updater` is registered only when the build compiled in `ANNALO_UPDATER_PUBKEY`

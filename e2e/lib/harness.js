@@ -56,7 +56,7 @@ export function guarded(test, getApp) {
 }
 
 /** The environment the app runs with on `dataDir` (also for starting it without WebDriver). */
-export function appEnv(dataDir, { demo = true, env: extraEnv = {} } = {}) {
+export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv = {} } = {}) {
   ensureXvfb();
   return {
     ...process.env,
@@ -69,6 +69,8 @@ export function appEnv(dataDir, { demo = true, env: extraEnv = {} } = {}) {
     WEBKIT_DISABLE_COMPOSITING_MODE: "1",
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
+    // The first-run intro and the 1.6 hint only where a test asks for them (debug builds honor it).
+    ...(onboarding ? {} : { ANNALO_SKIP_ONBOARDING: "1" }),
     // Extra variables of one test (e.g. ANNALO_EXE_DIR for portable mode).
     ...extraEnv,
   };
@@ -78,11 +80,11 @@ export function appEnv(dataDir, { demo = true, env: extraEnv = {} } = {}) {
  * Starts the app under WebDriver. `dataDir`: an existing data folder to use (kept on close),
  * else a fresh one that is removed on close.
  */
-export async function launch({ demo = true, width = 1480, height = 920, env: extraEnv = {}, dataDir: given = null } = {}) {
+export async function launch({ demo = true, onboarding = false, width = 1480, height = 920, env: extraEnv = {}, dataDir: given = null } = {}) {
   fs.mkdirSync(SHOTS, { recursive: true });
   const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
   const port = 4444 + Math.floor(Math.random() * 500);
-  const env = appEnv(dataDir, { demo, env: extraEnv });
+  const env = appEnv(dataDir, { demo, onboarding, env: extraEnv });
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
   driver.stderr.on("data", (d) => (driverErr += d));

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -34,6 +34,10 @@ import { captureFromOutlook, openMailDialog } from "./MailImport";
 import { flatLinks, isGroup, normalizeLinks } from "../lib/quicklinks";
 import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
 import { iconOf } from "./LinkDialogs";
+import { startFirstRun } from "../onboarding/state";
+
+/** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
+const TIME_COMMANDS = ["timer", "timesheet", "week-proposal", "projects", "weekly-report", "focus-note"];
 
 interface Item {
   id: string;
@@ -250,6 +254,7 @@ export function CommandPalette() {
       { id: "trash", title: t("cmd.trash"), icon: ic(Trash2), run: () => s().openTab({ kind: "trash" }) },
       { id: "attachments", title: t("cmd.attachments"), subtitle: t("cmd.attachmentsSub"), icon: ic(Paperclip), run: () => s().openTab({ kind: "attachments" }) },
       { id: "settings", title: t("cmd.settings"), icon: ic(Settings), hint: hint("settings"), run: () => s().openTab({ kind: "settings" }) },
+      { id: "intro", title: t("cmd.intro"), subtitle: t("cmd.introSub"), icon: ic(Compass), run: () => startFirstRun("rerun") },
       { id: "sidebar", title: t("cmd.toggleSidebar"), icon: ic(PanelLeft), hint: hint("toggle_sidebar"), run: () => { const v = !s().sidebarOpen; s().set({ sidebarOpen: v }); savePref("annalo.sidebar", v); } },
       { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("annalo.panel", v); } },
       { id: "focus", title: t("cmd.focusMode"), icon: ic(Focus), hint: hint("focus_mode"), run: () => s().set({ focusMode: !s().focusMode }) },
@@ -270,8 +275,12 @@ export function CommandPalette() {
         },
       },
     ];
+    // „Zeiterfassung verwenden“ off: the timesheet and project commands are hidden.
+    const timeOff = s().settings?.settings.time?.enabled === false;
+    const hidden = new Set(timeOff ? TIME_COMMANDS : []);
     out.push(
       ...commands
+        .filter((c) => !hidden.has(c.id))
         .map((c) => ({ c, score: fuzzy(c.title, lower) }))
         .filter((x) => x.score > 0)
         .sort((a, b) => (lower ? b.score - a.score : 0))

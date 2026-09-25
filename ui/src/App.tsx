@@ -31,6 +31,8 @@ import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
 import { openDayReview } from "./lib/reviewnav";
+import { FirstRun } from "./onboarding/FirstRun";
+import { checkFirstRun } from "./onboarding/state";
 
 export function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen);
@@ -56,6 +58,8 @@ export function App() {
         s.openPage(p.id);
       } else if (open === "dashboard") s.openTab({ kind: "home" });
       document.body.classList.add("ready");
+      // First start: the intro and the setup; after an upgrade a one-time hint instead.
+      void checkFirstRun();
       void s.refreshConflicts();
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
       void refreshPac(view);
@@ -332,6 +336,7 @@ export function App() {
       <MailImportHost />
       <ConfirmHost />
       <TemplateHost />
+      <FirstRun />
     </div>
   );
 }

@@ -107,6 +107,8 @@ pub struct Settings {
     pub capture: CapturePrefs,
     /// „E-Mail als Aufgabe / Notiz“: parent of mail notes, global shortcut, attachment default.
     pub mail: crate::mail::MailSettings,
+    /// First-run intro and setup: which intro was completed and when (kept by `settings_save`).
+    pub onboarding: crate::onboarding::OnboardingState,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
@@ -365,6 +367,7 @@ impl Default for Settings {
             calendar: crate::calsync::CalendarSettings::default(),
             capture: CapturePrefs::default(),
             mail: crate::mail::MailSettings::default(),
+            onboarding: crate::onboarding::OnboardingState::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),

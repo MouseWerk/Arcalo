@@ -456,6 +456,8 @@ impl Rounding {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TimePrefs {
+    /// „Zeiterfassung verwenden“: off hides the timesheet, projects and their commands.
+    pub enabled: bool,
     pub week_start: WeekStart,
     pub rounding: Rounding,
     pub hours_display: HoursDisplay,
@@ -470,6 +472,7 @@ pub struct TimePrefs {
 impl Default for TimePrefs {
     fn default() -> Self {
         TimePrefs {
+            enabled: true,
             week_start: WeekStart::Monday,
             rounding: Rounding::default(),
             hours_display: HoursDisplay::Decimal,
