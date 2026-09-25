@@ -282,7 +282,14 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       paragraph: false,
     }),
     ImageParagraph,
-    MarkdownLink.configure({ openOnClick: false, autolink: true, linkOnPaste: true, HTMLAttributes: { rel: "noopener noreferrer", target: null } }),
+    MarkdownLink.configure({
+      openOnClick: false,
+      autolink: true,
+      linkOnPaste: true,
+      HTMLAttributes: { rel: "noopener noreferrer", target: null },
+      // Links to e-mails taken over (`annalo-mail://<id>`, components/MailImport.tsx) are kept.
+      isAllowedUri: (url, ctx) => /^annalo-mail:\/\/[0-9a-z]+\/?$/i.test(url.trim()) || ctx.defaultValidate(url),
+    }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     LazyHighlight,
     TaskList,

@@ -10,6 +10,7 @@ mod feed;
 mod files;
 mod focus;
 mod jumplist;
+mod mail;
 mod network;
 mod portable;
 mod prefs;
@@ -505,7 +506,7 @@ async fn vault_export(app: AppHandle, path: String) -> Result<usize> {
             Some(db) => db.read_snapshot(vault::VaultSnapshot::read)?,
             None => vault::VaultSnapshot::read(&state.db())?,
         };
-        vault::export_snapshot(&snap, &PathBuf::from(path), &state.attachments_dir())
+        vault::export_snapshot(&snap.for_export(), &PathBuf::from(path), &state.attachments_dir())
     })
     .await
     .map_err(|e| Error::State(e.to_string()))?
@@ -1660,15 +1661,21 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
     settings.calendar.sources = state.settings().calendar.sources;
     let specs = |s: &Settings| {
-        [s.capture_shortcut.clone(), s.palette_shortcut.clone().unwrap_or_default(), s.search_shortcut.clone()]
+        [
+            s.capture_shortcut.clone(),
+            s.palette_shortcut.clone().unwrap_or_default(),
+            s.search_shortcut.clone(),
+            s.mail.shortcut.clone(),
+        ]
     };
     let new_specs = specs(&settings);
     desktop::validate_shortcuts(new_specs.each_ref().map(String::as_str)).map_err(Error::State)?;
     let old_specs = specs(&state.settings());
     let changed: Vec<bool> = new_specs.iter().zip(&old_specs).map(|(a, b)| a != b).collect();
-    let only_changed =
-        |v: &[String; 3]| -> [Option<String>; 3] { std::array::from_fn(|i| changed[i].then(|| v[i].clone())) };
-    let apply = |v: &[String; 3]| {
+    let only_changed = |v: &[String; desktop::SLOTS]| -> [Option<String>; desktop::SLOTS] {
+        std::array::from_fn(|i| changed[i].then(|| v[i].clone()))
+    };
+    let apply = |v: &[String; desktop::SLOTS]| {
         let v = only_changed(v);
         desktop::apply_shortcuts(&app, v.each_ref().map(Option::as_deref))
     };
@@ -3130,6 +3137,7 @@ pub fn run() {
                     match desktop::shortcut_role(app, shortcut) {
                         Some(desktop::Role::Capture) => desktop::open_capture(app),
                         Some(desktop::Role::Search) => desktop::open_search(app, true),
+                        Some(desktop::Role::Mail) => mail::on_shortcut(app),
                         Some(desktop::Role::Palette) => {
                             // In front already: the shortcut toggles the palette; from the
                             // background (hidden, minimized, unfocused) it always opens it.
@@ -3261,6 +3269,7 @@ pub fn run() {
                 settings.capture_shortcut.clone(),
                 settings.palette_shortcut.clone().unwrap_or_default(),
                 settings.search_shortcut.clone(),
+                settings.mail.shortcut.clone(),
             ];
             let secrets = SecretStore::new(&dir);
             let proxy_secret = SecretStore::proxy(&dir);
@@ -3336,7 +3345,7 @@ pub fn run() {
             // Another instance may already own the shortcut; Ctrl+K still works in-app.
             // Registered one by one: one taken shortcut must not block the others.
             for (i, spec) in shortcuts.iter().enumerate() {
-                let mut specs = [None; 3];
+                let mut specs = [None; desktop::SLOTS];
                 specs[i] = Some(spec.as_str());
                 if let Err(e) = desktop::apply_shortcuts(app.handle(), specs) {
                     devlog::warn("desktop", format!("global shortcut not available: {e}"));
@@ -3345,6 +3354,7 @@ pub fn run() {
             spawn_activity_sampler(app.handle().clone());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
+            mail::clean_temp(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3536,6 +3546,14 @@ pub fn run() {
             calsync::calendar_meeting_note,
             weekplan::week_proposal,
             weekplan::week_proposal_apply,
+            mail::mail_status,
+            mail::mail_outlook_current,
+            mail::mail_parse_file,
+            mail::mail_parse_text,
+            mail::mail_import,
+            mail::mail_link_info,
+            mail::mail_open,
+            mail::mail_suggest,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

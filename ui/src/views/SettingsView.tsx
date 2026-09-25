@@ -12,8 +12,9 @@ import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions
 import { flushAllEditors } from "../editor/NoteEditor";
 import { fileSize, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } from "../components/ui";
-import { formatShortcut, keys, recordShortcut } from "../lib/shortcut";
+import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_MAC } from "../lib/platform";
+import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
 import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
@@ -1128,29 +1129,6 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
   );
 }
 
-/** Records a global shortcut from the pressed keys; `active` shows whether the saved one is registered. */
-function ShortcutField({ value, onChange, label, placeholder, active }: { value: string; onChange: (v: string) => void; label: string; placeholder: string; active?: boolean }) {
-  return (
-    <div className="unit-input shortcut-input">
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          const next = recordShortcut(e.nativeEvent);
-          if (next === undefined) return;
-          e.preventDefault();
-          if (next !== null) onChange(next);
-        }}
-        placeholder={placeholder}
-        aria-label={label}
-        className="mono"
-      />
-      {IS_MAC && value && <kbd>{formatShortcut(value)}</kbd>}
-      {value && active !== undefined && (active ? <Badge tone="success">Aktiv</Badge> : <Badge tone="warning">Nicht registriert</Badge>)}
-    </div>
-  );
-}
-
 /** Offers to restart now; the move (or switch) happens at the next start either way. */
 async function offerRestart(dir: string, what: string) {
   const s = useApp.getState();
@@ -1284,6 +1262,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
     ...global(view.settings.palette_shortcut, t("keys.globalPalette")),
     ...global(view.settings.capture_shortcut, t("keys.globalCapture")),
     ...global(view.settings.search_shortcut, t("keys.globalSearch")),
+    ...global(view.settings.mail?.shortcut, t("keys.globalMail")),
   ];
   return (
     <>

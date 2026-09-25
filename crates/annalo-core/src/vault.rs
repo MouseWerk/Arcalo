@@ -430,12 +430,23 @@ impl VaultSnapshot {
     fn content(&self, id: i64) -> &str {
         self.contents.get(&id).map_or("", String::as_str)
     }
+
+    /// For Markdown that leaves Annalo (the explicit export, not the mirror, which Git sync
+    /// takes back): links to e-mails (`annalo-mail://`) become their text.
+    pub fn for_export(mut self) -> Self {
+        for c in self.contents.values_mut() {
+            if c.contains(crate::mail::SCHEME) {
+                *c = crate::mail::export_text(c);
+            }
+        }
+        self
+    }
 }
 
 /// Writes every page as a Markdown file below `dir` and the embedded attachments to
 /// `dir/attachments/`. Returns the number of Markdown files.
 pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result<usize> {
-    export_snapshot(&VaultSnapshot::read(db)?, dir, attachments_dir)
+    export_snapshot(&VaultSnapshot::read(db)?.for_export(), dir, attachments_dir)
 }
 
 /// [`export_vault`] from a [`VaultSnapshot`] (no database access).

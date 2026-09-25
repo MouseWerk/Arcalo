@@ -30,4 +30,15 @@ describe("taskSegments", () => {
   it("ignoriert # mitten im Wort", () => {
     expect(taskSegments("C#Sharp")).toEqual([{ kind: "text", text: "C#Sharp" }]);
   });
+  it("erkennt Links auf E-Mails", () => {
+    expect(taskSegments("Angebot prüfen [E-Mail: Angebot (Anna, 24.09.2026)](annalo-mail://k3v9x2qa) [[Angebot]] #kunde")).toEqual([
+      { kind: "text", text: "Angebot prüfen " },
+      { kind: "mail", text: "E-Mail: Angebot (Anna, 24.09.2026)", id: "k3v9x2qa" },
+      { kind: "text", text: " " },
+      { kind: "link", text: "Angebot", target: "Angebot" },
+      { kind: "text", text: " " },
+      { kind: "tag", text: "#kunde", tag: "kunde" },
+    ]);
+    expect(taskSegments("[Doku](https://x.de)")).toEqual([{ kind: "text", text: "[Doku](https://x.de)" }]);
+  });
 });

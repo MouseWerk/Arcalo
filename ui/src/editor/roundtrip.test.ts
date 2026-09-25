@@ -45,6 +45,7 @@ const CASES: Record<string, string> = {
   ampersand: "Schulung & Go-Live, a < b\n",
   literalStars: "Kein \\*Fett\\* hier\n",
   literalLinkish: "Text \\[\\[kein Link]]\n",
+  mailLink: "- [ ] Prüfen [E-Mail: Angebot (Portal) ＃42 (Müller, Anna, 24.09.2026)](annalo-mail://k3v9x2qa) due:2026-09-25 !!\n\nNotiz: [E-Mail: Kurz](annalo-mail://zz11)\n",
   embed: "![[a1b2c3d4e5f60718.png]]\n",
   embedInline: "Screenshot ![[Bild 1.PNG]] vom Fehler\n",
   embedSize: "![[assets/diagramm.webp|300]] und ![[foto.jpg|Kunde vor Ort]]\n",

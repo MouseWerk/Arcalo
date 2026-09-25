@@ -43,13 +43,14 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `calendar_marks` | What the user decided about an appointment (v9), by key `source\|uid\|instance`: `skip` („nicht buchen“), `note_page_id` (meeting note, set null on purge), `entry_id` (booked entry, set null on delete), subject and series of the booking for the WBS suggestion. Never touched by a sync |
 | `calendar_sync` | Status of the last sync per source (v9): last success, last attempt, error, number of events |
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
+| `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `annalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 
@@ -325,6 +326,45 @@ and by `entry_id`.
   from 14:00, once per ISO week (meta `week_proposal.week`), when earlier workdays are below the target, unless
   `notifications.week_proposal` is off or it is quiet time. The next focus of the main window emits
   `nav://week-proposal`; the UI opens the timesheet and the review (`requestWeekProposal`).
+
+## E-Mail als Aufgabe / Notiz (`mail/` and `outlookcom.rs` in core, `mail.rs` in the shell, `components/MailImport.tsx`)
+
+- Runner (`outlookcom.rs`): shared by the calendar and the mail script. A bundled script is written to `<data>/scripts`
+  when it differs and run with `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden
+  -File …` (no console window, timeout, off the async runtime); the output is one line of ASCII JSON, errors are codes.
+- Outlook (`mail/outlook.rs`, `mail/outlook-mail.ps1`, ASCII like the calendar script): `-Mode read` attaches to the running
+  Outlook (`Marshal.GetActiveObject`; Outlook is never started for reading: `not_running`) and reads the window in front:
+  an inspector's `CurrentItem`, else `ActiveExplorer().Selection` (at most 20 mails, classes mail, meeting and report).
+  Per mail: EntryID, StoreID (`Parent.StoreID`), subject, sender name, SMTP address (`GetExchangeUser().PrimarySmtpAddress`
+  or `PR_SENDER_SMTP_ADDRESS` for Exchange senders; an unresolved X.500 address is dropped in the core), To/Cc, received
+  time (UTC), conversation topic, importance, categories, the plain text cut at 20 000 characters and the attachments
+  (index, name, size, inline = content id or hidden). `-Mode save` writes chosen attachments with `SaveAsFile` into
+  `<data>/mail-temp/outlook-<ms>/<index>/`, which the shell imports and removes; `-Mode open` shows a mail by
+  `Namespace.GetItemFromID(EntryID, StoreID)`. Error codes: `not_running`, `no_selection`, `not_installed`, `new_outlook`,
+  `server_exec`, `constrained`, `not_found`, `save`, `com`. `ANNALO_OUTLOOK_MAIL_FIXTURE` (with `ANNALO_TEST_FIXTURES=1`)
+  replaces the script: `save` writes the attachments' base64 `data`, `open` appends `EntryID<TAB>StoreID` to `<fixture>.opened`.
+- Files: `.eml` through `mail-parser` (encoded words, charsets, quoted-printable, base64, RFC 2231 names; HTML-only
+  mails become text), `.msg` through `cfb` ([MS-OXMSG] property streams: subject, sender, SMTP before X.500, display
+  To/Cc, delivery time, importance, body, attachments; categories are named properties and not read). A dropped file is
+  parsed and staged in `<data>/mail-temp/<16 hex>/` (original and attachments; `temp_file` accepts only such paths);
+  staged mails older than a day are removed at start. Pasted header blocks (`mail/paste.rs`): German and English Outlook
+  labels, dates such as „Donnerstag, 24. September 2026 14:32“ or „Thursday, September 24, 2026 2:32 PM“ in local time.
+- Taking over (`Database::mail_create`, one transaction after the files were copied without the lock): the link row in
+  `mail_links` (v11: short id, source, EntryID/StoreID or the stored `.eml`/`.msg`, subject, sender, received, Vorgang;
+  an existing row of the same item is reused), the note below `mail.notes_parent` (front matter `von`, `an`, `cc`,
+  `datum`, `betreff`, `e-mail: annalo-mail://id`, `vorgang`, `tags` with `e-mail`, the chosen categories and the first
+  privacy marker when `mail.private_notes`), the text as a quote, the attachments as embeds, and the task line
+  `- [ ] Text [E-Mail: Betreff (Absender, 24.09.2026)](annalo-mail://id) due:… !!` below an `Aufgaben`/`Tasks` heading or
+  at the end. A pasted mail has nothing to open and gets no link. Link texts never contain `[`, `]`, `#` or `|`.
+- Links: the editor's link mark accepts `annalo-mail://<id>`, shows it as a chip and opens it on a plain click
+  (`mail_open`: the Outlook script, or the stored file in its app); the task list renders it as an „E-Mail“ chip. The
+  explicit Markdown export (`VaultSnapshot::for_export`) writes the link text only; the mirror keeps the link, because
+  Git sync takes its files back.
+- UI: the dialog takes 1–20 mails one after another; a window-level capture listener takes dropped `.eml`/`.msg` files
+  before the editor or a pane embeds them (Outlook's own drags are virtual files WebView2 does not expose). The global
+  shortcut is the fourth slot of `apply_shortcuts` (`mail.shortcut`, off by default) and emits `mail://capture`.
+- Privacy: no assistant tool reads mails. „Aufgabe vorschlagen“ (`mail_suggest`) is only offered when the local tier's
+  provider is marked local, and is sent as a private route, so availability fallbacks stay on local providers.
 
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 

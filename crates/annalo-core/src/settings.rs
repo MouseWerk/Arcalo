@@ -103,6 +103,8 @@ pub struct Settings {
     pub quick_links: Vec<QuickLink>,
     /// Calendar sync: Outlook, ICS files and subscriptions (subscription URLs live in the credential store).
     pub calendar: crate::calsync::CalendarSettings,
+    /// „E-Mail als Aufgabe / Notiz“: parent of mail notes, global shortcut, attachment default.
+    pub mail: crate::mail::MailSettings,
 }
 
 /// A link in the sidebar: a web address, `mailto:` or a local folder or file.
@@ -282,6 +284,7 @@ impl Default for Settings {
             dashboard: Dashboard::default(),
             quick_links: vec![],
             calendar: crate::calsync::CalendarSettings::default(),
+            mail: crate::mail::MailSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -402,6 +405,7 @@ impl Settings {
             .filter(|(k, _)| !k.is_empty())
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
+        self.mail = std::mem::take(&mut self.mail).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
     }

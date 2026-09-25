@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { mailLinkId, openMailLink } from "../lib/mail";
 import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight } from "lucide-react";
 import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
 import { drawPdfPreview } from "../lib/pdf";
@@ -457,6 +458,12 @@ export function NoteEditor({
         },
         handleClickOn: (_view, _pos, _node, _nodePos, event) => {
           const a = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+          // „E-Mail öffnen“: a plain click opens the linked mail (Outlook or the stored file).
+          const mailId = mailLinkId(a?.getAttribute("href"));
+          if (mailId) {
+            void openMailLink(mailId);
+            return true;
+          }
           if (a && !a.dataset.wikilink && (event.ctrlKey || event.metaKey)) {
             openUrl(a.href).catch(() => {});
             return true;

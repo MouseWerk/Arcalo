@@ -11,6 +11,7 @@ import { relative } from "../../lib/format";
 import { Button, Dialog, Field, IconButton, Input, Switch, useMenu } from "../../components/ui";
 import { useT } from "../../lib/i18n";
 import type { CalendarSettings, CalendarSourceInfo, CalendarStatus } from "../../lib/types";
+import { MailGroup } from "./MailGroup";
 import { Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
 
 const COLORS = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#ca8a04"];
@@ -181,6 +182,8 @@ export function CalendarSection({ draft, update }: SectionProps) {
           <Switch label="Besprechungslinks" checked={cal.meeting_links} onChange={(v) => set({ meeting_links: v })} />
         </Row>
       </Group>
+
+      <MailGroup draft={draft} update={update} />
 
       <Unfiltered>
         <details className="calset-help">

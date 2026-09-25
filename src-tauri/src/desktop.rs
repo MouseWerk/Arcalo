@@ -31,10 +31,14 @@ pub enum Role {
     Capture = 0,
     Palette = 1,
     Search = 2,
+    /// „Aktuelle E-Mail übernehmen“ (Outlook).
+    Mail = 3,
 }
 
-const ROLES: [Role; 3] = [Role::Capture, Role::Palette, Role::Search];
-const ROLE_NAMES: [&str; 3] = ["Schnellerfassung", "Befehlspalette", "Schnellsuche"];
+/// Number of global shortcut slots (one per [`Role`]).
+pub const SLOTS: usize = 4;
+const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Mail];
+const ROLE_NAMES: [&str; SLOTS] = ["Schnellerfassung", "Befehlspalette", "Schnellsuche", "E-Mail übernehmen"];
 
 #[derive(Clone)]
 struct TrayHandles {
@@ -46,8 +50,8 @@ struct TrayHandles {
 #[derive(Default)]
 pub struct Desktop {
     tray: Mutex<Option<TrayHandles>>,
-    /// Registered global shortcuts by [`Role`]: capture, palette, search.
-    shortcuts: Mutex<[Option<Shortcut>; 3]>,
+    /// Registered global shortcuts by [`Role`]: capture, palette, search, mail.
+    shortcuts: Mutex<[Option<Shortcut>; SLOTS]>,
     /// A reminder was shown while the app was in the background: the next time the
     /// main window gets focus it opens the timesheet.
     pending_timesheet: AtomicBool,
@@ -373,7 +377,7 @@ pub fn capture_submit(app: AppHandle, state: State<AppState>, text: String) -> R
 /// it off. New shortcuts are registered before the old ones are released, so a failure (e.g. the
 /// combination belongs to another program) keeps the previous shortcuts working. A shortcut
 /// that moves between slots (swap) stays registered and only changes its role.
-pub fn apply_shortcuts(app: &AppHandle, specs: [Option<&str>; 3]) -> std::result::Result<(), String> {
+pub fn apply_shortcuts(app: &AppHandle, specs: [Option<&str>; SLOTS]) -> std::result::Result<(), String> {
     let d = desktop(app);
     let old = *lock(&d.shortcuts);
     let mut new = old;
@@ -409,7 +413,7 @@ pub fn apply_shortcuts(app: &AppHandle, specs: [Option<&str>; 3]) -> std::result
     Ok(())
 }
 
-fn check_distinct(slots: &[Option<Shortcut>; 3]) -> std::result::Result<(), String> {
+fn check_distinct(slots: &[Option<Shortcut>; SLOTS]) -> std::result::Result<(), String> {
     for i in 0..slots.len() {
         for j in i + 1..slots.len() {
             if slots[i].is_some() && slots[i] == slots[j] {
@@ -420,9 +424,9 @@ fn check_distinct(slots: &[Option<Shortcut>; 3]) -> std::result::Result<(), Stri
     Ok(())
 }
 
-/// Checks the shortcuts of the settings (capture, palette, search; `""` = off) before saving.
-pub fn validate_shortcuts(specs: [&str; 3]) -> std::result::Result<(), String> {
-    let mut parsed = [None; 3];
+/// Checks the shortcuts of the settings (capture, palette, search, mail; `""` = off) before saving.
+pub fn validate_shortcuts(specs: [&str; SLOTS]) -> std::result::Result<(), String> {
+    let mut parsed = [None; SLOTS];
     for (slot, spec) in parsed.iter_mut().zip(specs) {
         if !spec.trim().is_empty() {
             *slot = Some(parse_shortcut(spec)?);
@@ -558,6 +562,7 @@ pub struct DesktopInfo {
     capture_shortcut_active: bool,
     palette_shortcut_active: bool,
     search_shortcut_active: bool,
+    mail_shortcut_active: bool,
     /// Portable mode: no autostart entry (it would point into the user profile).
     portable: bool,
 }
@@ -577,6 +582,7 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         capture_shortcut_active: slots[Role::Capture as usize].is_some(),
         palette_shortcut_active: slots[Role::Palette as usize].is_some(),
         search_shortcut_active: slots[Role::Search as usize].is_some(),
+        mail_shortcut_active: slots[Role::Mail as usize].is_some(),
     }
 }
 
@@ -633,13 +639,18 @@ mod tests {
 
     #[test]
     fn settings_shortcuts_must_differ() {
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O"]).is_ok());
-        assert!(validate_shortcuts(["", "", ""]).is_ok());
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o "]).unwrap_err();
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", ""]).is_ok());
+        assert!(validate_shortcuts(["", "", "", ""]).is_ok());
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o ", ""]).unwrap_err();
         assert!(e.contains("Befehlspalette und Schnellsuche"), "{e}");
-        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q"]).unwrap_err();
+        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q", ""]).unwrap_err();
         assert!(e.contains("Schnellerfassung und Schnellsuche"), "{e}");
-        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F"]).unwrap_err().contains("AltGr"));
+        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F", ""]).unwrap_err().contains("AltGr"));
+        // The mail shortcut is checked like the others.
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+M"]).is_ok());
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "ctrl+shift+space"]).unwrap_err();
+        assert!(e.contains("Schnellerfassung und E-Mail übernehmen"), "{e}");
+        assert!(validate_shortcuts(["", "", "", "Ctrl+Alt+M"]).unwrap_err().contains("AltGr"));
     }
 
     #[test]

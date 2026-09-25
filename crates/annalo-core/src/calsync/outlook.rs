@@ -8,8 +8,9 @@
 //! For development and tests, `ANNALO_OUTLOOK_FIXTURE` names a JSON file that replaces the
 //! script's output; it is only honored when `ANNALO_TEST_FIXTURES=1` is set as well.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use serde_json::Value;
@@ -17,6 +18,7 @@ use serde_json::Value;
 use super::tz::Zone;
 use super::{Busy, NewEvent, Privacy, instant_id, meeting_link};
 use crate::error::{Error, Result};
+use crate::outlookcom::{self, Script};
 
 /// The script, embedded so every build (and every installer) carries it.
 pub const SCRIPT: &str = include_str!("outlook.ps1");
@@ -171,59 +173,32 @@ pub fn read(script_dir: &Path, req: Request, local: &Zone) -> Result<Vec<NewEven
                 .into(),
         ));
     }
-    std::fs::create_dir_all(script_dir)?;
-    let path = script_dir.join(SCRIPT_FILE);
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(SCRIPT) {
-        std::fs::write(&path, SCRIPT)?;
-    }
-    let exe = std::env::var_os("SystemRoot")
-        .map(|r| PathBuf::from(r).join(r"System32\WindowsPowerShell\v1.0\powershell.exe"))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("powershell.exe"));
-    let mut cmd = std::process::Command::new(exe);
     let fmt = |t: NaiveDateTime| t.format("%Y-%m-%dT%H:%M:%S").to_string();
-    cmd.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
-        .arg(&path)
-        .args(["-From", &fmt(req.from), "-To", &fmt(req.to)]);
+    let mut args: Vec<OsString> = vec!["-From".into(), fmt(req.from).into(), "-To".into(), fmt(req.to).into()];
     if let Some((date, time, am, pm)) = regional_patterns() {
-        cmd.args([
-            "-FilterFrom",
-            &restrict_value(req.from, &date, &time, &am, &pm),
-            "-FilterTo",
-            &restrict_value(req.to, &date, &time, &am, &pm),
+        args.extend([
+            "-FilterFrom".into(),
+            restrict_value(req.from, &date, &time, &am, &pm).into(),
+            "-FilterTo".into(),
+            restrict_value(req.to, &date, &time, &am, &pm).into(),
         ]);
     }
-    if req.privacy.private_details {
-        cmd.arg("-Private");
-    }
-    if req.privacy.include_body {
-        cmd.arg("-Body");
-    }
-    if req.privacy.meeting_links {
-        cmd.arg("-Links");
-    }
-    let started = Instant::now();
-    let out = match crate::ai::tools::output_within(cmd, TIMEOUT) {
-        Ok(o) => o,
-        Err(_) if started.elapsed() >= TIMEOUT => {
-            return Err(Error::State(
-                "Outlook hat nicht innerhalb von 2 Minuten geantwortet. Vielleicht wartet Outlook auf eine Bestätigung \
-                 („Ein Programm versucht, auf E-Mail-Adressinformationen zuzugreifen“ – dort den Zugriff erlauben) oder \
-                 startet gerade noch. Später erneut synchronisieren."
-                    .into(),
-            ));
+    for (on, flag) in [
+        (req.privacy.private_details, "-Private"),
+        (req.privacy.include_body, "-Body"),
+        (req.privacy.meeting_links, "-Links"),
+    ] {
+        if on {
+            args.push(flag.into());
         }
-        Err(e) => return Err(Error::State(format!("PowerShell ließ sich nicht starten: {e}"))),
-    };
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    if stdout.trim().is_empty() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let err: String = err.trim().chars().take(300).collect();
-        return Err(Error::State(format!(
-            "Das Outlook-Skript lieferte kein Ergebnis{}",
-            if err.is_empty() { String::new() } else { format!(": {err}") }
-        )));
     }
+    let stdout = outlookcom::run(
+        script_dir,
+        Script { file: SCRIPT_FILE, source: SCRIPT },
+        &args,
+        TIMEOUT,
+        "Später erneut synchronisieren.",
+    )?;
     parse_output(&stdout, local, req.privacy)
 }
 
@@ -241,42 +216,10 @@ fn error_text(code: &str, detail: &str) -> String {
     }
 }
 
-fn s(v: &Value, k: &str) -> String {
-    match &v[k] {
-        Value::String(s) => s.trim().to_owned(),
-        Value::Number(n) => n.to_string(),
-        _ => String::new(),
-    }
-}
+use outlookcom::{int as n, list, text as s};
 
 fn b(v: &Value, k: &str) -> bool {
-    match &v[k] {
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
-        Value::String(s) => matches!(s.trim().to_ascii_lowercase().as_str(), "true" | "1" | "wahr"),
-        _ => false,
-    }
-}
-
-fn n(v: &Value, k: &str) -> i64 {
-    match &v[k] {
-        Value::Number(n) => n.as_i64().unwrap_or(0),
-        Value::String(s) => s.trim().parse().unwrap_or(0),
-        Value::Bool(b) => *b as i64,
-        _ => 0,
-    }
-}
-
-/// A list: a JSON array, or one string separated by `;` (a single value PowerShell unrolled).
-fn list(v: &Value, k: &str, seps: &[char]) -> Vec<String> {
-    let mut out: Vec<String> = match &v[k] {
-        Value::Array(a) => a.iter().filter_map(|x| x.as_str()).map(|x| x.trim().to_owned()).collect(),
-        Value::String(s) => s.split(seps).map(|x| x.trim().to_owned()).collect(),
-        _ => vec![],
-    };
-    out.retain(|x| !x.is_empty());
-    out.dedup();
-    out
+    outlookcom::truthy(&v[k])
 }
 
 /// `2026-09-25T08:00:00Z`, `…+02:00`, a local `2026-09-25T10:00:00` or `/Date(1758787200000)/`.
@@ -299,39 +242,11 @@ fn local_date(raw: &str) -> Option<NaiveDate> {
 
 /// The script's output as events. Declined and cancelled meetings are left out.
 pub fn parse_output(text: &str, local: &Zone, privacy: Privacy) -> Result<Vec<NewEvent>> {
-    let text = text.trim_start_matches('\u{feff}');
-    // The JSON (PowerShell may print warnings before it): from the first line that starts one.
-    let mut v: Option<Value> = None;
-    let mut first_err = None;
-    let mut offset = 0;
-    for line in text.split_inclusive('\n') {
-        if line.trim_start().starts_with('{') {
-            match serde_json::from_str(text[offset..].trim()) {
-                Ok(x) => {
-                    v = Some(x);
-                    break;
-                }
-                Err(e) => {
-                    first_err.get_or_insert(e.to_string());
-                }
-            }
-        }
-        offset += line.len();
+    let v = outlookcom::json(text)?;
+    if let Some((code, message)) = outlookcom::failure(&v) {
+        return Err(Error::State(error_text(&code, &message)));
     }
-    let v = v.ok_or_else(|| {
-        Error::State(format!(
-            "Die Antwort des Outlook-Skripts ist unlesbar ({})",
-            first_err.unwrap_or_else(|| "kein JSON".into())
-        ))
-    })?;
-    if !b(&v, "ok") {
-        return Err(Error::State(error_text(&s(&v, "error"), &s(&v, "message"))));
-    }
-    let items = match &v["items"] {
-        Value::Array(a) => a.clone(),
-        Value::Object(_) => vec![v["items"].clone()],
-        _ => vec![],
-    };
+    let items = outlookcom::items(&v, "items");
     let mut out = vec![];
     for it in &items {
         // olResponseDeclined; olMeetingCanceled / olMeetingReceivedAndCanceled.

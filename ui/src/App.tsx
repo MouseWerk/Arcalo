@@ -29,6 +29,7 @@ import { withPacResults } from "./views/settings/NetworkSection";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PresentationHost, startPresentation } from "./components/Presentation";
+import { MailImportHost } from "./components/MailImport";
 
 export function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen);
@@ -306,6 +307,7 @@ export function App() {
       <Toasts />
       <FocusDialogHost />
       <PresentationHost />
+      <MailImportHost />
       <ConfirmHost />
       <TemplateHost />
     </div>

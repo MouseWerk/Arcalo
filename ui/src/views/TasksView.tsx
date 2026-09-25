@@ -2,7 +2,7 @@
 // checkbox in the page's Markdown; open editors of that page reload via data://tasks.
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronUp, ChevronsUp, ListChecks } from "lucide-react";
+import { CalendarClock, ChevronUp, ChevronsUp, ListChecks, Mail } from "lucide-react";
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
 import { useApp } from "../store/app";
@@ -10,6 +10,7 @@ import { Badge, EmptyState, Segmented, Select, Spinner } from "../components/ui"
 import { PageIcon } from "../components/icons";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { TASK_GROUPS, taskGroup, taskSegments } from "../lib/tasks";
+import { openMailLink } from "../lib/mail";
 import { visibleRange } from "../lib/activity";
 import type { Task, TaskStatus } from "../lib/types";
 
@@ -265,6 +266,11 @@ const TaskRow = memo(function TaskRow({ task: t, group, busy, year, act }: { tas
               <span key={i} className="wikilink" data-target={seg.target} role="link" tabIndex={0} onClick={(e) => act.current.openLink(seg.target, e.ctrlKey || e.metaKey)} onKeyDown={(e) => e.key === "Enter" && act.current.openLink(seg.target, false)}>
                 {seg.text}
               </span>
+            ) : seg.kind === "mail" ? (
+              <button key={i} type="button" className="mail-chip" title={`${seg.text} – E-Mail öffnen`} onClick={() => void openMailLink(seg.id)}>
+                <Mail size={12} strokeWidth={2} aria-hidden />
+                <span>E-Mail</span>
+              </button>
             ) : seg.kind === "tag" ? (
               <span key={i} className="tag" role="link" tabIndex={0} onClick={() => s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })} onKeyDown={(e) => e.key === "Enter" && s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })}>
                 {seg.text}

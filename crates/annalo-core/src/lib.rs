@@ -17,6 +17,10 @@
 //! * [`merge`] – three-way merge of notes by blocks (Git sync conflicts)
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
 //! * [`calsync`] – calendar sync: Outlook Classic (COM via PowerShell) and ICS files/subscriptions
+//! * [`mail`] – „E-Mail als Aufgabe / Notiz“: Outlook, .eml/.msg and pasted mails, links back to the mail
+//! * [`outlookcom`] – runs the bundled Outlook scripts (hidden PowerShell, timeout, JSON)
+//! * [`mail`] – „E-Mail als Aufgabe / Notiz“: Outlook, .eml/.msg and pasted mails, links back to the mail
+//! * [`outlookcom`] – runs the bundled Outlook scripts (hidden PowerShell, timeout, JSON)
 //! * [`vault`] – Obsidian vault import / Markdown export
 //! * [`linktitle`] – titles of web pages for pasted links
 //! * [`attachments`] – pasted and imported images
@@ -57,12 +61,14 @@ pub mod feed;
 pub mod focus;
 pub mod gitsync;
 pub mod linktitle;
+pub mod mail;
 pub mod merge;
 pub mod mirror;
 pub mod model;
 pub mod network;
 pub mod netzplan;
 pub mod notes;
+pub mod outlookcom;
 pub mod pagework;
 pub mod prefs;
 pub mod properties;

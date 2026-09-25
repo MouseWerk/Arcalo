@@ -1080,3 +1080,34 @@
 .wikilink.file-link .file-link-icon { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--text-2); }
 .wikilink.file-link.is-missing { color: var(--text-3) !important; background: none; text-decoration: underline dashed !important; text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent) !important; text-underline-offset: 3px; }
 .wikilink.file-link.is-missing .file-link-icon { color: var(--danger); }
+
+/* ---- E-Mail als Aufgabe / Notiz: links to a mail (annalo-mail://) as a chip ---- */
+.prose a[href^="annalo-mail:"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0 8px 0 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.86em;
+  line-height: 1.6;
+  text-decoration: none;
+  vertical-align: 0.06em;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose a[href^="annalo-mail:"]::before {
+  content: "";
+  flex: none;
+  width: 13px;
+  height: 13px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3Cpath d='m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3Cpath d='m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.prose a[href^="annalo-mail:"]:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }

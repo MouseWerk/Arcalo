@@ -3,7 +3,9 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, CheckCircle2, Copy, Info, Loader2, XCircle } from "lucide-react";
-import { IconButton, Input } from "../../components/ui";
+import { Badge, IconButton, Input } from "../../components/ui";
+import { formatShortcut, recordShortcut } from "../../lib/shortcut";
+import { IS_MAC } from "../../lib/platform";
 import { useT } from "../../lib/i18n";
 import type { Settings } from "../../lib/types";
 
@@ -190,5 +192,28 @@ export function SectionHead({ title, intro }: { title: string; intro?: string })
       <h1>{title}</h1>
       {intro && <p>{intro}</p>}
     </header>
+  );
+}
+
+/** Records a global shortcut from the pressed keys; `active` shows whether the saved one is registered. */
+export function ShortcutField({ value, onChange, label, placeholder, active }: { value: string; onChange: (v: string) => void; label: string; placeholder: string; active?: boolean }) {
+  return (
+    <div className="unit-input shortcut-input">
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          const next = recordShortcut(e.nativeEvent);
+          if (next === undefined) return;
+          e.preventDefault();
+          if (next !== null) onChange(next);
+        }}
+        placeholder={placeholder}
+        aria-label={label}
+        className="mono"
+      />
+      {IS_MAC && value && <kbd>{formatShortcut(value)}</kbd>}
+      {value && active !== undefined && (active ? <Badge tone="success">Aktiv</Badge> : <Badge tone="warning">Nicht registriert</Badge>)}
+    </div>
   );
 }

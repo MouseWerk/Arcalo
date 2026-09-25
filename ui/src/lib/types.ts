@@ -278,6 +278,8 @@ export interface Settings {
   quick_links: QuickLink[];
   /** Calendar sync; subscription addresses live in the credential store. */
   calendar: CalendarSettings;
+  /** „E-Mail als Aufgabe / Notiz“ (Settings → Kalender → E-Mail). */
+  mail: MailSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -515,6 +517,7 @@ export interface DesktopInfo {
   capture_shortcut_active: boolean;
   palette_shortcut_active: boolean;
   search_shortcut_active: boolean;
+  mail_shortcut_active?: boolean;
   /** Portable mode: no autostart entry. */
   portable?: boolean;
 }
@@ -954,6 +957,19 @@ export interface IcsSource {
   path: string;
   color: string;
   enabled: boolean;
+}
+/** Settings → Kalender → E-Mail (Outlook). */
+export interface MailSettings {
+  /** Top-level page of new mail notes. */
+  notes_parent: string;
+  /** Global shortcut of „Aktuelle E-Mail übernehmen“; "" = off. */
+  shortcut: string;
+  /** Attachments are ticked when the dialog opens. */
+  save_attachments: boolean;
+  /** Mail notes get the first privacy marker as tag (they stay on the local model). */
+  private_notes: boolean;
+  /** What the dialog offers first. */
+  default_action: "task" | "note" | "both";
 }
 export interface CalendarSettings {
   /** Read the default calendar of Outlook Classic (Windows). */

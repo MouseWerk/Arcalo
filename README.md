@@ -132,6 +132,11 @@ creates a note with date, attendees and the Teams link. Meetings you do not book
 timesheet lists the week's meetings that are not booked yet. „Woche vorschlagen“ turns the week's meetings, focus
 sessions and page editing into a timesheet draft that you check by day and take over in one go.
 
+An e-mail becomes a task or a note in two clicks: select it in Outlook Classic and choose „Aktuelle E-Mail
+übernehmen“ (palette or your own global shortcut), drop an `.eml`/`.msg` file onto the window or paste the header
+lines of a forwarded mail. The task gets a due date and priority, the note the sender, date, text and the attachments
+you ticked; both carry an „E-Mail“ chip that opens the mail again in Outlook.
+
 ### Tasks, calendar and quick search
 
 Tasks from all notes are grouped by due date. The calendar shows your daily notes and booked hours per day. The global
@@ -197,6 +202,13 @@ settings also cover proxy and certificates for company networks and Git backup.
 - „Zeit buchen“ from a meeting (prefilled, WBS remembered per series or subject), „Besprechungsnotiz“, „Nicht buchen“; booked meetings get a check mark
 - Background sync every 15 minutes (Settings → Kalender); private appointments keep only their time unless you allow more; the assistant does not see your appointments
 - Start page widget „Termine“ and „Termine übernehmen“ in the timesheet
+
+**E-Mail als Aufgabe / Notiz**
+- „Aktuelle E-Mail übernehmen“: the mails selected in Outlook Classic (or the open one) through a second bundled PowerShell script; Exchange senders are resolved to their SMTP address
+- `.eml` and `.msg` files dropped anywhere on the window, and pasted Outlook header blocks (Von:/Gesendet:/An:/Betreff: or From:/Sent:/To:/Subject:)
+- Task (current page, daily note, another page or the new note; due date with Heute/Morgen/Fr/Nächste Woche; priority from the importance) and/or note below „E-Mails“ with von/an/datum/betreff, the text as a quote and the chosen attachments; Vorgang and Outlook categories optional
+- The link is `[E-Mail: Betreff (Absender, Datum)](annalo-mail://id)`, shown as a chip that opens the mail in Outlook (or the stored `.eml`/`.msg`); the Markdown export writes the text only
+- Mail texts stay local: notes are tagged with the privacy marker, and „Aufgabe vorschlagen“ only uses a provider marked local
 
 **Desktop**
 - Tray icon: open, stop the timer or restart the last booking, quick capture, quit; the tooltip shows the running timer (`NP-8801/1020 · 01:23`)

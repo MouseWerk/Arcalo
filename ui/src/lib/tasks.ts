@@ -21,9 +21,13 @@ export function taskGroup(due: string | null, now: Date): TaskGroup {
   return due <= isoDay(addDays(weekStart(now), 6)) ? "week" : "later";
 }
 
-export type TaskSegment = { kind: "text"; text: string } | { kind: "link"; text: string; target: string } | { kind: "tag"; text: string; tag: string };
+export type TaskSegment =
+  | { kind: "text"; text: string }
+  | { kind: "link"; text: string; target: string }
+  | { kind: "tag"; text: string; tag: string }
+  | { kind: "mail"; text: string; id: string };
 
-/** Splits a task text into plain text, `[[links]]` (alias shown) and `#tags` (same rules as the core). */
+/** Splits a task text into plain text, `[[links]]` (alias shown), `#tags` (same rules as the core) and links to e-mails (`[E-Mail: …](annalo-mail://id)`). */
 export function taskSegments(text: string): TaskSegment[] {
   const out: TaskSegment[] = [];
   const push = (t: string) => {
@@ -32,7 +36,7 @@ export function taskSegments(text: string): TaskSegment[] {
     if (last?.kind === "text") last.text += t;
     else out.push({ kind: "text", text: t });
   };
-  const re = /\[\[([^\]]+?)\]\]|(^|[\s(])#([\p{L}\p{N}_\-/]+)/gu;
+  const re = /\[\[([^\]]+?)\]\]|\[([^[\]]*)\]\(annalo-mail:\/\/([0-9a-z]+)\/?\)|(^|[\s(])#([\p{L}\p{N}_\-/]+)/giu;
   let at = 0;
   for (let m = re.exec(text); m; m = re.exec(text)) {
     push(text.slice(at, m.index));
@@ -45,14 +49,18 @@ export function taskSegments(text: string): TaskSegment[] {
       else push(m[0]);
       continue;
     }
-    push(m[2]);
-    const tag = m[3].replace(/[-/]+$/, "");
+    if (m[3] != null) {
+      out.push({ kind: "mail", text: m[2], id: m[3].toLowerCase() });
+      continue;
+    }
+    push(m[4]);
+    const tag = m[5].replace(/[-/]+$/, "");
     if (!tag || /^\d+$/.test(tag)) {
-      push(`#${m[3]}`);
+      push(`#${m[5]}`);
       continue;
     }
     out.push({ kind: "tag", text: `#${tag}`, tag: tag.toLowerCase() });
-    push(m[3].slice(tag.length));
+    push(m[5].slice(tag.length));
   }
   push(text.slice(at));
   return out;
