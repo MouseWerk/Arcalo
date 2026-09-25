@@ -232,8 +232,8 @@ test("tabs: titles are whole while there is room; short tabs stay whole when it 
   const measure = () =>
     app.browser.execute(() => [...document.querySelectorAll(".pane.active .tab")].map((t) => ({ title: t.querySelector(".tab-title").textContent, cut: t.querySelector(".tab-title").scrollWidth > t.querySelector(".tab-title").clientWidth, w: t.getBoundingClientRect().width })));
   const wide = await measure();
-  // With room to spare a title is only shortened at the tab's maximum width (220 px).
-  assert.ok(wide.every((t) => !t.cut || t.w >= 219), `nothing cut below the maximum width: ${JSON.stringify(wide)}`);
+  // With room to spare a title is only shortened at the tab's maximum width (360 px since 1.4.1).
+  assert.ok(wide.every((t) => !t.cut || t.w >= 359), `nothing cut below the maximum width: ${JSON.stringify(wide)}`);
   assert.ok(wide.some((t) => t.title === "Protokoll Lenkungskreis" && t.w > 200 && !t.cut), `a longer title gets the room it needs: ${JSON.stringify(wide)}`);
   // Narrow: only long titles are shortened.
   await app.browser.setWindowSize(900, 700);

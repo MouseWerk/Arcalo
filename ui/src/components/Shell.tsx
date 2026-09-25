@@ -8,6 +8,7 @@ import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
 import { clock, h1, usd } from "../lib/format";
+import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
 import { AnnaloLogo } from "./Logo";
@@ -169,6 +170,16 @@ function StartPage() {
   );
 }
 
+/** A toast's detail with long file paths shortened in the middle (the full text as tooltip). */
+function ToastDetail({ text }: { text: string }) {
+  const shown = shortenPaths(text);
+  return (
+    <div className="toast-detail" title={shown !== text ? text : undefined}>
+      {shown}
+    </div>
+  );
+}
+
 export function Toasts() {
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
@@ -183,7 +194,7 @@ export function Toasts() {
             <Icon size={16} className="toast-icon" />
             <div className="toast-body">
               <div className="toast-title">{t.title}</div>
-              {t.detail && <div className="toast-detail">{t.detail}</div>}
+              {t.detail && <ToastDetail text={t.detail} />}
             </div>
             {t.action && (
               <Button

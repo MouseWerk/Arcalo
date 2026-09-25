@@ -9,6 +9,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { api, attachmentUrl, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { renderMarkdown } from "../lib/markdown";
+import { highlightCodeBlocks } from "../editor/languages";
 import { elapsedLabel, fitScale, jumpTarget, prepareSlideMarkdown, splitSlides, type Slide } from "../lib/slides";
 import { CALLOUT_LABELS } from "../editor/extensions";
 import { fileExtension, fileIcon, fileKind, isImageName, isPdfName } from "../editor/fileEmbed";
@@ -59,6 +60,8 @@ export function PresentationHost() {
 
 /** Replaces the embed placeholders and marks callouts (after each render). */
 function hydrate(root: HTMLElement, refit: () => void) {
+  // Code in the editor's colors (grammars load on demand); the slide is fitted again after.
+  void highlightCodeBlocks(root).then((n) => n && refit());
   for (const bq of root.querySelectorAll<HTMLElement>("blockquote")) {
     const p = bq.firstElementChild;
     const text = p?.firstChild;
@@ -255,7 +258,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
         {next ? <SlideView slide={next} className={`presenter-next ${deck.beamer ? "beamer" : ""}`} label="Vorschau der nächsten Folie" /> : <div className="presenter-next presenter-end">Ende</div>}
         <div className="presenter-label">Notizen</div>
         <div className="presenter-notes prose" aria-label="Notizen">
-          {notes ? <div dangerouslySetInnerHTML={{ __html: notes }} /> : <p className="faint">Keine Notizen zu dieser Folie. Notizen stehen in einem Callout <code>&gt; [!notiz]</code> oder in einem Absatz, der mit <code>Notiz:</code> beginnt.</p>}
+          {notes ? <div ref={(el) => void (el && highlightCodeBlocks(el))} dangerouslySetInnerHTML={{ __html: notes }} /> : <p className="faint">Keine Notizen zu dieser Folie. Notizen stehen in einem Callout <code>&gt; [!notiz]</code> oder in einem Absatz, der mit <code>Notiz:</code> beginnt.</p>}
         </div>
         <div className="presenter-controls">
           <button type="button" className="present-btn" aria-label="Vorherige Folie" disabled={deck.index <= 0} onClick={() => onNav({ action: "prev" })}>

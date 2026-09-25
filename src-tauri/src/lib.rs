@@ -44,6 +44,7 @@ use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
 use annalo_core::db::EntryFilter;
 use annalo_core::drawings;
+use annalo_core::error::IoAt;
 use annalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
 use annalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
 use annalo_core::mirror::{self, MirrorReport};
@@ -600,12 +601,11 @@ async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<S
 /// The bytes of an attachment as a raw IPC response (PDF preview and viewer).
 #[tauri::command]
 async fn attachment_read(state: State<'_, AppState>, name: String) -> Result<tauri::ipc::Response> {
-    let path = attachments::resolve(&state.attachments_dir(), &name)
-        .ok_or_else(|| Error::not_found("attachment", name.clone()))?;
-    if std::fs::metadata(&path)?.len() > attachments::MAX_FILE_BYTES {
+    let path = attachments::existing(&state.attachments_dir(), &name)?;
+    if std::fs::metadata(&path).at(&path)?.len() > attachments::MAX_FILE_BYTES {
         return Err(Error::State(format!("„{name}“ ist zu groß für die Vorschau")));
     }
-    Ok(tauri::ipc::Response::new(std::fs::read(path)?))
+    Ok(tauri::ipc::Response::new(std::fs::read(&path).at(&path)?))
 }
 
 /// Size in bytes of an attachment, `None` when the file is missing (file chips).
@@ -640,7 +640,7 @@ fn html_file_write(path: String, html: String) -> Result<()> {
     if ext != "html" && ext != "htm" {
         return Err(Error::State("Nur .html-Dateien können so gespeichert werden".into()));
     }
-    std::fs::write(p, html)?;
+    std::fs::write(p, html).at(p)?;
     Ok(())
 }
 
@@ -650,8 +650,7 @@ fn html_file_write(path: String, html: String) -> Result<()> {
 #[tauri::command]
 fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal: bool) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
-    let path = attachments::resolve(&state.attachments_dir(), &name)
-        .ok_or_else(|| Error::not_found("attachment", name.clone()))?;
+    let path = attachments::existing(&state.attachments_dir(), &name)?;
     let opened = if reveal || attachments::is_executable(&name) {
         app.opener().reveal_item_in_dir(&path)
     } else {
@@ -1127,7 +1126,7 @@ fn export_entries(
     };
     let res = export::export(&rows, format, &options)?;
     if let Some(p) = path {
-        std::fs::write(&p, &res.content)?;
+        std::fs::write(&p, &res.content).at(&p)?;
     }
     if mark_exported {
         db.set_entry_status(&res.exported_ids, StatusFlag::Exported)?;
@@ -1142,7 +1141,7 @@ fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let res = backup_once(app);
     match &res {
         Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
-        Err(e) => devlog::error("backup", e.to_string()),
+        Err(e) => devlog::error("backup", e.detail()),
     }
     res
 }
@@ -1509,11 +1508,11 @@ fn mirror_open(app: AppHandle, state: State<AppState>) -> Result<()> {
 /// each file is written under a temporary name and renamed, so an interrupted copy never
 /// leaves a truncated file that later runs would take as complete.
 fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)?.flatten() {
+    std::fs::create_dir_all(dst).at(dst)?;
+    for entry in std::fs::read_dir(src).at(src)?.flatten() {
         let name = entry.file_name();
         let Some(name_str) = name.to_str() else { continue };
-        if name_str.starts_with('.') || !entry.file_type()?.is_file() {
+        if name_str.starts_with('.') || !entry.file_type().at(entry.path())?.is_file() {
             continue;
         }
         let to = dst.join(&name);
@@ -1521,10 +1520,11 @@ fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<
             continue;
         }
         let tmp = dst.join(format!(".{name_str}.part"));
-        let copied = std::fs::copy(entry.path(), &tmp).and_then(|_| std::fs::rename(&tmp, &to));
+        let copied =
+            annalo_core::error::copy_file(&entry.path(), &tmp).and_then(|_| std::fs::rename(&tmp, &to).at(&to));
         if let Err(e) = copied {
             let _ = std::fs::remove_file(&tmp);
-            return Err(e.into());
+            return Err(e);
         }
     }
     Ok(())
@@ -3166,7 +3166,7 @@ pub fn run() {
             let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir, false);
             if let Some(e) = folder_error {
-                recovery::show(app.handle(), &dir, recovery::Failure::Folder(annalo_core::error::io_text(&e)));
+                recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
             }
             devlog::info(

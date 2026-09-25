@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result, copy_file};
 
 pub const DB_FILE: &str = "workspace.db";
 /// Name of the bootstrap file in the app config folder.
@@ -55,11 +55,11 @@ pub fn read_location(config_dir: &Path) -> Option<PathBuf> {
 
 /// Writes `location.json` (via a temporary file, so a crash never leaves half a file).
 pub fn write_location_file(config_dir: &Path, loc: &Location) -> Result<()> {
-    std::fs::create_dir_all(config_dir)?;
+    std::fs::create_dir_all(config_dir).at(config_dir)?;
     let json = serde_json::to_string_pretty(loc)?;
     let tmp = config_dir.join(format!(".{LOCATION_FILE}.part"));
-    std::fs::write(&tmp, json)?;
-    std::fs::rename(&tmp, config_dir.join(LOCATION_FILE))?;
+    let file = config_dir.join(LOCATION_FILE);
+    std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, &file)).at(&file)?;
     Ok(())
 }
 
@@ -236,9 +236,8 @@ pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
     if !to.is_absolute() {
         return Err(Error::State("Bitte einen vollständigen Ordnerpfad wählen".into()));
     }
-    std::fs::create_dir_all(to)
-        .map_err(|e| Error::State(format!("Der Ordner {} kann nicht angelegt werden: {e}", to.display())))?;
-    let to_c = to.canonicalize()?;
+    std::fs::create_dir_all(to).map_err(|e| Error::File { path: to.to_path_buf(), dir: true, source: e })?;
+    let to_c = to.canonicalize().at(to)?;
     if let Ok(from_c) = from.canonicalize() {
         if from_c == to_c {
             return Err(Error::State("Die Daten liegen bereits in diesem Ordner".into()));
@@ -248,8 +247,7 @@ pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
         }
     }
     let probe = to.join(".annalo-write-test");
-    std::fs::write(&probe, b"ok")
-        .map_err(|e| Error::State(format!("In den Ordner {} kann nicht geschrieben werden: {e}", to.display())))?;
+    std::fs::write(&probe, b"ok").at(to)?;
     let _ = std::fs::remove_file(&probe);
     Ok(Target { has_workspace: to.join(DB_FILE).exists(), synced: is_synced_or_network(&to.display().to_string()) })
 }
@@ -270,9 +268,9 @@ pub fn copy_workspace(from: &Path, to: &Path) -> Result<usize> {
     }
     let staging = to.join(STAGING_DIR);
     if staging.exists() {
-        std::fs::remove_dir_all(&staging)?; // left over from an interrupted attempt
+        std::fs::remove_dir_all(&staging).at(&staging)?; // left over from an interrupted attempt
     }
-    std::fs::create_dir_all(&staging)?;
+    std::fs::create_dir_all(&staging).at(to)?;
     let result = stage_and_commit(from, to, &staging);
     let _ = std::fs::remove_dir_all(&staging);
     result
@@ -294,7 +292,7 @@ fn stage_and_commit(from: &Path, to: &Path, staging: &Path) -> Result<usize> {
     for name in DATA_FILES.iter().map(|s| s.to_string()).chain(db_files()) {
         let src = from.join(&name);
         if src.is_file() {
-            std::fs::copy(&src, staging.join(&name))?;
+            copy_file(&src, &staging.join(&name))?;
             n += 1;
         }
     }
@@ -317,26 +315,26 @@ pub fn move_workspace(from: &Path, to: &Path) -> Result<usize> {
 /// Renames `src` to `dst`; merges into an existing folder entry by entry.
 fn move_into(src: &Path, dst: &Path) -> Result<()> {
     if src.is_dir() && dst.is_dir() {
-        for entry in std::fs::read_dir(src)?.flatten() {
+        for entry in std::fs::read_dir(src).at(src)?.flatten() {
             move_into(&entry.path(), &dst.join(entry.file_name()))?;
         }
         return Ok(());
     }
-    std::fs::rename(src, dst)?;
+    std::fs::rename(src, dst).at(dst)?;
     Ok(())
 }
 
 /// Copies regular files and folders recursively; symlinks are skipped.
 fn copy_dir(src: &Path, dst: &Path) -> Result<usize> {
-    std::fs::create_dir_all(dst)?;
+    std::fs::create_dir_all(dst).at(dst)?;
     let mut n = 0;
-    for entry in std::fs::read_dir(src)?.flatten() {
-        let kind = entry.file_type()?;
+    for entry in std::fs::read_dir(src).at(src)?.flatten() {
+        let kind = entry.file_type().at(entry.path())?;
         let to = dst.join(entry.file_name());
         if kind.is_dir() {
             n += copy_dir(&entry.path(), &to)?;
         } else if kind.is_file() {
-            std::fs::copy(entry.path(), &to)?;
+            copy_file(&entry.path(), &to)?;
             n += 1;
         }
     }

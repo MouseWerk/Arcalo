@@ -124,6 +124,39 @@ export async function ensureLanguages(languages: Iterable<string>) {
   await Promise.all([...new Set(languages)].map(loadLanguage));
 }
 
+type Hast = { type: string; value?: string; tagName?: string; properties?: { className?: string[] }; children?: Hast[] };
+
+function hastToDom(doc: Document, node: Hast): Node {
+  if (node.type === "text") return doc.createTextNode(node.value ?? "");
+  const out = node.type === "element" ? doc.createElement(node.tagName ?? "span") : doc.createDocumentFragment();
+  if (out instanceof HTMLElement && node.properties?.className) out.className = node.properties.className.join(" ");
+  for (const c of node.children ?? []) out.appendChild(hastToDom(doc, c));
+  return out;
+}
+
+const codeLanguage = (code: Element) => /(?:^|\s)language-([\w+#-]+)/.exec(code.className)?.[1] ?? "";
+
+/**
+ * Highlights the `pre > code.language-…` blocks below `root` (rendered Markdown: slides, the HTML
+ * export) with the editor's grammars and `hljs-*` classes, loading lazy grammars first. Blocks
+ * without a known language stay plain, as in the editor. Resolves to the number highlighted.
+ */
+export async function highlightCodeBlocks(root: ParentNode): Promise<number> {
+  const codes = [...root.querySelectorAll<HTMLElement>("pre > code")].filter((c) => !c.classList.contains("hljs") && codeLanguage(c));
+  if (!codes.length) return 0;
+  await ensureLanguages(codes.map(codeLanguage));
+  let n = 0;
+  for (const code of codes) {
+    const lang = codeLanguage(code).toLowerCase();
+    if (!lowlight.registered(lang)) continue;
+    const tree = lowlight.highlight(lang, code.textContent ?? "");
+    code.replaceChildren(hastToDom(code.ownerDocument, tree as unknown as Hast));
+    code.classList.add("hljs");
+    n++;
+  }
+  return n;
+}
+
 const key = new PluginKey<Set<string>>("lazyHighlight");
 
 function codeLanguages(node: PMNode, out: Set<string>) {

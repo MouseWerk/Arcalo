@@ -5,6 +5,8 @@ import { api } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
 import { splitFrontmatter } from "../editor/extensions";
 import { useApp } from "../store/app";
+import { isFileLinkTarget } from "../editor/fileEmbed";
+import { titleSet } from "../lib/links";
 import { PageIcon } from "./icons";
 import type { PageDoc } from "../lib/types";
 
@@ -56,7 +58,8 @@ export function LinkPreview() {
       const a = linkOf(e.target);
       if (!a || editorPrefs()?.hover_preview === false) return;
       const target = a.dataset.target;
-      if (!target) return;
+      // `[[Angebot.pdf]]` links a file, not a page: nothing to preview.
+      if (!target || a.dataset.fileLink != null || (isFileLinkTarget(target) && !titleSet(useApp.getState().pages).has(target.trim().toLowerCase()))) return;
       window.clearTimeout(hideTimer.current);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(async () => {

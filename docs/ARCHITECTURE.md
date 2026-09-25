@@ -141,6 +141,10 @@ and by `entry_id`.
   key by key (`parse_settings_lenient`, one level deep): a value of the wrong type falls back to its default, the raw JSON
   is kept in the meta row `settings.broken` and a notice names the keys. A data folder that opens but cannot be written, and
   network settings that cannot be applied, are start notices (`DataDirStatus.notice` with a `title`).
+  The schema version is checked before the journal mode is set, so a newer database is not written at all. The dialog's
+  text goes to the developer log; „Beenden“ and „Ordner öffnen“ end with exit code 1. Debug builds skip the dialog when
+  `ANNALO_TEST_RECOVERY_CHOICE` (`restore`, `open`, `quit`) is set and take that answer once the event loop runs
+  (e2e `60-startup-recovery`: the app is started without WebDriver, then again under it on the restored folder).
 - **History**: activity, AI usage and finished focus sessions older than 400 days are pruned on start
   (`prune_history`); purging a page clears the texts of its activity rows (title, task text, mentions).
 - **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
@@ -179,6 +183,8 @@ and by `entry_id`.
   pages, file chips). `presentation_begin`/`presentation_end` switch the main window to full screen and back; with two monitors
   `presenter_open` moves the slides to the other monitor and opens the presenter window (`index.html#presenter`, capability
   `presenter`), which mirrors the deck through `presentation://state` and steers it with `presentation://nav`.
+  Code blocks (slides and speaker notes) are highlighted like the editor's (`languages::highlightCodeBlocks`, lazy grammars
+  loaded first); the Beamer look sets light `--code-*` tokens.
 
 ## Desktop integration (`desktop.rs` in core and shell)
 
@@ -337,6 +343,10 @@ and by `entry_id`.
   is embedded as `![[Angebot.pdf]]`. `![[x]]` counts as a file when the name has an extension of 1–10 ASCII letters/digits with a
   letter, other than `md` (`attachments::file_extension`, mirrored in the UI's `fileExtension`), so `![[Notiz]]` and `![[Version 1.2]]`
   stay note embeds; such embeds are not page links (`notes::wiki_links`) and travel with vault import/export and the mirror.
+  A plain `[[Angebot.pdf]]` link (`attachment_manager::is_file_link`, UI `isFileLinkTarget`) is a file link unless a page has
+  that title: it is never an unresolved link (`unresolved_links`), the editor shows it with the file's icon (missing files
+  marked) and opens it like the embed, the links panel lists it under „Anhänge“, the hover preview skips it and the HTML
+  export carries it like a file embed.
   Files keep their sanitized name (last path component, reserved/control characters replaced, Windows device names suffixed,
   at most 150 bytes); a name taken by other bytes gets ` 2`, ` 3`, …, identical bytes reuse the file. Limit 100 MB
   (`MAX_FILE_BYTES`; images sent base64 stay at 50 MB).
@@ -547,7 +557,11 @@ quelle: "[[Konzept]]"
   ignored. Network settings that cannot be applied (a missing CA file) leave no client: requests fail with „Netzwerkeinstellungen
   ungültig: …“ instead of bypassing proxy and certificates.
 - Errors (`error.rs`): every message is German and complete (`Error::State` shows its text only, so re-wrapping adds no
-  prefix); I/O and SQLite errors name the cause (`io_text`, disk full, read-only, locked, damaged), request errors keep
+  prefix); I/O and SQLite errors name the cause (`io_text`, disk full, read-only, locked, damaged). File operations attach
+  the path (`Error::File { path, dir, source }` through `IoAt::at` / `Error::with_path`, `error::copy_file` names the side
+  that failed, `attachments::existing` a missing attachment): „Datei nicht gefunden: …“, „Keine Berechtigung für den Ordner
+  …“; a file whose folder is missing names that folder. The developer log gets `Error::detail` (plus the OS text), toasts
+  shorten long paths in the middle (`shortenPaths` in `api.ts`, full text as tooltip). Request errors keep
   reqwest's cause chain and name proxy, certificate, timeout or an interrupted answer (`http_text`, read by
   `ui/src/lib/aierror.ts`).
 - Settings → KI (`AiProvidersSection.tsx`, `ProviderDialog.tsx`): the status of every provider (`ai_provider_models`, works for

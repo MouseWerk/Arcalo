@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use annalo_core::Error;
+use annalo_core::error::IoAt;
 use annalo_core::prefs::{self, CostLevel};
 use annalo_core::settings::Settings;
 use chrono::{Datelike, Local, TimeZone, Utc};
@@ -38,7 +39,7 @@ pub fn settings_export(state: State<'_, AppState>, path: String) -> Result<()> {
         exported_at: Local::now().to_rfc3339(),
         settings: &settings,
     };
-    std::fs::write(path.trim(), serde_json::to_string_pretty(&file)? + "\n")?;
+    std::fs::write(path.trim(), serde_json::to_string_pretty(&file)? + "\n").at(path.trim())?;
     Ok(())
 }
 
@@ -50,10 +51,10 @@ pub fn settings_file_read(path: String) -> Result<String> {
     if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
         return Err(Error::State("Bitte eine .json-Datei wählen".into()));
     }
-    if std::fs::metadata(&path)?.len() > MAX_IMPORT_BYTES {
+    if std::fs::metadata(&path).at(&path)?.len() > MAX_IMPORT_BYTES {
         return Err(Error::State("Die Datei ist zu groß für eine Einstellungsdatei".into()));
     }
-    Ok(std::fs::read_to_string(&path)?)
+    std::fs::read_to_string(&path).at(&path)
 }
 
 /// Writes a custom theme as a theme file (Settings → Darstellung → Exportieren).
@@ -62,7 +63,7 @@ pub fn theme_export(path: String, theme: prefs::CustomTheme) -> Result<()> {
     let theme = prefs::normalize_custom_themes(vec![theme])
         .pop()
         .ok_or_else(|| Error::State("Das Theme enthält ungültige Farben".into()))?;
-    std::fs::write(path.trim(), prefs::theme_file_json(&theme))?;
+    std::fs::write(path.trim(), prefs::theme_file_json(&theme)).at(path.trim())?;
     Ok(())
 }
 

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Table2, Trash2 } from "lucide-react";
 import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
+import { openIfFileLink } from "../editor/files";
 import { ConflictBanner } from "./ConflictView";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -205,6 +206,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   }, [pageId]);
 
   const openLink = useCallback(async (target: string, newTab: boolean) => {
+    if (openIfFileLink(target)) return;
     try {
       await handle.current?.flush();
       const page = await api.resolvePage(target, true);

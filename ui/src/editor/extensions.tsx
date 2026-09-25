@@ -19,12 +19,17 @@ import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
+import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
 
 // ------------------------------------------------------------- wiki links
 
 export interface WikiLinkOptions {
   onOpen: (target: string, newTab: boolean) => void;
   isKnown: (target: string) => boolean;
+  /** Size in bytes of an attachment (`null`: missing), for `[[Angebot.pdf]]` file links. */
+  fileSize: (name: string) => Promise<number | null>;
+  /** Opens the file of a file link (`anchor`: `page=3` of `[[a.pdf#page=3]]`). */
+  onOpenFile: (name: string, anchor: string | null) => void;
 }
 
 export const WikiLink = Node.create<WikiLinkOptions>({
@@ -35,7 +40,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   selectable: true,
 
   addOptions() {
-    return { onOpen: () => {}, isKnown: () => true };
+    return { onOpen: () => {}, isKnown: () => true, fileSize: async () => null, onOpenFile: () => {} };
   },
 
   addAttributes() {
@@ -60,6 +65,8 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       const dom = document.createElement("a");
       dom.dataset.wikilink = "";
       dom.dataset.target = node.attrs.target;
+      // `[[Angebot.pdf]]` with no page of that title: a link to the attachment, never a page to create.
+      if (!this.options.isKnown(node.attrs.target) && isFileLinkTarget(node.attrs.target)) return fileLinkView(dom, node, this.options);
       dom.className = `wikilink${this.options.isKnown(node.attrs.target) ? "" : " unresolved"}`;
       dom.textContent = node.attrs.alias || (node.attrs.anchor ? `${node.attrs.target} › ${node.attrs.anchor}` : node.attrs.target);
       dom.title = this.options.isKnown(node.attrs.target) ? node.attrs.target : `${node.attrs.target} (noch nicht angelegt, Klick erstellt die Seite)`;
@@ -91,6 +98,38 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   renderMarkdown: (node, _h, ctx) =>
     `[[${node.attrs?.target}${node.attrs?.anchor ? "#" + node.attrs.anchor : ""}${node.attrs?.alias ? (ctx?.meta?.parentAttrs?.__inTableCell ? "\\|" : "|") + node.attrs.alias : ""}]]`,
 });
+
+/** The node view of a wiki link to a file: type icon and name, marked when the file is missing. */
+function fileLinkView(dom: HTMLAnchorElement, node: PMNode, o: WikiLinkOptions) {
+  const target: string = node.attrs.target;
+  const name = baseName(target.trim());
+  const pdf = isPdfName(name);
+  dom.dataset.fileLink = name;
+  dom.className = "wikilink file-link";
+  const icon = document.createElement("span");
+  icon.className = "file-link-icon";
+  icon.append(fileIcon(fileKind(name), 14));
+  const label = document.createElement("span");
+  label.textContent = node.attrs.alias || name;
+  dom.append(icon, label);
+  const hint = pdf ? "klicken zum Ansehen" : "klicken zum Öffnen";
+  dom.title = `${name} – ${hint}`;
+  let alive = true;
+  o.fileSize(name).then(
+    (n) => {
+      if (!alive) return;
+      dom.classList.toggle("is-missing", n == null);
+      dom.title = n == null ? `${name} – Datei fehlt in den Anhängen` : `${name} – ${hint}`;
+    },
+    () => {},
+  );
+  dom.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    e.preventDefault();
+    o.onOpenFile(name, node.attrs.anchor ?? null);
+  });
+  return { dom, destroy: () => void (alive = false) };
+}
 
 export interface LinkSuggestItem extends PopupItem {
   target: string;

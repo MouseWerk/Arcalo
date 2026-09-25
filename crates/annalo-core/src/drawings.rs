@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::attachments::{self, SavedAttachment};
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result};
 
 /// File suffix of a drawing scene.
 pub const SUFFIX: &str = ".excalidraw";
@@ -43,7 +43,7 @@ pub fn validate_name(name: &str) -> Result<()> {
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().ok_or_else(|| Error::State("Kein Zielordner".into()))?;
     let file = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| Error::State("Ungültiger Dateiname".into()))?;
-    fs::create_dir_all(dir)?;
+    fs::create_dir_all(dir).at(dir)?;
     let tmp = dir.join(format!(".{file}.tmp"));
     let written = fs::File::create(&tmp).and_then(|mut f| {
         std::io::Write::write_all(&mut f, bytes)?;
@@ -51,7 +51,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     });
     if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
         let _ = fs::remove_file(&tmp);
-        return Err(e.into());
+        return Err(Error::file(path, e));
     }
     Ok(())
 }
@@ -101,7 +101,7 @@ pub fn create(attachments_dir: &Path, title: &str) -> Result<SavedAttachment> {
 pub fn read(attachments_dir: &Path, name: &str) -> Result<String> {
     validate_name(name)?;
     let path = attachments::resolve(attachments_dir, name).ok_or_else(|| Error::not_found("Zeichnung", name))?;
-    Ok(fs::read_to_string(path)?)
+    fs::read_to_string(&path).at(&path)
 }
 
 /// Stores the scene and its SVG preview. Without a preview (empty drawing) an old one is
@@ -123,7 +123,7 @@ pub fn save(attachments_dir: &Path, name: &str, scene: &str, svg: Option<&str>) 
     let preview = attachments_dir.join(preview_name(name));
     match svg {
         Some(s) => write_atomic(&preview, s.as_bytes())?,
-        None if preview.exists() => fs::remove_file(&preview)?,
+        None if preview.exists() => fs::remove_file(&preview).at(&preview)?,
         None => {}
     }
     Ok(())

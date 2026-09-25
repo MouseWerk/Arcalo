@@ -9,7 +9,7 @@ use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result};
 
 const STAMP: &str = "%Y%m%d-%H%M%S";
 
@@ -60,12 +60,12 @@ pub fn backup_to(db: &Database, dir: &Path, keep: usize) -> Result<BackupInfo> {
 
 /// `now` is UTC.
 fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Result<BackupInfo> {
-    fs::create_dir_all(dir)?;
+    fs::create_dir_all(dir).at(dir)?;
     let name = format!("annalo-{}.db", now.format(STAMP));
     let path = dir.join(&name);
     // VACUUM INTO refuses existing files; a second backup within the same second replaces the first.
     if path.exists() {
-        fs::remove_file(&path)?;
+        fs::remove_file(&path).at(&path)?;
     }
     let target = path.to_str().ok_or_else(|| Error::State(format!("Ungültiger Pfad: {}", path.display())))?;
     db.conn().execute("VACUUM INTO ?1", [target])?;
@@ -73,7 +73,7 @@ fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Resu
     // The new backup always counts as one of the kept ones, even if the clock went backwards.
     let others = list_backups(dir)?.into_iter().filter(|b| b.file_name != name);
     for old in others.skip(keep.max(1) - 1) {
-        fs::remove_file(&old.path)?;
+        fs::remove_file(&old.path).at(&old.path)?;
     }
     Ok(fresh)
 }
@@ -90,12 +90,11 @@ pub fn restore_latest(db_file: &Path, backups: &Path, now: DateTime<Utc>) -> Res
     for ext in ["", "-wal", "-shm"] {
         let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));
         if from.exists() {
-            fs::rename(&from, format!("{}{ext}.broken-{stamp}", db_file.display()))?;
+            fs::rename(&from, format!("{}{ext}.broken-{stamp}", db_file.display())).at(&from)?;
         }
     }
     let tmp = db_file.with_extension("restore-part");
-    fs::copy(&latest.path, &tmp)?;
-    fs::rename(&tmp, db_file)?;
+    fs::copy(&latest.path, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file)?;
     Ok(latest)
 }
 

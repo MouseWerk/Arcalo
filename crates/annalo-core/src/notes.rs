@@ -341,7 +341,8 @@ impl Database {
     }
 
     /// The link targets among `targets` that name no page (outside the trash), in their
-    /// order. One indexed query for all of them (not one per link); titles that differ only
+    /// order. Links to files (`[[Angebot.pdf]]`, [`crate::attachment_manager::is_file_link`]) are
+    /// no missing pages: the editor shows them as file links, present or missing. One indexed query for all of them (not one per link); titles that differ only
     /// beyond ASCII case (`[[übersicht]]` → „Übersicht“) are matched like [`Database::page_by_title`].
     pub fn unresolved_links(&self, targets: Vec<String>) -> Result<Vec<String>> {
         if targets.is_empty() {
@@ -373,6 +374,7 @@ impl Database {
                 needle.is_ascii() || !all.contains(&needle)
             });
         }
+        missing.retain(|t| !crate::attachment_manager::is_file_link(t));
         Ok(missing)
     }
 
@@ -873,6 +875,27 @@ mod tests {
             ),
             ["Notiz", "foto.jpg", "Version 1.2", "Plan.pdf"]
         );
+    }
+
+    #[test]
+    fn file_links_are_not_unresolved_pages() {
+        let db = Database::open_in_memory().unwrap();
+        db.create_page(None, "Node.js", None).unwrap();
+        let p = db.create_page(None, "Quelle", None).unwrap();
+        let saved = db
+            .save_page(
+                p.id,
+                "[[Angebot.pdf]] [[Ordner/Daten.xlsx|die Daten]] [[Plan.PDF#page=2]] [[Fehlt]] [[Node.js]] [[Version 1.2]]",
+            )
+            .unwrap();
+        assert_eq!(saved.unresolved_links, ["Fehlt", "Version 1.2"]);
+        assert_eq!(db.page_doc(p.id).unwrap().unresolved_links, saved.unresolved_links);
+        // A page titled like a file keeps its backlinks.
+        let node = db.page_by_title("Node.js").unwrap().unwrap();
+        assert_eq!(db.page_doc(node.id).unwrap().backlinks.len(), 1);
+        assert!(crate::attachment_manager::is_file_link(" Ordner\\Angebot.docx "));
+        assert!(!crate::attachment_manager::is_file_link("Notiz.md"));
+        assert!(!crate::attachment_manager::is_file_link("Ordner/"));
     }
 
     #[test]

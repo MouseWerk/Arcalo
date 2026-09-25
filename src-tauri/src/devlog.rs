@@ -424,7 +424,8 @@ fn log_ui_error(e: &annalo_core::Error) {
         E::Http(_) => (Level::Error, "net"),
         _ => (Level::Error, "core"),
     };
-    write(level, source, &e.to_string(), false);
+    // The full text (a file error's path and the system's own words), the UI may shorten it.
+    write(level, source, &e.detail(), false);
 }
 
 // ------------------------------------------------------------------ commands

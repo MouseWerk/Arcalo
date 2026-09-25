@@ -190,6 +190,33 @@ describe("file embeds", () => {
     expect(nodes(editor)[3].attrs).toMatchObject({ name: "d.docx", anchor: "#x", alt: "y" });
     editor.destroy();
   });
+  it("shows [[file.ext]] links as file links that open the file, page titles win", async () => {
+    const opened: string[] = [];
+    const known = new Set(["node.js"]);
+    const el = document.createElement("div");
+    const md = "[[Ordner/Angebot.pdf#page=3|das Angebot]] [[Daten.xlsx]] [[Fehlt.docx]] [[Node.js]] [[Neu]]\n";
+    const editor = new Editor({
+      element: el,
+      content: md,
+      contentType: "markdown",
+      extensions: buildExtensions({
+        isKnown: (t) => known.has(t.toLowerCase()),
+        attachmentSize: async (n) => (n === "Fehlt.docx" ? null : 10),
+        onOpenPdf: (n, p) => opened.push(`pdf:${n}:${p}`),
+        onOpenFile: (n) => opened.push(`file:${n}`),
+        onOpenLink: (t) => opened.push(`page:${t}`),
+      }),
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const links = [...el.querySelectorAll<HTMLElement>("a[data-wikilink]")];
+    expect(links.map((a) => a.className)).toEqual(["wikilink file-link", "wikilink file-link", "wikilink file-link is-missing", "wikilink", "wikilink unresolved"]);
+    expect(links[0].textContent).toBe("das Angebot");
+    expect(links[2].title).toContain("Datei fehlt");
+    for (const a of links) a.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }));
+    expect(opened).toEqual(["pdf:Angebot.pdf:3", "file:Daten.xlsx", "file:Fehlt.docx", "page:Node.js", "page:Neu"]);
+    expect(toMarkdown(editor)).toBe(md);
+    editor.destroy();
+  });
   it("serializes an inserted file to exactly its embed", () => {
     const editor = editorFor("");
     editor.commands.insertContent({ type: "fileEmbed", attrs: { name: "Angebot 2.pdf" } });

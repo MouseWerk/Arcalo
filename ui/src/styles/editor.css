@@ -1074,3 +1074,9 @@
 
 /* ---- Title rule (link characters) ---- */
 .page-title-hint { font-size: 12.5px; }
+
+/* ---- file links ---- */
+/* `[[Angebot.pdf]]`: a link to an attachment, with its type icon; a missing file is greyed with a dashed underline. */
+.wikilink.file-link .file-link-icon { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--text-2); }
+.wikilink.file-link.is-missing { color: var(--text-3) !important; background: none; text-decoration: underline dashed !important; text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent) !important; text-underline-offset: 3px; }
+.wikilink.file-link.is-missing .file-link-icon { color: var(--danger); }

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result};
 
 /// Folder below the data directory (and in exported vaults).
 pub const DIR_NAME: &str = "attachments";
@@ -171,13 +171,12 @@ pub fn save(attachments_dir: &Path, bytes: &[u8], name: &str, mime: &str) -> Res
         .or_else(|| ext_for_mime(mime).map(str::to_owned))
         .ok_or_else(|| Error::State(format!("„{name}“ ist kein unterstütztes Bildformat")))?;
     let file = format!("{}.{ext}", &sha256_hex(bytes)[..16]);
-    fs::create_dir_all(attachments_dir)?;
+    fs::create_dir_all(attachments_dir).at(attachments_dir)?;
     let path = attachments_dir.join(&file);
     if !path.is_file() {
         // Write-then-rename so a crash never leaves a truncated file under the final name.
         let tmp = attachments_dir.join(format!(".{file}.tmp"));
-        fs::write(&tmp, bytes)?;
-        fs::rename(&tmp, &path)?;
+        fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, &path)).at(&path)?;
     }
     Ok(SavedAttachment {
         markdown: format!("![[{file}]]"),
@@ -266,7 +265,7 @@ fn saved(dir: &Path, name: String, size: u64) -> SavedAttachment {
 pub fn store_file(attachments_dir: &Path, name: &str, bytes: &[u8]) -> Result<SavedAttachment> {
     check_size(bytes.len() as u64)?;
     let clean = clean_name(name)?;
-    fs::create_dir_all(attachments_dir)?;
+    fs::create_dir_all(attachments_dir).at(attachments_dir)?;
     let hash: [u8; 32] = Sha256::digest(bytes).into();
     let len = bytes.len() as u64;
     let (file, exists) = free_name(attachments_dir, &clean, |p| {
@@ -281,14 +280,14 @@ pub fn store_file(attachments_dir: &Path, name: &str, bytes: &[u8]) -> Result<Sa
 /// Copies a file chosen in the file dialog into the attachments folder, streaming instead of
 /// loading it into memory. Folders, empty and oversized files are refused.
 pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachment> {
-    let meta = fs::metadata(source)?;
+    let meta = fs::metadata(source).at(source)?;
     let name = source.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if !meta.is_file() {
         return Err(Error::State(format!("„{}“ ist keine Datei", source.display())));
     }
     check_size(meta.len())?;
     let clean = clean_name(name)?;
-    fs::create_dir_all(attachments_dir)?;
+    fs::create_dir_all(attachments_dir).at(attachments_dir)?;
     // A file picked from the attachments folder itself is embedded as it is.
     if let (Ok(src), Some(found)) = (source.canonicalize(), resolve(attachments_dir, name))
         && src == found
@@ -303,9 +302,10 @@ pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachm
     if !exists {
         // Copy under a hidden name and rename, so an interrupted copy leaves no truncated file.
         let tmp = attachments_dir.join(format!(".{file}.part"));
-        if let Err(e) = fs::copy(source, &tmp).and_then(|_| fs::rename(&tmp, attachments_dir.join(&file))) {
+        let target = attachments_dir.join(&file);
+        if let Err(e) = crate::error::copy_file(source, &tmp).and_then(|_| fs::rename(&tmp, &target).at(&target)) {
             let _ = fs::remove_file(&tmp);
-            return Err(e.into());
+            return Err(e);
         }
     }
     Ok(saved(attachments_dir, file, len))
@@ -322,6 +322,20 @@ pub fn resolve(attachments_dir: &Path, name: &str) -> Option<PathBuf> {
     let root = attachments_dir.canonicalize().ok()?;
     let real = path.canonicalize().ok()?;
     (real.starts_with(&root) && real.is_file()).then_some(real)
+}
+
+/// [`resolve`], with an error that names the missing file and its folder
+/// („Datei nicht gefunden: C:\…\attachments\Angebot.pdf“).
+pub fn existing(attachments_dir: &Path, name: &str) -> Result<PathBuf> {
+    resolve(attachments_dir, name).ok_or_else(|| {
+        let plain = !name.is_empty() && !name.starts_with('.') && !name.contains(['/', '\\', ':', '\0']);
+        if plain {
+            let source = std::io::Error::from(std::io::ErrorKind::NotFound);
+            Error::File { path: attachments_dir.join(name), dir: false, source }
+        } else {
+            Error::not_found("attachment", name)
+        }
+    })
 }
 
 /// Decodes `%XX` escapes of a URL path segment.
@@ -371,6 +385,21 @@ mod tests {
         let p = std::env::temp_dir().join(format!("annalo-att-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         p
+    }
+
+    #[test]
+    fn missing_files_are_named_with_their_folder() {
+        let dir = tmp("missing");
+        fs::create_dir_all(&dir).unwrap();
+        let e = existing(&dir, "Angebot.pdf").unwrap_err();
+        assert_eq!(e.to_string(), format!("Datei nicht gefunden: {}", dir.join("Angebot.pdf").display()));
+        // Even before the attachments folder exists, the file is named.
+        let e = existing(&dir.join("fehlt"), "Angebot.pdf").unwrap_err();
+        assert!(e.to_string().ends_with("Angebot.pdf"), "{e}");
+        assert!(matches!(existing(&dir, "../x.pdf"), Err(Error::NotFound { .. })));
+        let e = import_file(&dir, &dir.join("Quelle.docx")).unwrap_err();
+        assert_eq!(e.to_string(), format!("Datei nicht gefunden: {}", dir.join("Quelle.docx").display()));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

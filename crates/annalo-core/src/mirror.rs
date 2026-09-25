@@ -16,7 +16,7 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{Database, EntryFilter};
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result};
 use crate::export::field;
 use crate::model::{StatusFlag, TimeEntryRow};
 use crate::vault;
@@ -100,12 +100,13 @@ where
         let months = time_entries_csv(&snap.rows, offset);
         if !months.is_empty() {
             let out = dir.join(TIME_DIR);
-            fs::create_dir_all(&out)?;
+            fs::create_dir_all(&out).at(&out)?;
             for (month, csv) in &months {
-                fs::write(out.join(format!("{month}.csv")), csv)?;
+                let file = out.join(format!("{month}.csv"));
+                fs::write(&file, csv).at(&file)?;
             }
         }
-        fs::write(dir.join(README_NAME), README)?;
+        fs::write(dir.join(README_NAME), README).at(dir.join(README_NAME))?;
         Ok((pages, months.len()))
     })?;
     Ok(MirrorReport { path: target.display().to_string(), pages, csv_files, created_at: Local::now() })
@@ -142,13 +143,13 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
     // An interrupted swap left the previous mirror as `.old`: put it back first.
     if !target.exists() && old.is_dir() {
         let _swap = hold_swaps();
-        fs::rename(&old, target)?;
+        fs::rename(&old, target).at(target)?;
     }
     if target.exists() {
         if !target.is_dir() {
             return Err(Error::State(format!("{} ist kein Ordner", target.display())));
         }
-        let empty = fs::read_dir(target)?.next().is_none();
+        let empty = fs::read_dir(target).at(target)?.next().is_none();
         if !empty && !is_mirror(target) {
             return Err(Error::State(format!(
                 "Der Ordner {} ist nicht leer und keine Markdown-Kopie von Annalo – bitte einen leeren Ordner wählen",
@@ -156,10 +157,11 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
             )));
         }
     }
+    // Staging and `.old` sit next to `target`: their errors name the folder the user chose.
     if staging.exists() {
-        fs::remove_dir_all(&staging)?;
+        fs::remove_dir_all(&staging).at(target)?;
     }
-    fs::create_dir_all(&staging)?;
+    fs::create_dir_all(&staging).at(target)?;
     let value = match fill(&staging) {
         Ok(v) => v,
         Err(e) => {
@@ -169,7 +171,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
     };
     let _swap = hold_swaps();
     if old.exists() {
-        fs::remove_dir_all(&old)?;
+        fs::remove_dir_all(&old).at(target)?;
     }
     let had_old = target.exists();
     if had_old && let Err(e) = fs::rename(target, &old) {
@@ -184,7 +186,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
             let _ = fs::rename(&old, target);
         }
         let _ = fs::remove_dir_all(&staging);
-        return Err(e.into());
+        return Err(Error::file(target, e));
     }
     if had_old {
         // A leftover `.old` is removed by the next run.

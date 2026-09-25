@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::attachments::{self, file_extension, image_extension, is_drawing};
 use crate::db::Database;
 use crate::drawings;
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAt, Result, copy_file};
 
 /// Folder below the data directory that holds deleted files.
 pub const TRASH_DIR: &str = "trash/files";
@@ -101,6 +101,16 @@ pub fn export_files(markdown: &str) -> Vec<String> {
     out
 }
 
+/// Whether a `[[target]]` link (target without anchor and alias) names a file rather than a page:
+/// its last path segment has a file extension (`[[Angebot.pdf]]`, `[[Ordner/Daten.xlsx]]`), see
+/// [`attachments::embeddable`]. Such a link opens the attachment and is never an unresolved page
+/// link; a page whose title looks like a file name (`[[Node.js]]`) still wins where it exists.
+pub fn is_file_link(target: &str) -> bool {
+    let target = target.trim();
+    let base = target.rsplit(['/', '\\']).next().unwrap_or(target);
+    !base.is_empty() && attachments::embeddable(base)
+}
+
 /// One `![[target#anchor|alt]]`: byte range of `target` inside the Markdown and its base name.
 struct EmbedRef<'a> {
     /// Range of the whole target (folders included), without anchor and alias.
@@ -123,7 +133,7 @@ fn embed_refs(markdown: &str) -> Vec<EmbedRef<'_>> {
         let target = raw.trim();
         let base = target.rsplit(['/', '\\']).next().unwrap_or(target);
         let embed = markdown[..from + i].ends_with('!');
-        if !base.is_empty() && !inner.contains('\n') && (embed || attachments::embeddable(base)) {
+        if !base.is_empty() && !inner.contains('\n') && (embed || is_file_link(target)) {
             out.push(EmbedRef { target: start + lead..start + lead + target.len(), base });
         }
         from = start + len + 2;
@@ -326,7 +336,7 @@ pub fn list(db: &Database, attachments_dir: &Path) -> Result<AttachmentList> {
 
 /// A file of the attachments folder by its plain name, or a clear error.
 fn existing(attachments_dir: &Path, name: &str) -> Result<PathBuf> {
-    attachments::resolve(attachments_dir, name).ok_or_else(|| Error::not_found("Datei", name))
+    attachments::existing(attachments_dir, name)
 }
 
 /// Checks a new name for `old`: a valid file name (see [`attachments::clean_name`]) with the
@@ -388,7 +398,7 @@ pub fn rename(db: &Database, attachments_dir: &Path, old: &str, new: &str) -> Re
             for (from, to) in done.iter().rev() {
                 let _ = fs::rename(to, from);
             }
-            return Err(e.into());
+            return Err(Error::file(&m.0, e));
         }
         done.push(m);
     }
@@ -456,7 +466,7 @@ pub fn trash_files_at(data_dir: &Path, names: &[String], now: DateTime<Utc>) -> 
         existing(&src, name)?;
     }
     for name in names {
-        fs::create_dir_all(&target)?;
+        fs::create_dir_all(&target).at(&target)?;
         let mut files = vec![name.clone()];
         if is_drawing(name) && src.join(drawings::preview_name(name)).is_file() {
             files.push(drawings::preview_name(name));
@@ -466,8 +476,8 @@ pub fn trash_files_at(data_dir: &Path, names: &[String], now: DateTime<Utc>) -> 
             let to = target.join(&f);
             if fs::rename(&from, &to).is_err() {
                 // Another volume (a linked folder): copy, then remove.
-                fs::copy(&from, &to)?;
-                fs::remove_file(&from)?;
+                copy_file(&from, &to)?;
+                fs::remove_file(&from).at(&from)?;
             }
         }
         moved.push(name.clone());
@@ -510,7 +520,7 @@ fn trashed_path(data_dir: &Path, id: &str, name: &str) -> Result<PathBuf> {
 pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
     let folder = trashed_path(data_dir, id, name)?;
     let dst = attachments::dir(data_dir);
-    fs::create_dir_all(&dst)?;
+    fs::create_dir_all(&dst).at(&dst)?;
     let mut files = vec![name.to_owned()];
     if is_drawing(name) && folder.join(drawings::preview_name(name)).is_file() {
         files.push(drawings::preview_name(name));
@@ -521,7 +531,7 @@ pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
         }
     }
     for f in &files {
-        fs::rename(folder.join(f), dst.join(f))?;
+        fs::rename(folder.join(f), dst.join(f)).at(dst.join(f))?;
     }
     let _ = fs::remove_dir(&folder); // only when empty
     Ok(())
@@ -530,7 +540,7 @@ pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
 /// Deletes a file from the trash for good.
 pub fn purge_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
     let folder = trashed_path(data_dir, id, name)?;
-    fs::remove_file(folder.join(name))?;
+    fs::remove_file(folder.join(name)).at(folder.join(name))?;
     if is_drawing(name) {
         let _ = fs::remove_file(folder.join(drawings::preview_name(name)));
     }
@@ -546,7 +556,7 @@ pub fn purge_expired_files(data_dir: &Path, days: i64, now: DateTime<Utc>) -> Re
         let Some(at) = e.file_name().to_str().and_then(parse_stamp) else { continue };
         if now - at >= chrono::Duration::days(days) {
             n += fs::read_dir(e.path()).map(|r| r.count()).unwrap_or(0);
-            fs::remove_dir_all(e.path())?;
+            fs::remove_dir_all(e.path()).at(e.path())?;
         }
     }
     Ok(n)
