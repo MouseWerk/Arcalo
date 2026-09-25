@@ -122,7 +122,7 @@ mod tests {
             let counts = db.open_task_counts("2026-09-23", None).unwrap();
             assert_eq!(
                 counts.open, 6,
-                "3 on Welcome, 2 in the jour fixe, 1 in the daily note; none from the templates"
+                "3 on Welcome, 2 in the weekly sync, 1 in the daily note; none from the templates"
             );
             crate::demo::remove(&db).unwrap();
             assert!(db.page_by_title("Architecture").unwrap().is_none());

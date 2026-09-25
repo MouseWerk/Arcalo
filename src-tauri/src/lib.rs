@@ -1758,7 +1758,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // Keys of removed providers are deleted with them.
     for gone in previous.providers.iter().filter(|p| !settings.providers.iter().any(|n| n.id == p.id)) {
         if let Err(e) = state.provider_secret(&gone.id).set(None) {
-            devlog::warn("ai", format!("key of the removed provider „{}“ not deleted: {e}", gone.id));
+            devlog::warn("ai", format!("key of the removed provider “{}” not deleted: {e}", gone.id));
         }
     }
     // Outlook switched on, another window or other privacy rules: read the calendars again now.
@@ -1772,9 +1772,13 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
     }
-    // Another language: the tray, the menu bar and the jump list follow.
+    // Another language: the tray, the menu bar and the jump list follow, and the built-in
+    // activity types (unless edited).
     if relocalize {
         desktop::relocalize(&app);
+        if let Err(e) = state.db().localize_default_leistungsarten() {
+            devlog::warn("core", format!("activity types not localized: {e}"));
+        }
     }
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
@@ -1950,7 +1954,7 @@ async fn provider_models(state: &AppState, provider: AiProvider, key: Option<Str
             ConnectionTest { ok: true, latency_ms, models, embedding_models, error: None }
         }
         Err(e) => {
-            devlog::warn("ai", format!("model list of „{}“ failed: {e}", provider.display_name()));
+            devlog::warn("ai", format!("model list of “{}” failed: {e}", provider.display_name()));
             ConnectionTest {
                 ok: false,
                 latency_ms,
@@ -1968,7 +1972,7 @@ async fn model_modes(client: &AiClient) -> Option<HashMap<String, String>> {
     match tokio::time::timeout(Duration::from_secs(5), client.model_modes()).await {
         Ok(Ok(modes)) => Some(modes),
         Ok(Err(e)) => {
-            devlog::debug("ai", format!("model info of „{}“: {e}", client.provider().id));
+            devlog::debug("ai", format!("model info of “{}”: {e}", client.provider().id));
             None
         }
         Err(_) => None,
@@ -2295,7 +2299,7 @@ async fn ollama_pull(
         .await;
     lock(&state.cancels).remove(&request_id);
     lock(&state.server_models).remove(&provider.id);
-    res.inspect(|()| devlog::info("ai", format!("pulled „{model}“ into {}", provider.root())))
+    res.inspect(|()| devlog::info("ai", format!("pulled “{model}” into {}", provider.root())))
 }
 
 // ----------------------------------------------------------------------- AI
@@ -2417,7 +2421,7 @@ async fn ai_chat(
                 Ok(()) => (Some((client, r)), None),
                 Err(why) => {
                     let note = caps.tell_once(&r).then(|| {
-                        devlog::warn("ai", format!("no embeddings with „{}“, keyword search only: {why}", r.model));
+                        devlog::warn("ai", format!("no embeddings with “{}”, keyword search only: {why}", r.model));
                         trf!(
                             "Embedding-Modell „{}“ nicht nutzbar → nur Stichwortsuche",
                             "Embedding model “{}” not usable → keyword search only",
@@ -2445,7 +2449,7 @@ async fn ai_chat(
                         caps.tell_once(r);
                         devlog::warn(
                             "ai",
-                            format!("embedding with „{m}“ failed, keyword search only for this session: {e}"),
+                            format!("embedding with “{m}” failed, keyword search only for this session: {e}"),
                         );
                         embed_note = Some(trf!(
                             "Embedding-Modell „{m}“ antwortet nicht ({}) → nur Stichwortsuche",
@@ -2453,12 +2457,12 @@ async fn ai_chat(
                             capability::embedding_failure_text(&e)
                         ));
                     } else {
-                        devlog::warn("ai", format!("embedding with „{m}“ failed, keyword search only: {e}"));
+                        devlog::warn("ai", format!("embedding with “{m}” failed, keyword search only: {e}"));
                     }
                     None
                 }
                 Err(_) => {
-                    devlog::warn("ai", format!("embedding with „{m}“ timed out, keyword search only"));
+                    devlog::warn("ai", format!("embedding with “{m}” timed out, keyword search only"));
                     None
                 }
             }
@@ -2629,7 +2633,7 @@ async fn catalog(state: &AppState) -> Catalog {
     }
     // The client's connect/read timeouts (Settings → Netzwerk) bound the wait, and so does this.
     for (id, res) in annalo_core::ai::client::list_models(&ask, Duration::from_secs(10)).await {
-        let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of „{id}“: {e}"))).ok();
+        let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of “{id}”: {e}"))).ok();
         lock(&state.server_models).insert(id.clone(), (Instant::now(), list.clone()));
         models.insert(id, list.unwrap_or_default());
     }
@@ -2660,7 +2664,7 @@ async fn complete_routed(
     if format!("{} ({})", route.model, route.provider) != requested {
         devlog::warn(
             "ai",
-            format!("„{requested}“ is not offered, used „{} ({})“ instead", route.model, route.provider),
+            format!("“{requested}” is not offered, used “{} ({})” instead", route.model, route.provider),
         );
     }
     req.model = route.model.clone();
@@ -2719,7 +2723,7 @@ async fn complete_routed(
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ rejects {}, repeating without (remembered for this session)",
+                        "“{}” rejects {}, repeating without (remembered for this session)",
                         req.model,
                         if tools { "tools" } else { "the temperature" }
                     ),
@@ -2738,7 +2742,7 @@ async fn complete_routed(
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ ({}) is cooling down on the server, retrying in {seconds} s",
+                        "“{}” ({}) is cooling down on the server, retrying in {seconds} s",
                         req.model, route.provider
                     ),
                 );
@@ -2772,7 +2776,7 @@ async fn complete_routed(
                     if private && down {
                         devlog::warn(
                             "ai",
-                            format!("„{}“ not reachable, private content not sent elsewhere: {err}", failed.provider),
+                            format!("“{}” not reachable, private content not sent elsewhere: {err}", failed.provider),
                         );
                         return Err(Error::State(trf!(
                             "{} ist nicht erreichbar. Vertrauliche Inhalte bleiben lokal: sie gehen nicht an Anbieter, \
@@ -2787,7 +2791,7 @@ async fn complete_routed(
                 let label = catalog.label(&next);
                 devlog::warn(
                     "ai",
-                    format!("„{}“ ({}) failed: {err}; retrying on „{label}“", failed.model, failed.provider),
+                    format!("“{}” ({}) failed: {err}; retrying on “{label}”", failed.model, failed.provider),
                 );
                 route.reasons.push(if down {
                     trf!("{} nicht erreichbar → {label}", "{} not reachable → {label}", catalog.name(&failed.provider))
@@ -3131,7 +3135,7 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
                 v
             }
             Err(e) if lock(&state.caps).embed_failed(&r, &e) => {
-                devlog::warn("ai", format!("indexing with „{model}“ failed: {e}"));
+                devlog::warn("ai", format!("indexing with “{model}” failed: {e}"));
                 return Err(Error::State(trf!(
                     "„{model}“ liefert keine Embeddings ({}). Wähle unter Einstellungen → KI ein Embedding-Modell \
                      oder „Keine (nur Stichwortsuche)“.",
@@ -3662,6 +3666,9 @@ pub fn run() {
             // system's language).
             if let Ok(s) = db.load_settings() {
                 annalo_core::i18n::set_lang(s.locale.language);
+            }
+            if let Err(e) = db.localize_default_leistungsarten() {
+                devlog::warn("core", format!("activity types not localized: {e}"));
             }
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.

@@ -137,7 +137,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              | Network | Content | Plan |\n|---|---|---|\n\
              | NP-8801 | ERP system integration | 120 h |\n\
              | NP-8802 | Training & go-live | 40 h |\n\n\
-             Technical details in [[Architecture]], alignment in the [[Jour fixe 22.09.]].\n"
+             Technical details in [[Architecture]], alignment in the [[Weekly sync 22.09.]].\n"
         ),
     )?;
     let arch = db.create_page(Some(proj.id), tr!("Architektur", "Architecture"), Some("blocks"))?;
@@ -162,7 +162,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n"
         ),
     )?;
-    let jf = db.create_page(Some(proj.id), "Jour fixe 22.09.", Some("users"))?;
+    let jf = db.create_page(Some(proj.id), tr!("Jour fixe 22.09.", "Weekly sync 22.09."), Some("users"))?;
     db.save_page_content(
         jf.id,
         tr!(
@@ -255,6 +255,7 @@ const DEMO_PAGES: &[&str] = &[
     "Besprechung",
     "Kundentermin",
     "Welcome",
+    "Weekly sync 22.09.",
     "Projects",
     "Architecture",
     "Knowledge base",

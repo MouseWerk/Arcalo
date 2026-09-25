@@ -13,6 +13,14 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::error::{Error, Result};
 use crate::model::*;
 
+/// The activity types a new workspace starts with (code, German, English description).
+const DEFAULT_LEISTUNGSARTEN: [(&str, &str, &str); 4] = [
+    ("DEV", "Entwicklung", "Development"),
+    ("CONSULTING", "Beratung", "Consulting"),
+    ("PM", "Projektmanagement", "Project management"),
+    ("TEST", "Test & Qualitätssicherung", "Testing & quality assurance"),
+];
+
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_documents.sql"),
@@ -501,6 +509,20 @@ impl Database {
         let mut st = self.conn.prepare_cached("SELECT code, description FROM leistungsarten ORDER BY code")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
         Ok(rows)
+    }
+
+    /// Puts the built-in activity types' descriptions into the display language. Only the
+    /// untouched defaults change; a description the user edited stays as it is.
+    pub fn localize_default_leistungsarten(&self) -> Result<usize> {
+        let mut n = 0;
+        for (code, de, en) in DEFAULT_LEISTUNGSARTEN {
+            let (from, to) = if crate::i18n::is_en() { (de, en) } else { (en, de) };
+            n += self.conn.execute(
+                "UPDATE leistungsarten SET description = ?3 WHERE code = ?1 AND description = ?2",
+                params![code, from, to],
+            )?;
+        }
+        Ok(n)
     }
 
     pub fn upsert_leistungsart(&self, code: &str, description: &str) -> Result<()> {
@@ -1052,6 +1074,20 @@ mod tests {
         let p = db.create_project("PRJ-2026-X", "Annalo Rollout").unwrap();
         let np = db.create_netzplan(p.id, "NP-8801", "NP-8801-1020", "Systemintegration", 40.0).unwrap();
         (db, np)
+    }
+
+    #[test]
+    fn default_activity_types_follow_the_language() {
+        let db = Database::open_in_memory().unwrap();
+        db.upsert_leistungsart("PM", "Steuerung").unwrap();
+        let desc = |code: &str| db.list_leistungsarten().unwrap().into_iter().find(|(c, _)| c == code).unwrap().1;
+        crate::i18n::with_lang(crate::prefs::Language::En, || {
+            assert_eq!(db.localize_default_leistungsarten().unwrap(), 3);
+            assert_eq!(desc("TEST"), "Testing & quality assurance");
+            assert_eq!(desc("PM"), "Steuerung", "an edited description stays");
+        });
+        assert_eq!(db.localize_default_leistungsarten().unwrap(), 3);
+        assert_eq!(desc("DEV"), "Entwicklung");
     }
 
     #[test]

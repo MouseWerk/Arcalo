@@ -153,7 +153,7 @@ export const de: Catalog = {
   "set.editor.autosave": "Automatisch speichern nach",
   "set.editor.autosaveDesc": "Pause nach der letzten Eingabe (250–3000 ms).",
   "set.editor.smartQuotes": "Typografische Anführungszeichen",
-  "set.editor.smartQuotesDesc": "\"…\" wird zu „…“, '…' zu ‚…‘ und \" - \" zu \" – \" (nicht in Code).",
+  "set.editor.smartQuotesDesc": "\"…\" wird zu „…“, '…' zu ‚…‘ und \" - \" zu \" – \" (nicht in Code; auf Englisch “…”).",
   "set.editor.autoPair": "Klammern automatisch schließen",
   "set.editor.autoPairDesc": "( [ { fügen die schließende Klammer ein.",
   "set.editor.code": "Codeblöcke",

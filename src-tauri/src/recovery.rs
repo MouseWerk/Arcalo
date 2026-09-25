@@ -128,7 +128,7 @@ pub fn show(app: &AppHandle, dir: &Path, failure: Failure) {
     devlog::error("core", format!("start failed: {failure:?}"));
     let backups = backup::list_backups(&backups_dir(dir)).map(|l| l.len()).unwrap_or(0);
     let (title, text, restore) = failure.texts(dir, backups);
-    devlog::info("core", format!("recovery dialog „{title}“: {text}"));
+    devlog::info("core", format!("recovery dialog “{title}”: {text}"));
     if let Some(choice) = test_choice(restore) {
         devlog::info("core", format!("recovery dialog answered by the test: {choice:?}"));
         // Like a click: once the event loop runs (an exit requested during setup loses its code).

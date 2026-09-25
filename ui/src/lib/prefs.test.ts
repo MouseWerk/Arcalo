@@ -52,6 +52,12 @@ describe("typing aids", () => {
     expect(smartQuote("'", "(")).toBe("‚");
     expect(smartQuote("'", "Das ist ‚gut")).toBe("‘");
     expect(smartQuote("'", "geht")).toBe("’");
+    // English: “…” and ‘…’.
+    expect(smartQuote('"', "He said ", "en")).toBe("“");
+    expect(smartQuote('"', "He said “Hello", "en")).toBe("”");
+    expect(smartQuote("'", "(", "en")).toBe("‘");
+    expect(smartQuote("'", "It is ‘fine", "en")).toBe("’");
+    expect(smartQuote("'", "don", "en")).toBe("’");
     expect(dashBefore("A -")).toBe(true);
     expect(dashBefore("A-")).toBe(false);
   });

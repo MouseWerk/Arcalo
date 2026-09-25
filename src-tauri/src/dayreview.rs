@@ -115,7 +115,7 @@ pub async fn day_review_summary(
                 if !next {
                     return Err(e);
                 }
-                devlog::warn("ai", format!("day review: „{}“ ({}) failed: {e}", m.model, m.provider));
+                devlog::warn("ai", format!("day review: “{}” ({}) failed: {e}", m.model, m.provider));
                 last = Some(e);
             }
         }
