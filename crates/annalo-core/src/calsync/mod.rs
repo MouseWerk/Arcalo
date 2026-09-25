@@ -332,6 +332,29 @@ pub struct WbsHint {
     pub reference: String,
 }
 
+/// Where a [`WbsHint`] comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HintBasis {
+    /// An earlier appointment of the same series was booked.
+    Series,
+    /// An appointment with the same subject was booked.
+    Subject,
+    /// An entry is described like the subject.
+    Description,
+}
+
+/// A [`WbsHint`] with its basis and the booking it was taken from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WbsMemory {
+    pub hint: WbsHint,
+    pub basis: HintBasis,
+    /// Start of that booking.
+    pub booked_at: DateTime<Utc>,
+    /// Its description.
+    pub description: String,
+}
+
 /// The window of a sync around `today`.
 pub fn sync_window(today: NaiveDate, s: &CalendarSettings, zone: &tz::Zone) -> (DateTime<Utc>, DateTime<Utc>) {
     let from = today - chrono::Days::new(s.past_days as u64);
@@ -569,36 +592,50 @@ impl Database {
     /// The WBS for booking `key`: the one last booked from the same series, else from an
     /// appointment with the same subject, else of the newest entry described like the subject.
     pub fn calendar_wbs_hint(&self, key: &str) -> Result<Option<WbsHint>> {
-        let ev = self.calendar_event(key)?;
+        Ok(self.calendar_wbs_memory(&self.calendar_event(key)?)?.map(|m| m.hint))
+    }
+
+    /// [`Database::calendar_wbs_hint`] of an event, with where it comes from and the booking it
+    /// was taken from (the week proposal explains its choice with them).
+    pub fn calendar_wbs_memory(&self, ev: &CalendarEvent) -> Result<Option<WbsMemory>> {
         let title = ev.event.title.to_lowercase();
         let c = self.conn();
-        type Row = (i64, Option<String>, Option<String>);
+        type Row = (i64, Option<String>, Option<String>, String, String);
         let pick = |sql: &str, arg: &str| -> Result<Option<Row>> {
-            Ok(c.query_row(sql, [arg], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?)
+            Ok(c.query_row(sql, [arg], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).optional()?)
         };
-        let from_marks = "SELECT t.netzplan_id, t.vorgang_nr, t.leistungsart FROM calendar_marks m
+        let from_marks =
+            "SELECT t.netzplan_id, t.vorgang_nr, t.leistungsart, t.start_time, t.description FROM calendar_marks m
                           JOIN time_entries t ON t.id = m.entry_id";
         let mut hit = None;
         if ev.event.recurring {
-            hit = pick(&format!("{from_marks} WHERE m.series = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &ev.event.uid)?;
+            hit = pick(&format!("{from_marks} WHERE m.series = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &ev.event.uid)?
+                .map(|r| (r, HintBasis::Series));
         }
         if hit.is_none() && !title.is_empty() && ev.event.title != PRIVATE_TITLE {
-            hit = pick(&format!("{from_marks} WHERE m.title = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &title)?;
+            hit = pick(&format!("{from_marks} WHERE m.title = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &title)?
+                .map(|r| (r, HintBasis::Subject));
             if hit.is_none() {
                 hit = pick(
-                    "SELECT netzplan_id, vorgang_nr, leistungsart FROM time_entries
-                     WHERE description = ?1 COLLATE NOCASE ORDER BY start_time DESC LIMIT 1",
+                    "SELECT netzplan_id, vorgang_nr, leistungsart, start_time, description FROM time_entries
+                     WHERE description = ?1 COLLATE NOCASE AND status_flag <> 'running' ORDER BY start_time DESC LIMIT 1",
                     &ev.event.title,
-                )?;
+                )?
+                .map(|r| (r, HintBasis::Description));
             }
         }
-        let Some((netzplan_id, vorgang_nr, leistungsart)) = hit else { return Ok(None) };
+        let Some(((netzplan_id, vorgang_nr, leistungsart, start, description), basis)) = hit else { return Ok(None) };
         let np = self.netzplan_by_id(netzplan_id)?;
         let reference = match &vorgang_nr {
             Some(v) if !v.is_empty() => format!("{}/{v}", np.netzplan_nr),
             _ => np.netzplan_nr.clone(),
         };
-        Ok(Some(WbsHint { netzplan_id, vorgang_nr, leistungsart, reference }))
+        Ok(Some(WbsMemory {
+            hint: WbsHint { netzplan_id, vorgang_nr, leistungsart, reference },
+            basis,
+            booked_at: parse_ts(&start)?,
+            description,
+        }))
     }
 
     /// The meeting note of an appointment: the linked page, or a new page below

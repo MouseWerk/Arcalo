@@ -145,6 +145,12 @@ export const api = {
   /** The meeting note of an appointment (created on first use). */
   calendarMeetingNote: (key: string) => call<{ page: T.Page; created: boolean }>("calendar_meeting_note", { key }),
 
+  // Woche vorschlagen
+  /** The timesheet draft for the week starting at `weekStart` (YYYY-MM-DD, local). */
+  weekProposal: (weekStart: string, restOfToday = false) => call<T.WeekProposal>("week_proposal", { weekStart, restOfToday }),
+  /** Books the accepted proposals as drafts in one go and links their sources. */
+  weekProposalApply: (items: T.AcceptedProposal[]) => call<T.AppliedProposals>("week_proposal_apply", { items }),
+
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),

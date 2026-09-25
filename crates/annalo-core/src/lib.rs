@@ -36,6 +36,7 @@
 //! * [`activity`] – idle detection and active window probing (Win32 on Windows)
 //! * [`feed`] – activity feed („Aktivität“): what happened when (pages, tasks, bookings, files)
 //! * [`focus`] – focus sessions (Pomodoro) booked on a Vorgang
+//! * [`weekplan`] – „Woche vorschlagen“: a timesheet draft of the week from meetings, focus and page edits
 //! * [`ai`] – LiteLLM client, model router, token/cost metrics, local RAG
 
 pub mod activity;
@@ -75,6 +76,7 @@ pub mod trash;
 pub mod update;
 pub mod vault;
 pub mod versions;
+pub mod weekplan;
 pub mod zeit;
 
 pub use db::Database;
