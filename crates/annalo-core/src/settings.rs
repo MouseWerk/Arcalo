@@ -388,9 +388,11 @@ impl Settings {
         ai.allowed_tools.retain(|t| known.iter().any(|d| d["function"]["name"] == t.as_str()));
         ai.allowed_tools.dedup();
         let nt = &mut self.notifications;
-        for (v, def) in
-            [(&mut nt.quiet_from, &d.notifications.quiet_from), (&mut nt.quiet_to, &d.notifications.quiet_to)]
-        {
+        for (v, def) in [
+            (&mut nt.quiet_from, &d.notifications.quiet_from),
+            (&mut nt.quiet_to, &d.notifications.quiet_to),
+            (&mut nt.day_review_time, &d.notifications.day_review_time),
+        ] {
             *v = match crate::desktop::parse_hhmm(v.trim()) {
                 Some(t) => t.format("%H:%M").to_string(),
                 None => def.clone(),
@@ -918,6 +920,7 @@ mod tests {
         s.ai.temperature = 9.0;
         s.ai.allowed_tools = vec!["git".into(), "rm_rf".into()];
         s.notifications.quiet_from = "25:00".into();
+        s.notifications.day_review_time = "17.30 Uhr".into();
         s.start.open = StartOpen::Daily;
         s.normalize();
         assert_eq!((s.appearance.ui_scale, s.appearance.accent.as_str()), (125, "#aabbcc"));
@@ -927,6 +930,7 @@ mod tests {
         assert_eq!(s.time.default_leistungsart.get("NP-1").map(String::as_str), Some("DEV"));
         assert_eq!((s.ai.temperature, s.ai.allowed_tools.clone()), (2.0, vec!["git".to_owned()]));
         assert_eq!(s.notifications.quiet_from, "22:00");
+        assert_eq!(s.notifications.day_review_time, "17:30");
         assert!(s.open_daily_on_start);
         s.prices.clear();
         s.providers.push(AiProvider::ollama("ollama", provider::OLLAMA_URL));

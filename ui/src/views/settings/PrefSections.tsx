@@ -302,6 +302,12 @@ export function NotificationsSection({ draft, update }: SectionProps) {
         {toggle("end_of_day", t("set.notify.endOfDay"), draft.reminder_time ? t("set.notify.endOfDayAt", { time: draft.reminder_time }) : t("set.notify.endOfDayOff"))}
         {toggle("late_timer", t("set.notify.lateTimer"), t("set.notify.lateTimerDesc"))}
         {toggle("week_proposal", t("set.notify.weekProposal"), t("set.notify.weekProposalDesc"))}
+        <Row label={t("set.notify.dayReview")} description={t("set.notify.dayReviewDesc")}>
+          <div className="unit-input">
+            {n.day_review && <Input className="time-input num notify-review-time" value={n.day_review_time} maxLength={5} placeholder="17:30" onChange={(e) => set({ day_review_time: e.target.value })} aria-label={t("set.notify.dayReviewTime")} />}
+            <Switch label={t("set.notify.dayReview")} checked={n.day_review} onChange={(v) => set({ day_review: v })} />
+          </div>
+        </Row>
       </Group>
       <Group title={t("set.notify.inApp")}>
         {toggle("budget", t("set.notify.budget"), t("set.notify.budgetDesc"))}

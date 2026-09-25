@@ -151,6 +151,12 @@ export const api = {
   /** Books the accepted proposals as drafts in one go and links their sources. */
   weekProposalApply: (items: T.AcceptedProposal[]) => call<T.AppliedProposals>("week_proposal_apply", { items }),
 
+  // Tagesrückblick
+  /** „Tagesrückblick“ of a local day (YYYY-MM-DD). */
+  dayReview: (date: string) => call<T.DayReview>("day_review", { date }),
+  /** Summary of a day by a local model only; streams like `chat`. */
+  dayReviewSummary: (requestId: string, date: string) => call<T.ChatOutcome>("day_review_summary", { requestId, date }),
+
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),

@@ -326,6 +326,31 @@ and by `entry_id`.
   `notifications.week_proposal` is off or it is quiet time. The next focus of the main window emits
   `nav://week-proposal`; the UI opens the timesheet and the review (`requestWeekProposal`).
 
+## Tagesrückblick (`dayreview.rs` in core and shell, `ui/src/views/DayReviewView.tsx`, `ui/src/lib/dayreview.ts`)
+
+- `day_review(date)` (`dayreview::day_review`, one read on the reader connection): the local day's UTC bounds from
+  `feed::day_start` (23 or 25 hours at a DST change), then grouped queries: the journal's `page_created`/`page_edited` rows
+  per page (saves, characters, an editing estimate of 2 min per save and at most 60 per hour, first and last save), finished
+  entries starting that day per WBS (with Vorgang or Netzplan description) and a running timer, unbooked gaps of at least
+  30 min between the merged bookings, the target (`daily_target_hours` on `workdays`), the journal's `task_done`/`task_added`
+  rows and the open tasks due that day or before, the active calendar sources' events with their state (`booked`: linked
+  entry or an overlapping entry carrying the subject, as in the Kalender; `skipped`; `free`: all-day, free, out of office,
+  private; `upcoming`; `open`), focus sessions and `file_added` rows. The word delta of a page compares the first version
+  snapshot taken that day (empty for a page created that day) with the first snapshot after it or the page itself when it
+  was not saved since; unknown otherwise.
+- „In Tagesnotiz übernehmen“ (UI, `upsertReviewBlock`): flushes the editors, opens or creates the daily note and replaces the
+  block between `<!-- rückblick -->` and `<!-- /rückblick -->` (heading „Rückblick“), or appends it. The block has no
+  checkboxes (it must not add tasks) and links only pages that still exist.
+- Summary (`day_review_summary`, streamed like `ai_transform`): the whole review counts as private, so it never goes through
+  the router. `dayreview::local_candidates` lists the local tier's model when its provider is marked local, then the chat
+  models the enabled local providers list or were given by hand; a provider not marked local is never a candidate, whatever
+  the tiers say. An unreachable local model is replaced only by another local one. Without a local provider the command
+  refuses (`no_local_reason`) and the view explains why, with a link to the AI settings. The model gets numbers and names
+  (`dayreview::describe`), no page contents.
+- Reminder (`dayreview::review_reminder`, shell `dayreview::periodic`): `notifications.day_review` (off by default) at
+  `notifications.day_review_time` (default 17:30) on workdays, once a day (meta `day_review.day`), not in quiet hours; the
+  next focus of the main window emits `nav://day-review`.
+
 ## Preferences (`prefs.rs` in core, `ui/src/lib/{prefs,i18n,keymap,color}.ts`)
 
 - Every preference struct is `#[serde(default)]`, choices are lenient enums (unknown values load as the default), and

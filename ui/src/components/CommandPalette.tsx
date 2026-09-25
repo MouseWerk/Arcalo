@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -27,6 +27,7 @@ import { hint } from "../lib/keymap";
 import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
 import { openActivityDay } from "../views/activityDay";
+import { openDayReview } from "../lib/reviewnav";
 import { reloadEditors } from "../editor/NoteEditor";
 import { syncCalendarsNow } from "../lib/calnav";
 
@@ -218,6 +219,7 @@ export function CommandPalette() {
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
       { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },
+      { id: "day-review", title: t("cmd.review"), subtitle: t("cmd.reviewSub"), icon: ic(Sunset), run: () => openDayReview() },
       { id: "activity-day", title: t("cmd.activityDay"), icon: ic(CalendarSearch), run: () => setTimeout(() => s().set({ calendar: { onPick: openActivityDay } }), 0) },
       s().focus?.phase === "work"
         ? { id: "focus-session", title: t("cmd.focusAbort"), icon: ic(Square), run: () => void abortFocus() }

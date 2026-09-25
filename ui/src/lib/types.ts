@@ -405,6 +405,9 @@ export interface NotificationPrefs {
   git_failed: boolean;
   updates: boolean;
   week_proposal: boolean;
+  /** „Tagesrückblick ansehen“ once a workday at `day_review_time`. */
+  day_review: boolean;
+  day_review_time: string;
   quiet_hours: boolean;
   quiet_from: string;
   quiet_to: string;
@@ -1092,4 +1095,107 @@ export interface AcceptedProposal {
 export interface AppliedProposals {
   entry_ids: number[];
   alerts: BudgetStatus[];
+}
+
+// ---- Tagesrückblick (dayreview.rs)
+export interface DayReview {
+  date: string;
+  from: string;
+  to: string;
+  daily_note_id: number | null;
+  pages: ReviewPage[];
+  time: ReviewTime;
+  tasks: ReviewTasks;
+  meetings: ReviewMeeting[];
+  focus: { minutes: number; sessions: ReviewFocusSession[] };
+  files: ReviewFile[];
+}
+export interface ReviewPage {
+  page_id: number | null;
+  title: string;
+  icon: string | null;
+  gone: boolean;
+  created: boolean;
+  daily: boolean;
+  edits: number;
+  chars: number;
+  minutes: number;
+  first_at: string;
+  last_at: string;
+  word_delta: number | null;
+}
+export interface ReviewTime {
+  target_minutes: number;
+  workday: boolean;
+  booked_minutes: number;
+  running_minutes: number;
+  missing_minutes: number;
+  items: ReviewWbs[];
+  entries: ReviewEntry[];
+  gaps: { start: string; end: string; minutes: number }[];
+}
+export interface ReviewWbs {
+  label: string;
+  project_code: string;
+  netzplan_id: number;
+  vorgang_nr: string | null;
+  title: string;
+  minutes: number;
+  entries: number;
+  descriptions: string[];
+}
+export interface ReviewEntry {
+  id: number;
+  label: string;
+  start: string;
+  end: string;
+  minutes: number;
+  description: string;
+  status: string;
+}
+export interface ReviewTasks {
+  done: ReviewTask[];
+  added: ReviewTask[];
+  due: ReviewTask[];
+  overdue: ReviewTask[];
+  done_total: number;
+  added_total: number;
+  due_total: number;
+  overdue_total: number;
+}
+export interface ReviewTask {
+  page_id: number | null;
+  page_title: string;
+  text: string;
+  at: string | null;
+  due: string | null;
+  done: boolean;
+}
+export type MeetingState = "booked" | "skipped" | "open" | "upcoming" | "free";
+export interface ReviewMeeting {
+  key: string;
+  source: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  minutes: number;
+  state: MeetingState;
+  entry_id: number | null;
+  note_page_id: number | null;
+}
+export interface ReviewFocusSession {
+  id: number;
+  reference: string;
+  goal: string;
+  started_at: string;
+  worked_minutes: number;
+  status: string;
+  entry_id: number | null;
+}
+export interface ReviewFile {
+  name: string;
+  kind: string;
+  at: string;
 }

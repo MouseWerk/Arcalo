@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarDays, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
@@ -20,6 +20,7 @@ import { openSettingsSection, takeCalendarFocus } from "../lib/calnav";
 import { useWbs } from "./wbs";
 import { EntryDialog } from "./TimesheetView";
 import type { CalendarEvent, CalendarSettings, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
+import { openDayReview } from "../lib/reviewnav";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -426,6 +427,11 @@ function DayHead({ d, ov, onDay }: { d: Date; ov: DayOverview | undefined; onDay
             <Timer size={11} aria-hidden />
             {fmtMinutes(ov.booked_minutes)} h
           </span>
+        )}
+        {iso <= isoDay(new Date()) && (
+          <button type="button" className="calv-chip-btn calv-review-btn" onClick={(e) => openDayReview(iso, { newTab: e.ctrlKey || e.metaKey })} data-tooltip="Tagesrückblick" aria-label="Tagesrückblick">
+            <Sunset size={12} aria-hidden />
+          </button>
         )}
       </div>
     </div>

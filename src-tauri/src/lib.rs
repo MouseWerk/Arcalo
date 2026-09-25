@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod calsync;
+mod dayreview;
 mod desktop;
 mod devlog;
 mod feed;
@@ -3536,6 +3537,8 @@ pub fn run() {
             calsync::calendar_meeting_note,
             weekplan::week_proposal,
             weekplan::week_proposal_apply,
+            dayreview::day_review,
+            dayreview::day_review_summary,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")
