@@ -1,642 +1,640 @@
-// The start page's widget grid (also shown in new tabs). „Anpassen“ switches to edit mode:
-// add, remove, reorder (drag & drop or the arrow buttons) and resize; „Fertig“ saves.
+// The start page (also shown in new tabs): boards as tabs („Heute“, „Projekte“, own ones), each
+// a grid of widgets in 12 columns. „Anpassen“ switches to edit mode: add widgets from the
+// gallery, drag or move them with the keyboard, resize, set them up, duplicate and remove,
+// apply a preset, export and import a board; „Fertig“ saves. Narrow panes show the same board
+// in fewer columns. The widgets' data comes in one batched call (dashboard/data.tsx).
 
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Play, Plus, SlidersHorizontal, Square, Star, X } from "lucide-react";
-import { api, on } from "../lib/api";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { ChevronDown, Copy, Download, GripVertical, LayoutTemplate, MoreHorizontal, Plus, RotateCcw, Settings2, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { addDays, clock, h1, isoDay, relative, weekStart } from "../lib/format";
-import { hoursLabel, monthGrid, dayTone, addMonths } from "../lib/calendar";
-import { layoutReducer, SIZE_LABELS, weekBars, WIDGET_KINDS, WIDGETS, type LayoutAction } from "../lib/dashboard";
-import type { AlertLevel, BudgetStatus, DayOverview, Page, Task, TimeEntryRow, Widget, WidgetSize } from "../lib/types";
-import { Badge, Button, IconButton, Progress, useMenu, type Tone } from "./ui";
-import { PageIcon } from "./icons";
-import { stopTimer, useTimerSeconds } from "./Sidebar";
-import { openDailyNote } from "./CalendarPopover";
-import { FocusWidget } from "./Focus";
-import { bookedEntry, hasSources, isAllDayLike, sourceColor, timeRange } from "../lib/agenda";
-import { useHiddenCalendars, visibleEvents } from "../lib/calvisibility";
-import { openCalendarView, openSettingsSection } from "../lib/calnav";
+import { isoDay } from "../lib/format";
+import { t, useT } from "../lib/i18n";
+import { cellAt, columnsFor, COLS, GAP, grow, moveTo, nudge, readingOrder, rectPx, reflow, resizeTo, ROW_H } from "../lib/dashgrid";
+import {
+  editBoard,
+  exportBoard,
+  importBoard,
+  isKind,
+  loadDashboard,
+  minOf,
+  moveBoard,
+  narrowMinOf,
+  newBoard,
+  PRESETS,
+  sizeFor,
+  sizeName,
+  SIZE_NAMES,
+  titleOf,
+  toSaved,
+  type BoardAction,
+  type PresetName,
+  type SizeName,
+  type WidgetKind,
+} from "../lib/dashboard";
+import type { Board, Dashboard as DashboardT, GridWidget } from "../lib/types";
+import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
+import { DashData } from "./dashboard/data";
+import { BoardContext } from "./dashboard/board";
+import { BODIES, ICONS, openerOf } from "./dashboard/registry";
+import { Gallery } from "./dashboard/Gallery";
+import { WidgetSettings } from "./dashboard/WidgetSettings";
 
-const WIDGET_MIME = "application/x-annalo-widget";
+const s = useApp.getState;
 
-/** The start page widgets; `head` (the greeting) shares its row with „Anpassen“. */
-export function Dashboard({ head }: { head?: ReactNode }) {
-  const view = useApp((s) => s.settings);
-  const saved = view?.settings.dashboard.widgets;
-  const [draft, setDraft] = useState<Widget[] | null>(null);
+/** The start page as stored now (another window or widget may have saved meanwhile). */
+const fresh = () => loadDashboard(s().settings?.settings.dashboard);
+
+async function persist(next: DashboardT): Promise<boolean> {
+  try {
+    s().set({ settings: await api.saveDashboard(toSaved(next)) });
+    return true;
+  } catch (e) {
+    s().error(t("dash.saveFailed"), e);
+    return false;
+  }
+}
+
+export function Dashboard() {
+  const tr = useT();
+  const stored = useApp((st) => st.settings?.settings.dashboard);
+  const loaded = useMemo(() => loadDashboard(stored), [stored]);
+  const [draft, setDraft] = useState<DashboardT | null>(null);
   const [saving, setSaving] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropBefore, setDropBefore] = useState<string | null | undefined>(undefined);
+  const [gallery, setGallery] = useState(false);
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, , openMenuAt] = useMenu();
-  const s = useApp.getState;
-  if (!saved) return <div className="dash-top">{head}</div>;
+  // The board chosen outside edit mode shows at once (it is saved in the background).
+  const [picked, setPicked] = useState<string | null>(null);
   const editing = draft != null;
-  const widgets = draft ?? saved;
-  const dispatch = (a: LayoutAction) => setDraft((d) => layoutReducer(d ?? saved, a));
+  const dash = draft ?? loaded;
+  const activeId = draft ? draft.active : (picked ?? loaded.active);
+  const board = dash.boards.find((b) => b.id === activeId) ?? dash.boards[0];
 
-  const finish = async () => {
-    if (!draft || !view) return;
-    setSaving(true);
-    try {
-      s().set({ settings: await api.saveDashboard({ ...view.settings.dashboard, widgets: draft }) });
-      setDraft(null);
-    } catch (e) {
-      s().error("Startseite nicht gespeichert", e);
-    } finally {
-      setSaving(false);
+  // The widget list of 1.3–1.5 moves onto a board once, saved right away.
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (migrated.current || !stored || stored.boards?.length || stored.widgets == null) return;
+    migrated.current = true;
+    void persist(loaded);
+  }, [stored, loaded]);
+
+  /** A change of boards: into the draft while editing, else saved now. */
+  const change = useCallback(
+    (f: (d: DashboardT) => DashboardT) => {
+      if (draft) setDraft((d) => (d ? f(d) : d));
+      else void persist(f(fresh()));
+    },
+    [draft],
+  );
+  const dispatch = (a: BoardAction, boardId = board?.id) =>
+    change((d) => ({ ...d, boards: d.boards.map((b) => (b.id === boardId ? editBoard(b, d.boards, a) : b)) }));
+
+  const setActive = (id: string) => {
+    if (draft) setDraft({ ...draft, active: id });
+    else if (id !== activeId) {
+      setPicked(id);
+      // Saved so a restart comes back to it.
+      void persist({ ...fresh(), active: id }).then(() => setPicked(null));
     }
   };
-  const addMenu = (e: React.MouseEvent) =>
-    openMenuAt(
-      e,
-      WIDGET_KINDS.map((k) => ({ label: WIDGETS[k].label, onSelect: () => dispatch({ type: "add", kind: k }) })),
-    );
 
-  const drag = (w: Widget) =>
-    editing
-      ? {
-          draggable: true,
-          onDragStart: (e: DragEvent) => {
-            e.dataTransfer.setData(WIDGET_MIME, w.id);
-            e.dataTransfer.effectAllowed = "move";
-            setDragId(w.id);
-          },
-          onDragEnd: () => {
-            setDragId(null);
-            setDropBefore(undefined);
-          },
-          onDragOver: (e: DragEvent) => {
-            if (!dragId) return;
-            e.preventDefault();
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const after = e.clientX > r.left + r.width / 2;
-            const i = widgets.findIndex((x) => x.id === w.id);
-            setDropBefore(after ? (widgets[i + 1]?.id ?? null) : w.id);
-          },
-          onDrop: (e: DragEvent) => {
-            e.preventDefault();
-            const id = e.dataTransfer.getData(WIDGET_MIME) || dragId;
-            if (id && dropBefore !== undefined) dispatch({ type: "drop", id, before: dropBefore });
-            setDragId(null);
-            setDropBefore(undefined);
-          },
-        }
-      : {};
+  const notesCtx = useMemo(
+    () => ({
+      notes: loaded.notes,
+      setNote: (id: string, text: string) => {
+        const cur = fresh();
+        if ((cur.notes[id] ?? "") === text) return;
+        void persist({ ...cur, notes: { ...cur.notes, [id]: text } });
+      },
+    }),
+    [loaded.notes],
+  );
+
+  const finish = async () => {
+    if (!draft) return;
+    setSaving(true);
+    // Notes typed meanwhile are kept (they are saved on their own).
+    if (await persist({ ...draft, notes: fresh().notes })) setDraft(null);
+    setSaving(false);
+  };
+
+  const addBoard = (preset: PresetName | null) =>
+    change((d) => {
+      const b = newBoard(d.boards, preset ? t(PRESETS.find((p) => p.name === preset)!.label) : t("dash.board.new"), preset);
+      setRenaming(b.id);
+      return { ...d, boards: [...d.boards, b], active: b.id };
+    });
+  const removeBoard = async (b: Board) => {
+    if (dash.boards.length <= 1) return;
+    const ok = await s().confirm({ title: t("dash.board.deleteAsk", { name: b.name }), message: t("dash.board.deleteText"), confirmLabel: t("dash.board.delete"), danger: true });
+    if (!ok) return;
+    change((d) => {
+      const boards = d.boards.filter((x) => x.id !== b.id);
+      return { ...d, boards, active: d.active === b.id ? boards[0].id : d.active };
+    });
+  };
+  const renameBoard = (id: string, name: string) => {
+    setRenaming(null);
+    const n = name.trim();
+    if (n) change((d) => ({ ...d, boards: d.boards.map((b) => (b.id === id ? { ...b, name: n.slice(0, 40) } : b)) }));
+  };
+  const boardMenu = (b: Board, e: { currentTarget: EventTarget | null; clientX?: number; clientY?: number; preventDefault?: () => void; detail?: number }) => {
+    const i = dash.boards.findIndex((x) => x.id === b.id);
+    const items: MenuEntry[] = [
+      { label: t("dash.board.rename"), onSelect: () => setRenaming(b.id) },
+      { label: t("dash.board.left"), disabled: i === 0, onSelect: () => change((d) => ({ ...d, boards: moveBoard(d.boards, b.id, -1) })) },
+      { label: t("dash.board.right"), disabled: i === dash.boards.length - 1, onSelect: () => change((d) => ({ ...d, boards: moveBoard(d.boards, b.id, 1) })) },
+      { label: t("dash.board.export"), icon: Download, onSelect: () => void exportTo(b) },
+      "separator",
+      { label: t("dash.board.delete"), icon: Trash2, danger: true, disabled: dash.boards.length <= 1, onSelect: () => void removeBoard(b) },
+    ];
+    openMenuAt(e, items);
+  };
+
+  const exportTo = async (b: Board) => {
+    const path = await saveDialog({ defaultPath: `annalo-startseite-${b.name.toLowerCase().replace(/[^a-z0-9äöüß]+/g, "-")}-${isoDay(new Date())}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (!path) return;
+    try {
+      await api.dashboardFileWrite(path, exportBoard(b, fresh().notes));
+      s().toast({ tone: "success", title: t("dash.exported"), detail: path });
+    } catch (e) {
+      s().error(t("dash.exportFailed"), e);
+    }
+  };
+  const importFrom = async () => {
+    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (typeof path !== "string") return;
+    try {
+      importText(await api.readSettingsFile(path));
+    } catch (e) {
+      s().error(t("dash.importFailed"), e);
+    }
+  };
+  const importText = (text: string) => {
+    const r = importBoard(text, dash.boards);
+    if ("error" in r) return s().toast({ tone: "danger", title: t("dash.importFailed"), detail: t(r.error) });
+    change((d) => ({ ...d, boards: [...d.boards, r.board], active: r.board.id, notes: { ...d.notes, ...r.notes } }));
+    s().toast({ tone: "success", title: t("dash.imported", { name: r.board.name }) });
+  };
+  // Tests and scripts import a board without the file dialog.
+  useEffect(() => {
+    const f = (e: Event) => importText((e as CustomEvent<string>).detail);
+    window.addEventListener("annalo:dashboard-import", f);
+    return () => window.removeEventListener("annalo:dashboard-import", f);
+  });
+
+  const presetMenu = (e: ReactMouseEvent) =>
+    openMenuAt(e, [
+      ...PRESETS.map((p) => ({ label: t(p.label), onSelect: () => dispatch({ type: "preset", name: p.name }) })),
+      "separator",
+      { label: t("dash.reset"), icon: RotateCcw, onSelect: () => dispatch({ type: "preset", name: board?.id === "projekte" ? "lead" : "start" }) },
+    ]);
+  const moreMenu = (e: ReactMouseEvent) =>
+    openMenuAt(e, [
+      { label: t("dash.board.export"), icon: Download, disabled: !board, onSelect: () => board && void exportTo(board) },
+      { label: t("dash.board.import"), icon: Upload, onSelect: () => void importFrom() },
+    ]);
+  const newBoardMenu = (e: ReactMouseEvent) =>
+    openMenuAt(e, [{ label: t("dash.board.empty"), onSelect: () => addBoard(null) }, "separator", ...PRESETS.map((p) => ({ label: t(p.label), onSelect: () => addBoard(p.name) }))]);
+
+  const settingsWidget = board?.widgets.find((w) => w.id === settingsFor);
 
   return (
-    <section className={`dash ${editing ? "editing" : ""}`} aria-label="Übersicht">
+    <section className={`dash ${editing ? "editing" : ""}`} aria-label={tr("dash.label")}>
       <div className="dash-top">
-        {head}
+        <div className="dash-tabs" role="tablist" aria-label={tr("dash.boards")}>
+          {dash.boards.map((b, i) =>
+            renaming === b.id ? (
+              <input
+                key={b.id}
+                className="input dash-tab-input"
+                defaultValue={b.name}
+                aria-label={tr("dash.board.name")}
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={(e) => renameBoard(b.id, e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") renameBoard(b.id, e.currentTarget.value);
+                  if (e.key === "Escape") setRenaming(null);
+                }}
+              />
+            ) : (
+              <button
+                key={b.id}
+                type="button"
+                role="tab"
+                className="dash-tab"
+                aria-selected={b.id === board?.id}
+                tabIndex={b.id === board?.id ? 0 : -1}
+                data-board={b.id}
+                onClick={() => setActive(b.id)}
+                onDoubleClick={() => setRenaming(b.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  boardMenu(b, e);
+                }}
+                onKeyDown={(e) => {
+                  const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : -1;
+                  if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                    e.preventDefault();
+                    change((d) => ({ ...d, boards: moveBoard(d.boards, b.id, e.key === "ArrowLeft" ? -1 : 1) }));
+                  } else if (j >= 0 && j < dash.boards.length) {
+                    e.preventDefault();
+                    setActive(dash.boards[j].id);
+                    (e.currentTarget.parentElement?.querySelector(`[data-board="${dash.boards[j].id}"]`) as HTMLElement | null)?.focus();
+                  } else if (e.key === "F2") setRenaming(b.id);
+                }}
+              >
+                {b.name}
+                {editing && b.id === board?.id && (
+                  <span
+                    className="dash-tab-more"
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={tr("dash.board.options", { name: b.name })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      boardMenu(b, e);
+                    }}
+                  >
+                    <ChevronDown size={12} />
+                  </span>
+                )}
+              </button>
+            ),
+          )}
+          <IconButton icon={Plus} size="sm" label={tr("dash.board.add")} onClick={newBoardMenu} />
+        </div>
         <div className="dash-bar">
           {editing ? (
             <>
-              <span className="faint dash-hint">Ziehen oder mit den Pfeilen verschieben</span>
-              <Button size="sm" icon={Plus} onClick={addMenu}>
-                Widget hinzufügen
+              <Button size="sm" icon={Plus} onClick={() => setGallery(true)}>
+                {tr("dash.addWidget")}
               </Button>
+              <Button size="sm" variant="ghost" icon={LayoutTemplate} onClick={presetMenu}>
+                {tr("dash.presets")}
+              </Button>
+              <IconButton icon={MoreHorizontal} label={tr("dash.more2")} onClick={moreMenu} />
+              <span className="dash-bar-sep" aria-hidden />
               <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
-                Abbrechen
+                {tr("dash.cancel")}
               </Button>
               <Button size="sm" variant="primary" onClick={finish} loading={saving}>
-                Fertig
+                {tr("dash.done")}
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setDraft(saved.map((w) => ({ ...w })))}>
-              Anpassen
+            <Button size="sm" variant="ghost" icon={SlidersHorizontal} onClick={() => setDraft({ ...structuredClone(fresh()), active: board?.id ?? "" })}>
+              {tr("dash.customize")}
             </Button>
           )}
         </div>
       </div>
-      <div className="dash-grid">
-        {widgets.map((w, i) => (
-          <article
-            key={w.id}
-            className={`card dw dw-${w.size} ${dragId === w.id ? "dragging" : ""} ${dragId && dropBefore === w.id ? "drop-before" : ""} ${dragId && dropBefore === null && i === widgets.length - 1 ? "drop-after" : ""}`}
-            data-widget={w.id}
-            data-kind={w.kind}
-            aria-label={WIDGETS[w.kind].label}
-            {...drag(w)}
-          >
-            <header className="dw-head">
-              {editing && <GripVertical size={14} className="faint dw-grip" aria-hidden />}
-              <h2>{WIDGETS[w.kind].label}</h2>
-              {editing && (
-                <div className="dw-tools">
-                  <div className="dw-sizes" role="group" aria-label="Größe">
-                    {(["s", "m", "l"] as WidgetSize[]).map((sz) => (
-                      <button key={sz} type="button" aria-pressed={w.size === sz} title={SIZE_LABELS[sz]} aria-label={`Größe ${SIZE_LABELS[sz]}`} onClick={() => dispatch({ type: "resize", id: w.id, size: sz })}>
-                        {sz.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                  <IconButton icon={ArrowUp} label="Nach vorn" size="sm" disabled={i === 0} onClick={() => dispatch({ type: "move", id: w.id, delta: -1 })} />
-                  <IconButton icon={ArrowDown} label="Nach hinten" size="sm" disabled={i === widgets.length - 1} onClick={() => dispatch({ type: "move", id: w.id, delta: 1 })} />
-                  <IconButton icon={X} label="Entfernen" size="sm" onClick={() => dispatch({ type: "remove", id: w.id })} />
-                </div>
-              )}
-            </header>
-            <div className="dw-body" inert={editing}>
-              <WidgetBody widget={w} />
-            </div>
-          </article>
-        ))}
-        {widgets.length === 0 && (
-          <div className="dash-empty faint">
-            {editing ? "Keine Widgets. „Widget hinzufügen“ fügt welche hinzu." : "Die Startseite ist leer. „Anpassen“ fügt Widgets hinzu."}
-          </div>
-        )}
-      </div>
+      {board && (
+        <BoardContext.Provider value={notesCtx}>
+          <BoardGrid
+            key={board.id}
+            board={board}
+            editing={editing}
+            onLayout={(widgets) => dispatch({ type: "layout", widgets })}
+            onAction={dispatch}
+            onSettings={setSettingsFor}
+            onAdd={() => setGallery(true)}
+          />
+        </BoardContext.Provider>
+      )}
+      {gallery && (
+        <Gallery
+          onClose={() => setGallery(false)}
+          onPick={(kind: WidgetKind) => {
+            setGallery(false);
+            // Adding starts edit mode when it was not on.
+            setDraft((d) => {
+              const base = d ?? { ...structuredClone(fresh()), active: board?.id ?? "" };
+              const b = base.boards.find((x) => x.id === base.active) ?? base.boards[0];
+              return { ...base, boards: base.boards.map((x) => (x.id === b.id ? editBoard(x, base.boards, { type: "add", kind }) : x)) };
+            });
+          }}
+        />
+      )}
+      {settingsWidget && (
+        <WidgetSettings
+          widget={settingsWidget}
+          onClose={() => setSettingsFor(null)}
+          onApply={(config, title) => {
+            dispatch({ type: "config", id: settingsWidget.id, config, title });
+            setSettingsFor(null);
+          }}
+        />
+      )}
+      {editing && <DashKeysHint />}
       {menu}
     </section>
   );
 }
 
-function WidgetBody({ widget }: { widget: Widget }) {
-  switch (widget.kind) {
-    case "today":
-      return <TodayWidget />;
-    case "week":
-      return <WeekWidget />;
-    case "budgets":
-      return <BudgetsWidget size={widget.size} />;
-    case "recent":
-      return <RecentWidget size={widget.size} />;
-    case "favorites":
-      return <FavoritesWidget />;
-    case "timer":
-      return <TimerWidget />;
-    case "note":
-      return <NoteWidget />;
-    case "calendar":
-      return <CalendarWidget />;
-    case "focus":
-      return <FocusWidget />;
-    case "agenda":
-      return <AgendaWidget />;
-  }
-}
+// ------------------------------------------------------------------ grid
 
-/** Reloads with `load` on mount, when `deps` change and on the given backend events. */
-function useLoad<T>(load: () => Promise<T>, deps: unknown[], events: string[] = []): [T | null, () => void] {
-  const [data, setData] = useState<T | null>(null);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    load().then(
-      (d) => alive && setData(d),
-      () => alive && setData(null),
-    );
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick]);
-  useEffect(() => {
-    const un = events.map((ev) => on(ev, () => setTick((t) => t + 1)));
-    return () => un.forEach((u) => u.then((f) => f()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+type Drag = { id: string; mode: "move" | "resize"; grabX: number; grabY: number; layout: GridWidget[]; px: number; py: number; start: GridWidget[] };
+
+function BoardGrid({ board, editing, onLayout, onAction, onSettings, onAdd }: { board: Board; editing: boolean; onLayout: (w: GridWidget[]) => void; onAction: (a: BoardAction) => void; onSettings: (id: string) => void; onAdd: () => void }) {
+  const tr = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const [seen, setSeen] = useState<Set<string>>(() => new Set());
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setWidth(el.clientWidth);
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
-  return [data, () => setTick((t) => t + 1)];
-}
+  const cols = width ? columnsFor(width) : COLS;
+  const full = cols === COLS;
+  const shown = useMemo(() => {
+    const base = drag?.layout ?? board.widgets;
+    return full ? base : reflow(base, cols, narrowMinOf);
+  }, [drag, board.widgets, cols, full]);
+  const ordered = useMemo(() => readingOrder(shown), [shown]);
 
-const Empty = ({ children }: { children: ReactNode }) => <div className="dw-empty">{children}</div>;
+  // Widgets load when they come into view (a little ahead); the first screen right away.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const limit = (window.innerHeight + 400) / (ROW_H + GAP);
+    const top = el.getBoundingClientRect().top / (ROW_H + GAP);
+    setSeen((prev) => {
+      const next = new Set(prev);
+      for (const w of shown) if (w.y < limit - Math.max(0, top)) next.add(w.id);
+      return next.size === prev.size ? prev : next;
+    });
+    const root = el.closest(".home") as Element | null;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const ids = entries.filter((e) => e.isIntersecting).map((e) => (e.target as HTMLElement).dataset.widget!);
+        if (ids.length) setSeen((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])));
+      },
+      { root, rootMargin: "300px 0px" },
+    );
+    el.querySelectorAll<HTMLElement>(".dw[data-widget]").forEach((n) => io.observe(n));
+    return () => io.disconnect();
+  }, [shown]);
 
-// ------------------------------------------------------------------ Heute
+  const describe = (w: GridWidget) => tr("dash.a11y.pos", { name: titleOf(w), x: w.x + 1, y: w.y + 1, w: w.w, h: w.h });
 
-function TodayWidget() {
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const pages = useApp((s) => s.pages);
-  const today = isoDay(new Date());
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const s = useApp.getState;
-  const [tasks, reload] = useLoad(
-    async () => {
-      const [due, [day]] = await Promise.all([api.tasks({ status: "open", due_before: today }), api.dailyOverview(today, today)]);
-      const onNote = day?.note_id != null ? await api.tasks({ status: "open", page_id: day.note_id }) : [];
-      const key = (t: Task) => `${t.page_id}:${t.ordinal}`;
-      const seen = new Set(due.map(key));
-      return [...due, ...onNote.filter((t) => !seen.has(key(t)))];
-    },
-    [today, entriesVersion, pages],
-    ["data://tasks"],
-  );
-  const add = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
-    setBusy(true);
-    try {
-      await api.captureSubmit(`- [ ] ${t}`);
-      setText("");
-      await s().refreshTree();
-      reload();
-    } catch (e) {
-      s().error("Aufgabe nicht angelegt", e);
-    } finally {
-      setBusy(false);
+  const keyDown = (w: GridWidget, e: ReactKeyboardEvent) => {
+    if (!editing || e.target !== e.currentTarget) return;
+    const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const d = dir[e.key];
+    let next: GridWidget[] | null = null;
+    if (d && full) {
+      e.preventDefault();
+      next = e.shiftKey ? grow(board.widgets, w.id, d[0], d[1], COLS, minOf(w)) : nudge(board.widgets, w.id, d[0], d[1]);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      const i = ordered.findIndex((x) => x.id === w.id);
+      const neighbour = ordered[i + 1] ?? ordered[i - 1];
+      onAction({ type: "remove", id: w.id });
+      setAnnounce(tr("dash.a11y.removed", { name: titleOf(w) }));
+      if (neighbour) requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(`[data-widget="${neighbour.id}"]`)?.focus());
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onSettings(w.id);
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      onAction({ type: "duplicate", id: w.id });
+    }
+    if (next && next !== board.widgets) {
+      onLayout(next);
+      const moved = next.find((x) => x.id === w.id)!;
+      setAnnounce(describe(moved));
+      requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(`[data-widget="${w.id}"]`)?.focus());
     }
   };
-  const done = async (t: Task) => {
+
+  const startDrag = (w: GridWidget, mode: Drag["mode"], e: ReactPointerEvent) => {
+    if (!editing || !full || e.button !== 0) return;
+    if (mode === "move" && (e.target as Element).closest("button, input, [role=button]")) return;
+    e.preventDefault();
+    const grid = ref.current!.getBoundingClientRect();
+    const r = rectPx(w, width);
     try {
-      await api.setTaskDone(t.page_id, t.ordinal, true, t.text);
-      reload();
-    } catch (e) {
-      s().error("Aufgabe nicht abgehakt", e);
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic or already released pointers cannot be captured; moves still reach the grid.
     }
+    setDrag({ id: w.id, mode, grabX: e.clientX - grid.left - r.left, grabY: e.clientY - grid.top - r.top, layout: board.widgets, px: e.clientX - grid.left, py: e.clientY - grid.top, start: board.widgets });
   };
-  return (
-    <div className="dw-today">
-      {tasks && tasks.length === 0 && <Empty>Nichts fällig. Schönen Tag!</Empty>}
-      {tasks && tasks.length > 0 && (
-        <ul className="dw-list" aria-label="Fällige Aufgaben">
-          {tasks.slice(0, 8).map((t) => (
-            <li key={`${t.page_id}:${t.ordinal}`} className="dw-task">
-              <button type="button" role="checkbox" aria-checked={false} aria-label={`Erledigt: ${t.text}`} className="dw-check" onClick={() => done(t)} />
-              <button type="button" className="dw-task-text" onClick={() => s().openPage(t.page_id)} title={t.page_title}>
-                <span className="grow ellipsis">{t.text}</span>
-                {t.due && t.due < today && <Badge tone="danger">überfällig</Badge>}
-                {t.priority >= 2 && <Badge tone="warning">hoch</Badge>}
-              </button>
-            </li>
-          ))}
-          {tasks.length > 8 && (
-            <li>
-              <button type="button" className="dw-more" onClick={() => s().openTab({ kind: "tasks" })}>
-                {tasks.length - 8} weitere …
-              </button>
-            </li>
-          )}
-        </ul>
-      )}
-      <input
-        className="input dw-add"
-        value={text}
-        placeholder="Aufgabe für heute…"
-        aria-label="Aufgabe zur Tagesnotiz hinzufügen"
-        disabled={busy}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            add();
-          }
-        }}
-      />
-    </div>
-  );
-}
+  const moveDrag = (e: ReactPointerEvent) => {
+    if (!drag) return;
+    const grid = ref.current!.getBoundingClientRect();
+    const px = e.clientX - grid.left;
+    const py = e.clientY - grid.top;
+    const w = drag.start.find((x) => x.id === drag.id)!;
+    let layout: GridWidget[];
+    if (drag.mode === "move") {
+      const cell = cellAt(px - drag.grabX + (width / COLS) / 2, py - drag.grabY + ROW_H / 2, width);
+      layout = moveTo(drag.start, drag.id, cell.col, cell.row);
+    } else {
+      const r = rectPx(w, width);
+      const colW = (width - GAP * (COLS - 1)) / COLS;
+      const nw = Math.round((px - r.left + GAP) / (colW + GAP));
+      const nh = Math.round((py - r.top + GAP) / (ROW_H + GAP));
+      layout = resizeTo(drag.start, drag.id, nw, nh, COLS, minOf(w));
+    }
+    setDrag({ ...drag, layout, px, py });
+  };
+  const endDrag = () => {
+    if (!drag) return;
+    const moved = drag.layout.find((x) => x.id === drag.id);
+    if (drag.layout !== drag.start) {
+      onLayout(drag.layout);
+      if (moved) setAnnounce(describe(moved));
+    }
+    setDrag(null);
+  };
 
-// ------------------------------------------------------------------ Woche
-
-function WeekWidget() {
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const settings = useApp((s) => s.settings?.settings);
-  const monday = useMemo(() => weekStart(new Date()), []);
-  const [days] = useLoad(() => api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))), [monday, entriesVersion]);
-  const target = settings?.daily_target_hours ?? 8;
-  const week = weekBars(days ?? [], monday, target, settings?.workdays ?? [1, 2, 3, 4, 5], new Date());
-  const gaps = week.bars.filter((b) => b.gap > 0);
+  const rows = shown.reduce((m, w) => Math.max(m, w.y + w.h), 0);
   return (
-    <button type="button" className="dw-week" onClick={() => useApp.getState().openTab({ kind: "timesheet" })} aria-label="Woche in der Zeiterfassung öffnen">
-      <div className="dw-week-sum">
-        <span className="num dw-big">{h1(week.bookedMinutes / 60)}</span>
-        <span className="faint num">von {h1(week.targetMinutes / 60)} h</span>
-        <span className="grow" />
-        {gaps.length > 0 ? <Badge tone="warning">{h1(week.gapMinutes / 60)} h Lücke</Badge> : <Badge tone="success">Keine Lücken</Badge>}
-      </div>
-      <div className="dw-bars" style={{ "--target": week.targetLine } as React.CSSProperties}>
-        {week.bars.map((b) => (
-          <div
-            key={b.date}
-            className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
-            title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? ` · ${h1(b.gap / 60)} h fehlen` : ""}`}
-          >
-            <div className="dw-bar-track">
-              {b.workday && target > 0 && <span className="dw-bar-target" aria-hidden />}
-              <span className="dw-bar-fill" style={{ height: `${b.fill * 100}%` }} />
-            </div>
-            <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
-            <span className="dw-bar-day">{b.label}</span>
+    <>
+      {editing && !full && <div className="dash-narrow faint small">{tr("dash.narrowHint")}</div>}
+      <div
+        ref={ref}
+        className={`dash-grid ${drag ? "dragging" : ""}`}
+        style={{ "--cols": cols, "--rows": Math.max(rows, 1) } as CSSProperties}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        data-cols={cols}
+      >
+        <DashData widgets={board.widgets} seen={seen}>
+          {ordered.map((w) => {
+            const dragged = drag?.id === w.id;
+            const style: CSSProperties = { gridColumn: `${w.x + 1} / span ${w.w}`, gridRow: `${w.y + 1} / span ${w.h}` };
+            let ghost: CSSProperties | null = null;
+            if (dragged && drag) {
+              const target = rectPx(w, width);
+              if (drag.mode === "move") ghost = { transform: `translate(${drag.px - drag.grabX - target.left}px, ${drag.py - drag.grabY - target.top}px)` };
+            }
+            return (
+              <WidgetCard
+                key={w.id}
+                widget={w}
+                editing={editing}
+                full={full}
+                style={{ ...style, ...ghost }}
+                dragged={dragged}
+                dragMode={dragged ? drag!.mode : null}
+                onKeyDown={(e) => keyDown(w, e)}
+                onGrab={(e) => startDrag(w, "move", e)}
+                onResizeStart={(e) => startDrag(w, "resize", e)}
+                onAction={onAction}
+                onSettings={() => onSettings(w.id)}
+                onSize={(name) => {
+                  const sz = sizeFor(w.kind, name);
+                  const next = resizeTo(board.widgets, w.id, sz.w, sz.h, COLS, minOf(w));
+                  onLayout(next);
+                  setAnnounce(describe(next.find((x) => x.id === w.id)!));
+                }}
+              />
+            );
+          })}
+          {drag && drag.mode === "move" && (() => {
+            const w = drag.layout.find((x) => x.id === drag.id)!;
+            return <div className="dw-drop" style={{ gridColumn: `${w.x + 1} / span ${w.w}`, gridRow: `${w.y + 1} / span ${w.h}` }} aria-hidden />;
+          })()}
+        </DashData>
+        {board.widgets.length === 0 && (
+          <div className="dash-empty">
+            <div className="dash-empty-title">{tr("dash.emptyTitle")}</div>
+            <div className="faint">{editing ? tr("dash.emptyEditing") : tr("dash.emptyText")}</div>
+            <Button size="sm" icon={Plus} onClick={onAdd}>
+              {tr("dash.addWidget")}
+            </Button>
           </div>
-        ))}
+        )}
       </div>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------- Budgets
-
-const LEVEL: Record<AlertLevel, { tone: Tone; label: string; rank: number }> = {
-  ok: { tone: "success", label: "OK", rank: 0 },
-  warning: { tone: "warning", label: "Warnung", rank: 1 },
-  critical: { tone: "danger", label: "Kritisch", rank: 2 },
-  exceeded: { tone: "danger", label: "Überschritten", rank: 3 },
-};
-
-function BudgetsWidget({ size }: { size: WidgetSize }) {
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const thresholds = useApp((s) => s.settings?.settings.thresholds);
-  const [alerts] = useLoad(
-    async () => {
-      const all = await api.budgetsAll();
-      return all.filter((b) => b.level !== "ok").sort((a, b) => LEVEL[b.level].rank - LEVEL[a.level].rank || b.consumed - a.consumed);
-    },
-    [entriesVersion, thresholds?.warning, thresholds?.critical],
-  );
-  const open = () => useApp.getState().openTab({ kind: "projects" });
-  if (!alerts) return null;
-  if (alerts.length === 0) return <Empty>Alle Budgets im Rahmen.</Empty>;
-  const max = size === "s" ? 4 : 8;
-  return (
-    <ul className="dw-list">
-      {alerts.slice(0, max).map((b: BudgetStatus) => (
-        <li key={b.label}>
-          <button type="button" className="dw-budget" onClick={open} title={`${h1(b.booked_hours)} von ${h1(b.planned_hours)} h gebucht, Prognose ${h1(b.eac_hours)} h`}>
-            <span className="dw-budget-head">
-              <span className="mono ellipsis grow">{b.label}</span>
-              <Badge tone={LEVEL[b.level].tone}>{LEVEL[b.level].label}</Badge>
-            </span>
-            <span className="dw-budget-bar">
-              <Progress value={b.consumed} tone={LEVEL[b.level].tone} marker={b.planned_hours > 0 ? b.eac_hours / b.planned_hours : undefined} />
-              <span className="num faint">{Math.round(b.consumed * 100)} %</span>
-            </span>
-          </button>
-        </li>
-      ))}
-      {alerts.length > max && (
-        <li>
-          <button type="button" className="dw-more" onClick={open}>
-            {alerts.length - max} weitere …
-          </button>
-        </li>
-      )}
-    </ul>
-  );
-}
-
-// ------------------------------------------------------- pages (recent, favorites)
-
-function PageRows({ pages, when }: { pages: Page[]; when?: boolean }) {
-  const s = useApp.getState;
-  return (
-    <ul className="dw-list">
-      {pages.map((p) => (
-        <li key={p.id}>
-          <button type="button" className="dw-page" onClick={(e) => s().openPage(p.id, { newTab: e.ctrlKey || e.metaKey })}>
-            <PageIcon name={p.icon} size={15} />
-            <span className="grow ellipsis">{p.title}</span>
-            {when && <span className="faint dw-when">{relative(p.updated_at)}</span>}
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function RecentWidget({ size }: { size: WidgetSize }) {
-  const pages = useApp((s) => s.pages);
-  const [recent] = useLoad(() => api.recentPages(size === "l" ? 8 : size === "m" ? 6 : 5), [pages, size]);
-  if (!recent) return null;
-  return recent.length ? <PageRows pages={recent} when={size !== "s"} /> : <Empty>Noch keine Seiten.</Empty>;
-}
-
-function FavoritesWidget() {
-  const pages = useApp((s) => s.pages);
-  const favs = useMemo(() => [...pages.values()].filter((p) => p.favorite).sort((a, b) => a.title.localeCompare(b.title, "de")), [pages]);
-  if (!favs.length)
-    return (
-      <Empty>
-        Keine Lesezeichen. <Star size={12} className="inline-icon" /> im Seitenmenü setzt eins.
-      </Empty>
-    );
-  return <PageRows pages={favs.slice(0, 10)} />;
-}
-
-// ------------------------------------------------------------------ Timer
-
-function TimerWidget() {
-  const timer = useApp((s) => s.timer);
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const seconds = useTimerSeconds();
-  const s = useApp.getState;
-  const [refs] = useLoad(
-    async () => {
-      const rows = await api.entries(new Date(Date.now() - 60 * 86400_000).toISOString());
-      const seen = new Set<string>();
-      const out: TimeEntryRow[] = [];
-      for (const r of [...rows].sort((a, b) => b.start_time.localeCompare(a.start_time))) {
-        const key = `${r.netzplan_id}/${r.vorgang_nr ?? ""}`;
-        if (r.status_flag === "running" || seen.has(key)) continue;
-        seen.add(key);
-        out.push(r);
-        if (out.length === 3) break;
-      }
-      return out;
-    },
-    [entriesVersion],
-  );
-  const start = async (r: TimeEntryRow) => {
-    try {
-      await api.timerStart(r.netzplan_id, r.vorgang_nr, r.leistungsart, r.description);
-      s().bumpEntries();
-    } catch (e) {
-      s().error("Timer nicht gestartet", e);
-    }
-  };
-  if (timer) {
-    const e = timer.entry;
-    return (
-      <div className="dw-timer running">
-        <span className="rec-dot" aria-hidden />
-        <div className="grow dw-timer-main">
-          <span className="num dw-big">{clock(seconds)}</span>
-          <span className="faint ellipsis">{e.description || e.vorgang_nr || "Timer"}</span>
-        </div>
-        <Button size="sm" icon={Square} onClick={() => stopTimer()}>
-          Stoppen
-        </Button>
+      <div className="sr-only" aria-live="polite">
+        {announce}
       </div>
-    );
-  }
-  if (!refs) return null;
-  if (!refs.length) return <Empty>Noch keine Buchungen. Starte einen Timer in der Zeiterfassung.</Empty>;
+    </>
+  );
+}
+
+function WidgetCard({
+  widget: w,
+  editing,
+  full,
+  style,
+  dragged,
+  dragMode,
+  onKeyDown,
+  onGrab,
+  onResizeStart,
+  onAction,
+  onSettings,
+  onSize,
+}: {
+  widget: GridWidget;
+  editing: boolean;
+  full: boolean;
+  style: CSSProperties;
+  dragged: boolean;
+  dragMode: Drag["mode"] | null;
+  onKeyDown: (e: ReactKeyboardEvent) => void;
+  onGrab: (e: ReactPointerEvent) => void;
+  onResizeStart: (e: ReactPointerEvent) => void;
+  onAction: (a: BoardAction) => void;
+  onSettings: () => void;
+  onSize: (name: SizeName) => void;
+}) {
+  const tr = useT();
+  const [menu, , openMenuAt] = useMenu();
+  if (!isKind(w.kind)) return null;
+  const Body = BODIES[w.kind];
+  const Icon = ICONS[w.kind];
+  const title = titleOf(w);
+  const open = openerOf(w);
+  const current = sizeName(w);
+  // Narrow widgets keep room for their title: sizes and „Duplizieren“ go into a menu.
+  const compact = w.w <= 4;
   return (
-    <ul className="dw-list" aria-label="Zuletzt gebucht">
-      {refs.map((r) => (
-        <li key={`${r.netzplan_id}/${r.vorgang_nr}`}>
-          <button type="button" className="dw-page dw-start" onClick={() => start(r)} aria-label={`Timer starten: ${r.netzplan_nr}${r.vorgang_nr ? "/" + r.vorgang_nr : ""}`}>
-            <Play size={13} />
-            <span className="mono">{r.netzplan_nr}{r.vorgang_nr ? `/${r.vorgang_nr}` : ""}</span>
-            <span className="faint ellipsis grow">{r.description}</span>
+    <article
+      className={`card dw dw-k-${w.kind} ${dragged ? `lifted ${dragMode}` : ""} ${w.w <= 4 ? "narrow" : ""}`}
+      data-widget={w.id}
+      data-kind={w.kind}
+      style={style}
+      aria-label={title}
+      aria-roledescription={editing ? tr("dash.a11y.widget") : undefined}
+      aria-describedby={editing ? "dash-keys-hint" : undefined}
+      tabIndex={editing ? 0 : undefined}
+      onKeyDown={onKeyDown}
+    >
+      <header className="dw-head" onPointerDown={editing && full ? onGrab : undefined}>
+        {editing && <GripVertical size={14} className="faint dw-grip" aria-hidden />}
+        <Icon size={14} className="dw-head-icon" aria-hidden />
+        {open && !editing ? (
+          <button type="button" className="dw-title-btn" onClick={open}>
+            <h2>{title}</h2>
           </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// ------------------------------------------------------------------ Notiz
-
-function NoteWidget() {
-  const stored = useApp((s) => s.settings?.settings.dashboard.note ?? "");
-  const [text, setText] = useState(stored);
-  const pending = useRef<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flush = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    const note = pending.current;
-    pending.current = null;
-    if (note == null) return;
-    const st = useApp.getState();
-    const dash = st.settings?.settings.dashboard;
-    if (!dash || dash.note === note) return;
-    api.saveDashboard({ ...dash, note }).then(
-      (v) => useApp.getState().set({ settings: v }),
-      (e) => useApp.getState().error("Notiz nicht gespeichert", e),
-    );
-  };
-  // Another tab changed it: take it over unless something is being typed here.
-  useEffect(() => {
-    if (pending.current == null) setText(stored);
-  }, [stored]);
-  useEffect(() => flush, []);
-
-  return (
-    <textarea
-      className="input dw-note"
-      value={text}
-      placeholder="Gedanken, Telefonnummern, Zwischenstände…"
-      aria-label="Notiz"
-      spellCheck
-      onChange={(e) => {
-        setText(e.target.value);
-        pending.current = e.target.value;
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(flush, 600);
-      }}
-      onBlur={flush}
-    />
-  );
-}
-
-// --------------------------------------------------------------- Kalender
-
-const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
-function CalendarWidget() {
-  const settings = useApp((s) => s.settings?.settings);
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const [cursor, setCursor] = useState(() => new Date());
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const grid = useMemo(() => monthGrid(year, month), [year, month]);
-  const [list] = useLoad(() => api.dailyOverview(isoDay(grid[0][0]), isoDay(grid[5][6])), [grid, entriesVersion]);
-  const days = useMemo(() => new Map((list ?? []).map((d: DayOverview) => [d.date, d])), [list]);
-  const today = new Date();
-  const todayIso = isoDay(today);
-  const target = settings?.daily_target_hours ?? 8;
-  const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
-  const trackedSince = [...days.values()].find((d) => d.booked_minutes > 0)?.date;
-  return (
-    <div className="dw-cal">
-      <div className="dw-cal-head">
-        <span className="grow">{new Date(year, month, 1).toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</span>
-        <IconButton icon={ChevronLeft} label="Vorheriger Monat" size="sm" onClick={() => setCursor(addMonths(cursor, -1))} />
-        <IconButton icon={ChevronRight} label="Nächster Monat" size="sm" onClick={() => setCursor(addMonths(cursor, 1))} />
+        ) : (
+          <h2>{title}</h2>
+        )}
+        {editing ? (
+          <div className="dw-tools">
+            {compact ? (
+              <IconButton
+                icon={MoreHorizontal}
+                label={tr("dash.widgetMenu")}
+                size="sm"
+                onClick={(e) =>
+                  openMenuAt(e, [
+                    ...(full ? SIZE_NAMES.map((n) => ({ label: tr("dash.sizeName", { size: n.toUpperCase() }), checked: current === n, onSelect: () => onSize(n) })) : []),
+                    ...(full ? (["separator"] as const) : []),
+                    { label: tr("dash.duplicate"), icon: Copy, onSelect: () => onAction({ type: "duplicate", id: w.id }) },
+                  ])
+                }
+              />
+            ) : (
+              full && (
+                <div className="dw-sizes" role="group" aria-label={tr("dash.size")}>
+                  {SIZE_NAMES.map((n) => (
+                    <button key={n} type="button" aria-pressed={current === n} aria-label={tr("dash.sizeName", { size: n.toUpperCase() })} onClick={() => onSize(n)}>
+                      {n.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+            <IconButton icon={Settings2} label={tr("dash.settings")} size="sm" onClick={onSettings} />
+            {!compact && <IconButton icon={Copy} label={tr("dash.duplicate")} size="sm" onClick={() => onAction({ type: "duplicate", id: w.id })} />}
+            <IconButton icon={X} label={tr("dash.remove")} size="sm" onClick={() => onAction({ type: "remove", id: w.id })} />
+          </div>
+        ) : (
+          <IconButton icon={Settings2} label={tr("dash.settingsOf", { name: title })} size="sm" className="dw-gear" onClick={onSettings} />
+        )}
+      </header>
+      <div className="dw-body" inert={editing}>
+        <Body widget={w} openSettings={onSettings} />
       </div>
-      <div className="dw-cal-grid" role="grid">
-        {WEEKDAYS.map((w) => (
-          <span key={w} className="dw-cal-wd">
-            {w}
-          </span>
-        ))}
-        {grid.flat().map((d) => {
-          const iso = isoDay(d);
-          const info = days.get(iso);
-          const minutes = info?.booked_minutes ?? 0;
-          const tone = dayTone(d, minutes, target, workdays, today, trackedSince);
-          const cls = ["dw-cal-day", d.getMonth() !== month && "outside", iso === todayIso && "today", info?.has_note && "has-note", tone !== "none" && `tone-${tone}`].filter(Boolean).join(" ");
-          return (
-            <button
-              key={iso}
-              type="button"
-              className={cls}
-              data-date={iso}
-              title={[iso, info?.has_note ? "Tagesnotiz" : null, minutes > 0 ? `${hoursLabel(minutes)} h` : null].filter(Boolean).join(" · ")}
-              onClick={(e) => openDailyNote(iso, e.ctrlKey || e.metaKey)}
-            >
-              {d.getDate()}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+      {editing && full && <span className="dw-resize" role="presentation" onPointerDown={onResizeStart} title={tr("dash.resize")} />}
+      {menu}
+    </article>
   );
 }
 
-// --------------------------------------------------------------- Termine
-
-/** Today's appointments from the calendar sync; a click opens the Kalender on it. */
-function AgendaWidget() {
-  const settings = useApp((s) => s.settings?.settings);
-  // The calendars hidden in the Kalender view stay hidden here.
-  const hidden = useHiddenCalendars();
-  const entriesVersion = useApp((s) => s.entriesVersion);
-  const today = isoDay(new Date());
-  const [data] = useLoad(
-    async () => {
-      const from = new Date(`${today}T00:00:00`);
-      const to = addDays(from, 1);
-      const [events, entries, status] = await Promise.all([
-        api.calendarEvents(from.toISOString(), to.toISOString()),
-        api.entries(from.toISOString(), to.toISOString()),
-        api.calendarStatus(),
-      ]);
-      return { events, entries, configured: hasSources(settings?.calendar, status.outlook_available) };
-    },
-    [today, entriesVersion, settings?.calendar],
-    ["calendar://synced"],
-  );
-  if (!data) return null;
-  if (!data.configured)
-    return (
-      <Empty>
-        Kein Kalender verbunden.{" "}
-        <button type="button" className="calv-linkbtn" onClick={() => openSettingsSection("calendar")}>
-          Einrichten
-        </button>
-      </Empty>
-    );
-  const events = visibleEvents(data.events, hidden);
-  if (!events.length) return <Empty>Heute keine Termine.</Empty>;
-  const nowMs = Date.now();
+/** The keyboard help of edit mode (referenced by every widget). */
+function DashKeysHint() {
   return (
-    <ul className="dw-list dw-agenda" aria-label="Termine heute">
-      {events.slice(0, 7).map((e) => {
-        const past = new Date(e.end).getTime() < nowMs;
-        const booked = !!bookedEntry(e, data.entries);
-        return (
-          <li key={e.key}>
-            <button type="button" className={`dw-agenda-row ${past ? "past" : ""}`} style={{ "--ev": sourceColor(e.source, settings?.calendar) } as React.CSSProperties} onClick={() => openCalendarView({ date: today, key: e.key })}>
-              <span className="dw-agenda-time num">{isAllDayLike(e) ? "ganzt." : timeRange(e).slice(0, 5)}</span>
-              <span className="dw-agenda-bar" aria-hidden />
-              <span className="grow ellipsis">{e.title}</span>
-              {booked && <Badge tone="success">gebucht</Badge>}
-            </button>
-          </li>
-        );
-      })}
-      {events.length > 7 && (
-        <li>
-          <button type="button" className="dw-more" onClick={() => openCalendarView({ date: today })}>
-            {events.length - 7} weitere …
-          </button>
-        </li>
-      )}
-    </ul>
+    <span id="dash-keys-hint" className="sr-only">
+      {t("dash.a11y.keys")}
+    </span>
   );
 }

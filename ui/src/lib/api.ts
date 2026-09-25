@@ -268,6 +268,10 @@ export const api = {
   timerResumeLast: () => call<void>("timer_resume_last"),
   /** Saves the start page's widgets and scratch note only. */
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
+  /** Everything the visible start-page widgets need, in one call (see lib/dashboard.ts `partsOf`). */
+  dashboardData: (today: string, parts: { key: string; part: unknown }[]) => call<{ parts: Record<string, unknown>; ms: number }>("dashboard_data", { request: { today, parts } }),
+  /** Writes an exported start-page board (JSON). */
+  dashboardFileWrite: (path: string, json: string) => call<void>("dashboard_file_write", { path, json }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
   /** Opens the ribbon link at `index`, or entry `item` of the group there. */
   openQuickLink: (index: number, item: number | null = null) => call<void>("quick_link_open", { index, item }),

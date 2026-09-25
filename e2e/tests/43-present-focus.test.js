@@ -235,7 +235,8 @@ test("the start-page widget „Fokus“ and the line in the daily note", async (
   await app.waitFor(".dash .dash-bar");
   await app.browser.execute(() => [...document.querySelectorAll(".dash-bar button")].find((b) => /Anpassen/.test(b.textContent))?.click());
   await app.browser.execute(() => [...document.querySelectorAll(".dash-bar button")].find((b) => /Widget hinzufügen/.test(b.textContent))?.click());
-  assert.ok(await menuClick("Fokus"));
+  // The widget gallery (1.6) instead of a menu.
+  await app.click('.dash-gallery-card[data-kind="focus"]');
   await app.browser.execute(() => [...document.querySelectorAll(".dash-bar button")].find((b) => /Fertig/.test(b.textContent))?.click());
   await app.waitFor('.dw[data-kind="focus"]', 10000);
   await app.browser.waitUntil(async () => /Sitzungen heute|Sitzung heute/.test(await app.text('.dw[data-kind="focus"]')), { timeout: 10000, timeoutMsg: "focus widget not filled" });

@@ -251,7 +251,7 @@ pub fn quick_link_at(links: &[QuickLink], index: usize, item: Option<usize>) -> 
     }
 }
 
-/// Width of a dashboard widget in the start page's grid: one, two or all four columns.
+/// Width of a widget of the start page before 1.6: one, two or all four columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WidgetSize {
     #[serde(rename = "s")]
@@ -263,68 +263,188 @@ pub enum WidgetSize {
     Medium,
 }
 
+/// A widget of the start page before 1.6 (one list, three widths). The start page moves the
+/// list onto a board of the grid ([`Dashboard::boards`]) with the same widgets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Widget {
-    /// Stable id within the dashboard (drag & drop, keys).
+pub struct LegacyWidget {
     pub id: String,
-    /// One of [`WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
+    /// One of [`LEGACY_WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
     pub kind: String,
     pub size: WidgetSize,
 }
 
+/// A widget on a board: its place in the grid (`x`, `w` in columns of [`GRID_COLUMNS`], `y`,
+/// `h` in rows) and its own settings (their shape belongs to the UI).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Widget {
+    /// Stable id within the board (keys, the text of a „Notiz“).
+    pub id: String,
+    /// One of [`WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
+    pub kind: String,
+    #[serde(default)]
+    pub x: u32,
+    #[serde(default)]
+    pub y: u32,
+    #[serde(default = "one")]
+    pub w: u32,
+    #[serde(default = "one")]
+    pub h: u32,
+    /// Own title instead of the widget's name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub config: serde_json::Value,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// One start page („Heute“, „Projekte“, …), shown as a tab.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Board {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub widgets: Vec<Widget>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Dashboard {
-    pub widgets: Vec<Widget>,
-    /// Scratch text of the „Notiz“ widget.
+    /// 2 since 1.6 (boards in a grid); 0 before.
+    pub version: u32,
+    pub boards: Vec<Board>,
+    /// Id of the board shown.
+    pub active: String,
+    /// Texts of the „Notiz“ widgets, by widget id.
+    pub notes: BTreeMap<String, String>,
+    /// Before 1.6: the one widget list (`None`: the start page was never saved) …
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widgets: Option<Vec<LegacyWidget>>,
+    /// … and the text of its „Notiz“.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub note: String,
 }
 
-/// Widget kinds of the start page: Heute, Woche, Budgets, Zuletzt bearbeitet, Lesezeichen,
-/// Timer, Notiz, Kalender, Fokus, Termine.
-pub const WIDGET_KINDS: [&str; 10] =
+/// Widget kinds of the grid (1.6): Heute, Termine, Aufgaben, Zeit diese Woche, Budget, Projekt,
+/// Zuletzt bearbeitet, Lesezeichen, Angeheftet, Notiz, Seite einbetten, Abfrage, Aktivität,
+/// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender.
+/// The UI keeps the same list (`WIDGET_KINDS` in `lib/dashboard.ts`).
+pub const WIDGET_KINDS: [&str; 21] = [
+    "today",
+    "agenda",
+    "tasks",
+    "week",
+    "budget",
+    "project",
+    "recent",
+    "favorites",
+    "pinned",
+    "note",
+    "embed",
+    "query",
+    "activity",
+    "focus",
+    "links",
+    "proposal",
+    "clock",
+    "review",
+    "suggestions",
+    "timer",
+    "calendar",
+];
+
+/// Widget kinds of the list before 1.6.
+pub const LEGACY_WIDGET_KINDS: [&str; 10] =
     ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar", "focus", "agenda"];
 
-/// At most this many widgets are kept.
-pub const MAX_WIDGETS: usize = 24;
+/// At most this many boards …
+pub const MAX_BOARDS: usize = 12;
+/// … and widgets per board (and in the old list).
+pub const MAX_WIDGETS: usize = 40;
+/// Columns of the grid.
+pub const GRID_COLUMNS: u32 = 12;
+/// Tallest widget (rows).
+const MAX_WIDGET_ROWS: u32 = 30;
+/// Lowest row a widget may start in.
+const MAX_ROW: u32 = 600;
+/// Largest settings of one widget (bytes of JSON); bigger ones are dropped.
+pub const MAX_WIDGET_CONFIG: usize = 16_000;
 
 /// Longest scratch note kept (characters).
 pub const MAX_NOTE_CHARS: usize = 20_000;
 
-impl Default for Dashboard {
-    fn default() -> Self {
-        let w = |kind: &str, size| Widget { id: kind.into(), kind: kind.into(), size };
-        Dashboard {
-            widgets: vec![
-                w("today", WidgetSize::Medium),
-                w("week", WidgetSize::Medium),
-                w("timer", WidgetSize::Small),
-                w("budgets", WidgetSize::Small),
-                w("recent", WidgetSize::Medium),
-            ],
-            note: String::new(),
-        }
+fn truncate_chars(s: &str, n: usize) -> String {
+    if s.chars().count() > n { s.chars().take(n).collect() } else { s.to_owned() }
+}
+
+/// `raw` trimmed (or `fallback` when empty), with `-2`, `-3`, … when taken.
+fn unique_id(seen: &mut std::collections::HashSet<String>, raw: &str, fallback: &str) -> String {
+    let base = if raw.trim().is_empty() { fallback.to_owned() } else { raw.trim().to_owned() };
+    let mut id = base.clone();
+    let mut n = 2;
+    while !seen.insert(id.clone()) {
+        id = format!("{base}-{n}");
+        n += 1;
     }
+    id
 }
 
 impl Dashboard {
-    /// Drops unknown kinds, gives every widget a unique non-empty id, caps the count and the note.
+    /// Drops unknown kinds, gives boards and widgets unique non-empty ids, keeps every widget
+    /// inside the grid, and caps the counts, the settings of a widget and the notes.
     pub fn normalized(mut self) -> Self {
-        let mut seen = std::collections::HashSet::new();
-        self.widgets.retain(|w| WIDGET_KINDS.contains(&w.kind.as_str()));
-        self.widgets.truncate(MAX_WIDGETS);
-        for w in &mut self.widgets {
-            let base = if w.id.trim().is_empty() { w.kind.clone() } else { w.id.trim().to_owned() };
-            let mut id = base.clone();
-            let mut n = 2;
-            while !seen.insert(id.clone()) {
-                id = format!("{base}-{n}");
-                n += 1;
+        if let Some(list) = &mut self.widgets {
+            list.retain(|w| LEGACY_WIDGET_KINDS.contains(&w.kind.as_str()));
+            list.truncate(MAX_WIDGETS);
+            let mut seen = std::collections::HashSet::new();
+            for w in list.iter_mut() {
+                w.id = unique_id(&mut seen, &w.id, &w.kind);
             }
-            w.id = id;
         }
-        if self.note.chars().count() > MAX_NOTE_CHARS {
-            self.note = self.note.chars().take(MAX_NOTE_CHARS).collect();
+        self.note = truncate_chars(&self.note, MAX_NOTE_CHARS);
+        self.boards.truncate(MAX_BOARDS);
+        let mut board_ids = std::collections::HashSet::new();
+        for (i, b) in self.boards.iter_mut().enumerate() {
+            b.id = unique_id(&mut board_ids, &b.id, &format!("board-{}", i + 1));
+            b.name = truncate_chars(b.name.trim(), 40);
+            if b.name.is_empty() {
+                b.name = "Board".into();
+            }
+            b.widgets.retain(|w| WIDGET_KINDS.contains(&w.kind.as_str()));
+            b.widgets.truncate(MAX_WIDGETS);
+            let mut seen = std::collections::HashSet::new();
+            for w in &mut b.widgets {
+                w.id = unique_id(&mut seen, &w.id, &w.kind);
+                w.w = w.w.clamp(1, GRID_COLUMNS);
+                w.h = w.h.clamp(1, MAX_WIDGET_ROWS);
+                w.x = w.x.min(GRID_COLUMNS - w.w);
+                w.y = w.y.min(MAX_ROW);
+                w.title = truncate_chars(w.title.trim(), 60);
+                let too_big = serde_json::to_string(&w.config).map_or(true, |s| s.len() > MAX_WIDGET_CONFIG);
+                if !w.config.is_object() || too_big {
+                    w.config = serde_json::Value::Null;
+                }
+            }
+        }
+        if !self.boards.is_empty() {
+            self.version = self.version.max(2);
+            if !self.boards.iter().any(|b| b.id == self.active) {
+                self.active = self.boards[0].id.clone();
+            }
+            // Notes of widgets that are gone go with them.
+            let ids: std::collections::HashSet<&str> =
+                self.boards.iter().flat_map(|b| b.widgets.iter().map(|w| w.id.as_str())).collect();
+            self.notes.retain(|k, _| ids.contains(k.as_str()));
+        }
+        self.notes.retain(|k, _| !k.trim().is_empty());
+        while self.notes.len() > MAX_BOARDS * MAX_WIDGETS {
+            let first = self.notes.keys().next().cloned().unwrap_or_default();
+            self.notes.remove(&first);
+        }
+        for v in self.notes.values_mut() {
+            *v = truncate_chars(v, MAX_NOTE_CHARS);
         }
         self
     }
@@ -982,20 +1102,25 @@ mod tests {
         db.conn().execute(r#"UPDATE settings SET value = '{"theme":"dark","capture_shortcut":"Alt+Q"}'"#, []).unwrap();
         let s = db.load_settings().unwrap();
         assert_eq!(s.search_shortcut, DEFAULT_SEARCH_SHORTCUT);
+        // Never saved: no boards and no old list (the start page shows its default boards).
         assert_eq!(s.dashboard, Dashboard::default());
-        let kinds: Vec<_> = s.dashboard.widgets.iter().map(|w| w.kind.as_str()).collect();
-        assert_eq!(kinds, ["today", "week", "timer", "budgets", "recent"]);
-        assert!(kinds.iter().all(|k| WIDGET_KINDS.contains(k)));
-        // An explicitly empty dashboard stays empty; "" switches the search shortcut off.
+        assert!(s.dashboard.widgets.is_none() && s.dashboard.boards.is_empty());
+        // Saving other settings keeps it that way.
+        db.save_settings(&s).unwrap();
+        assert!(db.load_settings().unwrap().dashboard.widgets.is_none());
+        // An explicitly empty old list stays empty; "" switches the search shortcut off.
         db.conn()
             .execute(r#"UPDATE settings SET value = '{"search_shortcut":"","dashboard":{"widgets":[]}}'"#, [])
             .unwrap();
         let s = db.load_settings().unwrap();
-        assert_eq!((s.search_shortcut.as_str(), s.dashboard.widgets.len(), s.dashboard.note.as_str()), ("", 0, ""));
+        assert_eq!(
+            (s.search_shortcut.as_str(), s.dashboard.widgets.as_ref().map(Vec::len), s.dashboard.note.as_str()),
+            ("", Some(0), "")
+        );
     }
 
     #[test]
-    fn dashboard_is_normalized_on_load() {
+    fn old_dashboard_list_is_normalized_and_kept_for_the_move() {
         let db = Database::open_in_memory().unwrap();
         let json = r#"{"dashboard":{"note":"Hallo","widgets":[
             {"id":"a","kind":"today","size":"l"},
@@ -1004,28 +1129,91 @@ mod tests {
             {"id":"x","kind":"wetter","size":"m"}]}}"#;
         db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [json]).unwrap();
         let d = db.load_settings().unwrap().dashboard;
-        assert_eq!(d.note, "Hallo");
-        let got: Vec<_> = d.widgets.iter().map(|w| (w.id.as_str(), w.kind.as_str(), w.size)).collect();
+        assert_eq!((d.version, d.note.as_str()), (0, "Hallo"));
+        let got: Vec<_> = d.widgets.unwrap().iter().map(|w| (w.id.clone(), w.kind.clone(), w.size)).collect();
         assert_eq!(
             got,
             [
-                ("a", "today", WidgetSize::Large),
-                ("a-2", "week", WidgetSize::Small),
-                ("timer", "timer", WidgetSize::Medium)
+                ("a".to_owned(), "today".to_owned(), WidgetSize::Large),
+                ("a-2".to_owned(), "week".to_owned(), WidgetSize::Small),
+                ("timer".to_owned(), "timer".to_owned(), WidgetSize::Medium)
             ]
         );
+        // Sizes serialize with their short names.
+        let s = serde_json::to_string(&LegacyWidget { id: "t".into(), kind: "today".into(), size: WidgetSize::Small })
+            .unwrap();
+        assert_eq!(s, r#"{"id":"t","kind":"today","size":"s"}"#);
+    }
+
+    #[test]
+    fn boards_are_normalized_on_load() {
+        let db = Database::open_in_memory().unwrap();
+        let big = "x".repeat(MAX_WIDGET_CONFIG + 10);
+        let json = serde_json::json!({"dashboard": {
+            "version": 2,
+            "active": "weg",
+            "notes": {"n": "Merkzettel", "alt": "vergessen"},
+            "boards": [
+                {"id": "heute", "name": "  Heute  ", "widgets": [
+                    {"id": "n", "kind": "note", "x": 11, "y": 0, "w": 4, "h": 5},
+                    {"id": "n", "kind": "agenda", "x": 0, "y": 2, "w": 40, "h": 0, "config": {"days": 3}},
+                    {"id": "q", "kind": "query", "config": [1, 2]},
+                    {"id": "b", "kind": "budget", "config": {"big": big}},
+                    {"id": "w", "kind": "wetter"}
+                ]},
+                {"id": "heute", "name": "", "widgets": []}
+            ]
+        }});
+        db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [json.to_string()]).unwrap();
+        let d = db.load_settings().unwrap().dashboard;
+        assert_eq!(
+            (d.boards[0].name.as_str(), d.boards[1].id.as_str(), d.boards[1].name.as_str()),
+            ("Heute", "heute-2", "Board")
+        );
+        assert_eq!(d.active, "heute", "an unknown board falls back to the first");
+        let w: Vec<_> =
+            d.boards[0].widgets.iter().map(|w| (w.id.as_str(), w.kind.as_str(), w.x, w.y, w.w, w.h)).collect();
+        assert_eq!(
+            w,
+            [
+                ("n", "note", 8, 0, 4, 5),
+                ("n-2", "agenda", 0, 2, 12, 1),
+                ("q", "query", 0, 0, 1, 1),
+                ("b", "budget", 0, 0, 1, 1)
+            ]
+        );
+        assert_eq!(d.boards[0].widgets[1].config, serde_json::json!({"days": 3}));
+        assert!(d.boards[0].widgets[2].config.is_null(), "settings must be an object");
+        assert!(d.boards[0].widgets[3].config.is_null(), "too large settings are dropped");
+        // The note of a widget that is gone is dropped too.
+        assert_eq!(d.notes.keys().collect::<Vec<_>>(), ["n"]);
+        // Round trip: nothing changes on the second pass, empty fields are left out.
+        assert_eq!(d.clone().normalized(), d);
+        let text = serde_json::to_string(&d).unwrap();
+        assert!(!text.contains("\"widgets\":null") && !text.contains("\"note\":\"\""), "{text}");
         let many = Dashboard {
-            widgets: (0..40)
-                .map(|i| Widget { id: format!("w{i}"), kind: "note".into(), size: WidgetSize::Small })
+            boards: (0..20)
+                .map(|i| Board {
+                    id: format!("b{i}"),
+                    name: "B".into(),
+                    widgets: (0..50)
+                        .map(|j| Widget {
+                            id: format!("w{j}"),
+                            kind: "clock".into(),
+                            x: 0,
+                            y: 0,
+                            w: 1,
+                            h: 1,
+                            title: String::new(),
+                            config: serde_json::Value::Null,
+                        })
+                        .collect(),
+                })
                 .collect(),
-            note: "x".repeat(MAX_NOTE_CHARS + 5),
+            ..Default::default()
         }
         .normalized();
-        assert_eq!((many.widgets.len(), many.note.len()), (MAX_WIDGETS, MAX_NOTE_CHARS));
-        // Sizes serialize with their short names.
-        let s =
-            serde_json::to_string(&Widget { id: "t".into(), kind: "today".into(), size: WidgetSize::Small }).unwrap();
-        assert_eq!(s, r#"{"id":"t","kind":"today","size":"s"}"#);
+        assert_eq!((many.boards.len(), many.boards[0].widgets.len(), many.version), (MAX_BOARDS, MAX_WIDGETS, 2));
     }
 
     #[test]

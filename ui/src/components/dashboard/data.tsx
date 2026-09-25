@@ -1,0 +1,217 @@
+// Data of the start page: the parts of every widget in view, loaded in one `dashboard_data`
+// call (several widgets with the same settings share a part), kept while they reload, and
+// reloaded when what they show changes (time entries, tasks, pages, calendar sync, focus,
+// WBS). Widgets scrolled out of view load when they come into view.
+
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { api, on } from "../../lib/api";
+import { isoDay } from "../../lib/format";
+import { partKey, partsOf, partTopics, type DataTopic, type Part } from "../../lib/dashboard";
+import { useApp } from "../../store/app";
+import type { GridWidget } from "../../lib/types";
+
+export interface Entry {
+  data?: unknown;
+  error?: string;
+}
+
+interface Ctx {
+  entry: (key: string) => Entry | undefined;
+  /** Reloads the parts showing `topics` (all without). */
+  refresh: (topics?: DataTopic[]) => void;
+  today: Date;
+}
+
+const DataContext = createContext<Ctx>({ entry: () => undefined, refresh: () => {}, today: new Date() });
+
+/** Timing of the last load: backend time and the time from the answer to the painted grid. */
+export interface DashPerf {
+  backendMs: number;
+  /** From the call to its answer (backend and IPC). */
+  roundTripMs: number;
+  /** From the answer to the committed grid … */
+  commitMs: number;
+  /** … and to the next painted frame. */
+  renderMs: number;
+  parts: number;
+}
+
+declare global {
+  interface Window {
+    __annaloDashPerf?: DashPerf[];
+  }
+}
+
+/** The local day, renewed after midnight. */
+function useToday(): Date {
+  const [today, setToday] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = new Date();
+      if (isoDay(now) !== isoDay(today)) setToday(now);
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [today]);
+  return today;
+}
+
+export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; seen: Set<string>; children: ReactNode }) {
+  const today = useToday();
+  const workdays = useApp((s) => s.settings?.settings.workdays);
+  const [store, setStore] = useState<Map<string, Entry>>(() => new Map());
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  const stale = useRef(new Set<string>());
+  const inflight = useRef(new Set<string>());
+  const pending = useRef<{ t0: number; arrived: number; backend: number; parts: number } | null>(null);
+
+  // The parts of the widgets in view, by key.
+  const wanted = useMemo(() => {
+    const m = new Map<string, Part>();
+    for (const w of widgets) {
+      if (!seen.has(w.id)) continue;
+      for (const p of partsOf(w, today, workdays ?? [1, 2, 3, 4, 5])) m.set(partKey(p), p);
+    }
+    return m;
+  }, [widgets, seen, today, workdays]);
+  const wantedRef = useRef(wanted);
+  wantedRef.current = wanted;
+  const [tick, setTick] = useState(0);
+
+  const load = useCallback(async () => {
+    const todo = [...wantedRef.current].filter(([k]) => !inflight.current.has(k) && (!storeRef.current.has(k) || stale.current.has(k)));
+    if (!todo.length) return;
+    todo.forEach(([k]) => {
+      inflight.current.add(k);
+      stale.current.delete(k);
+    });
+    const t0 = performance.now();
+    try {
+      const res = await api.dashboardData(isoDay(today), todo.map(([key, part]) => ({ key, part })));
+      pending.current = { t0, arrived: performance.now(), backend: res.ms, parts: todo.length };
+      setStore((prev) => {
+        const next = new Map(prev);
+        for (const [k] of todo) {
+          const v = res.parts[k] as { error?: string } | undefined;
+          next.set(k, v && typeof v === "object" && !Array.isArray(v) && typeof v.error === "string" && Object.keys(v).length === 1 ? { error: v.error } : { data: v });
+        }
+        return next;
+      });
+    } catch (e) {
+      setStore((prev) => {
+        const next = new Map(prev);
+        for (const [k] of todo) next.set(k, { ...prev.get(k), error: String(e) });
+        return next;
+      });
+    } finally {
+      todo.forEach(([k]) => inflight.current.delete(k));
+      // Something changed meanwhile: load again.
+      if (todo.some(([k]) => stale.current.has(k))) setTick((x) => x + 1);
+    }
+  }, [today]);
+
+  useEffect(() => {
+    // One call for everything that became wanted in this render.
+    const id = window.setTimeout(load, 0);
+    return () => window.clearTimeout(id);
+  }, [wanted, tick, load]);
+
+  // Timing, measured once the grid with the new data is committed and painted.
+  useLayoutEffect(() => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    const committed = performance.now();
+    requestAnimationFrame(() => {
+      const list = (window.__annaloDashPerf ??= []);
+      list.push({ backendMs: p.backend, roundTripMs: p.arrived - p.t0, commitMs: committed - p.arrived, renderMs: performance.now() - p.arrived, parts: p.parts });
+      if (list.length > 50) list.shift();
+    });
+  }, [store]);
+
+  const refresh = useCallback((topics?: DataTopic[]) => {
+    const drop: string[] = [];
+    for (const k of storeRef.current.keys()) {
+      const part = JSON.parse(k) as Part;
+      if (topics && !partTopics(part).some((tp) => topics.includes(tp))) continue;
+      if (wantedRef.current.has(k)) stale.current.add(k);
+      else drop.push(k);
+    }
+    if (drop.length)
+      setStore((prev) => {
+        const next = new Map(prev);
+        drop.forEach((k) => next.delete(k));
+        return next;
+      });
+    setTick((x) => x + 1);
+  }, []);
+
+  // Changes elsewhere, batched: a save often sends several events at once.
+  const queued = useRef(new Set<DataTopic>());
+  const timer = useRef<number | null>(null);
+  const soon = useCallback(
+    (topics: DataTopic[], delay = 150) => {
+      topics.forEach((tp) => queued.current.add(tp));
+      if (timer.current != null) return;
+      timer.current = window.setTimeout(() => {
+        timer.current = null;
+        const list = [...queued.current];
+        queued.current.clear();
+        refresh(list);
+      }, delay);
+    },
+    [refresh],
+  );
+  useEffect(() => {
+    const subs: [string, DataTopic[]][] = [
+      ["data://entries", ["entries"]],
+      ["data://tasks", ["tasks", "pages"]],
+      ["data://pages", ["pages", "tasks"]],
+      ["calendar://synced", ["calendar"]],
+      ["focus://changed", ["focus", "entries"]],
+      ["focus://completed", ["focus", "entries"]],
+    ];
+    const un = subs.map(([ev, topics]) => on(ev, () => soon(topics)));
+    const saved = () => soon(["pages", "tasks"], 600);
+    window.addEventListener("annalo:page-saved", saved);
+    return () => {
+      un.forEach((u) => u.then((f) => f()));
+      window.removeEventListener("annalo:page-saved", saved);
+      if (timer.current != null) window.clearTimeout(timer.current);
+      timer.current = null;
+    };
+  }, [soon]);
+  const entriesVersion = useApp((s) => s.entriesVersion);
+  const wbsVersion = useApp((s) => s.wbsVersion);
+  const pages = useApp((s) => s.pages);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) return;
+    soon(["entries"]);
+  }, [entriesVersion, soon]);
+  useEffect(() => {
+    if (first.current) return;
+    soon(["wbs"]);
+  }, [wbsVersion, soon]);
+  useEffect(() => {
+    if (first.current) return;
+    soon(["pages", "tasks"], 400);
+  }, [pages, soon]);
+  useEffect(() => {
+    first.current = false;
+  }, []);
+
+  const value = useMemo<Ctx>(() => ({ entry: (k) => store.get(k), refresh, today }), [store, refresh, today]);
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+}
+
+export const useDash = () => useContext(DataContext);
+
+/** Part `index` of a widget: its data (kept while it reloads), an error, or neither while loading. */
+export function useWidgetData<T>(w: Pick<GridWidget, "kind" | "config">, index = 0): { data: T | undefined; error: string | undefined; loading: boolean } {
+  const { entry, today } = useDash();
+  const workdays = useApp((s) => s.settings?.settings.workdays);
+  const part = partsOf(w, today, workdays ?? [1, 2, 3, 4, 5])[index];
+  const e = part ? entry(partKey(part)) : undefined;
+  return { data: e?.data as T | undefined, error: e?.error, loading: !!part && !e };
+}
