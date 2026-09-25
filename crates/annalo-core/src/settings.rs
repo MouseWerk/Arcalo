@@ -591,6 +591,8 @@ impl Database {
             None => (Settings::default(), vec![]),
         };
         s.dashboard = s.dashboard.normalized();
+        // Settings of 1.5 know only the default Outlook calendar: it gets its entry in the list.
+        s.calendar = std::mem::take(&mut s.calendar).normalized();
         // Only settings that parsed cleanly are kept: the caller must learn about unreadable ones.
         *self.settings_cache.borrow_mut() = raw.filter(|_| bad.is_empty()).map(|json| (json, s.clone()));
         Ok((s, bad))

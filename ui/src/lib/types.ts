@@ -1030,10 +1030,52 @@ export interface MailSettings {
   /** What the dialog offers first. */
   default_action: "task" | "note" | "both";
 }
+/** Where an Outlook calendar lives. */
+export type OutlookKind = "own" | "file" | "mailbox" | "shared" | "room" | "group";
+/** An Outlook calendar chosen once in „Kalender auswählen“. */
+export interface OutlookCalendar {
+  /** `outlook` (default calendar) or `outlook:<hash>`. */
+  id: string;
+  store_id: string;
+  entry_id: string;
+  recipient: string;
+  name: string;
+  /** Mailbox, store or person. */
+  owner: string;
+  path: string;
+  kind: OutlookKind;
+  default: boolean;
+  /** Only free/busy times are readable. */
+  free_busy: boolean;
+  color: string;
+  enabled: boolean;
+  /** „Für Buchungsvorschläge verwenden“. */
+  booking: boolean;
+}
+/** A row of „Kalender auswählen“ (stored or only discovered). */
+export interface OutlookCalendarRow extends OutlookCalendar {
+  stored: boolean;
+  /** Found by the last discovery; null before one. */
+  found: boolean | null;
+  items: number | null;
+  error: string | null;
+  shared: boolean;
+  status: CalendarSyncStatus | null;
+  syncing: boolean;
+}
+export interface OutlookDiscovery {
+  running: boolean;
+  at: string | null;
+  error: string | null;
+}
 export interface CalendarSettings {
-  /** Read the default calendar of Outlook Classic (Windows). */
+  /** Read Outlook Classic (Windows): the selected calendars. */
   outlook: boolean;
+  /** Color of the default calendar. */
   outlook_color: string;
+  outlook_calendars?: OutlookCalendar[];
+  /** People whose calendars discovery opens by name. */
+  outlook_recipients?: string[];
   sources: IcsSource[];
   sync_minutes: number;
   past_days: number;
@@ -1071,6 +1113,8 @@ export interface CalendarEvent {
   note_page_id: number | null;
   /** The time entry booked from this appointment. */
   entry_id: number | null;
+  /** Other selected calendars with the same meeting (shown once). */
+  also_in?: string[];
 }
 export interface CalendarSyncStatus {
   source: string;
@@ -1080,10 +1124,17 @@ export interface CalendarSyncStatus {
   events: number;
 }
 export interface CalendarSourceInfo {
-  /** `outlook` or `ics:<id>`. */
+  /** `outlook`, `outlook:<hash>` or `ics:<id>`. */
   id: string;
   name: string;
   kind: "outlook" | "url" | "file";
+  /** Mailbox or person of an Outlook calendar. */
+  owner: string;
+  /** Someone else's calendar. */
+  shared: boolean;
+  free_busy: boolean;
+  /** Its meetings are proposed for booking. */
+  booking: boolean;
   color: string;
   enabled: boolean;
   /** Scheme and host of a subscription. */
@@ -1097,6 +1148,9 @@ export interface CalendarStatus {
   outlook_available: boolean;
   sources: CalendarSourceInfo[];
   secret_storage: string;
+  /** „Kalender auswählen“. */
+  outlook_calendars: OutlookCalendarRow[];
+  discovery: OutlookDiscovery;
 }
 export interface WbsHint {
   netzplan_id: number;
