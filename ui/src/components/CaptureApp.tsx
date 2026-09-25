@@ -145,7 +145,7 @@ export function CaptureApp() {
   const height = useRef(0);
   // The text and target of the newest capture: Ctrl+Z puts them back.
   const lastSubmitted = useRef<{ text: string; target: TargetChoice } | null>(null);
-  // Clipboard text offered already (not offered again on the next open).
+  // Clipboard text offered (or taken over) already: offered again only when it changed.
   const offered = useRef<string | null>(null);
   // Latest suggestion request; older answers are dropped.
   const req = useRef(0);
@@ -218,6 +218,8 @@ export function CaptureApp() {
       setNotice(null);
       setPicker(null);
       refresh();
+      const now = live.current;
+      if (!now.text.trim()) setTarget(defaultTarget(now.prefs, now.last));
       loadSettings().then((p) => {
         const cur = live.current;
         // A fresh open starts at the default target; a draft keeps its own.
@@ -231,7 +233,12 @@ export function CaptureApp() {
         offered.current = clipText;
         setClip(null);
         if (url) void linkify(url);
-      } else setClip(clipText && clipText !== offered.current && !live.current.text.includes(clipText.trim()) ? clipText : null);
+      } else {
+        // Offered once per new clipboard content, not on every open.
+        const fresh = clipText && clipText !== offered.current && !live.current.text.includes(clipText.trim());
+        offered.current = clipText ?? offered.current;
+        setClip(fresh ? clipText : null);
+      }
       focusRetry();
       // Open latency: the frame after the one that shows the window.
       requestAnimationFrame(() => requestAnimationFrame(() => api.captureReady().catch(() => {})));

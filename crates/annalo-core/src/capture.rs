@@ -584,6 +584,29 @@ mod tests {
         assert_eq!(content(&db, p.id), before);
     }
 
+    #[test]
+    fn pasted_images_and_dropped_files_are_stored_and_embedded() {
+        let dir = std::env::temp_dir().join(format!("annalo-capture-att-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
+        // What the capture window does on paste (image) and drop (any file).
+        let image = crate::attachments::save(&dir, &png, "image.png", "image/png").unwrap();
+        let file = crate::attachments::store_file(&dir, "Protokoll Kickoff.txt", b"Protokoll").unwrap();
+        assert!(dir.join(&image.name).is_file() && dir.join(&file.name).is_file());
+
+        let db = Database::open_in_memory().unwrap();
+        let t = Thresholds::default();
+        let zone = Zone::Fixed(tz());
+        let text = format!("Whiteboard\n{}\n{}", image.markdown, file.markdown);
+        let (out, _) = capture_to(&db, &text, &CaptureTarget::Inbox, &opts(&t, &zone), now(), &tz()).unwrap();
+        let md = content(&db, out.appended.unwrap().page_id);
+        assert_eq!(md, format!("**23.09.2026, 14:30**\n\n- Whiteboard\n\n{}\n\n{}\n", image.markdown, file.markdown));
+        // The embeds count as used attachments of the page.
+        let used = crate::attachments::embeds(&md);
+        assert!(used.contains(&image.name) && used.contains(&file.name), "{used:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn meeting(uid: &str, start: DateTime<Utc>, minutes: i64, title: &str) -> NewEvent {
         NewEvent {
             uid: uid.into(),

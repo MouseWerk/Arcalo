@@ -164,3 +164,20 @@ test("the clipboard is offered at open and inserted with one shortcut", async ()
   await app.keys(["Backspace"]);
   await app.keys(["Escape"]);
 });
+
+test("„Gespeichert in …“ opens the page in the main window", async () => {
+  await hidden();
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...view.settings, capture: { ...view.settings.capture, auto_hide_ms: 8000 } } });
+  const w = await openCapture(app);
+  await app.type(">Neue Seite: Kundenideen");
+  await app.keys(["Enter"]);
+  await app.type("Workshop anbieten");
+  await app.keys(["Enter"]);
+  await app.waitText(".capture-foot.done .capture-link", /Kundenideen/);
+  await app.click(".capture-foot.done .capture-link");
+  await app.browser.waitUntil(async () => (await captureVisible(app)) === false, { timeoutMsg: "capture window not hidden" });
+  await w.toMain();
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Kundenideen", { timeoutMsg: "page not opened" });
+  await app.waitText(".pane.active .ProseMirror", /Workshop anbieten/);
+});
