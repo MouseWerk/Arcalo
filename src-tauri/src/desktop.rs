@@ -662,7 +662,8 @@ pub struct CaptureContext {
 pub fn capture_context(app: AppHandle, state: State<AppState>) -> Result<CaptureContext> {
     let settings = state.settings();
     let meeting = if settings.capture.meeting_target {
-        let active = settings.calendar.active_sources(annalo_core::calsync::outlook::available());
+        // Own calendars only by default: a colleague's meeting is not the one running for the user.
+        let active = settings.calendar.booking_sources(annalo_core::calsync::outlook::available());
         cap::current_meeting(&state.reader(), Utc::now(), &active)?.map(|e| MeetingTarget {
             key: e.key,
             title: e.event.title,

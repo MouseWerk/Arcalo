@@ -1667,6 +1667,11 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.quick_links = state.settings().quick_links;
     // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
     settings.calendar.sources = state.settings().calendar.sources;
+    // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
+    let stored_cal = state.settings().calendar;
+    settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
+    settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
+    settings.calendar = std::mem::take(&mut settings.calendar).normalized();
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -3792,6 +3797,9 @@ pub fn run() {
             calsync::calendar_source_update,
             calsync::calendar_source_remove,
             calsync::calendar_sync_now,
+            calsync::calendar_outlook_discover,
+            calsync::calendar_outlook_update,
+            calsync::calendar_outlook_people,
             calsync::calendar_set_skip,
             calsync::calendar_link_entry,
             calsync::calendar_wbs_hint,

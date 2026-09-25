@@ -1,4 +1,4 @@
-// Calendar fixtures for the Kalender tests (62–64): an ICS file, an ICS subscription served by a
+// Calendar fixtures for the Kalender tests (62–64, 84–85): an ICS file, an ICS subscription served by a
 // local HTTP server (with a secret token in its address) and the JSON the Outlook script would
 // print, all relative to the current week in local time (the app reads floating times as local).
 
@@ -188,3 +188,77 @@ export function writeMeetingNow(title = "Jour fixe Kunde X") {
 
 /** Environment for the Outlook fixture (only honored with the test switch). */
 export const outlookEnv = (file) => ({ ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_FIXTURE: file, ANNALO_CALENDAR_DELAY_SECS: "3600" });
+
+// ---- Outlook calendar selection (tests 84–85)
+
+/** One appointment as the Outlook script prints it. */
+export function outlookItem(id, subject, a, b, extra = {}) {
+  return {
+    entryId: id,
+    globalId: `G-${id}`,
+    subject,
+    start: a.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    end: b.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    startLocal: local(a),
+    endLocal: local(b),
+    allDay: false,
+    recurring: false,
+    busy: 2,
+    sensitivity: 0,
+    responseStatus: 3,
+    meetingStatus: 1,
+    location: "",
+    organizer: "",
+    attendees: [],
+    categories: "",
+    body: null,
+    urls: [],
+    ...extra,
+  };
+}
+
+/** Discovery's view of one calendar folder. */
+const folder = (entryId, name, extra = {}) => ({ entryId, storeId: "S-OWN", name, path: "", store: "maurice@firma.de", storeType: 0, filePath: "", default: false, nav: false, group: "", groupType: -1, owner: "maurice@firma.de", recipient: "", person: false, items: 4, freeBusy: false, error: "", message: "", ...extra });
+
+/**
+ * Several Outlook calendars: the default one (the items of `outlookJson`, plus the „Jour fixe
+ * Vertrieb“ Anna's calendar has too), the own sub-calendar „Projekt X“, Anna Müller's calendar
+ * shared with the user, Jörg Weiß's shared as free/busy only, a PST, a room, and the boss's
+ * calendar that refuses access. Meetings in this week and in the last one (week proposal).
+ */
+export function outlookCalendarsJson() {
+  const base = JSON.parse(outlookJson());
+  const last = week(-1);
+  const jf = [at(2, 11), at(2, 12)];
+  base.items.push(outlookItem("JF", "Jour fixe Vertrieb", ...jf, { organizer: "Müller, Anna" }));
+  base.items.push(outlookItem("PLAN", "Planung Rollout", last.at(0, 9), last.at(0, 10)));
+  base.discovery = {
+    ok: true,
+    version: "16.0.0.0",
+    navError: "",
+    calendars: [
+      folder("E-DEFAULT", "Kalender", { default: true, path: "\\\\maurice@firma.de\\Kalender", items: 412 }),
+      folder("E-PROJ", "Projekt X", { path: "\\\\maurice@firma.de\\Kalender\\Projekt X", items: 12 }),
+      folder("E-PST", "Kalender", { storeId: "S-PST", store: "Archiv 2025", owner: "Archiv 2025", storeType: 3, filePath: "C:\\Users\\m\\Archiv 2025.pst", path: "\\\\Archiv 2025\\Kalender", items: 0 }),
+      folder("E-ANNA", "Kalender", { storeId: "S-ANNA", store: "Anna Müller", owner: "Anna Müller", recipient: "Anna Müller", storeType: 1, nav: true, group: "Freigegebene Kalender", groupType: 4, items: 55 }),
+      folder("", "Chef", { storeId: "", store: "", owner: "Chef", recipient: "Chef", storeType: -1, nav: true, group: "Freigegebene Kalender", groupType: 4, items: -1, error: "denied", message: "Sie verfügen nicht über die erforderliche Berechtigung." }),
+      folder("", "Jörg Weiß", { storeId: "", store: "", owner: "Jörg Weiß", recipient: "Jörg Weiß", storeType: -1, nav: true, group: "Freigegebene Kalender", groupType: 4, items: -1, freeBusy: true }),
+      folder("E-ROOM", "Raum Zürich", { storeId: "S-ROOM", store: "Raum Zürich", owner: "Raum Zürich", recipient: "Raum Zürich", storeType: 1, nav: true, group: "Räume", groupType: 6, items: 3 }),
+    ],
+  };
+  base.folders = {
+    "E-PROJ": { items: [outlookItem("PS1", "Projekt-Sync", at(3, 13), at(3, 14)), outlookItem("PS0", "Projekt-Sync alt", last.at(1, 9), last.at(1, 10))] },
+    "E-ANNA": {
+      items: [
+        // The same meeting as in the default calendar (same global id and start).
+        outlookItem("JF-ANNA", "Jour fixe Vertrieb", ...jf, { globalId: "G-JF", organizer: "Müller, Anna" }),
+        outlookItem("AV", "Anna: Vertriebsrunde", at(3, 15), at(3, 16)),
+        outlookItem("KA", "Kundentermin Anna", last.at(2, 10), last.at(2, 11)),
+      ],
+    },
+    "Jörg Weiß": { freeBusy: true, mode: "freebusy", items: [outlookItem("", "", at(1, 14), at(1, 15, 30), { globalId: "fb-joerg-1", freeBusy: true })] },
+    "E-ROOM": { items: [] },
+    "E-PST": { items: [] },
+  };
+  return JSON.stringify(base);
+}

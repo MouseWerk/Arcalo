@@ -295,6 +295,27 @@ and by `entry_id`.
   `new_outlook`, `server_exec`, `constrained`, `folder`, `com`) and become German messages that point to ICS where
   COM cannot work. For development and tests `ANNALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
   `ANNALO_TEST_FIXTURES=1`.
+- Outlook calendars (`calsync/calendars.rs`, 1.6): `-Mode discover` lists calendar folders: the default one, every
+  store of `Namespace.Stores` (primary, delegate and additional mailboxes, PSTs; public folders skipped) walked for
+  `DefaultItemType = 1` (calendars fully, other folders two levels deep, Deleted Items skipped), the calendar module of
+  the navigation pane (`GetNavigationModule(1)` → `NavigationGroups` → `NavigationFolders`, through a never shown
+  explorer when Outlook has none; colleagues' calendars, rooms, groups) and people added by name
+  (`GetSharedDefaultFolder`). Each comes with EntryID, StoreID, name, store/owner, path, store type, navigation group,
+  item count and a per-folder error; a folder that refuses access is tried as free/busy (`Recipient.FreeBusy`). The
+  core classifies them (`own`, `file`, `mailbox`, `shared`, `room`, `group`; everything but own and file counts as
+  shared). The default calendar keeps the source id `outlook` (so events, marks and WBS memory of 1.5 stay); others are
+  `outlook:<12 hex of SHA-256 over StoreID|EntryID>` (uppercased), a person opened by name hashes its name. The
+  choice lives in `settings.calendar.outlook_calendars` (id, ids, name, owner, path, kind, color, enabled, booking,
+  free/busy); `normalized()` (also on loading) adds the default calendar to 1.5 settings with `outlook_color`, which
+  stays its color. Reading: all selected calendars in one run with `-Calendars <json file>` (`GetDefaultFolder(9)`,
+  else `GetFolderFromID`, else `GetSharedDefaultFolder`, else free/busy blocks), each with its own result and status
+  row; the timeout grows by 20 s per calendar. `calendar_events` returns a meeting found in several Outlook calendars
+  (same uid and start) once: the copy with a mark, else the one of the calendar listed first (own before shared),
+  naming the others in `also_in`. Week proposal, day review and the quick capture's „Jetzt“ read
+  `booking_sources()` (calendars with „Für Buchungsvorschläge verwenden“, default off for shared ones). Which
+  calendars the Kalender and the „Termine“ widget show is a view setting (`lib/calvisibility.ts`, localStorage).
+  Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
+  describe the default calendar alone.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
   TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
   Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed

@@ -223,7 +223,8 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 
 **Kalender**
-- Outlook Classic on Windows: reads the default calendar of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed
+- Outlook Classic on Windows: reads the calendars you choose of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed. „Kalender auswählen“ lists the default calendar, sub-calendars, further and shared mailboxes, PST files, calendars colleagues shared with you (also free/busy only), rooms and groups; each has its own color and switch for booking proposals
+- A legend hides or shows calendars in the view; a meeting in two calendars appears once
 - ICS: subscribe to a published calendar (Outlook im Web/Exchange „Kalender veröffentlichen“, Google, Nextcloud, …) or add an `.ics` file; series, exceptions and Windows time zones are understood. Subscription addresses are kept in the credential store
 - Day, Arbeitswoche, Woche, Monat and Liste with KW numbers; overlapping meetings side by side; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
 - „Zeit buchen“ from a meeting (prefilled, WBS remembered per series or subject), „Besprechungsnotiz“, „Nicht buchen“; booked meetings get a check mark

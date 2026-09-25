@@ -15,6 +15,7 @@ import { stopTimer, useTimerSeconds } from "./Sidebar";
 import { openDailyNote } from "./CalendarPopover";
 import { FocusWidget } from "./Focus";
 import { bookedEntry, hasSources, isAllDayLike, sourceColor, timeRange } from "../lib/agenda";
+import { useHiddenCalendars, visibleEvents } from "../lib/calvisibility";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 
 const WIDGET_MIME = "application/x-annalo-widget";
@@ -582,6 +583,8 @@ function CalendarWidget() {
 /** Today's appointments from the calendar sync; a click opens the Kalender on it. */
 function AgendaWidget() {
   const settings = useApp((s) => s.settings?.settings);
+  // The calendars hidden in the Kalender view stay hidden here.
+  const hidden = useHiddenCalendars();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const today = isoDay(new Date());
   const [data] = useLoad(
@@ -608,11 +611,12 @@ function AgendaWidget() {
         </button>
       </Empty>
     );
-  if (!data.events.length) return <Empty>Heute keine Termine.</Empty>;
+  const events = visibleEvents(data.events, hidden);
+  if (!events.length) return <Empty>Heute keine Termine.</Empty>;
   const nowMs = Date.now();
   return (
     <ul className="dw-list dw-agenda" aria-label="Termine heute">
-      {data.events.slice(0, 7).map((e) => {
+      {events.slice(0, 7).map((e) => {
         const past = new Date(e.end).getTime() < nowMs;
         const booked = !!bookedEntry(e, data.entries);
         return (
@@ -626,10 +630,10 @@ function AgendaWidget() {
           </li>
         );
       })}
-      {data.events.length > 7 && (
+      {events.length > 7 && (
         <li>
           <button type="button" className="dw-more" onClick={() => openCalendarView({ date: today })}>
-            {data.events.length - 7} weitere …
+            {events.length - 7} weitere …
           </button>
         </li>
       )}
