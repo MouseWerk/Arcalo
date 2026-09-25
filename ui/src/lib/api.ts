@@ -180,6 +180,13 @@ export const api = {
   removeDemo: () => call<number>("demo_remove"),
   onboardingNeeded: () => call<boolean>("onboarding_needed"),
   finishOnboarding: (samples: boolean) => call<void>("onboarding_finish", { samples }),
+  /** First-run intro: play it (fresh install) or show the upgrade hint. */
+  onboardingStatus: () => call<T.OnboardingStatus>("onboarding_status"),
+  /** Stores `onboarding.completed_version` / `completed_at`. */
+  onboardingComplete: () => call<T.SettingsView>("onboarding_complete"),
+  onboardingHintShown: () => call<void>("onboarding_hint_shown"),
+  /** Resets the first-run flags only (never data). */
+  onboardingReset: () => call<T.SettingsView>("onboarding_reset"),
   backupNow: () => call<T.BackupInfo>("backup_now"),
   backups: () => call<T.BackupInfo[]>("backup_list"),
   mirrorStatus: () => call<T.MirrorStatus>("mirror_status"),

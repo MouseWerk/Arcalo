@@ -1672,6 +1672,8 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
     settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
     settings.calendar = std::mem::take(&mut settings.calendar).normalized();
+    // And for the first-run flags (`onboarding_complete` / `onboarding_reset`).
+    settings.onboarding = state.settings().onboarding;
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -3060,6 +3062,44 @@ fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> R
     Ok(())
 }
 
+/// Test builds only: `ANNALO_SKIP_ONBOARDING=1` keeps the intro and the upgrade hint away (e2e).
+fn skip_onboarding() -> bool {
+    cfg!(debug_assertions) && std::env::var("ANNALO_SKIP_ONBOARDING").is_ok_and(|v| v == "1")
+}
+
+/// Whether to play the intro and setup, or to show the hint for upgraded workspaces.
+#[tauri::command(async)]
+fn onboarding_status(state: State<AppState>) -> Result<annalo_core::onboarding::OnboardingStatus> {
+    state.db().onboarding_status(skip_onboarding())
+}
+
+/// Stores the settings the first-run flags changed (and tells the other windows).
+fn onboarding_store(app: &AppHandle, state: &State<AppState>, settings: Settings) -> SettingsView {
+    state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    let _ = app.emit("settings://changed", ());
+    settings_get(state.clone())
+}
+
+/// The setup was finished or closed: stores `onboarding.completed_version` and `completed_at`.
+#[tauri::command(async)]
+fn onboarding_complete(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
+    let settings = state.db().onboarding_complete(Utc::now())?;
+    Ok(onboarding_store(&app, &state, settings))
+}
+
+/// The one-time hint for an upgraded workspace was shown.
+#[tauri::command(async)]
+fn onboarding_hint_shown(state: State<AppState>) -> Result<()> {
+    state.db().onboarding_hint_shown()
+}
+
+/// „Einrichtung zurücksetzen“: the first-run flags only; nothing else is touched.
+#[tauri::command(async)]
+fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
+    let settings = state.db().onboarding_reset()?;
+    Ok(onboarding_store(&app, &state, settings))
+}
+
 /// Removes the sample project and pages created on first start.
 #[tauri::command(async)]
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
@@ -3464,6 +3504,10 @@ pub fn run() {
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
             }
+            // Once: a workspace from before the intro is an upgrade (no intro, a hint instead).
+            if let Err(e) = db.onboarding_classify() {
+                devlog::warn("core", format!("first-run check failed: {e}"));
+            }
             if let Err(e) = db.purge_expired_trash(Utc::now()) {
                 devlog::warn("core", format!("trash cleanup failed: {e}"));
             }
@@ -3745,6 +3789,10 @@ pub fn run() {
             demo_remove,
             onboarding_needed,
             onboarding_finish,
+            onboarding_status,
+            onboarding_complete,
+            onboarding_hint_shown,
+            onboarding_reset,
             window_backdrop,
             window_frame,
             window_ready,

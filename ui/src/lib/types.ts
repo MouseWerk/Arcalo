@@ -289,6 +289,8 @@ export interface Settings {
   capture: CapturePrefs;
   /** „E-Mail als Aufgabe / Notiz“ (Settings → Kalender → E-Mail). */
   mail: MailSettings;
+  /** First-run intro and setup (saved by its own commands, kept by `settings_save`). */
+  onboarding: OnboardingState;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -308,6 +310,18 @@ export interface Settings {
   locale: LocalePrefs;
   /** In-app shortcuts that differ from the defaults: command id → "Ctrl+Shift+D" ("" = off). */
   keymap: Record<string, string>;
+}
+export interface OnboardingState {
+  /** The intro version completed (e.g. "1.6.0"). */
+  completed_version: string | null;
+  completed_at: string | null;
+}
+export interface OnboardingStatus extends OnboardingState {
+  /** Play the intro and the setup (fresh install). */
+  intro: boolean;
+  /** One-time hint for a workspace from before the intro. */
+  whats_new: boolean;
+  existing: boolean;
 }
 export type ProxyMode = "none" | "system" | "manual" | "pac";
 export interface NetworkSettings {
@@ -387,6 +401,8 @@ export interface NotesPrefs {
   max_versions: number;
 }
 export interface TimePrefs {
+  /** „Zeiterfassung verwenden“: off hides the timesheet, projects and their commands. */
+  enabled: boolean;
   week_start: "monday" | "sunday";
   rounding: { step_minutes: number; mode: "up" | "nearest"; min_minutes: number };
   hours_display: "decimal" | "clock";
