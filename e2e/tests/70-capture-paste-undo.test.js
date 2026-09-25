@@ -175,9 +175,11 @@ test("„Gespeichert in …“ opens the page in the main window", async () => {
   await app.type("Workshop anbieten");
   await app.keys(["Enter"]);
   await app.waitText(".capture-foot.done .capture-link", /Kundenideen/);
-  await app.click(".capture-foot.done .capture-link");
-  await app.browser.waitUntil(async () => (await captureVisible(app)) === false, { timeoutMsg: "capture window not hidden" });
+  // Clicked from a script after the command returned: the window hides during the click, which
+  // WebDriver's own click would wait for forever.
+  await app.browser.execute(() => setTimeout(() => document.querySelector(".capture-foot.done .capture-link").click(), 50));
   await w.toMain();
+  await app.browser.waitUntil(async () => (await captureVisible(app)) === false, { timeoutMsg: "capture window not hidden" });
   await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Kundenideen", { timeoutMsg: "page not opened" });
   await app.waitText(".pane.active .ProseMirror", /Workshop anbieten/);
 });
