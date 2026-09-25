@@ -176,11 +176,11 @@ export interface Conflict {
   /** Command ids sharing the combo. */
   commands: string[];
   /** Editor/system function or global shortcut it collides with. */
-  other?: TKey | "global.capture" | "global.palette";
+  other?: TKey | "global.capture" | "global.palette" | "global.selection";
 }
 
 /** Combos used twice, or taken by the editor or a global shortcut. */
-export function findConflicts(map: Record<string, string>, globals: { capture?: string | null; palette?: string | null } = {}): Conflict[] {
+export function findConflicts(map: Record<string, string>, globals: { capture?: string | null; palette?: string | null; selection?: string | null } = {}): Conflict[] {
   const byCombo = new Map<string, string[]>();
   for (const [id, combo] of Object.entries(map)) {
     if (!combo) continue;
@@ -190,10 +190,12 @@ export function findConflicts(map: Record<string, string>, globals: { capture?: 
   const g = (s?: string | null) => (s ? normalizeCombo(s) : null);
   const capture = g(globals.capture);
   const palette = g(globals.palette);
+  const selection = g(globals.selection);
   for (const [combo, ids] of byCombo) {
     if (ids.length > 1) out.push({ combo, commands: ids });
     if (RESERVED[combo]) out.push({ combo, commands: ids, other: RESERVED[combo] });
     if (capture && combo === capture) out.push({ combo, commands: ids, other: "global.capture" });
+    if (selection && combo === selection) out.push({ combo, commands: ids, other: "global.selection" });
     // The global palette shortcut may equal the in-app palette command.
     if (palette && combo === palette && !(ids.length === 1 && ids[0] === "palette")) out.push({ combo, commands: ids, other: "global.palette" });
   }

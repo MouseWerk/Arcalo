@@ -205,7 +205,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Taskbar jump list (Windows, right-click the taskbar button): Heutige Notiz, Neue Seite, Schnellerfassung, Suchen…, stop the running timer or start the last one, and the recently edited pages
 - Own title bar on Windows: the tabs sit at the top edge like in Obsidian, with the app's own window buttons (Settings → Darstellung switches back to the system title bar)
 - Closing hides the window to the tray (Settings → Desktop), start with Windows (minimized), one instance per workspace
-- Quick capture (Ctrl Shift Space, global): one line into today's daily note, `todo …` / `- [ ] …` as a task, `/zeit …` books time
+- Quick capture (Ctrl Shift Space, global): a small window that appears instantly with the cursor in the field. Text goes into today's daily note, the „Posteingang“ page (each capture with date and time), any page (`>` opens a picker, „Neue Seite: Titel“ or Ctrl Enter creates one) or – while a calendar meeting runs – its meeting note („Jetzt: …“); Tab switches the target. Several lines with Shift Enter, `todo …` / `- [ ] …` as a task (`bis Fr`, `due:morgen` set the due date), `[[` and `#` complete links and tags, `/zeit …` books time. Pasted links get their page title, pasted images and dropped files become attachments. „Gespeichert in …“ links to the page; Esc keeps the draft, Ctrl Z takes the last capture back (30 s), the last five are listed. „Auswahl übernehmen“ (second shortcut, off by default) starts it with the marked text (Linux) or the clipboard. Settings → Desktop → Schnellerfassung
 - Quick search (Ctrl Shift O, global, or „Suchen…“ in the tray): a small window above all programs that finds pages, passages and bookings, opens today's daily note, creates a page, starts/stops the timer or books `/zeit …`; Enter opens the result in the main window
 - Start page with widgets: Heute (due tasks, quick add to the daily note), Woche (booked vs. target per day, gaps), Budgets, Zuletzt bearbeitet, Lesezeichen, Timer, Notiz and Kalender. „Anpassen“ adds, removes, reorders (drag & drop or arrow buttons) and resizes them
 - End-of-day reminder on workdays when less than the daily target is booked (default 17:30), and once when a timer is still running after 20:00
@@ -457,7 +457,7 @@ All in-app shortcuts can be changed under Settings → Tastatur (the defaults ar
 | Keys | Action |
 |---|---|
 | Ctrl K / Alt Space (global, configurable) | Command palette, search, `/zeit …`, `? question` |
-| Ctrl Shift Space (global) | Quick capture |
+| Ctrl Shift Space (global) | Quick capture (Tab: target, `>`: page, Ctrl Z: undo the last capture) |
 | Ctrl Shift O (global, configurable) | Quick search window |
 | Ctrl O | Quick switcher |
 | Ctrl N | New page |

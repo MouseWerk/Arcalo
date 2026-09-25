@@ -13,11 +13,17 @@ export function KeyboardSection({ draft, update }: SectionProps) {
   const map = effectiveKeymap(draft.keymap);
   const [recording, setRecording] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
-  const conflicts = findConflicts(map, { capture: draft.capture_shortcut, palette: draft.palette_shortcut });
+  const conflicts = findConflicts(map, { capture: draft.capture_shortcut, palette: draft.palette_shortcut, selection: draft.capture?.selection_shortcut });
   const conflictOf = (id: string) => conflicts.filter((c) => c.commands.includes(id));
   const setCombo = (id: string, combo: string) => update({ keymap: keymapOverrides({ ...map, [id]: combo }) });
   const otherLabel = (other: NonNullable<(typeof conflicts)[number]["other"]>) =>
-    other === "global.capture" ? t("keys.globalCapture") : other === "global.palette" ? t("keys.globalPalette") : t(other);
+    other === "global.capture"
+      ? t("keys.globalCapture")
+      : other === "global.palette"
+        ? t("keys.globalPalette")
+        : other === "global.selection"
+          ? t("keys.globalSelection")
+          : t(other);
 
   return (
     <>

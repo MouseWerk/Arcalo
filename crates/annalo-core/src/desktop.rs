@@ -1,14 +1,15 @@
 //! Desktop integration that needs no window system: the quick-capture window
-//! (text → daily note or time booking) and the reminder decisions for native
-//! notifications (end of day, timer still running late in the evening).
+//! (text → daily note or time booking; other targets in [`crate::capture`]) and the reminder
+//! decisions for native notifications (end of day, timer still running late in the evening).
 
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use serde::Serialize;
 
+use crate::capture;
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use crate::tracking::{self, LogOutcome, Thresholds};
+use crate::tracking::{LogOutcome, Thresholds};
 use crate::zeit;
 
 // ------------------------------------------------------------ quick capture
@@ -48,7 +49,7 @@ fn todo_text(line: &str) -> Option<&str> {
 }
 
 /// The Markdown line a captured task or note becomes.
-fn capture_markdown(line: &str) -> String {
+pub(crate) fn capture_markdown(line: &str) -> String {
     let t = line.trim();
     if let Some(task) = todo_text(t) {
         format!("- [ ] {task}")
@@ -59,7 +60,7 @@ fn capture_markdown(line: &str) -> String {
     }
 }
 
-fn is_list_item(line: &str) -> bool {
+pub(crate) fn is_list_item(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("- ") || t.starts_with("* ") || t.starts_with("+ ") || t == "-" || {
         let digits = t.chars().take_while(char::is_ascii_digit).count();
@@ -67,46 +68,37 @@ fn is_list_item(line: &str) -> bool {
     }
 }
 
-/// Appends `addition` (Markdown lines) to `content`: directly below a trailing list,
-/// otherwise after a blank line.
-fn append_markdown(content: &str, addition: &str) -> String {
-    let body = content.trim_end();
-    if body.is_empty() {
-        return format!("{addition}\n");
-    }
-    let last = body.lines().last().unwrap_or("");
-    let sep = if is_list_item(last) { "\n" } else { "\n\n" };
-    format!("{body}{sep}{addition}\n")
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Appended {
-    /// The daily note that received the lines.
+    /// The page that received the lines (the daily note unless another target was chosen).
     pub page_id: i64,
     pub tasks: usize,
     pub notes: usize,
+    pub title: String,
+    /// The page was created by this capture.
+    pub created: bool,
 }
 
 /// Appends each non-empty line of `text` to the daily note of `date` (created if needed):
 /// `- [ ] …` and `todo …` become tasks, anything else a bullet.
 pub fn append_to_daily(db: &Database, date: NaiveDate, text: &str) -> Result<Appended> {
-    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-    if lines.is_empty() {
+    let (md, tasks, notes) = capture::format_capture(text);
+    if md.is_empty() {
         return Err(Error::State("Nichts zu erfassen".into()));
     }
-    let tasks = lines.iter().filter(|l| classify(l) == CaptureKind::Task).count();
-    let addition: Vec<String> = lines.iter().map(|l| capture_markdown(l)).collect();
     db.atomic(|| {
         let page = db.daily_note(date)?;
         let content = db.page_doc(page.id)?.content;
-        db.save_page_content(page.id, &append_markdown(&content, &addition.join("\n")))?;
-        Ok(Appended { page_id: page.id, tasks, notes: lines.len() - tasks })
+        let next = capture::insert_in_section(&content, "Notizen", &md)
+            .unwrap_or_else(|| capture::append_markdown(&content, &md));
+        db.save_page_content(page.id, &next)?;
+        Ok(Appended { page_id: page.id, tasks, notes, title: page.title, created: false })
     })
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureOutcome {
-    /// Set when lines went into the daily note.
+    /// Set when lines went into a page.
     pub appended: Option<Appended>,
     /// One per `/zeit` line.
     pub bookings: Vec<LogOutcome>,
@@ -120,21 +112,13 @@ pub fn capture<Tz: TimeZone>(
     now: DateTime<Utc>,
     tz: &Tz,
     thresholds: &Thresholds,
-) -> Result<CaptureOutcome> {
-    let today = now.with_timezone(tz).date_naive();
-    let (zeit_lines, other): (Vec<&str>, Vec<&str>) =
-        text.lines().map(str::trim).filter(|l| !l.is_empty()).partition(|l| classify(l) == CaptureKind::Zeit);
-    if zeit_lines.is_empty() && other.is_empty() {
-        return Err(Error::State("Nichts zu erfassen".into()));
-    }
-    db.atomic(|| {
-        let bookings = zeit_lines
-            .iter()
-            .map(|l| tracking::log_slash_command(db, l, now, tz, thresholds))
-            .collect::<Result<Vec<_>>>()?;
-        let appended = if other.is_empty() { None } else { Some(append_to_daily(db, today, &other.join("\n"))?) };
-        Ok(CaptureOutcome { appended, bookings })
-    })
+) -> Result<CaptureOutcome>
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let zone = crate::calsync::tz::Zone::Local;
+    let opts = capture::CaptureOptions { inbox_title: capture::INBOX_TITLE, thresholds, zone: &zone };
+    Ok(capture::capture_to(db, text, &capture::CaptureTarget::Daily, &opts, now, tz)?.0)
 }
 
 // ----------------------------------------------------------------- reminders
@@ -258,6 +242,7 @@ mod tests {
 
     #[test]
     fn appends_below_lists_and_after_paragraphs() {
+        use capture::append_markdown;
         assert_eq!(append_markdown("", "- a"), "- a\n");
         assert_eq!(append_markdown("## Notizen\n\n", "- a"), "## Notizen\n\n- a\n");
         assert_eq!(append_markdown("- x\n\n\n", "- a"), "- x\n- a\n");

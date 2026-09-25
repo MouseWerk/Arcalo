@@ -230,8 +230,18 @@ export const api = {
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
   quit: () => call<void>("app_quit"),
-  captureSubmit: (text: string) => call<T.CaptureOutcome>("capture_submit", { text }),
+  captureSubmit: (text: string, target?: T.CaptureTarget) => call<T.CaptureOutcome>("capture_submit", { text, target: target ?? null }),
   captureHide: () => call<void>("capture_hide"),
+  /** Opens the quick-capture window. */
+  captureShow: () => call<void>("capture_show"),
+  /** The capture window painted its first frame after being shown (open latency). */
+  captureReady: () => call<void>("capture_ready"),
+  /** Meeting running now, recent captures, queued captures. */
+  captureContext: () => call<T.CaptureContext>("capture_context"),
+  /** Takes the newest capture back (within 30 s). */
+  captureUndo: () => call<T.RecentCapture>("capture_undo"),
+  /** Hides the capture window and opens the page in the main window. */
+  captureOpen: (pageId: number) => call<void>("capture_open", { pageId }),
   searchHide: () => call<void>("search_hide"),
   /** Hides the quick search and lets the main window open `target` (`search://open`). */
   searchOpen: (target: T.SearchTarget) => call<void>("search_open", { target }),

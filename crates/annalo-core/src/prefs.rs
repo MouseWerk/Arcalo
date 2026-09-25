@@ -575,6 +575,46 @@ pub fn cost_level(spent_usd: f64, limit_usd: Option<f64>) -> CostLevel {
     }
 }
 
+// ------------------------------------------------------------------- capture
+
+choice!(CaptureDefault {
+    /// Today's daily note.
+    #[default] Daily = "daily",
+    /// The inbox page („Posteingang“).
+    Inbox = "inbox",
+    /// The page chosen last in this session (the daily note until one was chosen).
+    Last = "last",
+} default Daily);
+
+/// Quick capture (Settings → Desktop → Schnellerfassung).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CapturePrefs {
+    /// Where a capture goes when the window opens.
+    pub default_target: CaptureDefault,
+    /// Title of the page that collects captures with a timestamp.
+    pub inbox_title: String,
+    /// Global shortcut „Auswahl übernehmen“: opens quick capture with the selection (Linux) or
+    /// the clipboard text; `""` = off.
+    pub selection_shortcut: String,
+    /// Hide the window this long after „Gespeichert in …“ (0–10000 ms).
+    pub auto_hide_ms: u32,
+    /// Offer the meeting running now (or started less than 15 minutes ago) as target.
+    pub meeting_target: bool,
+}
+
+impl Default for CapturePrefs {
+    fn default() -> Self {
+        CapturePrefs {
+            default_target: CaptureDefault::Daily,
+            inbox_title: crate::capture::INBOX_TITLE.into(),
+            selection_shortcut: String::new(),
+            auto_hide_ms: 1200,
+            meeting_target: true,
+        }
+    }
+}
+
 // ------------------------------------------------------------- notifications
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

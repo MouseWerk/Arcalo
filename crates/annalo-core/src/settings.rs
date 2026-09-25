@@ -15,8 +15,8 @@ use crate::error::Result;
 use crate::gitsync::GitSyncSettings;
 use crate::network::NetworkSettings;
 use crate::prefs::{
-    AiPrefs, AppearancePrefs, EditorPrefs, LocalePrefs, NotesPrefs, NotificationPrefs, PrivacyPrefs, ROUNDING_STEPS,
-    StartOpen, StartPrefs, TimePrefs,
+    AiPrefs, AppearancePrefs, CapturePrefs, EditorPrefs, LocalePrefs, NotesPrefs, NotificationPrefs, PrivacyPrefs,
+    ROUNDING_STEPS, StartOpen, StartPrefs, TimePrefs,
 };
 use crate::tracking::Thresholds;
 
@@ -103,6 +103,8 @@ pub struct Settings {
     pub quick_links: Vec<QuickLink>,
     /// Calendar sync: Outlook, ICS files and subscriptions (subscription URLs live in the credential store).
     pub calendar: crate::calsync::CalendarSettings,
+    /// Quick capture: default target, inbox page, „Auswahl übernehmen“, auto-hide.
+    pub capture: CapturePrefs,
 }
 
 /// A link in the sidebar: a web address, `mailto:` or a local folder or file.
@@ -282,6 +284,7 @@ impl Default for Settings {
             dashboard: Dashboard::default(),
             quick_links: vec![],
             calendar: crate::calsync::CalendarSettings::default(),
+            capture: CapturePrefs::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -354,6 +357,13 @@ impl Settings {
         if e.inbox_title.is_empty() {
             e.inbox_title = d.editor.inbox_title;
         }
+        let c = &mut self.capture;
+        c.inbox_title = crate::notes::clean_title(&c.inbox_title);
+        if c.inbox_title.is_empty() {
+            c.inbox_title = d.capture.inbox_title;
+        }
+        c.selection_shortcut = c.selection_shortcut.trim().to_owned();
+        c.auto_hide_ms = c.auto_hide_ms.min(10_000);
         let n = &mut self.notes;
         n.daily_folder = n.daily_folder.trim().to_owned();
         if n.daily_folder.is_empty() {

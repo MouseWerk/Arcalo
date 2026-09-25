@@ -278,6 +278,8 @@ export interface Settings {
   quick_links: QuickLink[];
   /** Calendar sync; subscription addresses live in the credential store. */
   calendar: CalendarSettings;
+  /** Quick capture: default target, inbox page, „Auswahl übernehmen“, auto-hide. */
+  capture: CapturePrefs;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -515,12 +517,48 @@ export interface DesktopInfo {
   capture_shortcut_active: boolean;
   palette_shortcut_active: boolean;
   search_shortcut_active: boolean;
+  selection_shortcut_active?: boolean;
+  /** Milliseconds from the last quick-capture request to its first frame. */
+  capture_open_ms?: number | null;
   /** Portable mode: no autostart entry. */
   portable?: boolean;
 }
 export interface CaptureOutcome {
-  appended: { page_id: number; tasks: number; notes: number } | null;
+  appended: { page_id: number; tasks: number; notes: number; title: string; created: boolean } | null;
   bookings: LogOutcome[];
+  /** Id in the recent captures (undo). */
+  id?: number | null;
+  /** The database could not take it now: stored and retried. */
+  queued?: boolean;
+}
+/** Where a quick capture goes (`annalo_core::capture::CaptureTarget`). */
+export type CaptureTarget =
+  | { kind: "daily" }
+  | { kind: "inbox" }
+  | { kind: "page"; page_id: number }
+  | { kind: "new_page"; title: string }
+  | { kind: "meeting"; key: string };
+export interface CapturePrefs {
+  default_target: "daily" | "inbox" | "last";
+  inbox_title: string;
+  /** Global shortcut „Auswahl übernehmen“; "" = off. */
+  selection_shortcut: string;
+  auto_hide_ms: number;
+  meeting_target: boolean;
+}
+export interface RecentCapture {
+  id: number;
+  at: string;
+  page_id: number | null;
+  title: string;
+  preview: string;
+  bookings: number;
+  undo_until: string;
+}
+export interface CaptureContext {
+  meeting: { key: string; title: string; start: string; end: string; note_page_id: number | null } | null;
+  recent: RecentCapture[];
+  queued: number;
 }
 export interface SettingsView {
   settings: Settings;

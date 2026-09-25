@@ -138,6 +138,25 @@ export function App() {
           stopTimer();
         }
       }),
+      // Quick capture (its own window): new pages appear in the tree; the queue reports here.
+      on<{ page_id: number; title: string; created: boolean; late: boolean }>("capture://stored", async (c) => {
+        const st = useApp.getState();
+        if (c.created || !st.pages.has(c.page_id)) await st.refreshTree();
+        if (c.late) st.toast({ tone: "success", title: "Schnellerfassung nachträglich gespeichert", detail: `In „${c.title}“` });
+      }),
+      on<[number, boolean]>("capture://undone", ([, created]) => void (created && useApp.getState().refreshTree())),
+      on<string>("capture://queued", (msg) =>
+        useApp.getState().toast({ tone: "warning", title: "Schnellerfassung wartet", detail: `Die Datenbank ist gerade nicht bereit (${msg}). Der Text ist gesichert und wird gespeichert, sobald es geht.` }),
+      ),
+      on<[string, string]>("capture://failed", ([msg, text]) =>
+        useApp.getState().toast({
+          tone: "danger",
+          persistent: true,
+          title: "Schnellerfassung nicht gespeichert",
+          detail: `${msg}\n\n${text}`,
+          action: { label: "Text kopieren", run: () => void navigator.clipboard?.writeText(text).catch(() => {}) },
+        }),
+      ),
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.
       on<boolean>("palette://toggle", (foreground) => {
         const st = useApp.getState();
