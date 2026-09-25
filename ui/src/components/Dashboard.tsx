@@ -15,6 +15,7 @@ import { stopTimer, useTimerSeconds } from "./Sidebar";
 import { openDailyNote } from "./CalendarPopover";
 import { FocusWidget } from "./Focus";
 import { bookedEntry, hasSources, isAllDayLike, sourceColor, timeRange } from "../lib/agenda";
+import { useHiddenCalendars, visibleEvents } from "../lib/calvisibility";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { useT, type TKey } from "../lib/i18n";
 
@@ -591,6 +592,8 @@ function CalendarWidget() {
 function AgendaWidget() {
   const t = useT();
   const settings = useApp((s) => s.settings?.settings);
+  // The calendars hidden in the Kalender view stay hidden here.
+  const hidden = useHiddenCalendars();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const today = isoDay(new Date());
   const [data] = useLoad(
@@ -617,11 +620,12 @@ function AgendaWidget() {
         </button>
       </Empty>
     );
-  if (!data.events.length) return <Empty>{t("dash.noEventsToday")}</Empty>;
+  const events = visibleEvents(data.events, hidden);
+  if (!events.length) return <Empty>{t("dash.noEventsToday")}</Empty>;
   const nowMs = Date.now();
   return (
     <ul className="dw-list dw-agenda" aria-label={t("dash.eventsToday")}>
-      {data.events.slice(0, 7).map((e) => {
+      {events.slice(0, 7).map((e) => {
         const past = new Date(e.end).getTime() < nowMs;
         const booked = !!bookedEntry(e, data.entries);
         return (
@@ -635,10 +639,10 @@ function AgendaWidget() {
           </li>
         );
       })}
-      {data.events.length > 7 && (
+      {events.length > 7 && (
         <li>
           <button type="button" className="dw-more" onClick={() => openCalendarView({ date: today })}>
-            {t("dash.more", { n: data.events.length - 7 })}
+            {t("dash.more", { n: events.length - 7 })}
           </button>
         </li>
       )}

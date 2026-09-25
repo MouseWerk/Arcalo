@@ -139,6 +139,12 @@ export const api = {
   calendarSourceRemove: (id: string) => call<T.CalendarStatus>("calendar_source_remove", { id }),
   /** Syncs one source (its error is thrown) or all active ones now. */
   calendarSyncNow: (source?: string) => call<T.CalendarStatus>("calendar_sync_now", { source: source ?? null }),
+  /** Lists the calendars of Outlook (default, other folders and stores, shared, rooms, groups). */
+  calendarOutlookDiscover: () => call<T.CalendarStatus>("calendar_outlook_discover"),
+  calendarOutlookUpdate: (id: string, patch: { enabled?: boolean; color?: string; booking?: boolean }) =>
+    call<T.CalendarStatus>("calendar_outlook_update", { id, enabled: patch.enabled ?? null, color: patch.color ?? null, booking: patch.booking ?? null }),
+  /** People whose calendars discovery opens by name; discovers again. */
+  calendarOutlookPeople: (people: string[]) => call<T.CalendarStatus>("calendar_outlook_people", { people }),
   calendarSetSkip: (key: string, skip: boolean) => call<void>("calendar_set_skip", { key, skip }),
   calendarLinkEntry: (key: string, entryId: number) => call<void>("calendar_link_entry", { key, entryId }),
   /** The WBS last booked for this series or subject. */

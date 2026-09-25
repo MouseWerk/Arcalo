@@ -3,7 +3,7 @@
 
 import { addDays, dateLocale, dayOfMonth, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
 import { addMonths, monthGrid } from "./calendar";
-import type { CalendarEvent, CalendarSettings, TimeEntryRow, WbsHint } from "./types";
+import type { CalendarEvent, CalendarSettings, OutlookCalendar, TimeEntryRow, WbsHint } from "./types";
 import { t } from "./i18n";
 
 export type CalView = "day" | "workweek" | "week" | "month" | "agenda";
@@ -270,10 +270,20 @@ export function unbooked(events: CalendarEvent[], entries: TimeEntryRow[], now =
   );
 }
 
+/** Someone else's Outlook calendar (colleague, shared mailbox, room, group). */
+export const isSharedCalendar = (c: Pick<OutlookCalendar, "kind">) => c.kind !== "own" && c.kind !== "file";
+
+/** How an Outlook calendar other than the default one is called: its name, with the owner of someone else's calendar („Anna Müller – Kalender“). */
+export function outlookLabel(c: Pick<OutlookCalendar, "name" | "owner" | "kind">): string {
+  if (!isSharedCalendar(c) || !c.owner || c.owner === c.name) return c.name;
+  return `${c.owner} – ${c.name}`;
+}
+
 /** Color of a source (Settings → Kalender). */
 export function sourceColor(source: string, cal: CalendarSettings | undefined): string {
   if (!cal) return "var(--accent)";
   if (source === "outlook") return cal.outlook_color || "var(--accent)";
+  if (source.startsWith("outlook:")) return cal.outlook_calendars?.find((c) => c.id === source)?.color ?? "var(--accent)";
   const id = source.replace(/^ics:/, "");
   return cal.sources.find((s) => s.id === id)?.color ?? "var(--accent)";
 }
@@ -281,6 +291,10 @@ export function sourceColor(source: string, cal: CalendarSettings | undefined): 
 /** Name of a source for the detail panel. */
 export function sourceName(source: string, cal: CalendarSettings | undefined): string {
   if (source === "outlook") return "Outlook";
+  if (source.startsWith("outlook:")) {
+    const c = cal?.outlook_calendars?.find((x) => x.id === source);
+    return c ? outlookLabel(c) : "Outlook";
+  }
   const id = source.replace(/^ics:/, "");
   return cal?.sources.find((s) => s.id === id)?.name ?? "Kalender";
 }

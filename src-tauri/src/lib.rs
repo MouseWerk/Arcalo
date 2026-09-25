@@ -3,6 +3,7 @@
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
+mod backdrop;
 mod calsync;
 mod dayreview;
 mod desktop;
@@ -1666,6 +1667,11 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.quick_links = state.settings().quick_links;
     // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
     settings.calendar.sources = state.settings().calendar.sources;
+    // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
+    let stored_cal = state.settings().calendar;
+    settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
+    settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
+    settings.calendar = std::mem::take(&mut settings.calendar).normalized();
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -3062,32 +3068,14 @@ fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     Ok(n)
 }
 
-/// Windows 11 (build 22000+) supports the Mica backdrop.
-#[cfg(windows)]
-fn supports_mica() -> bool {
-    use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
-    use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
-    let mut info: OSVERSIONINFOW = unsafe { std::mem::zeroed() };
-    info.dwOSVersionInfoSize = std::mem::size_of::<OSVERSIONINFOW>() as u32;
-    // SAFETY: `info` is a valid, correctly sized OSVERSIONINFOW.
-    unsafe { RtlGetVersion(&mut info) == 0 && info.dwBuildNumber >= 22000 }
-}
-
-#[cfg(not(windows))]
-fn supports_mica() -> bool {
-    false
-}
-
 fn create_main_window(
     app: &tauri::App,
     visible: bool,
     geometry: Option<prefs::WindowState>,
-    mica_on: bool,
+    effect: annalo_core::prefs::WindowEffect,
     custom_frame: bool,
     webview_dir: Option<PathBuf>,
 ) -> tauri::Result<tauri::WebviewWindow> {
-    // Transparent whenever Mica is possible, so switching it on later needs no restart.
-    let mica = supports_mica();
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
         .title("Annalo")
@@ -3104,16 +3092,13 @@ fn create_main_window(
         }
         None => builder.inner_size(1480.0, 920.0).center(),
     };
+    // Transparent whenever an effect is possible, so switching one on later needs no restart.
     #[cfg(windows)]
-    let builder = if mica {
+    let builder = if backdrop::transparent_window() {
         let b = builder.transparent(true);
-        if mica_on {
-            b.effects(tauri::utils::config::WindowEffectsConfig {
-                effects: vec![tauri::window::Effect::Mica],
-                ..Default::default()
-            })
-        } else {
-            b
+        match backdrop::initial(effect) {
+            Some(effects) => b.effects(effects),
+            None => b,
         }
     } else {
         builder
@@ -3123,7 +3108,7 @@ fn create_main_window(
     #[cfg(windows)]
     let builder = builder.decorations(!custom_frame);
     CUSTOM_FRAME.store(cfg!(windows) && custom_frame, std::sync::atomic::Ordering::Relaxed);
-    let _ = (mica, mica_on);
+    let _ = effect;
     // macOS: the tab bar sits in the title bar; the UI leaves room for the traffic lights (`os-macos`).
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
@@ -3179,26 +3164,22 @@ fn window_frame() -> bool {
     CUSTOM_FRAME.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Whether the window has a Mica backdrop (the UI then lets it show through). Off when
-/// switched off under Settings → Darstellung.
+/// The effects this system offers and the one the window shows (the UI then lets it show
+/// through). None when switched off under Settings → Darstellung or not available.
 #[tauri::command]
-fn window_backdrop(state: State<AppState>) -> bool {
-    supports_mica() && state.settings().appearance.mica
+fn window_backdrop(state: State<AppState>) -> backdrop::Backdrop {
+    backdrop::state(state.settings().appearance.window_effect)
 }
 
-/// Switches the Mica variant to match the app theme (Windows 11 only).
+/// Shows the effect (`none`, `mica`, `acrylic`) in the variant of the app theme. The UI passes
+/// the effect, so a change applies before (and whether or not) the settings are saved.
 #[tauri::command]
-fn window_set_theme(app: AppHandle, dark: bool) {
-    #[cfg(windows)]
-    if supports_mica()
-        && let Some(w) = app.get_webview_window("main")
-    {
-        let on = app.state::<AppState>().settings().appearance.mica;
-        let effect = if dark { tauri::window::Effect::MicaDark } else { tauri::window::Effect::MicaLight };
-        let effects = if on { vec![effect] } else { vec![] };
-        let _ = w.set_effects(tauri::utils::config::WindowEffectsConfig { effects, ..Default::default() });
+fn window_set_backdrop(app: AppHandle, effect: String, dark: bool) -> backdrop::Backdrop {
+    let effect = annalo_core::prefs::WindowEffect::parse(&effect).unwrap_or_default();
+    match app.get_webview_window(desktop::MAIN) {
+        Some(w) => backdrop::apply(&w, effect, dark),
+        None => backdrop::state(effect),
     }
-    let _ = (app, dark);
 }
 
 #[derive(Serialize)]
@@ -3544,7 +3525,7 @@ pub fn run() {
             let proxy_secret = SecretStore::proxy(&dir);
             let idle_threshold = Duration::from_secs(settings.idle_threshold_minutes * 60);
             let start = settings.start.clone();
-            let mica_on = settings.appearance.mica;
+            let effect = settings.appearance.window_effect;
             let custom_frame = settings.appearance.custom_titlebar;
             let geometry = prefs::saved_window(app.handle(), &settings);
             let keys = provider_keys(&dir, &settings.providers);
@@ -3595,7 +3576,7 @@ pub fn run() {
             // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
             // Windows showed the unstyled page, then the webview's white, then the splash.
             let webview_dir = portable::webview_dir(&app.state::<AppState>().data_dir);
-            let window = create_main_window(app, false, geometry, mica_on, custom_frame, webview_dir)?;
+            let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir)?;
             PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
             // Should the UI never report (a script error), the window still appears.
             let handle = app.handle().clone();
@@ -3768,7 +3749,7 @@ pub fn run() {
             window_frame,
             window_ready,
             jumplist::jump_take,
-            window_set_theme,
+            window_set_backdrop,
             desktop::window_hide,
             desktop::app_quit,
             desktop::capture_submit,
@@ -3816,6 +3797,9 @@ pub fn run() {
             calsync::calendar_source_update,
             calsync::calendar_source_remove,
             calsync::calendar_sync_now,
+            calsync::calendar_outlook_discover,
+            calsync::calendar_outlook_update,
+            calsync::calendar_outlook_people,
             calsync::calendar_set_skip,
             calsync::calendar_link_entry,
             calsync::calendar_wbs_hint,

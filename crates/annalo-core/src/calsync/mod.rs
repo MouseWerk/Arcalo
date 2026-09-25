@@ -4,12 +4,14 @@
 //!
 //! * [`ics`] – iCalendar parser with RRULE/EXDATE/RECURRENCE-ID expansion inside a window
 //! * [`outlook`] – the PowerShell script, its JSON output and the Restrict date format
+//! * [`calendars`] – the Outlook calendars found and selected („Kalender auswählen“), their ids
 //! * [`tz`] – IANA, Windows and `VTIMEZONE` time zones
 //!
 //! Each sync replaces the events of one source inside its window (`calendar_replace`); what the
 //! user decided about an event (booked entry, meeting note, „nicht buchen“) lives in
 //! `calendar_marks` under the event's key and survives every sync.
 
+pub mod calendars;
 pub mod ics;
 pub mod outlook;
 pub mod tz;
@@ -22,7 +24,10 @@ use crate::db::{Database, parse_ts, ts};
 use crate::error::{Error, Result};
 use crate::model::Page;
 
-/// Source id of the Outlook calendar; ICS sources are `ics:<id>`.
+pub use calendars::{OutlookCalendar, OutlookKind};
+
+/// Source id of the default Outlook calendar; the other Outlook calendars are
+/// `outlook:<hash>` ([`calendars::source_id`]), ICS sources are `ics:<id>`.
 pub const OUTLOOK: &str = "outlook";
 
 /// Colors given to new sources in turn (the first is Outlook's).
@@ -76,9 +81,15 @@ impl IcsSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CalendarSettings {
-    /// Read the default calendar of Outlook Classic (Windows).
+    /// Read Outlook Classic (Windows): the calendars selected in `outlook_calendars`.
     pub outlook: bool,
+    /// Color of the default calendar (also kept in its entry of `outlook_calendars`).
     pub outlook_color: String,
+    /// The Outlook calendars chosen once („Kalender auswählen“); the default calendar is always
+    /// the first, with the source id `outlook`.
+    pub outlook_calendars: Vec<OutlookCalendar>,
+    /// People (names or addresses) whose default calendar discovery opens by name.
+    pub outlook_recipients: Vec<String>,
     /// ICS files and subscriptions.
     pub sources: Vec<IcsSource>,
     /// Minutes between background syncs.
@@ -99,6 +110,8 @@ impl Default for CalendarSettings {
         CalendarSettings {
             outlook: false,
             outlook_color: PALETTE[0].into(),
+            outlook_calendars: vec![OutlookCalendar::default_calendar(PALETTE[0])],
+            outlook_recipients: vec![],
             sources: vec![],
             sync_minutes: 15,
             past_days: 30,
@@ -126,6 +139,8 @@ impl CalendarSettings {
         if !valid_color(&self.outlook_color) {
             self.outlook_color = PALETTE[0].into();
         }
+        self.outlook_color = self.outlook_color.to_ascii_lowercase();
+        self.normalize_outlook();
         let mut seen = std::collections::HashSet::new();
         let mut out = vec![];
         for (i, mut s) in std::mem::take(&mut self.sources).into_iter().enumerate() {
@@ -152,14 +167,90 @@ impl CalendarSettings {
         self
     }
 
+    /// The Outlook calendars: the default one first (settings from before calendar selection
+    /// knew only it: it is added with `outlook_color`), ids recomputed from the folder, colors
+    /// checked, duplicates dropped.
+    fn normalize_outlook(&mut self) {
+        let mut cals = std::mem::take(&mut self.outlook_calendars);
+        let mut def = match cals.iter().position(|c| c.default || c.id == OUTLOOK) {
+            Some(i) => cals.remove(i),
+            None => OutlookCalendar::default_calendar(&self.outlook_color),
+        };
+        def.id = OUTLOOK.into();
+        def.default = true;
+        def.kind = OutlookKind::Own;
+        def.free_busy = false;
+        // `outlook_color` is the default calendar's color (older settings have only it).
+        def.color = self.outlook_color.clone();
+        if def.name.trim().is_empty() {
+            def.name = "Kalender".into();
+        }
+        let mut out = vec![def];
+        for c in cals {
+            let mut c = OutlookCalendar { default: false, ..c };
+            if c.entry_id.trim().is_empty() && c.recipient.trim().is_empty() {
+                continue;
+            }
+            c.id = calendars::source_id(&c.store_id, &c.entry_id, &c.recipient);
+            if out.iter().any(|x| x.id == c.id) {
+                continue;
+            }
+            c.name = c.name.trim().to_owned();
+            c.owner = c.owner.trim().to_owned();
+            if c.name.is_empty() {
+                c.name = if c.owner.is_empty() { "Kalender".into() } else { c.owner.clone() };
+            }
+            c.color = c.color.trim().to_ascii_lowercase();
+            if !valid_color(&c.color) {
+                let used: Vec<String> = out.iter().map(|x| x.color.clone()).collect();
+                c.color = calendars::next_color(&used);
+            }
+            out.push(c);
+        }
+        out.truncate(calendars::MAX_CALENDARS);
+        self.outlook_calendars = out;
+        let mut people: Vec<String> = vec![];
+        for r in std::mem::take(&mut self.outlook_recipients) {
+            let r = r.trim().to_owned();
+            if !r.is_empty() && !people.iter().any(|p| p.to_lowercase() == r.to_lowercase()) {
+                people.push(r);
+            }
+        }
+        people.truncate(calendars::MAX_RECIPIENTS);
+        self.outlook_recipients = people;
+    }
+
+    /// The Outlook calendars that sync, in the order duplicates are resolved: the default
+    /// calendar, own ones, files, other mailboxes, shared, rooms, groups.
+    pub fn outlook_active(&self, outlook_available: bool) -> Vec<&OutlookCalendar> {
+        if !(self.outlook && outlook_available) {
+            return vec![];
+        }
+        let mut cals: Vec<&OutlookCalendar> = self.outlook_calendars.iter().filter(|c| c.enabled).collect();
+        cals.sort_by_key(|c| c.rank());
+        cals
+    }
+
+    pub fn outlook_calendar(&self, source_id: &str) -> Option<&OutlookCalendar> {
+        self.outlook_calendars.iter().find(|c| c.id == source_id)
+    }
+
     /// The source ids that sync (Outlook only where it exists).
     pub fn active_sources(&self, outlook_available: bool) -> Vec<String> {
-        let mut out = vec![];
-        if self.outlook && outlook_available {
-            out.push(OUTLOOK.to_owned());
-        }
+        let mut out: Vec<String> = self.outlook_active(outlook_available).iter().map(|c| c.id.clone()).collect();
         out.extend(self.sources.iter().filter(|s| s.enabled).map(IcsSource::source_id));
         out
+    }
+
+    /// The active sources whose meetings are proposed for booking (week proposal, day review)
+    /// and offered as „Jetzt“ in the quick capture: Outlook calendars with „Für
+    /// Buchungsvorschläge verwenden“ (by default the own ones, not those of colleagues), every
+    /// ICS source.
+    pub fn booking_sources(&self, outlook_available: bool) -> Vec<String> {
+        self.active_sources(outlook_available)
+            .into_iter()
+            .filter(|id| self.outlook_calendar(id).is_none_or(|c| c.booking))
+            .collect()
     }
 
     pub fn source(&self, source_id: &str) -> Option<&IcsSource> {
@@ -307,6 +398,10 @@ pub struct CalendarEvent {
     pub note_page_id: Option<i64>,
     /// The time entry booked from this appointment.
     pub entry_id: Option<i64>,
+    /// Other selected calendars with the same meeting (shown once, see
+    /// [`Database::calendar_events`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_in: Vec<String>,
 }
 
 /// Result of the last sync of a source.
@@ -414,6 +509,7 @@ fn map_event(r: &rusqlite::Row) -> rusqlite::Result<CalendarEvent> {
         skip: r.get(16)?,
         note_page_id: r.get(17)?,
         entry_id: r.get(18)?,
+        also_in: vec![],
     })
 }
 
@@ -465,7 +561,10 @@ impl Database {
         })
     }
 
-    /// Events of the given sources overlapping `from..to`, by start.
+    /// Events of the given sources overlapping `from..to`, by start. A meeting in several
+    /// Outlook calendars (same global id and start) is returned once: the copy with a mark
+    /// (booked, note, „nicht buchen“), else the one of the source listed first in `sources`;
+    /// the others are named in `also_in`.
     pub fn calendar_events(
         &self,
         from: DateTime<Utc>,
@@ -488,7 +587,7 @@ impl Database {
                 out.push(e);
             }
         }
-        Ok(out)
+        Ok(dedupe(out, sources))
     }
 
     /// One event by its key.
@@ -743,6 +842,46 @@ impl Database {
     }
 }
 
+/// One copy of a meeting found in several Outlook calendars (see [`Database::calendar_events`]).
+pub fn dedupe(events: Vec<CalendarEvent>, sources: &[String]) -> Vec<CalendarEvent> {
+    use std::collections::HashMap;
+    let rank = |e: &CalendarEvent| {
+        let marked = e.skip || e.entry_id.is_some() || e.note_page_id.is_some();
+        (!marked, sources.iter().position(|s| *s == e.source).unwrap_or(usize::MAX))
+    };
+    let key = |e: &CalendarEvent| {
+        (calendars::is_outlook(&e.source) && !e.event.uid.is_empty()).then(|| (e.event.uid.clone(), e.event.start))
+    };
+    let mut best: HashMap<(String, DateTime<Utc>), usize> = HashMap::new();
+    for (i, e) in events.iter().enumerate() {
+        let Some(k) = key(e) else { continue };
+        match best.get(&k) {
+            Some(&j) if rank(&events[j]) <= rank(e) => {}
+            _ => {
+                best.insert(k, i);
+            }
+        }
+    }
+    let mut others: HashMap<usize, Vec<String>> = HashMap::new();
+    for (i, e) in events.iter().enumerate() {
+        if let Some(&j) = key(e).and_then(|k| best.get(&k)).filter(|&&j| j != i) {
+            others.entry(j).or_default().push(e.source.clone());
+        }
+    }
+    events
+        .into_iter()
+        .enumerate()
+        .filter(|(i, e)| key(e).and_then(|k| best.get(&k).copied()).is_none_or(|j| j == *i))
+        .map(|(i, mut e)| {
+            if let Some(mut o) = others.remove(&i) {
+                o.sort_by_key(|s| sources.iter().position(|x| x == s));
+                e.also_in = o;
+            }
+            e
+        })
+        .collect()
+}
+
 /// Parent page of the meeting notes.
 pub const MEETINGS_TITLE: &str = "Besprechungen";
 
@@ -992,5 +1131,119 @@ mod tests {
         assert_eq!((s.sources[1].path.as_str(), s.sources[1].color.starts_with('#')), ("/tmp/a.ics", true));
         assert_eq!(s.active_sources(false), ["ics:s1", "ics:f"]);
         assert_eq!(new_source_id(&s.sources), "s3");
+    }
+
+    fn outlook_cal(entry: &str, kind: OutlookKind, enabled: bool) -> OutlookCalendar {
+        OutlookCalendar {
+            store_id: "S".into(),
+            entry_id: entry.into(),
+            name: entry.into(),
+            kind,
+            enabled,
+            booking: !kind.shared(),
+            color: String::new(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn settings_from_before_calendar_selection_keep_the_default_calendar() {
+        // Stored by 1.5: only the switch and the color of the default calendar.
+        let old =
+            r##"{"outlook":true,"outlook_color":"#DB2777","sources":[{"id":"s1","name":"Team"}],"sync_minutes":15}"##;
+        let s: CalendarSettings = serde_json::from_str::<CalendarSettings>(old).unwrap().normalized();
+        assert_eq!(s.outlook_calendars.len(), 1);
+        let d = &s.outlook_calendars[0];
+        assert_eq!(
+            (d.id.as_str(), d.default, d.enabled, d.booking, d.color.as_str()),
+            (OUTLOOK, true, true, true, "#db2777")
+        );
+        assert_eq!(s.active_sources(true), ["outlook", "ics:s1"], "the source id of 1.5 stays");
+        assert_eq!(s.booking_sources(true), ["outlook", "ics:s1"]);
+        assert_eq!(s.active_sources(false), ["ics:s1"]);
+        // Normalizing again changes nothing; a round trip through JSON neither.
+        let again: CalendarSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(again.normalized(), s);
+
+        // Loaded from the database as 1.5 left it: migrated on reading, before any save.
+        let db = Database::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('app', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [format!(r#"{{"calendar":{old}}}"#)],
+            )
+            .unwrap();
+        let loaded = db.load_settings().unwrap().calendar;
+        assert_eq!(loaded.outlook_calendars[0].color, "#db2777");
+        assert_eq!(loaded.active_sources(true), ["outlook", "ics:s1"]);
+    }
+
+    #[test]
+    fn selected_calendars_sync_in_their_order_and_shared_ones_are_not_booked() {
+        let mut s = CalendarSettings { outlook: true, ..Default::default() };
+        s.outlook_calendars.extend([
+            outlook_cal("ANNA", OutlookKind::Shared, true),
+            outlook_cal("PROJ", OutlookKind::Own, true),
+            outlook_cal("OFF", OutlookKind::Own, false),
+            OutlookCalendar { id: "egal".into(), ..outlook_cal("PROJ", OutlookKind::Own, true) },
+            OutlookCalendar { entry_id: String::new(), ..outlook_cal("", OutlookKind::Own, true) },
+            OutlookCalendar { default: true, ..outlook_cal("ZWEITER", OutlookKind::Own, true) },
+        ]);
+        let s = s.normalized();
+        let ids: Vec<&str> = s.outlook_calendars.iter().map(|c| c.id.as_str()).collect();
+        let anna = calendars::source_id("S", "ANNA", "");
+        let proj = calendars::source_id("S", "PROJ", "");
+        assert_eq!(ids.len(), 5, "duplicate and empty dropped: {ids:?}");
+        assert_eq!(ids[..3], [OUTLOOK, anna.as_str(), proj.as_str()]);
+        assert!(s.outlook_calendars.iter().filter(|c| c.default).count() == 1, "one default calendar");
+        assert!(s.outlook_calendars.iter().all(|c| c.color.len() == 7), "every calendar has a color");
+        assert_ne!(s.outlook_calendars[1].color, s.outlook_calendars[0].color);
+        // Own calendars before shared ones (duplicates keep the first).
+        let active = s.active_sources(true);
+        let second = calendars::source_id("S", "ZWEITER", "");
+        assert_eq!(active, [OUTLOOK, proj.as_str(), second.as_str(), anna.as_str()]);
+        assert!(!active.contains(&calendars::source_id("S", "OFF", "")));
+        let booking = s.booking_sources(true);
+        assert!(booking.contains(&proj) && !booking.contains(&anna), "a colleague's meetings are no bookings");
+        // Outlook switched off: none of them.
+        let off = CalendarSettings { outlook: false, ..s.clone() };
+        assert!(off.active_sources(true).is_empty());
+    }
+
+    #[test]
+    fn a_meeting_in_two_calendars_shows_once() {
+        let db = Database::open_in_memory().unwrap();
+        let own = calendars::source_id("S", "PROJ", "");
+        let anna = calendars::source_id("S", "ANNA", "");
+        let jf = ev("G-jf", "2026-09-22T09:00:00Z", 22, 9, "Jour fixe");
+        db.calendar_replace(OUTLOOK, at(1, 0), at(30, 0), &[jf.clone(), ev("G-a", "", 22, 12, "Nur Standard")])
+            .unwrap();
+        db.calendar_replace(&anna, at(1, 0), at(30, 0), &[jf.clone(), ev("G-b", "", 23, 9, "Nur Anna")]).unwrap();
+        // Same uid at another time: a different instance, not a duplicate.
+        let later = ev("G-jf", "2026-09-24T09:00:00Z", 24, 9, "Jour fixe");
+        db.calendar_replace(&own, at(1, 0), at(30, 0), &[jf.clone(), later]).unwrap();
+        db.calendar_replace("ics:s1", at(1, 0), at(30, 0), std::slice::from_ref(&jf)).unwrap();
+        let sources = vec![OUTLOOK.to_owned(), own.clone(), anna.clone(), "ics:s1".into()];
+        let all = db.calendar_events(at(1, 0), at(30, 0), &sources).unwrap();
+        let jfs: Vec<_> = all.iter().filter(|e| e.event.title == "Jour fixe").collect();
+        assert_eq!(jfs.len(), 3, "the default calendar's copy, the one on the 24th and the ICS one");
+        assert_eq!(jfs[0].source, OUTLOOK);
+        assert_eq!(jfs[0].also_in, [own.clone(), anna.clone()]);
+        assert!(all.iter().any(|e| e.source == "ics:s1" && e.also_in.is_empty()), "ICS sources are not merged");
+        // Without the default calendar the own one wins over the colleague's.
+        let two = db.calendar_events(at(1, 0), at(30, 0), &[anna.clone(), own.clone()]).unwrap();
+        let first = two.iter().find(|e| e.event.start == at(22, 9)).unwrap();
+        assert_eq!(
+            (first.source.as_str(), first.also_in.clone()),
+            (anna.as_str(), vec![own.clone()]),
+            "the order given decides"
+        );
+        // A marked copy wins: the booking made earlier stays visible.
+        db.calendar_set_skip(&event_key(&own, "G-jf", "2026-09-22T09:00:00Z"), true).unwrap();
+        let all = db.calendar_events(at(1, 0), at(30, 0), &sources).unwrap();
+        let shown = all.iter().find(|e| e.event.start == at(22, 9) && e.source != "ics:s1").unwrap();
+        assert_eq!(shown.source, own);
+        assert!(shown.skip);
     }
 }

@@ -12,6 +12,8 @@ import { Button, Dialog, Field, IconButton, Input, Switch, useMenu } from "../..
 import { t, useT, type TKey } from "../../lib/i18n";
 import type { CalendarSettings, CalendarSourceInfo, CalendarStatus } from "../../lib/types";
 import { MailGroup } from "./MailGroup";
+import { OutlookCalendars } from "./OutlookCalendars";
+import { outlookSummary } from "../../lib/outlookcal";
 import { Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
 
 const COLORS = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#ca8a04"];
@@ -64,7 +66,8 @@ export function CalendarSection({ draft, update }: SectionProps) {
     }
   };
 
-  const outlook = status?.sources.find((x) => x.kind === "outlook");
+  const outlook = status?.sources.find((x) => x.id === "outlook");
+  const outlookState = status ? outlookSummary(status.outlook_calendars) : null;
   const ics = status?.sources.filter((x) => x.kind !== "outlook") ?? [];
 
   const sourceMenu = (src: CalendarSourceInfo) => [
@@ -95,19 +98,24 @@ export function CalendarSection({ draft, update }: SectionProps) {
       </header>
 
       {status?.outlook_available && (
-        <Group title={t("calset.outlook")} description={t("calset.outlookDesc")}>
+        <Group title={t("calset.outlook")} description={t("olcal.groupDesc")}>
           <Row label={t("calset.outlookRead")} description={t("calset.outlookReadDesc")}>
             <Switch label={t("calset.outlookRead")} checked={cal.outlook} onChange={(v) => set({ outlook: v })} />
           </Row>
           {cal.outlook && outlook && (
             <Row label={t("upd.status")} keywords={t("calset.outlookKeywords")}>
               <div className="calset-status">
-                <SourceStatus src={outlook} />
-                <Button size="sm" icon={RefreshCw} loading={outlook.syncing} onClick={() => void run(() => api.calendarSyncNow("outlook"), t("calset.outlookSynced"))}>
+                {outlookState ? <StatusNote tone={outlookState.tone}>{outlookState.text}</StatusNote> : <SourceStatus src={outlook} />}
+                <Button size="sm" icon={RefreshCw} loading={status?.outlook_calendars.some((r) => r.syncing)} onClick={() => void run(() => api.calendarSyncNow("outlook:*"), t("calset.outlookSynced"))}>
                   {t("calset.syncNow")}
                 </Button>
               </div>
             </Row>
+          )}
+          {cal.outlook && status && (
+            <Unfiltered>
+              <OutlookCalendars status={status} setStatus={setStatus} />
+            </Unfiltered>
           )}
         </Group>
       )}

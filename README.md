@@ -223,7 +223,8 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 
 **Kalender**
-- Outlook Classic on Windows: reads the default calendar of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed
+- Outlook Classic on Windows: reads the calendars you choose of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed. „Kalender auswählen“ lists the default calendar, sub-calendars, further and shared mailboxes, PST files, calendars colleagues shared with you (also free/busy only), rooms and groups; each has its own color and switch for booking proposals
+- A legend hides or shows calendars in the view; a meeting in two calendars appears once
 - ICS: subscribe to a published calendar (Outlook im Web/Exchange „Kalender veröffentlichen“, Google, Nextcloud, …) or add an `.ics` file; series, exceptions and Windows time zones are understood. Subscription addresses are kept in the credential store
 - Day, Arbeitswoche, Woche, Monat and Liste with KW numbers; overlapping meetings side by side; booked time as a lane next to them; daily note, due tasks and booked hours in each day's header
 - „Zeit buchen“ from a meeting (prefilled, WBS remembered per series or subject), „Besprechungsnotiz“, „Nicht buchen“; booked meetings get a check mark
@@ -336,7 +337,7 @@ Settings are grouped (Allgemein, Arbeiten, KI, System) and searchable. Besides t
 
 | Section | What |
 |---|---|
-| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, Mica (Windows 11), own title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
+| Darstellung | light/dark, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, window backdrop Mica or Acrylic with an opacity slider (Windows 11), own title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
 | Sprache & Format | German or English for settings, ribbon, sidebar, tabs, status bar and commands (longer help texts, dialogs and AI prompts stay German), date format |
 | Start | open the last tabs, the start page or today's note; remember window size and position; start minimized |
 | Tastatur | rebind every in-app shortcut, with conflict detection (commands, editor keys, global shortcuts); Ctrl+Alt is rejected (AltGr) |

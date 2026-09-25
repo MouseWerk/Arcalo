@@ -9,6 +9,7 @@
 
 import type { AppearancePrefs, CustomTheme, Settings, ThemeColors } from "./types";
 import { accentHex, accentTokens, contrast, ensureContrast, mix, parseHex, toHex, type Rgb } from "./color";
+import { setBackdropDark } from "./backdrop";
 import { rememberSplash } from "./splash";
 
 export interface ThemeDef {
@@ -248,9 +249,8 @@ export function applyThemeState(next: { mode?: Settings["theme"]; appearance?: A
   // The startup animation of the next start uses the same colors.
   const k = def.colors;
   rememberSplash({ dark: def.dark, accent: effectiveAccent(def, accent), bg: def.app ?? k.background, text: k.text, muted: k.muted });
-  import("@tauri-apps/api/core")
-    .then(({ invoke }) => invoke("window_set_theme", { dark: def.dark }))
-    .catch(() => {});
+  // The Mica variant follows the theme.
+  setBackdropDark(def.dark);
 }
 
 // ------------------------------------------------------------------- editing
