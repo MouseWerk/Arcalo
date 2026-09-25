@@ -88,6 +88,7 @@ a local model (never a cloud provider) can add a short summary.
   <img src="docs/screenshots/presentation.png" width="49%" alt="A note as a presentation">
   <img src="docs/screenshots/activity-feed.png" width="49%" alt="Activity feed with the day summary">
 </p>
+<p align="center"><img src="docs/screenshots/dark-day-review.png" width="90%" alt="Tagesrückblick of a Thursday: hours per WBS with the unbooked gap, a meeting not booked yet, edited pages and tasks"></p>
 
 ### Your own start page
 
@@ -132,13 +133,34 @@ The Kalender (Ctrl Shift E) shows your meetings from Outlook Classic or any ICS 
 day, work week, week, month and a list. Click a meeting and „Zeit buchen“ opens the entry prefilled with its day,
 time, length and subject; the WBS of the last meeting of the same series or subject is suggested. „Besprechungsnotiz“
 creates a note with date, attendees and the Teams link. Meetings you do not book can be marked „nicht buchen“, and the
-timesheet lists the week's meetings that are not booked yet. „Woche vorschlagen“ turns the week's meetings, focus
-sessions and page editing into a timesheet draft that you check by day and take over in one go.
+timesheet lists the week's meetings that are not booked yet.
+
+<p align="center"><img src="docs/screenshots/kalender-week.png" width="90%" alt="Kalender work week with meetings and the booked time as a lane next to them"></p>
+
+„Woche vorschlagen“ turns the week's meetings, focus sessions and page editing into a timesheet draft that you check
+by day and take over in one go. Every line says where it comes from and how sure Annalo is about the Vorgang („wie
+letzte Woche“, „Seite … gehört zu NP-8801/1030“); a Vorgang you change is remembered for that page or meeting series.
+
+<p align="center"><img src="docs/screenshots/week-proposal.png" width="90%" alt="Woche vorschlagen: proposals by day with source, time, length, WBS and a confidence badge"></p>
 
 An e-mail becomes a task or a note in two clicks: select it in Outlook Classic and choose „Aktuelle E-Mail
 übernehmen“ (palette or your own global shortcut), drop an `.eml`/`.msg` file onto the window or paste the header
 lines of a forwarded mail. The task gets a due date and priority, the note the sender, date, text and the attachments
 you ticked; both carry an „E-Mail“ chip that opens the mail again in Outlook.
+
+<p align="center"><img src="docs/screenshots/mail-to-task.png" width="70%" alt="E-Mail übernehmen: a mail from Outlook becomes a task with due date, priority and an attachment"></p>
+
+### Quick capture and link groups
+
+Ctrl Shift Space opens a small capture window from any program. Text goes into today's daily note, the „Posteingang“,
+the note of the meeting running now or, after `>`, any page. Several lines, tasks with a due date (`todo … bis Fr`),
+`[[links]]`, `#tags` and `/zeit` work there too. Links and apps in the ribbon can be grouped behind one icon.
+
+<p align="center">
+  <img src="docs/screenshots/capture-picker.png" width="49%" alt="Quick capture: the page picker after typing >konz">
+  <img src="docs/screenshots/capture-task.png" width="49%" alt="Quick capture into a page with a task due on Friday">
+</p>
+<p align="center"><img src="docs/screenshots/dark-link-group.png" width="90%" alt="A link group „SAP“ opened next to the ribbon"></p>
 
 ### Tasks, calendar and quick search
 
@@ -455,6 +477,10 @@ e2e/run.sh                     # end-to-end: drives the real desktop app via Web
 
 The end-to-end suite starts the actual app binary under `tauri-driver`, with a fresh data directory per test file,
 and a fake LiteLLM server for the assistant tests. It also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
+
+The README and website screenshots come from `e2e/readme-shots.test.js` and `e2e/readme-shots-15.test.js` (the 1.5
+features in light and dark, at device scale factor 2 through `GDK_SCALE`, so the X display needs at least
+2960×1840). Run them after building the app with `ANNALO_SHOTS=<folder>` and `ANNALO_APP=<binary>`.
 
 ## Repository layout
 
