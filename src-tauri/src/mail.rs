@@ -164,8 +164,9 @@ pub async fn mail_import(app: AppHandle, request: MailImport) -> Result<MailCrea
     let pages: Vec<i64> = [&out.task_page, &out.note_page].into_iter().flatten().map(|p| p.id).collect();
     let _ = app.emit("data://pages", &pages);
     // The staged file is not needed any more once stored.
-    if !request.mail.file.is_empty()
-        && let Some(dir) = request.mail.file.split('/').next()
+    if let Some(dir) = request.mail.file.split('/').next()
+        && dir.len() == 16
+        && dir.bytes().all(|b| b.is_ascii_hexdigit())
     {
         let _ = std::fs::remove_dir_all(temp_root(&state).join(dir));
     }
