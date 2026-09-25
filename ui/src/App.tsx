@@ -26,6 +26,7 @@ import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
 import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
 import { withPacResults } from "./views/settings/NetworkSection";
+import { warnDestination } from "./views/settings/BackupDestinations";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PresentationHost, startPresentation } from "./components/Presentation";
@@ -82,6 +83,7 @@ export function App() {
     const unlisten = [
       on("data://entries", () => useApp.getState().bumpEntries()),
       on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: "Automatische Sicherung fehlgeschlagen", detail: msg })),
+      on<Parameters<typeof warnDestination>[0]>("backup://destination-failed", (w) => notify("backup_failed") && warnDestination(w)),
       // Git sync: only failures are shown (successes appear in the settings' status line).
       on<string>("gitsync://failed", (msg) => notify("git_failed") && useApp.getState().toast({ tone: "warning", title: "Git-Synchronisierung fehlgeschlagen", detail: msg })),
       // Git sync took over notes from the server; notes changed on both sides are conflicts.

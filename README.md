@@ -431,8 +431,13 @@ with the old key must be updated once by hand.
 
 - **Local first.** Everything is in one SQLite database (`workspace.db`) in your user profile. Nothing leaves the
   computer unless you set it up
-- **Daily backups** of the database into `backups` (folder configurable), with a readable **Markdown copy** of all
+- **Daily backups** of the database and the attachments into `backups` (folder configurable), with a readable **Markdown copy** of all
   pages, images and bookings (`Zeiterfassung/YYYY-MM.csv`, Excel-ready)
+- **Network and cloud destinations**: Settings → Sicherung → „Weitere Sicherungsziele“ copies every backup in the
+  background to further folders, such as `\\server\freigabe\Annalo`, a mapped drive, `/Volumes/NAS` or a OneDrive or
+  Nextcloud folder, each computer into its own subfolder with a SHA-256 checksum. A share that is offline or hangs never
+  holds up the app; Annalo retries quietly and only warns after a day. Backups from the destinations can be restored from
+  the same page, and the start-up recovery finds them too
 - **Trash** keeps deleted pages for 30 days. **Version history** keeps earlier states of every page, with a diff
 - **Git sync** pushes the Markdown copy to your own private repository (see below)
 - **Secrets** (AI provider keys, Git token, proxy password, calendar subscription addresses) are stored in the Windows Credential Manager or the macOS

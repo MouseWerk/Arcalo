@@ -3,6 +3,7 @@
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
+mod backupdest;
 mod calsync;
 mod dayreview;
 mod desktop;
@@ -1164,10 +1165,12 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
         None => backup::backup_to(&state.db(), &dir, keep)?,
     };
     feed::record(&state, "backup", &info.file_name, "");
-    // Images live next to the database; names are content hashes, so copying new ones suffices.
+    // Attachments live next to the database: new files and changed ones (a drawing saved again)
+    // are copied, nothing is deleted.
     let src = state.attachments_dir();
     if src.is_dir() {
-        copy_new_attachments(&src, &dir.join("attachments"))?;
+        let act = annalo_core::backupdest::Activity::new(None);
+        annalo_core::backupdest::sync_files(&src, &dir.join("attachments"), &act)?;
     }
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
@@ -1179,6 +1182,8 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
             Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
         }
     }
+    // Copies to network and cloud folders follow in the background.
+    backupdest::backup_written(app, &info);
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
         // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
@@ -1713,6 +1718,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     rebuild_ai(&state, settings);
+    backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
     }
@@ -3462,6 +3468,8 @@ pub fn run() {
             }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+            // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
+            let restored = backupdest::apply_pending_restore(&dir);
             let db = match Database::open(dir.join(datadir::DB_FILE)) {
                 Ok(db) => db,
                 Err(e) => {
@@ -3471,7 +3479,7 @@ pub fn run() {
             };
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.
-            let mut notice = startup.notice.clone();
+            let mut notice = restored.or(startup.notice.clone());
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", "Datenordner schreibgeschützt", format!(
@@ -3579,6 +3587,7 @@ pub fn run() {
             app.manage(desktop::Desktop::default());
             app.manage(calsync::CalendarSync::default());
             app.manage(updates::Updates::default());
+            app.manage(backupdest::Destinations::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
@@ -3622,6 +3631,7 @@ pub fn run() {
                 }
             }
             spawn_activity_sampler(app.handle().clone());
+            backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
             mail::clean_temp(app.handle());
@@ -3712,6 +3722,11 @@ pub fn run() {
             export_entries,
             backup_now,
             backup_list,
+            backupdest::backup_destinations,
+            backupdest::backup_destination_test,
+            backupdest::backup_destination_retry,
+            backupdest::backup_remote_list,
+            backupdest::backup_restore,
             mirror_status,
             mirror_open,
             git_sync_now,
