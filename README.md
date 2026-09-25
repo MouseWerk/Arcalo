@@ -178,6 +178,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Slash menu (`/`), formatting toolbar on selection, a table toolbar (rows, columns, header) while the cursor is in a table, find in page (Ctrl F)
 - Version history: „Versionen…“ in the page menu lists earlier states (kept 30 days) with a diff against now, and restores them
 - Tabs, favorites, a drag-and-drop page tree, a command palette (Ctrl K) and a quick switcher (Ctrl O)
+- Links and apps in the ribbon („App / Link hinzufügen“): web pages, folders, `mailto:` and programs, each with an icon, and groups of them (one icon with a count; a click lists the entries next to the ribbon, arrows and Enter open them, longer groups filter as you type). Drag a link onto a group to move it in, drag icons to reorder; right-click for edit, move, remove and „Alle Links öffnen“
 - Import an Obsidian vault (folders, frontmatter, links, tags and images kept), export everything back to Markdown files
 
 **Time tracking**

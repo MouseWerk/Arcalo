@@ -29,6 +29,9 @@ import { abortFocus, openFocusDialog } from "./Focus";
 import { openActivityDay } from "../views/activityDay";
 import { reloadEditors } from "../editor/NoteEditor";
 import { syncCalendarsNow } from "../lib/calnav";
+import { flatLinks, isGroup, normalizeLinks } from "../lib/quicklinks";
+import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
+import { iconOf } from "./LinkDialogs";
 
 interface Item {
   id: string;
@@ -270,6 +273,24 @@ export function CommandPalette() {
         .slice(0, lower ? 5 : 20)
         .map(({ c }) => ({ ...c, section: t("palette.commands") })),
     );
+
+    // Ribbon links and groups (only while searching, so the empty palette stays short).
+    if (lower && mode === "all") {
+      const links = normalizeLinks(s().settings?.settings.quick_links);
+      const linkItems: (Item & { score: number })[] = [];
+      links.forEach((l, i) => {
+        if (!isGroup(l)) return;
+        const title = t("palette.openGroup", { name: l.name });
+        const score = Math.max(fuzzy(l.name, lower), fuzzy(title, lower));
+        if (score > 0) linkItems.push({ id: `lgroup-${i}`, section: t("palette.links"), title, subtitle: t("links.count", { n: l.items?.length ?? 0 }), icon: <PageIcon name={iconOf(l)} size={16} />, run: () => setTimeout(() => openLinkGroup(i), 30), score });
+      });
+      for (const { item, at, group } of flatLinks(links)) {
+        const score = Math.max(fuzzy(item.name, lower), fuzzy(item.url, lower) * 0.8);
+        if (score > 0)
+          linkItems.push({ id: `link-${at.group}-${at.index}`, section: t("palette.links"), title: item.name || item.url, subtitle: group ? `${group} · ${item.url}` : item.url, icon: <PageIcon name={iconOf(item)} size={16} />, run: () => openQuickLinkAt(at), score });
+      }
+      out.push(...linkItems.sort((a, b) => b.score - a.score).slice(0, 6));
+    }
 
     for (const h of hits) {
       if (h.kind === "note")

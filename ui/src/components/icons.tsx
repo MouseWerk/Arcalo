@@ -2,7 +2,7 @@ import {
   BookOpen, Box, Briefcase, Bug, Calendar, CalendarDays, ClipboardList, Code2, Database, FileText, Flag,
   Folder, FolderKanban, Globe, GraduationCap, Heart, Layers, Library, Lightbulb, ListTodo, Map, MessageSquare,
   Notebook, Rocket, Shield, Sparkles, Star, Target, Users, Zap, Blocks, LayoutTemplate, Mail, Server, Cloud,
-  Terminal, Ticket, BarChart3, Video, Link2, Wrench, Newspaper, Home, KanbanSquare, type LucideIcon,
+  Terminal, Ticket, BarChart3, Video, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, type LucideIcon,
 } from "lucide-react";
 
 /** Page icons users can pick; stored by name in the database. */
@@ -51,6 +51,7 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   newspaper: Newspaper,
   home: Home,
   kanban: KanbanSquare,
+  "app-window": AppWindow,
 };
 
 /** German names of the page icons (menus, tooltips, screen readers). */
@@ -99,6 +100,7 @@ export const PAGE_ICON_LABELS: Record<string, string> = {
   newspaper: "Zeitung",
   home: "Startseite",
   kanban: "Kanban",
+  "app-window": "Programm",
 };
 
 /** The German name of a page icon (the stored name for unknown icons). */

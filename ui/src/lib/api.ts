@@ -240,7 +240,8 @@ export const api = {
   /** Saves the start page's widgets and scratch note only. */
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
-  openQuickLink: (index: number) => call<void>("quick_link_open", { index }),
+  /** Opens the ribbon link at `index`, or entry `item` of the group there. */
+  openQuickLink: (index: number, item: number | null = null) => call<void>("quick_link_open", { index, item }),
   openAttachment: (name: string, reveal = false) => call<void>("attachment_open", { name, reveal }),
   /** Title of a web page (smart paste of a URL); the URL itself when there is none. */
   linkTitle: (url: string) => call<string>("link_title", { url }),

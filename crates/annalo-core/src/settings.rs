@@ -105,14 +105,45 @@ pub struct Settings {
     pub calendar: crate::calsync::CalendarSettings,
 }
 
-/// A link in the sidebar: a web address, `mailto:` or a local folder or file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
+/// group of such links (shown as one icon that opens a list of them).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct QuickLink {
     pub name: String,
+    /// The address or path (empty for a group).
+    #[serde(default)]
     pub url: String,
     /// Name of a page icon (`globe`, `folder`, …).
     #[serde(default)]
     pub icon: String,
+    /// Link, program or group; links saved before groups existed have none (= link).
+    #[serde(default, skip_serializing_if = "LinkKind::is_link")]
+    pub kind: LinkKind,
+    /// A group's icon color (`blau`, `grün`, …; empty = like the other ribbon icons).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub color: String,
+    /// A group's links and programs, in order (groups do not nest).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<QuickLink>,
+}
+
+/// What a ribbon entry is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkKind {
+    /// A program, started directly.
+    App,
+    Group,
+    /// Unknown kinds (e.g. from a newer version) open like a link.
+    #[default]
+    #[serde(other)]
+    Link,
+}
+
+impl LinkKind {
+    pub fn is_link(&self) -> bool {
+        *self == LinkKind::Link
+    }
 }
 
 /// Where a quick link leads.
@@ -148,24 +179,70 @@ impl QuickLink {
 
 /// At most this many links: the sidebar is for the handful used every day.
 pub const MAX_QUICK_LINKS: usize = 40;
+/// At most this many links in one group.
+pub const MAX_GROUP_ITEMS: usize = 60;
 
-/// Trimmed links with an address; the name falls back to the address.
+/// Group colors (the option colors of collections).
+pub const LINK_COLORS: [&str; 9] = ["grau", "braun", "orange", "gelb", "grün", "blau", "lila", "rosa", "rot"];
+
+/// A trimmed link or program with an address (the name falls back to the address).
+fn normalize_link(l: QuickLink) -> Option<QuickLink> {
+    let url = l.url.trim().to_owned();
+    if url.is_empty() {
+        return None;
+    }
+    let name = match l.name.trim() {
+        "" => url.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/').to_owned(),
+        n => n.to_owned(),
+    };
+    Some(QuickLink { name, url, icon: l.icon.trim().to_owned(), kind: l.kind, color: String::new(), items: vec![] })
+}
+
+/// Trimmed links with an address; the name falls back to the address. Groups keep their
+/// (possibly empty) list; a group inside a group (only by hand-edited settings) hands its
+/// links to the outer one.
 pub fn normalize_quick_links(links: Vec<QuickLink>) -> Vec<QuickLink> {
     links
         .into_iter()
         .filter_map(|l| {
-            let url = l.url.trim().to_owned();
-            if url.is_empty() {
-                return None;
+            if l.kind != LinkKind::Group {
+                return normalize_link(l);
             }
+            let items = l
+                .items
+                .into_iter()
+                .flat_map(|i| if i.kind == LinkKind::Group { i.items } else { vec![i] })
+                .filter(|i| i.kind != LinkKind::Group)
+                .filter_map(normalize_link)
+                .take(MAX_GROUP_ITEMS)
+                .collect();
             let name = match l.name.trim() {
-                "" => url.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/').to_owned(),
+                "" => "Gruppe".to_owned(),
                 n => n.to_owned(),
             };
-            Some(QuickLink { name, url, icon: l.icon.trim().to_owned() })
+            let color = l.color.trim();
+            let color = if LINK_COLORS.contains(&color) { color.to_owned() } else { String::new() };
+            Some(QuickLink {
+                name,
+                url: String::new(),
+                icon: l.icon.trim().to_owned(),
+                kind: LinkKind::Group,
+                color,
+                items,
+            })
         })
         .take(MAX_QUICK_LINKS)
         .collect()
+}
+
+/// The link at `index` in the ribbon, or item `item` of the group there.
+pub fn quick_link_at(links: &[QuickLink], index: usize, item: Option<usize>) -> Option<&QuickLink> {
+    let top = links.get(index)?;
+    match (item, top.kind) {
+        (Some(i), LinkKind::Group) => top.items.get(i),
+        (None, LinkKind::Group) | (Some(_), _) => None,
+        (None, _) => Some(top),
+    }
 }
 
 /// Width of a dashboard widget in the start page's grid: one, two or all four columns.
@@ -779,7 +856,7 @@ mod tests {
 
     #[test]
     fn quick_link_targets() {
-        let t = |u: &str| QuickLink { name: String::new(), url: u.into(), icon: String::new() }.target();
+        let t = |u: &str| QuickLink { url: u.into(), ..Default::default() }.target();
         assert_eq!(t("jira.firma.de"), LinkTarget::Url("https://jira.firma.de".into()));
         assert_eq!(t("mailto:team@firma.de"), LinkTarget::Url("mailto:team@firma.de".into()));
         assert_eq!(t("msteams://teams.microsoft.com/l/x"), LinkTarget::Url("msteams://teams.microsoft.com/l/x".into()));
@@ -796,13 +873,75 @@ mod tests {
     #[test]
     fn quick_links_are_trimmed_and_named() {
         let got = normalize_quick_links(vec![
-            QuickLink { name: "  ".into(), url: " https://jira.firma.de/ ".into(), icon: "bug".into() },
-            QuickLink { name: "Leer".into(), url: "  ".into(), icon: String::new() },
-            QuickLink { name: " SAP ".into(), url: "C:\\SAP".into(), icon: String::new() },
+            QuickLink {
+                name: "  ".into(),
+                url: " https://jira.firma.de/ ".into(),
+                icon: "bug".into(),
+                ..Default::default()
+            },
+            QuickLink { name: "Leer".into(), url: "  ".into(), ..Default::default() },
+            QuickLink { name: " SAP ".into(), url: "C:\\SAP".into(), ..Default::default() },
         ]);
         assert_eq!(got.len(), 2);
         assert_eq!((got[0].name.as_str(), got[0].url.as_str()), ("jira.firma.de", "https://jira.firma.de/"));
         assert_eq!(got[1].name, "SAP");
+    }
+
+    #[test]
+    fn old_quick_links_load_as_links_and_save_unchanged() {
+        // Saved by 1.4: no kind, no items.
+        let json = r#"{"quick_links":[{"name":"Jira","url":"jira.firma.de","icon":"ticket"}]}"#;
+        let (s, bad) = Database::parse_settings_lenient(json);
+        assert!(bad.is_empty());
+        assert_eq!(s.quick_links[0].kind, LinkKind::Link);
+        assert!(s.quick_links[0].items.is_empty());
+        // Written back in the same shape (older versions read it as before).
+        assert_eq!(
+            serde_json::to_string(&s.quick_links[0]).unwrap(),
+            r#"{"name":"Jira","url":"jira.firma.de","icon":"ticket"}"#
+        );
+        // A kind from a newer version opens like a link.
+        let l: QuickLink = serde_json::from_str(r#"{"name":"x","url":"y","kind":"widget"}"#).unwrap();
+        assert_eq!(l.kind, LinkKind::Link);
+    }
+
+    #[test]
+    fn quick_link_groups_are_normalized() {
+        let link = |n: &str, u: &str| QuickLink { name: n.into(), url: u.into(), ..Default::default() };
+        let group = |n: &str, items: Vec<QuickLink>| QuickLink {
+            name: n.into(),
+            kind: LinkKind::Group,
+            items,
+            ..Default::default()
+        };
+        let mut inner = group("Innen", vec![link("A", "a.de")]);
+        inner.url = "ignored".into();
+        let mut g = group(" Tools ", vec![link("", " https://x.de/ "), link("Leer", ""), inner]);
+        g.color = "blau".into();
+        g.url = "https://ignored".into();
+        let mut odd = group("", vec![]);
+        odd.color = "#123456".into();
+        let got = normalize_quick_links(vec![g, odd, link("Solo", "solo.de")]);
+        assert_eq!(got.len(), 3);
+        assert_eq!((got[0].name.as_str(), got[0].url.as_str(), got[0].color.as_str()), ("Tools", "", "blau"));
+        let names: Vec<_> = got[0].items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["x.de", "A"]);
+        assert!(got[0].items.iter().all(|i| i.kind == LinkKind::Link && i.items.is_empty()));
+        // An empty group stays (it is filled next); unknown colors are dropped.
+        assert_eq!((got[1].name.as_str(), got[1].color.as_str(), got[1].items.len()), ("Gruppe", "", 0));
+        assert_eq!(got[2].kind, LinkKind::Link);
+        // Round trip through JSON keeps groups, programs and order.
+        let mut app = link("Rechner", "/usr/bin/calc");
+        app.kind = LinkKind::App;
+        let mut all = got.clone();
+        all[0].items.push(app);
+        let back: Vec<QuickLink> = serde_json::from_str(&serde_json::to_string(&all).unwrap()).unwrap();
+        assert_eq!(back, all);
+        assert_eq!(quick_link_at(&all, 0, Some(2)).map(|l| l.kind), Some(LinkKind::App));
+        assert_eq!(quick_link_at(&all, 0, None), None, "a group itself is not opened");
+        assert_eq!(quick_link_at(&all, 2, None).map(|l| l.name.as_str()), Some("Solo"));
+        assert_eq!(quick_link_at(&all, 2, Some(0)), None);
+        assert_eq!(quick_link_at(&all, 9, None), None);
     }
 
     #[test]
