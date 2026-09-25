@@ -10,7 +10,7 @@ import Image from "@tiptap/extension-image";
 import {
   type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
 } from "lucide-react";
-import { isoDay } from "../lib/format";
+import { fmtDate, isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
 import { PageIcon } from "../components/icons";
 import { zeitToken } from "./zeit-suggest";
@@ -20,6 +20,7 @@ import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
 import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
+import { t, type TKey } from "../lib/i18n";
 
 // ------------------------------------------------------------- wiki links
 
@@ -69,7 +70,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       if (!this.options.isKnown(node.attrs.target) && isFileLinkTarget(node.attrs.target)) return fileLinkView(dom, node, this.options);
       dom.className = `wikilink${this.options.isKnown(node.attrs.target) ? "" : " unresolved"}`;
       dom.textContent = node.attrs.alias || (node.attrs.anchor ? `${node.attrs.target} › ${node.attrs.anchor}` : node.attrs.target);
-      dom.title = this.options.isKnown(node.attrs.target) ? node.attrs.target : `${node.attrs.target} (noch nicht angelegt, Klick erstellt die Seite)`;
+      dom.title = this.options.isKnown(node.attrs.target) ? node.attrs.target : t("ed.unresolved", { target: node.attrs.target });
       dom.addEventListener("mousedown", (e) => {
         if (e.button !== 0 && e.button !== 1) return;
         e.preventDefault();
@@ -112,14 +113,14 @@ function fileLinkView(dom: HTMLAnchorElement, node: PMNode, o: WikiLinkOptions) 
   const label = document.createElement("span");
   label.textContent = node.attrs.alias || name;
   dom.append(icon, label);
-  const hint = pdf ? "klicken zum Ansehen" : "klicken zum Öffnen";
+  const hint = pdf ? t("ed.clickView") : t("ed.clickOpen");
   dom.title = `${name} – ${hint}`;
   let alive = true;
   o.fileSize(name).then(
     (n) => {
       if (!alive) return;
       dom.classList.toggle("is-missing", n == null);
-      dom.title = n == null ? `${name} – Datei fehlt in den Anhängen` : `${name} – ${hint}`;
+      dom.title = n == null ? `${name} – ${t("ed.fileMissing")}` : `${name} – ${hint}`;
     },
     () => {},
   );
@@ -163,7 +164,7 @@ export const WikiLinkSuggest = Extension.create<{ search: (q: string) => Promise
             ])
             .run();
         },
-        render: popupRenderer<LinkSuggestItem>("Tippe einen Seitennamen"),
+        render: popupRenderer<LinkSuggestItem>(() => t("ed.typePage")),
       }),
     ];
   },
@@ -200,54 +201,58 @@ export interface SlashOptions {
 }
 
 export function slashItems(o: SlashOptions): SlashItem[] {
-  const today = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const today = fmtDate(new Date());
   const isoToday = isoDay(new Date());
+  const basics = t("slash.sec.basics");
+  const lists = t("slash.sec.lists");
+  const blocks = t("slash.sec.blocks");
+  const insert = t("slash.sec.insert");
   return [
-    { id: "text", title: "Text", icon: ic(Text), Icon: Text, section: "Grundlagen", keywords: "absatz paragraph text", run: (e, r) => e.chain().focus().deleteRange(r).setParagraph().run() },
-    { id: "h1", title: "Überschrift 1", icon: ic(Heading1), Icon: Heading1, hint: "#", section: "Grundlagen", keywords: "heading titel h1", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 1 }).run() },
-    { id: "h2", title: "Überschrift 2", icon: ic(Heading2), Icon: Heading2, hint: "##", section: "Grundlagen", keywords: "heading h2", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 2 }).run() },
-    { id: "h3", title: "Überschrift 3", icon: ic(Heading3), Icon: Heading3, hint: "###", section: "Grundlagen", keywords: "heading h3", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
-    { id: "todo", title: "Aufgabenliste", icon: ic(CheckSquare), Icon: CheckSquare, hint: "[ ]", section: "Listen", keywords: "todo task checkbox aufgabe", run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
-    { id: "ul", title: "Aufzählung", icon: ic(List), Icon: List, hint: "-", section: "Listen", keywords: "bullet liste", run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
-    { id: "ol", title: "Nummerierte Liste", icon: ic(ListOrdered), Icon: ListOrdered, hint: "1.", section: "Listen", keywords: "ordered nummer", run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
-    { id: "quote", title: "Zitat", icon: ic(Quote), Icon: Quote, hint: ">", section: "Blöcke", keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
-    { id: "callout", title: "Hinweisbox", subtitle: "Obsidian-Callout", icon: ic(Info), Icon: Info, section: "Blöcke", keywords: "callout hinweis info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
-    { id: "warn", title: "Warnbox", icon: ic(AlertTriangle), Icon: AlertTriangle, section: "Blöcke", keywords: "callout warnung warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
-    { id: "fold", title: "Aufklappbar", subtitle: "Titel, Inhalt ein- und ausklappbar", icon: ic(ListCollapse), Icon: ListCollapse, section: "Blöcke", keywords: "aufklappbar einklappen toggle details collapsible falten callout", run: (e, r) => insertFoldable(e, r) },
-    { id: "columns2", title: "2 Spalten", subtitle: "Inhalt nebeneinander", icon: ic(Columns2), Icon: Columns2, section: "Blöcke", keywords: "spalten columns layout nebeneinander zwei", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 2)) },
-    { id: "columns3", title: "3 Spalten", subtitle: "Inhalt nebeneinander", icon: ic(Columns3), Icon: Columns3, section: "Blöcke", keywords: "spalten columns layout nebeneinander drei", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 3)) },
-    { id: "toc", title: "Inhaltsverzeichnis", subtitle: "Überschriften der Seite", icon: ic(ListTree), Icon: ListTree, section: "Blöcke", keywords: "inhaltsverzeichnis toc inhalt gliederung überschriften", run: (e, r) => e.chain().focus().deleteRange(r).insertContent({ type: "tableOfContents" }).run() },
-    { id: "code", title: "Codeblock", icon: ic(Code2), Icon: Code2, hint: "```", section: "Blöcke", keywords: "code snippet", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
-    { id: "table", title: "Tabelle", icon: ic(Table2), Icon: Table2, section: "Blöcke", keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-    { id: "hr", title: "Trennlinie", icon: ic(Minus), Icon: Minus, hint: "---", section: "Blöcke", keywords: "divider linie hr", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
-    { id: "mark", title: "Hervorheben", icon: ic(Highlighter), Icon: Highlighter, hint: "==", section: "Blöcke", keywords: "highlight markieren", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },
-    { id: "link", title: "Seitenlink", icon: ic(Link2), Icon: Link2, hint: "[[", section: "Einfügen", keywords: "link verknüpfung wiki", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
-    { id: "date", title: "Heutiges Datum", icon: ic(CalendarDays), Icon: CalendarDays, hint: today, section: "Einfügen", keywords: "datum date heute", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(today + " ").run() },
-    { id: "due", title: "Fälligkeitsdatum", subtitle: "Für Aufgaben: due:JJJJ-MM-TT", icon: ic(CalendarClock), Icon: CalendarClock, hint: `due:${isoToday}`, section: "Einfügen", keywords: "fällig due termin deadline aufgabe", run: (e, r) => {
+    { id: "text", title: t("slash.text"), icon: ic(Text), Icon: Text, section: basics, keywords: "absatz paragraph text", run: (e, r) => e.chain().focus().deleteRange(r).setParagraph().run() },
+    { id: "h1", title: t("slash.h1"), icon: ic(Heading1), Icon: Heading1, hint: "#", section: basics, keywords: "heading titel title überschrift h1", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 1 }).run() },
+    { id: "h2", title: t("slash.h2"), icon: ic(Heading2), Icon: Heading2, hint: "##", section: basics, keywords: "heading überschrift h2", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 2 }).run() },
+    { id: "h3", title: t("slash.h3"), icon: ic(Heading3), Icon: Heading3, hint: "###", section: basics, keywords: "heading überschrift h3", run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
+    { id: "todo", title: t("slash.todo"), icon: ic(CheckSquare), Icon: CheckSquare, hint: "[ ]", section: lists, keywords: "todo task checkbox aufgabe aufgabenliste", run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
+    { id: "ul", title: t("slash.ul"), icon: ic(List), Icon: List, hint: "-", section: lists, keywords: "bullet liste list aufzählung", run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
+    { id: "ol", title: t("slash.ol"), icon: ic(ListOrdered), Icon: ListOrdered, hint: "1.", section: lists, keywords: "ordered nummer numbered nummerierte", run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
+    { id: "quote", title: t("slash.quote"), icon: ic(Quote), Icon: Quote, hint: ">", section: blocks, keywords: "quote zitat", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
+    { id: "callout", title: t("slash.callout"), subtitle: t("slash.callout.sub"), icon: ic(Info), Icon: Info, section: blocks, keywords: "callout hinweis hinweisbox info note", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!note] ").run() },
+    { id: "warn", title: t("slash.warn"), icon: ic(AlertTriangle), Icon: AlertTriangle, section: blocks, keywords: "callout warnung warnbox warning", run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().insertContent("[!warning] ").run() },
+    { id: "fold", title: t("slash.fold"), subtitle: t("slash.fold.sub"), icon: ic(ListCollapse), Icon: ListCollapse, section: blocks, keywords: "aufklappbar einklappen toggle details collapsible falten callout fold", run: (e, r) => insertFoldable(e, r) },
+    { id: "columns2", title: t("slash.columns2"), subtitle: t("slash.columns.sub"), icon: ic(Columns2), Icon: Columns2, section: blocks, keywords: "spalten columns layout nebeneinander zwei two", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 2)) },
+    { id: "columns3", title: t("slash.columns3"), subtitle: t("slash.columns.sub"), icon: ic(Columns3), Icon: Columns3, section: blocks, keywords: "spalten columns layout nebeneinander drei three", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 3)) },
+    { id: "toc", title: t("slash.toc"), subtitle: t("slash.toc.sub"), icon: ic(ListTree), Icon: ListTree, section: blocks, keywords: "inhaltsverzeichnis toc inhalt gliederung überschriften contents outline", run: (e, r) => e.chain().focus().deleteRange(r).insertContent({ type: "tableOfContents" }).run() },
+    { id: "code", title: t("slash.code"), icon: ic(Code2), Icon: Code2, hint: "```", section: blocks, keywords: "code snippet codeblock", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
+    { id: "table", title: t("slash.table"), icon: ic(Table2), Icon: Table2, section: blocks, keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { id: "hr", title: t("slash.hr"), icon: ic(Minus), Icon: Minus, hint: "---", section: blocks, keywords: "divider linie trennlinie hr line", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
+    { id: "mark", title: t("slash.mark"), icon: ic(Highlighter), Icon: Highlighter, hint: "==", section: blocks, keywords: "highlight markieren hervorheben", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },
+    { id: "link", title: t("slash.link"), icon: ic(Link2), Icon: Link2, hint: "[[", section: insert, keywords: "link verknüpfung wiki seitenlink page", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
+    { id: "date", title: t("slash.date"), icon: ic(CalendarDays), Icon: CalendarDays, hint: today, section: insert, keywords: "datum date heute today", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(today + " ").run() },
+    { id: "due", title: t("slash.due"), subtitle: t("slash.due.sub"), icon: ic(CalendarClock), Icon: CalendarClock, hint: `due:${isoToday}`, section: insert, keywords: "fällig due termin deadline aufgabe task", run: (e, r) => {
       // Separate from preceding text, but no double space.
       const before = r.from > 1 ? e.state.doc.textBetween(r.from - 1, r.from) : "";
       e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}due:${isoToday} `).run();
     } },
-    { id: "footnote", title: "Fußnote", subtitle: "Verweis [^1] mit Text am Seitenende", icon: ic(Superscript), Icon: Superscript, hint: "[^1]", section: "Einfügen", keywords: "fußnote footnote anmerkung quelle", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertFootnote(e)) },
-    { id: "zeit", title: "Zeit buchen", subtitle: "NP-8801/1020 2.5h Beschreibung", icon: ic(Timer), Icon: Timer, hint: "/zeit", section: "Zeiterfassung", keywords: "zeit time buchen stunden", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
-    { id: "subpage", title: "Unterseite", icon: ic(FilePlus2), Icon: FilePlus2, section: "Einfügen", keywords: "seite page unterseite", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
+    { id: "footnote", title: t("slash.footnote"), subtitle: t("slash.footnote.sub"), icon: ic(Superscript), Icon: Superscript, hint: "[^1]", section: insert, keywords: "fußnote footnote anmerkung quelle note source", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertFootnote(e)) },
+    { id: "zeit", title: t("slash.zeit"), subtitle: t("slash.zeit.sub"), icon: ic(Timer), Icon: Timer, hint: "/zeit", section: t("ribbon.timesheet"), keywords: "zeit time buchen stunden book hours log", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
+    { id: "subpage", title: t("slash.subpage"), icon: ic(FilePlus2), Icon: FilePlus2, section: insert, keywords: "seite page unterseite subpage", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
-      ? [{ id: "image", title: "Bild", subtitle: `Datei wählen, oder einfügen mit ${keys("Mod V")}`, icon: ic(ImagePlus), Icon: ImagePlus, section: "Einfügen", keywords: "bild image foto screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
+      ? [{ id: "image", title: t("slash.image"), subtitle: t("slash.image.sub", { keys: keys("Mod V") }), icon: ic(ImagePlus), Icon: ImagePlus, section: insert, keywords: "bild image foto photo screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
       : []),
     ...(o.onFile
-      ? [{ id: "file", title: "Datei einfügen", subtitle: "PDF, Word, Excel, … oder in die Notiz ziehen", icon: ic(Paperclip), Icon: Paperclip, section: "Einfügen", keywords: "datei file anhang pdf dokument word excel anhängen attachment", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onFile!(e)) }]
+      ? [{ id: "file", title: t("slash.file"), subtitle: t("slash.file.sub"), icon: ic(Paperclip), Icon: Paperclip, section: insert, keywords: "datei file anhang pdf dokument document word excel anhängen attachment", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onFile!(e)) }]
       : []),
     ...(o.onDrawing
-      ? [{ id: "drawing", title: "Zeichnung", subtitle: "Skizze oder Diagramm (Excalidraw)", icon: ic(PenTool), Icon: PenTool, section: "Einfügen", keywords: "zeichnung drawing excalidraw diagramm skizze whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
+      ? [{ id: "drawing", title: t("slash.drawing"), subtitle: t("slash.drawing.sub"), icon: ic(PenTool), Icon: PenTool, section: insert, keywords: "zeichnung drawing excalidraw diagramm diagram skizze sketch whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
       : []),
     ...(o.onTemplate
-      ? [{ id: "template", title: "Vorlage einfügen", subtitle: "Seite aus „Vorlagen“", icon: ic(LayoutTemplate), Icon: LayoutTemplate, section: "Einfügen", keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
+      ? [{ id: "template", title: t("slash.template"), subtitle: t("slash.template.sub"), icon: ic(LayoutTemplate), Icon: LayoutTemplate, section: insert, keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]
       : []),
     ...(o.onAi
-      ? [{ id: "ki", title: "KI bearbeiten", subtitle: "Absatz verbessern, kürzen, übersetzen …", hint: keys("Mod J"), icon: ic(Sparkles), Icon: Sparkles, section: "KI", keywords: "ki ai assistent umschreiben verbessern kürzen übersetzen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onAi!(e)) }]
+      ? [{ id: "ki", title: t("slash.ai"), subtitle: t("slash.ai.sub"), hint: keys("Mod J"), icon: ic(Sparkles), Icon: Sparkles, section: t("slash.sec.ai"), keywords: "ki ai assistent assistant umschreiben rewrite verbessern improve kürzen shorten übersetzen translate", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onAi!(e)) }]
       : []),
     ...(o.onSummary
-      ? [{ id: "summary", title: "Zusammenfassung", subtitle: "Besprechung zusammenfassen: Entscheidungen, Aufgaben", icon: ic(NotebookPen), Icon: NotebookPen, section: "KI", keywords: "besprechung meeting protokoll summary ki aufgaben entscheidungen", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onSummary!(e)) }]
+      ? [{ id: "summary", title: t("slash.summary"), subtitle: t("slash.summary.sub"), icon: ic(NotebookPen), Icon: NotebookPen, section: t("slash.sec.ai"), keywords: "besprechung meeting protokoll minutes summary zusammenfassung ki ai aufgaben tasks entscheidungen decisions", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onSummary!(e)) }]
       : []),
   ];
 }
@@ -256,10 +261,10 @@ export function slashItems(o: SlashOptions): SlashItem[] {
 function tableSlashItems(editor: Editor): SlashItem[] {
   return TABLE_ACTIONS.filter((a) => tableActionEnabled(editor.state, a)).map((a) => ({
     id: `table-${a.id}`,
-    title: a.title,
+    title: t(a.title),
     icon: ic(a.icon),
     Icon: a.icon,
-    section: "Tabelle",
+    section: t("slash.table"),
     keywords: a.keywords,
     run: (e: Editor, r: Range) => a.run(e.chain().focus().deleteRange(r)).run(),
   }));
@@ -318,7 +323,7 @@ export const SlashCommand = Extension.create<SlashOptions>({
           return hits.map((i, n) => ({ i, n, r: rank(i) })).sort((a, b) => a.r - b.r || a.n - b.n).map((x) => x.i);
         },
         command: ({ editor, range, props }) => props.run(editor, range),
-        render: popupRenderer<SlashItem>("Kein Befehl gefunden"),
+        render: popupRenderer<SlashItem>(() => t("ed.noCommand")),
       }),
     ];
   },
@@ -447,7 +452,7 @@ export const TimeEntryChip = Node.create({
         t.textContent = node.attrs.text;
         dom.append(t);
       }
-      dom.title = "Gebuchter Zeiteintrag";
+      dom.title = t("ed.timeEntry");
       return { dom };
     };
   },
@@ -668,30 +673,35 @@ export function splitFrontmatter(md: string): { frontmatter: string; body: strin
 // ------------------------------------------------------------- callouts
 
 const CALLOUT_RE = /^\[!(\w+)\]([+-]?)[ \t]*/;
-export const CALLOUT_LABELS: Record<string, string> = {
-  note: "Notiz",
-  info: "Info",
-  tip: "Tipp",
-  hint: "Tipp",
-  important: "Wichtig",
-  warning: "Warnung",
-  caution: "Vorsicht",
-  danger: "Gefahr",
-  error: "Fehler",
-  success: "Erledigt",
-  question: "Frage",
-  quote: "Zitat",
-  example: "Beispiel",
-  todo: "Aufgabe",
-  abstract: "Zusammenfassung",
-  summary: "Zusammenfassung",
-  bug: "Fehler",
-  failure: "Fehlschlag",
+/** Callout types (as typed after `[!`, English as in Obsidian, German speaker-note aliases) and their labels. */
+const CALLOUT_KEYS: Record<string, TKey> = {
+  note: "callout.note",
+  info: "callout.info",
+  tip: "callout.tip",
+  hint: "callout.tip",
+  important: "callout.important",
+  warning: "callout.warning",
+  caution: "callout.caution",
+  danger: "callout.danger",
+  error: "callout.error",
+  success: "callout.success",
+  question: "callout.question",
+  quote: "callout.quote",
+  example: "callout.example",
+  todo: "callout.todo",
+  abstract: "callout.summary",
+  summary: "callout.summary",
+  bug: "callout.error",
+  failure: "callout.failure",
   // Speaker notes of the presentation mode (hidden on the slides).
-  notiz: "Sprechernotiz",
-  speaker: "Sprechernotiz",
-  sprecher: "Sprechernotiz",
+  notiz: "callout.speaker",
+  notizen: "callout.speaker",
+  notes: "callout.speaker",
+  speaker: "callout.speaker",
+  sprecher: "callout.speaker",
 };
+/** The label of a callout type in the display language (unknown types show as typed). */
+export const calloutLabel = (type: string) => (CALLOUT_KEYS[type] ? t(CALLOUT_KEYS[type]) : type);
 
 const CHEVRON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
@@ -775,7 +785,7 @@ export const Callouts = Extension.create({
                   b.type = "button";
                   b.className = "callout-fold";
                   b.contentEditable = "false";
-                  b.setAttribute("aria-label", folded ? "Aufklappen" : "Zuklappen");
+                  b.setAttribute("aria-label", folded ? t("ed.expand") : t("ed.collapse"));
                   b.setAttribute("aria-expanded", String(!folded));
                   b.innerHTML = CHEVRON;
                   return b;
@@ -787,7 +797,7 @@ export const Callouts = Extension.create({
           // A custom title replaces the type label (Obsidian shows one or the other).
           // Only the first line counts: `> [!question]\n> Text` has no title, the body follows.
           const hasTitle = first!.firstChild?.isText === true && (first!.firstChild.text ?? "").slice(m[0].length).split("\n")[0].trim() !== "";
-          const label = hasTitle ? "" : (CALLOUT_LABELS[type] ?? type);
+          const label = hasTitle ? "" : calloutLabel(type);
           // Covers the trailing space too, so the hidden marker leaves no gap before the title.
           decos.push(Decoration.inline(start, start + m[0].length, { class: "callout-marker", "data-label": label }));
           // Title = rest of the first line (up to a line break).

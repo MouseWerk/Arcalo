@@ -90,7 +90,10 @@ export const SuggestionPopup = forwardRef<PopupHandle, PopupProps>(({ items, com
  * Mounts a SuggestionPopup next to the caret and forwards keyboard events.
  * With `empty === null` the popup hides while nothing matches (and keys pass through).
  */
-export function popupRenderer<I extends PopupItem>(empty?: string | null, className?: string): SuggestionOptions<I>["render"] {
+export function popupRenderer<I extends PopupItem>(emptyText?: string | (() => string) | null, className?: string): SuggestionOptions<I>["render"] {
+  // A function is read on every render, so the text follows the display language.
+  const text = () => (typeof emptyText === "function" ? emptyText() : emptyText);
+  const empty = emptyText === null ? null : "";
   return () => {
     let renderer: ReactRenderer<PopupHandle, PopupProps> | null = null;
     let host: HTMLDivElement | null = null;
@@ -112,13 +115,13 @@ export function popupRenderer<I extends PopupItem>(empty?: string | null, classN
         document.body.appendChild(host);
         renderer = new ReactRenderer(SuggestionPopup, {
           editor: props.editor,
-          props: { items: props.items, command: props.command as (i: PopupItem) => void, empty: empty ?? undefined, className },
+          props: { items: props.items, command: props.command as (i: PopupItem) => void, empty: text() ?? undefined, className },
         });
         host.appendChild(renderer.element);
         requestAnimationFrame(() => place(props));
       },
       onUpdate: (props) => {
-        renderer?.updateProps({ items: props.items, command: props.command as (i: PopupItem) => void, empty: empty ?? undefined, className });
+        renderer?.updateProps({ items: props.items, command: props.command as (i: PopupItem) => void, empty: text() ?? undefined, className });
         requestAnimationFrame(() => place(props));
       },
       onKeyDown: (props) => {

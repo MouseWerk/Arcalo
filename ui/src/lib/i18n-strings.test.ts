@@ -57,6 +57,9 @@ const TECHNICAL = [
   /^https?:\/\//,
   /^(Ctrl|Alt|Shift|Mod|Cmd|Meta)\b[+\w ]*$/, // shortcuts
   /^[A-Z][A-Z0-9_-]*$/, // codes and placeholders: CODE, AET-12, NP-8801
+  /^NP-[\d…]*\/?[\d…]*$/, // WBS placeholders: NP-…/…
+  /^\/\w+$/, // slash commands: /zeit
+  /^due:/, // due:YYYY-MM-DD
   /^[\w-]+… \/ [\w-]+…$/, // token prefixes: ghp_… / glpat-…
 ];
 
@@ -103,6 +106,8 @@ const NAMES = new Set([
   "OpenRouter",
   "SAP CATS",
   "Obsidian",
+  "Cc",
+  "Hypercare",
 ]);
 
 /**
@@ -113,7 +118,7 @@ const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
   { file: "lib/capture.ts", text: /^\[Hh\]eute|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
   { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
   { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
-  { file: "lib/dayreview.ts", text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
+  { file: /^(lib\/dayreview.ts|views\/DayReviewView.tsx)$/, text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
 ];
 
 interface Hit {
@@ -176,7 +181,9 @@ function scan(file: string): Hit[] {
       if (MESSAGE_CALLS.has(callee)) for (const l of literalsIn(n.arguments[0])) flag(l, literalText(l)!);
     }
     const lit = literalText(n);
-    if (lit !== null && GERMAN.test(lit) && !ts.isTemplateExpression(n.parent)) flag(n, lit);
+    // Search keywords list both languages on purpose.
+    const keywords = ts.isPropertyAssignment(n.parent) && n.parent.name.getText(sf) === "keywords";
+    if (lit !== null && GERMAN.test(lit) && !keywords && !ts.isTemplateExpression(n.parent)) flag(n, lit);
     ts.forEachChild(n, visit);
   };
   visit(sf);

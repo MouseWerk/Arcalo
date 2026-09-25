@@ -236,6 +236,8 @@ export const compact = (x: number) => (Number.isInteger(x) ? String(x) : h1(x));
 /** Parses typed numbers: "1.200,5" → 1200,5, "1,5" → 1,5; without a comma a single dot is the decimal point. Null if invalid. */
 export function parseGermanNumber(s: string): number | null {
   let v = s.trim().replace(/[\s ']/g, "");
+  // With the point as decimal separator, commas group thousands: "1,200.5".
+  if (prefs.numberFormat === "point" && /^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(v)) v = v.replace(/,/g, "");
   if (v.includes(",")) {
     if (v.indexOf(",") !== v.lastIndexOf(",")) return null;
     if (v.includes(".") && !/^-?\d{1,3}(\.\d{3})*,\d*$/.test(v)) return null;

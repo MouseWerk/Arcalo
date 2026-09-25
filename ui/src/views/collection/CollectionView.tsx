@@ -43,10 +43,12 @@ import {
   type ViewType,
 } from "../../lib/collection";
 import { isValidKey, propertyLines } from "../../lib/frontmatter";
+import { fmtDate } from "../../lib/format";
 import { FRONTMATTER_EVENT, updateFrontmatter } from "./write";
 import { KIND_ICON, OptionsDialog, Popover, kindMenu, optionsForKind } from "./controls";
 import { TableView } from "./TableView";
 import { BoardView } from "./BoardView";
+import { t, useT, type TKey } from "../../lib/i18n";
 
 /** What the table and the board get from the view. */
 export interface Ctx {
@@ -70,10 +72,11 @@ export interface Ctx {
   moveRow: (row: Row, beforeId: number | null) => void;
 }
 
-export const VIEW_LABEL: Record<ViewType, string> = { liste: "Liste", tabelle: "Tabelle", board: "Board" };
+export const VIEW_LABEL: Record<ViewType, TKey> = { liste: "coll.view.list", tabelle: "coll.view.table", board: "coll.view.board" };
 const VIEW_ICON: Record<ViewType, LucideIcon> = { liste: List, tabelle: Table2, board: KanbanSquare };
 
 export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: string; onFm: (fm: string) => void }) {
+  const t = useT();
   const view = useMemo(() => parseView(fm), [fm]);
   const defs = useMemo(() => parseSchema(fm), [fm]);
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -139,15 +142,15 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
     const apply = (change: (f: string) => string) => {
       setRows((rs) => rs?.map((r) => (r.id === row.id ? { ...makeRow(r, change(r.fm)), title: r.title } : r)) ?? rs);
       return updateFrontmatter(row.id, change).catch((e) => {
-        s().error("Eigenschaft konnte nicht gespeichert werden", e);
+        s().error(t("coll.saveFailed"), e);
         load();
       });
     };
     apply((f) => writeValue(f, key, value));
     if (!undo) return;
     const before = row.props.find((p) => p.key.toLowerCase() === key.toLowerCase());
-    s().toast({ tone: "info", title: undo, action: { label: "Rückgängig", run: () => void apply((f) => setEntry(f, key, before ? propertyLines(before) : null)) } });
-  }, [load, s]);
+    s().toast({ tone: "info", title: undo, action: { label: t("common.undo"), run: () => void apply((f) => setEntry(f, key, before ? propertyLines(before) : null)) } });
+  }, [load, s, t]);
 
   const addOption = useCallback((key: string, name: string) => {
     changeDefs((ds) => ds.map((d) => (d.key.toLowerCase() === key.toLowerCase() && !d.options.some((o) => o.name.toLowerCase() === name.toLowerCase()) ? { ...d, options: [...d.options, { name, color: COLORS[d.options.length % COLORS.length] }] } : d)));
@@ -157,31 +160,31 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
     try {
       const icon = s().settings?.settings.editor?.default_icon ?? "file-text";
       const content = preset && preset[1] !== null ? writeValue("", preset[0], preset[1]) : undefined;
-      const p = await api.createPage("Unbenannt", pageId, icon, content);
+      const p = await api.createPage(t("page.untitled"), pageId, icon, content);
       const row = makeRow(p, content ?? "");
       setRows((rs) => [...(rs ?? []), row]);
       await s().refreshTree();
       return row;
     } catch (e) {
-      s().error("Seite konnte nicht angelegt werden", e);
+      s().error(t("page.createFailed"), e);
       return null;
     }
-  }, [pageId, s]);
+  }, [pageId, s, t]);
 
   const rename = useCallback(async (row: Row, title: string) => {
-    const t = title.trim();
-    if (!t || t === row.title) return;
+    const name = title.trim();
+    if (!name || name === row.title) return;
     try {
       await flushAllEditors();
-      const n = await api.renamePage(row.id, t, true);
-      setRows((rs) => rs?.map((r) => (r.id === row.id ? { ...r, title: t } : r)) ?? rs);
+      const n = await api.renamePage(row.id, name, true);
+      setRows((rs) => rs?.map((r) => (r.id === row.id ? { ...r, title: name } : r)) ?? rs);
       reloadEditors();
       await s().refreshTree();
-      if (n > 0) s().toast({ tone: "info", title: "Umbenannt", detail: `Links in ${n} ${n === 1 ? "Seite" : "Seiten"} aktualisiert` });
+      if (n > 0) s().toast({ tone: "info", title: t("page.renamed"), detail: t("page.linksUpdated", { n }) });
     } catch (e) {
-      s().error("Umbenennen nicht möglich", e);
+      s().error(t("page.renameFailed"), e);
     }
-  }, [s]);
+  }, [s, t]);
 
   const open = useCallback((row: Row, newTab: boolean) => s().openPage(row.id, { newTab }), [s]);
 
@@ -193,10 +196,10 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
       await api.movePage(row.id, pageId, at);
       await s().refreshTree();
     } catch (e) {
-      s().error("Reihenfolge konnte nicht gespeichert werden", e);
+      s().error(t("coll.orderFailed"), e);
       load();
     }
-  }, [rows, pageId, load, s]);
+  }, [rows, pageId, load, s, t]);
 
   /** Sets a property's type; unknown properties join the schema. Values stay as they are. */
   const changeKind = (key: string, kind: PropKind) => {
@@ -222,18 +225,18 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
     const kind = def?.kind ?? "text";
     const sorted = view.sort?.field.toLowerCase() === key.toLowerCase() ? view.sort.dir : null;
     const items: MenuEntry[] = [
-      { label: "Aufsteigend sortieren", icon: ArrowUp, checked: sorted === "auf", onSelect: () => changeView((v) => ({ ...v, sort: { field: key, dir: "auf" } })) },
-      { label: "Absteigend sortieren", icon: ArrowDown, checked: sorted === "ab", onSelect: () => changeView((v) => ({ ...v, sort: { field: key, dir: "ab" } })) },
-      ...(sorted ? [{ label: "Sortierung entfernen", icon: X, onSelect: () => changeView((v) => ({ ...v, sort: null })) }] : []),
-      { label: "Filtern…", icon: ListFilter, onSelect: () => addFilter(key) },
+      { label: t("coll.sortAsc"), icon: ArrowUp, checked: sorted === "auf", onSelect: () => changeView((v) => ({ ...v, sort: { field: key, dir: "auf" } })) },
+      { label: t("coll.sortDesc"), icon: ArrowDown, checked: sorted === "ab", onSelect: () => changeView((v) => ({ ...v, sort: { field: key, dir: "ab" } })) },
+      ...(sorted ? [{ label: t("coll.sortRemove"), icon: X, onSelect: () => changeView((v) => ({ ...v, sort: null })) }] : []),
+      { label: t("coll.filterMenu"), icon: ListFilter, onSelect: () => addFilter(key) },
     ];
     if (key !== TITLE) {
       items.push(
         "separator",
-        { label: "Typ ändern", icon: KIND_ICON[kind], submenu: kindMenu(def ? kind : ("" as PropKind), (k) => changeKind(key, k), KINDS) },
-        ...(def && hasOptions(def.kind) ? [{ label: "Optionen bearbeiten…", icon: Settings2, onSelect: () => setOptions(def.key) }] : []),
-        { label: "Spalte ausblenden", icon: EyeOff, onSelect: () => changeView((v) => ({ ...v, hidden: [...v.hidden, key] })) },
-        ...(def ? [{ label: "Aus dem Schema entfernen", icon: Trash2, danger: true, onSelect: () => changeDefs((ds) => ds.filter((d) => d !== defOf(ds, key))) }] : []),
+        { label: t("coll.changeType"), icon: KIND_ICON[kind], submenu: kindMenu(def ? kind : ("" as PropKind), (k) => changeKind(key, k), KINDS) },
+        ...(def && hasOptions(def.kind) ? [{ label: t("coll.editOptions"), icon: Settings2, onSelect: () => setOptions(def.key) }] : []),
+        { label: t("coll.hideColumn"), icon: EyeOff, onSelect: () => changeView((v) => ({ ...v, hidden: [...v.hidden, key] })) },
+        ...(def ? [{ label: t("coll.removeFromSchema"), icon: Trash2, danger: true, onSelect: () => changeDefs((ds) => ds.filter((d) => d !== defOf(ds, key))) }] : []),
       );
     }
     openMenuAt(anchor, items);
@@ -273,17 +276,17 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
   if (view.type === "liste") return null;
   const hiddenCols = view.hidden.filter((h) => h !== TITLE);
   const allKeys = columnKeys(defs, ctxRows, { ...view, hidden: [] }).filter((k) => k !== TITLE);
-  const count = rows ? (shown.length === rows.length ? `${rows.length} ${rows.length === 1 ? "Seite" : "Seiten"}` : `${shown.length} von ${rows.length}`) : "";
+  const count = rows ? (shown.length === rows.length ? t("import.pages", { n: rows.length }) : t("mail.pos", { i: shown.length, n: rows.length })) : "";
 
   return (
-    <section className={`coll coll-${view.type}`} data-page={pageId} aria-label={`${VIEW_LABEL[view.type]} der Unterseiten`}>
+    <section className={`coll coll-${view.type}`} data-page={pageId} aria-label={t("coll.ofSubpages", { view: t(VIEW_LABEL[view.type]) })}>
       <div className="coll-bar">
-        <div className="coll-switch" role="radiogroup" aria-label="Ansicht">
-          {(["liste", "tabelle", "board"] as ViewType[]).map((t) => {
-            const Icon = VIEW_ICON[t];
+        <div className="coll-switch" role="radiogroup" aria-label={t("calv.view")}>
+          {(["liste", "tabelle", "board"] as ViewType[]).map((type) => {
+            const Icon = VIEW_ICON[type];
             return (
-              <button key={t} type="button" role="radio" aria-checked={view.type === t} className={view.type === t ? "on" : ""} onClick={() => changeView((v) => ({ ...v, type: t }))} data-tooltip={t === "liste" ? "Nur die Seitenliste in der Seitenleiste" : undefined}>
-                <Icon size={13} aria-hidden /> {VIEW_LABEL[t]}
+              <button key={type} type="button" role="radio" aria-checked={view.type === type} className={view.type === type ? "on" : ""} onClick={() => changeView((v) => ({ ...v, type }))} data-tooltip={type === "liste" ? t("coll.listTip") : undefined}>
+                <Icon size={13} aria-hidden /> {t(VIEW_LABEL[type])}
               </button>
             );
           })}
@@ -292,21 +295,21 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
         <div className="coll-tools">
           {view.sort && (
             <span className="coll-sort">
-              <button type="button" className="coll-chip-btn" onClick={() => changeView((v) => ({ ...v, sort: v.sort && { ...v.sort, dir: v.sort.dir === "auf" ? "ab" : "auf" } }))} aria-label={`Sortiert nach ${fieldLabel(view.sort.field)}, ${view.sort.dir === "auf" ? "aufsteigend" : "absteigend"}`}>
+              <button type="button" className="coll-chip-btn" onClick={() => changeView((v) => ({ ...v, sort: v.sort && { ...v.sort, dir: v.sort.dir === "auf" ? "ab" : "auf" } }))} aria-label={t("coll.sortedBy", { field: fieldLabel(view.sort.field), dir: view.sort.dir === "auf" ? t("coll.ascending") : t("coll.descending") })}>
                 {view.sort.dir === "auf" ? <ArrowUp size={12} /> : <ArrowDown size={12} />} {fieldLabel(view.sort.field)}
               </button>
-              <button type="button" className="coll-chip-x" aria-label="Sortierung entfernen" onClick={() => changeView((v) => ({ ...v, sort: null }))}>
+              <button type="button" className="coll-chip-x" aria-label={t("coll.sortRemove")} onClick={() => changeView((v) => ({ ...v, sort: null }))}>
                 <X size={11} />
               </button>
             </span>
           )}
           <Button size="sm" variant="ghost" icon={Filter} onClick={() => addFilter()}>
-            Filter
+            {t("coll.filter")}
           </Button>
           {view.type === "board" && <BoardGroupSelect ctx={ctx} />}
           <IconButton
             icon={Columns3}
-            label="Eigenschaften"
+            label={t("coll.properties")}
             size="sm"
             onClick={(e) =>
               openMenuAt(e, [
@@ -326,29 +329,29 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
                   };
                 }),
                 ...(allKeys.length ? (["separator"] as MenuEntry[]) : []),
-                { label: "Eigenschaft hinzufügen…", icon: Plus, onSelect: () => setAdding(document.querySelector(`.coll[data-page="${pageId}"] .coll-tools`)) },
+                { label: t("coll.addPropertyMenu"), icon: Plus, onSelect: () => setAdding(document.querySelector(`.coll[data-page="${pageId}"] .coll-tools`)) },
               ])
             }
           />
           <Button size="sm" icon={Plus} onClick={() => newPage()}>
-            Neue Seite
+            {t("ribbon.newPage")}
           </Button>
         </div>
       </div>
       {view.filters.length > 0 && (
-        <div className="coll-filters" role="list" aria-label="Filter">
+        <div className="coll-filters" role="list" aria-label={t("coll.filter")}>
           {view.filters.map((f, i) => (
             <span key={i} className="coll-filter" role="listitem" data-index={i}>
               <button type="button" className="coll-chip-btn" onClick={(e) => setFilterEdit({ index: i, anchor: e.currentTarget.parentElement! })}>
                 <span className="strong">{fieldLabel(f.field)}</span> {opsFor(kindOf(defs, f.field)).find((o) => o.op === f.op)?.label ?? f.op} {filterValueLabel(f)}
               </button>
-              <button type="button" className="coll-chip-x" aria-label="Filter entfernen" onClick={() => changeView((v) => ({ ...v, filters: v.filters.filter((_, j) => j !== i) }))}>
+              <button type="button" className="coll-chip-x" aria-label={t("coll.filterRemove")} onClick={() => changeView((v) => ({ ...v, filters: v.filters.filter((_, j) => j !== i) }))}>
                 <X size={11} />
               </button>
             </span>
           ))}
           <button type="button" className="coll-filter-clear" onClick={() => changeView((v) => ({ ...v, filters: [] }))}>
-            Alle entfernen
+            {t("coll.removeAll")}
           </button>
         </div>
       )}
@@ -371,7 +374,7 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
         />
       )}
       {adding && (
-        <Popover anchor={adding} label="Eigenschaft hinzufügen" onClose={() => setAdding(null)}>
+        <Popover anchor={adding} label={t("cmd.addProperty")} onClose={() => setAdding(null)}>
           <NewPropertyForm
             taken={(k) => allKeys.some((x) => x.toLowerCase() === k.toLowerCase()) || k.toLowerCase() === TITLE || isManagedKey(k)}
             onAdd={(key, kind) => {
@@ -384,7 +387,7 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
         </Popover>
       )}
       {filterEdit && view.filters[filterEdit.index] && (
-        <Popover anchor={filterEdit.anchor} label="Filter bearbeiten" onClose={() => setFilterEdit(null)}>
+        <Popover anchor={filterEdit.anchor} label={t("coll.editFilter")} onClose={() => setFilterEdit(null)}>
           <FilterForm
             filter={view.filters[filterEdit.index]}
             defs={defs}
@@ -400,8 +403,10 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
 
 const filterValueLabel = (f: FilterSpec) => {
   if (/leer$/.test(f.op)) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(f.value)) return new Date(`${f.value}T12:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-  return f.value ? `„${f.value}“` : "…";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(f.value)) return fmtDate(new Date(`${f.value}T12:00:00`));
+  if (f.value === "heute") return t("review.today");
+  if (f.value === "ja" || f.value === "nein") return f.value === "ja" ? t("common.yes") : t("common.no");
+  return f.value ? t("common.quoted", { text: f.value }) : "…";
 };
 
 /** The property the board groups by: the chosen one, else the first that can. */
@@ -412,13 +417,14 @@ export function boardGroup(view: ViewSettings, defs: PropDef[] | null): string |
 }
 
 function BoardGroupSelect({ ctx }: { ctx: Ctx }) {
+  const t = useT();
   const options = (ctx.defs ?? []).filter((d) => groupable(d.kind));
   const current = boardGroup(ctx.view, ctx.defs);
   if (!current) return null;
   return (
     <label className="coll-group">
-      <span className="faint">Gruppiert nach</span>
-      <Select value={current} aria-label="Gruppieren nach" onChange={(e) => ctx.setView({ ...ctx.view, group: e.target.value })}>
+      <span className="faint">{t("coll.groupedBy")}</span>
+      <Select value={current} aria-label={t("coll.groupBy")} onChange={(e) => ctx.setView({ ...ctx.view, group: e.target.value })}>
         {options.map((d) => (
           <option key={d.key} value={d.key}>
             {d.key}
@@ -430,6 +436,7 @@ function BoardGroupSelect({ ctx }: { ctx: Ctx }) {
 }
 
 function NewPropertyForm({ taken, onAdd }: { taken: (key: string) => boolean; onAdd: (key: string, kind: PropKind) => void }) {
+  const t = useT();
   const [key, setKey] = useState("");
   const [kind, setKind] = useState<PropKind>("select");
   const k = key.trim();
@@ -444,23 +451,23 @@ function NewPropertyForm({ taken, onAdd }: { taken: (key: string) => boolean; on
       }}
     >
       <label className="coll-form-row">
-        <span className="faint">Name</span>
-        <input className="input" autoFocus value={key} placeholder="z. B. status" aria-label="Name der Eigenschaft" aria-invalid={invalid || undefined} spellCheck={false} onChange={(e) => setKey(e.target.value.replace(/[:\n]/g, ""))} />
+        <span className="faint">{t("links.name")}</span>
+        <input className="input" autoFocus value={key} placeholder={t("coll.keyPlaceholder")} aria-label={t("coll.propName")} aria-invalid={invalid || undefined} spellCheck={false} onChange={(e) => setKey(e.target.value.replace(/[:\n]/g, ""))} />
       </label>
-      <div className="coll-kinds" role="radiogroup" aria-label="Typ">
-        {KINDS.map((t) => {
-          const Icon = KIND_ICON[t.kind];
+      <div className="coll-kinds" role="radiogroup" aria-label={t("att.type")}>
+        {KINDS.map((k2) => {
+          const Icon = KIND_ICON[k2.kind];
           return (
-            <button key={t.kind} type="button" role="radio" aria-checked={kind === t.kind} className={`coll-kind ${kind === t.kind ? "on" : ""}`} onClick={() => setKind(t.kind)}>
-              <Icon size={13} aria-hidden /> {t.label}
+            <button key={k2.kind} type="button" role="radio" aria-checked={kind === k2.kind} className={`coll-kind ${kind === k2.kind ? "on" : ""}`} onClick={() => setKind(k2.kind)}>
+              <Icon size={13} aria-hidden /> {t(k2.label)}
             </button>
           );
         })}
       </div>
-      {invalid && <div className="prop-key-hint" role="alert">{taken(k) ? "Diesen Namen gibt es schon" : "Ungültiger Name"}</div>}
+      {invalid && <div className="prop-key-hint" role="alert">{taken(k) ? t("coll.nameTaken") : t("coll.nameInvalid")}</div>}
       <div className="coll-form-foot">
         <Button size="sm" variant="primary" type="submit" disabled={!k || invalid}>
-          Hinzufügen
+          {t("common.add")}
         </Button>
       </div>
     </form>
@@ -468,6 +475,7 @@ function NewPropertyForm({ taken, onAdd }: { taken: (key: string) => boolean; on
 }
 
 function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: FilterSpec; defs: PropDef[] | null; fields: string[]; onChange: (f: FilterSpec) => void; onDone: () => void }) {
+  const t = useT();
   const kind = kindOf(defs, filter.field);
   const ops = opsFor(kind);
   const op = ops.find((o) => o.op === filter.op) ?? ops[0];
@@ -476,8 +484,8 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
   if (op.value) {
     if (def && (def.kind === "select" || def.kind === "multi_select")) {
       value = (
-        <Select value={filter.value} aria-label="Wert" onChange={(e) => onChange({ ...filter, value: e.target.value })}>
-          <option value="">Option wählen</option>
+        <Select value={filter.value} aria-label={t("coll.value")} onChange={(e) => onChange({ ...filter, value: e.target.value })}>
+          <option value="">{t("coll.pickOption")}</option>
           {def.options.map((o) => (
             <option key={o.name} value={o.name}>
               {o.name}
@@ -487,26 +495,26 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
       );
     } else if (kind === "checkbox") {
       value = (
-        <Select value={filter.value || "ja"} aria-label="Wert" onChange={(e) => onChange({ ...filter, value: e.target.value })}>
-          <option value="ja">Ja</option>
-          <option value="nein">Nein</option>
+        <Select value={filter.value || "ja"} aria-label={t("coll.value")} onChange={(e) => onChange({ ...filter, value: e.target.value })}>
+          <option value="ja">{t("common.yes")}</option>
+          <option value="nein">{t("common.no")}</option>
         </Select>
       );
     } else if (kind === "date") {
       value = (
         <span className="coll-date-value">
           {filter.value === "heute" ? (
-            <span className="coll-today">heute</span>
+            <span className="coll-today">{t("review.today")}</span>
           ) : (
-            <DateInput value={/^\d{4}-/.test(filter.value) ? filter.value : ""} aria-label="Datum" onChange={(v) => onChange({ ...filter, value: v })} />
+            <DateInput value={/^\d{4}-/.test(filter.value) ? filter.value : ""} aria-label={t("time.date")} onChange={(v) => onChange({ ...filter, value: v })} />
           )}
           <Button size="sm" variant={filter.value === "heute" ? "secondary" : "ghost"} onClick={() => onChange({ ...filter, value: filter.value === "heute" ? "" : "heute" })}>
-            {filter.value === "heute" ? "Datum wählen" : "Heute"}
+            {filter.value === "heute" ? t("calv.pickDate") : t("feed.range.today")}
           </Button>
         </span>
       );
     } else {
-      value = <input className="input" autoFocus value={filter.value} aria-label="Wert" placeholder="Wert" spellCheck={false} onChange={(e) => onChange({ ...filter, value: e.target.value })} onKeyDown={(e) => e.key === "Enter" && onDone()} />;
+      value = <input className="input" autoFocus value={filter.value} aria-label={t("coll.value")} placeholder={t("coll.value")} spellCheck={false} onChange={(e) => onChange({ ...filter, value: e.target.value })} onKeyDown={(e) => e.key === "Enter" && onDone()} />;
     }
   }
   return (
@@ -514,7 +522,7 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
       <div className="coll-filter-grid">
         <Select
           value={filter.field}
-          aria-label="Eigenschaft"
+          aria-label={t("coll.property")}
           onChange={(e) => {
             const field = e.target.value;
             const nextOps = opsFor(kindOf(defs, field));
@@ -527,7 +535,7 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
             </option>
           ))}
         </Select>
-        <Select value={op.op} aria-label="Bedingung" onChange={(e) => onChange({ ...filter, op: e.target.value })}>
+        <Select value={op.op} aria-label={t("coll.condition")} onChange={(e) => onChange({ ...filter, op: e.target.value })}>
           {ops.map((o) => (
             <option key={o.op} value={o.op}>
               {o.label}
@@ -538,7 +546,7 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
       </div>
       <div className="coll-form-foot">
         <Button size="sm" variant="primary" onClick={onDone}>
-          Fertig
+          {t("common.done")}
         </Button>
       </div>
     </div>

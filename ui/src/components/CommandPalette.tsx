@@ -65,7 +65,7 @@ function fuzzy(text: string, q: string): number {
 const ic = (C: typeof Search) => <C size={16} strokeWidth={1.75} />;
 
 export function CommandPalette() {
-  useT();
+  const lang = useT();
   const open = useApp((s) => s.paletteOpen);
   const mode = useApp((s) => s.paletteMode);
   const initial = useApp((s) => s.paletteQuery);
@@ -94,10 +94,10 @@ export function CommandPalette() {
       return;
     }
     let alive = true;
-    const t = setTimeout(() => api.search(query, 12).then((h) => alive && setHits(h)).catch(() => {}), 90);
+    const timer = setTimeout(() => api.search(query, 12).then((h) => alive && setHits(h)).catch(() => {}), 90);
     return () => {
       alive = false;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
   }, [query, open, mode]);
 
@@ -110,19 +110,19 @@ export function CommandPalette() {
     if (mode === "all" && /^\/(zeit|time)\b/i.test(query)) {
       out.push({
         id: "zeit",
-        section: "Zeiterfassung",
-        title: `Buchen: ${query.replace(/^\/(zeit|time)\s*/i, "") || "…"}`,
-        subtitle: "Netzplan/Vorgang Dauer #Leistungsart Beschreibung",
+        section: t("ribbon.timesheet"),
+        title: t("qs.book", { rest: query.replace(/^\/(zeit|time)\s*/i, "") || "…" }),
+        subtitle: t("qs.bookSyntax"),
         icon: ic(Timer),
         hint: "Enter",
         run: async () => {
           try {
             const out2 = await api.logTime(query);
-            s().toast({ tone: "success", title: `${hoursFromMinutes(out2.entry.duration_minutes)} h gebucht`, detail: out2.entry.description || undefined });
+            s().toast({ tone: "success", title: t("time.booked", { h: hoursFromMinutes(out2.entry.duration_minutes) }), detail: out2.entry.description || undefined });
             s().alerts(out2.alerts);
             s().bumpEntries();
           } catch (e) {
-            s().error("Buchung fehlgeschlagen", e);
+            s().error(t("time.bookFailed"), e);
           }
         },
       });
@@ -132,8 +132,8 @@ export function CommandPalette() {
       const question = query.slice(1).trim();
       out.push({
         id: "ask",
-        section: "Assistent",
-        title: question ? `Fragen: ${question}` : "Frage an den Assistenten…",
+        section: t("ribbon.assistant"),
+        title: question ? t("palette.ask", { question }) : t("palette.askEmpty"),
         icon: ic(Sparkles),
         hint: "Enter",
         run: () => {
@@ -154,7 +154,7 @@ export function CommandPalette() {
       .slice(0, lower ? 8 : 6)
       .map(({ p }) => ({
         id: `page-${p.id}`,
-        section: lower ? "Seiten" : "Zuletzt bearbeitet",
+        section: lower ? t("qs.pages") : t("dash.w.recent"),
         title: p.title,
         subtitle: p.parent_id != null ? pages.get(p.parent_id)?.title : undefined,
         icon: <PageIcon name={p.icon} size={16} />,
@@ -165,7 +165,7 @@ export function CommandPalette() {
 
     if (mode === "pages") {
       if (lower && !pageItems.some((p) => p.title.toLowerCase() === lower))
-        out.push({ id: "create", section: "Neu", title: `„${query}“ anlegen`, icon: ic(FilePlus2), run: () => createSubpage(null, query) });
+        out.push({ id: "create", section: t("qs.new"), title: t("palette.create", { title: query }), icon: ic(FilePlus2), run: () => createSubpage(null, query) });
       return out;
     }
 
@@ -239,9 +239,9 @@ export function CommandPalette() {
             const id = await api.focusDailyLine();
             await s().refreshTree();
             reloadEditors([id]);
-            s().toast({ tone: "success", title: "In die Tagesnotiz eingetragen", action: { label: "Öffnen", run: () => s().openPage(id) } });
+            s().toast({ tone: "success", title: t("palette.focusNoted"), action: { label: t("links.open"), run: () => s().openPage(id) } });
           } catch (e) {
-            s().error("Nicht eingetragen", e);
+            s().error(t("palette.focusNoteFailed"), e);
           }
         },
       },
@@ -263,9 +263,9 @@ export function CommandPalette() {
         run: async () => {
           try {
             const n = await api.indexPending();
-            s().toast({ tone: "success", title: "Suchindex aktualisiert", detail: `${n} Abschnitte eingebettet` });
+            s().toast({ tone: "success", title: t("palette.indexed"), detail: t("palette.indexedDetail", { n }) });
           } catch (e) {
-            s().error("Index nicht aktualisiert", e);
+            s().error(t("palette.indexFailed"), e);
           }
         },
       },
@@ -299,16 +299,17 @@ export function CommandPalette() {
 
     for (const h of hits) {
       if (h.kind === "note")
-        out.push({ id: `note-${h.page_id}`, section: "Inhalte", title: h.title, snippet: h.snippet, icon: <PageIcon name={h.icon} size={16} />, run: (nt) => s().openPage(h.page_id, { newTab: nt }) });
+        out.push({ id: `note-${h.page_id}`, section: t("qs.content"), title: h.title, snippet: h.snippet, icon: <PageIcon name={h.icon} size={16} />, run: (nt) => s().openPage(h.page_id, { newTab: nt }) });
       else if (h.kind === "time_entry")
-        out.push({ id: `te-${h.id}`, section: "Zeiteinträge", title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) });
+        out.push({ id: `te-${h.id}`, section: t("qs.entries"), title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) });
     }
     if (lower && !pageItems.some((p) => p.title.toLowerCase() === lower))
-      out.push({ id: "create", section: "Neu", title: `Seite „${query}“ anlegen`, icon: ic(FilePlus2), run: () => createSubpage(null, query) });
+      out.push({ id: "create", section: t("qs.new"), title: t("palette.createPage", { title: query }), icon: ic(FilePlus2), run: () => createSubpage(null, query) });
     const tagHits = lower.startsWith("#") ? lower.slice(1) : null;
-    if (tagHits) out.unshift({ id: "tag", section: "Tags", title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
+    if (tagHits) out.unshift({ id: "tag", section: t("palette.tags"), title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
-  }, [query, pages, hits, mode, timer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, pages, hits, mode, timer, lang]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
@@ -353,15 +354,15 @@ export function CommandPalette() {
                 close();
               }
             }}
-            aria-label="Suche"
+            aria-label={t("palette.search")}
             spellCheck={false}
           />
           <kbd>Esc</kbd>
         </div>
         <div className="pal-list" ref={list} role="listbox">
-          {items.length === 0 && <div className="pal-empty">Keine Ergebnisse</div>}
+          {items.length === 0 && <div className="pal-empty">{t("palette.noResults")}</div>}
           {/* Only „anlegen“ left: say so, instead of offering it as if it were a match. */}
-          {query.trim() !== "" && items.length > 0 && items.every((it) => it.id === "create") && <div className="pal-nohits">Keine Treffer für „{query.trim()}“</div>}
+          {query.trim() !== "" && items.length > 0 && items.every((it) => it.id === "create") && <div className="pal-nohits">{t("sidebar.noHits", { q: query.trim() })}</div>}
           {items.map((it, i) => {
             const header = it.section !== lastSection ? it.section : null;
             lastSection = it.section;
@@ -390,11 +391,11 @@ export function CommandPalette() {
           })}
         </div>
         <div className="pal-foot">
-          <span><kbd>↑</kbd><kbd>↓</kbd> wählen</span>
-          <span><kbd>Enter</kbd> öffnen</span>
-          <span><kbd>{keys("Mod Enter")}</kbd> neuer Tab</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> {t("palette.footSelect")}</span>
+          <span><kbd>Enter</kbd> {t("palette.footOpen")}</span>
+          <span><kbd>{keys("Mod Enter")}</kbd> {t("palette.footNewTab")}</span>
           <span className="grow" />
-          <span className="faint">/zeit buchen · ? fragen · # Tag</span>
+          <span className="faint">{t("palette.footHints")}</span>
         </div>
       </div>
     </div>
@@ -406,11 +407,7 @@ export function askWeeklyReport(now = new Date()) {
   const from = isoDay(weekStart(now));
   const to = isoDay(now);
   const kw = isoWeek(now);
-  const text = [
-    `Erstelle eine Status-E-Mail auf Deutsch für KW ${kw} (${from} bis ${to}).`,
-    `Hole die gebuchten Stunden mit dem Werkzeug time_summary (from "${from}", to "${to}") und die erledigten Aufgaben mit list_tasks (status "done", changed_since "${from}").`,
-    "Gliederung: Betreff, kurze Zusammenfassung, Erledigt je Netzplan/Vorgang mit Stunden und Stichpunkten aus den Buchungstexten, erledigte Aufgaben, nächste Schritte, Summe der Stunden.",
-    "Antworte nur mit der E-Mail in Markdown, ohne Vorbemerkung.",
-  ].join("\n");
-  useApp.getState().set({ panelOpen: true, panelTab: "assistant", pendingAsk: { text, display: `Wochenbericht KW ${kw}`, pageTitle: `Wochenbericht KW ${kw}`, tools: true } });
+  const text = t("palette.reportPrompt", { kw, from, to });
+  const title = t("palette.reportTitle", { kw });
+  useApp.getState().set({ panelOpen: true, panelTab: "assistant", pendingAsk: { text, display: title, pageTitle: title, tools: true } });
 }
