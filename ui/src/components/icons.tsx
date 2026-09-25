@@ -44,6 +44,7 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   server: Server,
   cloud: Cloud,
   terminal: Terminal,
+  "app-window": AppWindow,
   ticket: Ticket,
   chart: BarChart3,
   video: Video,
@@ -51,7 +52,6 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   newspaper: Newspaper,
   home: Home,
   kanban: KanbanSquare,
-  "app-window": AppWindow,
 };
 
 /** German names of the page icons (menus, tooltips, screen readers). */
@@ -93,6 +93,7 @@ export const PAGE_ICON_LABELS: Record<string, string> = {
   server: "Server",
   cloud: "Cloud",
   terminal: "Terminal",
+  "app-window": "Programm",
   ticket: "Ticket",
   chart: "Diagramm",
   video: "Video",
@@ -100,7 +101,6 @@ export const PAGE_ICON_LABELS: Record<string, string> = {
   newspaper: "Zeitung",
   home: "Startseite",
   kanban: "Kanban",
-  "app-window": "Programm",
 };
 
 /** The German name of a page icon (the stored name for unknown icons). */
