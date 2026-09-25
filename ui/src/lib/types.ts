@@ -508,17 +508,38 @@ export interface GitTest {
   branches: string[];
   error: string | null;
 }
-export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar" | "focus" | "agenda";
-export type WidgetSize = "s" | "m" | "l";
-export interface Widget {
+/** A widget of the start page before 1.6 (one list, three widths). */
+export interface LegacyWidget {
   id: string;
-  kind: WidgetKind;
-  size: WidgetSize;
+  kind: string;
+  size: "s" | "m" | "l";
+}
+/** A widget on a board: place and size in the 12-column grid, own title and settings. */
+export interface GridWidget {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title?: string;
+  config?: Record<string, unknown>;
+}
+export interface Board {
+  id: string;
+  name: string;
+  widgets: GridWidget[];
 }
 export interface Dashboard {
-  widgets: Widget[];
-  /** Scratch text of the „Notiz“ widget. */
-  note: string;
+  /** 2 since 1.6 (boards); 0 before. */
+  version: number;
+  boards: Board[];
+  active: string;
+  /** Texts of the „Notiz“ widgets by widget id. */
+  notes: Record<string, string>;
+  /** Before 1.6 (moved onto a board by the start page); missing when never saved. */
+  widgets?: LegacyWidget[] | null;
+  note?: string;
 }
 /** Payload of `search://open`: what the quick search asks the main window to show. */
 export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" };

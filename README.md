@@ -92,8 +92,14 @@ a local model (never a cloud provider) can add a short summary.
 
 ### Your own start page
 
-Widgets for today's tasks, booked hours this week, budget warnings, recent pages, bookmarks, the timer, a note and the
-calendar. You can arrange and resize them with drag and drop.
+Boards of widgets in a twelve-column grid, as tabs: „Heute“ opens with the daily overview (today's meetings on a
+timeline with the next one and its join link, hours booked against your target, the timer, due tasks you tick off right
+there, focus and quick actions), next to meetings, the week per day or WBS, budgets with a forecast of when they run out,
+a project, recent and pinned pages, an embedded page, activity, links, the week proposal, a clock and yesterday's review.
+„Anpassen“ lets you drag, resize (also with the keyboard), set up and duplicate widgets, add them from a gallery, start
+from the templates „Tagesstart“, „Projektleitung“ or „Minimal“, and export or import a board. The „Abfrage“ widget is
+your own: pages, tasks, bookings or meetings filtered like `#projekt status: offen`, shown as a list, table, number or
+bar chart.
 
 <p align="center"><img src="docs/screenshots/dashboard.png" width="90%" alt="Start page with widgets"></p>
 

@@ -230,9 +230,26 @@ and by `entry_id`.
   `search_workspace` plus quick actions (`ui/src/lib/quicksearch.ts`); a chosen result goes through
   `search_open`, which hides it, shows the main window and emits `search://open` (`{kind:"page", page_id, new_tab}`,
   `timesheet`, `timer_stop`) to it. `/zeit …` is booked via `capture_submit`. The query is kept for 60 s.
-- Start page: `settings.dashboard` (`{ widgets: [{ id, kind, size: "s"|"m"|"l" }], note }`, normalized on load:
-  unknown kinds dropped, ids made unique) is saved by `dashboard_save` only; `settings_save` keeps the stored
-  dashboard. The grid has four columns (s = 1, m = 2, l = all) and falls back to two and one via `@container pane`.
+- Start page (1.6): `settings.dashboard` = `{ version: 2, boards: [{ id, name, widgets: [{ id, kind, x, y, w, h,
+  title?, config? }] }], active, notes: { widgetId: text } }` in a 12-column grid of 28 px rows. `Dashboard::normalized`
+  drops unknown kinds, makes board and widget ids unique, keeps widgets inside the grid, caps boards (12), widgets (40),
+  a widget's `config` (16 KB, objects only) and notes. It is saved by `dashboard_save` only; `settings_save` keeps the
+  stored dashboard. The list of 1.3–1.5 (`widgets` with `size`, `note`) stays readable: the UI moves it onto the board
+  „Heute“ (`migrateLegacy` in `lib/dashboard.ts`) and saves it once; a start page never saved shows the boards
+  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings.
+- Start page UI: `lib/dashgrid.ts` is the layout engine (collisions push down, then everything floats up; keyboard
+  `nudge`/`grow`; `reflow` to 6 or 1 columns by the grid's width, measured with a ResizeObserver), `lib/dashboard.ts`
+  the catalogue, presets, board edits, export/import (`annalo-dashboard` JSON), the parts a widget needs and the budget
+  forecast, `lib/dashquery.ts` the query line of the „Abfrage“ widget. Widgets live in `components/dashboard/`
+  (`day`, `time`, `pages`, `tools`), share `common.tsx`, and adapt to their own width (`container: dw`).
+- `dashboard_data(request)` (`annalo_core::dashboard`, async, read connection): `{ today, parts: [{ key, part }] }` →
+  `{ parts: { key: data | { error } }, ms }`. A part is one of `today`, `agenda`, `tasks`, `week`, `budgets`,
+  `project`, `recent`, `page`, `query`, `feed`, `focus`, `proposal`, `review`, `timer_refs`, `month`, `suggestions`;
+  equal parts of several widgets share a key, the budgets with the hours of the last 28 days are loaded once per call.
+  The UI (`components/dashboard/data.tsx`) asks only for widgets in view (IntersectionObserver), keeps shown data
+  while reloading and reloads the parts whose topics changed (`data://entries`, `data://tasks`, `data://pages`,
+  `calendar://synced`, `focus://changed`, saved pages, the WBS), batched into one call. Timing is kept in
+  `window.__annaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
 - Reminders: `end_of_day_reminder` and `late_timer_reminder` are pure functions of time, settings,
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.

@@ -11,7 +11,6 @@ import { clock, h1, usd } from "../lib/format";
 import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
-import { AnnaloLogo } from "./Logo";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { FocusStatus } from "./Focus";
@@ -153,22 +152,11 @@ export function Home() {
 }
 
 function StartPage() {
-  const hour = new Date().getHours();
-  const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Guten Tag" : "Guten Abend";
+  // The greeting lives in the „Heute“ widget; the start page is its boards.
   return (
     <div className="home">
       <div className="home-inner home-dash">
-        <Dashboard
-          head={
-            <header className="home-head">
-              <AnnaloLogo size={30} className="home-logo" />
-              <div>
-                <h1>{greeting}</h1>
-                <p className="muted">{new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</p>
-              </div>
-            </header>
-          }
-        />
+        <Dashboard />
       </div>
     </div>
   );

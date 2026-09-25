@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod calsync;
+mod dashboard;
 mod dayreview;
 mod desktop;
 mod devlog;
@@ -3782,6 +3783,8 @@ pub fn run() {
             desktop::search_open,
             desktop::timer_resume_last,
             dashboard_save,
+            dashboard::dashboard_data,
+            dashboard::dashboard_file_write,
             quick_links_save,
             quick_link_open,
             attachment_open,
