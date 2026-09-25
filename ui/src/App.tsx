@@ -29,6 +29,7 @@ import { withPacResults } from "./views/settings/NetworkSection";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PresentationHost, startPresentation } from "./components/Presentation";
+import { openDayReview } from "./lib/reviewnav";
 
 export function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen);
@@ -126,6 +127,8 @@ export function App() {
         useApp.getState().openTab({ kind: "timesheet" });
         requestWeekProposal();
       }),
+      // Came back after the „Tagesrückblick ansehen“ reminder.
+      on("nav://day-review", () => openDayReview()),
       // A result chosen in the quick-search window (it may have created the page).
       on<SearchTarget>("search://open", async (t) => {
         const st = useApp.getState();

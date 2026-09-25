@@ -79,7 +79,10 @@ sections, columns, a live table of contents and footnotes, all plain Markdown th
 ### Present, focus, look back
 
 Any note becomes a full-screen presentation, split at `---`, with speaker notes and a presenter view. Focus sessions
-book their time on a Vorgang by themselves, and the activity feed answers "Was habe ich am Dienstag gemacht?".
+book their time on a Vorgang by themselves, and the activity feed answers "Was habe ich am Dienstag gemacht?". At the
+end of the day the Tagesrückblick puts it on one page: pages edited, hours per WBS against your target with the gaps,
+tasks done and overdue, meetings booked or not, focus sessions and files. One click writes it into the daily note, and
+a local model (never a cloud provider) can add a short summary.
 
 <p align="center">
   <img src="docs/screenshots/presentation.png" width="49%" alt="A note as a presentation">
@@ -188,6 +191,7 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Timer with idle detection (inactive time can be subtracted), quick booking, manual entries
 - Weekly timesheet with a grid per Netzplan/Vorgang, release workflow, and export to SAP CATS, Jira worklogs, CSV or JSON
 - „Woche vorschlagen“: a timesheet draft of the week from meetings, unbooked focus sessions and page editing, around what is already booked and capped at the daily target; reviewed by day (source, time, length, text, Vorgang with confidence and reason) and taken over in one go as drafts. A Vorgang you change is remembered per page and meeting series; a reminder on the last workday afternoon points to open days
+- Tagesrückblick (ribbon, palette, the daily note's „Rückblick“ link, the Kalender's day header): one day's pages, hours per WBS against the target with the unbooked gaps, tasks, meetings with their booking state, focus sessions and files; every row leads to its place. „In Tagesnotiz übernehmen“ writes (and on repeat replaces) a compact block in the daily note; „Zusammenfassung schreiben“ runs only on a provider marked local. Optional reminder at the end of the workday
 - Projects view: budget, booked hours, remaining effort (ETC), forecast (EAC), critical path and float, as tables
 - Budget warnings when a booking pushes a Netzplan or Vorgang over its thresholds
 

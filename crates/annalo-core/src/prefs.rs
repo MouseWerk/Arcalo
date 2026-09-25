@@ -632,6 +632,10 @@ pub struct NotificationPrefs {
     pub updates: bool,
     /// „Woche vorschlagen“ on the last workday of the week from 14:00 when days are open.
     pub week_proposal: bool,
+    /// „Tagesrückblick ansehen“ once a workday at `day_review_time` (off by default).
+    pub day_review: bool,
+    /// `HH:MM` (local time) of the day review reminder.
+    pub day_review_time: String,
     /// No desktop notifications between `quiet_from` and `quiet_to`.
     pub quiet_hours: bool,
     pub quiet_from: String,
@@ -648,6 +652,8 @@ impl Default for NotificationPrefs {
             git_failed: true,
             updates: true,
             week_proposal: true,
+            day_review: false,
+            day_review_time: "17:30".into(),
             quiet_hours: false,
             quiet_from: "22:00".into(),
             quiet_to: "07:00".into(),

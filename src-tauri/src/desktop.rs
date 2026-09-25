@@ -204,6 +204,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                 let _ = app.emit_to(MAIN, "nav://timesheet", ());
             }
             crate::weekplan::on_focus(app);
+            crate::dayreview::on_focus(app);
         }
         // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
@@ -894,6 +895,7 @@ pub fn periodic(app: &AppHandle) {
         notify(app, "Timer läuft noch", &body);
     }
     crate::weekplan::periodic(app);
+    crate::dayreview::periodic(app);
 }
 
 // ---------------------------------------------------------------- autostart

@@ -20,6 +20,7 @@ import { modLabel } from "../lib/shortcut";
 import { openFocusDialog } from "../components/Focus";
 import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
+import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 
 const STATUS: Record<StatusFlag, { label: string; tone: Tone }> = {
   running: { label: "Läuft", tone: "info" },
@@ -49,6 +50,16 @@ export function TimesheetView() {
     take();
     window.addEventListener(OPEN_EVENT, take);
     return () => window.removeEventListener(OPEN_EVENT, take);
+  }, []);
+  // A day from the Tagesrückblick: its week.
+  useEffect(() => {
+    const take = () => {
+      const d = takeTimesheetDay();
+      if (d) setWeek(weekStart(new Date(`${d}T12:00:00`)));
+    };
+    take();
+    window.addEventListener(TIMESHEET_DAY_EVENT, take);
+    return () => window.removeEventListener(TIMESHEET_DAY_EVENT, take);
   }, []);
 
   // Only the latest request may update the list (fast week switching).

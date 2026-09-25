@@ -1,7 +1,7 @@
 // Obsidian-style ribbon: a slim column of global actions left of the sidebar.
 
 import { useRef } from "react";
-import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, Search, ListChecks, PanelLeft, Settings, Sparkles, Target, Timer } from "lucide-react";
+import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, Search, ListChecks, PanelLeft, Settings, Sparkles, Sunset, Target, Timer } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
@@ -12,6 +12,7 @@ import { openCalendar } from "./CalendarPopover";
 import { useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "./Focus";
+import { openDayReview } from "../lib/reviewnav";
 
 export async function openToday() {
   const s = useApp.getState();
@@ -105,6 +106,7 @@ export function Ribbon() {
       <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
       <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />
       <IconButton icon={Activity} label={t("ribbon.activity")} active={tab?.kind === "activity"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "activity" })} />
+      <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
       <span className="ribbon-sep" />
