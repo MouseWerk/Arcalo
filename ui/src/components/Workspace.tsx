@@ -23,7 +23,8 @@ const TagView = lazyView<{ tag: string }>(() => import("../views/TagView").then(
 const TasksView = lazyView(() => import("../views/TasksView").then((m) => m.TasksView));
 const ActivityView = lazyView(() => import("../views/ActivityView").then((m) => m.ActivityView));
 const AttachmentsView = lazyView(() => import("../views/AttachmentsView").then((m) => m.AttachmentsView));
-const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView];
+const CalendarView = lazyView(() => import("../views/CalendarView").then((m) => m.CalendarView));
+const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView];
 
 // The PDF viewer (with pdf.js) loads when a PDF tab is shown.
 const PdfPane = lazy(() => import("../editor/PdfViewer").then((m) => ({ default: m.PdfPane })));
@@ -190,6 +191,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "trash" && <TrashView />}
             {tab.kind === "tasks" && <TasksView />}
             {tab.kind === "attachments" && <AttachmentsView />}
+            {tab.kind === "calendar" && <CalendarView />}
             {tab.kind === "conflict" && <ConflictView pageId={tab.pageId!} />}
             </Suspense>
           </div>

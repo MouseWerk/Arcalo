@@ -5,7 +5,8 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, X,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, on } from "../lib/api";
+import { bookingPrefill, durationMinutes, sourceColor, timeRange, unbooked } from "../lib/agenda";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
@@ -14,7 +15,7 @@ import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
 import { catsGrid, undeletableReason, weekGaps } from "../lib/cats";
-import type { ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow } from "../lib/types";
+import type { CalendarEvent, ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow, WbsHint } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
 import { openFocusDialog } from "../components/Focus";
 
@@ -110,6 +111,8 @@ export function TimesheetView() {
         </div>
 
         <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} />
+
+        <MeetingSuggestions week={week} rows={rows} wbs={wbs} las={las} />
 
         <section className="card">
           <div className="card-head">
@@ -538,19 +541,32 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
 
 // ----------------------------------------------------------- entry dialog
 
-function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntryRow | null; wbs: ProjectTree[]; las: [string, string][]; onClose: () => void; defaultDay: Date }) {
-  const start = entry ? new Date(entry.start_time) : (() => {
+/** Values for a new entry (e.g. booked from a calendar appointment). */
+export interface EntryPrefill {
+  /** YYYY-MM-DD, HH:MM. */
+  day: string;
+  from: string;
+  minutes: number;
+  description: string;
+  netzplanId?: number | null;
+  vorgangNr?: string | null;
+  leistungsart?: string | null;
+}
+
+export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onSaved, note }: { entry: TimeEntryRow | null; wbs: ProjectTree[]; las: [string, string][]; onClose: () => void; defaultDay: Date; prefill?: EntryPrefill; onSaved?: (entryId: number) => void; note?: React.ReactNode }) {
+  const start = entry ? new Date(entry.start_time) : prefill ? new Date(`${prefill.day}T${prefill.from}:00`) : (() => {
     const d = isoDay(new Date()) >= isoDay(defaultDay) && isoDay(new Date()) <= isoDay(addDays(defaultDay, 6)) ? new Date() : new Date(defaultDay);
     d.setHours(9, 0, 0, 0);
     return d;
   })();
-  const [np, setNp] = useState<number | null>(entry?.netzplan_id ?? wbs[0]?.netzplaene[0]?.id ?? null);
-  const [vorgang, setVorgang] = useState(entry?.vorgang_nr ?? "");
-  const [la, setLa] = useState(entry?.leistungsart ?? "DEV");
+  const knownNp = (id: number | null | undefined) => (id != null && wbs.some((p) => p.netzplaene.some((n) => n.id === id)) ? id : null);
+  const [np, setNp] = useState<number | null>(entry?.netzplan_id ?? knownNp(prefill?.netzplanId) ?? wbs[0]?.netzplaene[0]?.id ?? null);
+  const [vorgang, setVorgang] = useState(entry?.vorgang_nr ?? (knownNp(prefill?.netzplanId) != null ? (prefill?.vorgangNr ?? "") : ""));
+  const [la, setLa] = useState(entry?.leistungsart ?? prefill?.leistungsart ?? "DEV");
   const [day, setDay] = useState(isoDay(start));
   const [from, setFrom] = useState(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
-  const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : "1,00");
-  const [desc, setDesc] = useState(entry?.description ?? "");
+  const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : prefill ? fmtMinutes(prefill.minutes) : "1,00");
+  const [desc, setDesc] = useState(entry?.description ?? prefill?.description ?? "");
   const [busy, setBusy] = useState(false);
   // Enter and a click right after each other must not book twice.
   const submitting = useRef(false);
@@ -568,6 +584,7 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
       } else {
         const out = await api.createEntry({ netzplanId: np, vorgangNr: vorgang || null, leistungsart: la || null, startTime, durationMinutes: minutes, description: desc });
         s().alerts(out.alerts);
+        onSaved?.(out.entry.id);
       }
       s().bumpEntries();
       s().toast({ tone: "success", title: entry ? "Eintrag gespeichert" : `${fmtMinutes(minutes)} h gebucht` });
@@ -601,6 +618,7 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
         </>
       }
     >
+      {note}
       <div className="form-grid">
         <Field label="Netzplan">
           <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} disabled={!!entry} />
@@ -625,6 +643,99 @@ function EntryDialog({ entry, wbs, las, onClose, defaultDay }: { entry: TimeEntr
         <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Was wurde gemacht?" onKeyDown={onEnter} />
       </Field>
     </Dialog>
+  );
+}
+
+// ----------------------------------------------------------------- meetings
+
+/**
+ * „Termine übernehmen“: meetings of the week from the calendar sync that are over and not booked
+ * yet; each can be booked (prefilled like in the Kalender) or marked „nicht buchen“.
+ */
+function MeetingSuggestions({ week, rows, wbs, las }: { week: Date; rows: TimeEntryRow[]; wbs: ProjectTree[]; las: [string, string][] }) {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [booking, setBooking] = useState<{ event: CalendarEvent; prefill: EntryPrefill; hint: WbsHint | null } | null>(null);
+  const [tick, setTick] = useState(0);
+  const [open, setOpen] = useState(false);
+  const target = useApp((st) => st.settings?.settings.daily_target_hours ?? 8);
+  const s = useApp.getState;
+  useEffect(() => {
+    let alive = true;
+    api
+      .calendarEvents(week.toISOString(), addDays(week, 7).toISOString())
+      .then((e) => alive && setEvents(e))
+      .catch(() => alive && setEvents([]));
+    const off = on("calendar://synced", () => setTick((x) => x + 1));
+    return () => {
+      alive = false;
+      off.then((f) => f());
+    };
+  }, [week, tick]);
+  const list = useMemo(() => unbooked(events, rows), [events, rows]);
+  if (!list.length) return null;
+  const shown = open ? list : list.slice(0, 4);
+  const book = async (e: CalendarEvent) => {
+    if (!wbs.some((p) => p.netzplaene.length)) return s().toast({ tone: "warning", title: "Noch kein Netzplan", detail: "Zum Buchen zuerst unter Projekte einen Netzplan anlegen." });
+    const hint = await api.calendarWbsHint(e.key).catch(() => null);
+    setBooking({ event: e, hint, prefill: bookingPrefill(e, hint, target) });
+  };
+  const skip = async (e: CalendarEvent) => {
+    try {
+      await api.calendarSetSkip(e.key, true);
+      setTick((x) => x + 1);
+    } catch (err) {
+      s().error("Nicht gespeichert", err);
+    }
+  };
+  return (
+    <section className="card ts-meetings" aria-label="Termine übernehmen">
+      <div className="card-head">
+        <h2>Termine übernehmen</h2>
+        <span className="faint">{list.length} {list.length === 1 ? "Termin" : "Termine"} dieser Woche noch nicht gebucht</span>
+      </div>
+      <ul className="ts-meeting-list">
+        {shown.map((e) => (
+          <li key={e.key} className="ts-meeting" style={{ "--ev": sourceColor(e.source, useApp.getState().settings?.settings.calendar) } as React.CSSProperties}>
+            <span className="ts-meeting-bar" aria-hidden />
+            <span className="ts-meeting-when num">
+              {weekdayShort(new Date(e.start))} {timeRange(e)}
+            </span>
+            <span className="ts-meeting-title ellipsis" title={e.title}>
+              {e.title}
+            </span>
+            <span className="faint num">{fmtMinutes(durationMinutes(e))} h</span>
+            <Button size="sm" icon={Timer} onClick={() => void book(e)}>
+              Buchen
+            </Button>
+            <IconButton icon={X} size="sm" label={`„${e.title}“ nicht buchen`} onClick={() => void skip(e)} />
+          </li>
+        ))}
+      </ul>
+      {list.length > 4 && (
+        <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>
+          {open ? "Weniger zeigen" : `Alle ${list.length} zeigen`}
+        </Button>
+      )}
+      {booking && (
+        <EntryDialog
+          entry={null}
+          wbs={wbs}
+          las={las}
+          defaultDay={week}
+          prefill={booking.prefill}
+          note={
+            <div className="calv-book-note">
+              <CalendarDays size={14} aria-hidden />
+              <span>
+                Aus dem Termin „{booking.event.title}“ ({timeRange(booking.event)}){booking.hint ? <> · WBS wie beim letzten Mal: <b>{booking.hint.reference}</b></> : null}
+              </span>
+            </div>
+          }
+          onClose={() => setBooking(null)}
+          onSaved={(id) => void api.calendarLinkEntry(booking.event.key, id).catch((err) => s().error("Buchung nicht mit dem Termin verknüpft", err))}
+        />
+      )}
+    </section>
   );
 }
 

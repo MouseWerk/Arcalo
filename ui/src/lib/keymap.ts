@@ -20,6 +20,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "new_page", label: "cmd.newPage", combo: "Ctrl+N" },
   { id: "daily_note", label: "cmd.dailyNote", combo: "Ctrl+Shift+D" },
   { id: "calendar", label: "cmd.calendar", combo: "Ctrl+Shift+C" },
+  { id: "calendar_view", label: "cmd.calendarView", combo: "Ctrl+Shift+E" },
   { id: "tasks", label: "cmd.tasks", combo: "Ctrl+Shift+A" },
   { id: "search", label: "cmd.search", combo: "Ctrl+Shift+F" },
   { id: "new_tab", label: "cmd.newTab", combo: "Ctrl+T" },

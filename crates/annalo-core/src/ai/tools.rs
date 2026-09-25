@@ -224,7 +224,7 @@ fn truncate(mut s: String) -> String {
 const SYSTEM_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Runs `cmd` (no stdin, no console window) and waits at most `timeout`.
-fn output_within(mut cmd: Command, timeout: Duration) -> Result<std::process::Output> {
+pub(crate) fn output_within(mut cmd: Command, timeout: Duration) -> Result<std::process::Output> {
     use std::io::Read;
     use std::process::Stdio;
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());

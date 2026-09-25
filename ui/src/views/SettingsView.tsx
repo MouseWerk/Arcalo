@@ -4,7 +4,7 @@
 
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CheckCircle2, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
+import { Bell, CalendarRange, CheckCircle2, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -29,8 +29,10 @@ import { KeyboardSection } from "./settings/KeyboardSection";
 import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
+import { CalendarSection } from "./settings/CalendarSection";
+import { takeSettingsSection } from "../lib/calnav";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     label: "navgroup.general",
@@ -47,6 +49,7 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
       { id: "editor", label: "nav.editor", icon: PenLine },
       { id: "notes", label: "nav.notes", icon: NotebookPen },
       { id: "time", label: "nav.time", icon: Timer },
+      { id: "calendar", label: "nav.calendar", icon: CalendarRange },
     ],
   },
   {
@@ -70,12 +73,24 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
   },
 ];
 /** Sections that save every change immediately (no save bar). */
-const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about"]);
+const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about", "calendar"]);
 
 export function SettingsView() {
   const t = useT();
   const view = useApp((s) => s.settings);
-  const [section, setSection] = useState<Section>("ai");
+  const [section, setSection] = useState<Section>(() => (takeSettingsSection() as Section | null) ?? "ai");
+  // Opened on a section from elsewhere (the Kalender view, a toast) while already open.
+  useEffect(() => {
+    const onRequest = () => {
+      const want = takeSettingsSection() as Section | null;
+      if (want) {
+        setQuery("");
+        setSection(want);
+      }
+    };
+    window.addEventListener("annalo:settings-section", onRequest);
+    return () => window.removeEventListener("annalo:settings-section", onRequest);
+  }, []);
   const nav = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -199,6 +214,8 @@ export function SettingsView() {
             <AiPrefGroups draft={draft} update={u} />
           </>
         );
+      case "calendar":
+        return <CalendarSection draft={draft} update={u} />;
       case "privacy":
         return <PrivacySection draft={draft} update={u} />;
       case "network":

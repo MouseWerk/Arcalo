@@ -6,7 +6,7 @@ import { logUi } from "../lib/devlog";
 import type { BudgetStatus, FocusState, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 
-export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict";
+export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict" | "calendar";
 /** A place a tab can show. */
 export interface Loc {
   kind: TabKind;

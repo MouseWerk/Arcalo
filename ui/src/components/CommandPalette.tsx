@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, Target, NotebookPen,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
@@ -27,6 +27,7 @@ import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
 import { openActivityDay } from "../views/activityDay";
 import { reloadEditors } from "../editor/NoteEditor";
+import { syncCalendarsNow } from "../lib/calnav";
 
 interface Item {
   id: string;
@@ -173,6 +174,8 @@ export function CommandPalette() {
         run: () => openToday(),
       },
       { id: "calendar", title: t("cmd.calendar"), subtitle: t("cmd.calendarSub"), icon: ic(CalendarDays), hint: hint("calendar"), run: () => setTimeout(() => openCalendar(), 0) },
+      { id: "calendar-view", title: t("cmd.calendarView"), subtitle: t("cmd.calendarViewSub"), icon: ic(CalendarRange), hint: hint("calendar_view"), run: () => s().openTab({ kind: "calendar" }) },
+      { id: "calendar-sync", title: t("cmd.calendarSync"), icon: ic(RefreshCw), run: () => void syncCalendarsNow() },
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
         ? [
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },

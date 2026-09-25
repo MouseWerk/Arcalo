@@ -126,6 +126,25 @@ export const api = {
   exportEntries: (a: { format: T.ExportFormat; from: string | null; to: string | null; onlyReleased: boolean; markExported: boolean; path: string | null }) =>
     call<T.ExportResult>("export_entries", a),
 
+  // calendar sync (Kalender)
+  calendarStatus: () => call<T.CalendarStatus>("calendar_status"),
+  /** Appointments of the active sources overlapping `from..to` (ISO instants). */
+  calendarEvents: (from: string, to: string) => call<T.CalendarEvent[]>("calendar_events", { from, to }),
+  /** Adds a subscription (the URL goes to the credential store) or an .ics file, and syncs it. */
+  calendarSourceAdd: (name: string, source: { url?: string; path?: string }) =>
+    call<T.CalendarStatus>("calendar_source_add", { name, url: source.url ?? null, path: source.path ?? null }),
+  calendarSourceUpdate: (id: string, patch: { name?: string; color?: string; enabled?: boolean; url?: string; path?: string }) =>
+    call<T.CalendarStatus>("calendar_source_update", { id, name: patch.name ?? null, color: patch.color ?? null, enabled: patch.enabled ?? null, url: patch.url ?? null, path: patch.path ?? null }),
+  calendarSourceRemove: (id: string) => call<T.CalendarStatus>("calendar_source_remove", { id }),
+  /** Syncs one source (its error is thrown) or all active ones now. */
+  calendarSyncNow: (source?: string) => call<T.CalendarStatus>("calendar_sync_now", { source: source ?? null }),
+  calendarSetSkip: (key: string, skip: boolean) => call<void>("calendar_set_skip", { key, skip }),
+  calendarLinkEntry: (key: string, entryId: number) => call<void>("calendar_link_entry", { key, entryId }),
+  /** The WBS last booked for this series or subject. */
+  calendarWbsHint: (key: string) => call<T.WbsHint | null>("calendar_wbs_hint", { key }),
+  /** The meeting note of an appointment (created on first use). */
+  calendarMeetingNote: (key: string) => call<{ page: T.Page; created: boolean }>("calendar_meeting_note", { key }),
+
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),

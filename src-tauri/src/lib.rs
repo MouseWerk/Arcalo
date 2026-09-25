@@ -3,6 +3,7 @@
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
+mod calsync;
 mod desktop;
 mod devlog;
 mod feed;
@@ -1655,6 +1656,8 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.dashboard = state.settings().dashboard;
     // The same for the sidebar's links (`quick_links_save`).
     settings.quick_links = state.settings().quick_links;
+    // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
+    settings.calendar.sources = state.settings().calendar.sources;
     let specs = |s: &Settings| {
         [s.capture_shortcut.clone(), s.palette_shortcut.clone().unwrap_or_default(), s.search_shortcut.clone()]
     };
@@ -1688,7 +1691,16 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
             devlog::warn("ai", format!("key of the removed provider „{}“ not deleted: {e}", gone.id));
         }
     }
+    // Outlook switched on, another window or other privacy rules: read the calendars again now.
+    let (old_cal, new_cal) = (&previous.calendar, &settings.calendar);
+    let resync = (!old_cal.outlook && new_cal.outlook)
+        || (old_cal.past_days, old_cal.future_days) != (new_cal.past_days, new_cal.future_days)
+        || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
+    let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     rebuild_ai(&state, settings);
+    if resync && !active.is_empty() {
+        calsync::spawn_sync(app.clone(), active);
+    }
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
     Ok(settings_get(state))
@@ -3285,6 +3297,7 @@ pub fn run() {
             });
 
             app.manage(desktop::Desktop::default());
+            app.manage(calsync::CalendarSync::default());
             app.manage(updates::Updates::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
@@ -3330,6 +3343,7 @@ pub fn run() {
             }
             spawn_activity_sampler(app.handle().clone());
             spawn_backup_scheduler(app.handle().clone());
+            calsync::spawn_scheduler(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3509,6 +3523,16 @@ pub fn run() {
             devlog::devlog_stats,
             devlog::devlog_clear,
             devlog::devlog_open_folder,
+            calsync::calendar_status,
+            calsync::calendar_events,
+            calsync::calendar_source_add,
+            calsync::calendar_source_update,
+            calsync::calendar_source_remove,
+            calsync::calendar_sync_now,
+            calsync::calendar_set_skip,
+            calsync::calendar_link_entry,
+            calsync::calendar_wbs_hint,
+            calsync::calendar_meeting_note,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

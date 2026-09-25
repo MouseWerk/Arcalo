@@ -101,6 +101,8 @@ pub struct Settings {
     pub dashboard: Dashboard,
     /// Links at the top of the sidebar (web pages, tools, folders).
     pub quick_links: Vec<QuickLink>,
+    /// Calendar sync: Outlook, ICS files and subscriptions (subscription URLs live in the credential store).
+    pub calendar: crate::calsync::CalendarSettings,
 }
 
 /// A link in the sidebar: a web address, `mailto:` or a local folder or file.
@@ -196,9 +198,9 @@ pub struct Dashboard {
 }
 
 /// Widget kinds of the start page: Heute, Woche, Budgets, Zuletzt bearbeitet, Lesezeichen,
-/// Timer, Notiz, Kalender, Fokus.
-pub const WIDGET_KINDS: [&str; 9] =
-    ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar", "focus"];
+/// Timer, Notiz, Kalender, Fokus, Termine.
+pub const WIDGET_KINDS: [&str; 10] =
+    ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar", "focus", "agenda"];
 
 /// At most this many widgets are kept.
 pub const MAX_WIDGETS: usize = 24;
@@ -279,6 +281,7 @@ impl Default for Settings {
             search_shortcut: DEFAULT_SEARCH_SHORTCUT.into(),
             dashboard: Dashboard::default(),
             quick_links: vec![],
+            calendar: crate::calsync::CalendarSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -398,6 +401,7 @@ impl Settings {
             .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
             .filter(|(k, _)| !k.is_empty())
             .collect();
+        self.calendar = std::mem::take(&mut self.calendar).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
     }

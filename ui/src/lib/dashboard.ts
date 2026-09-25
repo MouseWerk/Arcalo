@@ -13,6 +13,7 @@ export const WIDGETS: Record<WidgetKind, { label: string; hint: string; size: Wi
   note: { label: "Notiz", hint: "Ein Notizzettel für schnelle Gedanken", size: "m" },
   calendar: { label: "Kalender", hint: "Monat mit Tagesnotizen und Buchungen", size: "s" },
   focus: { label: "Fokus", hint: "Fokussitzungen heute und diese Woche, je Vorgang", size: "s" },
+  agenda: { label: "Termine", hint: "Die Termine von heute aus dem Kalender", size: "m" },
 };
 
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];

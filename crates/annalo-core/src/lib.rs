@@ -16,6 +16,7 @@
 //! * [`gitsync`] – pushes the Markdown mirror to a Git remote (system `git`, token via environment)
 //! * [`merge`] – three-way merge of notes by blocks (Git sync conflicts)
 //! * [`calendar`] – month overview for the daily-note calendar (notes, booked time, due tasks)
+//! * [`calsync`] – calendar sync: Outlook Classic (COM via PowerShell) and ICS files/subscriptions
 //! * [`vault`] – Obsidian vault import / Markdown export
 //! * [`linktitle`] – titles of web pages for pasted links
 //! * [`attachments`] – pasted and imported images
@@ -43,6 +44,7 @@ pub mod attachment_manager;
 pub mod attachments;
 pub mod backup;
 pub mod calendar;
+pub mod calsync;
 pub mod datadir;
 pub mod db;
 pub mod demo;

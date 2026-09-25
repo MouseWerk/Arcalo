@@ -14,6 +14,8 @@ import { PageIcon } from "./icons";
 import { stopTimer, useTimerSeconds } from "./Sidebar";
 import { openDailyNote } from "./CalendarPopover";
 import { FocusWidget } from "./Focus";
+import { bookedEntry, hasSources, isAllDayLike, sourceColor, timeRange } from "../lib/agenda";
+import { openCalendarView, openSettingsSection } from "../lib/calnav";
 
 const WIDGET_MIME = "application/x-annalo-widget";
 
@@ -170,6 +172,8 @@ function WidgetBody({ widget }: { widget: Widget }) {
       return <CalendarWidget />;
     case "focus":
       return <FocusWidget />;
+    case "agenda":
+      return <AgendaWidget />;
   }
 }
 
@@ -570,5 +574,65 @@ function CalendarWidget() {
         })}
       </div>
     </div>
+  );
+}
+
+// --------------------------------------------------------------- Termine
+
+/** Today's appointments from the calendar sync; a click opens the Kalender on it. */
+function AgendaWidget() {
+  const settings = useApp((s) => s.settings?.settings);
+  const entriesVersion = useApp((s) => s.entriesVersion);
+  const today = isoDay(new Date());
+  const [data] = useLoad(
+    async () => {
+      const from = new Date(`${today}T00:00:00`);
+      const to = addDays(from, 1);
+      const [events, entries, status] = await Promise.all([
+        api.calendarEvents(from.toISOString(), to.toISOString()),
+        api.entries(from.toISOString(), to.toISOString()),
+        api.calendarStatus(),
+      ]);
+      return { events, entries, configured: hasSources(settings?.calendar, status.outlook_available) };
+    },
+    [today, entriesVersion, settings?.calendar],
+    ["calendar://synced"],
+  );
+  if (!data) return null;
+  if (!data.configured)
+    return (
+      <Empty>
+        Kein Kalender verbunden.{" "}
+        <button type="button" className="calv-linkbtn" onClick={() => openSettingsSection("calendar")}>
+          Einrichten
+        </button>
+      </Empty>
+    );
+  if (!data.events.length) return <Empty>Heute keine Termine.</Empty>;
+  const nowMs = Date.now();
+  return (
+    <ul className="dw-list dw-agenda" aria-label="Termine heute">
+      {data.events.slice(0, 7).map((e) => {
+        const past = new Date(e.end).getTime() < nowMs;
+        const booked = !!bookedEntry(e, data.entries);
+        return (
+          <li key={e.key}>
+            <button type="button" className={`dw-agenda-row ${past ? "past" : ""}`} style={{ "--ev": sourceColor(e.source, settings?.calendar) } as React.CSSProperties} onClick={() => openCalendarView({ date: today, key: e.key })}>
+              <span className="dw-agenda-time num">{isAllDayLike(e) ? "ganzt." : timeRange(e).slice(0, 5)}</span>
+              <span className="dw-agenda-bar" aria-hidden />
+              <span className="grow ellipsis">{e.title}</span>
+              {booked && <Badge tone="success">gebucht</Badge>}
+            </button>
+          </li>
+        );
+      })}
+      {data.events.length > 7 && (
+        <li>
+          <button type="button" className="dw-more" onClick={() => openCalendarView({ date: today })}>
+            {data.events.length - 7} weitere …
+          </button>
+        </li>
+      )}
+    </ul>
   );
 }

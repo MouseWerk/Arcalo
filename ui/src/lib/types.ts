@@ -276,6 +276,8 @@ export interface Settings {
   /** Widgets of the start page. */
   dashboard: Dashboard;
   quick_links: QuickLink[];
+  /** Calendar sync; subscription addresses live in the credential store. */
+  calendar: CalendarSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -491,7 +493,7 @@ export interface GitTest {
   branches: string[];
   error: string | null;
 }
-export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar" | "focus";
+export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar" | "focus" | "agenda";
 export type WidgetSize = "s" | "m" | "l";
 export interface Widget {
   id: string;
@@ -940,4 +942,89 @@ export interface GitPulled {
   conflicts: number[];
   /** Pages the server deleted, kept here because there were too many at once. */
   kept?: number[];
+}
+
+// ---- calendar sync (Kalender)
+
+export interface IcsSource {
+  id: string;
+  name: string;
+  kind: "url" | "file";
+  path: string;
+  color: string;
+  enabled: boolean;
+}
+export interface CalendarSettings {
+  /** Read the default calendar of Outlook Classic (Windows). */
+  outlook: boolean;
+  outlook_color: string;
+  sources: IcsSource[];
+  sync_minutes: number;
+  past_days: number;
+  future_days: number;
+  /** Keep subject, place and attendees of private appointments. */
+  private_details: boolean;
+  /** Keep the text of appointments. */
+  include_body: boolean;
+  /** Keep a Teams/Zoom/Webex link found in the text. */
+  meeting_links: boolean;
+}
+export type Busy = "free" | "tentative" | "busy" | "oof" | "elsewhere";
+export interface CalendarEvent {
+  /** `source|uid|instance`. */
+  key: string;
+  source: string;
+  uid: string;
+  instance: string;
+  recurring: boolean;
+  /** RFC 3339 (UTC). */
+  start: string;
+  end: string;
+  all_day: boolean;
+  title: string;
+  location: string;
+  organizer: string;
+  attendees: string[];
+  body: string | null;
+  link: string | null;
+  busy: Busy;
+  private: boolean;
+  categories: string[];
+  /** Marked „nicht buchen“. */
+  skip: boolean;
+  note_page_id: number | null;
+  /** The time entry booked from this appointment. */
+  entry_id: number | null;
+}
+export interface CalendarSyncStatus {
+  source: string;
+  synced_at: string | null;
+  attempted_at: string | null;
+  error: string | null;
+  events: number;
+}
+export interface CalendarSourceInfo {
+  /** `outlook` or `ics:<id>`. */
+  id: string;
+  name: string;
+  kind: "outlook" | "url" | "file";
+  color: string;
+  enabled: boolean;
+  /** Scheme and host of a subscription. */
+  address: string;
+  url_set: boolean;
+  path: string;
+  status: CalendarSyncStatus | null;
+  syncing: boolean;
+}
+export interface CalendarStatus {
+  outlook_available: boolean;
+  sources: CalendarSourceInfo[];
+  secret_storage: string;
+}
+export interface WbsHint {
+  netzplan_id: number;
+  vorgang_nr: string | null;
+  leistungsart: string | null;
+  reference: string;
 }

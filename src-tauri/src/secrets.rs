@@ -1,5 +1,5 @@
-//! Storage for secrets: the API keys of the AI providers, the Git access token and the proxy
-//! password.
+//! Storage for secrets: the API keys of the AI providers, the Git access token, the proxy
+//! password and the addresses of calendar subscriptions.
 //!
 //! Windows: Credential Manager, macOS: Keychain. Elsewhere (Linux
 //! and other systems) the secrets are written to `secrets.json` in the app data directory
@@ -57,6 +57,11 @@ impl SecretStore {
     /// The password of the proxy (Settings → Netzwerk).
     pub fn proxy(data_dir: &Path) -> Self {
         Self::named(data_dir, annalo_core::network::PASSWORD_ACCOUNT, "proxy_password")
+    }
+
+    /// The address of the ICS subscription `id` (Settings → Kalender): it may carry a secret token.
+    pub fn calendar(data_dir: &Path, id: &str) -> Self {
+        Self::named(data_dir, &format!("calendar-ics-{id}"), &format!("calendar_ics_{id}"))
     }
 
     /// Human-readable name of the backend, shown in the settings.
@@ -204,6 +209,12 @@ mod tests {
         openai.set(None).unwrap();
         git.set(None).unwrap();
         assert_eq!((ai.get().as_deref(), git.get()), (Some("sk-1"), None));
+        // Calendar subscription addresses (they may carry a token) are secrets of their own.
+        let cal = SecretStore::calendar(&dir, "s1");
+        cal.set(Some("https://outlook.office365.com/owa/calendar/x/y/calendar.ics?token=1")).unwrap();
+        assert_eq!(cal.get().as_deref(), Some("https://outlook.office365.com/owa/calendar/x/y/calendar.ics?token=1"));
+        assert_eq!(SecretStore::calendar(&dir, "s2").get(), None);
+        cal.set(None).unwrap();
         ai.set(None).unwrap();
         assert!(!dir.join("secrets.json").exists(), "empty file removed");
         let _ = std::fs::remove_dir_all(&dir);

@@ -377,6 +377,7 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   new_page: () => void createSubpage(null),
   daily_note: () => void openToday(),
   tasks: () => useApp.getState().openTab({ kind: "tasks" }),
+  calendar_view: () => useApp.getState().openTab({ kind: "calendar" }),
   calendar: () => {
     const st = useApp.getState();
     if (st.calendar) st.set({ calendar: null });
