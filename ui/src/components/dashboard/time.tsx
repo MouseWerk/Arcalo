@@ -8,6 +8,7 @@ import { t, type TKey } from "../../lib/i18n";
 import { hoursLabel } from "../../lib/calendar";
 import { timeRange } from "../../lib/agenda";
 import { openCalendarView } from "../../lib/calnav";
+import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openTimesheetDay } from "../../lib/reviewnav";
 import { requestWeekProposal } from "../../lib/weekplan";
 import { budgetForecast, configOf, weekBars, type Forecast } from "../../lib/dashboard";
@@ -198,6 +199,7 @@ export function BudgetWidget({ widget }: WidgetProps) {
 // ------------------------------------------------------------------ Projekt
 
 export function ProjectWidget({ widget, openSettings }: WidgetProps) {
+  const hidden = useHiddenCalendars();
   const { data, error, loading } = useWidgetData<ProjectData>(widget);
   const { refresh } = useDash();
   const today = isoDay(new Date());
@@ -211,7 +213,7 @@ export function ProjectWidget({ widget, openSettings }: WidgetProps) {
               {t("dash.projectEmpty")}
             </Empty>
           );
-        const p = data;
+        const p = { ...data, events: visibleEvents(data.events, hidden) };
         const total = p.budget[0];
         const vorgaenge = p.budget.slice(1).sort(byRisk).slice(0, 3);
         return (

@@ -10,7 +10,8 @@ import { t, type TKey } from "../../lib/i18n";
 import { configOf, isKind, titleOf, TODAY_BLOCKS, WIDGETS, type TodayBlock } from "../../lib/dashboard";
 import { applyLine, DISPLAYS, emptyQuery, FIELDS, GROUPS, normalizeQuery, parseQueryLine, queryLine, SOURCES, type QueryDisplay, type QuerySource, type WidgetQuery } from "../../lib/dashquery";
 import { normalizeLinks, isGroup } from "../../lib/quicklinks";
-import { sourceName } from "../../lib/agenda";
+import { sourceColor, sourceName } from "../../lib/agenda";
+import { useHiddenCalendars } from "../../lib/calvisibility";
 import type { GridWidget } from "../../lib/types";
 import type { BudgetRow, QueryResult } from "../../lib/dashtypes";
 import { Button, Dialog, IconButton, Input, Segmented, Select, Switch } from "../ui";
@@ -215,6 +216,7 @@ function BudgetRefs({ value, onChange }: { value: string[]; onChange: (v: string
 
 function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Config) => void }) {
   const settings = useApp((st) => st.settings?.settings);
+  const hidden = useHiddenCalendars();
   const { wbs } = useWbs();
   const toggle = (key: string, label: TKey, invert = false) => (
     <Row label={t(label)}>
@@ -239,7 +241,12 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
     }
     case "agenda": {
       const cal = settings?.calendar;
-      const all = [...(cal?.outlook ? ["outlook"] : []), ...(cal?.sources ?? []).map((x) => `ics:${x.id}`)];
+      // Outlook (its default calendar and the other selected ones) and the ICS calendars.
+      const all = [
+        ...(cal?.outlook ? ["outlook"] : []),
+        ...(cal?.outlook ? (cal.outlook_calendars ?? []).filter((x) => x.enabled && x.id !== "outlook").map((x) => x.id) : []),
+        ...(cal?.sources ?? []).filter((x) => x.enabled).map((x) => `ics:${x.id}`),
+      ];
       const chosen = (c.sources as string[]) ?? [];
       return (
         <>
@@ -256,7 +263,9 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
                       const next = e.target.checked ? [...base, id] : base.filter((x) => x !== id);
                       set({ sources: next.length === all.length ? [] : next });
                     }} />
-                    <span>{sourceName(id, cal)}</span>
+                    <span className="dws-swatch" style={{ background: sourceColor(id, cal) }} aria-hidden />
+                    <span className="ellipsis">{sourceName(id, cal)}</span>
+                    {hidden.has(id) && <span className="faint small">{t("dash.set.hiddenInCalendar")}</span>}
                   </label>
                 ))}
               </div>

@@ -11,6 +11,7 @@ import { t } from "../../lib/i18n";
 import { bookingPrefill, isAllDayLike, sourceColor, sourceName, timeRange } from "../../lib/agenda";
 import { addMonths, dayTone, hoursLabel, monthGrid } from "../../lib/calendar";
 import { openCalendarView, openSettingsSection } from "../../lib/calnav";
+import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openDayReview } from "../../lib/reviewnav";
 import { requestWeekProposal } from "../../lib/weekplan";
 import { configOf, type TodayBlock } from "../../lib/dashboard";
@@ -210,6 +211,8 @@ export function TodayWidget({ widget }: WidgetProps) {
   const refs = useWidgetData<TimeEntryRow[]>(widget, 1).data;
   const { refresh } = useDash();
   const now = useNow(30_000);
+  // Calendars hidden in the Kalender's legend are hidden here too.
+  const hidden = useHiddenCalendars();
   const blocks = (configOf(widget).blocks ?? {}) as Partial<Record<TodayBlock, boolean>>;
   const on = (b: TodayBlock) => blocks[b] !== false;
   const date = new Date(now);
@@ -218,6 +221,7 @@ export function TodayWidget({ widget }: WidgetProps) {
     <Loadable loading={loading} error={error}>
       {() => {
         const d = data!;
+        const events = visibleEvents(d.events, hidden);
         const target = d.target_minutes;
         const share = target > 0 ? d.booked_minutes / target : 0;
         const missing = Math.max(0, target - d.booked_minutes);
@@ -246,8 +250,8 @@ export function TodayWidget({ widget }: WidgetProps) {
             </div>
             {on("timeline") && (
               <div className="dw-today-sec">
-                {d.calendar_configured && d.events.length > 0 && <Timeline events={d.events} now={now} />}
-                <NextMeeting events={d.events} now={now} configured={d.calendar_configured} />
+                {d.calendar_configured && events.length > 0 && <Timeline events={events} now={now} />}
+                <NextMeeting events={events} now={now} configured={d.calendar_configured} />
               </div>
             )}
             <div className="dw-today-cols">
@@ -377,6 +381,8 @@ export function AgendaWidget({ widget }: WidgetProps) {
   const now = useNow(30_000);
   const c = configOf(widget);
   const only = Array.isArray(c.sources) ? (c.sources as string[]) : [];
+  // The widget's own choice of calendars, and those hidden in the Kalender's legend.
+  const hidden = useHiddenCalendars();
   const { book, dialog } = useBooking(() => refresh(["calendar"]));
   return (
     <Loadable loading={loading} error={error}>
@@ -388,7 +394,7 @@ export function AgendaWidget({ widget }: WidgetProps) {
               {t("dash.noCalendar")}
             </Empty>
           );
-        const events = d.events.filter((e) => !only.length || only.includes(e.source));
+        const events = visibleEvents(d.events, hidden).filter((e) => !only.length || only.includes(e.source));
         if (!events.length) return <Empty icon={Coffee}>{Number(c.days) > 1 ? t("dash.noMeetingsDays") : t("dash.noMeetingsToday")}</Empty>;
         const byDay = new Map<string, CalendarEvent[]>();
         for (const e of events) {

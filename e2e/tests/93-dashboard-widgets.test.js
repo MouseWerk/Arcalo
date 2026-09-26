@@ -11,16 +11,19 @@ import { iso, writeMeetingNow } from "../lib/calendar-fixtures.js";
 const test = guarded(nodeTest, () => app);
 let app;
 let fx;
+let fx2;
 before(async () => {
   fx = writeMeetingNow("Jour fixe Kunde X");
+  fx2 = writeMeetingNow("Zweitkalender Termin");
   app = await launch();
   await app.invoke("calendar_source_add", { name: "Heute", url: null, path: fx.file });
+  await app.invoke("calendar_source_add", { name: "Zweit", url: null, path: fx2.file });
   await app.invoke("calendar_sync_now", { source: null });
   await app.browser.waitUntil(async () => (await app.invoke("calendar_status")).sources.every((s) => !s.enabled || (s.status?.synced_at && !s.syncing)), { timeout: 20000, timeoutMsg: "not synced" });
 });
 after(async () => {
   await app?.close();
-  if (fx) fs.rmSync(fx.dir, { recursive: true, force: true });
+  for (const f of [fx, fx2]) if (f) fs.rmSync(f.dir, { recursive: true, force: true });
 });
 
 const reload = async () => {
@@ -61,6 +64,27 @@ test("Heute shows the running meeting on the timeline with the now marker", asyn
   // „Termine“ next to it lists both, the running one marked.
   await app.waitText('.pane.active [data-widget="agenda"] .dw-agenda-item.live', /Jour fixe Kunde X/);
   await app.shot("93-heute-meeting");
+});
+
+test("a calendar hidden in the Kalender's legend is hidden in „Heute“ and „Termine“ too", async () => {
+  const titles = (sel) => app.browser.execute((s) => [...document.querySelectorAll(s)].map((e) => e.textContent.trim()), sel);
+  await app.waitText('.pane.active [data-widget="agenda"] .dw-agenda-title', /Zweitkalender Termin/);
+  const src = (await app.invoke("settings_get")).settings.calendar.sources.find((x) => x.name === "Heute");
+  await app.keys(["Control", "Shift", "e"]);
+  await app.waitFor(`.pane.active .calv-legend-item[data-source="ics:${src.id}"]`);
+  await app.click(`.pane.active .calv-legend-item[data-source="ics:${src.id}"]`);
+  await app.click(".pane.active .tab.active .tab-close");
+  await app.keys(["Control", "t"]);
+  await app.waitText('.pane.active [data-widget="agenda"] .dw-agenda-title', /Zweitkalender Termin/);
+  assert.ok(!(await titles('.pane.active [data-widget="agenda"] .dw-agenda-title')).some((x) => /Jour fixe Kunde X/.test(x)), "hidden calendar in Termine");
+  assert.ok(!(await titles('.pane.active [data-widget="today"] .dw-tl-ev')).some((x) => /Jour fixe Kunde X/.test(x)), "hidden calendar on the timeline");
+  assert.match(await app.text('.pane.active [data-widget="today"] .dw-next'), /Zweitkalender Termin/);
+  // Shown again in the Kalender: back on the start page at once.
+  await app.keys(["Control", "Shift", "e"]);
+  await app.click(`.pane.active .calv-legend-item[data-source="ics:${src.id}"]`);
+  await app.click(".pane.active .tab.active .tab-close");
+  await app.keys(["Control", "t"]);
+  await app.waitText('.pane.active [data-widget="agenda"] .dw-agenda-title', /Jour fixe Kunde X/);
 });
 
 test("Heute: a task is ticked off inline, the timer starts and stops", async () => {
