@@ -137,7 +137,13 @@ export function CalendarView() {
     const apply = () => {
       const f = takeCalendarFocus();
       if (!f) return;
-      if (f.date) setAnchor(new Date(`${f.date}T12:00:00`));
+      if (f.date) {
+        const day = new Date(`${f.date}T12:00:00`);
+        setAnchor(day);
+        // A weekend day is not in the work week: show the whole week for it (not stored).
+        const wd = useApp.getState().settings?.settings.workdays ?? [1, 2, 3, 4, 5];
+        if (!wd.includes(((day.getDay() + 6) % 7) + 1)) setViewState((v) => (v === "workweek" ? "week" : v));
+      }
       if (f.key) setSelected(f.key);
     };
     apply();
