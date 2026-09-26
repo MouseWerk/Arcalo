@@ -4,6 +4,7 @@
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod backdrop;
+mod backupdest;
 mod calsync;
 mod dashboard;
 mod dayreview;
@@ -1177,6 +1178,7 @@ fn export_entries(
 
 /// Backs up; the flag tells whether the Markdown mirror was refreshed as well.
 fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
+    let _running = lock(&BACKUP_RUNNING);
     let res = backup_once(app);
     match &res {
         Ok((info, _)) => devlog::debug("backup", format!("backup written: {}", info.path)),
@@ -1195,10 +1197,12 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
         None => backup::backup_to(&state.db(), &dir, keep)?,
     };
     feed::record(&state, "backup", &info.file_name, "");
-    // Images live next to the database; names are content hashes, so copying new ones suffices.
+    // Attachments live next to the database: new files and changed ones (a drawing saved again)
+    // are copied, nothing is deleted.
     let src = state.attachments_dir();
     if src.is_dir() {
-        copy_new_attachments(&src, &dir.join("attachments"))?;
+        let act = annalo_core::backupdest::Activity::new(None);
+        annalo_core::backupdest::sync_files(&src, &dir.join("attachments"), &act)?;
     }
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
@@ -1210,6 +1214,8 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
             Err(e) => devlog::error("backup", format!("markdown mirror failed: {e}")),
         }
     }
+    // Copies to network and cloud folders follow in the background.
+    backupdest::backup_written(app, &info);
     let gs = state.settings().git_sync;
     if gs.enabled && gs.mode == SyncMode::WithBackup && !gs.remote_url.is_empty() {
         // Like the mirror, a failed sync does not fail the backup (reported via event, status and log).
@@ -1769,6 +1775,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     let relocalize = annalo_core::i18n::set_lang(settings.locale.language);
     rebuild_ai(&state, settings);
+    backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
     }
@@ -3508,6 +3515,12 @@ fn app_restart(app: AppHandle) -> Result<()> {
 /// Closes the workspace and releases the single-instance lock before this process ends
 /// and another one (a restart, or the update installer's relaunch) takes over.
 pub(crate) fn prepare_exit(app: &AppHandle) {
+    // A backup cut off by the exit would be a truncated newest backup, the one a recovery restores.
+    let until = Instant::now() + Duration::from_secs(30);
+    while matches!(BACKUP_RUNNING.try_lock(), Err(std::sync::TryLockError::WouldBlock)) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    EXIT_PREPARED.store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(state) = app.try_state::<AppState>() {
         let mut db = state.db();
         let _ = db.checkpoint();
@@ -3530,11 +3543,43 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
     }
 }
 
+/// Held while a backup is written (see [`prepare_exit`]).
+static BACKUP_RUNNING: Mutex<()> = Mutex::new(());
+/// [`prepare_exit`] ran; [`resume_after_failed_exit`] undoes it.
+static EXIT_PREPARED: AtomicBool = AtomicBool::new(false);
+
+/// The process did not end after all (the update installer or the new process could not be
+/// started): opens the workspace again, so edits are not written into the in-memory stand-in.
+pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
+    if !EXIT_PREPARED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        let file = state.data_dir.join(datadir::DB_FILE);
+        match Database::open(&file) {
+            Ok(db) => *state.db() = db,
+            Err(e) => devlog::error("core", format!("workspace not reopened after a failed restart: {e}")),
+        }
+        if let Some(reader) = &state.reader
+            && let Ok(r) = Database::open_read_only(&file)
+        {
+            *lock(reader) = r;
+        }
+        if portable::active() {
+            portable::lock_instance(&state.data_dir);
+        }
+    }
+    desktop::show_main(app);
+}
+
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
     let exe = tauri::process::current_binary(&app.env())?;
     prepare_exit(app);
     let args = std::env::args_os().skip(1).filter(|a| a != desktop::MINIMIZED_ARG);
-    std::process::Command::new(exe).args(args).spawn()?;
+    if let Err(e) = std::process::Command::new(exe).args(args).spawn() {
+        resume_after_failed_exit(app);
+        return Err(e.into());
+    }
     app.exit(0);
     Ok(())
 }
@@ -3653,8 +3698,17 @@ pub fn run() {
             if let Some(n) = &startup.notice {
                 devlog::warn("core", format!("data folder: {}", n.message));
             }
+            // Started by the update (or after an installer that did not finish).
+            let after_update =
+                annalo_core::update::take_restart_marker(&dir, &app.package_info().version.to_string());
+            if let Some(a) = &after_update {
+                let how = if a.installed { "installed" } else { "not installed, still the old version" };
+                devlog::info("update", format!("first start after the update to {}: {how}", a.version));
+            }
             let opts: StartupOptions =
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+            // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
+            let restored = backupdest::apply_pending_restore(&dir);
             let db = match Database::open(dir.join(datadir::DB_FILE)) {
                 Ok(db) => db,
                 Err(e) => {
@@ -3672,7 +3726,7 @@ pub fn run() {
             }
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.
-            let mut notice = startup.notice.clone();
+            let mut notice = restored.or(startup.notice.clone());
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(
@@ -3787,7 +3841,10 @@ pub fn run() {
 
             app.manage(desktop::Desktop::default());
             app.manage(calsync::CalendarSync::default());
-            app.manage(updates::Updates::default());
+            // The window after an update always shows: the user clicked „Installieren“ and waits for it.
+            let updated = after_update.is_some();
+            app.manage(updates::Updates::after(after_update));
+            app.manage(backupdest::Destinations::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
@@ -3800,7 +3857,8 @@ pub fn run() {
             }
             let tray = app.state::<desktop::Desktop>().has_tray();
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
-            let wants_minimized = start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG);
+            let wants_minimized =
+                !updated && (start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG));
             let minimized = tray && wants_minimized;
             // A portable copy leaves the taskbar alone (the jump list lives in the user profile).
             if !portable::active() {
@@ -3836,6 +3894,7 @@ pub fn run() {
                 }
             }
             spawn_activity_sampler(app.handle().clone());
+            backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
             mail::clean_temp(app.handle());
@@ -3926,6 +3985,11 @@ pub fn run() {
             export_entries,
             backup_now,
             backup_list,
+            backupdest::backup_destinations,
+            backupdest::backup_destination_test,
+            backupdest::backup_destination_retry,
+            backupdest::backup_remote_list,
+            backupdest::backup_restore,
             mirror_status,
             mirror_open,
             git_sync_now,

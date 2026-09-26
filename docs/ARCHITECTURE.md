@@ -62,7 +62,28 @@ and by `entry_id`.
   parent is gone; title and daily-note clashes are resolved. Entries older than 30 days are purged on start.
 - **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `annalo-YYYYMMDD-HHMMSS.db`;
   older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
-  backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`.
+  backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`. It also copies the
+  attachments folder incrementally (new and changed files, e.g. a drawing saved again; nothing is deleted). A backup
+  holds the whole database (pages, versions, tasks, bookings, calendar cache, settings) and the attachments; secrets
+  and logs are not part of it.
+- **Backup destinations** (`backupdest.rs`, shell `backupdest.rs`): `settings.backup_targets` lists further folders
+  (UNC shares, mapped drives, `/Volumes`/`/mnt` mounts, synced cloud folders) with keep count, maximum age and whether
+  attachments and the Markdown mirror go along. After every local backup a worker thread copies the newest backup to each
+  due destination, into `<destination>/<computer>/` (so two computers sharing a share never prune each other): written as
+  `<name>.partial` (chunked, `fsync`, size checked), then `<name>.sha256` (`sha256sum` format), then renamed. Retention
+  deletes only `annalo-YYYYMMDD-HHMMSS.db` files that have their checksum file, in this computer's folder. Every copy
+  runs on its own thread under `run_watched`: without progress for 60 s (`ANNALO_BACKUP_STALL_SECS` in debug builds) it is
+  given up and the thread is abandoned, so a hung share never blocks the app, other destinations or quitting; the next
+  copy to it waits until the old thread ended. A destination folder is created only below an existing parent and never
+  again once it worked (an unmounted share must not become a local folder). Failures are classified (`Problem`:
+  unreachable, denied, read_only, full, timeout, checksum, …; the UI words them), retried after 1, 5, then every 15
+  minutes and on every new backup, and warned about once (`backup://destination-failed`) after 24 h or three missed
+  backups. Status lives in `<data dir>/backup-destinations.json` together with the destination list, so the start-up
+  recovery can use it without the database. Credentials are the operating system's (Windows session, Keychain, mounts).
+- **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Annalo backups in
+  the backup folder or a destination, copies the file into the data folder as `restore-pending.db` (checksum and
+  `PRAGMA quick_check` verified) and the UI restarts; the next start renames the database to
+  `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it.
 - **Markdown mirror** (`mirror.rs`): after each successful backup (with `markdown_mirror`, default on) the shell
   writes the vault export plus `Zeiterfassung/YYYY-MM.csv` (BOM, `;`, decimal comma) and a `README.txt` marker into
   `markdown_mirror_dir` or `<backup dir>/markdown`. It is built in `.markdown.staging` and swapped in by renaming the old
@@ -142,8 +163,10 @@ and by `entry_id`.
 - **Start-up failures** (shell `recovery.rs`): a data folder that cannot be created, a database that cannot be opened
   (damaged, not a database, locked, read-only storage: `Error::is_storage`) or one of a newer schema (`db::NEWER_SCHEMA`)
   show a native dialog instead of a panic without a window: „Letzte Sicherung wiederherstellen“ (only for a damaged
-  database with backups in `<data dir>/backups`: `backup::restore_latest` keeps the broken files as
-  `workspace.db.broken-<stamp>` and copies the newest backup, then restarts), „Ordner öffnen“, „Beenden“. Settings are read
+  database with backups in `<data dir>/backups`, the configured backup folder or a reachable destination from
+  `backup-destinations.json`, each listed for at most 5 s: `backupdest::restore_newest` copies the newest backup that
+  passes its checksum and SQLite check next to the database, keeps the broken files as `workspace.db.broken-<stamp>`
+  and puts it in place, then restarts), „Ordner öffnen“, „Beenden“. Settings are read
   key by key (`parse_settings_lenient`, one level deep): a value of the wrong type falls back to its default, the raw JSON
   is kept in the meta row `settings.broken` and a notice names the keys. A data folder that opens but cannot be written, and
   network settings that cannot be applied, are start notices (`DataDirStatus.notice` with a `title`).
@@ -292,6 +315,17 @@ and by `entry_id`.
   on „Jetzt nach Updates suchen“. Installing always needs a click: editors are flushed (`lib/exit.ts`, shared
   with quit/close), the download reports `update://progress`, and `prepare_exit` closes the workspace and
   releases the single-instance lock right before the NSIS installer takes over and relaunches the app.
+- `prepare_exit` waits for a running backup (a cut-off `VACUUM INTO` would be the newest backup a recovery
+  restores), and the update's exit hook also runs `cleanup_before_exit` (tray icon). If the installer or the
+  new process cannot be started, `resume_after_failed_exit` opens the workspace again.
+- `core::update::is_newer` decides (semver precedence; a release build is never offered a pre-release).
+  Portable copies and .deb/.rpm installs (`bundle_type`) never install: `manual_update_reason`, and the UI
+  opens the release page. The feed's `linux-x86_64` entry is the AppImage, which the plugin replaces in place.
+- Right before installing, `.annalo-update` (target version) is written into the data folder; the next start
+  reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
+  version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Debug builds only: `ANNALO_UPDATE_ENDPOINT`, `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_BUNDLE=deb` point the
+  updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
 ## Network (`network.rs` in core and shell)
 

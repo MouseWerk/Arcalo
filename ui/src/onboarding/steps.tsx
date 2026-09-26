@@ -10,7 +10,8 @@ import { importVault, pickFolder } from "../lib/actions";
 import { Badge, Button, Input, Segmented, Switch } from "../components/ui";
 import { translate, useT, type Lang, type TKey } from "../lib/i18n";
 import { weekdayLabels } from "../lib/format";
-import { IS_MAC } from "../lib/platform";
+import { IS_LINUX, IS_MAC } from "../lib/platform";
+import { canAdd, newDestination, problemText, type DestTest } from "../lib/backupdest";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { KIND_LABELS, PRESETS, fromPreset, localTierNotLocal, providerName } from "../lib/providers";
 import { BUILTIN_THEMES, findTheme } from "../lib/themes";
@@ -661,6 +662,7 @@ export function BackupStep({ view, write }: { view: SettingsView; write: Write }
             <span className="faint">{t("fr.backup.copies")}</span>
           </div>
         </Field>
+        <DestinationField view={view} write={write} />
         <div className={`fr-toggle-card ${s.markdown_mirror ? "on" : ""}`}>
           <span className="fr-choice-text">
             <span className="fr-choice-title">{t("fr.backup.mirror")}</span>
@@ -676,6 +678,83 @@ export function BackupStep({ view, write }: { view: SettingsView; write: Write }
       </div>
       <Note>{t("fr.backup.network")}</Note>
     </StepFrame>
+  );
+}
+
+/**
+ * An optional further backup destination (a network share or cloud folder, Settings → Sicherung →
+ * „Weitere Sicherungsziele“): adding it tests it at once (write, read back, delete a probe).
+ */
+function DestinationField({ view, write }: { view: SettingsView; write: Write }) {
+  const t = useT();
+  const list = view.settings.backup_targets.destinations;
+  const first = list[0] ?? null;
+  const [path, setPath] = useState("");
+  const [test, setTest] = useState<DestTest | null>(null);
+  const [testing, setTesting] = useState(false);
+  const platform = IS_MAC ? "mac" : IS_LINUX ? "linux" : "windows";
+  const runTest = async (p: string) => {
+    setTesting(true);
+    setTest(null);
+    try {
+      setTest(await api.testBackupDestination(p));
+    } catch (e) {
+      setTest({ ok: false, probe: null, info: { kind: "local", server: null, share: null, cloud: null }, failure: { problem: "other", message: String(e), path: p } });
+    } finally {
+      setTesting(false);
+    }
+  };
+  const add = async (p = path) => {
+    if (!canAdd(p, list)) return;
+    await write((x) => ({ ...x, backup_targets: { ...x.backup_targets, destinations: [...x.backup_targets.destinations, newDestination(p)] } }));
+    setPath("");
+    await runTest(p.trim());
+  };
+  const pick = async () => {
+    const dir = await pickFolder(t("bdest.pickTitle"));
+    if (dir) await add(dir);
+  };
+  const remove = () => {
+    setTest(null);
+    void write((x) => ({ ...x, backup_targets: { ...x.backup_targets, destinations: x.backup_targets.destinations.slice(1) } }));
+  };
+  return (
+    <Field label={t("fr.backup.dest")} hint={t("fr.backup.destHint")}>
+      {first ? (
+        <div className="fr-inline grow fr-dest">
+          <PathValue value={first.path} />
+          <Button icon={PlugZap} onClick={() => void runTest(first.path)} loading={testing}>
+            {t("bdest.test")}
+          </Button>
+          <Button variant="ghost" onClick={remove}>
+            {t("bdest.remove")}
+          </Button>
+        </div>
+      ) : (
+        <div className="fr-inline grow fr-dest">
+          <Input
+            className="grow mono"
+            value={path}
+            placeholder={t("bdest.pathPlaceholder")}
+            aria-label={t("fr.backup.dest")}
+            onChange={(e) => setPath(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void add()}
+          />
+          <Button icon={FolderOpen} onClick={() => void pick()}>
+            {t("fr.backup.choose")}
+          </Button>
+          <Button onClick={() => void add()} disabled={!canAdd(path, list)} loading={testing}>
+            {t("fr.backup.destAdd")}
+          </Button>
+        </div>
+      )}
+      {test && (
+        <span className={`fr-test-step ${test.ok ? "ok" : "fail"}`} role="status" title={test.failure?.message ?? ""}>
+          {test.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+          {test.ok && test.probe ? t("bdest.testOk", { ms: test.probe.write_ms + test.probe.delete_ms }) : test.failure ? problemText(t, test.failure, platform) : ""}
+        </span>
+      )}
+    </Field>
   );
 }
 

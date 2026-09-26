@@ -50,6 +50,7 @@ pub mod ai;
 pub mod attachment_manager;
 pub mod attachments;
 pub mod backup;
+pub mod backupdest;
 pub mod calendar;
 pub mod calsync;
 pub mod capture;

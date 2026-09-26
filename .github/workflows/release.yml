@@ -7,9 +7,10 @@ name: Release
 #
 # Automatic updates: the public key is committed (src-tauri/updater.pub). With the repository
 # secrets TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (README →
-# „Automatische Updates einrichten“) the Windows and macOS builds are signed, the updater is
-# switched on and `latest.json` is published. Without them the release is built unsigned and the
-# updater stays off.
+# „Automatische Updates einrichten“) the Windows, macOS and Linux builds are signed, the updater is
+# switched on and `latest.json` is published. On Linux the AppImage updates itself; the .deb
+# (same binary, updater on) only points to the release page, the package manager installs it.
+# Without them the release is built unsigned and the updater stays off.
 #
 # macOS: ad-hoc signed by default (not notarized). With the secrets APPLE_CERTIFICATE,
 # APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY the app is signed with the Developer ID;
@@ -88,7 +89,7 @@ jobs:
           - name: Linux
             os: ubuntu-22.04
             bundles: deb,appimage
-            updater: false
+            updater: true
           - name: macOS (Apple Silicon)
             os: macos-14
             bundles: app,dmg
@@ -248,6 +249,10 @@ jobs:
           else
             cp "$B"/deb/*.deb dist/Annalo_${VERSION}_amd64.deb
             cp "$B"/appimage/*.AppImage dist/Annalo_${VERSION}_amd64.AppImage
+            # Updater file of the AppImage (signed builds): the AppImage itself with its signature.
+            if [ -f "$(ls "$B"/appimage/*.AppImage.sig 2>/dev/null | head -1)" ]; then
+              cp "$B"/appimage/*.AppImage.sig dist/Annalo_${VERSION}_amd64.AppImage.sig
+            fi
           fi
           ls -la dist
 
@@ -291,6 +296,8 @@ jobs:
               "windows-x86_64": `Annalo_${version}_x64-setup.exe`,
               "darwin-aarch64": `Annalo_${version}_aarch64.app.tar.gz`,
               "darwin-x86_64": `Annalo_${version}_x64.app.tar.gz`,
+              // AppImage only: a .deb install finds this entry too but opens the release page.
+              "linux-x86_64": `Annalo_${version}_amd64.AppImage`,
             };
             const platforms = {};
             for (const [platform, file] of Object.entries(files)) {

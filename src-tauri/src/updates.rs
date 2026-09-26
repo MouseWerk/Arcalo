@@ -3,22 +3,39 @@
 //! the updater's public key (`ANNALO_UPDATER_PUBKEY`, set by the release workflow); other
 //! builds never contact the update server. Nothing is installed without the user's click:
 //! the UI asks, stores all open editors and only then calls [`update_install`].
+//!
+//! Debug builds take a test feed and key from `ANNALO_UPDATE_ENDPOINT` / `ANNALO_UPDATE_PUBKEY`
+//! (end-to-end tests with a local server); release builds ignore both.
 
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use annalo_core::Error;
-use annalo_core::update as core;
+use annalo_core::update::{self as core, AfterUpdate};
 use serde::Serialize;
 use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 
 use crate::{Result, lock};
+use annalo_core::{tr, trf};
+
+/// A download that receives nothing for this long is given up (a stalled proxy or connection).
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn test_var(name: &str) -> Option<String> {
+    core::test_override(cfg!(debug_assertions), std::env::var(name).ok().as_deref()).map(str::to_string)
+}
 
 /// Public key of the signing keypair, compiled in by the release build.
 pub fn pubkey() -> Option<&'static str> {
-    core::configured_pubkey(option_env!("ANNALO_UPDATER_PUBKEY"))
+    static KEY: OnceLock<Option<String>> = OnceLock::new();
+    KEY.get_or_init(|| {
+        test_var("ANNALO_UPDATE_PUBKEY")
+            .or_else(|| core::configured_pubkey(option_env!("ANNALO_UPDATER_PUBKEY")).map(str::to_string))
+    })
+    .as_deref()
 }
 
 /// The updater plugin, or `None` in builds without a key (the app then runs without it).
@@ -27,11 +44,29 @@ pub fn plugin<R: Runtime>() -> Option<TauriPlugin<R, tauri_plugin_updater::Confi
     pubkey().map(|key| tauri_plugin_updater::Builder::new().pubkey(key).build())
 }
 
+/// Installed through a package manager (.deb, .rpm): updates come from the release page.
+/// Debug builds pretend with `ANNALO_UPDATE_BUNDLE=deb` (tests).
+fn packaged() -> bool {
+    use tauri::utils::config::BundleType;
+    if let Some(bundle) = test_var("ANNALO_UPDATE_BUNDLE") {
+        return matches!(bundle.as_str(), "deb" | "rpm");
+    }
+    matches!(tauri::utils::platform::bundle_type(), Some(BundleType::Deb | BundleType::Rpm))
+}
+
 #[derive(Default)]
 pub struct Updates {
     /// The update found by the last check; installed on the user's click.
     pending: Mutex<Option<Update>>,
     installing: AtomicBool,
+    /// This start follows an update (reported once to the UI).
+    after: Mutex<Option<AfterUpdate>>,
+}
+
+impl Updates {
+    pub fn after(after: Option<AfterUpdate>) -> Self {
+        Updates { after: Mutex::new(after), ..Default::default() }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -64,6 +99,10 @@ pub struct UpdateStatus {
     available: Option<UpdateInfo>,
     /// Portable copy: a new version is downloaded from the release page, not installed.
     portable: bool,
+    /// Installed as .deb/.rpm: the new package comes from the release page, not installed.
+    package: bool,
+    /// The first call after a start that followed an update: which version, and whether it runs now.
+    restarted: Option<AfterUpdate>,
 }
 
 #[derive(Serialize, Clone)]
@@ -77,10 +116,67 @@ fn not_configured() -> Error {
     Error::State(core::not_configured().into())
 }
 
-fn failed(what: &str, e: impl std::fmt::Display) -> Error {
-    let err = Error::State(format!("{what}: {e}"));
-    crate::devlog::error("update", err.to_string());
-    err
+/// What went wrong, in words a user can act on; the technical detail goes to the log.
+fn reason(e: &UpdaterError) -> String {
+    match e {
+        UpdaterError::Reqwest(r) if r.is_timeout() => tr!(
+            "Zeitüberschreitung – der Update-Server antwortet nicht",
+            "Timed out – the update server does not answer"
+        )
+        .into(),
+        UpdaterError::Reqwest(r) if r.is_connect() => tr!(
+            "Keine Verbindung zum Update-Server (offline, oder Proxy unter Einstellungen → Netzwerk prüfen)",
+            "No connection to the update server (offline, or check the proxy under Settings → Network)"
+        )
+        .into(),
+        UpdaterError::Reqwest(r) if r.is_body() || r.is_decode() => {
+            tr!("Die Verbindung wurde unterbrochen", "The connection was interrupted").into()
+        }
+        UpdaterError::Reqwest(r) => trf!("Netzwerkfehler ({})", "Network error ({})", r),
+        UpdaterError::ReleaseNotFound => tr!(
+            "Der Update-Server hat keine Versionsinformation geliefert",
+            "The update server sent no version information"
+        )
+        .into(),
+        UpdaterError::Serialization(_) | UpdaterError::Semver(_) => {
+            tr!("Die Versionsinformation ist ungültig", "The version information is invalid").into()
+        }
+        UpdaterError::TargetNotFound(_) | UpdaterError::TargetsNotFound(_) => tr!(
+            "Für dieses System gibt es in dieser Version kein Update-Paket",
+            "This version has no update package for this system"
+        )
+        .into(),
+        UpdaterError::Network(msg) => trf!(
+            "Der Server hat die Datei nicht geliefert ({})",
+            "The server did not deliver the file ({})",
+            msg.trim_matches('`')
+        ),
+        UpdaterError::Minisign(_)
+        | UpdaterError::Base64(_)
+        | UpdaterError::SignatureUtf8(_)
+        | UpdaterError::SignedVersionMismatch { .. }
+        | UpdaterError::MissingSignedVersion => tr!(
+            "Die Signatur des Updates ist ungültig – die Datei wurde verworfen, es wurde nichts installiert",
+            "The update's signature is invalid – the file was discarded, nothing was installed"
+        )
+        .into(),
+        UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::StorageFull => {
+            tr!("Nicht genug freier Speicherplatz", "Not enough free disk space").into()
+        }
+        UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::PermissionDenied => {
+            trf!(
+                "Keine Schreibrechte für den Programmordner ({})",
+                "No write permission for the program folder ({})",
+                io
+            )
+        }
+        other => other.to_string(),
+    }
+}
+
+fn failed(what: &str, e: UpdaterError) -> Error {
+    crate::devlog::error("update", format!("{what}: {e} ({e:?})"));
+    Error::State(format!("{what}: {}", reason(&e)))
 }
 
 #[tauri::command]
@@ -90,6 +186,8 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
         current_version: app.package_info().version.to_string(),
         available: lock(&updates.pending).as_ref().map(UpdateInfo::of),
         portable: crate::portable::active(),
+        package: packaged(),
+        restarted: lock(&updates.after).take(),
     }
 }
 
@@ -98,6 +196,9 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
 pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result<Option<UpdateInfo>> {
     if pubkey().is_none() {
         return Err(not_configured());
+    }
+    if updates.installing.load(Ordering::SeqCst) {
+        return Err(Error::State(tr!("Das Update wird gerade installiert", "The update is being installed").into()));
     }
     // Windows: the installer ends this process; the workspace is closed cleanly first.
     let handle = app.clone();
@@ -112,16 +213,25 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
             annalo_core::network::Purpose::Updates,
         )?
     };
-    let updater = app
+    let mut builder = app
         .updater_builder()
-        .configure_client(move |b| network.apply(b))
-        .on_before_exit(move || crate::prepare_exit(&handle))
-        .build()
-        .map_err(|e| failed(annalo_core::tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
-    let found = updater
-        .check()
-        .await
-        .map_err(|e| failed(annalo_core::tr!("Update-Prüfung fehlgeschlagen", "Update check failed"), e))?;
+        .version_comparator(|current, release| core::is_newer(&current.to_string(), &release.version.to_string()))
+        .configure_client(move |b| network.apply(b).read_timeout(READ_TIMEOUT))
+        .on_before_exit(move || {
+            crate::prepare_exit(&handle);
+            // What the plugin does by default: the tray icon goes, the windows hide.
+            handle.cleanup_before_exit();
+        });
+    if let Some(url) = test_var("ANNALO_UPDATE_ENDPOINT") {
+        let url = url.parse().map_err(|e| Error::State(format!("ANNALO_UPDATE_ENDPOINT: {e}")))?;
+        builder = builder
+            .endpoints(vec![url])
+            .map_err(|e| failed(tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
+    }
+    let updater =
+        builder.build().map_err(|e| failed(tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
+    let found =
+        updater.check().await.map_err(|e| failed(tr!("Update-Prüfung fehlgeschlagen", "Update check failed"), e))?;
     let info = found.as_ref().map(UpdateInfo::of);
     crate::devlog::debug(
         "update",
@@ -139,28 +249,23 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
     if pubkey().is_none() {
         return Err(not_configured());
     }
-    if crate::portable::active() {
-        // The installer would install Annalo into the user profile instead of updating the stick.
-        return Err(Error::State(
-            annalo_core::tr!(
-                "Im portablen Modus wird nicht automatisch installiert – bitte die neue Version von der Release-Seite herunterladen",
-                "Portable mode does not install automatically – please download the new version from the release page"
-            )
-            .into(),
-        ));
+    // A portable copy would be installed into the user profile instead of updating its folder.
+    if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
+        return Err(Error::State(why.into()));
     }
     let update = lock(&updates.pending)
         .clone()
-        .ok_or_else(|| Error::State(annalo_core::tr!("Kein Update gefunden", "No update found").into()))?;
+        .ok_or_else(|| Error::State(tr!("Kein Update gefunden", "No update found").into()))?;
     if updates.installing.swap(true, Ordering::SeqCst) {
         return Err(Error::State(
-            annalo_core::tr!("Das Update wird bereits installiert", "The update is already being installed").into(),
+            tr!("Das Update wird bereits installiert", "The update is already being installed").into(),
         ));
     }
     let res = download_and_install(&app, &update).await;
     updates.installing.store(false, Ordering::SeqCst);
     res?;
     // Not reached on Windows (the installer ends this process); elsewhere the new binary is in place.
+    crate::devlog::info("update", format!("installed {}, restarting", update.version));
     crate::restart(&app)
 }
 
@@ -181,6 +286,36 @@ async fn download_and_install(app: &AppHandle, update: &Update) -> Result<()> {
             || {},
         )
         .await
-        .map_err(|e| failed(annalo_core::tr!("Download fehlgeschlagen", "Download failed"), e))?;
-    update.install(bytes).map_err(|e| failed(annalo_core::tr!("Installation fehlgeschlagen", "Installation failed"), e))
+        .map_err(|e| failed(tr!("Download fehlgeschlagen", "Download failed"), e))?;
+    // The next start shows its window (even when autostarted minimized) and says what happened.
+    let dir = app.state::<crate::AppState>().data_dir.clone();
+    if let Err(e) = core::write_restart_marker(&dir, &update.version) {
+        crate::devlog::warn("update", format!("restart note not written: {e}"));
+    }
+    update.install(bytes).map_err(|e| {
+        core::clear_restart_marker(&dir);
+        // Windows: the installer could not be started after the workspace was closed for it.
+        crate::resume_after_failed_exit(app);
+        failed(tr!("Installation fehlgeschlagen", "Installation failed"), e)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failures_are_explained() {
+        assert_eq!(reason(&UpdaterError::ReleaseNotFound), "Der Update-Server hat keine Versionsinformation geliefert");
+        assert!(reason(&UpdaterError::TargetsNotFound(vec!["linux-x86_64".into()])).contains("kein Update-Paket"));
+        assert_eq!(
+            reason(&UpdaterError::Network("`Download request failed with status: 404 Not Found`".into())),
+            "Der Server hat die Datei nicht geliefert (Download request failed with status: 404 Not Found)"
+        );
+        let mismatch = UpdaterError::SignedVersionMismatch { signed: "1.5.0".into(), announced: "1.6.0".into() };
+        assert!(reason(&mismatch).contains("Signatur"));
+        assert!(reason(&mismatch).contains("nichts installiert"));
+        let full = UpdaterError::Io(std::io::Error::from(std::io::ErrorKind::StorageFull));
+        assert_eq!(reason(&full), "Nicht genug freier Speicherplatz");
+    }
 }

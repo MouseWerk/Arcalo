@@ -9,13 +9,14 @@ import { api, on } from "../lib/api";
 import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
 import { fmtDate } from "../lib/format";
-import { autoCheckAllowed, CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS, NOT_CONFIGURED, progressLabel, progressValue } from "../lib/updates";
+import { autoCheckAllowed, CHECK_INTERVAL_MS, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue } from "../lib/updates";
 import type { UpdateInfo, UpdateProgress, UpdateStatus } from "../lib/types";
 import { useApp } from "../store/app";
 import { Button, Dialog, IconButton, Progress } from "./ui";
 import { t, useT } from "../lib/i18n";
 
-type Phase = "idle" | "checking" | "downloading" | "installing";
+/** `preparing`: the editors are being stored before the download (a second click waits for it). */
+type Phase = "idle" | "checking" | "preparing" | "downloading" | "installing";
 
 interface UpdateState {
   status: UpdateStatus | null;
@@ -46,6 +47,10 @@ export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
   try {
     const status = await api.updateStatus();
     useUpdates.setState((s) => ({ status, available: status.available ?? s.available }));
+    // The first start after an update (reported once): it worked, or the installer did not finish.
+    const r = status.restarted;
+    if (r?.installed) useApp.getState().toast({ tone: "success", title: t("upd.restarted", { version: r.version }) });
+    else if (r) useApp.getState().toast({ tone: "warning", persistent: true, title: t("upd.notInstalled", { version: r.version }), detail: t("upd.notInstalledDetail", { current: status.current_version }) });
     return status;
   } catch {
     return null;
@@ -78,9 +83,12 @@ export async function checkForUpdates(manual: boolean) {
 export async function installUpdate() {
   const st = useUpdates.getState();
   if (!st.available || st.phase !== "idle") return;
-  useUpdates.setState({ notesOpen: false });
-  if (!(await flushBeforeExit(t("upd.anyway")))) return;
-  useUpdates.setState({ phase: "downloading", progress: null });
+  useUpdates.setState({ notesOpen: false, phase: "preparing", progress: null });
+  if (!(await flushBeforeExit(t("upd.anyway")))) {
+    useUpdates.setState({ phase: "idle" });
+    return;
+  }
+  useUpdates.setState({ phase: "downloading" });
   const unlisten = on<UpdateProgress>("update://progress", (progress) => useUpdates.setState({ progress, phase: progress.percent === 100 ? "installing" : "downloading" }));
   try {
     // On Windows the installer ends this process and starts the new version.
@@ -94,7 +102,7 @@ export async function installUpdate() {
   }
 }
 
-/** Portable copy: the release page, where the portable ZIP is downloaded by hand (nothing is installed). */
+/** Portable copy or system package: the release page, where the ZIP or package is downloaded by hand (nothing is installed). */
 export async function downloadPortable(url?: string) {
   const target = url ?? useUpdates.getState().available?.url;
   if (!target) return;
@@ -103,15 +111,16 @@ export async function downloadPortable(url?: string) {
 }
 
 /** The update action: install and restart, or (portable) download from the release page. */
-function UpdateAction({ size }: { size?: "sm" | "md" }) {
+export function UpdateAction({ size }: { size?: "sm" | "md" }) {
   const t = useT();
-  const portable = useUpdates((s) => !!s.status?.portable);
-  return portable ? (
+  const manual = useUpdates((s) => manualUpdate(s.status));
+  const busy = useUpdates((s) => s.phase === "preparing" || s.phase === "downloading" || s.phase === "installing");
+  return manual ? (
     <Button size={size} variant="primary" icon={Download} onClick={() => void downloadPortable()}>
-      {t("upd.download")}
+      {manual === "package" ? t("upd.packageAction") : t("upd.download")}
     </Button>
   ) : (
-    <Button size={size} variant="primary" icon={RefreshCw} onClick={() => void installUpdate()}>
+    <Button size={size} variant="primary" icon={RefreshCw} loading={busy} disabled={busy} onClick={() => void installUpdate()}>
       {t("upd.install")}
     </Button>
   );
@@ -135,11 +144,12 @@ export function startUpdateChecks(): () => void {
 /** The persistent update toast, shown above the other toasts. */
 export function UpdateToast() {
   const t = useT();
-  const { available, phase, progress, dismissed } = useUpdates();
+  const { available, phase, progress, dismissed, status } = useUpdates();
+  const manual = manualUpdate(status);
   // Settings → Benachrichtigungen „Neue Version verfügbar“ (the settings' Über section still shows it).
   const notifyUpdates = useApp((st) => st.settings?.settings.notifications?.updates !== false);
   if (!available) return null;
-  const busy = phase === "downloading" || phase === "installing";
+  const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   if (!busy && (dismissed === available.version || !notifyUpdates)) return null;
   return (
     <div className="toast toast-info update-toast" role="status">
@@ -148,13 +158,13 @@ export function UpdateToast() {
         {busy ? (
           <>
             <div className="toast-title">{phase === "installing" ? t("upd.installing", { version: available.version }) : t("upd.downloading", { version: available.version })}</div>
-            <div className="toast-detail">{phase === "installing" ? t("upd.restartSoon") : progressLabel(progress)}</div>
+            <div className="toast-detail">{phase === "installing" ? t("upd.restartSoon") : phase === "preparing" ? t("upd.preparing") : progressLabel(progress)}</div>
             {phase === "downloading" && <Progress value={progressValue(progress)} />}
           </>
         ) : (
           <>
             <div className="toast-title">{t("upd.availableShort", { version: available.version })}</div>
-            <div className="toast-detail">{useUpdates.getState().status?.portable ? t("upd.portableHint") : t("upd.savedFirst")}</div>
+            <div className="toast-detail">{manual === "portable" ? t("upd.portableHint") : manual === "package" ? t("upd.package") : t("upd.savedFirst")}</div>
             <div className="toast-actions">
               <UpdateAction size="sm" />
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>

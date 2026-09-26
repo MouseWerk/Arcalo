@@ -72,12 +72,20 @@ fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Resu
         path.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
     db.conn().execute("VACUUM INTO ?1", [target])?;
     let fresh = info(&path, &name).ok_or_else(|| Error::not_found("backup", name.clone()))?;
-    // The new backup always counts as one of the kept ones, even if the clock went backwards.
-    let others = list_backups(dir)?.into_iter().filter(|b| b.file_name != name);
+    prune(dir, keep, &name)?;
+    Ok(fresh)
+}
+
+/// Deletes all but the newest `keep` (at least 1) backups in `dir`; `fresh` always counts as one
+/// of the kept ones, even if the clock went backwards. Returns the names deleted.
+pub fn prune(dir: &Path, keep: usize, fresh: &str) -> Result<Vec<String>> {
+    let others = list_backups(dir)?.into_iter().filter(|b| b.file_name != fresh);
+    let mut gone = Vec::new();
     for old in others.skip(keep.max(1) - 1) {
         fs::remove_file(&old.path).at(&old.path)?;
+        gone.push(old.file_name);
     }
-    Ok(fresh)
+    Ok(gone)
 }
 
 /// Puts the newest backup of `backups` in place of the database `db_file` (start-up recovery

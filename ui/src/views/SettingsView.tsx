@@ -16,7 +16,7 @@ import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
-import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
+import { checkForUpdates, loadUpdateStatus, UpdateAction, useUpdates } from "../components/Updates";
 import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
@@ -31,6 +31,7 @@ import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
+import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
@@ -669,7 +670,8 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     setBusy(true);
     try {
       const b = await api.backupNow();
-      s().toast({ tone: "success", title: t("set.backup.created"), detail: `${b.file_name} · ${fileSize(b.size_bytes)}` });
+      const copies = draft.backup_targets.destinations.some((d) => d.enabled) ? ` · ${t("bdest.backupDone")}` : "";
+      s().toast({ tone: "success", title: t("set.backup.created"), detail: `${b.file_name} · ${fileSize(b.size_bytes)}${copies}` });
       reload();
     } catch (e) {
       s().error(t("set.backup.failed"), e);
@@ -682,7 +684,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     <>
       <header className="settings-head">
         <h1>{t("set.backup.title")}</h1>
-        <p>{t("set.backup.intro")}</p>
+        <p>{t("bdest.contents")}</p>
       </header>
       <Group title={t("set.backup.auto")} description={t("set.backup.autoDesc")}>
         <Row
@@ -761,17 +763,9 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
             {t("set.backup.nowButton")}
           </Button>
         </Row>
-        <div className="backup-list" aria-label={t("set.backup.list")}>
-          {list?.length === 0 && <p className="faint small">{t("set.backup.none")}</p>}
-          {list?.map((b) => (
-            <div key={b.path} className="backup-row" title={b.path}>
-              <span className="grow">{dateTime(b.created_at)}</span>
-              <span className="faint small">{relative(b.created_at)}</span>
-              <span className="faint small num">{fileSize(b.size_bytes)}</span>
-            </div>
-          ))}
-        </div>
+        <BackupList local={list} reloadKey={list} />
       </Group>
+      <BackupDestinationsGroup draft={draft} update={update} />
       <GitSyncGroup draft={draft} update={update} dbSize={list?.[0]?.size_bytes ?? null} onSynced={reload} />
     </>
   );
@@ -1223,7 +1217,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   const { status, available, phase, checkedAt } = useUpdates();
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
-  const busy = phase === "downloading" || phase === "installing";
+  const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   let state: React.ReactNode;
   let tone: "neutral" | "success" | "info" | "busy" = "neutral";
   if (!status.enabled) state = t(NOT_CONFIGURED) + ".";
@@ -1232,7 +1226,10 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   else if (checkedAt) (state = t("upd.current", { when: relative(checkedAt.toISOString()) })), (tone = "success");
   else state = t("upd.notChecked");
   return (
-    <Group title={t("set.about.updates")} description={status.portable ? t("upd.portableDesc") : t("upd.desc")}>
+    <Group
+      title={t("set.about.updates")}
+      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : t("upd.desc")}
+    >
       {/* Status and actions: the buttons wrap below the text as soon as they do not fit beside it. */}
       <Row stack label={t("upd.status")} description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
         <div className="set-actions">
@@ -1241,15 +1238,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 {t("upd.whatsNew")}
               </Button>
-              {status.portable ? (
-                <Button variant="primary" icon={Download} onClick={() => void downloadPortable(available.url)}>
-                  {t("upd.download")}
-                </Button>
-              ) : (
-                <Button variant="primary" icon={RefreshCw} loading={busy} onClick={() => void installUpdate()}>
-                  {t("upd.install")}
-                </Button>
-              )}
+              <UpdateAction />
             </>
           )}
           <Button

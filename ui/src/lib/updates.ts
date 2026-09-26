@@ -15,6 +15,13 @@ export function autoCheckAllowed(status: UpdateStatus | null, autoCheck: boolean
   return !!status?.enabled && autoCheck !== false;
 }
 
+/** Why this copy does not install updates itself: a portable folder or a system package (both get the release page). */
+export function manualUpdate(status: UpdateStatus | null): "portable" | "package" | null {
+  if (status?.portable) return "portable";
+  if (status?.package) return "package";
+  return null;
+}
+
 /** „12 %“ with the downloaded size, or only the size while the total is unknown. */
 export function progressLabel(p: UpdateProgress | null): string {
   if (!p) return t("upd.starting");

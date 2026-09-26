@@ -1,5 +1,7 @@
 // Mirrors of the Rust types that cross the IPC boundary (serde snake_case).
 
+import type { BackupTargets } from "./backupdest";
+
 export interface Page {
   id: number;
   parent_id: number | null;
@@ -264,6 +266,8 @@ export interface Settings {
   workdays: number[];
   backup_dir: string | null;
   backup_keep: number;
+  /** Further folders (network shares, cloud folders) that receive a copy of every backup. */
+  backup_targets: BackupTargets;
   /** After every backup, write the workspace as Markdown files (+ time entries as CSV). */
   markdown_mirror: boolean;
   /** Mirror folder; null = `markdown` in the backup folder. */
@@ -878,6 +882,10 @@ export interface UpdateStatus {
   available: UpdateInfo | null;
   /** Portable copy: new versions are downloaded from the release page, not installed. */
   portable?: boolean;
+  /** Installed as .deb/.rpm: the package manager updates it, the release page has the package. */
+  package?: boolean;
+  /** Reported once after a start that followed an update: the version, and whether it runs now. */
+  restarted?: { version: string; installed: boolean } | null;
 }
 export interface UpdateProgress {
   downloaded: number;
