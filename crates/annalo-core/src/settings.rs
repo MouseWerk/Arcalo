@@ -60,6 +60,8 @@ pub struct Settings {
     pub backup_dir: Option<String>,
     /// Number of backups kept; older ones are deleted.
     pub backup_keep: usize,
+    /// Further folders that receive a copy of every backup (network shares, cloud folders).
+    pub backup_targets: crate::backupdest::BackupTargets,
     /// After every backup, write the workspace as Markdown files (+ time entries as CSV).
     pub markdown_mirror: bool,
     /// Folder of the Markdown mirror; `None` = `markdown` in the backup folder.
@@ -471,6 +473,7 @@ impl Default for Settings {
             workdays: vec![1, 2, 3, 4, 5],
             backup_dir: None,
             backup_keep: 14,
+            backup_targets: Default::default(),
             markdown_mirror: true,
             markdown_mirror_dir: None,
             daily_template: None,
@@ -545,6 +548,7 @@ impl Settings {
     /// saving and importing; loading keeps what is stored.
     pub fn normalize(&mut self) {
         let d = Settings::default();
+        self.backup_targets.normalize();
         let a = &mut self.appearance;
         a.accent = crate::prefs::normalize_accent(&a.accent).unwrap_or(d.appearance.accent);
         a.ui_scale = a.ui_scale.clamp(90, 125);

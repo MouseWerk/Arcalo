@@ -3,6 +3,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
+import type * as B from "./backupdest";
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
 
@@ -189,6 +190,14 @@ export const api = {
   onboardingReset: () => call<T.SettingsView>("onboarding_reset"),
   backupNow: () => call<T.BackupInfo>("backup_now"),
   backups: () => call<T.BackupInfo[]>("backup_list"),
+  backupDestinations: () => call<B.DestView[]>("backup_destinations"),
+  /** „Jetzt testen“: write, read back and delete a probe file in `path`. */
+  testBackupDestination: (path: string) => call<B.DestTest>("backup_destination_test", { path }),
+  retryBackupDestinations: () => call<void>("backup_destination_retry"),
+  /** Backups in the active destinations (unreachable ones listed in `offline`). */
+  remoteBackups: () => call<B.RemoteBackups>("backup_remote_list"),
+  /** Copies and checks the backup; the next start puts it in place (restart right after). */
+  restoreBackup: (path: string) => call<B.RestoreStaged>("backup_restore", { path }),
   mirrorStatus: () => call<T.MirrorStatus>("mirror_status"),
   openMirror: () => call<void>("mirror_open"),
   gitSyncNow: (allowDeletions = false) => call<T.GitSyncOutcome>("git_sync_now", { allowDeletions }),

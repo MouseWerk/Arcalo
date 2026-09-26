@@ -16,7 +16,7 @@ import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
-import { checkForUpdates, downloadPortable, installUpdate, loadUpdateStatus, useUpdates } from "../components/Updates";
+import { checkForUpdates, loadUpdateStatus, UpdateAction, useUpdates } from "../components/Updates";
 import { useT, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
@@ -31,6 +31,7 @@ import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
+import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
@@ -669,7 +670,8 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     setBusy(true);
     try {
       const b = await api.backupNow();
-      s().toast({ tone: "success", title: "Sicherung erstellt", detail: `${b.file_name} · ${fileSize(b.size_bytes)}` });
+      const copies = draft.backup_targets.destinations.some((d) => d.enabled) ? ` · ${t("bdest.backupDone")}` : "";
+      s().toast({ tone: "success", title: "Sicherung erstellt", detail: `${b.file_name} · ${fileSize(b.size_bytes)}${copies}` });
       reload();
     } catch (e) {
       s().error("Sicherung fehlgeschlagen", e);
@@ -682,7 +684,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     <>
       <header className="settings-head">
         <h1>{t("set.backup.title")}</h1>
-        <p>Die Datenbank wird einmal täglich automatisch gesichert. Eine Sicherung ist eine vollständige Kopie von workspace.db. Zum Wiederherstellen die Datei bei geschlossener App in den Datenordner kopieren und in workspace.db umbenennen.</p>
+        <p>{t("bdest.contents")}</p>
       </header>
       <Group title={t("set.backup.auto")} description="Wird beim Start und danach stündlich geprüft; gesichert wird, wenn die letzte Sicherung älter als 24 Stunden ist.">
         <Row
@@ -764,17 +766,9 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
             Jetzt sichern
           </Button>
         </Row>
-        <div className="backup-list" aria-label="Vorhandene Sicherungen">
-          {list?.length === 0 && <p className="faint small">Noch keine Sicherung vorhanden.</p>}
-          {list?.map((b) => (
-            <div key={b.path} className="backup-row" title={b.path}>
-              <span className="grow">{new Date(b.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</span>
-              <span className="faint small">{relative(b.created_at)}</span>
-              <span className="faint small num">{fileSize(b.size_bytes)}</span>
-            </div>
-          ))}
-        </div>
+        <BackupList local={list} reloadKey={list} />
       </Group>
+      <BackupDestinationsGroup draft={draft} update={update} />
       <GitSyncGroup draft={draft} update={update} dbSize={list?.[0]?.size_bytes ?? null} onSynced={reload} />
     </>
   );
@@ -1261,7 +1255,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   const { status, available, phase, checkedAt } = useUpdates();
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
-  const busy = phase === "downloading" || phase === "installing";
+  const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   let state: React.ReactNode;
   let tone: "neutral" | "success" | "info" | "busy" = "neutral";
   if (!status.enabled) state = NOT_CONFIGURED + ".";
@@ -1273,7 +1267,9 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
     <Group
       title={t("set.about.updates")}
       description={
-        status.portable
+        status.package && !status.portable
+          ? t("upd.packageDesc")
+          : status.portable
           ? "Portabler Modus: Neue Versionen werden nicht installiert (der Installer würde Annalo in das Benutzerprofil installieren). „Neue Version herunterladen“ öffnet die Release-Seite; das ZIP über den Ordner entpacken, der Ordner „data“ bleibt erhalten."
           : "Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert."
       }
@@ -1286,15 +1282,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 Was ist neu?
               </Button>
-              {status.portable ? (
-                <Button variant="primary" icon={Download} onClick={() => void downloadPortable(available.url)}>
-                  Neue Version herunterladen
-                </Button>
-              ) : (
-                <Button variant="primary" icon={RefreshCw} loading={busy} onClick={() => void installUpdate()}>
-                  Installieren und neu starten
-                </Button>
-              )}
+              <UpdateAction />
             </>
           )}
           <Button
