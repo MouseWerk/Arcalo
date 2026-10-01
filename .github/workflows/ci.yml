@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+env:
+  # whisper.cpp (voice notes) for every CPU of its kind, not only the build machine (x86: AVX2 baseline).
+  GGML_NATIVE: "OFF"
+
 jobs:
   core:
     name: Core, UI and end-to-end tests (Linux)
@@ -20,7 +24,8 @@ jobs:
       - name: System packages (WebKitGTK, WebDriver, Xvfb)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb x11-utils
+          # libasound2-dev: microphone (cpal); cmake and libclang: whisper.cpp for voice notes.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb x11-utils libasound2-dev cmake clang libclang-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test -p annalo-core -p annalo-cli

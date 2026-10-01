@@ -6,7 +6,7 @@
 
 import http from "node:http";
 
-export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind } = {}) {
+export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null } = {}) {
   const requests = [];
   const list = [...models];
   let server = null;
@@ -46,7 +46,8 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       }
       const msgs = json.messages;
       const lastUser = [...msgs].reverse().find((m) => m.role === "user")?.content ?? "";
-      const text = `Antwort von ${name} (${json.model}): ${lastUser.slice(0, 60)}`;
+      // `respond` (optional) writes the answer of one test, e.g. a meeting summary with tasks.
+      const text = respond?.(lastUser, json) ?? `Antwort von ${name} (${json.model}): ${lastUser.slice(0, 60)}`;
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
       const words = text.match(/\S+\s*/g) ?? [];

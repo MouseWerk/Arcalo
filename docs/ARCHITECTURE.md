@@ -941,6 +941,27 @@ quelle: "[[Konzept]]"
   step-by-step test (`ai_provider_test`: reach, auth, chat, tools, embeddings; nothing is recorded as usage), `ollama_pull`
   with `ai://pull` progress events, the tier pickers and the price table.
 
+## Voice notes (`voice/` in core, shell `voice.rs`, `ui/src/lib/voice.ts`, `ui/src/components/VoiceBar.tsx`)
+
+- **Recording** runs on a thread of its own that owns the cpal streams (microphone; on Windows also a WASAPI
+  loopback stream on the output device for the system audio). Callbacks mix down and resample to 16 kHz mono
+  (`audio::Resampler`); the thread mixes the system audio in and writes `<data>/voice/rec-<id>.wav`, syncing
+  the header every 5 s. `voice://level` (10 Hz) carries level, elapsed time and pause; `voice://status` the
+  recording and the jobs. The tray menu gets „Aufnahme beenden“ first while recording.
+- **Stopping** adds the block `## Sprachnotiz HH:MM`, `![[… .flac]]` and a status line with the recording's id
+  to the target page (`Database::voice_begin`: a new page below „Sprachnotizen“, the meeting note, or the page of
+  `/voice`). A job thread encodes the FLAC attachment (`audio::encode_flac`, flacenc, streamed from the WAV),
+  runs whisper.cpp (whisper-rs; one run at a time, progress and abort callbacks) and replaces the status line
+  with the transcript callout (`voice_finish`). The UI summarizes through `ai_transform` with the meeting-summary
+  prompt (privacy routing as for every page) and `voice_summary_apply` appends it, every action item a task line.
+- **Models** (`voice::models`): base, small, large-v3-turbo q5 with fixed size and SHA-256, in
+  `<data>/models/whisper/` (not in backups, the Markdown mirror or Git sync). `download::fetch` tries the admin
+  source (`settings.voice.source_url`: URL or folder), the GitHub release `whisper-models-v1`, then Hugging Face;
+  writes `<file>.part`, resumes with HTTP ranges, verifies and renames. The client uses Einstellungen → Netzwerk
+  (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline).
+- **Test hooks** (debug builds): `ANNALO_TEST_AUDIO_FILE`, `ANNALO_TEST_TRANSCRIPT`, `ANNALO_TEST_MODEL_BASES`
+  (see docs/testing/voice-notes.md).
+
 ## How the concept spec maps to this implementation
 
 | Spec | Implementation | Notes |
