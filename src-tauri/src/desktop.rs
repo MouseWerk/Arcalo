@@ -439,11 +439,14 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
                 // Files dropped onto the page arrive as HTML drops (quick capture stores them).
                 .disable_drag_drop_handler()
                 .transparent(p.transparent);
-            // macOS: no system shadow. It is computed from the transparent window's content and
-            // can stay a rectangle, or the old size after a resize; the panel has its own border.
+            // No system shadow for the transparent popups; the panel has its own border. On
+            // Windows 11 the shadow of an undecorated window comes with a thin frame around the
+            // whole rectangle, which showed as a second edge around the rounded panel; on macOS
+            // it is computed from the content and can stay a rectangle or the old size.
+            let b = b.shadow(!p.transparent);
             // On every Space, also over a full-screen app (see `macos::float_over_spaces`).
             #[cfg(target_os = "macos")]
-            let b = b.shadow(!p.transparent).visible_on_all_workspaces(true);
+            let b = b.visible_on_all_workspaces(true);
             // Portable: the same webview profile as the main window, in the data folder.
             let webview_dir =
                 app.try_state::<crate::AppState>().and_then(|s| crate::portable::webview_dir(&s.data_dir));
