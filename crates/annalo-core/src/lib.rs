@@ -51,6 +51,7 @@ pub mod attachment_manager;
 pub mod attachments;
 pub mod backup;
 pub mod backupdest;
+pub mod bookmarks;
 pub mod calendar;
 pub mod calsync;
 pub mod capture;

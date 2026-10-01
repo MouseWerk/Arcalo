@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
@@ -24,6 +24,7 @@ import type { CalendarEvent, CalendarSettings, CalendarSourceInfo, CalendarStatu
 import { openDayReview } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
 import { useT, t as tr, type TKey } from "../lib/i18n";
+import { blockFit } from "../lib/eventlook";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -445,21 +446,42 @@ function eventStyle(e: CalendarEvent, cal: CalendarSettings | undefined): CSSPro
   return { "--ev": sourceColor(e.source, cal) } as CSSProperties;
 }
 
-function eventClass(e: CalendarEvent, booked: Booked, selected: string | null) {
-  return ["calv-ev", `busy-${e.busy}`, booked.get(e.key) ? "booked" : "", e.skip ? "skipped" : "", e.key === selected ? "selected" : ""].filter(Boolean).join(" ");
+/**
+ * The states of a block: busy status, booked, „nicht buchen“, selected, over (`past`), running
+ * (`live`), and hatched for private meetings and calendars shared as free/busy only.
+ */
+function eventClass(e: CalendarEvent, booked: Booked, selected: string | null, cal?: CalendarSettings, now: Date = new Date()) {
+  const t = now.getTime();
+  const past = !e.all_day && new Date(e.end).getTime() <= t;
+  const live = !e.all_day && !past && new Date(e.start).getTime() <= t;
+  const freeBusy = cal?.outlook_calendars?.find((c) => c.id === e.source)?.free_busy;
+  return [
+    "calv-ev",
+    `busy-${e.busy}`,
+    booked.get(e.key) ? "booked" : "",
+    e.skip ? "skipped" : "",
+    e.key === selected ? "selected" : "",
+    past ? "past" : "",
+    live ? "live" : "",
+    e.private || freeBusy ? "veiled" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function EventMarks({ e, booked }: { e: CalendarEvent; booked: Booked }) {
   const t = useT();
   return (
     <>
-      {booked.get(e.key) && <CheckCircle2 className="calv-mark booked" size={12} aria-label={t("review.meeting.booked")} />}
-      {!booked.get(e.key) && e.skip && <EyeOff className="calv-mark" size={12} aria-label={t("review.meeting.skipped")} />}
-      {e.private && <Lock className="calv-mark" size={11} aria-label={t("calv.private")} />}
-      {e.recurring && <Repeat className="calv-mark faint-mark" size={11} aria-label={t("calv.series")} />}
+      {booked.get(e.key) && <Check className="calv-mark booked" size={12} strokeWidth={2.5} aria-label={t("review.meeting.booked")} />}
+      {!booked.get(e.key) && e.skip && <EyeOff className="calv-mark" size={11} aria-label={t("review.meeting.skipped")} />}
+      {e.private && <Lock className="calv-mark" size={10} aria-label={t("calv.private")} />}
+      {e.recurring && <Repeat className="calv-mark faint-mark" size={10} aria-label={t("calv.series")} />}
     </>
   );
 }
+
+const startTime = (e: CalendarEvent) => timeRange(e).slice(0, 5);
 
 function evLabel(e: CalendarEvent, booked: Booked) {
   const parts = [e.title, timeRange(e), e.location, booked.get(e.key) ? tr("review.meeting.booked") : e.skip ? tr("review.meeting.skipped") : ""].filter(Boolean);
@@ -555,9 +577,11 @@ function TimeGrid(props: {
               return (
                 <div key={isoDay(d)} className="calv-allday-cell">
                   {list.map((e) => (
-                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)}>
+                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected, cal, now)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)}>
                       <span className="calv-ev-title">{e.title}</span>
-                      <EventMarks e={e} booked={booked} />
+                      <span className="calv-ev-marks">
+                        <EventMarks e={e} booked={booked} />
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -587,21 +611,35 @@ function TimeGrid(props: {
                 <div className="calv-meetings">
                   {placed.map((p) => {
                     const e = p.item;
+                    const height = Math.max((p.height / 60) * HOUR - 2, 16);
+                    // Side by side with a 2px gap between overlapping meetings.
                     const style = {
                       ...eventStyle(e, cal),
                       top: (p.top / 60) * HOUR,
-                      height: Math.max((p.height / 60) * HOUR - 2, 16),
-                      left: `calc(${(p.col / p.cols) * 100}% + 1px)`,
-                      width: `calc(${100 / p.cols}% - 3px)`,
+                      height,
+                      left: `calc((100% + 2px) * ${p.col / p.cols})`,
+                      width: `calc((100% + 2px) / ${p.cols} - 2px)`,
                     } as CSSProperties;
-                    const short = p.height < 40;
+                    const fit = blockFit(height, p.height, !!e.location);
                     return (
-                      <button type="button" key={e.key} className={`${eventClass(e, booked, selected)} ${short ? "short" : ""}`} style={style} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)} data-key={e.key}>
+                      <button
+                        type="button"
+                        key={e.key}
+                        className={`${eventClass(e, booked, selected, cal, now)} ${fit.oneLine ? "short" : ""}`}
+                        style={{ ...style, "--lines": fit.titleLines } as CSSProperties}
+                        onClick={() => onSelect(e.key)}
+                        aria-label={evLabel(e, booked)}
+                        data-key={e.key}
+                      >
                         <span className="calv-ev-title">{e.title}</span>
-                        {!short && <span className="calv-ev-meta">{timeRange(e)}{e.location ? ` · ${e.location}` : ""}</span>}
-                        <span className="calv-ev-marks">
-                          <EventMarks e={e} booked={booked} />
+                        {/* Short meetings: the start time on the title's line. */}
+                        <span className="calv-ev-meta calv-ev-time">
+                          <span className="ellipsis">{fit.oneLine ? startTime(e) : fit.place || !e.location ? timeRange(e) : `${timeRange(e)} · ${e.location}`}</span>
+                          <span className="calv-ev-marks">
+                            <EventMarks e={e} booked={booked} />
+                          </span>
                         </span>
+                        {fit.place && <span className="calv-ev-meta calv-ev-place">{e.location}</span>}
                       </button>
                     );
                   })}
@@ -689,14 +727,16 @@ function MonthGrid(props: {
                     <button
                       type="button"
                       key={e.key}
-                      className={`${eventClass(e, booked, selected)} calv-mev ${isAllDayLike(e) ? "allday" : ""}`}
+                      className={`${eventClass(e, booked, selected, cal)} calv-mev ${isAllDayLike(e) ? "allday" : ""}`}
                       style={eventStyle(e, cal)}
                       onClick={() => onSelect(e.key)}
                       aria-label={evLabel(e, booked)}
                     >
-                      {!isAllDayLike(e) && <span className="calv-mev-time">{timeRange(e).slice(0, 5)}</span>}
+                      {!isAllDayLike(e) && <span className="calv-mev-time">{startTime(e)}</span>}
                       <span className="calv-ev-title">{e.title}</span>
-                      <EventMarks e={e} booked={booked} />
+                      <span className="calv-ev-marks">
+                        <EventMarks e={e} booked={booked} />
+                      </span>
                     </button>
                   ))}
                   {!!cell?.more && (
@@ -728,7 +768,8 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
         </EmptyState>
       </div>
     );
-  const todayIso = isoDay(new Date());
+  const now = new Date();
+  const todayIso = isoDay(now);
   return (
     <div className="calv-agenda">
       {days.map(({ d, list }) => (
@@ -738,7 +779,14 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
             <span className="faint">{fmtDate(d)}</span>
           </h2>
           {list.map((e) => (
-            <button type="button" key={e.key} className={`calv-agenda-row ${e.key === selected ? "selected" : ""} ${e.skip ? "skipped" : ""}`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)}>
+            <button
+              type="button"
+              key={e.key}
+              className={`calv-agenda-row ${e.key === selected ? "selected" : ""} ${e.skip ? "skipped" : ""} ${!e.all_day && new Date(e.end) <= now ? "past" : ""}`}
+              style={eventStyle(e, cal)}
+              onClick={() => onSelect(e.key)}
+              aria-label={evLabel(e, booked)}
+            >
               <span className="calv-agenda-time">{timeRange(e)}</span>
               <span className="calv-agenda-bar" aria-hidden />
               <span className="calv-agenda-text">
@@ -746,7 +794,14 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
                 {e.location && <span className="calv-ev-meta">{e.location}</span>}
               </span>
               <span className="calv-agenda-marks">
-                {booked.get(e.key) ? <Badge tone="success">{t("review.meeting.booked")}</Badge> : e.skip ? <Badge>{t("review.meeting.skipped")}</Badge> : null}
+                {booked.get(e.key) ? (
+                  <span className="calv-state booked">
+                    <Check size={12} strokeWidth={2.5} aria-hidden />
+                    {t("review.meeting.booked")}
+                  </span>
+                ) : e.skip ? (
+                  <span className="calv-state">{t("review.meeting.skipped")}</span>
+                ) : null}
                 {e.link && <Video size={13} className="faint" aria-label={t("calv.online")} />}
               </span>
             </button>
@@ -777,56 +832,69 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
   const entry = booked && "netzplan_nr" in booked ? booked : null;
   const linkKind = e.link?.includes("teams.") ? "Teams" : e.link?.includes("zoom.") ? "Zoom" : e.link?.includes("webex.") ? "Webex" : e.link?.includes("meet.google.") ? "Google Meet" : "Online";
   const calendar = cal?.outlook_calendars?.find((c) => c.id === e.source);
+  const past = !e.all_day && end.getTime() <= Date.now();
   return (
-    <aside className="calv-detail" aria-label={t("cal.appointment")}>
+    <aside className="calv-detail" aria-label={t("cal.appointment")} style={eventStyle(e, cal)}>
       <div className="calv-detail-head">
-        <span className="calv-detail-source" style={eventStyle(e, cal)}>
+        <span className="calv-detail-source">
           <span className="calv-dot" aria-hidden />
-          {sourceName(e.source, cal)}
+          <span className="ellipsis">{sourceName(e.source, cal)}</span>
         </span>
         <IconButton icon={X} label={t("calv.closeEsc")} size="sm" onClick={onClose} />
       </div>
-      <h2 className="calv-detail-title">{e.title}</h2>
-      <div className="calv-detail-rows">
-        <div className="calv-detail-row">
-          <Clock size={14} aria-hidden />
+      <div className="calv-detail-top">
+        <h2 className="calv-detail-title">{e.title}</h2>
+        <div className="calv-detail-when">
           <span>{when}</span>
+          {e.recurring && (
+            <span className="calv-detail-series">
+              <Repeat size={12} aria-hidden />
+              {t("calv.partOfSeries")}
+            </span>
+          )}
         </div>
-        {e.recurring && (
-          <div className="calv-detail-row">
-            <Repeat size={14} aria-hidden />
-            <span>{t("calv.partOfSeries")}</span>
-          </div>
+        {e.link && (
+          <Button icon={Video} variant={past ? "secondary" : "primary"} className="calv-join" onClick={() => void openUrl(e.link!).catch((err) => useApp.getState().error(t("links.openFailed"), err))}>
+            {t("calv.join", { kind: linkKind })}
+          </Button>
         )}
-        {e.location && (
-          <div className="calv-detail-row">
-            <MapPin size={14} aria-hidden />
-            <span>{e.location}</span>
-          </div>
-        )}
-        {e.organizer && (
-          <div className="calv-detail-row">
-            <User size={14} aria-hidden />
-            <span>
-              {e.organizer} <span className="faint">({t("calv.organizer")})</span>
-            </span>
-          </div>
-        )}
-        {e.attendees.length > 0 && (
-          <div className="calv-detail-row">
-            <Users size={14} aria-hidden />
-            <span className="calv-people">
-              {people.join(" · ")}
-              {e.attendees.length > people.length && (
-                <button type="button" className="calv-linkbtn" onClick={() => setAllPeople(true)}>
-                  {" "}
-                  {t("calv.more", { n: e.attendees.length - people.length })}
-                </button>
-              )}
-            </span>
-          </div>
-        )}
-        <div className="calv-detail-row faint">
+      </div>
+
+      {(e.location || e.organizer || e.attendees.length > 0) && (
+        <section className="calv-detail-sec calv-detail-rows">
+          {e.location && (
+            <div className="calv-detail-row">
+              <MapPin size={14} aria-hidden />
+              <span>{e.location}</span>
+            </div>
+          )}
+          {e.organizer && (
+            <div className="calv-detail-row">
+              <User size={14} aria-hidden />
+              <span>
+                {e.organizer} <span className="faint">({t("calv.organizer")})</span>
+              </span>
+            </div>
+          )}
+          {e.attendees.length > 0 && (
+            <div className="calv-detail-row">
+              <Users size={14} aria-hidden />
+              <span className="calv-people">
+                {people.join(" · ")}
+                {e.attendees.length > people.length && (
+                  <button type="button" className="calv-linkbtn" onClick={() => setAllPeople(true)}>
+                    {" "}
+                    {t("calv.more", { n: e.attendees.length - people.length })}
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="calv-detail-sec calv-detail-rows calv-detail-facts">
+        <div className="calv-detail-row">
           {e.private ? <Lock size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
           <span>
             {t(BUSY_LABELS[e.busy])}
@@ -834,7 +902,7 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           </span>
         </div>
         {calendar?.free_busy && (
-          <div className="calv-detail-row faint">
+          <div className="calv-detail-row">
             <EyeOff size={14} aria-hidden />
             <span>{t("olcal.freeBusyEvent")}</span>
           </div>
@@ -854,70 +922,67 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           </div>
         )}
         {timeOn && calendar && !calendar.booking && (
-          <div className="calv-detail-row faint">
+          <div className="calv-detail-row">
             <Timer size={14} aria-hidden />
             <span>{t("olcal.notForBooking")}</span>
           </div>
         )}
-      </div>
-      {e.link && (
-        <Button icon={Video} className="calv-join" onClick={() => void openUrl(e.link!).catch((err) => useApp.getState().error(t("links.openFailed"), err))}>
-          {t("calv.join", { kind: linkKind })}
-        </Button>
-      )}
-      {e.categories.length > 0 && (
-        <div className="calv-cats">
-          {e.categories.map((c) => (
-            <Badge key={c}>{c}</Badge>
-          ))}
+        {e.categories.length > 0 && (
+          <div className="calv-cats">
+            {e.categories.map((c) => (
+              <Badge key={c}>{c}</Badge>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="calv-detail-sec calv-detail-booking">
+        {/* Time tracking off: no booking state, „Zeit buchen“ or „Nicht buchen“; the note stays. */}
+        {timeOn && <div className={`calv-book-state ${booked ? "booked" : e.skip ? "skipped" : ""}`} role="status">
+          {booked ? (
+            <>
+              <Check size={14} strokeWidth={2.5} aria-hidden />
+              <span>
+                {entry ? t("calv.bookedAs", { ref: entryRef(entry), h: fmtMinutes(entry.duration_minutes) }) : t("calv.booked")}
+                {entry?.status_flag === "exported" ? ` · ${t("calv.exported")}` : ""}
+              </span>
+            </>
+          ) : e.skip ? (
+            <>
+              <EyeOff size={14} aria-hidden />
+              <span>{t("calv.markedSkip")}</span>
+            </>
+          ) : (
+            <>
+              <Timer size={14} aria-hidden />
+              <span>{t("calv.notBooked")}</span>
+            </>
+          )}
+        </div>}
+        <div className="calv-detail-actions">
+          {timeOn && (
+            <Button variant={booked || e.skip || (e.link && !past) ? "secondary" : "primary"} className="calv-book-btn" icon={Timer} onClick={onBook}>
+              {booked ? t("calv.bookAgain") : t("calv.bookTime")}
+            </Button>
+          )}
+          <Button variant={!timeOn && !(e.link && !past) ? "primary" : "secondary"} icon={NotebookPen} onClick={onNote}>
+            {e.note_page_id != null ? t("calv.openNote") : t("calv.note")}
+          </Button>
+          {timeOn && !booked && (
+            <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>
+              {e.skip ? t("calv.unskip") : t("calv.skip")}
+            </Button>
+          )}
+          {entry && (
+            <Button variant="ghost" onClick={() => useApp.getState().openTab({ kind: "timesheet" })}>
+              {t("calv.showInTimesheet")}
+            </Button>
+          )}
         </div>
-      )}
-
-      {timeOn && <div className={`calv-book-state ${booked ? "booked" : e.skip ? "skipped" : ""}`} role="status">
-        {booked ? (
-          <>
-            <CheckCircle2 size={15} aria-hidden />
-            <span>
-              {entry ? t("calv.bookedAs", { ref: entryRef(entry), h: fmtMinutes(entry.duration_minutes) }) : t("calv.booked")}
-              {entry?.status_flag === "exported" ? ` · ${t("calv.exported")}` : ""}
-            </span>
-          </>
-        ) : e.skip ? (
-          <>
-            <EyeOff size={15} aria-hidden />
-            <span>{t("calv.markedSkip")}</span>
-          </>
-        ) : (
-          <>
-            <Timer size={15} aria-hidden />
-            <span>{t("calv.notBooked")}</span>
-          </>
-        )}
-      </div>}
-
-      <div className="calv-detail-actions">
-        {timeOn && (
-          <Button variant={booked || e.skip ? "secondary" : "primary"} icon={Timer} onClick={onBook}>
-            {booked ? t("calv.bookAgain") : t("calv.bookTime")}
-          </Button>
-        )}
-        <Button variant={timeOn ? "secondary" : "primary"} icon={NotebookPen} onClick={onNote}>
-          {e.note_page_id != null ? t("calv.openNote") : t("calv.note")}
-        </Button>
-        {timeOn && !booked && (
-          <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>
-            {e.skip ? t("calv.unskip") : t("calv.skip")}
-          </Button>
-        )}
-        {entry && (
-          <Button variant="ghost" onClick={() => useApp.getState().openTab({ kind: "timesheet" })}>
-            {t("calv.showInTimesheet")}
-          </Button>
-        )}
-      </div>
+      </section>
 
       {e.body && (
-        <details className="calv-body-text">
+        <details className="calv-detail-sec calv-body-text">
           <summary>{t("time.description")}</summary>
           <pre>{e.body}</pre>
         </details>

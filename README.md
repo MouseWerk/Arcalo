@@ -175,6 +175,15 @@ the note of the meeting running now or, after `>`, any page. Several lines, task
 </p>
 <p align="center"><img src="docs/screenshots/dark-link-group.png" width="90%" alt="A link group „SAP“ opened next to the ribbon"></p>
 
+**Bookmarks from your browser.** „Lesezeichen importieren“ (in „App / Link hinzufügen“, the ribbon's context menu,
+the command palette and Einstellungen → Start) reads the bookmarks of Chrome, Edge, Brave, Vivaldi, Opera, Arc,
+Chromium, Firefox and Safari on Windows, macOS and Linux, every profile with its name, or a browser's HTML export
+(chosen or dropped onto the dialog). The browsers' files are only read. Pick folders and links in a tree; folders of
+the bookmarks bar become link groups, its links ribbon links, and whatever does not fit the ribbon (40 entries, 60 per
+group) or you send there becomes a Markdown page under „Lesezeichen“. Links already in the ribbon are skipped, and the
+toast's „Rückgängig“ undoes the whole import. Safari needs „Festplattenvollzugriff“ for Annalo; without it, export
+the bookmarks in Safari and import the HTML file.
+
 ### Tasks, calendar and quick search
 
 Tasks from all notes are grouped by due date. The calendar shows your daily notes and booked hours per day. The global

@@ -34,6 +34,8 @@ import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
+import { NavButtons } from "../components/ViewHeader";
+import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
 type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
@@ -79,8 +81,10 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
 /** Sections that save every change immediately (no save bar). */
 const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about", "calendar"]);
 
-export function SettingsView() {
+export function SettingsView({ tab }: { tab?: Tab }) {
   const t = useT();
+  // The bar with back and forward gets its hairline once the section scrolls under it.
+  const [scrolled, setScrolled] = useState(false);
   const view = useApp((s) => s.settings);
   const [section, setSection] = useState<Section>(() => (takeSettingsSection() as Section | null) ?? "ai");
   // Opened on a section from elsewhere (the Kalender view, a toast) while already open.
@@ -96,6 +100,23 @@ export function SettingsView() {
     return () => window.removeEventListener("annalo:settings-section", onRequest);
   }, []);
   const nav = useRef<HTMLElement>(null);
+  // A menu longer than the window scrolls; its edges fade where more items are.
+  const [navEdges, setNavEdges] = useState("");
+  const measureNav = () => {
+    const l = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
+    if (!l) return;
+    const edges = `${l.scrollTop > 1 ? "fade-top" : ""} ${l.scrollTop + l.clientHeight < l.scrollHeight - 1 ? "fade-bottom" : ""}`.trim();
+    setNavEdges(edges);
+  };
+  useEffect(() => {
+    const l = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
+    if (!l) return;
+    measureNav();
+    const watch = new ResizeObserver(measureNav);
+    watch.observe(l);
+    return () => watch.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
@@ -280,7 +301,7 @@ export function SettingsView() {
       <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
         {search}
-        <div className="settings-nav-list">
+        <div className={`settings-nav-list ${navEdges}`} onScroll={measureNav}>
           {NAV.map((g) => (
             <div key={g.label} className="settings-nav-group" role="group" aria-label={t(g.label)}>
               <div className="settings-nav-group-label">{t(g.label)}</div>
@@ -301,49 +322,55 @@ export function SettingsView() {
           ))}
         </div>
       </nav>
-      {/* Narrow panes: the menu becomes a section dropdown next to the search. */}
-      <div className="settings-topbar">
-        {search}
-        <Select
-          className="settings-section-select"
-          aria-label={t("settings.section")}
-          value={searching ? "" : section}
-          placeholder={t("settings.results", { n: hits })}
-          options={NAV.flatMap((g) => g.items.map((x, i) => ({ value: x.id, label: t(x.label), icon: x.icon, ...(i === 0 ? { group: t(g.label) } : {}) })))}
-          onChange={(e) => open(e.target.value as Section)}
-        />
-      </div>
-      <div className="settings-scroll" ref={scroll}>
-        <div className="settings-body" ref={body}>
-          {searching ? (
-            <>
-              <div className="settings-search-head" role="status">
-                {hits ? t("settings.results", { n: hits }) : t("settings.noHits", { query: query.trim() })}
-              </div>
-              {all.map((x) => (
-                // A section whose name matches shows all its rows.
-                <FilterContext.Provider key={x.id} value={matches(query, t(x.label)) ? "" : query}>
-                  <SearchSection id={x.id} icon={x.icon} title={t(x.label)} onOpen={() => open(x.id)}>
-                    {render(x.id)}
-                  </SearchSection>
-                </FilterContext.Provider>
-              ))}
-            </>
-          ) : (
-            render(section)
+      <div className="settings-main">
+        {/* The pane's back and forward, on the row of the menu's title. Narrow panes: the menu
+            becomes a section dropdown next to the search, in the same bar. */}
+        <div className={`settings-bar ${scrolled ? "scrolled" : ""}`}>
+          {tab && <NavButtons tab={tab} />}
+          <div className="settings-topbar">
+            {search}
+            <Select
+              className="settings-section-select"
+              aria-label={t("settings.section")}
+              value={searching ? "" : section}
+              placeholder={t("settings.results", { n: hits })}
+              options={NAV.flatMap((g) => g.items.map((x, i) => ({ value: x.id, label: t(x.label), icon: x.icon, ...(i === 0 ? { group: t(g.label) } : {}) })))}
+              onChange={(e) => open(e.target.value as Section)}
+            />
+          </div>
+        </div>
+        <div className="settings-scroll" ref={scroll} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
+          <div className="settings-body" ref={body}>
+            {searching ? (
+              <>
+                <div className="settings-search-head" role="status">
+                  {hits ? t("settings.results", { n: hits }) : t("settings.noHits", { query: query.trim() })}
+                </div>
+                {all.map((x) => (
+                  // A section whose name matches shows all its rows.
+                  <FilterContext.Provider key={x.id} value={matches(query, t(x.label)) ? "" : query}>
+                    <SearchSection id={x.id} icon={x.icon} title={t(x.label)} onOpen={() => open(x.id)}>
+                      {render(x.id)}
+                    </SearchSection>
+                  </FilterContext.Provider>
+                ))}
+              </>
+            ) : (
+              render(section)
+            )}
+          </div>
+          {dirty && (
+            <div className="savebar" role="region" aria-label={t("settings.unsaved")}>
+              <span>{t("settings.unsaved")}</span>
+              <Button variant="ghost" onClick={() => setDraft(structuredClone(view.settings))}>
+                {t("common.discard")}
+              </Button>
+              <Button variant="primary" onClick={() => save()} loading={saving}>
+                {t("common.save")}
+              </Button>
+            </div>
           )}
         </div>
-        {dirty && (
-          <div className="savebar" role="region" aria-label={t("settings.unsaved")}>
-            <span>{t("settings.unsaved")}</span>
-            <Button variant="ghost" onClick={() => setDraft(structuredClone(view.settings))}>
-              {t("common.discard")}
-            </Button>
-            <Button variant="primary" onClick={() => save()} loading={saving}>
-              {t("common.save")}
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   );

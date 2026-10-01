@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CalendarDays, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { addDays, isoDay, isoWeek, weekStart } from "../../lib/format";
@@ -431,8 +431,13 @@ export function AgendaWidget({ widget }: WidgetProps) {
                           </span>
                         </button>
                         <span className="dw-agenda-actions">
-                          {live && <Badge tone="accent">{t("dash.live")}</Badge>}
-                          {timeOn && e.entry_id != null && <Badge tone="success">{t("dash.booked")}</Badge>}
+                          {live && <span className="calv-state live">{t("dash.live")}</span>}
+                          {timeOn && e.entry_id != null && (
+                            <span className="calv-state booked">
+                              <Check size={12} strokeWidth={2.5} aria-hidden />
+                              {t("dash.booked")}
+                            </span>
+                          )}
                           {e.link && !past && <IconButton icon={Video} size="sm" label={t("dash.joinTitle", { title: e.title })} onClick={() => openUrl(e.link!).catch((err) => s().error(t("dash.joinFailed"), err))} />}
                           {canBook && (
                             <Button size="sm" variant="ghost" icon={Timer} onClick={() => void book(e)} aria-label={t("dash.bookTitle", { title: e.title })}>

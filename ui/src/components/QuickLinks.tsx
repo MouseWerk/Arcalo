@@ -4,7 +4,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowRightLeft, ArrowUp, ExternalLink, FolderClosed, FolderOpen, Pencil, Plus, Trash2, Ungroup, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, ArrowUp, BookmarkPlus, ExternalLink, FolderClosed, FolderOpen, Pencil, Plus, Trash2, Ungroup, type LucideIcon } from "lucide-react";
 import { useApp } from "../store/app";
 import { api } from "../lib/api";
 import type { QuickLink } from "../lib/types";
@@ -12,6 +12,7 @@ import { IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
 import { PageIcon } from "./icons";
 import { t as tr, useT } from "../lib/i18n";
 import { EntryDialog, iconOf, type EntryEdit } from "./LinkDialogs";
+import { openBookmarkImport } from "./BookmarkImport";
 import { FILTER_FROM, OPEN_ALL_CONFIRM, colorHex, filterItems, groupChoices, isGroup, kindOf, moveItem, normalizeLinks, removeItem, shortUrl, webItems, type Loc } from "../lib/quicklinks";
 
 export { guessIcon } from "./LinkDialogs";
@@ -106,6 +107,7 @@ export function QuickLinks() {
       .map((c) => ({ label: c.name, icon: FolderClosed, onSelect: () => move(at, { group: c.index, index: links[c.index].items?.length ?? 0 }) })),
   ];
 
+  const importEntry: MenuItem = { label: t("bm.menu"), icon: BookmarkPlus, onSelect: openBookmarkImport };
   const linkEntries = (i: number): MenuEntry[] => {
     const targets = moveTargets({ group: null, index: i });
     return [
@@ -116,6 +118,7 @@ export function QuickLinks() {
       ...(targets.length ? [{ label: t("links.inGroup"), icon: FolderClosed, submenu: targets }] : []),
       "separator",
       { label: t("links.addAny"), icon: Plus, onSelect: () => addItem(null) },
+      importEntry,
       { label: t("links.remove"), icon: Trash2, danger: true, onSelect: () => saveQuickLinks(removeItem(links, { group: null, index: i })) },
     ];
   };
@@ -130,6 +133,7 @@ export function QuickLinks() {
       { label: t("links.down"), icon: ArrowDown, disabled: i === links.length - 1, onSelect: () => move({ group: null, index: i }, { group: null, index: i + 2 }) },
       "separator",
       { label: t("links.add"), icon: Plus, onSelect: () => addItem(i) },
+      importEntry,
       {
         label: t("links.ungroup"),
         icon: Ungroup,
@@ -261,7 +265,15 @@ export function QuickLinks() {
         );
       })}
       {lineTop !== null && <span className="quick-drop-line" style={{ top: lineTop }} aria-hidden />}
-      <IconButton icon={Plus} label={t("links.addAny")} className="quick-link-add" tooltipSide="right" size="md" onClick={() => addItem(null)} />
+      <IconButton
+        icon={Plus}
+        label={t("links.addAny")}
+        className="quick-link-add"
+        tooltipSide="right"
+        size="md"
+        onClick={() => addItem(null)}
+        onContextMenu={(e) => openMenu(e, [{ label: t("links.addAny"), icon: Plus, onSelect: () => addItem(null) }, importEntry])}
+      />
       {menu}
       {openGroup !== null && isGroup(links[openGroup]) && (
         <LinkGroupPopover

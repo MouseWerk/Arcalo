@@ -26,7 +26,7 @@ describe("stylesheets", () => {
 // fine where it must not follow the theme; every such place is listed here with its reason.
 const LITERAL_COLORS_OK: [RegExp, string][] = [
   [/win-close/, "Windows' own red close button"],
-  [/fade-(left|right)|assistant-scroll/, "mask gradients (only the alpha counts)"],
+  [/fade-(left|right|top|bottom)|assistant-scroll/, "mask gradients (only the alpha counts)"],
   [/send-btn|task-check|\.cite:hover|cf-choice\.on|btn-primary|switch-knob|\.check:|theme-card-now|taskList.*checked::after|slide-task > input:checked::after|swatch/, "white on --accent-strong or a color swatch (>= 4.5:1 by construction)"],
   [/^:root, :root\[data-theme="dark"\]$|^body, \.app$/, "print: black on white paper"],
   [/onb-mark|about-mark/, "the app logo"],
@@ -36,6 +36,7 @@ const LITERAL_COLORS_OK: [RegExp, string][] = [
   [/activity-view/, "category colors of the activity timeline"],
   [/find-hit\.current/, "the current search hit, distinct from --mark"],
   [/\.overlay$/, "dialog scrim"],
+  [/^\.bm-badge$/, "white letters on the browsers' own colors (bookmark import)"],
 ];
 
 describe("literal colors", () => {

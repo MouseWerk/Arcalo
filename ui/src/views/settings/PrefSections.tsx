@@ -2,7 +2,7 @@
 // time tracking (week, rounding, display, exports), start, language, notifications and privacy.
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
@@ -12,6 +12,7 @@ import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 import { ChatHistoryGroup } from "./ChatHistoryPrefs";
+import { openBookmarkImport } from "../../components/BookmarkImport";
 
 // ------------------------------------------------------------------ notes
 
@@ -244,6 +245,13 @@ export function StartSection({ draft, update }: SectionProps) {
         </Row>
         <Row label={t("set.start.minimized")} description={t("set.start.minimizedDesc")}>
           <Switch label={t("set.start.minimized")} checked={st.minimized} onChange={(v) => set({ minimized: v })} />
+        </Row>
+      </Group>
+      <Group title={t("set.start.ribbon")}>
+        <Row label={t("bm.title")} description={t("set.start.bookmarksDesc")}>
+          <Button icon={BookmarkPlus} className="set-bookmarks-import" onClick={openBookmarkImport}>
+            {t("bm.menu")}
+          </Button>
         </Row>
       </Group>
     </>
