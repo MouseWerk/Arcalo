@@ -47,7 +47,13 @@ const saved = async () => (await app.invoke("settings_get")).settings.dashboard;
 const W = (id, kind, x, y, w, h, config = {}) => ({ id, kind, x, y, w, h, config });
 const KINDS = ["scratchpad", "inbox", "resurface", "writing", "pomodoro", "clock", "checklist", "status", "synced", "embed", "week"];
 const widgetText = (kind) => app.browser.execute((k) => document.querySelector(`.pane.active .dw[data-kind="${k}"]`)?.innerText ?? "", kind);
-const into = (kind) => app.browser.execute((k) => document.querySelector(`.pane.active .dw[data-kind="${k}"]`)?.scrollIntoView({ block: "center" }), kind);
+// Scrolls the start page (not the window) so the widget is in view.
+const into = (kind) =>
+  app.browser.execute((k) => {
+    const home = document.querySelector(".pane.active .home");
+    const el = document.querySelector(`.pane.active .dw[data-kind="${k}"]`);
+    if (home && el) home.scrollTop += el.getBoundingClientRect().top - home.getBoundingClientRect().top - 80;
+  }, kind);
 const setTheme = async (theme) => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme } });
@@ -98,7 +104,7 @@ async function prepare(lang) {
     await app.browser.waitUntil(() => app.browser.execute((kk) => (() => { const b = document.querySelector(`.pane.active .dw[data-kind="${kk}"] .dw-body`); return !!b?.firstElementChild && !b.querySelector(".dw-skel") && (!!b.innerText.trim() || !!b.querySelector("textarea")); })(), k), { timeout: 15000, timeoutMsg: `${k} stays empty` });
     assert.equal(await (await app.$(`.pane.active .dw[data-kind="${k}"] .dw-error`)).isExisting(), false, `${k} shows an error`);
   }
-  await app.browser.execute(() => document.querySelector(".home").scrollTo(0, 0));
+  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   return { status };
 }
 
@@ -166,7 +172,7 @@ test("the new widgets with sample data (German)", async () => {
   // German hours with a decimal comma.
   assert.match(await widgetText("week"), /\d,\d+ h/);
   await app.dismissToasts();
-  await app.browser.execute(() => document.querySelector(".home").scrollTo(0, 0));
+  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   for (const theme of ["light", "dark"]) {
     await setTheme(theme);
     await app.browser.pause(300);
@@ -198,6 +204,6 @@ test("the new widgets in English, hours with a decimal point", async () => {
   // No German left on the start page (the sample content is English too).
   const left = (await germanLeftovers(app)).filter((h) => !/Müller/.test(h));
   assert.deepEqual(left, []);
-  await app.browser.execute(() => document.querySelector(".home").scrollTo(0, 0));
+  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   await app.shot("107-notes-board-en");
 });
