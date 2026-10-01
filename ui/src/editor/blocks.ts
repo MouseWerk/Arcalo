@@ -8,7 +8,9 @@
 //     <!-- spalte -->
 //     Rechte Spalte
 //     <!-- /spalten -->
-//   (blank lines between marker and content). Column blocks may be nested.
+//   (blank lines between marker and content). Column blocks may be nested. English markers
+//   (`<!-- columns -->`, `<!-- column -->`, `<!-- /columns -->`) work alike; a block keeps the
+//   markers it was read with, a new one gets the display language's.
 // - Table of contents: a line `[TOC]` (Typora, MkDocs, Python-Markdown use the same marker).
 // - Footnotes: `[^1]` references and `[^1]: Text` definitions (Pandoc/Obsidian/GitHub),
 //   continuation lines indented by four spaces.
@@ -18,7 +20,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
-import { t } from "../lib/i18n";
+import { currentLang, t } from "../lib/i18n";
 
 // ---------------------------------------------------------------- columns
 
@@ -48,15 +50,26 @@ export function markerLine(src: string, marker: string, lead: boolean): number {
 export const COLUMNS_OPEN = "<!-- spalten -->";
 export const COLUMN_BREAK = "<!-- spalte -->";
 export const COLUMNS_CLOSE = "<!-- /spalten -->";
+/** The column markers in German (older notes) and English: open, break, close. */
+export const COLUMN_MARKERS = {
+  de: [COLUMNS_OPEN, COLUMN_BREAK, COLUMNS_CLOSE],
+  en: ["<!-- columns -->", "<!-- column -->", "<!-- /columns -->"],
+} as const;
+export type MarkerLang = keyof typeof COLUMN_MARKERS;
+const markerIs = (i: 0 | 1 | 2) => (t: string) => t === COLUMN_MARKERS.de[i] || t === COLUMN_MARKERS.en[i];
+export const isColumnsOpen = markerIs(0);
+export const isColumnBreak = markerIs(1);
+export const isColumnsClose = markerIs(2);
 
 /**
  * Splits `src` (starting at `<!-- spalten -->`) into the Markdown of its columns and the raw
  * length of the block. Nested column blocks and fenced code stay inside their column.
  * Returns null without a closing marker.
  */
-export function splitColumns(src: string): { raw: string; parts: string[] } | null {
+export function splitColumns(src: string): { raw: string; parts: string[]; lang: MarkerLang } | null {
   const lines = src.split("\n");
-  if (lines[0].trim() !== COLUMNS_OPEN) return null;
+  if (!isColumnsOpen(lines[0].trim())) return null;
+  const lang: MarkerLang = lines[0].trim() === COLUMN_MARKERS.en[0] ? "en" : "de";
   const parts: string[][] = [[]];
   let depth = 1;
   let fence: string | null = null;
@@ -67,11 +80,11 @@ export function splitColumns(src: string): { raw: string; parts: string[] } | nu
     if (fence) {
       if (f && f[1][0] === fence[0] && f[1].length >= fence.length && t.slice(f[1].length).trim() === "") fence = null;
     } else if (f) fence = f[1];
-    else if (t === COLUMNS_OPEN) depth++;
-    else if (t === COLUMNS_CLOSE && --depth === 0) {
+    else if (isColumnsOpen(t)) depth++;
+    else if (isColumnsClose(t) && --depth === 0) {
       const raw = lines.slice(0, i + 1).join("\n") + (i + 1 < lines.length ? "\n" : "");
-      return { raw, parts: parts.map((p) => p.join("\n").trim()) };
-    } else if (t === COLUMN_BREAK && depth === 1) {
+      return { raw, parts: parts.map((p) => p.join("\n").trim()), lang };
+    } else if (isColumnBreak(t) && depth === 1) {
       parts.push([]);
       continue;
     }
@@ -101,30 +114,40 @@ export const Columns = Node.create({
   parseHTML() {
     return [{ tag: "div[data-columns]" }];
   },
+  addAttributes() {
+    // The markers' language: as read, or (null) the display language when written.
+    return { lang: { default: null, rendered: false } };
+  },
   renderHTML() {
     return ["div", { "data-columns": "", class: "columns" }, 0];
   },
   markdownTokenizer: {
     name: "columns",
     level: "block",
-    start: (src: string) => markerLine(src, COLUMNS_OPEN, true),
+    start: (src: string) => {
+      const [de, en] = [markerLine(src, COLUMNS_OPEN, true), markerLine(src, COLUMN_MARKERS.en[0], true)];
+      return de < 0 ? en : en < 0 ? de : Math.min(de, en);
+    },
     tokenize(src, _tokens, lexer) {
-      if (!src.startsWith(COLUMNS_OPEN)) return undefined;
+      if (!src.startsWith(COLUMNS_OPEN) && !src.startsWith(COLUMN_MARKERS.en[0])) return undefined;
       const s = splitColumns(src);
       if (!s) return undefined;
-      return { type: "columns", raw: s.raw, cols: s.parts.map((p) => lexer.blockTokens(p)) };
+      return { type: "columns", raw: s.raw, lang: s.lang, cols: s.parts.map((p) => lexer.blockTokens(p)) };
     },
   },
   parseMarkdown: (token, h) =>
     h.createNode(
       "columns",
-      undefined,
+      { lang: token.lang ?? null },
       (token.cols as Parameters<typeof h.parseChildren>[0][]).map((tokens) => {
         const content = h.parseChildren(tokens);
         return h.createNode("column", undefined, content.length ? content : [{ type: "paragraph" }]);
       }),
     ),
-  renderMarkdown: (node, h) => `${COLUMNS_OPEN}\n\n${h.renderChildren(node.content ?? [], `\n\n${COLUMN_BREAK}\n\n`)}\n\n${COLUMNS_CLOSE}`,
+  renderMarkdown: (node, h) => {
+    const [open, brk, close] = COLUMN_MARKERS[(node.attrs?.lang as MarkerLang | null) ?? (currentLang() === "en" ? "en" : "de")];
+    return `${open}\n\n${h.renderChildren(node.content ?? [], `\n\n${brk}\n\n`)}\n\n${close}`;
+  },
 });
 
 /** Replaces the current (empty) block by `n` columns and puts the caret into the first one. */

@@ -68,7 +68,7 @@ const MAX_LINES = 8;
 const mod = () => (IS_MAC ? "⌘" : t("keys.ctrl"));
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
-const DEFAULT_PREFS: CapturePrefs = { default_target: "daily", inbox_title: "Posteingang", selection_shortcut: "", auto_hide_ms: 1200, meeting_target: true };
+const DEFAULT_PREFS: CapturePrefs = { default_target: "daily", inbox_title: "", selection_shortcut: "", auto_hide_ms: 1200, meeting_target: true };
 
 interface Sugg {
   kind: "zeit" | "wiki" | "tag";
@@ -624,7 +624,7 @@ export function CaptureApp() {
   const where = targetPhrase(target);
   const daily = target.target.kind === "daily";
   // Only name /zeit when a line books time.
-  const zeit = /^\s*\/zeit\b/m.test(text);
+  const zeit = /^\s*\/(zeit|time)\b/im.test(text);
   const multi = zeit
     ? daily
       ? t("cap.multi.zeitDaily")

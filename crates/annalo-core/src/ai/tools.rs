@@ -39,7 +39,7 @@ pub fn definitions() -> Vec<Value> {
             "log_time",
             tr!(
                 "Bucht Zeit auf ein Netzplan-Element. Nutzt die /zeit-Syntax, z. B. \"/zeit NP-8801/1020 2.5h #DEV 'Systemintegration'\".",
-                "Books time on a network element. Uses the /zeit syntax, e.g. \"/zeit NP-8801/1020 2.5h #DEV 'System integration'\"."
+                "Books time on a network element. Uses the /time syntax, e.g. \"/time NP-8801/1020 2.5h #DEV 'System integration'\"."
             ),
             json!({ "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"] }),
         ),

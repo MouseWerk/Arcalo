@@ -7,7 +7,7 @@ import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, IconButton, Progress, useMenu, type MenuEntry } from "../components/ui";
-import { DATE_RE, LIST_KEYS, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
+import { DATE_RE, LIST_KEYS, canonicalKey, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
 import { dateShort, fmtHours, fmtMinutes } from "../lib/format";
 import { NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
 import { LEVEL } from "./wbs";
@@ -23,7 +23,7 @@ import { renameOptionValues, updateSchema } from "./collection/write";
 import { t as tr, useT } from "../lib/i18n";
 
 const TYPE_ICON: Record<Property["type"], LucideIcon> = { text: Type, date: CalendarDays, list: Tags, raw: Braces };
-const isWbsKey = (key: string) => /^(vorgang|netzplan)$/i.test(key);
+const isWbsKey = (key: string) => /^(vorgang|netzplan)$/.test(canonicalKey(key));
 const isTagsKey = (key: string) => /^tags?$/i.test(key);
 const keyHint = () => tr("props.keyHint");
 
@@ -279,7 +279,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
   const [picker, setPicker] = useState(false);
   useEffect(() => setDraft(prop.value), [prop.value]);
   const commit = () => draft !== prop.value && onChange(draft);
-  const key = prop.key.toLowerCase();
+  const key = canonicalKey(prop.key);
   const input =
     key === "vorgang" ? (
       <RefCombo value={prop.value} draft={draft} setDraft={setDraft} label={prop.key} onCommit={commit} onPick={(v) => v !== prop.value && onChange(v)} onRevert={() => setDraft(prop.value)} />

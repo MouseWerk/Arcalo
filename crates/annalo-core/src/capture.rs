@@ -38,6 +38,11 @@ pub enum CaptureTarget {
 /// Default title of the inbox page.
 pub const INBOX_TITLE: &str = "Posteingang";
 
+/// The inbox title a new workspace gets, in the display language (existing ones keep theirs).
+pub fn inbox_title() -> &'static str {
+    tr!(INBOX_TITLE, "Inbox")
+}
+
 /// A meeting counts as „now“ while it runs and during this many minutes after its start
 /// (short meetings that are already over still get their notes).
 pub const MEETING_GRACE_MINUTES: i64 = 15;

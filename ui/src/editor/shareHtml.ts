@@ -18,6 +18,7 @@ import { fmtDate } from "../lib/format";
 import { useApp } from "../store/app";
 import { flushAllEditors } from "./NoteEditor";
 import { t, type TKey } from "../lib/i18n";
+import { calloutType } from "../lib/callouts";
 
 /** Reads attachments for the export (the app: IPC; tests: fakes). */
 export interface AttachmentSource {
@@ -188,7 +189,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
     const text = first?.tagName === "P" ? (first.firstChild?.textContent ?? "") : "";
     const m = first?.firstChild?.nodeType === 3 ? CALLOUT_RE.exec(text) : null;
     if (!m || !first) continue;
-    const type = m[1].toLowerCase();
+    const type = calloutType(m[1]);
     first.firstChild!.textContent = text.slice(m[0].length);
     // Title: the first line of the first paragraph.
     const title = el(doc, "span", { class: "callout-title" });

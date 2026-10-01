@@ -169,7 +169,8 @@ pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
                 i += 2;
                 continue;
             }
-            if let Some(d) = t.strip_prefix(OBSIDIAN_DUE).or_else(|| t.strip_prefix("due:")).and_then(parse_date) {
+            let due_word = ["due:", "Due:", "fällig:", "Fällig:"].iter().find_map(|p| t.strip_prefix(p));
+            if let Some(d) = t.strip_prefix(OBSIDIAN_DUE).or(due_word).and_then(parse_date) {
                 due = Some(d);
             } else if t == "!!" {
                 priority = 2;
@@ -366,6 +367,16 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn due_in_either_language() {
+        let t = parse_tasks("- [ ] Angebot fällig:2026-09-30 !\n- [ ] Offer due:2026-10-01 !!\n- [ ] x Due:2026-10-02");
+        let due: Vec<_> = t.iter().map(|t| (t.text.as_str(), t.due.as_deref(), t.priority)).collect();
+        assert_eq!(
+            due,
+            [("Angebot", Some("2026-09-30"), 1), ("Offer", Some("2026-10-01"), 2), ("x", Some("2026-10-02"), 0)]
+        );
+    }
 
     #[test]
     fn parses_due_dates_priorities_and_tags() {

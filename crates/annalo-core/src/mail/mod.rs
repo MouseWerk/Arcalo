@@ -40,6 +40,11 @@ pub const SCHEME: &str = "annalo-mail://";
 /// Parent page of new mail notes when the settings name none.
 pub const DEFAULT_PARENT: &str = "E-Mails";
 
+/// [`DEFAULT_PARENT`] for a new workspace, in the display language.
+pub fn default_parent() -> &'static str {
+    tr!(DEFAULT_PARENT, "Emails")
+}
+
 /// Longest mail text kept (characters), like the Outlook script cuts it.
 pub const MAX_BODY: usize = 20_000;
 
@@ -177,7 +182,7 @@ pub struct MailSettings {
 impl Default for MailSettings {
     fn default() -> Self {
         MailSettings {
-            notes_parent: DEFAULT_PARENT.into(),
+            notes_parent: default_parent().into(),
             shortcut: String::new(),
             save_attachments: false,
             private_notes: true,
@@ -190,7 +195,7 @@ impl MailSettings {
     pub fn normalized(mut self) -> MailSettings {
         self.notes_parent = crate::notes::clean_title(&self.notes_parent);
         if self.notes_parent.is_empty() {
-            self.notes_parent = DEFAULT_PARENT.into();
+            self.notes_parent = default_parent().into();
         }
         self.shortcut = self.shortcut.trim().to_owned();
         if !matches!(self.default_action.as_str(), "task" | "note" | "both") {
@@ -588,25 +593,26 @@ pub fn note_markdown(
     files: &StoredFiles,
     zone: &Zone,
 ) -> String {
+    let k = crate::i18n::key;
     let mut front = vec![];
     if !mail.sender_full().is_empty() {
-        front.push(format!("von: {}", yaml(&mail.sender_full())));
+        front.push(format!("{}: {}", k("von"), yaml(&mail.sender_full())));
     }
     if !mail.to.is_empty() {
-        front.push(format!("an: {}", yaml(&mail.to.join("; "))));
+        front.push(format!("{}: {}", k("an"), yaml(&mail.to.join("; "))));
     }
     if !mail.cc.is_empty() {
         front.push(format!("cc: {}", yaml(&mail.cc.join("; "))));
     }
     if let Some(t) = mail.received {
-        front.push(format!("datum: {}", zone.to_wall(t).format("%Y-%m-%d %H:%M")));
+        front.push(format!("{}: {}", k("datum"), zone.to_wall(t).format("%Y-%m-%d %H:%M")));
     }
-    front.push(format!("betreff: {}", yaml(&mail.subject)));
+    front.push(format!("{}: {}", k("betreff"), yaml(&mail.subject)));
     if let Some(id) = link_id {
         front.push(format!("e-mail: {SCHEME}{id}"));
     }
     if !vorgang.trim().is_empty() {
-        front.push(format!("vorgang: {}", vorgang.trim()));
+        front.push(format!("{}: {}", k("vorgang"), vorgang.trim()));
     }
     let tags: Vec<String> = tags.iter().map(|t| tag_of(t)).filter(|t| !t.is_empty()).collect();
     if !tags.is_empty() {
@@ -699,7 +705,7 @@ impl Database {
                     t if t.is_empty() => settings.notes_parent.clone(),
                     t => t,
                 };
-                let parent_title = if parent_title.is_empty() { DEFAULT_PARENT.to_owned() } else { parent_title };
+                let parent_title = if parent_title.is_empty() { default_parent().to_owned() } else { parent_title };
                 let parent = match self
                     .conn()
                     .query_row(

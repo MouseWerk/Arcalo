@@ -38,6 +38,35 @@ test("the daily note is written in English", async () => {
   await app.shot("en-83-daily");
 });
 
+test("/time books in English, and an English due word becomes the date", async () => {
+  // The slash menu offers the English command.
+  await app.caretToEnd();
+  await app.keys(["Enter"]);
+  await app.type("/time");
+  await app.waitFor(".sugg .sugg-item");
+  assert.match(await app.text(".sugg"), /\/time/);
+  await app.keys(["Escape"]);
+  for (let i = 0; i < 5; i++) await app.keys(["Backspace"]);
+  // `/time` with English words: a duration, a date word.
+  await app.type("/time NP-8801/1020 1.5h english review @yesterday");
+  await app.keys(["Escape"]);
+  await app.keys(["Enter"]);
+  await app.waitFor(".pane.active .ProseMirror .time-chip");
+  await app.waitText(".toast-title", /h booked/);
+  const e = (await app.invoke("time_entries", { from: null, to: null })).find((x) => x.description === "english review");
+  assert.ok(e, "entry booked");
+  assert.equal(e.duration_minutes, 90);
+  assert.equal(new Date(e.start_time).toDateString(), new Date(Date.now() - 86400000).toDateString(), e.start_time);
+  // A task with `due:tomorrow` gets tomorrow's date.
+  await app.caretToEnd();
+  await app.keys(["Enter"]);
+  await app.type("[ ] call Bob due:tomorrow ");
+  const next = new Date(Date.now() + 86400000);
+  const tomorrow = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+  await app.browser.waitUntil(async () => (await app.text(".pane.active .ProseMirror")).includes(`due:${tomorrow}`), { timeoutMsg: "due:tomorrow not resolved" });
+  await app.shot("en-83-time-due");
+});
+
 test("a new page, its deletion and the undo are English", async () => {
   await app.dismissToasts();
   await app.click('.ribbon [aria-label^="New page"]');

@@ -135,12 +135,14 @@ const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), 
 /**
  * A due date in plain words as YYYY-MM-DD: „heute“/„today“, „morgen“/„tomorrow“, „übermorgen“,
  * a weekday („Fr“, „freitag“, „fri“, „friday“ – the next one, a week ahead when it is today),
- * „+3“ (days), „+2w“ (weeks), or a date („3.10.“, „03.10.2026“, „2026-10-03“). null when it is none.
+ * „nächste Woche“ / „next week“ (its Monday), „+3“ (days), „+2w“ (weeks), or a date („3.10.“,
+ * „03.10.2026“, „2026-10-03“). null when it is none.
  */
 export function parseDue(word: string, now = new Date()): string | null {
   const w = fold(word.trim()).replace(/[,;!?]+$/, "");
   if (!w) return null;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (/^(next[\s_-]?week|n(a|ae)chste[\s_-]?woche)$/.test(w)) return isoDay(addDays(today, 7 - ((today.getDay() + 6) % 7)));
   if (w === "heute" || w === "today") return isoDay(today);
   if (w === "morgen" || w === "tomorrow") return isoDay(addDays(today, 1));
   if (w === "ubermorgen" || w === "uebermorgen") return isoDay(addDays(today, 2));
@@ -162,8 +164,10 @@ const DAY_WORDS = String.raw`[Hh]eute|[Mm]orgen|[ÜüUu]e?bermorgen|[Mm]ontag|[D
 const EN_DAY_WORDS = String.raw`[Tt]oday|[Tt]omorrow|[Mm]onday|[Tt]uesday|[Ww]ednesday|[Tt]hursday|[Ff]riday|[Ss]aturday|[Ss]unday|[Mm]on|[Tt]ue|[Ww]ed|[Tt]hu|[Ff]ri|[Ss]at|[Ss]un`;
 // Two-letter weekdays only capitalized („Fr“), or after „bis“/„am“: „so“ and „do“ are words too.
 const SHORT_DAYS = String.raw`Mo|Di|Mi|Do|Fr|Sa|So`;
+// „next week“ / „nächste Woche“ also alone at the end of a task.
+const NEXT_WEEK = String.raw`[Nn]ext [Ww]eek|[Nn]ächste [Ww]oche`;
 const TRAILING_DUE = new RegExp(
-  String.raw`\s+(?:(?:(?:bis|am|zum|fällig|by|on|due)\s+((?:${DAY_WORDS}|${EN_DAY_WORDS}|${SHORT_DAYS}|mo|di|mi|do|fr|sa|so|\+\d{1,3}[dtw]?)))|(${DAY_WORDS}|${SHORT_DAYS}))\.?$`,
+  String.raw`\s+(?:(?:(?:bis|am|zum|fällig|by|on|due)\s+((?:${NEXT_WEEK}|${DAY_WORDS}|${EN_DAY_WORDS}|${SHORT_DAYS}|mo|di|mi|do|fr|sa|so|\+\d{1,3}[dtw]?)))|(${NEXT_WEEK}|${DAY_WORDS}|${SHORT_DAYS}))\.?$`,
 );
 
 /**
@@ -172,11 +176,12 @@ const TRAILING_DUE = new RegExp(
  */
 export function normalizeLine(line: string, now = new Date()): string {
   if (captureKind(line) === "zeit") return line;
-  let out = line.replace(/\bdue:(\S+)/gi, (all, v: string) => {
-    const iso = parseDue(v, now);
-    return iso ? `due:${iso}` : all;
+  // `due:` or `fällig:` with a word: the prefix stays as typed, the word becomes the date.
+  let out = line.replace(/(?<![\p{L}\p{N}_])(due|fällig):(\S+)/giu, (all, key: string, v: string) => {
+    const iso = parseDue(v.replace(/[-_]/g, " "), now);
+    return iso ? `${key}:${iso}` : all;
   });
-  if (captureKind(out) === "task" && !/\bdue:\S/i.test(out)) {
+  if (captureKind(out) === "task" && !/(?<![\p{L}\p{N}_])(due|fällig):\S/iu.test(out)) {
     const m = TRAILING_DUE.exec(out);
     const iso = m && parseDue(m[1] ?? m[2], now);
     // Only the words after the task text: "todo Fr" alone stays a task named „Fr“.
@@ -203,7 +208,7 @@ export function normalizeCapture(text: string, now = new Date()): string {
 
 /** The first due date the text will get, for the chip under the field. */
 export function firstDue(text: string, now = new Date()): string | null {
-  const m = /\bdue:(\d{4}-\d{2}-\d{2})/.exec(normalizeCapture(text, now));
+  const m = /(?<![\p{L}\p{N}_])(?:due|fällig):(\d{4}-\d{2}-\d{2})/iu.exec(normalizeCapture(text, now));
   return m ? m[1] : null;
 }
 

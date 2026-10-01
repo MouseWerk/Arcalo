@@ -67,6 +67,35 @@ macro_rules! trf {
     };
 }
 
+/// Frontmatter keys Annalo reads and writes: the German name (as older notes have it) and its
+/// English alias. Both are read in every language (the first one in a page wins); new content
+/// is written with the display language's name. Same table as the UI's `KEY_ALIASES`.
+pub const KEY_ALIASES: [(&str, &str); 12] = [
+    ("vorgang", "activity"),
+    ("netzplan", "network"),
+    ("eigenschaften", "properties"),
+    ("ansicht", "view"),
+    ("datum", "date"),
+    ("uhrzeit", "time"),
+    ("ort", "location"),
+    ("organisator", "organizer"),
+    ("teilnehmer", "attendees"),
+    ("von", "from"),
+    ("an", "to"),
+    ("betreff", "subject"),
+];
+
+/// A frontmatter key in either language under its German name (lowercase, trimmed).
+pub fn canonical_key(key: &str) -> String {
+    let k = key.trim().to_lowercase();
+    KEY_ALIASES.iter().find(|(_, en)| *en == k).map_or(k, |(de, _)| (*de).to_owned())
+}
+
+/// The name to write for a known key (given by its German name) in the display language.
+pub fn key(de: &'static str) -> &'static str {
+    if is_en() { KEY_ALIASES.iter().find(|(d, _)| *d == de).map_or(de, |(_, en)| en) } else { de }
+}
+
 /// Runs `f` with this thread's language set to `lang` (tests only).
 #[cfg(test)]
 pub(crate) fn with_lang<T>(lang: Language, f: impl FnOnce() -> T) -> T {
@@ -79,6 +108,20 @@ pub(crate) fn with_lang<T>(lang: Language, f: impl FnOnce() -> T) -> T {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontmatter_keys_in_both_languages() {
+        assert_eq!(canonical_key("Activity"), "vorgang");
+        assert_eq!(canonical_key(" properties "), "eigenschaften");
+        assert_eq!(canonical_key("vorgang"), "vorgang");
+        assert_eq!(canonical_key("status"), "status");
+        assert_eq!(key("vorgang"), "vorgang");
+        with_lang(Language::En, || {
+            assert_eq!(key("vorgang"), "activity");
+            assert_eq!(key("teilnehmer"), "attendees");
+            assert_eq!(key("tags"), "tags");
+        });
+    }
 
     #[test]
     fn pairs_follow_the_language() {

@@ -2,7 +2,10 @@
 // which Netzplan/Vorgang or Leistungsart options match, and in which order.
 
 import type { ProjectTree, TimeEntryRow } from "../lib/types";
-import { t } from "../lib/i18n";
+import { currentLang, t } from "../lib/i18n";
+
+/** The booking command in the display language (`/zeit` and `/time` both work everywhere). */
+export const zeitCommand = () => (currentLang() === "en" ? "/time" : "/zeit");
 
 /** The token being completed: the reference (first argument) or a `#Leistungsart`. */
 export interface ZeitToken {

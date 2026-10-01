@@ -2321,8 +2321,8 @@ fn system_prompt(settings: &Settings) -> String {
          gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
         "You are the assistant of Annalo, a local workspace for notes, projects and time tracking. \
          Today is {}. Answer precisely and in English, unless the user writes in another language. \
-         Use Markdown. Refer to pages with [[Page name]]. Time is booked with the /zeit syntax, e.g. \
-         /zeit NP-8801/1020 2.5h #DEV 'Description'. Use tools only when needed.",
+         Use Markdown. Refer to pages with [[Page name]]. Time is booked with the /time syntax, e.g. \
+         /time NP-8801/1020 2.5h #DEV 'Description'. Use tools only when needed.",
         now.format(tr!("%A, %d.%m.%Y %H:%M", "%A, %B %-d, %Y %H:%M"))
     );
     if !settings.assistant_instructions.trim().is_empty() {
@@ -2916,7 +2916,7 @@ async fn zeit_suggest_ai(
         return Err(Error::Parse(
             tr!(
                 "Die Zeile braucht eine Dauer direkt nach /zeit, z. B. /zeit 2h Beschreibung",
-                "The line needs a duration right after /zeit, e.g. /zeit 2h Description"
+                "The line needs a duration right after /time, e.g. /time 2h Description"
             )
             .into(),
         ));

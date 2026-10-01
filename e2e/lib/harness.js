@@ -3,6 +3,7 @@
 
 import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { remote } from "webdriverio";
@@ -23,6 +24,23 @@ function ensureXvfb() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Whether nothing listens on `port` (another test run's driver may share the machine). */
+const portFree = (port) =>
+  new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once("error", () => resolve(false));
+    srv.listen(port, "127.0.0.1", () => srv.close(() => resolve(true)));
+  });
+
+/** A random port for tauri-driver whose native port (+1000) is free as well. */
+async function driverPort() {
+  for (let i = 0; i < 50; i++) {
+    const port = 4444 + Math.floor(Math.random() * 500);
+    if ((await portFree(port)) && (await portFree(port + 1000))) return port;
+  }
+  throw new Error("no free port for tauri-driver");
+}
 
 async function waitForPort(port, timeout = 15000) {
   const start = Date.now();
@@ -86,7 +104,7 @@ export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv
 export async function launch({ demo = true, onboarding = false, width = 1480, height = 920, env: extraEnv = {}, dataDir: given = null } = {}) {
   fs.mkdirSync(SHOTS, { recursive: true });
   const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
-  const port = 4444 + Math.floor(Math.random() * 500);
+  const port = await driverPort();
   const env = appEnv(dataDir, { demo, onboarding, env: extraEnv });
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";

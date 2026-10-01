@@ -71,7 +71,7 @@ describe("dashquery", () => {
     // Written back in the display language; both read to the same query.
     const q = applyLine(emptyQuery("entries"), "zeitraum:30tage netzplan:NP-8801 status:entwurf");
     expect(queryLine(q)).toBe("netzplan:NP-8801 status:entwurf zeitraum:30tage");
-    expect(queryLine(q, "en")).toBe("netzplan:NP-8801 status:draft range:30days");
+    expect(queryLine(q, "en")).toBe("network:NP-8801 status:draft range:30days");
     expect(applyLine(emptyQuery("entries"), queryLine(q, "en"))).toEqual(q);
     const t = applyLine(emptyQuery("tasks"), "fällig:woche prio:hoch wer:leer");
     expect(queryLine(t, "en")).toBe("due:week priority:high wer:empty");

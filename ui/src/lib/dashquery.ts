@@ -95,6 +95,7 @@ const FIELD_ALIASES: Record<string, string> = {
   page: "seite",
   parent: "eltern",
   activity: "vorgang",
+  network: "netzplan",
   project: "projekt",
   activitytype: "leistungsart",
   hours: "stunden",

@@ -19,7 +19,7 @@ import { dayTitle, fileKind } from "../lib/activity";
 import { fmtDayMonth, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
-import { MEETING_LABEL, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
+import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import type { DayReview, MeetingState, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
@@ -130,7 +130,7 @@ export function DayReviewView() {
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: note.id, content: next, from: "review" } }));
       }
       await s().refreshTree();
-      const replaced = doc.content.includes("<!-- rückblick -->");
+      const replaced = !!findReviewBlock(doc.content);
       s().toast({
         tone: "success",
         title: replaced ? t("review.updated") : t("review.inserted"),

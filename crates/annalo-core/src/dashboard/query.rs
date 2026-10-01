@@ -102,7 +102,7 @@ pub struct QueryResult {
 
 /// English field names → the German ones the query stores and runs with (the query line in
 /// the widget accepts both languages; stored queries of 1.x keep working).
-const FIELD_ALIASES: [(&str, &str); 21] = [
+const FIELD_ALIASES: [(&str, &str); 22] = [
     ("title", "titel"),
     ("changed", "geändert"),
     ("modified", "geändert"),
@@ -112,6 +112,7 @@ const FIELD_ALIASES: [(&str, &str); 21] = [
     ("page", "seite"),
     ("parent", "eltern"),
     ("activity", "vorgang"),
+    ("network", "netzplan"),
     ("project", "projekt"),
     ("activitytype", "leistungsart"),
     ("hours", "stunden"),

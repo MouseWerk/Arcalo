@@ -4,11 +4,17 @@
 
 import { addDays, decimal, isoDay, time } from "./format";
 import type { AiProvider, DayReview, MeetingState, ReviewMeeting, ReviewTask } from "./types";
-import { t, type TKey } from "./i18n";
+import { currentLang, t, type TKey } from "./i18n";
 
-/** Markers around the generated block (kept verbatim by the editor, like `<!-- spalten -->`). */
-export const REVIEW_OPEN = "<!-- rückblick -->";
-export const REVIEW_CLOSE = "<!-- /rückblick -->";
+/**
+ * Markers around the generated block (kept verbatim by the editor, like `<!-- spalten -->`):
+ * German (older notes) and English. Both are always found, so a block is replaced, never
+ * written twice; a new block gets the display language's markers.
+ */
+export const REVIEW_MARKERS = { de: ["<!-- rückblick -->", "<!-- /rückblick -->"], en: ["<!-- review -->", "<!-- /review -->"] } as const;
+export const REVIEW_OPEN = REVIEW_MARKERS.de[0];
+export const REVIEW_CLOSE = REVIEW_MARKERS.de[1];
+const reviewMarkers = () => REVIEW_MARKERS[currentLang() === "en" ? "en" : "de"];
 /** The heading of the block, in the display language (the markers find the block). */
 export const reviewHeading = () => `## ${t("review.heading")}`;
 
@@ -79,7 +85,8 @@ export function cleanSummary(text: string): string {
 
 /** The block for the daily note, markers included. */
 export function reviewMarkdown(r: DayReview, summary?: string | null): string {
-  const out: string[] = [REVIEW_OPEN, "", reviewHeading(), ""];
+  const [open, close] = reviewMarkers();
+  const out: string[] = [open, "", reviewHeading(), ""];
   const tm = r.time;
   const label = (key: TKey) => `**${t(key)}:**`;
   let zeit = `${label("review.md.time")} ${t("review.md.booked", { h: hours(tm.booked_minutes) })}`;
@@ -117,15 +124,21 @@ export function reviewMarkdown(r: DayReview, summary?: string | null): string {
   if (r.files.length) out.push(`${label("review.md.files")} ${r.files.map((f) => inline(f.name)).join(", ")}`, "");
   const text = summary ? cleanSummary(summary) : "";
   if (text) out.push(`**${t("review.md.summary")}**`, "", text, "");
-  out.push(REVIEW_CLOSE);
+  out.push(close);
   return out.join("\n");
 }
 
 /** Where the block stands in `content`: [start, end) of its lines, or null. */
 export function findReviewBlock(content: string): [number, number] | null {
-  const open = content.indexOf(REVIEW_OPEN);
+  // The first block in either language.
+  let open = -1;
+  let closeMarker = "";
+  for (const [o, c] of Object.values(REVIEW_MARKERS)) {
+    const i = content.indexOf(o);
+    if (i >= 0 && (open < 0 || i < open)) [open, closeMarker] = [i, c];
+  }
   if (open < 0) return null;
-  const close = content.indexOf(REVIEW_CLOSE, open);
+  const close = content.indexOf(closeMarker, open);
   if (close < 0) return null;
   const start = content.lastIndexOf("\n", open - 1) + 1;
   const nl = content.indexOf("\n", close);

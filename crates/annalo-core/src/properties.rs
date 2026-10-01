@@ -29,6 +29,10 @@ use crate::{tr, trf};
 pub const SCHEMA_KEY: &str = "eigenschaften";
 /// Frontmatter key of the view settings on the parent page (read by the UI).
 pub const VIEW_KEY: &str = "ansicht";
+/// The schema key in either language (`properties:` is the English alias).
+pub fn is_schema_key(k: &str) -> bool {
+    crate::i18n::canonical_key(k) == SCHEMA_KEY
+}
 /// Colors an option can have; the first is the default.
 pub const COLORS: [&str; 9] = ["grau", "braun", "orange", "gelb", "grün", "blau", "lila", "rosa", "rot"];
 
@@ -450,14 +454,26 @@ pub struct Schema {
 
 fn color_of(name: &str, index: usize) -> String {
     let lower = name.trim().to_lowercase();
-    let known = COLORS.iter().find(|c| **c == lower || (lower == "gruen" && **c == "grün"));
+    // English names (as the UI writes them in English) and `gruen` stand for the stored ones.
+    let lower = match lower.as_str() {
+        "gray" | "grey" => "grau",
+        "brown" => "braun",
+        "yellow" => "gelb",
+        "gruen" | "green" => "grün",
+        "blue" => "blau",
+        "purple" => "lila",
+        "pink" => "rosa",
+        "red" => "rot",
+        other => other,
+    };
+    let known = COLORS.iter().find(|c| **c == lower);
     known.map_or_else(|| COLORS[index % COLORS.len()].to_owned(), |c| (*c).to_owned())
 }
 
 impl Schema {
     /// The schema of a page's `eigenschaften:`; `None` when it has none (or it is unreadable).
     pub fn from_markdown(markdown: &str) -> Option<Schema> {
-        let entry = page_entries(markdown).into_iter().find(|e| e.key.eq_ignore_ascii_case(SCHEMA_KEY))?;
+        let entry = page_entries(markdown).into_iter().find(|e| is_schema_key(&e.key))?;
         Schema::from_yaml(&entry.value?)
     }
 
@@ -682,7 +698,7 @@ pub fn page_cells(schema: &Schema, markdown: &str) -> Vec<Cell> {
         })
         .collect();
     for e in &entries {
-        let special = [SCHEMA_KEY, VIEW_KEY].iter().any(|k| e.key.eq_ignore_ascii_case(k));
+        let special = [SCHEMA_KEY, VIEW_KEY].contains(&crate::i18n::canonical_key(&e.key).as_str());
         if !special
             && schema.prop(&e.key).is_none()
             && !out.iter().any(|c| c.key.to_lowercase() == e.key.to_lowercase())
@@ -703,7 +719,22 @@ pub struct Filter {
     pub value: String,
 }
 
-/// Whether a cell passes a filter. Dates accept `heute`; unknown operators pass everything.
+/// A filter operator in either language under its German name (as stored in older notes).
+pub fn canonical_op(op: &str) -> &str {
+    match op.trim().to_lowercase().as_str() {
+        "is" => "ist",
+        "is not" => "ist nicht",
+        "contains" => "enthält",
+        "does not contain" => "enthält nicht",
+        "is empty" => "ist leer",
+        "is not empty" => "ist nicht leer",
+        "before" => "vor",
+        "after" => "nach",
+        _ => op.trim(),
+    }
+}
+
+/// Whether a cell passes a filter. Dates accept `heute` / `today`; unknown operators pass everything.
 pub fn matches(cell: Option<&Cell>, op: &str, wanted: &str, today: chrono::NaiveDate) -> bool {
     let text = cell.map_or("", |c| c.text.as_str());
     let empty = text.trim().is_empty();
@@ -719,7 +750,7 @@ pub fn matches(cell: Option<&Cell>, op: &str, wanted: &str, today: chrono::Naive
         match cell?.value.as_ref()? {
             Typed::Number(n) => n.partial_cmp(&parse_number(wanted)?),
             Typed::Date(d) => {
-                let w = if lower == "heute" {
+                let w = if lower == "heute" || lower == "today" {
                     today
                 } else {
                     chrono::NaiveDate::parse_from_str(wanted.trim(), "%Y-%m-%d").ok()?
@@ -730,7 +761,7 @@ pub fn matches(cell: Option<&Cell>, op: &str, wanted: &str, today: chrono::Naive
         }
     };
     use std::cmp::Ordering::*;
-    match op {
+    match canonical_op(op) {
         "ist" => values.iter().any(eq) || (lower.is_empty() && empty) || cmp() == Some(Equal),
         "ist nicht" => !(values.iter().any(eq) || cmp() == Some(Equal)),
         "enthält" => text.to_lowercase().contains(&lower),
@@ -913,7 +944,7 @@ impl Database {
     pub fn schema_property_keys(&self) -> Result<Vec<String>> {
         let conn = self.conn();
         let mut st = conn
-            .prepare_cached("SELECT content FROM pages WHERE deleted_at IS NULL AND content LIKE '%' || ?1 || '%'")?;
+            .prepare_cached("SELECT content FROM pages WHERE deleted_at IS NULL AND (content LIKE '%' || ?1 || '%' OR content LIKE '%properties%')")?;
         let mut keys: Vec<String> = vec![];
         for content in st.query_map([SCHEMA_KEY], |r| r.get::<_, String>(0))? {
             for p in Schema::from_markdown(&content?).map(|s| s.props).unwrap_or_default() {
@@ -930,7 +961,8 @@ impl Database {
     pub fn pages_with_property(&self, key: &str, op: &str, value: &str, today: chrono::NaiveDate) -> Result<Vec<Page>> {
         let conn = self.conn();
         let mut st = conn.prepare_cached(&format!(
-            "SELECT {}, content FROM pages WHERE deleted_at IS NULL AND content LIKE '%' || ?1 || '%' ORDER BY updated_at DESC",
+            "SELECT {}, content FROM pages WHERE deleted_at IS NULL AND (content LIKE '%' || ?1 || '%' OR content LIKE '%properties%') \
+             ORDER BY updated_at DESC",
             crate::db::PAGE_COLS
         ))?;
         let parents = st
@@ -956,6 +988,36 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn english_keys_and_operators() {
+        let en = "---\nproperties:\n  status: {type: select, options: {Open: gray, Done: green}}\n  effort: number\nview: table\n---\n";
+        let de = Schema::from_markdown(PARENT).unwrap();
+        let s = Schema::from_markdown(en).unwrap();
+        assert_eq!(
+            s.props.iter().map(|p| (p.key.as_str(), p.kind)).collect::<Vec<_>>(),
+            [("status", PropKind::Select), ("effort", PropKind::Number)]
+        );
+        assert_eq!(s.props[0].options[1].color, "grün");
+        assert_eq!(de.props.len(), 7);
+        // The schema and view keys are no properties of the page, in either language.
+        assert!(page_cells(&s, en).iter().all(|c| c.key != "properties" && c.key != "view"));
+        // Filters in either language.
+        let cell =
+            Cell { key: "status".into(), text: "Open".into(), value: Some(Typed::Select("Open".into())), error: None };
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 23).unwrap();
+        for (op, v, want) in [
+            ("is", "open", true),
+            ("ist", "open", true),
+            ("is not", "open", false),
+            ("contains", "pe", true),
+            ("does not contain", "pe", false),
+            ("is empty", "", false),
+            ("is not empty", "", true),
+        ] {
+            assert_eq!(matches(Some(&cell), op, v, today), want, "{op} {v}");
+        }
+    }
 
     const PARENT: &str = "---\neigenschaften:\n  status: {typ: auswahl, optionen: {Offen: grau, In Arbeit: blau, Fertig: grün}}\n  aufwand: zahl\n  fällig: {typ: datum}\n  themen: {typ: mehrfachauswahl, optionen: [UI, \"API, intern\"]}\n  wer: person\n  erledigt: checkbox\n  quelle: link\nansicht: tabelle\n---\n# Aufgaben\n";
 

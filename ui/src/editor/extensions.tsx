@@ -1,7 +1,7 @@
 // Custom TipTap extensions: wiki links, [[ autocomplete, slash commands,
 // /zeit booking, #tag and due-date highlighting, time-entry chips and image embeds.
 
-import { Extension, Node, mergeAttributes, type Editor, type Range } from "@tiptap/core";
+import { Extension, InputRule, Node, mergeAttributes, type Editor, type Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, type EditorView } from "@tiptap/pm/view";
@@ -10,17 +10,25 @@ import Image from "@tiptap/extension-image";
 import {
   type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
 } from "lucide-react";
-import { fmtDate, isoDay } from "../lib/format";
+import { decimal, fmtDate, isoDay } from "../lib/format";
+
+/** Booked hours as stored in a chip („1,50“ or „1.5“) in the regional number format. */
+const chipHours = (h: unknown) => {
+  const n = Number(String(h ?? "").replace(",", "."));
+  return Number.isFinite(n) && String(h ?? "").trim() ? decimal(n, 2) : String(h ?? "");
+};
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
 import { PageIcon } from "../components/icons";
-import { zeitToken } from "./zeit-suggest";
+import { zeitCommand, zeitToken } from "./zeit-suggest";
+import { calloutType } from "../lib/callouts";
+import { parseDue } from "../lib/capture";
 import { FIRST_LINE_RE } from "../lib/frontmatter";
 import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
 import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
-import { t, type TKey } from "../lib/i18n";
+import { inOtherLanguage, t, type TKey } from "../lib/i18n";
 
 // ------------------------------------------------------------- wiki links
 
@@ -234,7 +242,7 @@ export function slashItems(o: SlashOptions): SlashItem[] {
       e.chain().focus().deleteRange(r).insertContent(`${before && !/\s/.test(before) ? " " : ""}due:${isoToday} `).run();
     } },
     { id: "footnote", title: t("slash.footnote"), subtitle: t("slash.footnote.sub"), icon: ic(Superscript), Icon: Superscript, hint: "[^1]", section: insert, keywords: "fußnote footnote anmerkung quelle note source", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertFootnote(e)) },
-    { id: "zeit", title: t("slash.zeit"), subtitle: t("slash.zeit.sub"), icon: ic(Timer), Icon: Timer, hint: "/zeit", section: t("ribbon.timesheet"), keywords: "zeit time buchen stunden book hours log", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("/zeit ").run() },
+    { id: "zeit", title: t("slash.zeit"), subtitle: t("slash.zeit.sub"), icon: ic(Timer), Icon: Timer, hint: zeitCommand(), section: t("ribbon.timesheet"), keywords: "zeit time buchen stunden book hours log", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(`${zeitCommand()} `).run() },
     { id: "subpage", title: t("slash.subpage"), icon: ic(FilePlus2), Icon: FilePlus2, section: insert, keywords: "seite page unterseite subpage", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
       ? [{ id: "image", title: t("slash.image"), subtitle: t("slash.image.sub", { keys: keys("Mod V") }), icon: ic(ImagePlus), Icon: ImagePlus, section: insert, keywords: "bild image foto photo screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]
@@ -317,7 +325,7 @@ export const SlashCommand = Extension.create<SlashOptions>({
         items: ({ query, editor }) => {
           const q = query.toLowerCase().trim();
           const all = editor.isActive("table") ? [...tableSlashItems(editor), ...slashItems(opts)] : slashItems(opts);
-          const hits = all.filter((i) => !q || fuzzyIncludes(`${i.title} ${i.keywords}`, q) || i.id.startsWith(q));
+          const hits = all.filter((i) => !q || fuzzyIncludes(`${i.title} ${inOtherLanguage(i.title, "slash.")} ${i.keywords}`, q) || i.id.startsWith(q));
           // A title word starting with the query first („/zeichn“: Zeichnung before Inhaltsverzeichnis).
           const rank = (i: SlashItem) => (!q || i.id.startsWith(q) || wordStarts(i.title, q) ? 0 : 1);
           return hits.map((i, n) => ({ i, n, r: rank(i) })).sort((a, b) => a.r - b.r || a.n - b.n).map((x) => x.i);
@@ -441,7 +449,7 @@ export const TimeEntryChip = Node.create({
       dom.innerHTML =
         '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
       const label = document.createElement("span");
-      label.textContent = `${node.attrs.hours} h`;
+      label.textContent = `${chipHours(node.attrs.hours)} h`;
       const target = document.createElement("span");
       target.className = "time-chip-target";
       target.textContent = node.attrs.target;
@@ -609,7 +617,27 @@ export const ZeitSuggest = Extension.create<{
 
 const TAG_RE = /(^|[\s(])#([\p{L}\p{N}_/-]*[\p{L}_][\p{L}\p{N}_/-]*)/gu;
 // `due:` and the calendar marker of Obsidian Tasks (imported notes).
-const DUE_RE = /(?:\u{1F4C5}\s?|\bdue:)\d{4}-\d{2}-\d{2}\b/gu;
+const DUE_RE = /(?:\u{1F4C5}\s?|(?<![\p{L}\p{N}_])(?:due|fällig):)\d{4}-\d{2}-\d{2}\b/giu;
+
+/**
+ * `due:tomorrow`, `due:fri`, `fällig:morgen` or `due:next-week`: the word becomes the date
+ * (`due:2026-10-02`) once a space follows it. Words in both languages, like quick capture.
+ */
+export const DueWords = Extension.create({
+  name: "dueWords",
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /(?<![\p{L}\p{N}_])((?:due|fällig):)([^\s\d+][^\s]*|\+\d{1,3}[dtw]?) $/iu,
+        handler: ({ state, range, match }) => {
+          const iso = parseDue(match[2].replace(/[-_]/g, " "));
+          if (!iso) return null;
+          state.tr.insertText(`${match[1]}${iso} `, range.from, range.to);
+        },
+      }),
+    ];
+  },
+});
 
 export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>({
   name: "tagHighlight",
@@ -701,7 +729,10 @@ const CALLOUT_KEYS: Record<string, TKey> = {
   sprecher: "callout.speaker",
 };
 /** The label of a callout type in the display language (unknown types show as typed). */
-export const calloutLabel = (type: string) => (CALLOUT_KEYS[type] ? t(CALLOUT_KEYS[type]) : type);
+export const calloutLabel = (typed: string) => {
+  const type = calloutType(typed);
+  return CALLOUT_KEYS[type] ? t(CALLOUT_KEYS[type]) : typed;
+};
 
 const CHEVRON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
@@ -738,7 +769,7 @@ export function insertFoldable(editor: Editor, range: Range) {
     .insertContent({
       type: "blockquote",
       content: [
-        { type: "paragraph", content: [{ type: "text", text: "[!note]+ Aufklappbar" }] },
+        { type: "paragraph", content: [{ type: "text", text: `[!note]+ ${t("slash.fold")}` }] },
         { type: "paragraph" },
       ],
     })
@@ -766,7 +797,7 @@ export const Callouts = Extension.create({
         const first = node.firstChild;
         const m = first?.isTextblock ? CALLOUT_RE.exec(first.textContent) : null;
         if (m) {
-          const type = m[1].toLowerCase();
+          const type = calloutType(m[1]);
           const fold = m[2];
           const folded = fold === "-";
           decos.push(

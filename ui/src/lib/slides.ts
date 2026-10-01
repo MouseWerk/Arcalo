@@ -267,15 +267,15 @@ export function prepareSlideMarkdown(md: string, deck: Pick<Slide, "footnotes" |
       continue;
     }
     // Columns: blank lines around the HTML so the Markdown inside the columns is still parsed.
-    if (t === "<!-- spalten -->") {
+    if (t === "<!-- spalten -->" || t === "<!-- columns -->") {
       out.push("", `<div class="slide-columns"><div class="slide-column">`, "");
       continue;
     }
-    if (t === "<!-- spalte -->") {
+    if (t === "<!-- spalte -->" || t === "<!-- column -->") {
       out.push("", `</div><div class="slide-column">`, "");
       continue;
     }
-    if (t === "<!-- /spalten -->") {
+    if (t === "<!-- /spalten -->" || t === "<!-- /columns -->") {
       out.push("", "</div></div>", "");
       continue;
     }

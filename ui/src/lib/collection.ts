@@ -7,7 +7,7 @@
 
 import { DATE_RE, parseFrontmatter, propertyLines, serializeFrontmatter, type Property } from "./frontmatter";
 import { dumpFlow, flowScalar, isMap, parseEntry, yget, yitems, type Yaml } from "./yaml";
-import { t, type TKey } from "./i18n";
+import { currentLang, t, type TKey } from "./i18n";
 
 export type PropKind = "text" | "select" | "multi_select" | "number" | "date" | "person" | "checkbox" | "link";
 
@@ -70,12 +70,51 @@ export interface PropDef {
 
 export const SCHEMA_KEY = "eigenschaften";
 export const VIEW_KEY = "ansicht";
+/** The German key (older notes) and its English alias; the first one in a page wins. */
+export const SCHEMA_KEYS = [SCHEMA_KEY, "properties"];
+export const VIEW_KEYS = [VIEW_KEY, "view"];
 /** The page title as a column / filter field. */
 export const TITLE = "titel";
 /** Label of a field in headers, menus and filters. */
 export const fieldLabel = (key: string) => (key === TITLE ? t("coll.title") : key);
 /** Keys the views manage themselves; the property editor does not list them. */
-export const isManagedKey = (key: string) => /^(eigenschaften|ansicht)$/i.test(key.trim());
+export const isManagedKey = (key: string) => [...SCHEMA_KEYS, ...VIEW_KEYS].includes(key.trim().toLowerCase());
+
+/** The language an entry is written in: German or English names. */
+type Dialect = "de" | "en";
+/** The first entry named by one of `keys` (German first, English alias second). */
+const findAny = (props: Property[], keys: string[]) => props.find((p) => keys.includes(p.key.trim().toLowerCase()));
+/**
+ * How to write an entry: like the page already has it (a page never gets both), else in the
+ * display language.
+ */
+function dialectOf(fm: string, keys: string[]): Dialect {
+  const p = findAny(parseFrontmatter(fm), keys);
+  if (p) return p.key.trim().toLowerCase() === keys[0] ? "de" : "en";
+  return currentLang() === "en" ? "en" : "de";
+}
+/** A German stored name and its English form. */
+const pick = (d: Dialect, de: string, en: string) => (d === "en" ? en : de);
+/** English names of the kinds, colors, view types, sort directions and filter operators. */
+const KIND_EN: Record<string, string> = { auswahl: "select", mehrfachauswahl: "multi-select", zahl: "number", datum: "date" };
+const COLOR_EN: Record<string, string> = { grau: "gray", braun: "brown", gelb: "yellow", "grün": "green", blau: "blue", lila: "purple", rosa: "pink", rot: "red" };
+const VIEW_TYPE_EN: Record<string, string> = { liste: "list", tabelle: "table", board: "board" };
+const OP_EN: Record<string, string> = {
+  ist: "is",
+  "ist nicht": "is not",
+  "enthält": "contains",
+  "enthält nicht": "does not contain",
+  vor: "before",
+  nach: "after",
+  "ist leer": "is empty",
+  "ist nicht leer": "is not empty",
+};
+const OP_DE = Object.fromEntries(Object.entries(OP_EN).map(([de, en]) => [en, de]));
+/** A filter operator in either language as stored internally (German). */
+export const canonicalOp = (op: string) => OP_DE[op.trim().toLowerCase()] ?? op.trim();
+/** A field name in either language as used internally (`title` is the page title). */
+const canonicalField = (f: string) => (f.trim().toLowerCase() === "title" ? TITLE : f);
+const fieldOut = (d: Dialect, f: string) => (f === TITLE ? pick(d, TITLE, "title") : f);
 export const hasOptions = (k: PropKind) => k === "select" || k === "multi_select";
 
 // ------------------------------------------------------------------ schema
@@ -93,7 +132,7 @@ export function schemaFromYaml(v: Yaml | null): PropDef[] | null {
   if (!isMap(v)) return null;
   const out: PropDef[] = [];
   for (const [key, def] of v.entries) {
-    const typ = typeof def === "string" ? def : yget(def, "typ") ?? yget(def, "type");
+    const typ = typeof def === "string" ? def : (yget(def, "typ") ?? yget(def, "type"));
     const kind = typeof typ === "string" ? parseKind(typ) : null;
     if (!kind || out.some((p) => p.key.toLowerCase() === key.toLowerCase())) continue;
     const options: SelectOption[] = [];
@@ -117,24 +156,30 @@ const findProp = (props: Property[], key: string) => props.find((p) => p.key.toL
 
 /** The schema in a page's frontmatter; `null` when it defines none. */
 export function parseSchema(fm: string): PropDef[] | null {
-  const p = findProp(parseFrontmatter(fm), SCHEMA_KEY);
+  const p = findAny(parseFrontmatter(fm), SCHEMA_KEYS);
   return p ? schemaFromYaml(parseEntry(propertyLines(p))) : null;
 }
 
-/** The `eigenschaften:` block (as the core writes it). */
-export function schemaLines(defs: PropDef[]): string {
+/** The `eigenschaften:` block (as the core writes it), or `properties:` with English names. */
+export function schemaLines(defs: PropDef[], d: Dialect = "de"): string {
   const rows = defs.map((p) => {
-    const name = KINDS.find((k) => k.kind === p.kind)!.name;
-    const def = p.options.length ? `{typ: ${name}, optionen: {${p.options.map((o) => `${flowScalar(o.name)}: ${o.color}`).join(", ")}}}` : name;
+    const de = KINDS.find((k) => k.kind === p.kind)!.name;
+    const name = pick(d, de, KIND_EN[de] ?? de);
+    const opts = p.options.map((o) => `${flowScalar(o.name)}: ${pick(d, o.color, COLOR_EN[o.color] ?? o.color)}`).join(", ");
+    const def = p.options.length ? `{${pick(d, "typ", "type")}: ${name}, ${pick(d, "optionen", "options")}: {${opts}}}` : name;
     return `\n  ${p.key}: ${def}`;
   });
-  return `${SCHEMA_KEY}:${rows.join("")}`;
+  return `${pick(d, SCHEMA_KEY, "properties")}:${rows.join("")}`;
 }
 
-/** Replaces (or adds, or with `null` removes) a top-level entry, keeping every other line. */
-export function setEntry(fm: string, key: string, lines: string | null): string {
+/**
+ * Replaces (or adds, or with `null` removes) a top-level entry, keeping every other line.
+ * `also`: other names of the same entry (the first one present is replaced).
+ */
+export function setEntry(fm: string, key: string, lines: string | null, also: string[] = []): string {
   const props = parseFrontmatter(fm);
-  const i = props.findIndex((p) => p.key.toLowerCase() === key.toLowerCase());
+  const names = [key, ...also].map((k) => k.toLowerCase());
+  const i = props.findIndex((p) => names.includes(p.key.trim().toLowerCase()));
   const row: Property | null = lines === null ? null : { key, type: "raw", value: lines, items: [], source: lines };
   if (i < 0) return row ? serializeFrontmatter([...props, row]) : fm;
   if (row) {
@@ -145,7 +190,10 @@ export function setEntry(fm: string, key: string, lines: string | null): string 
 }
 
 /** The frontmatter with a new schema; an empty schema removes the key (free text again). */
-export const setSchema = (fm: string, defs: PropDef[] | null) => setEntry(fm, SCHEMA_KEY, defs && defs.length ? schemaLines(defs) : null);
+export const setSchema = (fm: string, defs: PropDef[] | null) => {
+  const d = dialectOf(fm, SCHEMA_KEYS);
+  return setEntry(fm, pick(d, SCHEMA_KEY, "properties"), defs && defs.length ? schemaLines(defs, d) : null, SCHEMA_KEYS);
+};
 
 // ------------------------------------------------------------------ view settings
 
@@ -178,7 +226,24 @@ export interface ViewSettings {
 }
 
 export const defaultView = (): ViewSettings => ({ type: "liste", sort: null, filters: [], columns: [], hidden: [], widths: {}, group: null, cards: [], collapsed: [], extra: [] });
-const KNOWN_VIEW_KEYS = ["typ", "sortierung", "filter", "spalten", "ausgeblendet", "breiten", "gruppierung", "karten", "eingeklappt"];
+/** The view settings' keys: German as stored in older notes, and English. */
+const VIEW_FIELDS = {
+  type: ["typ", "type"],
+  sort: ["sortierung", "sort"],
+  filter: ["filter", "filter"],
+  columns: ["spalten", "columns"],
+  hidden: ["ausgeblendet", "hidden"],
+  widths: ["breiten", "widths"],
+  group: ["gruppierung", "group"],
+  cards: ["karten", "cards"],
+  collapsed: ["eingeklappt", "collapsed"],
+  field: ["feld", "field"],
+  dir: ["richtung", "dir"],
+  value: ["wert", "value"],
+} as const;
+const KNOWN_VIEW_KEYS: string[] = Object.values(VIEW_FIELDS).flat();
+/** A view setting by its German or English key. */
+const vget = (v: Yaml | undefined, k: keyof typeof VIEW_FIELDS) => yget(v, VIEW_FIELDS[k][0]) ?? yget(v, VIEW_FIELDS[k][1]);
 
 const viewType = (s: string): ViewType | null => {
   const l = s.trim().toLowerCase();
@@ -193,55 +258,65 @@ export function viewFromYaml(v: Yaml | null): ViewSettings {
   }
   if (!isMap(v)) return out;
   const str = (x: Yaml | undefined) => (typeof x === "string" ? x : "");
-  out.type = viewType(str(yget(v, "typ"))) ?? "liste";
-  const sort = yget(v, "sortierung");
-  if (isMap(sort) && str(yget(sort, "feld"))) out.sort = { field: str(yget(sort, "feld")), dir: /^(ab|absteigend|desc)$/i.test(str(yget(sort, "richtung"))) ? "ab" : "auf" };
-  const filters = yget(v, "filter");
+  out.type = viewType(str(vget(v, "type"))) ?? "liste";
+  const sort = vget(v, "sort");
+  if (isMap(sort) && str(vget(sort, "field")))
+    out.sort = { field: canonicalField(str(vget(sort, "field"))), dir: /^(ab|absteigend|desc|descending)$/i.test(str(vget(sort, "dir"))) ? "ab" : "auf" };
+  const filters = vget(v, "filter");
   for (const f of Array.isArray(filters) ? filters : isMap(filters) ? [filters] : []) {
-    if (isMap(f) && str(yget(f, "feld")) && str(yget(f, "op"))) out.filters.push({ field: str(yget(f, "feld")), op: str(yget(f, "op")), value: str(yget(f, "wert")) });
+    if (isMap(f) && str(vget(f, "field")) && str(yget(f, "op"))) out.filters.push({ field: canonicalField(str(vget(f, "field"))), op: canonicalOp(str(yget(f, "op"))), value: str(vget(f, "value")) });
   }
-  out.columns = yitems(yget(v, "spalten")) ?? [];
-  out.hidden = yitems(yget(v, "ausgeblendet")) ?? [];
-  const widths = yget(v, "breiten");
+  out.columns = (yitems(vget(v, "columns")) ?? []).map(canonicalField);
+  out.hidden = (yitems(vget(v, "hidden")) ?? []).map(canonicalField);
+  const widths = vget(v, "widths");
   if (isMap(widths))
     for (const [k, w] of widths.entries) {
       const n = typeof w === "string" ? Number(w) : NaN;
-      if (Number.isFinite(n) && n > 0) out.widths[k] = Math.round(n);
+      if (Number.isFinite(n) && n > 0) out.widths[canonicalField(k)] = Math.round(n);
     }
-  out.group = str(yget(v, "gruppierung")) || null;
-  out.cards = yitems(yget(v, "karten")) ?? [];
-  const collapsed = yget(v, "eingeklappt");
+  out.group = str(vget(v, "group")) || null;
+  out.cards = (yitems(vget(v, "cards")) ?? []).map(canonicalField);
+  const collapsed = vget(v, "collapsed");
   out.collapsed = Array.isArray(collapsed) ? collapsed.filter((x): x is string => typeof x === "string") : [];
   out.extra = v.entries.filter(([k]) => !KNOWN_VIEW_KEYS.includes(k.toLowerCase()));
   return out;
 }
 
 export function parseView(fm: string): ViewSettings {
-  const p = findProp(parseFrontmatter(fm), VIEW_KEY);
+  const p = findAny(parseFrontmatter(fm), VIEW_KEYS);
   return p ? viewFromYaml(parseEntry(propertyLines(p))) : defaultView();
 }
 
 const list = (items: string[]) => `[${items.map(flowScalar).join(", ")}]`;
 
-/** The `ansicht:` entry; `null` for the default list view without settings. */
-export function viewLines(v: ViewSettings): string | null {
+/** The `ansicht:` entry (or `view:` with English names); `null` for the default list view without settings. */
+export function viewLines(v: ViewSettings, d: Dialect = "de"): string | null {
+  const k = (name: keyof typeof VIEW_FIELDS) => VIEW_FIELDS[name][d === "en" ? 1 : 0];
+  const f = (x: string) => flowScalar(fieldOut(d, x));
+  const fields = (xs: string[]) => list(xs.map((x) => fieldOut(d, x)));
   const rows: string[] = [];
-  if (v.sort) rows.push(`sortierung: {feld: ${flowScalar(v.sort.field)}, richtung: ${v.sort.dir}}`);
-  if (v.filters.length) rows.push(`filter: [${v.filters.map((f) => `{feld: ${flowScalar(f.field)}, op: ${flowScalar(f.op)}, wert: ${flowScalar(f.value)}}`).join(", ")}]`);
-  if (v.columns.length) rows.push(`spalten: ${list(v.columns)}`);
-  if (v.hidden.length) rows.push(`ausgeblendet: ${list(v.hidden)}`);
+  if (v.sort) rows.push(`${k("sort")}: {${k("field")}: ${f(v.sort.field)}, ${k("dir")}: ${d === "en" ? (v.sort.dir === "ab" ? "desc" : "asc") : v.sort.dir}}`);
+  if (v.filters.length)
+    rows.push(`${k("filter")}: [${v.filters.map((x) => `{${k("field")}: ${f(x.field)}, op: ${flowScalar(d === "en" ? (OP_EN[x.op] ?? x.op) : x.op)}, ${k("value")}: ${flowScalar(x.value)}}`).join(", ")}]`);
+  if (v.columns.length) rows.push(`${k("columns")}: ${fields(v.columns)}`);
+  if (v.hidden.length) rows.push(`${k("hidden")}: ${fields(v.hidden)}`);
   const widths = Object.entries(v.widths);
-  if (widths.length) rows.push(`breiten: {${widths.map(([k, w]) => `${flowScalar(k)}: ${Math.round(w)}`).join(", ")}}`);
-  if (v.group) rows.push(`gruppierung: ${flowScalar(v.group)}`);
-  if (v.cards.length) rows.push(`karten: ${list(v.cards)}`);
+  if (widths.length) rows.push(`${k("widths")}: {${widths.map(([key, w]) => `${f(key)}: ${Math.round(w)}`).join(", ")}}`);
+  if (v.group) rows.push(`${k("group")}: ${f(v.group)}`);
+  if (v.cards.length) rows.push(`${k("cards")}: ${fields(v.cards)}`);
   // `""` is the „Ohne Wert“ column: always quoted.
-  if (v.collapsed.length) rows.push(`eingeklappt: [${v.collapsed.map((c) => (c ? flowScalar(c) : '""')).join(", ")}]`);
-  for (const [k, x] of v.extra) rows.push(`${k}: ${dumpFlow(x)}`);
-  if (!rows.length) return v.type === "liste" ? null : `${VIEW_KEY}: ${v.type}`;
-  return `${VIEW_KEY}:\n  typ: ${v.type}\n${rows.map((r) => `  ${r}`).join("\n")}`;
+  if (v.collapsed.length) rows.push(`${k("collapsed")}: [${v.collapsed.map((c) => (c ? flowScalar(c) : '""')).join(", ")}]`);
+  for (const [key, x] of v.extra) rows.push(`${key}: ${dumpFlow(x)}`);
+  const key = pick(d, VIEW_KEY, "view");
+  const type = pick(d, v.type, VIEW_TYPE_EN[v.type]);
+  if (!rows.length) return v.type === "liste" ? null : `${key}: ${type}`;
+  return `${key}:\n  ${k("type")}: ${type}\n${rows.map((r) => `  ${r}`).join("\n")}`;
 }
 
-export const setView = (fm: string, v: ViewSettings) => setEntry(fm, VIEW_KEY, viewLines(v));
+export const setView = (fm: string, v: ViewSettings) => {
+  const d = dialectOf(fm, VIEW_KEYS);
+  return setEntry(fm, pick(d, VIEW_KEY, "view"), viewLines(v, d), VIEW_KEYS);
+};
 
 // ------------------------------------------------------------------ rows and cells
 

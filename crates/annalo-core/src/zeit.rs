@@ -71,7 +71,7 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
         Some(Token::Word(w)) if is_zeit_command(&w) => {}
         _ => {
             return Err(Error::Parse(
-                tr!("Der Befehl muss mit /zeit beginnen", "The command must start with /zeit").into(),
+                tr!("Der Befehl muss mit /zeit beginnen", "The command must start with /time").into(),
             ));
         }
     }
@@ -249,8 +249,8 @@ pub fn parse_duration(s: &str) -> Result<i64> {
             rest = &rest[num_len..];
             let unit_len = rest.find(|c: char| c.is_ascii_digit() || c == '.').unwrap_or(rest.len());
             let factor = match &rest[..unit_len] {
-                "h" | "std" | "hr" | "hrs" => 60.0,
-                "m" | "min" => 1.0,
+                "h" | "std" | "stunde" | "stunden" | "hr" | "hrs" | "hour" | "hours" => 60.0,
+                "m" | "min" | "mins" | "minute" | "minuten" | "minutes" => 1.0,
                 _ => return Err(err()),
             };
             rest = &rest[unit_len..];
@@ -280,11 +280,32 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M").ok()
 }
 
+/// A weekday written in German or English, short or long (`mo`, `montag`, `mon`, `monday`).
+pub fn weekday_word(w: &str) -> Option<chrono::Weekday> {
+    use chrono::Weekday::*;
+    Some(match w.trim().trim_end_matches('.').to_lowercase().as_str() {
+        "mo" | "montag" | "mon" | "monday" => Mon,
+        "di" | "dienstag" | "tue" | "tues" | "tuesday" => Tue,
+        "mi" | "mittwoch" | "wed" | "wednesday" => Wed,
+        "do" | "donnerstag" | "thu" | "thur" | "thurs" | "thursday" => Thu,
+        "fr" | "freitag" | "fri" | "friday" => Fri,
+        "sa" | "samstag" | "sat" | "saturday" => Sat,
+        "so" | "sonntag" | "sun" | "sunday" => Sun,
+        _ => return None,
+    })
+}
+
 fn parse_date(s: &str, today: NaiveDate) -> Result<DateSpec> {
     match s.to_lowercase().as_str() {
         "heute" | "today" => return Ok(DateSpec::Today),
         "gestern" | "yesterday" => return Ok(DateSpec::Yesterday),
-        _ => {}
+        w => {
+            // A weekday in either language: the most recent such day (today on that weekday).
+            if let Some(wd) = weekday_word(w) {
+                let back = (today.weekday().num_days_from_monday() + 7 - wd.num_days_from_monday()) % 7;
+                return Ok(DateSpec::On(today - chrono::Days::new(u64::from(back))));
+            }
+        }
     }
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Ok(DateSpec::On(d));
@@ -300,8 +321,8 @@ fn parse_date(s: &str, today: NaiveDate) -> Result<DateSpec> {
             return Ok(DateSpec::On(d));
         }
         return Err(Error::Parse(trf!(
-            "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @2026-09-22 oder @22.09.)",
-            "Invalid date “@{s}” (e.g. @today, @yesterday, @2026-09-22 or @22.09.)"
+            "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @mo, @2026-09-22 oder @22.09.)",
+            "Invalid date “@{s}” (e.g. @today, @yesterday, @mon, @2026-09-22 or @22.09.)"
         )));
     }
     // "22.09." or "22.09": the most recent such day (Dec dates in early January mean last year).
@@ -310,8 +331,8 @@ fn parse_date(s: &str, today: NaiveDate) -> Result<DateSpec> {
         return Ok(DateSpec::On(d));
     }
     Err(Error::Parse(trf!(
-        "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @2026-09-22 oder @22.09.)",
-        "Invalid date “@{s}” (e.g. @today, @yesterday, @2026-09-22 or @22.09.)"
+        "Ungültiges Datum „@{s}“ (z. B. @heute, @gestern, @mo, @2026-09-22 oder @22.09.)",
+        "Invalid date “@{s}” (e.g. @today, @yesterday, @mon, @2026-09-22 or @22.09.)"
     )))
 }
 
@@ -375,6 +396,46 @@ mod tests {
         for bad in ["", "h", "2x", "1:75", "25h", "0m", "-1h", "2.5"] {
             assert!(parse_duration(bad).is_err(), "{bad} should fail");
         }
+    }
+
+    #[test]
+    fn english_and_german_words() {
+        // Units in both languages.
+        for (s, m) in [
+            ("1.5h", 90),
+            ("1,5h", 90),
+            ("30m", 30),
+            ("2hours", 120),
+            ("1hr30mins", 90),
+            ("2stunden", 120),
+            ("20minuten", 20),
+        ] {
+            assert_eq!(parse_duration(s).unwrap(), m, "{s}");
+        }
+        // 2026-09-23 is a Wednesday: weekdays mean the most recent such day.
+        let on = |d| DateSpec::On(NaiveDate::from_ymd_opt(2026, 9, d).unwrap());
+        for (w, d) in [
+            ("mon", 21),
+            ("Monday", 21),
+            ("Mo", 21),
+            ("montag", 21),
+            ("wed", 23),
+            ("Mi", 23),
+            ("fri", 18),
+            ("Fr", 18),
+            ("sun", 20),
+            ("So", 20),
+        ] {
+            assert_eq!(parse_date(w, today()).unwrap(), on(d), "{w}");
+        }
+        assert_eq!(parse_date("yesterday", today()).unwrap(), DateSpec::Yesterday);
+        assert_eq!(parse_date("gestern", today()).unwrap(), DateSpec::Yesterday);
+        let c = parse("/time NP-8801/1020 1.5h review @yesterday", today()).unwrap();
+        assert_eq!((c.duration_minutes, c.date), (90, DateSpec::Yesterday));
+        let c = parse("/zeit NP-8801/1020 1,5h Review @Mo", today()).unwrap();
+        assert_eq!((c.duration_minutes, c.date), (90, on(21)));
+        let c = parse("/time NP-8801 30m standup @monday", today()).unwrap();
+        assert_eq!((c.duration_minutes, c.date), (30, on(21)));
     }
 
     #[test]

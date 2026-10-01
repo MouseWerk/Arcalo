@@ -630,7 +630,7 @@ impl Default for CapturePrefs {
     fn default() -> Self {
         CapturePrefs {
             default_target: CaptureDefault::Daily,
-            inbox_title: crate::capture::INBOX_TITLE.into(),
+            inbox_title: crate::capture::inbox_title().into(),
             selection_shortcut: String::new(),
             auto_hide_ms: 1200,
             meeting_target: true,

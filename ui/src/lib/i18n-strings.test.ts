@@ -133,7 +133,7 @@ const NAMES = new Set([
  * says why (typed syntax, file formats, sample data, logs).
  */
 const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
-  { file: "lib/capture.ts", text: /^\[Hh\]eute|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
+  { file: "lib/capture.ts", text: /^\[Hh\]eute|^\[Nn\]ext|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
   { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
   { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
   { file: /^(lib\/dayreview.ts|views\/DayReviewView.tsx)$/, text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },

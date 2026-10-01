@@ -9,7 +9,7 @@
 // tokens are identical (see chunkedLex.test.ts).
 
 import type { Lexer, Token, TokensList } from "marked";
-import { COLUMNS_CLOSE, COLUMNS_OPEN } from "./blocks";
+import { isColumnsClose, isColumnsOpen } from "./blocks";
 
 /** Lines per piece before the next possible cut. */
 export const CHUNK_LINES = 40;
@@ -66,8 +66,8 @@ export function chunkCuts(md: string, every = CHUNK_LINES): number[] {
       if (f) fence = f[1];
       else {
         const t = line.trim();
-        if (t === COLUMNS_OPEN) columns++;
-        else if (t === COLUMNS_CLOSE) columns = Math.max(0, columns - 1);
+        if (isColumnsOpen(t)) columns++;
+        else if (isColumnsClose(t)) columns = Math.max(0, columns - 1);
         for (const [open, close] of HTML_OPEN) {
           const m = open.exec(line);
           if (m) {
@@ -120,7 +120,7 @@ export function chunkedLex(lexer: Lexer, src: string, every = CHUNK_LINES): Toke
     let last = tokens.length - 1;
     while (last >= count && tokens[last].type === "space") last--;
     // A column block without its end in this piece is read as a lone HTML comment.
-    const lostColumns = tokens.slice(count).some((t) => t.type === "html" && t.raw.trim() === COLUMNS_OPEN);
+    const lostColumns = tokens.slice(count).some((t) => t.type === "html" && isColumnsOpen(t.raw.trim()));
     if (lostColumns || (last >= count && cutShort(tokens[last]))) {
       // A fence or HTML block went on behind the cut: lex this piece again together with the next.
       tokens.length = count;

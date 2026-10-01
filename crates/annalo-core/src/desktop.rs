@@ -118,7 +118,7 @@ where
     Tz::Offset: std::fmt::Display,
 {
     let zone = crate::calsync::tz::Zone::Local;
-    let opts = capture::CaptureOptions { inbox_title: capture::INBOX_TITLE, thresholds, zone: &zone };
+    let opts = capture::CaptureOptions { inbox_title: capture::inbox_title(), thresholds, zone: &zone };
     Ok(capture::capture_to(db, text, &capture::CaptureTarget::Daily, &opts, now, tz)?.0)
 }
 

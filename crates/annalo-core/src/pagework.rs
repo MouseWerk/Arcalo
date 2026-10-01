@@ -26,10 +26,12 @@ fn frontmatter_lines(markdown: &str) -> Vec<&str> {
 }
 
 /// A scalar frontmatter property (key case-insensitive), unquoted; `None` when missing or empty.
+/// German keys also match their English alias (`vorgang:` = `activity:`); the first one wins.
 pub fn frontmatter_value(markdown: &str, key: &str) -> Option<String> {
+    let want = crate::i18n::canonical_key(key);
     frontmatter_lines(markdown).into_iter().find_map(|line| {
         let (k, v) = line.split_once(':')?;
-        if line.starts_with([' ', '\t']) || !k.trim().eq_ignore_ascii_case(key) {
+        if line.starts_with([' ', '\t']) || crate::i18n::canonical_key(k) != want {
             return None;
         }
         yaml_scalar(v).filter(|v| !v.is_empty())
@@ -252,6 +254,11 @@ mod tests {
         assert_eq!(page_reference("---\nvorgang: NP-8801/1020 # Integration\n---\n").as_deref(), Some("NP-8801/1020"));
         assert_eq!(page_reference("---\nvorgang: \"NP-8801/1020\"  # x\n---\n").as_deref(), Some("NP-8801/1020"));
         assert_eq!(page_reference("---\nvorgang: # nur Kommentar\n---\n"), None);
+        // English keys work alike; with both, the first one wins.
+        assert_eq!(page_reference("---\nactivity: NP-8801/1020\n---\n").as_deref(), Some("NP-8801/1020"));
+        assert_eq!(page_reference("---\nnetwork: NP-8801\nActivity: '1020'\n---\n").as_deref(), Some("NP-8801/1020"));
+        assert_eq!(page_reference("---\nactivity: NP-1/1\nvorgang: NP-2/2\n---\n").as_deref(), Some("NP-1/1"));
+        assert_eq!(page_reference("---\nvorgang: NP-2/2\nactivity: NP-1/1\n---\n").as_deref(), Some("NP-2/2"));
     }
 
     #[test]

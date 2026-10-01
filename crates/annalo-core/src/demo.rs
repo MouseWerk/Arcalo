@@ -105,7 +105,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
             "Annalo is your local workspace for notes, projects and time tracking.\n\n\
              ## How you work here\n\n\
              - Notes are Markdown. Link pages with `[[Page name]]` and tag them with `#tag`.\n\
-             - You book time right in the text: type `/zeit NP-8801/1020 1.5h Review` and press Enter.\n\
+             - You book time right in the text: type `/time NP-8801/1020 1.5h Review` and press Enter.\n\
              - `Ctrl K` opens the command palette, `Ctrl O` the quick switcher, `Alt Space` works everywhere.\n\
              - The assistant on the right knows your notes and time logs. Set up the server and token in the settings.\n\n\
              ## Getting started\n\n\
@@ -217,7 +217,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              ## Agenda\n\n1. \n\n\
              ## Decisions\n\n- \n\n\
              ## Tasks\n\n- [ ] \n\n\
-             > [!tip] Book time\n> Type `/zeit NP-8801/1020 1h Meeting` and press Enter.\n"
+             > [!tip] Book time\n> Type `/time NP-8801/1020 1h Meeting` and press Enter.\n"
         ),
     )?;
     let customer = db.create_page(Some(templates.id), tr!("Kundentermin", "Customer meeting"), Some("briefcase"))?;

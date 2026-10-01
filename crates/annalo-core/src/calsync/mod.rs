@@ -771,18 +771,20 @@ impl Database {
         };
         let attendees = e.attendees.join(", ");
         let yaml = |v: &str| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
-        let mut front = vec![format!("datum: {}", date.format("%Y-%m-%d")), format!("uhrzeit: {}", yaml(&time))];
+        let k = crate::i18n::key;
+        let mut front =
+            vec![format!("{}: {}", k("datum"), date.format("%Y-%m-%d")), format!("{}: {}", k("uhrzeit"), yaml(&time))];
         if !e.location.is_empty() {
-            front.push(format!("ort: {}", yaml(&e.location)));
+            front.push(format!("{}: {}", k("ort"), yaml(&e.location)));
         }
         if !e.organizer.is_empty() {
-            front.push(format!("organisator: {}", yaml(&e.organizer)));
+            front.push(format!("{}: {}", k("organisator"), yaml(&e.organizer)));
         }
         if !attendees.is_empty() {
-            front.push(format!("teilnehmer: {}", yaml(&attendees)));
+            front.push(format!("{}: {}", k("teilnehmer"), yaml(&attendees)));
         }
         if let Some(h) = &hint {
-            front.push(format!("vorgang: {}", h.reference));
+            front.push(format!("{}: {}", k("vorgang"), h.reference));
         }
         let vars = crate::templates::TemplateVars { date, time: start.time(), title: e.title.clone() };
         // The template „Besprechung“ (or „Meeting“ in an English workspace).
@@ -795,8 +797,11 @@ impl Database {
                 let mut b = self
                     .render_template(t.id, &vars)?
                     .replace("{{teilnehmer}}", &attendees)
+                    .replace("{{attendees}}", &attendees)
                     .replace("{{ort}}", &e.location)
-                    .replace("{{uhrzeit}}", &time);
+                    .replace("{{location}}", &e.location)
+                    .replace("{{uhrzeit}}", &time)
+                    .replace("{{hours}}", &time);
                 // An empty attendee list in the template is filled in.
                 if !e.attendees.is_empty() {
                     let list: String = e.attendees.iter().map(|a| format!("- {a}\n")).collect();
@@ -1040,6 +1045,22 @@ mod tests {
         // A deleted entry no longer counts as booked.
         db.delete_time_entry(entry.id).unwrap();
         assert_eq!(db.calendar_event(&k1).unwrap().entry_id, None);
+    }
+
+    #[test]
+    fn meeting_notes_in_english_use_english_keys() {
+        crate::i18n::with_lang(crate::prefs::Language::En, || {
+            let db = Database::open_in_memory().unwrap();
+            db.calendar_replace(OUTLOOK, at(1, 0), at(30, 0), &[ev("m", "", 24, 8, "Sync")]).unwrap();
+            let zone = tz::Zone::named("Europe/Berlin").unwrap();
+            let (page, _) = db.calendar_meeting_note(&event_key(OUTLOOK, "m", ""), &zone).unwrap();
+            let content = db.page_doc(page.id).unwrap().content;
+            assert!(
+                content.starts_with("---\ndate: 2026-09-24\ntime: \"10:00–11:00\"\nlocation: \"Raum 1\""),
+                "{content}"
+            );
+            assert!(content.contains("attendees: \"Jörg, Zoë\""), "{content}");
+        });
     }
 
     #[test]

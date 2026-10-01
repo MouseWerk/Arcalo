@@ -173,6 +173,34 @@ export function splitItems(text: string): string[] {
 
 /** Value of a scalar property (case-insensitive key). */
 export function propertyValue(props: Property[], key: string): string | null {
-  const p = props.find((x) => x.key.toLowerCase() === key && (x.type === "text" || x.type === "date"));
+  const want = canonicalKey(key);
+  const p = props.find((x) => canonicalKey(x.key) === want && (x.type === "text" || x.type === "date"));
   return p?.value.trim() || null;
 }
+
+/**
+ * Frontmatter keys Annalo reads, German (as older notes have them) → English alias. Both
+ * always work; the first one in a page wins. New content uses the display language's name.
+ */
+export const KEY_ALIASES: Record<string, string> = {
+  vorgang: "activity",
+  netzplan: "network",
+  eigenschaften: "properties",
+  ansicht: "view",
+  datum: "date",
+  uhrzeit: "time",
+  ort: "location",
+  organisator: "organizer",
+  teilnehmer: "attendees",
+  von: "from",
+  an: "to",
+  betreff: "subject",
+};
+const KEY_DE: Record<string, string> = Object.fromEntries(Object.entries(KEY_ALIASES).map(([de, en]) => [en, de]));
+/** A key in either language under its German name (lowercase). */
+export const canonicalKey = (key: string) => {
+  const l = key.trim().toLowerCase();
+  return KEY_DE[l] ?? l;
+};
+/** The name to write for a known key (given by its German name) in a language. */
+export const keyName = (de: string, lang: "de" | "en") => (lang === "en" ? (KEY_ALIASES[de] ?? de) : de);

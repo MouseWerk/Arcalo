@@ -22,7 +22,7 @@ import { newPageFromTemplate } from "./Templates";
 import { insertDrawingInActiveNote } from "../editor/drawings";
 import { snippetHtml } from "../lib/quicksearch";
 import { keys } from "../lib/shortcut";
-import { t, useT } from "../lib/i18n";
+import { inOtherLanguage, t, useT } from "../lib/i18n";
 import { hint } from "../lib/keymap";
 import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
@@ -281,7 +281,7 @@ export function CommandPalette() {
     out.push(
       ...commands
         .filter((c) => !hidden.has(c.id))
-        .map((c) => ({ c, score: fuzzy(c.title, lower) }))
+        .map((c) => ({ c, score: Math.max(fuzzy(c.title, lower), fuzzy(inOtherLanguage(c.title, "cmd."), lower) * 0.9) }))
         .filter((x) => x.score > 0)
         .sort((a, b) => (lower ? b.score - a.score : 0))
         .slice(0, lower ? 5 : 20)

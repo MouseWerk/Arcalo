@@ -69,6 +69,23 @@ export function translate(l: Lang, key: TKey, vars?: TVars): string {
 /** Translation in the current language (outside React, or in event handlers). */
 export const t = (key: TKey, vars?: TVars) => translate(lang, key, vars);
 
+const otherTexts = new Map<string, Map<string, string>>();
+/**
+ * `text` (a catalog text in the current language under one of the key `prefix`es) in the other
+ * language, or `""`: command palette and slash menu find a command by either name.
+ */
+export function inOtherLanguage(text: string, prefix: string): string {
+  const id = `${lang}|${prefix}`;
+  let m = otherTexts.get(id);
+  if (!m) {
+    m = new Map();
+    const other: Lang = lang === "en" ? "de" : "en";
+    for (const k of Object.keys(DICTS.en) as TKey[]) if (k.startsWith(prefix)) m.set(translate(lang, k), translate(other, k));
+    otherTexts.set(id, m);
+  }
+  return m.get(text) ?? "";
+}
+
 /** Whether a key exists (for keys built at run time). */
 export const hasKey = (key: string): key is TKey => key in DICTS.en;
 
