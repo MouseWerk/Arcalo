@@ -20,7 +20,7 @@ export type WorkSettingsProps = { c: Config; set: (patch: Config) => void; Row: 
 const opt = (value: string, label: TKey) => ({ value, label: t(label) });
 
 /** Names of the deadline providers (annalo_core::dashboard::work::DEADLINE_PROVIDERS). */
-export const DEADLINE_PROVIDER_LABELS: Record<string, TKey> = { tasks: "work.dl.src.tasks", properties: "work.dl.src.properties" };
+export const DEADLINE_PROVIDER_LABELS: Record<string, TKey> = { tasks: "work.dl.src.tasks", properties: "work.dl.src.properties", jira: "work.dl.src.jira" };
 
 function Checks({ all, chosen, onChange, label, color }: { all: [string, string][]; chosen: string[]; onChange: (v: string[]) => void; label: (id: string, name: string) => ReactNode; color?: (id: string) => string }) {
   return (

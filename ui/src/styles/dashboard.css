@@ -476,3 +476,25 @@
   .dw-budget-head .badge { margin-left: auto; }
 }
 .dws-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* ---- jira widgets ---- */
+.dwj-list .dwj-row { gap: 8px; }
+.dwj-key { flex: none; font-size: var(--fs-xs); color: var(--text-2); }
+.dwj-cells { display: flex; align-items: center; gap: 8px; flex: none; }
+.dwj-assignee { max-width: 12ch; font-size: var(--fs-xs); }
+.dwj-sprint { display: grid; gap: 10px; min-width: 0; }
+.dwj-sprint-head { display: grid; gap: 4px; }
+.dwj-sprint-name { font-weight: 650; }
+.dwj-progress { height: 5px; border-radius: 999px; background: var(--bg-active); overflow: hidden; }
+.dwj-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--success); }
+.dwj-burn { margin: 0; display: grid; gap: 4px; }
+.dwj-burn svg { width: 100%; height: 84px; overflow: visible; }
+.dwj-axis { stroke: var(--border-strong); stroke-width: 1; }
+.dwj-ideal { fill: none; stroke: var(--text-3); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.dwj-actual { fill: none; stroke: var(--accent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.dwj-today { stroke: var(--accent); stroke-width: 1; opacity: 0.35; }
+.dwj-burn-axis { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--fs-2xs); }
+.dwj-legend { display: inline-flex; align-items: center; gap: 4px; }
+.dwj-legend i { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--accent); margin-left: 6px; }
+.dwj-legend i.dwj-key-ideal { border-top: 2px dashed var(--text-3); }
+.dwj-stale { margin-top: -4px; }

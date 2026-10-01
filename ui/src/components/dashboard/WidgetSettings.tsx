@@ -20,6 +20,7 @@ import { PageIcon } from "../icons";
 import { NetzplanSelect, useWbs } from "../../views/wbs";
 import { QueryView } from "./tools";
 import { WORK_SETTINGS } from "./workSettings";
+import { JiraWidgetFields } from "./jira";
 
 type Config = Record<string, unknown>;
 
@@ -392,6 +393,10 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
           <Select aria-label={t("dash.set.count")} value={String(c.count ?? 5)} onChange={(e) => set({ count: Number(e.target.value) })} options={[3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))} />
         </Row>
       );
+    case "jira":
+    case "jira_query":
+    case "jira_sprint":
+      return <JiraWidgetFields kind={w.kind} c={c} set={set} />;
     default: {
       const Extra = WORK_SETTINGS[w.kind];
       return Extra ? <Extra c={c} set={set} Row={Row} /> : <div className="faint small">{t("dash.set.nothing")}</div>;

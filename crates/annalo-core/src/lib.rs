@@ -43,6 +43,7 @@
 //! * [`focus`] – focus sessions (Pomodoro) booked on a Vorgang
 //! * [`dayreview`] – „Tagesrückblick“: one day's pages, bookings, tasks, meetings, focus and files
 //! * [`weekplan`] – „Woche vorschlagen“: a timesheet draft of the week from meetings, focus and page edits
+//! * [`issues`] – issue trackers (Jira Cloud and Server): offline cache, keys in notes, worklogs
 //! * [`ai`] – LiteLLM client, model router, token/cost metrics, local RAG
 
 pub mod activity;
@@ -69,6 +70,7 @@ pub mod feed;
 pub mod focus;
 pub mod gitsync;
 pub mod i18n;
+pub mod issues;
 pub mod linktitle;
 pub mod mail;
 pub mod merge;

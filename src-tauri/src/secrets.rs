@@ -1,5 +1,5 @@
 //! Storage for secrets: the API keys of the AI providers, the Git access token, the proxy
-//! password and the addresses of calendar subscriptions.
+//! password, the addresses of calendar subscriptions and the Jira tokens.
 //!
 //! Windows: Credential Manager, macOS: Keychain. Elsewhere (Linux
 //! and other systems) the secrets are written to `secrets.json` in the app data directory
@@ -62,6 +62,11 @@ impl SecretStore {
     /// The address of the ICS subscription `id` (Settings → Kalender): it may carry a secret token.
     pub fn calendar(data_dir: &Path, id: &str) -> Self {
         Self::named(data_dir, &format!("calendar-ics-{id}"), &format!("calendar_ics_{id}"))
+    }
+
+    /// The API token (Cloud) or personal access token (Server) of the Jira site `id` (Settings → Jira).
+    pub fn jira(data_dir: &Path, id: &str) -> Self {
+        Self::named(data_dir, &format!("jira-{id}"), &format!("jira_{}", id.replace('-', "_")))
     }
 
     /// Human-readable name of the backend, shown in the settings.

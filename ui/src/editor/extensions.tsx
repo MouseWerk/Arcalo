@@ -8,7 +8,7 @@ import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip,
+  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket,
 } from "lucide-react";
 import { decimal, fmtDate, isoDay } from "../lib/format";
 
@@ -30,6 +30,8 @@ import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
 import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
 import { inOtherLanguage, t, type TKey } from "../lib/i18n";
+import { jiraReady, requestCreateIssue } from "./taskIssue";
+import { useApp } from "../store/app";
 
 // ------------------------------------------------------------- wiki links
 
@@ -249,6 +251,14 @@ function allSlashItems(o: SlashOptions): SlashItem[] {
     } },
     { id: "footnote", title: t("slash.footnote"), subtitle: t("slash.footnote.sub"), icon: ic(Superscript), Icon: Superscript, hint: "[^1]", section: insert, keywords: "fußnote footnote anmerkung quelle note source", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertFootnote(e)) },
     { id: "zeit", title: t("slash.zeit"), subtitle: t("slash.zeit.sub"), icon: ic(Timer), Icon: Timer, hint: zeitCommand(), section: t("ribbon.timesheet"), keywords: "zeit time buchen stunden book hours log", run: (e, r) => e.chain().focus().deleteRange(r).insertContent(`${zeitCommand()} `).run() },
+    ...(jiraReady()
+      ? [{ id: "jira", title: t("slash.jira"), subtitle: t("slash.jira.sub"), icon: ic(Ticket), Icon: Ticket, section: insert, keywords: "jira issue ticket vorgang anlegen create", run: (e: Editor, r: Range) => {
+          e.chain().focus().deleteRange(r).run();
+          const st = useApp.getState();
+          const pageId = st.tabs.find((x) => x.id === st.activeTabId)?.pageId ?? null;
+          if (!requestCreateIssue(e, e.state.selection.from, pageId)) st.toast({ tone: "info", title: t("jira.notATask") });
+        } }]
+      : []),
     { id: "subpage", title: t("slash.subpage"), icon: ic(FilePlus2), Icon: FilePlus2, section: insert, keywords: "seite page unterseite subpage", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
       ? [{ id: "image", title: t("slash.image"), subtitle: t("slash.image.sub", { keys: keys("Mod V") }), icon: ic(ImagePlus), Icon: ImagePlus, section: insert, keywords: "bild image foto photo screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]

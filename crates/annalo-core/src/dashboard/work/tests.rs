@@ -265,7 +265,7 @@ fn deadlines_from_tasks_and_date_properties() {
     assert_eq!(d.items[1].detail, "Projekte · fällig");
     let only = deadlines(&db, today(), 14, &["tasks".into()]).unwrap();
     assert!(only.items.iter().all(|x| x.source == "properties"));
-    assert_eq!(DEADLINE_PROVIDERS.iter().map(|p| p.0).collect::<Vec<_>>(), ["tasks", "properties"]);
+    assert_eq!(DEADLINE_PROVIDERS.iter().map(|p| p.0).collect::<Vec<_>>(), ["tasks", "properties", "jira"]);
 }
 
 #[test]

@@ -45,13 +45,15 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
 | `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `annalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 | `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
+| `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text), the last comments (JSON) and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
+| `issue_wbs_map`, `time_entry_issues` | Which Netzplan/Vorgang an issue or project books on (`learned` from the first booking) (v14); the issue key of a time entry (cascade with the entry) and its Jira worklog: `worklog_state` (`none`, `pending`, `posting`, `posted`, `failed`), `worklog_id` once posted (never posted twice), attempts and the next try |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 

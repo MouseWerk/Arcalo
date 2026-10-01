@@ -21,7 +21,10 @@ import {
   Sun,
   Sunset,
   Target,
+  Ticket,
   Timer,
+  Kanban,
+  ListTodo,
   TrendingUp,
   WandSparkles,
   type LucideIcon,
@@ -36,6 +39,7 @@ import { BudgetWidget, ProjectWidget, ProposalWidget, TimerWidget, WeekWidget } 
 import { ActivityWidget, EmbedWidget, FavoritesWidget, NoteWidget, PinnedWidget, RecentWidget } from "./pages";
 import { LinksWidget, QueryWidget, SuggestionsWidget } from "./tools";
 import { WORK_BODIES, WORK_ICONS, workOpener } from "./work";
+import { JiraMineWidget, JiraQueryWidget, JiraSprintWidget } from "./jira";
 
 export interface WidgetProps {
   widget: GridWidget;
@@ -65,6 +69,9 @@ export const BODIES: Record<WidgetKind, ComponentType<WidgetProps>> = {
   links: LinksWidget,
   suggestions: SuggestionsWidget,
   ...WORK_BODIES,
+  jira: JiraMineWidget,
+  jira_query: JiraQueryWidget,
+  jira_sprint: JiraSprintWidget,
 };
 
 export const ICONS: Record<WidgetKind, LucideIcon> = {
@@ -90,6 +97,9 @@ export const ICONS: Record<WidgetKind, LucideIcon> = {
   links: Link2,
   suggestions: Sparkles,
   ...WORK_ICONS,
+  jira: Ticket,
+  jira_query: ListTodo,
+  jira_sprint: Kanban,
 };
 
 const s = useApp.getState;
@@ -113,6 +123,10 @@ export function openerOf(w: GridWidget): (() => void) | null {
       return () => s().openTab({ kind: "activity" });
     case "review":
       return () => openDayReview();
+    case "jira":
+    case "jira_query":
+    case "jira_sprint":
+      return () => s().openTab({ kind: "issues" });
     case "embed":
       return typeof c.page === "number" ? () => s().openPage(c.page as number) : null;
     default:

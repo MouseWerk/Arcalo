@@ -41,6 +41,9 @@ const LOOK: Record<WidgetKind, Look> = {
   chart: "bars",
   heatmap: "grid",
   kanban: "tiles",
+  jira: "list",
+  jira_query: "list",
+  jira_sprint: "bars",
 };
 
 /** A schematic of the widget: neutral shapes in the theme's colors. */

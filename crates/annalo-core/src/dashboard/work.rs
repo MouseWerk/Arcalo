@@ -146,7 +146,7 @@ pub type DeadlineProvider = fn(&Database, &DeadlineWindow) -> Result<Vec<Deadlin
 
 /// Every source of due dates, by name. Add a provider here (Jira: `("jira", jira_deadlines)`).
 pub const DEADLINE_PROVIDERS: &[(&str, DeadlineProvider)] =
-    &[("tasks", task_deadlines), ("properties", property_deadlines)];
+    &[("tasks", task_deadlines), ("properties", property_deadlines), ("jira", crate::issues::jira_deadlines)];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeadlinesData {

@@ -24,6 +24,9 @@ pub struct LogOutcome {
     /// Canonical reference the entry was booked on (`NP-8801/1020`).
     #[serde(default)]
     pub reference: String,
+    /// The issue key the line named (`/zeit 1h PROJ-123 …`), stored with the entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
 }
 
 /// Where a `/zeit` line was typed: the page it books from and that page's linked reference.
@@ -57,9 +60,21 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     ctx: SlashContext,
 ) -> Result<LogOutcome> {
     let local_now = now.with_timezone(offset);
-    let mut cmd = zeit::parse_with_default(line, local_now.date_naive(), ctx.default_ref)?;
+    // An issue key of a synced project (`/zeit 1h PROJ-123 Login`): a line without reference
+    // books on the issue's (or its project's) WBS, which wins over the page's.
+    let issue = crate::issues::zeit_issue(db, line)?;
+    let bare = crate::issues::zeit_without_reference(line);
+    let default_ref = match (&issue.key, bare) {
+        (Some(_), true) => issue.mapped.as_deref().or(ctx.default_ref),
+        _ => ctx.default_ref,
+    };
+    if let (Some(key), true, None) = (&issue.key, bare, default_ref) {
+        return Err(crate::issues::unmapped_error(key));
+    }
+    let mut cmd = zeit::parse_with_default(line, local_now.date_naive(), default_ref)?;
     // Settings → Zeiterfassung: rounding, minimum booking and default Leistungsart.
-    let time = db.load_settings().map(|s| s.time).unwrap_or_default();
+    let settings = db.load_settings().unwrap_or_default();
+    let time = settings.time.clone();
     cmd.duration_minutes = time.rounding.apply(cmd.duration_minutes);
 
     let np = db.netzplan_by_ref(&cmd.netzplan_ref)?;
@@ -123,7 +138,17 @@ pub fn log_slash_command_in<Tz: TimeZone>(
         Some(v) => format!("{}/{v}", np.netzplan_nr),
         None => np.netzplan_nr.clone(),
     };
-    Ok(LogOutcome { entry, alerts, reference })
+    if let Some(key) = &issue.key {
+        // The first booking of an issue teaches its WBS (and its project's, when that has none).
+        if issue.mapped.is_none() {
+            db.issue_wbs_set("issue", key, &reference, true)?;
+            db.issue_wbs_set("project", crate::issues::project_of(key), &reference, true)?;
+        }
+        let site = db.issue_get(key)?.map(|i| i.site);
+        let log_site = site.as_deref().filter(|s| settings.jira.site(s).is_some_and(|x| x.enabled && x.log_work));
+        db.issue_link_entry(entry.id, key, log_site)?;
+    }
+    Ok(LogOutcome { entry, alerts, reference, issue: issue.key })
 }
 
 /// Resolves a local wall-clock time in the given zone (per date, so DST is honoured). A time

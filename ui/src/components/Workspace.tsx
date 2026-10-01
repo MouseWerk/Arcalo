@@ -26,6 +26,7 @@ const ActivityView = lazyView(() => import("../views/ActivityView").then((m) => 
 const AttachmentsView = lazyView(() => import("../views/AttachmentsView").then((m) => m.AttachmentsView));
 const CalendarView = lazyView(() => import("../views/CalendarView").then((m) => m.CalendarView));
 const DayReviewView = lazyView(() => import("../views/DayReviewView").then((m) => m.DayReviewView));
+const IssuesView = lazyView(() => import("../views/IssuesView").then((m) => m.IssuesView));
 const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView];
 
 // The PDF viewer (with pdf.js) loads when a PDF tab is shown.
@@ -220,6 +221,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "attachments" && <AttachmentsView />}
             {tab.kind === "calendar" && <CalendarView />}
             {tab.kind === "review" && <DayReviewView />}
+            {tab.kind === "issues" && <IssuesView />}
             {tab.kind === "conflict" && <ConflictView pageId={tab.pageId!} />}
             </Suspense>
           </div>

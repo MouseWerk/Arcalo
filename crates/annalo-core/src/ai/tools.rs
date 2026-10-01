@@ -89,6 +89,49 @@ pub fn definitions() -> Vec<Value> {
                 "to": { "type": "string", "description": tr!("Letzter Tag einschließlich, YYYY-MM-DD (Standard: wie from)", "Last day, inclusive, YYYY-MM-DD (default: same as from)") } }, "required": ["from"] }),
         ),
         f(
+            "jira_search",
+            tr!(
+                "Sucht Jira-Issues (nur lesend): JQL wie \"project = PROJ AND status = 'In Progress'\", ein Schlüssel oder freier Text. Liefert Schlüssel, Titel, Status, Priorität, Bearbeiter, Sprint, Fälligkeit und Link.",
+                "Searches Jira issues (read-only): JQL like \"project = PROJ AND status = 'In Progress'\", a key or free text. Returns key, summary, status, priority, assignee, sprint, due date and link."
+            ),
+            json!({ "type": "object", "properties": {
+                "query": { "type": "string", "description": tr!("JQL, Schlüssel oder Suchtext", "JQL, key or search text") },
+                "site": { "type": "string", "description": tr!("Name oder ID der Jira-Site (Standard: alle)", "Name or id of the Jira site (default: all)") } }, "required": ["query"] }),
+        ),
+        f(
+            "jira_issue",
+            tr!(
+                "Ein Jira-Issue mit Beschreibung und den letzten Kommentaren (nur lesend).",
+                "One Jira issue with its description and the last comments (read-only)."
+            ),
+            json!({ "type": "object", "properties": { "key": { "type": "string", "description": "PROJ-123" } }, "required": ["key"] }),
+        ),
+        f(
+            "jira_my_issues",
+            tr!(
+                "Meine offenen Jira-Issues und der aktuelle Sprint mit Fortschritt (nur lesend).",
+                "My open Jira issues and the current sprint with its progress (read-only)."
+            ),
+            json!({ "type": "object", "properties": {
+                "site": { "type": "string", "description": tr!("Name oder ID der Jira-Site (Standard: alle)", "Name or id of the Jira site (default: all)") } } }),
+        ),
+        f(
+            "jira_comment",
+            tr!(
+                "Schreibt einen Kommentar zu einem Jira-Issue. Der Nutzer muss jeden Kommentar bestätigen.",
+                "Adds a comment to a Jira issue. The user must confirm every comment."
+            ),
+            json!({ "type": "object", "properties": { "key": { "type": "string" }, "body": { "type": "string" } }, "required": ["key", "body"] }),
+        ),
+        f(
+            "jira_transition",
+            tr!(
+                "Setzt den Status eines Jira-Issues (z. B. \"In Progress\", \"Done\"). Der Nutzer muss jede Änderung bestätigen.",
+                "Changes the status of a Jira issue (e.g. \"In Progress\", \"Done\"). The user must confirm every change."
+            ),
+            json!({ "type": "object", "properties": { "key": { "type": "string" }, "status": { "type": "string" } }, "required": ["key", "status"] }),
+        ),
+        f(
             "run_powershell",
             tr!(
                 "Führt ein PowerShell-Skript aus. Der Nutzer muss jede Ausführung bestätigen.",
@@ -121,6 +164,11 @@ pub fn definitions() -> Vec<Value> {
 /// Tools about booking time: not offered while time tracking is off.
 pub const TIME_TOOLS: &[&str] = &["log_time", "budget_status", "time_summary"];
 
+/// Jira tools that only read: offered while a Jira site is set up (Settings → Jira).
+pub const JIRA_READ_TOOLS: &[&str] = &["jira_search", "jira_issue", "jira_my_issues"];
+/// Jira tools that change an issue: offered only for sites that allow it, each confirmed.
+pub const JIRA_WRITE_TOOLS: &[&str] = &["jira_comment", "jira_transition"];
+
 /// The definitions of the tools in `allowed` (Settings → KI → Werkzeuge).
 pub fn definitions_allowed(allowed: &[String]) -> Vec<Value> {
     definitions().into_iter().filter(|d| allowed.iter().any(|a| d["function"]["name"] == a.as_str())).collect()
@@ -140,9 +188,8 @@ pub fn check_allowed(tool: &str, allowed: &[String]) -> Result<()> {
 
 pub fn classify(tool: &str) -> Risk {
     match tool {
-        "log_time" | "search_workspace" | "budget_status" | "list_tasks" | "time_summary" | "activity_log" => {
-            Risk::Workspace
-        }
+        "log_time" | "search_workspace" | "budget_status" | "list_tasks" | "time_summary" | "activity_log"
+        | "jira_search" | "jira_issue" | "jira_my_issues" => Risk::Workspace,
         _ => Risk::RequiresApproval,
     }
 }
@@ -151,9 +198,28 @@ pub fn classify(tool: &str) -> Risk {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "tool")]
 pub enum SystemCall {
-    RunPowershell { script: String, cwd: Option<String> },
-    Git { args: Vec<String>, repo: String },
-    HttpRequest { method: String, url: String, body: Option<Value> },
+    RunPowershell {
+        script: String,
+        cwd: Option<String>,
+    },
+    Git {
+        args: Vec<String>,
+        repo: String,
+    },
+    HttpRequest {
+        method: String,
+        url: String,
+        body: Option<Value>,
+    },
+    /// Runs in the shell (it holds the Jira tokens), not in [`execute_system_tool`].
+    JiraComment {
+        key: String,
+        body: String,
+    },
+    JiraTransition {
+        key: String,
+        status: String,
+    },
 }
 
 impl SystemCall {
@@ -220,6 +286,22 @@ impl SystemCall {
                 }
                 SystemCall::HttpRequest { method, url, body: args.get("body").filter(|b| !b.is_null()).cloned() }
             }
+            "jira_comment" | "jira_transition" => {
+                let key = s("key").map(|k| k.trim().to_uppercase()).unwrap_or_default();
+                if !crate::issues::is_key(&key) {
+                    return Err(Error::State(trf!("„{key}“ ist kein Issue-Schlüssel", "“{key}” is not an issue key")));
+                }
+                if name == "jira_comment" {
+                    let body = s("body").map(|b| b.trim().to_owned()).filter(|b| !b.is_empty());
+                    let body =
+                        body.ok_or_else(|| Error::Parse(tr!("Kommentartext fehlt", "Comment text missing").into()))?;
+                    SystemCall::JiraComment { key, body }
+                } else {
+                    let status = s("status").map(|b| b.trim().to_owned()).filter(|b| !b.is_empty());
+                    let status = status.ok_or_else(|| Error::Parse(tr!("Status fehlt", "Status missing").into()))?;
+                    SystemCall::JiraTransition { key, status }
+                }
+            }
             other => return Err(Error::not_found("tool", other)),
         };
         Ok(call)
@@ -234,6 +316,8 @@ impl SystemCall {
             SystemCall::HttpRequest { method, url, body } => {
                 ("http_request", json!({ "method": method, "url": url, "body": body }))
             }
+            SystemCall::JiraComment { key, body } => ("jira_comment", json!({ "key": key, "body": body })),
+            SystemCall::JiraTransition { key, status } => ("jira_transition", json!({ "key": key, "status": status })),
         };
         Self::from_tool_call(name, &args.to_string()).map(|_| ())
     }
@@ -246,6 +330,10 @@ impl SystemCall {
             }
             SystemCall::Git { args, repo } => format!("git {} (in {repo})", args.join(" ")),
             SystemCall::HttpRequest { method, url, .. } => format!("{method} {url}"),
+            SystemCall::JiraComment { key, body } => trf!("Kommentar zu {key}:\n{body}", "Comment on {key}:\n{body}"),
+            SystemCall::JiraTransition { key, status } => {
+                trf!("Status von {key} → {status}", "Status of {key} → {status}")
+            }
         }
     }
 }
@@ -447,6 +535,9 @@ pub async fn execute_system_tool(call: &SystemCall, http: &reqwest::Client, time
             let status = resp.status();
             let text = resp.text().await?;
             Ok(truncate(format!("HTTP {status}\n{text}")))
+        }
+        SystemCall::JiraComment { .. } | SystemCall::JiraTransition { .. } => {
+            Err(Error::State("Jira calls run in the shell".into()))
         }
     }
 }

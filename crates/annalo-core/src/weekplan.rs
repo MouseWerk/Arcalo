@@ -894,6 +894,17 @@ impl WbsContext {
         }))
     }
 
+    /// An issue key in `text` (`PROJ-123` of a synced project) whose issue or project is mapped
+    /// to a WBS (Settings → Jira, or learned from the first booking).
+    fn issue(&self, db: &Database, text: &str) -> Result<Option<WbsGuess>> {
+        let Some(key) = db.issue_key_in(text)? else { return Ok(None) };
+        let Some(reference) = db.issue_wbs_for(&key)? else { return Ok(None) };
+        let Some((np, v)) = self.resolve_ref(db, &reference) else { return Ok(None) };
+        Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
+            trf!("Issue {key} gehört zu {r}", "Issue {key} belongs to {r}")
+        }))
+    }
+
     /// The newest finished entry described like `text`.
     fn by_description(&self, db: &Database, text: &str) -> Result<Option<WbsGuess>> {
         if text.trim().is_empty() {
@@ -964,6 +975,9 @@ impl WbsContext {
         if let Some(g) = self.text_memory(db, title)? {
             return Ok(Some(g));
         }
+        if let Some(g) = self.issue(db, title)? {
+            return Ok(Some(g));
+        }
         if let Some(page) = e.note_page_id
             && let Some(reference) = db.page_reference(page)?
             && let Some((np, v)) = self.resolve_ref(db, &reference)
@@ -1004,6 +1018,9 @@ impl WbsContext {
         if let Some(g) = self.text_memory(db, goal)? {
             return Ok(Some(g));
         }
+        if let Some(g) = self.issue(db, goal)? {
+            return Ok(Some(g));
+        }
         if !crate::focus::is_default_goal(goal)
             && let Some(g) = self.by_description(db, goal)?
         {
@@ -1034,6 +1051,12 @@ impl WbsContext {
             return Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
                 trf!("Seite „{title}“ gehört zu {r}", "Page “{title}” belongs to {r}")
             }));
+        }
+        // An issue note (`jira: PROJ-123`) or a title naming an issue.
+        let issue_text =
+            format!("{title}\n{}", crate::pagework::frontmatter_value(&content, "jira").unwrap_or_default());
+        if let Some(g) = self.issue(db, &issue_text)? {
+            return Ok(Some(g));
         }
         // Parent pages (a project page with `vorgang:`), nearest first.
         let mut seen = HashSet::new();
