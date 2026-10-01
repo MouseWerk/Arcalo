@@ -9,7 +9,8 @@ import path from "node:path";
 import { remote } from "webdriverio";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-export const APP = process.env.ANNALO_APP ?? path.join(ROOT, "target/debug/annalo");
+// Resolved, so `pkill -f APP` also matches an app that restarted itself (it runs as its real path).
+export const APP = path.resolve(process.env.ANNALO_APP ?? path.join(ROOT, "target/debug/annalo"));
 export const SHOTS = process.env.ANNALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
