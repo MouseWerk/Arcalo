@@ -161,6 +161,8 @@ test("a meeting in two calendars shows once, from the own calendar, naming the o
 
 test("shared-calendar meetings are no booking proposals until the calendar is used for them", async () => {
   const texts = async () => (await app.invoke("week_proposal", { weekStart: iso(week(-1).monday), restOfToday: false })).proposals.map((p) => p.text).join(" | ");
+  // The demo bookings start hours before „now“ on each past day and could cover the meetings.
+  for (const e of await app.invoke("time_entries", { from: null, to: null })) await app.invoke("delete_time_entry", { id: e.id });
   const before = await texts();
   assert.match(before, /Projekt-Sync alt/, "own sub-calendar proposed");
   assert.match(before, /Planung Rollout/, "default calendar proposed");
