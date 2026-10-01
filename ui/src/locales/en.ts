@@ -3008,7 +3008,7 @@ export const en = {
   "dash.set.todayOnly": "Today only",
   "dash.set.nDays": "{n} days",
   "dash.set.calendars": "Calendars",
-  "dash.set.calendarsHint": "Which calendars appear here",
+  "dash.set.calendarsHint": "Which calendars appear here; calendars hidden in the Calendar stay hidden here too",
   "dash.set.due": "Due",
   "dash.due.any": "All open",
   "dash.due.overdue": "Overdue",
@@ -3760,6 +3760,8 @@ export const en = {
   "fr.backup.dest": "Additional destination (optional)",
   "fr.backup.destHint": "A network share (\\\\server\\share\\Annalo), a drive or a OneDrive folder. Annalo copies every backup there in the background; when it is offline, it tries again later.",
   "fr.backup.destAdd": "Add and test",
+  // ---- merged from main
+  "dash.set.hiddenInCalendar": "hidden in the Kalender",
 } satisfies Record<string, Msg>;
 
 export type Catalog = { [K in keyof typeof en]: Msg };

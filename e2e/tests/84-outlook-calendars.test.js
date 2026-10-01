@@ -128,6 +128,20 @@ test("the Kalender shows each calendar in its color; the legend hides one in the
   await app.browser.waitUntil(async () => (await color("Anna: Vertriebsrunde")) !== null, { timeoutMsg: "not shown again" });
 });
 
+test("the start page's „Termine“ lists the Outlook calendars by name and color", async () => {
+  await app.keys(["Control", "t"]);
+  await app.waitFor('.pane.active .dw[data-widget="agenda"]');
+  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-widget="agenda"] .dw-gear').click());
+  await app.waitFor(".dialog .dws");
+  const rows = await app.browser.execute(() => [...document.querySelectorAll(".dialog .dws-check")].map((l) => `${l.querySelector(".ellipsis")?.textContent}|${l.querySelector(".dws-swatch")?.style.background}`));
+  const names = rows.map((r) => r.split("|")[0]);
+  assert.deepEqual(names, ["Outlook", "Projekt X", "Anna Müller – Kalender"]);
+  assert.match(rows[1], /\|rgb\(101, 163, 13\)$/, "Projekt X in its color");
+  await app.shot("84-dashboard-calendars");
+  await app.keys(["Escape"]);
+  await app.click(".pane.active .tab.active .tab-close");
+});
+
 test("a meeting in two calendars shows once, from the own calendar, naming the other", async () => {
   const jf = (await eventsOf()).filter((e) => e.title === "Jour fixe Vertrieb");
   assert.equal(jf.length, 1, "deduplicated");

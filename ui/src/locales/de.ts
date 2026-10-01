@@ -3005,7 +3005,7 @@ export const de: Catalog = {
   "dash.set.todayOnly": "Nur heute",
   "dash.set.nDays": "{n} Tage",
   "dash.set.calendars": "Kalender",
-  "dash.set.calendarsHint": "Welche Kalender hier erscheinen",
+  "dash.set.calendarsHint": "Welche Kalender hier erscheinen; im Kalender ausgeblendete bleiben auch hier verborgen",
   "dash.set.due": "Fällig",
   "dash.due.any": "Alle offenen",
   "dash.due.overdue": "Überfällig",
@@ -3757,4 +3757,6 @@ export const de: Catalog = {
   "fr.backup.dest": "Weiteres Sicherungsziel (optional)",
   "fr.backup.destHint": "Eine Netzwerkfreigabe (\\\\server\\freigabe\\Annalo), ein Laufwerk oder ein OneDrive-Ordner. Annalo kopiert jede Sicherung im Hintergrund dorthin; ist das Ziel offline, wird später erneut versucht.",
   "fr.backup.destAdd": "Hinzufügen und testen",
+  // ---- merged from main
+  "dash.set.hiddenInCalendar": "im Kalender ausgeblendet",
 };

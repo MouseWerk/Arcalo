@@ -465,3 +465,4 @@
   .dw-budget-head .faint { display: none; }
   .dw-budget-head .badge { margin-left: auto; }
 }
+.dws-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
