@@ -5,7 +5,8 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { mailLinkId, openMailLink } from "../lib/mail";
-import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight } from "lucide-react";
+import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight, Ticket } from "lucide-react";
+import { jiraReady, requestCreateIssue } from "./taskIssue";
 import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
 import { drawPdfPreview } from "../lib/pdf";
 import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
@@ -446,6 +447,14 @@ export function NoteEditor({
             const fileAt = file && editorRef.current ? fileEmbedAt(editorRef.current, file) : null;
             if (fileAt && editorRef.current) {
               openImgMenu(event, fileMenu(editorRef.current, fileAt.pos));
+              return true;
+            }
+            // On a task: „Jira-Issue anlegen“.
+            const task = (event.target as HTMLElement).closest?.<HTMLElement>(".ProseMirror li[data-checked]");
+            if (task && !(event.target as HTMLElement).closest?.("img") && editorRef.current && jiraReady()) {
+              const ed = editorRef.current;
+              const at = view.posAtDOM(task, 0);
+              openImgMenu(event, [{ label: tr("jira.createTitle"), icon: Ticket, onSelect: () => void requestCreateIssue(ed, at, doc.id) }]);
               return true;
             }
             const img = (event.target as HTMLElement).closest?.<HTMLImageElement>(".ProseMirror img");

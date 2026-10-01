@@ -33,8 +33,8 @@ const noOverlaps = (ws: GridWidget[]) => {
 describe("catalogue and presets", () => {
   it("knows every widget kind the backend keeps", () => {
     // Same list as WIDGET_KINDS in crates/annalo-core/src/settings.rs.
-    expect([...WIDGET_KINDS].sort()).toEqual(["activity", "agenda", "budget", "calendar", "clock", "embed", "favorites", "focus", "links", "note", "pinned", "project", "proposal", "query", "recent", "review", "suggestions", "tasks", "timer", "today", "week"]);
-    expect(new Set(WIDGET_KINDS).size).toBe(21);
+    expect([...WIDGET_KINDS].sort()).toEqual(["activity", "agenda", "budget", "calendar", "clock", "embed", "favorites", "focus", "jira", "jira_query", "jira_sprint", "links", "note", "pinned", "project", "proposal", "query", "recent", "review", "suggestions", "tasks", "timer", "today", "week"]);
+    expect(new Set(WIDGET_KINDS).size).toBe(24);
     for (const k of WIDGET_KINDS) {
       const d = WIDGETS[k];
       expect(d.size.w >= d.min.w && d.size.h >= d.min.h, k).toBe(true);

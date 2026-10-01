@@ -10,6 +10,7 @@ import Highlight from "@tiptap/extension-highlight";
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
+import { IssueChips } from "./issueChips";
 import { Callouts, DueWords, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
@@ -327,6 +328,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     ZeitCommand.configure({ book: o.book ?? (async () => null), onLost: o.onZeitLost ?? (() => {}) }),
     ZeitSuggest.configure({ refs: o.zeitRefs ?? (async () => []), leistungsarten: o.zeitLeistungsarten ?? (async () => []) }),
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
+    IssueChips,
     DueWords,
     FindInPage,
     Callouts,

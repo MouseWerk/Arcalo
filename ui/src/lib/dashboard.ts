@@ -31,7 +31,10 @@ export type WidgetKind =
   | "review"
   | "suggestions"
   | "timer"
-  | "calendar";
+  | "calendar"
+  | "jira"
+  | "jira_query"
+  | "jira_sprint";
 
 export type WidgetGroup = "day" | "time" | "pages" | "tools";
 
@@ -95,6 +98,10 @@ export const WIDGETS: Record<WidgetKind, WidgetDef> = {
   },
   links: { label: "dash.w.links", hint: "dash.w.linksHint", group: "tools", size: { w: 4, h: 4 }, min: { w: 2, h: 3 }, config: () => ({ group: -1 }) },
   suggestions: { label: "dash.w.suggestions", hint: "dash.w.suggestionsHint", group: "tools", size: { w: 4, h: 6 }, min: { w: 3, h: 3 }, config: () => ({ count: 5 }) },
+  // Jira (components/dashboard/jira.tsx).
+  jira: { label: "dash.w.jira", hint: "dash.w.jiraHint", group: "tools", size: { w: 5, h: 7 }, min: { w: 3, h: 4 }, config: () => ({ limit: 8, columns: ["status"], site: "" }) },
+  jira_query: { label: "dash.w.jiraQuery", hint: "dash.w.jiraQueryHint", group: "tools", size: { w: 5, h: 7 }, min: { w: 3, h: 4 }, config: () => ({ query: "", limit: 8, columns: ["status", "assignee"] }) },
+  jira_sprint: { label: "dash.w.jiraSprint", hint: "dash.w.jiraSprintHint", group: "tools", size: { w: 5, h: 10 }, min: { w: 3, h: 6 }, config: () => ({ site: "", project: "" }) },
 };
 
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];

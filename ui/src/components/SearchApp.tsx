@@ -3,7 +3,7 @@
 // window (`search_open` → `search://open`).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CalendarCheck2, FilePlus2, Play, Search, Square, Timer } from "lucide-react";
+import { ArrowRight, CalendarCheck2, FilePlus2, Play, Search, Square, Ticket, Timer } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
 import { applyTheme } from "../lib/actions";
 import { hoursFromMinutes } from "../lib/format";
@@ -23,6 +23,8 @@ const ACTION_ICONS: Partial<Record<QsAction["type"], React.ReactNode>> = {
   timer_stop: ic(Square),
   zeit: ic(Timer),
   timesheet: ic(Timer),
+  issues: ic(Ticket),
+  issue: ic(Ticket),
 };
 
 /** `NP-8801/1020` of the most recent finished booking of the last 60 days. */
@@ -43,6 +45,7 @@ export function SearchApp() {
   const [lastRef, setLastRef] = useState<string | null>(null);
   // „Zeiterfassung verwenden“: off, no timer, timesheet or /zeit here.
   const [timeOn, setTimeOn] = useState(true);
+  const [jiraOn, setJiraOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -57,7 +60,7 @@ export function SearchApp() {
       .then((v) => applyTheme(v.settings.theme, v.settings.appearance))
       .catch(() => {});
     const refresh = () => {
-      api.settings().then((v) => setTimeOn(timeTrackingOn(v.settings)), () => {});
+      api.settings().then((v) => (setTimeOn(timeTrackingOn(v.settings)), setJiraOn(!!v.settings.jira?.sites.length)), () => {});
       api.recentPages(6).then(setRecent, () => {});
       api.timerStatus().then((t) => setTimerRunning(!!t), () => {});
       lastReference().then(setLastRef, () => {});
@@ -116,7 +119,7 @@ export function SearchApp() {
     };
   }, [query, timeOn]);
 
-  const items = useMemo(() => quickItems(query, { hits, recent, timerRunning, lastRef, time: timeOn }), [query, hits, recent, timerRunning, lastRef, timeOn]);
+  const items = useMemo(() => quickItems(query, { hits, recent, timerRunning, lastRef, time: timeOn, jira: jiraOn }), [query, hits, recent, timerRunning, lastRef, timeOn, jiraOn]);
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
     list.current?.querySelector(".pal-item.sel")?.scrollIntoView({ block: "nearest" });
@@ -149,6 +152,12 @@ export function SearchApp() {
           break;
         case "timesheet":
           await api.searchOpen({ kind: "timesheet" });
+          break;
+        case "issues":
+          await api.searchOpen({ kind: "issues" });
+          break;
+        case "issue":
+          await api.searchOpen({ kind: "issue", key: a.key });
           break;
         case "timer_start":
           await api.timerResumeLast();

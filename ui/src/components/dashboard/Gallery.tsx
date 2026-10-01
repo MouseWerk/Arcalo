@@ -31,6 +31,9 @@ const LOOK: Record<WidgetKind, Look> = {
   query: "hbars",
   links: "tiles",
   suggestions: "list",
+  jira: "list",
+  jira_query: "list",
+  jira_sprint: "bars",
 };
 
 /** A schematic of the widget: neutral shapes in the theme's colors. */

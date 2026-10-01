@@ -2854,3 +2854,104 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 }
 /* Aktivität without the „gebucht“ tile. */
 .activity-stats.no-time { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ---- jira ---- */
+
+/* Status pill and type icon (chips, Issues page, widgets, hover card). */
+.issue-status {
+  display: inline-block; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: baseline;
+  padding: 0 6px; border-radius: 4px; font-size: var(--fs-2xs); font-weight: 650; line-height: 1.55; letter-spacing: 0.02em; text-transform: uppercase;
+  background: var(--bg-active); color: var(--text-2);
+}
+.issue-status.cat-indeterminate { background: var(--info-soft); color: var(--info); }
+.issue-status.cat-done { background: var(--success-soft); color: var(--success); }
+.issue-status.cat-unknown { background: transparent; color: var(--text-3); }
+.issue-type-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--text-3); }
+.issue-type-bug { color: var(--danger); }
+.issue-type-story { color: var(--success); }
+.issue-type-epic { color: var(--violet); }
+.issue-type-task, .issue-type-subtask { color: var(--info); }
+.issue-prio { font-size: var(--fs-xs); color: var(--text-2); }
+.issue-prio.prio-highest, .issue-prio.prio-blocker, .issue-prio.prio-critical, .issue-prio.prio-high, .issue-prio.prio-major { color: var(--danger); }
+.issue-prio.prio-low, .issue-prio.prio-lowest, .issue-prio.prio-minor, .issue-prio.prio-trivial { color: var(--text-3); }
+.issue-due { font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.issue-due.overdue { color: var(--danger); font-weight: 600; }
+
+/* Hover card of a chip (like the page-link preview). */
+.issue-preview { padding-bottom: 12px; }
+.issue-preview-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 0; }
+.issue-preview-key { font-size: var(--fs-sm); color: var(--text-2); }
+.issue-preview-open { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); }
+.issue-preview-open:hover { background: var(--bg-hover); color: var(--text); }
+.issue-preview-title { padding-top: 6px; line-height: 1.35; }
+.issue-preview-meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; padding: 0 14px 8px; font-size: var(--fs-sm); }
+.issue-preview-meta dt { color: var(--text-3); }
+.issue-preview-meta dd { margin: 0; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-preview-desc { margin: 0 14px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text-2); white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
+
+/* Issues page. */
+.issues-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.issues-search { position: relative; flex: 1 1 220px; min-width: 180px; max-width: 360px; }
+.issues-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; color: var(--text-3); pointer-events: none; z-index: 1; }
+.issues-search input { padding-left: 28px; width: 100%; }
+.issues-filter.on { box-shadow: inset 0 0 0 1px var(--accent); border-radius: var(--r-sm); }
+.issues-banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); background: var(--warning-soft); color: var(--text); font-size: var(--fs-sm); }
+.issues-banner > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.issues-group { display: grid; gap: 2px; }
+.issues-group-title { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px; font-size: var(--fs-sm); font-weight: 650; color: var(--text-2); }
+.issues-site-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.issues-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.issue-row { position: relative; border-radius: var(--r-md); }
+.issue-row:hover, .issue-row.open { background: var(--bg-hover); }
+.issue-row.open { box-shadow: inset 0 0 0 1px var(--border); }
+.issue-row-main { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 6px 10px; cursor: pointer; border-radius: var(--r-md); }
+.issue-row-main:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.issue-row:hover .issue-row-main, .issue-row:focus-within .issue-row-main, .issue-row.open .issue-row-main { padding-right: 112px; }
+.issue-key { flex: none; font-size: var(--fs-sm); color: var(--text-2); min-width: 7ch; }
+.issue-summary { flex: 1 1 auto; min-width: 0; color: var(--text); }
+.issue-row.done .issue-summary { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.issue-meta { display: flex; align-items: center; gap: 12px; flex: none; }
+.issue-sprint { max-width: 14ch; font-size: var(--fs-xs); }
+.issue-assignee { max-width: 16ch; font-size: var(--fs-xs); color: var(--text-2); }
+.issue-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast); }
+.issue-row:hover .issue-actions, .issue-row:focus-within .issue-actions, .issue-row.open .issue-actions { opacity: 1; }
+.issue-detail { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; padding: 6px 14px 16px 36px; cursor: default; }
+.issue-detail-main { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.issue-facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: var(--fs-sm); }
+.issue-facts dt { color: var(--text-3); }
+.issue-facts dd { margin: 0; color: var(--text-2); }
+.issue-desc { white-space: pre-line; font-size: var(--fs-sm); line-height: 1.55; color: var(--text); max-height: 280px; overflow: auto; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-raised); border: 1px solid var(--border); }
+.issue-comments h3, .issue-detail-side h3 { margin: 4px 0 6px; font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }
+.issue-comment { padding: 6px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.issue-comment-body { white-space: pre-line; color: var(--text-2); margin-top: 2px; }
+.issue-detail-side { display: grid; gap: 8px; align-content: start; }
+.issue-detail-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.issue-backlinks { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.issue-backlinks .dw-row { width: 100%; display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); text-align: left; }
+.issue-backlinks .dw-row:hover { background: var(--bg-active); }
+@container pane (max-width: 760px) {
+  .issue-sprint, .issue-assignee { display: none; }
+  .issue-detail { grid-template-columns: minmax(0, 1fr); padding-left: 14px; }
+}
+@container pane (max-width: 600px) {
+  .issue-meta .issue-prio, .issue-row-main .issue-due { display: none; }
+}
+
+/* Settings → Jira. */
+.calset-name .badge { margin-left: 6px; }
+.jira-jql { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); background: var(--code-bg); padding: 2px 6px; border-radius: var(--r-xs); }
+.jira-queries, .jira-mappings { display: grid; gap: 6px; }
+.jira-query, .jira-mapping { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); min-width: 0; }
+.jira-query-text { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.jira-query-name { display: flex; align-items: baseline; gap: 8px; font-weight: 600; min-width: 0; }
+.jira-query .jira-jql { display: block; max-width: 100%; }
+.jira-query-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jira-query-add .grow { flex: 1 1 220px; min-width: 0; }
+.jira-query-name-input { width: 160px; }
+.jira-switches { display: grid; gap: 10px; margin-top: 6px; }
+.jira-switch { display: flex; align-items: flex-start; gap: 10px; }
+.jira-switch > span { display: grid; gap: 2px; }
+.jira-test-result { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 10px; border-radius: var(--r-md); font-size: var(--fs-sm); }
+.jira-test-result.ok { background: var(--success-soft); color: var(--success); }
+.jira-test-result.bad { background: var(--danger-soft); color: var(--danger); }
+.jira-create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

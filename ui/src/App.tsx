@@ -11,6 +11,9 @@ import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
 import { Workspace } from "./components/Workspace";
 import { Resizer, readSize } from "./components/Resizer";
 import { LinkPreview } from "./components/LinkPreview";
+import { IssuePreview } from "./components/IssuePreview";
+import { CreateIssueHost } from "./components/CreateIssueDialog";
+import { openIssueNote } from "./lib/jiraActions";
 import { CommandPalette } from "./components/CommandPalette";
 import { CalendarPopover, openCalendar } from "./components/CalendarPopover";
 import { RightPanel } from "./panels/RightPanel";
@@ -148,6 +151,8 @@ export function App() {
           if (!st.pages.has(t.page_id)) await st.refreshTree();
           st.openPage(t.page_id, { newTab: !!t.new_tab });
         } else if (t.kind === "timesheet") st.openTab({ kind: "timesheet" });
+        else if (t.kind === "issues") st.openTab({ kind: "issues" });
+        else if (t.kind === "issue") void openIssueNote(t.key);
         else if (t.kind === "timer_stop" && timeTrackingEnabled()) {
           await st.refreshTimer();
           stopTimer();
@@ -339,6 +344,8 @@ export function App() {
       )}
       <CommandPalette />
       <LinkPreview />
+      <IssuePreview />
+      <CreateIssueHost />
       <CalendarPopover />
       <WindowControls />
       <Toasts />

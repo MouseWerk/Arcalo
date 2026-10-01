@@ -295,6 +295,8 @@ export interface Settings {
   mail: MailSettings;
   /** First-run intro and setup (saved by its own commands, kept by `settings_save`). */
   onboarding: OnboardingState;
+  /** Jira sites, saved JQL searches and the sync (tokens live in the credential store). */
+  jira?: import("./jira").IssueSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -569,7 +571,7 @@ export interface Dashboard {
   note?: string;
 }
 /** Payload of `search://open`: what the quick search asks the main window to show. */
-export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" };
+export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" } | { kind: "issues" } | { kind: "issue"; key: string };
 export interface DesktopInfo {
   autostart: boolean;
   autostart_available: boolean;
