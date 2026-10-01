@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { exportFileName, spellcheckAttrs } from "./prefs";
+import { exportFileName, numberFormatOf, spellcheckAttrs, withNumberFormat } from "./prefs";
 import { fmtDate, fmtHours, fmtMinutes, setFormatPrefs, weekStart, weekdayLabels } from "./format";
 import { monthGrid } from "./calendar";
 import { dashBefore, lineNumbers, smartQuote } from "../editor/typing";
@@ -77,5 +77,15 @@ describe("AI presets and templates", () => {
     expect(transformInstruction("shorten", p)).toBe("shorten");
     expect(meetingSummaryInstruction("  Nur Stichpunkte ")).toBe("Nur Stichpunkte");
     expect(meetingSummaryInstruction(null)).toMatch(/## Zusammenfassung/);
+  });
+});
+
+describe("number format", () => {
+  it("choosing the language's own notation keeps following the language", () => {
+    const de = { language: "de", date_format: "de" };
+    expect(withNumberFormat(de, "point")).toEqual({ ...de, number_format: "point" });
+    expect(withNumberFormat(withNumberFormat(de, "point"), "comma")).toEqual(de);
+    expect(withNumberFormat({ language: "en" }, "comma")).toEqual({ language: "en", number_format: "comma" });
+    expect(numberFormatOf(withNumberFormat({ language: "en", number_format: "comma" as const }, "point"))).toBe("point");
   });
 });

@@ -32,6 +32,8 @@ pub struct JiraSync {
     worklogs: AtomicBool,
     /// A booking arrived while the runner was busy: it runs once more.
     again: AtomicBool,
+    /// Woken whenever a site sync ends (callers waiting for their turn).
+    done: tokio::sync::Notify,
 }
 
 fn secret(state: &AppState, id: &str) -> SecretStore {
@@ -266,16 +268,29 @@ fn start(app: &AppHandle, id: &str) -> bool {
 }
 
 fn finish(app: &AppHandle, id: &str) {
-    lock(&app.state::<JiraSync>().running).remove(id);
+    let sync = app.state::<JiraSync>();
+    lock(&sync.running).remove(id);
+    sync.done.notify_waiters();
     let _ = app.emit("jira://synced", id);
 }
 
 /// Syncs one site: its searches, stored in one transaction; done issues tick their tasks.
-async fn sync_site(app: &AppHandle, id: &str) -> Result<usize> {
-    if !start(app, id) {
-        return Err(Error::State(
-            tr!("Diese Jira-Site wird gerade synchronisiert", "This Jira site is syncing right now").into(),
-        ));
+/// A sync of the site already running: with `wait` this one follows it (the settings may have
+/// changed since it started, e.g. right after saving the site), otherwise it is refused.
+async fn sync_site(app: &AppHandle, id: &str, wait: bool) -> Result<usize> {
+    loop {
+        let sync = app.state::<JiraSync>();
+        let mut done = std::pin::pin!(sync.done.notified());
+        done.as_mut().enable();
+        if start(app, id) {
+            break;
+        }
+        if !wait {
+            return Err(Error::State(
+                tr!("Diese Jira-Site wird gerade synchronisiert", "This Jira site is syncing right now").into(),
+            ));
+        }
+        done.await;
     }
     let outcome = sync_inner(app, id).await;
     let state = app.state::<AppState>();
@@ -316,21 +331,22 @@ async fn sync_inner(app: &AppHandle, id: &str) -> Result<(usize, String)> {
     Ok((out.issues, account.display_name))
 }
 
-async fn sync_ids(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<usize>)> {
+async fn sync_ids(app: &AppHandle, ids: &[String], wait: bool) -> Vec<(String, Result<usize>)> {
     let mut out = vec![];
     for id in ids {
-        out.push((id.clone(), sync_site(app, id).await));
+        out.push((id.clone(), sync_site(app, id, wait).await));
     }
     out
 }
 
 pub fn spawn_sync(app: AppHandle, ids: Vec<String>) {
     tauri::async_runtime::spawn(async move {
-        sync_ids(&app, &ids).await;
+        sync_ids(&app, &ids, true).await;
     });
 }
 
-/// Syncs `site` (or every active site) now and waits; one site asked for: its error is the answer.
+/// Syncs `site` (or every active site) now and waits, after a sync already running for it;
+/// one site asked for: its error is the answer.
 #[tauri::command]
 pub async fn jira_sync_now(app: AppHandle, site: Option<String>) -> Result<JiraStatus> {
     let settings = app.state::<AppState>().settings().jira;
@@ -339,7 +355,7 @@ pub async fn jira_sync_now(app: AppHandle, site: Option<String>) -> Result<JiraS
         None => settings.active().map(|s| s.id.clone()).collect(),
     };
     let mut errors: Vec<String> =
-        sync_ids(&app, &ids).await.into_iter().filter_map(|(_, r)| r.err().map(|e| e.to_string())).collect();
+        sync_ids(&app, &ids, true).await.into_iter().filter_map(|(_, r)| r.err().map(|e| e.to_string())).collect();
     let status = status_of(&app)?;
     if site.is_some() && !errors.is_empty() {
         return Err(Error::State(errors.remove(0)));
@@ -375,7 +391,7 @@ pub fn spawn_scheduler(app: AppHandle) {
                 .map(|s| s.id.clone())
                 .collect();
             if !due.is_empty() {
-                sync_ids(&app, &due).await;
+                sync_ids(&app, &due, false).await;
             }
             run_worklogs(&app).await;
             tokio::time::sleep(Duration::from_secs(30)).await;

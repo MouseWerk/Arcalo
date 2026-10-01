@@ -6,7 +6,7 @@ import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
-import { exportFileName, numberFormatOf } from "../../lib/prefs";
+import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
 import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
@@ -301,7 +301,7 @@ export function LocaleSection({ draft, update }: SectionProps) {
               { value: "comma", label: "1.234,5" },
               { value: "point", label: "1,234.5" },
             ]}
-            onChange={(v) => update({ locale: { ...l, number_format: v } })}
+            onChange={(v) => update({ locale: withNumberFormat(l, v) })}
           />
         </Row>
       </Group>

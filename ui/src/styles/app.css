@@ -2997,3 +2997,13 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .voice-meter { display: none; }
   .voice-progress { width: 64px; }
 }
+
+/* ---- ribbon in low windows ---- */
+/* The ribbon's own buttons fill a low window: tighter spacing keeps room for the quick links,
+   and at least one of them stays visible (the rest scroll). */
+.ribbon-sep { flex: none; }
+@media (max-height: 720px) {
+  .ribbon { gap: 1px; padding: 4px 0 6px; }
+  .ribbon-sep { margin: 2px 0; }
+  .quick-links { gap: 1px; min-height: 32px; }
+}

@@ -81,11 +81,11 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   await clickText(".dash-bar button", "Widget hinzufügen");
   await app.click('.dash-gallery-card[data-kind="note"]');
   await app.waitFor('[data-widget="note"]');
-  // Remove „Budget“, make „Zuletzt bearbeitet“ extra large, move the note up with the keyboard.
+  // Remove „Budget“, make „Zuletzt bearbeitet“ wide and tall, move the note up with the keyboard.
   await app.click('[data-widget="budget"] [aria-label="Entfernen"]');
   // Narrow widgets offer the sizes in a menu.
   await app.click('[data-widget="recent"] [aria-label="Widget-Optionen"]');
-  await clickText(".menu [role=menuitem]", "Größe XL");
+  await clickText(".menu [role=menuitem]", "Größe: Breit und hoch");
   const before = (await order()).indexOf("note");
   await app.browser.execute(() => document.querySelector('[data-widget="note"]').focus());
   await app.keys(["ArrowUp"]);
@@ -97,7 +97,8 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   const saved = (await app.invoke("settings_get")).settings.dashboard.boards[0].widgets;
   assert.deepEqual(saved.map((w) => w.id).sort(), [...expected].sort());
   assert.ok(!saved.some((w) => w.kind === "budget"));
-  assert.equal(saved.find((w) => w.id === "recent").w, 12);
+  const recent = saved.find((w) => w.id === "recent");
+  assert.deepEqual([recent.w, recent.h], [8, 14]);
 
   // The scratch note saves itself.
   const note = await app.waitFor('[data-widget="note"] textarea');
@@ -108,7 +109,11 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   await reload();
   await app.waitFor(".dash-grid .dw");
   assert.deepEqual(await order(), expected);
-  assert.equal(await app.browser.execute(() => document.querySelector('[data-widget="recent"]').style.gridColumn), "1 / span 12");
+  const grid = await app.browser.execute(() => {
+    const st = document.querySelector('[data-widget="recent"]').style;
+    return [st.gridColumn, st.gridRow];
+  });
+  assert.deepEqual(grid, [`${recent.x + 1} / span 8`, `${recent.y + 1} / span 14`]);
   assert.equal(await (await app.$('[data-widget="note"] textarea')).getValue(), "Merkzettel E2E");
 
   // Cancel leaves everything as saved; a new tab shows the dashboard too.

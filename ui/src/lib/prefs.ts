@@ -115,3 +115,11 @@ export function exportFileName(pattern: string, v: { from: string; to: string; f
 
 /** The decimal notation: as chosen, else as the display language writes numbers (28.00 / 28,00). */
 export const numberFormatOf = (l: { language: string; number_format?: "comma" | "point" | null }): "comma" | "point" => l.number_format ?? (l.language === "en" ? "point" : "comma");
+
+/** `l` with the decimal notation `v`: the language's own one stays unset, so it keeps following the language. */
+export function withNumberFormat<L extends { language: string; number_format?: "comma" | "point" | null }>(l: L, v: "comma" | "point"): L {
+  const out = { ...l };
+  if (v === numberFormatOf({ language: l.language })) delete out.number_format;
+  else out.number_format = v;
+  return out;
+}
