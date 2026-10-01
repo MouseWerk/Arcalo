@@ -172,6 +172,7 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
       ["calendar://synced", ["calendar"]],
       ["focus://changed", ["focus", "entries"]],
       ["focus://completed", ["focus", "entries"]],
+      ["data://absences", ["absences"]],
     ];
     const un = subs.map(([ev, topics]) => on(ev, () => soon(topics)));
     const saved = () => soon(["pages", "tasks"], 600);

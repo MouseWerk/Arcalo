@@ -16,6 +16,7 @@ fn day(d: u32, workday: bool, booked: i64) -> Day {
         to: t(d, 0, 0) + Duration::days(1),
         workday,
         booked_minutes: booked,
+        target_minutes: None,
     }
 }
 

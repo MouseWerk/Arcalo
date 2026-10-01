@@ -93,7 +93,7 @@ describe("dashboard without time tracking", () => {
   const TIME = ["week", "budget", "timer", "proposal"];
 
   it("the gallery offers no time widgets (nor the project widget)", () => {
-    expect(galleryKinds(true)).toEqual(WIDGET_KINDS);
+    expect(galleryKinds(true, true)).toEqual(WIDGET_KINDS);
     const off = galleryKinds(false);
     for (const k of [...TIME, "project"]) expect(off).not.toContain(k);
     expect(off).toEqual(expect.arrayContaining(["today", "agenda", "tasks", "review", "focus", "note"]));

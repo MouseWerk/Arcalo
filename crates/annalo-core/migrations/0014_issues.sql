@@ -1,4 +1,4 @@
--- v13: issue trackers (Jira Cloud and Server/Data Center) read offline.
+-- v14: issue trackers (Jira Cloud and Server/Data Center) read offline.
 --
 -- `issues` caches what a sync found per site: one row per issue with the fields the Issues
 -- page, the widgets, the chips in notes and the assistant show. `matches` (JSON) names the

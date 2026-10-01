@@ -487,6 +487,8 @@ pub struct TimePrefs {
     pub cats_columns: CatsColumns,
     /// Default file name of exports without extension; `{von}`, `{bis}`, `{format}`, `{kw}`, `{pernr}`.
     pub export_file_pattern: String,
+    /// Overtime balance, vacation account and public holidays.
+    pub balance: crate::worktime::BalancePrefs,
 }
 
 impl Default for TimePrefs {
@@ -500,6 +502,7 @@ impl Default for TimePrefs {
             cats_delimiter: CatsDelimiter::Semicolon,
             cats_columns: CatsColumns::Standard,
             export_file_pattern: DEFAULT_EXPORT_PATTERN.into(),
+            balance: crate::worktime::BalancePrefs::default(),
         }
     }
 }
@@ -764,18 +767,32 @@ impl Default for StartPrefs {
 
 choice!(Language { #[default] De = "de", En = "en" } default De);
 choice!(DateFormat { #[default] De = "de", Iso = "iso" } default De);
+choice!(NumberFormat { #[default] Comma = "comma", Point = "point" } default Comma);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalePrefs {
     pub language: Language,
     pub date_format: DateFormat,
+    /// Decimal comma (28,00) or point (28.00); `None`: as the display language writes it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_format: Option<NumberFormat>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+
+    #[test]
+    fn number_format_is_kept_and_unset_by_default() {
+        let l: LocalePrefs = serde_json::from_str(r#"{"language":"en","number_format":"point"}"#).unwrap();
+        assert_eq!(l.number_format, Some(NumberFormat::Point));
+        assert_eq!(serde_json::to_value(&l).unwrap()["number_format"], "point");
+        let l: LocalePrefs = serde_json::from_str(r#"{"language":"en"}"#).unwrap();
+        assert_eq!(l.number_format, None);
+        assert!(serde_json::to_value(&l).unwrap().get("number_format").is_none());
+    }
 
     #[test]
     fn rounding_up_nearest_and_minimum() {

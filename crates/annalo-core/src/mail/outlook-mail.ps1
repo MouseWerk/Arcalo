@@ -9,12 +9,15 @@
 #                names and sizes of the attachments (nothing is saved).
 #   -Mode save   saves the attachments -Indexes (1-based, "1,3") of one mail into -Dir\<index>\.
 #   -Mode open   shows one mail (Namespace.GetItemFromID) in its own Outlook window.
+#   -Mode flagged  the flagged mails of the To-Do list (all folders; the inbox when the To-Do
+#                folder cannot be read), the earliest due first, at most -MaxItems: what "read"
+#                returns per mail (text cut at -MaxBody) plus flagDue (yyyy-MM-dd) and flagRequest.
 #
 # Outlook is never started for "read": an Outlook that is not running has nothing selected.
 # Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Annalo shows its own text.
 
 param(
-    [ValidateSet('read', 'save', 'open')][string]$Mode = 'read',
+    [ValidateSet('read', 'save', 'open', 'flagged')][string]$Mode = 'read',
     [string]$EntryId = '',
     [string]$StoreId = '',
     [string]$Indexes = '',
@@ -60,7 +63,7 @@ if (-not $outlook) {
         if ($newOutlook) { Fail 'new_outlook' 'olk' }
         Fail 'not_installed' 'Outlook.Application'
     }
-    if (-not $classic -and $Mode -eq 'read') {
+    if (-not $classic -and ($Mode -eq 'read' -or $Mode -eq 'flagged')) {
         if ($newOutlook) { Fail 'new_outlook' 'olk' }
         Fail 'not_running' 'OUTLOOK'
     }
@@ -166,6 +169,34 @@ function Is-Mail($it) {
     try { $c = [int]$it.Class } catch { return $false }
     # olMail, olMeetingRequest .. olMeetingTentative, olReport (43, 53-57, 46)
     return ($c -eq 43) -or ($c -ge 53 -and $c -le 57) -or ($c -eq 46)
+}
+
+if ($Mode -eq 'flagged') {
+    $folder = $null
+    try { $folder = $ns.GetDefaultFolder(28) } catch { $folder = $null }
+    if (-not $folder) {
+        try { $folder = $ns.GetDefaultFolder(6) } catch { Fail 'com' $_.Exception.Message }
+    }
+    $found = New-Object System.Collections.ArrayList
+    try {
+        $items = $folder.Items.Restrict('[FlagStatus] = 2')
+        foreach ($it in $items) {
+            try { if ([int]$it.Class -ne 43) { continue } } catch { continue }
+            $o = Read-Mail $it
+            $o.flagDue = ''
+            $o.flagRequest = ''
+            try {
+                $due = $it.TaskDueDate
+                if ($due.Year -lt 4000) { $o.flagDue = $due.ToString('yyyy-MM-dd', $inv) }
+            } catch { }
+            try { $o.flagRequest = [string]$it.FlagRequest } catch { }
+            [void]$found.Add($o)
+            if ($found.Count -ge 200) { break }
+        }
+    } catch { Fail 'com' $_.Exception.Message }
+    $sorted = @($found | Sort-Object @{ Expression = { if ($_.flagDue) { $_.flagDue } else { '9999' } } }, @{ Expression = { $_.received }; Descending = $true })
+    Write-Json ([ordered]@{ ok = $true; version = [string]$outlook.Version; items = @($sorted | Select-Object -First $MaxItems) })
+    exit 0
 }
 
 if ($Mode -eq 'open') {

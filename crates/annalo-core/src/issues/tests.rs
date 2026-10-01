@@ -542,3 +542,36 @@ fn burndown_counts_open_issues_per_day() {
     assert_eq!(points.iter().map(|p| p.remaining).collect::<Vec<_>>(), [Some(3), Some(2), Some(1), None, None]);
     assert_eq!((points[0].ideal, points[4].ideal), (3.0, 0.0));
 }
+
+#[test]
+fn open_issues_with_a_due_date_are_deadlines() {
+    let db = setup();
+    let due = |key: &str, cat: &str, d: &str, prio: &str| {
+        let mut i = issue(key, cat);
+        i.due_date = Some(d.into());
+        i.priority = prio.into();
+        i
+    };
+    store(
+        &db,
+        &[
+            (due("PROJ-1", "new", "2026-09-20", "High"), &["mine"]),
+            (due("PROJ-2", "done", "2026-09-25", "Low"), &["mine"]),
+            (due("PROJ-3", "indeterminate", "2026-10-30", "Medium"), &["q1"]),
+            (due("PROJ-4", "new", "2026-12-30", "Medium"), &["mine"]),
+        ],
+    );
+    let w = crate::dashboard::work::DeadlineWindow {
+        today: NaiveDate::from_ymd_opt(2026, 9, 23).unwrap(),
+        until: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+    };
+    let list = jira_deadlines(&db, &w).unwrap();
+    assert_eq!(
+        list.iter().map(|d| (d.key.as_str(), d.priority)).collect::<Vec<_>>(),
+        [("jira:PROJ-1", 2), ("jira:PROJ-3", 1)]
+    );
+    assert_eq!(list[0].title, "PROJ-1 Summary of PROJ-1");
+    assert!(list[0].url.as_deref().is_some_and(|u| u.ends_with("/browse/PROJ-1")));
+    let all = crate::dashboard::work::deadlines(&db, w.today, 40, &[]).unwrap();
+    assert!(all.items.iter().any(|d| d.source == "jira"));
+}

@@ -2,6 +2,7 @@
 // Netzwerk, Sicherung, Desktop) and the preferences (Darstellung, Editor, Notizen, Zeit,
 // Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung, Protokoll and Über.
 
+import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
@@ -233,6 +234,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
           <>
             <TimeSection draft={draft} update={u} setEnabled={(v) => u({ time: { ...draft.time, enabled: v } })} />
             {timeTrackingOn(draft) && <TimePrefGroups draft={draft} update={u} />}
+            {timeTrackingOn(draft) && <BalancePrefGroup draft={draft} update={u} />}
           </>
         );
       case "ai":

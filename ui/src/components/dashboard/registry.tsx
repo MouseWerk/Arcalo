@@ -38,6 +38,7 @@ import { AgendaWidget, CalendarWidget, ClockWidget, FocusWidget, ReviewWidget, T
 import { BudgetWidget, ProjectWidget, ProposalWidget, TimerWidget, WeekWidget } from "./time";
 import { ActivityWidget, EmbedWidget, FavoritesWidget, NoteWidget, PinnedWidget, RecentWidget } from "./pages";
 import { LinksWidget, QueryWidget, SuggestionsWidget } from "./tools";
+import { WORK_BODIES, WORK_ICONS, workOpener } from "./work";
 import { JiraMineWidget, JiraQueryWidget, JiraSprintWidget } from "./jira";
 
 export interface WidgetProps {
@@ -67,6 +68,7 @@ export const BODIES: Record<WidgetKind, ComponentType<WidgetProps>> = {
   query: QueryWidget,
   links: LinksWidget,
   suggestions: SuggestionsWidget,
+  ...WORK_BODIES,
   jira: JiraMineWidget,
   jira_query: JiraQueryWidget,
   jira_sprint: JiraSprintWidget,
@@ -94,6 +96,7 @@ export const ICONS: Record<WidgetKind, LucideIcon> = {
   query: ListFilter,
   links: Link2,
   suggestions: Sparkles,
+  ...WORK_ICONS,
   jira: Ticket,
   jira_query: ListTodo,
   jira_sprint: Kanban,
@@ -127,6 +130,6 @@ export function openerOf(w: GridWidget): (() => void) | null {
     case "embed":
       return typeof c.page === "number" ? () => s().openPage(c.page as number) : null;
     default:
-      return null;
+      return workOpener(w);
   }
 }

@@ -1134,3 +1134,42 @@ pub fn unmapped_error(key: &str) -> Error {
         "{key} has no network/activity yet. Book it once with a reference (e.g. /time NP-8801/1020 1h {key} …) or map it under Settings → Jira."
     ))
 }
+
+/// Due dates of the synced open issues for the start page's „Fristen“ widget
+/// ([`crate::dashboard::work::DEADLINE_PROVIDERS`]): everything due up to the window's end,
+/// overdue ones included; they open in Jira.
+pub fn jira_deadlines(
+    db: &Database,
+    w: &crate::dashboard::work::DeadlineWindow,
+) -> Result<Vec<crate::dashboard::work::Deadline>> {
+    let until = w.until.format("%Y-%m-%d").to_string();
+    let mut st = db.conn().prepare(
+        "SELECT key, MAX(summary), MAX(project_name), MAX(project_key), MAX(due_date), MAX(url), MAX(priority) FROM issues
+         WHERE status_category <> 'done' AND matches <> '[]' AND due_date IS NOT NULL AND due_date <= ?1
+         GROUP BY key ORDER BY key",
+    )?;
+    let rows: Vec<(String, String, String, String, String, String, String)> = st
+        .query_map([until], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(key, summary, project_name, project_key, due, url, priority)| {
+            let date = NaiveDate::parse_from_str(&due, "%Y-%m-%d").ok()?;
+            Some(crate::dashboard::work::Deadline {
+                source: "jira".into(),
+                title: format!("{key} {summary}"),
+                detail: if project_name.is_empty() { project_key } else { project_name },
+                date,
+                page_id: None,
+                ordinal: None,
+                url: Some(url).filter(|u| !u.is_empty()),
+                priority: match priority.to_lowercase().as_str() {
+                    "highest" | "blocker" | "critical" | "high" => 2,
+                    "medium" | "major" => 1,
+                    _ => 0,
+                },
+                key: format!("jira:{key}"),
+            })
+        })
+        .collect())
+}

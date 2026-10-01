@@ -9,6 +9,7 @@
 //! [`query`] evaluates the saved queries of the „Abfrage“ widget.
 
 pub mod query;
+pub mod work;
 
 use crate::trf;
 use std::cell::OnceCell;
@@ -83,6 +84,9 @@ pub enum Part {
     Month { from: NaiveDate, to: NaiveDate },
     /// „KI-Vorschläge“: counts the suggestions are built from.
     Suggestions,
+    /// The work and chart widgets of 1.7 (balance, vacation, deadlines, team, charts, …).
+    #[serde(untagged)]
+    Work(work::WorkPart),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -402,6 +406,7 @@ pub fn part<Tz: TimeZone>(ctx: &Ctx<Tz>, p: &Part) -> Result<serde_json::Value> 
         Part::TimerRefs => json(timer_refs(ctx)?),
         Part::Month { from, to } => json(calendar::daily_overview(ctx.db, *from, *to, ctx.tz)?),
         Part::Suggestions => json(suggestions(ctx)?),
+        Part::Work(p) => work::part(ctx, p),
     }
 }
 
@@ -702,12 +707,14 @@ fn embed(db: &Database, id: i64) -> Result<PageData> {
 fn proposal<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<ProposalData> {
     let w = week(ctx, start)?;
     let target = ctx.target_minutes();
-    let open_days: Vec<OpenDay> = w
-        .days
-        .iter()
-        .filter(|d| d.workday && d.date < ctx.today && d.minutes < target)
-        .map(|d| OpenDay { date: d.date, booked_minutes: d.minutes, missing_minutes: target - d.minutes })
-        .collect();
+    let mut open_days: Vec<OpenDay> = vec![];
+    for d in w.days.iter().filter(|d| d.workday && d.date < ctx.today) {
+        // Holidays and absence days are no gaps.
+        let target = crate::worktime::gap_target(ctx.db, d.date, target)?;
+        if d.minutes < target {
+            open_days.push(OpenDay { date: d.date, booked_minutes: d.minutes, missing_minutes: target - d.minutes });
+        }
+    }
     let events = ctx.events(ctx.day_start(start), ctx.day_start(start + Duration::days(7)))?;
     let unbooked: Vec<&CalendarEvent> = events
         .iter()

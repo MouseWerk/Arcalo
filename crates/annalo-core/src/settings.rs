@@ -337,7 +337,7 @@ pub struct Dashboard {
 /// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender; Jira (1.7):
 /// Meine Issues, Jira-Abfrage, Sprint.
 /// The UI keeps the same list (`WIDGET_KINDS` in `lib/dashboard.ts`).
-pub const WIDGET_KINDS: [&str; 24] = [
+pub const WIDGET_KINDS: [&str; 33] = [
     "today",
     "agenda",
     "tasks",
@@ -359,6 +359,17 @@ pub const WIDGET_KINDS: [&str; 24] = [
     "suggestions",
     "timer",
     "calendar",
+    // 1.7: work and chart widgets.
+    "balance",
+    "vacation",
+    "deadlines",
+    "mail_flags",
+    "next_meeting",
+    "team",
+    "chart",
+    "heatmap",
+    "kanban",
+    // 1.7: Jira.
     "jira",
     "jira_query",
     "jira_sprint",
@@ -681,6 +692,7 @@ impl Settings {
         self.calendar = std::mem::take(&mut self.calendar).normalized();
         self.jira = std::mem::take(&mut self.jira).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
+        self.time.balance = std::mem::take(&mut self.time.balance).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
     }

@@ -16,6 +16,7 @@
 //! suggestion only goes to a provider marked local.
 
 pub mod eml;
+pub mod flagged;
 pub mod msg;
 pub mod outlook;
 pub mod paste;

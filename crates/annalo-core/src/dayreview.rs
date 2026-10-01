@@ -355,7 +355,9 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
     let mut time =
         ReviewTime { workday: opts.workdays.contains(&date.weekday().number_from_monday()), ..Default::default() };
     if time.workday {
-        time.target_minutes = (opts.daily_target_hours.max(0.0) * 60.0).round() as i64;
+        // A public holiday or an absence day has less or no target (it is no gap).
+        time.target_minutes =
+            crate::worktime::gap_target(db, date, (opts.daily_target_hours.max(0.0) * 60.0).round() as i64)?;
     }
     {
         let mut st = c.prepare_cached(
