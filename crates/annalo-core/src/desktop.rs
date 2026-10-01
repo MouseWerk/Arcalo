@@ -258,6 +258,15 @@ pub fn close_action(platform: Platform, close_to_tray: bool, has_tray: bool) -> 
 
 /// macOS: whether dismissing a popup (quick capture, quick search) hides the app, so the program
 /// the user came from gets the focus back. Only when the popup was opened from another program
+/// Top-left corner that centres a window of `window` (width, height) on a screen given as
+/// (x, y, width, height), all in physical pixels. A window larger than the screen starts at its
+/// top-left corner.
+pub fn centered_in(screen: (i32, i32, u32, u32), window: (u32, u32)) -> (i32, i32) {
+    let (x, y, sw, sh) = screen;
+    let off = |s: u32, w: u32| (s.saturating_sub(w) / 2) as i32;
+    (x + off(sw, window.0), y + off(sh, window.1))
+}
+
 /// and still has the focus (it was dismissed with Esc or after storing, not by clicking elsewhere).
 pub fn hide_app_after_popup(platform: Platform, opened_from_other_app: bool, popup_focused: bool) -> bool {
     platform == Platform::MacOs && opened_from_other_app && popup_focused
@@ -425,5 +434,20 @@ mod tests {
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", Some("1020")), 83))), "NP-8801/1020 · 01:23");
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", None), 600))), "NP-8801 · 10:00");
         assert_eq!(tray_tooltip(None), "Annalo");
+    }
+}
+
+#[cfg(test)]
+mod centered_tests {
+    use super::centered_in;
+
+    #[test]
+    fn popups_are_centred_on_the_given_screen() {
+        // Primary screen at the origin, 1920x1080; popup 620x160.
+        assert_eq!(centered_in((0, 0, 1920, 1080), (620, 160)), (650, 460));
+        // A screen left of the main one has negative coordinates.
+        assert_eq!(centered_in((-2560, 0, 2560, 1440), (1240, 320)), (-1900, 560));
+        // Larger than the screen: its corner.
+        assert_eq!(centered_in((100, 50, 800, 600), (1000, 700)), (100, 50));
     }
 }

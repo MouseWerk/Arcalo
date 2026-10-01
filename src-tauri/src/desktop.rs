@@ -376,7 +376,7 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow>
     // appear and take the keyboard focus from the program in front.
     #[cfg(target_os = "macos")]
     let _ = app.show();
-    w.center()?;
+    center_on_primary(app, &w);
     w.show()?;
     w.set_focus()?;
     // Windows may refuse the foreground to a window shown from the background (focus-stealing
@@ -392,6 +392,24 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow>
         }
     });
     Ok(w)
+}
+
+/// Puts a popup in the middle of the primary screen (the main display), whatever screen the
+/// main window is on. The popup first moves onto that screen, so its size follows the screen's
+/// scaling before it is centred. Falls back to the current screen when there is none.
+fn center_on_primary(app: &AppHandle, w: &tauri::WebviewWindow) {
+    let Ok(Some(m)) = app.primary_monitor() else {
+        let _ = w.center();
+        return;
+    };
+    let (pos, size) = (m.position(), m.size());
+    let _ = w.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
+    let Ok(outer) = w.outer_size() else {
+        let _ = w.center();
+        return;
+    };
+    let (x, y) = core::centered_in((pos.x, pos.y, size.width, size.height), (outer.width, outer.height));
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
 /// Payload of `capture://shown`.
