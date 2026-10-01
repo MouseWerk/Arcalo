@@ -152,6 +152,12 @@ pub fn mime_for(name: &str) -> &'static str {
         Some("webp") => "image/webp",
         Some("svg") => "image/svg+xml",
         Some("pdf") => "application/pdf",
+        // Voice notes and other recordings play in the editor's audio player.
+        Some("flac") => "audio/flac",
+        Some("wav") => "audio/wav",
+        Some("ogg" | "opus") => "audio/ogg",
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
         _ => "application/octet-stream",
     }
 }
@@ -353,6 +359,26 @@ pub fn existing(attachments_dir: &Path, name: &str) -> Result<PathBuf> {
     })
 }
 
+/// The first range of an HTTP `Range: bytes=…` header for a file of `len` bytes, as inclusive
+/// `(from, to)`: `bytes=100-199`, `bytes=100-` (to the end), `bytes=-500` (the last 500).
+/// `None` for anything else or a range outside the file (the whole file is sent then).
+pub fn byte_range(header: &str, len: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?.split(',').next()?.trim();
+    let (a, b) = spec.split_once('-')?;
+    if len == 0 {
+        return None;
+    }
+    let (from, to) = match (a.trim(), b.trim()) {
+        ("", n) => {
+            let n: u64 = n.parse().ok()?;
+            (len.saturating_sub(n), len - 1)
+        }
+        (a, "") => (a.parse().ok()?, len - 1),
+        (a, b) => (a.parse().ok()?, b.parse::<u64>().ok()?.min(len - 1)),
+    };
+    (from <= to && from < len).then_some((from, to))
+}
+
 /// Decodes `%XX` escapes of a URL path segment.
 pub fn percent_decode(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
@@ -395,6 +421,19 @@ pub fn embeds(markdown: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn byte_ranges_for_audio_seeking() {
+        assert_eq!(byte_range("bytes=0-", 1000), Some((0, 999)));
+        assert_eq!(byte_range("bytes=100-199", 1000), Some((100, 199)));
+        assert_eq!(byte_range("bytes=900-5000", 1000), Some((900, 999)));
+        assert_eq!(byte_range("bytes=-300", 1000), Some((700, 999)));
+        assert_eq!(byte_range("bytes=1000-", 1000), None);
+        assert_eq!(byte_range("bytes=5-2", 1000), None);
+        assert_eq!(byte_range("items=0-5", 1000), None);
+        assert_eq!(byte_range("bytes=0-", 0), None);
+        assert_eq!(mime_for("Sprachnotiz 2026-10-01 14-30.flac"), "audio/flac");
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("annalo-att-{name}-{}", std::process::id()));

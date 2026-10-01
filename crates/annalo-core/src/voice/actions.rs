@@ -149,11 +149,11 @@ pub fn parse_item(raw: &str, today: NaiveDate) -> Option<ActionItem> {
             continue;
         }
         let lower = w.to_lowercase();
-        if let Some(d) = ["due:", "fällig:"].iter().find_map(|p| lower.strip_prefix(p)) {
-            if let Some(d) = parse_date(d, today) {
-                due.get_or_insert(d);
-                continue;
-            }
+        if let Some(d) = ["due:", "fällig:"].iter().find_map(|p| lower.strip_prefix(p))
+            && let Some(d) = parse_date(d, today)
+        {
+            due.get_or_insert(d);
+            continue;
         }
         words.push(w.to_owned());
     }

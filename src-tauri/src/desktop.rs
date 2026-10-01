@@ -39,11 +39,13 @@ pub enum Role {
     Selection = 3,
     /// „Aktuelle E-Mail übernehmen“ (Outlook).
     Mail = 4,
+    /// Sprachnotiz starten oder beenden.
+    Voice = 5,
 }
 
 /// Number of global shortcut slots (one per [`Role`]).
-pub const SLOTS: usize = 5;
-const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Selection, Role::Mail];
+pub const SLOTS: usize = 6;
+const ROLES: [Role; SLOTS] = [Role::Capture, Role::Palette, Role::Search, Role::Selection, Role::Mail, Role::Voice];
 /// The name of a shortcut's role (in messages about it).
 fn role_name(i: usize) -> &'static str {
     match i {
@@ -51,7 +53,8 @@ fn role_name(i: usize) -> &'static str {
         1 => tr!("Befehlspalette", "Command palette"),
         2 => tr!("Schnellsuche", "Quick search"),
         3 => tr!("Auswahl übernehmen", "Capture selection"),
-        _ => tr!("E-Mail übernehmen", "Capture e-mail"),
+        4 => tr!("E-Mail übernehmen", "Capture e-mail"),
+        _ => tr!("Sprachnotiz", "Voice note"),
     }
 }
 
@@ -62,6 +65,8 @@ struct TrayHandles {
     timer: Option<(MenuItem<Wry>, MenuItem<Wry>)>,
     /// The menu was built for time tracking on (rebuilt when the setting changes).
     time: bool,
+    /// The menu has „Aufnahme beenden“ (a voice note is being recorded).
+    recording: bool,
 }
 
 #[derive(Default)]
@@ -125,6 +130,17 @@ type TimerItems = Option<(MenuItem<Wry>, MenuItem<Wry>)>;
 fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItems)> {
     let menu = Menu::new(app)?;
     let (mut stop, mut resume) = (None, None);
+    // Recording a voice note: the first entry stops it (never recording unnoticed).
+    if crate::voice::is_recording(app) {
+        menu.append(&MenuItem::with_id(
+            app,
+            "voice-stop",
+            tr!("Aufnahme beenden", "Stop recording"),
+            true,
+            None::<&str>,
+        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
     for id in tray_entries(time) {
         let label = match id {
             "-" => {
@@ -163,7 +179,8 @@ pub fn relocalize(app: &AppHandle) {
         match tray_menu(app, time) {
             Ok((menu, timer)) => {
                 let _ = t.tray.set_menu(Some(menu));
-                *lock(&desktop(app).tray) = Some(TrayHandles { tray: t.tray, timer, time });
+                let recording = crate::voice::is_recording(app);
+                *lock(&desktop(app).tray) = Some(TrayHandles { tray: t.tray, timer, time, recording });
             }
             Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
         }
@@ -203,7 +220,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     let tray = builder.build(app)?;
-    *lock(&desktop(app).tray) = Some(TrayHandles { tray, timer, time });
+    let recording = crate::voice::is_recording(app);
+    *lock(&desktop(app).tray) = Some(TrayHandles { tray, timer, time, recording });
     refresh_tray(app);
     Ok(())
 }
@@ -224,6 +242,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             }
         }
         "capture" => open_capture(app, false),
+        "voice-stop" => crate::voice::on_shortcut(app),
         "search" => open_search(app, false),
         "quit" => request_quit(app),
         _ => {}
@@ -263,7 +282,7 @@ pub fn refresh_tray(app: &AppHandle) {
     if !time {
         // Nothing about a timer, also not one left running from before.
         if let Some(t) = lock(&desktop(app).tray).clone() {
-            let _ = t.tray.set_tooltip(Some(core::tray_tooltip(None)));
+            let _ = t.tray.set_tooltip(Some(crate::voice::tray_tip(app, core::tray_tooltip(None))));
         }
         return;
     }
@@ -278,7 +297,7 @@ pub fn refresh_tray(app: &AppHandle) {
     // Cloned out of the lock: tray calls wait for the main thread, which may want the lock.
     let handles = lock(&desktop(app).tray).clone();
     let Some(t) = handles else { return };
-    let tip = core::tray_tooltip(running.as_ref().map(|(l, m)| (l.as_str(), *m)));
+    let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m)| (l.as_str(), *m))));
     let _ = t.tray.set_tooltip(Some(tip));
     if let Some((stop, resume)) = &t.timer {
         let _ = stop.set_enabled(running.is_some());
@@ -289,7 +308,8 @@ pub fn refresh_tray(app: &AppHandle) {
 /// A new tray menu when the one shown was built for the other state of time tracking.
 fn rebuild_tray_menu(app: &AppHandle, time: bool) {
     let Some(t) = lock(&desktop(app).tray).clone() else { return };
-    if t.time == time {
+    let recording = crate::voice::is_recording(app);
+    if t.time == time && t.recording == recording {
         return;
     }
     match tray_menu(app, time) {
@@ -301,6 +321,7 @@ fn rebuild_tray_menu(app: &AppHandle, time: bool) {
             if let Some(h) = lock(&desktop(app).tray).as_mut() {
                 h.timer = timer;
                 h.time = time;
+                h.recording = recording;
             }
         }
         Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
@@ -1171,6 +1192,7 @@ pub struct DesktopInfo {
     search_shortcut_active: bool,
     selection_shortcut_active: bool,
     mail_shortcut_active: bool,
+    voice_shortcut_active: bool,
     /// Milliseconds from the last capture request to its first frame (`None`: not opened yet).
     capture_open_ms: Option<u64>,
     /// Portable mode: no autostart entry (it would point into the user profile).
@@ -1186,7 +1208,13 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
     let autostart = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>().map(|m| m.is_enabled());
     // Copied out: one lock per statement (temporaries live until its end).
     let slots = *lock(&d.shortcuts);
-    let tray_menu = lock(&d.tray).as_ref().map(|t| tray_entries(t.time));
+    let tray_menu = lock(&d.tray).as_ref().map(|t| {
+        let mut ids = tray_entries(t.time);
+        if t.recording {
+            ids.splice(0..0, ["voice-stop", "-"]);
+        }
+        ids
+    });
     DesktopInfo {
         tray_menu,
         autostart: !portable && matches!(autostart, Some(Ok(true))),
@@ -1198,6 +1226,7 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         search_shortcut_active: slots[Role::Search as usize].is_some(),
         selection_shortcut_active: slots[Role::Selection as usize].is_some(),
         mail_shortcut_active: slots[Role::Mail as usize].is_some(),
+        voice_shortcut_active: slots[Role::Voice as usize].is_some(),
         capture_open_ms: Some(d.capture_open_ms.load(Ordering::Relaxed)).filter(|ms| *ms > 0),
     }
 }
@@ -1265,25 +1294,31 @@ mod tests {
 
     #[test]
     fn settings_shortcuts_must_differ() {
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", ""]).is_ok());
-        assert!(validate_shortcuts(["", "", "", "", ""]).is_ok());
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o ", "", ""]).unwrap_err();
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", "", ""]).is_ok());
+        assert!(validate_shortcuts(["", "", "", "", "", ""]).is_ok());
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "Ctrl+Shift+O", " ctrl+shift+o ", "", "", ""]).unwrap_err();
         assert!(e.contains("Befehlspalette und Schnellsuche"), "{e}");
-        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q", "", ""]).unwrap_err();
+        let e = validate_shortcuts(["Alt+Q", "", "Alt+Q", "", "", ""]).unwrap_err();
         assert!(e.contains("Schnellerfassung und Schnellsuche"), "{e}");
-        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F", "", ""]).unwrap_err().contains("AltGr"));
+        assert!(validate_shortcuts(["", "", "Ctrl+Alt+F", "", "", ""]).unwrap_err().contains("AltGr"));
         // „Auswahl übernehmen“ is a slot of its own: it must differ and follows the same rules.
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "", "ctrl+shift+space", ""]).unwrap_err();
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "", "ctrl+shift+space", "", ""]).unwrap_err();
         assert!(e.contains("Schnellerfassung und Auswahl übernehmen"), "{e}");
-        assert!(validate_shortcuts(["", "", "", "Ctrl+Shift+Alt+C", ""]).unwrap_err().contains("AltGr"));
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", ""]).is_ok());
+        assert!(validate_shortcuts(["", "", "", "Ctrl+Shift+Alt+C", "", ""]).unwrap_err().contains("AltGr"));
+        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", "", ""]).is_ok());
         // The mail shortcut is the fifth slot and differs from all others.
-        assert!(validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", "Ctrl+Shift+M"]).is_ok());
-        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", "ctrl+shift+space"]).unwrap_err();
+        assert!(
+            validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "Ctrl+Shift+Y", "Ctrl+Shift+M", ""]).is_ok()
+        );
+        let e = validate_shortcuts(["Ctrl+Shift+Space", "", "Ctrl+Shift+O", "", "ctrl+shift+space", ""]).unwrap_err();
         assert!(e.contains("Schnellerfassung und E-Mail übernehmen"), "{e}");
-        let e = validate_shortcuts(["", "", "", "Ctrl+Shift+Y", "ctrl+shift+y"]).unwrap_err();
+        let e = validate_shortcuts(["", "", "", "Ctrl+Shift+Y", "ctrl+shift+y", ""]).unwrap_err();
         assert!(e.contains("Auswahl übernehmen und E-Mail übernehmen"), "{e}");
-        assert!(validate_shortcuts(["", "", "", "", "Ctrl+Alt+M"]).unwrap_err().contains("AltGr"));
+        assert!(validate_shortcuts(["", "", "", "", "Ctrl+Alt+M", ""]).unwrap_err().contains("AltGr"));
+        // The voice-note shortcut is the sixth slot.
+        let e = validate_shortcuts(["", "", "", "", "Ctrl+Shift+M", "ctrl+shift+m"]).unwrap_err();
+        assert!(e.contains("E-Mail übernehmen und Sprachnotiz"), "{e}");
+        assert!(validate_shortcuts(["", "", "", "", "", "Ctrl+Shift+R"]).is_ok());
     }
 
     #[test]

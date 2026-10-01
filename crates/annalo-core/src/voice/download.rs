@@ -93,10 +93,10 @@ pub async fn fetch(
         }
     }
     Err(Error::State(trf!(
-        "Modell „{}“ nicht geladen. {}",
-        "Model “{}” not downloaded. {}",
+        "Modell „{}“ nicht geladen.\n{}",
+        "Model “{}” not downloaded.\n{}",
         target.file,
-        problems.join(" · ")
+        problems.join("\n")
     )))
 }
 

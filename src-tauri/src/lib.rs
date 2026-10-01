@@ -26,6 +26,7 @@ mod recovery;
 mod secrets;
 mod syncmerge;
 mod updates;
+mod voice;
 mod weekplan;
 mod worktime;
 
@@ -746,7 +747,32 @@ fn serve_attachment(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) ->
     let raw = request.uri().path().trim_start_matches('/');
     let found = attachments::percent_decode(raw).and_then(|name| attachments::resolve(&state.attachments_dir(), &name));
     match found.map(|p| (std::fs::read(&p), p)) {
-        Some((Ok(bytes), p)) => respond(200, attachments::mime_for(&p.to_string_lossy()), bytes),
+        Some((Ok(bytes), p)) => {
+            let mime = attachments::mime_for(&p.to_string_lossy());
+            // Audio players (voice notes) ask for ranges to seek; WebView2 needs them for that.
+            let range = request
+                .headers()
+                .get("range")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| attachments::byte_range(v, bytes.len() as u64));
+            match range {
+                Some((from, to)) => {
+                    let total = bytes.len();
+                    let mut res = respond(206, mime, bytes[from as usize..=to as usize].to_vec());
+                    let h = res.headers_mut();
+                    if let Ok(v) = format!("bytes {from}-{to}/{total}").parse() {
+                        h.insert("Content-Range", v);
+                    }
+                    h.insert("Accept-Ranges", tauri::http::HeaderValue::from_static("bytes"));
+                    res
+                }
+                None => {
+                    let mut res = respond(200, mime, bytes);
+                    res.headers_mut().insert("Accept-Ranges", tauri::http::HeaderValue::from_static("bytes"));
+                    res
+                }
+            }
+        }
         _ => respond(404, "text/plain", b"not found".to_vec()),
     }
 }
@@ -1767,6 +1793,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
             s.search_shortcut.clone(),
             s.capture.selection_shortcut.clone(),
             s.mail.shortcut.clone(),
+            s.voice.shortcut.clone(),
         ]
     };
     let new_specs = specs(&settings);
@@ -3628,6 +3655,8 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
         std::thread::sleep(Duration::from_millis(100));
     }
     EXIT_PREPARED.store(true, std::sync::atomic::Ordering::SeqCst);
+    // A running recording is closed properly (its WAV file stays under `voice/`).
+    voice::shutdown(app);
     if let Some(state) = app.try_state::<AppState>() {
         let mut db = state.db();
         let _ = db.checkpoint();
@@ -3759,6 +3788,7 @@ pub fn run() {
                         Some(desktop::Role::Selection) => desktop::open_capture(app, true),
                         Some(desktop::Role::Search) => desktop::open_search(app, true),
                         Some(desktop::Role::Mail) => mail::on_shortcut(app),
+                        Some(desktop::Role::Voice) => voice::on_shortcut(app),
                         Some(desktop::Role::Palette) => {
                             // In front already: the shortcut toggles the palette; from the
                             // background (hidden, minimized, unfocused) it always opens it.
@@ -3923,6 +3953,7 @@ pub fn run() {
                 settings.search_shortcut.clone(),
                 settings.capture.selection_shortcut.clone(),
                 settings.mail.shortcut.clone(),
+                settings.voice.shortcut.clone(),
             ];
             let secrets = SecretStore::new(&dir);
             let proxy_secret = SecretStore::proxy(&dir);
@@ -3961,6 +3992,7 @@ pub fn run() {
             });
 
             app.manage(desktop::Desktop::default());
+            app.manage(voice::Voice::default());
             app.manage(calsync::CalendarSync::default());
             app.manage(jira::JiraSync::default());
             // The window after an update always shows: the user clicked „Installieren“ and waits for it.
@@ -4284,6 +4316,19 @@ pub fn run() {
             mail::mail_suggest,
             dayreview::day_review,
             dayreview::day_review_summary,
+            voice::voice_devices,
+            voice::voice_start,
+            voice::voice_pause,
+            voice::voice_stop,
+            voice::voice_discard,
+            voice::voice_status,
+            voice::voice_job_cancel,
+            voice::voice_summary_apply,
+            voice::voice_models,
+            voice::voice_model_download,
+            voice::voice_model_cancel,
+            voice::voice_model_import,
+            voice::voice_model_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Annalo")

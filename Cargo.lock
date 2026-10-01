@@ -74,6 +74,7 @@ dependencies = [
  "cpal",
  "keyring",
  "objc2-app-kit",
+ "reqwest",
  "serde",
  "serde_json",
  "sys-locale",
