@@ -583,7 +583,7 @@
   background: linear-gradient(to right, transparent, var(--bg-hover) 8px); border-radius: var(--r-sm); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast);
 }
 .dw-check-item:hover .dw-check-tools, .dw-check-tools:focus-within { opacity: 1; pointer-events: auto; }
-.dw-check-add .input { height: 30px; font-size: var(--fs-sm); }
+.dw-check-add .input { width: 100%; height: 30px; font-size: var(--fs-sm); }
 .dw-check-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dw-check-foot .dw-link { font-size: var(--fs-xs); }
 
