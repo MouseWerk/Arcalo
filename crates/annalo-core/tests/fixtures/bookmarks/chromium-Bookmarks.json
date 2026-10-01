@@ -1,0 +1,90 @@
+{
+   "checksum": "4a1b0c7f2e2d9b6a5f0c3d1e8a7b6c5d",
+   "roots": {
+      "bookmark_bar": {
+         "children": [ {
+            "date_added": "13348540800000000",
+            "guid": "0f4b7c1e-0001-4000-8000-000000000001",
+            "id": "5",
+            "name": "Jira",
+            "type": "url",
+            "url": "https://jira.firma.de/secure/Dashboard.jspa"
+         }, {
+            "children": [ {
+               "date_added": "13348540800000000",
+               "id": "7",
+               "name": "Fiori Launchpad",
+               "type": "url",
+               "url": "https://fiori.firma.de/sap/bc/ui2/flp"
+            }, {
+               "date_added": "13348540800000000",
+               "id": "8",
+               "name": "Büro – Zeiterfassung",
+               "type": "url",
+               "url": "https://zeit.firma.de/büro?ä=1"
+            }, {
+               "children": [ {
+                  "date_added": "13348540800000000",
+                  "id": "10",
+                  "name": "Grafana",
+                  "type": "url",
+                  "url": "https://grafana.firma.de/d/abc"
+               }, {
+                  "date_added": "13348540800000000",
+                  "id": "11",
+                  "name": "Seite übersetzen",
+                  "type": "url",
+                  "url": "javascript:(function(){location.href='https://translate.google.com/translate?u='+encodeURIComponent(location.href)})()"
+               } ],
+               "date_added": "13348540800000000",
+               "id": "9",
+               "name": "Überwachung",
+               "type": "folder"
+            } ],
+            "date_added": "13348540800000000",
+            "id": "6",
+            "name": "Arbeit",
+            "type": "folder"
+         }, {
+            "date_added": "13348540800000000",
+            "id": "12",
+            "name": "Einstellungen",
+            "type": "url",
+            "url": "chrome://settings/"
+         }, {
+            "children": [ {
+               "id": "14",
+               "name": "Nur ein Bookmarklet",
+               "type": "url",
+               "url": "javascript:void(0)"
+            } ],
+            "id": "13",
+            "name": "Leer nach dem Filtern",
+            "type": "folder"
+         } ],
+         "date_added": "13348540800000000",
+         "id": "1",
+         "name": "Lesezeichenleiste",
+         "type": "folder"
+      },
+      "other": {
+         "children": [ {
+            "date_added": "13348540800000000",
+            "id": "15",
+            "name": "Handbuch (PDF)",
+            "type": "url",
+            "url": "file:///C:/Dokumente/Handbuch%20v2.pdf"
+         } ],
+         "id": "2",
+         "name": "Weitere Lesezeichen",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [ ],
+         "id": "3",
+         "name": "Mobile Lesezeichen",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}

@@ -4,11 +4,12 @@
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { AppWindow, ArrowRightLeft, FolderClosed, GripVertical, Link2, Pencil, Plus, X, type LucideIcon } from "lucide-react";
+import { AppWindow, ArrowRightLeft, BookmarkPlus, FolderClosed, GripVertical, Link2, Pencil, Plus, X, type LucideIcon } from "lucide-react";
 import type { QuickLink } from "../lib/types";
 import { Button, Dialog, Field, IconButton, Input, Select, useMenu, type MenuEntry } from "./ui";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { useT } from "../lib/i18n";
+import { openBookmarkImport } from "./BookmarkImport";
 import { LINK_COLORS, groupChoices, insertItem, isGroup, isPath, kindOf, moveItem, newGroup, removeItem, shortUrl, updateItem, type LinkKind } from "../lib/quicklinks";
 
 /** An icon that fits the address when none was picked. */
@@ -119,6 +120,22 @@ export function EntryDialog({ links, edit, onClose, onSave }: { links: QuickLink
       description={kind === "group" ? t("links.helpGroup") : kind === "app" ? t("links.helpApp") : t("links.help")}
       footer={
         <>
+          {isNew && edit.kind === "item" && (
+            <>
+              <Button
+                variant="ghost"
+                icon={BookmarkPlus}
+                className="link-import-bookmarks"
+                onClick={() => {
+                  onClose();
+                  openBookmarkImport();
+                }}
+              >
+                {t("bm.menu")}
+              </Button>
+              <span className="grow" />
+            </>
+          )}
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>

@@ -87,6 +87,7 @@ dependencies = [
  "chrono-tz",
  "futures-util",
  "mail-parser",
+ "plist",
  "reqwest",
  "rrule",
  "rusqlite",

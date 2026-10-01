@@ -5,6 +5,7 @@
 mod appmenu;
 mod backdrop;
 mod backupdest;
+mod bookmarks;
 mod calsync;
 mod chats;
 mod dashboard;
@@ -3932,6 +3933,10 @@ pub fn run() {
             dashboard::dashboard_file_write,
             quick_links_save,
             quick_link_open,
+            bookmarks::bookmarks_sources,
+            bookmarks::bookmarks_read,
+            bookmarks::bookmarks_read_file,
+            bookmarks::bookmarks_read_text,
             attachment_open,
             desktop::desktop_info,
             desktop::autostart_set,

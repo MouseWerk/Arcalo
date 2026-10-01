@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass, History, MessageSquarePlus,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass, History, MessageSquarePlus,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -34,6 +34,7 @@ import { captureFromOutlook, openMailDialog } from "./MailImport";
 import { flatLinks, isGroup, normalizeLinks } from "../lib/quicklinks";
 import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
 import { iconOf } from "./LinkDialogs";
+import { openBookmarkImport } from "./BookmarkImport";
 import { startFirstRun } from "../onboarding/state";
 import { newChat, showHistory } from "../store/chat";
 
@@ -189,6 +190,7 @@ export function CommandPalette() {
       { id: "calendar-sync", title: t("cmd.calendarSync"), icon: ic(RefreshCw), run: () => void syncCalendarsNow() },
       { id: "mail-capture", title: t("cmd.mailCapture"), subtitle: t("cmd.mailCaptureSub"), icon: ic(Mail), run: () => setTimeout(() => void captureFromOutlook(), 0) },
       { id: "mail-dialog", title: t("cmd.mailDialog"), subtitle: t("cmd.mailDialogSub"), icon: ic(MailPlus), run: () => setTimeout(() => openMailDialog(), 0) },
+      { id: "bookmarks-import", title: t("cmd.bookmarksImport"), subtitle: t("cmd.bookmarksImportSub"), icon: ic(BookmarkPlus), run: () => setTimeout(openBookmarkImport, 0) },
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
         ? [
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },

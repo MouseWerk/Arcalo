@@ -31,6 +31,7 @@ import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
+import { BookmarkImportHost } from "./components/BookmarkImport";
 import { openDayReview } from "./lib/reviewnav";
 import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
@@ -338,6 +339,7 @@ export function App() {
       <FocusDialogHost />
       <PresentationHost />
       <MailImportHost />
+      <BookmarkImportHost />
       <ConfirmHost />
       <TemplateHost />
       <FirstRun />

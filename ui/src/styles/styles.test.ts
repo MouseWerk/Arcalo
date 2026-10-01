@@ -36,6 +36,7 @@ const LITERAL_COLORS_OK: [RegExp, string][] = [
   [/activity-view/, "category colors of the activity timeline"],
   [/find-hit\.current/, "the current search hit, distinct from --mark"],
   [/\.overlay$/, "dialog scrim"],
+  [/^\.bm-badge$/, "white letters on the browsers' own colors (bookmark import)"],
 ];
 
 describe("literal colors", () => {
