@@ -116,12 +116,9 @@ Type `/time NP-8801/1020 2.5h #DEV System integration` in any note. Network, act
 autocomplete, with the remaining plan hours shown. (`/zeit` works as well, in both languages.) A page linked to an
 activity shows a work card with budget, ETC and a timer. The weekly timesheet exports to SAP CATS, Jira, CSV or JSON.
 
-If you do not book time at all, one switch (in the setup, or Settings → Time tracking → “Use time tracking”) hides the
-timesheet, projects and their commands; booked time is kept.
-
-Time tracking is optional. If you do not book time, switch off „Zeiterfassung verwenden“ (in the first-run setup or
-under Settings → Zeiterfassung): the timesheet, projects, timer, `/zeit`, budgets, the week proposal, the booking parts
-of the Kalender, start page and Tagesrückblick, the assistant's time tools and every reminder about bookings disappear,
+Time tracking is optional. If you do not book time, switch off “Use time tracking” (in the first-run setup or under
+Settings → Time tracking): the timesheet, projects, timer, `/time`, budgets, the week proposal, the booking parts of
+the Calendar, start page and daily review, the assistant's time tools and every reminder about bookings disappear,
 and nothing runs in the background for them. Annalo is then a notes, calendar and AI app. Booked time stays in the
 workspace and is back as soon as you switch it on again.
 
@@ -273,7 +270,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 - Daily review (ribbon, palette, the daily note's review link, the Calendar's day header): one day's pages, hours per WBS against the target with the unbooked gaps, tasks, meetings with their booking state, focus sessions and files; every row leads to its place. “Add to daily note” writes (and on repeat replaces) a compact block in the daily note; “Write summary” runs only on a provider marked local. Optional reminder at the end of the workday
 - Projects view: budget, booked hours, remaining effort (ETC), forecast (EAC), critical path and float, as tables
 - Budget warnings when a booking pushes a network or activity over its thresholds
-- Optional: Settings → Time tracking → “Use time tracking” off hides the timesheet, projects and their commands for people who only take notes; booked time is kept
+- Optional: with Settings → Time tracking → “Use time tracking” off, everything about booking time is gone (timesheet, projects, timer, `/time`, budgets, booking in the Calendar, time widgets, reminders, the assistant's time tools); booked time is kept and comes back when you switch it on
 
 **Calendar**
 - Outlook Classic on Windows: reads the calendars you choose of the Outlook that is signed in, through its COM interface (a bundled PowerShell script); no admin rights and no app registration needed. Settings → Calendar → “Choose calendars” lists the default calendar, sub-calendars, further and shared mailboxes, PST files, calendars colleagues shared with you (also free/busy only, shown without subjects), rooms and groups, each with its own color, its sync status and a switch “Use for booking suggestions” (off for calendars shared by others). “Open a person's calendar” adds a colleague's calendar by name or address. A calendar that cannot be opened says why and does not stop the others
