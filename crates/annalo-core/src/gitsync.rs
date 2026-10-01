@@ -982,7 +982,12 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     // Only a complete mirror is synced: a missing folder (drive not connected) or a foreign
     // one (a wrongly chosen mirror folder the mirror refused to replace) would otherwise be
     // committed as the deletion of every note, or as someone else's files.
-    if !req.source.is_dir() || !crate::mirror::is_mirror(req.source) {
+    // Checked under the swap lock: while the mirror is being swapped, the folder is briefly gone.
+    let complete = {
+        let _swap = crate::mirror::hold_swaps();
+        req.source.is_dir() && crate::mirror::is_mirror(req.source)
+    };
+    if !complete {
         return Err(Error::State(trf!(
             "Die Markdown-Kopie unter {} fehlt oder ist keine Markdown-Kopie von Arcalo – \
              Git-Synchronisierung abgebrochen, damit auf dem Server nichts gelöscht wird",
