@@ -563,6 +563,7 @@ export const en = {
   "set.locale.region": "Regional format",
   "set.locale.regionDesc": "How dates and numbers are written, independent of the language.",
   "set.locale.numberFormat": "Numbers",
+  "set.locale.numberAuto": "By language",
   // ---- tabs
   "tabs.moveToOther": "Move to the other pane",
   "tabs.moveToPane": "Move to pane",

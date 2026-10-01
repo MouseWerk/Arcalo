@@ -560,6 +560,7 @@ export const de: Catalog = {
   "set.locale.region": "Regionale Formate",
   "set.locale.regionDesc": "Wie Datumsangaben und Zahlen geschrieben werden, unabhängig von der Sprache.",
   "set.locale.numberFormat": "Zahlen",
+  "set.locale.numberAuto": "Nach Sprache",
   // ---- tabs
   "tabs.moveToOther": "In den anderen Bereich",
   "tabs.moveToPane": "In Bereich",

@@ -763,13 +763,23 @@ impl Default for StartPrefs {
 // -------------------------------------------------------------------- locale
 
 choice!(Language { #[default] De = "de", En = "en" } default De);
-choice!(DateFormat { #[default] De = "de", Iso = "iso" } default De);
+choice!(DateFormat { #[default] De = "de", Iso = "iso", EnGb = "en-gb", EnUs = "en-us" } default De);
+choice!(NumberFormat {
+    /// The decimal separator of the display language: a comma in German, a point in English.
+    #[default] Auto = "auto",
+    /// 1.234,5
+    Comma = "comma",
+    /// 1,234.5
+    Point = "point",
+} default Auto);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalePrefs {
     pub language: Language,
     pub date_format: DateFormat,
+    /// Decimal separator of hours and numbers (CATS exports keep SAP's format regardless).
+    pub number_format: NumberFormat,
 }
 
 #[cfg(test)]

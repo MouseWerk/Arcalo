@@ -460,8 +460,8 @@ export interface StartPrefs {
 export interface LocalePrefs {
   language: "de" | "en";
   date_format: "de" | "iso" | "en-gb" | "en-us";
-  /** Decimal separator: comma (1.234,5) or point (1,234.5). */
-  number_format: "comma" | "point";
+  /** Decimal separator: comma (1.234,5), point (1,234.5) or by the language (auto). */
+  number_format: "auto" | "comma" | "point";
 }
 export interface SystemProxy {
   http: string | null;

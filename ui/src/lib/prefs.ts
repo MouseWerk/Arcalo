@@ -44,7 +44,7 @@ export function applyPrefs(s: Settings) {
 /** Display language and regional formats (also in the small windows). */
 export function applyLocale(s: Settings) {
   if (s.locale) {
-    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: s.locale.number_format ?? "comma" });
+    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: s.locale.number_format ?? "auto" });
     setLang(s.locale.language);
   }
   if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });

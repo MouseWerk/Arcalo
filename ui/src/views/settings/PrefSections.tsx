@@ -296,8 +296,9 @@ export function LocaleSection({ draft, update }: SectionProps) {
         <Row label={t("set.locale.numberFormat")}>
           <Segmented
             label={t("set.locale.numberFormat")}
-            value={l.number_format ?? "comma"}
+            value={l.number_format ?? "auto"}
             options={[
+              { value: "auto", label: t("set.locale.numberAuto") },
               { value: "comma", label: "1.234,5" },
               { value: "point", label: "1,234.5" },
             ]}

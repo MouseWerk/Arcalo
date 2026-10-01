@@ -9,15 +9,18 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::prefs::Language;
+use crate::prefs::{Language, NumberFormat};
 
 static LANG: AtomicU8 = AtomicU8::new(0);
+/// Settings → Sprache & Format „Zahlen“: 0 by the language, 1 comma, 2 point.
+static NUMBERS: AtomicU8 = AtomicU8::new(0);
 
 // Tests run in parallel threads: there the language is per thread (German unless a test
 // switches it with `with_lang`), so a test in English does not change another's texts.
 #[cfg(test)]
 thread_local! {
     static TEST_LANG: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static TEST_NUMBERS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
 /// The current language.
@@ -37,6 +40,37 @@ pub fn is_en() -> bool {
 pub fn set_lang(lang: Language) -> bool {
     let v = u8::from(lang == Language::En);
     LANG.swap(v, Ordering::Relaxed) != v
+}
+
+/// Sets the decimal separator of numbers and hours (`Auto` follows the language).
+pub fn set_number_format(f: NumberFormat) {
+    NUMBERS.store(
+        match f {
+            NumberFormat::Auto => 0,
+            NumberFormat::Comma => 1,
+            NumberFormat::Point => 2,
+        },
+        Ordering::Relaxed,
+    );
+}
+
+/// Whether numbers are written with a decimal comma: the setting, else German.
+pub fn decimal_comma() -> bool {
+    #[cfg(test)]
+    let n = TEST_NUMBERS.with(|n| n.get());
+    #[cfg(not(test))]
+    let n = NUMBERS.load(Ordering::Relaxed);
+    match n {
+        1 => true,
+        2 => false,
+        _ => !is_en(),
+    }
+}
+
+/// A number formatted with a point (`format!("{:.2}", …)`) in the reader's notation: `28,00`
+/// in German, `28.00` in English. Machine formats (CATS) do not use this.
+pub fn decimal(point: String) -> String {
+    if decimal_comma() { point.replace('.', ",") } else { point }
 }
 
 /// The language of a locale tag such as `de-DE`, `de_AT.UTF-8` or `en-US`: German for German,
@@ -130,6 +164,26 @@ mod tests {
         assert_eq!(with_lang(Language::En, || tr!("Öffnen", "Open")), "Open");
         assert_eq!(with_lang(Language::En, || trf!("{n} Termine", "{n} meetings")), "3 meetings");
         assert_eq!(with_lang(Language::De, || trf!("{} Termine", "{} meetings", n)), "3 Termine");
+    }
+
+    #[test]
+    fn decimals_follow_the_language_or_the_setting() {
+        let h = || decimal(format!("{:.2}", 28.0));
+        assert_eq!(with_lang(Language::De, h), "28,00");
+        assert_eq!(with_lang(Language::En, h), "28.00");
+        let with_numbers = |n: u8, lang: Language| {
+            let before = TEST_NUMBERS.with(|c| c.replace(n));
+            let out = with_lang(lang, h);
+            TEST_NUMBERS.with(|c| c.set(before));
+            out
+        };
+        assert_eq!(with_numbers(1, Language::En), "28,00", "comma chosen in English");
+        assert_eq!(with_numbers(2, Language::De), "28.00", "point chosen in German");
+        // The process-wide setting maps the choices.
+        set_number_format(NumberFormat::Point);
+        assert_eq!(NUMBERS.load(Ordering::Relaxed), 2);
+        set_number_format(NumberFormat::Auto);
+        assert_eq!(NUMBERS.load(Ordering::Relaxed), 0);
     }
 
     #[test]

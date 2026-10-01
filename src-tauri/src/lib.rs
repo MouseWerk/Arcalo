@@ -1795,6 +1795,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
+    annalo_core::i18n::set_number_format(settings.locale.number_format);
     }
     // Another language: the tray, the menu bar and the jump list follow, and the built-in
     // activity types (unless edited).
@@ -3809,6 +3810,7 @@ pub fn run() {
                     "In den Datenordner {} kann nicht geschrieben werden (schreibgeschützt oder voll) – Änderungen \
                      werden nicht gespeichert.",
                     "The data folder {} cannot be written to (read-only or full) – changes are not saved.",
+                annalo_core::i18n::set_number_format(s.locale.number_format);
                     dir.display()
                 )));
             }
