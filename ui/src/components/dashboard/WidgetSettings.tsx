@@ -19,6 +19,7 @@ import { Button, Dialog, IconButton, Input, Segmented, Select, Switch } from "..
 import { PageIcon } from "../icons";
 import { NetzplanSelect, useWbs } from "../../views/wbs";
 import { QueryView } from "./tools";
+import { WORK_SETTINGS } from "./workSettings";
 
 type Config = Record<string, unknown>;
 
@@ -391,8 +392,10 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
           <Select aria-label={t("dash.set.count")} value={String(c.count ?? 5)} onChange={(e) => set({ count: Number(e.target.value) })} options={[3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))} />
         </Row>
       );
-    default:
-      return <div className="faint small">{t("dash.set.nothing")}</div>;
+    default: {
+      const Extra = WORK_SETTINGS[w.kind];
+      return Extra ? <Extra c={c} set={set} Row={Row} /> : <div className="faint small">{t("dash.set.nothing")}</div>;
+    }
   }
 }
 
@@ -418,7 +421,7 @@ function PinnedPages({ ids, onChange }: { ids: number[]; onChange: (ids: number[
 export function WidgetSettings({ widget, onClose, onApply }: { widget: GridWidget; onClose: () => void; onApply: (config: Config, title: string) => void }) {
   const [c, setC] = useState<Config>(() => configOf(widget));
   const [title, setTitle] = useState(widget.title ?? "");
-  const wide = widget.kind === "query";
+  const wide = widget.kind === "query" || widget.kind === "chart";
   const hint = isKind(widget.kind) ? t(WIDGETS[widget.kind].hint) : "";
   return (
     <Dialog

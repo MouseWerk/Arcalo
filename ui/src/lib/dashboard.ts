@@ -7,6 +7,7 @@ import { t, type TKey } from "./i18n";
 import { COLS, clampRect, compact, findFree, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
 import type { Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
+import { timeConfig, WORK_TIME_KINDS, workParts, workTopics, type WorkKind, type WorkPart } from "./workwidgets";
 
 // ------------------------------------------------------------------ catalogue
 
@@ -31,9 +32,10 @@ export type WidgetKind =
   | "review"
   | "suggestions"
   | "timer"
-  | "calendar";
+  | "calendar"
+  | WorkKind;
 
-export type WidgetGroup = "day" | "time" | "pages" | "tools";
+export type WidgetGroup = "day" | "time" | "pages" | "tools" | "charts";
 
 export interface WidgetDef {
   label: TKey;
@@ -95,6 +97,23 @@ export const WIDGETS: Record<WidgetKind, WidgetDef> = {
   },
   links: { label: "dash.w.links", hint: "dash.w.linksHint", group: "tools", size: { w: 4, h: 4 }, min: { w: 2, h: 3 }, config: () => ({ group: -1 }) },
   suggestions: { label: "dash.w.suggestions", hint: "dash.w.suggestionsHint", group: "tools", size: { w: 4, h: 6 }, min: { w: 3, h: 3 }, config: () => ({ count: 5 }) },
+  // 1.7: work and chart widgets (components/dashboard/work.tsx, charts.tsx).
+  balance: { label: "work.w.balance", hint: "work.w.balanceHint", group: "time", size: { w: 4, h: 6 }, min: { w: 3, h: 4 }, config: () => ({}) },
+  vacation: { label: "work.w.vacation", hint: "work.w.vacationHint", group: "time", size: { w: 4, h: 6 }, min: { w: 3, h: 5 }, config: () => ({}) },
+  deadlines: { label: "work.w.deadlines", hint: "work.w.deadlinesHint", group: "day", size: { w: 4, h: 8 }, min: { w: 3, h: 4 }, config: () => ({ days: 14, off: [] }) },
+  mail_flags: { label: "work.w.mailFlags", hint: "work.w.mailFlagsHint", group: "day", size: { w: 4, h: 8 }, min: { w: 3, h: 4 }, config: () => ({}) },
+  next_meeting: { label: "work.w.nextMeeting", hint: "work.w.nextMeetingHint", group: "day", size: { w: 4, h: 6 }, min: { w: 3, h: 5 }, config: () => ({ sources: [] }) },
+  team: { label: "work.w.team", hint: "work.w.teamHint", group: "day", size: { w: 4, h: 7 }, min: { w: 3, h: 4 }, config: () => ({ sources: [] }) },
+  chart: {
+    label: "work.w.chart",
+    hint: "work.w.chartHint",
+    group: "charts",
+    size: { w: 6, h: 8 },
+    min: { w: 3, h: 5 },
+    config: () => ({ type: "bar", chart: { source: "pages", page: null, group: "status", value: "count", field: "", weeks: 12 } }),
+  },
+  heatmap: { label: "work.w.heatmap", hint: "work.w.heatmapHint", group: "charts", size: { w: 8, h: 6 }, min: { w: 4, h: 5 }, config: () => ({ mode: "notes" }) },
+  kanban: { label: "work.w.kanban", hint: "work.w.kanbanHint", group: "charts", size: { w: 8, h: 9 }, min: { w: 4, h: 5 }, config: () => ({ page: null }) },
 };
 
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];
@@ -106,20 +125,20 @@ export const isKind = (k: string): k is WidgetKind => k in WIDGETS;
  * Widgets about booking time („Zeiterfassung verwenden“ off): not offered and not shown. They
  * stay on their boards (hidden), so switching time tracking on brings them back in place.
  */
-export const TIME_WIDGETS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(["week", "budget", "timer", "proposal"]);
+export const TIME_WIDGETS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(["week", "budget", "timer", "proposal", ...(WORK_TIME_KINDS as ReadonlySet<WidgetKind>)]);
 /** Not offered either: the project widget lives on a Netzplan (on a board it stays, without budgets). */
 const GALLERY_TIME: ReadonlySet<WidgetKind> = new Set<WidgetKind>([...TIME_WIDGETS, "project"]);
 
-/** Whether a widget of `kind` shows. */
-export const widgetShown = (kind: string, time: boolean) => time || !TIME_WIDGETS.has(kind as WidgetKind);
+/** Whether a widget of `kind` (with settings `config`: a chart of the bookings) shows. */
+export const widgetShown = (kind: string, time: boolean, config?: Record<string, unknown>) => time || (!TIME_WIDGETS.has(kind as WidgetKind) && !timeConfig(kind, config));
 
-/** The kinds the gallery offers. */
-export const galleryKinds = (time: boolean): WidgetKind[] => WIDGET_KINDS.filter((k) => time || !GALLERY_TIME.has(k));
+/** The kinds the gallery offers (flagged mails only where Outlook can be asked). */
+export const galleryKinds = (time: boolean, mailFlags = false): WidgetKind[] => WIDGET_KINDS.filter((k) => (time || !GALLERY_TIME.has(k)) && (mailFlags || k !== "mail_flags"));
 
 /** The widgets a board shows: without the time widgets while time tracking is off, closed up (no holes). */
 export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[] {
   if (time) return widgets;
-  const shown = widgets.filter((w) => widgetShown(w.kind, false));
+  const shown = widgets.filter((w) => widgetShown(w.kind, false, w.config));
   return shown.length === widgets.length ? widgets : compact(shown);
 }
 
@@ -129,11 +148,11 @@ export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[]
  */
 export function withHidden(all: GridWidget[], edited: GridWidget[], time: boolean): GridWidget[] {
   if (time) return edited;
-  const hidden = all.filter((w) => !widgetShown(w.kind, false) && !edited.some((e) => e.id === w.id));
+  const hidden = all.filter((w) => !widgetShown(w.kind, false, w.config) && !edited.some((e) => e.id === w.id));
   return hidden.length ? settle([...edited, ...hidden], edited.map((w) => w.id)) : edited;
 }
 
-export const GROUP_LABELS: Record<WidgetGroup, TKey> = { day: "dash.g.day", time: "dash.g.time", pages: "dash.g.pages", tools: "dash.g.tools" };
+export const GROUP_LABELS: Record<WidgetGroup, TKey> = { day: "dash.g.day", time: "dash.g.time", pages: "dash.g.pages", tools: "dash.g.tools", charts: "work.g.charts" };
 
 /** The blocks of „Heute“ that can be switched off. */
 export const TODAY_BLOCKS = ["timeline", "hours", "timer", "tasks", "focus", "actions"] as const;
@@ -465,7 +484,8 @@ export type Part =
   | { kind: "review"; date: string }
   | { kind: "timer_refs" }
   | { kind: "month"; from: string; to: string }
-  | { kind: "suggestions" };
+  | { kind: "suggestions" }
+  | WorkPart;
 
 export interface TaskQuery {
   status?: "open" | "done" | "all";
@@ -477,7 +497,7 @@ export interface TaskQuery {
 }
 
 /** What invalidates a part: time entries, tasks, pages, the calendar, focus sessions, the WBS. */
-export type DataTopic = "entries" | "tasks" | "pages" | "calendar" | "focus" | "wbs";
+export type DataTopic = "entries" | "tasks" | "pages" | "calendar" | "focus" | "wbs" | "absences";
 
 /** A stable key for a part (same settings, same key: loaded once for several widgets). */
 export const partKey = (p: Part) => JSON.stringify(p);
@@ -514,6 +534,8 @@ export function partTopics(p: Part): DataTopic[] {
       return ["entries", "pages", "tasks"];
     case "suggestions":
       return ["entries", "tasks", "pages", "wbs"];
+    default:
+      return workTopics(p);
   }
 }
 
@@ -533,7 +555,7 @@ export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, wor
   const c = configOf(w);
   const monday = isoDay(weekStart(today, 1));
   // Time tracking off: nothing is loaded for the hidden time widgets.
-  if (!widgetShown(w.kind, time)) return [];
+  if (!widgetShown(w.kind, time, c)) return [];
   switch (w.kind as WidgetKind) {
     case "today": {
       const blocks = (c.blocks ?? {}) as Partial<Record<TodayBlock, boolean>>;
@@ -575,7 +597,7 @@ export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, wor
     case "suggestions":
       return [{ kind: "suggestions" }];
     default:
-      return [];
+      return (workParts(w.kind, c, today, time) as Part[] | null) ?? [];
   }
 }
 

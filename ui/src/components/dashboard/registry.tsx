@@ -35,6 +35,7 @@ import { AgendaWidget, CalendarWidget, ClockWidget, FocusWidget, ReviewWidget, T
 import { BudgetWidget, ProjectWidget, ProposalWidget, TimerWidget, WeekWidget } from "./time";
 import { ActivityWidget, EmbedWidget, FavoritesWidget, NoteWidget, PinnedWidget, RecentWidget } from "./pages";
 import { LinksWidget, QueryWidget, SuggestionsWidget } from "./tools";
+import { WORK_BODIES, WORK_ICONS, workOpener } from "./work";
 
 export interface WidgetProps {
   widget: GridWidget;
@@ -63,6 +64,7 @@ export const BODIES: Record<WidgetKind, ComponentType<WidgetProps>> = {
   query: QueryWidget,
   links: LinksWidget,
   suggestions: SuggestionsWidget,
+  ...WORK_BODIES,
 };
 
 export const ICONS: Record<WidgetKind, LucideIcon> = {
@@ -87,6 +89,7 @@ export const ICONS: Record<WidgetKind, LucideIcon> = {
   query: ListFilter,
   links: Link2,
   suggestions: Sparkles,
+  ...WORK_ICONS,
 };
 
 const s = useApp.getState;
@@ -113,6 +116,6 @@ export function openerOf(w: GridWidget): (() => void) | null {
     case "embed":
       return typeof c.page === "number" ? () => s().openPage(c.page as number) : null;
     default:
-      return null;
+      return workOpener(w);
   }
 }

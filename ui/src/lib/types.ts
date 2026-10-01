@@ -414,6 +414,19 @@ export interface TimePrefs {
   cats_delimiter: "semicolon" | "comma" | "tab";
   cats_columns: "standard" | "without_wbs" | "date_first";
   export_file_pattern: string;
+  /** Overtime balance, vacation account and public holidays (1.7). */
+  balance?: BalancePrefs;
+}
+export interface BalancePrefs {
+  /** Target hours Monday..Sunday; empty: the daily target on the workdays. */
+  weekday_hours: number[];
+  /** YYYY-MM-DD; null: 1 January of the current year. */
+  start: string | null;
+  opening_hours: number;
+  vacation_days: number;
+  carry_over: number;
+  /** BY, NW, …; empty: no public holidays. */
+  state: string;
 }
 export interface AiPresetDef {
   label: string;
@@ -461,7 +474,8 @@ export interface LocalePrefs {
   language: "de" | "en";
   date_format: "de" | "iso" | "en-gb" | "en-us";
   /** Decimal separator: comma (1.234,5) or point (1,234.5). */
-  number_format: "comma" | "point";
+  /** Unset: as the display language writes numbers. */
+  number_format?: "comma" | "point";
 }
 export interface SystemProxy {
   http: string | null;
