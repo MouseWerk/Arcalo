@@ -15,6 +15,7 @@ mod devlog;
 mod feed;
 mod files;
 mod focus;
+mod jira;
 mod jumplist;
 mod mail;
 mod network;
@@ -352,7 +353,7 @@ fn page_create(
 }
 
 /// Avoid duplicate titles so [[links]] stay unambiguous.
-fn unique_title(db: &Database, title: &str) -> Result<String> {
+pub(crate) fn unique_title(db: &Database, title: &str) -> Result<String> {
     let base = annalo_core::notes::clean_title(title);
     let mut name = base.clone();
     let mut n = 2;
@@ -905,15 +906,22 @@ fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
 // ---------------------------------------------------------- time tracking
 
 #[tauri::command(async)]
-fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Result<LogOutcome> {
+fn log_time(app: AppHandle, state: State<AppState>, line: String, page_id: Option<i64>) -> Result<LogOutcome> {
     let settings = state.settings();
     settings.require_time_tracking()?;
     let t = settings.thresholds;
-    let db = state.db();
-    // Typed on a page linked to a Vorgang: `/zeit 1.5h …` books on that Vorgang.
-    let default_ref = page_id.map(|id| db.page_reference(id)).transpose()?.flatten();
-    let ctx = tracking::SlashContext { default_ref: default_ref.as_deref(), page_id };
-    tracking::log_slash_command_in(&db, &line, Utc::now(), &Local, &t, ctx)
+    let out = {
+        let db = state.db();
+        // Typed on a page linked to a Vorgang: `/zeit 1.5h …` books on that Vorgang.
+        let default_ref = page_id.map(|id| db.page_reference(id)).transpose()?.flatten();
+        let ctx = tracking::SlashContext { default_ref: default_ref.as_deref(), page_id };
+        tracking::log_slash_command_in(&db, &line, Utc::now(), &Local, &t, ctx)?
+    };
+    // Booked with an issue key: its Jira worklog (when the site logs work) goes out now.
+    if out.issue.is_some() {
+        jira::kick_worklogs(app);
+    }
+    Ok(out)
 }
 
 /// Budget and bookings of the Vorgang a page is linked to (`vorgang:` property).
@@ -1057,7 +1065,7 @@ fn time_entry_create(
     let alerts = tracking::alerts_for(&db, entry.netzplan_id, entry.vorgang_nr.as_deref(), &t)?;
     let np = db.netzplan_by_id(entry.netzplan_id)?.netzplan_nr;
     let reference = entry.vorgang_nr.as_ref().map_or(np.clone(), |v| format!("{np}/{v}"));
-    Ok(LogOutcome { entry, alerts, reference })
+    Ok(LogOutcome { entry, alerts, reference, issue: None })
 }
 
 #[tauri::command(async)]
@@ -1735,6 +1743,9 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.calendar = std::mem::take(&mut settings.calendar).normalized();
     // And for the first-run flags (`onboarding_complete` / `onboarding_reset`).
     settings.onboarding = state.settings().onboarding;
+    // And for the Jira sites (`jira_site_*`; their tokens are secrets).
+    settings.jira.sites = state.settings().jira.sites;
+    settings.jira = std::mem::take(&mut settings.jira).normalized();
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -1783,6 +1794,12 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     let relocalize = annalo_core::i18n::set_lang(settings.locale.language);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
+    // Another saved Jira search: its issues are read now.
+    let jira_resync: Vec<String> = if previous.jira.queries != settings.jira.queries {
+        settings.jira.active().map(|s| s.id.clone()).collect()
+    } else {
+        vec![]
+    };
     let time_switched = previous.time_tracking() != settings.time_tracking();
     rebuild_ai(&state, settings);
     // Time tracking switched: tray menu and jump list without (or with) the timer entries.
@@ -1795,6 +1812,9 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
+    }
+    if !jira_resync.is_empty() {
+        jira::spawn_sync(app.clone(), jira_resync);
     }
     // Another language: the tray, the menu bar and the jump list follow, and the built-in
     // activity types (unless edited).
@@ -3124,14 +3144,20 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
 /// Executes a system tool. The UI calls this only after the user approved
 /// the exact summary returned by `ai_plan_tool`.
 #[tauri::command]
-async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Result<String> {
+async fn ai_run_system_tool(app: AppHandle, state: State<'_, AppState>, call: SystemCall) -> Result<String> {
     let name = match &call {
         SystemCall::RunPowershell { .. } => "run_powershell",
         SystemCall::Git { .. } => "git",
         SystemCall::HttpRequest { .. } => "http_request",
+        SystemCall::JiraComment { .. } => "jira_comment",
+        SystemCall::JiraTransition { .. } => "jira_transition",
     };
     let settings = state.settings();
     settings.check_tool(name)?;
+    if matches!(call, SystemCall::JiraComment { .. } | SystemCall::JiraTransition { .. }) {
+        call.validate()?;
+        return jira::run_write(&app, &call).await;
+    }
     let (http, network_error) = {
         let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
         (ai.tools_http.clone(), ai.network_error.clone())
@@ -3920,6 +3946,7 @@ pub fn run() {
 
             app.manage(desktop::Desktop::default());
             app.manage(calsync::CalendarSync::default());
+            app.manage(jira::JiraSync::default());
             // The window after an update always shows: the user clicked „Installieren“ and waits for it.
             let updated = after_update.is_some();
             app.manage(updates::Updates::after(after_update));
@@ -3976,6 +4003,7 @@ pub fn run() {
             backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
+            jira::spawn_scheduler(app.handle().clone());
             mail::clean_temp(app.handle());
             Ok(())
         })
@@ -4189,6 +4217,25 @@ pub fn run() {
             devlog::devlog_stats,
             devlog::devlog_clear,
             devlog::devlog_open_folder,
+            jira::jira_status,
+            jira::jira_site_save,
+            jira::jira_site_remove,
+            jira::jira_test,
+            jira::jira_wbs_set,
+            jira::jira_sync_now,
+            jira::jira_issues,
+            jira::jira_index,
+            jira::jira_issue_view,
+            jira::jira_issue_fetch,
+            jira::jira_issue_note,
+            jira::jira_add_task,
+            jira::jira_entry_issues,
+            jira::jira_projects,
+            jira::jira_issue_types,
+            jira::jira_create_issue,
+            jira::jira_sprint,
+            jira::jira_worklog_retry,
+            jira::jira_tool,
             calsync::calendar_status,
             calsync::calendar_events,
             calsync::calendar_source_add,

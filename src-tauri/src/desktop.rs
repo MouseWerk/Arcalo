@@ -626,6 +626,12 @@ pub enum SearchTarget {
     Timesheet,
     /// The main window stops the timer (it asks about idle time first).
     TimerStop,
+    /// The Issues page (Jira).
+    Issues,
+    /// The note of an issue (`PROJ-123` typed into the quick search).
+    Issue {
+        key: String,
+    },
 }
 
 /// Hides the quick search, brings the main window to the front and lets it open `target`.
