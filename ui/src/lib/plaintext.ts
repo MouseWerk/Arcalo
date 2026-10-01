@@ -18,7 +18,7 @@ export function stripMarkdown(line: string, opts: { keepWikilinks?: boolean } = 
     .replace(/^\[TOC\]\s*$/, "");
   s = s
     .replace(/\[\^[^\]\s]+\]/g, "")
-    .replace(/<!--\s*\/?spalten?\s*-->/g, "")
+    .replace(/<!--\s*\/?(spalten?|columns?)\s*-->/g, "")
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")
     .replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, "$1")
     .replace(/!\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g, (_, name: string) => name.trim());

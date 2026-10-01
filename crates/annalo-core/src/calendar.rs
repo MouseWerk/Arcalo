@@ -1,6 +1,7 @@
 //! Month overview for the daily-note calendar: per local day whether a daily note
 //! exists, the booked minutes and the open tasks due that day.
 
+use crate::trf;
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, TimeZone};
@@ -37,7 +38,7 @@ pub fn daily_overview<Tz: TimeZone>(
         return Err(Error::State("'to' liegt vor 'from'".into()));
     }
     if (to - from).num_days() >= MAX_DAYS {
-        return Err(Error::State(format!("Zeitraum länger als {MAX_DAYS} Tage")));
+        return Err(Error::State(trf!("Zeitraum länger als {MAX_DAYS} Tage", "Period longer than {MAX_DAYS} days")));
     }
     let key = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
 

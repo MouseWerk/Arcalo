@@ -6,10 +6,11 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { addDays, dateLong, isoDay, weekdayLabels } from "../lib/format";
+import { addDays, dateLocale, dateLong, isoDay, weekdayLabels } from "../lib/format";
 import { addMonths, dayTone, hoursLabel, monthGrid, weekNumber } from "../lib/calendar";
 import type { DayOverview } from "../lib/types";
 import { Button, IconButton, MENU_GAP } from "./ui";
+import { t, useT } from "../lib/i18n";
 
 
 /** Opens the calendar next to `el` (or centered without an element), showing `date` (default today). */
@@ -33,7 +34,7 @@ export async function openDailyNote(iso: string, newTab = false) {
     await s.refreshTree();
     s.openPage(p.id, { newTab });
   } catch (e) {
-    s.error("Tagesnotiz konnte nicht geöffnet werden", e);
+    s.error(t("calpop.openFailed"), e);
   }
 }
 
@@ -49,6 +50,7 @@ export function CalendarPopover() {
 }
 
 function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: string; onPick?: (iso: string) => void }) {
+  const t = useT();
   const settings = useApp((s) => s.settings?.settings);
   const entriesVersion = useApp((s) => s.entriesVersion);
   const [cursor, setCursor] = useState(() => parseDay(date));
@@ -131,7 +133,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
   };
 
   const trackedSince = useMemo(() => [...days.values()].find((d) => d.booked_minutes > 0)?.date, [days]);
-  const monthLabel = new Date(year, month, 1).toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  const monthLabel = new Date(year, month, 1).toLocaleDateString(dateLocale(), { month: "long", year: "numeric" });
   const cursorIso = isoDay(cursor);
 
   const body = (
@@ -140,7 +142,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
       className={`calendar ${pos ? "calendar-anchored" : ""}`}
       style={pos ? { left: pos.left, top: pos.top } : undefined}
       role="dialog"
-      aria-label={onPick ? "Datum wählen" : "Kalender"}
+      aria-label={onPick ? t("calv.pickDate") : t("nav.calendar")}
       tabIndex={-1}
       onKeyDown={onKey}
     >
@@ -148,16 +150,16 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
         <div className="cal-month" aria-live="polite">
           {monthLabel}
         </div>
-        <IconButton icon={ChevronLeft} label="Vorheriger Monat (Bild ↑)" size="md" onClick={() => setCursor(addMonths(cursor, -1))} />
+        <IconButton icon={ChevronLeft} label={t("calpop.prev")} size="md" onClick={() => setCursor(addMonths(cursor, -1))} />
         <Button size="sm" variant="ghost" onClick={() => setCursor(new Date())}>
-          Heute
+          {t("feed.range.today")}
         </Button>
-        <IconButton icon={ChevronRight} label="Nächster Monat (Bild ↓)" size="md" onClick={() => setCursor(addMonths(cursor, 1))} />
+        <IconButton icon={ChevronRight} label={t("calpop.next")} size="md" onClick={() => setCursor(addMonths(cursor, 1))} />
       </div>
       <div className="cal-grid" role="grid" aria-label={monthLabel}>
         <div className="cal-row cal-weekdays" role="row">
           <span className="cal-kw" role="columnheader">
-            KW
+            {t("calv.weekShort")}
           </span>
           {weekdayLabels().map((w) => (
             <span key={w} className="cal-wd" role="columnheader">
@@ -178,9 +180,9 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
               const tone = dayTone(d, minutes, target, workdays, today, trackedSince);
               const label = [
                 dateLong(iso + "T12:00:00"),
-                info?.has_note ? "Tagesnotiz" : null,
-                minutes > 0 ? `${hoursLabel(minutes)} h gebucht` : null,
-                info?.open_tasks ? `${info.open_tasks} offene ${info.open_tasks === 1 ? "Aufgabe" : "Aufgaben"} fällig` : null,
+                info?.has_note ? t("capture.daily") : null,
+                minutes > 0 ? t("time.booked", { h: hoursLabel(minutes) }) : null,
+                info?.open_tasks ? t("calpop.openTasks", { n: info.open_tasks }) : null,
               ]
                 .filter(Boolean)
                 .join(" · ");
@@ -228,14 +230,14 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
       </div>
       <div className="cal-foot">
         <span>
-          <span className="cal-dot" /> Tagesnotiz
+          <span className="cal-dot" /> {t("capture.daily")}
         </span>
         <span>
-          <span className="cal-task" /> Aufgabe fällig
+          <span className="cal-task" /> {t("calpop.taskDue")}
         </span>
         <span className="grow" />
-        <span className="faint" title={`Pfeiltasten: Tag · Bild ↑/↓: Monat · Pos1: heute · Enter: ${onPick ? "übernehmen" : "öffnen"} · Esc: schließen`}>
-          <kbd>Enter</kbd> {onPick ? "übernehmen" : "öffnen"}
+        <span className="faint" title={t("calpop.keys", { enter: onPick ? t("calpop.take") : t("calpop.open") })}>
+          <kbd>Enter</kbd> {onPick ? t("calpop.take") : t("calpop.open")}
         </span>
       </div>
     </div>

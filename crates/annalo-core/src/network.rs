@@ -18,6 +18,7 @@
 //!
 //! The proxy password lives in the OS credential store (account [`PASSWORD_ACCOUNT`]).
 
+use crate::{tr, trf};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -148,10 +149,16 @@ impl NetworkSettings {
         n.no_proxy = self.no_proxy.trim().to_owned();
         n.pac_url = self.pac_url.trim().to_owned();
         if !n.pac_url.is_empty() {
-            let u =
-                Url::parse(&n.pac_url).map_err(|_| Error::State(format!("PAC-URL „{}“ ist ungültig", n.pac_url)))?;
+            let u = Url::parse(&n.pac_url)
+                .map_err(|_| Error::State(trf!("PAC-URL „{}“ ist ungültig", "PAC URL “{}” is invalid", n.pac_url)))?;
             if !matches!(u.scheme(), "http" | "https" | "file") {
-                return Err(Error::State("Die PAC-URL muss mit http://, https:// oder file:// beginnen".into()));
+                return Err(Error::State(
+                    tr!(
+                        "Die PAC-URL muss mit http://, https:// oder file:// beginnen",
+                        "The PAC URL must start with http://, https:// or file://"
+                    )
+                    .into(),
+                ));
             }
         }
         n.proxy_user = self.proxy_user.trim().to_owned();
@@ -162,10 +169,18 @@ impl NetworkSettings {
             && n.https_proxy.is_empty()
             && n.socks_proxy.is_empty()
         {
-            return Err(Error::State("Für einen manuellen Proxy bitte mindestens eine Proxy-Adresse eintragen".into()));
+            return Err(Error::State(
+                tr!(
+                    "Für einen manuellen Proxy bitte mindestens eine Proxy-Adresse eintragen",
+                    "For a manual proxy, enter at least one proxy address"
+                )
+                .into(),
+            ));
         }
         if n.mode == ProxyMode::Pac && n.pac_url.is_empty() {
-            return Err(Error::State("Bitte die Adresse der PAC-Datei eintragen".into()));
+            return Err(Error::State(
+                tr!("Bitte die Adresse der PAC-Datei eintragen", "Enter the address of the PAC file").into(),
+            ));
         }
         Ok(n)
     }
@@ -179,12 +194,22 @@ pub fn normalize_proxy_url(raw: &str, default_scheme: &str) -> Result<Option<Str
         return Ok(None);
     }
     let with_scheme = if s.contains("://") { s.to_owned() } else { format!("{default_scheme}://{s}") };
-    let bad = || Error::State(format!("Proxy-Adresse „{s}“ ist ungültig (erwartet host:port oder eine URL)"));
+    let bad = || {
+        Error::State(trf!(
+            "Proxy-Adresse „{s}“ ist ungültig (erwartet host:port oder eine URL)",
+            "Proxy address “{s}” is invalid (expected host:port or a URL)"
+        ))
+    };
     let mut url = Url::parse(&with_scheme).map_err(|_| bad())?;
     let scheme = match url.scheme() {
         "socks" => "socks5".to_owned(),
         s @ ("http" | "https" | "socks4" | "socks4a" | "socks5" | "socks5h") => s.to_owned(),
-        other => return Err(Error::State(format!("Proxy-Protokoll „{other}“ wird nicht unterstützt"))),
+        other => {
+            return Err(Error::State(trf!(
+                "Proxy-Protokoll „{other}“ wird nicht unterstützt",
+                "Proxy protocol “{other}” is not supported"
+            )));
+        }
     };
     if url.host_str().is_none_or(str::is_empty) {
         return Err(bad());
@@ -618,19 +643,22 @@ pub fn parse_certificates(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
             let b64: String = body[..end].chars().filter(|c| !c.is_whitespace()).collect();
             let der = base64::engine::general_purpose::STANDARD
                 .decode(b64)
-                .map_err(|e| Error::Parse(format!("PEM: ungültiges Base64 ({e})")))?;
+                .map_err(|e| Error::Parse(trf!("PEM: ungültiges Base64 ({e})", "PEM: invalid Base64 ({e})")))?;
             out.push(der);
             rest = &body[end..];
         }
         if out.is_empty() {
-            return Err(Error::Parse("Die Datei enthält keinen Block „BEGIN CERTIFICATE“".into()));
+            return Err(Error::Parse(
+                tr!("Die Datei enthält keinen Block „BEGIN CERTIFICATE“", "The file has no “BEGIN CERTIFICATE” block")
+                    .into(),
+            ));
         }
         return Ok(out);
     }
     if bytes.first() == Some(&0x30) && der_tlv(bytes).is_some() {
         return Ok(vec![bytes.to_vec()]);
     }
-    Err(Error::Parse("Kein Zertifikat im PEM- oder DER-Format".into()))
+    Err(Error::Parse(tr!("Kein Zertifikat im PEM- oder DER-Format", "No certificate in PEM or DER format").into()))
 }
 
 /// Reads and summarizes a CA file.
@@ -641,12 +669,13 @@ pub fn ca_info(bytes: &[u8]) -> Result<CaInfo> {
 }
 
 fn read_ca(path: &str) -> Result<Vec<Vec<u8>>> {
-    let meta = std::fs::metadata(path).map_err(|e| Error::State(format!("CA-Datei {path}: {e}")))?;
+    let meta =
+        std::fs::metadata(path).map_err(|e| Error::State(trf!("CA-Datei {path}: {e}", "CA file {path}: {e}")))?;
     if meta.len() > MAX_CA_BYTES {
-        return Err(Error::State(format!("CA-Datei {path} ist zu groß")));
+        return Err(Error::State(trf!("CA-Datei {path} ist zu groß", "CA file {path} is too large")));
     }
-    let bytes = std::fs::read(path).map_err(|e| Error::State(format!("CA-Datei {path}: {e}")))?;
-    parse_certificates(&bytes).map_err(|e| Error::State(format!("CA-Datei {path}: {e}")))
+    let bytes = std::fs::read(path).map_err(|e| Error::State(trf!("CA-Datei {path}: {e}", "CA file {path}: {e}")))?;
+    parse_certificates(&bytes).map_err(|e| Error::State(trf!("CA-Datei {path}: {e}", "CA file {path}: {e}")))
 }
 
 /// Reads a CA file and summarizes it.
@@ -745,7 +774,10 @@ impl Prepared {
         let certs = match &net.extra_ca_path {
             Some(p) => read_ca(p)?
                 .iter()
-                .map(|d| reqwest::Certificate::from_der(d).map_err(|e| Error::State(format!("CA-Datei {p}: {e}"))))
+                .map(|d| {
+                    reqwest::Certificate::from_der(d)
+                        .map_err(|e| Error::State(trf!("CA-Datei {p}: {e}", "CA file {p}: {e}")))
+                })
                 .collect::<Result<Vec<_>>>()?,
             None => vec![],
         };
@@ -792,18 +824,19 @@ pub fn http_client(net: &NetworkSettings, password: Option<&str>, purpose: Purpo
 pub async fn fetch_pac(net: &NetworkSettings, url: &str) -> Result<String> {
     if let Some(path) = url.strip_prefix("file://") {
         let path = path.strip_prefix('/').filter(|p| cfg!(windows) && p.chars().nth(1) == Some(':')).unwrap_or(path);
-        let text = std::fs::read_to_string(path).map_err(|e| Error::State(format!("PAC-Datei {path}: {e}")))?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| Error::State(trf!("PAC-Datei {path}: {e}", "PAC file {path}: {e}")))?;
         return Ok(text);
     }
     let direct = NetworkSettings { mode: ProxyMode::None, ..net.clone() };
     let client = Prepared::new(&direct, None, Purpose::Ai)?.client()?;
     let resp = client.get(url).timeout(net.timeout()).send().await?;
     if !resp.status().is_success() {
-        return Err(Error::State(format!("PAC-Datei: HTTP {}", resp.status())));
+        return Err(Error::State(trf!("PAC-Datei: HTTP {}", "PAC file: HTTP {}", resp.status())));
     }
     let bytes = resp.bytes().await?;
     if bytes.len() > MAX_PAC_BYTES {
-        return Err(Error::State("PAC-Datei ist zu groß".into()));
+        return Err(Error::State(tr!("PAC-Datei ist zu groß", "The PAC file is too large").into()));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

@@ -14,26 +14,27 @@ import { useApp } from "../store/app";
 import { Button, Dialog, EmptyState, IconButton, Segmented, Spinner, useMenu, type MenuEntry } from "../components/ui";
 import { Select } from "../components/Select";
 import { PageIcon } from "../components/icons";
-import { fmtDate } from "../lib/format";
+import { fmtDate, int } from "../lib/format";
 import { fileKind, formatSize, type FileKind } from "../editor/fileEmbed";
 import { drawPdfPreview, forgetPdfPreview } from "../lib/pdf";
 import { openDrawing } from "../editor/drawings";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, renameProblem, stemLength, totalSize, type KindFilter, type ListFilter, type SortKey } from "../lib/attachments";
+import { t, useT, withLabel, type TKey } from "../lib/i18n";
 
-const KINDS: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "Alle" },
-  { value: "image", label: "Bilder" },
-  { value: "drawing", label: "Zeichnungen" },
-  { value: "pdf", label: "PDFs" },
-  { value: "other", label: "Andere" },
+const KINDS: { value: KindFilter; readonly label: string }[] = [
+  withLabel({ value: "all" as KindFilter }, "att.kind.all"),
+  withLabel({ value: "image" as KindFilter }, "att.kind.image"),
+  withLabel({ value: "drawing" as KindFilter }, "att.kind.drawing"),
+  withLabel({ value: "pdf" as KindFilter }, "att.kind.pdf"),
+  withLabel({ value: "other" as KindFilter }, "att.kind.other"),
 ];
-const KIND_LABEL: Record<AttachmentInfo["kind"], string> = { image: "Bild", drawing: "Zeichnung", pdf: "PDF", other: "Datei" };
-const SORTS: { value: SortKey; label: string }[] = [
-  { value: "name", label: "Name" },
-  { value: "size", label: "Größe" },
-  { value: "date", label: "Geändert" },
-  { value: "usage", label: "Verwendung" },
+const KIND_LABEL: Record<AttachmentInfo["kind"], TKey> = { image: "feed.kind.image", drawing: "feed.kind.drawing", pdf: "att.pdf", other: "feed.kind.file" };
+const SORTS: { value: SortKey; label: TKey }[] = [
+  { value: "name", label: "att.sort.name" },
+  { value: "size", label: "att.sort.size" },
+  { value: "date", label: "att.sort.date" },
+  { value: "usage", label: "att.sort.usage" },
 ];
 const FILE_ICONS: Record<FileKind, typeof File> = {
   file: File,
@@ -47,14 +48,13 @@ const FILE_ICONS: Record<FileKind, typeof File> = {
   code: FileCode2,
 };
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString("de-DE")} ${n === 1 ? one : many}`;
 
 /** Opens a file: PDFs in a viewer tab, drawings in the editor, everything else in its app. */
 export function openAttachmentFile(f: Pick<AttachmentInfo, "name" | "kind">, newTab = true) {
   const s = useApp.getState();
   if (f.kind === "pdf") s.openTab({ kind: "pdf", tag: f.name }, { newTab });
   else if (f.kind === "drawing") openDrawing(f.name);
-  else api.openAttachment(f.name).catch((e) => s.error("Datei ließ sich nicht öffnen", e));
+  else api.openAttachment(f.name).catch((e) => s.error(t("att.openFailed"), e));
 }
 
 /** Small preview: the image, the drawing's SVG, the PDF's first page, or a type icon. */
@@ -100,13 +100,14 @@ function Thumb({ file }: { file: AttachmentInfo }) {
 }
 
 export function AttachmentsView() {
+  const t = useT();
   const [list, setList] = useState<AttachmentList | null>(null);
   const [filter, setFilter] = useState<ListFilter>(DEFAULT_FILTER);
   const [renaming, setRenaming] = useState<AttachmentInfo | null>(null);
   const [cleanup, setCleanup] = useState(false);
   const [menu, openMenu, openMenuAt] = useMenu();
   const s = useApp.getState;
-  const load = useCallback(() => api.attachments().then(setList, (e) => (s().error("Anhänge nicht geladen", e), setList({ files: [], total_size: 0 }))), [s]);
+  const load = useCallback(() => api.attachments().then(setList, (e) => (s().error(t("att.loadFailed"), e), setList({ files: [], total_size: 0 }))), [s, t]);
   useEffect(() => void load(), [load]);
   // Pages renamed or deleted elsewhere: the „Verwendet in“ titles follow.
   const tree = useApp((st) => st.tree);
@@ -124,14 +125,14 @@ export function AttachmentsView() {
   const remove = async (f: AttachmentInfo) => {
     const live = f.used_in.filter((u) => !u.trashed);
     const where = live.length
-      ? ` Sie wird in ${plural(live.length, "Seite", "Seiten")} verwendet (${live.slice(0, 3).map((u) => `„${u.title}“`).join(", ")}${live.length > 3 ? ", …" : ""}); dort erscheint dann „Datei fehlt“.`
+      ? ` ${t("att.deleteUsed", { n: live.length, pages: live.slice(0, 3).map((u) => t("common.quoted", { text: u.title })).join(", ") + (live.length > 3 ? ", …" : "") })}`
       : f.used_in.length
-        ? " Sie wird nur noch in Seiten im Papierkorb verwendet."
+        ? ` ${t("att.deleteTrashOnly")}`
         : "";
     const ok = await s().confirm({
-      title: "Datei löschen?",
-      message: `„${f.name}“ wird in den Papierkorb verschoben und lässt sich dort wiederherstellen.${where}`,
-      confirmLabel: "Löschen",
+      title: t("att.deleteAsk"),
+      message: t("att.deleteText", { name: f.name }) + where,
+      confirmLabel: t("common.delete"),
       danger: true,
     });
     if (!ok) return;
@@ -147,41 +148,41 @@ export function AttachmentsView() {
         try {
           const trashed = await api.trashedAttachments();
           for (const name of moved) {
-            const t = trashed.find((x) => x.name === name);
-            if (t) await api.restoreAttachment(t.id, t.name);
+            const x = trashed.find((y) => y.name === name);
+            if (x) await api.restoreAttachment(x.id, x.name);
           }
           await load();
         } catch (e) {
-          s().error("Wiederherstellen fehlgeschlagen", e);
+          s().error(t("set.git.restoreFailed"), e);
         }
       };
       s().toast({
         tone: "success",
-        title: moved.length === 1 ? "Datei gelöscht" : `${moved.length} Dateien gelöscht`,
-        detail: moved.length === 1 ? moved[0] : "Im Papierkorb wiederherstellbar",
-        action: { label: "Rückgängig", run: () => void undo() },
+        title: t("att.deleted", { n: moved.length }),
+        detail: moved.length === 1 ? moved[0] : t("att.restorable"),
+        action: { label: t("common.undo"), run: () => void undo() },
       });
     } catch (e) {
-      s().error("Löschen fehlgeschlagen", e);
+      s().error(t("common.deleteFailed"), e);
       await load();
     }
   };
 
   const rowMenu = (f: AttachmentInfo): MenuEntry[] => [
-    { label: f.kind === "pdf" ? "Ansehen" : f.kind === "drawing" ? "Bearbeiten" : "Öffnen", icon: ExternalLink, onSelect: () => openAttachmentFile(f) },
+    { label: f.kind === "pdf" ? t("att.view") : f.kind === "drawing" ? t("links.editShort") : t("links.open"), icon: ExternalLink, onSelect: () => openAttachmentFile(f) },
     ...(f.kind === "pdf" || f.kind === "drawing"
-      ? [{ label: "Mit Standard-App öffnen", icon: ExternalLink, onSelect: () => api.openAttachment(f.name).catch((e) => s().error("Datei ließ sich nicht öffnen", e)) } as MenuEntry]
+      ? [{ label: t("att.openDefault"), icon: ExternalLink, onSelect: () => api.openAttachment(f.name).catch((e) => s().error(t("att.openFailed"), e)) } as MenuEntry]
       : []),
-    { label: "Im Ordner zeigen", icon: FolderOpen, onSelect: () => api.openAttachment(f.name, true).catch((e) => s().error("Ordner ließ sich nicht öffnen", e)) },
+    { label: t("att.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(f.name, true).catch((e) => s().error(t("common.openFolderFailed"), e)) },
     "separator",
-    { label: "Umbenennen…", icon: Pencil, onSelect: () => setRenaming(f) },
+    { label: t("att.rename"), icon: Pencil, onSelect: () => setRenaming(f) },
     {
-      label: "Einbettung kopieren",
+      label: t("att.copyEmbed"),
       icon: Copy,
-      onSelect: () => navigator.clipboard.writeText(`![[${f.name}]]`).then(() => s().toast({ tone: "success", title: "Einbettung kopiert" }), (e) => s().error("Kopieren fehlgeschlagen", e)),
+      onSelect: () => navigator.clipboard.writeText(`![[${f.name}]]`).then(() => s().toast({ tone: "success", title: t("att.embedCopied") }), (e) => s().error(t("devlog.copyFailed"), e)),
     },
     "separator",
-    { label: "Löschen…", icon: Trash2, danger: true, onSelect: () => void remove(f) },
+    { label: t("att.deleteMenu"), icon: Trash2, danger: true, onSelect: () => void remove(f) },
   ];
 
   const empty = list && list.files.length === 0;
@@ -190,17 +191,17 @@ export function AttachmentsView() {
       <div className="view att-view">
         <header className="view-header">
           <div>
-            <h1>Anhänge</h1>
+            <h1>{t("mail.attachments")}</h1>
             <div className="view-sub att-summary">
               {list
-                ? `${plural(list.files.length, "Datei", "Dateien")} · ${formatSize(list.total_size)} insgesamt${unused.length ? ` · ${unused.length} unbenutzt (${formatSize(totalSize(unused))})` : ""}`
+                ? `${t("att.files", { n: list.files.length, count: int(list.files.length) })} · ${t("att.total", { size: formatSize(list.total_size) })}${unused.length ? ` · ${t("att.unusedCount", { n: unused.length, size: formatSize(totalSize(unused)) })}` : ""}`
                 : ""}
             </div>
           </div>
           <div className="view-actions">
-            <IconButton icon={RefreshCw} label="Neu laden" onClick={() => void load()} />
+            <IconButton icon={RefreshCw} label={t("att.reload")} onClick={() => void load()} />
             <Button icon={Sparkles} onClick={() => setCleanup(true)} disabled={!unused.length}>
-              Unbenutzte aufräumen
+              {t("att.cleanup")}
             </Button>
           </div>
         </header>
@@ -208,8 +209,8 @@ export function AttachmentsView() {
         {!list ? (
           <Spinner />
         ) : empty ? (
-          <EmptyState icon={Paperclip} title="Noch keine Anhänge">
-            Bilder, Zeichnungen, PDFs und andere Dateien, die du in Notizen einfügst, erscheinen hier.
+          <EmptyState icon={Paperclip} title={t("att.empty")}>
+            {t("att.emptyHint")}
           </EmptyState>
         ) : (
           <>
@@ -218,37 +219,37 @@ export function AttachmentsView() {
                 <Search size={14} aria-hidden />
                 <input
                   className="att-search-input"
-                  placeholder="Name oder Seite suchen"
-                  aria-label="Anhänge durchsuchen"
+                  placeholder={t("att.searchPlaceholder")}
+                  aria-label={t("att.search")}
                   value={filter.query}
                   onChange={(e) => set({ query: e.target.value })}
                   onKeyDown={(e) => e.key === "Escape" && filter.query && (e.stopPropagation(), set({ query: "" }))}
                 />
-                {filter.query && <IconButton icon={X} label="Suche leeren" size="sm" onClick={() => set({ query: "" })} />}
+                {filter.query && <IconButton icon={X} label={t("att.clearSearch")} size="sm" onClick={() => set({ query: "" })} />}
               </label>
-              <Segmented value={filter.kind} options={KINDS} onChange={(kind) => set({ kind })} label="Typ" />
+              <Segmented value={filter.kind} options={KINDS} onChange={(kind) => set({ kind })} label={t("att.type")} />
               <div className="att-toggles">
                 <button type="button" className={`att-chip ${filter.unused ? "on" : ""}`} aria-pressed={filter.unused} onClick={() => set({ unused: !filter.unused })}>
-                  Unbenutzt
+                  {t("att.unused")}
                 </button>
-                <button type="button" className={`att-chip ${filter.large ? "on" : ""}`} aria-pressed={filter.large} onClick={() => set({ large: !filter.large })} title={`Ab ${formatSize(LARGE_BYTES)}`}>
-                  Groß
+                <button type="button" className={`att-chip ${filter.large ? "on" : ""}`} aria-pressed={filter.large} onClick={() => set({ large: !filter.large })} title={t("att.largeFrom", { size: formatSize(LARGE_BYTES) })}>
+                  {t("att.large")}
                 </button>
               </div>
-              <Select value={filter.sort} onChange={(e) => set({ sort: e.target.value as SortKey })} aria-label="Sortieren nach" className="att-sort" options={SORTS.map((o) => ({ value: o.value, label: `Nach ${o.label}` }))} />
+              <Select value={filter.sort} onChange={(e) => set({ sort: e.target.value as SortKey })} aria-label={t("att.sortBy")} className="att-sort" options={SORTS.map((o) => ({ value: o.value, label: t("att.sortOption", { field: t(o.label) }) }))} />
             </div>
 
             {shown.length === 0 ? (
-              <div className="att-none">Keine Datei passt zu den Filtern.</div>
+              <div className="att-none">{t("att.noMatch")}</div>
             ) : (
-              <div className="att-table" role="table" aria-label="Anhänge">
+              <div className="att-table" role="table" aria-label={t("mail.attachments")}>
                 <div className="att-row att-head" role="row">
-                  <span role="columnheader" className="att-c-name">Name</span>
-                  <span role="columnheader" className="att-c-kind">Typ</span>
-                  <span role="columnheader" className="att-c-size">Größe</span>
-                  <span role="columnheader" className="att-c-date">Geändert</span>
-                  <span role="columnheader" className="att-c-used">Verwendet in</span>
-                  <span role="columnheader" className="att-c-act" aria-label="Aktionen" />
+                  <span role="columnheader" className="att-c-name">{t("att.sort.name")}</span>
+                  <span role="columnheader" className="att-c-kind">{t("att.type")}</span>
+                  <span role="columnheader" className="att-c-size">{t("att.sort.size")}</span>
+                  <span role="columnheader" className="att-c-date">{t("att.sort.date")}</span>
+                  <span role="columnheader" className="att-c-used">{t("att.usedIn")}</span>
+                  <span role="columnheader" className="att-c-act" aria-label={t("ribbon.actions")} />
                 </div>
                 {shown.map((f) => {
                   const live = f.used_in.filter((u) => !u.trashed);
@@ -268,13 +269,13 @@ export function AttachmentsView() {
                             {f.name}
                           </button>
                           <span className="att-sub">
-                            {KIND_LABEL[f.kind]} · {formatSize(f.size)}
+                            {t(KIND_LABEL[f.kind])} · {formatSize(f.size)}
                             {f.modified ? ` · ${fmtDate(f.modified)}` : ""}
                           </span>
                         </span>
                       </span>
                       <span role="cell" className="att-c-kind">
-                        {KIND_LABEL[f.kind]}
+                        {t(KIND_LABEL[f.kind])}
                       </span>
                       <span role="cell" className={`att-c-size num ${f.size >= LARGE_BYTES ? "att-large" : ""}`}>
                         {formatSize(f.size)}
@@ -284,7 +285,7 @@ export function AttachmentsView() {
                       </span>
                       <span role="cell" className="att-c-used">
                         {live.length === 0 ? (
-                          <span className={`att-unused ${f.used_in.length ? "is-trash" : ""}`}>{f.used_in.length ? "Nur im Papierkorb" : "Nicht verwendet"}</span>
+                          <span className={`att-unused ${f.used_in.length ? "is-trash" : ""}`}>{f.used_in.length ? t("att.onlyTrash") : t("att.notUsed")}</span>
                         ) : (
                           <span className="att-uses">
                             {live.slice(0, 3).map((u) => (
@@ -298,7 +299,7 @@ export function AttachmentsView() {
                         )}
                       </span>
                       <span role="cell" className="att-c-act">
-                        <IconButton icon={MoreHorizontal} label={`Aktionen für ${f.name}`} size="sm" onClick={(e) => openMenuAt(e, rowMenu(f))} />
+                        <IconButton icon={MoreHorizontal} label={t("calset.actionsFor", { name: f.name })} size="sm" onClick={(e) => openMenuAt(e, rowMenu(f))} />
                       </span>
                     </div>
                   );
@@ -316,6 +317,7 @@ export function AttachmentsView() {
 }
 
 function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; names: string[]; onClose: () => void; onDone: () => Promise<void> }) {
+  const t = useT();
   const [value, setValue] = useState(file.name);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -324,8 +326,8 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
   const s = useApp.getState;
   // The name without its extension is selected, ready to type over.
   useEffect(() => {
-    const t = setTimeout(() => input.current?.setSelectionRange(0, stemLength(file.name)), 40);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => input.current?.setSelectionRange(0, stemLength(file.name)), 40);
+    return () => clearTimeout(timer);
   }, [file.name]);
 
   const submit = async () => {
@@ -342,8 +344,8 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
       onClose();
       s().toast({
         tone: "success",
-        title: "Datei umbenannt",
-        detail: out.pages.length ? `„${out.name}“ – in ${plural(out.pages.length, "Seite", "Seiten")} angepasst` : `„${out.name}“`,
+        title: t("att.renamed"),
+        detail: out.pages.length ? t("att.renamedIn", { name: out.name, n: out.pages.length }) : t("common.quoted", { text: out.name }),
       });
     } catch (e) {
       setServerError(String(e).replace(/^invalid state: /, ""));
@@ -356,15 +358,15 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
     <Dialog
       open
       onClose={onClose}
-      title="Datei umbenennen"
-      description={live ? `Die Einbettungen in ${plural(live, "Seite", "Seiten")} werden mit angepasst; die bisherigen Fassungen bleiben als Versionen erhalten.` : "Die Datei wird in keiner Seite verwendet."}
+      title={t("att.renameTitle")}
+      description={live ? t("att.renameDesc", { n: live }) : t("att.renameUnused")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={() => void submit()} loading={busy} disabled={!!problem}>
-            Umbenennen
+            {t("att.renameButton")}
           </Button>
         </>
       }
@@ -374,20 +376,21 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
         value={value}
         onChange={(e) => (setValue(e.target.value), setServerError(null))}
         onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void submit())}
-        aria-label="Neuer Dateiname"
+        aria-label={t("att.newName")}
         aria-invalid={!!error}
         className="input att-rename-input"
         data-autofocus
         spellCheck={false}
       />
       <div className={`att-rename-hint ${error ? "is-error" : ""}`} role={error ? "alert" : undefined}>
-        {error ?? "Die Dateiendung bleibt gleich."}
+        {error ?? t("att.extStays")}
       </div>
     </Dialog>
   );
 }
 
 function CleanupDialog({ files, onClose, onDelete }: { files: AttachmentInfo[]; onClose: () => void; onDelete: (names: string[]) => Promise<void> }) {
+  const t = useT();
   const [picked, setPicked] = useState(() => new Set(files.map((f) => f.name)));
   const [busy, setBusy] = useState(false);
   const chosen = files.filter((f) => picked.has(f.name));
@@ -404,12 +407,12 @@ function CleanupDialog({ files, onClose, onDelete }: { files: AttachmentInfo[]; 
       open
       onClose={onClose}
       width={560}
-      title="Unbenutzte Anhänge aufräumen"
-      description={`${plural(files.length, "Datei wird", "Dateien werden")} in keiner Seite verwendet (${formatSize(totalSize(files))}). Gelöschte Dateien lassen sich aus dem Papierkorb wiederherstellen.`}
+      title={t("att.cleanupTitle")}
+      description={t("att.cleanupDesc", { n: files.length, size: formatSize(totalSize(files)) })}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button
             variant="danger"
@@ -422,16 +425,16 @@ function CleanupDialog({ files, onClose, onDelete }: { files: AttachmentInfo[]; 
               setBusy(false);
             }}
           >
-            {chosen.length ? `${plural(chosen.length, "Datei", "Dateien")} löschen (${formatSize(totalSize(chosen))})` : "Löschen"}
+            {chosen.length ? t("att.deleteN", { n: chosen.length, size: formatSize(totalSize(chosen)) }) : t("common.delete")}
           </Button>
         </>
       }
     >
       <label className="att-clean-all">
         <input type="checkbox" className="task-check" checked={all} onChange={() => setPicked(all ? new Set() : new Set(files.map((f) => f.name)))} />
-        <span>Alle auswählen</span>
+        <span>{t("common.selectAll")}</span>
       </label>
-      <ul className="att-clean-list" aria-label="Unbenutzte Dateien">
+      <ul className="att-clean-list" aria-label={t("att.unusedFiles")}>
         {files.map((f) => (
           <li key={f.name}>
             <label className="att-clean-item">

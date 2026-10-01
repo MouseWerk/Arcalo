@@ -73,6 +73,7 @@ use annalo_core::trash::TrashEntry;
 use annalo_core::vault::{self, ImportReport};
 use annalo_core::versions::VersionInfo;
 use annalo_core::{Database, Error, datadir, demo};
+use annalo_core::{tr, trf};
 use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -129,7 +130,10 @@ impl AiRuntime {
         devlog::remember_secret(proxy_password.as_deref());
         let mut network_error = None;
         let mut failed = |e: Error| {
-            let msg = format!("Netzwerkeinstellungen ungültig: {e} (Einstellungen → Netzwerk)");
+            let msg = trf!(
+                "Netzwerkeinstellungen ungültig: {e} (Einstellungen → Netzwerk)",
+                "Network settings invalid: {e} (Settings → Network)"
+            );
             devlog::error("net", &msg);
             network_error = Some(msg);
         };
@@ -225,8 +229,9 @@ impl AppState {
         };
         ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
             Some(e) => Error::State(e.clone()),
-            None => Error::State(format!(
-                "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)"
+            None => Error::State(trf!(
+                "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)",
+                "The AI provider “{id}” is not set up or is switched off (Settings → AI)"
             )),
         })
     }
@@ -366,7 +371,7 @@ fn page_rename(state: State<AppState>, id: i64, title: String, update_links: boo
     if let Some(other) = db.page_by_title(&title)?
         && other.id != id
     {
-        return Err(Error::State(format!("Eine Seite „{}“ existiert bereits", other.title)));
+        return Err(Error::State(trf!("Eine Seite „{}“ existiert bereits", "A page “{}” already exists", other.title)));
     }
     db.rename_page_linked(id, &title, update_links)
 }
@@ -483,7 +488,7 @@ static VAULT_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
-        return Err(Error::State(format!("„{path}“ ist kein Ordner")));
+        return Err(Error::State(trf!("„{path}“ ist kein Ordner", "“{path}” is not a folder")));
     }
     VAULT_CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
     tauri::async_runtime::spawn_blocking(move || {
@@ -500,6 +505,13 @@ async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     })
     .await
     .map_err(|e| Error::State(e.to_string()))?
+}
+
+/// The operating system's locale (`de-DE`, `en-US` …): the language the first run suggests.
+#[tauri::command]
+fn os_locale() -> Option<String> {
+    // Tests and support: ANNALO_LOCALE stands in for the system's.
+    std::env::var("ANNALO_LOCALE").ok().filter(|l| !l.trim().is_empty()).or_else(sys_locale::get_locale)
 }
 
 #[tauri::command]
@@ -616,7 +628,10 @@ async fn attachment_import(state: State<'_, AppState>, path: String) -> Result<S
 async fn attachment_read(state: State<'_, AppState>, name: String) -> Result<tauri::ipc::Response> {
     let path = attachments::existing(&state.attachments_dir(), &name)?;
     if std::fs::metadata(&path).at(&path)?.len() > attachments::MAX_FILE_BYTES {
-        return Err(Error::State(format!("„{name}“ ist zu groß für die Vorschau")));
+        return Err(Error::State(trf!(
+            "„{name}“ ist zu groß für die Vorschau",
+            "“{name}” is too large for the preview"
+        )));
     }
     Ok(tauri::ipc::Response::new(std::fs::read(&path).at(&path)?))
 }
@@ -651,7 +666,9 @@ fn html_file_write(path: String, html: String) -> Result<()> {
     let p = std::path::Path::new(&path);
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if ext != "html" && ext != "htm" {
-        return Err(Error::State("Nur .html-Dateien können so gespeichert werden".into()));
+        return Err(Error::State(
+            tr!("Nur .html-Dateien können so gespeichert werden", "Only .html files can be saved this way").into(),
+        ));
     }
     std::fs::write(p, html).at(p)?;
     Ok(())
@@ -669,7 +686,7 @@ fn attachment_open(app: AppHandle, state: State<AppState>, name: String, reveal:
     } else {
         app.opener().open_path(path.display().to_string(), None::<&str>)
     };
-    opened.map_err(|e| Error::State(format!("„{name}“ ließ sich nicht öffnen: {e}")))
+    opened.map_err(|e| Error::State(trf!("„{name}“ ließ sich nicht öffnen: {e}", "“{name}” could not be opened: {e}")))
 }
 
 /// Creates an empty drawing (`<title>.excalidraw`) and returns its `![[name]]` embed.
@@ -698,12 +715,16 @@ fn decode_attachment(data: &str) -> Result<Vec<u8>> {
     let b64 = if data.starts_with("data:") { data.split_once(',').map_or("", |(_, d)| d) } else { data };
     let len = b64.bytes().filter(|b| !b.is_ascii_whitespace()).count();
     if len > attachments::MAX_BYTES.div_ceil(3) * 4 + 4 {
-        return Err(Error::State(format!("Datei ist größer als {} MB", attachments::MAX_BYTES / 1024 / 1024)));
+        return Err(Error::State(trf!(
+            "Datei ist größer als {} MB",
+            "The file is larger than {} MB",
+            attachments::MAX_BYTES / 1024 / 1024
+        )));
     }
     let compact: String = b64.chars().filter(|c| !c.is_ascii_whitespace()).collect();
     base64::engine::general_purpose::STANDARD
         .decode(compact)
-        .map_err(|e| Error::Parse(format!("Ungültige Bilddaten: {e}")))
+        .map_err(|e| Error::Parse(trf!("Ungültige Bilddaten: {e}", "Invalid image data: {e}")))
 }
 
 /// Serves `annalo-asset://localhost/<name>`: only plain file names inside the attachments folder.
@@ -763,17 +784,19 @@ fn wbs_tree(state: State<AppState>) -> Result<Vec<ProjectTree>> {
 
 fn required(value: &str, what: &str) -> Result<String> {
     let v = value.trim();
-    if v.is_empty() { Err(Error::State(format!("{what} fehlt"))) } else { Ok(v.to_owned()) }
+    if v.is_empty() { Err(Error::State(trf!("{what} fehlt", "{what} is missing"))) } else { Ok(v.to_owned()) }
 }
 
 #[tauri::command(async)]
 fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
-    state.db().create_project(&required(&code, "Projekt-ID")?, &required(&name, "Name")?)
+    state
+        .db()
+        .create_project(&required(&code, tr!("Projekt-ID", "Project ID"))?, &required(&name, tr!("Name", "Name"))?)
 }
 
 #[tauri::command(async)]
 fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
-    state.db().update_project(id, &required(&name, "Name")?)
+    state.db().update_project(id, &required(&name, tr!("Name", "Name"))?)
 }
 
 #[tauri::command(async)]
@@ -790,7 +813,7 @@ fn netzplan_create(
     description: String,
     planned_hours: f64,
 ) -> Result<Netzplan> {
-    let nr = required(&netzplan_nr, "Netzplan-Nr.")?;
+    let nr = required(&netzplan_nr, tr!("Netzplan-Nr.", "Network no."))?;
     let wbs = if wbs_element.trim().is_empty() { nr.clone() } else { wbs_element.trim().to_owned() };
     state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
 }
@@ -822,7 +845,7 @@ fn vorgang_create(
     planned_hours: f64,
     predecessors: Vec<String>,
 ) -> Result<Vorgang> {
-    let nr = required(&vorgang_nr, "Vorgangsnummer")?;
+    let nr = required(&vorgang_nr, tr!("Vorgangsnummer", "Activity number"))?;
     let db = state.db();
     let existing = db.list_vorgaenge(netzplan_id)?;
     let preds: Vec<i64> = predecessors
@@ -1002,7 +1025,13 @@ fn time_entry_create(
     description: String,
 ) -> Result<LogOutcome> {
     if !(1..=24 * 60).contains(&duration_minutes) {
-        return Err(Error::State("Dauer muss zwischen 1 Minute und 24 Stunden liegen".into()));
+        return Err(Error::State(
+            tr!(
+                "Dauer muss zwischen 1 Minute und 24 Stunden liegen",
+                "The duration must be between 1 minute and 24 hours"
+            )
+            .into(),
+        ));
     }
     let settings = state.settings();
     let t = settings.thresholds;
@@ -1337,7 +1366,9 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
 #[tauri::command]
 async fn git_sync_now(app: AppHandle, allow_deletions: Option<bool>) -> Result<SyncOutcome> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
-        return Err(Error::State("Bitte zuerst die Remote-URL eintragen und speichern".into()));
+        return Err(Error::State(
+            tr!("Bitte zuerst die Remote-URL eintragen und speichern", "Enter and save the remote URL first").into(),
+        ));
     }
     let allow = allow_deletions.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false, allow))
@@ -1406,7 +1437,12 @@ async fn git_sync_test(app: AppHandle, url: Option<String>, token: Option<String
         let state = app.state::<AppState>();
         let url = url.map(|u| u.trim().to_owned()).unwrap_or_else(|| state.settings().git_sync.remote_url);
         if url.is_empty() {
-            return Ok(GitTest { ok: false, latency_ms: 0, branches: vec![], error: Some("Keine Remote-URL".into()) });
+            return Ok(GitTest {
+                ok: false,
+                latency_ms: 0,
+                branches: vec![],
+                error: Some(tr!("Keine Remote-URL", "No remote URL").into()),
+            });
         }
         let token = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).or_else(|| state.git_secret.get());
         let git = network::git(&state, token.clone(), &url);
@@ -1517,7 +1553,13 @@ fn mirror_open(app: AppHandle, state: State<AppState>) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     let dir = state.mirror_dir();
     if !dir.is_dir() {
-        return Err(Error::State("Die Markdown-Kopie wurde noch nicht erstellt – zuerst sichern".into()));
+        return Err(Error::State(
+            tr!(
+                "Die Markdown-Kopie wurde noch nicht erstellt – zuerst sichern",
+                "The Markdown copy has not been made yet – back up first"
+            )
+            .into(),
+        ));
     }
     app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| Error::State(e.to_string()))
 }
@@ -1662,8 +1704,12 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     annalo_core::network::Prepared::new(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
     settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     if let Some(t) = &settings.reminder_time {
-        let time = annalo_core::desktop::parse_hhmm(t)
-            .ok_or_else(|| Error::State(format!("Erinnerungszeit „{t}“ ungültig, erwartet HH:MM")))?;
+        let time = annalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
+            Error::State(trf!(
+                "Erinnerungszeit „{t}“ ungültig, erwartet HH:MM",
+                "Reminder time “{t}” is invalid, expected HH:MM"
+            ))
+        })?;
         settings.reminder_time = Some(time.format("%H:%M").to_string());
     }
     settings.capture_shortcut = settings.capture_shortcut.trim().to_owned();
@@ -1720,7 +1766,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // Keys of removed providers are deleted with them.
     for gone in previous.providers.iter().filter(|p| !settings.providers.iter().any(|n| n.id == p.id)) {
         if let Err(e) = state.provider_secret(&gone.id).set(None) {
-            devlog::warn("ai", format!("key of the removed provider „{}“ not deleted: {e}", gone.id));
+            devlog::warn("ai", format!("key of the removed provider “{}” not deleted: {e}", gone.id));
         }
     }
     // Outlook switched on, another window or other privacy rules: read the calendars again now.
@@ -1729,6 +1775,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || (old_cal.past_days, old_cal.future_days) != (new_cal.past_days, new_cal.future_days)
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
+    let relocalize = annalo_core::i18n::set_lang(settings.locale.language);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     rebuild_ai(&state, settings);
     if chat_retention {
@@ -1737,6 +1784,14 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
+    }
+    // Another language: the tray, the menu bar and the jump list follow, and the built-in
+    // activity types (unless edited).
+    if relocalize {
+        desktop::relocalize(&app);
+        if let Err(e) = state.db().localize_default_leistungsarten() {
+            devlog::warn("core", format!("activity types not localized: {e}"));
+        }
     }
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
@@ -1797,12 +1852,14 @@ fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize, item: O
     let opened = match target {
         ("url", u) => app.opener().open_url(u, None::<&str>),
         ("app", p) => {
-            return start_program(&app, &p)
-                .map_err(|e| Error::State(format!("„{}“ ließ sich nicht starten: {e}", link.name)));
+            return start_program(&app, &p).map_err(|e| {
+                Error::State(trf!("„{}“ ließ sich nicht starten: {e}", "“{}” could not be started: {e}", link.name))
+            });
         }
         (_, p) => app.opener().open_path(p, None::<&str>),
     };
-    opened.map_err(|e| Error::State(format!("„{}“ ließ sich nicht öffnen: {e}", link.name)))
+    opened
+        .map_err(|e| Error::State(trf!("„{}“ ließ sich nicht öffnen: {e}", "“{}” could not be opened: {e}", link.name)))
 }
 
 /// Starts a program from the ribbon. Windows and macOS start programs (`.exe`, `.lnk`, `.app`)
@@ -1843,7 +1900,7 @@ fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsVi
 fn provider_key_set(state: State<AppState>, id: String, key: Option<String>) -> Result<SettingsView> {
     let id = annalo_core::ai::provider::slug(&id);
     if id.is_empty() {
-        return Err(Error::State("Anbieter ohne Kennung".into()));
+        return Err(Error::State(tr!("Anbieter ohne Kennung", "Provider without an id").into()));
     }
     state.provider_secret(&id).set(key.as_deref().map(str::trim)).map_err(Error::State)?;
     rebuild_ai(&state, state.settings());
@@ -1910,7 +1967,7 @@ async fn provider_models(state: &AppState, provider: AiProvider, key: Option<Str
             ConnectionTest { ok: true, latency_ms, models, embedding_models, error: None }
         }
         Err(e) => {
-            devlog::warn("ai", format!("model list of „{}“ failed: {e}", provider.display_name()));
+            devlog::warn("ai", format!("model list of “{}” failed: {e}", provider.display_name()));
             ConnectionTest {
                 ok: false,
                 latency_ms,
@@ -1928,7 +1985,7 @@ async fn model_modes(client: &AiClient) -> Option<HashMap<String, String>> {
     match tokio::time::timeout(Duration::from_secs(5), client.model_modes()).await {
         Ok(Ok(modes)) => Some(modes),
         Ok(Err(e)) => {
-            devlog::debug("ai", format!("model info of „{}“: {e}", client.provider().id));
+            devlog::debug("ai", format!("model info of “{}”: {e}", client.provider().id));
             None
         }
         Err(_) => None,
@@ -2029,17 +2086,28 @@ async fn ai_provider_test(
         (Err(e), _) | (_, Err(e @ Error::Http(_))) => {
             steps.push(step("reach", Some(false), short_error(&e), start));
             for id in ["auth", "chat", "tools", "embed"] {
-                steps.push(skipped(id, "Nicht erreichbar"));
+                steps.push(skipped(id, tr!("Nicht erreichbar", "Not reachable")));
             }
             return Ok(ProviderTest { steps, models: vec![], model: None });
         }
         (Ok(version), Err(e)) => {
             steps.push(step("reach", Some(true), version, start));
             let denied = matches!(e, Error::Provider { status: 401 | 403, .. });
-            let detail = if denied && !has_key { "Kein API-Schlüssel hinterlegt".into() } else { short_error(&e) };
+            let detail = if denied && !has_key {
+                tr!("Kein API-Schlüssel hinterlegt", "No API key stored").into()
+            } else {
+                short_error(&e)
+            };
             steps.push(step("auth", Some(false), detail, start));
             for id in ["chat", "tools", "embed"] {
-                steps.push(skipped(id, if denied { "Zugang abgelehnt" } else { "Modellliste nicht lesbar" }));
+                steps.push(skipped(
+                    id,
+                    if denied {
+                        tr!("Zugang abgelehnt", "Access denied")
+                    } else {
+                        tr!("Modellliste nicht lesbar", "Model list not readable")
+                    },
+                ));
             }
             return Ok(ProviderTest { steps, models: vec![], model: None });
         }
@@ -2047,10 +2115,12 @@ async fn ai_provider_test(
             models.sort();
             steps.push(step("reach", Some(true), version, start));
             let detail = match (provider.models_url().is_some(), has_key) {
-                (false, _) => "Wird beim Chat geprüft".into(),
-                (true, true) => format!("Schlüssel angenommen · {} Modelle", models.len()),
-                (true, false) if !provider.needs_key() => format!("Kein Schlüssel nötig · {} Modelle", models.len()),
-                (true, false) => format!("Ohne Schlüssel · {} Modelle", models.len()),
+                (false, _) => tr!("Wird beim Chat geprüft", "Checked with the chat").into(),
+                (true, true) => trf!("Schlüssel angenommen · {} Modelle", "Key accepted · {} models", models.len()),
+                (true, false) if !provider.needs_key() => {
+                    trf!("Kein Schlüssel nötig · {} Modelle", "No key needed · {} models", models.len())
+                }
+                (true, false) => trf!("Ohne Schlüssel · {} Modelle", "Without a key · {} models", models.len()),
             };
             steps.push(step("auth", Some(true), detail, start));
             models
@@ -2068,14 +2138,14 @@ async fn ai_provider_test(
             .or_else(|| models.iter().find(|m| capability::chat_capable(m, None)).cloned())
     });
     let Some(chat_model) = chat_model else {
-        steps.push(skipped("chat", "Kein Chat-Modell bekannt"));
-        steps.push(skipped("tools", "Kein Chat-Modell bekannt"));
+        steps.push(skipped("chat", tr!("Kein Chat-Modell bekannt", "No chat model known")));
+        steps.push(skipped("tools", tr!("Kein Chat-Modell bekannt", "No chat model known")));
         steps.push(embed_step(&client, &settings, &provider, &models).await);
         return Ok(ProviderTest { steps, models, model: None });
     };
     let ask = |tools: Vec<serde_json::Value>| ChatRequest {
         model: chat_model.clone(),
-        messages: vec![ChatMessage::user("Antworte nur mit: OK")],
+        messages: vec![ChatMessage::user(tr!("Antworte nur mit: OK", "Answer only with: OK"))],
         tools,
         temperature: None,
         max_tokens: Some(16),
@@ -2088,7 +2158,11 @@ async fn ai_provider_test(
         }
         Ok(c) => {
             let answer: String = c.content.trim().chars().take(40).collect();
-            let detail = if answer.is_empty() { chat_model.clone() } else { format!("{chat_model}: „{answer}“") };
+            let detail = if answer.is_empty() {
+                chat_model.clone()
+            } else {
+                trf!("{chat_model}: „{answer}“", "{chat_model}: “{answer}”")
+            };
             steps.push(step("chat", Some(true), detail, start));
         }
         Err(e) => {
@@ -2096,10 +2170,13 @@ async fn ai_provider_test(
             steps.push(step("chat", Some(false), short_error(&e), start));
             if auth && let Some(s) = steps.iter_mut().find(|s| s.id == "auth") {
                 s.ok = Some(false);
-                s.detail =
-                    if has_key { "Schlüssel abgelehnt".into() } else { "Kein API-Schlüssel hinterlegt".into() };
+                s.detail = if has_key {
+                    tr!("Schlüssel abgelehnt", "Key rejected").into()
+                } else {
+                    tr!("Kein API-Schlüssel hinterlegt", "No API key stored").into()
+                };
             }
-            steps.push(skipped("tools", "Chat fehlgeschlagen"));
+            steps.push(skipped("tools", tr!("Chat fehlgeschlagen", "Chat failed")));
             steps.push(embed_step(&client, &settings, &provider, &models).await);
             return Ok(ProviderTest { steps, models, model: Some(chat_model) });
         }
@@ -2108,7 +2185,7 @@ async fn ai_provider_test(
     // 4: tools: the request with a tool definition is accepted.
     let ping = serde_json::json!({
         "type": "function",
-        "function": {"name": "ping", "description": "Antwortet mit pong", "parameters": {"type": "object", "properties": {}}}
+        "function": {"name": "ping", "description": tr!("Antwortet mit pong", "Answers with pong"), "parameters": {"type": "object", "properties": {}}}
     });
     let start = Instant::now();
     steps.push(match client.chat_stream(&ask(vec![ping]), None, |_| {}).await {
@@ -2119,8 +2196,11 @@ async fn ai_provider_test(
         Err(Error::Provider { status, body }) => {
             let unsupported =
                 matches!(availability::retry_for(status, &body, true, false), availability::Retry::Without { .. });
-            let detail =
-                if unsupported { "Das Modell unterstützt keine Werkzeuge".into() } else { format!("HTTP {status}") };
+            let detail = if unsupported {
+                tr!("Das Modell unterstützt keine Werkzeuge", "The model does not support tools").into()
+            } else {
+                format!("HTTP {status}")
+            };
             step("tools", Some(false), detail, start)
         }
         Err(e) => step("tools", Some(false), short_error(&e), start),
@@ -2141,11 +2221,19 @@ async fn embed_step(client: &AiClient, settings: &Settings, provider: &AiProvide
     let modes = model_modes(client).await.unwrap_or_default();
     let capable = |m: &String| capability::embedding_capable(m, modes.get(m).map(String::as_str));
     if let Some(m) = configured.as_ref().filter(|m| !capable(m)) {
-        let detail = format!("„{m}“ ist kein Embedding-Modell – nur Stichwortsuche");
+        let detail = trf!(
+            "„{m}“ ist kein Embedding-Modell – nur Stichwortsuche",
+            "“{m}” is not an embedding model – keyword search only"
+        );
         return TestStep { id: "embed", ok: None, detail, latency_ms: 0 };
     }
     let Some(model) = configured.or_else(|| models.iter().find(|m| capable(m)).cloned()) else {
-        return TestStep { id: "embed", ok: None, detail: "Kein Embedding-Modell".into(), latency_ms: 0 };
+        return TestStep {
+            id: "embed",
+            ok: None,
+            detail: tr!("Kein Embedding-Modell", "No embedding model").into(),
+            latency_ms: 0,
+        };
     };
     let start = Instant::now();
     let res = client.embed(&model, &["Annalo".to_string()]).await;
@@ -2209,7 +2297,7 @@ async fn ollama_pull(
 ) -> Result<()> {
     let model = model.trim().to_owned();
     if model.is_empty() {
-        return Err(Error::State("Kein Modellname".into()));
+        return Err(Error::State(tr!("Kein Modellname", "No model name").into()));
     }
     let client = provider_client(&state.settings(), &provider, None, state.proxy_secret.get().as_deref())?;
     let cancel = Arc::new(AtomicBool::new(false));
@@ -2224,22 +2312,27 @@ async fn ollama_pull(
         .await;
     lock(&state.cancels).remove(&request_id);
     lock(&state.server_models).remove(&provider.id);
-    res.inspect(|()| devlog::info("ai", format!("pulled „{model}“ into {}", provider.root())))
+    res.inspect(|()| devlog::info("ai", format!("pulled “{model}” into {}", provider.root())))
 }
 
 // ----------------------------------------------------------------------- AI
 
 fn system_prompt(settings: &Settings) -> String {
     let now = Local::now();
-    let mut s = format!(
+    // The answers follow the display language (unless the user writes in another one).
+    let mut s = trf!(
         "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
          Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
          schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
          gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
-        now.format("%A, %d.%m.%Y %H:%M")
+        "You are the assistant of Annalo, a local workspace for notes, projects and time tracking. \
+         Today is {}. Answer precisely and in English, unless the user writes in another language. \
+         Use Markdown. Refer to pages with [[Page name]]. Time is booked with the /time syntax, e.g. \
+         /time NP-8801/1020 2.5h #DEV 'Description'. Use tools only when needed.",
+        now.format(tr!("%A, %d.%m.%Y %H:%M", "%A, %B %-d, %Y %H:%M"))
     );
     if !settings.assistant_instructions.trim().is_empty() {
-        s.push_str("\n\nZusätzliche Anweisungen des Nutzers:\n");
+        s.push_str(tr!("\n\nZusätzliche Anweisungen des Nutzers:\n", "\n\nAdditional instructions from the user:\n"));
         s.push_str(settings.assistant_instructions.trim());
     }
     s
@@ -2337,7 +2430,7 @@ async fn ai_chat(
         .rev()
         .find(|m| m.role == "user")
         .and_then(|m| m.content.clone())
-        .ok_or_else(|| Error::State("Keine Nachricht".into()))?;
+        .ok_or_else(|| Error::State(tr!("Keine Nachricht", "No message").into()))?;
     let settings = state.settings();
     // A saved conversation that touched private content stays on the local model.
     let private_chat = match conversation_id {
@@ -2361,8 +2454,12 @@ async fn ai_chat(
                 Ok(()) => (Some((client, r)), None),
                 Err(why) => {
                     let note = caps.tell_once(&r).then(|| {
-                        devlog::warn("ai", format!("no embeddings with „{}“, keyword search only: {why}", r.model));
-                        format!("Embedding-Modell „{}“ nicht nutzbar → nur Stichwortsuche", r.model)
+                        devlog::warn("ai", format!("no embeddings with “{}”, keyword search only: {why}", r.model));
+                        trf!(
+                            "Embedding-Modell „{}“ nicht nutzbar → nur Stichwortsuche",
+                            "Embedding model “{}” not usable → keyword search only",
+                            r.model
+                        )
                     });
                     (None, note)
                 }
@@ -2385,19 +2482,20 @@ async fn ai_chat(
                         caps.tell_once(r);
                         devlog::warn(
                             "ai",
-                            format!("embedding with „{m}“ failed, keyword search only for this session: {e}"),
+                            format!("embedding with “{m}” failed, keyword search only for this session: {e}"),
                         );
-                        embed_note = Some(format!(
+                        embed_note = Some(trf!(
                             "Embedding-Modell „{m}“ antwortet nicht ({}) → nur Stichwortsuche",
+                            "Embedding model “{m}” does not answer ({}) → keyword search only",
                             capability::embedding_failure_text(&e)
                         ));
                     } else {
-                        devlog::warn("ai", format!("embedding with „{m}“ failed, keyword search only: {e}"));
+                        devlog::warn("ai", format!("embedding with “{m}” failed, keyword search only: {e}"));
                     }
                     None
                 }
                 Err(_) => {
-                    devlog::warn("ai", format!("embedding with „{m}“ timed out, keyword search only"));
+                    devlog::warn("ai", format!("embedding with “{m}” timed out, keyword search only"));
                     None
                 }
             }
@@ -2450,7 +2548,10 @@ async fn ai_chat(
     let mut system = system_prompt(&settings);
     if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
-        system.push_str(&format!("\n\nAktuell geöffnete Seite „{title}“:\n\n{text}"));
+        system.push_str(&trf!(
+            "\n\nAktuell geöffnete Seite „{title}“:\n\n{text}",
+            "\n\nThe page open right now, “{title}”:\n\n{text}"
+        ));
     }
     if !context.is_empty() {
         system.push_str("\n\n");
@@ -2497,7 +2598,13 @@ async fn ai_embedding_status(state: State<'_, AppState>) -> Result<EmbeddingStat
     let provider = settings.embedding_provider.clone();
     let Some((client, r)) = embedding_client(&state) else {
         let model = settings.embedding_model.filter(|m| !m.trim().is_empty());
-        let reason = model.as_ref().map(|_| "Der Anbieter des Embedding-Modells ist ausgeschaltet oder fehlt.".into());
+        let reason = model.as_ref().map(|_| {
+            tr!(
+                "Der Anbieter des Embedding-Modells ist ausgeschaltet oder fehlt.",
+                "The embedding model's provider is switched off or missing."
+            )
+            .into()
+        });
         return Ok(EmbeddingStatus { model, provider, usable: false, reason });
     };
     learn_modes(&state, &client).await;
@@ -2572,7 +2679,7 @@ async fn catalog(state: &AppState) -> Catalog {
     }
     // The client's connect/read timeouts (Settings → Netzwerk) bound the wait, and so does this.
     for (id, res) in annalo_core::ai::client::list_models(&ask, Duration::from_secs(10)).await {
-        let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of „{id}“: {e}"))).ok();
+        let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of “{id}”: {e}"))).ok();
         lock(&state.server_models).insert(id.clone(), (Instant::now(), list.clone()));
         models.insert(id, list.unwrap_or_default());
     }
@@ -2603,7 +2710,7 @@ async fn complete_routed(
     if format!("{} ({})", route.model, route.provider) != requested {
         devlog::warn(
             "ai",
-            format!("„{requested}“ is not offered, used „{} ({})“ instead", route.model, route.provider),
+            format!("“{requested}” is not offered, used “{} ({})” instead", route.model, route.provider),
         );
     }
     req.model = route.model.clone();
@@ -2621,8 +2728,13 @@ async fn complete_routed(
             req.tools = if skip_tools { vec![] } else { tools.clone() };
             req.temperature = temperature.filter(|_| !caps.rejects_temperature(&current));
             // Said visibly once (when the server rejects them), later only in the route details.
-            let told = format!("„{}“ unterstützt keine Werkzeuge → ohne", route.model);
-            let note = format!("„{}“ ohne Werkzeuge (vom Server abgelehnt)", route.model);
+            let told =
+                trf!("„{}“ unterstützt keine Werkzeuge → ohne", "“{}” does not support tools → without", route.model);
+            let note = trf!(
+                "„{}“ ohne Werkzeuge (vom Server abgelehnt)",
+                "“{}” without tools (rejected by the server)",
+                route.model
+            );
             if skip_tools && !route.reasons.contains(&told) && !route.reasons.contains(&note) {
                 route.reasons.push(note);
             }
@@ -2657,14 +2769,18 @@ async fn complete_routed(
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ rejects {}, repeating without (remembered for this session)",
+                        "“{}” rejects {}, repeating without (remembered for this session)",
                         req.model,
                         if tools { "tools" } else { "the temperature" }
                     ),
                 );
                 lock(&state.caps).rejected(&current, tools, temperature);
                 if tools {
-                    route.reasons.push(format!("„{}“ unterstützt keine Werkzeuge → ohne", route.model));
+                    route.reasons.push(trf!(
+                        "„{}“ unterstützt keine Werkzeuge → ohne",
+                        "“{}” does not support tools → without",
+                        route.model
+                    ));
                 }
             }
             availability::Retry::Wait { seconds } => {
@@ -2672,7 +2788,7 @@ async fn complete_routed(
                 devlog::warn(
                     "ai",
                     format!(
-                        "„{}“ ({}) is cooling down on the server, retrying in {seconds} s",
+                        "“{}” ({}) is cooling down on the server, retrying in {seconds} s",
                         req.model, route.provider
                     ),
                 );
@@ -2682,8 +2798,12 @@ async fn complete_routed(
                     let completion = cancelled_completion(&req.model);
                     return Ok((completion, lock(&state.meter).clone(), route));
                 }
-                if !route.reasons.iter().any(|r| r.starts_with("Server kurz ausgelastet")) {
-                    route.reasons.push(format!("Server kurz ausgelastet → nach {seconds} s erneut „{}“", route.model));
+                if !route.reasons.iter().any(|r| r.starts_with(tr!("Server kurz ausgelastet", "Server briefly busy"))) {
+                    route.reasons.push(trf!(
+                        "Server kurz ausgelastet → nach {seconds} s erneut „{}“",
+                        "Server briefly busy → “{}” again after {seconds} s",
+                        route.model
+                    ));
                 }
             }
             availability::Retry::OtherModel => {
@@ -2702,11 +2822,13 @@ async fn complete_routed(
                     if private && down {
                         devlog::warn(
                             "ai",
-                            format!("„{}“ not reachable, private content not sent elsewhere: {err}", failed.provider),
+                            format!("“{}” not reachable, private content not sent elsewhere: {err}", failed.provider),
                         );
-                        return Err(Error::State(format!(
+                        return Err(Error::State(trf!(
                             "{} ist nicht erreichbar. Vertrauliche Inhalte bleiben lokal: sie gehen nicht an Anbieter, \
                              die nicht als lokal markiert sind.",
+                            "{} is not reachable. Confidential content stays local: it does not go to providers \
+                             that are not marked as local.",
                             catalog.name(&failed.provider)
                         )));
                     }
@@ -2715,12 +2837,16 @@ async fn complete_routed(
                 let label = catalog.label(&next);
                 devlog::warn(
                     "ai",
-                    format!("„{}“ ({}) failed: {err}; retrying on „{label}“", failed.model, failed.provider),
+                    format!("“{}” ({}) failed: {err}; retrying on “{label}”", failed.model, failed.provider),
                 );
                 route.reasons.push(if down {
-                    format!("{} nicht erreichbar → {label}", catalog.name(&failed.provider))
+                    trf!("{} nicht erreichbar → {label}", "{} not reachable → {label}", catalog.name(&failed.provider))
                 } else {
-                    format!("„{}“ ohne erreichbare Instanz → {label}", failed.model)
+                    trf!(
+                        "„{}“ ohne erreichbare Instanz → {label}",
+                        "“{}” without a reachable instance → {label}",
+                        failed.model
+                    )
                 });
                 route.reasons.extend(availability::weaker_fallback_note(&settings.router, &catalog, &failed, &next));
                 route.provider = next.provider;
@@ -2785,7 +2911,7 @@ async fn ai_transform(
     override_limit: Option<bool>,
 ) -> Result<ChatOutcome> {
     if instruction.trim().is_empty() {
-        return Err(Error::State("Keine Anweisung".into()));
+        return Err(Error::State(tr!("Keine Anweisung", "No instruction").into()));
     }
     prefs::check_cost_limit(&state, override_limit.unwrap_or(false))?;
     let page = match page_id {
@@ -2826,7 +2952,13 @@ async fn zeit_suggest_ai(
     page_id: Option<i64>,
 ) -> Result<Option<ZeitGuess>> {
     if zeitguess::unreferenced(&line).is_none() {
-        return Err(Error::Parse("Die Zeile braucht eine Dauer direkt nach /zeit, z. B. /zeit 2h Beschreibung".into()));
+        return Err(Error::Parse(
+            tr!(
+                "Die Zeile braucht eine Dauer direkt nach /zeit, z. B. /zeit 2h Beschreibung",
+                "The line needs a duration right after /time, e.g. /time 2h Description"
+            )
+            .into(),
+        ));
     }
     let (candidates, las, page) = {
         let db = state.db();
@@ -2839,11 +2971,15 @@ async fn zeit_suggest_ai(
         (zeitguess::candidates(&db, Utc::now())?, db.list_leistungsarten()?, page)
     };
     if candidates.is_empty() {
-        return Err(Error::State("Keine Netzpläne oder Vorgänge angelegt".into()));
+        return Err(Error::State(
+            tr!("Keine Netzpläne oder Vorgänge angelegt", "No networks or activities set up").into(),
+        ));
     }
     // Without a usable provider (none, or all lack their key) there is nothing to ask.
     if !state.clients().iter().any(|(_, c)| c.has_key() || !c.provider().needs_key()) {
-        return Err(Error::State("Keine KI verbunden (API-Schlüssel fehlt)".into()));
+        return Err(Error::State(
+            tr!("Keine KI verbunden (API-Schlüssel fehlt)", "No AI connected (API key missing)").into(),
+        ));
     }
     prefs::check_cost_limit(&state, false)?;
     let messages = zeitguess::messages(&line, &candidates, &las, page.as_ref().map(|d| d.page.title.as_str()));
@@ -2949,7 +3085,12 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             pages.extend(list.iter().map(|t| t.page_id));
             serde_json::to_string(&list)?
         }
-        other => return Err(Error::State(format!("„{other}“ ist kein Werkzeug des Arbeitsbereichs"))),
+        other => {
+            return Err(Error::State(trf!(
+                "„{other}“ ist kein Werkzeug des Arbeitsbereichs",
+                "“{other}” is not a workspace tool"
+            )));
+        }
     };
     let markers = state.settings().router.private_markers;
     let private = privacy::private_pages(&db, pages, &markers)?;
@@ -2982,18 +3123,29 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
 async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     let settings = state.settings();
     if settings.embedding_model.as_deref().is_none_or(|m| m.trim().is_empty()) {
-        return Err(Error::State("Kein Embedding-Modell in den Einstellungen gewählt".into()));
+        return Err(Error::State(
+            tr!("Kein Embedding-Modell in den Einstellungen gewählt", "No embedding model chosen in the settings")
+                .into(),
+        ));
     }
     let (client, r) = embedding_client(&state).ok_or_else(|| {
-        Error::State("Der Anbieter des Embedding-Modells ist nicht eingerichtet oder ausgeschaltet".into())
+        Error::State(
+            tr!(
+                "Der Anbieter des Embedding-Modells ist nicht eingerichtet oder ausgeschaltet",
+                "The embedding model's provider is not set up or switched off"
+            )
+            .into(),
+        )
     })?;
     // Indexing is asked for explicitly, so a model with an unusual name is tried; one the
     // provider reports as a chat model is not (its failures would count against it).
     learn_modes(&state, &client).await;
     if let Some(mode) = lock(&state.caps).mode(&r).filter(|m| !capability::embedding_capable(&r.model, Some(m))) {
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "„{}“ ist laut KI-Server kein Embedding-Modell (Typ „{mode}“). Wähle unter Einstellungen → KI ein \
              Embedding-Modell oder „Keine (nur Stichwortsuche)“.",
+            "According to the AI server “{}” is not an embedding model (type “{mode}”). Choose an embedding \
+             model or “None (keyword search only)” under Settings → AI.",
             r.model
         )));
     }
@@ -3001,8 +3153,11 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     let local = client.provider().local;
     if !local && settings.privacy.local_only {
         return Err(Error::State(
-            "Datenschutz „Nur lokal“: das Embedding-Modell liegt bei einem Anbieter, der nicht als lokal markiert ist"
-                .into(),
+            tr!(
+                "Datenschutz „Nur lokal“: das Embedding-Modell liegt bei einem Anbieter, der nicht als lokal markiert ist",
+                "Privacy “Local only”: the embedding model is at a provider that is not marked as local"
+            )
+            .into(),
         ));
     }
     let mut total = 0;
@@ -3026,10 +3181,12 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
                 v
             }
             Err(e) if lock(&state.caps).embed_failed(&r, &e) => {
-                devlog::warn("ai", format!("indexing with „{model}“ failed: {e}"));
-                return Err(Error::State(format!(
+                devlog::warn("ai", format!("indexing with “{model}” failed: {e}"));
+                return Err(Error::State(trf!(
                     "„{model}“ liefert keine Embeddings ({}). Wähle unter Einstellungen → KI ein Embedding-Modell \
                      oder „Keine (nur Stichwortsuche)“.",
+                    "“{model}” returns no embeddings ({}). Choose an embedding model or “None (keyword search \
+                     only)” under Settings → AI.",
                     capability::embedding_failure_text(&e)
                 )));
             }
@@ -3326,10 +3483,18 @@ fn data_dir_status(app: AppHandle, state: State<AppState>) -> DataDirStatus {
 
 fn data_dir_env_guard() -> Result<()> {
     if portable::active() {
-        return Err(Error::State("Im portablen Modus liegen die Daten immer im Ordner „data“ neben Annalo.exe".into()));
+        return Err(Error::State(
+            tr!(
+                "Im portablen Modus liegen die Daten immer im Ordner „data“ neben Annalo.exe",
+                "In portable mode the data is always in the “data” folder next to Annalo.exe"
+            )
+            .into(),
+        ));
     }
     if std::env::var_os("ANNALO_DATA_DIR").is_some() {
-        return Err(Error::State("Der Speicherort ist über ANNALO_DATA_DIR festgelegt".into()));
+        return Err(Error::State(
+            tr!("Der Speicherort ist über ANNALO_DATA_DIR festgelegt", "The location is set by ANNALO_DATA_DIR").into(),
+        ));
     }
     Ok(())
 }
@@ -3358,7 +3523,11 @@ fn data_dir_set(
     let config = config_dir(&app)?;
     if target.has_workspace {
         if !use_existing.unwrap_or(false) {
-            return Err(Error::State(format!("Im Zielordner liegt bereits ein Arbeitsbereich ({})", datadir::DB_FILE)));
+            return Err(Error::State(trf!(
+                "Im Zielordner liegt bereits ein Arbeitsbereich ({})",
+                "The target folder already contains a workspace ({})",
+                datadir::DB_FILE
+            )));
         }
         datadir::write_location(&config, &to)?;
     } else {
@@ -3556,6 +3725,8 @@ pub fn run() {
                 app.path().app_data_dir()?,
             );
             let dir = startup.dir.clone();
+            // Until the settings are read (and on the recovery screens): the system's language.
+            annalo_core::i18n::set_lang(annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default()));
             let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir, false);
             if let Some(e) = folder_error {
@@ -3594,14 +3765,23 @@ pub fn run() {
                     return Ok(());
                 }
             };
+            // The language of the settings, as the UI shows it (the first run sets it from the
+            // system's language).
+            if let Ok(s) = db.load_settings() {
+                annalo_core::i18n::set_lang(s.locale.language);
+            }
+            if let Err(e) = db.localize_default_leistungsarten() {
+                devlog::warn("core", format!("activity types not localized: {e}"));
+            }
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.
             let mut notice = restored.or(startup.notice.clone());
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
-                notice = Some(datadir::Notice::titled("error", "Datenordner schreibgeschützt", format!(
+                notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(
                     "In den Datenordner {} kann nicht geschrieben werden (schreibgeschützt oder voll) – Änderungen \
                      werden nicht gespeichert.",
+                    "The data folder {} cannot be written to (read-only or full) – changes are not saved.",
                     dir.display()
                 )));
             }
@@ -3645,8 +3825,9 @@ pub fn run() {
                 }
                 devlog::warn("core", format!("settings not readable, defaults used for: {}", unreadable.join(", ")));
                 if notice.is_none() {
-                    notice = Some(datadir::Notice::titled("warning", "Einstellungen zurückgesetzt", format!(
+                    notice = Some(datadir::Notice::titled("warning", tr!("Einstellungen zurückgesetzt", "Settings reset"), trf!(
                         "Einige Einstellungen waren nicht lesbar und stehen wieder auf dem Standard ({}).",
+                        "Some settings could not be read and are back at their defaults ({}).",
                         unreadable.join(", ")
                     )));
                 }
@@ -3656,9 +3837,11 @@ pub fn run() {
             if let Err(e) = annalo_core::network::http_client(&settings.network, None, Purpose::Tools)
                 && notice.is_none()
             {
-                notice = Some(datadir::Notice::titled("warning", "Netzwerkeinstellungen ungültig", format!(
+                notice = Some(datadir::Notice::titled("warning", tr!("Netzwerkeinstellungen ungültig", "Network settings invalid"), trf!(
                     "Netzwerkeinstellungen ungültig: {e} – KI-Anfragen und Links werden nicht gesendet, bis das unter \
-                     Einstellungen → Netzwerk korrigiert ist."
+                     Einstellungen → Netzwerk korrigiert ist.",
+                    "Network settings invalid: {e} – AI requests and links are not sent until this is corrected under \
+                     Settings → Network."
                 )));
             }
             devlog::set_verbose(settings.dev_log_verbose);
@@ -3718,6 +3901,11 @@ pub fn run() {
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
                 devlog::warn("desktop", format!("tray icon not available: {e}"));
+            }
+            // The menu bar was built before the settings were read.
+            #[cfg(target_os = "macos")]
+            if let Ok(menu) = appmenu::build(app.handle()) {
+                let _ = app.set_menu(menu);
             }
             let tray = app.state::<desktop::Desktop>().has_tray();
             // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
@@ -3913,6 +4101,7 @@ pub fn run() {
             window_backdrop,
             window_frame,
             window_ready,
+            os_locale,
             jumplist::jump_take,
             window_set_backdrop,
             desktop::window_hide,

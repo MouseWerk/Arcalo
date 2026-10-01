@@ -11,7 +11,9 @@ use serde::Serialize;
 use crate::Result;
 
 fn roots() -> Result<Roots> {
-    Roots::from_env().ok_or_else(|| Error::State("Der Benutzerordner ist nicht bekannt.".into()))
+    Roots::from_env().ok_or_else(|| {
+        Error::State(annalo_core::tr!("Der Benutzerordner ist nicht bekannt.", "The user folder is not known.").into())
+    })
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {

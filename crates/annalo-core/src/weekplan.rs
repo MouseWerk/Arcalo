@@ -23,6 +23,7 @@
 //!   the proposals are cut to the daily target minus what is booked (weakest signals first), and
 //!   what is still missing is reported as the day's gap.
 
+use crate::{tr, trf};
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -30,7 +31,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::calsync::tz::Zone;
-use crate::calsync::{Busy, CalendarEvent, HintBasis, PRIVATE_TITLE};
+use crate::calsync::{Busy, CalendarEvent, HintBasis, is_private_title};
 use crate::db::{Database, EntryFilter, parse_ts, ts};
 use crate::error::{Error, Result};
 use crate::model::{EntrySource, NewTimeEntry, StatusFlag};
@@ -402,7 +403,10 @@ fn proposal(
         text,
         kind: signals[main].kind,
         confidence: wbs.as_ref().map_or(Confidence::None, |w| w.confidence),
-        reason: wbs.as_ref().map_or_else(|| "Kein passender Vorgang gefunden".to_owned(), |w| w.reason.clone()),
+        reason: wbs.as_ref().map_or_else(
+            || tr!("Kein passender Vorgang gefunden", "No matching activity found").to_owned(),
+            |w| w.reason.clone(),
+        ),
         wbs,
         sources,
     }
@@ -441,7 +445,7 @@ fn edit_block(kind: &str, at: DateTime<Utc>, count: i64) -> (DateTime<Utc>, Date
 fn bookable(e: &CalendarEvent) -> bool {
     let done = e.event.all_day || e.skip || e.entry_id.is_some();
     let not_work =
-        matches!(e.event.busy, Busy::Free | Busy::Oof) || (e.event.private && e.event.title == PRIVATE_TITLE);
+        matches!(e.event.busy, Busy::Free | Busy::Oof) || (e.event.private && is_private_title(&e.event.title));
     !done && !not_work && e.event.end > e.event.start
 }
 
@@ -547,7 +551,7 @@ pub fn collect(
                 None => start + Duration::minutes(worked),
             };
             let text =
-                if goal.trim().is_empty() { crate::focus::DEFAULT_GOAL.to_owned() } else { goal.trim().to_owned() };
+                if goal.trim().is_empty() { crate::focus::default_goal().to_owned() } else { goal.trim().to_owned() };
             let wbs = ctx.for_focus(db, np, vorgang.as_deref(), &text)?;
             signals.push(Signal {
                 kind: SourceKind::Focus,
@@ -791,7 +795,7 @@ impl WbsContext {
 
     /// `24.09.` in local time.
     fn day(&self, t: DateTime<Utc>) -> String {
-        self.zone.to_wall(t).format("%d.%m.").to_string()
+        self.zone.to_wall(t).format(tr!("%d.%m.", "%b %-d")).to_string()
     }
 
     fn reference(&self, netzplan_id: i64, vorgang: Option<&str>) -> Option<String> {
@@ -878,7 +882,7 @@ impl WbsContext {
         }
         Ok(self.memory(db, "text", &key)?.and_then(|(np, v, la, _)| {
             self.guess(np, v, la, Confidence::High, Basis::Learned, |r| {
-                format!("gelernt: „{text}“ zuletzt auf {r} übernommen")
+                trf!("gelernt: „{text}“ zuletzt auf {r} übernommen", "learned: “{text}” last taken to {r}")
             })
         }))
     }
@@ -900,7 +904,7 @@ impl WbsContext {
         Ok(hit.and_then(|(np, v, la, at)| {
             let when = parse_ts(&at).map(|t| self.day(t)).unwrap_or_default();
             self.guess(np, v, la, Confidence::Medium, Basis::History, |r| {
-                format!("am {when} „{}“ auf {r} gebucht", text.trim())
+                trf!("am {when} „{}“ auf {r} gebucht", "“{}” booked on {r} on {when}", text.trim())
             })
         }))
     }
@@ -918,7 +922,7 @@ impl WbsContext {
             [(best, t), rest @ ..] if rest.first().is_none_or(|(s, _)| s < best) => {
                 let title = t.title.clone();
                 self.guess(t.netzplan_id, t.vorgang_nr.clone(), None, Confidence::Low, Basis::Similar, |r| {
-                    format!("ähnlich wie „{title}“ ({r})")
+                    trf!("ähnlich wie „{title}“ ({r})", "similar to “{title}” ({r})")
                 })
             }
             _ => None,
@@ -935,9 +939,9 @@ impl WbsContext {
         {
             let (this, then) = (self.zone.to_wall(e.event.start).date(), self.zone.to_wall(m.booked_at).date());
             let when = if monday(this) - monday(then) == Duration::days(7) {
-                "wie letzte Woche".to_owned()
+                tr!("wie letzte Woche", "like last week").to_owned()
             } else {
-                format!("wie am {}", self.day(m.booked_at))
+                trf!("wie am {}", "like on {}", self.day(m.booked_at))
             };
             let label = if m.basis == HintBasis::Series { format!("{when} (Serie)") } else { when };
             let h = m.hint.clone();
@@ -959,7 +963,7 @@ impl WbsContext {
         {
             let note = db.page(page)?.title;
             return Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
-                format!("Besprechungsnotiz „{note}“ gehört zu {r}")
+                trf!("Besprechungsnotiz „{note}“ gehört zu {r}", "Meeting note “{note}” belongs to {r}")
             }));
         }
         if let Some(m) = memory {
@@ -971,7 +975,7 @@ impl WbsContext {
                 h.leistungsart,
                 Confidence::Medium,
                 Basis::History,
-                |r| format!("am {when} „{}“ auf {r} gebucht", m.description),
+                |r| trf!("am {when} „{}“ auf {r} gebucht", "“{}” booked on {r} on {when}", m.description),
             ));
         }
         Ok(self.similar(title))
@@ -987,18 +991,18 @@ impl WbsContext {
     ) -> Result<Option<WbsGuess>> {
         if let Some(np) = np {
             return Ok(self.guess(np, vorgang.map(str::to_owned), None, Confidence::High, Basis::Link, |r| {
-                format!("Fokus-Sitzung auf {r}")
+                trf!("Fokus-Sitzung auf {r}", "Focus session on {r}")
             }));
         }
         if let Some(g) = self.text_memory(db, goal)? {
             return Ok(Some(g));
         }
-        if goal != crate::focus::DEFAULT_GOAL
+        if !crate::focus::is_default_goal(goal)
             && let Some(g) = self.by_description(db, goal)?
         {
             return Ok(Some(g));
         }
-        Ok(if goal == crate::focus::DEFAULT_GOAL { None } else { self.similar(goal) })
+        Ok(if crate::focus::is_default_goal(goal) { None } else { self.similar(goal) })
     }
 
     /// A page: remembered for the page, its `vorgang:`, a parent's, a WBS it mentions (text or
@@ -1012,7 +1016,7 @@ impl WbsContext {
         if let Some((np, v, la, link_ref)) = self.memory(db, "page", &page_id.to_string())?
             && link_ref == own.clone().unwrap_or_default()
             && let Some(g) = self.guess(np, v, la, Confidence::High, Basis::Learned, |r| {
-                format!("gelernt: Seite „{title}“ zuletzt auf {r} übernommen")
+                trf!("gelernt: Seite „{title}“ zuletzt auf {r} übernommen", "learned: page “{title}” last taken to {r}")
             })
         {
             return Ok(Some(g));
@@ -1020,9 +1024,9 @@ impl WbsContext {
         if let Some(reference) = &own
             && let Some((np, v)) = self.resolve_ref(db, reference)
         {
-            return Ok(
-                self.guess(np, v, None, Confidence::High, Basis::Link, |r| format!("Seite „{title}“ gehört zu {r}"))
-            );
+            return Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
+                trf!("Seite „{title}“ gehört zu {r}", "Page “{title}” belongs to {r}")
+            }));
         }
         // Parent pages (a project page with `vorgang:`), nearest first.
         let mut seen = HashSet::new();
@@ -1038,7 +1042,7 @@ impl WbsContext {
                 && let Some((np, v)) = self.resolve_ref(db, &reference)
             {
                 return Ok(self.guess(np, v, None, Confidence::Medium, Basis::Link, |r| {
-                    format!("Seite „{title}“ liegt unter „{ptitle}“ ({r})")
+                    trf!("Seite „{title}“ liegt unter „{ptitle}“ ({r})", "Page “{title}” is below “{ptitle}” ({r})")
                 }));
             }
             parent = next;
@@ -1058,7 +1062,7 @@ impl WbsContext {
         if let Some((np, v, la, at)) = hit {
             let when = parse_ts(&at).map(|t| self.day(t)).unwrap_or_default();
             return Ok(self.guess(np, v, la, Confidence::Medium, Basis::History, |r| {
-                format!("am {when} von „{title}“ auf {r} gebucht")
+                trf!("am {when} von „{title}“ auf {r} gebucht", "booked from “{title}” on {r} on {when}")
             }));
         }
         if let Some(g) = self.by_description(db, &title)? {
@@ -1105,7 +1109,9 @@ impl WbsContext {
             }
         }
         Ok(best.and_then(|(_, _, np, v)| {
-            self.guess(np, v, None, Confidence::Medium, Basis::Link, |r| format!("Seite „{title}“ erwähnt {r}"))
+            self.guess(np, v, None, Confidence::Medium, Basis::Link, |r| {
+                trf!("Seite „{title}“ erwähnt {r}", "Page “{title}” mentions {r}")
+            })
         }))
     }
 }
@@ -1178,10 +1184,11 @@ pub fn apply(db: &Database, items: &[Accepted], now: DateTime<Utc>, thresholds: 
     let ids = db.atomic(|| {
         let mut ids = vec![];
         for (n, it) in items.iter().enumerate() {
-            let what = || format!("Vorschlag {} („{}“)", n + 1, it.text.trim());
+            let what = || trf!("Vorschlag {} („{}“)", "Proposal {} (“{}”)", n + 1, it.text.trim());
             if !(1..=24 * 60).contains(&it.minutes) {
-                return Err(Error::State(format!(
+                return Err(Error::State(trf!(
                     "{}: Die Dauer muss zwischen 1 Minute und 24 Stunden liegen",
+                    "{}: The duration must be between 1 minute and 24 hours",
                     what()
                 )));
             }
@@ -1322,6 +1329,7 @@ pub fn week_key(d: NaiveDate) -> String {
 }
 
 const WEEKDAYS: [&str; 7] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const WEEKDAYS_EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /// The „Woche vorschlagen“ notification, when one is due: on the last workday of the week from
 /// 14:00, once per week, when earlier workdays are below the target (`open`, see [`open_days`]).
@@ -1345,12 +1353,20 @@ pub fn week_reminder(
         .map(|(d, m)| {
             format!(
                 "{} {} h",
-                WEEKDAYS[d.weekday().num_days_from_monday() as usize],
+                if crate::i18n::is_en() {
+                    WEEKDAYS_EN[d.weekday().num_days_from_monday() as usize]
+                } else {
+                    WEEKDAYS[d.weekday().num_days_from_monday() as usize]
+                },
                 crate::desktop::format_hours(*m as f64)
             )
         })
         .collect();
-    Some(format!("Noch offen: {}. Annalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.", days.join(", ")))
+    Some(trf!(
+        "Noch offen: {}. Annalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.",
+        "Still open: {}. Annalo proposes the time entries from meetings, focus and pages.",
+        days.join(", ")
+    ))
 }
 
 #[cfg(test)]

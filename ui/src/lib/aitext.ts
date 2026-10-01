@@ -1,3 +1,4 @@
+import { t, type TKey } from "./i18n";
 // Prompts and text helpers of the inline AI bar and the meeting summary.
 // The shell wraps the instruction and the text (`ai_transform`); these only build the instruction.
 
@@ -7,44 +8,31 @@ export interface AiPreset {
   instruction: string;
 }
 
-export const AI_PRESETS: AiPreset[] = [
-  { id: "improve", label: "Verbessern", instruction: "Verbessere den Text: klarer, flüssiger und präziser formuliert, gleicher Inhalt, ähnliche Länge." },
-  { id: "shorten", label: "Kürzen", instruction: "Kürze den Text auf etwa die Hälfte. Behalte alle wichtigen Aussagen, Namen, Zahlen und Termine." },
-  { id: "expand", label: "Ausführlicher", instruction: "Formuliere den Text ausführlicher: ergänze Erläuterungen und Zusammenhänge, aber erfinde keine Fakten." },
-  { id: "translate", label: "Übersetzen DE↔EN", instruction: "Übersetze den Text: deutschen Text ins Englische, englischen Text ins Deutsche. Formatierung beibehalten." },
-  { id: "bullets", label: "In Stichpunkte", instruction: "Fasse den Text als Markdown-Aufzählung (- …) mit kurzen Stichpunkten zusammen." },
-  { id: "table", label: "Als Tabelle", instruction: "Stelle den Inhalt als Markdown-Tabelle mit Kopfzeile dar. Wähle sinnvolle Spalten." },
-  { id: "spelling", label: "Rechtschreibung korrigieren", instruction: "Korrigiere nur Rechtschreibung, Grammatik und Zeichensetzung. Ändere weder Inhalt, Stil noch Formatierung." },
-  { id: "friendly", label: "Freundlicher", instruction: "Formuliere den Text freundlicher und zugewandter, bei gleichem Inhalt." },
-  { id: "formal", label: "Förmlicher", instruction: "Formuliere den Text förmlicher und sachlicher (Geschäftston, Sie-Form), bei gleichem Inhalt." },
-];
+const preset = (id: string): AiPreset => ({ id, label: t(`aitext.${id}` as TKey), instruction: t(`aitext.${id}.prompt` as TKey) });
+
+/** The built-in presets of the inline AI bar, in the display language. */
+export const aiPresets = (): AiPreset[] => ["improve", "shorten", "expand", "translate", "bullets", "table", "spelling", "friendly", "formal"].map(preset);
 
 /** The presets of the inline AI bar: the user's (Settings → KI) or the built-in ones. */
 export function inlinePresets(custom?: { label: string; instruction: string }[] | null): AiPreset[] {
-  if (!custom) return AI_PRESETS;
+  if (!custom) return aiPresets();
   return custom.filter((p) => p.label.trim() && p.instruction.trim()).map((p, i) => ({ id: `custom-${i}`, label: p.label.trim(), instruction: p.instruction.trim() }));
 }
 
 /** On an empty line there is nothing to rewrite: the bar writes new text, the page is context. */
-export const WRITE_PRESETS: AiPreset[] = [
-  { id: "write-continue", label: "Weiterschreiben", instruction: "Schreibe die Notiz an dieser Stelle sinnvoll weiter (ein bis drei Absätze)." },
-  { id: "write-outline", label: "Gliederung", instruction: "Erstelle eine knappe Gliederung (Überschriften und Stichpunkte) für das Thema dieser Seite." },
-  { id: "write-tasks", label: "Aufgaben ableiten", instruction: "Leite aus dem Inhalt der Seite die offenen Aufgaben ab, als Aufgabenliste (- [ ] …)." },
-  { id: "write-summary", label: "Zusammenfassung", instruction: "Fasse den Inhalt der Seite in drei bis fünf Stichpunkten zusammen." },
-  { id: "write-next", label: "Nächste Schritte", instruction: "Schlage die nächsten Schritte vor, als kurze Aufgabenliste (- [ ] …)." },
-];
+export const writePresets = (): AiPreset[] => ["write-continue", "write-outline", "write-tasks", "write-summary", "write-next"].map(preset);
 
 /** Wraps a request to write new text: `<text>` then holds the page as context, not text to change. */
 export function writeInstruction(instruction: string): string {
-  return `${instruction.trim()}\n\nDer Text zwischen <text> und </text> ist der bisherige Inhalt der Seite, nur als Kontext: ändere ihn nicht und wiederhole ihn nicht, sondern antworte nur mit dem neuen Text, der an der Stelle des Cursors eingefügt wird.`;
+  return `${instruction.trim()}\n\n${t("aitext.writeContext")}`;
 }
 
 /** The instruction of a preset or free text (trimmed); null when empty. */
-export function transformInstruction(presetOrText: string, presets: AiPreset[] = AI_PRESETS): string | null {
-  const preset = presets.find((p) => p.id === presetOrText);
-  if (preset) return preset.instruction;
-  const t = presetOrText.trim();
-  return t ? t : null;
+export function transformInstruction(presetOrText: string, presets: AiPreset[] = aiPresets()): string | null {
+  const found = presets.find((p) => p.id === presetOrText);
+  if (found) return found.instruction;
+  const text = presetOrText.trim();
+  return text ? text : null;
 }
 
 /** Removes a fence the model put around the whole answer (```markdown … ```), also while it streams. */
@@ -62,48 +50,31 @@ export function cleanAiMarkdown(answer: string): string {
 
 // ------------------------------------------------------------ meeting summary
 
-export const SUMMARY_HEADINGS = ["Zusammenfassung", "Entscheidungen", "Aufgaben", "Offene Punkte"] as const;
-
 /** The instruction for „Besprechung zusammenfassen“: the user's template or the built-in one. */
 export function meetingSummaryInstruction(template?: string | null): string {
   if (template?.trim()) return template.trim();
-  return [
-    "Fasse die folgende Besprechungsnotiz zusammen. Gliedere die Antwort genau in diese vier Abschnitte und nichts sonst:",
-    "",
-    "## Zusammenfassung",
-    "3–5 Sätze: Anlass, wichtigste Ergebnisse.",
-    "",
-    "## Entscheidungen",
-    "Getroffene Entscheidungen als Aufzählung (- …). Gibt es keine, schreibe „- Keine“.",
-    "",
-    "## Aufgaben",
-    "Jede Aufgabe als eigene Zeile im Format `- [ ] Text @Person due:JJJJ-MM-TT`.",
-    "@Person nur, wenn eine verantwortliche Person genannt ist. due: mit Datum nur, wenn ein Termin genannt ist; relative Angaben („bis Freitag“) in ein Datum umrechnen.",
-    "Priorität am Zeilenende mit !! (hoch) oder ! (mittel), nur wenn sie erkennbar ist. Gibt es keine Aufgaben, schreibe „- Keine“.",
-    "",
-    "## Offene Punkte",
-    "Ungeklärte Fragen und Themen für das nächste Treffen als Aufzählung, sonst „- Keine“.",
-    "",
-    "Erfinde nichts: nur, was in der Notiz steht. Schreibe auf Deutsch.",
-  ].join("\n");
+  return t("aitext.summaryPrompt");
 }
 
-export const summaryPageTitle = (title: string) => `${title} – Zusammenfassung`;
+export const summaryPageTitle = (title: string) => t("aitext.summaryTitle", { title });
 
 /** Content of the page „<Titel> – Zusammenfassung“, linked back to the meeting page. */
 export function summaryPageContent(title: string, summary: string): string {
-  return `Zusammenfassung von [[${title}]]\n\n${summary.trim()}\n`;
+  return `${t("aitext.summaryOf", { link: `[[${title}]]` })}\n\n${summary.trim()}\n`;
 }
 
-/** Minutes of a meeting from its notes: a time span („10:00–11:30“) or „Dauer: 90 min / 1,5 h“. */
+/**
+ * Minutes of a meeting from its notes: a time span („10:00–11:30“, „10:00 bis 11:30“, „10:00 to
+ * 11:30“) or „Dauer: 90 min / 1,5 h“ („Duration: 1.5 h“).
+ */
 export function meetingMinutes(body: string): number | null {
-  const dur = /\bDauer\s*:?\s*(\d+(?:[.,]\d+)?)\s*(h|std\.?|stunden?|min(?:uten)?)\b/i.exec(body);
+  const dur = /\b(?:Dauer|Duration)\s*:?\s*(\d+(?:[.,]\d+)?)\s*(h|hrs?|hours?|std\.?|stunden?|min(?:uten|utes)?)\b/i.exec(body);
   if (dur) {
     const n = parseFloat(dur[1].replace(",", "."));
     const minutes = /^min/i.test(dur[2]) ? n : n * 60;
     return minutes > 0 && minutes <= 12 * 60 ? Math.round(minutes) : null;
   }
-  const span = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:Uhr\s*)?(?:–|-|—|bis)\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b/.exec(body);
+  const span = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:Uhr\s*)?(?:–|-|—|bis|to)\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b/.exec(body);
   if (span) {
     const minutes = +span[3] * 60 + +span[4] - (+span[1] * 60 + +span[2]);
     return minutes > 0 && minutes <= 12 * 60 ? minutes : null;
@@ -123,5 +94,5 @@ export function bookingSuggestion(reference: string | null, body: string, title:
   const minutes = meetingMinutes(body);
   if (minutes == null) return null;
   const text = title.replace(/[`\n]/g, " ").trim();
-  return `Buchungsvorschlag: \`/zeit ${reference} ${zeitDuration(minutes)} ${text}\``;
+  return `${t("aitext.bookingSuggestion")} \`/zeit ${reference} ${zeitDuration(minutes)} ${text}\``;
 }

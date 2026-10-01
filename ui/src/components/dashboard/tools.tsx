@@ -4,10 +4,10 @@
 import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
 import { useApp } from "../../store/app";
-import { fmtDate, h1, isoDay, relative, weekStart } from "../../lib/format";
-import { t } from "../../lib/i18n";
+import { fmtDate, h1, isoDay, numberLocale, relative, weekStart } from "../../lib/format";
+import { currentLang, t } from "../../lib/i18n";
 import { configOf, weekBars } from "../../lib/dashboard";
-import { bars, displayProblem, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
+import { bars, displayProblem, groupLabel, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
 import { buildSuggestions } from "../../lib/suggestions";
 import { openCalendarView } from "../../lib/calnav";
 import { kindOf, normalizeLinks } from "../../lib/quicklinks";
@@ -117,7 +117,7 @@ function QueryNumber({ q, res }: { q: WidgetQuery; res: QueryResult }) {
   const unit = hours ? "h" : q.source === "tasks" ? (res.total === 1 ? t("dash.q.unit.task") : t("dash.q.unit.tasks")) : q.source === "events" ? (res.total === 1 ? t("dash.q.unit.meeting") : t("dash.q.unit.meetings")) : res.total === 1 ? t("dash.q.unit.page") : t("dash.q.unit.pages");
   return (
     <div className="dw-number">
-      <span className="num dw-number-value">{hours ? h1((res.minutes ?? 0) / 60) : res.total.toLocaleString("de-DE")}</span>
+      <span className="num dw-number-value">{hours ? h1((res.minutes ?? 0) / 60) : res.total.toLocaleString(numberLocale())}</span>
       <span className="muted">{unit}</span>
       {hours && <span className="faint small">{t("dash.q.entries", { n: res.total })}</span>}
     </div>
@@ -127,7 +127,7 @@ function QueryNumber({ q, res }: { q: WidgetQuery; res: QueryResult }) {
 /** Horizontal bars (one series, accent), labels and values in text colors, a tooltip per bar. */
 export function BarChart({ groups, unit, label }: { groups: { label: string; value: number }[]; unit: string; label: string }) {
   const rows = bars(groups);
-  const fmt = (v: number) => (unit === "h" ? h1(v) : v.toLocaleString("de-DE"));
+  const fmt = (v: number) => (unit === "h" ? h1(v) : v.toLocaleString(numberLocale()));
   const withUnit = (v: number) => (unit ? `${fmt(v)} ${unit}` : fmt(v));
   const rowH = 22;
   const summary = rows.map((r) => `${r.label}: ${withUnit(r.value)}`).join(", ");
@@ -182,7 +182,7 @@ export function QueryView({ q, display, res, onSettings, title }: { q: WidgetQue
     );
   if (display === "number") return <QueryNumber q={q} res={res} />;
   if (!res.total) return <Empty icon={ListFilter}>{t("dash.q.none")}</Empty>;
-  if (display === "bar") return <BarChart groups={res.groups} unit={q.source === "entries" ? "h" : ""} label={title} />;
+  if (display === "bar") return <BarChart groups={res.groups.map((g) => ({ ...g, label: groupLabel(g.label, q.group, currentLang()) }))} unit={q.source === "entries" ? "h" : ""} label={title} />;
   if (display === "table") return <QueryTable q={q} res={res} />;
   return <QueryList q={q} res={res} />;
 }

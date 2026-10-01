@@ -1,3 +1,4 @@
+import { t, currentLang } from "./i18n";
 // „Als HTML-Datei teilen“: one self-contained HTML file (styles inline, images as data URIs,
 // system fonts, no scripts, nothing loaded from elsewhere). The page content is rendered by
 // `editor/shareHtml.ts`; this module assembles the document around it.
@@ -22,7 +23,7 @@ export interface ExportSection {
 /** A file name for the page: reserved characters replaced, `.html` appended. */
 export function htmlFileName(title: string): string {
   const base = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().replace(/^\.+/, "").slice(0, 120);
-  return `${base || "Seite"}.html`;
+  return `${base || t("share.page")}.html`;
 }
 
 /** MIME type of an attachment by its extension (data URIs). */
@@ -58,7 +59,7 @@ export function dataUri(bytes: Uint8Array, mime: string): string {
 export function buildHtmlDocument(sections: ExportSection[], opts: { created: string }): string {
   const [main, ...subs] = sections;
   const toc = subs.length
-    ? `<nav class="doc-toc" aria-label="Inhalt"><h2>Inhalt</h2><ol>${sections
+    ? `<nav class="doc-toc" aria-label="${escapeHtml(t("slides.toc"))}"><h2>${escapeHtml(t("slides.toc"))}</h2><ol>${sections
         .map((s) => `<li style="--depth:${s.depth}"><a href="#${s.id}">${escapeHtml(s.title)}</a></li>`)
         .join("")}</ol></nav>`
     : "";
@@ -70,13 +71,13 @@ export function buildHtmlDocument(sections: ExportSection[], opts: { created: st
 <div class="prose">${s.body}</div>
 </article>`;
   return `<!DOCTYPE html>
-<html lang="de">
+<html lang="${currentLang()}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="Annalo">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; media-src data:">
-<title>${escapeHtml(main?.title ?? "Seite")}</title>
+<title>${escapeHtml(main?.title ?? t("share.page"))}</title>
 <style>${EXPORT_CSS}</style>
 </head>
 <body>
@@ -84,7 +85,7 @@ export function buildHtmlDocument(sections: ExportSection[], opts: { created: st
 ${main ? article(main, true) : ""}
 ${subs.map((s) => article(s, false)).join("\n")}
 </main>
-<footer class="made-with">Erstellt mit Annalo am ${escapeHtml(opts.created)}</footer>
+<footer class="made-with">${escapeHtml(t("share.madeWith", { date: opts.created }))}</footer>
 </body>
 </html>
 `;

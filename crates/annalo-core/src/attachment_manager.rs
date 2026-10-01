@@ -7,6 +7,7 @@
 //! `![[name#page=3]]` and `![alt](path/name.png)` in those pages. Names match
 //! case-insensitively, like the file systems of Windows and macOS.
 
+use crate::trf;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -345,15 +346,16 @@ pub fn check_new_name(attachments_dir: &Path, old: &str, new: &str) -> Result<St
     let new = new.trim();
     let clean = attachments::clean_name(new)?;
     if clean != new {
-        return Err(Error::State(format!(
-            "„{new}“ ist als Dateiname nicht erlaubt (keine Ordner und keines der Zeichen : * ? \" < > | [ ] # ^) – zum Beispiel „{clean}“"
+        return Err(Error::State(trf!(
+            "„{new}“ ist als Dateiname nicht erlaubt (keine Ordner und keines der Zeichen : * ? \" < > | [ ] # ^) – zum Beispiel „{clean}“",
+            "“{new}” is not allowed as a file name (no folders and none of the characters : * ? \" < > | [ ] # ^) – for example “{clean}”"
         )));
     }
     let (old_ext, new_ext) = (file_extension(old), file_extension(&clean));
     let drawing = is_drawing(old);
     if old_ext != new_ext || (drawing && !is_drawing(&clean)) {
         let ext = if drawing { ".excalidraw".to_owned() } else { format!(".{}", old_ext.unwrap_or_default()) };
-        return Err(Error::State(format!("Die Dateiendung muss {ext} bleiben")));
+        return Err(Error::State(trf!("Die Dateiendung muss {ext} bleiben", "The file extension must stay {ext}")));
     }
     if drawing {
         drawings::validate_name(&clean)?;
@@ -363,7 +365,7 @@ pub fn check_new_name(attachments_dir: &Path, old: &str, new: &str) -> Result<St
         visible_files(attachments_dir).unwrap_or_default().iter().any(|(n, _)| n.to_lowercase() == lower && n != old)
     };
     if taken(&clean) || (drawing && taken(&drawings::preview_name(&clean))) {
-        return Err(Error::State(format!("Eine Datei „{clean}“ gibt es schon")));
+        return Err(Error::State(trf!("Eine Datei „{clean}“ gibt es schon", "A file “{clean}” already exists")));
     }
     Ok(clean)
 }
@@ -510,7 +512,7 @@ pub fn trashed_files(data_dir: &Path) -> Result<Vec<TrashedFile>> {
 
 fn trashed_path(data_dir: &Path, id: &str, name: &str) -> Result<PathBuf> {
     if parse_stamp(id).is_none() || attachments::resolve(&trash_dir(data_dir).join(id), name).is_none() {
-        return Err(Error::not_found("Datei im Papierkorb", name));
+        return Err(Error::not_found("trashed_file", name));
     }
     Ok(trash_dir(data_dir).join(id))
 }
@@ -527,7 +529,10 @@ pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
     }
     for f in &files {
         if dst.join(f).exists() {
-            return Err(Error::State(format!("Eine Datei „{f}“ gibt es schon – zuerst umbenennen")));
+            return Err(Error::State(trf!(
+                "Eine Datei „{f}“ gibt es schon – zuerst umbenennen",
+                "A file “{f}” already exists – rename it first"
+            )));
         }
     }
     for f in &files {

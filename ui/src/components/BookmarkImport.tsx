@@ -80,9 +80,6 @@ function BrowserBadge({ browser }: { browser: string }) {
   );
 }
 
-/** `key` with `n`, in its singular form (`key` + "1") for one. */
-const tn = (key: TKey, n: number, vars: Record<string, string | number> = {}) => tr((n === 1 ? `${key}1` : key) as TKey, { n, ...vars });
-
 /** A top folder by the browser's own (localized) name, or by its role where it has none. */
 const roleTitle = (n: BmNode) => n.title || (n.role ? tr(`bm.role.${n.role}` as TKey) : "");
 
@@ -236,7 +233,7 @@ async function runImport(plan: Plan, before: QuickLink[], label: string) {
   }
   const parts = [
     plan.newLinks ? tr("bm.doneRibbon", { n: plan.newLinks }) : "",
-    plan.pages.length ? tn("bm.donePages", plan.pages.length, { parent: parentTitle }) : "",
+    plan.pages.length ? tr("bm.donePages", { n: plan.pages.length, parent: parentTitle }) : "",
     plan.duplicates ? tr("bm.doneDup", { n: plan.duplicates }) : "",
   ].filter(Boolean);
   s().toast({
@@ -705,12 +702,12 @@ function TargetStep({
                 <span className="bm-unit-name">{u.name}</span>
                 <span className="bm-unit-meta">
                   {u.dest === "page"
-                    ? tn("bm.unitPage", u.items.length)
+                    ? t("bm.unitPage", { n: u.items.length })
                     : u.kind === "group"
                       ? u.merge !== null
-                        ? tn("bm.unitMerge", u.inRibbon)
-                        : tn("bm.unitGroup", u.inRibbon)
-                      : tn("bm.unitLinks", u.inRibbon)}
+                        ? t("bm.unitMerge", { n: u.inRibbon })
+                        : t("bm.unitGroup", { n: u.inRibbon })
+                      : t("bm.unitLinks", { n: u.inRibbon })}
                   {u.dest !== "page" && u.toPage > 0 && <span className="bm-chip warn">{t("bm.chipPage", { n: u.toPage })}</span>}
                   {u.dropped > 0 && <span className="bm-chip danger">{t("bm.chipDropped", { n: u.dropped })}</span>}
                   {u.duplicates > 0 && <span className="bm-chip">{t("bm.chipDup", { n: u.duplicates })}</span>}
@@ -736,9 +733,9 @@ function TargetStep({
           ) : (
             <span>
               {[
-                plan.newEntries ? tn("bm.sumEntries", plan.newEntries) : "",
-                plan.newLinks ? tn("bm.sumLinks", plan.newLinks) : "",
-                plan.pages.length ? tn("bm.sumPages", plan.pages.length, { parent: t("bm.pageParent") }) : "",
+                plan.newEntries ? t("bm.sumEntries", { n: plan.newEntries }) : "",
+                plan.newLinks ? t("bm.sumLinks", { n: plan.newLinks }) : "",
+                plan.pages.length ? t("bm.sumPages", { n: plan.pages.length, parent: t("bm.pageParent") }) : "",
               ]
                 .filter(Boolean)
                 .join(" · ")}

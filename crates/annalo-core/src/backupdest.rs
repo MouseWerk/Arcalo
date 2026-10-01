@@ -34,6 +34,7 @@ use sha2::{Digest, Sha256};
 
 use crate::backup::{self, BackupInfo};
 use crate::error::{Error, IoAt, Result};
+use crate::{tr, trf};
 
 /// Suffix of a copy that is still being written.
 pub const PARTIAL: &str = ".partial";
@@ -251,23 +252,39 @@ pub fn os_path(path: &Path) -> PathBuf {
 pub fn validate(path: &str) -> std::result::Result<PathBuf, Failure> {
     let p = path.trim();
     if p.is_empty() {
-        return Err(Failure::new(Problem::Invalid, "Kein Ordner angegeben", p));
+        return Err(Failure::new(Problem::Invalid, tr!("Kein Ordner angegeben", "No folder given"), p));
     }
     if unc_parts(p).is_some() && !cfg!(windows) {
         return Err(Failure::new(
             Problem::UncUnsupported,
-            "Netzwerkpfade wie \\\\server\\freigabe gibt es nur unter Windows. Die Freigabe zuerst verbinden \
-             (macOS: Finder → „Mit Server verbinden“, dann /Volumes/…; Linux: einhängen, z. B. unter /mnt/…) und \
-             diesen Ordner wählen.",
+            tr!(
+                "Netzwerkpfade wie \\\\server\\freigabe gibt es nur unter Windows. Die Freigabe zuerst verbinden \
+                 (macOS: Finder → „Mit Server verbinden“, dann /Volumes/…; Linux: einhängen, z. B. unter /mnt/…) und \
+                 diesen Ordner wählen.",
+                "Network paths like \\\\server\\share exist only on Windows. Connect the share first \
+                 (macOS: Finder → “Connect to Server”, then /Volumes/…; Linux: mount it, e.g. under /mnt/…) and \
+                 choose that folder."
+            ),
             p,
         ));
     }
     if (p.starts_with("\\\\") || p.starts_with("//")) && unc_parts(p).is_none() {
-        return Err(Failure::new(Problem::Invalid, "Unvollständiger Netzwerkpfad: \\\\server\\freigabe\\Ordner", p));
+        return Err(Failure::new(
+            Problem::Invalid,
+            tr!(
+                "Unvollständiger Netzwerkpfad: \\\\server\\freigabe\\Ordner",
+                "Incomplete network path: \\\\server\\share\\folder"
+            ),
+            p,
+        ));
     }
     let path = PathBuf::from(p);
     if !path.is_absolute() {
-        return Err(Failure::new(Problem::Invalid, "Bitte einen vollständigen Ordnerpfad angeben", p));
+        return Err(Failure::new(
+            Problem::Invalid,
+            tr!("Bitte einen vollständigen Ordnerpfad angeben", "Please give a full folder path"),
+            p,
+        ));
     }
     Ok(path)
 }
@@ -455,7 +472,11 @@ pub fn run_watched<T: Send + 'static>(
                 let secs = stall.as_secs().max(1);
                 return Err(Failure::new(
                     Problem::Timeout,
-                    format!("Zeitüberschreitung bei {} (seit {secs} s keine Antwort)", path.display()),
+                    trf!(
+                        "Zeitüberschreitung bei {} (seit {secs} s keine Antwort)",
+                        "Timed out at {} (no answer for {secs} s)",
+                        path.display()
+                    ),
                     path.display().to_string(),
                 ));
             }
@@ -617,7 +638,11 @@ pub fn deliver(job: &Job, act: &Activity) -> std::result::Result<Delivered, Fail
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| {
-            Failure::new(Problem::Invalid, "Ungültiger Name der Sicherung", job.backup.display().to_string())
+            Failure::new(
+                Problem::Invalid,
+                tr!("Ungültiger Name der Sicherung", "Invalid backup name"),
+                job.backup.display().to_string(),
+            )
         })?
         .to_owned();
     let size = fs::metadata(&job.backup).at(&job.backup).map_err(fail)?.len();
@@ -637,7 +662,11 @@ pub fn deliver(job: &Job, act: &Activity) -> std::result::Result<Delivered, Fail
         let _ = fs::remove_file(os_path(&part));
         return Err(Failure::new(
             Problem::Checksum,
-            format!("Die Kopie ist unvollständig ({written} von {size} Bytes): {}", target.display()),
+            trf!(
+                "Die Kopie ist unvollständig ({written} von {size} Bytes): {}",
+                "The copy is incomplete ({written} of {size} bytes): {}",
+                target.display()
+            ),
             target.display().to_string(),
         ));
     }
@@ -918,7 +947,11 @@ pub fn fetch_verified(backup: &Path, to: &Path, act: &Activity) -> std::result::
         {
             return Err(Failure::new(
                 Problem::Checksum,
-                format!("Die Prüfsumme der Sicherung stimmt nicht – die Datei ist beschädigt: {}", backup.display()),
+                trf!(
+                    "Die Prüfsumme der Sicherung stimmt nicht – die Datei ist beschädigt: {}",
+                    "The backup's checksum does not match – the file is damaged: {}",
+                    backup.display()
+                ),
                 backup.display().to_string(),
             ));
         }
@@ -938,7 +971,11 @@ pub fn check_sqlite(path: &Path) -> Result<()> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     let res: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
     if res != "ok" {
-        return Err(Error::State(format!("Die Sicherung ist beschädigt ({res}): {}", path.display())));
+        return Err(Error::State(trf!(
+            "Die Sicherung ist beschädigt ({res}): {}",
+            "The backup is damaged ({res}): {}",
+            path.display()
+        )));
     }
     Ok(())
 }
@@ -1035,7 +1072,7 @@ pub fn restore_newest(db_file: &Path, backups: &[BackupInfo], now: DateTime<Utc>
     }
     Err(Error::State(match last_error {
         Some(f) => f.message,
-        None => "Keine Sicherung gefunden".into(),
+        None => tr!("Keine Sicherung gefunden", "No backup found").into(),
     }))
 }
 

@@ -8,6 +8,7 @@
 //! complete state. A folder is only ever replaced when it is empty or carries the
 //! mirror's `README.txt`, never a folder with other contents.
 
+use crate::{tr, trf};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,21 @@ vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 \r
 Wiederherstellen: die Datenbank aus einer Sicherung (annalo-….db) verwenden,\r
 oder diesen Ordner in Annalo als Obsidian-Vault importieren.\r
+";
+
+/// The README in English; its first line stays [`MARKER`], which identifies the folder.
+const README_EN: &str = "Annalo – Markdown-Kopie\r
+\r
+This folder is a read-only copy of the workspace (Markdown copy), so the notes stay\r
+readable without Annalo. It is made anew with every backup: changes made here are lost.\r
+\r
+- Every page is a Markdown file (.md), subpages are in the folder of the same name.\r
+- Embedded images, drawings and files are in attachments/.\r
+- Zeiterfassung/YYYY-MM.csv holds the finished time entries per month\r
+  (separated by semicolons, decimal comma, UTF-8 – opens directly in Excel).\r
+\r
+Restore: use the database from a backup (annalo-….db), or import this folder into\r
+Annalo as an Obsidian vault.\r
 ";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,7 +122,7 @@ where
                 fs::write(&file, csv).at(&file)?;
             }
         }
-        fs::write(dir.join(README_NAME), README).at(dir.join(README_NAME))?;
+        fs::write(dir.join(README_NAME), tr!(README, README_EN)).at(dir.join(README_NAME))?;
         Ok((pages, months.len()))
     })?;
     Ok(MirrorReport { path: target.display().to_string(), pages, csv_files, created_at: Local::now() })
@@ -129,7 +145,13 @@ pub fn hold_swaps() -> std::sync::MutexGuard<'static, ()> {
 
 /// Sibling paths used while swapping: `.name.staging` and `.name.old`.
 fn siblings(target: &Path) -> Result<(PathBuf, PathBuf)> {
-    let invalid = || Error::State(format!("Ungültiger Ordner für die Markdown-Kopie: {}", target.display()));
+    let invalid = || {
+        Error::State(trf!(
+            "Ungültiger Ordner für die Markdown-Kopie: {}",
+            "Invalid folder for the Markdown copy: {}",
+            target.display()
+        ))
+    };
     let parent = target.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(invalid)?;
     let name = target.file_name().and_then(|n| n.to_str()).ok_or_else(invalid)?;
     Ok((parent.join(format!(".{name}.staging")), parent.join(format!(".{name}.old"))))
@@ -147,12 +169,13 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
     }
     if target.exists() {
         if !target.is_dir() {
-            return Err(Error::State(format!("{} ist kein Ordner", target.display())));
+            return Err(Error::State(trf!("{} ist kein Ordner", "{} is not a folder", target.display())));
         }
         let empty = fs::read_dir(target).at(target)?.next().is_none();
         if !empty && !is_mirror(target) {
-            return Err(Error::State(format!(
+            return Err(Error::State(trf!(
                 "Der Ordner {} ist nicht leer und keine Markdown-Kopie von Annalo – bitte einen leeren Ordner wählen",
+                "The folder {} is not empty and not a Markdown copy by Annalo – please choose an empty folder",
                 target.display()
             )));
         }
@@ -176,8 +199,9 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
     let had_old = target.exists();
     if had_old && let Err(e) = fs::rename(target, &old) {
         let _ = fs::remove_dir_all(&staging);
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "Markdown-Kopie nicht ersetzt (Ordner in Benutzung?): {}: {e}",
+            "Markdown copy not replaced (folder in use?): {}: {e}",
             target.display()
         )));
     }

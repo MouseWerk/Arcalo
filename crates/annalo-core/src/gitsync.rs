@@ -13,6 +13,7 @@
 //! every message that leaves this module is redacted. SSH remotes use the user's SSH
 //! agent and keys as they are.
 
+use crate::{tr, trf};
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
@@ -37,6 +38,11 @@ pub const ATTRIBUTES_FILE: &str = ".gitattributes";
 const MARKER: &str = "# Annalo Git-Synchronisierung";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 pub const NOT_INSTALLED: &str = "Git ist nicht installiert (git-scm.com)";
+
+/// [`NOT_INSTALLED`] in the display language.
+pub fn not_installed() -> &'static str {
+    tr!(NOT_INSTALLED, "Git is not installed (git-scm.com)")
+}
 /// Prefix of the branch used when the configured branch has diverged.
 pub const FALLBACK_PREFIX: &str = "annalo-sync-";
 
@@ -48,6 +54,9 @@ const ATTRIBUTES: &str = "# Annalo Git-Synchronisierung\n\
 *.jpeg binary\n\
 *.gif binary\n\
 *.webp binary\n";
+
+/// First line of the sync's README (it marks the file as the sync's own, in every language).
+const README_TITLE: &str = "# Annalo – Git-Sicherung";
 
 const README: &str = "# Annalo – Git-Sicherung
 
@@ -62,6 +71,20 @@ wird es auf den Stand des Arbeitsbereichs gebracht. Änderungen hier werden dabe
 
 Wiederherstellen: in Annalo unter Einstellungen → Sicherung → „Aus Git wiederherstellen…“,
 oder das Repository klonen und als Obsidian-Vault importieren.
+";
+
+const README_EN: &str = "# Annalo – Git-Sicherung
+
+This repository is written by Annalo automatically (Git backup): every sync brings it up
+to the state of the workspace. Changes made here are overwritten then.
+
+- Every page is a Markdown file (`.md`), subpages are in the folder of the same name.
+- Embedded images are in `attachments/`.
+- `Zeiterfassung/YYYY-MM.csv` holds the finished time entries per month.
+- `annalo-workspace.db` (when switched on) is the latest backup of the database.
+
+Restore: in Annalo under Settings → Backup → “Restore from Git…”, or clone the repository
+and import it as an Obsidian vault.
 ";
 
 // ------------------------------------------------------------------ settings
@@ -137,7 +160,7 @@ pub fn check_branch(b: &str) -> Result<()> {
         || b.contains("@{")
         || b.chars().any(|c| c.is_whitespace() || c.is_control() || "~^:?*[\\".contains(c));
     if bad {
-        return Err(Error::State(format!("Ungültiger Branch-Name „{b}“")));
+        return Err(Error::State(trf!("Ungültiger Branch-Name „{b}“", "Invalid branch name “{b}”")));
     }
     Ok(())
 }
@@ -145,7 +168,7 @@ pub fn check_branch(b: &str) -> Result<()> {
 /// A remote URL or path that cannot be mistaken for an option.
 pub fn check_url(url: &str) -> Result<()> {
     if url.is_empty() || url.starts_with('-') || url.chars().any(|c| c.is_control()) {
-        return Err(Error::State("Ungültige Remote-URL".into()));
+        return Err(Error::State(tr!("Ungültige Remote-URL", "Invalid remote URL").into()));
     }
     Ok(())
 }
@@ -177,7 +200,7 @@ pub fn redact(text: &str, token: Option<&str>) -> String {
     for line in text.lines() {
         let lower = line.to_ascii_lowercase();
         if lower.contains("extraheader") || lower.contains("authorization") {
-            out.push("[Zeile mit Zugangsdaten entfernt]".into());
+            out.push(tr!("[Zeile mit Zugangsdaten entfernt]", "[line with credentials removed]").into());
             continue;
         }
         let mut l = line.to_owned();
@@ -215,8 +238,13 @@ pub fn commit_message<Tz: TimeZone>(at: &DateTime<Tz>, changed: usize) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
-    let noun = if changed == 1 { "Datei" } else { "Dateien" };
-    format!("Sicherung {} – {changed} {noun} geändert", at.format("%d.%m.%Y %H:%M"))
+    let when = at.format(tr!("%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M"));
+    match (changed == 1, crate::i18n::is_en()) {
+        (true, false) => format!("Sicherung {when} – {changed} Datei geändert"),
+        (false, false) => format!("Sicherung {when} – {changed} Dateien geändert"),
+        (true, true) => format!("Backup {when} – {changed} file changed"),
+        (false, true) => format!("Backup {when} – {changed} files changed"),
+    }
 }
 
 /// Computer name for the fallback branch, reduced to characters valid in a branch name.
@@ -308,7 +336,7 @@ fn remove_path(p: &Path) -> Result<()> {
 /// missing folder is an error, never an empty list (that would remove every file).
 fn source_entries(src: &Path) -> Result<Vec<(OsString, bool)>> {
     if !src.is_dir() {
-        return Err(Error::State(format!("Ordner fehlt: {}", src.display())));
+        return Err(Error::State(trf!("Ordner fehlt: {}", "Folder missing: {}", src.display())));
     }
     let mut entries: Vec<(OsString, bool)> = Vec::new();
     for e in fs::read_dir(src)? {
@@ -463,7 +491,7 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<Vec
 fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>) -> Result<()> {
     fs::write(repo.join(ATTRIBUTES_FILE), ATTRIBUTES)?;
     if !source.join(README_FILE).exists() {
-        fs::write(repo.join(README_FILE), README)?;
+        fs::write(repo.join(README_FILE), tr!(README, README_EN))?;
     }
     let db = repo.join(DB_FILE);
     match database {
@@ -514,9 +542,10 @@ fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str
     let lower = detail.to_ascii_lowercase();
     let any = |ps: &[&str]| ps.iter().any(|p| lower.contains(p));
     if any(&["index.lock", ".lock': file exists"]) {
-        format!(
+        trf!(
             "Git ist gesperrt: eine frühere Synchronisierung wurde unterbrochen. Die Sperre wird bei der nächsten \
-             Synchronisierung entfernt ({detail})"
+             Synchronisierung entfernt ({detail})",
+            "Git is locked: an earlier sync was interrupted. The lock is removed with the next sync ({detail})"
         )
     } else if any(&[
         "authentication failed",
@@ -529,7 +558,10 @@ fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str
         "the requested url returned error: 401",
         "invalid username or password",
     ]) {
-        format!("Anmeldung am Git-Server fehlgeschlagen – Zugangstoken bzw. SSH-Schlüssel prüfen ({detail})")
+        trf!(
+            "Anmeldung am Git-Server fehlgeschlagen – Zugangstoken bzw. SSH-Schlüssel prüfen ({detail})",
+            "Sign-in to the Git server failed – check the access token or SSH key ({detail})"
+        )
     } else if any(&[
         "could not resolve host",
         "couldn't connect",
@@ -543,11 +575,11 @@ fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str
         "does not appear to be a git repository",
         "not found",
     ]) {
-        format!("Git-Repository nicht erreichbar ({detail})")
+        trf!("Git-Repository nicht erreichbar ({detail})", "Git repository not reachable ({detail})")
     } else if any(&["permission denied", "read-only file system", "no space left"]) {
-        format!("Git kann im Sync-Ordner nicht schreiben ({detail})")
+        trf!("Git kann im Sync-Ordner nicht schreiben ({detail})", "Git cannot write in the sync folder ({detail})")
     } else {
-        format!("git {} fehlgeschlagen: {detail}", subcommand(args))
+        trf!("git {} fehlgeschlagen: {detail}", "git {} failed: {detail}", subcommand(args))
     }
 }
 
@@ -696,9 +728,9 @@ impl Git {
     pub fn run(&self, cwd: Option<&Path>, args: &[&str]) -> Result<GitOutput> {
         let mut child = self.command(cwd, args).spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Error::State(NOT_INSTALLED.into())
+                Error::State(not_installed().into())
             } else {
-                Error::State(format!("Git konnte nicht gestartet werden: {e}"))
+                Error::State(trf!("Git konnte nicht gestartet werden: {e}", "Git could not be started: {e}"))
             }
         })?;
         let reader = |r: Option<Box<dyn Read + Send>>| {
@@ -720,8 +752,9 @@ impl Git {
             if start.elapsed() >= self.timeout {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(Error::State(format!(
+                return Err(Error::State(trf!(
                     "git {} hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
+                    "git {} did not answer within {} s and was stopped",
                     subcommand(args),
                     self.timeout.as_secs().max(1)
                 )));
@@ -767,7 +800,9 @@ impl Git {
     /// Shallow clone of `url` (optionally one branch) into `dest`, which must not exist.
     pub fn clone_shallow(&self, url: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
         check_url(url)?;
-        let dest_s = dest.to_str().ok_or_else(|| Error::State(format!("Ungültiger Pfad: {}", dest.display())))?;
+        let dest_s = dest
+            .to_str()
+            .ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", dest.display())))?;
         let mut args = vec!["clone", "-q", "--depth", "1"];
         if let Some(b) = branch {
             check_branch(b)?;
@@ -802,6 +837,8 @@ pub struct SyncRequest<'a> {
 /// Start of the error a sync returns when it stopped before deleting many notes; the shell
 /// offers „Löschungen übertragen“ for it.
 pub const GUARD_PREFIX: &str = "Zur Sicherheit angehalten";
+/// The same in English.
+pub const GUARD_PREFIX_EN: &str = "Stopped to be safe";
 
 /// Whether deleting `deleted` of `tracked` notes in one step needs the user's confirmation:
 /// more than 10 notes, or more than a fifth of them (from 3 notes on).
@@ -816,15 +853,17 @@ fn count_notes<'a>(paths: impl Iterator<Item = &'a str>) -> usize {
 
 /// The error for a refused mass deletion.
 fn guard_error(deleted: usize, tracked: usize) -> Error {
-    Error::State(format!(
+    Error::State(trf!(
         "{GUARD_PREFIX}: die Synchronisierung würde {deleted} von {tracked} Notizen auf dem Server löschen. \
-         Wenn das gewollt ist, unter Einstellungen → Sicherung „Löschungen übertragen“ wählen."
+         Wenn das gewollt ist, unter Einstellungen → Sicherung „Löschungen übertragen“ wählen.",
+        "{GUARD_PREFIX_EN}: the sync would delete {deleted} of {tracked} notes on the server. \
+         If that is intended, choose “Transfer deletions” under Settings → Backup."
     ))
 }
 
-/// The number of notes a refused sync would have deleted, from its error message.
+/// The number of notes a refused sync would have deleted, from its error message (either language).
 pub fn guard_count(message: &str) -> Option<usize> {
-    let rest = message.split(GUARD_PREFIX).nth(1)?;
+    let rest = [GUARD_PREFIX, GUARD_PREFIX_EN].iter().find_map(|p| message.split(p).nth(1))?;
     rest.split_whitespace().find_map(|w| w.parse().ok())
 }
 
@@ -931,15 +970,20 @@ fn rejected(out: &GitOutput) -> bool {
 pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     let s = normalize(req.settings)?;
     if s.remote_url.is_empty() {
-        return Err(Error::State("Für die Git-Synchronisierung fehlt die Remote-URL".into()));
+        return Err(Error::State(
+            tr!("Für die Git-Synchronisierung fehlt die Remote-URL", "The remote URL for the Git sync is missing")
+                .into(),
+        ));
     }
     // Only a complete mirror is synced: a missing folder (drive not connected) or a foreign
     // one (a wrongly chosen mirror folder the mirror refused to replace) would otherwise be
     // committed as the deletion of every note, or as someone else's files.
     if !req.source.is_dir() || !crate::mirror::is_mirror(req.source) {
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "Die Markdown-Kopie unter {} fehlt oder ist keine Markdown-Kopie von Annalo – \
              Git-Synchronisierung abgebrochen, damit auf dem Server nichts gelöscht wird",
+            "The Markdown copy at {} is missing or is not a Markdown copy by Annalo – Git sync stopped \
+             so that nothing is deleted on the server",
             req.source.display()
         )));
     }
@@ -967,7 +1011,11 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         // The mirror is read in one complete state (no swap in between).
         let _swap = crate::mirror::hold_swaps();
         if !crate::mirror::is_mirror(req.source) {
-            return Err(Error::State(format!("Die Markdown-Kopie unter {} fehlt", req.source.display())));
+            return Err(Error::State(trf!(
+                "Die Markdown-Kopie unter {} fehlt",
+                "The Markdown copy at {} is missing",
+                req.source.display()
+            )));
         }
         if adopted {
             adopt_tree(req.source, repo, req.database)?
@@ -1020,18 +1068,36 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let conflicts = remote_changes.iter().filter(|c| c.conflict).count();
         let message = match (committed, fallback) {
             (_, true) => {
-                format!("Der Branch „{branch}“ auf dem Server enthält einen anderen Stand – gesichert in „{target}“")
+                trf!(
+                    "Der Branch „{branch}“ auf dem Server enthält einen anderen Stand – gesichert in „{target}“",
+                    "The branch “{branch}” on the server holds another state – saved in “{target}”"
+                )
             }
             _ if conflicts > 0 => {
-                let noun = if conflicts == 1 { "Notiz wurde" } else { "Notizen wurden" };
-                format!("{conflicts} {noun} hier und auf dem Server geändert – bitte zusammenführen")
+                let noun = match (conflicts == 1, crate::i18n::is_en()) {
+                    (true, false) => "Notiz wurde",
+                    (false, false) => "Notizen wurden",
+                    (true, true) => "note was",
+                    (false, true) => "notes were",
+                };
+                trf!(
+                    "{conflicts} {noun} hier und auf dem Server geändert – bitte zusammenführen",
+                    "{conflicts} {noun} changed here and on the server – please merge"
+                )
             }
             _ if pulled > 0 => {
-                let noun = if pulled == 1 { "Notiz" } else { "Notizen" };
-                format!("{pulled} {noun} vom Server übernommen")
+                let noun = match (pulled == 1, crate::i18n::is_en()) {
+                    (true, false) => "Notiz",
+                    (false, false) => "Notizen",
+                    (true, true) => "note",
+                    (false, true) => "notes",
+                };
+                trf!("{pulled} {noun} vom Server übernommen", "{pulled} {noun} taken over from the server")
             }
             (true, false) => commit_message(&req.now, changed),
-            (false, false) => "Keine Änderungen seit der letzten Synchronisierung".into(),
+            (false, false) => {
+                tr!("Keine Änderungen seit der letzten Synchronisierung", "No changes since the last sync").into()
+            }
         };
         SyncOutcome {
             commit,
@@ -1092,9 +1158,10 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     if !pulled.is_empty() {
         // Merged, but the server moved on again: taken over here, pushed with the next sync.
         let mut out = done(short(git)?, branch, false, pulled);
-        out.message.push_str(
+        out.message.push_str(tr!(
             " – der Server hat sich währenddessen erneut geändert, die nächste Synchronisierung überträgt den Stand",
-        );
+            " – the server changed again meanwhile, the next sync transfers the state"
+        ));
         return Ok(out);
     }
     let fb = fallback_branch(req.host);
@@ -1213,7 +1280,11 @@ fn merge_remote(
         // Until the user has merged it, the server keeps its version.
         take_path(git, repo, theirs, path)?;
     }
-    let msg = format!("Abgleich mit dem Server {}", now.format("%d.%m.%Y %H:%M"));
+    let msg = trf!(
+        "Abgleich mit dem Server {}",
+        "Merge with the server {}",
+        now.format(tr!("%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M"))
+    );
     git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
     Ok(changes)
 }
@@ -1229,7 +1300,7 @@ pub fn pending_changes(source: &Path, repo: &Path) -> usize {
 /// Removes this sync's own README from a cloned repository before it is imported as a vault.
 pub fn strip_sync_files(dir: &Path) -> Result<()> {
     let readme = dir.join(README_FILE);
-    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with("# Annalo – Git-Sicherung")) {
+    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with(README_TITLE)) {
         fs::remove_file(readme)?;
     }
     Ok(())

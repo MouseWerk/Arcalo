@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { AI_PRESETS, bookingSuggestion, cleanAiMarkdown, meetingMinutes, meetingSummaryInstruction, summaryPageContent, summaryPageTitle, transformInstruction, zeitDuration } from "./aitext";
+import { aiPresets, bookingSuggestion, cleanAiMarkdown, meetingMinutes, meetingSummaryInstruction, summaryPageContent, summaryPageTitle, transformInstruction, zeitDuration } from "./aitext";
 
 describe("inline AI instructions", () => {
   it("has the preset actions", () => {
-    expect(AI_PRESETS.map((p) => p.label)).toEqual([
+    expect(aiPresets().map((p) => p.label)).toEqual([
       "Verbessern",
       "Kürzen",
       "Ausführlicher",

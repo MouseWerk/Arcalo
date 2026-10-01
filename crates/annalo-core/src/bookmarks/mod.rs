@@ -156,7 +156,13 @@ pub fn parse_export(text: &str) -> crate::Result<Tree> {
     if lower.contains("netscape-bookmark") || lower.contains("<dl") || lower.contains("<dt") {
         return Ok(html::parse(text));
     }
-    Err(crate::Error::Parse("Keine Lesezeichen-Datei (erwartet: HTML-Export eines Browsers)".into()))
+    Err(crate::Error::Parse(
+        crate::tr!(
+            "Keine Lesezeichen-Datei (erwartet: HTML-Export eines Browsers)",
+            "Not a bookmarks file (expected: a browser's HTML export)"
+        )
+        .into(),
+    ))
 }
 
 /// The largest export file that is read.
@@ -166,7 +172,13 @@ pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 pub fn read_export_file(path: &std::path::Path) -> crate::Result<Tree> {
     let meta = std::fs::metadata(path).map_err(|e| crate::Error::file(path, e))?;
     if meta.len() > MAX_FILE_BYTES {
-        return Err(crate::Error::State("Die Datei ist zu groß für einen Lesezeichen-Export.".into()));
+        return Err(crate::Error::State(
+            crate::tr!(
+                "Die Datei ist zu groß für einen Lesezeichen-Export.",
+                "The file is too large for a bookmarks export."
+            )
+            .into(),
+        ));
     }
     let bytes = std::fs::read(path).map_err(|e| crate::Error::file(path, e))?;
     parse_export(&String::from_utf8_lossy(&bytes))

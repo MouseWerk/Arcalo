@@ -7,6 +7,7 @@
 //! the database: unknown references are rejected, unknown Leistungsarten dropped. The caller
 //! shows the suggestion and books only after the user confirmed it.
 
+use crate::{tr, trf};
 use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
@@ -152,13 +153,25 @@ pub fn unreferenced(line: &str) -> Option<Unreferenced<'_>> {
     Some(Unreferenced { command, duration, rest: rest.trim() })
 }
 
-pub const SYSTEM_PROMPT: &str = "Du ordnest Zeitbuchungen in Annalo dem passenden Vorgang zu. \
+/// The system prompt; the reason comes in the display language.
+pub fn system_prompt() -> &'static str {
+    tr!(
+        "Du ordnest Zeitbuchungen in Annalo dem passenden Vorgang zu. \
 Wähle aus der Liste der buchbaren Referenzen genau die, zu der die Tätigkeit am besten passt. \
 Zuletzt gebuchte Referenzen stehen oben und sind bei ähnlicher Eignung vorzuziehen. \
 Antworte ausschließlich mit einem JSON-Objekt, ohne Codeblock und ohne weiteren Text: \
 {\"reference\": \"<Referenz exakt aus der Liste>\", \"leistungsart\": \"<Code aus der Liste>\" oder null, \
 \"confidence\": <Zahl von 0 bis 1>, \"reason\": \"<kurze Begründung auf Deutsch>\"}. \
-Erfinde keine Referenzen. Wenn nichts passt, wähle die wahrscheinlichste und gib eine niedrige confidence an.";
+Erfinde keine Referenzen. Wenn nichts passt, wähle die wahrscheinlichste und gib eine niedrige confidence an.",
+        "You assign time entries in Annalo to the right activity. \
+From the list of bookable references, choose exactly the one the work fits best. \
+Recently booked references come first and are preferred when they fit about equally well. \
+Answer with a JSON object only, without a code block and without other text: \
+{\"reference\": \"<reference exactly as in the list>\", \"leistungsart\": \"<code from the list>\" or null, \
+\"confidence\": <number from 0 to 1>, \"reason\": \"<short reason in English>\"}. \
+Do not invent references. If nothing fits, choose the most likely one and give a low confidence."
+    )
+}
 
 /// The request for one line: system rules, then the candidates, Leistungsarten and the text.
 pub fn messages(
@@ -168,29 +181,29 @@ pub fn messages(
     page_title: Option<&str>,
 ) -> Vec<ChatMessage> {
     let text = unreferenced(line).map_or(line.trim(), |u| u.rest);
-    let mut user = String::from("Buchbare Referenzen:\n");
+    let mut user = String::from(tr!("Buchbare Referenzen:\n", "Bookable references:\n"));
     for c in candidates {
         user.push_str(&format!("- {} | {} | {}", c.reference, c.title, c.context));
         if c.recent_count > 0 {
-            user.push_str(&format!(" | zuletzt gebucht ({}×)", c.recent_count));
+            user.push_str(&trf!(" | zuletzt gebucht ({}×)", " | recently booked ({}×)", c.recent_count));
             if !c.leistungsarten.is_empty() {
-                user.push_str(&format!(", Leistungsarten: {}", c.leistungsarten.join(", ")));
+                user.push_str(&trf!(", Leistungsarten: {}", ", activity types: {}", c.leistungsarten.join(", ")));
             }
             if !c.recent.is_empty() {
-                user.push_str(&format!(", z. B. „{}“", c.recent.join("“, „")));
+                user.push_str(&trf!(", z. B. „{}“", ", e.g. “{}”", c.recent.join(tr!("“, „", "”, “"))));
             }
         }
         user.push('\n');
     }
-    user.push_str("\nLeistungsarten:\n");
+    user.push_str(tr!("\nLeistungsarten:\n", "\nActivity types:\n"));
     for (code, desc) in leistungsarten {
         user.push_str(&format!("- {code}: {desc}\n"));
     }
     if let Some(t) = page_title.filter(|t| !t.trim().is_empty()) {
-        user.push_str(&format!("\nNotizseite: „{}“\n", t.trim()));
+        user.push_str(&trf!("\nNotizseite: „{}“\n", "\nNote page: “{}”\n", t.trim()));
     }
-    user.push_str(&format!("\nTätigkeit: {text}"));
-    vec![ChatMessage::system(SYSTEM_PROMPT), ChatMessage::user(user)]
+    user.push_str(&trf!("\nTätigkeit: {text}", "\nWork: {text}"));
+    vec![ChatMessage::system(system_prompt()), ChatMessage::user(user)]
 }
 
 /// The model's answer as sent.
@@ -207,8 +220,13 @@ pub struct RawGuess {
 
 /// Extracts the JSON object of an answer, tolerating a code fence or text around it.
 pub fn parse_answer(answer: &str) -> Result<RawGuess> {
-    let bad =
-        || Error::Parse(format!("KI-Antwort ist kein gültiges JSON: {}", answer.chars().take(160).collect::<String>()));
+    let bad = || {
+        Error::Parse(trf!(
+            "KI-Antwort ist kein gültiges JSON: {}",
+            "The AI answer is not valid JSON: {}",
+            answer.chars().take(160).collect::<String>()
+        ))
+    };
     let start = answer.find('{').ok_or_else(bad)?;
     let end = answer.rfind('}').filter(|e| *e > start).ok_or_else(bad)?;
     serde_json::from_str(&answer[start..=end]).map_err(|_| bad())
@@ -242,7 +260,10 @@ pub fn validate(
     let wanted = raw.reference.trim();
     let norm = |s: &str| s.to_lowercase().replace(char::is_whitespace, "");
     let Some(c) = candidates.iter().find(|c| norm(&c.reference) == norm(wanted)) else {
-        return Err(Error::State(format!("Die KI schlug die unbekannte Referenz „{wanted}“ vor")));
+        return Err(Error::State(trf!(
+            "Die KI schlug die unbekannte Referenz „{wanted}“ vor",
+            "The AI suggested the unknown reference “{wanted}”"
+        )));
     };
     let la = raw
         .leistungsart
@@ -269,7 +290,9 @@ pub fn validate(
 
 /// Inserts `reference` before the duration and `#LA` after it, unless the line has one.
 pub fn apply(line: &str, reference: &str, leistungsart: Option<&str>) -> Result<String> {
-    let u = unreferenced(line).ok_or_else(|| Error::Parse("Die Zeile hat bereits eine Referenz".into()))?;
+    let u = unreferenced(line).ok_or_else(|| {
+        Error::Parse(tr!("Die Zeile hat bereits eine Referenz", "The line already has a reference").into())
+    })?;
     let has_la = u.rest.split_whitespace().any(|w| w.len() > 1 && w.starts_with('#'));
     let mut out = format!("{} {reference} {}", u.command, u.duration);
     if let Some(la) = leistungsart.filter(|_| !has_la) {

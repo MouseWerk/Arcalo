@@ -8,7 +8,12 @@ use super::{Collector, MAX_DEPTH, Node, Tree};
 use crate::{Error, Result};
 
 /// Shown when macOS refuses access to Safari's file.
-pub const NO_ACCESS: &str = "Kein Zugriff auf Safaris Lesezeichen. Annalo in den Systemeinstellungen unter „Datenschutz & Sicherheit → Festplattenvollzugriff“ erlauben, oder in Safari „Ablage → Exportieren → Lesezeichen …“ wählen und die HTML-Datei importieren.";
+pub fn no_access() -> &'static str {
+    crate::tr!(
+        "Kein Zugriff auf Safaris Lesezeichen. Annalo in den Systemeinstellungen unter „Datenschutz & Sicherheit → Festplattenvollzugriff“ erlauben, oder in Safari „Ablage → Exportieren → Lesezeichen …“ wählen und die HTML-Datei importieren.",
+        "No access to Safari's bookmarks. Allow Annalo under System Settings → “Privacy & Security → Full Disk Access”, or choose “File → Export → Bookmarks …” in Safari and import the HTML file."
+    )
+}
 
 /// Whether an I/O error is macOS refusing access (TCC answers with EPERM).
 pub fn is_denied(e: &std::io::Error) -> bool {
@@ -18,14 +23,18 @@ pub fn is_denied(e: &std::io::Error) -> bool {
 /// Reads Safari's bookmarks file.
 pub fn read(path: &std::path::Path) -> Result<Tree> {
     let bytes = std::fs::read(path)
-        .map_err(|e| if is_denied(&e) { Error::State(NO_ACCESS.into()) } else { Error::file(path, e) })?;
+        .map_err(|e| if is_denied(&e) { Error::State(no_access().into()) } else { Error::file(path, e) })?;
     parse(&bytes)
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Tree> {
     let v = Value::from_reader(std::io::Cursor::new(bytes))
-        .map_err(|e| Error::Parse(format!("Safari-Lesezeichen: {e}")))?;
-    let root = v.as_dictionary().ok_or_else(|| Error::Parse("Safari-Lesezeichen: unerwartetes Format".into()))?;
+        .map_err(|e| Error::Parse(crate::trf!("Safari-Lesezeichen: {e}", "Safari bookmarks: {e}")))?;
+    let root = v.as_dictionary().ok_or_else(|| {
+        Error::Parse(
+            crate::tr!("Safari-Lesezeichen: unerwartetes Format", "Safari bookmarks: unexpected format").into(),
+        )
+    })?;
     let mut c = Collector::default();
     let mut roots = Vec::new();
     let mut loose = Vec::new();
@@ -33,10 +42,11 @@ pub fn parse(bytes: &[u8]) -> Result<Tree> {
         let Some(d) = child.as_dictionary() else { continue };
         match kind(d) {
             "WebBookmarkTypeList" => {
+                // Safari's own folders get their name from their role (in the display language).
                 let (title, role) = match str_of(d, "Title") {
-                    "BookmarksBar" => ("Favoriten", Some("bar")),
-                    "BookmarksMenu" => ("Lesezeichenmenü", Some("menu")),
-                    "com.apple.ReadingList" => ("Leseliste", Some("reading")),
+                    "BookmarksBar" => ("", Some("bar")),
+                    "BookmarksMenu" => ("", Some("menu")),
+                    "com.apple.ReadingList" => ("", Some("reading")),
                     t => (t, None),
                 };
                 let mut f = Node::folder(title, role);

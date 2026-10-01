@@ -13,6 +13,7 @@ import { bookingSuggestion, meetingSummaryInstruction, summaryPageContent, summa
 import { useAiTransform } from "../lib/useAiTransform";
 import { appendMarkdown } from "../editor/ai-insert";
 import { toMarkdown } from "../editor/schema";
+import { useT } from "../lib/i18n";
 
 interface Props {
   page: { id: number; title: string };
@@ -28,6 +29,7 @@ export function MeetingSummaryDialog({ open, ...props }: Props & { open: boolean
 }
 
 function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
+  const t = useT();
   const ai = useAiTransform();
   const [body, setBody] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -45,7 +47,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
   };
 
   useEffect(() => {
-    start().catch((e) => s().error("Zusammenfassung nicht möglich", e));
+    start().catch((e) => s().error(t("summary.failed"), e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,9 +57,9 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
 
   const insertAtEnd = () => {
     const editor = getEditor();
-    if (!editor || editor.isDestroyed) return s().toast({ tone: "warning", title: "Seite ist nicht geöffnet" });
+    if (!editor || editor.isDestroyed) return s().toast({ tone: "warning", title: t("summary.notOpen") });
     if (appendMarkdown(editor, result)) {
-      s().toast({ tone: "success", title: "Zusammenfassung eingefügt" });
+      s().toast({ tone: "success", title: t("summary.inserted") });
       onClose();
     }
   };
@@ -71,7 +73,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
       s().openPage(p.id, { newTab: true });
       onClose();
     } catch (e) {
-      s().error("Seite nicht angelegt", e);
+      s().error(t("assist.pageFailed"), e);
     } finally {
       setSaving(false);
     }
@@ -81,8 +83,8 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
     <Dialog
       open
       onClose={onClose}
-      title="Besprechung zusammenfassen"
-      description={`Zusammenfassung, Entscheidungen, Aufgaben und offene Punkte aus „${page.title}“.`}
+      title={t("summary.title")}
+      description={t("summary.desc", { title: page.title })}
       width={720}
       footer={
         <>
@@ -105,20 +107,20 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
                   setTimeout(() => setCopied(false), 1200);
                 }}
               >
-                Kopieren
+                {t("common.copy")}
               </Button>
               <Button icon={FilePlus2} loading={saving} onClick={asPage}>
-                Als neue Seite
+                {t("summary.asPage")}
               </Button>
               <Button variant="primary" icon={ListEnd} onClick={insertAtEnd}>
-                Am Seitenende einfügen
+                {t("summary.insertEnd")}
               </Button>
             </>
           ) : ai.busy ? (
-            <Button onClick={() => ai.cancel()}>Stoppen</Button>
+            <Button onClick={() => ai.cancel()}>{t("summary.stop")}</Button>
           ) : (
             <Button icon={RotateCcw} disabled={!body?.trim()} onClick={() => start()}>
-              Erneut
+              {t("summary.again")}
             </Button>
           )}
         </>
@@ -126,10 +128,10 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
     >
       <div className="summary-preview" aria-live="polite">
         {body !== null && !body.trim() ? (
-          <div className="faint">Die Seite ist leer – es gibt nichts zusammenzufassen.</div>
+          <div className="faint">{t("summary.empty")}</div>
         ) : ai.error ? (
           <div className="msg-error">
-            <div>Die Anfrage ist fehlgeschlagen.</div>
+            <div>{t("summary.requestFailed")}</div>
             <div className="faint small mono">{ai.error}</div>
           </div>
         ) : !ai.text ? (
@@ -141,7 +143,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
         ) : (
           <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(result) }} />
         )}
-        {ai.cancelled && <div className="faint small">Abgebrochen</div>}
+        {ai.cancelled && <div className="faint small">{t("assist.cancelled")}</div>}
       </div>
     </Dialog>
   );

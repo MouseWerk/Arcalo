@@ -88,13 +88,18 @@ fn copy_for_reading(src: &Path) -> Result<TempCopy> {
 fn locked_or(path: &Path, e: std::io::Error) -> Error {
     // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
     if matches!(e.raw_os_error(), Some(32 | 33)) && cfg!(windows) {
-        return Error::State(LOCKED.into());
+        return Error::State(locked().into());
     }
     Error::file(path, e)
 }
 
 /// Shown when the database cannot be read because Firefox holds it.
-pub const LOCKED: &str = "Firefox hält die Lesezeichen gesperrt. Firefox schließen und erneut versuchen.";
+pub fn locked() -> &'static str {
+    crate::tr!(
+        "Firefox hält die Lesezeichen gesperrt. Firefox schließen und erneut versuchen.",
+        "Firefox keeps its bookmarks locked. Close Firefox and try again."
+    )
+}
 
 /// Reads the bookmarks of `places` (a profile's `places.sqlite`) from a copy.
 pub fn read(places: &Path) -> Result<Tree> {
@@ -105,7 +110,7 @@ pub fn read(places: &Path) -> Result<Tree> {
         Error::Db(rusqlite::Error::SqliteFailure(f, _))
             if matches!(f.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) =>
         {
-            Error::State(LOCKED.into())
+            Error::State(locked().into())
         }
         other => other,
     });
@@ -123,13 +128,10 @@ struct Row {
     url: Option<String>,
 }
 
-/// The top folders of Firefox by their fixed ids, in the order of its library window.
-const ROOTS: [(&str, &str, &str); 4] = [
-    ("toolbar_____", "bar", "Lesezeichen-Symbolleiste"),
-    ("menu________", "menu", "Lesezeichen-Menü"),
-    ("unfiled_____", "other", "Weitere Lesezeichen"),
-    ("mobile______", "mobile", "Mobile Lesezeichen"),
-];
+/// The top folders of Firefox by their fixed ids, in the order of its library window (named by
+/// their role in the display language; the database only has internal names).
+const ROOTS: [(&str, &str); 4] =
+    [("toolbar_____", "bar"), ("menu________", "menu"), ("unfiled_____", "other"), ("mobile______", "mobile")];
 
 /// The bookmark tree of an open `places.sqlite`.
 pub fn parse(conn: &Connection) -> Result<Tree> {
@@ -161,9 +163,9 @@ pub fn parse(conn: &Connection) -> Result<Tree> {
     }
     let mut c = Collector::default();
     let mut roots = Vec::new();
-    for (guid, role, title) in ROOTS {
+    for (guid, role) in ROOTS {
         let Some(id) = by_guid.get(guid) else { continue };
-        let mut f = Node::folder(title, Some(role));
+        let mut f = Node::folder("", Some(role));
         f.children = build(&mut c, &children, *id, 0);
         roots.push(f);
     }

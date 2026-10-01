@@ -416,7 +416,7 @@ function ItemFields({ link, kind, setLink, onIcon, children }: { link: QuickLink
               const url = e.target.value;
               setLink((l) => ({ ...l, url }));
             }}
-            placeholder={kind === "app" ? "C:\\Programme\\Tool\\tool.exe · /Applications/Tool.app" : "https://jira.firma.de · C:\\Projekte · mailto:team@firma.de"}
+            placeholder={kind === "app" ? t("links.appPh") : t("links.targetPh")}
             data-autofocus
           />
           {kind === "app" && <Button onClick={browse}>{t("links.browse")}</Button>}

@@ -10,14 +10,14 @@ import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
 import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions";
 import { flushAllEditors } from "../editor/NoteEditor";
-import { fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
+import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } from "../components/ui";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { NOT_CONFIGURED } from "../lib/updates";
 import { checkForUpdates, loadUpdateStatus, UpdateAction, useUpdates } from "../components/Updates";
-import { useT, type TKey } from "../lib/i18n";
+import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
@@ -372,14 +372,14 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
     <>
       <header className="settings-head">
         <h1>{t("set.ai.title")}</h1>
-        <p>Annalo spricht mit einem oder mehreren KI-Anbietern: LiteLLM, OpenAI-kompatiblen Diensten, Azure OpenAI oder einem lokalen Ollama.</p>
+        <p>{t("set.ai.intro")}</p>
       </header>
 
       <AiProvidersSection draft={draft} update={update} />
 
       <Group title={t("set.ai.behavior")}>
-        <Field label={t("set.ai.instructions")} hint="z. B. Rolle, Tonalität, bevorzugte Formate">
-          <TextArea rows={4} value={draft.assistant_instructions} onChange={(e) => update({ assistant_instructions: e.target.value })} placeholder="Ich bin SAP-Berater im Projekt … Antworte knapp." />
+        <Field label={t("set.ai.instructions")} hint={t("set.ai.instructionsHint")}>
+          <TextArea rows={4} value={draft.assistant_instructions} onChange={(e) => update({ assistant_instructions: e.target.value })} placeholder={t("set.ai.instructionsPlaceholder")} />
         </Field>
       </Group>
     </>
@@ -405,7 +405,7 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
     <>
       <header className="settings-head">
         <h1>{t("set.time.title")}</h1>
-        <p>Leerlauferkennung, Budgetwarnungen und Angaben für SAP- und Jira-Exporte.</p>
+        <p>{t("set.time.intro")}</p>
       </header>
       <Group title={t("set.time.use")}>
         <Row label={t("set.time.useLabel")} description={t("set.time.useDesc")}>
@@ -413,22 +413,22 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
         </Row>
       </Group>
       <Group title={t("set.time.timer")}>
-        <Row label={t("set.time.idle")} description="Pausen ohne Tastatur- oder Mauseingabe, die länger dauern, werden beim Stoppen zum Abziehen angeboten.">
+        <Row label={t("set.time.idle")} description={t("set.time.idleDesc")}>
           <div className="unit-input">
-            <NumberInput min={1} max={120} value={draft.idle_threshold_minutes} onCommit={(v) => update({ idle_threshold_minutes: v })} aria-label="Minuten" />
-            <span className="faint">Minuten</span>
+            <NumberInput min={1} max={120} value={draft.idle_threshold_minutes} onCommit={(v) => update({ idle_threshold_minutes: v })} aria-label={t("unit.minutes")} />
+            <span className="faint">{t("unit.minutes")}</span>
           </div>
         </Row>
       </Group>
-      <Group title={t("set.time.workTime")} description="Tage unter dem Soll werden in der Wochenübersicht markiert.">
+      <Group title={t("set.time.workTime")} description={t("set.time.workTimeDesc")}>
         <Row label={t("set.time.target")}>
           <div className="unit-input">
-            <NumberInput min={0.5} max={16} step={0.25} value={draft.daily_target_hours} onCommit={(v) => update({ daily_target_hours: v })} aria-label="Stunden" />
-            <span className="faint">Stunden</span>
+            <NumberInput min={0.5} max={16} step={0.25} value={draft.daily_target_hours} onCommit={(v) => update({ daily_target_hours: v })} aria-label={t("unit.hoursLong")} />
+            <span className="faint">{t("unit.hoursLong")}</span>
           </div>
         </Row>
         <Row label={t("set.time.workdays")}>
-          <div className="day-toggle" role="group" aria-label="Arbeitstage">
+          <div className="day-toggle" role="group" aria-label={t("set.time.workdays")}>
             {weekdayLabels(1).map((d, i) => {
               const on = draft.workdays.includes(i + 1);
               return (
@@ -446,29 +446,29 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
           </div>
         </Row>
       </Group>
-      <Group title={t("set.time.budget")} description="Gilt für Netzpläne und Vorgänge.">
+      <Group title={t("set.time.budget")} description={t("set.time.budgetDesc")}>
         <Row label={t("set.time.warnAt")}>
           <div className="unit-input">
-            <NumberInput min={1} max={100} value={pct(draft.thresholds.warning)} onCommit={(v) => update({ thresholds: { ...draft.thresholds, warning: v / 100 } })} aria-label="Warnung in Prozent" />
-            <span className="faint">% verbraucht</span>
+            <NumberInput min={1} max={100} value={pct(draft.thresholds.warning)} onCommit={(v) => update({ thresholds: { ...draft.thresholds, warning: v / 100 } })} aria-label={t("set.time.warnPercent")} />
+            <span className="faint">{t("set.time.percentUsed")}</span>
           </div>
         </Row>
-        <Row label={t("set.time.criticalAt")} description="Oder wenn die Prognose (gebucht + Restaufwand) den Plan übersteigt.">
+        <Row label={t("set.time.criticalAt")} description={t("set.time.criticalDesc")}>
           <div className="unit-input">
-            <NumberInput min={1} max={100} value={pct(draft.thresholds.critical)} onCommit={(v) => update({ thresholds: { ...draft.thresholds, critical: v / 100 } })} aria-label="Kritisch in Prozent" />
-            <span className="faint">% verbraucht</span>
+            <NumberInput min={1} max={100} value={pct(draft.thresholds.critical)} onCommit={(v) => update({ thresholds: { ...draft.thresholds, critical: v / 100 } })} aria-label={t("set.time.criticalPercent")} />
+            <span className="faint">{t("set.time.percentUsed")}</span>
           </div>
         </Row>
         {pct(draft.thresholds.warning) >= pct(draft.thresholds.critical) && (
-          <p className="error-note small" role="alert">Die Warnschwelle muss unter der kritischen Schwelle liegen.</p>
+          <p className="error-note small" role="alert">{t("settings.thresholdOrder")}</p>
         )}
       </Group>
       <Group title="SAP CATS">
         <Row label={t("set.time.pernr")}>
-          <Input value={draft.pernr ?? ""} onChange={(e) => update({ pernr: e.target.value || null })} placeholder="00012345" aria-label="Personalnummer" />
+          <Input value={draft.pernr ?? ""} onChange={(e) => update({ pernr: e.target.value || null })} placeholder="00012345" aria-label={t("set.time.pernr")} />
         </Row>
       </Group>
-      <Group title={t("set.time.jira")} description="Netzplan oder Netzplan/Vorgang zu Jira-Issue. Die spezifischere Zuordnung gewinnt.">
+      <Group title={t("set.time.jira")} description={t("set.time.jiraDesc")}>
         <div className="map-list">
           {Object.entries(draft.jira_issue_map).map(([k, v]) => (
             <div key={k} className="map-row">
@@ -478,7 +478,7 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
               <span className="grow" />
               <IconButton
                 icon={Trash2}
-                label="Entfernen"
+                label={t("common.remove")}
                 size="sm"
                 onClick={() => {
                   const m = { ...draft.jira_issue_map };
@@ -489,9 +489,9 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
             </div>
           ))}
           <div className="map-row">
-            <Input value={mapKey} onChange={(e) => setMapKey(e.target.value)} placeholder="NP-8801/1020" className="mono" aria-label="Netzplan/Vorgang" />
+            <Input value={mapKey} onChange={(e) => setMapKey(e.target.value)} placeholder="NP-8801/1020" className="mono" aria-label={t("set.time.jiraKey")} />
             <span className="faint">→</span>
-            <Input value={mapVal} onChange={(e) => setMapVal(e.target.value)} placeholder="AET-12" className="mono" aria-label="Jira-Issue" />
+            <Input value={mapVal} onChange={(e) => setMapVal(e.target.value)} placeholder="AET-12" className="mono" aria-label={t("set.time.jiraIssue")} />
             <Button
               icon={Plus}
               disabled={!mapKey.trim() || !mapVal.trim()}
@@ -501,12 +501,12 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
                 setMapVal("");
               }}
             >
-              Hinzufügen
+              {t("common.add")}
             </Button>
           </div>
         </div>
       </Group>
-      <Group title={t("set.time.leistungsarten")} description="Werden direkt gespeichert.">
+      <Group title={t("set.time.leistungsarten")} description={t("set.time.leistungsartenDesc")}>
         <div className="map-list">
           {las.map(([code, desc]) => (
             <div key={code} className="map-row">
@@ -515,7 +515,7 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
               <span className="grow" />
               <IconButton
                 icon={Trash2}
-                label="Löschen"
+                label={t("common.delete")}
                 size="sm"
                 onClick={async () => {
                   try {
@@ -523,15 +523,15 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
                     reload();
                     s().bumpWbs();
                   } catch (e) {
-                    s().error("Löschen nicht möglich", e);
+                    s().error(t("common.deleteFailed"), e);
                   }
                 }}
               />
             </div>
           ))}
           <div className="map-row">
-            <Input value={newLa.code} onChange={(e) => setNewLa({ ...newLa, code: e.target.value.toUpperCase() })} placeholder="CODE" className="mono w-120" aria-label="Code" />
-            <Input value={newLa.desc} onChange={(e) => setNewLa({ ...newLa, desc: e.target.value })} placeholder="Beschreibung" aria-label="Beschreibung" />
+            <Input value={newLa.code} onChange={(e) => setNewLa({ ...newLa, code: e.target.value.toUpperCase() })} placeholder="CODE" className="mono w-120" aria-label={t("set.time.laCode")} />
+            <Input value={newLa.desc} onChange={(e) => setNewLa({ ...newLa, desc: e.target.value })} placeholder={t("set.time.laDesc")} aria-label={t("set.time.laDesc")} />
             <Button
               icon={Plus}
               disabled={!newLa.code.trim()}
@@ -542,11 +542,11 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
                   reload();
                   s().bumpWbs();
                 } catch (e) {
-                  s().error("Speichern nicht möglich", e);
+                  s().error(t("common.saveFailed"), e);
                 }
               }}
             >
-              Hinzufügen
+              {t("common.add")}
             </Button>
           </div>
         </div>
@@ -569,64 +569,64 @@ function NotesSection({ draft, update }: { draft: Settings; update: (p: Partial<
     <>
       <header className="settings-head">
         <h1>{t("set.notes.title")}</h1>
-        <p>Alle Notizen sind Markdown und liegen lokal. Du kannst jederzeit aus Obsidian importieren oder alles als Markdown-Ordner exportieren.</p>
+        <p>{t("set.notes.intro")}</p>
       </header>
       <Group title={t("set.notes.templates")}>
-        <Row label={t("set.notes.dailyTemplate")} description="Gilt für neu angelegte Tagesnotizen. Vorlagen sind die Seiten unter „Vorlagen“.">
+        <Row label={t("set.notes.dailyTemplate")} description={t("set.notes.dailyTemplateDesc")}>
           <Select
             value={draft.daily_template == null ? "" : String(draft.daily_template)}
             onChange={(e) => update({ daily_template: e.target.value ? Number(e.target.value) : null })}
-            aria-label="Vorlage für Tagesnotizen"
+            aria-label={t("set.notes.dailyTemplate")}
             className="w-360"
           >
-            <option value="">Standard (Fokus und Notizen)</option>
-            {missing && templates.length > 0 && <option value={String(draft.daily_template)}>Gelöschte Vorlage</option>}
-            {templates.map((t) => (
-              <option key={t.id} value={String(t.id)}>
-                {t.title}
+            <option value="">{t("set.notes.dailyTemplateDefault")}</option>
+            {missing && templates.length > 0 && <option value={String(draft.daily_template)}>{t("set.notes.deletedTemplate")}</option>}
+            {templates.map((x) => (
+              <option key={x.id} value={String(x.id)}>
+                {x.title}
               </option>
             ))}
           </Select>
         </Row>
       </Group>
-      <Group title="Obsidian" description="Ordner werden zu Seiten, [[Links]] und #Tags bleiben erhalten. Bilder werden als Anhänge übernommen, andere Dateien übersprungen.">
+      <Group title="Obsidian" description={t("set.notes.obsidianDesc")}>
         <Row label={t("set.notes.importVault")}>
           <Button icon={FolderInput} onClick={() => importVault()}>
-            Ordner wählen…
+            {t("common.chooseFolder")}
           </Button>
         </Row>
-        <Row stack label={t("set.notes.path")} description="Alternativ zum Dialog.">
-          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="C:\\Users\\du\\Obsidian\\Vault" className="grow" aria-label="Vault-Pfad" />
+        <Row stack label={t("set.notes.path")} description={t("set.notes.pathDesc")}>
+          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("set.notes.pathPlaceholder")} className="grow" aria-label={t("set.notes.vaultPath")} />
           <Button onClick={() => path.trim() && importVault(path.trim())} disabled={!path.trim()}>
-            Importieren
+            {t("common.import")}
           </Button>
         </Row>
-        <Row label={t("set.notes.exportMd")} description="Schreibt jede Seite als .md-Datei, Unterseiten als Ordner.">
+        <Row label={t("set.notes.exportMd")} description={t("set.notes.exportMdDesc")}>
           <Button icon={FolderOutput} onClick={() => exportVault()}>
-            Zielordner wählen…
+            {t("set.notes.chooseTarget")}
           </Button>
         </Row>
       </Group>
       <Group title={t("set.notes.samples")}>
-        <Row label={t("set.notes.removeSamples")} description="Löscht das Beispielprojekt PRJ-2026-X mit seinen Zeiten und die Beispielseiten. Deine eigenen Seiten und Tagesnotizen bleiben erhalten.">
+        <Row label={t("set.notes.removeSamples")} description={t("set.notes.removeSamplesDesc")}>
           <Button
             variant="danger"
             icon={Trash2}
             onClick={async () => {
               const s = useApp.getState();
-              if (!(await s.confirm({ title: "Beispieldaten entfernen?", message: "Das Beispielprojekt, seine Zeitbuchungen und die Beispielseiten werden gelöscht.", confirmLabel: "Entfernen", danger: true }))) return;
+              if (!(await s.confirm({ title: t("set.notes.removeSamplesAsk"), message: t("set.notes.removeSamplesText"), confirmLabel: t("common.remove"), danger: true }))) return;
               try {
                 const n = await api.removeDemo();
                 await s.refreshTree();
                 s.bumpWbs();
                 s.bumpEntries();
-                s.toast({ tone: "success", title: "Beispieldaten entfernt", detail: n ? "Beispielprojekt und -seiten gelöscht" : "Beispielprojekt gelöscht" });
+                s.toast({ tone: "success", title: t("set.notes.samplesRemoved"), detail: n ? t("set.notes.samplesRemovedPages") : t("set.notes.samplesRemovedProject") });
               } catch (e) {
-                s.error("Entfernen fehlgeschlagen", e);
+                s.error(t("common.removeFailed"), e);
               }
             }}
           >
-            Entfernen
+            {t("common.remove")}
           </Button>
         </Row>
       </Group>
@@ -651,19 +651,19 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
   }, [view.backup_dir, view.settings.backup_keep, view.settings.markdown_mirror, view.settings.markdown_mirror_dir]);
 
   const pickMirror = async () => {
-    const dir = await pickFolder("Ordner für die Markdown-Kopie (leer oder eine frühere Kopie)");
+    const dir = await pickFolder(t("set.backup.mirrorPick"));
     if (dir) update({ markdown_mirror_dir: dir });
   };
   const openMirror = async () => {
     try {
       await api.openMirror();
     } catch (e) {
-      s().error("Ordner konnte nicht geöffnet werden", e);
+      s().error(t("common.openFolderFailed"), e);
     }
   };
 
   const pick = async () => {
-    const dir = await pickFolder("Ordner für Sicherungen");
+    const dir = await pickFolder(t("set.backup.pick"));
     if (dir) update({ backup_dir: dir });
   };
   const backupNow = async () => {
@@ -671,10 +671,10 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
     try {
       const b = await api.backupNow();
       const copies = draft.backup_targets.destinations.some((d) => d.enabled) ? ` · ${t("bdest.backupDone")}` : "";
-      s().toast({ tone: "success", title: "Sicherung erstellt", detail: `${b.file_name} · ${fileSize(b.size_bytes)}${copies}` });
+      s().toast({ tone: "success", title: t("set.backup.created"), detail: `${b.file_name} · ${fileSize(b.size_bytes)}${copies}` });
       reload();
     } catch (e) {
-      s().error("Sicherung fehlgeschlagen", e);
+      s().error(t("set.backup.failed"), e);
     } finally {
       setBusy(false);
     }
@@ -686,84 +686,81 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
         <h1>{t("set.backup.title")}</h1>
         <p>{t("bdest.contents")}</p>
       </header>
-      <Group title={t("set.backup.auto")} description="Wird beim Start und danach stündlich geprüft; gesichert wird, wenn die letzte Sicherung älter als 24 Stunden ist.">
+      <Group title={t("set.backup.auto")} description={t("set.backup.autoDesc")}>
         <Row
-          label="Ordner"
+          label={t("common.folder")}
           description={
             <>
-              <span>{draft.backup_dir ? "Eigener Ordner, z. B. ein Netzlaufwerk:" : "Standard, im Datenordner:"}</span>
+              <span>{draft.backup_dir ? t("set.backup.ownFolder") : t("set.backup.defaultFolder")}</span>
               <PathValue value={view.backup_dir} className="backup-path" />
             </>
           }
         >
           <Button icon={FolderOpen} onClick={pick}>
-            Ordner wählen…
+            {t("common.chooseFolder")}
           </Button>
           {draft.backup_dir && (
             <Button variant="ghost" onClick={() => update({ backup_dir: null })}>
-              Standard
+              {t("common.default")}
             </Button>
           )}
         </Row>
-        <Row label={t("set.backup.keep")} description="Ältere Sicherungen werden gelöscht.">
+        <Row label={t("set.backup.keep")} description={t("set.backup.keepDesc")}>
           <div className="unit-input">
-            <NumberInput min={1} max={365} value={draft.backup_keep} onCommit={(v) => update({ backup_keep: v })} aria-label="Anzahl Sicherungen" />
-            <span className="faint">Sicherungen</span>
+            <NumberInput min={1} max={365} value={draft.backup_keep} onCommit={(v) => update({ backup_keep: v })} aria-label={t("set.backup.keepCount")} />
+            <span className="faint">{t("set.backup.backupsUnit")}</span>
           </div>
         </Row>
       </Group>
-      <Group
-        title="Markdown-Kopie"
-        description="Nach jeder Sicherung werden alle Seiten als Markdown-Dateien (mit Bildern) und die Buchungen als Zeiterfassung/JJJJ-MM.csv in einen Ordner geschrieben – lesbar auch ohne Annalo. Der Ordner wird jedes Mal vollständig ersetzt."
-      >
+      <Group title={t("set.backup.mirrorTitle")} description={t("set.backup.mirrorDesc")}>
         <Row label={t("set.backup.mirror")}>
-          <Switch label="Markdown-Kopie bei jeder Sicherung" checked={draft.markdown_mirror} onChange={(v) => update({ markdown_mirror: v })} />
+          <Switch label={t("set.backup.mirrorSwitch")} checked={draft.markdown_mirror} onChange={(v) => update({ markdown_mirror: v })} />
         </Row>
         {draft.markdown_mirror && (
           <>
             <Row
-              label="Ordner"
+              label={t("common.folder")}
               description={
                 <>
-                  <span>{draft.markdown_mirror_dir ? "Eigener Ordner (leer oder eine frühere Kopie):" : "Standard, im Sicherungsordner:"}</span>
+                  <span>{draft.markdown_mirror_dir ? t("set.backup.mirrorOwn") : t("set.backup.mirrorDefault")}</span>
                   {mirror?.path ? <PathValue value={mirror.path} className="backup-path mirror-path" /> : null}
                 </>
               }
             >
               <Button icon={FolderOpen} onClick={pickMirror}>
-                Ordner wählen…
+                {t("common.chooseFolder")}
               </Button>
               {draft.markdown_mirror_dir && (
                 <Button variant="ghost" onClick={() => update({ markdown_mirror_dir: null })}>
-                  Standard
+                  {t("common.default")}
                 </Button>
               )}
             </Row>
             <Row
-              label="Letzte Kopie"
+              label={t("set.backup.mirrorLast")}
               description={
                 mirror?.error ? (
-                  <span className="mirror-error">Fehlgeschlagen: {mirror.error}</span>
+                  <span className="mirror-error">{t("common.failedWith", { msg: mirror.error })}</span>
                 ) : mirror?.last_at ? (
                   <span className="mirror-last">
-                    {new Date(mirror.last_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })} · {relative(mirror.last_at)}
+                    {dateTime(mirror.last_at)} · {relative(mirror.last_at)}
                   </span>
                 ) : (
-                  "Noch keine – wird mit der nächsten Sicherung erstellt."
+                  t("set.backup.mirrorNone")
                 )
               }
             >
               <Button icon={ExternalLink} onClick={openMirror} disabled={!mirror?.last_at}>
-                Ordner öffnen
+                {t("common.openFolder")}
               </Button>
             </Row>
           </>
         )}
       </Group>
       <Group title={t("set.backup.backups")}>
-        <Row label={t("set.backup.now")} description="Legt sofort eine zusätzliche Sicherung an.">
+        <Row label={t("set.backup.now")} description={t("set.backup.nowDesc")}>
           <Button icon={DatabaseBackup} onClick={backupNow} loading={busy}>
-            Jetzt sichern
+            {t("set.backup.nowButton")}
           </Button>
         </Row>
         <BackupList local={list} reloadKey={list} />
@@ -777,6 +774,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
 const BIG_DB = 50 * 1024 * 1024;
 
 function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; update: (p: Partial<Settings>) => void; dbSize: number | null; onSynced: () => void }) {
+  const t = useT();
   const git = draft.git_sync;
   const setGit = (p: Partial<GitSyncSettings>) => update({ git_sync: { ...git, ...p } });
   const [status, setStatus] = useState<GitSyncStatus | null>(null);
@@ -801,9 +799,9 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
     try {
       setStatus(await api.setGitToken(value));
       setToken("");
-      s().toast({ tone: "success", title: value ? "Git-Token gespeichert" : "Git-Token entfernt" });
+      s().toast({ tone: "success", title: value ? t("set.git.tokenSaved") : t("set.git.tokenRemoved") });
     } catch (e) {
-      s().error("Token konnte nicht gespeichert werden", e);
+      s().error(t("set.git.tokenFailed"), e);
     }
   };
   const runTest = async () => {
@@ -820,9 +818,9 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
     if (allowDeletions) {
       const n = status?.blocked_deletions ?? 0;
       const ok = await s().confirm({
-        title: "Löschungen übertragen?",
-        message: `${n} Notizen werden auf dem Server gelöscht und fehlen danach auch auf den anderen Rechnern. Vorher prüfen, ob die Markdown-Kopie vollständig ist.`,
-        confirmLabel: "Löschen und synchronisieren",
+        title: t("set.git.deleteAsk"),
+        message: t("set.git.deleteText", { n }),
+        confirmLabel: t("set.git.deleteConfirm"),
         danger: true,
       });
       if (!ok) return;
@@ -830,7 +828,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
     setSyncing(true);
     try {
       const r = await api.gitSyncNow(allowDeletions);
-      s().toast({ tone: r.fallback ? "warning" : "success", title: r.committed ? "Synchronisiert" : "Git ist aktuell", detail: r.fallback ? r.message : `${r.message}${r.commit ? ` · ${r.commit}` : ""}` });
+      s().toast({ tone: r.fallback ? "warning" : "success", title: r.committed ? t("set.git.synced") : t("set.git.upToDate"), detail: r.fallback ? r.message : `${r.message}${r.commit ? ` · ${r.commit}` : ""}` });
       onSynced();
     } catch {
       // The shell emits gitsync://failed, which shows the toast; the status line shows the error.
@@ -847,10 +845,10 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       await s().refreshTree();
       collapsePages(foldersBelow(useApp.getState().pages.get(r.root_page_id)));
       s().openPage(r.root_page_id);
-      s().toast({ tone: "success", title: "Aus Git importiert", detail: importSummary(r) });
+      s().toast({ tone: "success", title: t("set.git.imported"), detail: importSummary(r) });
       setRestoreUrl(null);
     } catch (e) {
-      s().error("Wiederherstellen fehlgeschlagen", e);
+      s().error(t("set.git.restoreFailed"), e);
     } finally {
       setRestoring(false);
     }
@@ -858,30 +856,27 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
 
   const fallback = status?.last_branch && status.last_branch !== git.branch ? status.last_branch : null;
   return (
-    <Group
-      title="Git-Synchronisierung"
-      description="Überträgt die Markdown-Kopie (und optional die Datenbank) als Commit in ein Git-Repository, z. B. auf GitHub, GitLab oder Azure DevOps. Benötigt ein installiertes Git (git-scm.com)."
-    >
-      <Row label="Git-Synchronisierung" description={git.remote_url ? undefined : "Zuerst die Remote-URL eintragen."}>
-        <Switch label="Git-Synchronisierung" checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
+    <Group title={t("set.git.title")} description={t("set.git.desc")}>
+      <Row label={t("set.git.title")} description={git.remote_url ? undefined : t("set.git.urlFirst")}>
+        <Switch label={t("set.git.title")} checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
       </Row>
-      <Row stack label="Remote-URL" description="HTTPS mit Zugangstoken, oder SSH (git@…): SSH-URLs verwenden die SSH-Schlüssel bzw. den SSH-Agent des Systems.">
-        <CommitInput value={git.remote_url} onCommit={(v) => setGit({ remote_url: v })} placeholder="https://github.com/name/notizen.git" aria-label="Remote-URL" className="grow" />
+      <Row stack label={t("set.git.remote")} description={t("set.git.remoteDesc")}>
+        <CommitInput value={git.remote_url} onCommit={(v) => setGit({ remote_url: v })} placeholder={t("set.git.remotePlaceholder")} aria-label={t("set.git.remote")} className="grow" />
       </Row>
-      <Row label="Branch">
-        <CommitInput value={git.branch} onCommit={(v) => setGit({ branch: v || "main" })} placeholder="main" aria-label="Branch" />
+      <Row label={t("set.git.branch")}>
+        <CommitInput value={git.branch} onCommit={(v) => setGit({ branch: v || "main" })} placeholder="main" aria-label={t("set.git.branch")} />
       </Row>
-      <Row label="Autor" description="Name und E-Mail der Commits.">
-        <CommitInput value={git.author_name} onCommit={(v) => setGit({ author_name: v })} placeholder="Name" aria-label="Autor Name" />
-        <CommitInput value={git.author_email} onCommit={(v) => setGit({ author_email: v })} placeholder="E-Mail" aria-label="Autor E-Mail" />
+      <Row label={t("set.git.author")} description={t("set.git.authorDesc")}>
+        <CommitInput value={git.author_name} onCommit={(v) => setGit({ author_name: v })} placeholder={t("set.git.authorName")} aria-label={t("set.git.authorNameLabel")} />
+        <CommitInput value={git.author_email} onCommit={(v) => setGit({ author_email: v })} placeholder={t("set.git.authorEmail")} aria-label={t("set.git.authorEmailLabel")} />
       </Row>
       <Row
         stack
-        label="Zugangstoken"
+        label={t("set.git.token")}
         description={
           <>
-            {status?.token_set ? <Badge tone="success">gespeichert</Badge> : <Badge>Nicht gesetzt</Badge>}
-            <span>Personal Access Token (nur für HTTPS). Sicher gespeichert, nie in Dateien oder im Repository.</span>
+            {status?.token_set ? <Badge tone="success">{t("common.saved")}</Badge> : <Badge>{t("common.notSet")}</Badge>}
+            <span>{t("set.git.tokenDesc")}</span>
           </>
         }
       >
@@ -891,103 +886,103 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
             type={showToken ? "text" : "password"}
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder={status?.token_set ? "Neuen Token eingeben, um ihn zu ersetzen" : "ghp_… / glpat-…"}
-            aria-label="Git-Zugangstoken"
+            placeholder={status?.token_set ? t("set.git.tokenReplace") : "ghp_… / glpat-…"}
+            aria-label={t("set.git.tokenLabel")}
             autoComplete="off"
             spellCheck={false}
             onKeyDown={(e) => e.key === "Enter" && token.trim() && saveToken(token.trim())}
           />
-          <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? "Verbergen" : "Anzeigen"} size="sm" onClick={() => setShowToken(!showToken)} />
+          <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowToken(!showToken)} />
         </div>
         <Button variant="primary" onClick={() => saveToken(token.trim())} disabled={!token.trim()}>
-          Speichern
+          {t("common.save")}
         </Button>
-        {status?.token_set && <IconButton icon={Trash2} label="Git-Token entfernen" onClick={() => saveToken(null)} />}
+        {status?.token_set && <IconButton icon={Trash2} label={t("set.git.tokenRemove")} onClick={() => saveToken(null)} />}
       </Row>
-      <Row label="Zeitpunkt">
-        <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label="Zeitpunkt der Synchronisierung">
-          <option value="with_backup">Mit jeder Sicherung</option>
-          <option value="hourly">Stündlich</option>
+      <Row label={t("set.git.when")}>
+        <Select value={git.mode} onChange={(e) => setGit({ mode: e.target.value as GitSyncMode })} aria-label={t("set.git.whenLabel")}>
+          <option value="with_backup">{t("set.git.withBackup")}</option>
+          <option value="hourly">{t("set.git.hourly")}</option>
         </Select>
       </Row>
       <Row
-        label="Datenbank mitsichern"
+        label={t("set.git.database")}
         description={
           git.include_database ? (
             <span className={dbSize != null && dbSize > BIG_DB ? "mirror-error" : ""}>
-              Die letzte Sicherung wird als annalo-workspace.db übertragen{dbSize != null ? ` (derzeit ${fileSize(dbSize)})` : ""}. Jede Änderung speichert die ganze Datei neu – das Repository wächst schnell; GitHub lehnt Dateien über 100 MB ab.
+              {dbSize != null ? t("set.git.databaseOnSize", { size: fileSize(dbSize) }) : t("set.git.databaseOn")}
             </span>
           ) : (
-            "Nur Markdown, Bilder und Zeiterfassung (empfohlen)."
+            t("set.git.databaseOff")
           )
         }
       >
-        <Switch label="Datenbank mitsichern" checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
+        <Switch label={t("set.git.database")} checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
       </Row>
-      <Row label="Verbindung" description="Prüft URL und Zugangsdaten (git ls-remote).">
+      <Row label={t("set.git.connection")} description={t("set.git.connectionDesc")}>
         <div className={`conn ${test ? (test.ok ? "ok" : "fail") : ""}`}>
           {testing ? (
             <>
-              <Loader2 size={14} className="spin" /> Prüfe…
+              <Loader2 size={14} className="spin" /> {t("common.checking")}
             </>
           ) : test?.ok ? (
             <span className="git-test-ok">
-              <CheckCircle2 size={14} /> Verbunden · {test.branches.length} Branches · {test.latency_ms} ms
+              <CheckCircle2 size={14} /> {t("set.git.connected", { n: test.branches.length, ms: test.latency_ms })}
             </span>
           ) : test ? (
             <span title={test.error ?? ""}>
-              <XCircle size={14} /> Keine Verbindung
+              <XCircle size={14} /> {t("set.ai.noConnection")}
             </span>
           ) : null}
         </div>
         <Button icon={PlugZap} onClick={runTest} disabled={testing || !git.remote_url}>
-          Verbindung testen
+          {t("set.git.test")}
         </Button>
       </Row>
       {test && !test.ok && test.error && <p className="error-note mono small">{test.error}</p>}
       <Row
-        label="Letzte Synchronisierung"
+        label={t("set.git.last")}
         description={
           <span className="git-status">
             {status?.last_error ? (
-              <span className="mirror-error">Fehlgeschlagen: {status.last_error}</span>
+              <span className="mirror-error">{t("common.failedWith", { msg: status.last_error })}</span>
             ) : status?.last_at ? (
               <span>
                 {relative(status.last_at)}
-                {status.last_commit ? ` · Commit ${status.last_commit}` : ""}
-                {fallback ? ` · auf Branch ${fallback}` : ""}
+                {status.last_commit ? ` · ${t("set.git.commit", { commit: status.last_commit })}` : ""}
+                {fallback ? ` · ${t("set.git.onBranch", { branch: fallback })}` : ""}
               </span>
             ) : (
-              <span>Noch nie</span>
+              <span>{t("set.git.never")}</span>
             )}
-            {status && status.pending_changes > 0 && <span className="faint"> · {status.pending_changes} Dateien ausstehend</span>}
+            {status && status.pending_changes > 0 && <span className="faint"> · {t("set.git.pending", { n: status.pending_changes })}</span>}
           </span>
         }
       >
         <Button icon={Upload} onClick={() => syncNow()} loading={syncing} disabled={!git.remote_url}>
-          Jetzt synchronisieren
+          {t("set.git.syncNow")}
         </Button>
       </Row>
       {status?.blocked_deletions ? (
-        <Row label="Löschungen angehalten" description={`Die Synchronisierung würde ${status.blocked_deletions} Notizen auf dem Server löschen und wurde zur Sicherheit angehalten.`}>
+        <Row label={t("set.git.deletionsHeld")} description={t("set.git.deletionsHeldDesc", { n: status.blocked_deletions })}>
           <Button variant="danger" icon={Trash2} onClick={() => syncNow(true)} disabled={syncing}>
-            Löschungen übertragen
+            {t("set.git.deletionsPush")}
           </Button>
         </Row>
       ) : null}
-      <Row label="Wiederherstellen" description="Klont das Repository und importiert es als neue Seite „Git-Import <Datum>“. Bestehende Seiten bleiben unverändert.">
+      <Row label={t("set.git.restore")} description={t("set.git.restoreDesc")}>
         <Button icon={Download} onClick={() => setRestoreUrl(restoreUrl == null ? git.remote_url : null)}>
-          Aus Git wiederherstellen…
+          {t("set.git.restoreButton")}
         </Button>
       </Row>
       {restoreUrl != null && (
-        <Row stack label="Repository-URL" description="Der gespeicherte Token wird nur an die eingestellte Remote-URL gesendet.">
-          <Input value={restoreUrl} onChange={(e) => setRestoreUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && restore()} aria-label="Repository-URL zum Wiederherstellen" className="grow" autoFocus />
+        <Row stack label={t("set.git.repoUrl")} description={t("set.git.repoUrlDesc")}>
+          <Input value={restoreUrl} onChange={(e) => setRestoreUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && restore()} aria-label={t("set.git.repoUrlLabel")} className="grow" autoFocus />
           <Button variant="primary" onClick={restore} loading={restoring} disabled={!restoreUrl.trim()}>
-            Importieren
+            {t("common.import")}
           </Button>
           <Button variant="ghost" onClick={() => setRestoreUrl(null)}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
         </Row>
       )}
@@ -996,21 +991,13 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
 }
 
 /** Wording of the window options: tray and login items are called differently on macOS. */
-const desk = IS_MAC
-  ? {
-      closeLabel: "Beim Schließen im Dock/Menüleiste weiterlaufen",
-      closeHint: "Schließen blendet das Fenster nur aus; Timer und Erinnerungen laufen weiter. Ein Klick auf das Dock-Symbol holt es zurück, ⌘Q beendet.",
-      autostartLabel: "Bei der Anmeldung starten",
-      autostartHint: "Startet bei der Anmeldung im Hintergrund (Symbol in der Menüleiste). Wird sofort übernommen.",
-    }
-  : {
-      closeLabel: "In den Infobereich schließen",
-      closeHint: "Schließen blendet das Fenster nur aus; Timer und Erinnerungen laufen weiter. Beenden über das Symbol im Infobereich.",
-      autostartLabel: "Mit Windows starten",
-      autostartHint: "Startet bei der Anmeldung minimiert im Infobereich. Wird sofort übernommen.",
-    };
+const DESK: Record<"closeLabel" | "closeHint" | "autostartLabel" | "autostartHint", TKey> = IS_MAC
+  ? { closeLabel: "set.desktop.closeMac", closeHint: "set.desktop.closeHintMac", autostartLabel: "set.desktop.autostartMac", autostartHint: "set.desktop.autostartHintMac" }
+  : { closeLabel: "set.desktop.close", closeHint: "set.desktop.closeHint", autostartLabel: "set.desktop.autostart", autostartHint: "set.desktop.autostartHint" };
 
 function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
+  const t = useT();
+  const desk = { closeLabel: t(DESK.closeLabel), closeHint: t(DESK.closeHint), autostartLabel: t(DESK.autostartLabel), autostartHint: t(DESK.autostartHint) };
   const [info, setInfo] = useState<DesktopInfo | null>(null);
   const s = useApp.getState;
   const view = useApp((st) => st.settings);
@@ -1021,7 +1008,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
     try {
       setInfo(await api.setAutostart(on));
     } catch (e) {
-      s().error("Autostart konnte nicht geändert werden", e);
+      s().error(t("set.desktop.autostartFailed"), e);
     }
   };
   const reminderOn = draft.reminder_time != null;
@@ -1029,10 +1016,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
   return (
     <>
       <header className="settings-head">
-        <h1>Desktop</h1>
-        <p>{IS_MAC ? "Symbol in der Menüleiste" : "Symbol im Infobereich"}, Autostart, Erinnerungen, Schnellsuche und Schnellerfassung.</p>
+        <h1>{t("nav.desktop")}</h1>
+        <p>{IS_MAC ? t("set.desktop.introMac") : t("set.desktop.intro")}</p>
       </header>
-      <Group title="Fenster">
+      <Group title={t("set.desktop.window")}>
         {/* macOS: closing always hides the window (the app stays in the Dock, ⌘Q quits). */}
         {!IS_MAC && (
           <Row
@@ -1040,7 +1027,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             description={
               <>
                 {desk.closeHint}
-                {info && !info.tray && <Badge tone="warning">Kein Infobereich verfügbar – das Fenster wird minimiert</Badge>}
+                {info && !info.tray && <Badge tone="warning">{t("set.desktop.noTray")}</Badge>}
               </>
             }
           >
@@ -1052,7 +1039,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           description={
             info?.portable ? (
               <>
-                {desk.autostartHint} <Badge tone="info">Im portablen Modus aus</Badge> Ein Autostart-Eintrag würde in das Benutzerprofil dieses Rechners geschrieben und auf den Datenträger zeigen, der beim nächsten Start fehlen kann.
+                {desk.autostartHint} <Badge tone="info">{t("set.desktop.portableOff")}</Badge> {t("set.desktop.portableAutostart")}
               </>
             ) : (
               desk.autostartHint
@@ -1062,36 +1049,30 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           <Switch label={desk.autostartLabel} checked={!!info?.autostart} onChange={setAutostart} disabled={!!info?.portable} />
         </Row>
       </Group>
-      <Group title="Befehlspalette">
-        <Row
-          label="Tastenkürzel (global)"
-          description={`Holt Annalo mit der Befehlspalette nach vorn. Ins Feld klicken und die Tasten drücken, z. B. ${keys("Mod Shift K")}. Entf = aus. ${keys("Mod K")} funktioniert im Fenster immer.`}
-        >
+      <Group title={t("cmd.palette")}>
+        <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.paletteDesc", { example: keys("Mod Shift K"), always: keys("Mod K") })}>
           <ShortcutField
             value={draft.palette_shortcut ?? ""}
             onChange={(v) => update({ palette_shortcut: v || null })}
-            label="Tastenkürzel Befehlspalette"
-            placeholder={`z. B. ${IS_MAC ? "Cmd" : "Ctrl"}+Shift+K`}
+            label={t("set.desktop.paletteShortcut")}
+            placeholder={t("common.egShortcut", { keys: `${IS_MAC ? "Cmd" : "Ctrl"}+Shift+K` })}
             active={info ? (draft.palette_shortcut ?? "") === (view?.settings.palette_shortcut ?? "") && info.palette_shortcut_active : undefined}
           />
         </Row>
       </Group>
-      <Group title="Schnellsuche" description="Ein Suchfenster über allen Programmen: Seiten, Inhalte und Buchungen finden, Tagesnotiz öffnen, Timer starten oder „/zeit …“ buchen. Auch über „Suchen…“ im Infobereich.">
-        <Row
-          label="Tastenkürzel (global)"
-          description="Ins Feld klicken und die Tasten drücken, z. B. Ctrl+Shift+O. Ctrl+Shift+F bleibt die Suche in der Seitenleiste. Entf = aus."
-        >
+      <Group title={t("set.desktop.search")} description={t("set.desktop.searchDesc")}>
+        <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.searchShortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+O`), search: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+F`) })}>
           <ShortcutField
             value={draft.search_shortcut}
             onChange={(v) => update({ search_shortcut: v })}
-            label="Tastenkürzel Schnellsuche"
-            placeholder="Tasten drücken…"
+            label={t("set.desktop.searchShortcut")}
+            placeholder={t("common.pressKeys")}
             active={info ? draft.search_shortcut === view?.settings.search_shortcut && info.search_shortcut_active : undefined}
           />
         </Row>
       </Group>
-      <Group title="Feierabend-Erinnerung" description="Hinweis an Arbeitstagen, wenn weniger als das Tagessoll gebucht ist. Ein Klick darauf öffnet die Zeiterfassung. Läuft nach 20 Uhr noch ein Timer, erinnert Annalo einmal daran.">
-        <Row label="Erinnern um">
+      <Group title={t("set.desktop.reminder")} description={t("set.desktop.reminderDesc")}>
+        <Row label={t("set.desktop.remindAt")}>
           <div className="unit-input">
             {reminderOn && (
               <Input
@@ -1102,91 +1083,77 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
                 className="time-input num"
                 value={draft.reminder_time ?? ""}
                 onChange={(e) => update({ reminder_time: e.target.value })}
-                aria-label="Uhrzeit der Erinnerung"
+                aria-label={t("set.desktop.reminderTime")}
               />
             )}
-            <span className="faint">{reminderOn ? "Uhr" : "Aus"}</span>
-            <Switch label="Feierabend-Erinnerung" checked={reminderOn} onChange={(v) => update({ reminder_time: v ? "17:30" : null })} />
+            <span className="faint">{reminderOn ? t("unit.oclock") : t("common.off")}</span>
+            <Switch label={t("set.desktop.reminder")} checked={reminderOn} onChange={(v) => update({ reminder_time: v ? "17:30" : null })} />
           </div>
         </Row>
       </Group>
-      <Group
-        title="Schnellerfassung"
-        description="Ein kleines Fenster über allen anderen: Text landet in der Tagesnotiz, im Posteingang, in einer Seite (> am Anfang) oder in der Notiz der laufenden Besprechung. „todo … bis Fr“ wird eine Aufgabe mit Termin, „/zeit …“ wird gebucht. Tab wechselt das Ziel."
-      >
-        <Row
-          label="Tastenkürzel (global)"
-          description={
-            IS_MAC
-              ? `Ins Feld klicken und die Tasten drücken, z. B. ${formatShortcut("Cmd+Shift+Space")}. ⌥ allein geht nicht – damit tippt man Zeichen wie @ oder €. Entf = aus.`
-              : "Ins Feld klicken und die Tasten drücken, z. B. Ctrl+Shift+Space. Ctrl+Alt geht nicht – das ist AltGr auf deutschen Tastaturen. Entf = aus."
-          }
-        >
+      <Group title={t("set.capture.title")} description={t("set.capture.desc")}>
+        <Row label={t("set.desktop.globalShortcut")} description={IS_MAC ? t("set.capture.shortcutDescMac", { example: formatShortcut("Cmd+Shift+Space") }) : t("set.capture.shortcutDesc")}>
           <ShortcutField
             value={draft.capture_shortcut}
             onChange={(v) => update({ capture_shortcut: v })}
-            label="Tastenkürzel Schnellerfassung"
-            placeholder="Tasten drücken…"
+            label={t("set.capture.shortcut")}
+            placeholder={t("common.pressKeys")}
             active={info ? draft.capture_shortcut === view?.settings.capture_shortcut && info.capture_shortcut_active : undefined}
           />
         </Row>
         <Row
-          label="Auswahl übernehmen (global)"
-          description={
-            IS_LINUX
-              ? "Öffnet die Schnellerfassung mit dem markierten Text des Programms im Vordergrund (sonst mit der Zwischenablage). Aus, solange kein Kürzel eingetragen ist."
-              : `Öffnet die Schnellerfassung mit dem Text der Zwischenablage: erst ${IS_MAC ? "⌘C" : "Strg+C"} im anderen Programm, dann dieses Kürzel. Aus, solange kein Kürzel eingetragen ist.`
-          }
+          label={t("set.capture.selection")}
+          description={IS_LINUX ? t("set.capture.selectionDescLinux") : t("set.capture.selectionDesc", { copy: IS_MAC ? "⌘C" : t("keys.ctrlC") })}
         >
           <ShortcutField
             value={draft.capture.selection_shortcut}
             onChange={(v) => update({ capture: { ...draft.capture, selection_shortcut: v } })}
-            label="Tastenkürzel Auswahl übernehmen"
-            placeholder={`z. B. ${IS_MAC ? "Cmd" : "Ctrl"}+Shift+Y`}
+            label={t("set.capture.selectionShortcut")}
+            placeholder={t("common.egShortcut", { keys: `${IS_MAC ? "Cmd" : "Ctrl"}+Shift+Y` })}
             active={
               info ? draft.capture.selection_shortcut === view?.settings.capture?.selection_shortcut && !!info.selection_shortcut_active : undefined
             }
           />
         </Row>
-        <Row label="Standardziel" description="Wohin der Text geht, wenn das Fenster aufgeht. Tab wechselt zwischen Tagesnotiz, laufender Besprechung, zuletzt gewählter Seite und Posteingang.">
+        <Row label={t("set.capture.target")} description={t("set.capture.targetDesc")}>
           <Select
             value={draft.capture.default_target}
             onChange={(e) => update({ capture: { ...draft.capture, default_target: e.target.value as Settings["capture"]["default_target"] } })}
-            aria-label="Standardziel der Schnellerfassung"
+            aria-label={t("set.capture.targetLabel")}
           >
-            <option value="daily">Tagesnotiz</option>
-            <option value="inbox">Posteingang</option>
-            <option value="last">Zuletzt gewählte Seite</option>
+            <option value="daily">{t("capture.daily")}</option>
+            <option value="inbox">{t("capture.inbox")}</option>
+            <option value="last">{t("set.capture.lastPage")}</option>
           </Select>
         </Row>
-        <Row label="Posteingang" description="Seite, die Erfassungen mit Datum und Uhrzeit sammelt. Sie wird beim ersten Mal angelegt.">
+        <Row label={t("capture.inbox")} description={t("set.capture.inboxDesc")}>
           <CommitInput
             value={draft.capture.inbox_title}
-            onCommit={(v) => update({ capture: { ...draft.capture, inbox_title: v.trim() || "Posteingang" } })}
-            aria-label="Titel des Posteingangs"
+            onCommit={(v) => update({ capture: { ...draft.capture, inbox_title: v.trim() || t("capture.inbox") } })}
+            aria-label={t("set.capture.inboxTitle")}
           />
         </Row>
-        <Row label="Laufende Besprechung anbieten" description="Läuft ein Termin aus dem Kalender (oder begann er vor weniger als 15 Minuten), bietet das Fenster „Jetzt: …“ als Ziel an – der Text landet in der Besprechungsnotiz.">
+        <Row label={t("set.capture.meeting")} description={t("set.capture.meetingDesc")}>
           <Switch
-            label="Laufende Besprechung anbieten"
+            label={t("set.capture.meeting")}
             checked={draft.capture.meeting_target}
             onChange={(v) => update({ capture: { ...draft.capture, meeting_target: v } })}
           />
         </Row>
         <Row
-          label="Ausblenden nach dem Speichern"
-          description={info?.capture_open_ms ? `„Gespeichert in …“ bleibt so lange stehen. Zuletzt erschien das Fenster nach ${info.capture_open_ms} ms.` : "„Gespeichert in …“ bleibt so lange stehen."}
+          label={t("set.capture.hide")}
+          description={info?.capture_open_ms ? `${t("set.capture.hideDesc")} ${t("set.capture.openedIn", { ms: info.capture_open_ms })}` : t("set.capture.hideDesc")}
         >
           <Select
             value={String(draft.capture.auto_hide_ms)}
             onChange={(e) => update({ capture: { ...draft.capture, auto_hide_ms: Number(e.target.value) } })}
-            aria-label="Ausblenden nach dem Speichern"
+            aria-label={t("set.capture.hide")}
           >
             {[...new Set([0, 800, 1200, 2000, 4000, draft.capture.auto_hide_ms])]
               .sort((a, b) => a - b)
               .map((ms) => (
                 <option key={ms} value={String(ms)}>
-                  {ms === 0 ? "Sofort" : `${String(ms / 1000).replace(".", ",")} s`}
+                  {ms === 0 ? t("set.capture.hideNow") : `${decimal(ms / 1000)} s`}
                 </option>
               ))}
           </Select>
@@ -1200,18 +1167,18 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
 async function offerRestart(dir: string, what: string) {
   const s = useApp.getState();
   const restart = await s.confirm({
-    title: "Neustart erforderlich",
-    message: `${what} Bis dahin arbeitest du normal im bisherigen Ordner weiter – es geht nichts verloren, auch wenn du erst später neu startest.`,
-    confirmLabel: "Jetzt neu starten",
-    cancelLabel: "Später",
+    title: t("set.data.restartNeeded"),
+    message: `${what} ${t("set.data.restartMeanwhile")}`,
+    confirmLabel: t("common.restartNow"),
+    cancelLabel: t("common.later"),
   });
   if (restart) return restartApp();
   s.toast({
     tone: "info",
     persistent: true,
-    title: "Neustart ausstehend",
-    detail: `Der Speicherort ${dir} gilt ab dem nächsten Start.`,
-    action: { label: "Jetzt neu starten", run: () => void restartApp() },
+    title: t("set.data.restartPending"),
+    detail: t("set.data.restartPendingText", { dir }),
+    action: { label: t("common.restartNow"), run: () => void restartApp() },
   });
 }
 
@@ -1220,36 +1187,31 @@ async function restartApp() {
     await flushAllEditors();
     await api.restart();
   } catch (e) {
-    useApp.getState().error("Neustart fehlgeschlagen", e);
+    useApp.getState().error(t("set.data.restartFailed"), e);
   }
 }
 
 async function moveDataDir(onChanged: () => void) {
   const s = useApp.getState();
-  const dir = await pickFolder("Neuer Speicherort für die Daten");
+  const dir = await pickFolder(t("set.data.pick"));
   if (!dir) return;
   try {
     const target = await api.inspectDataDir(dir);
     let useExisting = false;
     if (target.has_workspace) {
       useExisting = await s.confirm({
-        title: "Vorhandenen Arbeitsbereich verwenden?",
-        message: `In ${dir} liegt bereits ein Annalo-Arbeitsbereich. Nach dem Neustart wird dieser geöffnet; es werden keine Daten kopiert. Der aktuelle Arbeitsbereich bleibt unverändert im bisherigen Ordner.`,
-        confirmLabel: "Vorhandenen verwenden",
+        title: t("set.data.useExistingAsk"),
+        message: t("set.data.useExistingText", { dir }),
+        confirmLabel: t("set.data.useExisting"),
       });
       if (!useExisting) return;
     }
     await api.setDataDir(dir, useExisting);
     onChanged();
-    const warn = target.synced ? " Achtung: Der Ordner ist synchronisiert oder liegt im Netzwerk – das kann die Datenbank beschädigen." : "";
-    await offerRestart(
-      dir,
-      useExisting
-        ? `Beim nächsten Start wird der Arbeitsbereich in ${dir} geöffnet.${warn}`
-        : `Beim nächsten Start werden Datenbank, Bilder und Sicherungen nach ${dir} kopiert und ab dann von dort geladen. Der alte Ordner bleibt unverändert.${warn}`,
-    );
+    const warn = target.synced ? ` ${t("set.data.syncedWarning")}` : "";
+    await offerRestart(dir, (useExisting ? t("set.data.opensThere", { dir }) : t("set.data.copiesThere", { dir })) + warn);
   } catch (e) {
-    s.error("Speicherort nicht geändert", e);
+    s.error(t("set.data.moveFailed"), e);
   }
 }
 
@@ -1261,29 +1223,23 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   let state: React.ReactNode;
   let tone: "neutral" | "success" | "info" | "busy" = "neutral";
-  if (!status.enabled) state = NOT_CONFIGURED + ".";
-  else if (available) (state = `Version ${available.version} ist verfügbar.`), (tone = "info");
-  else if (phase === "checking") (state = "Suche nach Updates …"), (tone = "busy");
-  else if (checkedAt) (state = `Annalo ist aktuell (geprüft ${relative(checkedAt.toISOString())}).`), (tone = "success");
-  else state = "Noch nicht geprüft.";
+  if (!status.enabled) state = t(NOT_CONFIGURED) + ".";
+  else if (available) (state = t("upd.available", { version: available.version })), (tone = "info");
+  else if (phase === "checking") (state = t("upd.checking")), (tone = "busy");
+  else if (checkedAt) (state = t("upd.current", { when: relative(checkedAt.toISOString()) })), (tone = "success");
+  else state = t("upd.notChecked");
   return (
     <Group
       title={t("set.about.updates")}
-      description={
-        status.package && !status.portable
-          ? t("upd.packageDesc")
-          : status.portable
-          ? "Portabler Modus: Neue Versionen werden nicht installiert (der Installer würde Annalo in das Benutzerprofil installieren). „Neue Version herunterladen“ öffnet die Release-Seite; das ZIP über den Ordner entpacken, der Ordner „data“ bleibt erhalten."
-          : "Neue Versionen kommen als signierte Installer von GitHub. Installiert wird nur nach deinem Klick; offene Notizen werden vorher gespeichert."
-      }
+      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : t("upd.desc")}
     >
       {/* Status and actions: the buttons wrap below the text as soon as they do not fit beside it. */}
-      <Row stack label="Status" description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
+      <Row stack label={t("upd.status")} description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
         <div className="set-actions">
           {available && status.enabled && (
             <>
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
-                Was ist neu?
+                {t("upd.whatsNew")}
               </Button>
               <UpdateAction />
             </>
@@ -1293,16 +1249,16 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
             icon={RefreshCw}
             disabled={!status.enabled || busy}
             loading={phase === "checking"}
-            title={status.enabled ? undefined : NOT_CONFIGURED}
+            title={status.enabled ? undefined : t(NOT_CONFIGURED)}
             onClick={() => void checkForUpdates(true)}
           >
-            Jetzt nach Updates suchen
+            {t("upd.checkNow")}
           </Button>
         </div>
       </Row>
       {status.enabled && (
-        <Row label="Automatisch nach Updates suchen" description="Beim Start und alle 6 Stunden. Du wirst gefragt, bevor etwas installiert wird.">
-          <Switch label="Automatisch nach Updates suchen" checked={draft.auto_update_check} onChange={(v) => update({ auto_update_check: v })} />
+        <Row label={t("upd.auto")} description={t("upd.autoDesc")}>
+          <Switch label={t("upd.auto")} checked={draft.auto_update_check} onChange={(v) => update({ auto_update_check: v })} />
         </Row>
       )}
     </Group>
@@ -1334,7 +1290,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
         </span>
         <div>
           <h1>Annalo</h1>
-          <p>Version {version}</p>
+          <p>{t("upd.version", { version })}</p>
         </div>
       </header>
       <UpdatesGroup draft={draft} update={update} />
@@ -1343,32 +1299,32 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           <Row
             stack
             label={t("set.about.portable")}
-            description="Alle Daten liegen im Ordner „data“ neben Annalo.exe und wandern mit dem Ordner mit. Nichts wird in das Benutzerprofil dieses Rechners geschrieben: kein Autostart, keine Sprungliste, Updates werden von Hand heruntergeladen. Zugangsdaten (API-Schlüssel, Token, Passwörter) bleiben in der Anmeldeinformationsverwaltung dieses Rechners und müssen auf einem anderen Rechner neu eingegeben werden."
+            description={t("set.about.portableDesc")}
           >
             <span className="portable-badge">
               <Badge tone="info">{t("set.about.portable")}</Badge>
             </span>
           </Row>
         )}
-        <Row stack label={t("set.about.dataDir")} description="Datenbank, Einstellungen und Schlüsselablage (unter Linux).">
+        <Row stack label={t("set.about.dataDir")} description={t("set.about.dataDirDesc")}>
           <PathValue value={view.data_dir} className="data-dir" />
         </Row>
         {status?.pending_move && (
-          <Row stack label="Beim nächsten Start" description="Der Speicherort wechselt beim nächsten Start. Bis dahin bleibt alles im bisherigen Ordner.">
+          <Row stack label={t("set.data.nextStart")} description={t("set.data.nextStartDesc")}>
             <PathValue value={status.pending_move} />
             <div className="set-actions">
-              <Button onClick={() => void restartApp()}>Jetzt neu starten</Button>
+              <Button onClick={() => void restartApp()}>{t("common.restartNow")}</Button>
               <Button
                 variant="ghost"
                 onClick={async () => {
                   try {
                     setStatus(await api.cancelDataDirMove());
                   } catch (e) {
-                    useApp.getState().error("Nicht verworfen", e);
+                    useApp.getState().error(t("set.data.discardFailed"), e);
                   }
                 }}
               >
-                Verwerfen
+                {t("common.discard")}
               </Button>
             </div>
           </Row>
@@ -1377,12 +1333,12 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           label={t("set.about.moveData")}
           description={
             status?.portable
-              ? "Im portablen Modus liegen die Daten immer neben Annalo.exe. Zum Umziehen den ganzen Ordner kopieren."
-              : "Kopiert Datenbank, Bilder und Sicherungen beim nächsten Start in einen anderen Ordner. Der alte Ordner bleibt unverändert. Kein OneDrive-, Dropbox- oder Netzwerkordner."
+              ? t("set.data.movePortable")
+              : t("set.data.moveDesc")
           }
         >
           <Button icon={FolderInput} onClick={() => moveDataDir(loadStatus)} disabled={!!status?.portable}>
-            Speicherort ändern…
+            {t("set.data.moveButton")}
           </Button>
         </Row>
         <DevLogAboutRow onOpen={onOpenLog} />

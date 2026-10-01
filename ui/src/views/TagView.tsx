@@ -6,6 +6,7 @@ import { EmptyState, Spinner } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { relative } from "../lib/format";
 import type { Page } from "../lib/types";
+import { t } from "../lib/i18n";
 
 export function TagView({ tag }: { tag: string }) {
   const pages = useApp((s) => s.pages);
@@ -29,7 +30,7 @@ export function TagView({ tag }: { tag: string }) {
         {!list ? (
           <Spinner />
         ) : list.length === 0 ? (
-          <EmptyState icon={Hash} title="Keine Seiten mit diesem Tag" />
+          <EmptyState icon={Hash} title={t("tag.none")} />
         ) : (
           <div className="page-list">
             {list.map((p) => (

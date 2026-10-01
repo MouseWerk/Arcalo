@@ -190,15 +190,15 @@ fn firefox_places_are_read_from_a_copy() {
     assert_eq!(
         outline(&t),
         [
-            "Lesezeichen-Symbolleiste [bar]",
+            " [bar]",
             "  Arbeit",
             "    Jira – Übersicht <https://jira.firma.de/>",
             "    Tief",
             "      Wiki <https://wiki.firma.de/>",
             "  Nachrichten <https://news.de/>",
-            "Lesezeichen-Menü [menu]",
+            " [menu]",
             "  Menüeintrag <https://menu.de/>",
-            "Weitere Lesezeichen [other]",
+            " [other]",
             "  Lose <http://lose.de/>",
         ]
     );
@@ -235,11 +235,11 @@ fn safari_binary_plist() {
     assert_eq!(
         outline(&t),
         [
-            "Favoriten [bar]",
+            " [bar]",
             "  Apple <https://www.apple.com/de/>",
             "  Projekte",
             "    Größen <https://groessen.de/>",
-            "Leseliste [reading]",
+            " [reading]",
             "  Später lesen <https://lesen.de/>",
         ]
     );

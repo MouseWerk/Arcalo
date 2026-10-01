@@ -2,6 +2,7 @@
 //! quoted-printable and base64 bodies, multipart trees. The text is the first plain-text body
 //! (an HTML-only mail is turned into text); attachments keep their order (1-based indexes).
 
+use crate::trf;
 use chrono::{DateTime, TimeZone, Utc};
 use mail_parser::{Address, MessageParser, MimeHeaders};
 
@@ -77,7 +78,7 @@ pub fn parse(bytes: &[u8]) -> Option<Parsed> {
             Some(n) if !n.trim().is_empty() => n.trim().to_owned(),
             _ => match part.message().and_then(|m| m.subject()) {
                 Some(s) => format!("{}.eml", s.trim()),
-                None => format!("Anhang {}", i + 1),
+                None => trf!("Anhang {}", "Attachment {}", i + 1),
             },
         };
         let disposition_inline = part.content_disposition().is_some_and(|d| d.is_inline());

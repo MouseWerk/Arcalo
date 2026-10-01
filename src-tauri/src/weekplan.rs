@@ -70,7 +70,7 @@ pub fn periodic(app: &AppHandle) {
         msg
     };
     if let Some(body) = body {
-        notify(app, "Woche vorschlagen", &body);
+        notify(app, annalo_core::tr!("Woche vorschlagen", "Propose the week"), &body);
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             PENDING.store(true, Ordering::Relaxed);

@@ -396,9 +396,9 @@ pub fn sources(os: Os, roots: &Roots) -> Vec<Source> {
             Ok(t) => Source { location, status: SourceStatus::Ok, count: t.links, error: None },
             Err(e) => {
                 let text = e.to_string();
-                let status = if text == firefox::LOCKED {
+                let status = if text == firefox::locked() {
                     SourceStatus::Locked
-                } else if text == safari::NO_ACCESS {
+                } else if text == safari::no_access() {
                     SourceStatus::Permission
                 } else {
                     SourceStatus::Error
@@ -411,10 +411,15 @@ pub fn sources(os: Os, roots: &Roots) -> Vec<Source> {
 
 /// The tree of the source `id` (only paths found by [`discover`] are read).
 pub fn read_source(os: Os, roots: &Roots, id: &str) -> Result<(Location, Tree)> {
-    let loc = discover(os, roots)
-        .into_iter()
-        .find(|l| l.id == id)
-        .ok_or_else(|| Error::State("Diese Lesezeichen sind nicht mehr da. Die Liste der Browser neu laden.".into()))?;
+    let loc = discover(os, roots).into_iter().find(|l| l.id == id).ok_or_else(|| {
+        Error::State(
+            crate::tr!(
+                "Diese Lesezeichen sind nicht mehr da. Die Liste der Browser neu laden.",
+                "These bookmarks are no longer there. Reload the list of browsers."
+            )
+            .into(),
+        )
+    })?;
     let tree = read_location(&loc)?;
     Ok((loc, tree))
 }

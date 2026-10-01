@@ -15,13 +15,13 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use annalo_core::Error;
 use annalo_core::calsync::calendars::{self, DiscoveredCalendar, OutlookChoice};
 use annalo_core::calsync::tz::Zone;
 use annalo_core::calsync::{
     self as core, CalendarEvent, IcsKind, IcsSource, OutlookCalendar, Privacy, SyncStatus, WbsHint, ics, outlook,
 };
 use annalo_core::model::Page;
+use annalo_core::{Error, tr, trf};
 use chrono::{DateTime, Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -210,7 +210,7 @@ pub fn calendar_source_add(
     let state = app.state::<AppState>();
     let sources = state.settings().calendar.sources;
     if sources.len() >= core::MAX_SOURCES {
-        return Err(Error::State(format!("Höchstens {} Kalender", core::MAX_SOURCES)));
+        return Err(Error::State(trf!("Höchstens {} Kalender", "At most {} calendars", core::MAX_SOURCES)));
     }
     let id = core::new_source_id(&sources);
     let (kind, path) = match (url.as_deref().map(str::trim).filter(|u| !u.is_empty()), path.as_deref().map(str::trim)) {
@@ -222,11 +222,19 @@ pub fn calendar_source_add(
         }
         (None, Some(p)) if !p.is_empty() => {
             if !std::path::Path::new(p).is_file() {
-                return Err(Error::State(format!("Die Datei „{p}“ gibt es nicht")));
+                return Err(Error::State(trf!("Die Datei „{p}“ gibt es nicht", "The file “{p}” does not exist")));
             }
             (IcsKind::File, p.to_owned())
         }
-        _ => return Err(Error::State("Bitte eine Kalender-Adresse oder eine .ics-Datei angeben".into())),
+        _ => {
+            return Err(Error::State(
+                tr!(
+                    "Bitte eine Kalender-Adresse oder eine .ics-Datei angeben",
+                    "Enter a calendar address or an .ics file"
+                )
+                .into(),
+            ));
+        }
     };
     let color = core::PALETTE[(sources.len() + 1) % core::PALETTE.len()].to_owned();
     let source = IcsSource { id: id.clone(), name: name.trim().to_owned(), kind, path, color, enabled: true };
@@ -259,7 +267,7 @@ pub fn calendar_source_update(
     }
     let mut resync = url.is_some() || path.is_some() || enabled == Some(true);
     save_sources(&app, |list| {
-        let s = list.iter_mut().find(|s| s.id == id).ok_or_else(|| Error::not_found("Kalender", id.clone()))?;
+        let s = list.iter_mut().find(|s| s.id == id).ok_or_else(|| Error::not_found("calendar", id.clone()))?;
         if let Some(n) = name {
             s.name = n;
         }
@@ -311,7 +319,9 @@ pub async fn calendar_outlook_discover(app: AppHandle) -> Result<CalendarStatus>
         let sync = app.state::<CalendarSync>();
         let mut d = lock(&sync.discovery);
         if d.running {
-            return Err(Error::State("Die Kalender werden gerade gesucht".into()));
+            return Err(Error::State(
+                tr!("Die Kalender werden gerade gesucht", "The calendars are being searched right now").into(),
+            ));
         }
         d.running = true;
     }
@@ -377,9 +387,13 @@ pub fn calendar_outlook_update(
     let mut resync = false;
     save_calendar(&app, |cal| {
         if !cal.outlook_calendars.iter().any(|c| c.id == id) {
-            let d = found.iter().find(|d| d.id == id).ok_or_else(|| Error::not_found("Kalender", id.clone()))?;
+            let d = found.iter().find(|d| d.id == id).ok_or_else(|| Error::not_found("calendar", id.clone()))?;
             if cal.outlook_calendars.len() >= calendars::MAX_CALENDARS {
-                return Err(Error::State(format!("Höchstens {} Outlook-Kalender", calendars::MAX_CALENDARS)));
+                return Err(Error::State(trf!(
+                    "Höchstens {} Outlook-Kalender",
+                    "At most {} Outlook calendars",
+                    calendars::MAX_CALENDARS
+                )));
             }
             let mut c = OutlookCalendar::from(d);
             let used: Vec<String> = cal.outlook_calendars.iter().map(|c| c.color.clone()).collect();
@@ -392,7 +406,7 @@ pub fn calendar_outlook_update(
             .outlook_calendars
             .iter_mut()
             .find(|c| c.id == id)
-            .ok_or_else(|| Error::not_found("Kalender", id.clone()))?;
+            .ok_or_else(|| Error::not_found("calendar", id.clone()))?;
         if let Some(e) = enabled {
             resync = e && !c.enabled && outlook_on;
             c.enabled = e;
@@ -527,7 +541,7 @@ fn finish(app: &AppHandle, id: &str, window: Window, read: Result<Vec<core::NewE
 }
 
 fn busy_error() -> Error {
-    Error::State("Dieser Kalender wird gerade synchronisiert".into())
+    Error::State(tr!("Dieser Kalender wird gerade synchronisiert", "This calendar is syncing right now").into())
 }
 
 /// Reads one source and replaces its events; records the outcome.
@@ -553,7 +567,7 @@ async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<us
     let mut cals: Vec<OutlookCalendar> = vec![];
     for id in ids {
         match settings.outlook_calendar(id) {
-            None => out.push((id.clone(), Err(Error::not_found("Kalender", id.clone())))),
+            None => out.push((id.clone(), Err(Error::not_found("calendar", id.clone())))),
             Some(_) if !start(app, id) => out.push((id.clone(), Err(busy_error()))),
             Some(c) => cals.push(c.clone()),
         }
@@ -612,22 +626,31 @@ async fn read_source(app: &AppHandle, id: &str, (from, to): Window) -> Result<Ve
     let privacy = Privacy::from(&settings);
     let join = |e: tauri::Error| Error::State(e.to_string());
     let events = {
-        let src = settings.source(id).cloned().ok_or_else(|| Error::not_found("Kalender", id.to_owned()))?;
+        let src = settings.source(id).cloned().ok_or_else(|| Error::not_found("calendar", id.to_owned()))?;
         let bytes = match src.kind {
             IcsKind::File => {
                 let path = src.path.clone();
                 tauri::async_runtime::spawn_blocking(move || read_file(&path)).await.map_err(join)??
             }
             IcsKind::Url => {
-                let url = secret(&state, &src.id)
-                    .get()
-                    .ok_or_else(|| Error::State("Für diesen Kalender ist keine Adresse gespeichert".into()))?;
+                let url = secret(&state, &src.id).get().ok_or_else(|| {
+                    Error::State(
+                        tr!(
+                            "Für diesen Kalender ist keine Adresse gespeichert",
+                            "No address is stored for this calendar"
+                        )
+                        .into(),
+                    )
+                })?;
                 let (http, network_error, timeout) = {
                     let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
                     (ai.tools_http.clone(), ai.network_error.clone(), ai.settings.network.timeout())
                 };
-                let http =
-                    http.ok_or_else(|| Error::State(network_error.unwrap_or_else(|| "Kein Netzwerk-Client".into())))?;
+                let http = http.ok_or_else(|| {
+                    Error::State(
+                        network_error.unwrap_or_else(|| tr!("Kein Netzwerk-Client", "No network client").into()),
+                    )
+                })?;
                 ics::fetch(&http, &url, timeout).await?
             }
         };
@@ -640,12 +663,24 @@ async fn read_source(app: &AppHandle, id: &str, (from, to): Window) -> Result<Ve
 
 fn read_file(path: &str) -> Result<Vec<u8>> {
     let p = std::path::Path::new(path);
-    let meta =
-        std::fs::metadata(p).map_err(|e| Error::State(format!("Die Kalenderdatei „{path}“ ist nicht lesbar: {e}")))?;
+    let meta = std::fs::metadata(p).map_err(|e| {
+        Error::State(trf!(
+            "Die Kalenderdatei „{path}“ ist nicht lesbar: {e}",
+            "The calendar file “{path}” cannot be read: {e}"
+        ))
+    })?;
     if meta.len() as usize > ics::MAX_BYTES {
-        return Err(Error::State(format!("Die Kalenderdatei „{path}“ ist größer als 30 MB")));
+        return Err(Error::State(trf!(
+            "Die Kalenderdatei „{path}“ ist größer als 30 MB",
+            "The calendar file “{path}” is larger than 30 MB"
+        )));
     }
-    std::fs::read(p).map_err(|e| Error::State(format!("Die Kalenderdatei „{path}“ ist nicht lesbar: {e}")))
+    std::fs::read(p).map_err(|e| {
+        Error::State(trf!(
+            "Die Kalenderdatei „{path}“ ist nicht lesbar: {e}",
+            "The calendar file “{path}” cannot be read: {e}"
+        ))
+    })
 }
 
 /// Syncs `ids` in the background.

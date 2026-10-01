@@ -1,6 +1,7 @@
 //! Time summaries for status reports: booked hours per Netzplan/Vorgang with
 //! what was done (entry descriptions), plus totals per day.
 
+use crate::{tr, trf};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 
@@ -52,9 +53,9 @@ pub struct SummaryItem {
 /// (e.g. America/Santiago, Asia/Beirut), the day starts at the end of the gap, one hour later.
 fn day_start(d: NaiveDate, resolve: impl Fn(&NaiveDateTime) -> Option<DateTime<Utc>>) -> Result<DateTime<Utc>> {
     let midnight = d.and_time(NaiveTime::MIN);
-    resolve(&midnight)
-        .or_else(|| resolve(&(midnight + Duration::hours(1))))
-        .ok_or_else(|| Error::State(format!("Ortszeit {midnight} existiert nicht")))
+    resolve(&midnight).or_else(|| resolve(&(midnight + Duration::hours(1)))).ok_or_else(|| {
+        Error::State(trf!("Ortszeit {midnight} existiert nicht", "The local time {midnight} does not exist"))
+    })
 }
 
 /// Summarizes the finished time entries whose start falls on the local days `from..=to`.
@@ -64,11 +65,13 @@ pub fn time_summary<Tz: TimeZone>(db: &Database, from: NaiveDate, to: NaiveDate,
         return Err(Error::State("'to' liegt vor 'from'".into()));
     }
     if (to - from).num_days() >= MAX_DAYS {
-        return Err(Error::State(format!("Zeitraum länger als {MAX_DAYS} Tage")));
+        return Err(Error::State(trf!("Zeitraum länger als {MAX_DAYS} Tage", "Period longer than {MAX_DAYS} days")));
     }
     let start_of =
         |d: NaiveDate| day_start(d, |dt| offset.from_local_datetime(dt).earliest().map(|t| t.with_timezone(&Utc)));
-    let end_day = to.succ_opt().ok_or_else(|| Error::State("Datum außerhalb des gültigen Bereichs".into()))?;
+    let end_day = to
+        .succ_opt()
+        .ok_or_else(|| Error::State(tr!("Datum außerhalb des gültigen Bereichs", "Date out of range").into()))?;
     let rows = db.list_time_entries(&EntryFilter {
         from: Some(start_of(from)?),
         to: Some(start_of(end_day)?),

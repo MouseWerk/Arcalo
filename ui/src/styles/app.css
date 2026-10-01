@@ -2336,31 +2336,6 @@ body.presenter-window .presenter { height: 100vh; }
 .mail-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin: 0 2px; padding: 0 7px 0 6px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font: inherit; font-size: var(--fs-xs); vertical-align: 0.1em; cursor: pointer; }
 .mail-chip:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
-/* ---- window backdrop (Mica / Acrylic on Windows 11, lib/backdrop.ts) ---- */
-/* <html data-backdrop> while an effect shows; --glass is the opacity (0.4–1, set live). One
-   base layer on the body, the theme's sidebar color at --glass, covers the whole window, so
-   splitters, the 1px gaps beside them, the room around the ribbon, the window buttons and the
-   splash crossfade can never be holes. The content column adds a second layer (the canvas at
-   --glass), clearly more opaque than the chrome. Everything in between is transparent, and the
-   borders are lines drawn over the layers. Text colors never change. */
-:root[data-backdrop] {
-  --glass: 0.8;
-  --glass-chrome: color-mix(in srgb, var(--bg-sidebar) calc(var(--glass) * 100%), transparent);
-  --glass-content: color-mix(in srgb, var(--bg-canvas) calc(var(--glass) * 100%), transparent);
-  --glass-line: color-mix(in srgb, var(--border) 75%, transparent);
-  background: transparent;
-}
-:root[data-backdrop] body { background: var(--glass-chrome); }
-:root[data-backdrop] :is(.app, .ribbon, .sidebar, .panel, .tabbar, .statusbar) { background: transparent; }
-:root[data-backdrop] :is(.main, .app.focus .main) { background: var(--glass-content); }
-:root[data-backdrop] :is(.ribbon, .sidebar, .panel, .tabbar, .statusbar, .side-tabs, .panel-tabs, .sidebar-foot) { border-color: var(--glass-line); }
-:root[data-backdrop] :is(.pane + .resizer + .pane, .pane.multi + .resizer + .pane) { border-left-color: var(--glass-line); }
-:root[data-backdrop] .pane.multi.active .tabbar { background: color-mix(in srgb, var(--bg-active) 45%, transparent); }
-/* Views with a surface of their own: tinted over the content layer instead of painted over it. */
-:root[data-backdrop] :is(.settings-nav, .settings-topbar) { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
-:root[data-backdrop] .calv { background: transparent; }
-:root[data-backdrop] :is(.calv-sticky, .calv-month-head) { background: var(--glass-content); }
-
 /* ---- Outlook calendar selection ---- */
 .olcal { display: grid; gap: 10px; padding: 14px 0 16px; border-top: 1px solid var(--border); min-width: 0; }
 .olcal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -2422,6 +2397,31 @@ body.presenter-window .presenter { height: 100vh; }
   .calv-legend { padding: 8px 14px 0; }
   .calv-legend-note { width: 100%; margin-left: 0; }
 }
+
+/* ---- window backdrop (Mica / Acrylic on Windows 11, lib/backdrop.ts) ---- */
+/* <html data-backdrop> while an effect shows; --glass is the opacity (0.4–1, set live). One
+   base layer on the body, the theme's sidebar color at --glass, covers the whole window, so
+   splitters, the 1px gaps beside them, the room around the ribbon, the window buttons and the
+   splash crossfade can never be holes. The content column adds a second layer (the canvas at
+   --glass), clearly more opaque than the chrome. Everything in between is transparent, and the
+   borders are lines drawn over the layers. Text colors never change. */
+:root[data-backdrop] {
+  --glass: 0.8;
+  --glass-chrome: color-mix(in srgb, var(--bg-sidebar) calc(var(--glass) * 100%), transparent);
+  --glass-content: color-mix(in srgb, var(--bg-canvas) calc(var(--glass) * 100%), transparent);
+  --glass-line: color-mix(in srgb, var(--border) 75%, transparent);
+  background: transparent;
+}
+:root[data-backdrop] body { background: var(--glass-chrome); }
+:root[data-backdrop] :is(.app, .ribbon, .sidebar, .panel, .tabbar, .statusbar) { background: transparent; }
+:root[data-backdrop] :is(.main, .app.focus .main) { background: var(--glass-content); }
+:root[data-backdrop] :is(.ribbon, .sidebar, .panel, .tabbar, .statusbar, .side-tabs, .panel-tabs, .sidebar-foot) { border-color: var(--glass-line); }
+:root[data-backdrop] :is(.pane + .resizer + .pane, .pane.multi + .resizer + .pane) { border-left-color: var(--glass-line); }
+:root[data-backdrop] .pane.multi.active .tabbar { background: color-mix(in srgb, var(--bg-active) 45%, transparent); }
+/* Views with a surface of their own: tinted over the content layer instead of painted over it. */
+:root[data-backdrop] :is(.settings-nav, .settings-topbar) { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
+:root[data-backdrop] .calv { background: transparent; }
+:root[data-backdrop] :is(.calv-sticky, .calv-month-head) { background: var(--glass-content); }
 
 /* ---- macOS popups ---- */
 

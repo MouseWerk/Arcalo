@@ -130,6 +130,28 @@ describe("due dates", () => {
     expect(normalizeLine("/zeit NP-8801 1h due:morgen", now)).toBe("/zeit NP-8801 1h due:morgen");
   });
 
+  it("takes the English words alongside the German ones", () => {
+    // 2026-09-23 is a Wednesday.
+    expect(parseDue("today", now)).toBe("2026-09-23");
+    expect(parseDue("tomorrow", now)).toBe("2026-09-24");
+    expect(parseDue("fri", now)).toBe("2026-09-25");
+    expect(parseDue("Friday", now)).toBe("2026-09-25");
+    expect(parseDue("next week", now)).toBe("2026-09-28");
+    expect(parseDue("nächste Woche", now)).toBe("2026-09-28");
+    expect(normalizeLine("todo send the offer by Fri", now)).toBe("todo send the offer due:2026-09-25");
+    expect(normalizeLine("todo call Bob due:tomorrow", now)).toBe("todo call Bob due:2026-09-24");
+    expect(normalizeLine("todo plan the release next week", now)).toBe("todo plan the release due:2026-09-28");
+    expect(normalizeLine("todo Release planen nächste Woche", now)).toBe("todo Release planen due:2026-09-28");
+    expect(normalizeLine("todo x due:next-week", now)).toBe("todo x due:2026-09-28");
+    // `fällig:` keeps its name; both count as a due date.
+    expect(normalizeLine("todo Angebot fällig:morgen", now)).toBe("todo Angebot fällig:2026-09-24");
+    expect(normalizeLine("todo Angebot fällig:2026-10-01 bis Fr", now)).toBe("todo Angebot fällig:2026-10-01 bis Fr");
+    expect(firstDue("todo x fällig:morgen", now)).toBe("2026-09-24");
+    // „today“ alone ends ordinary sentences: only after by/on/due.
+    expect(normalizeLine("todo what I did today", now)).toBe("todo what I did today");
+    expect(normalizeLine("/time NP-8801 1h due:tomorrow", now)).toBe("/time NP-8801 1h due:tomorrow");
+  });
+
   it("keeps multi-line text and code blocks", () => {
     const text = "Notiz\ntodo A bis Fr\n```\ntodo B morgen\n```\n  - [ ] C due:heute";
     expect(normalizeCapture(text, now)).toBe("Notiz\ntodo A due:2026-09-25\n```\ntodo B morgen\n```\n  - [ ] C due:2026-09-23");

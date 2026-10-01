@@ -3,6 +3,7 @@
 //! Notes embed them as `![[name.excalidraw]]`, the same way the Obsidian Excalidraw
 //! plugin references drawings, so vault import/export keeps them.
 
+use crate::{tr, trf};
 use std::fs;
 use std::path::Path;
 
@@ -25,15 +26,17 @@ pub fn preview_name(name: &str) -> String {
 
 /// A plain file name ending in `.excalidraw`: no folders, no `..`, no hidden or control characters.
 pub fn validate_name(name: &str) -> Result<()> {
-    let bad = |why: &str| Err(Error::State(format!("Ungültiger Zeichnungsname „{name}“: {why}")));
+    let bad = |why: &str| {
+        Err(Error::State(trf!("Ungültiger Zeichnungsname „{name}“: {why}", "Invalid drawing name “{name}”: {why}")))
+    };
     if !name.to_ascii_lowercase().ends_with(SUFFIX) || name.len() <= SUFFIX.len() {
-        return bad("muss auf .excalidraw enden");
+        return bad(tr!("muss auf .excalidraw enden", "must end in .excalidraw"));
     }
     if name.contains(['/', '\\', ':', '\0']) || name.chars().any(char::is_control) {
-        return bad("keine Ordner oder Sonderzeichen");
+        return bad(tr!("keine Ordner oder Sonderzeichen", "no folders or special characters"));
     }
     if name.starts_with('.') || name.starts_with(' ') || name.len() > MAX_NAME {
-        return bad("nicht erlaubt");
+        return bad(tr!("nicht erlaubt", "not allowed"));
     }
     Ok(())
 }
@@ -41,8 +44,11 @@ pub fn validate_name(name: &str) -> Result<()> {
 /// Writes `bytes` to a temp file in the same folder and renames it over `path`, so a crash
 /// never leaves a half-written scene under the final name.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let dir = path.parent().ok_or_else(|| Error::State("Kein Zielordner".into()))?;
-    let file = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| Error::State("Ungültiger Dateiname".into()))?;
+    let dir = path.parent().ok_or_else(|| Error::State(tr!("Kein Zielordner", "No target folder").into()))?;
+    let file = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::State(tr!("Ungültiger Dateiname", "Invalid file name").into()))?;
     fs::create_dir_all(dir).at(dir)?;
     let tmp = dir.join(format!(".{file}.tmp"));
     let written = fs::File::create(&tmp).and_then(|mut f| {
@@ -74,7 +80,7 @@ fn stem(title: &str) -> String {
         .collect();
     let s = s.trim().trim_start_matches('.').trim();
     let s: String = s.chars().take(120).collect();
-    if s.is_empty() { "Zeichnung".into() } else { s }
+    if s.is_empty() { tr!("Zeichnung", "Drawing").into() } else { s }
 }
 
 /// Creates an empty drawing named after `title` (`Zeichnung 2`, `Zeichnung 3`, … when taken).
@@ -100,7 +106,7 @@ pub fn create(attachments_dir: &Path, title: &str) -> Result<SavedAttachment> {
 /// The scene JSON of a drawing.
 pub fn read(attachments_dir: &Path, name: &str) -> Result<String> {
     validate_name(name)?;
-    let path = attachments::resolve(attachments_dir, name).ok_or_else(|| Error::not_found("Zeichnung", name))?;
+    let path = attachments::resolve(attachments_dir, name).ok_or_else(|| Error::not_found("drawing", name))?;
     fs::read_to_string(&path).at(&path)
 }
 
@@ -109,15 +115,21 @@ pub fn read(attachments_dir: &Path, name: &str) -> Result<String> {
 pub fn save(attachments_dir: &Path, name: &str, scene: &str, svg: Option<&str>) -> Result<()> {
     validate_name(name)?;
     if scene.len() > attachments::MAX_BYTES || svg.is_some_and(|s| s.len() > attachments::MAX_BYTES) {
-        return Err(Error::State(format!("Zeichnung ist größer als {} MB", attachments::MAX_BYTES / 1024 / 1024)));
+        return Err(Error::State(trf!(
+            "Zeichnung ist größer als {} MB",
+            "The drawing is larger than {} MB",
+            attachments::MAX_BYTES / 1024 / 1024
+        )));
     }
     let value: serde_json::Value = serde_json::from_str(scene)?;
     if !value.get("elements").is_some_and(serde_json::Value::is_array) {
-        return Err(Error::Parse("Keine Excalidraw-Zeichnung (elements fehlt)".into()));
+        return Err(Error::Parse(
+            tr!("Keine Excalidraw-Zeichnung (elements fehlt)", "Not an Excalidraw drawing (elements missing)").into(),
+        ));
     }
     let svg = svg.map(str::trim).filter(|s| !s.is_empty());
     if svg.is_some_and(|s| !s.starts_with("<svg")) {
-        return Err(Error::Parse("Vorschau ist kein SVG".into()));
+        return Err(Error::Parse(tr!("Vorschau ist kein SVG", "The preview is not an SVG").into()));
     }
     write_atomic(&attachments_dir.join(name), scene.as_bytes())?;
     let preview = attachments_dir.join(preview_name(name));

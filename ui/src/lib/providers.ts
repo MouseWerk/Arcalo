@@ -2,10 +2,13 @@
 // the price table. Pure functions; the settings page and the assistant use them.
 
 import type { AiProvider, PriceRule, ProviderKind, RouterConfig, Settings, SettingsView, Tier } from "./types";
+import { t, type TKey } from "./i18n";
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
   litellm: "LiteLLM",
-  openai: "OpenAI-kompatibel",
+  get openai() {
+    return t("prov.kind.openai");
+  },
   azure: "Azure OpenAI",
   ollama: "Ollama",
 };
@@ -23,25 +26,47 @@ export interface ProviderPreset {
 
 export const OLLAMA_URL = "http://localhost:11434";
 
+/** A preset whose hint (and label, when given as a key) follows the display language. */
+const preset = (p: Omit<ProviderPreset, "hint" | "label"> & { label: string; labelKey?: TKey; hintKey: TKey }): ProviderPreset => ({
+  key: p.key,
+  kind: p.kind,
+  url: p.url,
+  ...(p.local ? { local: true } : {}),
+  get label() {
+    return p.labelKey ? t(p.labelKey) : p.label;
+  },
+  get hint() {
+    return t(p.hintKey);
+  },
+});
+
 /** Presets of the „Anbieter hinzufügen“ menu. */
 export const PRESETS: ProviderPreset[] = [
-  { key: "ollama", label: "Ollama", kind: "ollama", url: OLLAMA_URL, local: true, hint: "Lokale Modelle, kein Schlüssel nötig." },
-  { key: "lmstudio", label: "LM Studio", kind: "openai", url: "http://localhost:1234/v1", local: true, hint: "Lokaler Server von LM Studio (OpenAI-kompatibel)." },
-  { key: "openai", label: "OpenAI", kind: "openai", url: "https://api.openai.com/v1", hint: "API-Schlüssel von platform.openai.com." },
-  { key: "azure", label: "Azure OpenAI", kind: "azure", url: "https://RESSOURCE.openai.azure.com", hint: "Endpunkt der Ressource, API-Version und Deployment-Namen; Schlüssel als api-key." },
-  { key: "mistral", label: "Mistral", kind: "openai", url: "https://api.mistral.ai/v1", hint: "API-Schlüssel von console.mistral.ai." },
-  { key: "groq", label: "Groq", kind: "openai", url: "https://api.groq.com/openai/v1", hint: "API-Schlüssel von console.groq.com." },
-  { key: "openrouter", label: "OpenRouter", kind: "openai", url: "https://openrouter.ai/api/v1", hint: "Viele Modelle über einen Schlüssel." },
-  { key: "litellm", label: "LiteLLM", kind: "litellm", url: "http://localhost:4000", hint: "LiteLLM-Proxy mit Virtual Key oder Master Key." },
-  { key: "custom", label: "Anderer OpenAI-kompatibler Server", kind: "openai", url: "https://", hint: "vLLM, llama.cpp, LocalAI, eigene Gateways …" },
+  preset({ key: "ollama", label: "Ollama", kind: "ollama", url: OLLAMA_URL, local: true, hintKey: "prov.hint.ollama" }),
+  preset({ key: "lmstudio", label: "LM Studio", kind: "openai", url: "http://localhost:1234/v1", local: true, hintKey: "prov.hint.lmstudio" }),
+  preset({ key: "openai", label: "OpenAI", kind: "openai", url: "https://api.openai.com/v1", hintKey: "prov.hint.openai" }),
+  preset({ key: "azure", label: "Azure OpenAI", kind: "azure", url: "https://RESSOURCE.openai.azure.com", hintKey: "prov.hint.azure" }),
+  preset({ key: "mistral", label: "Mistral", kind: "openai", url: "https://api.mistral.ai/v1", hintKey: "prov.hint.mistral" }),
+  preset({ key: "groq", label: "Groq", kind: "openai", url: "https://api.groq.com/openai/v1", hintKey: "prov.hint.groq" }),
+  preset({ key: "openrouter", label: "OpenRouter", kind: "openai", url: "https://openrouter.ai/api/v1", hintKey: "prov.hint.openrouter" }),
+  preset({ key: "litellm", label: "LiteLLM", kind: "litellm", url: "http://localhost:4000", hintKey: "prov.hint.litellm" }),
+  preset({ key: "custom", label: "", labelKey: "prov.custom", kind: "openai", url: "https://", hintKey: "prov.hint.custom" }),
 ];
 
 /** Where the address of a kind points to. */
 export const URL_HINTS: Record<ProviderKind, string> = {
-  litellm: "Adresse des LiteLLM-Proxys, z. B. https://llm.firma.de",
-  openai: "Basis-URL mit Version, z. B. https://api.openai.com/v1",
-  azure: "Endpunkt der Ressource, z. B. https://firma.openai.azure.com",
-  ollama: `Standard: ${OLLAMA_URL}`,
+  get litellm() {
+    return t("prov.url.litellm");
+  },
+  get openai() {
+    return t("prov.url.openai");
+  },
+  get azure() {
+    return t("prov.url.azure");
+  },
+  get ollama() {
+    return t("prov.url.ollama", { url: OLLAMA_URL });
+  },
 };
 
 /** `[a-z0-9-]` from a name (as the core's `slug`). */
@@ -108,8 +133,8 @@ export function usableProvider(view: Pick<SettingsView, "settings" | "provider_k
 /** Problems that keep the dialog from saving (empty = fine). */
 export function validateProvider(p: AiProvider): string | null {
   const url = p.base_url.trim();
-  if (!/^https?:\/\/[^/\s]+/i.test(url)) return "Die Adresse muss mit http:// oder https:// beginnen.";
-  if (p.kind === "azure" && /RESSOURCE/.test(url)) return "Trage den Endpunkt deiner Azure-Ressource ein.";
+  if (!/^https?:\/\/[^/\s]+/i.test(url)) return t("prov.err.url");
+  if (p.kind === "azure" && /RESSOURCE|RESOURCE/.test(url)) return t("prov.err.azure");
   return null;
 }
 

@@ -300,7 +300,7 @@ test("settings and Firefox; dark theme and 900 px", async () => {
   await app.browser.execute(() => (document.documentElement.dataset.theme = "dark"));
   await app.browser.setWindowSize(900, 760);
   await chooseSource("firefox", "default-release");
-  assert.deepEqual(await rowsText(), ["Lesezeichen-Symbolleiste", "GitLab", "Lesezeichen-Menü", "Webmail"]);
+  assert.deepEqual(await rowsText(), ["Lesezeichenleiste", "GitLab", "Lesezeichen-Menü", "Webmail"]);
   await app.shot("bookmarks-5-firefox-dark-900");
   await clickRow("Lesezeichen-Menü");
   await app.click(".dialog .bm-next");

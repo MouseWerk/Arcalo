@@ -9,19 +9,21 @@ import { PageIcon } from "../components/icons";
 import { relative } from "../lib/format";
 import type { TrashEntry, TrashedFile } from "../lib/types";
 import { formatSize } from "../editor/fileEmbed";
+import { t, useT } from "../lib/i18n";
 
 export async function restorePage(id: number, title: string) {
   const s = useApp.getState();
   try {
     const p = await api.restorePage(id);
     await s.refreshTree();
-    s.toast({ tone: "success", title: "Seite wiederhergestellt", detail: p.title !== title ? `als „${p.title}“` : title, action: { label: "Öffnen", run: () => s.openPage(p.id) } });
+    s.toast({ tone: "success", title: t("trash.restored"), detail: p.title !== title ? t("trash.restoredAs", { title: p.title }) : title, action: { label: t("file.open"), run: () => s.openPage(p.id) } });
   } catch (e) {
-    s.error("Wiederherstellen fehlgeschlagen", e);
+    s.error(t("trash.restoreFailed"), e);
   }
 }
 
 export function TrashView() {
+  useT();
   const tree = useApp((s) => s.tree);
   const [list, setList] = useState<TrashEntry[] | null>(null);
   const s = useApp.getState;
@@ -32,23 +34,23 @@ export function TrashView() {
   }, [tree, reload]);
 
   const purge = async (e: TrashEntry) => {
-    const kids = e.descendants ? ` und ${e.descendants} ${e.descendants === 1 ? "Unterseite" : "Unterseiten"}` : "";
-    if (!(await s().confirm({ title: "Endgültig löschen?", message: `„${e.title}“${kids} werden endgültig gelöscht. Das kann nicht rückgängig gemacht werden.`, confirmLabel: "Endgültig löschen", danger: true }))) return;
+    const message = e.descendants ? t("trash.purgeWithSubpages", { title: e.title, n: e.descendants }) : t("trash.purgeOne", { title: e.title });
+    if (!(await s().confirm({ title: t("trash.purgeTitle"), message, confirmLabel: t("trash.purge"), danger: true }))) return;
     try {
       await api.purgePage(e.id);
       reload();
     } catch (err) {
-      s().error("Löschen fehlgeschlagen", err);
+      s().error(t("trash.deleteFailed"), err);
     }
   };
   const empty = async () => {
-    if (!(await s().confirm({ title: "Papierkorb leeren?", message: "Alle Seiten im Papierkorb werden endgültig gelöscht. Das kann nicht rückgängig gemacht werden.", confirmLabel: "Leeren", danger: true }))) return;
+    if (!(await s().confirm({ title: t("trash.emptyTitle"), message: t("trash.emptyMessage"), confirmLabel: t("trash.emptyConfirm"), danger: true }))) return;
     try {
       const n = await api.emptyTrash();
       reload();
-      s().toast({ tone: "info", title: "Papierkorb geleert", detail: `${n} ${n === 1 ? "Seite" : "Seiten"} gelöscht` });
+      s().toast({ tone: "info", title: t("trash.emptied"), detail: t("trash.pagesDeleted", { n }) });
     } catch (err) {
-      s().error("Leeren fehlgeschlagen", err);
+      s().error(t("trash.emptyFailed"), err);
     }
   };
 
@@ -57,13 +59,13 @@ export function TrashView() {
       <div className="view narrow">
         <header className="view-header">
           <div>
-            <h1>Papierkorb</h1>
-            <div className="view-sub">Gelöschte Seiten werden nach {useApp.getState().settings?.settings.notes?.trash_retention_days ?? 30} Tagen endgültig entfernt.</div>
+            <h1>{t("trash.title")}</h1>
+            <div className="view-sub">{t("trash.sub", { n: useApp.getState().settings?.settings.notes?.trash_retention_days ?? 30 })}</div>
           </div>
           {!!list?.length && (
             <div className="view-actions">
               <Button variant="danger" icon={Trash2} onClick={empty}>
-                Papierkorb leeren
+                {t("trash.emptyButton")}
               </Button>
             </div>
           )}
@@ -71,8 +73,8 @@ export function TrashView() {
         {!list ? (
           <Spinner />
         ) : list.length === 0 ? (
-          <EmptyState icon={Trash2} title="Der Papierkorb ist leer">
-            Gelöschte Seiten landen hier und lassen sich wiederherstellen.
+          <EmptyState icon={Trash2} title={t("trash.isEmpty")}>
+            {t("trash.isEmptyText")}
           </EmptyState>
         ) : (
           <div className="trash-list" role="list">
@@ -82,15 +84,15 @@ export function TrashView() {
                 <div className="trash-item-text">
                   <span className="trash-item-title">{e.title}</span>
                   <span className="trash-item-meta">
-                    Gelöscht {relative(e.deleted_at)}
-                    {e.descendants > 0 && ` · ${e.descendants} ${e.descendants === 1 ? "Unterseite" : "Unterseiten"}`}
-                    {e.parent_title && ` · aus „${e.parent_title}“`}
+                    {t("trash.deletedWhen", { when: relative(e.deleted_at) })}
+                    {e.descendants > 0 && ` · ${t("trash.subpages", { n: e.descendants })}`}
+                    {e.parent_title && ` · ${t("trash.from", { title: e.parent_title })}`}
                   </span>
                 </div>
                 <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)}>
-                  Wiederherstellen
+                  {t("trash.restore")}
                 </Button>
-                <IconButton icon={X} label="Endgültig löschen" size="md" onClick={() => purge(e)} />
+                <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => purge(e)} />
               </div>
             ))}
           </div>
@@ -103,6 +105,7 @@ export function TrashView() {
 
 /** Files deleted in the attachment manager (`<data dir>/trash/files`), until restored or expired. */
 function FileTrash() {
+  useT();
   const [files, setFiles] = useState<TrashedFile[]>([]);
   const s = useApp.getState;
   const reload = useCallback(() => api.trashedAttachments().then(setFiles).catch(() => setFiles([])), []);
@@ -111,24 +114,24 @@ function FileTrash() {
   const restore = async (f: TrashedFile) => {
     try {
       await api.restoreAttachment(f.id, f.name);
-      s().toast({ tone: "success", title: "Datei wiederhergestellt", detail: f.name, action: { label: "Anhänge", run: () => s().openTab({ kind: "attachments" }) } });
+      s().toast({ tone: "success", title: t("trash.fileRestored"), detail: f.name, action: { label: t("share.attachments"), run: () => s().openTab({ kind: "attachments" }) } });
     } catch (e) {
-      s().error("Wiederherstellen fehlgeschlagen", e);
+      s().error(t("trash.restoreFailed"), e);
     }
     reload();
   };
   const purge = async (f: TrashedFile) => {
-    if (!(await s().confirm({ title: "Endgültig löschen?", message: `„${f.name}“ wird endgültig gelöscht. Das kann nicht rückgängig gemacht werden.`, confirmLabel: "Endgültig löschen", danger: true }))) return;
+    if (!(await s().confirm({ title: t("trash.purgeTitle"), message: t("trash.purgeFile", { name: f.name }), confirmLabel: t("trash.purge"), danger: true }))) return;
     try {
       await api.purgeAttachment(f.id, f.name);
     } catch (e) {
-      s().error("Löschen fehlgeschlagen", e);
+      s().error(t("trash.deleteFailed"), e);
     }
     reload();
   };
   return (
-    <section className="trash-files" aria-label="Gelöschte Dateien">
-      <h2 className="trash-files-title">Gelöschte Dateien</h2>
+    <section className="trash-files" aria-label={t("trash.files")}>
+      <h2 className="trash-files-title">{t("trash.files")}</h2>
       <div className="trash-list" role="list">
         {files.map((f) => (
           <div key={`${f.id}/${f.name}`} className="trash-item" role="listitem" data-file={f.name}>
@@ -136,13 +139,13 @@ function FileTrash() {
             <div className="trash-item-text">
               <span className="trash-item-title">{f.name}</span>
               <span className="trash-item-meta">
-                Gelöscht {relative(f.deleted_at)} · {formatSize(f.size)}
+                {t("trash.deletedWhen", { when: relative(f.deleted_at) })} · {formatSize(f.size)}
               </span>
             </div>
             <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)}>
-              Wiederherstellen
+              {t("trash.restore")}
             </Button>
-            <IconButton icon={X} label="Endgültig löschen" size="md" onClick={() => void purge(f)} />
+            <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => void purge(f)} />
           </div>
         ))}
       </div>

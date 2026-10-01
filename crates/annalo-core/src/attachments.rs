@@ -6,6 +6,7 @@
 //! (PDF, Office documents, archives, …) keep their sanitized name; `Angebot 2.pdf` when an
 //! `Angebot.pdf` with other content exists.
 
+use crate::{tr, trf};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -162,14 +163,18 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Stores `bytes` as `<sha256 prefix>.<ext>`; the extension comes from `name`, else from `mime`.
 pub fn save(attachments_dir: &Path, bytes: &[u8], name: &str, mime: &str) -> Result<SavedAttachment> {
     if bytes.is_empty() {
-        return Err(Error::State("Leere Datei".into()));
+        return Err(Error::State(tr!("Leere Datei", "Empty file").into()));
     }
     if bytes.len() > MAX_BYTES {
-        return Err(Error::State(format!("Datei ist größer als {} MB", MAX_BYTES / 1024 / 1024)));
+        return Err(Error::State(trf!(
+            "Datei ist größer als {} MB",
+            "The file is larger than {} MB",
+            MAX_BYTES / 1024 / 1024
+        )));
     }
-    let ext = image_extension(name)
-        .or_else(|| ext_for_mime(mime).map(str::to_owned))
-        .ok_or_else(|| Error::State(format!("„{name}“ ist kein unterstütztes Bildformat")))?;
+    let ext = image_extension(name).or_else(|| ext_for_mime(mime).map(str::to_owned)).ok_or_else(|| {
+        Error::State(trf!("„{name}“ ist kein unterstütztes Bildformat", "“{name}” is not a supported image format"))
+    })?;
     let file = format!("{}.{ext}", &sha256_hex(bytes)[..16]);
     fs::create_dir_all(attachments_dir).at(attachments_dir)?;
     let path = attachments_dir.join(&file);
@@ -201,7 +206,12 @@ pub fn clean_name(name: &str) -> Result<String> {
         .collect();
     let trimmed = mapped.trim_start_matches(['.', ' ']).trim_end_matches(['.', ' ']);
     let ext_len = file_extension(trimmed)
-        .ok_or_else(|| Error::State(format!("„{base}“ hat keine Dateiendung und lässt sich nicht anhängen")))?
+        .ok_or_else(|| {
+            Error::State(trf!(
+                "„{base}“ hat keine Dateiendung und lässt sich nicht anhängen",
+                "“{base}” has no file extension and cannot be attached"
+            ))
+        })?
         .len();
     // The extension keeps its spelling (`Bericht.PDF`).
     let (stem, ext) = trimmed.split_at(trimmed.len() - ext_len - 1);
@@ -217,7 +227,7 @@ pub fn clean_name(name: &str) -> Result<String> {
             && (upper.starts_with("COM") || upper.starts_with("LPT"))
             && upper.as_bytes()[3].is_ascii_digit());
     Ok(match (stem.is_empty(), reserved) {
-        (true, _) => format!("Datei{ext}"),
+        (true, _) => trf!("Datei{ext}", "File{ext}"),
         (false, true) => format!("{device}_{}{ext}", &stem[device.len()..]),
         _ => format!("{stem}{ext}"),
     })
@@ -238,7 +248,7 @@ fn free_name(dir: &Path, name: &str, same: impl Fn(&Path) -> bool) -> Result<(St
         }
         candidate = format!("{stem} {n}.{ext}");
     }
-    Err(Error::State(format!("Kein freier Dateiname für „{name}“")))
+    Err(Error::State(trf!("Kein freier Dateiname für „{name}“", "No free file name for “{name}”")))
 }
 
 fn file_hash(path: &Path) -> Option<[u8; 32]> {
@@ -249,10 +259,14 @@ fn file_hash(path: &Path) -> Option<[u8; 32]> {
 
 fn check_size(size: u64) -> Result<()> {
     if size == 0 {
-        return Err(Error::State("Leere Datei".into()));
+        return Err(Error::State(tr!("Leere Datei", "Empty file").into()));
     }
     if size > MAX_FILE_BYTES {
-        return Err(Error::State(format!("Datei ist größer als {} MB", MAX_FILE_BYTES / 1024 / 1024)));
+        return Err(Error::State(trf!(
+            "Datei ist größer als {} MB",
+            "The file is larger than {} MB",
+            MAX_FILE_BYTES / 1024 / 1024
+        )));
     }
     Ok(())
 }
@@ -283,7 +297,7 @@ pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachm
     let meta = fs::metadata(source).at(source)?;
     let name = source.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if !meta.is_file() {
-        return Err(Error::State(format!("„{}“ ist keine Datei", source.display())));
+        return Err(Error::State(trf!("„{}“ ist keine Datei", "“{}” is not a file", source.display())));
     }
     check_size(meta.len())?;
     let clean = clean_name(name)?;
@@ -294,7 +308,8 @@ pub fn import_file(attachments_dir: &Path, source: &Path) -> Result<SavedAttachm
     {
         return Ok(saved(attachments_dir, name.to_owned(), meta.len()));
     }
-    let hash = file_hash(source).ok_or_else(|| Error::State(format!("„{name}“ ließ sich nicht lesen")))?;
+    let hash = file_hash(source)
+        .ok_or_else(|| Error::State(trf!("„{name}“ ließ sich nicht lesen", "“{name}” could not be read")))?;
     let len = meta.len();
     let (file, exists) = free_name(attachments_dir, &clean, |p| {
         fs::metadata(p).is_ok_and(|m| m.len() == len) && file_hash(p) == Some(hash)

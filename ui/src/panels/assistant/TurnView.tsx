@@ -9,7 +9,7 @@ import { previewMarkdown } from "../../components/LinkPreview";
 import { aiErrorSummary, routeNotes, waitText } from "../../lib/aierror";
 import { citedNumbers, linkCitations } from "../../lib/citations";
 import { renderChatMarkdown, renderChatMarkdownCached, renderMarkdown } from "../../lib/markdown";
-import { h1, usd } from "../../lib/format";
+import { h1, int, usd } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Turn } from "../../lib/chathistory";
 import type { ContextChunk } from "../../lib/types";
@@ -356,7 +356,7 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
               {m.ttft != null && <span title={t("chat.ttft")}>{h1(m.ttft / 1000)} s</span>}
               {m.tps != null && <span title={t("chat.tps")}>{Math.round(m.tps)} t/s</span>}
               <span>
-                {m.tokens.toLocaleString("de-DE")} Tokens{m.exact ? "" : ` ${t("chat.estimated")}`}
+                {t("chat.tokens", { n: int(m.tokens) })}{m.exact ? "" : ` ${t("chat.estimated")}`}
               </span>
               {m.cost > 0 && <span>{usd(m.cost)}</span>}
             </span>

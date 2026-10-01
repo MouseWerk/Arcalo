@@ -25,7 +25,13 @@ const ROOTS: [(&str, &str); 3] = [("bookmark_bar", "bar"), ("other", "other"), (
 pub fn parse(json: &str) -> crate::Result<Tree> {
     let v: Value = serde_json::from_str(json.trim_start_matches('\u{feff}'))?;
     let Some(roots) = v.get("roots").and_then(Value::as_object) else {
-        return Err(crate::Error::Parse("Keine Chromium-Lesezeichendatei („roots“ fehlt)".into()));
+        return Err(crate::Error::Parse(
+            crate::tr!(
+                "Keine Chromium-Lesezeichendatei („roots“ fehlt)",
+                "Not a Chromium bookmarks file (“roots” is missing)"
+            )
+            .into(),
+        ));
     };
     let mut c = Collector::default();
     let mut out = Vec::new();

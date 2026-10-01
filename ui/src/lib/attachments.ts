@@ -3,6 +3,7 @@
 
 import { fileExtension } from "../editor/fileEmbed";
 import type { AttachmentInfo, AttachmentKind } from "./types";
+import { t } from "./i18n";
 
 export type KindFilter = "all" | AttachmentKind;
 export type SortKey = "name" | "size" | "date" | "usage";
@@ -57,17 +58,17 @@ const DEVICE = /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i;
  */
 export function renameProblem(old: string, next: string, names: string[]): string | null {
   const name = next.trim();
-  if (!name) return "Bitte einen Namen eingeben";
+  if (!name) return t("files.nameEmpty");
   if (name === old) return null;
-  if (RESERVED.test(name)) return "Keine Ordner und keines der Zeichen : * ? \" < > | [ ] # ^";
-  if (name.startsWith(".") || name.endsWith(".") || name.endsWith(" ")) return "Nicht mit einem Punkt beginnen oder enden";
-  if (DEVICE.test(name)) return "Dieser Name ist unter Windows reserviert";
+  if (RESERVED.test(name)) return t("files.nameReserved");
+  if (name.startsWith(".") || name.endsWith(".") || name.endsWith(" ")) return t("files.nameDot");
+  if (DEVICE.test(name)) return t("files.nameWindows");
   const drawing = /\.excalidraw$/i.test(old);
   const oldExt = fileExtension(old);
-  if (drawing ? !/\.excalidraw$/i.test(name) : fileExtension(name) !== oldExt) return `Die Dateiendung muss ${drawing ? ".excalidraw" : `.${oldExt}`} bleiben`;
-  if (new TextEncoder().encode(name).length > 150) return "Der Name ist zu lang";
+  if (drawing ? !/\.excalidraw$/i.test(name) : fileExtension(name) !== oldExt) return t("files.nameExtension", { ext: drawing ? ".excalidraw" : `.${oldExt}` });
+  if (new TextEncoder().encode(name).length > 150) return t("files.nameLong");
   const lower = name.toLowerCase();
-  if (names.some((n) => n !== old && (n.toLowerCase() === lower || (drawing && n.toLowerCase() === `${lower}.svg`)))) return `Eine Datei „${name}“ gibt es schon`;
+  if (names.some((n) => n !== old && (n.toLowerCase() === lower || (drawing && n.toLowerCase() === `${lower}.svg`)))) return t("files.nameExists", { name });
   return null;
 }
 

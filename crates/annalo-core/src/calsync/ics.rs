@@ -6,6 +6,7 @@
 //! Series are expanded in wall-clock time of their zone, so a meeting at 10:00 stays at 10:00
 //! across a change to or from daylight saving time; each instance is then placed in UTC.
 
+use crate::{tr, trf};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -560,7 +561,9 @@ pub fn parse(
     let top = parse_components(bytes);
     let cals: Vec<&Component> = top.iter().filter(|c| c.name == "VCALENDAR").collect();
     if cals.is_empty() {
-        return Err(Error::Parse("keine iCalendar-Daten (BEGIN:VCALENDAR fehlt)".into()));
+        return Err(Error::Parse(
+            tr!("keine iCalendar-Daten (BEGIN:VCALENDAR fehlt)", "no iCalendar data (BEGIN:VCALENDAR missing)").into(),
+        ));
     }
     let mut defined = HashMap::new();
     for tz in cals.iter().flat_map(|c| c.children.iter()).filter(|c| c.name == "VTIMEZONE") {
@@ -724,7 +727,13 @@ pub fn fetch_url(url: &str) -> Result<String> {
     };
     let ok = fixed.to_ascii_lowercase().starts_with("https://") || fixed.to_ascii_lowercase().starts_with("http://");
     if !ok || fixed.len() < 10 {
-        return Err(Error::State("Die Kalender-Adresse muss mit https://, http:// oder webcal:// beginnen".into()));
+        return Err(Error::State(
+            tr!(
+                "Die Kalender-Adresse muss mit https://, http:// oder webcal:// beginnen",
+                "The calendar address must start with https://, http:// or webcal://"
+            )
+            .into(),
+        ));
     }
     Ok(fixed)
 }
@@ -753,18 +762,28 @@ pub async fn fetch(http: &reqwest::Client, url: &str, timeout: std::time::Durati
     let status = resp.status();
     if !status.is_success() {
         let hint = match status.as_u16() {
-            401 | 403 => " – die Adresse ist nicht (mehr) freigegeben oder der Zugriffsschlüssel ist ungültig",
-            404 => " – die Adresse gibt es nicht (mehr)",
+            401 | 403 => tr!(
+                " – die Adresse ist nicht (mehr) freigegeben oder der Zugriffsschlüssel ist ungültig",
+                " – the address is not shared (any more) or the access key is invalid"
+            ),
+            404 => tr!(" – die Adresse gibt es nicht (mehr)", " – the address does not exist (any more)"),
             _ => "",
         };
-        return Err(Error::State(format!("Der Kalender-Server antwortet mit {status}{hint}")));
+        return Err(Error::State(trf!(
+            "Der Kalender-Server antwortet mit {status}{hint}",
+            "The calendar server answers with {status}{hint}"
+        )));
     }
     if resp.content_length().is_some_and(|n| n as usize > MAX_BYTES) {
-        return Err(Error::State("Die Kalenderdatei ist größer als 30 MB".into()));
+        return Err(Error::State(
+            tr!("Die Kalenderdatei ist größer als 30 MB", "The calendar file is larger than 30 MB").into(),
+        ));
     }
     let bytes = resp.bytes().await.map_err(|e| Error::Http(e.without_url()))?;
     if bytes.len() > MAX_BYTES {
-        return Err(Error::State("Die Kalenderdatei ist größer als 30 MB".into()));
+        return Err(Error::State(
+            tr!("Die Kalenderdatei ist größer als 30 MB", "The calendar file is larger than 30 MB").into(),
+        ));
     }
     Ok(bytes.to_vec())
 }

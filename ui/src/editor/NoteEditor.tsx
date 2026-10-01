@@ -13,7 +13,7 @@ import { fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
-import { hoursFromMinutes } from "../lib/format";
+import { h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, toMarkdown } from "./schema";
 import { zeitLaItems, zeitRefItems } from "./zeit-source";
@@ -40,6 +40,7 @@ import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
 import { flushAllEditors, registerFlusher, trackSave } from "./saves";
 import { titleSet } from "../lib/links";
+import { t as tr, useT } from "../lib/i18n";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -66,19 +67,19 @@ function chooseOtherRef(editor: Editor, line: string) {
   editor.chain().focus().insertContentAt(pos, " ").setTextSelection(pos).run();
 }
 
-const NO_REF_HINT = "Schreibe die Referenz dazu, z. B. /zeit NP-8801/1020 2h Beschreibung.";
+const noRefHint = () => tr("ne.noRefHint");
 
 /** Pasted text above this size is offered as an attached file (megabytes of text slow the editor down). */
 export const LARGE_PASTE = 1_000_000;
 
 /** Very large pasted text: attached as a text file, or pasted anyway, as the user chooses. */
 async function largePaste(editor: Editor, text: string, from: number, to: number) {
-  const mb = (text.length / 1_000_000).toLocaleString("de-DE", { maximumFractionDigits: 1 });
+  const mb = h1(text.length / 1_000_000);
   const choice = await useApp.getState().choose({
-    title: "Sehr großer Text",
-    message: `Der eingefügte Text ist etwa ${mb} MB groß. Als Datei angehängt bleibt die Notiz schnell; als Text eingefügt kann das Bearbeiten spürbar langsamer werden.`,
-    confirmLabel: "Als Datei anhängen",
-    altLabel: "Als Text einfügen",
+    title: tr("ne.largeTitle"),
+    message: tr("ne.largeMessage", { mb }),
+    confirmLabel: tr("ne.largeAttach"),
+    altLabel: tr("paste.asText"),
   });
   if (editor.isDestroyed || choice === "cancel") return;
   const at = { from: Math.min(from, editor.state.doc.content.size), to: Math.min(to, editor.state.doc.content.size) };
@@ -88,11 +89,12 @@ async function largePaste(editor: Editor, text: string, from: number, to: number
     return;
   }
   try {
-    const stamp = new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(/[/:]/g, ".").replace(",", "");
-    const saved = await storeFile(new File([text], `Eingefügter Text ${stamp}.txt`, { type: "text/plain" }));
+    const now = new Date();
+    const stamp = `${isoDay(now)} ${time(now.toISOString()).replace(":", ".")}`;
+    const saved = await storeFile(new File([text], `${tr("ne.pastedText")} ${stamp}.txt`, { type: "text/plain" }));
     if (!editor.isDestroyed) editor.chain().focus().insertContentAt(at, { type: "fileEmbed", attrs: { name: saved.name } }).run();
   } catch (e) {
-    useApp.getState().error("Text nicht als Datei gespeichert", e);
+    useApp.getState().error(tr("ne.textNotSaved"), e);
   }
 }
 
@@ -147,6 +149,7 @@ export function NoteEditor({
   onFrontmatter?: (fm: string) => void;
   handleRef?: (h: NoteEditorHandle) => void;
 }) {
+  useT();
   const frontmatter = useRef(splitFrontmatter(doc.content).frontmatter);
   const saveTimer = useRef<number | undefined>(undefined);
   const dirty = useRef(false);
@@ -252,7 +255,7 @@ export function NoteEditor({
       .catch((e) => {
         dirty.current = true;
         // Reported once per failure series, not on every retry.
-        if (!failed.current) useApp.getState().error("Speichern fehlgeschlagen", e);
+        if (!failed.current) useApp.getState().error(tr("editor.saveFailed"), e);
         failed.current = true;
         if (unmounted.current) return;
         setStatus("dirty");
@@ -288,7 +291,7 @@ export function NoteEditor({
             .map((p) => pageSuggestItem(p, p.parent_id ? useApp.getState().pages.get(p.parent_id)?.title : undefined));
           const items: LinkSuggestItem[] = matches;
           if (lower && !titleSet(useApp.getState().pages).has(lower)) {
-            items.push({ id: "create", title: `„${q.trim()}“ neu verlinken`, subtitle: "Seite wird beim Öffnen angelegt", target: q.trim(), create: true });
+            items.push({ id: "create", title: tr("cap.linkNew", { title: q.trim() }), subtitle: tr("cap.linkNewSub"), target: q.trim(), create: true });
           }
           return items;
         },
@@ -340,17 +343,17 @@ export function NoteEditor({
               out = await api.logTime(line, doc.id);
             } catch (e) {
               if (aiError === null) throw e;
-              useApp.getState().toast({ tone: "danger", title: "Buchung fehlgeschlagen", detail: `${errorText(e)}. ${NO_REF_HINT} (KI-Vorschlag nicht möglich: ${errorText(aiError)})` });
+              useApp.getState().toast({ tone: "danger", title: tr("ne.bookFailed"), detail: tr("ne.bookFailedDetail", { msg: errorText(e), hint: noRefHint(), ai: errorText(aiError) }) });
               return null;
             }
             const s = useApp.getState();
             s.bumpEntries();
             s.alerts(out.alerts);
             const target = out.reference || (line.trim().split(/\s+/)[1] ?? "");
-            s.toast({ tone: "success", title: `${hoursFromMinutes(out.entry.duration_minutes)} h gebucht`, detail: `${target}${out.entry.description ? " · " + out.entry.description : ""}` });
+            s.toast({ tone: "success", title: tr("ne.booked", { h: hoursFromMinutes(out.entry.duration_minutes) }), detail: `${target}${out.entry.description ? " · " + out.entry.description : ""}` });
             return { entryId: out.entry.id, hours: hoursFromMinutes(out.entry.duration_minutes), target, text: out.entry.description };
           } catch (e) {
-            useApp.getState().error("Buchung fehlgeschlagen", e);
+            useApp.getState().error(tr("ne.bookFailed"), e);
             return null;
           }
         },
@@ -361,7 +364,7 @@ export function NoteEditor({
           try {
             return (await uploadAttachment(file)).name;
           } catch (e) {
-            useApp.getState().error("Bild nicht gespeichert", e);
+            useApp.getState().error(tr("ne.imageNotSaved"), e);
             return null;
           }
         },
@@ -376,7 +379,7 @@ export function NoteEditor({
                 const saved = await uploadAttachment(file);
                 if (!editor.isDestroyed) editor.chain().focus().insertContent({ type: "imageEmbed", attrs: { name: saved.name } }).run();
               } catch (e) {
-                useApp.getState().error("Bild nicht gespeichert", e);
+                useApp.getState().error(tr("ne.imageNotSaved"), e);
               }
             }
           };
@@ -386,7 +389,7 @@ export function NoteEditor({
           try {
             return (await storeFile(file)).name;
           } catch (e) {
-            useApp.getState().error(`„${file.name}“ nicht gespeichert`, e);
+            useApp.getState().error(tr("ne.fileNotSaved", { name: file.name }), e);
             return null;
           }
         },
@@ -403,13 +406,13 @@ export function NoteEditor({
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
         onZeitLost: (res) =>
-          useApp.getState().toast({ tone: "warning", title: "Gebucht, aber Zeile nicht mehr gefunden", detail: `${res.hours} h · ${res.target} – kein Chip eingefügt` }),
+          useApp.getState().toast({ tone: "warning", title: tr("ne.lineLost"), detail: tr("ne.lineLostDetail", { h: res.hours, target: res.target }) }),
       }),
       content: splitFrontmatter(doc.content).body,
       contentType: "markdown",
       editorProps: {
         // Settings → Editor: spell check language (re-read on every update).
-        attributes: () => ({ class: "prose", ...spellcheckAttrs(editorPrefs()?.spellcheck), "aria-label": "Notiz", style: `tab-size: ${editorPrefs()?.tab_size ?? 4}` }),
+        attributes: () => ({ class: "prose", ...spellcheckAttrs(editorPrefs()?.spellcheck), "aria-label": tr("ne.aria"), style: `tab-size: ${editorPrefs()?.tab_size ?? 4}` }),
         // Ctrl+J on a selection: inline AI instead of the assistant panel (App's global Ctrl+J).
         handleKeyDown: (view, event) => {
           // Alt+↑/↓: move the block (list item, paragraph, heading) with the cursor.
@@ -495,7 +498,7 @@ export function NoteEditor({
       window.clearTimeout(saveTimer.current);
       await save(editor);
       await saving.current;
-      if (dirty.current) throw new Error("Änderungen konnten nicht gespeichert werden");
+      if (dirty.current) throw new Error(tr("ne.changesNotSaved"));
     };
     const setFrontmatter = (fm: string) => {
       if (fm === frontmatter.current) return;
@@ -670,8 +673,8 @@ export function NoteEditor({
           <input
             ref={findInput}
             value={find}
-            placeholder="In Seite suchen"
-            aria-label="In Seite suchen"
+            placeholder={tr("ne.findPh")}
+            aria-label={tr("ne.findPh")}
             onChange={(e) => setFind(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -684,18 +687,18 @@ export function NoteEditor({
             }}
           />
           <span className="find-count num">{find ? (ui?.findCount ? `${ui.findIndex + 1}/${ui.findCount}` : "0") : ""}</span>
-          <IconButton icon={ChevronUp} label="Vorheriger Treffer" size={24} iconSize={14} onClick={() => editor?.commands.findStep(-1)} />
-          <IconButton icon={ChevronDown} label="Nächster Treffer" size={24} iconSize={14} onClick={() => editor?.commands.findStep(1)} />
-          <IconButton icon={Replace} label={`Ersetzen (${keys("Mod H")})`} active={replace !== null} size={24} iconSize={14} onClick={() => setReplace((r) => (r === null ? "" : null))} />
-          <IconButton icon={X} label="Schließen" size={24} iconSize={14} onClick={closeFind} />
+          <IconButton icon={ChevronUp} label={tr("pdf.prevHit")} size={24} iconSize={14} onClick={() => editor?.commands.findStep(-1)} />
+          <IconButton icon={ChevronDown} label={tr("pdf.nextHit")} size={24} iconSize={14} onClick={() => editor?.commands.findStep(1)} />
+          <IconButton icon={Replace} label={`${tr("aibar.replace")} (${keys("Mod H")})`} active={replace !== null} size={24} iconSize={14} onClick={() => setReplace((r) => (r === null ? "" : null))} />
+          <IconButton icon={X} label={tr("common.close")} size={24} iconSize={14} onClick={closeFind} />
         </div>
         {replace !== null && (
-          <div className="find-bar find-replace" role="group" aria-label="Ersetzen">
+          <div className="find-bar find-replace" role="group" aria-label={tr("aibar.replace")}>
             <Replace size={14} className="faint" />
             <input
               value={replace}
-              placeholder="Ersetzen durch"
-              aria-label="Ersetzen durch"
+              placeholder={tr("ne.replaceWith")}
+              aria-label={tr("ne.replaceWith")}
               onChange={(e) => setReplace(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -709,10 +712,10 @@ export function NoteEditor({
               }}
             />
             <button type="button" className="btn btn-ghost btn-sm" disabled={!ui?.findCount} onClick={() => editor?.commands.replaceCurrent(replace)}>
-              Ersetzen
+              {tr("aibar.replace")}
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={!ui?.findCount} onClick={() => editor?.commands.replaceAll(replace)} title={`Alle ersetzen (${keys("Mod Enter")})`}>
-              Alle
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!ui?.findCount} onClick={() => editor?.commands.replaceAll(replace)} title={tr("ne.replaceAll", { keys: keys("Mod Enter") })}>
+              {tr("tasks.status.all")}
             </button>
           </div>
         )}
@@ -721,20 +724,20 @@ export function NoteEditor({
       {editor && (
         // A selected block (table of contents, image, drawing, file) has no text to format.
         <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, state }) => find === null && !aiOpen.current && !state.selection.empty && !(state.selection instanceof NodeSelection) && !e.isActive("codeBlock") && !e.isActive("wikiLink") && !e.isActive("timeEntry") && !e.isActive("imageEmbed") && !e.isActive("image")}>
-          <IconButton icon={Bold} label={`Fett (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
-          <IconButton icon={Italic} label={`Kursiv (${keys("Mod I")})`} active={ui?.italic} onClick={() => editor.chain().focus().toggleItalic().run()} tooltipSide="top" />
-          <IconButton icon={Strikethrough} label="Durchgestrichen" active={ui?.strike} onClick={() => editor.chain().focus().toggleStrike().run()} tooltipSide="top" />
-          <IconButton icon={Code} label="Code" active={ui?.code} onClick={() => editor.chain().focus().toggleCode().run()} tooltipSide="top" />
-          <IconButton icon={Highlighter} label="Hervorheben" active={ui?.highlight} onClick={() => editor.chain().focus().toggleHighlight().run()} tooltipSide="top" />
+          <IconButton icon={Bold} label={`${tr("tb.bold")} (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
+          <IconButton icon={Italic} label={`${tr("tb.italic")} (${keys("Mod I")})`} active={ui?.italic} onClick={() => editor.chain().focus().toggleItalic().run()} tooltipSide="top" />
+          <IconButton icon={Strikethrough} label={tr("tb.strike")} active={ui?.strike} onClick={() => editor.chain().focus().toggleStrike().run()} tooltipSide="top" />
+          <IconButton icon={Code} label={tr("tb.code")} active={ui?.code} onClick={() => editor.chain().focus().toggleCode().run()} tooltipSide="top" />
+          <IconButton icon={Highlighter} label={tr("slash.mark")} active={ui?.highlight} onClick={() => editor.chain().focus().toggleHighlight().run()} tooltipSide="top" />
           <span className="bubble-sep" />
-          <button type="button" className="bubble-ai" aria-label={`Mit KI bearbeiten (${keys("Mod J")})`} data-tooltip={`Mit KI bearbeiten (${keys("Mod J")})`} data-tooltip-side="top" onClick={() => openAi(editor)}>
+          <button type="button" className="bubble-ai" aria-label={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip-side="top" onClick={() => openAi(editor)}>
             <Sparkles size={14} strokeWidth={1.75} aria-hidden />
-            KI
+            {tr("slash.sec.ai")}
           </button>
           <span className="bubble-sep" />
           <IconButton
             icon={Link2}
-            label="Als Seitenlink [[ ]]"
+            label={tr("ne.asPageLink")}
             onClick={() => {
               const { from, to } = editor.state.selection;
               const text = editor.state.doc.textBetween(from, to, " ").trim();
@@ -746,7 +749,7 @@ export function NoteEditor({
           {linkDraft === null ? (
             <IconButton
               icon={SquareArrowOutUpRight}
-              label={ui?.link ? "Weblink entfernen" : "Weblink"}
+              label={ui?.link ? tr("tb.unlink") : tr("tb.weblink")}
               active={ui?.link}
               onClick={() => (editor.isActive("link") ? editor.chain().focus().unsetLink().run() : setLinkDraft("https://"))}
               tooltipSide="top"

@@ -9,6 +9,7 @@
 //! of `read` (only with `ANNALO_TEST_FIXTURES=1`): `save` then writes the attachments'
 //! `data` (base64) and `open` appends `EntryID<TAB>StoreID` to `<fixture>.opened`.
 
+use crate::{tr, trf};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -48,19 +49,44 @@ pub fn available() -> bool {
     cfg!(windows) || fixture_path().is_some()
 }
 
-/// The German message for an error code of the script.
+/// The message for an error code of the script, in the display language.
 fn error_text(code: &str, detail: &str) -> String {
-    let drop = "Alternativ die E-Mail als Datei speichern (Datei → Speichern unter, .msg) und in Annalo ziehen.";
+    let drop = tr!(
+        "Alternativ die E-Mail als Datei speichern (Datei → Speichern unter, .msg) und in Annalo ziehen.",
+        "Or save the e-mail as a file (File → Save as, .msg) and drag it into Annalo."
+    );
     match code {
-        "not_running" => "Outlook läuft nicht. Outlook öffnen, die E-Mail markieren und erneut „Aktuelle E-Mail übernehmen“ wählen.".into(),
-        "no_selection" => "In Outlook ist keine E-Mail markiert oder geöffnet. Eine E-Mail anklicken und erneut versuchen.".into(),
-        "not_installed" => format!("Outlook (klassisch) ist auf diesem Computer nicht installiert. {drop}"),
-        "new_outlook" => format!("Hier läuft das neue Outlook; es erlaubt anderen Programmen keinen Zugriff auf E-Mails. {drop}"),
-        "server_exec" => "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut versuchen.".into(),
-        "constrained" => format!("PowerShell ist auf diesem Computer eingeschränkt (Sprachmodus „{detail}“), der Zugriff auf Outlook ist so nicht möglich. {drop}"),
-        "not_found" => "Outlook findet diese E-Mail nicht mehr (gelöscht, verschoben in ein anderes Postfach oder ein Archiv, das nicht geöffnet ist).".into(),
-        "save" => format!("Ein Anhang ließ sich nicht speichern: {detail}"),
-        _ => format!("Outlook hat die E-Mail nicht geliefert: {}", if detail.is_empty() { code } else { detail }),
+        "not_running" => tr!(
+            "Outlook läuft nicht. Outlook öffnen, die E-Mail markieren und erneut „Aktuelle E-Mail übernehmen“ wählen.",
+            "Outlook is not running. Open Outlook, select the e-mail and choose “Capture current e-mail” again."
+        )
+        .into(),
+        "no_selection" => tr!(
+            "In Outlook ist keine E-Mail markiert oder geöffnet. Eine E-Mail anklicken und erneut versuchen.",
+            "No e-mail is selected or open in Outlook. Click an e-mail and try again."
+        )
+        .into(),
+        "not_installed" => trf!("Outlook (klassisch) ist auf diesem Computer nicht installiert. {drop}", "Outlook (classic) is not installed on this computer. {drop}"),
+        "new_outlook" => trf!(
+            "Hier läuft das neue Outlook; es erlaubt anderen Programmen keinen Zugriff auf E-Mails. {drop}",
+            "The new Outlook runs here; it gives other programs no access to e-mails. {drop}"
+        ),
+        "server_exec" => tr!(
+            "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut versuchen.",
+            "Outlook runs with other rights than Annalo (e.g. “Run as administrator”). Start Outlook normally and try again."
+        )
+        .into(),
+        "constrained" => trf!(
+            "PowerShell ist auf diesem Computer eingeschränkt (Sprachmodus „{detail}“), der Zugriff auf Outlook ist so nicht möglich. {drop}",
+            "PowerShell is restricted on this computer (language mode “{detail}”), so Outlook cannot be reached. {drop}"
+        ),
+        "not_found" => tr!(
+            "Outlook findet diese E-Mail nicht mehr (gelöscht, verschoben in ein anderes Postfach oder ein Archiv, das nicht geöffnet ist).",
+            "Outlook no longer finds this e-mail (deleted, or moved to another mailbox or an archive that is not open)."
+        )
+        .into(),
+        "save" => trf!("Ein Anhang ließ sich nicht speichern: {detail}", "An attachment could not be saved: {detail}"),
+        _ => trf!("Outlook hat die E-Mail nicht geliefert: {}", "Outlook did not return the e-mail: {}", if detail.is_empty() { code } else { detail }),
     }
 }
 
@@ -139,7 +165,13 @@ pub fn read(script_dir: &Path) -> Result<Vec<Mail>> {
         return parse_output(&std::fs::read_to_string(&fixture)?);
     }
     let args: Vec<OsString> = vec!["-Mode".into(), "read".into(), "-MaxItems".into(), MAX_ITEMS.to_string().into()];
-    parse_output(&outlookcom::run(script_dir, SCRIPT_REF, &args, TIMEOUT, "Dann erneut versuchen.")?)
+    parse_output(&outlookcom::run(
+        script_dir,
+        SCRIPT_REF,
+        &args,
+        TIMEOUT,
+        tr!("Dann erneut versuchen.", "Then try again."),
+    )?)
 }
 
 /// The files of a `save` output: `(index, path)`.
@@ -193,13 +225,22 @@ pub fn save_attachments(script_dir: &Path, mail: &Mail, indexes: &[u32], dir: &P
         "-Dir".into(),
         dir.as_os_str().to_owned(),
     ];
-    parse_saved(&outlookcom::run(script_dir, SCRIPT_REF, &args, TIMEOUT, "Dann erneut versuchen.")?)
+    parse_saved(&outlookcom::run(
+        script_dir,
+        SCRIPT_REF,
+        &args,
+        TIMEOUT,
+        tr!("Dann erneut versuchen.", "Then try again."),
+    )?)
 }
 
 /// Shows a mail in Outlook again (blocking).
 pub fn open(script_dir: &Path, entry_id: &str, store_id: &str) -> Result<()> {
     if entry_id.trim().is_empty() {
-        return Err(Error::State("Zu dieser E-Mail ist keine Outlook-Kennung gespeichert".into()));
+        return Err(Error::State(
+            tr!("Zu dieser E-Mail ist keine Outlook-Kennung gespeichert", "No Outlook id is stored for this e-mail")
+                .into(),
+        ));
     }
     if let Some(fixture) = fixture_path() {
         use std::io::Write;
@@ -211,5 +252,11 @@ pub fn open(script_dir: &Path, entry_id: &str, store_id: &str) -> Result<()> {
     }
     let args: Vec<OsString> =
         vec!["-Mode".into(), "open".into(), "-EntryId".into(), entry_id.into(), "-StoreId".into(), store_id.into()];
-    check(&outlookcom::json(&outlookcom::run(script_dir, SCRIPT_REF, &args, TIMEOUT, "Dann erneut versuchen.")?)?)
+    check(&outlookcom::json(&outlookcom::run(
+        script_dir,
+        SCRIPT_REF,
+        &args,
+        TIMEOUT,
+        tr!("Dann erneut versuchen.", "Then try again."),
+    )?)?)
 }

@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { useApp } from "../store/app";
 import { Intake } from "./Intake";
 import { Intro } from "./Intro";
-import { applyLanguage, osLanguage } from "./lang";
+import { applyLanguage, detectLanguage } from "./lang";
 import { startIntake, useFirstRun } from "./state";
 
 export function FirstRun() {
@@ -21,8 +21,9 @@ export function FirstRun() {
   useEffect(() => {
     if (phase === "off" || mode !== "fresh" || langDone.current || !lang) return;
     langDone.current = true;
-    const os = osLanguage();
-    if (os !== lang) void applyLanguage(os);
+    void detectLanguage().then((os) => {
+      if (os !== lang) void applyLanguage(os);
+    });
   }, [phase, mode, lang]);
 
   // The element that had the focus gets it back afterwards.

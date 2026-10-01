@@ -8,7 +8,7 @@ import {
 import { api } from "../lib/api";
 import { importVault, pickFolder } from "../lib/actions";
 import { Badge, Button, Input, Segmented, Switch } from "../components/ui";
-import { useT, type Lang, type TKey } from "../lib/i18n";
+import { translate, useT, type Lang, type TKey } from "../lib/i18n";
 import { weekdayLabels } from "../lib/format";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { canAdd, newDestination, problemText, type DestTest } from "../lib/backupdest";
@@ -123,8 +123,9 @@ export function LanguageStep({ view }: { view: SettingsView }) {
   return (
     <StepFrame step="language" title="fr.lang.title" lead="fr.lang.lead">
       <ChoiceGroup label={t("fr.step.language")} className="two">
-        <Choice name="de" on={lang === "de"} icon={Globe} title="Deutsch" text="Oberfläche, Datumsformat und Hilfetexte auf Deutsch." onPick={() => pick("de")} badge={os === "de" ? t("fr.lang.system") : undefined} />
-        <Choice name="en" on={lang === "en"} icon={Globe} title="English" text="Interface and help texts in English, German dates stay available." onPick={() => pick("en")} badge={os === "en" ? t("fr.lang.system") : undefined} />
+        {/* Each language describes itself in its own words, whatever the interface language. */}
+        <Choice name="de" on={lang === "de"} icon={Globe} title="Deutsch" text={translate("de", "fr.lang.deText")} onPick={() => pick("de")} badge={os === "de" ? t("fr.lang.system") : undefined} />
+        <Choice name="en" on={lang === "en"} icon={Globe} title="English" text={translate("en", "fr.lang.enText")} onPick={() => pick("en")} badge={os === "en" ? t("fr.lang.system") : undefined} />
       </ChoiceGroup>
       <Note icon={RefreshCw}>{t("fr.lang.live")}</Note>
     </StepFrame>
@@ -217,7 +218,7 @@ export function WorkStep({ view, write }: { view: SettingsView; write: Write }) 
                 <Segmented
                   label={t("fr.work.rounding")}
                   value={String(ROUNDING_STEPS.includes(r.step_minutes as never) ? r.step_minutes : 0)}
-                  options={ROUNDING_STEPS.map((n) => ({ value: String(n), label: n ? `${n} min` : t("fr.work.off") }))}
+                  options={ROUNDING_STEPS.map((n) => ({ value: String(n), label: n ? `${n} ${t("unit.min")}` : t("fr.work.off") }))}
                   onChange={(v) => write((x) => withRounding(x, Number(v)))}
                 />
                 {r.step_minutes > 0 && (

@@ -9,12 +9,12 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use annalo_core::Error;
 use annalo_core::ai::client::{ChatMessage, ChatRequest};
 use annalo_core::ai::router::{RouteDecision, Tier};
 use annalo_core::attachments;
 use annalo_core::calsync::tz::Zone;
 use annalo_core::mail::{self, Mail, MailCreated, MailImport, MailLink, MailSource, StoredFiles, Suggestion, outlook};
+use annalo_core::{Error, tr, trf};
 use chrono::{Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -118,13 +118,20 @@ fn store_files(app: &AppHandle, req: &MailImport) -> Result<StoredFiles> {
         MailSource::Eml | MailSource::Msg => {
             if !m.file.is_empty() {
                 let path = mail::temp_file(&root, &m.file).ok_or_else(|| {
-                    Error::State("Die E-Mail-Datei ist nicht mehr da; bitte erneut hineinziehen".into())
+                    Error::State(
+                        tr!(
+                            "Die E-Mail-Datei ist nicht mehr da; bitte erneut hineinziehen",
+                            "The e-mail file is gone; please drag it in again"
+                        )
+                        .into(),
+                    )
                 })?;
                 files.original = Some(import(&state, &path)?);
             }
             for a in m.attachments.iter().filter(|a| req.attachments.contains(&a.index)) {
-                let path = mail::temp_file(&root, &a.file)
-                    .ok_or_else(|| Error::State(format!("Der Anhang „{}“ ist nicht mehr da", a.name)))?;
+                let path = mail::temp_file(&root, &a.file).ok_or_else(|| {
+                    Error::State(trf!("Der Anhang „{}“ ist nicht mehr da", "The attachment “{}” is gone", a.name))
+                })?;
                 files.attachments.push(import(&state, &path)?);
             }
         }
@@ -189,7 +196,11 @@ pub async fn mail_open(app: AppHandle, id: String) -> Result<()> {
         MailSource::Outlook => {
             if !outlook::available() {
                 return Err(Error::State(
-                    "Diese E-Mail liegt in Outlook (klassisch) unter Windows und lässt sich nur dort öffnen.".into(),
+                    tr!(
+                        "Diese E-Mail liegt in Outlook (klassisch) unter Windows und lässt sich nur dort öffnen.",
+                        "This e-mail is in Outlook (classic) on Windows and can only be opened there."
+                    )
+                    .into(),
                 ));
             }
             let dir = scripts(&state);
@@ -199,11 +210,17 @@ pub async fn mail_open(app: AppHandle, id: String) -> Result<()> {
         }
         MailSource::Eml | MailSource::Msg => {
             let path = attachments::existing(&state.attachments_dir(), &link.file)?;
-            app.opener()
-                .open_path(path.display().to_string(), None::<&str>)
-                .map_err(|e| Error::State(format!("„{}“ ließ sich nicht öffnen: {e}", link.file)))
+            app.opener().open_path(path.display().to_string(), None::<&str>).map_err(|e| {
+                Error::State(trf!("„{}“ ließ sich nicht öffnen: {e}", "“{}” could not be opened: {e}", link.file))
+            })
         }
-        MailSource::Text => Err(Error::State("Zu dieser E-Mail ist nichts gespeichert, das sich öffnen ließe".into())),
+        MailSource::Text => Err(Error::State(
+            tr!(
+                "Zu dieser E-Mail ist nichts gespeichert, das sich öffnen ließe",
+                "Nothing is stored for this e-mail that could be opened"
+            )
+            .into(),
+        )),
     }
 }
 
@@ -213,9 +230,13 @@ pub async fn mail_suggest(app: AppHandle, request_id: String, mail: Mail) -> Res
     let state = app.state::<AppState>();
     let (provider, _, model) = local_model(&state).ok_or_else(|| {
         Error::State(
-            "Kein lokales KI-Modell eingerichtet. Unter Einstellungen → KI einen Anbieter als „lokal“ markieren und ihn für \
-             die Stufe „Lokal“ wählen; E-Mails gehen nie an andere Anbieter."
-                .into(),
+            tr!(
+                "Kein lokales KI-Modell eingerichtet. Unter Einstellungen → KI einen Anbieter als „lokal“ markieren und ihn für \
+                 die Stufe „Lokal“ wählen; E-Mails gehen nie an andere Anbieter.",
+                "No local AI model set up. Under Settings → AI, mark a provider as “local” and choose it for the \
+                 “Local” tier; e-mails never go to other providers."
+            )
+            .into(),
         )
     })?;
     prefs::check_cost_limit(&state, false)?;
@@ -238,13 +259,22 @@ pub async fn mail_suggest(app: AppHandle, request_id: String, mail: Mail) -> Res
     let (completion, _, route) =
         tokio::time::timeout(Duration::from_secs(120), crate::complete_routed(&app, &state, &request_id, req, route))
             .await
-            .map_err(|_| Error::State("Das lokale Modell hat nicht innerhalb von 2 Minuten geantwortet".into()))??;
+            .map_err(|_| {
+                Error::State(
+                    tr!(
+                        "Das lokale Modell hat nicht innerhalb von 2 Minuten geantwortet",
+                        "The local model did not answer within 2 minutes"
+                    )
+                    .into(),
+                )
+            })??;
     let settings = state.settings();
     if !settings.providers.iter().any(|p| p.id == route.provider && p.local) {
-        return Err(Error::State("Kein lokales Modell verfügbar".into()));
+        return Err(Error::State(tr!("Kein lokales Modell verfügbar", "No local model available").into()));
     }
-    mail::parse_suggestion(&completion.content)
-        .ok_or_else(|| Error::State("Das lokale Modell hat keine Aufgabe genannt".into()))
+    mail::parse_suggestion(&completion.content).ok_or_else(|| {
+        Error::State(tr!("Das lokale Modell hat keine Aufgabe genannt", "The local model named no task").into())
+    })
 }
 
 /// Removes staged mails older than a day (read, never taken over).

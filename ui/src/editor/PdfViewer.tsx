@@ -15,6 +15,7 @@ import { api, errorText } from "../lib/api";
 import { loadPdfjs, openPdf, pdfWorkerKind } from "../lib/pdf";
 import { findHits, matchOffsets, type PdfHit } from "../lib/pdfsearch";
 import { useApp } from "../store/app";
+import { t, useT } from "../lib/i18n";
 
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
 /** Gap between pages and around the column (px, as in the CSS). */
@@ -63,6 +64,7 @@ function highlight(layer: TextLayer, mark: Mark | null): HTMLElement | null {
 }
 
 function PdfPage({ doc, index, scale, size, root, mark }: { doc: PDFDocumentProxy; index: number; scale: number; size: Size; root: HTMLElement | null; mark: Mark | null }) {
+  useT();
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const textBox = useRef<HTMLDivElement>(null);
@@ -171,13 +173,14 @@ function PdfPage({ doc, index, scale, size, root, mark }: { doc: PDFDocumentProx
   } as React.CSSProperties;
   return (
     <div ref={box} className="pdf-page" data-page={index + 1} style={style}>
-      <canvas ref={canvas} aria-label={`Seite ${index + 1}`} />
+      <canvas ref={canvas} aria-label={t("pdf.page", { n: index + 1 })} />
       <div ref={textBox} className="textLayer" />
     </div>
   );
 }
 
 function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; page: number | null; onClose: () => void; mode: "overlay" | "tab" }) {
+  useT();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -382,7 +385,7 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
     return () => window.removeEventListener("keydown", onKey, true);
   });
 
-  const openExternal = () => api.openAttachment(name).catch((e) => useApp.getState().error("PDF ließ sich nicht öffnen", e));
+  const openExternal = () => api.openAttachment(name).catch((e) => useApp.getState().error(t("pdf.openFailed"), e));
   const hit = hits?.list[hits.at];
   const overlay = mode === "overlay";
 
@@ -392,7 +395,7 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
       className={overlay ? "pdf-overlay" : "pdf-pane"}
       role={overlay ? "dialog" : "region"}
       aria-modal={overlay ? true : undefined}
-      aria-label={`PDF ${name}`}
+      aria-label={t("pdf.aria", { name })}
       data-worker={workerKind}
       tabIndex={-1}
       onKeyDown={(e) => {
@@ -409,12 +412,12 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
           {name}
         </span>
         <div className="pdf-tools">
-          <IconButton icon={ChevronUp} label="Vorherige Seite" onClick={() => goTo(current - 1)} disabled={!doc || current <= 1} />
-          <IconButton icon={ChevronDown} label="Nächste Seite" onClick={() => goTo(current + 1)} disabled={!doc || current >= sizes.length} />
+          <IconButton icon={ChevronUp} label={t("pdf.prevPage")} onClick={() => goTo(current - 1)} disabled={!doc || current <= 1} />
+          <IconButton icon={ChevronDown} label={t("pdf.nextPage")} onClick={() => goTo(current + 1)} disabled={!doc || current >= sizes.length} />
           <span className="pdf-page-nav">
             <input
               className="input pdf-page-input"
-              aria-label="Seite"
+              aria-label={t("pdf.pageLabel")}
               value={pageInput}
               inputMode="numeric"
               onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ""))}
@@ -424,20 +427,20 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
             <span className="pdf-page-count">/ {sizes.length || "–"}</span>
           </span>
           <span className="pdf-sep" />
-          <IconButton icon={ZoomOut} label="Verkleinern" onClick={() => step(-1)} disabled={!doc} />
+          <IconButton icon={ZoomOut} label={t("pdf.zoomOut")} onClick={() => step(-1)} disabled={!doc} />
           <span className="pdf-zoom" aria-live="polite">
             {Math.round(scale * 100)} %
           </span>
-          <IconButton icon={ZoomIn} label="Vergrößern" onClick={() => step(1)} disabled={!doc} />
-          <IconButton icon={MoveHorizontal} label="An Breite anpassen" active={zoom === "fit"} onClick={() => zoomTo(zoom === "fit" ? "auto" : "fit")} disabled={!doc} />
+          <IconButton icon={ZoomIn} label={t("pdf.zoomIn")} onClick={() => step(1)} disabled={!doc} />
+          <IconButton icon={MoveHorizontal} label={t("pdf.fitWidth")} active={zoom === "fit"} onClick={() => zoomTo(zoom === "fit" ? "auto" : "fit")} disabled={!doc} />
           <span className="pdf-sep" />
           <label className="pdf-search">
             <Search size={14} aria-hidden />
             <input
               ref={searchInput}
               className="pdf-search-input"
-              placeholder="Im PDF suchen"
-              aria-label="Im PDF suchen"
+              placeholder={t("pdf.search")}
+              aria-label={t("pdf.search")}
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -451,32 +454,32 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
             />
             {(hits || searching) && (
               <span className="pdf-hits" aria-live="polite">
-                {searching ? "Suche…" : hit ? `Seite ${hit.page} · ${hits!.at + 1}/${hits!.list.length}` : "Keine Treffer"}
+                {searching ? t("pdf.searching") : hit ? t("pdf.hitAt", { page: hit.page, at: hits!.at + 1, n: hits!.list.length }) : t("links.noHits")}
               </span>
             )}
           </label>
-          <IconButton icon={ChevronUp} label="Vorheriger Treffer" size="sm" onClick={() => void search(true)} disabled={!doc || !query.trim()} className="pdf-hit-prev" />
-          <IconButton icon={ChevronDown} label="Nächster Treffer" size="sm" onClick={() => void search(false)} disabled={!doc || !query.trim()} className="pdf-hit-next" />
+          <IconButton icon={ChevronUp} label={t("pdf.prevHit")} size="sm" onClick={() => void search(true)} disabled={!doc || !query.trim()} className="pdf-hit-prev" />
+          <IconButton icon={ChevronDown} label={t("pdf.nextHit")} size="sm" onClick={() => void search(false)} disabled={!doc || !query.trim()} className="pdf-hit-next" />
           <span className="pdf-sep" />
           {overlay && (
             <IconButton
               icon={PanelTop}
-              label="In einem Tab öffnen"
+              label={t("pdf.openInTab")}
               onClick={() => {
                 onClose();
                 useApp.getState().openTab({ kind: "pdf", tag: name }, { newTab: true });
               }}
             />
           )}
-          <IconButton icon={ExternalLink} label="Extern öffnen" onClick={openExternal} />
-          {overlay && <IconButton icon={X} label="Schließen" onClick={onClose} className="pdf-close" />}
+          <IconButton icon={ExternalLink} label={t("file.openExternal")} onClick={openExternal} />
+          {overlay && <IconButton icon={X} label={t("common.close")} onClick={onClose} className="pdf-close" />}
         </div>
       </header>
       <div ref={scrollRef} className="pdf-scroll" onScroll={onScroll}>
         {error ? (
-          <div className="pdf-message is-error">PDF ließ sich nicht anzeigen: {error}</div>
+          <div className="pdf-message is-error">{t("pdf.showFailed", { error })}</div>
         ) : !doc ? (
-          <div className="pdf-message">PDF wird geladen…</div>
+          <div className="pdf-message">{t("ws.pdfLoading")}</div>
         ) : (
           sizes.map((s, i) => <PdfPage key={i} doc={doc} index={i} scale={scale} size={s} root={root} mark={marks.get(i + 1) ?? null} />)
         )}

@@ -14,6 +14,7 @@
 //! holding the marker `.annalo-portable`) keeps everything in `<exe dir>/data`, and
 //! `location.json` is neither read nor written ([`portable_data_dir`], [`prepare_portable`]).
 
+use crate::{tr, trf};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -187,8 +188,9 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
         let from = current.clone().unwrap_or_else(|| default.clone());
         match move_workspace(&from, &to).and_then(|_| write_location(config_dir, &to)) {
             Ok(()) => {
-                let msg = format!(
+                let msg = trf!(
                     "Die Daten wurden nach {} verschoben. Der bisherige Ordner {} bleibt unverändert erhalten.",
+                    "The data was moved to {}. The previous folder {} is kept unchanged.",
                     to.display(),
                     from.display()
                 );
@@ -197,8 +199,9 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
             Err(e) => {
                 let keep = Location { data_dir: loc.data_dir.clone(), pending_move: None };
                 let _ = write_location_file(config_dir, &keep);
-                let msg = format!(
+                let msg = trf!(
                     "Die Daten konnten nicht nach {} verschoben werden ({e}). Es wird weiter der bisherige Ordner verwendet.",
+                    "The data could not be moved to {} ({e}). The previous folder is still used.",
                     to.display()
                 );
                 notice = Some(Notice::new("error", msg));
@@ -207,9 +210,14 @@ pub fn prepare(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
     }
     let Some(dir) = current else { return Startup { dir: default, notice } };
     if dir != default && !dir.join(DB_FILE).is_file() {
-        let why = if dir.is_dir() { "enthält keinen Arbeitsbereich" } else { "ist nicht erreichbar" };
-        let msg = format!(
+        let why = if dir.is_dir() {
+            tr!("enthält keinen Arbeitsbereich", "contains no workspace")
+        } else {
+            tr!("ist nicht erreichbar", "is not reachable")
+        };
+        let msg = trf!(
             "Der Datenordner {} {why}. Vorübergehend wird der Standardordner {} verwendet.",
+            "The data folder {} {why}. The default folder {} is used for now.",
             dir.display(),
             default.display()
         );
@@ -231,19 +239,29 @@ pub struct Target {
 /// writable folder that is neither `from` nor inside it. Creates `to` if needed.
 pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
     if to.as_os_str().is_empty() {
-        return Err(Error::State("Kein Zielordner angegeben".into()));
+        return Err(Error::State(tr!("Kein Zielordner angegeben", "No target folder given").into()));
     }
     if !to.is_absolute() {
-        return Err(Error::State("Bitte einen vollständigen Ordnerpfad wählen".into()));
+        return Err(Error::State(
+            tr!("Bitte einen vollständigen Ordnerpfad wählen", "Please choose a full folder path").into(),
+        ));
     }
     std::fs::create_dir_all(to).map_err(|e| Error::File { path: to.to_path_buf(), dir: true, source: e })?;
     let to_c = to.canonicalize().at(to)?;
     if let Ok(from_c) = from.canonicalize() {
         if from_c == to_c {
-            return Err(Error::State("Die Daten liegen bereits in diesem Ordner".into()));
+            return Err(Error::State(
+                tr!("Die Daten liegen bereits in diesem Ordner", "The data is already in this folder").into(),
+            ));
         }
         if to_c.starts_with(&from_c) {
-            return Err(Error::State("Der Zielordner liegt im bisherigen Datenordner".into()));
+            return Err(Error::State(
+                tr!(
+                    "Der Zielordner liegt im bisherigen Datenordner",
+                    "The target folder is inside the current data folder"
+                )
+                .into(),
+            ));
         }
     }
     let probe = to.join(".annalo-write-test");
@@ -261,10 +279,17 @@ pub fn check_target(from: &Path, to: &Path) -> Result<Target> {
 pub fn copy_workspace(from: &Path, to: &Path) -> Result<usize> {
     check_target(from, to)?;
     if to.join(DB_FILE).exists() {
-        return Err(Error::State(format!("Im Zielordner liegt bereits eine Datenbank ({DB_FILE})")));
+        return Err(Error::State(trf!(
+            "Im Zielordner liegt bereits eine Datenbank ({DB_FILE})",
+            "The target folder already contains a database ({DB_FILE})"
+        )));
     }
     if !from.join(DB_FILE).is_file() {
-        return Err(Error::State(format!("Im bisherigen Ordner {} liegt keine Datenbank", from.display())));
+        return Err(Error::State(trf!(
+            "Im bisherigen Ordner {} liegt keine Datenbank",
+            "There is no database in the previous folder {}",
+            from.display()
+        )));
     }
     let staging = to.join(STAGING_DIR);
     if staging.exists() {

@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ClipboardType, Copy, FilePlus2, FileInput, FileText, History, Languages, Lightbulb, ListChecks, Lock, MessageSquarePlus, PencilLine, Plus, Quote, RefreshCw, Settings2, Sparkles, Square, Timer, WifiOff, Wrench, X } from "lucide-react";
 import { api } from "../lib/api";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
-import { t, useT } from "../lib/i18n";
+import { t, useT, type TKey } from "../lib/i18n";
 import { modelLabel, usableProvider } from "../lib/providers";
 import type { RouteDecision, Tier } from "../lib/types";
 import type { Turn } from "../lib/chathistory";
@@ -22,7 +22,9 @@ import { answerTitle, copyText } from "./assistant/actions";
 export { openSource } from "./assistant/TurnView";
 
 /** Quick follow-ups under the last answer. */
-const FOLLOW_UPS = ["Kürzer", "Als Stichpunkte", "Als Tabelle", "Auf Englisch"];
+const FOLLOW_UP_KEYS: TKey[] = ["assist.follow.shorter", "assist.follow.bullets", "assist.follow.table", "assist.follow.language"];
+/** Follow-up questions in the display language (the answer follows the question's language). */
+const followUps = () => FOLLOW_UP_KEYS.map((k) => t(k));
 const tierKey: Record<Tier, "chat.tier.local" | "chat.tier.standard" | "chat.tier.reasoning"> = { local: "chat.tier.local", standard: "chat.tier.standard", reasoning: "chat.tier.reasoning" };
 
 export function AssistantPanel() {
@@ -119,7 +121,7 @@ function ChatHeader() {
         </button>
       )}
       {!historyOpen && priv && <span className="chat-private-badge" title={t("chat.privateHint")}>{t("chat.private")}</span>}
-      <IconButton icon={Plus} label="Neuer Chat" size="md" onClick={() => newChat()} />
+      <IconButton icon={Plus} label={t("assist.newChat")} size="md" onClick={() => newChat()} />
     </div>
   );
 }
@@ -209,8 +211,8 @@ function ChatBody() {
               </div>
               {!busy && last?.kind === "assistant" && !last.error && (
                 <div className="follow-ups" aria-label={t("chat.followUps")}>
-                  {FOLLOW_UPS.map((f) => (
-                    <button key={f} type="button" className="follow-up" onClick={() => sendChat(`${f}, bitte.`)}>
+                  {followUps().map((f) => (
+                    <button key={f} type="button" className="follow-up" onClick={() => sendChat(t("assist.follow.ask", { f }))}>
                       {f}
                     </button>
                   ))}
@@ -242,8 +244,8 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
   };
   if (selected) {
     out.push(
-      { label: "Auswahl kopieren", icon: Copy, onSelect: () => copy(selected, t("chat.what.selection")) },
-      { label: "Auswahl zitieren", icon: Quote, onSelect: () => setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`) },
+      { label: t("assist.copySelection"), icon: Copy, onSelect: () => copy(selected, t("chat.what.selection")) },
+      { label: t("assist.quoteSelection"), icon: Quote, onSelect: () => setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`) },
       "separator",
     );
   }
@@ -254,12 +256,12 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
   const page = currentPage();
   if (turn?.kind === "assistant" && turn.text && !turn.streaming) {
     out.push(
-      { label: "Antwort kopieren (Markdown)", icon: Copy, onSelect: () => copy(turn.text, t("chat.what.answer")) },
-      { label: "Als reinen Text kopieren", icon: ClipboardType, onSelect: () => copy(plainText(row) ?? turn.text, t("chat.what.text")) },
+      { label: t("assist.copyAnswer"), icon: Copy, onSelect: () => copy(turn.text, t("chat.what.answer")) },
+      { label: t("assist.copyPlain"), icon: ClipboardType, onSelect: () => copy(plainText(row) ?? turn.text, t("chat.what.text")) },
       ...(page
         ? [
             {
-              label: `An „${page.title}“ anhängen`,
+              label: t("assist.appendTo", { title: page.title }),
               icon: FileInput,
               onSelect: async () => {
                 try {
@@ -276,7 +278,7 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
           ]
         : []),
       {
-        label: "Als neue Seite speichern",
+        label: t("assist.saveAsPage"),
         icon: FilePlus2,
         onSelect: async () => {
           try {
@@ -289,19 +291,19 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
         },
       },
       "separator",
-      { label: "Neu generieren", icon: RefreshCw, disabled: busy || idx !== turns.length - 1, onSelect: () => regenerate(turn.id) },
-      { label: "Nachfragen", icon: MessageSquarePlus, disabled: busy, submenu: FOLLOW_UPS.map((f) => ({ label: f, onSelect: () => sendChat(`${f}, bitte.`) })) },
+      { label: t("assist.regenerate"), icon: RefreshCw, disabled: busy || idx !== turns.length - 1, onSelect: () => regenerate(turn.id) },
+      { label: t("assist.followUp"), icon: MessageSquarePlus, disabled: busy, submenu: followUps().map((f) => ({ label: f, onSelect: () => sendChat(t("assist.follow.ask", { f })) })) },
       "separator",
     );
   } else if (turn?.kind === "user") {
     out.push(
-      { label: "Kopieren", icon: Copy, onSelect: () => copy(turn.text, t("chat.what.message")) },
-      { label: "Bearbeiten", icon: PencilLine, onSelect: () => setInput(() => turn.text) },
-      { label: "Erneut senden", icon: RefreshCw, disabled: busy, onSelect: () => sendChat(turn.prompt, { ...turn.opts }) },
+      { label: t("common.copy"), icon: Copy, onSelect: () => copy(turn.text, t("chat.what.message")) },
+      { label: t("links.editShort"), icon: PencilLine, onSelect: () => setInput(() => turn.text) },
+      { label: t("assist.resend"), icon: RefreshCw, disabled: busy, onSelect: () => sendChat(turn.prompt, { ...turn.opts }) },
       "separator",
     );
   }
-  if (turns.length) out.push({ label: "Neuer Chat", icon: Plus, onSelect: () => newChat() });
+  if (turns.length) out.push({ label: t("assist.newChat"), icon: Plus, onSelect: () => newChat() });
   while (out[out.length - 1] === "separator") out.pop();
   return out;
 }
@@ -457,7 +459,7 @@ function Composer() {
           rows={1}
           value={input}
           placeholder={t("chat.placeholder")}
-          aria-label="Nachricht an den Assistenten"
+          aria-label={t("assist.inputLabel")}
           aria-invalid={tooLong || undefined}
           onChange={(e) => useChat.setState({ input: e.target.value })}
           onKeyDown={(e) => {
@@ -497,7 +499,7 @@ function Composer() {
                   onSelect: () => setTier(o.value),
                 })),
                 "separator" as const,
-                { label: useTools ? "Werkzeuge deaktivieren" : "Werkzeuge aktivieren", icon: Wrench, onSelect: () => setUseTools(!useTools) },
+                { label: useTools ? t("assist.toolsOff") : t("assist.toolsOn"), icon: Wrench, onSelect: () => setUseTools(!useTools) },
                 { label: t("chat.aiSettings"), icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
               ])
             }
@@ -519,11 +521,11 @@ function Composer() {
             </span>
           )}
           {busy ? (
-            <button type="button" className="send-btn stop" aria-label="Antwort stoppen" title={t("chat.stopHint")} onClick={stopChat}>
+            <button type="button" className="send-btn stop" aria-label={t("assist.stop")} title={t("chat.stopHint")} onClick={stopChat}>
               <Square size={11} fill="currentColor" />
             </button>
           ) : (
-            <button type="button" className="send-btn" aria-label="Senden" disabled={!input.trim() || tooLong} onClick={send}>
+            <button type="button" className="send-btn" aria-label={t("assist.send")} disabled={!input.trim() || tooLong} onClick={send}>
               <ArrowUp size={15} strokeWidth={2.25} />
             </button>
           )}

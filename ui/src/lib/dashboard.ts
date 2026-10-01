@@ -2,7 +2,7 @@
 // widget list of 1.3–1.5 onto a board, export and import of a board, the parts of
 // `dashboard_data` each widget needs, the budget forecast and the week bars.
 
-import { addDays, isoDay, weekStart } from "./format";
+import { addDays, isoDay, weekStart, weekdayLabels } from "./format";
 import { t, type TKey } from "./i18n";
 import { COLS, clampRect, findFree, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
@@ -589,13 +589,11 @@ export interface WeekSummary {
   gapMinutes: number;
 }
 
-const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
 /**
  * Bars for the week starting `monday`: booked minutes per day against the daily target.
  * Gaps count only on past workdays (today is still running, weekends have no target).
  */
-export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targetHours: number, workdays: number[], today: Date, labels = WEEKDAY_LABELS): WeekSummary {
+export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targetHours: number, workdays: number[], today: Date, labels = weekdayLabels(1)): WeekSummary {
   const byDate = new Map(days.map((d) => [d.date, d.booked_minutes]));
   const target = Math.max(0, targetHours) * 60;
   const todayIso = isoDay(today);

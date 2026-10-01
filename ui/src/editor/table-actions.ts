@@ -5,10 +5,12 @@ import type { EditorState } from "@tiptap/pm/state";
 import {
   BetweenHorizontalEnd, BetweenHorizontalStart, BetweenVerticalEnd, BetweenVerticalStart, TableColumnsSplit, TableRowsSplit, Trash2, type LucideIcon,
 } from "lucide-react";
+import { type TKey } from "../lib/i18n";
 
 export interface TableAction {
   id: string;
-  title: string;
+  /** Catalog key of the label. */
+  title: TKey;
   icon: LucideIcon;
   keywords: string;
   danger?: boolean;
@@ -18,13 +20,13 @@ export interface TableAction {
 }
 
 export const TABLE_ACTIONS: TableAction[] = [
-  { id: "row-above", title: "Zeile darüber", icon: BetweenHorizontalStart, keywords: "tabelle zeile row oben einfügen", bodyOnly: true, run: (c) => c.addRowBefore() },
-  { id: "row-below", title: "Zeile darunter", icon: BetweenHorizontalEnd, keywords: "tabelle zeile row unten einfügen", run: (c) => c.addRowAfter() },
-  { id: "col-left", title: "Spalte links", icon: BetweenVerticalStart, keywords: "tabelle spalte column links einfügen", run: (c) => c.addColumnBefore() },
-  { id: "col-right", title: "Spalte rechts", icon: BetweenVerticalEnd, keywords: "tabelle spalte column rechts einfügen", run: (c) => c.addColumnAfter() },
-  { id: "row-delete", title: "Zeile löschen", icon: TableRowsSplit, keywords: "tabelle zeile row entfernen löschen", danger: true, bodyOnly: true, run: (c) => c.deleteRow() },
-  { id: "col-delete", title: "Spalte löschen", icon: TableColumnsSplit, keywords: "tabelle spalte column entfernen löschen", danger: true, run: (c) => c.deleteColumn() },
-  { id: "table-delete", title: "Tabelle löschen", icon: Trash2, keywords: "tabelle table entfernen löschen", danger: true, run: (c) => c.deleteTable() },
+  { id: "row-above", title: "table.rowAbove", icon: BetweenHorizontalStart, keywords: "tabelle table zeile row oben above einfügen insert", bodyOnly: true, run: (c) => c.addRowBefore() },
+  { id: "row-below", title: "table.rowBelow", icon: BetweenHorizontalEnd, keywords: "tabelle table zeile row unten below einfügen insert", run: (c) => c.addRowAfter() },
+  { id: "col-left", title: "table.colLeft", icon: BetweenVerticalStart, keywords: "tabelle table spalte column links left einfügen insert", run: (c) => c.addColumnBefore() },
+  { id: "col-right", title: "table.colRight", icon: BetweenVerticalEnd, keywords: "tabelle table spalte column rechts right einfügen insert", run: (c) => c.addColumnAfter() },
+  { id: "row-delete", title: "table.rowDelete", icon: TableRowsSplit, keywords: "tabelle table zeile row entfernen remove löschen delete", danger: true, bodyOnly: true, run: (c) => c.deleteRow() },
+  { id: "col-delete", title: "table.colDelete", icon: TableColumnsSplit, keywords: "tabelle table spalte column entfernen remove löschen delete", danger: true, run: (c) => c.deleteColumn() },
+  { id: "table-delete", title: "table.delete", icon: Trash2, keywords: "tabelle table entfernen remove löschen delete", danger: true, run: (c) => c.deleteTable() },
 ];
 
 /** Whether the selection is in the first (header) row of a table. */

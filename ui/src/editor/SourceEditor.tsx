@@ -10,6 +10,7 @@ import { splitFrontmatter } from "./extensions";
 import { markdownStats } from "../lib/plaintext";
 import { registerFlusher, trackSave } from "./NoteEditor";
 import { merge3 } from "../lib/merge3";
+import { t } from "../lib/i18n";
 
 const SAVE_MS = 700;
 const INDENT = "  ";
@@ -66,7 +67,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       })
       .catch((e) => {
         dirty.current = true;
-        useApp.getState().error("Speichern fehlgeschlagen", e);
+        useApp.getState().error(t("editor.saveFailed"), e);
       })
       .finally(() => {
         if (saving.current === p) saving.current = null;
@@ -211,7 +212,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         className="source-text"
         value={value}
         spellCheck={false}
-        aria-label="Markdown-Quelltext"
+        aria-label={t("editor.source")}
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKeyDown}
         // Other editors of this page store their edits first, so we continue from them.

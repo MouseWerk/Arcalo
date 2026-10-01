@@ -6,7 +6,8 @@ import { ArrowDown, ArrowUp, Cloud, Cpu, MoreHorizontal, Pencil, Plus, RefreshCw
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { Badge, Button, IconButton, Input, Select, Switch, useMenu } from "../../components/ui";
-import { useT } from "../../lib/i18n";
+import { t as tr, useT, type TKey } from "../../lib/i18n";
+import { numberLocale } from "../../lib/format";
 import {
   KIND_LABELS,
   PRESETS,
@@ -28,10 +29,10 @@ import { ProviderDialog } from "./ProviderDialog";
 
 type Status = { state: "checking" } | { state: "done"; test: ConnectionTest };
 
-const TIER_ROWS: { tier: Tier; label: "set.ai.local" | "set.ai.standard" | "set.ai.reasoning"; aria: string }[] = [
-  { tier: "local", label: "set.ai.local", aria: "Lokales Modell" },
-  { tier: "standard", label: "set.ai.standard", aria: "Standardmodell" },
-  { tier: "reasoning", label: "set.ai.reasoning", aria: "Reasoning-Modell" },
+const TIER_ROWS: { tier: Tier; label: "set.ai.local" | "set.ai.standard" | "set.ai.reasoning"; aria: TKey }[] = [
+  { tier: "local", label: "set.ai.local", aria: "aip.aria.local" },
+  { tier: "standard", label: "set.ai.standard", aria: "aip.aria.standard" },
+  { tier: "reasoning", label: "set.ai.reasoning", aria: "aip.aria.reasoning" },
 ];
 
 export function AiProvidersSection({ draft, update }: SectionProps) {
@@ -147,14 +148,14 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
 
   return (
     <>
-      <Group title={t("set.ai.providers")} description="Wohin Anfragen gehen. Lokale Anbieter bekommen auch vertrauliche Inhalte und kosten nichts.">
+      <Group title={t("set.ai.providers")} description={t("aip.providersDesc")}>
         {ollama && (
           <Unfiltered>
             <div className="provider-found" role="status">
               <Cpu size={15} />
               <span title={ollama.url}>
                 <strong>{t("set.ai.ollamaFound")}</strong>
-                <span className="faint"> · {ollama.models.length === 1 ? "1 Modell" : `${ollama.models.length} Modelle`}</span>
+                <span className="faint"> · {t("aip.modelCount", { n: ollama.models.length })}</span>
               </span>
               <Button size="sm" variant="primary" icon={Plus} onClick={() => add(PRESETS.find((p) => p.key === "ollama")!)}>
                 {t("common.add")}
@@ -174,7 +175,7 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
           />
         ))}
         <Unfiltered>
-          {!providers.length && <p className="faint small provider-empty">Noch kein Anbieter eingerichtet. Ohne Anbieter bleibt der Assistent aus.</p>}
+          {!providers.length && <p className="faint small provider-empty">{t("aip.none")}</p>}
           <div className="provider-actions">
             <Button icon={Plus} onClick={addMenu} aria-haspopup="menu">
               {t("set.ai.addProvider")}
@@ -184,46 +185,45 @@ export function AiProvidersSection({ draft, update }: SectionProps) {
         </Unfiltered>
       </Group>
 
-      <Group title={t("set.ai.models")} description="Welcher Anbieter und welches Modell für welche Aufgaben verwendet werden.">
+      <Group title={t("set.ai.models")} description={t("aip.modelsDesc")}>
         {missing.length > 0 && Object.keys(lists).length > 0 && (
           <div className="warn-note model-missing" role="status">
             <span>
-              {missing.length === 1 ? "Ein Modell" : `${missing.length} Modelle`} gibt es beim gewählten Anbieter nicht ({missing.map((tier) => tierRef(router, tier).model || "leer").join(", ")}).
-              Anfragen weichen auf ein vorhandenes Modell aus.
+              {t("aip.missing", { n: missing.length, list: missing.map((tier) => tierRef(router, tier).model || t("aip.empty")).join(", ") })}
             </span>
             <Button variant="secondary" size="sm" onClick={() => setRouter(autoAssignTiers(router, providers, lists))}>
-              Automatisch zuordnen
+              {t("aip.autoAssign")}
             </Button>
           </div>
         )}
-        <Row label={t("set.ai.autoRoute")} description="Einfache Aufgaben gehen an das lokale Modell, komplexe an stärkere Modelle.">
-          <Switch checked={draft.auto_route} onChange={(v) => update({ auto_route: v })} label="Automatisches Routing" />
+        <Row label={t("set.ai.autoRoute")} description={t("aip.autoRouteDesc")}>
+          <Switch checked={draft.auto_route} onChange={(v) => update({ auto_route: v })} label={t("aip.autoRouteAria")} />
         </Row>
         {TIER_ROWS.map(({ tier, label, aria }) => {
           const r = tierRef(router, tier);
           const desc =
             tier === "local"
               ? cloudLocal && providers.length > 1
-                ? `Für kurze Fragen und vertrauliche Inhalte. Achtung: „${providerName(cloudLocal)}“ ist nicht als lokal markiert.`
-                : "Für kurze Fragen, Umformulierungen und vertrauliche Inhalte."
+                ? t("aip.localNotLocal", { name: providerName(cloudLocal) })
+                : t("aip.localDesc")
               : tier === "standard"
                 ? draft.auto_route
-                  ? "Für die meisten Aufgaben."
-                  : "Wird für alle Anfragen verwendet."
-                : "Für Analysen, Planung und Code.";
+                  ? t("aip.standardDesc")
+                  : t("aip.standardAll")
+                : t("aip.reasoningDesc");
           return (
             <Row key={tier} label={t(label)} description={desc} keywords="Modell Anbieter">
-              <ModelPicker label={aria} providers={providers} lists={lists} embedLists={embedLists} value={r} prices={draft.prices} onChange={(v) => setRouter(setTier(tier, v.provider, v.model))} />
+              <ModelPicker label={t(aria)} providers={providers} lists={lists} embedLists={embedLists} value={r} prices={draft.prices} onChange={(v) => setRouter(setTier(tier, v.provider, v.model))} />
             </Row>
           );
         })}
         <Row
           label={t("set.ai.embeddings")}
-          description="Für die semantische Suche in Notizen. Angeboten werden nur Modelle, die Embeddings berechnen (bei LiteLLM: mode: embedding, sonst am Namen erkannt), nie Chat-Modelle. „Keine“ = nur Stichwortsuche. Private Seiten gehen nur an lokale Anbieter."
+          description={t("aip.embedDesc")}
           keywords="Modell Anbieter Stichwortsuche"
         >
           <ModelPicker
-            label="Embedding-Modell"
+            label={t("aip.embedModel")}
             providers={providers}
             lists={lists}
             embedLists={embedLists}
@@ -287,7 +287,7 @@ function ProviderRow({
           {p.enabled && needsKey(p) && !keySet && <Badge tone="warning">{t("set.ai.noKey")}</Badge>}
         </div>
         <div className="set-row-desc provider-meta">
-          <span className={`conn ${tone === "ok" ? "ok" : tone === "fail" ? "fail" : ""}`} title={test ? (test.error ?? `${test.latency_ms} ms`) : ""}>
+          <span className={`conn ${tone === "ok" ? "ok" : tone === "fail" ? "fail" : ""}`} title={test ? (test.error ?? t("aip.ms", { n: test.latency_ms })) : ""}>
             {!p.enabled ? t("set.ai.off") : !test ? t("common.checking") : test.ok ? t("set.ai.connected", { n: test.models.length }) : t("set.ai.noConnection")}
           </span>
           <span>{KIND_LABELS[p.kind]}</span>
@@ -298,8 +298,8 @@ function ProviderRow({
       </div>
       <div className="set-row-control">
         <Switch checked={p.enabled} onChange={onToggle} label={`${name}: ${t("set.ai.providerActive")}`} />
-        <IconButton icon={Pencil} label={`${name} bearbeiten`} onClick={onEdit} />
-        <IconButton icon={MoreHorizontal} label={`${name}: Weitere Aktionen`} aria-haspopup="menu" onClick={onMenu} />
+        <IconButton icon={Pencil} label={t("aip.edit", { name })} onClick={onEdit} />
+        <IconButton icon={MoreHorizontal} label={t("aip.more", { name })} aria-haspopup="menu" onClick={onMenu} />
       </div>
     </div>
   );
@@ -338,7 +338,8 @@ function ModelPicker({
   const notEmbedding = !!embedding && !!value.model && all.includes(value.model) && !embeds.includes(value.model);
   const missing = !!value.model && all.length > 0 && !all.includes(value.model);
   const price = prices && value.model ? priceFor(prices, provider, value.model) : null;
-  const perM = (x: number) => x.toLocaleString("de-DE", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 3 });
+  useT();
+  const perM = (x: number) => x.toLocaleString(numberLocale(), { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 3 });
   return (
     <div className="model-picker">
       <div className="model-picker-row">
@@ -351,24 +352,24 @@ function ModelPicker({
               const keep = list.includes(value.model) ? value.model : (list[0] ?? (embedding ? "" : value.model));
               onChange({ provider: id, model: keep });
             }}
-            aria-label={`Anbieter für ${label}`}
+            aria-label={tr("aip.providerFor", { label })}
             className="model-picker-provider"
           >
-            {!provider && <option value="">Anbieter wählen</option>}
+            {!provider && <option value="">{tr("aip.chooseProvider")}</option>}
             {providers.map((p) => (
               <option key={p.id} value={p.id} disabled={!p.enabled && p.id !== pid}>
                 {providerName(p)}
-                {p.enabled ? "" : " (aus)"}
+                {p.enabled ? "" : ` (${tr("set.ai.off")})`}
               </option>
             ))}
           </Select>
         )}
         {models.length || (embedding && all.length) ? (
           <Select value={value.model} onChange={(e) => onChange({ provider: pid, model: e.target.value })} aria-label={label} className="model-picker-model">
-            {embedding && <option value="">Keine (nur Stichwortsuche)</option>}
-            {!embedding && !value.model && <option value="">Modell wählen</option>}
-            {missing && <option value={value.model}>{value.model} (nicht beim Anbieter)</option>}
-            {notEmbedding && <option value={value.model}>{value.model} (kein Embedding-Modell)</option>}
+            {embedding && <option value="">{tr("aip.noneKeyword")}</option>}
+            {!embedding && !value.model && <option value="">{tr("aip.chooseModel")}</option>}
+            {missing && <option value={value.model}>{tr("aip.notAtProvider", { model: value.model })}</option>}
+            {notEmbedding && <option value={value.model}>{tr("aip.notEmbedding", { model: value.model })}</option>}
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -379,22 +380,22 @@ function ModelPicker({
           <Input
             value={value.model}
             onChange={(e) => onChange({ provider: pid, model: e.target.value })}
-            placeholder={embedding ? "Keine (nur Stichwortsuche)" : "Modellname"}
+            placeholder={embedding ? tr("aip.noneKeyword") : tr("aip.modelName")}
             aria-label={label}
             className="model-picker-model"
           />
         )}
       </div>
       {missing ? (
-        <span className="warn-note small">Dieses Modell bietet der Anbieter nicht an</span>
+        <span className="warn-note small">{tr("aip.modelMissing")}</span>
       ) : notEmbedding ? (
-        <span className="warn-note small">Chat-Modell, keine Embeddings: die Suche nutzt nur Stichwörter. „Keine“ oder ein Embedding-Modell wählen.</span>
+        <span className="warn-note small">{tr("aip.chatNotEmbed")}</span>
       ) : problem ? (
         <span className="warn-note small embed-problem">{problem}</span>
       ) : embedding && all.length > 0 && !embeds.length ? (
-        <span className="faint small">Dieser Anbieter meldet kein Embedding-Modell.</span>
+        <span className="faint small">{tr("aip.noEmbedModels")}</span>
       ) : (
-        price && !embedding && <span className="faint small model-picker-price">{provider?.local ? "Kostenlos (lokal)" : `${perM(price.input)} / ${perM(price.output)} je 1 Mio. Tokens`}</span>
+        price && !embedding && <span className="faint small model-picker-price">{provider?.local ? tr("aip.freeLocal") : tr("aip.perMTok", { input: perM(price.input), output: perM(price.output) })}</span>
       )}
     </div>
   );
@@ -410,15 +411,15 @@ function PriceGroup({ draft, update }: SectionProps) {
       const d = await api.settingsDefaults("ai");
       update({ prices: d.prices });
     } catch (e) {
-      s().error("Standardpreise nicht verfügbar", e);
+      s().error(t("aip.defaultsFailed"), e);
     }
   };
   return (
-    <Group title={t("set.ai.prices")} description="Kosten je 1 Mio. Tokens in USD für Anbieter ohne eigene Kostenangabe. LiteLLM meldet Kosten selbst, lokale Anbieter kosten nichts.">
+    <Group title={t("set.ai.prices")} description={t("aip.pricesDesc")}>
       <Row
         stack
         label={t("set.ai.priceTable")}
-        description="Ein * am Ende gilt für alle Modelle mit diesem Anfang (gpt-4o* auch für gpt-4o-2024-08-06). Die Preise ändern sich: bitte beim Anbieter prüfen."
+        description={t("aip.priceTableDesc")}
         keywords="Kosten Preis Tokens"
       >
         <div className="price-editor">
@@ -432,8 +433,8 @@ function PriceGroup({ draft, update }: SectionProps) {
             </div>
             {rules.map((r, i) => (
               <div className="price-row" role="row" key={i}>
-                <Input value={r.model} onChange={(e) => set(i, { model: e.target.value })} placeholder="gpt-4o*" aria-label={`Modell (Zeile ${i + 1})`} className="mono" />
-                <Select value={r.provider} onChange={(e) => set(i, { provider: e.target.value })} aria-label={`Anbieter (Zeile ${i + 1})`}>
+                <Input value={r.model} onChange={(e) => set(i, { model: e.target.value })} placeholder="gpt-4o*" aria-label={t("aip.row.model", { n: i + 1 })} className="mono" />
+                <Select value={r.provider} onChange={(e) => set(i, { provider: e.target.value })} aria-label={t("aip.row.provider", { n: i + 1 })}>
                   <option value="">{t("set.ai.anyProvider")}</option>
                   {draft.providers.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -442,9 +443,9 @@ function PriceGroup({ draft, update }: SectionProps) {
                   ))}
                   {r.provider && !draft.providers.some((p) => p.id === r.provider) && <option value={r.provider}>{r.provider}</option>}
                 </Select>
-                <NumberInput value={r.input_per_mtok} min={0} max={1000} step={0.01} onCommit={(v) => set(i, { input_per_mtok: v })} aria-label={`Eingabepreis (Zeile ${i + 1})`} />
-                <NumberInput value={r.output_per_mtok} min={0} max={1000} step={0.01} onCommit={(v) => set(i, { output_per_mtok: v })} aria-label={`Ausgabepreis (Zeile ${i + 1})`} />
-                <IconButton icon={Trash2} label={`Preis entfernen (Zeile ${i + 1})`} size="sm" onClick={() => update({ prices: rules.filter((_, j) => j !== i) })} />
+                <NumberInput value={r.input_per_mtok} min={0} max={1000} step={0.01} onCommit={(v) => set(i, { input_per_mtok: v })} aria-label={t("aip.row.input", { n: i + 1 })} />
+                <NumberInput value={r.output_per_mtok} min={0} max={1000} step={0.01} onCommit={(v) => set(i, { output_per_mtok: v })} aria-label={t("aip.row.output", { n: i + 1 })} />
+                <IconButton icon={Trash2} label={t("aip.row.remove", { n: i + 1 })} size="sm" onClick={() => update({ prices: rules.filter((_, j) => j !== i) })} />
               </div>
             ))}
           </div>
