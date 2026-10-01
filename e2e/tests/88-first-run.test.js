@@ -129,7 +129,10 @@ test("the setup is completed with the keyboard and writes every answer", async (
   assert.match(summary.calendar, /Outlook/);
   assert.equal(summary.sync, "Off");
   assert.match(summary.backup, new RegExp(path.basename(backupDir)));
-  assert.match(await app.text(".fr-tips"), /\/zeit/);
+  // No time tracking chosen: the tips leave out /zeit (/time), the others stay.
+  const tips = await app.text(".fr-tips");
+  assert.doesNotMatch(tips, /\/(zeit|time)/);
+  assert.match(tips, /Command palette/);
   await app.shot("firstrun-88-done");
 
   await press(".fr-next");

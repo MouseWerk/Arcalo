@@ -58,13 +58,22 @@ const clickText = async (sel, pattern) => {
 };
 const timeOn = async () => (await app.invoke("settings_get")).settings.time.enabled;
 
-/** Settings → Zeiterfassung, then the switch „Zeiterfassung verwenden“ (saves at once). */
+/** Settings → Zeiterfassung, the switch „Zeiterfassung verwenden“, then „Speichern“. */
 async function setTimeTracking(on) {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.click('.settings-nav-item[data-section="time"]');
   const sw = await app.waitFor('button[role="switch"][aria-label="Zeiterfassung verwenden"]');
   if ((await sw.getAttribute("aria-checked")) !== String(on)) await sw.click();
+  // The section follows the draft at once; the rest of the app after saving.
+  await app.browser.waitUntil(
+    () => app.browser.execute(() => {
+      const b = [...document.querySelectorAll(".savebar button")].find((x) => /Speichern/.test(x.textContent));
+      b?.click();
+      return !!b;
+    }),
+    { timeoutMsg: "no Speichern" },
+  );
   await app.browser.waitUntil(async () => (await timeOn()) === on, { timeoutMsg: "switch not saved" });
   await app.browser.waitUntil(() => app.browser.execute((v) => document.documentElement.hasAttribute("data-time-off") === !v, on), { timeoutMsg: "UI did not follow" });
 }
@@ -117,6 +126,9 @@ test("ribbon, palette, status bar and the timer shortcut show nothing about time
   assert.ok(!zeit.some((t) => /^Buchen/.test(t)), `palette /zeit: ${zeit}`);
   assert.ok(!(await app.browser.execute(() => [...document.querySelectorAll(".statusbar .sb-item")].some((b) => /Timer/.test(b.textContent)))), "no timer in the status bar");
   assert.ok(!(await has(".sidebar-foot .side-foot-btn")), "no hours in the sidebar footer");
+  // The assistant's empty state offers no booking.
+  const empty = await app.browser.execute(() => document.querySelector(".assistant-empty")?.textContent ?? "");
+  assert.ok(!/Zeit buchen|Zeitbuchungen|Budget/.test(empty), empty);
   const tabs = await app.browser.execute(() => document.querySelectorAll(".tab").length);
   await app.keys(["Control", "Shift", "t"]);
   await app.browser.pause(300);

@@ -205,10 +205,10 @@ export function SettingsView() {
           </>
         );
       case "time":
-        // „Zeiterfassung verwenden“ saves at once (every window follows); off, only the switch shows.
+        // „Zeiterfassung verwenden“ off: only the switch shows (saved like the rest, then every window follows).
         return (
           <>
-            <TimeSection draft={draft} update={u} setEnabled={(v) => instant({ time: { ...draft.time, enabled: v } })} />
+            <TimeSection draft={draft} update={u} setEnabled={(v) => u({ time: { ...draft.time, enabled: v } })} />
             {timeTrackingOn(draft) && <TimePrefGroups draft={draft} update={u} />}
           </>
         );
