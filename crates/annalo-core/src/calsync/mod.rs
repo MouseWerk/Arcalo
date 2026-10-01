@@ -354,7 +354,7 @@ impl NewEvent {
         }
         self.title = self.title.trim().to_owned();
         if self.title.is_empty() {
-            self.title = "(Ohne Betreff)".into();
+            self.title = tr!("(Ohne Betreff)", "(No subject)").into();
         }
     }
 }

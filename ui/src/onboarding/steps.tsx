@@ -14,7 +14,8 @@ import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { canAdd, newDestination, problemText, type DestTest } from "../lib/backupdest";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { KIND_LABELS, PRESETS, fromPreset, localTierNotLocal, providerName } from "../lib/providers";
-import { BUILTIN_THEMES, findTheme } from "../lib/themes";
+import { BUILTIN_THEMES, findTheme, themeName } from "../lib/themes";
+import { zeitCommand } from "../editor/zeit-suggest";
 import type { AiProvider, CalendarStatus, DataDirStatus, DesktopInfo, GitSyncStatus, GitTest, OllamaDetect, ProviderKind, ProviderTest, Settings, SettingsView } from "../lib/types";
 import { useApp } from "../store/app";
 import { CommitInput, NumberInput, PathValue, ShortcutField } from "../views/settings/common";
@@ -160,7 +161,7 @@ export function ThemeStep({ view, write }: { view: SettingsView; write: Write })
               role="radio"
               tabIndex={0}
               aria-checked={on}
-              aria-label={d.name}
+              aria-label={themeName(d)}
               data-theme-card={d.id}
               className={`theme-card ${on ? "on" : ""}`}
               onClick={() => write((x) => withThemePick(x, d))}
@@ -168,7 +169,7 @@ export function ThemeStep({ view, write }: { view: SettingsView; write: Write })
             >
               <ThemeMock def={d} />
               <span className="theme-card-foot">
-                <span className="theme-card-name">{d.name}</span>
+                <span className="theme-card-name">{themeName(d)}</span>
                 {on && <Check size={14} strokeWidth={2.5} className="theme-card-check" aria-hidden />}
               </span>
             </div>
@@ -838,7 +839,7 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
   const tips: [string, TKey][] = [
     [keys("Mod K"), "fr.tip.palette"],
     // Without time tracking there is no /zeit to tell about.
-    ...(timeTrackingOn(view.settings) ? ([["/zeit", "fr.tip.zeit"]] as [string, TKey][]) : []),
+    ...(timeTrackingOn(view.settings) ? ([[zeitCommand(), "fr.tip.zeit"]] as [string, TKey][]) : []),
     ["[[ ]]", "fr.tip.links"],
     ...(capture ? ([[formatShortcut(capture, IS_MAC, " "), "fr.tip.capture"]] as [string, TKey][]) : []),
   ];

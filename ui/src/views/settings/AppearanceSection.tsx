@@ -11,7 +11,7 @@ import { api } from "../../lib/api";
 import { OPACITY_DEFAULT, OPACITY_MIN, backdropState, onBackdrop, previewOpacity, type Backdrop } from "../../lib/backdrop";
 import { ACCENT_PRESETS, accentHex, accentTokens, contrast } from "../../lib/color";
 import { useT, type TKey } from "../../lib/i18n";
-import { BUILTIN_THEMES, allThemes, effectiveAccent, findTheme, type ThemeDef } from "../../lib/themes";
+import { BUILTIN_THEMES, allThemes, effectiveAccent, findTheme, themeName, type ThemeDef } from "../../lib/themes";
 import type { AppearancePrefs, CustomTheme } from "../../lib/types";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
@@ -122,7 +122,7 @@ export function AppearanceSection({ draft, update }: SectionProps) {
             stack
             label={t(dark ? "set.appearance.darkTheme" : "set.appearance.lightTheme")}
             description={t(dark ? "set.appearance.darkThemeDesc" : "set.appearance.lightThemeDesc")}
-            keywords={themes.filter((d) => d.dark === dark).map((d) => d.name).join(" ")}
+            keywords={themes.filter((d) => d.dark === dark).map((d) => themeName(d)).join(" ")}
           >
             <div className="theme-grid" role="radiogroup" aria-label={t(dark ? "set.appearance.darkTheme" : "set.appearance.lightTheme")}>
               {themes
@@ -144,7 +144,7 @@ export function AppearanceSection({ draft, update }: SectionProps) {
                     >
                       <ThemeMock def={d} />
                       <span className="theme-card-foot">
-                        <span className="theme-card-name">{d.name}</span>
+                        <span className="theme-card-name">{themeName(d)}</span>
                         {now && <span className="theme-card-now">{t("set.appearance.shownNow")}</span>}
                         {on && <Check size={14} strokeWidth={2.5} className="theme-card-check" aria-hidden />}
                       </span>
@@ -159,7 +159,7 @@ export function AppearanceSection({ draft, update }: SectionProps) {
 
       <Group title={t("set.appearance.custom")} description={t("set.appearance.customDesc")}>
         <Row label={t("set.appearance.newTheme")} description={t("set.appearance.newThemeDesc")}>
-          <Button icon={Plus} onClick={() => setEditing({ id: "", name: uniqueName(`${shown.name} (eigenes)`, themes), dark: shown.dark, colors: { ...shown.colors } })}>
+          <Button icon={Plus} onClick={() => setEditing({ id: "", name: uniqueName(t("set.appearance.ownCopy", { name: themeName(shown) }), themes), dark: shown.dark, colors: { ...shown.colors } })}>
             {t("set.appearance.newTheme")}
           </Button>
           <Button variant="ghost" icon={Upload} onClick={importCustom}>

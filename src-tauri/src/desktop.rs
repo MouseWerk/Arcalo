@@ -769,7 +769,10 @@ fn remember(app: &AppHandle, text: &str, out: &CaptureOutcome, undo: CaptureUndo
         id,
         at: now,
         page_id: out.appended.as_ref().map(|a| a.page_id),
-        title: out.appended.as_ref().map_or_else(|| "Zeiterfassung".to_owned(), |a| a.title.clone()),
+        title: out
+            .appended
+            .as_ref()
+            .map_or_else(|| tr!("Zeiterfassung", "Time tracking").to_owned(), |a| a.title.clone()),
         preview,
         bookings: out.bookings.len(),
         undo_until: now + TimeDelta::seconds(cap::UNDO_SECONDS),

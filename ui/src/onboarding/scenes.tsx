@@ -7,6 +7,7 @@ import { ArrowRight, Check, CalendarRange, Cpu, DatabaseBackup, FileText, GitBra
 import { AnnaloLogo } from "../components/Logo";
 import { formatShortcut } from "../lib/shortcut";
 import { t } from "../lib/i18n";
+import { zeitCommand } from "../editor/zeit-suggest";
 import type { TKey } from "../lib/i18n";
 
 /** Delay of an element's entrance, in ms. */
@@ -111,7 +112,7 @@ export function TimeVisual() {
     <div className="frv-stack">
       <Frame label={t("fr.v.dailyTab")}>
         <div className="frv-zeit frv-in" style={d(100)}>
-          <span className="frv-zeit-cmd">/zeit</span>
+          <span className="frv-zeit-cmd">{zeitCommand()}</span>
           <span className="frv-type" style={{ ...d(350), ["--n" as string]: t("fr.v.zeitLine").length }}>
             {t("fr.v.zeitLine")}
           </span>

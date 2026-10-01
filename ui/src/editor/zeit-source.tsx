@@ -4,6 +4,7 @@
 import { Tag, Timer, History } from "lucide-react";
 import { api } from "../lib/api";
 import { h2 } from "../lib/format";
+import { t } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { rankLeistungsarten, rankRefs, recentRefs, refOptions, remainingHint, type RefOption } from "./zeit-suggest";
 import type { ZeitSuggestItem } from "./extensions";
@@ -60,7 +61,7 @@ export async function zeitRefItems(query: string): Promise<ZeitSuggestItem[]> {
         title: o.title ? `${o.ref} · ${o.title}` : o.ref,
         subtitle: isRecent ? o.project : undefined,
         hint: remainingHint(o, h2),
-        section: isRecent ? "Zuletzt gebucht" : o.project,
+        section: isRecent ? t("zeit.recentSection") : o.project,
         icon: icon(isRecent ? History : Timer),
         insert: o.ref,
       };
@@ -73,7 +74,7 @@ export async function zeitLaItems(query: string): Promise<ZeitSuggestItem[]> {
     id: `la-${code}`,
     title: `#${code}`,
     subtitle: desc || undefined,
-    section: "Leistungsart",
+    section: t("wbs.leistungsart"),
     icon: icon(Tag),
     insert: `#${code}`,
   }));

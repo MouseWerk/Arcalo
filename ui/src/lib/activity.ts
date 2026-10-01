@@ -4,6 +4,7 @@
 import { addDays, dateLocale, decimal, int, isoDay, weekStart } from "./format";
 import type { Activity, ActivityKind } from "./types";
 import { t, type TKey } from "./i18n";
+import { zeitCommand } from "../editor/zeit-suggest";
 
 export type KindGroup = "pages" | "tasks" | "time" | "files" | "focus" | "system";
 
@@ -111,7 +112,7 @@ export function describe(a: Activity): { verb: string; title: string; detail: st
 }
 
 function sourceLabel(s: string): string {
-  return ({ manual: t("feed.source.manual"), timer: t("feed.source.timer"), slash: "/zeit", auto: t("feed.source.auto") } as Record<string, string>)[s] ?? "";
+  return ({ manual: t("feed.source.manual"), timer: t("feed.source.timer"), slash: zeitCommand(), auto: t("feed.source.auto") } as Record<string, string>)[s] ?? "";
 }
 
 export type FeedRow = { type: "day"; key: string; day: string; count: number } | { type: "item"; key: string; item: Activity };

@@ -1488,7 +1488,7 @@ async fn git_restore_import(app: AppHandle, url: String) -> Result<ImportReport>
             std::process::id(),
             now.format("%Y%m%d%H%M%S%f")
         ));
-        let dir = tmp.join(format!("Git-Import {}", now.format("%d.%m.%Y")));
+        let dir = tmp.join(trf!("Git-Import {}", "Git import {}", now.format("%d.%m.%Y")));
         std::fs::create_dir_all(&tmp)?;
         let res = (|| {
             git.clone_shallow(&url, configured.then_some(gs.branch.as_str()), &dir)?;

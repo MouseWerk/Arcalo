@@ -271,7 +271,7 @@ pub fn retrieve(
                 )
                 .optional()?
                 .map(|text| ContextChunk {
-                    source: "Zeiterfassung".into(),
+                    source: tr!("Zeiterfassung", "Time tracking").into(),
                     page_id: None,
                     text,
                     score,

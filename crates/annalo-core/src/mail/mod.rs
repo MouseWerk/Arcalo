@@ -210,7 +210,8 @@ impl MailSettings {
 /// Text of the link to a mail: `E-Mail: Betreff (Absender, 24.09.2026)`. Brackets, `#` and
 /// line breaks are replaced, so the text never ends the link or becomes a tag.
 pub fn link_text(mail: &Mail, zone: &Zone) -> String {
-    let subject = if mail.subject.trim().is_empty() { "(ohne Betreff)" } else { mail.subject.trim() };
+    let subject =
+        if mail.subject.trim().is_empty() { tr!("(ohne Betreff)", "(no subject)") } else { mail.subject.trim() };
     let mut detail: Vec<String> = vec![];
     if !mail.sender().is_empty() {
         detail.push(mail.sender().to_owned());
@@ -219,9 +220,9 @@ pub fn link_text(mail: &Mail, zone: &Zone) -> String {
         detail.push(zone.to_wall(t).format("%d.%m.%Y").to_string());
     }
     let text = if detail.is_empty() {
-        format!("E-Mail: {subject}")
+        trf!("E-Mail: {subject}", "E-mail: {subject}")
     } else {
-        format!("E-Mail: {subject} ({})", detail.join(", "))
+        trf!("E-Mail: {subject} ({})", "E-mail: {subject} ({})", detail.join(", "))
     };
     safe_text(&text)
 }

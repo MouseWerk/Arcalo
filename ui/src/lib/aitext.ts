@@ -1,4 +1,5 @@
 import { t, type TKey } from "./i18n";
+import { zeitCommand } from "../editor/zeit-suggest";
 // Prompts and text helpers of the inline AI bar and the meeting summary.
 // The shell wraps the instruction and the text (`ai_transform`); these only build the instruction.
 
@@ -94,5 +95,5 @@ export function bookingSuggestion(reference: string | null, body: string, title:
   const minutes = meetingMinutes(body);
   if (minutes == null) return null;
   const text = title.replace(/[`\n]/g, " ").trim();
-  return `${t("aitext.bookingSuggestion")} \`/zeit ${reference} ${zeitDuration(minutes)} ${text}\``;
+  return `${t("aitext.bookingSuggestion")} \`${zeitCommand()} ${reference} ${zeitDuration(minutes)} ${text}\``;
 }

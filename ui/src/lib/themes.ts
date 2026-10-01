@@ -12,6 +12,7 @@ import { accentHex, accentTokens, contrast, ensureContrast, mix, parseHex, toHex
 import { setBackdropDark } from "./backdrop";
 import { rememberSplash } from "./splash";
 import { eventTokens } from "./eventlook";
+import { hasKey, t } from "./i18n";
 
 export interface ThemeDef {
   id: string;
@@ -30,6 +31,12 @@ export interface ThemeDef {
   /** The theme's accent cannot be replaced (high contrast). */
   fixedAccent?: boolean;
   custom?: boolean;
+}
+
+/** The name shown for a theme: built-in themes with a German name have one per language. */
+export function themeName(d: ThemeDef): string {
+  const key = `theme.${d.id}`;
+  return !d.custom && hasKey(key) ? t(key) : d.name;
 }
 
 const c = (background: string, surface: string, text: string, muted: string, border: string, accent: string, success: string, warning: string, danger: string): ThemeColors => ({
