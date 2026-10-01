@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the Windows installer artwork from the Annalo logo (the same outline as ui/public/icon.svg).
+"""Draws the Windows installer artwork from the Arcalo logo (the same outline as ui/public/icon.svg).
 
 NSIS Modern UI wants 24-bit BMPs: the welcome/finish page image (164x314) and the header image
 (150x57, right side of the white page header). Drawn at 4x and scaled down for smooth edges.
@@ -79,7 +79,7 @@ def sidebar() -> Image.Image:
     mark = int(w * 0.46)
     draw_logo(img, ((w - mark) // 2, int(h * 0.30) - mark // 2 - 6 * S, mark), (255, 255, 255))
     d = ImageDraw.Draw(img)
-    text_center(d, w // 2, int(h * 0.30) + mark // 2 + 6 * S, "Annalo", font(22 * S, 650), (244, 244, 245))
+    text_center(d, w // 2, int(h * 0.30) + mark // 2 + 6 * S, "Arcalo", font(22 * S, 650), (244, 244, 245))
     text_center(d, w // 2, int(h * 0.30) + mark // 2 + 36 * S, "Notizen · Zeit · KI", font(9 * S, 450), (161, 161, 170))
     # A thin accent line at the bottom edge.
     d.rectangle((0, h - 3 * S, w, h), fill=ACCENT)

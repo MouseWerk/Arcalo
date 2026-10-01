@@ -4,6 +4,9 @@ The automated tests cover the update logic against a local feed (`e2e/tests/95-u
 AppImage update on Linux (section „Linux“ below). What only a real machine shows is listed here. Run it before
 publishing a release that changes the update path, and at least once per minor release.
 
+Up to 1.6 the app was called Annalo: its files are named `Annalo_…`. The update from 1.6 to 1.7 (the rename)
+has its own checklist in `rebrand-windows.md`.
+
 ## Before you start
 
 - A signed release of the **previous** version installed (e.g. 1.5.0), and the **new** version published as a
@@ -18,21 +21,21 @@ publishing a release that changes the update path, and at least once per minor r
 
 ### 1. Per-user install (the default installer)
 
-1. Install 1.5.0 with the normal setup (no admin prompt; lands in `%LOCALAPPDATA%\Programs\Annalo`).
-2. Start Annalo, open a note, type a sentence and **do not wait** for the save indicator.
+1. Install 1.5.0 with the normal setup (no admin prompt; lands in `%LOCALAPPDATA%\Programs\Arcalo`).
+2. Start Arcalo, open a note, type a sentence and **do not wait** for the save indicator.
 3. Settings → Über → „Jetzt nach Updates suchen“. Expected: toast „Version 1.6.0 verfügbar“, „Was ist neu?“
    shows the release notes.
 4. Click „Installieren und neu starten“. Expected: „Offene Notizen werden gespeichert …“, then the progress bar
    with percent and size, then „wird installiert“. The window disappears, the tray icon disappears (no dead
    icon left in the notification area), the installer runs with its progress window only (passive mode) and
-   Annalo starts again by itself.
-5. After the restart: toast „Annalo wurde auf Version 1.6.0 aktualisiert“, Settings → Über shows 1.6.0, the
+   Arcalo starts again by itself.
+5. After the restart: toast „Arcalo wurde auf Version 1.6.0 aktualisiert“, Settings → Über shows 1.6.0, the
    sentence from step 2 is in the note, the tabs are restored.
-6. Start menu entry and desktop shortcut still start Annalo; there is only one entry in „Apps & Features“.
+6. Start menu entry and desktop shortcut still start Arcalo; there is only one entry in „Apps & Features“.
 
 ### 2. Per-machine install
 
-1. Install 1.5.0 for all users (e.g. deployed by IT into `C:\Program Files\Annalo`).
+1. Install 1.5.0 for all users (e.g. deployed by IT into `C:\Program Files\Arcalo`).
 2. Run the update as in 1. Expected: the updater's installer is per-user; check what happens and record it:
    either the per-machine copy is updated (with a UAC prompt), or a second per-user copy is installed.
    A second copy is a bug report (two entries in „Apps & Features“, two start menu entries).
@@ -50,14 +53,14 @@ publishing a release that changes the update path, and at least once per minor r
 Only with a per-machine copy (2.) or when the installer asks for admin rights.
 
 1. Install the update and click „Nein“ in the UAC prompt.
-2. Expected: Annalo either stays open with „Installation fehlgeschlagen“ and keeps saving normally (type a note,
-   restart Annalo by hand, the note is there), or it has closed and, when started by hand, shows the warning
+2. Expected: Arcalo either stays open with „Installation fehlgeschlagen“ and keeps saving normally (type a note,
+   restart Arcalo by hand, the note is there), or it has closed and, when started by hand, shows the warning
    „Update auf Version 1.6.0 nicht installiert“ and runs 1.5.0 without data loss.
 3. Check that the tray icon and the global shortcuts work again after that start.
 
 ### 5. The update toast while offline
 
-1. Disconnect the network (flight mode or unplug), start Annalo, wait 30 s.
+1. Disconnect the network (flight mode or unplug), start Arcalo, wait 30 s.
 2. Expected: no toast and no error for the automatic check (it stays quiet); the log has „Update-Prüfung
    fehlgeschlagen“.
 3. Settings → Über → „Jetzt nach Updates suchen“. Expected: „Keine Verbindung zum Update-Server (offline, oder
@@ -75,7 +78,7 @@ Only with a per-machine copy (2.) or when the installer asks for admin rights.
 
 ### 7. Portable copy
 
-1. Unpack the 1.5.0 portable ZIP to a USB stick or a folder, start `Annalo.exe`.
+1. Unpack the 1.5.0 portable ZIP to a USB stick or a folder, start `Arcalo.exe`.
 2. Expected: the toast says „Portabler Modus: das ZIP von der Release-Seite über den Ordner entpacken.“ and the
    button is „Neue Version herunterladen“, which opens the release page. Nothing is installed, nothing appears
    under `%LOCALAPPDATA%\Programs`.
@@ -83,7 +86,7 @@ Only with a per-machine copy (2.) or when the installer asks for admin rights.
 
 ### 8. Autostart and „Minimiert starten“
 
-1. Enable „Mit dem System starten“ and „Minimiert starten“, sign out and in again (Annalo starts in the tray).
+1. Enable „Mit dem System starten“ and „Minimiert starten“, sign out and in again (Arcalo starts in the tray).
 2. Open the window from the tray and install the update.
 3. Expected: after the restart the window is **visible** (not hidden in the tray) with the „aktualisiert“ toast.
    The next login starts minimized again.
@@ -93,18 +96,18 @@ Only with a per-machine copy (2.) or when the installer asks for admin rights.
 ### 9. From /Applications
 
 1. Copy 1.5.0 from the DMG to `/Applications`, start it (right-click → Öffnen for an ad-hoc signed build).
-2. Install the update from the toast. Expected: progress, then Annalo quits and starts again within a few
+2. Install the update from the toast. Expected: progress, then Arcalo quits and starts again within a few
    seconds as 1.6.0 with the „aktualisiert“ toast; the Dock icon stays; notes intact.
-3. Finder → Programme → Annalo → Informationen shows 1.6.0. With a Developer ID build: no Gatekeeper prompt
+3. Finder → Programme → Arcalo → Informationen shows 1.6.0. With a Developer ID build: no Gatekeeper prompt
    after the update.
 
 ### 10. From ~/Downloads (App Translocation)
 
 1. Start 1.5.0 directly from `~/Downloads` (or from the mounted DMG) without moving it.
 2. Install the update. Expected: record what happens. A translocated app runs from a random read-only path, so
-   replacing it fails: Annalo must show „Installation fehlgeschlagen“ with a readable reason and keep running
+   replacing it fails: Arcalo must show „Installation fehlgeschlagen“ with a readable reason and keep running
    normally (type a note, quit, start again: the note is there). It must not end up without an app.
-3. Move Annalo to `/Applications`, start it from there, update: works as in 9.
+3. Move Arcalo to `/Applications`, start it from there, update: works as in 9.
 
 ### 11. Intel and Apple Silicon
 
@@ -120,17 +123,17 @@ Verified for 1.6.0 with two debug AppImages (1.6.0-test.1 to 1.6.0-test.2, throw
 update replaced it in place, relaunched it past the single-instance lock, and the text typed right before the
 click was saved. Repeat with the real release:
 
-1. `chmod +x Annalo_1.5.x_amd64.AppImage` in a folder you own (e.g. `~/Apps`), start it, type a note.
+1. `chmod +x Arcalo_1.5.x_amd64.AppImage` in a folder you own (e.g. `~/Apps`), start it, type a note.
 2. Install the update from the toast. Expected: the AppImage file is replaced in place (same name, still
-   executable) and Annalo starts again as the new version with the „aktualisiert“ toast; the note is there.
+   executable) and Arcalo starts again as the new version with the „aktualisiert“ toast; the note is there.
 3. An AppImage in a folder you cannot write to (e.g. `/opt` owned by root): „Installation fehlgeschlagen: Keine
-   Schreibrechte …“ and Annalo keeps running.
+   Schreibrechte …“ and Arcalo keeps running.
 
 ### 13. .deb
 
-1. Install the .deb, start Annalo. Expected: the toast says „Als Paket installiert: das neue Paket von der
+1. Install the .deb, start Arcalo. Expected: the toast says „Als Paket installiert: das neue Paket von der
    Release-Seite installieren.“ with „Release-Seite öffnen“; no install button.
-2. `sudo apt install ./Annalo_1.6.0_amd64.deb` while Annalo runs, then restart it: version 1.6.0, notes intact.
+2. `sudo apt install ./Arcalo_1.6.0_amd64.deb` while Arcalo runs, then restart it: version 1.6.0, notes intact.
 
 ## Test feed
 
@@ -142,4 +145,4 @@ the key compiled in. Never use the release signing key for tests.
 The published feed must contain, per release: `version`, `notes`, `pub_date` (RFC 3339) and the platforms
 `windows-x86_64` (the NSIS `…_x64-setup.exe`), `darwin-aarch64` and `darwin-x86_64` (`….app.tar.gz`) and
 `linux-x86_64` (`…_amd64.AppImage`), each with the content of its `.sig` file and a URL under
-`https://github.com/MouseWerk/Annalo/releases/download/v<version>/`.
+`https://github.com/MouseWerk/Arcalo/releases/download/v<version>/`.

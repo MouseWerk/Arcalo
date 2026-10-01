@@ -81,8 +81,8 @@ jobs:
         run: cargo tauri build --bundles app --target aarch64-apple-darwin
         working-directory: src-tauri
       # ditto keeps the bundle's symlinks and permissions (upload-artifact would not).
-      - run: ditto -c -k --keepParent "target/aarch64-apple-darwin/release/bundle/macos/Annalo.app" Annalo-macos.zip
+      - run: ditto -c -k --keepParent "target/aarch64-apple-darwin/release/bundle/macos/Arcalo.app" Arcalo-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: annalo-macos
-          path: Annalo-macos.zip
+          path: Arcalo-macos.zip

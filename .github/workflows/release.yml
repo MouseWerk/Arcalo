@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag `v1.2.3` builds the Windows installer (per-user NSIS, no admin rights) and the
-# portable Windows ZIP (Annalo.exe + marker file, data next to the executable), the Linux
+# portable Windows ZIP (Arcalo.exe + marker file, data next to the executable), the Linux
 # packages (.deb, .AppImage) and the macOS disk images (Apple Silicon and Intel) and publishes
 # them as a GitHub release.
 #
@@ -69,7 +69,7 @@ jobs:
             exit 0
           fi
           NOTES="docs/releases/$TAG.md"
-          [ -f "$NOTES" ] || { echo "Annalo $VERSION" > /tmp/notes.md; NOTES=/tmp/notes.md; }
+          [ -f "$NOTES" ] || { echo "Arcalo $VERSION" > /tmp/notes.md; NOTES=/tmp/notes.md; }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a --cleanup=verbatim "$TAG" -F "$NOTES"  # keep "## New" headings: # is not a comment here
@@ -217,44 +217,46 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             B="target/${{ matrix.target }}/release/bundle"
             ARCH="${{ matrix.arch }}"
-            cp "$B"/dmg/*.dmg "dist/Annalo_${VERSION}_${ARCH}.dmg"
+            cp "$B"/dmg/*.dmg "dist/Arcalo_${VERSION}_${ARCH}.dmg"
             # Updater archive of the .app: only in signed builds (createUpdaterArtifacts).
             TGZ="$(ls "$B"/macos/*.app.tar.gz 2>/dev/null | head -1)"
             if [ -n "$TGZ" ] && [ -f "$TGZ.sig" ]; then
-              cp "$TGZ" "dist/Annalo_${VERSION}_${ARCH}.app.tar.gz"
-              cp "$TGZ.sig" "dist/Annalo_${VERSION}_${ARCH}.app.tar.gz.sig"
+              cp "$TGZ" "dist/Arcalo_${VERSION}_${ARCH}.app.tar.gz"
+              cp "$TGZ.sig" "dist/Arcalo_${VERSION}_${ARCH}.app.tar.gz.sig"
             fi
           elif [ "${{ runner.os }}" = "Windows" ]; then
-            cp "$B"/nsis/*.exe dist/Annalo_${VERSION}_x64-setup.exe
+            cp "$B"/nsis/*.exe dist/Arcalo_${VERSION}_x64-setup.exe
             if [ -f "$(ls "$B"/nsis/*.exe.sig 2>/dev/null | head -1)" ]; then
-              cp "$B"/nsis/*.exe.sig dist/Annalo_${VERSION}_x64-setup.exe.sig
+              cp "$B"/nsis/*.exe.sig dist/Arcalo_${VERSION}_x64-setup.exe.sig
             fi
             # Portable ZIP: the same executable with the marker file next to it (all data then
-            # lives in data\ beside Annalo.exe). Not part of latest.json: portable copies are
+            # lives in data\ beside Arcalo.exe). Not part of latest.json: portable copies are
             # updated by hand from the release page.
-            P="$RUNNER_TEMP/Annalo-portable"
+            P="$RUNNER_TEMP/Arcalo-portable"
             rm -rf "$P" && mkdir -p "$P"
-            cp target/release/annalo.exe "$P/Annalo.exe"
-            printf 'Annalo portabel\r\n' > "$P/annalo-portable"
+            cp target/release/annalo.exe "$P/Arcalo.exe"
+            printf 'Arcalo portabel\r\n' > "$P/arcalo-portable"
             {
-              printf 'Annalo %s – portable Version\r\n\r\n' "$VERSION"
-              printf 'Den Ordner an einen beliebigen Ort entpacken (z. B. auf einen USB-Stick) und Annalo.exe starten.\r\n'
-              printf 'Die Datei „annalo-portable“ schaltet den portablen Modus ein: alle Daten (Datenbank, Einstellungen,\r\n'
-              printf 'Anhänge, Sicherungen, Protokoll, WebView-Daten) liegen im Ordner „data“ neben Annalo.exe.\r\n\r\n'
-              printf 'Im portablen Modus schreibt Annalo nichts in das Benutzerprofil des Rechners: kein Autostart,\r\n'
+              printf 'Arcalo %s – portable Version\r\n\r\n' "$VERSION"
+              printf 'Den Ordner an einen beliebigen Ort entpacken (z. B. auf einen USB-Stick) und Arcalo.exe starten.\r\n'
+              printf 'Die Datei „arcalo-portable“ schaltet den portablen Modus ein: alle Daten (Datenbank, Einstellungen,\r\n'
+              printf 'Anhänge, Sicherungen, Protokoll, WebView-Daten) liegen im Ordner „data“ neben Arcalo.exe.\r\n\r\n'
+              printf 'Im portablen Modus schreibt Arcalo nichts in das Benutzerprofil des Rechners: kein Autostart,\r\n'
               printf 'keine Sprungliste, kein Installer. Zugangsdaten (API-Schlüssel, Git-Token, Proxy-Passwort) bleiben\r\n'
               printf 'in der Windows-Anmeldeinformationsverwaltung des jeweiligen Rechners und werden auf einem anderen\r\n'
               printf 'Rechner neu eingegeben.\r\n\r\n'
               printf 'Update: die neue ZIP-Datei herunterladen und über diesen Ordner entpacken; der Ordner „data“ bleibt.\r\n'
+              printf 'Arcalo hieß bis Version 1.6 Annalo: liegt noch eine Annalo.exe im Ordner, kann sie gelöscht werden\r\n'
+              printf '(sie ist die alte Version und öffnet die Daten von Arcalo nicht mehr).\r\n'
               printf 'Voraussetzung: Microsoft Edge WebView2 Runtime (unter Windows 10 und 11 vorinstalliert).\r\n'
             } > "$P/LIESMICH.txt"
-            (cd "$P" && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist/Annalo_${VERSION}_x64-portable.zip" Annalo.exe annalo-portable LIESMICH.txt >/dev/null)
+            (cd "$P" && 7z a -tzip -mx=9 "$GITHUB_WORKSPACE/dist/Arcalo_${VERSION}_x64-portable.zip" Arcalo.exe arcalo-portable LIESMICH.txt >/dev/null)
           else
-            cp "$B"/deb/*.deb dist/Annalo_${VERSION}_amd64.deb
-            cp "$B"/appimage/*.AppImage dist/Annalo_${VERSION}_amd64.AppImage
+            cp "$B"/deb/*.deb dist/Arcalo_${VERSION}_amd64.deb
+            cp "$B"/appimage/*.AppImage dist/Arcalo_${VERSION}_amd64.AppImage
             # Updater file of the AppImage (signed builds): the AppImage itself with its signature.
             if [ -f "$(ls "$B"/appimage/*.AppImage.sig 2>/dev/null | head -1)" ]; then
-              cp "$B"/appimage/*.AppImage.sig dist/Annalo_${VERSION}_amd64.AppImage.sig
+              cp "$B"/appimage/*.AppImage.sig dist/Arcalo_${VERSION}_amd64.AppImage.sig
             fi
           fi
           ls -la dist
@@ -288,7 +290,7 @@ jobs:
           VERSION="${TAG#v}"
           NOTES="$(git for-each-ref "refs/tags/$TAG" --format='%(contents)' | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
           if [ "$(git cat-file -t "$TAG")" != "tag" ] || [ -z "$(echo "$NOTES" | tr -d '[:space:]')" ]; then
-            NOTES="Annalo $VERSION"
+            NOTES="Arcalo $VERSION"
           fi
           printf '%s\n' "$NOTES" > notes.md
           # Update feed: every platform whose update file was signed.
@@ -296,11 +298,11 @@ jobs:
             const fs = require("fs");
             const version = process.argv[1];
             const files = {
-              "windows-x86_64": `Annalo_${version}_x64-setup.exe`,
-              "darwin-aarch64": `Annalo_${version}_aarch64.app.tar.gz`,
-              "darwin-x86_64": `Annalo_${version}_x64.app.tar.gz`,
+              "windows-x86_64": `Arcalo_${version}_x64-setup.exe`,
+              "darwin-aarch64": `Arcalo_${version}_aarch64.app.tar.gz`,
+              "darwin-x86_64": `Arcalo_${version}_x64.app.tar.gz`,
               // AppImage only: a .deb install finds this entry too but opens the release page.
-              "linux-x86_64": `Annalo_${version}_amd64.AppImage`,
+              "linux-x86_64": `Arcalo_${version}_amd64.AppImage`,
             };
             const platforms = {};
             for (const [platform, file] of Object.entries(files)) {
@@ -318,6 +320,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.tag.outputs.tag }}
-          name: Annalo ${{ needs.tag.outputs.tag }}
+          name: Arcalo ${{ needs.tag.outputs.tag }}
           body_path: notes.md
           files: dist/*
