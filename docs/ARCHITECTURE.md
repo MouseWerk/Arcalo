@@ -153,9 +153,12 @@ and by `entry_id`.
   (e2e `60-startup-recovery`: the app is started without WebDriver, then again under it on the restored folder).
 - **History**: activity, AI usage and finished focus sessions older than 400 days are pruned on start
   (`prune_history`); purging a page clears the texts of its activity rows (title, task text, mentions).
-- **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
-  „Beenden“ in the tray emits `app://quit-requested`, the UI flushes (asking if that fails) and calls
-  `app_quit`. Without it the UI destroys the main window and the shell exits.
+- **Close to tray / quit**: the UI asks `window_close_action` (`annalo_core::desktop::close_action`): on macOS the
+  window is always hidden (the app stays in the Dock, `RunEvent::Reopen` shows it again, ⌘Q quits); elsewhere
+  `close_to_tray` hides it (minimized without a tray icon). For hide/minimize the UI flushes its editors and calls
+  `window_hide`; „Beenden“ in the tray or the macOS menu (⌘Q) emits `app://quit-requested`, the UI flushes (asking
+  if that fails) and calls `app_quit`. Otherwise the UI destroys the main window and the shell exits. `RunEvent::Exit`
+  checkpoints the database when it is free (also for a quit the UI never sees: Dock menu, logout).
 
 ## Activity, focus sessions and presentations (`feed.rs`, `focus.rs`; shell `feed.rs`, `focus.rs`, `present.rs`)
 
@@ -218,6 +221,13 @@ and by `entry_id`.
   `capture://failed` (with the text) toasts. `ANNALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
   The draft (text and target) lives in `localStorage` (`annalo.capture.draft`). The popup windows disable the native
   drag-and-drop handler, so dropped files reach the page and are stored via `attachment_store`.
+- macOS popups: transparent through `macOSPrivateApi` (tauri feature `macos-private-api`; fine outside the Mac App
+  Store) and without the system shadow (it is computed from the transparent content and can stay rectangular);
+  `NSWindowCollectionBehavior` CanJoinAllSpaces + FullScreenAuxiliary so they appear on the current Space, also over a
+  full-screen app. Showing one unhides and activates the app; a popup called up from another program and dismissed
+  with Esc, after storing or with its shortcut hides the app again (`hide_app_after_popup`), so that program gets the
+  focus back. Enter/Esc while an input method composes stay with it (`ui/src/lib/ime.ts`; WebKit sends them with
+  keyCode 229 after `compositionend`). Manual checklist: `docs/testing/macos.md`.
 - „Auswahl übernehmen“ (`capture.selection_shortcut`, off by default) opens the capture window with text: the X11
   PRIMARY selection on Linux, else the clipboard (`arboard`, read in the shell; no simulated Ctrl+C – that would stop
   a program in a console window and needs accessibility permission on macOS). Every open also passes the clipboard text

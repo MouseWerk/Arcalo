@@ -1033,17 +1033,20 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         <p>{IS_MAC ? "Symbol in der Menüleiste" : "Symbol im Infobereich"}, Autostart, Erinnerungen, Schnellsuche und Schnellerfassung.</p>
       </header>
       <Group title="Fenster">
-        <Row
-          label={desk.closeLabel}
-          description={
-            <>
-              {desk.closeHint}
-              {info && !info.tray && !IS_MAC && <Badge tone="warning">Kein Infobereich verfügbar – das Fenster wird minimiert</Badge>}
-            </>
-          }
-        >
-          <Switch label={desk.closeLabel} checked={draft.close_to_tray} onChange={(v) => update({ close_to_tray: v })} />
-        </Row>
+        {/* macOS: closing always hides the window (the app stays in the Dock, ⌘Q quits). */}
+        {!IS_MAC && (
+          <Row
+            label={desk.closeLabel}
+            description={
+              <>
+                {desk.closeHint}
+                {info && !info.tray && <Badge tone="warning">Kein Infobereich verfügbar – das Fenster wird minimiert</Badge>}
+              </>
+            }
+          >
+            <Switch label={desk.closeLabel} checked={draft.close_to_tray} onChange={(v) => update({ close_to_tray: v })} />
+          </Row>
+        )}
         <Row
           label={desk.autostartLabel}
           description={

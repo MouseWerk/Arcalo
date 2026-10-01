@@ -50,6 +50,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "keyring",
+ "objc2-app-kit",
  "serde",
  "serde_json",
  "tauri",

@@ -211,10 +211,86 @@ pub fn tray_tooltip(running: Option<(&str, i64)>) -> String {
     }
 }
 
+// ------------------------------------------------------------------ windows
+
+/// The operating system, for window behaviour that differs per platform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    MacOs,
+    Windows,
+    Linux,
+}
+
+impl Platform {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Platform::MacOs
+        } else if cfg!(windows) {
+            Platform::Windows
+        } else {
+            Platform::Linux
+        }
+    }
+}
+
+/// What closing the main window does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseAction {
+    /// Hidden; the app keeps running (tray icon, or the Dock on macOS).
+    Hide,
+    /// Close to tray without a tray icon: minimized instead, so the window can be found again.
+    Minimize,
+    /// The app quits (after storing the editors).
+    Quit,
+}
+
+/// macOS: closing (red button, ⇧⌘W) only hides the window, the app stays in the Dock and ⌘Q
+/// quits, with or without the menu bar icon. Windows/Linux follow „close to tray“.
+pub fn close_action(platform: Platform, close_to_tray: bool, has_tray: bool) -> CloseAction {
+    match (platform, close_to_tray, has_tray) {
+        (Platform::MacOs, _, _) => CloseAction::Hide,
+        (_, true, true) => CloseAction::Hide,
+        (_, true, false) => CloseAction::Minimize,
+        (_, false, _) => CloseAction::Quit,
+    }
+}
+
+/// macOS: whether dismissing a popup (quick capture, quick search) hides the app, so the program
+/// the user came from gets the focus back. Only when the popup was opened from another program
+/// and still has the focus (it was dismissed with Esc or after storing, not by clicking elsewhere).
+pub fn hide_app_after_popup(platform: Platform, opened_from_other_app: bool, popup_focused: bool) -> bool {
+    platform == Platform::MacOs && opened_from_other_app && popup_focused
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::FixedOffset;
+
+    #[test]
+    fn closing_hides_on_macos_and_follows_the_setting_elsewhere() {
+        use CloseAction::*;
+        for (tray_setting, tray) in [(false, false), (false, true), (true, false), (true, true)] {
+            assert_eq!(close_action(Platform::MacOs, tray_setting, tray), Hide, "{tray_setting} {tray}");
+        }
+        for p in [Platform::Windows, Platform::Linux] {
+            assert_eq!(close_action(p, true, true), Hide);
+            assert_eq!(close_action(p, true, false), Minimize, "no tray icon: the window stays reachable");
+            assert_eq!(close_action(p, false, true), Quit);
+            assert_eq!(close_action(p, false, false), Quit);
+        }
+    }
+
+    #[test]
+    fn only_macos_hands_the_focus_back_after_a_popup() {
+        assert!(hide_app_after_popup(Platform::MacOs, true, true));
+        assert!(!hide_app_after_popup(Platform::MacOs, false, true), "opened from Annalo: Annalo keeps the focus");
+        assert!(!hide_app_after_popup(Platform::MacOs, true, false), "clicked elsewhere: that program has it");
+        assert!(!hide_app_after_popup(Platform::Windows, true, true));
+        assert!(!hide_app_after_popup(Platform::Linux, true, true));
+        assert_eq!(Platform::current() == Platform::MacOs, cfg!(target_os = "macos"));
+    }
 
     fn day() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 9, 23).unwrap() // a Wednesday

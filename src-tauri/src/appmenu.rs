@@ -14,6 +14,7 @@ use crate::desktop;
 const ACTIONS: [(&str, &str); 4] =
     [("menu:settings", "settings"), ("menu:sidebar", "sidebar"), ("menu:focus", "focus"), ("menu:palette", "palette")];
 const QUIT: &str = "menu:quit";
+const CLOSE_WINDOW: &str = "menu:close_window";
 const WEBSITE: &str = "menu:website";
 const WEBSITE_URL: &str = "https://github.com/MouseWerk/Annalo";
 
@@ -73,6 +74,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         "Fenster",
         true,
         &[
+            // ⌘W stays with the window (it closes the tab there), as in Safari.
+            &item(CLOSE_WINDOW, "Fenster schließen", Some("Cmd+Shift+W"))?,
             &PredefinedMenuItem::minimize(app, Some("Minimieren"))?,
             &PredefinedMenuItem::maximize(app, Some("Zoomen"))?,
             &PredefinedMenuItem::fullscreen(app, Some("Vollbild"))?,
@@ -98,6 +101,8 @@ pub fn on_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
     if id == QUIT {
         desktop::request_quit(app);
+    } else if id == CLOSE_WINDOW {
+        desktop::close_front_window(app);
     } else if id == WEBSITE {
         use tauri_plugin_opener::OpenerExt;
         if let Err(e) = app.opener().open_url(WEBSITE_URL, None::<&str>) {

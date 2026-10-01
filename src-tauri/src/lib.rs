@@ -3339,6 +3339,16 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
     }
 }
 
+/// The process ends: writes the WAL into the database file. Runs on the main thread, so it never
+/// waits for a save in progress (that one stays in the WAL, which the next start reads).
+fn checkpoint_on_exit(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>()
+        && let Ok(db) = state.db.try_lock()
+    {
+        let _ = db.checkpoint();
+    }
+}
+
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
     let exe = tauri::process::current_binary(&app.env())?;
     prepare_exit(app);
@@ -3770,6 +3780,7 @@ pub fn run() {
             jumplist::jump_take,
             window_set_theme,
             desktop::window_hide,
+            desktop::window_close_action,
             desktop::app_quit,
             desktop::capture_submit,
             desktop::capture_hide,
@@ -3839,13 +3850,16 @@ pub fn run() {
 }
 
 fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
-    // macOS: closing hides the window and the app stays in the Dock; clicking the Dock icon
-    // brings the window back.
-    #[cfg(target_os = "macos")]
-    if let tauri::RunEvent::Reopen { .. } = event {
-        desktop::show_main(app);
+    match event {
+        // macOS: closing hides the window and the app stays in the Dock; clicking the Dock icon
+        // (or opening Annalo again) brings the window back, also while a popup is visible.
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => desktop::show_main(app),
+        // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI
+        // never hears of (macOS: Dock menu „Beenden“, logging out).
+        tauri::RunEvent::Exit => checkpoint_on_exit(app),
+        _ => {}
     }
-    let _ = (app, event);
 }
 
 #[cfg(test)]

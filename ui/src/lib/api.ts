@@ -235,6 +235,8 @@ export const api = {
   setAutostart: (enabled: boolean) => call<T.DesktopInfo>("autostart_set", { enabled }),
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
+  /** What closing the main window does (macOS: always hide; elsewhere „close to tray“). */
+  closeAction: () => call<"hide" | "minimize" | "quit">("window_close_action"),
   quit: () => call<void>("app_quit"),
   captureSubmit: (text: string, target?: T.CaptureTarget) => call<T.CaptureOutcome>("capture_submit", { text, target: target ?? null }),
   captureHide: () => call<void>("capture_hide"),

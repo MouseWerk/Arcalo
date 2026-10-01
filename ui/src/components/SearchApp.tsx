@@ -11,6 +11,7 @@ import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem 
 import type { Page, SearchHit } from "../lib/types";
 import { PageIcon } from "./icons";
 import { keys } from "../lib/shortcut";
+import { isComposing } from "../lib/ime";
 
 const ic = (C: typeof Search) => <C size={16} strokeWidth={1.75} />;
 const ACTION_ICONS: Partial<Record<QsAction["type"], React.ReactNode>> = {
@@ -191,13 +192,14 @@ export function SearchApp() {
               setNotice(null);
             }}
             onKeyDown={(e) => {
+              if (isComposing(e.nativeEvent)) return;
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setSel((v) => (v + 1) % Math.max(items.length, 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setSel((v) => (v - 1 + items.length) % Math.max(items.length, 1));
-              } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              } else if (e.key === "Enter") {
                 e.preventDefault();
                 if (searching) setEnterQueued({ newTab: e.ctrlKey || e.metaKey });
                 else run(items[sel], e.ctrlKey || e.metaKey);

@@ -952,7 +952,7 @@ button.side-section-title:hover { color: var(--text-2); }
 
 /* ---------------------------------------------------------- quick capture */
 
-/* The window is transparent (not on macOS): the panel draws the rounded frame. */
+/* The window is transparent: the panel draws the rounded frame. */
 body.capture-mode { background: transparent; }
 .capture {
   height: 100%;
@@ -2430,3 +2430,11 @@ body.presenter-window .presenter { height: 100vh; }
 /* the task list: link to a mail */
 .mail-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin: 0 2px; padding: 0 7px 0 6px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font: inherit; font-size: var(--fs-xs); vertical-align: 0.1em; cursor: pointer; }
 .mail-chip:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* ---- macOS popups ---- */
+
+/* The quick-capture and quick-search windows are transparent on every platform now (macOS via
+   the private API); the rounded panel is all that shows. WebKit lets composited children
+   (scrolling lists, animations) paint over a rounded `overflow: hidden` corner unless the
+   panel is its own stacking context. */
+.capture, .qs-panel { isolation: isolate; }

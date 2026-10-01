@@ -50,6 +50,7 @@ import {
 } from "../lib/capture";
 import { fmtDate } from "../lib/format";
 import { IS_MAC } from "../lib/platform";
+import { isComposing } from "../lib/ime";
 import { SuggestionPopup, type PopupHandle, type PopupItem } from "../editor/suggestion-popup";
 import { lacksReference, referenceOffset, zeitToken, type ZeitToken } from "../editor/zeit-suggest";
 import { ZeitConfirm, type ZeitChoice } from "../editor/ZeitConfirm";
@@ -556,13 +557,15 @@ export function CaptureApp() {
   // ------------------------------------------------------------------ keys
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter/Esc/arrows while an input method composes (IME, ⌥U for umlauts) stay with it.
+    if (isComposing(e.nativeEvent)) return;
     if (sugg && popup.current?.onKeyDown({ event: e.nativeEvent } as SuggestionKeyDownProps)) {
       e.preventDefault();
       return;
     }
     const el = e.currentTarget;
     const mod = IS_MAC ? e.metaKey : e.ctrlKey;
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void submit();
     } else if (e.key === "Escape") {
@@ -588,6 +591,7 @@ export function CaptureApp() {
   };
 
   const onPickKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isComposing(e.nativeEvent)) return;
     const mod = IS_MAC ? e.metaKey : e.ctrlKey;
     const q = picker?.query ?? "";
     if (e.key === "Enter" && mod) {
