@@ -89,9 +89,9 @@ test("a damaged database is restored from the last backup; the app starts with t
   assert.equal(code, 0, "the first process ends after starting the restored app");
   await until("restore logged", () => /database restored from backup annalo-/.test(log(dir)));
   const text = log(dir);
-  assert.match(text, /recovery dialog „Datenbank beschädigt“: Die Datenbank im Datenordner lässt sich nicht öffnen/);
+  assert.match(text, /recovery dialog “Datenbank beschädigt”: Die Datenbank im Datenordner lässt sich nicht öffnen/);
   assert.match(text, /verwendet die neueste von 1 Sicherungen/);
-  assert.match(text, /answered by the test: Letzte Sicherung wiederherstellen/);
+  assert.match(text, /answered by the test: Restore/);
   const broken = fs.readdirSync(dir).filter((f) => /^workspace\.db\.broken-\d{8}-\d{6}$/.test(f));
   assert.equal(broken.length, 1, `broken file kept: ${fs.readdirSync(dir)}`);
   assert.deepEqual(fs.readFileSync(path.join(dir, broken[0])), garbage, "the broken file is kept unchanged");
@@ -124,8 +124,8 @@ test("a database of a newer Annalo is explained in German; quitting leaves it un
   const code = await run(dir, "quit");
   assert.equal(code, 1, `quits with exit code 1: ${log(dir)}`);
   const text = log(dir);
-  assert.match(text, /recovery dialog „Neuere Datenbank“: Die Datenbank stammt von einer neueren Annalo-Version \(Schema v999, diese kennt v\d+\)\. Bitte Annalo aktualisieren\./);
-  assert.match(text, /answered by the test: Beenden/);
+  assert.match(text, /recovery dialog “Neuere Datenbank”: Die Datenbank stammt von einer neueren Annalo-Version \(Schema v999, diese kennt v\d+\)\. Bitte Annalo aktualisieren\./);
+  assert.match(text, /answered by the test: Quit/);
   assert.deepEqual(fs.readFileSync(db), bytes, "the newer database is not changed");
   assert.deepEqual(fs.readdirSync(dir).filter((f) => f.includes("broken")), [], "nothing set aside");
 });

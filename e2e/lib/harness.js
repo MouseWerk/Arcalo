@@ -69,6 +69,9 @@ export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv
     WEBKIT_DISABLE_COMPOSITING_MODE: "1",
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
+    // The system language the app sees (ANNALO_LOCALE stands in for it): German, as the tests expect,
+    // whatever the machine running them is set to. English runs pass their own.
+    ANNALO_LOCALE: "de-DE",
     // The first-run intro and the 1.6 hint only where a test asks for them (debug builds honor it).
     ...(onboarding ? {} : { ANNALO_SKIP_ONBOARDING: "1" }),
     // Extra variables of one test (e.g. ANNALO_EXE_DIR for portable mode).
