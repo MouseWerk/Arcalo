@@ -3,7 +3,7 @@
 // files. Every row leads to its place; „In Tagesnotiz übernehmen“ writes a compact block into
 // the daily note, and a local model (never a cloud provider) can write a short summary.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   AlertTriangle, CalendarDays, CalendarRange, Check, CheckSquare, ChevronLeft, ChevronRight, Clock, Copy, FileText, Lock, NotebookPen, Paperclip, RefreshCw, Settings2, Sparkles, Square, Sunset, Target, X,
   type LucideIcon,
@@ -18,14 +18,13 @@ import { revealText } from "../editor/reveal";
 import { dayTitle, fileKind } from "../lib/activity";
 import { fmtDayMonth, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
+import { sourceColor } from "../lib/agenda";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
 import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
-import type { DayReview, MeetingState, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
+import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
 import { useT } from "../lib/i18n";
-
-const MEETING_TONE: Record<MeetingState, Tone> = { booked: "success", open: "warning", skipped: "neutral", upcoming: "info", free: "neutral" };
 
 export function DayReviewView() {
   const t = useT();
@@ -34,6 +33,7 @@ export function DayReviewView() {
   const entriesVersion = useApp((st) => st.entriesVersion);
   const focusId = useApp((st) => `${st.focus?.session.id ?? ""}:${st.focus?.phase ?? ""}`);
   const providers = useApp((st) => st.settings?.settings.providers);
+  const cal = useApp((st) => st.settings?.settings.calendar);
   const [date, setDate] = useState(() => takeReviewDay() ?? isoDay(new Date()));
   const [review, setReview] = useState<DayReview | null>(null);
   const [tick, setTick] = useState(0);
@@ -289,13 +289,16 @@ export function DayReviewView() {
               <TimeCard r={r} onOpen={toSheet} />
               <Section icon={CalendarRange} tone="meetings" title={t("review.md.meetings")} count={r.meetings.length} empty={t("review.noMeetings")} className="rv-meetings">
                 {r.meetings.map((m) => (
-                  <button key={m.key} type="button" className={`rv-row rv-meeting state-${m.state}`} onClick={() => openMeeting(m)}>
+                  <button key={m.key} type="button" className={`rv-row rv-meeting state-${m.state}`} style={{ "--ev": sourceColor(m.source, cal) } as CSSProperties} onClick={() => openMeeting(m)}>
                     <span className="rv-when num">{m.all_day ? t("cal.allDay") : `${time(m.start)}–${time(m.end)}`}</span>
                     <span className="rv-main">
                       <span className="rv-title ellipsis">{m.title || t("cal.appointment")}</span>
                       {m.location && <span className="rv-sub ellipsis">{m.location}</span>}
                     </span>
-                    <Badge tone={MEETING_TONE[m.state]}>{t(MEETING_LABEL[m.state])}</Badge>
+                    <span className={`calv-state state-${m.state} ${m.state === "booked" ? "booked" : ""}`}>
+                      {m.state === "booked" && <Check size={12} strokeWidth={2.5} aria-hidden />}
+                      {t(MEETING_LABEL[m.state])}
+                    </span>
                   </button>
                 ))}
                 {openMeetings(r).length > 0 && (

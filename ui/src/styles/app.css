@@ -1802,38 +1802,92 @@ body.presenter-window .presenter { height: 100vh; }
 .calv-col { container: calcol / inline-size; position: relative; border-left: 1px solid var(--border); background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 45%, transparent) 1px, transparent 1px); background-size: 100% var(--hour), 100% var(--hour); background-position: 0 0, 0 calc(var(--hour) / 2); }
 .calv-col.weekend { background-color: color-mix(in srgb, var(--bg-hover) 70%, transparent); }
 .calv-col.today { background-color: color-mix(in srgb, var(--accent-soft) 32%, transparent); }
-.calv-meetings { position: absolute; inset: 0 3px 0 2px; }
+.calv-meetings { position: absolute; inset: 0 4px 0 3px; }
 .calv-col.has-lane .calv-meetings { right: 26%; }
 .calv-lane { position: absolute; top: 0; bottom: 0; right: 3px; width: calc(26% - 6px); }
 .calv-now { position: absolute; left: -1px; right: 0; height: 2px; background: var(--danger); z-index: 3; pointer-events: none; }
 .calv-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 
-/* appointment blocks */
-.calv-ev { --ev-bg: color-mix(in srgb, var(--ev) 15%, var(--bg-canvas)); position: absolute; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; padding: 3px 18px 3px 8px; border: 0; border-radius: 5px; background: var(--ev-bg); box-shadow: inset 3px 0 0 var(--ev), 0 0 0 1px var(--bg-canvas); color: var(--text); font: inherit; font-size: var(--fs-xs); line-height: 1.3; text-align: left; overflow: hidden; cursor: pointer; transition: background var(--dur-fast), box-shadow var(--dur-fast); }
-:root[data-theme="dark"] .calv-ev { --ev-bg: color-mix(in srgb, var(--ev) 26%, var(--bg-canvas)); }
-.calv-ev:hover { background: color-mix(in srgb, var(--ev) 10%, var(--ev-bg)); }
-.calv-ev:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
-.calv-ev.selected { box-shadow: inset 3px 0 0 var(--ev), 0 0 0 2px var(--ev); z-index: 2; }
-.calv-ev-title { max-width: 100%; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: break-word; }
-.calv-ev-meta { max-width: 100%; color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.calv-ev.short { flex-direction: row; align-items: center; padding-block: 0; }
-.calv-ev.short .calv-ev-title { display: block; white-space: nowrap; text-overflow: ellipsis; }
-.calv-ev-marks { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
-.calv-ev.short .calv-ev-marks { top: 50%; transform: translateY(-50%); }
-.calv-mark { flex: none; color: var(--text-3); }
-.calv-mark.booked { color: var(--success); }
-.calv-mark.faint-mark { opacity: 0.7; }
-.calv-ev.busy-tentative { background: repeating-linear-gradient(135deg, var(--ev-bg) 0 6px, color-mix(in srgb, var(--ev-bg) 55%, var(--bg-canvas)) 6px 12px); }
-.calv-ev.busy-free { background: var(--bg-canvas); box-shadow: inset 3px 0 0 var(--ev), inset 0 0 0 1px color-mix(in srgb, var(--ev) 45%, transparent); }
-.calv-ev.busy-oof { --ev-bg: color-mix(in srgb, var(--violet) 14%, var(--bg-canvas)); }
-.calv-ev.skipped { opacity: 0.55; }
-.calv-ev.skipped .calv-ev-title { text-decoration: line-through; text-decoration-color: var(--text-3); }
-.calv-chip { position: relative; flex-direction: row; align-items: center; gap: 4px; height: 20px; padding: 0 6px 0 8px; }
-.calv-chip .calv-ev-title { display: block; flex: 1; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
-.calv-entry { position: absolute; padding: 2px 4px; border: 0; border-radius: 4px; background: var(--success-soft); box-shadow: inset 2px 0 0 var(--success); color: var(--text-2); font: inherit; font-size: var(--fs-2xs); font-weight: 600; text-align: left; overflow: hidden; cursor: pointer; }
-.calv-entry span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.calv-entry.status-draft { background: repeating-linear-gradient(135deg, var(--success-soft) 0 5px, transparent 5px 10px); }
-.calv-entry:hover { background: color-mix(in srgb, var(--success) 22%, transparent); color: var(--text); }
+/* Meeting blocks: a quiet fill of the calendar color and a 3px bar in it on the left, no border,
+   no glow. --ev-tint and --ev-meta come from the theme (lib/eventlook.ts): the title (--text) and
+   time and place (--ev-meta) read at 4.5:1 or more on the fill of every calendar color. */
+.calv-ev {
+  --ev-fill: color-mix(in srgb, var(--ev) var(--ev-tint), var(--bg-canvas));
+  --ev-bar: var(--ev);
+  --ev-title: var(--text);
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 3px 6px 3px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--ev-fill);
+  color: var(--ev-title);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 14px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+.calv-ev::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ev-bar); }
+.calv-ev:hover { box-shadow: var(--shadow-sm); z-index: 2; }
+.calv-ev:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; z-index: 3; }
+.calv-ev.selected { outline: 2px solid var(--border-focus); outline-offset: 1px; box-shadow: var(--shadow-sm); z-index: 3; }
+.calv-ev-title { flex: none; max-width: 100%; color: var(--ev-title); font-size: var(--fs-sm); font-weight: 600; line-height: 16px; letter-spacing: -0.005em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: var(--lines, 2); -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.calv-ev-meta { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; color: var(--ev-meta); font-size: var(--fs-xs); line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.calv-ev-meta > .ellipsis, .calv-legend-item > .ellipsis, .calv-detail-source > .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calv-ev-place { display: block; overflow: hidden; text-overflow: ellipsis; }
+.calv-ev-marks { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.calv-mark { flex: none; color: var(--ev-meta); }
+.calv-mark.booked { color: var(--ev-title); }
+.calv-mark.faint-mark { opacity: 0.75; }
+/* 30 minutes or less: title and start time on one line. */
+.calv-ev.short { flex-direction: row; align-items: center; gap: 6px; padding-block: 0; }
+.calv-ev.short .calv-ev-title { display: block; flex: 0 1 auto; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
+.calv-ev.short .calv-ev-time { flex: none; }
+/* Running now: a small dot before the time. */
+.calv-ev.live .calv-ev-time::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ev) 25%, transparent); }
+/* Over: half the tint, the title in the secondary color. */
+.calv-ev.past { --ev-fill: color-mix(in srgb, var(--ev) calc(var(--ev-tint) / 2), var(--bg-canvas)); --ev-bar: color-mix(in srgb, var(--ev) 55%, var(--bg-canvas)); --ev-title: var(--ev-meta); }
+.calv-ev.past .calv-ev-title { font-weight: 550; }
+/* „nicht buchen“: neutral and quiet, no strike-through. */
+.calv-ev.skipped { --ev-fill: color-mix(in srgb, var(--text) 4%, var(--bg-canvas)); --ev-bar: color-mix(in srgb, var(--ev) 40%, var(--border-strong)); --ev-title: var(--ev-meta); }
+.calv-ev.skipped .calv-ev-title { font-weight: 500; }
+/* Tentative, free, private and free/busy-only: hatched between the fill and the canvas. */
+.calv-ev:is(.busy-tentative, .busy-free, .veiled) { background: repeating-linear-gradient(-45deg, var(--ev-fill) 0 5px, color-mix(in srgb, var(--ev-fill) 45%, var(--bg-canvas)) 5px 9px); }
+.calv-ev.busy-free { --ev-fill: color-mix(in srgb, var(--ev) calc(var(--ev-tint) / 2), var(--bg-canvas)); }
+
+/* All-day: compact bars. */
+.calv-chip { position: relative; flex-direction: row; align-items: center; gap: 6px; height: 20px; padding: 0 6px 0 9px; border-radius: 4px; }
+.calv-chip .calv-ev-title { display: block; flex: 1; min-width: 0; font-size: var(--fs-xs); line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Booked time: a quiet hatch in the text color, distinct from the colored meetings. */
+.calv-entry {
+  position: absolute;
+  padding: 3px 4px 2px 6px;
+  border: 0;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, color-mix(in srgb, var(--text-3) 70%, transparent) 2px, transparent 2px),
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--text) 9%, transparent) 0 1px, transparent 1px 5px),
+    color-mix(in srgb, var(--text) 3%, var(--bg-canvas));
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 13px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+.calv-entry span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.calv-entry.status-draft { background: linear-gradient(to right, color-mix(in srgb, var(--text-3) 45%, transparent) 2px, transparent 2px), repeating-linear-gradient(-45deg, color-mix(in srgb, var(--text) 6%, transparent) 0 1px, transparent 1px 7px), var(--bg-canvas); }
+.calv-entry:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.calv-entry:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 
 /* month */
 .calv-month { flex: 1; min-height: 0; display: grid; grid-template-rows: auto repeat(6, minmax(92px, 1fr)); overflow-y: auto; }
@@ -1851,56 +1905,78 @@ body.presenter-window .presenter { height: 100vh; }
 .calv-mnote { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
 .calv-mhours { margin-left: auto; color: var(--text-3); font-size: var(--fs-2xs); font-weight: 600; font-variant-numeric: tabular-nums; }
 .calv-mlist { display: flex; flex-direction: column; gap: 1px; min-height: 0; }
-.calv-ev.calv-mev { position: relative; flex-direction: row; align-items: center; gap: 5px; height: 20px; flex: none; padding: 0 5px; border-radius: 4px; background: transparent; box-shadow: none; font-weight: 400; }
-.calv-ev.calv-mev::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev); }
-.calv-ev.calv-mev:hover { background: var(--bg-hover); }
-.calv-ev.calv-mev.allday { background: var(--ev-bg); box-shadow: inset 3px 0 0 var(--ev); }
-.calv-ev.calv-mev.allday::before { display: none; }
-.calv-ev.calv-mev.selected { background: var(--bg-selected); box-shadow: 0 0 0 1px var(--ev); }
-.calv-mev .calv-ev-title { display: block; flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
-.calv-mev .calv-mark { flex: none; }
+/* One line per meeting: a dot in the calendar color, the start time, the title. */
+.calv-ev.calv-mev { position: relative; flex-direction: row; align-items: center; gap: 6px; height: 20px; flex: none; padding: 0 4px 0 6px; border-radius: 4px; background: transparent; color: var(--text); }
+.calv-ev.calv-mev::before { position: static; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev); }
+.calv-ev.calv-mev:hover { background: var(--bg-hover); box-shadow: none; }
+.calv-ev.calv-mev.selected { background: var(--bg-selected); box-shadow: none; outline-offset: 0; }
+.calv-ev.calv-mev.allday { padding-left: 9px; background: var(--ev-fill); }
+.calv-ev.calv-mev.allday::before { position: absolute; top: 0; bottom: 0; left: 0; width: 3px; height: auto; border-radius: 0; background: var(--ev-bar); }
+.calv-ev.calv-mev:is(.past, .skipped) { color: var(--text-2); }
+.calv-ev.calv-mev:is(.past, .skipped)::before { background: var(--ev-bar); }
+.calv-mev .calv-ev-title { display: block; flex: 1; min-width: 0; color: inherit; font-size: var(--fs-xs); font-weight: 500; line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
+.calv-mev .calv-mark, .calv-chip .calv-mark { color: var(--text-2); }
 .calv-mev .calv-mark.faint-mark, .calv-chip .calv-mark.faint-mark { display: none; }
-.calv-mev-time { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.calv-more { align-self: flex-start; height: 18px; padding: 0 5px; border: 0; border-radius: 4px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.calv-mev-time { flex: none; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.calv-more { align-self: flex-start; height: 18px; margin-left: 2px; padding: 0 4px; border: 0; border-radius: 4px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: 500; font-variant-numeric: tabular-nums; cursor: pointer; }
 .calv-more:hover { background: var(--bg-hover); color: var(--text); }
+.calv-more:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 0; }
 
 /* list */
 .calv-agenda { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 48px; }
 .calv-agenda-day { max-width: 860px; margin: 0 auto; }
-.calv-agenda-day h2 { display: flex; align-items: baseline; gap: 8px; margin: 18px 0 4px; padding: 0 10px; font-size: var(--fs-sm); font-weight: 650; }
+.calv-agenda-day h2 { display: flex; align-items: baseline; gap: 8px; margin: 20px 0 4px; padding: 0 10px 6px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); font-weight: 650; }
 .calv-agenda-day.today h2 { color: var(--accent-text); }
-.calv-agenda-row { display: grid; grid-template-columns: 104px 4px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-md); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.calv-agenda-row { display: grid; grid-template-columns: 96px 3px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .calv-agenda-row:hover { background: var(--bg-hover); }
+.calv-agenda-row:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 .calv-agenda-row.selected { background: var(--bg-selected); }
-.calv-agenda-row.skipped { opacity: 0.6; }
+.calv-agenda-row:is(.skipped, .past) { color: var(--text-2); }
+.calv-agenda-row:is(.skipped, .past) .calv-agenda-bar { background: color-mix(in srgb, var(--ev) 50%, var(--bg-canvas)); }
 .calv-agenda-time { color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .calv-agenda-bar { align-self: stretch; min-height: 20px; border-radius: 2px; background: var(--ev); }
-.calv-agenda-text { display: flex; flex-direction: column; min-width: 0; }
-.calv-agenda-text .calv-ev-title { display: block; white-space: nowrap; text-overflow: ellipsis; }
-.calv-agenda-text .calv-ev-meta { font-size: var(--fs-xs); }
-.calv-agenda-marks { display: flex; align-items: center; gap: 6px; }
+.calv-agenda-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.calv-agenda-text .calv-ev-title { display: block; font-size: var(--fs-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.calv-agenda-row:is(.skipped, .past) .calv-ev-title { font-weight: 500; }
+.calv-agenda-text .calv-ev-meta { display: block; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+.calv-agenda-marks { display: flex; align-items: center; gap: 10px; }
+/* A meeting's booking state as quiet text with a glyph (list, start page, Tagesrückblick). */
+.calv-state { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; }
+.calv-state.booked svg { color: var(--success); }
+.calv-state:is(.live, .state-open)::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ev, var(--accent)); }
+.calv-state.live { color: var(--text); }
+.calv-state.state-open::before { background: var(--warning-fill); }
+.calv-state.state-upcoming { color: var(--text-3); }
 
 /* detail */
-.calv-detail { flex: none; width: 340px; display: flex; flex-direction: column; gap: 14px; padding: 14px 18px 20px; border-left: 1px solid var(--border); background: var(--bg-raised); overflow-y: auto; animation: fade-in var(--dur) var(--ease-out); }
-.calv-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.calv-detail-source { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
-.calv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ev); }
-.calv-detail-title { margin: -4px 0 0; font-size: 17px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.calv-detail { flex: none; width: 340px; display: flex; flex-direction: column; gap: 0; padding: 12px 18px 18px; border-left: 1px solid var(--border); background: var(--bg-raised); overflow-y: auto; animation: fade-in var(--dur) var(--ease-out); }
+.calv-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.calv-detail-source { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
+.calv-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ev); }
+.calv-detail-top { display: grid; gap: 8px; padding: 6px 0 16px; }
+.calv-detail-title { margin: 0; padding-left: 11px; border-left: 3px solid var(--ev); font-size: 17px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.calv-detail-when { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding-left: 14px; color: var(--text-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.calv-detail-series { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+.calv-detail-series svg { color: var(--text-3); }
+.calv-join { justify-self: start; max-width: 100%; margin: 4px 0 0 14px; }
+.calv-detail-sec { padding: 14px 0; border-top: 1px solid var(--border); }
 .calv-detail-rows { display: flex; flex-direction: column; gap: 8px; }
-.calv-detail-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; align-items: start; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.calv-detail-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
 .calv-detail-row > svg { margin-top: 2px; color: var(--text-3); }
+.calv-detail-facts .calv-detail-row { color: var(--text-2); }
 .calv-detail-row.faint { color: var(--text-2); }
-.calv-join { align-self: flex-start; max-width: 100%; }
 .calv-join span, .calv-detail-actions .btn span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.calv-cats { display: flex; flex-wrap: wrap; gap: 4px; }
-.calv-book-state { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: var(--r-md); background: var(--bg-hover); color: var(--text-2); font-size: var(--fs-sm); }
-.calv-book-state.booked { background: var(--success-soft); color: var(--text); }
+.calv-cats { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 26px; }
+.calv-detail-booking { display: grid; gap: 10px; }
+.calv-book-state { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
+.calv-book-state svg { flex: none; color: var(--text-3); }
+.calv-book-state.booked { color: var(--text); }
 .calv-book-state.booked svg { color: var(--success); }
 .calv-detail-actions { display: flex; flex-direction: column; gap: 6px; }
 .calv-detail-actions .btn { justify-content: flex-start; }
-.calv-body-text summary { color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.calv-body-text summary { color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
 .calv-body-text pre { max-height: 280px; margin: 8px 0 0; overflow: auto; color: var(--text-2); font-family: inherit; font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
-.calv-synced { margin-top: auto; font-size: var(--fs-xs); }
+.calv-synced { margin-top: auto; padding-top: 12px; font-size: var(--fs-xs); }
 .calv-book-note { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 9px 11px; border-radius: var(--r-md); background: var(--accent-soft); font-size: var(--fs-sm); line-height: 1.45; }
 .calv-book-note svg { flex: none; margin-top: 2px; color: var(--accent-text); }
 
@@ -1913,6 +1989,7 @@ body.presenter-window .presenter { height: 100vh; }
 }
 @container calcol (max-width: 110px) {
   .calv-ev { padding-right: 4px; }
+  .calv-ev.short .calv-ev-time { display: none; }
   .calv-ev-marks { display: none; }
 }
 @container pane (max-width: 1000px) {
@@ -1937,7 +2014,7 @@ body.presenter-window .presenter { height: 100vh; }
   .calv-month-row { grid-template-columns: 22px repeat(7, minmax(0, 1fr)); }
   .calv-mev-time, .calv-mhours { display: none; }
   .calv-agenda { padding-inline: 8px; }
-  .calv-agenda-row { grid-template-columns: 80px 4px minmax(0, 1fr); }
+  .calv-agenda-row { grid-template-columns: 80px 3px minmax(0, 1fr); }
   .calv-agenda-marks { display: none; }
 }
 
@@ -2244,6 +2321,10 @@ body.presenter-window .presenter { height: 100vh; }
 .rv-bar { display: block; height: 4px; border-radius: 2px; background: var(--bg-active); overflow: hidden; }
 .rv-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--k); }
 .rv-meeting.state-free .rv-title, .rv-meeting.state-skipped .rv-title { color: var(--text-2); font-weight: 500; }
+/* Meetings: the calendar's bar like in the Kalender, the booking state as quiet text. */
+.rv-meeting .rv-main { position: relative; padding-left: 12px; }
+.rv-meeting .rv-main::before { content: ""; position: absolute; top: 1px; bottom: 1px; left: 0; width: 3px; border-radius: 2px; background: var(--ev, var(--accent)); }
+.rv-meeting:is(.state-free, .state-skipped) .rv-main::before { background: color-mix(in srgb, var(--ev, var(--accent)) 45%, var(--bg-raised)); }
 .rv-page.gone .rv-title { color: var(--text-3); text-decoration: line-through; }
 .rv-gaps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 4px 0; padding: 8px 10px; border-radius: var(--r-md); background: var(--warning-soft); font-size: var(--fs-sm); color: var(--text-2); }
 .rv-gaps > svg { color: var(--warning); }
@@ -2382,19 +2463,18 @@ body.presenter-window .presenter { height: 100vh; }
   .olcal-head { flex-direction: column; }
 }
 /* Kalender view: the legend hides or shows calendars in the view */
-.calv-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 20px 0; }
-.calv-legend-item { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; height: 24px; padding: 0 10px 0 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-raised); color: var(--text-2); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
-.calv-legend-item:hover { border-color: color-mix(in srgb, var(--ev) 45%, var(--border)); color: var(--text); }
-.calv-legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.calv-legend-dot { flex: none; width: 9px; height: 9px; border: 2px solid var(--ev); border-radius: 50%; background: var(--ev); }
-.calv-legend-item.off { color: var(--text-3); background: transparent; border-style: dashed; }
-.calv-legend-item.off .calv-legend-dot { background: transparent; }
-.calv-legend-item.off .ellipsis { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
+.calv-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 8px 14px 0; }
+.calv-legend-item { display: inline-flex; align-items: center; gap: 7px; max-width: 240px; height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: 500; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.calv-legend-item:hover { background: var(--bg-hover); color: var(--text); }
+.calv-legend-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 0; }
+.calv-legend-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ev); }
+.calv-legend-item.off { color: var(--text-3); }
+.calv-legend-item.off .calv-legend-dot { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ev) 70%, var(--text-3)); }
 .calv-legend-note { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; font-size: var(--fs-xs); }
 .calv-also-in > span { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .calv-also-cal { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
 @container pane (max-width: 600px) {
-  .calv-legend { padding: 8px 14px 0; }
+  .calv-legend { padding: 8px 6px 0; }
   .calv-legend-note { width: 100%; margin-left: 0; }
 }
 
@@ -2419,7 +2499,7 @@ body.presenter-window .presenter { height: 100vh; }
 :root[data-backdrop] :is(.pane + .resizer + .pane, .pane.multi + .resizer + .pane) { border-left-color: var(--glass-line); }
 :root[data-backdrop] .pane.multi.active .tabbar { background: color-mix(in srgb, var(--bg-active) 45%, transparent); }
 /* Views with a surface of their own: tinted over the content layer instead of painted over it. */
-:root[data-backdrop] :is(.settings-nav, .settings-topbar) { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
+:root[data-backdrop] .settings-nav { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
 :root[data-backdrop] .calv { background: transparent; }
 :root[data-backdrop] :is(.calv-sticky, .calv-month-head) { background: var(--glass-content); }
 

@@ -83,6 +83,10 @@
   --code-type: #facc15;
   --code-meta: #22d3ee;
 
+  /* Meetings: the calendar color's share in their fill, their secondary text (lib/eventlook.ts). */
+  --ev-tint: 26%;
+  --ev-meta: #c6c7cd;
+
   --mark: rgb(250 204 21 / 0.22);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
@@ -135,6 +139,9 @@
   --code-title: #1d4ed8;
   --code-type: #a16207;
   --code-meta: #0e7490;
+
+  --ev-tint: 14%;
+  --ev-meta: #52525b;
 
   --mark: rgb(250 204 21 / 0.35);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);

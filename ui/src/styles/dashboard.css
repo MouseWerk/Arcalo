@@ -100,11 +100,14 @@
 .dw-check:hover { border-color: var(--accent); background: var(--accent-soft); }
 .dw-check[aria-checked="true"] { border-color: var(--accent-strong); background: var(--accent-strong); }
 .dw-add { height: 30px; font-size: var(--fs-sm); margin-top: 6px; flex: none; }
+/* All-day meetings on the timeline: compact bars like the Kalender's (fill and bar, lib/eventlook.ts). */
 .dw-chip {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 22px; padding: 0 8px; border: 0; border-radius: 11px;
-  background: color-mix(in srgb, var(--ev, var(--accent)) 14%, transparent); color: var(--text); font: inherit; font-size: var(--fs-xs); cursor: pointer;
+  position: relative; display: inline-flex; align-items: center; max-width: 100%; height: 20px; padding: 0 8px 0 9px; border: 0; border-radius: 4px;
+  background: color-mix(in srgb, var(--ev, var(--accent)) var(--ev-tint), var(--bg-raised)); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.dw-chip::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ev, var(--accent)); }
+.dw-chip:hover { box-shadow: var(--shadow-sm); }
 .dw-meter { height: 6px; border-radius: 3px; background: var(--bg-active); overflow: hidden; }
 .dw-meter > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width var(--dur) var(--ease-out); }
 
@@ -147,14 +150,19 @@
 .dw-tl-track { position: relative; height: calc(var(--lanes, 1) * var(--lane-h) + 16px); margin-top: 2px; border-top: 1px solid var(--border); }
 .dw-tl-hour { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--border); }
 .dw-tl-hour > span { position: absolute; bottom: 0; left: 3px; font-size: var(--fs-2xs); color: var(--text-3); }
+/* Meetings on the timeline: the Kalender's blocks (fill, 3px bar, past and running). */
 .dw-tl-ev {
-  position: absolute; height: calc(var(--lane-h) - 3px); margin-top: 3px; display: flex; align-items: center; padding: 0 6px; border: 0;
-  border-left: 3px solid var(--ev, var(--accent)); border-radius: 4px; background: color-mix(in srgb, var(--ev, var(--accent)) 16%, var(--bg-raised));
-  color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 500; overflow: hidden; cursor: pointer; z-index: 1;
+  --ev-fill: color-mix(in srgb, var(--ev, var(--accent)) var(--ev-tint), var(--bg-raised));
+  --ev-bar: var(--ev, var(--accent));
+  position: absolute; height: calc(var(--lane-h) - 3px); margin-top: 3px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 8px; border: 0;
+  border-radius: 4px; background: var(--ev-fill); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; overflow: hidden; cursor: pointer; z-index: 1;
+  transition: box-shadow var(--dur-fast);
 }
-.dw-tl-ev:hover { background: color-mix(in srgb, var(--ev, var(--accent)) 26%, var(--bg-raised)); }
-.dw-tl-ev.past { opacity: 0.5; }
-.dw-tl-ev.live { box-shadow: 0 0 0 1px var(--ev, var(--accent)); }
+.dw-tl-ev::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ev-bar); }
+.dw-tl-ev:hover { box-shadow: var(--shadow-sm); z-index: 2; }
+.dw-tl-ev:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.dw-tl-ev.past { --ev-fill: color-mix(in srgb, var(--ev, var(--accent)) calc(var(--ev-tint) / 2), var(--bg-raised)); --ev-bar: color-mix(in srgb, var(--ev, var(--accent)) 55%, var(--bg-raised)); color: var(--ev-meta); font-weight: 500; }
+.dw-tl-ev.live > .ellipsis::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--ev, var(--accent)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ev, var(--accent)) 25%, transparent); vertical-align: 1px; }
 .dw-tl-now { position: absolute; top: -4px; bottom: 12px; width: 2px; margin-left: -1px; background: var(--danger); border-radius: 1px; z-index: 2; }
 .dw-tl-now::before { content: ""; position: absolute; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 .dw-next { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px 4px 10px; border-radius: var(--r-md); background: var(--bg-hover); font-size: var(--fs-sm); }
@@ -178,15 +186,17 @@
 .dw-agenda { display: grid; gap: 10px; }
 .dw-agenda-item { display: flex; align-items: center; min-width: 0; border-radius: var(--r-sm); }
 .dw-agenda-item:hover { background: var(--bg-hover); }
-.dw-agenda-row { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 36px; padding: 3px 6px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
-.dw-agenda-time { width: 42px; flex: none; color: var(--text-2); font-size: var(--fs-xs); }
+.dw-agenda-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 36px; padding: 3px 6px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.dw-agenda-row:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; border-radius: var(--r-sm); }
+.dw-agenda-time { width: 40px; flex: none; color: var(--text-2); font-size: var(--fs-xs); }
 .dw-agenda-bar { width: 3px; align-self: stretch; margin: 2px 0; border-radius: 2px; background: var(--ev, var(--accent)); flex: none; }
 .dw-agenda-main { display: grid; min-width: 0; line-height: 1.3; }
-.dw-agenda-title { font-weight: 500; }
-.dw-agenda-item.past .dw-agenda-row { color: var(--text-3); }
-.dw-agenda-item.past .dw-agenda-bar { opacity: 0.45; }
-.dw-agenda-item.live .dw-agenda-title { color: var(--text); font-weight: 600; }
-.dw-agenda-actions { display: flex; align-items: center; gap: 4px; flex: none; padding-right: 4px; }
+.dw-agenda-title { font-weight: 600; }
+.dw-agenda-item.past .dw-agenda-row { color: var(--text-2); }
+.dw-agenda-item.past .dw-agenda-title { font-weight: 500; }
+.dw-agenda-item.past .dw-agenda-bar { background: color-mix(in srgb, var(--ev, var(--accent)) 50%, var(--bg-raised)); }
+.dw-agenda-item.live .dw-agenda-time { display: inline-flex; align-items: center; gap: 4px; color: var(--text); font-weight: 600; }
+.dw-agenda-actions { display: flex; align-items: center; gap: 6px; flex: none; padding-right: 4px; }
 .dw-agenda-day + .dw-agenda-day { padding-top: 4px; }
 
 /* Zeit diese Woche */

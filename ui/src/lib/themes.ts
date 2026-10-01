@@ -11,6 +11,7 @@ import type { AppearancePrefs, CustomTheme, Settings, ThemeColors } from "./type
 import { accentHex, accentTokens, contrast, ensureContrast, mix, parseHex, toHex, type Rgb } from "./color";
 import { setBackdropDark } from "./backdrop";
 import { rememberSplash } from "./splash";
+import { eventTokens } from "./eventlook";
 
 export interface ThemeDef {
   id: string;
@@ -136,6 +137,8 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
   const code = (light: string, darkHex: string) => toHex(readable(rgb(dark ? darkHex : light), [codeBg], 4.6, dark));
   const violet = readable(rgb(dark ? "#a78bfa" : "#7c3aed"), [bg, raised], 4.5, dark);
   const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background);
+  // Meetings: the calendar color's share in their fill and their secondary text (lib/eventlook.ts).
+  const ev = eventTokens({ canvas: toHex(bg), raised: toHex(raised), text: toHex(text), text2: toHex(text2), accent: accent["--accent"], dark });
   return {
     "color-scheme": dark ? "dark" : "light",
     "--bg-app": toHex(app),
@@ -172,6 +175,8 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
     "--code-title": code("#1d4ed8", "#60a5fa"),
     "--code-type": code("#a16207", "#facc15"),
     "--code-meta": code("#0e7490", "#22d3ee"),
+    "--ev-tint": `${ev.tint}%`,
+    "--ev-meta": ev.meta,
     "--mark": dark ? "rgb(250 204 21 / 0.24)" : "rgb(250 204 21 / 0.38)",
     "--shadow-sm": dark ? "0 1px 2px rgb(0 0 0 / 0.4)" : "0 1px 2px rgb(0 0 0 / 0.06)",
     "--shadow-md": dark ? `0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px ${rgba(text, 0.07)}` : "0 8px 24px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.06)",
