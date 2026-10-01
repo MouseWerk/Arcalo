@@ -6,6 +6,7 @@ mod appmenu;
 mod backdrop;
 mod backupdest;
 mod calsync;
+mod chats;
 mod dashboard;
 mod dayreview;
 mod desktop;
@@ -1727,7 +1728,11 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || (old_cal.past_days, old_cal.future_days) != (new_cal.past_days, new_cal.future_days)
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
+    let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     rebuild_ai(&state, settings);
+    if chat_retention {
+        chats::prune(&state);
+    }
     backupdest::settings_changed(&app);
     if resync && !active.is_empty() {
         calsync::spawn_sync(app.clone(), active);
@@ -2253,6 +2258,8 @@ struct ChatOutcome {
     meter: SessionMeter,
     /// Share of the monthly cost limit used, once it is at least 80 %.
     cost_warning: Option<f64>,
+    /// The turn touched private content (a marker, „Nur lokal“ or a private conversation).
+    private: bool,
 }
 
 /// The cost warning after a request (at least 80 % of the monthly limit).
@@ -2283,8 +2290,19 @@ fn route_for(
 }
 
 #[tauri::command]
-fn ai_route_preview(state: State<AppState>, prompt: String, use_tools: bool, tier: Option<Tier>) -> RouteDecision {
-    route_for(&state, &prompt, &[], use_tools, tier)
+fn ai_route_preview(
+    state: State<AppState>,
+    prompt: String,
+    use_tools: bool,
+    tier: Option<Tier>,
+    conversation_id: Option<i64>,
+) -> RouteDecision {
+    let route = route_for(&state, &prompt, &[], use_tools, tier);
+    let private_chat = conversation_id.is_some_and(|id| state.db().chat_is_private(id).unwrap_or(false));
+    if private_chat && !availability::local_required(&route, state.settings().privacy.local_only) {
+        return state.router().private_route("private conversation, kept on the local model");
+    }
+    route
 }
 
 #[tauri::command]
@@ -2310,6 +2328,7 @@ async fn ai_chat(
     tier: Option<Tier>,
     page_id: Option<i64>,
     override_limit: Option<bool>,
+    conversation_id: Option<i64>,
 ) -> Result<ChatOutcome> {
     prefs::check_cost_limit(&state, override_limit.unwrap_or(false))?;
     let prompt = messages
@@ -2319,11 +2338,17 @@ async fn ai_chat(
         .and_then(|m| m.content.clone())
         .ok_or_else(|| Error::State("Keine Nachricht".into()))?;
     let settings = state.settings();
+    // A saved conversation that touched private content stays on the local model.
+    let private_chat = match conversation_id {
+        Some(id) => state.db().chat_is_private(id)?,
+        None => false,
+    };
 
     // Retrieval: embeddings are optional; keyword search always works offline. A private
     // question is not sent to an embedding model of a provider that is not local.
     let lower = prompt.to_lowercase();
-    let private = settings.privacy.local_only
+    let private = private_chat
+        || settings.privacy.local_only
         || settings.router.private_markers.iter().any(|m| !m.trim().is_empty() && lower.contains(&m.to_lowercase()));
     // A chat model is never asked for embeddings, and a model that failed is not asked again:
     // on a LiteLLM proxy each failure counts against the model and can put it into cooldown.
@@ -2404,7 +2429,20 @@ async fn ai_chat(
     context_texts.push(source_marker);
     // Earlier turns (and tool results) of the conversation are sent again, so they count as well.
     context_texts.extend(messages.iter().filter_map(|m| m.content.clone()));
-    let route = route_for(&state, &prompt, &context_texts, use_tools, tier);
+    let mut route = route_for(&state, &prompt, &context_texts, use_tools, tier);
+    if private_chat && !availability::local_required(&route, settings.privacy.local_only) {
+        route = state.router().private_route("private conversation, kept on the local model");
+    }
+    // What makes the conversation private from now on (the UI saves it with the turn).
+    let touched_private = private_chat
+        || settings.privacy.local_only
+        || annalo_core::ai::privacy::any_private(
+            std::iter::once(prompt.as_str()).chain(context_texts.iter().map(String::as_str)),
+            &settings.router.private_markers,
+        );
+    if touched_private && let Some(id) = conversation_id {
+        state.db().chat_mark_private(id)?;
+    }
 
     // One system message, as in the inline AI: chat templates of many models (vLLM, Mistral,
     // Gemma) accept a system message only at the very start.
@@ -2429,7 +2467,7 @@ async fn ai_chat(
 
     let (completion, meter, mut route) = complete_routed(&app, &state, &request_id, req, route).await?;
     route.reasons.extend(embed_note);
-    Ok(ChatOutcome { completion, route, context, meter, cost_warning: cost_warning(&state) })
+    Ok(ChatOutcome { completion, route, context, meter, cost_warning: cost_warning(&state), private: touched_private })
 }
 
 /// The client and model for embeddings, when an embedding model is set and its provider is on.
@@ -2772,7 +2810,7 @@ async fn ai_transform(
     };
     let (mut completion, meter, route) = complete_routed(&app, &state, &request_id, req, route).await?;
     completion.content = transform::clean_output(&completion.content);
-    Ok(ChatOutcome { completion, route, context: vec![], meter, cost_warning: cost_warning(&state) })
+    Ok(ChatOutcome { completion, route, context: vec![], meter, cost_warning: cost_warning(&state), private: false })
 }
 
 /// Smart `/zeit`: a line with a duration but no reference, typed on a page without a linked
@@ -3613,6 +3651,9 @@ pub fn run() {
                 )));
             }
             devlog::set_verbose(settings.dev_log_verbose);
+            if let Err(e) = db.chat_prune(settings.ai.chat_history, Utc::now()) {
+                devlog::warn("ai", format!("chat history cleanup failed: {e}"));
+            }
             let shortcuts = [
                 settings.capture_shortcut.clone(),
                 settings.palette_shortcut.clone().unwrap_or_default(),
@@ -3883,6 +3924,16 @@ pub fn run() {
             attachment_open,
             desktop::desktop_info,
             desktop::autostart_set,
+            chats::chat_list,
+            chats::chat_get,
+            chats::chat_create,
+            chats::chat_append,
+            chats::chat_truncate,
+            chats::chat_update,
+            chats::chat_delete,
+            chats::chat_restore,
+            chats::chat_delete_all,
+            chats::chat_duplicate,
             focus::focus_state,
             focus::focus_start,
             focus::focus_finish,

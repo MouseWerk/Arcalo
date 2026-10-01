@@ -430,6 +430,8 @@ export interface AiPrefs {
   citations: boolean;
   streaming: boolean;
   allowed_tools: string[];
+  /** How long the assistant's chats are kept. */
+  chat_history?: ChatRetention;
 }
 export interface NotificationPrefs {
   end_of_day: boolean;
@@ -783,6 +785,8 @@ export interface ChatOutcome {
   meter: SessionMeter;
   /** Share of the monthly cost limit used, once at least 80 %. */
   cost_warning?: number | null;
+  /** The turn touched private content (marker, „Nur lokal“, private chat). */
+  private?: boolean;
 }
 export type StreamEvent =
   | { type: "delta"; text: string; tokens_per_second: number | null }
@@ -1372,4 +1376,54 @@ export interface ReviewFile {
   name: string;
   kind: string;
   at: string;
+}
+
+// ---- assistant chat history ----
+export type ChatRetention = "all" | "90" | "30" | "off";
+export interface ChatConversation {
+  id: number;
+  title: string;
+  title_custom: boolean;
+  created_at: string;
+  updated_at: string;
+  pinned: boolean;
+  archived: boolean;
+  private: boolean;
+  provider: string;
+  model: string;
+  tier: string;
+  page_ids: number[];
+  messages: number;
+  /** Search hit, the match between \u0002 and \u0003. */
+  snippet: string | null;
+}
+/** A message to save (and as saved, with `id`, `seq`, `created_at`). */
+export interface ChatRecord {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  display?: string | null;
+  tool_calls?: ToolCall[] | null;
+  tool_call_id?: string | null;
+  tool?: { name: string; label: string; status: string; summary?: string; output?: string } | null;
+  citations?: ContextChunk[] | null;
+  provider?: string;
+  model?: string;
+  tier?: string;
+  reasons?: string[] | null;
+  meta?: { model: string; ttft: number | null; tps: number | null; exact: boolean } | null;
+  tokens?: number;
+  cost_usd?: number;
+  error?: string | null;
+  cancelled?: boolean;
+  in_context?: boolean;
+  page_title?: string | null;
+}
+export interface StoredChatRecord extends ChatRecord {
+  id: number;
+  seq: number;
+  created_at: string;
+}
+export interface ChatConversationDoc {
+  conversation: ChatConversation;
+  messages: StoredChatRecord[];
 }
