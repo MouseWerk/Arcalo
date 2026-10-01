@@ -36,10 +36,18 @@ pub fn dashboard_data(state: State<AppState>, request: Request) -> Result<Respon
 pub fn dashboard_file_write(path: String, json: String) -> Result<()> {
     let path = path.trim();
     if !path.to_lowercase().ends_with(".json") {
-        return Err(Error::State("Bitte eine .json-Datei wählen".into()));
+        return Err(Error::State(
+            annalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
+        ));
     }
     if json.len() > MAX_FILE_BYTES || serde_json::from_str::<serde_json::Value>(&json).is_err() {
-        return Err(Error::State("Die Startseite ließ sich nicht als Datei schreiben".into()));
+        return Err(Error::State(
+            annalo_core::tr!(
+                "Die Startseite ließ sich nicht als Datei schreiben",
+                "The start page could not be written as a file"
+            )
+            .into(),
+        ));
     }
     std::fs::write(path, json).at(path)?;
     Ok(())

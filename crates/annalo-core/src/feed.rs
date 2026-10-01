@@ -7,6 +7,7 @@
 //! (files, backups, syncs). History from before the journal existed is derived once from
 //! pages, versions, time entries and the attachments folder ([`backfill`]).
 
+use crate::{tr, trf};
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
@@ -475,7 +476,7 @@ impl Database {
             kind,
             entry_id: (n == 1).then(|| ids[0]),
             netzplan_id: (np_ids.len() == 1).then(|| np_ids[0]),
-            title: if n == 1 { "1 Eintrag".into() } else { format!("{n} Einträge") },
+            title: if n == 1 { tr!("1 Eintrag", "1 entry").into() } else { trf!("{n} Einträge", "{n} entries") },
             detail: refs.join(", "),
             amount: minutes,
             ..Default::default()
@@ -517,14 +518,14 @@ impl Database {
     }
 }
 
-/// „Zeichnung“, „Bild“ or „Datei“ for a file name.
+/// „Zeichnung“, „Bild“ or „Datei“ for a file name (in the display language).
 pub fn file_kind(name: &str) -> &'static str {
     if crate::attachments::is_drawing(name) {
-        "Zeichnung"
+        tr!("Zeichnung", "Drawing")
     } else if crate::attachments::image_extension(name).is_some() {
-        "Bild"
+        tr!("Bild", "Image")
     } else {
-        "Datei"
+        tr!("Datei", "File")
     }
 }
 
@@ -641,15 +642,18 @@ where
     Tz::Offset: std::fmt::Display,
 {
     if to < from || (to - from).num_days() > 62 {
-        return Err(Error::State("Zeitraum ungültig (höchstens 62 Tage)".into()));
+        return Err(Error::State(
+            tr!("Zeitraum ungültig (höchstens 62 Tage)", "Invalid period (at most 62 days)").into(),
+        ));
     }
     let start = day_start(from, tz);
     let end = day_start(to + chrono::Duration::days(1), tz);
     let s = summary(db, start, end)?;
     let mut items = list(db, &FeedFilter { from: Some(start), to: Some(end), limit: Some(400), ..Default::default() })?;
     items.reverse();
-    let mut out = format!(
+    let mut out = trf!(
         "Zeitraum {from} bis {to}: {} Seiten bearbeitet, {} Aufgaben erledigt, {} Aufgaben neu, {} gebucht, {} Fokussitzungen.\n",
+        "Period {from} to {to}: {} pages edited, {} tasks done, {} tasks new, {} booked, {} focus sessions.\n",
         s.pages_edited,
         s.tasks_done,
         s.tasks_added,
@@ -661,36 +665,48 @@ where
             parse_ts(&a.at).map(|t| t.with_timezone(tz).format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default();
         let page = a.page_title.clone().unwrap_or_else(|| a.title.clone());
         let line = match a.kind.as_str() {
-            "page_created" => format!("Seite angelegt: {page}"),
-            "page_edited" => format!("Seite bearbeitet: {page} ({} Änderungen, ~{} Zeichen)", a.count, a.amount),
-            "task_added" => format!("Aufgabe neu: {} (Seite {})", a.title, a.detail),
-            "task_done" => format!("Aufgabe erledigt: {} (Seite {})", a.title, a.detail),
-            "entry_created" => format!(
+            "page_created" => trf!("Seite angelegt: {page}", "Page created: {page}"),
+            "page_edited" => trf!(
+                "Seite bearbeitet: {page} ({} Änderungen, ~{} Zeichen)",
+                "Page edited: {page} ({} changes, ~{} characters)",
+                a.count,
+                a.amount
+            ),
+            "task_added" => trf!("Aufgabe neu: {} (Seite {})", "Task new: {} (page {})", a.title, a.detail),
+            "task_done" => trf!("Aufgabe erledigt: {} (Seite {})", "Task done: {} (page {})", a.title, a.detail),
+            "entry_created" => trf!(
                 "Zeit gebucht: {} {} {}",
+                "Time booked: {} {} {}",
                 a.reference.clone().unwrap_or_default(),
                 crate::focus::hm(a.amount),
                 a.title
             ),
             "entry_changed" => {
-                format!("Buchung geändert: {} {}", a.reference.clone().unwrap_or(a.detail.clone()), a.title)
+                trf!(
+                    "Buchung geändert: {} {}",
+                    "Time entry changed: {} {}",
+                    a.reference.clone().unwrap_or(a.detail.clone()),
+                    a.title
+                )
             }
-            "entry_released" => format!("{} freigegeben ({})", a.title, a.detail),
-            "entry_exported" => format!("{} exportiert ({})", a.title, a.detail),
-            "file_added" => format!("{} hinzugefügt: {}", a.detail, a.title),
-            "focus_session" => format!(
+            "entry_released" => trf!("{} freigegeben ({})", "{} released ({})", a.title, a.detail),
+            "entry_exported" => trf!("{} exportiert ({})", "{} exported ({})", a.title, a.detail),
+            "file_added" => trf!("{} hinzugefügt: {}", "{} added: {}", a.detail, a.title),
+            "focus_session" => trf!(
                 "Fokussitzung: {} {} {}",
+                "Focus session: {} {} {}",
                 a.reference.clone().unwrap_or_default(),
                 crate::focus::hm(a.amount),
                 a.title
             ),
-            "backup" => "Sicherung erstellt".to_owned(),
-            "sync" => format!("Git-Synchronisierung: {}", a.detail),
+            "backup" => tr!("Sicherung erstellt", "Backup made").to_owned(),
+            "sync" => trf!("Git-Synchronisierung: {}", "Git sync: {}", a.detail),
             other => other.to_owned(),
         };
         out.push_str(&format!("- {when} {}\n", line.trim()));
     }
     if items.is_empty() {
-        out.push_str("Keine Aktivität aufgezeichnet.\n");
+        out.push_str(tr!("Keine Aktivität aufgezeichnet.\n", "No activity recorded.\n"));
     }
     Ok(out)
 }

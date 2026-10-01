@@ -6,8 +6,10 @@ import { AnnaloLogo } from "./Logo";
 import { api } from "../lib/api";
 import { importVault } from "../lib/actions";
 import { useApp } from "../store/app";
+import { useT } from "../lib/i18n";
 
 export function Onboarding() {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const s = useApp.getState;
   const finish = async (samples: boolean) => {
@@ -18,11 +20,12 @@ export function Onboarding() {
       s().bumpWbs();
       s().set({ onboarding: false });
       if (samples) {
-        const welcome = [...s().pages.values()].find((p) => p.title === "Willkommen");
+        // The samples' start page, in the language they were made in.
+        const welcome = [...s().pages.values()].find((p) => p.title === "Willkommen" || p.title === "Welcome");
         if (welcome) s().openPage(welcome.id);
       }
     } catch (e) {
-      s().error("Start fehlgeschlagen", e);
+      s().error(t("onb.failed"), e);
     } finally {
       setBusy(false);
     }
@@ -30,14 +33,14 @@ export function Onboarding() {
   const choices = [
     {
       icon: FilePlus2,
-      title: "Leer starten",
-      text: "Ein leerer Arbeitsbereich für deine eigenen Notizen und Projekte.",
+      title: t("onb.empty"),
+      text: t("onb.emptyText"),
       run: () => finish(false),
     },
     {
       icon: FolderInput,
-      title: "Obsidian-Vault importieren",
-      text: "Ordner, [[Links]], #Tags, Eigenschaften und Bilder werden übernommen.",
+      title: t("onb.import"),
+      text: t("onb.importText"),
       run: async () => {
         await finish(false);
         await importVault();
@@ -45,8 +48,8 @@ export function Onboarding() {
     },
     {
       icon: LayoutDashboard,
-      title: "Mit Beispieldaten erkunden",
-      text: "Ein Beispielprojekt mit Netzplänen, Buchungen und Notizen. Lässt sich später in den Einstellungen entfernen.",
+      title: t("onb.samples"),
+      text: t("onb.samplesText"),
       run: () => finish(true),
     },
   ];
@@ -73,8 +76,8 @@ export function Onboarding() {
         <div className="onb-mark" aria-hidden>
           <AnnaloLogo size={34} />
         </div>
-        <h1>Willkommen bei Annalo</h1>
-        <p className="muted">Notizen, Projekte und Zeiterfassung an einem Ort. Wie möchtest du beginnen?</p>
+        <h1>{t("onb.title")}</h1>
+        <p className="muted">{t("onb.lead")}</p>
         <div className="onb-choices">
           {choices.map((c, i) => (
             <button key={c.title} ref={i === 0 ? first : undefined} type="button" className="onb-choice" disabled={busy} onClick={c.run} aria-keyshortcuts={String(i + 1)}>
@@ -88,7 +91,7 @@ export function Onboarding() {
           ))}
         </div>
         <button type="button" className="onb-server" onClick={() => s().openTab({ kind: "settings" })}>
-          <Server size={14} strokeWidth={1.75} /> KI-Anbieter jetzt einrichten (LiteLLM, OpenAI, Ollama …)
+          <Server size={14} strokeWidth={1.75} /> {t("onb.ai")}
         </button>
       </div>
     </div>

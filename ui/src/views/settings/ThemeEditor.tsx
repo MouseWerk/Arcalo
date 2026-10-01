@@ -161,7 +161,7 @@ export function ThemeEditor({
               return (
                 <div key={key} className="theme-color" data-color={key}>
                   <label className="theme-color-swatch" style={{ background: draft.colors[key] }} data-tooltip={label}>
-                    <input type="color" value={draft.colors[key]} aria-label={`${label} (Farbwähler)`} onChange={(e) => setColor(key, e.target.value)} />
+                    <input type="color" value={draft.colors[key]} aria-label={t("theme.colorPicker", { label })} onChange={(e) => setColor(key, e.target.value)} />
                   </label>
                   <span className="theme-color-text">
                     <span className="theme-color-label">{label}</span>
@@ -204,24 +204,24 @@ function ThemePreview({ tokens, name }: { tokens: Record<string, string>; name: 
     <div className="theme-preview" style={style} role="figure" aria-label={t("set.appearance.preview")}>
       <div className="tp-side">
         <div className="tp-search">
-          <Search size={12} aria-hidden /> <span>Suchen</span>
+          <Search size={12} aria-hidden /> <span>{t("tb.find")}</span>
         </div>
         <div className="tp-item active">
-          <FileText size={13} aria-hidden /> <span>{name || "Notiz"}</span>
+          <FileText size={13} aria-hidden /> <span>{name || t("theme.mock.note")}</span>
         </div>
         <div className="tp-item">
-          <Star size={13} aria-hidden /> <span>Favoriten</span>
+          <Star size={13} aria-hidden /> <span>{t("theme.mock.favorites")}</span>
         </div>
         <div className="tp-item">
-          <Hash size={13} aria-hidden /> <span>Projekte</span>
+          <Hash size={13} aria-hidden /> <span>{t("theme.mock.projects")}</span>
         </div>
       </div>
       <div className="tp-main">
-        <div className="tp-title">Wochenplanung</div>
+        <div className="tp-title">{t("theme.mock.title")}</div>
         <p className="tp-text">
-          {t("set.appearance.previewText")} <a className="tp-link">[[Jour fixe]]</a> <mark className="tp-mark">markiert</mark>
+          {t("set.appearance.previewText")} <a className="tp-link">{t("theme.mock.link")}</a> <mark className="tp-mark">{t("theme.mock.marked")}</mark>
         </p>
-        <p className="tp-muted">Zuletzt bearbeitet vor 5 Minuten</p>
+        <p className="tp-muted">{t("theme.mock.edited")}</p>
         <div className="tp-controls">
           <Button variant="primary" size="sm">
             {t("common.save")}
@@ -230,12 +230,12 @@ function ThemePreview({ tokens, name }: { tokens: Record<string, string>; name: 
           <Switch label={t("set.appearance.preview")} checked={on} onChange={setOn} />
         </div>
         <div className="tp-controls">
-          <Badge tone="success">Gebucht</Badge>
+          <Badge tone="success">{t("theme.mock.booked")}</Badge>
           <Badge tone="warning">80 %</Badge>
-          <Badge tone="danger">Überzogen</Badge>
-          <Badge tone="accent">Neu</Badge>
+          <Badge tone="danger">{t("theme.mock.over")}</Badge>
+          <Badge tone="accent">{t("theme.mock.new")}</Badge>
         </div>
-        <Input className="tp-input" placeholder="Eingabefeld" aria-label={t("set.appearance.preview")} readOnly />
+        <Input className="tp-input" placeholder={t("theme.mock.input")} aria-label={t("set.appearance.preview")} readOnly />
       </div>
     </div>
   );

@@ -1,31 +1,32 @@
 // Activity feed („Aktivität“): date ranges, what an event says, and the rows of the timeline
 // (day headers and events, for the virtualized list).
 
-import { addDays, isoDay, weekStart } from "./format";
+import { addDays, dateLocale, decimal, int, isoDay, weekStart } from "./format";
 import type { Activity, ActivityKind } from "./types";
+import { t, type TKey } from "./i18n";
 
 export type KindGroup = "pages" | "tasks" | "time" | "files" | "focus" | "system";
 
-export const KIND_GROUPS: { id: KindGroup; label: string; kinds: ActivityKind[] }[] = [
-  { id: "pages", label: "Seiten", kinds: ["page_created", "page_edited"] },
-  { id: "tasks", label: "Aufgaben", kinds: ["task_added", "task_done"] },
-  { id: "time", label: "Buchungen", kinds: ["entry_created", "entry_changed", "entry_released", "entry_exported"] },
-  { id: "files", label: "Dateien", kinds: ["file_added"] },
-  { id: "focus", label: "Fokus", kinds: ["focus_session"] },
-  { id: "system", label: "Sicherung & Sync", kinds: ["backup", "sync"] },
+export const KIND_GROUPS: { id: KindGroup; label: TKey; kinds: ActivityKind[] }[] = [
+  { id: "pages", label: "feed.group.pages", kinds: ["page_created", "page_edited"] },
+  { id: "tasks", label: "feed.group.tasks", kinds: ["task_added", "task_done"] },
+  { id: "time", label: "feed.group.time", kinds: ["entry_created", "entry_changed", "entry_released", "entry_exported"] },
+  { id: "files", label: "feed.group.files", kinds: ["file_added"] },
+  { id: "focus", label: "feed.group.focus", kinds: ["focus_session"] },
+  { id: "system", label: "feed.group.system", kinds: ["backup", "sync"] },
 ];
 
 export const groupOf = (kind: ActivityKind): KindGroup => KIND_GROUPS.find((g) => g.kinds.includes(kind))?.id ?? "system";
 
 export type RangePreset = "today" | "yesterday" | "week" | "last7" | "month" | "day" | "custom";
 
-export const RANGE_LABELS: Record<Exclude<RangePreset, "day">, string> = {
-  today: "Heute",
-  yesterday: "Gestern",
-  week: "Diese Woche",
-  last7: "Letzte 7 Tage",
-  month: "Letzte 30 Tage",
-  custom: "Zeitraum",
+export const RANGE_LABELS: Record<Exclude<RangePreset, "day">, TKey> = {
+  today: "feed.range.today",
+  yesterday: "feed.range.yesterday",
+  week: "feed.range.week",
+  last7: "feed.range.last7",
+  month: "feed.range.month",
+  custom: "feed.range.custom",
 };
 
 /** Local days `from..=to` (YYYY-MM-DD) of a preset. */
@@ -59,50 +60,58 @@ export function dayBounds(from: string, to: string): { from: string; to: string 
 export function dayTitle(iso: string, now = new Date()): string {
   const d = new Date(`${iso}T12:00:00`);
   const today = isoDay(now);
-  const prefix = iso === today ? "Heute · " : iso === isoDay(addDays(now, -1)) ? "Gestern · " : "";
-  return prefix + d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const prefix = iso === today ? `${t("feed.range.today")} · ` : iso === isoDay(addDays(now, -1)) ? `${t("feed.range.yesterday")} · ` : "";
+  return prefix + d.toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString("de-DE")} ${n === 1 ? one : many}`;
-const hours = (minutes: number) => `${(minutes / 60).toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} h`;
+const hours = (minutes: number) => `${decimal(minutes / 60)} h`;
+/** „3 Einträge“ (stored by earlier versions) or „3“: the number of entries. */
+const entryCount = (title: string) => t("time.entriesCount", { n: Number(/^\d+/.exec(title)?.[0] ?? 1) });
+/** The kind of a stored file: a code (`drawing`, `image`, `file`) or the German word of earlier versions. */
+export function fileKind(detail: string): string {
+  const k = detail.toLowerCase();
+  if (k === "drawing" || k === "zeichnung") return t("feed.kind.drawing");
+  if (k === "image" || k === "bild") return t("feed.kind.image");
+  return t("feed.kind.file");
+}
 
 /** What an event says: a verb line and the details below it. */
 export function describe(a: Activity): { verb: string; title: string; detail: string } {
   const page = a.page_title ?? a.title;
   switch (a.kind) {
     case "page_created":
-      return { verb: "Seite angelegt", title: page, detail: a.count > 1 ? `${plural(a.count - 1, "Änderung", "Änderungen")} · ~${plural(a.amount, "Zeichen", "Zeichen")}` : "" };
+      return { verb: t("feed.pageCreated"), title: page, detail: a.count > 1 ? `${t("feed.changes", { n: a.count - 1 })} · ~${t("feed.chars", { n: a.amount, count: int(a.amount) })}` : "" };
     case "page_edited":
-      return { verb: "Seite bearbeitet", title: page, detail: `${plural(a.count, "Änderung", "Änderungen")} · ~${plural(a.amount, "Zeichen", "Zeichen")}` };
+      return { verb: t("feed.pageEdited"), title: page, detail: `${t("feed.changes", { n: a.count })} · ~${t("feed.chars", { n: a.amount, count: int(a.amount) })}` };
     case "task_added":
-      return { verb: "Aufgabe angelegt", title: a.title, detail: a.page_title ?? a.detail };
+      return { verb: t("feed.taskAdded"), title: a.title, detail: a.page_title ?? a.detail };
     case "task_done":
-      return { verb: "Aufgabe erledigt", title: a.title, detail: a.page_title ?? a.detail };
+      return { verb: t("feed.taskDone"), title: a.title, detail: a.page_title ?? a.detail };
     case "entry_created":
-      return { verb: `${hours(a.amount)} gebucht`, title: a.title || "Ohne Beschreibung", detail: [a.reference, sourceLabel(a.detail)].filter(Boolean).join(" · ") };
+      return { verb: t("feed.booked", { h: hours(a.amount) }), title: a.title || t("time.noDescription"), detail: [a.reference, sourceLabel(a.detail)].filter(Boolean).join(" · ") };
     case "entry_changed":
-      return { verb: "Buchung geändert", title: a.title || a.detail || "Einträge", detail: [a.reference, a.amount ? hours(a.amount) : ""].filter(Boolean).join(" · ") };
+      return { verb: t("feed.entryChanged"), title: a.title || a.detail || t("time.entries"), detail: [a.reference, a.amount ? hours(a.amount) : ""].filter(Boolean).join(" · ") };
     case "entry_released":
-      return { verb: `${a.title} freigegeben`, title: a.detail, detail: a.amount ? hours(a.amount) : "" };
+      return { verb: t("feed.released", { what: entryCount(a.title) }), title: a.detail, detail: a.amount ? hours(a.amount) : "" };
     case "entry_exported":
-      return { verb: `${a.title} exportiert`, title: a.detail, detail: a.amount ? hours(a.amount) : "" };
+      return { verb: t("feed.exported", { what: entryCount(a.title) }), title: a.detail, detail: a.amount ? hours(a.amount) : "" };
     case "file_added":
-      return { verb: `${a.detail || "Datei"} hinzugefügt`, title: a.title, detail: "" };
+      return { verb: t("feed.fileAdded", { kind: fileKind(a.detail) }), title: a.title, detail: "" };
     case "focus_session":
       return {
-        verb: a.detail === "aborted" ? "Fokussitzung abgebrochen" : "Fokussitzung",
-        title: a.title || a.reference || "Ohne Ziel",
-        detail: [a.reference, `${a.amount} Min.`].filter(Boolean).join(" · "),
+        verb: a.detail === "aborted" ? t("feed.focusAborted") : t("feed.focus"),
+        title: a.title || a.reference || t("feed.noGoal"),
+        detail: [a.reference, t("feed.minutes", { n: a.amount })].filter(Boolean).join(" · "),
       };
     case "backup":
-      return { verb: "Sicherung erstellt", title: a.title, detail: "" };
+      return { verb: t("set.backup.created"), title: a.title, detail: "" };
     case "sync":
-      return { verb: "Git-Synchronisierung", title: a.title, detail: a.detail ? a.detail.slice(0, 10) : "" };
+      return { verb: t("set.git.title"), title: a.title, detail: a.detail ? a.detail.slice(0, 10) : "" };
   }
 }
 
 function sourceLabel(s: string): string {
-  return ({ manual: "manuell", timer: "Timer", slash: "/zeit", auto: "automatisch" } as Record<string, string>)[s] ?? "";
+  return ({ manual: t("feed.source.manual"), timer: t("feed.source.timer"), slash: "/zeit", auto: t("feed.source.auto") } as Record<string, string>)[s] ?? "";
 }
 
 export type FeedRow = { type: "day"; key: string; day: string; count: number } | { type: "item"; key: string; item: Activity };

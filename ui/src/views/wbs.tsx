@@ -5,13 +5,14 @@ import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Select, type Tone } from "../components/ui";
 import type { AlertLevel, ProjectTree } from "../lib/types";
+import { useT, withLabel } from "../lib/i18n";
 
 /** Budget levels as badges show them. */
-export const LEVEL: Record<AlertLevel, { label: string; tone: Tone }> = {
-  ok: { label: "Im Plan", tone: "success" },
-  warning: { label: "Warnung", tone: "warning" },
-  critical: { label: "Kritisch", tone: "danger" },
-  exceeded: { label: "Überschritten", tone: "danger" },
+export const LEVEL: Record<AlertLevel, { readonly label: string; tone: Tone }> = {
+  ok: withLabel({ tone: "success" as Tone }, "wbs.level.ok"),
+  warning: withLabel({ tone: "warning" as Tone }, "wbs.level.warning"),
+  critical: withLabel({ tone: "danger" as Tone }, "wbs.level.critical"),
+  exceeded: withLabel({ tone: "danger" as Tone }, "wbs.level.exceeded"),
 };
 
 export function useWbs() {
@@ -26,9 +27,10 @@ export function useWbs() {
 }
 
 export function NetzplanSelect({ wbs, value, onChange, disabled }: { wbs: ProjectTree[]; value: number | null; onChange: (id: number) => void; disabled?: boolean }) {
+  const t = useT();
   return (
-    <Select value={value ?? ""} onChange={(e) => onChange(+e.target.value)} disabled={disabled} aria-label="Netzplan">
-      {value == null && <option value="">Netzplan wählen</option>}
+    <Select value={value ?? ""} onChange={(e) => onChange(+e.target.value)} disabled={disabled} aria-label={t("wbs.netzplan")}>
+      {value == null && <option value="">{t("week.problem.netzplan")}</option>}
       {wbs.map((p) => (
         <optgroup key={p.id} label={`${p.project_code} · ${p.name}`}>
           {p.netzplaene.map((n) => (
@@ -43,10 +45,11 @@ export function NetzplanSelect({ wbs, value, onChange, disabled }: { wbs: Projec
 }
 
 export function VorgangSelect({ wbs, netzplanId, value, onChange, disabled }: { wbs: ProjectTree[]; netzplanId: number | null; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const t = useT();
   const np = wbs.flatMap((p) => p.netzplaene).find((n) => n.id === netzplanId);
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled || !np} aria-label="Vorgang">
-      <option value="">Ohne Vorgang</option>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled || !np} aria-label={t("wbs.vorgang")}>
+      <option value="">{t("wbs.noVorgang")}</option>
       {np?.vorgaenge.map((v) => (
         <option key={v.id} value={v.vorgang_nr}>
           {v.vorgang_nr} · {v.description}
@@ -57,9 +60,10 @@ export function VorgangSelect({ wbs, netzplanId, value, onChange, disabled }: { 
 }
 
 export function LeistungsartSelect({ las, value, onChange, disabled }: { las: [string, string][]; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const t = useT();
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-label="Leistungsart">
-      <option value="">Leistungsart</option>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-label={t("wbs.leistungsart")}>
+      <option value="">{t("wbs.leistungsart")}</option>
       {las.map(([code, desc]) => (
         <option key={code} value={code} title={desc}>
           {code}

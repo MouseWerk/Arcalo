@@ -10,6 +10,7 @@
 
 pub mod query;
 
+use crate::trf;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -344,7 +345,10 @@ impl<'a, Tz: TimeZone> Ctx<'a, Tz> {
 /// Answers every part of `req`; a part that fails carries its error.
 pub fn dashboard_data<Tz: TimeZone>(ctx: &Ctx<Tz>, parts: &[Keyed]) -> Result<BTreeMap<String, serde_json::Value>> {
     if parts.len() > MAX_PARTS {
-        return Err(Error::State(format!("Zu viele Widget-Abfragen auf einmal (höchstens {MAX_PARTS})")));
+        return Err(Error::State(trf!(
+            "Zu viele Widget-Abfragen auf einmal (höchstens {MAX_PARTS})",
+            "Too many widget queries at once (at most {MAX_PARTS})"
+        )));
     }
     let mut out = BTreeMap::new();
     for k in parts {

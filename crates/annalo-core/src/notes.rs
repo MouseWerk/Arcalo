@@ -1,6 +1,7 @@
 //! Markdown documents: saving, chunk index, [[wiki links]], backlinks, tags,
 //! renames that keep links intact, daily notes and the page tree.
 
+use crate::tr;
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
@@ -476,7 +477,7 @@ impl Database {
         let title = clean_title(title);
         let title = title.as_str();
         if title.is_empty() {
-            return Err(Error::State("Der Titel darf nicht leer sein".into()));
+            return Err(Error::State(tr!("Der Titel darf nicht leer sein", "The title must not be empty").into()));
         }
         let old = self.page(id)?.title;
         // All or nothing: a failure must not leave some links rewritten and others not.
@@ -512,11 +513,16 @@ impl Database {
         let mut cursor = parent_id;
         while let Some(p) = cursor {
             if p == id {
-                return Err(Error::State("Eine Seite kann nicht in sich selbst verschoben werden".into()));
+                return Err(Error::State(
+                    tr!("Eine Seite kann nicht in sich selbst verschoben werden", "A page cannot be moved into itself")
+                        .into(),
+                ));
             }
             let parent = self.page(p)?;
             if parent.deleted_at.is_some() {
-                return Err(Error::State("Die Zielseite liegt im Papierkorb".into()));
+                return Err(Error::State(
+                    tr!("Die Zielseite liegt im Papierkorb", "The target page is in the trash").into(),
+                ));
             }
             cursor = parent.parent_id;
         }
@@ -626,7 +632,7 @@ impl Database {
                 let time = chrono::Local::now().time();
                 self.render_template(id, &crate::templates::TemplateVars { date, time, title: title.clone() })?
             }
-            None => "## Fokus\n\n- [ ] \n\n## Notizen\n\n".to_owned(),
+            None => tr!("## Fokus\n\n- [ ] \n\n## Notizen\n\n", "## Focus\n\n- [ ] \n\n## Notes\n\n").to_owned(),
         };
         self.save_page_content(page.id, &content)?;
         self.page(page.id)

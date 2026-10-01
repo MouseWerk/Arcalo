@@ -3,6 +3,7 @@
 // group in the ribbon, or null for the ribbon itself.
 
 import type { QuickLink } from "./types";
+import { t, type TKey } from "./i18n";
 
 export type LinkKind = "link" | "app" | "group";
 export interface Loc {
@@ -11,16 +12,23 @@ export interface Loc {
 }
 
 /** Group colors (the option colors of collections, same order and names). */
-export const LINK_COLORS: { id: string; label: string; hex: string }[] = [
-  { id: "grau", label: "Grau", hex: "#9ca3af" },
-  { id: "braun", label: "Braun", hex: "#b0845c" },
-  { id: "orange", label: "Orange", hex: "#f97316" },
-  { id: "gelb", label: "Gelb", hex: "#eab308" },
-  { id: "grün", label: "Grün", hex: "#22c55e" },
-  { id: "blau", label: "Blau", hex: "#3b82f6" },
-  { id: "lila", label: "Lila", hex: "#a855f7" },
-  { id: "rosa", label: "Rosa", hex: "#ec4899" },
-  { id: "rot", label: "Rot", hex: "#ef4444" },
+const color = (id: string, key: TKey, hex: string) => ({
+  id,
+  hex,
+  get label() {
+    return t(key);
+  },
+});
+export const LINK_COLORS: { id: string; readonly label: string; hex: string }[] = [
+  color("grau", "coll.color.grau", "#9ca3af"),
+  color("braun", "coll.color.braun", "#b0845c"),
+  color("orange", "coll.color.orange", "#f97316"),
+  color("gelb", "coll.color.gelb", "#eab308"),
+  color("grün", "coll.color.gruen", "#22c55e"),
+  color("blau", "coll.color.blau", "#3b82f6"),
+  color("lila", "coll.color.lila", "#a855f7"),
+  color("rosa", "coll.color.rosa", "#ec4899"),
+  color("rot", "coll.color.rot", "#ef4444"),
 ];
 export const colorHex = (id: string | undefined) => LINK_COLORS.find((c) => c.id === id)?.hex;
 

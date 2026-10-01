@@ -112,8 +112,8 @@ export function TimeVisual() {
       <Frame label={t("fr.v.dailyTab")}>
         <div className="frv-zeit frv-in" style={d(100)}>
           <span className="frv-zeit-cmd">/zeit</span>
-          <span className="frv-type" style={{ ...d(350), ["--n" as string]: 37 }}>
-            NP-8801/1020 1,5h #DEV Schnittstellen
+          <span className="frv-type" style={{ ...d(350), ["--n" as string]: t("fr.v.zeitLine").length }}>
+            {t("fr.v.zeitLine")}
           </span>
         </div>
         <div className="frv-booked frv-pop" style={d(2100)}>
@@ -186,11 +186,11 @@ export function AiVisual() {
 export function CalendarVisual() {
   // Day columns with meetings, then the dashed proposals of „Woche vorschlagen“.
   const meetings = [
-    { day: 0, top: 10, h: 18, label: "Daily" },
-    { day: 1, top: 34, h: 28, label: "Workshop" },
-    { day: 2, top: 10, h: 18, label: "Daily" },
-    { day: 3, top: 52, h: 22, label: "Review" },
-    { day: 4, top: 10, h: 18, label: "Daily" },
+    { day: 0, top: 10, h: 18, label: t("fr.v.daily") },
+    { day: 1, top: 34, h: 28, label: t("fr.v.workshop") },
+    { day: 2, top: 10, h: 18, label: t("fr.v.daily") },
+    { day: 3, top: 52, h: 22, label: t("fr.v.review") },
+    { day: 4, top: 10, h: 18, label: t("fr.v.daily") },
   ];
   const proposals = [
     { day: 0, top: 34, h: 30 },

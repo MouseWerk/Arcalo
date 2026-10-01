@@ -11,6 +11,7 @@ import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem 
 import type { Page, SearchHit } from "../lib/types";
 import { PageIcon } from "./icons";
 import { keys } from "../lib/shortcut";
+import { useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
 
 const ic = (C: typeof Search) => <C size={16} strokeWidth={1.75} />;
@@ -32,6 +33,7 @@ async function lastReference(): Promise<string | null> {
 }
 
 export function SearchApp() {
+  const t = useT();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -175,14 +177,14 @@ export function SearchApp() {
   let lastSection = "";
   return (
     <div className="qs">
-      <div className="palette qs-panel" role="dialog" aria-label="Schnellsuche">
+      <div className="palette qs-panel" role="dialog" aria-label={t("qs.title")}>
         <div className="pal-input">
           <Search size={16} className="faint" />
           <input
             ref={input}
             value={q}
-            placeholder="Seiten, Inhalte, Buchungen – oder /zeit …"
-            aria-label="Schnellsuche"
+            placeholder={t("qs.placeholder")}
+            aria-label={t("qs.title")}
             aria-controls="qs-list"
             spellCheck={false}
             autoFocus
@@ -211,8 +213,8 @@ export function SearchApp() {
           />
           <kbd>Esc</kbd>
         </div>
-        <div className="pal-list qs-list" id="qs-list" ref={list} role="listbox" aria-label="Ergebnisse">
-          {items.length === 0 && <div className="pal-empty">Keine Ergebnisse</div>}
+        <div className="pal-list qs-list" id="qs-list" ref={list} role="listbox" aria-label={t("qs.results")}>
+          {items.length === 0 && <div className="pal-empty">{t("qs.none")}</div>}
           {items.map((it, i) => {
             const header = it.section !== lastSection ? it.section : null;
             lastSection = it.section;
@@ -246,11 +248,11 @@ export function SearchApp() {
             <span className="qs-notice">{notice.text}</span>
           ) : (
             <>
-              <span><kbd>↑</kbd><kbd>↓</kbd> wählen</span>
-              <span><kbd>Enter</kbd> öffnen</span>
-              <span><kbd>{keys("Mod Enter")}</kbd> neuer Tab</span>
+              <span><kbd>↑</kbd><kbd>↓</kbd> {t("qs.choose")}</span>
+              <span><kbd>Enter</kbd> {t("qs.open")}</span>
+              <span><kbd>{keys("Mod Enter")}</kbd> {t("qs.newTab")}</span>
               <span className="grow" />
-              <span className="faint">/zeit bucht</span>
+              <span className="faint">{t("qs.zeit")}</span>
             </>
           )}
         </div>

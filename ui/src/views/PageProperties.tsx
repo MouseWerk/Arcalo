@@ -7,7 +7,7 @@ import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, IconButton, Progress, useMenu, type MenuEntry } from "../components/ui";
-import { DATE_RE, LIST_KEYS, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
+import { DATE_RE, LIST_KEYS, canonicalKey, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
 import { dateShort, fmtHours, fmtMinutes } from "../lib/format";
 import { NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
 import { LEVEL } from "./wbs";
@@ -17,14 +17,15 @@ import { pickDate } from "../components/CalendarPopover";
 import { dayLabel } from "../components/DateInput";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
-import { KINDS, cellInput, defOf, hasOptions, inferKind, isManagedKey, validate, writeValue, type PropDef, type PropKind } from "../lib/collection";
+import { KINDS, kindLabel, cellInput, defOf, hasOptions, inferKind, isManagedKey, validate, writeValue, type PropDef, type PropKind } from "../lib/collection";
 import { KIND_ICON, OptionsDialog, TypedValue, kindMenu, optionsForKind } from "./collection/controls";
 import { renameOptionValues, updateSchema } from "./collection/write";
+import { t as tr, useT } from "../lib/i18n";
 
 const TYPE_ICON: Record<Property["type"], LucideIcon> = { text: Type, date: CalendarDays, list: Tags, raw: Braces };
-const isWbsKey = (key: string) => /^(vorgang|netzplan)$/i.test(key);
+const isWbsKey = (key: string) => /^(vorgang|netzplan)$/.test(canonicalKey(key));
 const isTagsKey = (key: string) => /^tags?$/i.test(key);
-const KEY_HINT = "Ungültiger Name: nicht mit Leerzeichen oder # - [ ] { } ' \" & * ! | > % @ ` ? , beginnen";
+const keyHint = () => tr("props.keyHint");
 
 /** Opens „Eigenschaft hinzufügen“ on the page of the focused pane (palette, Ctrl+;). */
 export const ADD_PROPERTY_EVENT = "annalo:add-property";
@@ -64,6 +65,7 @@ export function PropertyEditor({
   /** The parent page; with one, a property can become a property of the whole folder. */
   parentId?: number | null;
 }) {
+  useT();
   const props = useMemo(() => parseFrontmatter(fm), [fm]);
   const [open, setOpen] = useState(true);
   const [optionsOf, setOptionsOf] = useState<PropDef | null>(null);
@@ -78,7 +80,7 @@ export function PropertyEditor({
   // Schema and view settings of this page's own table are managed by the view.
   const rows = props.map((p, i) => ({ p, i })).filter(({ p }) => (p.key || p.value.trim()) && !isManagedKey(p.key) && !defOf(defs, p.key));
   const toast = useApp.getState().toast;
-  const fail = (e: unknown) => useApp.getState().error("Eigenschaft des Ordners nicht geändert", e);
+  const fail = (e: unknown) => useApp.getState().error(tr("props.folderFailed"), e);
 
   /** Adds a property of this page to the folder's schema (typed after the values it has). */
   const shareWithFolder = (key: string, kind?: PropKind) => {
@@ -87,7 +89,7 @@ export function PropertyEditor({
     const values = input ? input.items : [];
     const k = kind ?? inferKind(values);
     updateSchema(parentId, (ds) => (defOf(ds, key) ? ds : [...ds, { key, kind: k, options: optionsForKind(k, undefined, values) }]))
-      .then(() => toast({ tone: "info", title: `„${key}“ gilt jetzt für alle Seiten im Ordner` }))
+      .then(() => toast({ tone: "info", title: tr("props.shared", { key }) }))
       .catch(fail);
   };
   const changeKind = (key: string, kind: PropKind) => {
@@ -103,21 +105,21 @@ export function PropertyEditor({
     const def = defOf(defs, key);
     const items: MenuEntry[] = [];
     if (parentId != null) {
-      items.push({ label: "Typ ändern", icon: def ? KIND_ICON[def.kind] : Type, submenu: kindMenu(def?.kind ?? ("" as PropKind), (k) => changeKind(key, k), KINDS) });
-      if (def && hasOptions(def.kind)) items.push({ label: "Optionen bearbeiten…", icon: Settings2, onSelect: () => setOptionsOf(def) });
-      if (!def) items.push({ label: "Für alle Seiten im Ordner", icon: FolderInput, onSelect: () => shareWithFolder(key) });
-      else items.push({ label: "Aus dem Ordner-Schema entfernen", icon: FolderMinus, onSelect: () => updateSchema(parentId, (ds) => ds.filter((d) => d !== defOf(ds, key))).catch(fail) });
+      items.push({ label: tr("props.changeType"), icon: def ? KIND_ICON[def.kind] : Type, submenu: kindMenu(def?.kind ?? ("" as PropKind), (k) => changeKind(key, k), KINDS) });
+      if (def && hasOptions(def.kind)) items.push({ label: tr("props.editOptions"), icon: Settings2, onSelect: () => setOptionsOf(def) });
+      if (!def) items.push({ label: tr("props.forFolder"), icon: FolderInput, onSelect: () => shareWithFolder(key) });
+      else items.push({ label: tr("props.removeFromSchema"), icon: FolderMinus, onSelect: () => updateSchema(parentId, (ds) => ds.filter((d) => d !== defOf(ds, key))).catch(fail) });
     }
-    if (onRemove) items.push(...(items.length ? (["separator"] as MenuEntry[]) : []), { label: "Von dieser Seite entfernen", icon: Trash2, danger: true, onSelect: onRemove });
+    if (onRemove) items.push(...(items.length ? (["separator"] as MenuEntry[]) : []), { label: tr("props.removeFromPage"), icon: Trash2, danger: true, onSelect: onRemove });
     if (items.length) openMenuAt(anchor, items);
   };
 
   if (!rows.length && !defs.length && !adding) return null;
   return (
-    <section className="properties" aria-label="Eigenschaften">
+    <section className="properties" aria-label={tr("props.title")}>
       <button type="button" className="properties-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        Eigenschaften
+        {tr("props.title")}
       </button>
       {open && (
         <>
@@ -127,7 +129,7 @@ export function PropertyEditor({
             const Icon = KIND_ICON[def.kind];
             return (
               <div key={`schema:${def.key}`} className={`prop-row prop-typed prop-kind-${def.kind}`} data-prop-key={def.key} data-kind={def.kind}>
-                <button type="button" className="prop-icon prop-icon-btn" aria-label={`Menü von ${def.key}`} data-tooltip={`${KINDS.find((k) => k.kind === def.kind)!.label} · Eigenschaft des Ordners „${folder!.parentTitle}“`} onClick={(e) => rowMenu(def.key, e.currentTarget, i >= 0 ? () => commit(props.filter((_, j) => j !== i)) : null)}>
+                <button type="button" className="prop-icon prop-icon-btn" aria-label={tr("props.menuOf", { key: def.key })} data-tooltip={tr("props.folderProp", { kind: kindLabel(def.kind), folder: folder!.parentTitle })} onClick={(e) => rowMenu(def.key, e.currentTarget, i >= 0 ? () => commit(props.filter((_, j) => j !== i)) : null)}>
                   <Icon size={14} />
                 </button>
                 <span className="prop-key prop-key-static">{def.key}</span>
@@ -144,7 +146,7 @@ export function PropertyEditor({
                     }
                   />
                 </div>
-                {i >= 0 ? <IconButton icon={X} label="Eigenschaft entfernen" size="sm" className="prop-remove" onClick={() => commit(props.filter((_, j) => j !== i))} /> : <span />}
+                {i >= 0 ? <IconButton icon={X} label={tr("props.remove")} size="sm" className="prop-remove" onClick={() => commit(props.filter((_, j) => j !== i))} /> : <span />}
               </div>
             );
           })}
@@ -157,7 +159,7 @@ export function PropertyEditor({
               onRename={(key) => {
                 if (!key || key === p.key || !isValidKey(key)) return false;
                 if (taken(key, i)) {
-                  useApp.getState().toast({ tone: "warning", title: `Eigenschaft „${key}“ gibt es schon` });
+                  useApp.getState().toast({ tone: "warning", title: tr("props.exists", { key }) });
                   return false;
                 }
                 update(i, { key });
@@ -172,13 +174,13 @@ export function PropertyEditor({
             onAdd={(key) => {
               if (!isValidKey(key)) return;
               if (taken(key) || defOf(defs, key)) {
-                useApp.getState().toast({ tone: "warning", title: `Eigenschaft „${key}“ gibt es schon` });
+                useApp.getState().toast({ tone: "warning", title: tr("props.exists", { key }) });
                 return;
               }
               const list = LIST_KEYS.has(key.toLowerCase());
               commit([...props, edited({ key, type: list ? "list" : "text", value: "", items: [] }, {})]);
               // A page in a folder: offer the property to its siblings too.
-              if (parentId != null && !isManagedKey(key)) toast({ tone: "info", title: `„${key}“ hinzugefügt`, action: { label: "Für alle Seiten im Ordner", run: () => shareWithFolder(key) } });
+              if (parentId != null && !isManagedKey(key)) toast({ tone: "info", title: tr("props.added", { key }), action: { label: tr("props.forFolder"), run: () => shareWithFolder(key) } });
               // Continue with the value of the new row.
               setTimeout(() => document.querySelector<HTMLElement>(`.properties [data-prop-key="${CSS.escape(key)}"] .prop-value-input`)?.focus(), 30);
             }}
@@ -214,7 +216,7 @@ function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Pro
   return (
     <div className={`prop-row prop-type-${prop.type}${isWbsKey(prop.key) ? " is-wbs" : ""}`} data-prop-key={prop.key}>
       {onMenu ? (
-        <button type="button" className="prop-icon prop-icon-btn" aria-label={`Menü von ${prop.key}`} data-tooltip="Typ ändern, für alle Seiten im Ordner" onClick={(e) => onMenu(e.currentTarget)}>
+        <button type="button" className="prop-icon prop-icon-btn" aria-label={tr("props.menuOf", { key: prop.key })} data-tooltip={tr("props.menuTip")} onClick={(e) => onMenu(e.currentTarget)}>
           <Icon size={14} />
         </button>
       ) : (
@@ -223,12 +225,12 @@ function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Pro
         </span>
       )}
       {prop.type === "raw" ? (
-        <span className="prop-key prop-key-static" title="YAML – wird unverändert gespeichert">{prop.key || "YAML"}</span>
+        <span className="prop-key prop-key-static" title={tr("props.yamlTip")}>{prop.key || "YAML"}</span>
       ) : (
         <input
           className="prop-key"
           value={key}
-          aria-label="Name der Eigenschaft"
+          aria-label={tr("props.name")}
           aria-invalid={invalid || undefined}
           spellCheck={false}
           onChange={(e) => setKey(e.target.value.replace(/[:\n]/g, ""))}
@@ -242,10 +244,10 @@ function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Pro
       <div className="prop-value">
         <PropertyValue prop={prop} onChange={onChange} />
       </div>
-      <IconButton icon={X} label="Eigenschaft entfernen" size="sm" className="prop-remove" onClick={onRemove} />
+      <IconButton icon={X} label={tr("props.remove")} size="sm" className="prop-remove" onClick={onRemove} />
       {invalid && (
         <span className="prop-key-hint" role="alert">
-          {KEY_HINT}
+          {keyHint()}
         </span>
       )}
     </div>
@@ -261,11 +263,11 @@ function PropertyValue({ prop, onChange }: { prop: Property; onChange: (c: Parti
       <button
         type="button"
         className="prop-value-input prop-date"
-        aria-label={`${prop.key}: ${iso ? dayLabel(iso) : "kein Datum"}, Datum wählen`}
+        aria-label={tr("props.dateAria", { key: prop.key, date: iso ? dayLabel(iso) : tr("props.noDate") })}
         aria-haspopup="dialog"
         onClick={(e) => pickDate(e.currentTarget, iso, (value) => onChange({ value }))}
       >
-        {iso ? dayLabel(iso) : <span className="faint">Datum wählen</span>}
+        {iso ? dayLabel(iso) : <span className="faint">{tr("props.pickDate")}</span>}
       </button>
     );
   }
@@ -277,7 +279,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
   const [picker, setPicker] = useState(false);
   useEffect(() => setDraft(prop.value), [prop.value]);
   const commit = () => draft !== prop.value && onChange(draft);
-  const key = prop.key.toLowerCase();
+  const key = canonicalKey(prop.key);
   const input =
     key === "vorgang" ? (
       <RefCombo value={prop.value} draft={draft} setDraft={setDraft} label={prop.key} onCommit={commit} onPick={(v) => v !== prop.value && onChange(v)} onRevert={() => setDraft(prop.value)} />
@@ -285,7 +287,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
       <input
         className="prop-value-input"
         value={draft}
-        placeholder="Leer"
+        placeholder={tr("props.empty")}
         aria-label={prop.key}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
@@ -300,7 +302,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
     <>
       {input}
       {isWbsKey(prop.key) && (
-        <IconButton icon={FolderTree} label={key === "netzplan" ? "Netzplan wählen" : "Vorgang wählen"} size="sm" className="prop-pick" active={picker} onClick={() => setPicker((v) => !v)} />
+        <IconButton icon={FolderTree} label={key === "netzplan" ? tr("props.pickNetzplan") : tr("props.pickVorgang")} size="sm" className="prop-pick" active={picker} onClick={() => setPicker((v) => !v)} />
       )}
       {picker && <WbsPicker value={prop.value} netzplanOnly={key === "netzplan"} onChange={onChange} onClose={() => setPicker(false)} />}
     </>
@@ -393,7 +395,7 @@ function RefCombo({ value, draft, setDraft, label, onCommit, onPick, onRevert }:
             ref={popup}
             items={items}
             className="zeit"
-            empty="Kein Vorgang gefunden – Enter übernimmt den Text"
+            empty={tr("props.noVorgang")}
             command={(it) => {
               const v = (it as ZeitSuggestItem).insert;
               setDraft(v);
@@ -416,12 +418,12 @@ function WbsPicker({ value, netzplanOnly, onChange, onClose }: { value: string; 
   const np = nps.find((n) => n.netzplan_nr.toLowerCase() === lower || n.wbs_element.toLowerCase() === lower) ?? null;
   const vorgang = np?.vorgaenge.find((v) => v.vorgang_nr.toLowerCase() === vRef.trim().toLowerCase())?.vorgang_nr ?? "";
   return (
-    <div className="prop-picker" role="group" aria-label="Vorgang wählen">
+    <div className="prop-picker" role="group" aria-label={tr("props.pickVorgang")}>
       <NetzplanSelect wbs={wbs} value={np?.id ?? null} onChange={(id) => onChange(nps.find((n) => n.id === id)?.netzplan_nr ?? "")} />
       {!netzplanOnly && (
         <VorgangSelect wbs={wbs} netzplanId={np?.id ?? null} value={vorgang} onChange={(v) => np && onChange(v ? `${np.netzplan_nr}/${v}` : np.netzplan_nr)} />
       )}
-      <Button size="sm" variant="ghost" onClick={onClose}>Fertig</Button>
+      <Button size="sm" variant="ghost" onClick={onClose}>{tr("props.done")}</Button>
     </div>
   );
 }
@@ -439,7 +441,7 @@ function ListValue({ items, hashed, onChange }: { items: string[]; hashed: boole
         <span key={`${i}:${item}`} className="prop-chip">
           {hashed && <span className="prop-chip-hash" aria-hidden>#</span>}
           {item}
-          <button type="button" aria-label={`${item} entfernen`} onClick={() => onChange(items.filter((_, j) => j !== i))}>
+          <button type="button" aria-label={tr("props.removeItem", { item })} onClick={() => onChange(items.filter((_, j) => j !== i))}>
             <X size={11} />
           </button>
         </span>
@@ -447,8 +449,8 @@ function ListValue({ items, hashed, onChange }: { items: string[]; hashed: boole
       <input
         className="prop-value-input prop-list-input"
         value={draft}
-        placeholder={items.length ? "" : "Leer"}
-        aria-label="Eintrag hinzufügen"
+        placeholder={items.length ? "" : tr("props.empty")}
+        aria-label={tr("props.addItem")}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={add}
@@ -504,7 +506,7 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
   if (draft === null)
     return (
       <button type="button" className="prop-add" onClick={() => setDraft("")}>
-        <Plus size={13} /> Eigenschaft hinzufügen
+        <Plus size={13} /> {tr("props.add")}
       </button>
     );
   return (
@@ -516,8 +518,8 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
         className="prop-key"
         autoFocus
         value={draft}
-        placeholder="Name, z. B. vorgang"
-        aria-label="Name der neuen Eigenschaft"
+        placeholder={tr("props.newPh")}
+        aria-label={tr("props.newAria")}
         aria-invalid={invalid || undefined}
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value.replace(/[:\n]/g, ""))}
@@ -532,7 +534,7 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
       />
       {invalid && (
         <span className="prop-key-hint" role="alert">
-          {KEY_HINT}
+          {keyHint()}
         </span>
       )}
     </div>
@@ -541,6 +543,7 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
 
 /** Budget, ETC and the latest bookings of the Vorgang the page is linked to. */
 export function WorkCard({ pageId, reference, title }: { pageId: number; reference: string; title: string }) {
+  useT();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const timer = useApp((s) => s.timer);
   const [work, setWork] = useState<PageWork | null>(null);
@@ -567,7 +570,7 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
   if (!work) return null;
   if (work.error)
     return (
-      <section className="work-card work-error" aria-label="Vorgang">
+      <section className="work-card work-error" aria-label={tr("focus.ref")}>
         <TriangleAlert size={14} /> {work.error}
       </section>
     );
@@ -577,13 +580,13 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
     try {
       await api.timerStart(work.netzplan_id!, work.vorgang, localStorage.getItem("annalo.timer.la") || "DEV", title);
       s.bumpEntries();
-      s.toast({ tone: "info", title: "Timer gestartet", detail: work.label });
+      s.toast({ tone: "info", title: tr("props.timerStarted"), detail: work.label });
     } catch (e) {
-      s.error("Timer nicht gestartet", e);
+      s.error(tr("props.timerFailed"), e);
     }
   };
   return (
-    <section className="work-card" aria-label="Vorgang">
+    <section className="work-card" aria-label={tr("focus.ref")}>
       <div className="work-head">
         <Workflow size={14} className="faint" />
         <span className="work-title">
@@ -592,23 +595,23 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
         </span>
         <Badge tone={level.tone}>{level.label}</Badge>
         <Button size="sm" icon={Play} disabled={!!timer} onClick={start}>
-          {timer ? "Timer läuft" : "Timer starten"}
+          {timer ? tr("props.timerRunning") : tr("props.timerStart")}
         </Button>
-        <IconButton icon={Target} label="Fokussitzung auf diesem Vorgang" size="md" onClick={() => openFocusDialog({ reference: work.label, goal: title })} />
+        <IconButton icon={Target} label={tr("props.focusHere")} size="md" onClick={() => openFocusDialog({ reference: work.label, goal: title })} />
       </div>
       {work.planned_hours > 0 && <Progress value={work.consumed} tone={level.tone} />}
       <div className="work-stats">
         <span className="num">
-          {fmtHours(work.booked_hours)} / {fmtHours(work.planned_hours)} h gebucht
+          {tr("props.bookedOf", { booked: fmtHours(work.booked_hours), planned: fmtHours(work.planned_hours) })}
         </span>
         <span className="num">ETC {fmtHours(work.etc_hours)} h</span>
-        {work.page_hours > 0 && <span className="num">{fmtHours(work.page_hours)} h von dieser Seite</span>}
+        {work.page_hours > 0 && <span className="num">{tr("props.pageHours", { h: fmtHours(work.page_hours) })}</span>}
       </div>
       {work.entries.length > 0 && (
         <>
           <button type="button" className="work-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
             {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            Letzte Buchungen
+            {tr("props.lastEntries")}
           </button>
           {open && (
             <ul className="work-entries">
@@ -618,7 +621,7 @@ export function WorkCard({ pageId, reference, title }: { pageId: number; referen
                   <span className="num">{fmtMinutes(e.duration_minutes)} h</span>
                   <span className="work-entry-desc">
                     {e.description || "–"}
-                    {e.page_id === pageId && <span className="faint"> · diese Seite</span>}
+                    {e.page_id === pageId && <span className="faint"> · {tr("props.thisPage")}</span>}
                   </span>
                 </li>
               ))}

@@ -1,15 +1,22 @@
 // Task view helpers: due-date groups and [[link]]/#tag segments of a task text.
 
 import { addDays, isoDay, weekStart } from "./format";
+import { t, type TKey } from "./i18n";
 
 export type TaskGroup = "overdue" | "today" | "week" | "later" | "none";
 
-export const TASK_GROUPS: { id: TaskGroup; label: string }[] = [
-  { id: "overdue", label: "Überfällig" },
-  { id: "today", label: "Heute" },
-  { id: "week", label: "Diese Woche" },
-  { id: "later", label: "Später" },
-  { id: "none", label: "Ohne Datum" },
+const group = (id: TaskGroup, key: TKey) => ({
+  id,
+  get label() {
+    return t(key);
+  },
+});
+export const TASK_GROUPS: { id: TaskGroup; readonly label: string }[] = [
+  group("overdue", "tasks.overdue"),
+  group("today", "feed.range.today"),
+  group("week", "feed.range.week"),
+  group("later", "common.later"),
+  group("none", "tasks.noDate"),
 ];
 
 /** Group of a due date (`YYYY-MM-DD`) relative to `now`; the week ends on Sunday. */

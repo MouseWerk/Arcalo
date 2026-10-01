@@ -9,10 +9,12 @@ import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "../../c
 import { boardCards, cellOf, defOf, fieldLabel, groupRows, groupWrite, groupable, type Group, type PropDef, type Row } from "../../lib/collection";
 import { CellDisplay, Invalid, OptionChip } from "./controls";
 import type { Ctx } from "./CollectionView";
+import { useT } from "../../lib/i18n";
 
 type Drag = { row: Row; from: string; x: number; y: number; dx: number; dy: number; w: number; target: string | null; before: number | null };
 
 export function BoardView({ ctx }: { ctx: Ctx }) {
+  const t = useT();
   const { defs, view, shown } = ctx;
   const [menu, openMenu, openMenuAt] = useMenu();
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -27,7 +29,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
       <div className="coll-board-empty">
         <EmptyState
           icon={KanbanSquare}
-          title="Wonach gruppieren?"
+          title={t("coll.board.groupAsk")}
           action={
             <Button
               size="sm"
@@ -37,11 +39,11 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                 if (el) ctx.addProperty(el);
               }}
             >
-              Eigenschaft anlegen
+              {t("coll.board.createProp")}
             </Button>
           }
         >
-          Ein Board braucht eine Eigenschaft vom Typ Auswahl, Person oder Checkbox. Jede Option wird eine Spalte.
+          {t("coll.board.needProp")}
         </EmptyState>
         <div ref={board} />
       </div>
@@ -57,7 +59,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
     if (d.target === null) return;
     const target = groups.find((g) => g.key === d.target);
     if (!target) return;
-    if (d.target !== d.from) ctx.write(d.row, def.key, groupWrite(def, target.key), `„${d.row.title}“ → ${target.label}`);
+    if (d.target !== d.from) ctx.write(d.row, def.key, groupWrite(def, target.key), `${t("common.quoted", { text: d.row.title })} → ${target.label}`);
     if (!canReorder) return;
     // Position among the pages of the folder: before the card it was dropped on, else after the column's last card.
     const cards = target.rows.filter((r) => r.id !== d.row.id);
@@ -109,17 +111,17 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
   };
 
   const cardMenu = (row: Row, from: string): MenuEntry[] => [
-    { label: "Öffnen", icon: SquareArrowOutUpRight, onSelect: () => ctx.open(row, false) },
-    { label: "In neuem Tab öffnen", onSelect: () => ctx.open(row, true) },
+    { label: t("links.open"), icon: SquareArrowOutUpRight, onSelect: () => ctx.open(row, false) },
+    { label: t("coll.openNewTab"), onSelect: () => ctx.open(row, true) },
     "separator",
     {
-      label: "Verschieben nach",
-      submenu: groups.map((g) => ({ label: g.label, checked: g.key === from, onSelect: () => g.key !== from && ctx.write(row, def.key, groupWrite(def, g.key), `„${row.title}“ → ${g.label}`) })),
+      label: t("links.moveTo"),
+      submenu: groups.map((g) => ({ label: g.label, checked: g.key === from, onSelect: () => g.key !== from && ctx.write(row, def.key, groupWrite(def, g.key), `${t("common.quoted", { text: row.title })} → ${g.label}`) })),
     },
   ];
 
   return (
-    <div className={`board${drag ? " is-dragging" : ""}`} ref={board} role="list" aria-label={`Board nach ${def.key}`}>
+    <div className={`board${drag ? " is-dragging" : ""}`} ref={board} role="list" aria-label={t("coll.board.by", { key: def.key })}>
       {groups.map((g) => {
         const isCollapsed = collapsed(g);
         const over = drag?.target === g.key;
@@ -130,11 +132,11 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
             className={`board-col${isCollapsed ? " collapsed" : ""}${over ? " over" : ""}`}
             data-group={g.key}
             role="listitem"
-            aria-label={`${g.label}: ${g.rows.length} ${g.rows.length === 1 ? "Seite" : "Seiten"}`}
+            aria-label={`${g.label}: ${t("import.pages", { n: g.rows.length })}`}
           >
             <header className="board-col-head">
               {isCollapsed ? (
-                <button type="button" className="board-col-expand" onClick={() => toggle(g)} aria-label={`${g.label} ausklappen`}>
+                <button type="button" className="board-col-expand" onClick={() => toggle(g)} aria-label={t("coll.board.expand", { name: g.label })}>
                   <ChevronsLeftRight size={13} />
                   <span className={`board-col-vert ${g.color !== null ? `opt-chip opt-${g.color}` : g.invalid ? "opt-chip opt-invalid" : ""}`}>{g.label}</span>
                   <span className="board-count num">{g.rows.length}</span>
@@ -142,12 +144,12 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
               ) : (
                 <>
                   {chip}
-                  <span className="board-count num" data-tooltip="Seiten in dieser Spalte">
+                  <span className="board-count num" data-tooltip={t("coll.board.count")}>
                     {g.rows.length}
                   </span>
                   <span className="board-col-actions">
-                    <IconButton icon={ChevronsRightLeft} label={`${g.label} einklappen`} size="sm" onClick={() => toggle(g)} />
-                    <IconButton icon={Plus} label={`Neue Seite in ${g.label}`} size="sm" onClick={() => ctx.newPage([def.key, groupWrite(def, g.key)])} />
+                    <IconButton icon={ChevronsRightLeft} label={t("coll.board.collapse", { name: g.label })} size="sm" onClick={() => toggle(g)} />
+                    <IconButton icon={Plus} label={t("coll.board.newIn", { name: g.label })} size="sm" onClick={() => ctx.newPage([def.key, groupWrite(def, g.key)])} />
                   </span>
                 </>
               )}
@@ -179,7 +181,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                         <div className="board-card-title">
                           <PageIcon name={row.icon} size={14} />
                           <span>{row.title}</span>
-                          <IconButton icon={MoreHorizontal} label="Kartenmenü" size="sm" className="board-card-menu" onClick={(e) => openMenuAt(e, cardMenu(row, g.key))} />
+                          <IconButton icon={MoreHorizontal} label={t("coll.board.cardMenu")} size="sm" className="board-card-menu" onClick={(e) => openMenuAt(e, cardMenu(row, g.key))} />
                         </div>
                         {cardKeys.map((k) => {
                           const d = defOf(defs, k);
@@ -203,7 +205,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                 })}
                 {over && drag?.before === null && <div className="board-drop" aria-hidden />}
                 <button type="button" className="board-add" onClick={() => ctx.newPage([def.key, groupWrite(def, g.key)])}>
-                  <Plus size={13} /> Neue Seite
+                  <Plus size={13} /> {t("ribbon.newPage")}
                 </button>
               </div>
             )}

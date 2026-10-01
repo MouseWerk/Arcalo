@@ -11,6 +11,7 @@ import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
 import { BREAKS, LENGTHS, countdown, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
 import type { FocusDone } from "../lib/types";
+import { t as tr, useT } from "../lib/i18n";
 
 const s = useApp.getState;
 
@@ -28,7 +29,7 @@ async function reload() {
     s().set({ focus: st && !(st.phase === "break" && remainingMs(st, Date.now()) <= 0) ? st : null });
     if (st?.completed) showDone({ ...st.completed, held: st.held ?? [] });
   } catch (e) {
-    s().error("Fokussitzung nicht geladen", e);
+    s().error(tr("focus.notLoaded"), e);
   }
 }
 
@@ -47,7 +48,7 @@ function showDone(done: FocusDone) {
     detail: detail || undefined,
     urgent: true,
     persistent: held.length > 0 || done.held.length > 0,
-    action: { label: "Nächste Sitzung", run: () => void nextSession() },
+    action: { label: tr("focus.next"), run: () => void nextSession() },
   });
   s().bumpEntries();
 }
@@ -62,7 +63,7 @@ export async function startFocus(c: FocusChoice) {
       s().set({ focusMode: true });
     }
   } catch (e) {
-    s().error("Fokussitzung nicht gestartet", e);
+    s().error(tr("focus.notStarted"), e);
   }
 }
 
@@ -79,21 +80,21 @@ export async function abortFocus() {
   let book = false;
   if (f.session.reference && minutes >= 1) {
     const choice = await s().choose({
-      title: "Fokussitzung abbrechen?",
-      message: `Bisher ${minutes} Min. auf ${f.session.reference}. Soll diese Zeit gebucht werden?`,
-      confirmLabel: `${minutes} Min. buchen`,
-      altLabel: "Nicht buchen",
-      cancelLabel: "Weiterarbeiten",
+      title: tr("focus.abortTitle"),
+      message: tr("focus.abortMessage", { n: minutes, ref: f.session.reference }),
+      confirmLabel: tr("focus.bookMinutes", { n: minutes }),
+      altLabel: tr("focus.dontBook"),
+      cancelLabel: tr("focus.keepWorking"),
     });
     if (choice === "cancel") return;
     book = choice === "confirm";
-  } else if (!(await s().confirm({ title: "Fokussitzung abbrechen?", message: "Die Sitzung wird beendet.", confirmLabel: "Abbrechen", cancelLabel: "Weiterarbeiten" }))) return;
+  } else if (!(await s().confirm({ title: tr("focus.abortTitle"), message: tr("focus.abortEnds"), confirmLabel: tr("focus.abort"), cancelLabel: tr("focus.keepWorking") }))) return;
   try {
     const done = await api.focusAbort(book);
     s().set({ focus: null });
     showDone(done);
   } catch (e) {
-    s().error("Fokussitzung nicht beendet", e);
+    s().error(tr("focus.notEnded"), e);
     void reload();
   }
 }
@@ -103,7 +104,7 @@ export async function endBreak() {
     await api.focusEndBreak();
     s().set({ focus: null });
   } catch (e) {
-    s().error("Pause nicht beendet", e);
+    s().error(tr("focus.breakNotEnded"), e);
   }
 }
 
@@ -135,7 +136,7 @@ export function useFocusEngine() {
           .finally(() => (finishing = false));
       } else {
         s().set({ focus: null });
-        s().toast({ tone: "info", title: "Pause vorbei", urgent: true, action: { label: "Nächste Sitzung", run: () => void nextSession() } });
+        s().toast({ tone: "info", title: tr("focus.breakOver"), urgent: true, action: { label: tr("focus.next"), run: () => void nextSession() } });
       }
     }, 500);
     return () => {
@@ -180,6 +181,7 @@ export function FocusRing({ progress, size = 14, stroke = 2, tone = "accent" }: 
 
 /** Status bar: ring, remaining time and Vorgang; a click opens the session menu. */
 export function FocusStatus() {
+  useT();
   const focus = useApp((st) => st.focus);
   const focusMode = useApp((st) => st.focusMode);
   const held = useApp((st) => st.heldToasts.length);
@@ -188,7 +190,11 @@ export function FocusStatus() {
   if (!focus) return null;
   const work = focus.phase === "work";
   const left = countdown(remainingMs(focus, now));
-  const label = work ? `Fokus: noch ${left}${focus.session.reference ? ` auf ${focus.session.reference}` : ""}` : `Pause: noch ${left}`;
+  const label = work
+    ? focus.session.reference
+      ? tr("focus.statusOn", { left, ref: focus.session.reference })
+      : tr("focus.status", { left })
+    : tr("focus.breakStatus", { left });
   return (
     <>
       <button
@@ -201,13 +207,13 @@ export function FocusStatus() {
             e,
             work
               ? [
-                  { label: "Sitzung abbrechen…", icon: Square, onSelect: () => void abortFocus() },
-                  { label: focusMode ? "Fokusmodus beenden" : "Fokusmodus einschalten", icon: Target, onSelect: () => s().set({ focusMode: !focusMode }) },
+                  { label: tr("focus.menuAbort"), icon: Square, onSelect: () => void abortFocus() },
+                  { label: focusMode ? tr("focus.modeOff") : tr("focus.modeOn"), icon: Target, onSelect: () => s().set({ focusMode: !focusMode }) },
                 ]
               : [
-                  { label: "Nächste Sitzung starten", icon: Play, onSelect: () => void nextSession() },
-                  { label: "Andere Sitzung…", icon: Target, onSelect: () => openFocusDialog() },
-                  { label: "Pause beenden", icon: X, onSelect: () => void endBreak() },
+                  { label: tr("focus.startNext"), icon: Play, onSelect: () => void nextSession() },
+                  { label: tr("focus.other"), icon: Target, onSelect: () => openFocusDialog() },
+                  { label: tr("focus.endBreak"), icon: X, onSelect: () => void endBreak() },
                 ],
           )
         }
@@ -215,7 +221,7 @@ export function FocusStatus() {
         {work ? <FocusRing progress={phaseProgress(focus, now)} /> : <Coffee size={12} />}
         <span className="num sb-focus-time">{left}</span>
         {work && focus.session.reference && <span className="faint">{focus.session.reference}</span>}
-        {work && held > 0 && <span className="sb-focus-held" title={`${held} Hinweise zurückgehalten`}>{held}</span>}
+        {work && held > 0 && <span className="sb-focus-held" title={tr("focus.heldCount", { n: held })}>{held}</span>}
       </button>
       {menu}
     </>
@@ -226,6 +232,7 @@ export function FocusStatus() {
 
 /** Vorgang input with the `/zeit` suggestions (recently booked first). */
 function RefCombo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  useT();
   const [items, setItems] = useState<ZeitSuggestItem[]>([]);
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(0);
@@ -250,7 +257,7 @@ function RefCombo({ value, onChange }: { value: string; onChange: (v: string) =>
         className="mono"
         value={value}
         placeholder="NP-8801/1020"
-        aria-label="Vorgang"
+        aria-label={tr("focus.ref")}
         role="combobox"
         aria-expanded={open && items.length > 0}
         aria-autocomplete="list"
@@ -294,6 +301,7 @@ export function FocusDialogHost() {
 }
 
 function FocusDialog({ preset }: { preset: { reference?: string; goal?: string } }) {
+  useT();
   const last = useMemo(lastChoice, []);
   const timer = useApp((st) => st.timer);
   const [reference, setReference] = useState(preset.reference ?? last.reference);
@@ -317,51 +325,51 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
     <Dialog
       open
       onClose={close}
-      title="Fokussitzung"
-      description="Konzentriert arbeiten, dann Pause. Die Zeit wird als Entwurf auf den Vorgang gebucht; Hinweise warten bis zum Ende."
+      title={tr("focus.dialogTitle")}
+      description={tr("focus.dialogDesc")}
       width={500}
       footer={
         <>
           <Button variant="ghost" onClick={close}>
-            Abbrechen
+            {tr("common.cancel")}
           </Button>
           <Button variant="primary" icon={Play} onClick={start} disabled={minutes == null} loading={busy}>
-            Starten
+            {tr("focus.start")}
           </Button>
         </>
       }
     >
       <div className="focus-form" onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && !e.defaultPrevented && (e.preventDefault(), start())}>
-        <Field label="Vorgang" hint={reference.trim() ? undefined : "Ohne Vorgang wird nichts gebucht."}>
+        <Field label={tr("focus.ref")} hint={reference.trim() ? undefined : tr("focus.noRefHint")}>
           <RefCombo value={reference} onChange={setReference} />
         </Field>
-        <Field label="Ziel">
-          <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Woran arbeitest du?" aria-label="Ziel" data-autofocus={preset.reference ? true : undefined} />
+        <Field label={tr("focus.goal")}>
+          <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("focus.goalPh")} aria-label={tr("focus.goal")} data-autofocus={preset.reference ? true : undefined} />
         </Field>
         <div className="focus-row">
-          <Field label="Länge">
+          <Field label={tr("focus.length")}>
             <span className="focus-length">
               <Segmented
-                label="Länge"
+                label={tr("focus.length")}
                 value={length}
                 onChange={setLength}
-                options={[...LENGTHS.map((m) => ({ value: String(m), label: `${m} Min.` })), { value: "custom", label: "Eigene" }]}
+                options={[...LENGTHS.map((m) => ({ value: String(m), label: tr("focus.minutes", { n: m }) })), { value: "custom", label: tr("focus.custom") }]}
               />
               {length === "custom" && (
-                <Input className="num focus-custom" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label="Eigene Länge in Minuten" aria-invalid={minutes == null} />
+                <Input className="num focus-custom" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label={tr("focus.customAria")} aria-invalid={minutes == null} />
               )}
             </span>
           </Field>
-          <Field label="Pause">
-            <Segmented label="Pause" value={pause} onChange={setPause} options={BREAKS.map((m) => ({ value: String(m), label: `${m} Min.` }))} />
+          <Field label={tr("focus.break")}>
+            <Segmented label={tr("focus.break")} value={pause} onChange={setPause} options={BREAKS.map((m) => ({ value: String(m), label: tr("focus.minutes", { n: m }) }))} />
           </Field>
         </div>
         <div className="focus-switch">
-          <Switch checked={focusMode} onChange={setFocusMode} label="Fokusmodus während der Sitzung" />
-          <span>Fokusmodus während der Sitzung</span>
-          <span className="faint small">Seitenleiste, Panel und Leiste ausblenden</span>
+          <Switch checked={focusMode} onChange={setFocusMode} label={tr("focus.modeDuring")} />
+          <span>{tr("focus.modeDuring")}</span>
+          <span className="faint small">{tr("focus.modeDuringSub")}</span>
         </div>
-        {timer && <p className="faint small focus-note">Ein Timer läuft – die Fokuszeit wird zusätzlich gebucht.</p>}
+        {timer && <p className="faint small focus-note">{tr("focus.timerNote")}</p>}
       </div>
     </Dialog>
   );

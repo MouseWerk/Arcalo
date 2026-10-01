@@ -7,6 +7,7 @@
 //! ---
 //! ```
 
+use crate::trf;
 use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
@@ -25,10 +26,12 @@ fn frontmatter_lines(markdown: &str) -> Vec<&str> {
 }
 
 /// A scalar frontmatter property (key case-insensitive), unquoted; `None` when missing or empty.
+/// German keys also match their English alias (`vorgang:` = `activity:`); the first one wins.
 pub fn frontmatter_value(markdown: &str, key: &str) -> Option<String> {
+    let want = crate::i18n::canonical_key(key);
     frontmatter_lines(markdown).into_iter().find_map(|line| {
         let (k, v) = line.split_once(':')?;
-        if line.starts_with([' ', '\t']) || !k.trim().eq_ignore_ascii_case(key) {
+        if line.starts_with([' ', '\t']) || crate::i18n::canonical_key(k) != want {
             return None;
         }
         yaml_scalar(v).filter(|v| !v.is_empty())
@@ -176,7 +179,7 @@ pub fn page_work(db: &Database, page_id: i64, t: &Thresholds) -> Result<Option<P
         Err(Error::NotFound { .. }) => {
             return Ok(Some(PageWork::unresolved(
                 reference,
-                format!("Netzplan „{np_ref}“ nicht gefunden"),
+                trf!("Netzplan „{np_ref}“ nicht gefunden", "Network “{np_ref}” not found"),
                 page_hours,
             )));
         }
@@ -190,7 +193,7 @@ pub fn page_work(db: &Database, page_id: i64, t: &Thresholds) -> Result<Option<P
             // A Netzplan without modelled Vorgänge accepts free activity codes (like `/zeit`).
             None if vorgaenge.is_empty() => None,
             None => {
-                let msg = format!("Vorgang „{}/{v}“ nicht gefunden", np.netzplan_nr);
+                let msg = trf!("Vorgang „{}/{v}“ nicht gefunden", "Activity “{}/{v}” not found", np.netzplan_nr);
                 return Ok(Some(PageWork::unresolved(reference, msg, page_hours)));
             }
         },
@@ -251,6 +254,11 @@ mod tests {
         assert_eq!(page_reference("---\nvorgang: NP-8801/1020 # Integration\n---\n").as_deref(), Some("NP-8801/1020"));
         assert_eq!(page_reference("---\nvorgang: \"NP-8801/1020\"  # x\n---\n").as_deref(), Some("NP-8801/1020"));
         assert_eq!(page_reference("---\nvorgang: # nur Kommentar\n---\n"), None);
+        // English keys work alike; with both, the first one wins.
+        assert_eq!(page_reference("---\nactivity: NP-8801/1020\n---\n").as_deref(), Some("NP-8801/1020"));
+        assert_eq!(page_reference("---\nnetwork: NP-8801\nActivity: '1020'\n---\n").as_deref(), Some("NP-8801/1020"));
+        assert_eq!(page_reference("---\nactivity: NP-1/1\nvorgang: NP-2/2\n---\n").as_deref(), Some("NP-1/1"));
+        assert_eq!(page_reference("---\nvorgang: NP-2/2\nactivity: NP-1/1\n---\n").as_deref(), Some("NP-2/2"));
     }
 
     #[test]

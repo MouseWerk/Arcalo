@@ -2,6 +2,7 @@
 //! `annalo-YYYYMMDD-HHMMSS.db` (UTC, so names sort chronologically across DST
 //! changes), pruned to the newest `keep`. Times are shown in local time.
 
+use crate::trf;
 use std::fs;
 use std::path::Path;
 
@@ -67,7 +68,8 @@ fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Resu
     if path.exists() {
         fs::remove_file(&path).at(&path)?;
     }
-    let target = path.to_str().ok_or_else(|| Error::State(format!("Ungültiger Pfad: {}", path.display())))?;
+    let target =
+        path.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
     db.conn().execute("VACUUM INTO ?1", [target])?;
     let fresh = info(&path, &name).ok_or_else(|| Error::not_found("backup", name.clone()))?;
     prune(dir, keep, &name)?;
@@ -90,10 +92,13 @@ pub fn prune(dir: &Path, keep: usize, fresh: &str) -> Result<Vec<String>> {
 /// of a broken database). The broken file and its WAL files are kept as
 /// `<name>.broken-<stamp>`. Returns the backup used.
 pub fn restore_latest(db_file: &Path, backups: &Path, now: DateTime<Utc>) -> Result<BackupInfo> {
-    let latest = list_backups(backups)?
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::State(format!("Im Ordner {} liegt keine Sicherung", backups.display())))?;
+    let latest = list_backups(backups)?.into_iter().next().ok_or_else(|| {
+        Error::State(trf!(
+            "Im Ordner {} liegt keine Sicherung",
+            "There is no backup in the folder {}",
+            backups.display()
+        ))
+    })?;
     let stamp = now.format(STAMP);
     for ext in ["", "-wal", "-shm"] {
         let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));

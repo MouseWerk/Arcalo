@@ -5,6 +5,7 @@
 //! [`classify`] marks them [`Risk::RequiresApproval`] and the shell must show
 //! the exact command to the user before calling [`execute_system_tool`].
 
+use crate::{tr, trf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -36,57 +37,79 @@ pub fn definitions() -> Vec<Value> {
     vec![
         f(
             "log_time",
-            "Bucht Zeit auf ein Netzplan-Element. Nutzt die /zeit-Syntax, z. B. \"/zeit NP-8801/1020 2.5h #DEV 'Systemintegration'\".",
+            tr!(
+                "Bucht Zeit auf ein Netzplan-Element. Nutzt die /zeit-Syntax, z. B. \"/zeit NP-8801/1020 2.5h #DEV 'Systemintegration'\".",
+                "Books time on a network element. Uses the /time syntax, e.g. \"/time NP-8801/1020 2.5h #DEV 'System integration'\"."
+            ),
             json!({ "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"] }),
         ),
         f(
             "search_workspace",
-            "Volltextsuche über Notizen und Zeiteinträge.",
+            tr!("Volltextsuche über Notizen und Zeiteinträge.", "Full-text search in notes and time entries."),
             json!({ "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] }),
         ),
         f(
             "budget_status",
-            "Budget, gebuchte Stunden und ETC eines Netzplans.",
+            tr!("Budget, gebuchte Stunden und ETC eines Netzplans.", "Budget, booked hours and ETC of a network."),
             json!({ "type": "object", "properties": { "netzplan": { "type": "string" } }, "required": ["netzplan"] }),
         ),
         f(
             "list_tasks",
-            "Listet Aufgaben (- [ ] …) aus allen Notizen mit Seite, Fälligkeit (YYYY-MM-DD) und Priorität (2 hoch, 1 mittel).",
+            tr!(
+                "Listet Aufgaben (- [ ] …) aus allen Notizen mit Seite, Fälligkeit (YYYY-MM-DD) und Priorität (2 hoch, 1 mittel).",
+                "Lists tasks (- [ ] …) from all notes with page, due date (YYYY-MM-DD) and priority (2 high, 1 medium)."
+            ),
             json!({ "type": "object", "properties": {
-                "status": { "type": "string", "enum": ["open", "done", "all"], "description": "Standard: open" },
-                "due_before": { "type": "string", "description": "Nur fällig bis einschließlich YYYY-MM-DD" },
-                "tag": { "type": "string", "description": "Tag der Aufgabe oder ihrer Seite, ohne #" },
-                "changed_since": { "type": "string", "description": "Nur Aufgaben auf Seiten, die seit diesem Tag (YYYY-MM-DD) geändert wurden, z. B. für „diese Woche erledigt“" } } }),
+                "status": { "type": "string", "enum": ["open", "done", "all"], "description": tr!("Standard: open", "Default: open") },
+                "due_before": { "type": "string", "description": tr!("Nur fällig bis einschließlich YYYY-MM-DD", "Only due up to and including YYYY-MM-DD") },
+                "tag": { "type": "string", "description": tr!("Tag der Aufgabe oder ihrer Seite, ohne #", "Tag of the task or its page, without #") },
+                "changed_since": { "type": "string", "description": tr!(
+                    "Nur Aufgaben auf Seiten, die seit diesem Tag (YYYY-MM-DD) geändert wurden, z. B. für „diese Woche erledigt“",
+                    "Only tasks on pages changed since this day (YYYY-MM-DD), e.g. for “done this week”"
+                ) } } }),
         ),
         f(
             "time_summary",
-            "Gebuchte Stunden je Netzplan/Vorgang mit den Beschreibungen der Einträge und Summen je Tag, für Statusberichte.",
+            tr!(
+                "Gebuchte Stunden je Netzplan/Vorgang mit den Beschreibungen der Einträge und Summen je Tag, für Statusberichte.",
+                "Booked hours per network/activity with the entries' descriptions and totals per day, for status reports."
+            ),
             json!({ "type": "object", "properties": {
-                "from": { "type": "string", "description": "Erster Tag, YYYY-MM-DD" },
-                "to": { "type": "string", "description": "Letzter Tag einschließlich, YYYY-MM-DD" } }, "required": ["from", "to"] }),
+                "from": { "type": "string", "description": tr!("Erster Tag, YYYY-MM-DD", "First day, YYYY-MM-DD") },
+                "to": { "type": "string", "description": tr!("Letzter Tag einschließlich, YYYY-MM-DD", "Last day, inclusive, YYYY-MM-DD") } }, "required": ["from", "to"] }),
         ),
         f(
             "activity_log",
-            "Was im Arbeitsbereich an einem Tag oder in einem Zeitraum passiert ist (nur lesend): angelegte und bearbeitete Seiten, neue und erledigte Aufgaben, Buchungen, Freigaben, Dateien und Fokussitzungen, mit Uhrzeit. Für Fragen wie „Was habe ich am Dienstag gemacht?“.",
+            tr!(
+                "Was im Arbeitsbereich an einem Tag oder in einem Zeitraum passiert ist (nur lesend): angelegte und bearbeitete Seiten, neue und erledigte Aufgaben, Buchungen, Freigaben, Dateien und Fokussitzungen, mit Uhrzeit. Für Fragen wie „Was habe ich am Dienstag gemacht?“.",
+                "What happened in the workspace on a day or in a period (read-only): created and edited pages, new and finished tasks, time entries, releases, files and focus sessions, with the time of day. For questions like “What did I do on Tuesday?”."
+            ),
             json!({ "type": "object", "properties": {
-                "from": { "type": "string", "description": "Erster Tag, YYYY-MM-DD" },
-                "to": { "type": "string", "description": "Letzter Tag einschließlich, YYYY-MM-DD (Standard: wie from)" } }, "required": ["from"] }),
+                "from": { "type": "string", "description": tr!("Erster Tag, YYYY-MM-DD", "First day, YYYY-MM-DD") },
+                "to": { "type": "string", "description": tr!("Letzter Tag einschließlich, YYYY-MM-DD (Standard: wie from)", "Last day, inclusive, YYYY-MM-DD (default: same as from)") } }, "required": ["from"] }),
         ),
         f(
             "run_powershell",
-            "Führt ein PowerShell-Skript aus. Der Nutzer muss jede Ausführung bestätigen.",
+            tr!(
+                "Führt ein PowerShell-Skript aus. Der Nutzer muss jede Ausführung bestätigen.",
+                "Runs a PowerShell script. The user must confirm every run."
+            ),
             json!({ "type": "object", "properties": { "script": { "type": "string" }, "cwd": { "type": "string" } }, "required": ["script"] }),
         ),
         f(
             "git",
-            &format!("Führt einen lesenden git-Befehl aus ({}).", GIT_ALLOWED.join(", ")),
+            &trf!(
+                "Führt einen lesenden git-Befehl aus ({}).",
+                "Runs a read-only git command ({}).",
+                GIT_ALLOWED.join(", ")
+            ),
             json!({ "type": "object", "properties": {
                 "args": { "type": "array", "items": { "type": "string" } },
                 "repo": { "type": "string" } }, "required": ["args", "repo"] }),
         ),
         f(
             "http_request",
-            "Ruft eine REST-API auf.",
+            tr!("Ruft eine REST-API auf.", "Calls a REST API."),
             json!({ "type": "object", "properties": {
                 "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
                 "url": { "type": "string" },
@@ -105,7 +128,10 @@ pub fn check_allowed(tool: &str, allowed: &[String]) -> Result<()> {
     if allowed.iter().any(|a| a == tool) {
         Ok(())
     } else {
-        Err(Error::State(format!("Das Werkzeug „{tool}“ ist in den Einstellungen (KI → Werkzeuge) nicht erlaubt")))
+        Err(Error::State(trf!(
+            "Das Werkzeug „{tool}“ ist in den Einstellungen (KI → Werkzeuge) nicht erlaubt",
+            "The tool “{tool}” is not allowed in the settings (AI → Tools)"
+        )))
     }
 }
 
@@ -130,8 +156,12 @@ pub enum SystemCall {
 impl SystemCall {
     /// Parses and validates a model tool call. Rejects anything outside policy.
     pub fn from_tool_call(name: &str, arguments: &str) -> Result<Self> {
-        let args: Value = serde_json::from_str(arguments)
-            .map_err(|e| Error::Parse(format!("Ungültige Werkzeug-Argumente vom Modell ({e})")))?;
+        let args: Value = serde_json::from_str(arguments).map_err(|e| {
+            Error::Parse(trf!(
+                "Ungültige Werkzeug-Argumente vom Modell ({e})",
+                "Invalid tool arguments from the model ({e})"
+            ))
+        })?;
         let s = |k: &str| args[k].as_str().map(str::to_owned);
         let call = match name {
             "run_powershell" => SystemCall::RunPowershell {
@@ -144,15 +174,16 @@ impl SystemCall {
                     .ok_or_else(|| Error::Parse("git-Argumente fehlen".into()))?
                     .iter()
                     .map(|a| {
-                        a.as_str()
-                            .map(str::to_owned)
-                            .ok_or_else(|| Error::Parse("git-Argumente müssen Texte sein".into()))
+                        a.as_str().map(str::to_owned).ok_or_else(|| {
+                            Error::Parse(tr!("git-Argumente müssen Texte sein", "git arguments must be strings").into())
+                        })
                     })
                     .collect::<Result<_>>()?;
                 let sub = list.first().map(String::as_str).unwrap_or("");
                 if !GIT_ALLOWED.contains(&sub) {
-                    return Err(Error::State(format!(
-                        "Der git-Befehl „{sub}“ ist nicht erlaubt (nur lesende Befehle)"
+                    return Err(Error::State(trf!(
+                        "Der git-Befehl „{sub}“ ist nicht erlaubt (nur lesende Befehle)",
+                        "The git command “{sub}” is not allowed (read-only commands only)"
                     )));
                 }
                 // Options that can execute programs or write files.
@@ -163,18 +194,26 @@ impl SystemCall {
                         || a.starts_with("-c")
                         || a.starts_with("--exec")
                 }) {
-                    return Err(Error::State("Diese git-Option ist nicht erlaubt".into()));
+                    return Err(Error::State(
+                        tr!("Diese git-Option ist nicht erlaubt", "This git option is not allowed").into(),
+                    ));
                 }
                 SystemCall::Git { args: list, repo: s("repo").ok_or_else(|| Error::Parse("Repository fehlt".into()))? }
             }
             "http_request" => {
                 let method = s("method").unwrap_or_else(|| "GET".into()).to_uppercase();
                 if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
-                    return Err(Error::State(format!("Die HTTP-Methode {method} ist nicht erlaubt")));
+                    return Err(Error::State(trf!(
+                        "Die HTTP-Methode {method} ist nicht erlaubt",
+                        "The HTTP method {method} is not allowed"
+                    )));
                 }
                 let url = s("url").ok_or_else(|| Error::Parse("URL fehlt".into()))?;
                 if !(url.starts_with("https://") || url.starts_with("http://")) {
-                    return Err(Error::State("Nur http- und https-Adressen sind erlaubt".into()));
+                    return Err(Error::State(
+                        tr!("Nur http- und https-Adressen sind erlaubt", "Only http and https addresses are allowed")
+                            .into(),
+                    ));
                 }
                 SystemCall::HttpRequest { method, url, body: args.get("body").filter(|b| !b.is_null()).cloned() }
             }
@@ -215,7 +254,7 @@ fn truncate(mut s: String) -> String {
             cut -= 1;
         }
         s.truncate(cut);
-        s.push_str("\n… [gekürzt]");
+        s.push_str(tr!("\n… [gekürzt]", "\n… [shortened]"));
     }
     s
 }
@@ -254,8 +293,9 @@ pub(crate) fn output_within(mut cmd: Command, timeout: Duration) -> Result<std::
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(Error::State(format!(
+            return Err(Error::State(trf!(
                 "Der Befehl hat nicht innerhalb von {} s geantwortet und wurde abgebrochen",
+                "The command did not answer within {} s and was stopped",
                 timeout.as_secs().max(1)
             )));
         }
@@ -367,8 +407,9 @@ async fn run_git(args: &[String], repo: &str) -> Result<String> {
         .map_err(|e| Error::State(e.to_string()))??;
     let bad = dangerous_git_config(&String::from_utf8_lossy(&list.stdout));
     if !bad.is_empty() {
-        return Err(Error::State(format!(
+        return Err(Error::State(trf!(
             "Das Repository enthält Git-Einstellungen, die Programme starten können ({}) – der Befehl wird nicht ausgeführt",
+            "The repository has git settings that can start programs ({}) – the command is not run",
             bad.join(", ")
         )));
     }

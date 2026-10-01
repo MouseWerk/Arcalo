@@ -8,6 +8,7 @@
 //! as an embedding model (LiteLLM's `/model/info`, `model_info.mode`), or, when it does not
 //! say, its name looks like one. What failed once is remembered for the session.
 
+use crate::{tr, trf};
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
@@ -82,9 +83,15 @@ pub fn embedding_failure_lasting(e: &Error) -> bool {
 /// Short German cause of a failed embedding request, for the settings and the answer's route info.
 pub fn embedding_failure_text(e: &Error) -> String {
     match e {
-        Error::Provider { status: 200, .. } | Error::Json(_) => "die Antwort ist keine Embedding-Liste".into(),
-        Error::Provider { status, .. } if *status > 0 => format!("der KI-Server meldet Fehler {status}"),
-        Error::Http(e) if e.is_decode() => "die Antwort ist keine Embedding-Liste".into(),
+        Error::Provider { status: 200, .. } | Error::Json(_) => {
+            tr!("die Antwort ist keine Embedding-Liste", "the answer is not a list of embeddings").into()
+        }
+        Error::Provider { status, .. } if *status > 0 => {
+            trf!("der KI-Server meldet Fehler {status}", "the AI server reports error {status}")
+        }
+        Error::Http(e) if e.is_decode() => {
+            tr!("die Antwort ist keine Embedding-Liste", "the answer is not a list of embeddings").into()
+        }
         e => e.to_string().chars().take(120).collect(),
     }
 }
@@ -123,9 +130,11 @@ impl Capabilities {
     /// Whether `r` may be asked for embeddings, or why not (German, for the settings).
     pub fn embedding_usable(&self, r: &ModelRef) -> std::result::Result<(), String> {
         if let Some(why) = self.embed_failed.get(r) {
-            return Err(format!(
+            return Err(trf!(
                 "„{}“ liefert keine Embeddings ({why}). Die Suche nutzt nur Stichwörter, bis du ein anderes \
                  Embedding-Modell wählst oder die Einstellungen neu speicherst.",
+                "“{}” returns no embeddings ({why}). The search uses keywords only until you choose another \
+                 embedding model or save the settings again.",
                 r.model
             ));
         }
@@ -133,15 +142,18 @@ impl Capabilities {
             return Ok(());
         }
         match self.mode(r) {
-            Some(mode) if !embedding_capable(&r.model, Some(mode)) => Err(format!(
+            Some(mode) if !embedding_capable(&r.model, Some(mode)) => Err(trf!(
                 "„{}“ ist laut Server kein Embedding-Modell (Typ „{mode}“). Die Suche nutzt nur Stichwörter.",
+                "According to the server “{}” is not an embedding model (type “{mode}”). The search uses keywords only.",
                 r.model
             )),
             Some(_) => Ok(()),
             None if looks_like_embedding(&r.model) => Ok(()),
-            None => Err(format!(
+            None => Err(trf!(
                 "„{}“ ist kein Embedding-Modell (weder der Server noch der Name weist es als solches aus). \
                  Die Suche nutzt nur Stichwörter.",
+                "“{}” is not an embedding model (neither the server nor the name says it is one). The search \
+                 uses keywords only.",
                 r.model
             )),
         }

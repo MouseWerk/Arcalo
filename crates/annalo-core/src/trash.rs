@@ -4,6 +4,7 @@
 //! Pages trashed together share one `deleted_at` stamp, which is how an entry's
 //! subtree is told apart from children that were trashed separately before.
 
+use crate::trf;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -46,7 +47,7 @@ impl Database {
         let page = self.page(id)?;
         match page.deleted_at.clone() {
             Some(at) => Ok((page, at)),
-            None => Err(Error::State(format!("„{}“ liegt nicht im Papierkorb", page.title))),
+            None => Err(Error::State(trf!("„{}“ liegt nicht im Papierkorb", "“{}” is not in the trash", page.title))),
         }
     }
 
@@ -58,7 +59,11 @@ impl Database {
     pub fn trash_page_at(&self, id: i64, at: DateTime<Utc>) -> Result<usize> {
         let page = self.page(id)?;
         if page.deleted_at.is_some() {
-            return Err(Error::State(format!("„{}“ liegt bereits im Papierkorb", page.title)));
+            return Err(Error::State(trf!(
+                "„{}“ liegt bereits im Papierkorb",
+                "“{}” is already in the trash",
+                page.title
+            )));
         }
         Ok(self.conn().execute(
             "WITH RECURSIVE sub(id) AS (

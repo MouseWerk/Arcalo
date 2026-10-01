@@ -66,7 +66,7 @@ pub fn run(app: &AppHandle, action: Action, ready: bool) {
         Action::Search => desktop::open_search(app, false),
         Action::Timer if !timer_running(app) => {
             if let Err(e) = desktop::timer_resume_last(app.clone()) {
-                desktop::notify(app, "Timer nicht gestartet", &e.to_string());
+                desktop::notify(app, annalo_core::tr!("Timer nicht gestartet", "Timer not started"), &e.to_string());
             }
         }
         a if !ready => *lock(&PENDING) = Some(a),

@@ -9,7 +9,7 @@ import { pickDate } from "../../components/CalendarPopover";
 import { TITLE, cellOf, columnKeys, defOf, fieldLabel, kindOf, writeFromText, type CellWrite, type PropKind, type Row } from "../../lib/collection";
 import { CellDisplay, ComboInput, Invalid, KIND_ICON, OptionPicker, Popover, editText, openLink, suggestLinks, suggestPersons } from "./controls";
 import type { Ctx } from "./CollectionView";
-import { t } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 import { modLabel } from "../../lib/shortcut";
 
 const ROW_H = 34;
@@ -42,6 +42,7 @@ function Spacer({ rows, cols }: { rows: number; cols: number }) {
 }
 
 export function TableView({ ctx }: { ctx: Ctx }) {
+  const t = useT();
   const { defs, view, shown } = ctx;
   const cols = columnKeys(defs, ctx.rows, view);
   const [live, setLive] = useState<Record<string, number>>({});
@@ -185,7 +186,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
       case "Backspace":
         if (p.key !== TITLE) {
           e.preventDefault();
-          if (cellOf(row, p.key).text) ctx.write(row, p.key, null, `${fieldLabel(p.key)} von „${row.title}“ geleert`);
+          if (cellOf(row, p.key).text) ctx.write(row, p.key, null, t("coll.cleared", { field: fieldLabel(p.key), title: row.title }));
         }
         return;
     }
@@ -300,20 +301,20 @@ export function TableView({ ctx }: { ctx: Ctx }) {
                   className={`coll-th${k === TITLE ? " coll-sticky" : ""}${dragging ? " dragging" : ""}${colDrag && colDrag.target === i && !dragging ? " drop-before" : ""}${colDrag && colDrag.target === cols.length && i === cols.length - 1 && !dragging ? " drop-after" : ""}`}
                   style={dragging ? { transform: `translateX(${colDrag.dx}px)` } : undefined}
                 >
-                  <div className="coll-th-inner" onPointerDown={(e) => onHeadDown(e, k)} title={k === TITLE ? "Klicken sortiert" : "Klicken sortiert, Ziehen verschiebt die Spalte"}>
+                  <div className="coll-th-inner" onPointerDown={(e) => onHeadDown(e, k)} title={k === TITLE ? t("coll.clickSorts") : t("coll.clickSortsDrag")}>
                     <Icon size={13} className="coll-th-icon" aria-hidden />
                     <span className="coll-th-label">{fieldLabel(k)}</span>
                     {sorted && (sorted === "auf" ? <ArrowUp size={12} className="coll-th-sort" aria-hidden /> : <ArrowDown size={12} className="coll-th-sort" aria-hidden />)}
-                    <button type="button" className="coll-th-menu" aria-label={`Menü von ${fieldLabel(k)}`} onClick={(e) => ctx.propMenu(k, e.currentTarget.closest("th")!)}>
+                    <button type="button" className="coll-th-menu" aria-label={t("coll.menuOf", { field: fieldLabel(k) })} onClick={(e) => ctx.propMenu(k, e.currentTarget.closest("th")!)}>
                       <ChevronDown size={13} />
                     </button>
                   </div>
-                  <span className="coll-resize" role="separator" aria-orientation="vertical" aria-label={`Breite von ${fieldLabel(k)}`} onPointerDown={(e) => onResizeDown(e, k)} />
+                  <span className="coll-resize" role="separator" aria-orientation="vertical" aria-label={t("coll.widthOf", { field: fieldLabel(k) })} onPointerDown={(e) => onResizeDown(e, k)} />
                 </th>
               );
             })}
             <th className="coll-th coll-th-add">
-              <button type="button" className="coll-add-col" aria-label="Eigenschaft hinzufügen" data-tooltip="Eigenschaft hinzufügen" onClick={(e) => ctx.addProperty(e.currentTarget)}>
+              <button type="button" className="coll-add-col" aria-label={t("cmd.addProperty")} data-tooltip={t("cmd.addProperty")} onClick={(e) => ctx.addProperty(e.currentTarget)}>
                 <Plus size={14} />
               </button>
             </th>
@@ -370,8 +371,8 @@ export function TableView({ ctx }: { ctx: Ctx }) {
                         <button type="button" className="coll-title-link" tabIndex={-1} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)} title={t("coll.openHint", { mod: modLabel() })}>
                           {row.title}
                         </button>
-                        <button type="button" className="coll-open" tabIndex={-1} aria-label={`${row.title} öffnen`} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)}>
-                          <SquareArrowOutUpRight size={12} /> Öffnen
+                        <button type="button" className="coll-open" tabIndex={-1} aria-label={t("coll.openName", { name: row.title })} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)}>
+                          <SquareArrowOutUpRight size={12} /> {t("links.open")}
                         </button>
                       </span>
                     ) : (
@@ -389,10 +390,10 @@ export function TableView({ ctx }: { ctx: Ctx }) {
           {!shown.length && (
             <tr className="coll-empty-row">
               <td colSpan={cols.length + 1}>
-                <span className="coll-empty-text">{ctx.rows.length ? "Keine Seite passt zu den Filtern." : "Noch keine Unterseiten."}</span>
+                <span className="coll-empty-text">{ctx.rows.length ? t("coll.noMatch") : t("coll.noSubpages")}</span>
                 {ctx.rows.length > 0 && (
                   <button type="button" className="coll-link-btn" onClick={() => ctx.setView({ ...view, filters: [] })}>
-                    Filter entfernen
+                    {t("coll.filterRemove")}
                   </button>
                 )}
               </td>
@@ -401,7 +402,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
           <tr className="coll-new-row">
             <td colSpan={cols.length + 1}>
               <button type="button" className="coll-new" onClick={addRow}>
-                <Plus size={13} /> Neue Seite
+                <Plus size={13} /> {t("ribbon.newPage")}
               </button>
             </td>
           </tr>

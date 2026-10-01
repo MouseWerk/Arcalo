@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { drawingTitle, isDrawingName, lastDrawingEditor } from "./drawing";
+import { t } from "../lib/i18n";
 
 const DrawingEditor = lazy(() => {
   // Excalidraw loads its fonts from here instead of a CDN (copied by scripts/excalidraw-assets.mjs).
@@ -28,7 +29,7 @@ export function openDrawing(name: string) {
   }
   const close = () => root?.render(null);
   root.render(
-    <Suspense fallback={<div className="drawing-overlay drawing-loading" role="dialog" aria-label="Zeichnung wird geladen">Zeichnung wird geladen…</div>}>
+    <Suspense fallback={<div className="drawing-overlay drawing-loading" role="dialog" aria-label={t("draw.loading")}>{t("draw.loadingDots")}</div>}>
       <DrawingEditor key={`${base}-${Date.now()}`} name={base} onClose={close} />
     </Suspense>,
   );
@@ -42,7 +43,7 @@ export async function insertDrawing(editor: Editor) {
     editor.chain().focus().insertContent({ type: "drawingEmbed", attrs: { name: saved.name } }).run();
     openDrawing(saved.name);
   } catch (e) {
-    useApp.getState().error("Zeichnung nicht angelegt", e);
+    useApp.getState().error(t("draw.notCreated"), e);
   }
 }
 
@@ -51,7 +52,7 @@ export function insertDrawingInActiveNote() {
   const dom = document.querySelector<HTMLElement & { editor?: Editor }>(".pane.active .ProseMirror");
   const editor = dom?.editor && !dom.editor.isDestroyed ? dom.editor : lastDrawingEditor();
   if (!editor) {
-    useApp.getState().toast({ tone: "warning", title: "Keine Notiz geöffnet", detail: "Zeichnungen werden in die aktuelle Notiz eingefügt." });
+    useApp.getState().toast({ tone: "warning", title: t("draw.noNote"), detail: t("draw.noNoteDetail") });
     return;
   }
   void insertDrawing(editor);

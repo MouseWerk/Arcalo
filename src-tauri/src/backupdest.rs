@@ -23,6 +23,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, devlog, lock};
+use annalo_core::{tr, trf};
 
 /// State of the destinations: their status, the copies running now and the worker's inbox.
 #[derive(Default)]
@@ -98,10 +99,12 @@ pub fn apply_pending_restore(dir: &Path) -> Option<datadir::Notice> {
             devlog::warn("backup", format!("database restored from {from}"));
             Some(datadir::Notice::titled(
                 "info",
-                "Sicherung wiederhergestellt",
-                format!(
+                tr!("Sicherung wiederhergestellt", "Backup restored"),
+                trf!(
                     "Die Sicherung {from} wurde wiederhergestellt. Der vorherige Stand liegt als \
-                     workspace.db.before-restore-… im Datenordner."
+                     workspace.db.before-restore-… im Datenordner.",
+                    "The backup {from} was restored. The previous state is in the data folder as \
+                     workspace.db.before-restore-…."
                 ),
             ))
         }
@@ -109,8 +112,11 @@ pub fn apply_pending_restore(dir: &Path) -> Option<datadir::Notice> {
             devlog::error("backup", format!("restore failed: {}", e.detail()));
             Some(datadir::Notice::titled(
                 "error",
-                "Wiederherstellen fehlgeschlagen",
-                format!("Die gewählte Sicherung konnte nicht eingesetzt werden: {e}"),
+                tr!("Wiederherstellen fehlgeschlagen", "Restoring failed"),
+                trf!(
+                    "Die gewählte Sicherung konnte nicht eingesetzt werden: {e}",
+                    "The chosen backup could not be put in place: {e}"
+                ),
             ))
         }
     }
@@ -442,7 +448,11 @@ fn remote_list(list: Vec<Destination>) -> RemoteList {
                 let p2 = path.clone();
                 let res = dest::with_timeout(dest::LIST_TIMEOUT, move || dest::list_remote(&p2));
                 let res = match res {
-                    None => Err(Failure::new(Problem::Timeout, format!("Zeitüberschreitung bei {}", d.path), &d.path)),
+                    None => Err(Failure::new(
+                        Problem::Timeout,
+                        trf!("Zeitüberschreitung bei {}", "Timed out at {}", d.path),
+                        &d.path,
+                    )),
                     Some(Err(e)) => Err(Failure::of(&e, &path)),
                     Some(Ok(l)) => Ok(l),
                 };
@@ -493,7 +503,11 @@ pub async fn backup_restore(app: AppHandle, path: String) -> Result<Staged> {
     };
     let known = file.parent() == Some(local.as_path()) || settings.backup_targets.destinations.iter().any(in_dest);
     if !known || !name.starts_with("annalo-") || !name.ends_with(".db") {
-        let f = Failure::new(Problem::Invalid, format!("Keine Sicherung von Annalo: {}", file.display()), &path);
+        let f = Failure::new(
+            Problem::Invalid,
+            trf!("Keine Sicherung von Annalo: {}", "Not an Annalo backup: {}", file.display()),
+            &path,
+        );
         return Ok(Staged { ok: false, verified: false, failure: Some(f) });
     }
     let data_dir = state.data_dir.clone();

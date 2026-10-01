@@ -40,23 +40,24 @@ async function openDroppedFiles(files: File[], paneId: string) {
   const s = useApp.getState();
   const pdfs = files.filter((f) => isPdfName(f.name));
   if (pdfs.length < files.length)
-    s.toast({ tone: "info", title: "Nur PDFs öffnen sich im Tab", detail: "Andere Dateien in eine Notiz ziehen, um sie dort einzufügen." });
+    s.toast({ tone: "info", title: t("ws.onlyPdf"), detail: t("ws.onlyPdfDetail") });
   for (const file of pdfs) {
     try {
       const saved = await storeFile(file);
       s.focusPane(paneId);
       s.openTab({ kind: "pdf", tag: saved.name }, { newTab: true });
     } catch (e) {
-      s.error(`„${file.name}“ ließ sich nicht öffnen`, e);
+      s.error(t("ws.openFailed", { name: file.name }), e);
     }
   }
 }
-import { useT } from "../lib/i18n";
+import { t, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 
 const MIN_PANE = 280;
 
 export function Workspace() {
+  useT();
   const panes = useApp((s) => s.panes);
   const sizes = useApp((s) => s.paneSizes);
   const activePaneId = useApp((s) => s.activePaneId);
@@ -82,7 +83,7 @@ export function Workspace() {
         <Fragment key={p.id}>
           {i > 0 && (
             <Resizer
-              label="Bereichsbreite"
+              label={t("ws.paneWidth")}
               className="pane-resizer"
               onResize={(dx) => resize(i, dx)}
               onEnd={() => (drag.current = null)}
@@ -97,7 +98,8 @@ export function Workspace() {
 }
 
 function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: number; active: boolean; last: boolean; multi: boolean }) {
-  const tab = pane.tabs.find((t) => t.id === pane.activeTabId) ?? null;
+  useT();
+  const tab = pane.tabs.find((x) => x.id === pane.activeTabId) ?? null;
   const s = useApp.getState;
   // A tab dragged from another pane can be dropped onto this pane's content.
   const [dropHere, setDropHere] = useState(false);
@@ -139,7 +141,7 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
       style={{ flexGrow: size, flexBasis: 0 }}
       onMouseDownCapture={() => s().focusPane(pane.id)}
       onFocusCapture={() => s().focusPane(pane.id)}
-      aria-label="Bereich"
+      aria-label={t("ws.pane")}
     >
       <PaneTabs pane={pane} last={last} />
       <div className="pane-content" key={tab ? `${tab.id}:${tab.kind}:${tab.pageId ?? tab.tag ?? ""}` : "home"}>
@@ -174,7 +176,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
       );
     case "pdf":
       return (
-        <Suspense fallback={<div className="pdf-message pdf-tab-loading">PDF wird geladen…</div>}>
+        <Suspense fallback={<div className="pdf-message pdf-tab-loading">{t("ws.pdfLoading")}</div>}>
           <PdfPane key={tab.tag} name={tab.tag!} onClose={() => useApp.getState().closeTab(tab.id)} />
         </Suspense>
       );

@@ -15,14 +15,16 @@ import { keys } from "../lib/shortcut";
 import { slashItems, type SlashOptions } from "./extensions";
 import { changeSelectionCase, clearFormatting, dedupeSelectedLines, moveBlock, sortSelectedLines, statsText, textStats } from "./tools";
 import { useApp } from "../store/app";
+import { fmtDate, int, time } from "../lib/format";
+import { useT, withLabel } from "../lib/i18n";
 
 type Block = "paragraph" | "h1" | "h2" | "h3" | "h4";
-const BLOCKS: { value: Block; label: string }[] = [
-  { value: "paragraph", label: "Text" },
-  { value: "h1", label: "Überschrift 1" },
-  { value: "h2", label: "Überschrift 2" },
-  { value: "h3", label: "Überschrift 3" },
-  { value: "h4", label: "Überschrift 4" },
+const BLOCKS: { value: Block; readonly label: string }[] = [
+  withLabel({ value: "paragraph" as Block }, "slash.text"),
+  withLabel({ value: "h1" as Block }, "slash.h1"),
+  withLabel({ value: "h2" as Block }, "slash.h2"),
+  withLabel({ value: "h3" as Block }, "slash.h3"),
+  withLabel({ value: "h4" as Block }, "tb.h4"),
 ];
 
 /** Width of the „Weitere Formatierung“ button with its group separator. */
@@ -30,6 +32,7 @@ const MORE_W = 38;
 const MAX_LEVEL = 6;
 
 export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind: (replace: boolean) => void; onAi: () => void }) {
+  const t = useT();
   const [menu, , openMenuAt] = useMenu();
   const [url, setUrl] = useState<string | null>(null);
   // In the header row: groups that do not fit move into „Weitere Formatierung“, the least used
@@ -125,39 +128,41 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
 
   const toolsMenu = (): MenuEntry[] => {
     const toast = useApp.getState().toast;
+    const needLines = () => toast({ tone: "info", title: t("tb.needLines") });
+    const now = new Date();
     return [
-      { label: "Suchen", icon: Replace, shortcut: keys("Mod F"), onSelect: () => onFind(false) },
-      { label: "Suchen und ersetzen", icon: Replace, shortcut: keys("Mod H"), onSelect: () => onFind(true) },
+      { label: t("tb.find"), icon: Replace, shortcut: keys("Mod F"), onSelect: () => onFind(false) },
+      { label: t("tb.replace"), icon: Replace, shortcut: keys("Mod H"), onSelect: () => onFind(true) },
       "separator",
       {
-        label: "Groß-/Kleinschreibung",
+        label: t("tb.case"),
         icon: CaseSensitive,
         disabled: st.empty,
         submenu: [
-          { label: "GROSSBUCHSTABEN", onSelect: () => changeSelectionCase(editor, "upper") },
-          { label: "kleinbuchstaben", onSelect: () => changeSelectionCase(editor, "lower") },
-          { label: "Jedes Wort Groß", onSelect: () => changeSelectionCase(editor, "title") },
+          { label: t("tb.upper"), onSelect: () => changeSelectionCase(editor, "upper") },
+          { label: t("tb.lower"), onSelect: () => changeSelectionCase(editor, "lower") },
+          { label: t("tb.title"), onSelect: () => changeSelectionCase(editor, "title") },
         ],
       },
-      { label: "Zeilen sortieren A–Z", icon: ArrowDownAZ, onSelect: () => sortSelectedLines(editor) || toast({ tone: "info", title: "Mehrere Zeilen oder Listenpunkte markieren" }) },
-      { label: "Zeilen sortieren Z–A", icon: ArrowUpAZ, onSelect: () => sortSelectedLines(editor, true) || toast({ tone: "info", title: "Mehrere Zeilen oder Listenpunkte markieren" }) },
-      { label: "Doppelte Zeilen entfernen", icon: ListX, onSelect: () => dedupeSelectedLines(editor) || toast({ tone: "info", title: "Mehrere Zeilen oder Listenpunkte markieren" }) },
+      { label: t("tb.sortAz"), icon: ArrowDownAZ, onSelect: () => sortSelectedLines(editor) || needLines() },
+      { label: t("tb.sortZa"), icon: ArrowUpAZ, onSelect: () => sortSelectedLines(editor, true) || needLines() },
+      { label: t("tb.dedupe"), icon: ListX, onSelect: () => dedupeSelectedLines(editor) || needLines() },
       "separator",
-      { label: "Block nach oben", icon: MoveUp, shortcut: keys("Alt ArrowUp"), onSelect: () => moveBlock(editor, -1) },
-      { label: "Block nach unten", icon: MoveDown, shortcut: keys("Alt ArrowDown"), onSelect: () => moveBlock(editor, 1) },
-      { label: "Datum und Uhrzeit einfügen", icon: Clock, onSelect: () => c().insertContent(new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "") + " ").run() },
-      { label: "Formatierung entfernen", icon: Eraser, onSelect: () => clearFormatting(editor) },
+      { label: t("tb.blockUp"), icon: MoveUp, shortcut: keys("Alt ArrowUp"), onSelect: () => moveBlock(editor, -1) },
+      { label: t("tb.blockDown"), icon: MoveDown, shortcut: keys("Alt ArrowDown"), onSelect: () => moveBlock(editor, 1) },
+      { label: t("tb.dateTime"), icon: Clock, onSelect: () => c().insertContent(`${fmtDate(now)} ${time(now.toISOString())} `).run() },
+      { label: t("tb.clearFormat"), icon: Eraser, onSelect: () => clearFormatting(editor) },
       "separator",
       {
-        label: "Statistik",
+        label: t("tb.stats"),
         icon: BarChart3,
         onSelect: () => {
           const { text, selection } = statsText(editor);
           const s = textStats(text);
           toast({
             tone: "info",
-            title: `${s.words.toLocaleString("de-DE")} Wörter${selection ? " markiert" : ""}`,
-            detail: `${s.chars.toLocaleString("de-DE")} Zeichen (${s.charsNoSpaces.toLocaleString("de-DE")} ohne Leerzeichen) · ${s.paragraphs} Absätze · Lesezeit ${s.readingMinutes} min`,
+            title: selection ? t("tb.wordsSelected", { n: s.words, count: int(s.words) }) : t("tb.words", { n: s.words, count: int(s.words) }),
+            detail: t("tb.statsDetail", { chars: int(s.chars), noSpaces: int(s.charsNoSpaces), paragraphs: s.paragraphs, minutes: s.readingMinutes }),
           });
         },
       },
@@ -171,35 +176,35 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
       out.push(...items);
     };
     if (!shown(5))
-      group([{ label: "Absatzformat", icon: Heading, submenu: BLOCKS.map((b) => ({ label: b.label, checked: st.block === b.value, onSelect: () => setBlock(b.value) })) }]);
+      group([{ label: t("tb.blockFormat"), icon: Heading, submenu: BLOCKS.map((b) => ({ label: b.label, checked: st.block === b.value, onSelect: () => setBlock(b.value) })) }]);
     if (!shown(6))
       group([
-        { label: "Fett", icon: Bold, shortcut: keys("Mod B"), checked: st.bold, onSelect: () => c().toggleBold().run() },
-        { label: "Kursiv", icon: Italic, shortcut: keys("Mod I"), checked: st.italic, onSelect: () => c().toggleItalic().run() },
+        { label: t("tb.bold"), icon: Bold, shortcut: keys("Mod B"), checked: st.bold, onSelect: () => c().toggleBold().run() },
+        { label: t("tb.italic"), icon: Italic, shortcut: keys("Mod I"), checked: st.italic, onSelect: () => c().toggleItalic().run() },
       ]);
     if (!shown(4))
       group([
-        { label: "Rückgängig", icon: Undo2, shortcut: keys("Mod Z"), disabled: !st.canUndo, onSelect: () => c().undo().run() },
-        { label: "Wiederholen", icon: Redo2, shortcut: keys("Mod Shift Z"), disabled: !st.canRedo, onSelect: () => c().redo().run() },
+        { label: t("tb.undo"), icon: Undo2, shortcut: keys("Mod Z"), disabled: !st.canUndo, onSelect: () => c().undo().run() },
+        { label: t("tb.redo"), icon: Redo2, shortcut: keys("Mod Shift Z"), disabled: !st.canRedo, onSelect: () => c().redo().run() },
       ]);
     if (!shown(3))
       group([
-        { label: "Durchgestrichen", icon: Strikethrough, checked: st.strike, onSelect: () => c().toggleStrike().run() },
-        { label: "Hervorheben", icon: Highlighter, checked: st.highlight, onSelect: () => c().toggleHighlight().run() },
-        { label: "Code", icon: Code, shortcut: keys("Mod E"), checked: st.code, onSelect: () => c().toggleCode().run() },
-        { label: st.link ? "Weblink entfernen" : "Weblink", icon: SquareArrowOutUpRight, onSelect: () => (st.link ? c().unsetLink().run() : setUrl("https://")) },
-        { label: "Seitenlink [[ ]]", icon: Link2, onSelect: () => c().insertContent("[[").run() },
+        { label: t("tb.strike"), icon: Strikethrough, checked: st.strike, onSelect: () => c().toggleStrike().run() },
+        { label: t("slash.mark"), icon: Highlighter, checked: st.highlight, onSelect: () => c().toggleHighlight().run() },
+        { label: t("tb.code"), icon: Code, shortcut: keys("Mod E"), checked: st.code, onSelect: () => c().toggleCode().run() },
+        { label: st.link ? t("tb.unlink") : t("tb.weblink"), icon: SquareArrowOutUpRight, onSelect: () => (st.link ? c().unsetLink().run() : setUrl("https://")) },
+        { label: t("tb.pageLink"), icon: Link2, onSelect: () => c().insertContent("[[").run() },
       ]);
     if (!shown(2))
       group([
-        { label: "Zitat", icon: Quote, checked: st.quote, onSelect: () => c().toggleBlockquote().run() },
-        { label: "Codeblock", icon: SquareCode, checked: st.codeBlock, onSelect: () => c().toggleCodeBlock().run() },
+        { label: t("slash.quote"), icon: Quote, checked: st.quote, onSelect: () => c().toggleBlockquote().run() },
+        { label: t("slash.code"), icon: SquareCode, checked: st.codeBlock, onSelect: () => c().toggleCodeBlock().run() },
       ]);
     if (!shown(1))
       group([
-        { label: "Aufzählung", icon: List, checked: st.bullet, onSelect: () => c().toggleBulletList().run() },
-        { label: "Nummerierte Liste", icon: ListOrdered, checked: st.ordered, onSelect: () => c().toggleOrderedList().run() },
-        { label: "Aufgabenliste", icon: ListChecks, checked: st.task, onSelect: () => c().toggleTaskList().run() },
+        { label: t("slash.ul"), icon: List, checked: st.bullet, onSelect: () => c().toggleBulletList().run() },
+        { label: t("slash.ol"), icon: ListOrdered, checked: st.ordered, onSelect: () => c().toggleOrderedList().run() },
+        { label: t("slash.todo"), icon: ListChecks, checked: st.task, onSelect: () => c().toggleTaskList().run() },
       ]);
     return out;
   };
@@ -209,7 +214,7 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
       ref={bar}
       className="editor-toolbar"
       role="toolbar"
-      aria-label="Formatierung"
+      aria-label={t("tb.formatting")}
       // Last resort when even the essentials do not fit: the wheel scrolls it sideways.
       onWheel={(e) => {
         const el = e.currentTarget;
@@ -217,29 +222,29 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
       }}
       onMouseDown={(e) => (e.target as HTMLElement).closest("button") && e.preventDefault()}>
       {shown(4) && <div className="tb-group" data-collapse={4}>
-        <IconButton icon={Undo2} label={`Rückgängig (${keys("Mod Z")})`} disabled={!st.canUndo} onClick={() => c().undo().run()} size={28} iconSize={15} />
-        <IconButton icon={Redo2} label={`Wiederholen (${keys("Mod Shift Z")})`} disabled={!st.canRedo} onClick={() => c().redo().run()} size={28} iconSize={15} />
+        <IconButton icon={Undo2} label={`${t("tb.undo")} (${keys("Mod Z")})`} disabled={!st.canUndo} onClick={() => c().undo().run()} size={28} iconSize={15} />
+        <IconButton icon={Redo2} label={`${t("tb.redo")} (${keys("Mod Shift Z")})`} disabled={!st.canRedo} onClick={() => c().redo().run()} size={28} iconSize={15} />
       </div>}
       {shown(5) && <div className="tb-group" data-collapse={5}>
-        <Select className="tb-select" aria-label="Absatzformat" value={st.block} options={BLOCKS} onChange={(e) => setBlock(e.target.value as Block)} />
+        <Select className="tb-select" aria-label={t("tb.blockFormat")} value={st.block} options={BLOCKS} onChange={(e) => setBlock(e.target.value as Block)} />
       </div>}
       {shown(6) && <div className="tb-group" data-collapse={6}>
-        <IconButton icon={Bold} label={`Fett (${keys("Mod B")})`} active={st.bold} onClick={() => c().toggleBold().run()} size={28} iconSize={15} />
-        <IconButton icon={Italic} label={`Kursiv (${keys("Mod I")})`} active={st.italic} onClick={() => c().toggleItalic().run()} size={28} iconSize={15} />
+        <IconButton icon={Bold} label={`${t("tb.bold")} (${keys("Mod B")})`} active={st.bold} onClick={() => c().toggleBold().run()} size={28} iconSize={15} />
+        <IconButton icon={Italic} label={`${t("tb.italic")} (${keys("Mod I")})`} active={st.italic} onClick={() => c().toggleItalic().run()} size={28} iconSize={15} />
       </div>}
       {shown(3) && <div className="tb-group" data-collapse={3}>
-        <IconButton icon={Strikethrough} label="Durchgestrichen" active={st.strike} onClick={() => c().toggleStrike().run()} size={28} iconSize={15} />
-        <IconButton icon={Highlighter} label="Hervorheben" active={st.highlight} onClick={() => c().toggleHighlight().run()} size={28} iconSize={15} />
-        <IconButton icon={Code} label={`Code (${keys("Mod E")})`} active={st.code} onClick={() => c().toggleCode().run()} size={28} iconSize={15} />
-        <IconButton icon={SquareArrowOutUpRight} label={st.link ? "Weblink entfernen" : "Weblink"} active={st.link} onClick={() => (st.link ? c().unsetLink().run() : setUrl("https://"))} size={28} iconSize={15} />
-        <IconButton icon={Link2} label="Seitenlink [[ ]]" onClick={() => c().insertContent("[[").run()} size={28} iconSize={15} />
+        <IconButton icon={Strikethrough} label={t("tb.strike")} active={st.strike} onClick={() => c().toggleStrike().run()} size={28} iconSize={15} />
+        <IconButton icon={Highlighter} label={t("slash.mark")} active={st.highlight} onClick={() => c().toggleHighlight().run()} size={28} iconSize={15} />
+        <IconButton icon={Code} label={`${t("tb.code")} (${keys("Mod E")})`} active={st.code} onClick={() => c().toggleCode().run()} size={28} iconSize={15} />
+        <IconButton icon={SquareArrowOutUpRight} label={st.link ? t("tb.unlink") : t("tb.weblink")} active={st.link} onClick={() => (st.link ? c().unsetLink().run() : setUrl("https://"))} size={28} iconSize={15} />
+        <IconButton icon={Link2} label={t("tb.pageLink")} onClick={() => c().insertContent("[[").run()} size={28} iconSize={15} />
       </div>}
         {url !== null && (
           <input
             className="input tb-url"
             autoFocus
             value={url}
-            aria-label="Adresse des Weblinks"
+            aria-label={t("tb.weblinkUrl")}
             onChange={(e) => setUrl(e.target.value)}
             onBlur={() => setUrl(null)}
             onKeyDown={(e) => {
@@ -249,33 +254,33 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
           />
         )}
       {shown(1) && <div className="tb-group" data-collapse={1}>
-        <IconButton icon={List} label="Aufzählung" active={st.bullet} onClick={() => c().toggleBulletList().run()} size={28} iconSize={15} />
-        <IconButton icon={ListOrdered} label="Nummerierte Liste" active={st.ordered} onClick={() => c().toggleOrderedList().run()} size={28} iconSize={15} />
-        <IconButton icon={ListChecks} label="Aufgabenliste" active={st.task} onClick={() => c().toggleTaskList().run()} size={28} iconSize={15} />
+        <IconButton icon={List} label={t("slash.ul")} active={st.bullet} onClick={() => c().toggleBulletList().run()} size={28} iconSize={15} />
+        <IconButton icon={ListOrdered} label={t("slash.ol")} active={st.ordered} onClick={() => c().toggleOrderedList().run()} size={28} iconSize={15} />
+        <IconButton icon={ListChecks} label={t("slash.todo")} active={st.task} onClick={() => c().toggleTaskList().run()} size={28} iconSize={15} />
       </div>}
       {shown(2) && <div className="tb-group" data-collapse={2}>
-        <IconButton icon={Quote} label="Zitat" active={st.quote} onClick={() => c().toggleBlockquote().run()} size={28} iconSize={15} />
-        <IconButton icon={SquareCode} label="Codeblock" active={st.codeBlock} onClick={() => c().toggleCodeBlock().run()} size={28} iconSize={15} />
+        <IconButton icon={Quote} label={t("slash.quote")} active={st.quote} onClick={() => c().toggleBlockquote().run()} size={28} iconSize={15} />
+        <IconButton icon={SquareCode} label={t("slash.code")} active={st.codeBlock} onClick={() => c().toggleCodeBlock().run()} size={28} iconSize={15} />
       </div>}
       {level > 0 && (
         <div className="tb-group">
-          <IconButton icon={MoreHorizontal} label="Weitere Formatierung" aria-haspopup="menu" onClick={(e) => openMenuAt(e, moreMenu())} size={28} iconSize={15} />
+          <IconButton icon={MoreHorizontal} label={t("tb.more")} aria-haspopup="menu" onClick={(e) => openMenuAt(e, moreMenu())} size={28} iconSize={15} />
         </div>
       )}
       <div className="tb-group">
-        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Einfügen" data-tooltip="Einfügen" onClick={(e) => openMenuAt(e, insertMenu())}>
+        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label={t("slash.sec.insert")} data-tooltip={t("slash.sec.insert")} onClick={(e) => openMenuAt(e, insertMenu())}>
           <Plus size={15} strokeWidth={1.75} aria-hidden />
-          <span className="tb-label">Einfügen</span>
+          <span className="tb-label">{t("slash.sec.insert")}</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />
         </button>
-        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label="Werkzeuge" data-tooltip="Werkzeuge" onClick={(e) => openMenuAt(e, toolsMenu())}>
+        <button type="button" className="tb-menu" aria-haspopup="menu" aria-label={t("tb.tools")} data-tooltip={t("tb.tools")} onClick={(e) => openMenuAt(e, toolsMenu())}>
           <Wrench size={15} strokeWidth={1.75} aria-hidden />
-          <span className="tb-label">Werkzeuge</span>
+          <span className="tb-label">{t("tb.tools")}</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />
         </button>
-        <button type="button" className="tb-menu tb-ai" onClick={onAi} data-tooltip={`Mit KI bearbeiten (${keys("Mod J")})`}>
+        <button type="button" className="tb-menu tb-ai" onClick={onAi} data-tooltip={t("tb.aiEdit", { keys: keys("Mod J") })}>
           <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-          <span className="tb-label">KI</span>
+          <span className="tb-label">{t("slash.sec.ai")}</span>
         </button>
       </div>
       {menu}

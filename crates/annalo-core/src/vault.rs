@@ -7,6 +7,7 @@
 //! Images are copied into the attachments folder under their file name, so
 //! `![[bild.png]]` embeds keep working; export writes them to `attachments/`.
 
+use crate::{tr, trf};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,7 +55,7 @@ fn is_md(p: &Path) -> bool {
 }
 
 fn stem(p: &Path) -> String {
-    p.file_stem().and_then(|s| s.to_str()).unwrap_or("Ohne Titel").to_owned()
+    p.file_stem().and_then(|s| s.to_str()).unwrap_or(tr!("Ohne Titel", "Untitled")).to_owned()
 }
 
 /// Windows-1252 (the „ANSI“ of German Windows) for the bytes 0x80–0x9F; the others are Latin-1.
@@ -80,16 +81,21 @@ fn read_text(p: &Path, rel: &Path, warnings: &mut Vec<String>) -> Result<String>
     let bytes = fs::read(p).at(p)?;
     let (text, converted) = decode_text(&bytes);
     if converted {
-        warnings.push(format!("{}: kein UTF-8, als Windows-1252 gelesen", rel.display()));
+        warnings.push(trf!(
+            "{}: kein UTF-8, als Windows-1252 gelesen",
+            "{}: not UTF-8, read as Windows-1252",
+            rel.display()
+        ));
     }
     let mut text = text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n");
     if text.len() > MAX_NOTE_BYTES {
         let mb = text.len() / 1024 / 1024;
         text.truncate(text.floor_char_boundary(MAX_NOTE_BYTES));
-        text.push_str(&format!(
-            "\n\n> Gekürzt beim Import: die Datei ist {mb} MB groß, der Rest steht nur im Vault.\n"
+        text.push_str(&trf!(
+            "\n\n> Gekürzt beim Import: die Datei ist {mb} MB groß, der Rest steht nur im Vault.\n",
+            "\n\n> Shortened on import: the file is {mb} MB, the rest is only in the vault.\n"
         ));
-        warnings.push(format!("{}: {mb} MB groß, gekürzt auf 2 MB", rel.display()));
+        warnings.push(trf!("{}: {mb} MB groß, gekürzt auf 2 MB", "{}: {mb} MB, shortened to 2 MB", rel.display()));
     }
     // Obsidian Tasks marks due dates with a calendar symbol; Annalo writes `due:`.
     Ok(text.replace(&format!("{} ", crate::tasks::OBSIDIAN_DUE), "due:").replace(crate::tasks::OBSIDIAN_DUE, "due:"))
@@ -223,7 +229,7 @@ impl Walk<'_> {
                 // to the notes of this folder.
                 self.files_only(path, &here)?;
             } else if path.is_dir() {
-                let title = path.file_name().and_then(|n| n.to_str()).unwrap_or("Ordner").to_owned();
+                let title = path.file_name().and_then(|n| n.to_str()).unwrap_or(tr!("Ordner", "Folder")).to_owned();
                 let note = dir.join(format!("{title}.md"));
                 let content = if is_plain_file(&note) {
                     self.report.pages += 1;
@@ -346,7 +352,7 @@ fn file_name(title: &str) -> String {
     if RESERVED.contains(&stem.as_str()) {
         cleaned.push('_');
     }
-    if cleaned.is_empty() { "Ohne Titel".into() } else { cleaned }
+    if cleaned.is_empty() { tr!("Ohne Titel", "Untitled").into() } else { cleaned }
 }
 
 /// Where the export puts one page, relative to the export folder (`/` separated).
@@ -699,7 +705,7 @@ mod tests {
     #[test]
     fn sanitizes_file_names() {
         assert_eq!(file_name("A/B: C?"), "A-B- C-");
-        assert_eq!(file_name("  ...  "), "Ohne Titel");
+        assert_eq!(file_name("  ...  "), tr!("Ohne Titel", "Untitled"));
     }
 
     #[test]

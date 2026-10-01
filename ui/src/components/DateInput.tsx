@@ -6,6 +6,7 @@ import { CalendarDays } from "lucide-react";
 import { fmtDate, parseDayInput, parseTimeInput } from "../lib/format";
 import { pickDate } from "./CalendarPopover";
 import { IconButton } from "./ui";
+import { t } from "../lib/i18n";
 
 type Rest = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type">;
 
@@ -28,7 +29,7 @@ export function DateInput({ value, onChange, className = "", ...rest }: Rest & {
       <input
         {...rest}
         value={text}
-        placeholder="TT.MM.JJJJ"
+        placeholder={t("date.placeholder")}
         spellCheck={false}
         aria-invalid={invalid || undefined}
         onChange={(e) => {
@@ -45,7 +46,7 @@ export function DateInput({ value, onChange, className = "", ...rest }: Rest & {
           }
         }}
       />
-      <IconButton icon={CalendarDays} label="Kalender" size="sm" tabIndex={-1} onClick={(e) => pick(e.currentTarget.parentElement!)} />
+      <IconButton icon={CalendarDays} label={t("tabs.calendar")} size="sm" tabIndex={-1} onClick={(e) => pick(e.currentTarget.parentElement!)} />
     </span>
   );
 }

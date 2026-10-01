@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // Proxy auto-config (PAC): the standard helper functions and the evaluation of
 // `FindProxyForURL`. PAC files are JavaScript; the core has no JS engine, so the UI runs them
 // in a sandboxed frame (`annalo-pac:` scheme, opaque origin, no IPC) and hands the answers
@@ -179,7 +180,7 @@ async function sandbox() {
 /** Evaluates `FindProxyForURL` for each URL in the sandboxed frame (5 s timeout each). */
 export async function evaluatePacSandboxed(pac: string, urls: string[]): Promise<string[]> {
   const f = await sandbox();
-  await Promise.race([f.ready, new Promise((_, rej) => setTimeout(() => rej(new Error("PAC-Auswertung nicht verfügbar")), 5000))]);
+  await Promise.race([f.ready, new Promise((_, rej) => setTimeout(() => rej(new Error(t("net.pacUnavailable"))), 5000))]);
   return Promise.all(
     urls.map(
       (url) =>
@@ -187,7 +188,7 @@ export async function evaluatePacSandboxed(pac: string, urls: string[]): Promise
           const id = nextId++;
           const timer = setTimeout(() => {
             f.waiters.delete(id);
-            reject(new Error("PAC-Auswertung dauert zu lange"));
+            reject(new Error(t("net.pacSlow")));
           }, 5000);
           f.waiters.set(id, {
             resolve: (v) => (clearTimeout(timer), resolve(v)),

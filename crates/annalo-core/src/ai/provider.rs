@@ -5,6 +5,7 @@
 //! header and (Ollama) a native model list and model download. Keys are not part of the
 //! settings: the desktop shell keeps one credential per provider id.
 
+use crate::trf;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -265,8 +266,9 @@ pub fn normalize(list: Vec<AiProvider>) -> Result<Vec<AiProvider>> {
         let lower = p.base_url.to_ascii_lowercase();
         if !(lower.starts_with("http://") || lower.starts_with("https://")) || reqwest::Url::parse(&p.base_url).is_err()
         {
-            return Err(Error::State(format!(
+            return Err(Error::State(trf!(
                 "Die Adresse von „{}“ muss mit http:// oder https:// beginnen (z. B. https://api.openai.com/v1)",
+                "The address of “{}” must start with http:// or https:// (e.g. https://api.openai.com/v1)",
                 p.name
             )));
         }

@@ -7,6 +7,8 @@
 import { Extension, Node, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+import { t } from "../lib/i18n";
+import { numberLocale } from "../lib/format";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
 
@@ -52,7 +54,7 @@ export function formatSize(bytes: number): string {
     v /= 1000;
     u++;
   }
-  return `${v.toLocaleString("de-DE", { maximumFractionDigits: v < 10 ? 1 : 0 })} ${units[u]}`;
+  return `${v.toLocaleString(numberLocale(), { maximumFractionDigits: v < 10 ? 1 : 0 })} ${units[u]}`;
 }
 
 // ------------------------------------------------------------- icons
@@ -173,7 +175,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
       dom.className = pdf ? "pdf-embed" : "file-embed";
       dom.contentEditable = "false";
       dom.dataset.file = name;
-      dom.title = pdf ? `${base} – klicken zum Ansehen` : `${base} – klicken zum Öffnen`;
+      dom.title = pdf ? t("file.clickView", { name: base }) : t("file.clickOpen", { name: base });
 
       const bar = document.createElement("span");
       bar.className = pdf ? "pdf-embed-bar" : "file-embed-bar";
@@ -199,7 +201,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
           if (!alive) return;
           bytes = n;
           dom.classList.toggle("is-missing", n == null);
-          if (n == null) meta.textContent = "Datei fehlt";
+          if (n == null) meta.textContent = t("file.missing");
           else showMeta();
         },
         () => {},
@@ -213,7 +215,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
         canvas.className = "pdf-embed-canvas";
         const status = document.createElement("span");
         status.className = "pdf-embed-status";
-        status.textContent = "Vorschau wird geladen…";
+        status.textContent = t("file.previewLoading");
         page.append(canvas, status);
         dom.append(page, bar);
         // pdf.js loads when the card scrolls into view, not with every note that has a PDF.
@@ -229,7 +231,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
             () => {
               if (!alive) return;
               dom.classList.add("is-failed");
-              status.textContent = bytes == null ? "Datei fehlt" : "Keine Vorschau möglich";
+              status.textContent = bytes == null ? t("file.missing") : t("file.noPreview");
             },
           );
         };

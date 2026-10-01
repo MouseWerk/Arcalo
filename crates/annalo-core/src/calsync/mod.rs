@@ -16,6 +16,7 @@ pub mod ics;
 pub mod outlook;
 pub mod tz;
 
+use crate::{tr, trf};
 use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -150,7 +151,7 @@ impl CalendarSettings {
             }
             s.name = s.name.trim().to_owned();
             if s.name.is_empty() {
-                s.name = format!("Kalender {}", i + 1);
+                s.name = trf!("Kalender {}", "Calendar {}", i + 1);
             }
             s.path = s.path.trim().to_owned();
             if s.kind == IcsKind::Url {
@@ -183,7 +184,7 @@ impl CalendarSettings {
         // `outlook_color` is the default calendar's color (older settings have only it).
         def.color = self.outlook_color.clone();
         if def.name.trim().is_empty() {
-            def.name = "Kalender".into();
+            def.name = tr!("Kalender", "Calendar").into();
         }
         let mut out = vec![def];
         for c in cals {
@@ -198,7 +199,7 @@ impl CalendarSettings {
             c.name = c.name.trim().to_owned();
             c.owner = c.owner.trim().to_owned();
             if c.name.is_empty() {
-                c.name = if c.owner.is_empty() { "Kalender".into() } else { c.owner.clone() };
+                c.name = if c.owner.is_empty() { tr!("Kalender", "Calendar").into() } else { c.owner.clone() };
             }
             c.color = c.color.trim().to_ascii_lowercase();
             if !valid_color(&c.color) {
@@ -310,6 +311,13 @@ pub struct NewEvent {
 
 /// Title shown instead of a private appointment's subject.
 pub const PRIVATE_TITLE: &str = "Privater Termin";
+/// The same in English.
+pub const PRIVATE_TITLE_EN: &str = "Private appointment";
+
+/// Whether `title` is the stand-in title of a private appointment (either language).
+pub fn is_private_title(title: &str) -> bool {
+    title == PRIVATE_TITLE || title == PRIVATE_TITLE_EN
+}
 
 /// What of an appointment is kept (Settings → Kalender).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,7 +344,7 @@ impl NewEvent {
             self.body = None;
         }
         if self.private && !p.private_details {
-            self.title = PRIVATE_TITLE.into();
+            self.title = tr!(PRIVATE_TITLE, PRIVATE_TITLE_EN).into();
             self.location.clear();
             self.organizer.clear();
             self.attendees.clear();
@@ -694,7 +702,13 @@ impl Database {
             )
             .optional()?
             .ok_or_else(|| {
-                Error::State("Der Termin ist nicht mehr im Kalender (inzwischen geändert oder gelöscht)".into())
+                Error::State(
+                    tr!(
+                        "Der Termin ist nicht mehr im Kalender (inzwischen geändert oder gelöscht)",
+                        "The appointment is no longer in the calendar (changed or deleted meanwhile)"
+                    )
+                    .into(),
+                )
             })
     }
 
@@ -799,7 +813,7 @@ impl Database {
             hit = pick(&format!("{from_marks} WHERE m.series = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &ev.event.uid)?
                 .map(|r| (r, HintBasis::Series));
         }
-        if hit.is_none() && !title.is_empty() && ev.event.title != PRIVATE_TITLE {
+        if hit.is_none() && !title.is_empty() && !is_private_title(&ev.event.title) {
             hit = pick(&format!("{from_marks} WHERE m.title = ?1 ORDER BY m.updated_at DESC LIMIT 1"), &title)?
                 .map(|r| (r, HintBasis::Subject));
             if hit.is_none() {
@@ -839,38 +853,49 @@ impl Database {
         let end = zone.to_wall(e.end);
         let date = start.date();
         let time = if e.all_day {
-            "ganztägig".to_owned()
+            tr!("ganztägig", "all day").to_owned()
         } else {
             format!("{}–{}", start.format("%H:%M"), end.format("%H:%M"))
         };
         let attendees = e.attendees.join(", ");
         let yaml = |v: &str| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
-        let mut front = vec![format!("datum: {}", date.format("%Y-%m-%d")), format!("uhrzeit: {}", yaml(&time))];
+        let k = crate::i18n::key;
+        let mut front =
+            vec![format!("{}: {}", k("datum"), date.format("%Y-%m-%d")), format!("{}: {}", k("uhrzeit"), yaml(&time))];
         if !e.location.is_empty() {
-            front.push(format!("ort: {}", yaml(&e.location)));
+            front.push(format!("{}: {}", k("ort"), yaml(&e.location)));
         }
         if !e.organizer.is_empty() {
-            front.push(format!("organisator: {}", yaml(&e.organizer)));
+            front.push(format!("{}: {}", k("organisator"), yaml(&e.organizer)));
         }
         if !attendees.is_empty() {
-            front.push(format!("teilnehmer: {}", yaml(&attendees)));
+            front.push(format!("{}: {}", k("teilnehmer"), yaml(&attendees)));
         }
         if let Some(h) = &hint {
-            front.push(format!("vorgang: {}", h.reference));
+            front.push(format!("{}: {}", k("vorgang"), h.reference));
         }
         let vars = crate::templates::TemplateVars { date, time: start.time(), title: e.title.clone() };
-        let template = self.list_templates()?.into_iter().find(|p| p.title.eq_ignore_ascii_case("Besprechung"));
+        // The template „Besprechung“ (or „Meeting“ in an English workspace).
+        let template = self
+            .list_templates()?
+            .into_iter()
+            .find(|p| MEETING_TEMPLATES.iter().any(|name| p.title.eq_ignore_ascii_case(name)));
         let body = match template {
             Some(t) => {
                 let mut b = self
                     .render_template(t.id, &vars)?
                     .replace("{{teilnehmer}}", &attendees)
+                    .replace("{{attendees}}", &attendees)
                     .replace("{{ort}}", &e.location)
-                    .replace("{{uhrzeit}}", &time);
+                    .replace("{{location}}", &e.location)
+                    .replace("{{uhrzeit}}", &time)
+                    .replace("{{hours}}", &time);
                 // An empty attendee list in the template is filled in.
                 if !e.attendees.is_empty() {
                     let list: String = e.attendees.iter().map(|a| format!("- {a}\n")).collect();
-                    for empty in ["## Teilnehmer\n\n- \n", "## Teilnehmer\n- \n"] {
+                    for empty in
+                        ["## Teilnehmer\n\n- \n", "## Teilnehmer\n- \n", "## Attendees\n\n- \n", "## Attendees\n- \n"]
+                    {
                         if let Some(at) = b.find(empty) {
                             let head = &empty[..empty.len() - 3];
                             b.replace_range(at..at + empty.len(), &format!("{head}{list}"));
@@ -879,42 +904,46 @@ impl Database {
                     }
                 }
                 if let Some(link) = &e.link {
-                    b = format!("[Besprechung beitreten]({link})\n\n{b}");
+                    b = trf!("[Besprechung beitreten]({link})\n\n{b}", "[Join the meeting]({link})\n\n{b}");
                 }
                 b
             }
             None => {
                 let mut b = format!("# {}\n\n", e.title);
-                b.push_str(&format!("{} · {time}", date.format("%d.%m.%Y")));
+                b.push_str(&format!("{} · {time}", date.format(tr!("%d.%m.%Y", "%Y-%m-%d"))));
                 if !e.location.is_empty() {
                     b.push_str(&format!(" · {}", e.location));
                 }
                 b.push_str("\n\n");
                 if let Some(link) = &e.link {
-                    b.push_str(&format!("[Besprechung beitreten]({link})\n\n"));
+                    b.push_str(&trf!("[Besprechung beitreten]({link})\n\n", "[Join the meeting]({link})\n\n"));
                 }
                 if !e.attendees.is_empty() {
-                    b.push_str("## Teilnehmer\n\n");
+                    b.push_str(tr!("## Teilnehmer\n\n", "## Attendees\n\n"));
                     for a in &e.attendees {
                         b.push_str(&format!("- {a}\n"));
                     }
                     b.push('\n');
                 }
-                b.push_str("## Agenda\n\n- \n\n## Notizen\n\n\n\n## Entscheidungen\n\n- \n\n## Aufgaben\n\n- [ ] \n");
+                b.push_str(tr!(
+                    "## Agenda\n\n- \n\n## Notizen\n\n\n\n## Entscheidungen\n\n- \n\n## Aufgaben\n\n- [ ] \n",
+                    "## Agenda\n\n- \n\n## Notes\n\n\n\n## Decisions\n\n- \n\n## Tasks\n\n- [ ] \n"
+                ));
                 b
             }
         };
         let content = format!("---\n{}\n---\n{body}", front.join("\n"));
         self.atomic(|| {
             let parent = match self.conn().query_row(
-                "SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL AND title = ?1 COLLATE NOCASE ORDER BY id LIMIT 1",
-                [MEETINGS_TITLE],
+                "SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL AND title IN (?1 COLLATE NOCASE, ?2 COLLATE NOCASE) \
+                 ORDER BY title COLLATE NOCASE = ?3 DESC, id LIMIT 1",
+                [MEETINGS_TITLE, MEETINGS_TITLE_EN, meetings_title()],
                 |r| r.get::<_, i64>(0),
             ).optional()? {
                 Some(id) => id,
-                None => self.create_page(None, MEETINGS_TITLE, Some("users"))?.id,
+                None => self.create_page(None, meetings_title(), Some("users"))?.id,
             };
-            let base = crate::notes::clean_title(&format!("{} {}", e.title, date.format("%d.%m.%Y")));
+            let base = crate::notes::clean_title(&format!("{} {}", e.title, date.format(tr!("%d.%m.%Y", "%Y-%m-%d"))));
             let mut title = base.clone();
             let mut n = 2;
             while self.page_by_title(&title)?.is_some() {
@@ -972,6 +1001,15 @@ pub fn dedupe(events: Vec<CalendarEvent>, sources: &[String]) -> Vec<CalendarEve
 
 /// Parent page of the meeting notes.
 pub const MEETINGS_TITLE: &str = "Besprechungen";
+/// The same page in an English workspace.
+pub const MEETINGS_TITLE_EN: &str = "Meetings";
+/// Names of the meeting note template.
+pub const MEETING_TEMPLATES: [&str; 2] = ["Besprechung", "Meeting"];
+
+/// The title a new meetings page gets (an existing one in the other language is used as it is).
+pub fn meetings_title() -> &'static str {
+    tr!(MEETINGS_TITLE, MEETINGS_TITLE_EN)
+}
 
 /// RFC 3339 in UTC with seconds (instance ids).
 pub(crate) fn instant_id(t: DateTime<Utc>) -> String {
@@ -1095,6 +1133,22 @@ mod tests {
         // A deleted entry no longer counts as booked.
         db.delete_time_entry(entry.id).unwrap();
         assert_eq!(db.calendar_event(&k1).unwrap().entry_id, None);
+    }
+
+    #[test]
+    fn meeting_notes_in_english_use_english_keys() {
+        crate::i18n::with_lang(crate::prefs::Language::En, || {
+            let db = Database::open_in_memory().unwrap();
+            db.calendar_replace(OUTLOOK, at(1, 0), at(30, 0), &[ev("m", "", 24, 8, "Sync")]).unwrap();
+            let zone = tz::Zone::named("Europe/Berlin").unwrap();
+            let (page, _) = db.calendar_meeting_note(&event_key(OUTLOOK, "m", ""), &zone).unwrap();
+            let content = db.page_doc(page.id).unwrap().content;
+            assert!(
+                content.starts_with("---\ndate: 2026-09-24\ntime: \"10:00–11:00\"\nlocation: \"Raum 1\""),
+                "{content}"
+            );
+            assert!(content.contains("attendees: \"Jörg, Zoë\""), "{content}");
+        });
     }
 
     #[test]

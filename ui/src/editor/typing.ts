@@ -5,6 +5,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { currentLang } from "../lib/i18n";
 
 export interface TypingPrefs {
   smartQuotes: boolean;
@@ -19,17 +20,19 @@ const OPENERS = /[\s([{—–/-]$/;
 
 /**
  * The typographic replacement for a typed `"` or `'` given the text before the caret in the
- * same block: „…“ and ‚…‘ (German), and ’ as apostrophe inside words.
+ * same block, in the display language: „…“ and ‚…‘ in German, “…” and ‘…’ in English, and ’ as
+ * apostrophe inside words.
  */
-export function smartQuote(ch: '"' | "'", before: string): string {
+export function smartQuote(ch: '"' | "'", before: string, lang: "de" | "en" = currentLang()): string {
   const atStart = before === "" || OPENERS.test(before);
-  if (ch === '"') return atStart ? "„" : "“";
-  if (atStart) return "‚";
-  // A letter before: apostrophe (geht’s), unless a ‚ is still open in this block.
-  const open = before.lastIndexOf("‚");
-  const close = Math.max(before.lastIndexOf("‘"), -1);
+  const [dOpen, dClose, sOpen, sClose] = lang === "en" ? ["“", "”", "‘", "’"] : ["„", "“", "‚", "‘"];
+  if (ch === '"') return atStart ? dOpen : dClose;
+  if (atStart) return sOpen;
+  // A letter before: apostrophe (geht’s), unless a single quote is still open in this block.
+  const open = before.lastIndexOf(sOpen);
+  const close = lang === "en" ? -1 : Math.max(before.lastIndexOf(sClose), -1);
   if (/[\p{L}\p{N}]$/u.test(before) && !(open > close)) return "’";
-  return "‘";
+  return sClose;
 }
 
 /** " - " typed as "space hyphen space" becomes " – " (en dash). */

@@ -2,6 +2,7 @@
 //! Secrets (the API keys of the AI providers) are deliberately not part of this struct;
 //! the desktop shell keeps them in the OS credential store.
 
+use crate::trf;
 use std::collections::{BTreeMap, HashMap};
 
 use rusqlite::{OptionalExtension, params};
@@ -673,7 +674,12 @@ impl Settings {
             }
             "locale" => self.locale = d.locale,
             "keyboard" => self.keymap = d.keymap,
-            other => return Err(crate::error::Error::State(format!("Unbekannter Abschnitt „{other}“"))),
+            other => {
+                return Err(crate::error::Error::State(trf!(
+                    "Unbekannter Abschnitt „{other}“",
+                    "Unknown section “{other}”"
+                )));
+            }
         }
         Ok(())
     }

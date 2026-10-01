@@ -48,7 +48,7 @@ import {
   wikiToken,
   type TargetChoice,
 } from "../lib/capture";
-import { fmtDate } from "../lib/format";
+import { fmtDate, time as clockTime } from "../lib/format";
 import { IS_MAC } from "../lib/platform";
 import { isComposing } from "../lib/ime";
 import { SuggestionPopup, type PopupHandle, type PopupItem } from "../editor/suggestion-popup";
@@ -58,6 +58,7 @@ import type { CaptureContext, CapturePrefs, Page, PageNode, ZeitGuess } from "..
 import { resetZeitCache, zeitLaItems, zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
 import { PageIcon } from "./icons";
+import { t, useT } from "../lib/i18n";
 
 const ICONS = { zeit: Clock, task: CalendarCheck2, note: NotebookPen };
 /** Window width and height range (logical px); the height follows the content. */
@@ -65,10 +66,10 @@ const WIDTH = 640;
 const MIN_HEIGHT = 112;
 const MAX_HEIGHT = 480;
 const MAX_LINES = 8;
-const MOD = IS_MAC ? "⌘" : "Strg";
+const mod = () => (IS_MAC ? "⌘" : t("keys.ctrl"));
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
-const DEFAULT_PREFS: CapturePrefs = { default_target: "daily", inbox_title: "Posteingang", selection_shortcut: "", auto_hide_ms: 1200, meeting_target: true };
+const DEFAULT_PREFS: CapturePrefs = { default_target: "daily", inbox_title: "", selection_shortcut: "", auto_hide_ms: 1200, meeting_target: true };
 
 interface Sugg {
   kind: "zeit" | "wiki" | "tag";
@@ -118,9 +119,11 @@ function targetIcon(c: TargetChoice, size = 14): ReactNode {
   }
 }
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+const time = (iso: string) => clockTime(iso);
 
 export function CaptureApp() {
+  useT();
+  const MOD = mod();
   const draft = useMemo(loadDraft, []);
   const [text, setText] = useState(draft?.text ?? "");
   const [target, setTarget] = useState<TargetChoice>(draft?.target ?? DAILY);
@@ -143,6 +146,10 @@ export function CaptureApp() {
   const pickPopup = useRef<PopupHandle>(null);
   const tags = useRef<[string, number][] | null>(null);
   const hideTimer = useRef<number>(0);
+  // The field is disabled while saving and loses the focus: back to it once it is enabled again.
+  useEffect(() => {
+    if (!busy && document.activeElement === document.body) (pickInput.current ?? input.current)?.focus();
+  }, [busy]);
   const height = useRef(0);
   // The text and target of the newest capture: Ctrl+Z puts them back.
   const lastSubmitted = useRef<{ text: string; target: TargetChoice } | null>(null);
@@ -305,7 +312,7 @@ export function CaptureApp() {
     if (wiki) {
       const items = pageItems(wiki.query);
       const exact = pages.some((p) => fold(p.title) === fold(wiki.query.trim()));
-      if (wiki.query.trim() && !exact) items.push({ id: "create", title: `„${wiki.query.trim()}“ neu verlinken`, subtitle: "Seite wird beim Öffnen angelegt", icon: <FilePlus2 size={15} /> });
+      if (wiki.query.trim() && !exact) items.push({ id: "create", title: t("cap.linkNew", { title: wiki.query.trim() }), subtitle: t("cap.linkNewSub"), icon: <FilePlus2 size={15} /> });
       return setSugg(items.length ? { kind: "wiki", from: before.length - line.length + wiki.from, items } : null);
     }
     const tag = captureKind(line) === "zeit" ? null : tagToken(line);
@@ -314,17 +321,17 @@ export function CaptureApp() {
         if (id !== req.current) return;
         const q = fold(tag.query);
         const items = all
-          .filter(([t]) => fold(t).startsWith(q) || (q.length > 1 && fold(t).includes(q)))
-          .filter(([t]) => t !== tag.query)
+          .filter(([x]) => fold(x).startsWith(q) || (q.length > 1 && fold(x).includes(q)))
+          .filter(([x]) => x !== tag.query)
           .slice(0, 8)
-          .map(([t, n]) => ({ id: `t-${t}`, title: `#${t}`, subtitle: n === 1 ? "1 Seite" : `${n} Seiten`, icon: <Hash size={14} /> }));
+          .map(([tag, n]) => ({ id: `t-${tag}`, title: `#${tag}`, subtitle: t("cap.pages", { n }), icon: <Hash size={14} /> }));
         setSugg(items.length ? { kind: "tag", from: before.length - line.length + tag.from, items } : null);
       };
       if (tags.current) show(tags.current);
       else
-        api.tags().then((t) => {
-          tags.current = t;
-          show(t);
+        api.tags().then((all) => {
+          tags.current = all;
+          show(all);
         }, () => {});
       return;
     }
@@ -358,12 +365,12 @@ export function CaptureApp() {
     const q = picker.query;
     const out: PickItem[] = [];
     const fresh = newPageTitle(q);
-    if (fresh) out.push({ id: "new", title: `Neue Seite „${fresh}“ anlegen`, icon: <FilePlus2 size={15} />, section: "Neu", choice: { target: { kind: "new_page", title: fresh }, label: fresh } });
+    if (fresh) out.push({ id: "new", title: t("cap.newPage", { title: fresh }), icon: <FilePlus2 size={15} />, section: t("cap.sec.new"), choice: { target: { kind: "new_page", title: fresh }, label: fresh } });
     if (!fresh) {
       for (const c of quick) {
         if (c.target.kind === "page") continue;
         if (!q.trim() || fold(c.label).includes(fold(q.trim())))
-          out.push({ id: `q-${JSON.stringify(c.target)}`, title: c.target.kind === "meeting" ? `Jetzt: ${c.label}` : c.label, icon: targetIcon(c, 15), section: "Ziele", choice: c });
+          out.push({ id: `q-${JSON.stringify(c.target)}`, title: c.target.kind === "meeting" ? t("cap.now", { label: c.label }) : c.label, icon: targetIcon(c, 15), section: t("cap.sec.targets"), choice: c });
       }
       const byId = new Map(pages.map((p) => [p.id, p]));
       for (const p of rankPages(q, pages, recentIds, 8))
@@ -372,18 +379,21 @@ export function CaptureApp() {
           title: p.title,
           subtitle: p.parent_id ? byId.get(p.parent_id)?.title : undefined,
           icon: <PageIcon name={p.icon} size={15} />,
-          section: q.trim() ? "Seiten" : "Zuletzt bearbeitet",
+          section: q.trim() ? t("cap.sec.pages") : t("cap.sec.recent"),
           choice: { target: { kind: "page", page_id: p.id }, label: p.title },
         });
       const title = q.trim();
       if (title && !pages.some((p) => !p.deleted_at && fold(p.title) === fold(title)))
-        out.push({ id: "new", title: `Neue Seite „${title}“ anlegen`, hint: `${MOD}+Enter`, icon: <FilePlus2 size={15} />, section: "Neu", choice: { target: { kind: "new_page", title }, label: title } });
+        out.push({ id: "new", title: t("cap.newPage", { title }), hint: `${mod()}+Enter`, icon: <FilePlus2 size={15} />, section: t("cap.sec.new"), choice: { target: { kind: "new_page", title }, label: title } });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picker, pages, recentIds, ctx, last, prefs.inbox_title]);
 
   const openPicker = (query = "") => {
+    // Still typing after a save: the window stays (like any other input does).
+    window.clearTimeout(hideTimer.current);
+    setDone(null);
     setSugg(null);
     setPicker({ query });
     requestAnimationFrame(() => pickInput.current?.focus());
@@ -416,7 +426,7 @@ export function CaptureApp() {
     setAsk(null);
     // No AI: the booking's own error, plus how to fix it.
     const err = await submit(line, true);
-    if (err && aiError) setError(`${err} – Referenz angeben, z. B. /zeit NP-8801/1020 2h … (KI: ${errorText(aiError)})`);
+    if (err && aiError) setError(t("cap.needRef", { err, ai: errorText(aiError) }));
   };
   const decide = (c: ZeitChoice) => {
     const cur = ask;
@@ -463,7 +473,7 @@ export function CaptureApp() {
         setTarget(c);
         setLast(c);
       }
-      const title = a ? a.title : out.bookings.length ? `Zeiterfassung (${out.bookings.map((b) => b.reference).filter(Boolean).join(", ") || "gebucht"})` : "";
+      const title = a ? a.title : out.bookings.length ? t("cap.booked", { refs: out.bookings.map((b) => b.reference).filter(Boolean).join(", ") || t("cap.bookedPlain") }) : "";
       setDone({ title, pageId: a?.page_id ?? null, queued: !!out.queued });
       api.captureContext().then(setCtx, () => {});
       window.clearTimeout(hideTimer.current);
@@ -494,7 +504,7 @@ export function CaptureApp() {
         setTarget(prev.target.target.kind === "new_page" ? prev.target : live.current.target);
         lastSubmitted.current = null;
       }
-      setNotice(`Rückgängig gemacht: ${r.preview || r.title}`);
+      setNotice(t("cap.undone", { what: r.preview || r.title }));
       setError(null);
       api.captureContext().then(setCtx, () => {});
       requestAnimationFrame(focusInput);
@@ -532,13 +542,13 @@ export function CaptureApp() {
 
   const storeFiles = async (files: File[]) => {
     if (!files.length) return;
-    setNotice(files.length === 1 ? `„${files[0].name || "Bild"}“ wird gespeichert …` : `${files.length} Dateien werden gespeichert …`);
+    setNotice(files.length === 1 ? t("cap.savingOne", { name: files[0].name || t("cap.image") }) : t("cap.savingMany", { n: files.length }));
     const parts: string[] = [];
     for (const f of files) {
       try {
         parts.push((await storeFile(f)).markdown);
       } catch (e) {
-        setError(`${f.name || "Datei"} nicht gespeichert: ${errorText(e)}`);
+        setError(t("cap.fileFailed", { name: f.name || t("cap.file"), msg: errorText(e) }));
       }
     }
     setNotice(null);
@@ -625,20 +635,25 @@ export function CaptureApp() {
   const where = targetPhrase(target);
   const daily = target.target.kind === "daily";
   // Only name /zeit when a line books time.
-  const multi = /^\s*\/zeit\b/m.test(text)
-    ? `/zeit bucht, der Rest ${daily ? "geht in die Tagesnotiz" : `wird ${where} gespeichert`}`
-    : `sie ${daily ? "gehen in die Tagesnotiz" : `werden ${where} gespeichert`}`;
+  const zeit = /^\s*\/(zeit|time)\b/im.test(text);
+  const multi = zeit
+    ? daily
+      ? t("cap.multi.zeitDaily")
+      : t("cap.multi.zeitWhere", { where })
+    : daily
+      ? t("cap.multi.daily")
+      : t("cap.multi.where", { where });
   const hint = !text.trim()
-    ? "Enter speichert · Shift+Enter neue Zeile · Esc schließt"
+    ? t("cap.hint.empty")
     : lines > 1
-      ? `Enter erfasst ${lines} Zeilen${multi.startsWith("/") ? ": " : ", "}${multi} · Esc schließt`
-      : `${captureHint(kind, where)} · Esc schließt`;
+      ? t(zeit ? "cap.hint.linesZeit" : "cap.hint.lines", { n: lines, multi })
+      : t("cap.hint.one", { hint: captureHint(kind, where) });
   const due = picker ? null : firstDue(text);
   const embeds = [...text.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1]);
   /** Daily notes read „Tagesnotiz 25.09.2026“ instead of their title. */
   const pageLabel = (id: number | null, title: string) => {
     const daily = id != null ? pages.find((p) => p.id === id)?.daily_date : null;
-    return daily ? `Tagesnotiz ${fmtDate(new Date(`${daily}T12:00:00`))}` : title;
+    return daily ? t("cap.dailyOf", { date: fmtDate(new Date(`${daily}T12:00:00`)) }) : title;
   };
   const showRecent = !text && !picker && !done && !ask && recent.length > 0;
   const meetingOffer = meetingChoice && !sameTarget(meetingChoice.target, target.target) ? meetingChoice : null;
@@ -649,7 +664,7 @@ export function CaptureApp() {
     status = (
       <>
         <Check size={14} strokeWidth={2.4} className="capture-ok" />
-        <span>{done.queued ? "Wartet auf die Datenbank – wird gespeichert, sobald sie frei ist" : "Gespeichert in"}</span>
+        <span>{done.queued ? t("cap.queued") : t("cap.savedIn")}</span>
         {!done.queued &&
           (done.pageId != null ? (
             <button type="button" className="capture-link" onClick={() => api.captureOpen(done.pageId!).catch(() => {})}>
@@ -660,13 +675,13 @@ export function CaptureApp() {
           ))}
         {undoable && (
           <button type="button" className="capture-undo" onClick={() => void undo()}>
-            <Undo2 size={13} /> Rückgängig <kbd>{MOD}+Z</kbd>
+            <Undo2 size={13} /> {t("common.undo")} <kbd>{MOD}+Z</kbd>
           </button>
         )}
       </>
     );
   else if (notice) status = notice;
-  else status = picker ? "Enter wählt · " + `${MOD}+Enter legt eine neue Seite an · Esc zurück` : hint;
+  else status = picker ? t("cap.pickHint", { mod: MOD }) : hint;
 
   return (
     <div className="capture" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
@@ -676,35 +691,35 @@ export function CaptureApp() {
       void storeFiles(files);
     }}>
       <div className="capture-body" ref={body}>
-        <div className="capture-targets" role="toolbar" aria-label="Ziel">
+        <div className="capture-targets" role="toolbar" aria-label={t("cap.target")}>
           <button
             type="button"
             className={`capture-chip target target-${target.target.kind}`}
             onClick={() => (picker ? closePicker() : openPicker())}
-            title="Ziel wählen (> am Anfang)"
-            aria-label={`Ziel: ${target.label}`}
+            title={t("cap.chooseTarget")}
+            aria-label={t("cap.targetIs", { label: target.label })}
           >
             {targetIcon(target)}
-            <span className="capture-chip-label">{target.target.kind === "meeting" ? `Jetzt: ${target.label}` : target.label}</span>
-            {target.target.kind === "new_page" && <span className="capture-new">neu</span>}
+            <span className="capture-chip-label">{target.target.kind === "meeting" ? t("cap.now", { label: target.label }) : target.label}</span>
+            {target.target.kind === "new_page" && <span className="capture-new">{t("cap.new")}</span>}
           </button>
           {meetingOffer && (
-            <button type="button" className="capture-chip meeting" onClick={() => choose(meetingOffer)} title="In die Notiz dieser Besprechung schreiben">
+            <button type="button" className="capture-chip meeting" onClick={() => choose(meetingOffer)} title={t("cap.meetingTitle")}>
               <Users size={13} strokeWidth={1.9} />
-              <span className="capture-chip-label">Jetzt: {meetingOffer.label}</span>
+              <span className="capture-chip-label">{t("cap.now", { label: meetingOffer.label })}</span>
             </button>
           )}
           {clip && !picker && (
             <button type="button" className="capture-chip clip" onClick={insertClipboard} title={clip.slice(0, 200)}>
               <Clipboard size={13} strokeWidth={1.9} />
-              <span className="capture-chip-label">Zwischenablage einfügen</span>
+              <span className="capture-chip-label">{t("cap.pasteClip")}</span>
               <kbd>{MOD}+⇧+V</kbd>
             </button>
           )}
           <span className="capture-spacer" />
-          {!!ctx?.queued && <span className="capture-queued" title="Wird gespeichert, sobald die Datenbank frei ist">{ctx.queued} wartet</span>}
+          {!!ctx?.queued && <span className="capture-queued" title={t("cap.queuedTitle")}>{t("cap.waiting", { n: ctx.queued })}</span>}
           <span className="capture-tab" aria-hidden>
-            <kbd>Tab</kbd> Ziel
+            <kbd>Tab</kbd> {t("cap.target")}
           </span>
         </div>
         <div className="capture-field">
@@ -714,8 +729,8 @@ export function CaptureApp() {
               ref={pickInput}
               className="capture-input capture-pick-input"
               value={picker.query}
-              placeholder="Seite suchen oder „Neue Seite: Titel“"
-              aria-label="Zielseite suchen"
+              placeholder={t("cap.pickPh")}
+              aria-label={t("cap.pickLabel")}
               spellCheck={false}
               autoFocus
               onChange={(e) => setPicker({ query: e.target.value })}
@@ -727,8 +742,8 @@ export function CaptureApp() {
               className="capture-input"
               rows={1}
               value={text}
-              placeholder="Notiz, todo … bis Fr, [[Seite]], #tag oder /zeit NP-8801/1020 1h"
-              aria-label="Schnellerfassung"
+              placeholder={t("cap.placeholder")}
+              aria-label={t("set.capture.title")}
               aria-autocomplete="list"
               aria-expanded={!!sugg}
               spellCheck={false}
@@ -766,7 +781,7 @@ export function CaptureApp() {
           <div className="capture-meta">
             {due && (
               <span className="capture-pill">
-                <CalendarCheck2 size={12} /> fällig {fmtDate(new Date(`${due}T12:00:00`))}
+                <CalendarCheck2 size={12} /> {t("cap.due", { date: fmtDate(new Date(`${due}T12:00:00`)) })}
               </span>
             )}
             {embeds.map((name, i) =>
@@ -778,7 +793,7 @@ export function CaptureApp() {
                 </span>
               ),
             )}
-            {embeds.length > 0 && <span className="capture-pill faint">{embeds.length === 1 ? "1 Anhang" : `${embeds.length} Anhänge`}</span>}
+            {embeds.length > 0 && <span className="capture-pill faint">{t("cap.attachments", { n: embeds.length })}</span>}
           </div>
         )}
         {ask && <ZeitConfirm className="inline" guess={ask.guess} onChoice={decide} />}
@@ -789,16 +804,16 @@ export function CaptureApp() {
         )}
         {picker && (
           <div className="capture-sugg capture-picker">
-            <SuggestionPopup ref={pickPopup} items={pickItems} empty="Keine Seite gefunden" command={(it) => choose((it as PickItem).choice)} />
+            <SuggestionPopup ref={pickPopup} items={pickItems} empty={t("cap.noPage")} command={(it) => choose((it as PickItem).choice)} />
           </div>
         )}
         {showRecent && (
-          <div className="capture-recent" aria-label="Zuletzt erfasst">
+          <div className="capture-recent" aria-label={t("cap.recent")}>
             <div className="capture-recent-head">
-              <span>Zuletzt erfasst</span>
+              <span>{t("cap.recent")}</span>
               {undoable && (
                 <span className="faint">
-                  <kbd>{MOD}+Z</kbd> nimmt die letzte zurück
+                  <kbd>{MOD}+Z</kbd> {t("cap.undoLast")}
                 </span>
               )}
             </div>

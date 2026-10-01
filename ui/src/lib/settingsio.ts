@@ -2,6 +2,7 @@
 // keys, same types), and lists what an import would change.
 
 import type { Settings } from "./types";
+import { t } from "./i18n";
 
 export const EXPORT_FORMAT = "annalo-settings";
 export const EXPORT_VERSION = 1;
@@ -23,26 +24,26 @@ function mergeValue(path: string, cur: unknown, inc: unknown, warnings: string[]
   const ik = kind(inc);
   if (RECORDS.has(path)) {
     if (ik !== "object") {
-      warnings.push(`${path}: Objekt erwartet`);
+      warnings.push(t("sio.object", { path }));
       return cur;
     }
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(inc as Record<string, unknown>)) {
       if (typeof v === "string") out[k] = v;
-      else warnings.push(`${path}.${k}: Text erwartet`);
+      else warnings.push(t("sio.text", { path: `${path}.${k}` }));
     }
     return out;
   }
   if (ck === "object") {
     if (ik !== "object") {
-      warnings.push(`${path}: Objekt erwartet`);
+      warnings.push(t("sio.object", { path }));
       return cur;
     }
     const out: Record<string, unknown> = { ...(cur as Record<string, unknown>) };
     for (const [k, v] of Object.entries(inc as Record<string, unknown>)) {
       const p = path ? `${path}.${k}` : k;
       if (!(k in out)) {
-        warnings.push(`${p}: unbekannte Einstellung, übersprungen`);
+        warnings.push(t("sio.unknown", { path: p }));
         continue;
       }
       out[k] = mergeValue(p, out[k], v, warnings);
@@ -52,33 +53,33 @@ function mergeValue(path: string, cur: unknown, inc: unknown, warnings: string[]
   // Optional values (null now) take any value of a plain type or null.
   if (ck === "null") {
     if (["string", "number", "boolean", "null", "array", "object"].includes(ik)) return inc;
-    warnings.push(`${path}: ungültiger Wert`);
+    warnings.push(t("sio.invalid", { path }));
     return cur;
   }
   if (inc === null) {
     // Nullable fields that are set now (reminder_time, embedding_model, …) may be switched off.
     if (NULLABLE.has(path)) return null;
-    warnings.push(`${path}: Wert fehlt, übersprungen`);
+    warnings.push(t("sio.missing", { path }));
     return cur;
   }
   if (ck === "array") {
     if (ik !== "array") {
-      warnings.push(`${path}: Liste erwartet`);
+      warnings.push(t("sio.list", { path }));
       return cur;
     }
     const sample = (cur as unknown[])[0];
     if (sample !== undefined && (inc as unknown[]).some((x) => kind(x) !== kind(sample))) {
-      warnings.push(`${path}: Listeneinträge haben den falschen Typ`);
+      warnings.push(t("sio.listType", { path }));
       return cur;
     }
     return inc;
   }
   if (ck !== ik) {
-    warnings.push(`${path}: ${ck === "number" ? "Zahl" : ck === "boolean" ? "Ja/Nein" : "Text"} erwartet`);
+    warnings.push(ck === "number" ? t("sio.number", { path }) : ck === "boolean" ? t("sio.boolean", { path }) : t("sio.text", { path }));
     return cur;
   }
   if (ik === "number" && !Number.isFinite(inc as number)) {
-    warnings.push(`${path}: ungültige Zahl`);
+    warnings.push(t("sio.nan", { path }));
     return cur;
   }
   return inc;
@@ -111,19 +112,18 @@ export function parseSettingsImport(text: string, current: Settings): ImportResu
   try {
     raw = JSON.parse(text);
   } catch {
-    return { settings: null, warnings: [], error: "Die Datei ist kein gültiges JSON." };
+    return { settings: null, warnings: [], error: t("sio.notJson") };
   }
-  if (kind(raw) !== "object") return { settings: null, warnings: [], error: "Die Datei enthält keine Einstellungen." };
+  if (kind(raw) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
   let obj = raw as Record<string, unknown>;
   if ("format" in obj || "settings" in obj) {
-    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: "Die Datei ist keine Annalo-Einstellungsdatei." };
-    if (typeof obj.version === "number" && obj.version > EXPORT_VERSION)
-      return { settings: null, warnings: [], error: "Die Datei stammt von einer neueren Annalo-Version." };
-    if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: "Die Datei enthält keine Einstellungen." };
+    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: t("sio.notAnnalo") };
+    if (typeof obj.version === "number" && obj.version > EXPORT_VERSION) return { settings: null, warnings: [], error: t("sio.newer") };
+    if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
     obj = obj.settings as Record<string, unknown>;
   }
   const known = Object.keys(obj).filter((k) => k in current);
-  if (known.length === 0) return { settings: null, warnings: [], error: "Die Datei enthält keine bekannten Einstellungen." };
+  if (known.length === 0) return { settings: null, warnings: [], error: t("sio.noKnown") };
   const warnings: string[] = [];
   const settings = mergeValue("", current, obj, warnings) as Settings;
   return { settings, warnings, error: null };
@@ -147,7 +147,7 @@ export function settingsDiff(a: unknown, b: unknown, path = ""): Change[] {
 /** Short display of a value in the diff preview. */
 export function showValue(v: unknown): string {
   if (v === null || v === undefined) return "–";
-  if (typeof v === "boolean") return v ? "an" : "aus";
+  if (typeof v === "boolean") return v ? t("sio.on") : t("sio.off");
   const s = typeof v === "string" ? v : JSON.stringify(v);
   return s.length > 60 ? `${s.slice(0, 57)}…` : s;
 }
