@@ -19,6 +19,8 @@ import { Button, Dialog, IconButton, Input, Segmented, Select, Switch } from "..
 import { PageIcon } from "../icons";
 import { NetzplanSelect, useWbs } from "../../views/wbs";
 import { QueryView } from "./tools";
+import { viewOf } from "./define";
+import { cityOf, timeZones } from "../../lib/worldclock";
 
 type Config = Record<string, unknown>;
 
@@ -373,6 +375,12 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
         <>
           {toggle("seconds", "dash.set.seconds", true)}
           {toggle("week", "dash.set.kw")}
+          <Row label={t("dash.set.hours")}>
+            <Segmented label={t("dash.set.hours")} value={c.hour12 === true ? "12" : c.hour12 === false ? "24" : "auto"} options={[opt("auto", "dash.set.hoursAuto"), opt("24", "dash.set.hours24"), opt("12", "dash.set.hours12")]} onChange={(v) => set({ hour12: v === "auto" ? null : v === "12" })} />
+          </Row>
+          <Row label={t("dash.set.zones")} hint={t("dash.set.zonesHint")}>
+            <ZoneList zones={Array.isArray(c.zones) ? (c.zones as string[]) : []} onChange={(zones) => set({ zones })} />
+          </Row>
         </>
       );
     case "review":
@@ -391,9 +399,55 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
           <Select aria-label={t("dash.set.count")} value={String(c.count ?? 5)} onChange={(e) => set({ count: Number(e.target.value) })} options={[3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))} />
         </Row>
       );
-    default:
-      return <div className="faint small">{t("dash.set.nothing")}</div>;
+    default: {
+      // Registered widgets bring their own fields (define.ts).
+      const Own = viewOf(w.kind)?.settings;
+      return Own ? <Own widget={w} config={c} set={set} /> : <div className="faint small">{t("dash.set.nothing")}</div>;
+    }
   }
+}
+
+/** The extra time zones of the clock: listed with their city, added by typing a zone or city. */
+function ZoneList({ zones, onChange }: { zones: string[]; onChange: (zones: string[]) => void }) {
+  const [q, setQ] = useState("");
+  const all = useMemo(() => timeZones(), []);
+  const add = (v: string) => {
+    const hit = all.find((z) => z.toLowerCase() === v.trim().toLowerCase()) ?? all.find((z) => cityOf(z).toLowerCase() === v.trim().toLowerCase());
+    if (hit && !zones.includes(hit) && zones.length < 6) onChange([...zones, hit]);
+    setQ("");
+  };
+  return (
+    <div className="dws-pinned">
+      {zones.map((z) => (
+        <div key={z} className="dws-chosen">
+          <span className="ellipsis grow">{cityOf(z)}</span>
+          <span className="faint small mono">{z}</span>
+          <IconButton icon={X} size="sm" label={t("dash.set.zoneRemove", { zone: cityOf(z) })} onClick={() => onChange(zones.filter((x) => x !== z))} />
+        </div>
+      ))}
+      {zones.length < 6 && (
+        <>
+          <Input
+            value={q}
+            list="dws-zones"
+            aria-label={t("dash.set.zoneAdd")}
+            placeholder={t("dash.set.zonePh")}
+            onChange={(e) => {
+              setQ(e.target.value);
+              // Picking from the list adds at once.
+              if (all.includes(e.target.value)) add(e.target.value);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add(q))}
+          />
+          <datalist id="dws-zones">
+            {all.map((z) => (
+              <option key={z} value={z} />
+            ))}
+          </datalist>
+        </>
+      )}
+    </div>
+  );
 }
 
 function PinnedPages({ ids, onChange }: { ids: number[]; onChange: (ids: number[]) => void }) {

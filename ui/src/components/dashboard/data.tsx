@@ -1,7 +1,9 @@
 // Data of the start page: the parts of every widget in view, loaded in one `dashboard_data`
 // call (several widgets with the same settings share a part), kept while they reload, and
 // reloaded when what they show changes (time entries, tasks, pages, calendar sync, focus,
-// WBS). Widgets scrolled out of view load when they come into view.
+// WBS, a Git sync). Widgets scrolled out of view load when they come into view. Widgets that
+// load something else (a status, an outside service) use `useLazyData`, which follows the same
+// rules.
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, on } from "../../lib/api";
@@ -21,9 +23,13 @@ interface Ctx {
   /** Reloads the parts showing `topics` (all without). */
   refresh: (topics?: DataTopic[]) => void;
   today: Date;
+  /** Whether widget `id` is (or was) in view: lazy data loads only then. */
+  inView: (id: string) => boolean;
+  /** Counts the changes per topic (for `useLazyData`). */
+  versions: Partial<Record<DataTopic, number>>;
 }
 
-const DataContext = createContext<Ctx>({ entry: () => undefined, refresh: () => {}, today: new Date() });
+const DataContext = createContext<Ctx>({ entry: () => undefined, refresh: () => {}, today: new Date(), inView: () => true, versions: {} });
 
 /** Timing of the last load: backend time and the time from the answer to the painted grid. */
 export interface DashPerf {
@@ -131,7 +137,13 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     });
   }, [store]);
 
+  const [versions, setVersions] = useState<Partial<Record<DataTopic, number>>>({});
   const refresh = useCallback((topics?: DataTopic[]) => {
+    setVersions((v) => {
+      const next = { ...v };
+      for (const tp of topics ?? (["entries", "tasks", "pages", "calendar", "focus", "wbs", "sync"] as DataTopic[])) next[tp] = (next[tp] ?? 0) + 1;
+      return next;
+    });
     const drop: string[] = [];
     for (const k of storeRef.current.keys()) {
       const part = JSON.parse(k) as Part;
@@ -172,6 +184,11 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
       ["calendar://synced", ["calendar"]],
       ["focus://changed", ["focus", "entries"]],
       ["focus://completed", ["focus", "entries"]],
+      ["gitsync://done", ["sync"]],
+      ["gitsync://failed", ["sync"]],
+      ["gitsync://pulled", ["sync", "pages"]],
+      ["backup://failed", ["sync"]],
+      ["backup://destinations", ["sync"]],
     ];
     const un = subs.map(([ev, topics]) => on(ev, () => soon(topics)));
     const saved = () => soon(["pages", "tasks"], 600);
@@ -203,7 +220,7 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     first.current = false;
   }, []);
 
-  const value = useMemo<Ctx>(() => ({ entry: (k) => store.get(k), refresh, today }), [store, refresh, today]);
+  const value = useMemo<Ctx>(() => ({ entry: (k) => store.get(k), refresh, today, inView: (id) => seen.has(id), versions }), [store, refresh, today, seen, versions]);
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
@@ -217,4 +234,46 @@ export function useWidgetData<T>(w: Pick<GridWidget, "kind" | "config">, index =
   const part = partsOf(w, today, workdays ?? [1, 2, 3, 4, 5], timeOn)[index];
   const e = part ? entry(partKey(part)) : undefined;
   return { data: e?.data as T | undefined, error: e?.error, loading: !!part && !e };
+}
+
+export interface LazyData<T> {
+  data: T | undefined;
+  error: string | undefined;
+  /** Nothing loaded yet. */
+  loading: boolean;
+  /** Loads again now. */
+  reload: () => void;
+}
+
+/**
+ * Data a widget loads itself (not through `dashboard_data`): `load` runs once the widget is in
+ * view, again when one of `topics` changes, every `every` ms while it shows, and when `key`
+ * changes (e.g. the settings it depends on). The last data stays while it reloads.
+ */
+export function useLazyData<T>(widgetId: string, load: () => Promise<T>, opts: { key?: string; topics?: DataTopic[]; every?: number } = {}): LazyData<T> {
+  const { inView, versions } = useDash();
+  const visible = inView(widgetId);
+  const [state, setState] = useState<{ data?: T; error?: string; done: boolean }>({ done: false });
+  const [tick, setTick] = useState(0);
+  const loader = useRef(load);
+  loader.current = load;
+  const version = (opts.topics ?? []).map((tp) => versions[tp] ?? 0).join(".");
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    loader.current().then(
+      (data) => alive && setState({ data, done: true }),
+      (e) => alive && setState((prev) => ({ ...prev, error: String(e), done: true })),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [visible, version, tick, opts.key]);
+  useEffect(() => {
+    if (!visible || !opts.every) return;
+    const id = window.setInterval(() => setTick((x) => x + 1), opts.every);
+    return () => window.clearInterval(id);
+  }, [visible, opts.every]);
+  const reload = useCallback(() => setTick((x) => x + 1), []);
+  return { data: state.data, error: state.data === undefined ? state.error : undefined, loading: !state.done, reload };
 }

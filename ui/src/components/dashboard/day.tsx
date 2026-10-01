@@ -6,7 +6,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
-import { addDays, isoDay, isoWeek, weekStart } from "../../lib/format";
+import { addDays, dateLocale, isoDay, isoWeek, weekStart } from "../../lib/format";
+import { cityOf, offsetLabel, uses12h, zoneTime } from "../../lib/worldclock";
 import { t } from "../../lib/i18n";
 import { bookingPrefill, isAllDayLike, sourceColor, sourceName, timeRange } from "../../lib/agenda";
 import { addMonths, dayTone, hoursLabel, monthGrid } from "../../lib/calendar";
@@ -575,13 +576,40 @@ export function ClockWidget({ widget }: WidgetProps) {
   const c = configOf(widget);
   const seconds = c.seconds === true;
   const now = new Date(useNow(seconds ? 1000 : 15_000));
+  // 12 or 24 hours as the region writes them (English with the US date format: 12), or as set.
+  const h12 = typeof c.hour12 === "boolean" ? c.hour12 : uses12h(dateLocale());
+  const zones = (Array.isArray(c.zones) ? (c.zones as unknown[]) : []).filter((z): z is string => typeof z === "string").slice(0, 6);
   return (
-    <div className="dw-clock">
-      <div className="dw-clock-time num" aria-live="off">
-        {fmt(now, { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) })}
+    <div className={`dw-clock ${zones.length ? "with-zones" : ""}`}>
+      <div className="dw-clock-main">
+        <div className="dw-clock-time num" aria-live="off">
+          {fmt(now, { hour: h12 ? "numeric" : "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hour12: h12 })}
+        </div>
+        <div className="dw-clock-date">{fmt(now, { weekday: "long", day: "numeric", month: "long" })}</div>
+        {c.week !== false && <div className="faint small num">{t("dash.kwYear", { n: isoWeek(now), y: now.getFullYear() })}</div>}
       </div>
-      <div className="dw-clock-date">{fmt(now, { weekday: "long", day: "numeric", month: "long" })}</div>
-      {c.week !== false && <div className="faint small num">{t("dash.kwYear", { n: isoWeek(now), y: now.getFullYear() })}</div>}
+      {zones.length > 0 && (
+        <ul className="dw-zones" aria-label={t("dash.clock.zones")}>
+          {zones.map((z) => {
+            let at;
+            try {
+              at = zoneTime(now, z, dateLocale(), h12);
+            } catch {
+              return null;
+            }
+            return (
+              <li key={z}>
+                <span className="ellipsis dw-zone-city">{cityOf(z)}</span>
+                <span className="faint small num dw-zone-off">
+                  {offsetLabel(at.offset)}
+                  {at.dayShift !== 0 && ` · ${at.dayShift > 0 ? t("dash.clock.nextDay") : t("dash.clock.prevDay")}`}
+                </span>
+                <span className="num dw-zone-time">{at.time}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

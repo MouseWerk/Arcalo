@@ -1,4 +1,6 @@
-// Which component shows which widget kind, its icon, and where its title leads.
+// Which component shows which widget kind, its icon, and where its title leads: the built-in
+// kinds below, and the kinds the files in ./widgets register with `defineWidget` (define.ts),
+// all loaded here with the start page.
 
 import { timeTrackingEnabled } from "../../lib/timetracking";
 import type { ComponentType } from "react";
@@ -7,6 +9,7 @@ import {
   CalendarClock,
   CalendarDays,
   CheckSquare,
+  LayoutGrid,
   Clock,
   FileText,
   FolderKanban,
@@ -35,6 +38,7 @@ import { AgendaWidget, CalendarWidget, ClockWidget, FocusWidget, ReviewWidget, T
 import { BudgetWidget, ProjectWidget, ProposalWidget, TimerWidget, WeekWidget } from "./time";
 import { ActivityWidget, EmbedWidget, FavoritesWidget, NoteWidget, PinnedWidget, RecentWidget } from "./pages";
 import { LinksWidget, QueryWidget, SuggestionsWidget } from "./tools";
+import { viewOf } from "./define";
 
 export interface WidgetProps {
   widget: GridWidget;
@@ -89,6 +93,16 @@ export const ICONS: Record<WidgetKind, LucideIcon> = {
   suggestions: Sparkles,
 };
 
+/** The component of a kind: built in or registered. */
+export function bodyOf(kind: string): ComponentType<WidgetProps> | undefined {
+  return Object.hasOwn(BODIES, kind) ? BODIES[kind as WidgetKind] : viewOf(kind)?.body;
+}
+
+/** The icon of a kind: built in or registered. */
+export function iconOf(kind: string): LucideIcon {
+  return (Object.hasOwn(ICONS, kind) ? ICONS[kind as WidgetKind] : viewOf(kind)?.icon) ?? LayoutGrid;
+}
+
 const s = useApp.getState;
 
 /** Where a click on the widget's title leads (none for widgets that are the thing itself). */
@@ -113,6 +127,9 @@ export function openerOf(w: GridWidget): (() => void) | null {
     case "embed":
       return typeof c.page === "number" ? () => s().openPage(c.page as number) : null;
     default:
-      return null;
+      return viewOf(w.kind)?.opener?.(w) ?? null;
   }
 }
+
+// Every widget file in ./widgets registers itself (define.ts); nothing else needs to list it.
+import.meta.glob("./widgets/*.tsx", { eager: true });

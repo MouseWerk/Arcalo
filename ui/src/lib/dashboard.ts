@@ -1,10 +1,11 @@
-// Start page: the widget catalogue, the boards (tabs) with their presets, the move of the
-// widget list of 1.3–1.5 onto a board, export and import of a board, the parts of
-// `dashboard_data` each widget needs, the budget forecast and the week bars.
+// Start page: the widget catalogue (built in, plus widgets registered from their own files, see
+// `registerWidgetDef` and docs/ARCHITECTURE.md „Start page widgets“), the boards (tabs) with
+// their presets, the move of older layouts onto boards, export and import of a board, the parts
+// of `dashboard_data` each widget needs, the budget forecast and the week bars.
 
 import { addDays, isoDay, weekStart, weekdayLabels } from "./format";
 import { t, type TKey } from "./i18n";
-import { COLS, clampRect, compact, findFree, settle, type MinSize } from "./dashgrid";
+import { COLS, clampRect, compact, findFree, resizeTo, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
 import type { Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
 
@@ -43,6 +44,30 @@ export interface WidgetDef {
   min: MinSize;
   /** Settings a new widget starts with. */
   config: () => Record<string, unknown>;
+  /** About booking time: hidden on the boards and not offered while time tracking is off. */
+  time?: boolean;
+  /**
+   * The `dashboard_data` parts the widget shows, loaded in the batched call once it scrolls
+   * into view (built-in kinds are listed in `partsOf`). Widgets without parts read what the UI
+   * already has, or load lazily with `useLazyData` (components/dashboard/data.tsx).
+   */
+  parts?: (config: Record<string, unknown>, ctx: PartContext) => Part[];
+  /**
+   * Settings keys that hold credentials or point at them (a token, an account of the credential
+   * store): never written into an exported board and dropped on import. Keys that look like
+   * secrets (token, password, api key, …) are dropped for every widget anyway.
+   */
+  secrets?: string[];
+}
+
+/** What `WidgetDef.parts` gets besides the settings. */
+export interface PartContext {
+  today: Date;
+  /** Monday of this week (YYYY-MM-DD). */
+  monday: string;
+  workdays: number[];
+  /** „Zeiterfassung verwenden“. */
+  time: boolean;
 }
 
 export const WIDGETS: Record<WidgetKind, WidgetDef> = {
@@ -97,8 +122,28 @@ export const WIDGETS: Record<WidgetKind, WidgetDef> = {
   suggestions: { label: "dash.w.suggestions", hint: "dash.w.suggestionsHint", group: "tools", size: { w: 4, h: 6 }, min: { w: 3, h: 3 }, config: () => ({ count: 5 }) },
 };
 
+/** The built-in kinds (the same list as `WIDGET_KINDS` in crates/annalo-core/src/settings.rs). */
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];
-export const isKind = (k: string): k is WidgetKind => k in WIDGETS;
+
+/** Kinds added by `registerWidgetDef`, in the order they registered. */
+const REGISTERED: string[] = [];
+/** A widget kind: lower case letters, digits and dashes (the backend keeps any such kind). */
+export const KIND_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
+
+/**
+ * Adds a widget kind to the catalogue (usually through `defineWidget` in
+ * components/dashboard/define.ts, which also registers its component). Registering a kind
+ * again replaces its definition.
+ */
+export function registerWidgetDef(kind: string, def: WidgetDef): void {
+  if (!KIND_PATTERN.test(kind)) throw new Error(`invalid widget kind: ${kind}`);
+  if (!Object.prototype.hasOwnProperty.call(WIDGETS, kind)) REGISTERED.push(kind);
+  (WIDGETS as Record<string, WidgetDef>)[kind] = def;
+}
+
+/** Built-in and registered kinds. */
+export const allKinds = (): WidgetKind[] => [...WIDGET_KINDS, ...(REGISTERED as WidgetKind[])];
+export const isKind = (k: string): k is WidgetKind => Object.prototype.hasOwnProperty.call(WIDGETS, k);
 
 // ------------------------------------------------------------------ time tracking off
 
@@ -110,26 +155,30 @@ export const TIME_WIDGETS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(["week"
 /** Not offered either: the project widget lives on a Netzplan (on a board it stays, without budgets). */
 const GALLERY_TIME: ReadonlySet<WidgetKind> = new Set<WidgetKind>([...TIME_WIDGETS, "project"]);
 
-/** Whether a widget of `kind` shows. */
-export const widgetShown = (kind: string, time: boolean) => time || !TIME_WIDGETS.has(kind as WidgetKind);
+const isTimeKind = (kind: WidgetKind) => TIME_WIDGETS.has(kind) || WIDGETS[kind].time === true;
+
+/**
+ * Whether a widget of `kind` shows: not a time widget while time tracking is off, and a kind
+ * this version knows (widgets of a newer version or a feature not built in stay on the board,
+ * hidden, so nothing is lost).
+ */
+export const widgetShown = (kind: string, time: boolean) => isKind(kind) && (time || !isTimeKind(kind));
 
 /** The kinds the gallery offers. */
-export const galleryKinds = (time: boolean): WidgetKind[] => WIDGET_KINDS.filter((k) => time || !GALLERY_TIME.has(k));
+export const galleryKinds = (time: boolean): WidgetKind[] => allKinds().filter((k) => time || !(GALLERY_TIME.has(k) || isTimeKind(k)));
 
-/** The widgets a board shows: without the time widgets while time tracking is off, closed up (no holes). */
+/** The widgets a board shows: without hidden ones (see `widgetShown`), closed up (no holes). */
 export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[] {
-  if (time) return widgets;
-  const shown = widgets.filter((w) => widgetShown(w.kind, false));
+  const shown = widgets.filter((w) => widgetShown(w.kind, time));
   return shown.length === widgets.length ? widgets : compact(shown);
 }
 
 /**
- * A layout edited while time widgets were hidden, with the hidden ones put back: the edited
- * widgets keep their places, the hidden ones go below whatever they would hit.
+ * A layout edited while widgets were hidden, with the hidden ones put back: the edited widgets
+ * keep their places, the hidden ones go below whatever they would hit.
  */
 export function withHidden(all: GridWidget[], edited: GridWidget[], time: boolean): GridWidget[] {
-  if (time) return edited;
-  const hidden = all.filter((w) => !widgetShown(w.kind, false) && !edited.some((e) => e.id === w.id));
+  const hidden = all.filter((w) => !widgetShown(w.kind, time) && !edited.some((e) => e.id === w.id));
   return hidden.length ? settle([...edited, ...hidden], edited.map((w) => w.id)) : edited;
 }
 
@@ -154,9 +203,14 @@ export const titleOf = (w: Pick<GridWidget, "kind" | "title">) => w.title?.trim(
 
 // ------------------------------------------------------------------ sizes
 
-export type SizeName = "s" | "m" | "l" | "xl";
-export const SIZES: Record<SizeName, { w: number; h: number }> = { s: { w: 3, h: 5 }, m: { w: 6, h: 6 }, l: { w: 8, h: 9 }, xl: { w: 12, h: 9 } };
+/**
+ * Preset sizes on the 12 columns: small, medium (a third of the width), wide (two thirds),
+ * tall (twice as high) and wide and tall. Any other size is set with the handle or the keys.
+ */
+export type SizeName = "s" | "m" | "w" | "t" | "wt";
+export const SIZES: Record<SizeName, { w: number; h: number }> = { s: { w: 3, h: 4 }, m: { w: 4, h: 7 }, w: { w: 8, h: 7 }, t: { w: 4, h: 14 }, wt: { w: 8, h: 14 } };
 export const SIZE_NAMES = Object.keys(SIZES) as SizeName[];
+export const SIZE_LABELS: Record<SizeName, TKey> = { s: "dash.size.s", m: "dash.size.m", w: "dash.size.w", t: "dash.size.t", wt: "dash.size.wt" };
 
 /** The preset size `name` for a widget of `kind` (at least its minimum). */
 export function sizeFor(kind: string, name: SizeName): { w: number; h: number } {
@@ -191,6 +245,14 @@ export function newId(base: string, used: Iterable<string>): string {
 /** Every widget id on every board (widget ids are kept unique across boards: notes use them). */
 export const allWidgetIds = (boards: Board[]) => boards.flatMap((b) => b.widgets.map((w) => w.id));
 
+/** The board after widget `id` took the preset size `name` (the others make room). */
+export function resizeToPreset(widgets: GridWidget[], id: string, name: SizeName): GridWidget[] {
+  const w = widgets.find((x) => x.id === id);
+  if (!w) return widgets;
+  const sz = sizeFor(w.kind, name);
+  return resizeTo(widgets, id, sz.w, sz.h, COLS, minOf(w));
+}
+
 /** A new widget of `kind` at the first free place of `widgets`. */
 export function makeWidget(kind: WidgetKind, widgets: GridWidget[], usedIds: Iterable<string>, at?: { x: number; y: number }): GridWidget {
   const { w, h } = WIDGETS[kind].size;
@@ -198,14 +260,38 @@ export function makeWidget(kind: WidgetKind, widgets: GridWidget[], usedIds: Ite
   return { id: newId(kind, usedIds), kind, ...spot, w, h, config: WIDGETS[kind].config() };
 }
 
-export type PresetName = "start" | "lead" | "minimal";
+export type PresetName = "start" | "lead" | "minimal" | "sprint" | "personal";
 export const PRESETS: { name: PresetName; label: TKey; hint: TKey }[] = [
   { name: "start", label: "dash.preset.start", hint: "dash.preset.startHint" },
   { name: "lead", label: "dash.preset.lead", hint: "dash.preset.leadHint" },
+  { name: "sprint", label: "dash.preset.sprint", hint: "dash.preset.sprintHint" },
+  { name: "personal", label: "dash.preset.personal", hint: "dash.preset.personalHint" },
   { name: "minimal", label: "dash.preset.minimal", hint: "dash.preset.minimalHint" },
 ];
 
 type Spec = [WidgetKind, number, number, number, number, Record<string, unknown>?];
+
+// Registered kinds (components/dashboard/widgets/*) in the presets; a kind that is not
+// registered is left out of a preset.
+const k = (kind: string) => kind as WidgetKind;
+
+/** The week's tasks, a focus timer, the meetings, a checklist and what colleagues changed. */
+const SPRINT: Spec[] = [
+  ["tasks", 0, 0, 8, 8, { due: "week" }],
+  [k("pomodoro"), 8, 0, 4, 8],
+  ["agenda", 0, 8, 4, 7, { days: 7 }],
+  [k("checklist"), 4, 8, 4, 7],
+  [k("synced"), 8, 8, 4, 7],
+];
+/** Notes: a scratchpad, the inbox, what was a year ago, writing and a checklist. */
+const PERSONAL: Spec[] = [
+  ["clock", 0, 0, 4, 4],
+  [k("scratchpad"), 0, 4, 4, 10],
+  [k("inbox"), 4, 0, 4, 7],
+  [k("resurface"), 8, 0, 4, 7],
+  [k("writing"), 4, 7, 8, 7],
+  [k("checklist"), 0, 14, 4, 7],
+];
 
 const PRESET_SPECS: Record<PresetName, Spec[]> = {
   // A day at a glance: Heute and Termine on top, the week, budgets and recent pages below.
@@ -234,6 +320,8 @@ const PRESET_SPECS: Record<PresetName, Spec[]> = {
     ["tasks", 0, 4, 7, 7, { due: "today" }],
     ["note", 7, 4, 5, 7],
   ],
+  sprint: SPRINT,
+  personal: PERSONAL,
 };
 
 /** The presets without time tracking: the same ideas with tasks, meetings, pages and focus. */
@@ -258,16 +346,20 @@ const PRESET_SPECS_NO_TIME: Record<PresetName, Spec[]> = {
     ["tasks", 0, 4, 7, 7, { due: "today" }],
     ["note", 7, 4, 5, 7],
   ],
+  sprint: SPRINT,
+  personal: PERSONAL,
 };
 
 /** The widgets of a preset, with ids not in `used` (without time widgets while time tracking is off). */
 export function presetWidgets(name: PresetName, used: Iterable<string> = [], time = true): GridWidget[] {
   const taken = new Set(used);
-  return (time ? PRESET_SPECS : PRESET_SPECS_NO_TIME)[name].map(([kind, x, y, w, h, extra]) => {
+  const specs = (time ? PRESET_SPECS : PRESET_SPECS_NO_TIME)[name].filter(([kind]) => isKind(kind));
+  const widgets = specs.map(([kind, x, y, w, h, extra]): GridWidget => {
     const id = newId(kind, taken);
     taken.add(id);
     return { id, kind, x, y, w, h, config: { ...WIDGETS[kind].config(), ...extra } };
   });
+  return specs.length === (time ? PRESET_SPECS : PRESET_SPECS_NO_TIME)[name].length ? widgets : settle(widgets);
 }
 
 /** The boards of a new start page: „Heute“ and „Projekte“. */
@@ -275,7 +367,7 @@ export function defaultDashboard(time = true): Dashboard {
   const today = presetWidgets("start", [], time);
   const lead = presetWidgets("lead", today.map((w) => w.id), time);
   return {
-    version: 2,
+    version: DASHBOARD_VERSION,
     boards: [
       { id: "heute", name: t("dash.board.today"), widgets: today },
       { id: "projekte", name: t("dash.board.projects"), widgets: lead },
@@ -330,23 +422,31 @@ export function migrateLegacy(list: LegacyWidget[], note = ""): Dashboard {
   const rowHeight = new Map<number, number>();
   for (const w of widgets) rowHeight.set(w.y, Math.max(rowHeight.get(w.y) ?? 0, w.h));
   const even = widgets.map((w) => ({ ...w, h: rowHeight.get(w.y)! }));
-  return { version: 2, boards: [{ id: "heute", name: t("dash.board.today"), widgets: even }], active: "heute", notes };
+  return { version: DASHBOARD_VERSION, boards: [{ id: "heute", name: t("dash.board.today"), widgets: even }], active: "heute", notes };
 }
 
 /**
- * The start page as the UI shows it: boards as saved; the old widget list moved onto a board;
- * a start page never saved gets the default boards. Unknown kinds are dropped.
+ * Version of the saved start page: 0 the one list of 1.3–1.5, 2 boards (1.6), 3 boards whose
+ * widgets may be of kinds this version does not know (kept, hidden) and registered kinds (1.7).
+ */
+export const DASHBOARD_VERSION = 3;
+
+/**
+ * The start page as the UI shows it: boards (start pages) as saved with the one last used
+ * active; the old widget list moved onto the first board; a start page never saved gets the
+ * default boards. Widgets of unknown kinds are kept (hidden by `shownWidgets`), so a layout
+ * of a newer version or with a widget of a feature not present survives a save.
  */
 export function loadDashboard(d: Dashboard | null | undefined, time = true): Dashboard {
   if (!d || (!d.boards?.length && d.widgets == null)) return defaultDashboard(time);
   if (!d.boards?.length) return migrateLegacy(d.widgets ?? [], d.note ?? "");
-  const boards = d.boards.map((b) => ({ ...b, widgets: b.widgets.filter((w) => isKind(w.kind)).map((w) => clampRect(w, COLS, minOf(w))) }));
+  const boards = d.boards.map((b) => ({ ...b, widgets: (b.widgets ?? []).map((w) => (isKind(w.kind) ? clampRect(w, COLS, minOf(w)) : w)) }));
   const active = boards.some((b) => b.id === d.active) ? d.active : boards[0].id;
-  return { version: 2, boards, active, notes: { ...(d.notes ?? {}) } };
+  return { version: DASHBOARD_VERSION, boards, active, notes: { ...(d.notes ?? {}) } };
 }
 
 /** What `dashboard_save` gets: the boards, without the old list. */
-export const toSaved = (d: Dashboard): Dashboard => ({ version: 2, boards: d.boards, active: d.active, notes: d.notes });
+export const toSaved = (d: Dashboard): Dashboard => ({ version: DASHBOARD_VERSION, boards: d.boards, active: d.active, notes: d.notes });
 
 // ------------------------------------------------------------------ board edits
 
@@ -405,16 +505,55 @@ export function moveBoard(boards: Board[], id: string, delta: -1 | 1): Board[] {
 // ------------------------------------------------------------------ export / import
 
 export const BOARD_FORMAT = "annalo-dashboard";
+/** Version of the board file: 1 (1.6), 2 adds `app` and `exported` and leaves out secrets. */
+export const BOARD_FILE_VERSION = 2;
+/** Extension of a board file (plain JSON; any `.json` file imports too). */
+export const BOARD_EXT = "dashboard.json";
+/** Most widgets a board (and a board file) holds, as in the backend. */
+export const MAX_BOARD_WIDGETS = 40;
+const MAX_CONFIG_CHARS = 16_000;
+const MAX_NOTE_CHARS = 20_000;
 
-/** A board as a file: its name, widgets and the texts of its notes. */
-export function exportBoard(board: Board, notes: Record<string, string>): string {
-  const own = Object.fromEntries(board.widgets.filter((w) => notes[w.id] != null).map((w) => [w.id, notes[w.id]]));
-  return JSON.stringify({ format: BOARD_FORMAT, version: 1, board: { name: board.name, widgets: board.widgets }, notes: own }, null, 2) + "\n";
+/** Settings keys that look like credentials: never exported or imported, for any widget. */
+const SECRET_KEY = /(token|secret|passw|api[-_]?key|apikey|credential|bearer|cookie|session|auth|private[-_]?key)/i;
+
+/** A widget's settings without credentials (see `WidgetDef.secrets`), nested objects included. */
+export function publicConfig(kind: string, config: Record<string, unknown> | undefined): Record<string, unknown> {
+  const own = new Set(isKind(kind) ? (WIDGETS[kind].secrets ?? []) : []);
+  const clean = (v: unknown, top: boolean): unknown => {
+    if (Array.isArray(v)) return v.map((x) => clean(x, false));
+    if (!v || typeof v !== "object") return v;
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>)
+        .filter(([key]) => !SECRET_KEY.test(key) && !(top && own.has(key)))
+        .map(([key, x]) => [key, clean(x, false)]),
+    );
+  };
+  return clean(config ?? {}, true) as Record<string, unknown>;
 }
 
-export type ImportResult = { board: Board; notes: Record<string, string> } | { error: TKey };
+/** A board as a file: its name, widgets (settings without credentials) and the texts of its notes. */
+export function exportBoard(board: Board, notes: Record<string, string>, now = new Date()): string {
+  const own = Object.fromEntries(board.widgets.filter((w) => notes[w.id] != null).map((w) => [w.id, notes[w.id]]));
+  const widgets = board.widgets.map((w) => ({ ...w, config: publicConfig(w.kind, w.config) }));
+  return JSON.stringify({ format: BOARD_FORMAT, version: BOARD_FILE_VERSION, app: "annalo", exported: now.toISOString(), board: { name: board.name, widgets }, notes: own }, null, 2) + "\n";
+}
 
-/** Reads a board file; the board gets a new id and widget ids not in use on `boards`. */
+/** File name of an exported board: `annalo-arbeit-2026-10-01.dashboard.json`. */
+export function boardFileName(board: Board, now = new Date()): string {
+  const slug = board.name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "board";
+  return `annalo-${slug}-${isoDay(now)}.${BOARD_EXT}`;
+}
+
+/** An imported board, the notes of its widgets and the kinds this version does not know (left out). */
+export type ImportResult = { board: Board; notes: Record<string, string>; dropped: string[] } | { error: TKey };
+
+/**
+ * Reads and checks a board file: the format and its version, at most `MAX_BOARD_WIDGETS`
+ * widgets with a kind, numbers for the place, settings as an object of sensible size and
+ * without credentials, titles and notes as text. Unknown kinds are left out and named in
+ * `dropped`. The board gets a new id and widget ids not in use on `boards`.
+ */
 export function importBoard(text: string, boards: Board[]): ImportResult {
   let raw: unknown;
   try {
@@ -422,28 +561,37 @@ export function importBoard(text: string, boards: Board[]): ImportResult {
   } catch {
     return { error: "dash.import.notJson" };
   }
-  const r = raw as { format?: unknown; board?: { name?: unknown; widgets?: unknown }; notes?: unknown };
-  if (!r || r.format !== BOARD_FORMAT || !r.board || !Array.isArray(r.board.widgets)) return { error: "dash.import.wrongFormat" };
+  const r = raw as { format?: unknown; version?: unknown; board?: { name?: unknown; widgets?: unknown }; notes?: unknown };
+  if (!r || typeof r !== "object" || r.format !== BOARD_FORMAT || !r.board || typeof r.board !== "object" || !Array.isArray(r.board.widgets)) return { error: "dash.import.wrongFormat" };
+  if (r.version != null && (typeof r.version !== "number" || r.version > BOARD_FILE_VERSION)) return { error: "dash.import.newer" };
+  if (r.board.widgets.length > MAX_BOARD_WIDGETS) return { error: "dash.import.tooMany" };
   const used = new Set(allWidgetIds(boards));
-  const notesIn = r.notes && typeof r.notes === "object" ? (r.notes as Record<string, unknown>) : {};
+  const notesIn = r.notes && typeof r.notes === "object" && !Array.isArray(r.notes) ? (r.notes as Record<string, unknown>) : {};
   const notes: Record<string, string> = {};
   const widgets: GridWidget[] = [];
+  const dropped: string[] = [];
   for (const w of r.board.widgets as Partial<GridWidget>[]) {
-    if (!w || typeof w.kind !== "string" || !isKind(w.kind)) continue;
-    const id = newId(typeof w.id === "string" && w.id.trim() ? w.id.trim() : w.kind, used);
+    if (!w || typeof w !== "object" || typeof w.kind !== "string") continue;
+    if (!isKind(w.kind)) {
+      if (!dropped.includes(w.kind)) dropped.push(w.kind.slice(0, 32));
+      continue;
+    }
+    const wanted = typeof w.id === "string" ? w.id.trim().slice(0, 40) : "";
+    const id = newId(wanted || w.kind, used);
     used.add(id);
     const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
     const def = WIDGETS[w.kind];
     const r0 = clampRect({ x: num(w.x, 0), y: num(w.y, 0), w: num(w.w, def.size.w), h: num(w.h, def.size.h) }, COLS, def.min);
-    const config = w.config && typeof w.config === "object" && !Array.isArray(w.config) ? (w.config as Record<string, unknown>) : def.config();
-    widgets.push({ id, kind: w.kind, ...r0, title: typeof w.title === "string" ? w.title.slice(0, 60) : undefined, config });
+    const given = w.config && typeof w.config === "object" && !Array.isArray(w.config) && JSON.stringify(w.config).length <= MAX_CONFIG_CHARS ? (w.config as Record<string, unknown>) : def.config();
+    const title = typeof w.title === "string" && w.title.trim() ? w.title.trim().slice(0, 60) : undefined;
+    widgets.push({ id, kind: w.kind, ...r0, ...(title ? { title } : {}), config: publicConfig(w.kind, given) });
     const note = typeof w.id === "string" ? notesIn[w.id] : undefined;
-    if (typeof note === "string") notes[id] = note;
+    if (typeof note === "string") notes[id] = note.slice(0, MAX_NOTE_CHARS);
   }
-  if (!widgets.length && (r.board.widgets as unknown[]).length) return { error: "dash.import.noWidgets" };
+  if (!widgets.length && (r.board.widgets as unknown[]).length) return dropped.length ? { error: "dash.import.onlyUnknown" } : { error: "dash.import.noWidgets" };
   const name = typeof r.board.name === "string" && r.board.name.trim() ? r.board.name.trim().slice(0, 40) : t("dash.board.imported");
   const board = newBoard(boards, name, null);
-  return { board: { ...board, widgets: settle(widgets) }, notes };
+  return { board: { ...board, widgets: settle(widgets) }, notes, dropped };
 }
 
 // ------------------------------------------------------------------ data parts
@@ -465,7 +613,11 @@ export type Part =
   | { kind: "review"; date: string }
   | { kind: "timer_refs" }
   | { kind: "month"; from: string; to: string }
-  | { kind: "suggestions" };
+  | { kind: "suggestions" }
+  | { kind: "resurface"; seed: number }
+  | { kind: "writing"; days: number }
+  | { kind: "pulled"; limit: number }
+  | { kind: "inbox"; limit: number };
 
 export interface TaskQuery {
   status?: "open" | "done" | "all";
@@ -476,8 +628,8 @@ export interface TaskQuery {
   text?: string;
 }
 
-/** What invalidates a part: time entries, tasks, pages, the calendar, focus sessions, the WBS. */
-export type DataTopic = "entries" | "tasks" | "pages" | "calendar" | "focus" | "wbs";
+/** What invalidates a part: time entries, tasks, pages, the calendar, focus sessions, the WBS, a Git sync. */
+export type DataTopic = "entries" | "tasks" | "pages" | "calendar" | "focus" | "wbs" | "sync";
 
 /** A stable key for a part (same settings, same key: loaded once for several widgets). */
 export const partKey = (p: Part) => JSON.stringify(p);
@@ -514,6 +666,14 @@ export function partTopics(p: Part): DataTopic[] {
       return ["entries", "pages", "tasks"];
     case "suggestions":
       return ["entries", "tasks", "pages", "wbs"];
+    case "resurface":
+    case "writing":
+    case "inbox":
+      return ["pages"];
+    case "pulled":
+      return ["sync", "pages"];
+    default:
+      return ["pages"];
   }
 }
 
@@ -575,7 +735,7 @@ export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, wor
     case "suggestions":
       return [{ kind: "suggestions" }];
     default:
-      return [];
+      return isKind(w.kind) ? (WIDGETS[w.kind].parts?.(c, { today, monday, workdays, time }) ?? []) : [];
   }
 }
 
