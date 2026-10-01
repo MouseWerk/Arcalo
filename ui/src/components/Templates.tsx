@@ -6,11 +6,13 @@ import { create } from "zustand";
 import type { Editor } from "@tiptap/core";
 import { LayoutTemplate } from "lucide-react";
 import { api } from "../lib/api";
+import { fmtDate } from "../lib/format";
 import { useApp } from "../store/app";
 import { fuzzyIncludes } from "../editor/extensions";
 import { PageIcon } from "./icons";
 import { Button, Dialog, EmptyState, Input, Spinner } from "./ui";
 import type { Page } from "../lib/types";
+import { currentLang, t as tr, useT } from "../lib/i18n";
 
 type Mode = "insert" | "page";
 interface Pick {
@@ -51,7 +53,7 @@ export async function insertTemplate(editor: Editor, pageTitle: string) {
     const md = await api.renderTemplate(pick.template.id, pageTitle);
     editor.chain().focus().setTextSelection({ from, to }).insertContent(md, { contentType: "markdown" }).run();
   } catch (e) {
-    useApp.getState().error("Vorlage nicht eingefügt", e);
+    useApp.getState().error(tr("tpl.insertFailed"), e);
   }
 }
 
@@ -65,11 +67,11 @@ export async function newPageFromTemplate(parentId: number | null = null) {
     await s.refreshTree();
     s.openPage(page.id);
   } catch (e) {
-    s.error("Seite konnte nicht angelegt werden", e);
+    s.error(tr("tpl.pageFailed"), e);
   }
 }
 
-const today = () => new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+const today = () => fmtDate(new Date());
 
 export function TemplateHost() {
   const req = usePicker((s) => s.req);
@@ -78,6 +80,7 @@ export function TemplateHost() {
 }
 
 function TemplatePicker({ req }: { req: Request }) {
+  useT();
   const [templates, setTemplates] = useState<Page[] | null>(null);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -105,7 +108,7 @@ function TemplatePicker({ req }: { req: Request }) {
       .templates()
       .then(setTemplates)
       .catch((e) => {
-        useApp.getState().error("Vorlagen nicht geladen", e);
+        useApp.getState().error(tr("tpl.loadFailed"), e);
         setTemplates([]);
       });
   }, [req]);
@@ -136,7 +139,7 @@ function TemplatePicker({ req }: { req: Request }) {
       await s.refreshTree();
       s.openPage(root.id);
     } catch (e) {
-      s.error("„Vorlagen“ nicht geöffnet", e);
+      s.error(tr("tpl.openFailed"), e);
     }
   };
   const onKey = (e: { key: string; preventDefault: () => void; stopPropagation: () => void }) => {
@@ -157,16 +160,16 @@ function TemplatePicker({ req }: { req: Request }) {
     <Dialog
       open
       onClose={close}
-      title={isPage ? "Neue Seite aus Vorlage" : "Vorlage einfügen"}
-      description={<>Vorlagen sind die Seiten unter „Vorlagen“. Platzhalter wie {"{{datum}}"}, {"{{zeit}}"} oder {"{{titel}}"} werden ausgefüllt.</>}
+      title={isPage ? tr("tpl.newPage") : tr("tpl.insert")}
+      description={tr("tpl.desc", currentLang() === "de" ? { a: "{{datum}}", b: "{{zeit}}", c: "{{titel}}" } : { a: "{{date}}", b: "{{time}}", c: "{{title}}" })}
       width={500}
       footer={
         <>
           <Button variant="ghost" onClick={close}>
-            Abbrechen
+            {tr("common.cancel")}
           </Button>
           <Button variant="primary" onClick={() => choose(current)} disabled={!current || (isPage && !title.trim())}>
-            {isPage ? "Anlegen" : "Einfügen"}
+            {isPage ? tr("common.create") : tr("slash.sec.insert")}
           </Button>
         </>
       }
@@ -174,28 +177,28 @@ function TemplatePicker({ req }: { req: Request }) {
       <div className="tpl-picker" ref={pickerRef}>
         {isPage && (
           <label className="field">
-            <span className="field-label">Titel</span>
+            <span className="field-label">{tr("tpl.title")}</span>
             <Input
               value={title}
               onChange={(e) => (setTitle(e.target.value), setTitleTouched(true))}
               onKeyDown={onKey}
-              aria-label="Titel der neuen Seite"
+              aria-label={tr("tpl.titleLabel")}
               data-autofocus
               spellCheck
             />
           </label>
         )}
-        {templates && templates.length > 3 && <Input value={q} onChange={(e) => (setQ(e.target.value), setSel(0))} onKeyDown={onKey} placeholder="Vorlage suchen…" aria-label="Vorlage suchen" data-autofocus={isPage ? undefined : ""} />}
+        {templates && templates.length > 3 && <Input value={q} onChange={(e) => (setQ(e.target.value), setSel(0))} onKeyDown={onKey} placeholder={tr("tpl.searchPh")} aria-label={tr("tpl.search")} data-autofocus={isPage ? undefined : ""} />}
         {templates === null ? (
           <div className="center-fill tpl-loading">
             <Spinner />
           </div>
         ) : templates.length === 0 ? (
-          <EmptyState icon={LayoutTemplate} title="Noch keine Vorlagen" action={<Button onClick={openTemplates}>„Vorlagen“ öffnen</Button>}>
-            Lege Unterseiten unter „Vorlagen“ an, sie erscheinen dann hier.
+          <EmptyState icon={LayoutTemplate} title={tr("tpl.none")} action={<Button onClick={openTemplates}>{tr("tpl.openFolder")}</Button>}>
+            {tr("tpl.noneText")}
           </EmptyState>
         ) : (
-          <div className="tpl-list" role="listbox" aria-label="Vorlagen" tabIndex={-1} data-autofocus={isPage ? undefined : ""}>
+          <div className="tpl-list" role="listbox" aria-label={tr("set.notes.templates")} tabIndex={-1} data-autofocus={isPage ? undefined : ""}>
             {shown.map((t, i) => (
               <button
                 key={t.id}
@@ -215,7 +218,7 @@ function TemplatePicker({ req }: { req: Request }) {
                 </span>
               </button>
             ))}
-            {shown.length === 0 && <div className="sugg-empty">Keine Vorlage gefunden</div>}
+            {shown.length === 0 && <div className="sugg-empty">{tr("tpl.notFound")}</div>}
           </div>
         )}
       </div>

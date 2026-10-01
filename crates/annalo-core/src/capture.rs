@@ -4,6 +4,7 @@
 //! while ([`CaptureUndo`]), and a capture the database could not take (busy, storage) waits
 //! in a queue file and is retried ([`QueuedCapture`]).
 
+use crate::{tr, trf};
 use std::path::Path;
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -36,6 +37,11 @@ pub enum CaptureTarget {
 
 /// Default title of the inbox page.
 pub const INBOX_TITLE: &str = "Posteingang";
+
+/// The inbox title a new workspace gets, in the display language (existing ones keep theirs).
+pub fn inbox_title() -> &'static str {
+    tr!(INBOX_TITLE, "Inbox")
+}
 
 /// A meeting counts as „now“ while it runs and during this many minutes after its start
 /// (short meetings that are already over still get their notes).
@@ -168,6 +174,14 @@ pub fn append_markdown(content: &str, addition: &str) -> String {
     format!("{body}{sep}{addition}\n")
 }
 
+/// The names of the notes section of a daily or meeting note (German pages, English pages).
+pub const NOTES_SECTIONS: [&str; 2] = ["Notizen", "Notes"];
+
+/// [`insert_in_section`] into the notes section, whichever language the page was made in.
+pub fn insert_in_notes(content: &str, addition: &str) -> Option<String> {
+    NOTES_SECTIONS.iter().find_map(|name| insert_in_section(content, name, addition))
+}
+
 /// Inserts `addition` at the end of the section headed `## <name>` (level 2 or 3, any case),
 /// before the next heading of the same or a higher level. `None` when there is no such section.
 pub fn insert_in_section(content: &str, name: &str, addition: &str) -> Option<String> {
@@ -258,7 +272,7 @@ fn resolve<Tz: TimeZone>(
         CaptureTarget::Page { page_id } => {
             let page = db.page(*page_id)?;
             if page.deleted_at.is_some() {
-                return Err(Error::State(format!("„{}“ liegt im Papierkorb", page.title)));
+                return Err(Error::State(trf!("„{}“ liegt im Papierkorb", "“{}” is in the trash", page.title)));
             }
             Ok((page, false))
         }
@@ -270,7 +284,7 @@ fn resolve<Tz: TimeZone>(
 fn page_titled(db: &Database, title: &str, icon: &str) -> Result<(crate::model::Page, bool)> {
     let title = crate::notes::clean_title(title);
     if title.is_empty() {
-        return Err(Error::State("Der Seitentitel fehlt".into()));
+        return Err(Error::State(tr!("Der Seitentitel fehlt", "The page title is missing").into()));
     }
     match db.page_by_title(&title)? {
         Some(p) => Ok((p, false)),
@@ -324,7 +338,7 @@ where
         let next = match target {
             CaptureTarget::Inbox => append_markdown(&before, &inbox_entry(&md, now, tz)),
             CaptureTarget::Daily | CaptureTarget::Meeting { .. } => {
-                insert_in_section(&before, "Notizen", &md).unwrap_or_else(|| append_markdown(&before, &md))
+                insert_in_notes(&before, &md).unwrap_or_else(|| append_markdown(&before, &md))
             }
             _ => append_markdown(&before, &md),
         };
@@ -345,8 +359,9 @@ pub fn undo_capture(db: &Database, undo: &CaptureUndo) -> Result<()> {
         if let Some(p) = &undo.page {
             let trashed = db.page(p.page_id)?.deleted_at.is_some();
             if trashed || db.page_doc(p.page_id)?.content != p.after {
-                return Err(Error::State(format!(
+                return Err(Error::State(trf!(
                     "„{}“ wurde seit der Erfassung geändert – nichts rückgängig gemacht",
+                    "“{}” was changed since the capture – nothing undone",
                     p.title
                 )));
             }

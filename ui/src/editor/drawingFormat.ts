@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n";
 // Reading a drawing file: Excalidraw's JSON, or the Markdown form of Obsidian's Excalidraw
 // plugin (a `json` or `compressed-json` block under `## Drawing`). Anything else is reported
 // as damaged or unknown, so the editor never starts empty over it and overwrites it.
@@ -19,9 +20,9 @@ function fromJson(text: string, converted: boolean): DrawingLoad {
   try {
     value = JSON.parse(text);
   } catch {
-    return { ok: false, reason: "Die Datei ist beschädigt (unvollständig oder kein gültiges JSON)." };
+    return { ok: false, reason: t("draw.corrupt") };
   }
-  return isScene(value) ? { ok: true, scene: value, converted } : { ok: false, reason: "Die Datei ist keine Excalidraw-Zeichnung (es fehlen die Elemente)." };
+  return isScene(value) ? { ok: true, scene: value, converted } : { ok: false, reason: t("draw.notScene") };
 }
 
 export function parseDrawing(raw: string): DrawingLoad {
@@ -32,12 +33,12 @@ export function parseDrawing(raw: string): DrawingLoad {
   const compressed = /```compressed-json[^\n]*\n([\s\S]*?)```/.exec(text);
   if (compressed) {
     const json = decompressFromBase64(compressed[1].replace(/\s+/g, ""));
-    if (!json) return { ok: false, reason: "Die komprimierte Zeichnung (Obsidian) ist beschädigt." };
+    if (!json) return { ok: false, reason: t("draw.corruptCompressed") };
     return fromJson(json, true);
   }
   const plain = /```json[^\n]*\n([\s\S]*?)```/.exec(text);
   if (plain) return fromJson(plain[1], true);
-  return { ok: false, reason: "Das Format der Datei ist unbekannt." };
+  return { ok: false, reason: t("draw.unknownFormat") };
 }
 
 // ------------------------------------------------ lz-string (compressToBase64 counterpart)

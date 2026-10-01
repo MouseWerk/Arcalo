@@ -59,17 +59,20 @@ fn pause_notification(app: &AppHandle, o: &FocusOutcome) {
     if o.session.status != "done" {
         return;
     }
-    let what = if o.session.reference.is_empty() { String::new() } else { format!(" auf {}", o.session.reference) };
+    let reference = &o.session.reference;
+    let what =
+        if reference.is_empty() { String::new() } else { annalo_core::trf!(" auf {reference}", " on {reference}") };
+    let worked = focus::hm(o.session.worked_minutes);
     let body = if o.session.break_minutes > 0 {
-        format!(
-            "{} Fokus{what} geschafft. {} Min. Pause.",
-            focus::hm(o.session.worked_minutes),
-            o.session.break_minutes
+        let pause = o.session.break_minutes;
+        annalo_core::trf!(
+            "{worked} Fokus{what} geschafft. {pause} Min. Pause.",
+            "{worked} of focus{what} done. {pause} min break."
         )
     } else {
-        format!("{} Fokus{what} geschafft.", focus::hm(o.session.worked_minutes))
+        annalo_core::trf!("{worked} Fokus{what} geschafft.", "{worked} of focus{what} done.")
     };
-    if let Err(e) = app.notification().builder().title("Pause").body(body).silent().show() {
+    if let Err(e) = app.notification().builder().title(annalo_core::tr!("Pause", "Break")).body(body).silent().show() {
         crate::devlog::warn("focus", format!("notification failed: {e}"));
     }
 }

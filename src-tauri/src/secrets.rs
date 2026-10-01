@@ -68,15 +68,24 @@ impl SecretStore {
     pub fn backend(&self) -> &'static str {
         let portable = crate::portable::active();
         if cfg!(windows) && portable {
-            "Windows-Anmeldeinformationsverwaltung dieses Rechners (portabler Modus: nicht auf dem Datenträger)"
+            annalo_core::tr!(
+                "Windows-Anmeldeinformationsverwaltung dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
+                "Windows Credential Manager of this computer (portable mode: not on the drive)"
+            )
         } else if cfg!(windows) {
             "Windows-Anmeldeinformationsverwaltung"
         } else if cfg!(target_os = "macos") && portable {
-            "macOS-Schlüsselbund dieses Rechners (portabler Modus: nicht auf dem Datenträger)"
+            annalo_core::tr!(
+                "macOS-Schlüsselbund dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
+                "macOS keychain of this computer (portable mode: not on the drive)"
+            )
         } else if cfg!(target_os = "macos") {
-            "macOS-Schlüsselbund"
+            annalo_core::tr!("macOS-Schlüsselbund", "macOS keychain")
         } else {
-            "Datei im App-Datenordner (nur für den Benutzer lesbar)"
+            annalo_core::tr!(
+                "Datei im App-Datenordner (nur für den Benutzer lesbar)",
+                "File in the app data folder (readable by the user only)"
+            )
         }
     }
 

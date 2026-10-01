@@ -67,6 +67,7 @@ pub mod export;
 pub mod feed;
 pub mod focus;
 pub mod gitsync;
+pub mod i18n;
 pub mod linktitle;
 pub mod mail;
 pub mod merge;

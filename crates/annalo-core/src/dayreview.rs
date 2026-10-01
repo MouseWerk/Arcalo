@@ -9,6 +9,7 @@
 //! from this structure ([`summary_messages`]) and only ever goes to a provider marked local
 //! ([`local_candidates`]): the review aggregates every page of the day, private ones included.
 
+use crate::{tr, trf};
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
@@ -18,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::ai::availability::Catalog;
 use crate::ai::client::ChatMessage;
 use crate::ai::router::{ModelRef, RouterConfig, Tier};
-use crate::calsync::{Busy, CalendarEvent, PRIVATE_TITLE};
+use crate::calsync::{Busy, CalendarEvent, is_private_title};
 use crate::db::{Database, parse_ts, ts};
 use crate::error::{Error, Result};
 use crate::feed::day_start;
@@ -299,7 +300,9 @@ pub fn gaps(mut spans: Vec<(DateTime<Utc>, DateTime<Utc>)>) -> Vec<ReviewGap> {
 
 /// The review of the local day `date` in `tz`.
 pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &ReviewOptions) -> Result<DayReview> {
-    let next = date.succ_opt().ok_or_else(|| Error::State("Datum außerhalb des gültigen Bereichs".into()))?;
+    let next = date
+        .succ_opt()
+        .ok_or_else(|| Error::State(tr!("Datum außerhalb des gültigen Bereichs", "Date out of range").into()))?;
     let (from, to) = (day_start(date, tz), day_start(next, tz));
     let (a, b) = (ts(from), ts(to));
     let key = date.format("%Y-%m-%d").to_string();
@@ -581,7 +584,8 @@ fn meeting(
             .flatten()
             .map(|x| x.id)
     });
-    let not_work = ev.all_day || matches!(ev.busy, Busy::Free | Busy::Oof) || (ev.private && ev.title == PRIVATE_TITLE);
+    let not_work =
+        ev.all_day || matches!(ev.busy, Busy::Free | Busy::Oof) || (ev.private && is_private_title(&ev.title));
     let state = if matched.is_some() {
         "booked"
     } else if e.skip {
@@ -629,17 +633,20 @@ pub fn reminder_body(r: &DayReview) -> String {
     let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
     let mut parts = vec![];
     if !r.pages.is_empty() {
-        parts.push(plural(r.pages.len(), "Seite", "Seiten"));
+        parts.push(plural(r.pages.len(), tr!("Seite", "page"), tr!("Seiten", "pages")));
     }
     if !r.without_time {
-        parts.push(format!("{} h gebucht", crate::desktop::format_hours(r.time.booked_minutes as f64)));
+        let hours = crate::desktop::format_hours(r.time.booked_minutes as f64);
+        parts.push(trf!("{hours} h gebucht", "{hours} h booked"));
     }
     if r.tasks.done_total > 0 {
-        parts.push(format!("{} erledigt", plural(r.tasks.done_total as usize, "Aufgabe", "Aufgaben")));
+        let n = plural(r.tasks.done_total as usize, tr!("Aufgabe", "task"), tr!("Aufgaben", "tasks"));
+        parts.push(trf!("{n} erledigt", "{n} done"));
     }
     let open = r.meetings.iter().filter(|m| m.state == "open").count();
     if open > 0 {
-        parts.push(format!("{} ohne Buchung", plural(open, "Termin", "Termine")));
+        let n = plural(open, tr!("Termin", "meeting"), tr!("Termine", "meetings"));
+        parts.push(trf!("{n} ohne Buchung", "{n} not booked"));
     }
     parts.join(" · ")
 }
@@ -676,9 +683,13 @@ pub fn no_local_reason(catalog: &Catalog) -> Option<String> {
         return None;
     }
     Some(
-        "Der Tagesrückblick enthält alle Seiten des Tages, auch vertrauliche. Die Zusammenfassung schreibt deshalb \
-         nur ein lokales Modell (z. B. Ollama): markiere unter Einstellungen → KI einen Anbieter als lokal."
-            .into(),
+        tr!(
+            "Der Tagesrückblick enthält alle Seiten des Tages, auch vertrauliche. Die Zusammenfassung schreibt deshalb \
+             nur ein lokales Modell (z. B. Ollama): markiere unter Einstellungen → KI einen Anbieter als lokal.",
+            "The day review contains every page of the day, confidential ones too. So only a local model (e.g. \
+             Ollama) writes the summary: mark a provider as local under Settings → AI."
+        )
+        .into(),
     )
 }
 
@@ -688,54 +699,71 @@ where
     Tz::Offset: std::fmt::Display,
 {
     let t = |at: DateTime<Utc>| at.with_timezone(tz).format("%H:%M").to_string();
+    let en = crate::i18n::is_en();
     const WEEKDAYS: [&str; 7] = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-    let weekday = WEEKDAYS[r.date.weekday().num_days_from_monday() as usize];
-    let mut out = format!("Tag: {weekday}, {}\n", r.date.format("%d.%m.%Y"));
+    let mut out = if en {
+        format!("Day: {}\n", r.date.format("%A, %Y-%m-%d"))
+    } else {
+        let weekday = WEEKDAYS[r.date.weekday().num_days_from_monday() as usize];
+        format!("Tag: {weekday}, {}\n", r.date.format("%d.%m.%Y"))
+    };
     let tm = &r.time;
     // Time tracking off: nothing about bookings, targets or gaps.
     if !r.without_time {
-        out.push_str(&format!("Gebucht: {}", hm(tm.booked_minutes)));
+        let booked = hm(tm.booked_minutes);
+        out.push_str(&trf!("Gebucht: {booked}", "Booked: {booked}"));
         if tm.target_minutes > 0 {
-            out.push_str(&format!(" von {} Soll", hm(tm.target_minutes)));
+            let target = hm(tm.target_minutes);
+            out.push_str(&trf!(" von {target} Soll", " of {target} target"));
             if tm.missing_minutes > 0 {
-                out.push_str(&format!(", es fehlen {}", hm(tm.missing_minutes)));
+                let missing = hm(tm.missing_minutes);
+                out.push_str(&trf!(", es fehlen {missing}", ", {missing} missing"));
             }
         } else {
-            out.push_str(" (kein Arbeitstag)");
+            out.push_str(tr!(" (kein Arbeitstag)", " (not a workday)"));
         }
         out.push('\n');
     }
     if tm.running_minutes > 0 {
-        out.push_str(&format!("Ein Timer läuft noch ({}).\n", hm(tm.running_minutes)));
+        let running = hm(tm.running_minutes);
+        out.push_str(&trf!("Ein Timer läuft noch ({running}).\n", "A timer is still running ({running}).\n"));
     }
     for w in &tm.items {
         let what = if w.descriptions.is_empty() { String::new() } else { format!(": {}", w.descriptions.join("; ")) };
         out.push_str(&format!("- {} {} ({}){what}\n", w.label, hm(w.minutes), w.title));
     }
     for g in &tm.gaps {
-        out.push_str(&format!("Lücke ohne Buchung: {}–{} ({})\n", t(g.start), t(g.end), hm(g.minutes)));
+        let (from, to, len) = (t(g.start), t(g.end), hm(g.minutes));
+        out.push_str(&trf!(
+            "Lücke ohne Buchung: {from}–{to} ({len})\n",
+            "Gap without a time entry: {from}–{to} ({len})\n"
+        ));
     }
     if !r.meetings.is_empty() {
-        out.push_str("Termine:\n");
+        out.push_str(tr!("Termine:\n", "Meetings:\n"));
         for m in &r.meetings {
             let state = match m.state.as_str() {
-                "booked" => "gebucht",
-                "skipped" => "nicht zu buchen",
-                "open" => "noch nicht gebucht",
-                "upcoming" => "steht noch an",
-                "done" => "vorbei",
-                _ => "frei",
+                "booked" => tr!("gebucht", "booked"),
+                "skipped" => tr!("nicht zu buchen", "not to be booked"),
+                "open" => tr!("noch nicht gebucht", "not booked yet"),
+                "upcoming" => tr!("steht noch an", "still to come"),
+                "done" => tr!("vorbei", "over"),
+                _ => tr!("frei", "free"),
             };
-            let when = if m.all_day { "ganztägig".to_owned() } else { format!("{}–{}", t(m.start), t(m.end)) };
+            let when = if m.all_day {
+                tr!("ganztägig", "all day").to_owned()
+            } else {
+                format!("{}–{}", t(m.start), t(m.end))
+            };
             out.push_str(&format!("- {when} {} ({state})\n", m.title));
         }
     }
     if !r.pages.is_empty() {
-        out.push_str("Seiten:\n");
+        out.push_str(tr!("Seiten:\n", "Pages:\n"));
         for p in &r.pages {
-            let verb = if p.created { "angelegt" } else { "bearbeitet" };
+            let verb = if p.created { tr!("angelegt", "created") } else { tr!("bearbeitet", "edited") };
             let words = match p.word_delta {
-                Some(d) if d != 0 => format!(", {d:+} Wörter"),
+                Some(d) if d != 0 => trf!(", {d:+} Wörter", ", {d:+} words"),
                 _ => String::new(),
             };
             out.push_str(&format!("- {} ({verb}, ~{} min{words})\n", p.title, p.minutes));
@@ -747,53 +775,74 @@ where
         }
         out.push_str(&format!("{head} ({total}):\n"));
         for task in tasks.iter().take(20) {
-            let due = task.due.as_deref().map(|d| format!(", fällig {d}")).unwrap_or_default();
-            out.push_str(&format!("- {} (Seite {}{due})\n", task.text, task.page_title));
+            let due = task.due.as_deref().map(|d| trf!(", fällig {d}", ", due {d}")).unwrap_or_default();
+            let (text, page) = (&task.text, &task.page_title);
+            out.push_str(&trf!("- {text} (Seite {page}{due})\n", "- {text} (page {page}{due})\n"));
         }
     };
-    list(&mut out, "Erledigte Aufgaben", &r.tasks.done, r.tasks.done_total);
+    list(&mut out, tr!("Erledigte Aufgaben", "Tasks done"), &r.tasks.done, r.tasks.done_total);
     let fresh: Vec<ReviewTask> = r.tasks.added.iter().filter(|x| !x.done).cloned().collect();
-    list(&mut out, "Neue offene Aufgaben", &fresh, fresh.len() as i64);
-    list(&mut out, "Heute fällig, offen", &r.tasks.due, r.tasks.due_total);
-    list(&mut out, "Überfällig", &r.tasks.overdue, r.tasks.overdue_total);
+    list(&mut out, tr!("Neue offene Aufgaben", "New open tasks"), &fresh, fresh.len() as i64);
+    list(&mut out, tr!("Heute fällig, offen", "Due today, open"), &r.tasks.due, r.tasks.due_total);
+    list(&mut out, tr!("Überfällig", "Overdue"), &r.tasks.overdue, r.tasks.overdue_total);
     if !r.focus.sessions.is_empty() {
-        out.push_str(&format!("Fokus: {} Sitzungen, {}\n", r.focus.sessions.len(), hm(r.focus.minutes)));
+        let (n, len) = (r.focus.sessions.len(), hm(r.focus.minutes));
+        out.push_str(&trf!("Fokus: {n} Sitzungen, {len}\n", "Focus: {n} sessions, {len}\n"));
         for s in &r.focus.sessions {
             let what = if s.goal.is_empty() { &s.reference } else { &s.goal };
             out.push_str(&format!("- {} {} {}\n", t(s.started_at), hm(s.worked_minutes), what));
         }
     }
     if !r.files.is_empty() {
-        let names: Vec<&str> = r.files.iter().map(|f| f.name.as_str()).collect();
-        out.push_str(&format!("Dateien hinzugefügt: {}\n", names.join(", ")));
+        let names = r.files.iter().map(|f| f.name.as_str()).collect::<Vec<&str>>().join(", ");
+        out.push_str(&trf!("Dateien hinzugefügt: {names}\n", "Files added: {names}\n"));
     }
     if r.is_empty() {
-        out.push_str("An diesem Tag wurde nichts aufgezeichnet.\n");
+        out.push_str(tr!("An diesem Tag wurde nichts aufgezeichnet.\n", "Nothing was recorded on this day.\n"));
     }
     out
 }
 
-/// The request for the summary: 3–6 German sentences and „Offen für morgen“.
+/// The request for the summary: 3–6 sentences in the display language and „Offen für morgen“.
 pub fn summary_messages<Tz: TimeZone>(r: &DayReview, tz: &Tz) -> Vec<ChatMessage>
 where
     Tz::Offset: std::fmt::Display,
 {
-    let system = "Du schreibst in Annalo, einem Notiz- und Zeiterfassungsprogramm, den Tagesrückblick des Nutzers. \
+    let system = tr!(
+        "Du schreibst in Annalo, einem Notiz- und Zeiterfassungsprogramm, den Tagesrückblick des Nutzers. \
         Fasse den Tag auf Deutsch in 3 bis 6 Sätzen zusammen: woran gearbeitet wurde, wie viel Zeit gebucht ist, \
         welche Termine und Aufgaben wichtig waren. Sprich den Nutzer mit „du“ an, bleibe sachlich und erfinde nichts, \
         was nicht in den Daten steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 \
         Stichpunkte (- …) mit dem, was offen ist: fehlende Buchungen, nicht gebuchte Termine, fällige und \
         überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. Antworte nur mit dem Text in \
-        Markdown, ohne Überschrift und ohne Einleitung.";
+        Markdown, ohne Überschrift und ohne Einleitung.",
+        "You write the user's day review in Annalo, a notes and time tracking app. Summarize the day in English \
+        in 3 to 6 sentences: what was worked on, how much time is booked, which meetings and tasks mattered. \
+        Address the user as “you”, stay factual and invent nothing that is not in the data. Then write a line \
+        “**Open for tomorrow:**” and below it 1 to 5 bullet points (- …) with what is open: missing time \
+        entries, meetings not booked, tasks due and overdue. If nothing is open, write “- Nothing urgent.”. \
+        Answer with the text in Markdown only, without a heading and without an introduction."
+    );
     // Time tracking off: a notes and calendar day, no bookings.
-    let without_time = "Du schreibst in Annalo, einem Notizprogramm mit Kalender, den Tagesrückblick des Nutzers. \
+    let without_time = tr!(
+        "Du schreibst in Annalo, einem Notizprogramm mit Kalender, den Tagesrückblick des Nutzers. \
         Fasse den Tag auf Deutsch in 3 bis 6 Sätzen zusammen: woran gearbeitet wurde, welche Termine und Aufgaben \
         wichtig waren. Sprich den Nutzer mit „du“ an, bleibe sachlich und erfinde nichts, was nicht in den Daten \
         steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 Stichpunkte (- …) mit dem, \
         was offen ist: fällige und überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. \
-        Antworte nur mit dem Text in Markdown, ohne Überschrift und ohne Einleitung.";
+        Antworte nur mit dem Text in Markdown, ohne Überschrift und ohne Einleitung.",
+        "You write the user's day review in Annalo, a notes app with a calendar. Summarize the day in English \
+        in 3 to 6 sentences: what was worked on, which meetings and tasks mattered. Address the user as “you”, \
+        stay factual and invent nothing that is not in the data. Then write a line “**Open for tomorrow:**” and \
+        below it 1 to 5 bullet points (- …) with what is open: tasks due and overdue. If nothing is open, write \
+        “- Nothing urgent.”. Answer with the text in Markdown only, without a heading and without an introduction."
+    );
     let system = if r.without_time { without_time } else { system };
-    vec![ChatMessage::system(system.to_owned()), ChatMessage::user(format!("Daten des Tages:\n\n{}", describe(r, tz)))]
+    let data = describe(r, tz);
+    vec![
+        ChatMessage::system(system.to_owned()),
+        ChatMessage::user(trf!("Daten des Tages:\n\n{data}", "The day's data:\n\n{data}")),
+    ]
 }
 
 #[cfg(test)]

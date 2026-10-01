@@ -2,6 +2,7 @@
 //! Secrets (the API keys of the AI providers) are deliberately not part of this struct;
 //! the desktop shell keeps them in the OS credential store.
 
+use crate::trf;
 use std::collections::{BTreeMap, HashMap};
 
 use rusqlite::{OptionalExtension, params};
@@ -510,7 +511,12 @@ impl Default for Settings {
 const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
 
 /// What a booking command answers while time tracking is switched off.
-pub const TIME_TRACKING_OFF: &str = "Die Zeiterfassung ist ausgeschaltet (Einstellungen → Zeiterfassung).";
+pub fn time_tracking_off() -> &'static str {
+    crate::tr!(
+        "Die Zeiterfassung ist ausgeschaltet (Einstellungen → Zeiterfassung).",
+        "Time tracking is switched off (Settings → Time tracking)."
+    )
+}
 
 impl Settings {
     /// „Zeiterfassung verwenden“: off, nothing books time and no timer, reminder or budget
@@ -519,9 +525,9 @@ impl Settings {
         self.time.enabled
     }
 
-    /// Commands that book time call this first: off, they refuse with [`TIME_TRACKING_OFF`].
+    /// Commands that book time call this first: off, they refuse with [`time_tracking_off`].
     pub fn require_time_tracking(&self) -> Result<()> {
-        if self.time_tracking() { Ok(()) } else { Err(crate::Error::State(TIME_TRACKING_OFF.into())) }
+        if self.time_tracking() { Ok(()) } else { Err(crate::Error::State(time_tracking_off().into())) }
     }
 
     /// The assistant's tools: the allowed ones (Settings → KI → Werkzeuge), without the time
@@ -707,7 +713,12 @@ impl Settings {
             }
             "locale" => self.locale = d.locale,
             "keyboard" => self.keymap = d.keymap,
-            other => return Err(crate::error::Error::State(format!("Unbekannter Abschnitt „{other}“"))),
+            other => {
+                return Err(crate::error::Error::State(trf!(
+                    "Unbekannter Abschnitt „{other}“",
+                    "Unknown section “{other}”"
+                )));
+            }
         }
         Ok(())
     }

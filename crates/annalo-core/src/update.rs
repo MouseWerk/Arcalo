@@ -7,10 +7,17 @@
 use std::path::Path;
 
 /// GitHub repository the releases are published to.
+use crate::tr;
+
 pub const REPOSITORY: &str = "MouseWerk/Annalo";
 
 /// Shown when a build has no update key.
 pub const NOT_CONFIGURED: &str = "Automatische Updates sind in diesem Build nicht eingerichtet";
+
+/// [`NOT_CONFIGURED`] in the display language.
+pub fn not_configured() -> &'static str {
+    tr!(NOT_CONFIGURED, "Automatic updates are not set up in this build")
+}
 
 /// The compiled-in public key, if it is usable: blank values count as "not configured".
 pub fn configured_pubkey(raw: Option<&str>) -> Option<&str> {
@@ -51,9 +58,15 @@ pub const PACKAGE_MANUAL: &str =
 /// package manager (the feed's Linux file is the AppImage).
 pub fn manual_update_reason(portable: bool, package: bool) -> Option<&'static str> {
     if portable {
-        Some(PORTABLE_MANUAL)
+        Some(tr!(
+            PORTABLE_MANUAL,
+            "Portable mode does not install automatically – please download the new version from the release page"
+        ))
     } else if package {
-        Some(PACKAGE_MANUAL)
+        Some(tr!(
+            PACKAGE_MANUAL,
+            "Annalo is installed as a package – please download the new package from the release page"
+        ))
     } else {
         None
     }

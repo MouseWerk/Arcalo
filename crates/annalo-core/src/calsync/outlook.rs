@@ -14,6 +14,7 @@
 //! EntryID or recipient the result of one calendar: `{"ok":true,"items":[…]}`, optionally
 //! `"freeBusy":true`, or `{"ok":false,"error":"denied"}`).
 
+use crate::{tr, trf};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -178,8 +179,11 @@ pub struct Request {
 
 fn only_windows() -> Error {
     Error::State(
-        "Outlook (klassisch) gibt es nur unter Windows. Hier den Kalender als ICS-Datei oder -Adresse einbinden."
-            .into(),
+        tr!(
+            "Outlook (klassisch) gibt es nur unter Windows. Hier den Kalender als ICS-Datei oder -Adresse einbinden.",
+            "Outlook (classic) exists on Windows only. Add the calendar as an ICS file or address here."
+        )
+        .into(),
     )
 }
 
@@ -240,7 +244,7 @@ pub fn read_calendars(
         Script { file: SCRIPT_FILE, source: SCRIPT },
         &args,
         timeout,
-        "Später erneut synchronisieren.",
+        tr!("Später erneut synchronisieren.", "Sync again later."),
     )?;
     parse_calendars(&stdout, local, req.privacy, &ids)
 }
@@ -283,7 +287,7 @@ pub fn discover(script_dir: &Path, people: &[String]) -> Result<Vec<DiscoveredCa
                 Script { file: SCRIPT_FILE, source: SCRIPT },
                 &args,
                 TIMEOUT,
-                "Später erneut suchen.",
+                tr!("Später erneut suchen.", "Search again later."),
             )?
         }
     };
@@ -376,17 +380,34 @@ pub fn parse_calendars(text: &str, local: &Zone, privacy: Privacy, ids: &[String
         .collect())
 }
 
-/// The German message for an error code of the script.
+/// The message for an error code of the script, in the display language.
 fn error_text(code: &str, detail: &str) -> String {
-    let ics = "Stattdessen den Kalender als ICS-Adresse abonnieren (Outlook im Web: Einstellungen → Kalender → \
-               Freigegebene Kalender → Kalender veröffentlichen) oder als .ics-Datei einbinden.";
+    let ics = tr!(
+        "Stattdessen den Kalender als ICS-Adresse abonnieren (Outlook im Web: Einstellungen → Kalender → \
+         Freigegebene Kalender → Kalender veröffentlichen) oder als .ics-Datei einbinden.",
+        "Subscribe to the calendar as an ICS address instead (Outlook on the web: Settings → Calendar → \
+         Shared calendars → Publish a calendar) or add it as an .ics file."
+    );
     match code {
-        "not_installed" => format!("Outlook (klassisch) ist auf diesem Computer nicht installiert. {ics}"),
-        "new_outlook" => format!("Hier läuft das neue Outlook; es erlaubt anderen Programmen keinen Zugriff auf den Kalender. {ics}"),
-        "server_exec" => "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut synchronisieren.".into(),
-        "constrained" => format!("PowerShell ist auf diesem Computer eingeschränkt (Sprachmodus „{detail}“), der Zugriff auf Outlook ist so nicht möglich. {ics}"),
-        "folder" => format!("Der Outlook-Kalender ließ sich nicht öffnen ({detail}). Ist in Outlook ein Konto eingerichtet?"),
-        _ => format!("Outlook hat den Kalender nicht geliefert: {}", if detail.is_empty() { code } else { detail }),
+        "not_installed" => trf!("Outlook (klassisch) ist auf diesem Computer nicht installiert. {ics}", "Outlook (classic) is not installed on this computer. {ics}"),
+        "new_outlook" => trf!(
+            "Hier läuft das neue Outlook; es erlaubt anderen Programmen keinen Zugriff auf den Kalender. {ics}",
+            "The new Outlook runs here; it gives other programs no access to the calendar. {ics}"
+        ),
+        "server_exec" => tr!(
+            "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut synchronisieren.",
+            "Outlook runs with other rights than Annalo (e.g. “Run as administrator”). Start Outlook normally and sync again."
+        )
+        .into(),
+        "constrained" => trf!(
+            "PowerShell ist auf diesem Computer eingeschränkt (Sprachmodus „{detail}“), der Zugriff auf Outlook ist so nicht möglich. {ics}",
+            "PowerShell is restricted on this computer (language mode “{detail}”), so Outlook cannot be reached. {ics}"
+        ),
+        "folder" => trf!(
+            "Der Outlook-Kalender ließ sich nicht öffnen ({detail}). Ist in Outlook ein Konto eingerichtet?",
+            "The Outlook calendar could not be opened ({detail}). Is an account set up in Outlook?"
+        ),
+        _ => trf!("Outlook hat den Kalender nicht geliefert: {}", "Outlook did not return the calendar: {}", if detail.is_empty() { code } else { detail }),
     }
 }
 
@@ -427,11 +448,11 @@ pub fn parse_output(text: &str, local: &Zone, privacy: Privacy) -> Result<Vec<Ne
 /// Title of a free/busy block (its subject cannot be read).
 fn busy_title(b: Busy) -> &'static str {
     match b {
-        Busy::Free => "Frei",
-        Busy::Tentative => "Mit Vorbehalt",
-        Busy::Busy => "Beschäftigt",
-        Busy::Oof => "Abwesend",
-        Busy::Elsewhere => "An anderem Ort tätig",
+        Busy::Free => tr!("Frei", "Free"),
+        Busy::Tentative => tr!("Mit Vorbehalt", "Tentative"),
+        Busy::Busy => tr!("Beschäftigt", "Busy"),
+        Busy::Oof => tr!("Abwesend", "Away"),
+        Busy::Elsewhere => tr!("An anderem Ort tätig", "Working elsewhere"),
     }
 }
 

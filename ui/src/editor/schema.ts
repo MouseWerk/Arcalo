@@ -10,7 +10,7 @@ import Highlight from "@tiptap/extension-highlight";
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
-import { Callouts, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
+import { Callouts, DueWords, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
 import { AttachmentDrop, FileEmbed, anchorPage, isPdfName } from "./fileEmbed";
@@ -298,7 +298,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TableKit.configure({ table: false }),
     MarkdownTable.configure({ resizable: false }),
     Placeholder.configure({
-      placeholder: ({ node }) => (node.type.name === "heading" ? "Überschrift" : "Schreibe etwas, / für Befehle, [[ für Links"),
+      placeholder: ({ node }) => (node.type.name === "heading" ? t("editor.headingPh") : t("editor.placeholder")),
       showOnlyCurrent: true,
     }),
     Markdown,
@@ -327,6 +327,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     ZeitCommand.configure({ book: o.book ?? (async () => null), onLost: o.onZeitLost ?? (() => {}) }),
     ZeitSuggest.configure({ refs: o.zeitRefs ?? (async () => []), leistungsarten: o.zeitLeistungsarten ?? (async () => []) }),
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
+    DueWords,
     FindInPage,
     Callouts,
     HtmlInline,

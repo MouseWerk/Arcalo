@@ -1,5 +1,6 @@
 //! Sample workspace used by `annalo demo` and the first launch of the app.
 
+use crate::tr;
 use chrono::{DateTime, Duration, Utc};
 
 use crate::db::Database;
@@ -23,17 +24,25 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     if !db.list_projects()?.is_empty() {
         return Ok(false);
     }
+    // The samples come in the display language (codes and numbers are the same in both).
     let p = db.create_project("PRJ-2026-X", "Annalo Rollout")?;
-    let np = db.create_netzplan(p.id, "NP-8801", "NP-8801-1020", "Systemintegration ERP", 120.0)?;
-    let np2 = db.create_netzplan(p.id, "NP-8802", "NP-8802-2010", "Schulung & Go-Live", 40.0)?;
+    let np = db.create_netzplan(
+        p.id,
+        "NP-8801",
+        "NP-8801-1020",
+        tr!("Systemintegration ERP", "ERP system integration"),
+        120.0,
+    )?;
+    let np2 =
+        db.create_netzplan(p.id, "NP-8802", "NP-8802-2010", tr!("Schulung & Go-Live", "Training & go-live"), 40.0)?;
 
     let spec = [
-        ("1010", "Anforderungsanalyse", 3.0, 16.0, &[][..]),
-        ("1020", "Systemintegration", 5.0, 40.0, &["1010"][..]),
-        ("1030", "Schnittstellen-Design", 4.0, 24.0, &["1010"][..]),
-        ("1040", "Integrationstest", 3.0, 24.0, &["1020", "1030"][..]),
-        ("1050", "Dokumentation", 2.0, 8.0, &["1030"][..]),
-        ("1060", "Abnahme", 1.0, 8.0, &["1040", "1050"][..]),
+        ("1010", tr!("Anforderungsanalyse", "Requirements analysis"), 3.0, 16.0, &[][..]),
+        ("1020", tr!("Systemintegration", "System integration"), 5.0, 40.0, &["1010"][..]),
+        ("1030", tr!("Schnittstellen-Design", "Interface design"), 4.0, 24.0, &["1010"][..]),
+        ("1040", tr!("Integrationstest", "Integration test"), 3.0, 24.0, &["1020", "1030"][..]),
+        ("1050", tr!("Dokumentation", "Documentation"), 2.0, 8.0, &["1030"][..]),
+        ("1060", tr!("Abnahme", "Acceptance"), 1.0, 8.0, &["1040", "1050"][..]),
     ];
     let mut ids = std::collections::HashMap::new();
     for (nr, desc, days, hours, preds) in spec {
@@ -43,20 +52,28 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
         }
         ids.insert(nr, v.id);
     }
-    db.create_vorgang(np2.id, "2010", "Key-User-Schulung", 2.0, 16.0)?;
+    db.create_vorgang(np2.id, "2010", tr!("Key-User-Schulung", "Key user training"), 2.0, 16.0)?;
 
     let day = |d: i64, h: i64| now - Duration::days(d) - Duration::hours(h);
     let entries = [
-        (np.id, "1010", "CONSULTING", 9, 6, 240, "Workshop Anforderungen mit Fachbereich"),
-        (np.id, "1010", "CONSULTING", 8, 6, 330, "Lastenheft finalisiert"),
-        (np.id, "1010", "PM", 7, 7, 150, "Abstimmung Scope & Budget"),
-        (np.id, "1020", "DEV", 6, 6, 420, "Systemintegration Middleware"),
-        (np.id, "1020", "DEV", 5, 6, 450, "IDoc-Mapping Materialstamm"),
-        (np.id, "1030", "DEV", 4, 6, 300, "REST-Schnittstelle Auftragsdaten"),
-        (np.id, "1020", "DEV", 3, 6, 480, "Fehleranalyse Queue-Verarbeitung"),
-        (np.id, "1030", "DEV", 2, 6, 360, "OpenAPI Spezifikation"),
-        (np.id, "1020", "DEV", 1, 6, 390, "Systemintegration Delta-Load"),
-        (np2.id, "2010", "CONSULTING", 1, 2, 90, "Schulungsunterlagen Entwurf"),
+        (
+            np.id,
+            "1010",
+            "CONSULTING",
+            9,
+            6,
+            240,
+            tr!("Workshop Anforderungen mit Fachbereich", "Requirements workshop with the business team"),
+        ),
+        (np.id, "1010", "CONSULTING", 8, 6, 330, tr!("Lastenheft finalisiert", "Requirements specification finalized")),
+        (np.id, "1010", "PM", 7, 7, 150, tr!("Abstimmung Scope & Budget", "Scope & budget alignment")),
+        (np.id, "1020", "DEV", 6, 6, 420, tr!("Systemintegration Middleware", "Middleware system integration")),
+        (np.id, "1020", "DEV", 5, 6, 450, tr!("IDoc-Mapping Materialstamm", "IDoc mapping material master")),
+        (np.id, "1030", "DEV", 4, 6, 300, tr!("REST-Schnittstelle Auftragsdaten", "REST interface order data")),
+        (np.id, "1020", "DEV", 3, 6, 480, tr!("Fehleranalyse Queue-Verarbeitung", "Error analysis queue processing")),
+        (np.id, "1030", "DEV", 2, 6, 360, tr!("OpenAPI Spezifikation", "OpenAPI specification")),
+        (np.id, "1020", "DEV", 1, 6, 390, tr!("Systemintegration Delta-Load", "System integration delta load")),
+        (np2.id, "2010", "CONSULTING", 1, 2, 90, tr!("Schulungsunterlagen Entwurf", "Training material draft")),
     ];
     for (npid, v, la, d, h, minutes, desc) in entries {
         db.insert_time_entry(&NewTimeEntry {
@@ -71,88 +88,153 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
         })?;
     }
 
-    let start = db.create_page(None, "Willkommen", Some("sparkles"))?;
+    let start = db.create_page(None, tr!("Willkommen", "Welcome"), Some("sparkles"))?;
     db.save_page_content(
         start.id,
-        "Annalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
-         ## So arbeitest du hier\n\n\
-         - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
-         - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
-         - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler, `Alt Space` funktioniert global.\n\
-         - Der Assistent rechts kennt deine Notizen und Zeitlogs. Server und Token stellst du in den Einstellungen ein.\n\n\
-         ## Einstieg\n\n\
-         - [ ] LiteLLM-Server in den Einstellungen verbinden\n\
-         - [ ] Obsidian-Vault importieren\n\
-         - [ ] Erstes Projekt unter [[PRJ-2026-X Rollout]] ansehen\n",
+        tr!(
+            "Annalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
+             ## So arbeitest du hier\n\n\
+             - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
+             - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
+             - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler, `Alt Space` funktioniert global.\n\
+             - Der Assistent rechts kennt deine Notizen und Zeitlogs. Server und Token stellst du in den Einstellungen ein.\n\n\
+             ## Einstieg\n\n\
+             - [ ] LiteLLM-Server in den Einstellungen verbinden\n\
+             - [ ] Obsidian-Vault importieren\n\
+             - [ ] Erstes Projekt unter [[PRJ-2026-X Rollout]] ansehen\n",
+            "Annalo is your local workspace for notes, projects and time tracking.\n\n\
+             ## How you work here\n\n\
+             - Notes are Markdown. Link pages with `[[Page name]]` and tag them with `#tag`.\n\
+             - You book time right in the text: type `/time NP-8801/1020 1.5h Review` and press Enter.\n\
+             - `Ctrl K` opens the command palette, `Ctrl O` the quick switcher, `Alt Space` works everywhere.\n\
+             - The assistant on the right knows your notes and time logs. Set up the server and token in the settings.\n\n\
+             ## Getting started\n\n\
+             - [ ] Connect a LiteLLM server in the settings\n\
+             - [ ] Import an Obsidian vault\n\
+             - [ ] Look at the first project under [[PRJ-2026-X Rollout]]\n"
+        ),
     )?;
 
-    let projects = db.create_page(None, "Projekte", Some("folder-kanban"))?;
+    let projects = db.create_page(None, tr!("Projekte", "Projects"), Some("folder-kanban"))?;
     let proj = db.create_page(Some(projects.id), "PRJ-2026-X Rollout", Some("briefcase"))?;
     db.save_page_content(
         proj.id,
-        "Einführung der ERP-Middleware bei Kunde X. #projekt #rollout\n\n\
-         ## Ziele\n\n\
-         1. IDoc-Schnittstellen für Material- und Auftragsdaten produktiv\n\
-         2. Key-User geschult, Go-Live bis Ende Oktober\n\n\
-         ## Netzpläne\n\n\
-         | Netzplan | Inhalt | Plan |\n|---|---|---|\n\
-         | NP-8801 | Systemintegration ERP | 120 h |\n\
-         | NP-8802 | Schulung & Go-Live | 40 h |\n\n\
-         Technische Details in [[Architektur]], Abstimmungen im [[Jour fixe 22.09.]].\n",
+        tr!(
+            "Einführung der ERP-Middleware bei Kunde X. #projekt #rollout\n\n\
+             ## Ziele\n\n\
+             1. IDoc-Schnittstellen für Material- und Auftragsdaten produktiv\n\
+             2. Key-User geschult, Go-Live bis Ende Oktober\n\n\
+             ## Netzpläne\n\n\
+             | Netzplan | Inhalt | Plan |\n|---|---|---|\n\
+             | NP-8801 | Systemintegration ERP | 120 h |\n\
+             | NP-8802 | Schulung & Go-Live | 40 h |\n\n\
+             Technische Details in [[Architektur]], Abstimmungen im [[Jour fixe 22.09.]].\n",
+            "Rollout of the ERP middleware at customer X. #project #rollout\n\n\
+             ## Goals\n\n\
+             1. IDoc interfaces for material and order data in production\n\
+             2. Key users trained, go-live by the end of October\n\n\
+             ## Networks\n\n\
+             | Network | Content | Plan |\n|---|---|---|\n\
+             | NP-8801 | ERP system integration | 120 h |\n\
+             | NP-8802 | Training & go-live | 40 h |\n\n\
+             Technical details in [[Architecture]], alignment in the [[Weekly sync 22.09.]].\n"
+        ),
     )?;
-    let arch = db.create_page(Some(proj.id), "Architektur", Some("blocks"))?;
+    let arch = db.create_page(Some(proj.id), tr!("Architektur", "Architecture"), Some("blocks"))?;
     db.save_page_content(
         arch.id,
-        "Die Middleware verbindet das ERP über IDocs mit dem Auftragsportal. #architektur\n\n\
-         ## Komponenten\n\n\
-         - **Inbound**: IDoc-Empfang, Mapping auf das kanonische Datenmodell\n\
-         - **Queue**: persistente Verarbeitung mit Retry\n\
-         - **Outbound**: REST-Schnittstelle Auftragsdaten (OpenAPI 3.1)\n\n\
-         > **Risiko:** Vorgang 1020 liegt auf dem kritischen Pfad. Verzug verschiebt die Abnahme.\n\n\
-         ## Betrieb\n\n\
-         ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n",
+        tr!(
+            "Die Middleware verbindet das ERP über IDocs mit dem Auftragsportal. #architektur\n\n\
+             ## Komponenten\n\n\
+             - **Inbound**: IDoc-Empfang, Mapping auf das kanonische Datenmodell\n\
+             - **Queue**: persistente Verarbeitung mit Retry\n\
+             - **Outbound**: REST-Schnittstelle Auftragsdaten (OpenAPI 3.1)\n\n\
+             > **Risiko:** Vorgang 1020 liegt auf dem kritischen Pfad. Verzug verschiebt die Abnahme.\n\n\
+             ## Betrieb\n\n\
+             ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n",
+            "The middleware connects the ERP to the order portal through IDocs. #architecture\n\n\
+             ## Components\n\n\
+             - **Inbound**: IDoc receipt, mapping to the canonical data model\n\
+             - **Queue**: persistent processing with retry\n\
+             - **Outbound**: REST interface order data (OpenAPI 3.1)\n\n\
+             > **Risk:** Activity 1020 is on the critical path. A delay moves the acceptance.\n\n\
+             ## Operations\n\n\
+             ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n"
+        ),
     )?;
-    let jf = db.create_page(Some(proj.id), "Jour fixe 22.09.", Some("users"))?;
+    let jf = db.create_page(Some(proj.id), tr!("Jour fixe 22.09.", "Weekly sync 22.09."), Some("users"))?;
     db.save_page_content(
         jf.id,
-        "Teilnehmer: Fachbereich, IT-Betrieb, Projektleitung #meeting\n\n\
-         ## Ergebnisse\n\n\
-         - Delta-Load läuft stabil, nächster Schritt ist der Integrationstest (siehe [[Architektur]])\n\
-         - Schulungstermine für NP-8802 werden bis Freitag fixiert\n\n\
-         ## Aufgaben\n\n\
-         - [x] Budget NP-8801 prüfen\n\
-         - [ ] Testdaten für 1040 bereitstellen\n\
-         - [ ] Schulungstermine 2010 fixieren\n",
+        tr!(
+            "Teilnehmer: Fachbereich, IT-Betrieb, Projektleitung #meeting\n\n\
+             ## Ergebnisse\n\n\
+             - Delta-Load läuft stabil, nächster Schritt ist der Integrationstest (siehe [[Architektur]])\n\
+             - Schulungstermine für NP-8802 werden bis Freitag fixiert\n\n\
+             ## Aufgaben\n\n\
+             - [x] Budget NP-8801 prüfen\n\
+             - [ ] Testdaten für 1040 bereitstellen\n\
+             - [ ] Schulungstermine 2010 fixieren\n",
+            "Attendees: business team, IT operations, project management #meeting\n\n\
+             ## Results\n\n\
+             - The delta load runs stable, the next step is the integration test (see [[Architecture]])\n\
+             - Training dates for NP-8802 are fixed by Friday\n\n\
+             ## Tasks\n\n\
+             - [x] Check the NP-8801 budget\n\
+             - [ ] Provide test data for 1040\n\
+             - [ ] Fix the 2010 training dates\n"
+        ),
     )?;
-    let kb = db.create_page(None, "Wissensbasis", Some("book-open"))?;
-    let cats = db.create_page(Some(kb.id), "SAP CATS Leitfaden", Some("file-text"))?;
+    let kb = db.create_page(None, tr!("Wissensbasis", "Knowledge base"), Some("book-open"))?;
+    let cats = db.create_page(Some(kb.id), tr!("SAP CATS Leitfaden", "SAP CATS guide"), Some("file-text"))?;
     db.save_page_content(
         cats.id,
-        "Zeiten werden wöchentlich in CATS übertragen. #sap #zeiterfassung\n\n\
-         1. Einträge der Woche prüfen und **freigeben**\n\
-         2. Export im Format *SAP CATS* erzeugen\n\
-         3. Datei in der CATS-Upload-Transaktion einlesen\n\n\
-         Leistungsarten: `DEV`, `CONSULTING`, `PM`, `TEST`.\n",
+        tr!(
+            "Zeiten werden wöchentlich in CATS übertragen. #sap #zeiterfassung\n\n\
+             1. Einträge der Woche prüfen und **freigeben**\n\
+             2. Export im Format *SAP CATS* erzeugen\n\
+             3. Datei in der CATS-Upload-Transaktion einlesen\n\n\
+             Leistungsarten: `DEV`, `CONSULTING`, `PM`, `TEST`.\n",
+            "Times are transferred to CATS weekly. #sap #timetracking\n\n\
+             1. Check the week's entries and **release** them\n\
+             2. Create an export in the *SAP CATS* format\n\
+             3. Load the file in the CATS upload transaction\n\n\
+             Activity types: `DEV`, `CONSULTING`, `PM`, `TEST`.\n"
+        ),
     )?;
     let templates = db.templates_root()?;
-    let meeting = db.create_page(Some(templates.id), "Besprechung", Some("users"))?;
+    let meeting = db.create_page(Some(templates.id), tr!("Besprechung", "Meeting"), Some("users"))?;
     db.save_page_content(
         meeting.id,
-        "{{wochentag}}, {{datum}} · {{zeit}} Uhr #meeting\n\n\
-         ## Teilnehmer\n\n- \n\n\
-         ## Agenda\n\n1. \n\n\
-         ## Beschlüsse\n\n- \n\n\
-         ## Aufgaben\n\n- [ ] \n\n\
-         > [!tip] Zeit buchen\n> Tippe `/zeit NP-8801/1020 1h Besprechung` und drücke Enter.\n",
+        tr!(
+            "{{wochentag}}, {{datum}} · {{zeit}} Uhr #meeting\n\n\
+             ## Teilnehmer\n\n- \n\n\
+             ## Agenda\n\n1. \n\n\
+             ## Beschlüsse\n\n- \n\n\
+             ## Aufgaben\n\n- [ ] \n\n\
+             > [!tip] Zeit buchen\n> Tippe `/zeit NP-8801/1020 1h Besprechung` und drücke Enter.\n",
+            "{{weekday}}, {{date}} · {{time}} #meeting\n\n\
+             ## Attendees\n\n- \n\n\
+             ## Agenda\n\n1. \n\n\
+             ## Decisions\n\n- \n\n\
+             ## Tasks\n\n- [ ] \n\n\
+             > [!tip] Book time\n> Type `/time NP-8801/1020 1h Meeting` and press Enter.\n"
+        ),
     )?;
-    let customer = db.create_page(Some(templates.id), "Kundentermin", Some("briefcase"))?;
+    let customer = db.create_page(Some(templates.id), tr!("Kundentermin", "Customer meeting"), Some("briefcase"))?;
     db.save_page_content(
         customer.id,
-        "Termin: {{titel}}\nKunde: \nOrt: \nDatum: {{datum}}, {{zeit}} Uhr (KW {{kw}}) #kunde\n\n\
-         ## Ziel des Termins\n\n\n\
-         ## Gesprächsnotizen\n\n- \n\n\
-         ## Vereinbarungen\n\n- \n\n\
-         ## Nächste Schritte\n\n- [ ] Protokoll an den Kunden senden\n- [ ] \n",
+        tr!(
+            "Termin: {{titel}}\nKunde: \nOrt: \nDatum: {{datum}}, {{zeit}} Uhr (KW {{kw}}) #kunde\n\n\
+             ## Ziel des Termins\n\n\n\
+             ## Gesprächsnotizen\n\n- \n\n\
+             ## Vereinbarungen\n\n- \n\n\
+             ## Nächste Schritte\n\n- [ ] Protokoll an den Kunden senden\n- [ ] \n",
+            "Meeting: {{title}}\nCustomer: \nPlace: \nDate: {{date}}, {{time}} (week {{week}}) #customer\n\n\
+             ## Goal of the meeting\n\n\n\
+             ## Conversation notes\n\n- \n\n\
+             ## Agreements\n\n- \n\n\
+             ## Next steps\n\n- [ ] Send the minutes to the customer\n- [ ] \n"
+        ),
     )?;
     db.set_favorite(proj.id, true)?;
     db.set_favorite(arch.id, true)?;
@@ -160,7 +242,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     Ok(true)
 }
 
-/// Titles of the pages created by [`seed`].
+/// Titles of the pages created by [`seed`], in both languages.
 const DEMO_PAGES: &[&str] = &[
     "Willkommen",
     "Projekte",
@@ -172,6 +254,15 @@ const DEMO_PAGES: &[&str] = &[
     crate::templates::TEMPLATES_TITLE,
     "Besprechung",
     "Kundentermin",
+    "Welcome",
+    "Weekly sync 22.09.",
+    "Projects",
+    "Architecture",
+    "Knowledge base",
+    "SAP CATS guide",
+    crate::templates::TEMPLATES_TITLE_EN,
+    "Meeting",
+    "Customer meeting",
 ];
 
 /// Removes the sample project (with its time entries) and the sample pages.

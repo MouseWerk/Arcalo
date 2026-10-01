@@ -8,7 +8,7 @@ import { Button, IconButton, Input, Switch } from "../../components/ui";
 import { api, on } from "../../lib/api";
 import { pickFolder } from "../../lib/actions";
 import { flushBeforeExit } from "../../lib/exit";
-import { fileSize, fmtDate, relative, time } from "../../lib/format";
+import { dateTime, fileSize, fmtDate, relative, time } from "../../lib/format";
 import { t, useT } from "../../lib/i18n";
 import { IS_LINUX, IS_MAC } from "../../lib/platform";
 import { useApp } from "../../store/app";
@@ -290,11 +290,11 @@ export function BackupList({ local, reloadKey }: { local: BackupInfo[] | null; r
   };
 
   return (
-    <div className="backup-list" aria-label="Vorhandene Sicherungen">
-      {rows.length === 0 && !loading && <p className="faint small">Noch keine Sicherung vorhanden.</p>}
+    <div className="backup-list" aria-label={t("set.backup.list")}>
+      {rows.length === 0 && !loading && <p className="faint small">{t("set.backup.none")}</p>}
       {rows.map((b) => (
         <div key={b.path} className="backup-row" title={b.path} data-source={b.source}>
-          <span className="grow backup-when">{new Date(b.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</span>
+          <span className="grow backup-when">{dateTime(b.created_at)}</span>
           <span className={`backup-source small ${b.source === "local" ? "faint" : ""}`}>
             {b.source === "local" ? <DatabaseBackup size={12} aria-hidden /> : <Network size={12} aria-hidden />}
             <span className="backup-source-text">{source(b)}</span>

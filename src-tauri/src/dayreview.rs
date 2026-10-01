@@ -60,9 +60,13 @@ pub async fn day_review_summary(
     let candidates = core::local_candidates(&settings.router, &catalog);
     if candidates.is_empty() {
         return Err(Error::State(
-            "Der lokale KI-Anbieter bietet kein Chat-Modell an: lade unter Einstellungen → KI ein Modell herunter \
-             oder wähle es für die Stufe Lokal."
-                .into(),
+            annalo_core::tr!(
+                "Der lokale KI-Anbieter bietet kein Chat-Modell an: lade unter Einstellungen → KI ein Modell herunter \
+                 oder wähle es für die Stufe Lokal.",
+                "The local AI provider offers no chat model: download a model under Settings → AI or choose one \
+                 for the Local tier."
+            )
+            .into(),
         ));
     }
     let messages = {
@@ -86,7 +90,9 @@ pub async fn day_review_summary(
         match stream_completion(&app, &state, &client, &request_id, &req).await {
             Ok((mut completion, meter)) => {
                 completion.content = transform::clean_output(&completion.content);
-                let mut reasons = vec!["Tagesrückblick: nur lokale Modelle".to_owned()];
+                let mut reasons = vec![
+                    annalo_core::tr!("Tagesrückblick: nur lokale Modelle", "Day review: local models only").to_owned(),
+                ];
                 if i > 0 {
                     reasons.push(format!("{} statt {}", m.model, candidates[0].model));
                 }
@@ -112,16 +118,23 @@ pub async fn day_review_summary(
                 if !next {
                     return Err(e);
                 }
-                devlog::warn("ai", format!("day review: „{}“ ({}) failed: {e}", m.model, m.provider));
+                devlog::warn("ai", format!("day review: “{}” ({}) failed: {e}", m.model, m.provider));
                 last = Some(e);
             }
         }
     }
     Err(match last {
-        Some(e) => {
-            Error::State(format!("Kein lokales Modell hat geantwortet. Die Zusammenfassung bleibt lokal. ({e})"))
-        }
-        None => Error::State("Kein lokales Modell verfügbar (Einstellungen → KI).".into()),
+        Some(e) => Error::State(annalo_core::trf!(
+            "Kein lokales Modell hat geantwortet. Die Zusammenfassung bleibt lokal. ({e})",
+            "No local model answered. The summary stays local. ({e})"
+        )),
+        None => Error::State(
+            annalo_core::tr!(
+                "Kein lokales Modell verfügbar (Einstellungen → KI).",
+                "No local model available (Settings → AI)."
+            )
+            .into(),
+        ),
     })
 }
 
@@ -143,7 +156,7 @@ pub fn periodic(app: &AppHandle) {
         let _ = db.meta_set(REMINDED, &now.date().to_string());
         review(&state, &db, now.date()).map(|r| core::reminder_body(&r)).unwrap_or_default()
     };
-    notify(app, "Tagesrückblick ansehen", &body);
+    notify(app, annalo_core::tr!("Tagesrückblick ansehen", "See the day review"), &body);
     let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
     if !focused {
         PENDING.store(true, Ordering::Relaxed);

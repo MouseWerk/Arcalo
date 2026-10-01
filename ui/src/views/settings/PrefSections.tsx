@@ -8,7 +8,7 @@ import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import { exportFileName } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
-import { fmtHours } from "../../lib/format";
+import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 import { ChatHistoryGroup } from "./ChatHistoryPrefs";
@@ -28,7 +28,7 @@ export function NotesPrefGroups({ draft, update }: SectionProps) {
           <Select value={n.daily_title} onChange={(e) => set({ daily_title: e.target.value as NotesPrefs["daily_title"] })} aria-label={t("set.notes.dailyTitle")}>
             <option value="iso">2026-09-24</option>
             <option value="de">24.09.2026</option>
-            <option value="long">{`${sample.toLocaleDateString("de-DE", { weekday: "long" })}, 24.09.2026`}</option>
+            <option value="long">{`${sample.toLocaleDateString(dateLocale(), { weekday: "long" })}, 24.09.2026`}</option>
           </Select>
         </Row>
         <Row label={t("set.notes.dailyFolder")} description={t("set.notes.dailyFolderDesc")}>
@@ -270,15 +270,30 @@ export function LocaleSection({ draft, update }: SectionProps) {
             onChange={(v) => update({ locale: { ...l, language: v } })}
           />
         </Row>
+      </Group>
+      <Group title={t("set.locale.region")} description={t("set.locale.regionDesc")}>
         <Row label={t("set.locale.dateFormat")}>
-          <Segmented
-            label={t("set.locale.dateFormat")}
+          <Select
+            aria-label={t("set.locale.dateFormat")}
             value={l.date_format}
             options={[
               { value: "de", label: "24.09.2026" },
+              { value: "en-gb", label: "24/09/2026" },
+              { value: "en-us", label: "09/24/2026" },
               { value: "iso", label: "2026-09-24" },
             ]}
-            onChange={(v) => update({ locale: { ...l, date_format: v } })}
+            onChange={(e) => update({ locale: { ...l, date_format: e.target.value as typeof l.date_format } })}
+          />
+        </Row>
+        <Row label={t("set.locale.numberFormat")}>
+          <Segmented
+            label={t("set.locale.numberFormat")}
+            value={l.number_format ?? "comma"}
+            options={[
+              { value: "comma", label: "1.234,5" },
+              { value: "point", label: "1,234.5" },
+            ]}
+            onChange={(v) => update({ locale: { ...l, number_format: v } })}
           />
         </Row>
       </Group>

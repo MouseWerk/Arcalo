@@ -10,6 +10,7 @@ import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, 
 import { compact, h1, parseGermanNumber } from "../lib/format";
 import { LEVEL, useWbs } from "./wbs";
 import type { NetzplanOverview, NetzplanTree, ProjectTree, Vorgang } from "../lib/types";
+import { useT } from "../lib/i18n";
 
 export { LEVEL };
 
@@ -19,6 +20,7 @@ type DialogState =
   | { kind: "vorgang"; netzplan: NetzplanTree; vorgang?: Vorgang };
 
 export function ProjectsView() {
+  const t = useT();
   const { wbs } = useWbs();
   const entriesVersion = useApp((s) => s.entriesVersion);
   const [dialog, setDialog] = useState<DialogState | null>(null);
@@ -37,8 +39,8 @@ export function ProjectsView() {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (wbs.length) setLoaded(true);
-    const t = setTimeout(() => setLoaded(true), 400);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setLoaded(true), 400);
+    return () => clearTimeout(timer);
   }, [wbs]);
 
   return (
@@ -46,12 +48,12 @@ export function ProjectsView() {
       <div className="view">
         <header className="view-header">
           <div>
-            <h1>Projekte</h1>
-            <div className="view-sub">Projekt, Netzplan (PSP-Element), Vorgang und Leistungsart</div>
+            <h1>{t("ribbon.projects")}</h1>
+            <div className="view-sub">{t("proj.sub")}</div>
           </div>
           <div className="view-actions">
             <Button variant="primary" icon={Plus} onClick={() => setDialog({ kind: "project" })}>
-              Projekt
+              {t("err.kind.project")}
             </Button>
           </div>
         </header>
@@ -60,8 +62,8 @@ export function ProjectsView() {
             <Spinner />
           </div>
         ) : wbs.length === 0 ? (
-          <EmptyState icon={Briefcase} title="Noch keine Projekte" action={<Button icon={Plus} onClick={() => setDialog({ kind: "project" })}>Projekt anlegen</Button>}>
-            Lege ein Projekt mit Netzplänen und Vorgängen an, um Zeiten darauf zu buchen.
+          <EmptyState icon={Briefcase} title={t("proj.empty")} action={<Button icon={Plus} onClick={() => setDialog({ kind: "project" })}>{t("proj.create")}</Button>}>
+            {t("proj.emptyHint")}
           </EmptyState>
         ) : (
           wbs.map((p) => <ProjectCard key={p.id} project={p} overview={overview} open={setDialog} />)
@@ -73,6 +75,7 @@ export function ProjectsView() {
 }
 
 function ProjectCard({ project, overview, open }: { project: ProjectTree; overview: Map<number, NetzplanOverview>; open: (d: DialogState) => void }) {
+  const t = useT();
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   return (
@@ -82,26 +85,26 @@ function ProjectCard({ project, overview, open }: { project: ProjectTree; overvi
         <h2>{project.name}</h2>
         <span className="grow" />
         <Button size="sm" icon={Plus} variant="ghost" onClick={() => open({ kind: "netzplan", projectId: project.id })}>
-          Netzplan
+          {t("wbs.netzplan")}
         </Button>
         <IconButton
           icon={MoreHorizontal}
-          label="Projektaktionen"
+          label={t("proj.actions")}
           onClick={(e) =>
             openMenuAt(e, [
-              { label: "Umbenennen", icon: Pencil, onSelect: () => open({ kind: "project", project }) },
+              { label: t("att.renameButton"), icon: Pencil, onSelect: () => open({ kind: "project", project }) },
               "separator",
               {
-                label: "Projekt löschen",
+                label: t("proj.delete"),
                 icon: Trash2,
                 danger: true,
                 onSelect: async () => {
-                  if (!(await s().confirm({ title: "Projekt löschen?", message: `${project.project_code} mit allen Netzplänen und Vorgängen wird gelöscht. Projekte mit gebuchten Zeiten können nicht gelöscht werden.`, confirmLabel: "Löschen", danger: true }))) return;
+                  if (!(await s().confirm({ title: t("proj.deleteAsk"), message: t("proj.deleteText", { code: project.project_code }), confirmLabel: t("common.delete"), danger: true }))) return;
                   try {
                     await api.deleteProject(project.id);
                     s().bumpWbs();
                   } catch (e) {
-                    s().error("Löschen nicht möglich", e);
+                    s().error(t("common.deleteFailed"), e);
                   }
                 },
               },
@@ -109,7 +112,7 @@ function ProjectCard({ project, overview, open }: { project: ProjectTree; overvi
           }
         />
       </div>
-      {project.netzplaene.length === 0 && <p className="faint small pad">Noch keine Netzpläne.</p>}
+      {project.netzplaene.length === 0 && <p className="faint small pad">{t("proj.noNetzplan")}</p>}
       {project.netzplaene.map((n) => (
         <NetzplanBlock key={n.id} netzplan={n} facts={overview.get(n.id)} open={open} />
       ))}
@@ -119,6 +122,7 @@ function ProjectCard({ project, overview, open }: { project: ProjectTree; overvi
 }
 
 function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; facts: NetzplanOverview | undefined; open: (d: DialogState) => void }) {
+  const t = useT();
   const budget = facts?.budget ?? [];
   const schedule = facts?.schedule ?? null;
   const [menu, , openMenuAt] = useMenu();
@@ -130,9 +134,9 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
     try {
       await api.timerStart(netzplan.id, v?.vorgang_nr ?? null, localStorage.getItem("annalo.timer.la") || "DEV", "");
       s().bumpEntries();
-      s().toast({ tone: "info", title: "Timer gestartet", detail: `${netzplan.netzplan_nr}${v ? "/" + v.vorgang_nr : ""}` });
+      s().toast({ tone: "info", title: t("proj.timerStarted"), detail: `${netzplan.netzplan_nr}${v ? "/" + v.vorgang_nr : ""}` });
     } catch (e) {
-      s().error("Timer nicht gestartet", e);
+      s().error(t("time.timerStartFailed"), e);
     }
   };
 
@@ -151,32 +155,32 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
               <span className="faint"> / {h1(total.planned_hours)} h</span>
             </div>
             <Progress value={total.consumed} tone={level!.tone} marker={total.planned_hours ? total.eac_hours / total.planned_hours : undefined} />
-            <Badge tone={level!.tone} title={`Restaufwand ${h1(total.etc_hours)} h, Prognose ${h1(total.eac_hours)} h`}>
+            <Badge tone={level!.tone} title={t("proj.forecast", { etc: h1(total.etc_hours), eac: h1(total.eac_hours) })}>
               {level!.label}
             </Badge>
           </div>
         )}
         <div className="netzplan-actions">
-          <IconButton icon={Play} label="Timer auf Netzplan starten" onClick={() => startTimer(null)} />
-          <IconButton icon={Plus} label="Vorgang hinzufügen" onClick={() => open({ kind: "vorgang", netzplan })} />
+          <IconButton icon={Play} label={t("proj.timerNetzplan")} onClick={() => startTimer(null)} />
+          <IconButton icon={Plus} label={t("proj.addVorgang")} onClick={() => open({ kind: "vorgang", netzplan })} />
           <IconButton
             icon={MoreHorizontal}
-            label="Netzplanaktionen"
+            label={t("proj.netzplanActions")}
             onClick={(e) =>
               openMenuAt(e, [
-                { label: "Bearbeiten", icon: Pencil, onSelect: () => open({ kind: "netzplan", projectId: netzplan.project_id, netzplan }) },
+                { label: t("links.editShort"), icon: Pencil, onSelect: () => open({ kind: "netzplan", projectId: netzplan.project_id, netzplan }) },
                 "separator",
                 {
-                  label: "Netzplan löschen",
+                  label: t("proj.deleteNetzplan"),
                   icon: Trash2,
                   danger: true,
                   onSelect: async () => {
-                    if (!(await s().confirm({ title: "Netzplan löschen?", message: `${netzplan.netzplan_nr} und alle Vorgänge werden gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
+                    if (!(await s().confirm({ title: t("proj.deleteNetzplanAsk"), message: t("proj.deleteNetzplanText", { nr: netzplan.netzplan_nr }), confirmLabel: t("common.delete"), danger: true }))) return;
                     try {
                       await api.deleteNetzplan(netzplan.id);
                       s().bumpWbs();
                     } catch (e) {
-                      s().error("Löschen nicht möglich", e);
+                      s().error(t("common.deleteFailed"), e);
                     }
                   },
                 },
@@ -200,13 +204,13 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
             </colgroup>
             <thead>
               <tr>
-                <th>Vorgang</th>
-                <th>Termin</th>
-                <th className="num">Plan</th>
-                <th className="num">Gebucht</th>
-                <th className="num">Rest</th>
-                <th className="budget-col">Fortschritt</th>
-                <th>Status</th>
+                <th>{t("wbs.vorgang")}</th>
+                <th>{t("proj.col.schedule")}</th>
+                <th className="num">{t("proj.col.plan")}</th>
+                <th className="num">{t("calv.booked")}</th>
+                <th className="num">{t("proj.col.rest")}</th>
+                <th className="budget-col">{t("proj.col.progress")}</th>
+                <th>{t("upd.status")}</th>
                 <th />
               </tr>
             </thead>
@@ -222,17 +226,17 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                     </td>
                     <td className="small nowrap">
                       {node ? (
-                        <span title={`Früheste Lage T${node.faz}–T${node.fez}, späteste T${node.saz}–T${node.sez}`}>
-                          <span className="num">T{node.faz}–T{node.fez}</span>
-                          {node.critical ? <span className="crit">kritisch</span> : <span className="faint"> · Puffer {compact(node.gp)} T</span>}
+                        <span title={t("proj.scheduleTitle", { faz: node.faz, fez: node.fez, saz: node.saz, sez: node.sez })}>
+                          <span className="num">{t("proj.dayRange", { a: node.faz, b: node.fez })}</span>
+                          {node.critical ? <span className="crit">{t("proj.critical")}</span> : <span className="faint"> · {t("proj.float", { days: compact(node.gp) })}</span>}
                         </span>
                       ) : (
-                        <span className="faint">{compact(v.duration_days)} T</span>
+                        <span className="faint">{t("proj.days", { days: compact(v.duration_days) })}</span>
                       )}
                     </td>
                     <td className="num">{h1(v.planned_hours)}</td>
                     <td className="num">{b ? h1(b.booked_hours) : "–"}</td>
-                    <td className="num" title={v.remaining_hours != null ? "Manuell geschätzt" : "Plan minus gebucht"}>
+                    <td className="num" title={v.remaining_hours != null ? t("proj.restManual") : t("proj.restAuto")}>
                       {b ? h1(b.etc_hours) : "–"}
                       {v.remaining_hours != null && <span className="faint">*</span>}
                     </td>
@@ -243,9 +247,9 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                       <Badge tone={lv.tone}>{lv.label}</Badge>
                     </td>
                     <td className="row-actions">
-                      <IconButton icon={Play} label="Timer starten" size="sm" onClick={() => startTimer(v)} />
-                      <IconButton icon={Target} label="Fokussitzung starten" size="sm" onClick={() => openFocusDialog({ reference: `${netzplan.netzplan_nr}/${v.vorgang_nr}` })} />
-                      <IconButton icon={Pencil} label="Bearbeiten" size="sm" onClick={() => open({ kind: "vorgang", netzplan, vorgang: v })} />
+                      <IconButton icon={Play} label={t("cmd.startTimer")} size="sm" onClick={() => startTimer(v)} />
+                      <IconButton icon={Target} label={t("cmd.focusStart")} size="sm" onClick={() => openFocusDialog({ reference: `${netzplan.netzplan_nr}/${v.vorgang_nr}` })} />
+                      <IconButton icon={Pencil} label={t("links.editShort")} size="sm" onClick={() => open({ kind: "vorgang", netzplan, vorgang: v })} />
                     </td>
                   </tr>
                 );
@@ -260,6 +264,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
 }
 
 function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void }) {
+  const t = useT();
   const s = useApp.getState;
   const [busy, setBusy] = useState(false);
   const [f, setF] = useState<Record<string, string>>((): Record<string, string> => {
@@ -282,7 +287,7 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
       if (!raw && emptyZero) return 0;
       const v = parseGermanNumber(raw);
       if (v == null || v < 0) {
-        errs[k] = "Keine gültige Zahl";
+        errs[k] = t("proj.invalidNumber");
         return 0;
       }
       return v;
@@ -311,30 +316,34 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
       s().bumpEntries();
       onClose();
     } catch (e) {
-      s().error("Speichern fehlgeschlagen", e);
+      s().error(t("common.saveFailed"), e);
     } finally {
       setBusy(false);
     }
   };
 
-  const title = { project: "Projekt", netzplan: "Netzplan", vorgang: "Vorgang" }[state.kind];
+  const title = {
+    project: editing ? t("proj.editProject") : t("proj.newProject"),
+    netzplan: editing ? t("proj.editNetzplan") : t("proj.newNetzplan"),
+    vorgang: editing ? t("proj.editVorgang") : t("proj.newVorgang"),
+  }[state.kind];
   const del =
     state.kind === "vorgang" && state.vorgang ? (
       <Button
         variant="danger"
         icon={Trash2}
         onClick={async () => {
-          if (!(await s().confirm({ title: "Vorgang löschen?", message: `${state.vorgang!.vorgang_nr} ${state.vorgang!.description} wird gelöscht. Gebuchte Zeiten bleiben erhalten.`, confirmLabel: "Löschen", danger: true }))) return;
+          if (!(await s().confirm({ title: t("proj.deleteVorgangAsk"), message: t("proj.deleteVorgangText", { what: `${state.vorgang!.vorgang_nr} ${state.vorgang!.description}` }), confirmLabel: t("common.delete"), danger: true }))) return;
           try {
             await api.deleteVorgang(state.vorgang!.id);
             s().bumpWbs();
             onClose();
           } catch (e) {
-            s().error("Löschen fehlgeschlagen", e);
+            s().error(t("common.deleteFailed"), e);
           }
         }}
       >
-        Löschen
+        {t("common.delete")}
       </Button>
     ) : null;
 
@@ -342,17 +351,17 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
     <Dialog
       open
       onClose={onClose}
-      title={`${title} ${editing ? "bearbeiten" : "anlegen"}`}
+      title={title}
       width={520}
       footer={
         <>
           {del}
           <span className="grow" />
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={submit} loading={busy}>
-            {editing ? "Speichern" : "Anlegen"}
+            {editing ? t("common.save") : t("common.create")}
           </Button>
         </>
       }
@@ -366,50 +375,50 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
       >
         {state.kind === "project" && (
           <>
-            <Field label="Projekt-ID">
+            <Field label={t("proj.projectId")}>
               <Input value={f.code} onChange={set("code")} placeholder="PRJ-2026-X" disabled={!!state.project} data-autofocus />
             </Field>
-            <Field label="Name">
-              <Input value={f.name} onChange={set("name")} placeholder="Rollout Kunde X" />
+            <Field label={t("links.name")}>
+              <Input value={f.name} onChange={set("name")} placeholder={t("proj.namePlaceholder")} />
             </Field>
           </>
         )}
         {state.kind === "netzplan" && (
           <>
-            <Field label="Netzplan-Nr.">
+            <Field label={t("proj.netzplanNr")}>
               <Input value={f.nr} onChange={set("nr")} placeholder="NP-8801" disabled={!!state.netzplan} data-autofocus />
             </Field>
-            <Field label="PSP-Element" hint="Leer = Netzplan-Nr.">
+            <Field label={t("proj.wbsElement")} hint={t("proj.wbsElementHint")}>
               <Input value={f.wbs} onChange={set("wbs")} placeholder="NP-8801-1020" />
             </Field>
-            <Field label="Beschreibung">
-              <Input value={f.desc} onChange={set("desc")} placeholder="Systemintegration" />
+            <Field label={t("time.description")}>
+              <Input value={f.desc} onChange={set("desc")} placeholder={t("proj.netzplanPlaceholder")} />
             </Field>
-            <Field label="Planstunden" hint={errHint("hours")}>
+            <Field label={t("proj.plannedHours")} hint={errHint("hours")}>
               <Input value={f.hours} onChange={set("hours")} inputMode="decimal" placeholder="120" aria-invalid={!!bad.hours} />
             </Field>
           </>
         )}
         {state.kind === "vorgang" && (
           <>
-            <Field label="Vorgang">
+            <Field label={t("wbs.vorgang")}>
               <Input value={f.nr} onChange={set("nr")} placeholder="1070" disabled={!!state.vorgang} data-autofocus />
             </Field>
-            <Field label="Beschreibung">
+            <Field label={t("time.description")}>
               <Input value={f.desc} onChange={set("desc")} placeholder="Hypercare" />
             </Field>
-            <Field label="Dauer (Tage)" hint={errHint("days")}>
+            <Field label={t("proj.durationDays")} hint={errHint("days")}>
               <Input value={f.days} onChange={set("days")} inputMode="decimal" aria-invalid={!!bad.days} />
             </Field>
-            <Field label="Planstunden" hint={errHint("hours")}>
+            <Field label={t("proj.plannedHours")} hint={errHint("hours")}>
               <Input value={f.hours} onChange={set("hours")} inputMode="decimal" aria-invalid={!!bad.hours} />
             </Field>
             {state.vorgang ? (
-              <Field label="Restaufwand (h)" hint={errHint("rest", "Leer lassen, um Plan minus gebucht zu verwenden")}>
-                <Input value={f.rest} onChange={set("rest")} aria-invalid={!!bad.rest} inputMode="decimal" placeholder="automatisch" />
+              <Field label={t("proj.remaining")} hint={errHint("rest", t("proj.remainingHint"))}>
+                <Input value={f.rest} onChange={set("rest")} aria-invalid={!!bad.rest} inputMode="decimal" placeholder={t("proj.automatic")} />
               </Field>
             ) : (
-              <Field label="Nach Vorgang" hint="Vorgänger, kommagetrennt">
+              <Field label={t("proj.after")} hint={t("proj.afterHint")}>
                 <Input value={f.after} onChange={set("after")} placeholder="1040, 1050" />
               </Field>
             )}

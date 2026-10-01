@@ -2,6 +2,7 @@
 
 import { addDays, isoDay, isoWeekday } from "./format";
 import type { StatusFlag, TimeEntryRow } from "./types";
+import { t } from "./i18n";
 
 export interface DayGap {
   day: Date;
@@ -58,7 +59,7 @@ export function catsGrid(rows: TimeEntryRow[], week: Date): { text: string; ids:
 /** Why an entry cannot be deleted (the core refuses it as well), or null: an exported entry is
  *  already in the time system, a running one is stopped first. */
 export function undeletableReason(status: StatusFlag): string | null {
-  if (status === "exported") return "bereits exportiert";
-  if (status === "running") return "läuft noch – zuerst stoppen";
+  if (status === "exported") return t("time.reasonExported");
+  if (status === "running") return t("time.reasonRunning");
   return null;
 }

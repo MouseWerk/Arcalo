@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DICTS, translate, type TKey } from "./i18n";
+import { DICTS, langFromLocale, translate, type TKey } from "./i18n";
+import type { Msg } from "../locales/en";
 import { COMMANDS, RESERVED } from "./keymap";
 
 const SRC = path.resolve(__dirname, "..");
@@ -14,21 +15,25 @@ function sources(dir: string): string[] {
   });
 }
 
-const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+const forms = (m: Msg) => (typeof m === "string" ? [m] : [m.one, m.other]);
+const placeholders = (m: Msg) => [...new Set(forms(m).flatMap((s) => [...s.matchAll(/\{(\w+)\}/g)].map((x) => x[1])))].sort();
 
 describe("i18n", () => {
-  it("German and English have the same keys, none empty", () => {
+  it("English and German have the same keys, none empty", () => {
     const de = Object.keys(DICTS.de).sort();
     const en = Object.keys(DICTS.en).sort();
-    expect(en).toEqual(de);
-    for (const k of de) {
-      expect(DICTS.de[k as TKey].trim(), k).not.toBe("");
-      expect(DICTS.en[k as TKey].trim(), k).not.toBe("");
+    expect(de).toEqual(en);
+    for (const k of en as TKey[]) {
+      for (const s of forms(DICTS.de[k])) expect(s.trim(), k).not.toBe("");
+      for (const s of forms(DICTS.en[k])) expect(s.trim(), k).not.toBe("");
     }
   });
 
-  it("placeholders match in both languages", () => {
-    for (const k of Object.keys(DICTS.de) as TKey[]) expect(placeholders(DICTS.en[k]), k).toEqual(placeholders(DICTS.de[k]));
+  it("placeholders and plural forms match in both languages", () => {
+    for (const k of Object.keys(DICTS.en) as TKey[]) {
+      expect(placeholders(DICTS.de[k]), k).toEqual(placeholders(DICTS.en[k]));
+      expect(typeof DICTS.de[k], k).toBe(typeof DICTS.en[k]);
+    }
   });
 
   it("every key used in the code exists", () => {
@@ -41,7 +46,7 @@ describe("i18n", () => {
     for (const c of COMMANDS) used.add(c.label);
     for (const r of Object.values(RESERVED)) used.add(r);
     expect(used.size).toBeGreaterThan(100);
-    const missing = [...used].filter((k) => !(k in DICTS.de));
+    const missing = [...used].filter((k) => !(k in DICTS.en));
     expect(missing).toEqual([]);
   });
 
@@ -53,5 +58,24 @@ describe("i18n", () => {
     expect(translate("de", "ribbon.projects")).toBe("Projekte");
     expect(translate("de", "nav.backup")).toBe("Sicherung");
     expect(translate("en", "ribbon.settings")).toBe("Settings");
+  });
+
+  it("picks plural forms with Intl.PluralRules", () => {
+    const k = (Object.keys(DICTS.en) as TKey[]).find((x) => typeof DICTS.en[x] !== "string");
+    expect(k, "at least one plural entry").toBeTruthy();
+    const en = DICTS.en[k!] as { one: string; other: string };
+    expect(translate("en", k!, { n: 1 })).toBe(en.one.split("{n}").join("1"));
+    expect(translate("en", k!, { n: 2 })).toBe(en.other.split("{n}").join("2"));
+    expect(translate("en", k!, { n: 0 })).toBe(en.other.split("{n}").join("0"));
+  });
+
+  it("chooses German only for German locales", () => {
+    expect(langFromLocale("de-DE")).toBe("de");
+    expect(langFromLocale("de")).toBe("de");
+    expect(langFromLocale("DE-at")).toBe("de");
+    expect(langFromLocale("en-US")).toBe("en");
+    expect(langFromLocale("fr-FR")).toBe("en");
+    expect(langFromLocale("")).toBe("en");
+    expect(langFromLocale(undefined)).toBe("en");
   });
 });

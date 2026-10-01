@@ -2,6 +2,7 @@
 
 import type { FocusDone, FocusState, HeldNotification } from "./types";
 import { parseGermanNumber } from "./format";
+import { t } from "./i18n";
 
 export const LENGTHS = [25, 50] as const;
 export const BREAKS = [5, 10] as const;
@@ -73,19 +74,21 @@ export function saveChoice(c: FocusChoice) {
 /** Title and text of the message after a session: what was booked and what was held back. */
 export function sessionSummary(done: FocusDone, heldToasts: { title: string }[], held: HeldNotification[] = done.held, time = true): { title: string; detail: string } {
   const s = done.session;
-  const title = s.status === "done" ? (s.break_minutes > 0 ? `Pause – ${s.break_minutes} Min.` : "Fokussitzung geschafft") : "Fokussitzung beendet";
+  const title = s.status === "done" ? (s.break_minutes > 0 ? t("focus.breakTitle", { n: s.break_minutes }) : t("focus.doneTitle")) : t("focus.endedTitle");
   const parts: string[] = [];
   const minutes = done.entry ? s.worked_minutes : 0;
   // Time tracking off: the focus time, nothing about booking.
   if (!time) {
-    if (s.status === "done") parts.push(`${hm(s.worked_minutes)} Fokus`);
-  } else if (done.entry) parts.push(`${hm(minutes)} ${done.extended ? "zur Buchung addiert" : "gebucht"}${s.reference ? ` auf ${s.reference}` : ""} (Entwurf)`);
-  else if (s.status === "done" && !s.reference) parts.push(`${hm(s.worked_minutes)} Fokus, ohne Vorgang nicht gebucht`);
-  else if (s.status === "aborted") parts.push("Nicht gebucht");
-  const titles = [...heldToasts.map((t) => t.title), ...held.map((h) => h.title)];
+    if (s.status === "done") parts.push(t("focus.focusOnly", { time: hm(s.worked_minutes) }));
+  } else if (done.entry) {
+    const what = done.extended ? t("focus.addedToBooking", { time: hm(minutes) }) : t("focus.bookedTime", { time: hm(minutes) });
+    parts.push(s.reference ? t("focus.bookedOn", { what, ref: s.reference }) : t("focus.bookedDraft", { what }));
+  } else if (s.status === "done" && !s.reference) parts.push(t("focus.noActivity", { time: hm(s.worked_minutes) }));
+  else if (s.status === "aborted") parts.push(t("focus.notBooked"));
+  const titles = [...heldToasts.map((x) => x.title), ...held.map((h) => h.title)];
   if (titles.length) {
     const shown = titles.slice(0, 3).join(" · ");
-    parts.push(`${titles.length} ${titles.length === 1 ? "Hinweis" : "Hinweise"} zurückgehalten: ${shown}${titles.length > 3 ? " …" : ""}`);
+    parts.push(t("focus.held", { n: titles.length, list: shown + (titles.length > 3 ? " …" : "") }));
   }
   return { title, detail: parts.join(". ") };
 }

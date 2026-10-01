@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyLine, bars, displayProblem, emptyQuery, filterText, normalizeQuery, parseFilter, parseQueryLine, queryLine, tokenize } from "./dashquery";
+import { applyLine, bars, displayProblem, emptyQuery, filterText, groupLabel, normalizeQuery, parseFilter, parseQueryLine, queryLine, tokenize } from "./dashquery";
 
 describe("dashquery", () => {
   it("tokenizes words, quotes and `key: value` with a blank", () => {
@@ -51,6 +51,41 @@ describe("dashquery", () => {
     expect(queryLine(applyLine(emptyQuery("entries"), "zeitraum:woche"))).toBe("");
     expect(queryLine({ ...emptyQuery("pages"), text: "a:b" })).toBe('"a:b"');
     expect(filterText({ field: "x", op: "vor", value: "2026-01-01" })).toBe("x<2026-01-01");
+  });
+
+  it("accepts English aliases next to the German words and stores the German ones", () => {
+    const en = parseQueryLine("#client due: overdue priority>=1 range:month days:14 title:~offer");
+    const de = parseQueryLine("#client fällig: überfällig prio>=1 zeitraum:monat tage:14 titel:~offer");
+    expect(en).toEqual(de);
+    expect(parseFilter("due:!empty")).toEqual({ field: "fällig", op: "ist nicht leer", value: "" });
+    expect(parseFilter("status:done")).toEqual({ field: "status", op: "ist", value: "erledigt" });
+    // Word operators, in both languages, after built-in fields only.
+    expect(parseQueryLine("status is open").filters).toEqual([{ field: "status", op: "ist", value: "offen" }]);
+    expect(parseQueryLine("status ist offen").filters).toEqual([{ field: "status", op: "ist", value: "offen" }]);
+    expect(parseQueryLine("status is not done").filters).toEqual([{ field: "status", op: "ist nicht", value: "erledigt" }]);
+    expect(parseQueryLine("titel enthält Angebot").filters).toEqual([{ field: "titel", op: "enthält", value: "Angebot" }]);
+    expect(parseQueryLine("title contains offer").filters).toEqual([{ field: "titel", op: "enthält", value: "offer" }]);
+    const text = parseQueryLine('what is new "status is open"');
+    expect(text.filters).toEqual([]);
+    expect(text.text).toBe("what is new status is open");
+    // Written back in the display language; both read to the same query.
+    const q = applyLine(emptyQuery("entries"), "zeitraum:30tage netzplan:NP-8801 status:entwurf");
+    expect(queryLine(q)).toBe("netzplan:NP-8801 status:entwurf zeitraum:30tage");
+    expect(queryLine(q, "en")).toBe("network:NP-8801 status:draft range:30days");
+    expect(applyLine(emptyQuery("entries"), queryLine(q, "en"))).toEqual(q);
+    const t = applyLine(emptyQuery("tasks"), "fällig:woche prio:hoch wer:leer");
+    expect(queryLine(t, "en")).toBe("due:week priority:high wer:empty");
+    expect(normalizeQuery({ source: "tasks", group: "Due", filters: [{ field: "Priority", op: "ist", value: "hoch" }] })).toMatchObject({ group: "fällig", filters: [{ field: "prio" }] });
+  });
+
+  it("shows the backend's group words in the display language", () => {
+    expect(groupLabel("überfällig", "fällig", "en")).toBe("overdue");
+    expect(groupLabel("hoch", "prio", "en")).toBe("high");
+    expect(groupLabel("(leer)", "status", "en")).toBe("(empty)");
+    expect(groupLabel("Andere", "projekt", "en")).toBe("Other");
+    // A page property's own values stay as they are.
+    expect(groupLabel("hoch", "risiko", "en")).toBe("hoch");
+    expect(groupLabel("überfällig", "fällig", "de")).toBe("überfällig");
   });
 
   it("normalizes stored queries", () => {

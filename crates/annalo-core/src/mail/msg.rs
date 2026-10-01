@@ -6,6 +6,7 @@
 //! (`__attach_version1.0_#XXXXXXXX`: long file name, data). Categories are named properties
 //! and are not read.
 
+use crate::{tr, trf};
 use std::io::{Cursor, Read};
 
 use cfb::CompoundFile;
@@ -86,7 +87,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, String> {
             .filter(|n| !n.trim().is_empty())
             .or_else(|| string(&mut cf, &dir, 0x3704))
             .or_else(|| string(&mut cf, &dir, 0x3001))
-            .unwrap_or_else(|| format!("Anhang {}", i + 1));
+            .unwrap_or_else(|| trf!("Anhang {}", "Attachment {}", i + 1));
         // Embedded messages (a storage instead of data) are listed without content.
         let data = stream(&mut cf, &format!("{dir}__substg1.0_37010102")).unwrap_or_default();
         let inline = string(&mut cf, &dir, 0x3712).is_some_and(|c| !c.trim().is_empty());
@@ -114,7 +115,7 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed, String> {
         ..Default::default()
     };
     if mail.subject.is_empty() && mail.from_name.is_empty() && mail.body.is_empty() {
-        return Err("keine Nachrichteneigenschaften gefunden".into());
+        return Err(tr!("keine Nachrichteneigenschaften gefunden", "no message properties found").into());
     }
     Ok(Parsed { mail, parts })
 }

@@ -35,8 +35,10 @@ import { MailImportHost } from "./components/MailImport";
 import { openDayReview } from "./lib/reviewnav";
 import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
+import { t, useT } from "./lib/i18n";
 
 export function App() {
+  useT();
   const sidebarOpen = useApp((s) => s.sidebarOpen);
   const panelOpen = useApp((s) => s.panelOpen);
   const focus = useApp((s) => s.focusMode);
@@ -65,17 +67,17 @@ export function App() {
       void s.refreshConflicts();
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
       void refreshPac(view);
-    })().catch((e) => s.error("Start fehlgeschlagen", e));
+    })().catch((e) => s.error(t("onb.failed"), e));
     // SQLite in a sync client's or a network folder can be corrupted: warn until dismissed.
     api
       .dataDirStatus()
       .then((d) => {
         // A move at startup, or a chosen folder that is not reachable (fallback to the default).
         const n = d.notice;
-        if (n?.kind === "info") s.toast({ tone: "success", title: "Speicherort geändert", detail: n.message });
-        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: n.title ?? "Datenordner nicht verfügbar", detail: n.message });
-        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: n.title ?? "Daten nicht verschoben", detail: n.message });
-        if (d.synced) s.toast({ tone: "warning", persistent: true, title: "Datenbank im synchronisierten Ordner", detail: `Die Datenbank liegt in einem synchronisierten/Netzwerkordner – das kann sie beschädigen. Sicherungen dorthin sind unbedenklich. (${d.data_dir})` });
+        if (n?.kind === "info") s.toast({ tone: "success", title: t("app.dirMoved"), detail: n.message });
+        else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: n.title ?? t("app.dirUnavailable"), detail: n.message });
+        else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: n.title ?? t("app.dirNotMoved"), detail: n.message });
+        if (d.synced) s.toast({ tone: "warning", persistent: true, title: t("app.syncedDb"), detail: t("app.syncedDbDetail", { dir: d.data_dir }) });
       })
       .catch(() => {});
 
@@ -87,10 +89,10 @@ export function App() {
     media.addEventListener("change", onMedia);
     const unlisten = [
       on("data://entries", () => useApp.getState().bumpEntries()),
-      on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: "Automatische Sicherung fehlgeschlagen", detail: msg })),
+      on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: t("app.backupFailed"), detail: msg })),
       on<Parameters<typeof warnDestination>[0]>("backup://destination-failed", (w) => notify("backup_failed") && warnDestination(w)),
       // Git sync: only failures are shown (successes appear in the settings' status line).
-      on<string>("gitsync://failed", (msg) => notify("git_failed") && useApp.getState().toast({ tone: "warning", title: "Git-Synchronisierung fehlgeschlagen", detail: msg })),
+      on<string>("gitsync://failed", (msg) => notify("git_failed") && useApp.getState().toast({ tone: "warning", title: t("app.gitFailed"), detail: msg })),
       // Git sync took over notes from the server; notes changed on both sides are conflicts.
       on<GitPulled>("gitsync://pulled", (p) => void onPulled(p)),
       on("gitsync://conflicts", () => void useApp.getState().refreshConflicts()),
@@ -114,7 +116,7 @@ export function App() {
       }),
       // Tray „Beenden“: store edits, then quit for real.
       on("app://quit-requested", async () => {
-        if (await flushBeforeExit()) await api.quit().catch((e) => useApp.getState().error("Beenden fehlgeschlagen", e));
+        if (await flushBeforeExit()) await api.quit().catch((e) => useApp.getState().error(t("app.quitFailed"), e));
       }),
       on("tray://timer-stop", () => void (timeTrackingEnabled() && stopTimer())),
       // macOS app menu (its key equivalents ⌘, ⌘\ ⌘. never reach the keydown handler below).
@@ -154,19 +156,19 @@ export function App() {
       on<{ page_id: number; title: string; created: boolean; late: boolean }>("capture://stored", async (c) => {
         const st = useApp.getState();
         if (c.created || !st.pages.has(c.page_id)) await st.refreshTree();
-        if (c.late) st.toast({ tone: "success", title: "Schnellerfassung nachträglich gespeichert", detail: `In „${c.title}“` });
+        if (c.late) st.toast({ tone: "success", title: t("app.captureLate"), detail: t("app.captureIn", { title: c.title }) });
       }),
       on<[number, boolean]>("capture://undone", ([, created]) => void (created && useApp.getState().refreshTree())),
       on<string>("capture://queued", (msg) =>
-        useApp.getState().toast({ tone: "warning", title: "Schnellerfassung wartet", detail: `Die Datenbank ist gerade nicht bereit (${msg}). Der Text ist gesichert und wird gespeichert, sobald es geht.` }),
+        useApp.getState().toast({ tone: "warning", title: t("app.captureWaits"), detail: t("app.captureWaitsDetail", { msg }) }),
       ),
       on<[string, string]>("capture://failed", ([msg, text]) =>
         useApp.getState().toast({
           tone: "danger",
           persistent: true,
-          title: "Schnellerfassung nicht gespeichert",
+          title: t("app.captureFailed"),
           detail: `${msg}\n\n${text}`,
-          action: { label: "Text kopieren", run: () => void navigator.clipboard?.writeText(text).catch(() => {}) },
+          action: { label: t("app.copyText"), run: () => void navigator.clipboard?.writeText(text).catch(() => {}) },
         }),
       ),
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.
@@ -245,7 +247,7 @@ export function App() {
         const action = await api.closeAction().catch(() => (toTray ? "hide" : "quit"));
         if (action !== "quit") {
           await flushAllEditors().catch(() => {});
-          await api.hideWindow().catch((err) => useApp.getState().error("Fenster konnte nicht ausgeblendet werden", err));
+          await api.hideWindow().catch((err) => useApp.getState().error(t("app.hideFailed"), err));
           closing = false;
           return;
         }
@@ -256,7 +258,7 @@ export function App() {
         // Needs core:window:allow-destroy.
         await win.destroy().catch((err) => {
           closing = false;
-          useApp.getState().error("Fenster konnte nicht geschlossen werden", err);
+          useApp.getState().error(t("app.closeFailed"), err);
         });
       })
       .catch(() => null);
@@ -298,7 +300,7 @@ export function App() {
         <>
           <Sidebar />
           <Resizer
-            label="Seitenleiste"
+            label={t("app.sidebar")}
             className="side-resizer"
             onResize={(dx) => {
               if (!dragStart.current) dragStart.current = sideW;
@@ -319,7 +321,7 @@ export function App() {
       {showPanel && (
         <>
           <Resizer
-            label="Seitenpanel"
+            label={t("panel.label")}
             className="panel-resizer"
             onResize={(dx) => {
               if (!dragStart.current) dragStart.current = panelW;
@@ -359,22 +361,19 @@ async function onPulled(p: GitPulled) {
     st.toast({
       tone: "warning",
       persistent: true,
-      title: "Löschungen vom Server nicht übernommen",
-      detail: `Auf dem Server fehlen ${p.kept.length} Seiten auf einmal. Sie bleiben hier erhalten und werden bei der nächsten Synchronisierung wieder übertragen. Wenn sie gelöscht werden sollen, hier löschen.`,
+      title: t("app.keptTitle"),
+      detail: t("app.keptDetail", { n: p.kept.length }),
     });
   }
   if (!p.conflicts.length) return;
   const first = p.conflicts[0];
-  const title = st.pages.get(first)?.title ?? "Eine Notiz";
+  const title = st.pages.get(first)?.title ?? t("app.aNote");
   st.toast({
     tone: "warning",
     persistent: true,
-    title: p.conflicts.length === 1 ? "Konflikt bei der Git-Synchronisierung" : `${p.conflicts.length} Konflikte bei der Git-Synchronisierung`,
-    detail:
-      p.conflicts.length === 1
-        ? `„${title}“ wurde hier und auf einem anderen Rechner geändert. Beide Fassungen sind erhalten.`
-        : "Diese Notizen wurden hier und auf einem anderen Rechner geändert. Beide Fassungen sind erhalten.",
-    action: { label: "Zusammenführen", run: () => useApp.getState().openTab({ kind: "conflict", pageId: first }, { newTab: true }) },
+    title: t("app.conflicts", { n: p.conflicts.length }),
+    detail: p.conflicts.length === 1 ? t("app.conflictOne", { title }) : t("app.conflictMany"),
+    action: { label: t("app.merge"), run: () => useApp.getState().openTab({ kind: "conflict", pageId: first }, { newTab: true }) },
   });
 }
 
@@ -394,7 +393,7 @@ async function refreshPac(view: SettingsView) {
       useApp.getState().set({ settings: saved });
     }
   } catch (e) {
-    useApp.getState().toast({ tone: "warning", title: "PAC-Datei nicht ausgewertet", detail: String(e) });
+    useApp.getState().toast({ tone: "warning", title: t("app.pacFailed"), detail: String(e) });
   }
 }
 

@@ -66,7 +66,11 @@ export function blockDecorations(doc: PMNode, build: (node: PMNode, pos: number)
   return DecorationSet.create(doc, decos);
 }
 
+/** Transaction meta that rebuilds all block decorations (their labels follow the display language). */
+export const RELABEL = "annalo:relabel";
+
 export function updateBlockDecorations(old: DecorationSet, tr: Transaction, build: (node: PMNode, pos: number) => Decoration[]): DecorationSet {
+  if (tr.getMeta(RELABEL)) return blockDecorations(tr.doc, build);
   if (!tr.docChanged) return old;
   const ranges = changedRanges(tr);
   const blocks = ranges && touchedBlocks(tr.doc, ranges);

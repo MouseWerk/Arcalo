@@ -7,7 +7,7 @@ import {
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
-import { clock, h1, usd } from "../lib/format";
+import { clock, h1, int, usd } from "../lib/format";
 import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { useTimeTracking } from "../lib/timetracking";
@@ -15,7 +15,7 @@ import { Onboarding } from "./Onboarding";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { FocusStatus } from "./Focus";
-import { t, useT } from "../lib/i18n";
+import { t, t as tr, useT } from "../lib/i18n";
 import { modelLabel, usableProvider } from "../lib/providers";
 
 export function tabTitle(tab: Tab, pages: Map<number, { title: string }>) {
@@ -126,8 +126,8 @@ export function StatusBar() {
         </button>
       )}
       {onPage && stats && (
-        <span className="sb-item sb-static num" title={t("status.chars", { n: stats.chars.toLocaleString("de-DE") })}>
-          {stats.words.toLocaleString("de-DE")} {stats.words === 1 ? t("status.word") : t("status.words")}
+        <span className="sb-item sb-static num" title={t("status.chars", { n: int(stats.chars) })}>
+          {int(stats.words)} {stats.words === 1 ? t("status.word") : t("status.words")}
         </span>
       )}
       <button type="button" className="sb-item" onClick={() => s().set({ panelOpen: true, panelTab: "assistant" })} title={t("status.aiSession")}>
@@ -135,7 +135,7 @@ export function StatusBar() {
         {meter && meter.requests > 0 ? (
           <>
             <span className="num">{meter.last_tokens_per_second != null ? `${h1(meter.last_tokens_per_second)} t/s` : "–"}</span>
-            <span className="faint num">{(meter.prompt_tokens + meter.completion_tokens).toLocaleString("de-DE")} Tokens</span>
+            <span className="faint num">{t("assist.tokens", { n: int(meter.prompt_tokens + meter.completion_tokens) })}</span>
             <span className="faint num">{usd(meter.cost_usd)}</span>
           </>
         ) : (
@@ -202,7 +202,7 @@ export function Toasts() {
                 {t.action.label}
               </Button>
             )}
-            <IconButton icon={X} label="Schließen" size="sm" onClick={() => dismiss(t.id)} />
+            <IconButton icon={X} label={tr("common.close")} size="sm" onClick={() => dismiss(t.id)} />
           </div>
         );
       })}
@@ -222,7 +222,7 @@ export function ConfirmHost() {
       footer={
         <>
           <Button variant="ghost" onClick={() => req.resolve("cancel")}>
-            {req.cancelLabel ?? "Abbrechen"}
+            {req.cancelLabel ?? tr("common.cancel")}
           </Button>
           {req.altLabel && <Button onClick={() => req.resolve("alt")}>{req.altLabel}</Button>}
           <Button variant={req.danger ? "danger" : "primary"} onClick={() => req.resolve("confirm")} data-autofocus>

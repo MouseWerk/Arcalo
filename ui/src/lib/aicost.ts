@@ -3,18 +3,19 @@
 
 import { errorText } from "./api";
 import { useApp } from "../store/app";
+import { t } from "./i18n";
 
-/** Start of the shell's error when the limit is reached (see src-tauri/src/prefs.rs). */
-export const COST_LIMIT_PREFIX = "KI-Kostenlimit erreicht";
+/** Starts of the shell's error when the limit is reached, in both languages (see src-tauri/src/prefs.rs). */
+export const COST_LIMIT_PREFIXES = ["KI-Kostenlimit erreicht", "AI cost limit reached"];
 
-export const isCostLimit = (e: unknown) => errorText(e).includes(COST_LIMIT_PREFIX);
+export const isCostLimit = (e: unknown) => COST_LIMIT_PREFIXES.some((p) => errorText(e).includes(p));
 
 /** Asks whether to send despite the limit. */
 export function confirmOverLimit(e: unknown): Promise<boolean> {
   return useApp.getState().confirm({
-    title: "Monatliches KI-Kostenlimit erreicht",
-    message: `${errorText(e)}. Diese Anfrage trotzdem senden? Das Limit lässt sich unter Einstellungen › KI ändern.`,
-    confirmLabel: "Trotzdem senden",
+    title: t("ai.cost.reachedMonthly"),
+    message: t("ai.cost.ask", { msg: errorText(e) }),
+    confirmLabel: t("ai.cost.sendAnyway"),
   });
 }
 
@@ -27,8 +28,8 @@ export function warnCost(fraction: number | null | undefined) {
   warnedAt = step;
   useApp.getState().toast({
     tone: fraction >= 1 ? "danger" : "warning",
-    title: fraction >= 1 ? "KI-Kostenlimit erreicht" : `${Math.round(fraction * 100)} % des KI-Kostenlimits verbraucht`,
-    detail: "Monatliches Limit unter Einstellungen › KI.",
+    title: fraction >= 1 ? t("ai.cost.reached") : t("ai.cost.used", { percent: Math.round(fraction * 100) }),
+    detail: t("ai.cost.where"),
   });
 }
 

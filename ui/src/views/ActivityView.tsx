@@ -14,13 +14,14 @@ import { pickDate } from "../components/CalendarPopover";
 import { PageIcon } from "../components/icons";
 import { useWbs } from "./wbs";
 import { hm } from "../lib/focus";
-import { isoDay, time } from "../lib/format";
+import { decimal, isoDay, time } from "../lib/format";
 import {
   KIND_GROUPS, RANGE_LABELS, dayBounds, dayTitle, describe, feedRows, groupOf, presetDays, rowOffsets, visibleRange, type FeedRow, type KindGroup, type RangePreset,
 } from "../lib/activity";
 import type { Activity, FeedSummary } from "../lib/types";
 
 import { ACTIVITY_PREF as PREF } from "./activityDay";
+import { useT } from "../lib/i18n";
 export { openActivityDay } from "./activityDay";
 interface Prefs {
   preset: RangePreset;
@@ -48,6 +49,7 @@ const GROUP_ICON: Record<KindGroup, typeof FileText> = {
 };
 
 export function ActivityView() {
+  const t = useT();
   const s = useApp.getState;
   const pages = useApp((st) => st.pages);
   const entriesVersion = useApp((st) => st.entriesVersion);
@@ -83,20 +85,20 @@ export function ActivityView() {
     return () => window.removeEventListener("annalo:activity-day", onDay);
   }, []);
   useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(query.trim()), 200);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setDebounced(query.trim()), 200);
+    return () => window.clearTimeout(timer);
   }, [query]);
   // Saves change the feed: refetch shortly after, and every minute while open.
   useEffect(() => {
-    let t: number | undefined;
+    let timer: number | undefined;
     const bump = () => {
-      window.clearTimeout(t);
-      t = window.setTimeout(() => setTick((n) => n + 1), 600);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setTick((n) => n + 1), 600);
     };
     window.addEventListener("annalo:page-saved", bump);
     const every = window.setInterval(() => setTick((n) => n + 1), 60_000);
     return () => {
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
       window.clearInterval(every);
       window.removeEventListener("annalo:page-saved", bump);
     };
@@ -129,7 +131,7 @@ export function ActivityView() {
         setSummary(sum);
         setPeople(ppl);
       })
-      .catch((e) => n === seq.current && (setItems([]), s().error("Aktivität nicht geladen", e)));
+      .catch((e) => n === seq.current && (setItems([]), s().error(t("feed.loadFailed"), e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bounds.from, bounds.to, kinds, wbsFilter, person, debounced, timeOn]);
   useEffect(load, [load, entriesVersion, pages, tick, focusId]);
@@ -176,9 +178,9 @@ export function ActivityView() {
   const open = (a: Activity, newTab: boolean) => {
     if (a.page_id != null && pages.has(a.page_id)) return s().openPage(a.page_id, { newTab });
     if (a.kind.startsWith("entry_") || a.kind === "focus_session") return s().openTab({ kind: "timesheet" }, { newTab });
-    if (a.kind === "file_added") return void api.openAttachment(a.title).catch((e) => s().error("Datei nicht geöffnet", e));
+    if (a.kind === "file_added") return void api.openAttachment(a.title).catch((e) => s().error(t("feed.fileOpenFailed"), e));
     if (a.kind === "backup" || a.kind === "sync") return s().openTab({ kind: "settings" }, { newTab });
-    s().toast({ tone: "info", title: "Nicht mehr vorhanden", detail: "Die Seite wurde gelöscht oder liegt im Papierkorb." });
+    s().toast({ tone: "info", title: t("feed.gone"), detail: t("feed.goneText") });
   };
 
   return (
@@ -186,8 +188,8 @@ export function ActivityView() {
       <div className="view activity-view">
         <header className="view-header">
           <div>
-            <h1>Aktivität</h1>
-            <div className="view-sub">{timeOn ? "Was wann passiert ist: Seiten, Aufgaben, Buchungen, Dateien und Fokus" : "Was wann passiert ist: Seiten, Aufgaben, Dateien und Fokus"}</div>
+            <h1>{t("ribbon.activity")}</h1>
+            <div className="view-sub">{t(timeOn ? "feed.sub" : "tt.feedSub")}</div>
           </div>
           <div className="view-actions">
             <button
@@ -196,17 +198,17 @@ export function ActivityView() {
               onClick={(e) => pickDate(e.currentTarget, days.from, (iso) => setPrefs({ preset: "day", from: iso, to: iso }))}
             >
               <CalendarSearch size={14} aria-hidden />
-              <span>Was habe ich am … gemacht?</span>
+              <span>{t("cmd.activityDay")}</span>
             </button>
-            <IconButton icon={RefreshCw} label="Aktualisieren" onClick={() => setTick((n) => n + 1)} />
+            <IconButton icon={RefreshCw} label={t("devlog.refresh")} onClick={() => setTick((n) => n + 1)} />
           </div>
         </header>
 
         <div className="activity-filters">
-          <div className="activity-range" role="radiogroup" aria-label="Zeitraum">
+          <div className="activity-range" role="radiogroup" aria-label={t("feed.range.custom")}>
             {(Object.keys(RANGE_LABELS) as Exclude<RangePreset, "day">[]).map((p) => (
               <button key={p} type="button" role="radio" aria-checked={prefs.preset === p} className={`chip ${prefs.preset === p ? "on" : ""}`} onClick={() => setPreset(p)}>
-                {RANGE_LABELS[p]}
+                {t(RANGE_LABELS[p])}
               </button>
             ))}
             {prefs.preset === "day" && (
@@ -217,21 +219,21 @@ export function ActivityView() {
           </div>
           {prefs.preset === "custom" && (
             <div className="activity-dates">
-              <DateInput value={prefs.from} onChange={(iso) => setPrefs((c) => ({ ...c, from: iso }))} aria-label="Von" />
-              <span className="faint">bis</span>
-              <DateInput value={prefs.to} onChange={(iso) => setPrefs((c) => ({ ...c, to: iso }))} aria-label="Bis" />
+              <DateInput value={prefs.from} onChange={(iso) => setPrefs((c) => ({ ...c, from: iso }))} aria-label={t("common.from")} />
+              <span className="faint">{t("common.to")}</span>
+              <DateInput value={prefs.to} onChange={(iso) => setPrefs((c) => ({ ...c, to: iso }))} aria-label={t("common.until")} />
             </div>
           )}
           <div className="activity-row-filters">
             <span className="input affix-input activity-search">
               <Search size={14} className="faint" aria-hidden />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Suchen…" aria-label="Aktivität durchsuchen" spellCheck={false} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.searchDots")} aria-label={t("feed.search")} spellCheck={false} />
             </span>
-            {timeOn && <Select value={wbsFilter} onChange={(e) => setWbsFilter(e.target.value)} aria-label="Projekt, Netzplan oder Vorgang">
-              <option value="">Alle Projekte</option>
+            {timeOn && <Select value={wbsFilter} onChange={(e) => setWbsFilter(e.target.value)} aria-label={t("feed.wbsFilter")}>
+              <option value="">{t("feed.allProjects")}</option>
               {wbs.map((p) => (
                 <optgroup key={p.id} label={`${p.project_code} · ${p.name}`}>
-                  <option value={`p:${p.id}`}>{p.project_code} (ganzes Projekt)</option>
+                  <option value={`p:${p.id}`}>{t("feed.wholeProject", { code: p.project_code })}</option>
                   {p.netzplaene.flatMap((n) => [
                     <option key={`n${n.id}`} value={`n:${n.id}`}>
                       {n.netzplan_nr} · {n.description || n.wbs_element}
@@ -246,8 +248,8 @@ export function ActivityView() {
                 </optgroup>
               ))}
             </Select>}
-            <Select value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Person" disabled={!people.length && !person}>
-              <option value="">Alle Personen</option>
+            <Select value={person} onChange={(e) => setPerson(e.target.value)} aria-label={t("feed.person")} disabled={!people.length && !person}>
+              <option value="">{t("feed.allPeople")}</option>
               {people.map((p) => (
                 <option key={p} value={p}>
                   @{p}
@@ -255,28 +257,28 @@ export function ActivityView() {
               ))}
             </Select>
           </div>
-          <div className="activity-kinds" role="group" aria-label="Art">
+          <div className="activity-kinds" role="group" aria-label={t("feed.kind")}>
             {KIND_GROUPS.filter((g) => timeOn || g.id !== "time").map((g) => {
               const Icon = GROUP_ICON[g.id];
               return (
                 <button key={g.id} type="button" aria-pressed={groups.has(g.id)} className={`chip chip-kind kind-${g.id} ${groups.has(g.id) ? "on" : ""}`} onClick={() => toggleGroup(g.id)}>
-                  <Icon size={13} aria-hidden /> {g.label}
+                  <Icon size={13} aria-hidden /> {t(g.label)}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <section className="activity-summary card" aria-label="Zusammenfassung">
+        <section className="activity-summary card" aria-label={t("feed.summary")}>
           <div className="activity-summary-head">
             <h2>{heading}</h2>
-            {single && <span className="faint small">{days.from === isoDay(new Date()) ? "bisher" : ""}</span>}
+            {single && <span className="faint small">{days.from === isoDay(new Date()) ? t("feed.soFar") : ""}</span>}
           </div>
           <div className={`activity-stats ${timeOn ? "" : "no-time"}`}>
-            <Stat value={summary?.pages_edited ?? 0} label={summary?.pages_edited === 1 ? "Seite bearbeitet" : "Seiten bearbeitet"} icon={FileText} tone="pages" />
-            <Stat value={summary?.tasks_done ?? 0} label={summary?.tasks_done === 1 ? "Aufgabe erledigt" : "Aufgaben erledigt"} icon={CheckSquare} tone="tasks" />
-            {timeOn && <Stat value={`${((summary?.booked_minutes ?? 0) / 60).toLocaleString("de-DE", { maximumFractionDigits: 2 })} h`} label="gebucht" icon={Clock} tone="time" />}
-            <Stat value={summary?.focus_sessions ?? 0} label={summary?.focus_minutes ? `Fokus · ${hm(summary.focus_minutes)}` : "Fokussitzungen"} icon={Target} tone="focus" />
+            <Stat value={summary?.pages_edited ?? 0} label={t("feed.stat.pages", { n: summary?.pages_edited ?? 0 })} icon={FileText} tone="pages" />
+            <Stat value={summary?.tasks_done ?? 0} label={t("feed.stat.tasks", { n: summary?.tasks_done ?? 0 })} icon={CheckSquare} tone="tasks" />
+            {timeOn && <Stat value={`${decimal((summary?.booked_minutes ?? 0) / 60)} h`} label={t("feed.stat.booked")} icon={Clock} tone="time" />}
+            <Stat value={summary?.focus_sessions ?? 0} label={summary?.focus_minutes ? t("feed.stat.focusTime", { time: hm(summary.focus_minutes) }) : t("feed.stat.focus")} icon={Target} tone="focus" />
           </div>
         </section>
 
@@ -285,11 +287,11 @@ export function ActivityView() {
             <Spinner />
           </div>
         ) : items.length === 0 ? (
-          <EmptyState icon={ActivityIcon} title="Keine Aktivität in diesem Zeitraum">
-            {query || kinds.length || wbsFilter || person ? "Mit diesen Filtern gibt es nichts. Filter lockern oder einen anderen Zeitraum wählen." : "Bearbeitete Seiten, erledigte Aufgaben und Buchungen erscheinen hier."}
+          <EmptyState icon={ActivityIcon} title={t("feed.empty")}>
+            {query || kinds.length || wbsFilter || person ? t("feed.emptyFiltered") : t("feed.emptyHint")}
           </EmptyState>
         ) : (
-          <div className="activity-list" ref={listRef} style={{ height: total }} role="list" aria-label="Aktivitäten">
+          <div className="activity-list" ref={listRef} style={{ height: total }} role="list" aria-label={t("feed.list")}>
             {rows.slice(start, end).map((r, k) => (
               <Row key={r.key} row={r} top={offsets[start + k]} onOpen={open} />
             ))}
@@ -319,6 +321,7 @@ const KIND_ICON: Partial<Record<Activity["kind"], typeof FileText>> = {
 };
 
 function Row({ row, top, onOpen }: { row: FeedRow; top: number; onOpen: (a: Activity, newTab: boolean) => void }) {
+  useT();
   if (row.type === "day")
     return (
       <div className="activity-day" style={{ top }} role="presentation">

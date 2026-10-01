@@ -10,7 +10,7 @@ import { bookingPrefill, durationMinutes, sourceColor, timeRange, unbooked } fro
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, clock, fmtHours, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtHours, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
@@ -21,15 +21,17 @@ import { openFocusDialog } from "../components/Focus";
 import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
+import { useT, type TKey } from "../lib/i18n";
 
-const STATUS: Record<StatusFlag, { label: string; tone: Tone }> = {
-  running: { label: "Läuft", tone: "info" },
-  draft: { label: "Entwurf", tone: "neutral" },
-  released: { label: "Freigegeben", tone: "accent" },
-  exported: { label: "Exportiert", tone: "success" },
+const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
+  running: { label: "time.status.running", tone: "info" },
+  draft: { label: "time.status.draft", tone: "neutral" },
+  released: { label: "time.status.released", tone: "accent" },
+  exported: { label: "time.status.exported", tone: "success" },
 };
 
 export function TimesheetView() {
+  const t = useT();
   const version = useApp((s) => s.entriesVersion);
   const [week, setWeek] = useState(() => weekStart(new Date()));
   const [rows, setRows] = useState<TimeEntryRow[]>([]);
@@ -69,7 +71,7 @@ export function TimesheetView() {
     api
       .entries(week.toISOString(), addDays(week, 7).toISOString())
       .then((r) => n === seq.current && setRows(r))
-      .catch((e) => s().error("Einträge nicht geladen", e));
+      .catch((e) => s().error(t("time.loadFailed"), e));
   };
   useEffect(() => {
     load();
@@ -85,7 +87,7 @@ export function TimesheetView() {
   const target = settings?.daily_target_hours ?? 8;
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
   const end = addDays(week, 6);
-  const range = `${week.toLocaleDateString("de-DE", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" })}`;
+  const range = `${dayMonthName(week)} – ${dayMonthName(end, true)}`;
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try {
@@ -94,7 +96,7 @@ export function TimesheetView() {
       setSelected(new Set());
       s().bumpEntries();
     } catch (e) {
-      s().error("Aktion fehlgeschlagen", e);
+      s().error(t("common.actionFailed"), e);
     }
   };
 
@@ -103,26 +105,26 @@ export function TimesheetView() {
       <div className="view">
         <header className="view-header">
           <div>
-            <h1>Zeiterfassung</h1>
+            <h1>{t("ribbon.timesheet")}</h1>
             <div className="view-sub">
-              KW {isoWeek(week)} · {range}
+              {t("time.weekNo", { n: isoWeek(week) })} · {range}
             </div>
           </div>
           <div className="view-actions">
             <div className="week-nav">
-              <IconButton icon={ChevronLeft} label="Vorherige Woche" onClick={() => setWeek(addDays(week, -7))} />
+              <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(week, -7))} />
               <Button size="sm" variant="ghost" onClick={() => setWeek(weekStart(new Date()))}>
-                Diese Woche
+                {t("time.thisWeek")}
               </Button>
-              <IconButton icon={ChevronRight} label="Nächste Woche" onClick={() => setWeek(addDays(week, 7))} />
+              <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(week, 7))} />
             </div>
-            <IconButton icon={Printer} label="Woche drucken / als PDF" onClick={() => window.print()} />
+            <IconButton icon={Printer} label={t("time.print")} onClick={() => window.print()} />
             <Button icon={Download} onClick={() => setExporting(true)}>
-              Export
+              {t("time.export")}
             </Button>
             <WeekProposalButton onClick={() => setProposing(true)} />
             <Button icon={Plus} variant="primary" onClick={() => setEditing("new")}>
-              Eintrag
+              {t("time.entry")}
             </Button>
           </div>
         </header>
@@ -130,11 +132,11 @@ export function TimesheetView() {
         <TimerCard wbs={wbs} las={las} />
 
         <div className="stat-row">
-          <Stat label="Woche gesamt" value={`${fmtMinutes(total)} h`} sub={`Soll ${fmtHours(target * workdays.length)} h`} />
-          <Stat label="Entwurf" value={`${fmtMinutes(byStatus("draft"))} h`} />
+          <Stat label={t("time.weekTotal")} value={`${fmtMinutes(total)} h`} sub={t("time.targetHours", { h: fmtHours(target * workdays.length) })} />
+          <Stat label={t("time.status.draft")} value={`${fmtMinutes(byStatus("draft"))} h`} />
           {/* Colored only when there is something: a green „0,00 h“ reads like a result. */}
-          <Stat label="Freigegeben" value={`${fmtMinutes(byStatus("released"))} h`} tone={byStatus("released") ? "accent" : undefined} />
-          <Stat label="Exportiert" value={`${fmtMinutes(byStatus("exported"))} h`} tone={byStatus("exported") ? "success" : undefined} />
+          <Stat label={t("time.status.released")} value={`${fmtMinutes(byStatus("released"))} h`} tone={byStatus("released") ? "accent" : undefined} />
+          <Stat label={t("time.status.exported")} value={`${fmtMinutes(byStatus("exported"))} h`} tone={byStatus("exported") ? "success" : undefined} />
         </div>
 
         <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} onPropose={() => setProposing(true)} />
@@ -143,15 +145,15 @@ export function TimesheetView() {
 
         <section className="card">
           <div className="card-head">
-            <h2>Einträge</h2>
+            <h2>{t("time.entries")}</h2>
             {selected.size > 0 ? (
               <div className="bulk">
-                <span className="faint">{selected.size} ausgewählt</span>
-                <Button size="sm" icon={Send} onClick={() => act(() => api.setStatus([...selected], "released"), "Einträge freigegeben")}>
-                  Freigeben
+                <span className="faint">{t("common.selected", { n: selected.size })}</span>
+                <Button size="sm" icon={Send} onClick={() => act(() => api.setStatus([...selected], "released"), t("time.released"))}>
+                  {t("time.release")}
                 </Button>
-                <Button size="sm" icon={RotateCcw} variant="ghost" onClick={() => act(() => api.setStatus([...selected], "draft"), "Zurück auf Entwurf")}>
-                  Entwurf
+                <Button size="sm" icon={RotateCcw} variant="ghost" onClick={() => act(() => api.setStatus([...selected], "draft"), t("time.backToDraft"))}>
+                  {t("time.status.draft")}
                 </Button>
                 <Button
                   size="sm"
@@ -162,25 +164,25 @@ export function TimesheetView() {
                     const kept = rows.filter((r) => selected.has(r.id) && undeletableReason(r.status_flag));
                     const ids = [...selected].filter((id) => !kept.some((r) => r.id === id));
                     if (!ids.length) {
-                      s().toast({ tone: "warning", title: "Nicht löschbar", detail: "Exportierte Einträge bleiben erhalten; ein laufender Eintrag wird zuerst gestoppt." });
+                      s().toast({ tone: "warning", title: t("time.notDeletable"), detail: t("time.notDeletableText") });
                       return;
                     }
-                    const note = kept.length ? ` ${kept.length} exportierte bzw. laufende ${kept.length === 1 ? "bleibt" : "bleiben"} erhalten.` : "";
-                    if (!(await s().confirm({ title: "Einträge löschen?", message: `${ids.length} Einträge werden endgültig gelöscht.${note}`, confirmLabel: "Löschen", danger: true }))) return;
-                    act(() => Promise.all(ids.map((id) => api.deleteEntry(id))), "Einträge gelöscht");
+                    const note = kept.length ? ` ${t("time.keptOnDelete", { n: kept.length })}` : "";
+                    if (!(await s().confirm({ title: t("time.deleteEntriesAsk"), message: t("time.deleteEntriesText", { n: ids.length }) + note, confirmLabel: t("common.delete"), danger: true }))) return;
+                    act(() => Promise.all(ids.map((id) => api.deleteEntry(id))), t("time.entriesDeleted"));
                   }}
                 >
-                  Löschen
+                  {t("common.delete")}
                 </Button>
-                <IconButton icon={X} label="Auswahl aufheben" onClick={() => setSelected(new Set())} />
+                <IconButton icon={X} label={t("common.clearSelection")} onClick={() => setSelected(new Set())} />
               </div>
             ) : (
-              <span className="faint small">Freigegebene Einträge gehen in den Export</span>
+              <span className="faint small">{t("time.releasedExport")}</span>
             )}
           </div>
           {rows.length === 0 ? (
-            <EmptyState icon={Timer} title="Keine Einträge in dieser Woche" action={<Button icon={Plus} onClick={() => setEditing("new")}>Eintrag hinzufügen</Button>}>
-              Starte einen Timer oder tippe <span className="mono">/zeit NP-8801/1020 1.5h</span> in einer Notiz.
+            <EmptyState icon={Timer} title={t("time.emptyWeek")} action={<Button icon={Plus} onClick={() => setEditing("new")}>{t("time.addEntry")}</Button>}>
+              {t("time.emptyHint")} <span className="mono">{t("time.emptyExample")}</span> {t("time.emptyHintEnd")}
             </EmptyState>
           ) : (
             <EntryList rows={rows} selected={selected} setSelected={setSelected} onEdit={setEditing} week={week} />
@@ -207,6 +209,7 @@ function Stat({ label, value, tone, sub }: { label: string; value: string; tone?
 // ------------------------------------------------------------------ timer
 
 function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }) {
+  const t = useT();
   const timer = useApp((s) => s.timer);
   const seconds = useTimerSeconds();
   const [np, setNp] = useState<number | null>(() => {
@@ -233,19 +236,19 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
       setDesc("");
       s().bumpEntries();
     } catch (e) {
-      s().error("Timer nicht gestartet", e);
+      s().error(t("time.timerStartFailed"), e);
     }
   };
   const book = async () => {
     const line = /^\/(zeit|time)\b/i.test(quick.trim()) ? quick.trim() : `/zeit ${quick.trim()}`;
     try {
       const out = await api.logTime(line);
-      s().toast({ tone: "success", title: `${fmtMinutes(out.entry.duration_minutes)} h gebucht`, detail: out.entry.description || undefined });
+      s().toast({ tone: "success", title: t("time.booked", { h: fmtMinutes(out.entry.duration_minutes) }), detail: out.entry.description || undefined });
       s().alerts(out.alerts);
       setQuick("");
       s().bumpEntries();
     } catch (e) {
-      s().error("Buchung fehlgeschlagen", e);
+      s().error(t("time.bookFailed"), e);
     }
   };
 
@@ -264,8 +267,8 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
                 {e.vorgang_nr ? `/${e.vorgang_nr}` : ""}
               </span>
               {e.leistungsart && <Badge>{e.leistungsart}</Badge>}
-              <span>{e.description || <span className="faint">Ohne Beschreibung</span>}</span>
-              {timer.idle_minutes > 0 && <Badge tone="warning">{timer.idle_minutes} Min. inaktiv</Badge>}
+              <span>{e.description || <span className="faint">{t("time.noDescription")}</span>}</span>
+              {timer.idle_minutes > 0 && <Badge tone="warning">{t("time.idleMinutes", { n: timer.idle_minutes })}</Badge>}
             </div>
           </div>
         </div>
@@ -273,19 +276,19 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
           <Button
             variant="ghost"
             onClick={async () => {
-              if (!(await s().confirm({ title: "Timer verwerfen?", message: "Die laufende Zeit wird nicht gebucht.", confirmLabel: "Verwerfen", danger: true }))) return;
+              if (!(await s().confirm({ title: t("time.discardTimerAsk"), message: t("time.discardTimerText"), confirmLabel: t("common.discard"), danger: true }))) return;
               try {
                 await api.timerDiscard();
                 s().bumpEntries();
               } catch (e) {
-                s().error("Timer konnte nicht verworfen werden", e);
+                s().error(t("time.discardTimerFailed"), e);
               }
             }}
           >
-            Verwerfen
+            {t("common.discard")}
           </Button>
           <Button variant="primary" icon={Square} onClick={() => stopTimer()}>
-            Stoppen
+            {t("time.stop")}
           </Button>
         </div>
       </section>
@@ -298,14 +301,14 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} />
         <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         <LeistungsartSelect las={las} value={la} onChange={setLa} />
-        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Woran arbeitest du?" onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && start()} aria-label="Beschreibung" />
+        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t("time.workingOn")} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && start()} aria-label={t("time.description")} />
         <span className="timer-start">
           <Button variant="primary" icon={Play} onClick={start} disabled={np == null}>
-            Starten
+            {t("time.start")}
           </Button>
           <IconButton
             icon={Target}
-            label="Fokussitzung auf diesem Vorgang"
+            label={t("time.focusOnActivity")}
             onClick={() => {
               const n = all.find((x) => x.id === np);
               openFocusDialog({ reference: n ? `${n.netzplan_nr}${vorgang ? `/${vorgang}` : ""}` : "", goal: desc });
@@ -314,14 +317,14 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         </span>
       </div>
       <div className="quick-book">
-        <span className="faint small">Schnell buchen</span>
+        <span className="faint small">{t("time.quickBook")}</span>
         <Input
           className="mono"
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
-          placeholder="NP-8801/1020 1.5h #DEV Review @gestern"
+          placeholder={t("time.quickBookPlaceholder")}
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && quick.trim() && book()}
-          aria-label="Schnell buchen"
+          aria-label={t("time.quickBook")}
         />
       </div>
     </section>
@@ -331,6 +334,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
 // -------------------------------------------------------------- week grid
 
 function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows: TimeEntryRow[]; week: Date; todayKey: string; target: number; workdays: number[]; onPropose: () => void }) {
+  const t = useT();
   const weekend = (i: number) => !workdays.includes(isoWeekday(addDays(week, i)));
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
   const keys = days.map(isoDay);
@@ -354,22 +358,22 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
-      return s().error("Kopieren fehlgeschlagen", e);
+      return s().error(t("devlog.copyFailed"), e);
     }
     const open = rows.filter((r) => ids.includes(r.id) && r.status_flag !== "exported").map((r) => r.id);
     s().toast({
       tone: "success",
-      title: "Für CATS kopiert",
-      detail: `Netzplan, Vorgang, Leistungsart und Stunden je Tag – in CATS mit ${modLabel()} V einfügen.`,
+      title: t("time.catsCopied"),
+      detail: t("time.catsCopiedText", { mod: modLabel() }),
       action: open.length
         ? {
-            label: "Als exportiert markieren",
+            label: t("time.markExported"),
             run: async () => {
               try {
                 await api.setStatus(open, "exported");
                 s().bumpEntries();
               } catch (e) {
-                s().error("Status nicht geändert", e);
+                s().error(t("time.statusFailed"), e);
               }
             },
           }
@@ -382,25 +386,25 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
   return (
     <section className="card">
       <div className="card-head">
-        <h2>Wochenübersicht</h2>
+        <h2>{t("time.weekOverview")}</h2>
         {lines.length > 0 && (
           <Button size="sm" variant="ghost" icon={Clipboard} onClick={copyCats}>
-            In CATS kopieren
+            {t("time.copyCats")}
           </Button>
         )}
       </div>
       {gaps.length > 0 && (
         <div className="week-gaps" role="status">
           <AlertTriangle size={14} />
-          <span>Unter Soll:</span>
+          <span>{t("time.belowTarget")}</span>
           {gaps.map((g) => (
-            <span key={isoDay(g.day)} className="gap-chip" title={`${fmtMinutes(g.bookedMinutes)} von ${fmtHours(target)} h gebucht`}>
-              {weekdayShort(g.day)} {g.day.getDate()}. −{fmtMinutes(g.missingMinutes)} h
+            <span key={isoDay(g.day)} className="gap-chip" title={t("time.bookedOf", { booked: fmtMinutes(g.bookedMinutes), target: fmtHours(target) })}>
+              {weekdayShort(g.day)} {dayOfMonth(g.day)} −{fmtMinutes(g.missingMinutes)} h
             </span>
           ))}
           <span className="grow" />
           <Button size="sm" variant="ghost" icon={WandSparkles} onClick={onPropose}>
-            Lücken füllen
+            {t("time.fillGaps")}
           </Button>
         </div>
       )}
@@ -408,14 +412,14 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
         <table className="table week-grid">
           <thead>
             <tr>
-              <th>Netzplan / Vorgang</th>
-              <th>LA</th>
+              <th>{t("time.col.wbs")}</th>
+              <th>{t("time.col.la")}</th>
               {days.map((d, i) => (
                 <th key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) ? "weekend" : ""}`}>
-                  {weekdayShort(d)} <span className="faint">{d.getDate()}.</span>
+                  {weekdayShort(d)} <span className="faint">{dayOfMonth(d)}</span>
                 </th>
               ))}
-              <th className="num">Summe</th>
+              <th className="num">{t("time.col.total")}</th>
             </tr>
           </thead>
           <tbody>
@@ -434,7 +438,7 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={2}>Summe</td>
+              <td colSpan={2}>{t("time.col.total")}</td>
               {dayTotals.map((m, i) => (
                 <td key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) ? "weekend" : ""} ${gapKeys.has(keys[i]) ? "gap" : ""}`}>
                   {cell(m)}
@@ -452,6 +456,7 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
 // ------------------------------------------------------------- entry list
 
 function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEntryRow[]; selected: Set<number>; setSelected: (s: Set<number>) => void; onEdit: (r: TimeEntryRow) => void; week: Date }) {
+  const t = useT();
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
   // Entries booked by focus sessions carry a mark.
@@ -473,7 +478,7 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
       await api.setStatus([id], status);
       s().bumpEntries();
     } catch (e) {
-      s().error("Status konnte nicht geändert werden", e);
+      s().error(t("time.statusFailed"), e);
     }
   };
   const toggle = (id: number) => {
@@ -494,20 +499,20 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                 type="checkbox"
                 className="check"
                 checked={allSel}
-                aria-label="Tag auswählen"
+                aria-label={t("time.selectDay")}
                 onChange={() => {
                   const next = new Set(selected);
                   selectable.forEach((r) => (allSel ? next.delete(r.id) : next.add(r.id)));
                   setSelected(next);
                 }}
               />
-              <span className="entry-day-title">{new Date(day + "T12:00:00").toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}</span>
+              <span className="entry-day-title">{new Date(day + "T12:00:00").toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" })}</span>
               <span className="grow" />
               <span className="num strong">{fmtMinutes(sum)} h</span>
             </div>
             {list.map((r) => (
               <div key={r.id} className={`entry ${selected.has(r.id) ? "sel" : ""}`} onDoubleClick={() => r.status_flag !== "running" && r.status_flag !== "exported" && onEdit(r)}>
-                <input type="checkbox" className="check" checked={selected.has(r.id)} disabled={r.status_flag === "running" || r.status_flag === "exported"} onChange={() => toggle(r.id)} aria-label="Auswählen" title={r.status_flag === "exported" ? "Bereits exportiert" : undefined} />
+                <input type="checkbox" className="check" checked={selected.has(r.id)} disabled={r.status_flag === "running" || r.status_flag === "exported"} onChange={() => toggle(r.id)} aria-label={t("common.select")} title={r.status_flag === "exported" ? t("time.alreadyExported") : undefined} />
                 <span className="entry-time num faint">
                   {time(r.start_time)}–{r.end_time ? time(r.end_time) : "…"}
                 </span>
@@ -517,44 +522,44 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                 </span>
                 <span className="entry-la">{r.leistungsart && <Badge>{r.leistungsart}</Badge>}</span>
                 <span className="entry-desc">
-                  {r.description || <span className="faint">Ohne Beschreibung</span>}
+                  {r.description || <span className="faint">{t("time.noDescription")}</span>}
                   {focusIds.has(r.id) && (
-                    <span className="entry-focus" title="Aus einer Fokussitzung">
-                      <Target size={11} aria-hidden /> Fokus
+                    <span className="entry-focus" title={t("time.fromFocus")}>
+                      <Target size={11} aria-hidden /> {t("time.focus")}
                     </span>
                   )}
                 </span>
-                <Badge tone={STATUS[r.status_flag].tone}>{STATUS[r.status_flag].label}</Badge>
-                <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : "läuft"}</span>
+                <Badge tone={STATUS[r.status_flag].tone}>{t(STATUS[r.status_flag].label)}</Badge>
+                <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : t("time.runningLower")}</span>
                 <IconButton
                   icon={MoreHorizontal}
-                  label="Aktionen"
+                  label={t("ribbon.actions")}
                   size="md"
                   disabled={r.status_flag === "running"}
                   onClick={(e) =>
                     openMenuAt(e, [
-                      { label: "Bearbeiten", icon: Pencil, disabled: r.status_flag === "exported", onSelect: () => onEdit(r) },
+                      { label: t("links.editShort"), icon: Pencil, disabled: r.status_flag === "exported", onSelect: () => onEdit(r) },
                       r.status_flag === "released"
-                        ? { label: "Zurück auf Entwurf", icon: RotateCcw, onSelect: () => setStatus(r.id, "draft") }
-                        : { label: "Freigeben", icon: Check, disabled: r.status_flag === "exported", onSelect: () => setStatus(r.id, "released") },
+                        ? { label: t("time.backToDraft"), icon: RotateCcw, onSelect: () => setStatus(r.id, "draft") }
+                        : { label: t("time.release"), icon: Check, disabled: r.status_flag === "exported", onSelect: () => setStatus(r.id, "released") },
                       {
-                        label: "Fokussitzung starten…",
+                        label: t("time.startFocus"),
                         icon: Target,
                         onSelect: () => openFocusDialog({ reference: `${r.netzplan_nr}${r.vorgang_nr ? `/${r.vorgang_nr}` : ""}`, goal: r.description }),
                       },
                       "separator",
                       {
-                        label: undeletableReason(r.status_flag) ? `Löschen nicht möglich – ${undeletableReason(r.status_flag)}` : "Löschen",
+                        label: undeletableReason(r.status_flag) ? t("time.cannotDelete", { reason: undeletableReason(r.status_flag)! }) : t("common.delete"),
                         icon: Trash2,
                         danger: true,
                         disabled: undeletableReason(r.status_flag) != null,
                         onSelect: async () => {
-                          if (!(await s().confirm({ title: "Eintrag löschen?", message: `${r.description || r.netzplan_nr} (${fmtMinutes(r.duration_minutes)} h) wird gelöscht.`, confirmLabel: "Löschen", danger: true }))) return;
+                          if (!(await s().confirm({ title: t("time.deleteEntryAsk"), message: t("time.deleteEntryText", { what: r.description || r.netzplan_nr, h: fmtMinutes(r.duration_minutes) }), confirmLabel: t("common.delete"), danger: true }))) return;
                           try {
                             await api.deleteEntry(r.id);
                             s().bumpEntries();
                           } catch (e) {
-                            s().error("Löschen fehlgeschlagen", e);
+                            s().error(t("common.deleteFailed"), e);
                           }
                         },
                       },
@@ -586,6 +591,7 @@ export interface EntryPrefill {
 }
 
 export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onSaved, note }: { entry: TimeEntryRow | null; wbs: ProjectTree[]; las: [string, string][]; onClose: () => void; defaultDay: Date; prefill?: EntryPrefill; onSaved?: (entryId: number) => void; note?: React.ReactNode }) {
+  const t = useT();
   const start = entry ? new Date(entry.start_time) : prefill ? new Date(`${prefill.day}T${prefill.from}:00`) : (() => {
     const d = isoDay(new Date()) >= isoDay(defaultDay) && isoDay(new Date()) <= isoDay(addDays(defaultDay, 6)) ? new Date() : new Date(defaultDay);
     d.setHours(9, 0, 0, 0);
@@ -597,7 +603,7 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
   const [la, setLa] = useState(entry?.leistungsart ?? prefill?.leistungsart ?? "DEV");
   const [day, setDay] = useState(isoDay(start));
   const [from, setFrom] = useState(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
-  const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : prefill ? fmtMinutes(prefill.minutes) : "1,00");
+  const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : prefill ? fmtMinutes(prefill.minutes) : fmtMinutes(60));
   const [desc, setDesc] = useState(entry?.description ?? prefill?.description ?? "");
   const [busy, setBusy] = useState(false);
   // Enter and a click right after each other must not book twice.
@@ -619,10 +625,10 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
         onSaved?.(out.entry.id);
       }
       s().bumpEntries();
-      s().toast({ tone: "success", title: entry ? "Eintrag gespeichert" : `${fmtMinutes(minutes)} h gebucht` });
+      s().toast({ tone: "success", title: entry ? t("time.entrySaved") : t("time.booked", { h: fmtMinutes(minutes) }) });
       onClose();
     } catch (e) {
-      s().error("Speichern fehlgeschlagen", e);
+      s().error(t("common.saveFailed"), e);
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -637,42 +643,42 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
     <Dialog
       open
       onClose={onClose}
-      title={entry ? "Eintrag bearbeiten" : "Zeit erfassen"}
+      title={entry ? t("time.editEntry") : t("time.logTime")}
       width={520}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={submit} loading={busy} disabled={np == null || minutes == null || minutes <= 0}>
-            {entry ? "Speichern" : "Buchen"}
+            {entry ? t("common.save") : t("time.book")}
           </Button>
         </>
       }
     >
       {note}
       <div className="form-grid">
-        <Field label="Netzplan">
+        <Field label={t("wbs.netzplan")}>
           <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} disabled={!!entry} />
         </Field>
-        <Field label="Vorgang">
+        <Field label={t("wbs.vorgang")}>
           <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         </Field>
-        <Field label="Datum">
-          <DateInput value={day} onChange={setDay} aria-label="Datum" />
+        <Field label={t("time.date")}>
+          <DateInput value={day} onChange={setDay} aria-label={t("time.date")} />
         </Field>
-        <Field label="Beginn">
-          <TimeInput value={from} onChange={setFrom} aria-label="Beginn" />
+        <Field label={t("time.startTime")}>
+          <TimeInput value={from} onChange={setFrom} aria-label={t("time.startTime")} />
         </Field>
-        <Field label="Dauer" hint={minutes == null ? "z. B. 1,5 oder 1:30 oder 90m" : `${fmtMinutes(minutes)} h`}>
+        <Field label={t("time.duration")} hint={minutes == null ? t("time.durationHint", { a: `1${decimalSep()}5` }) : `${fmtMinutes(minutes)} h`}>
           <Input value={dur} onChange={(e) => setDur(e.target.value)} onKeyDown={onEnter} />
         </Field>
-        <Field label="Leistungsart">
+        <Field label={t("wbs.leistungsart")}>
           <LeistungsartSelect las={las} value={la} onChange={setLa} />
         </Field>
       </div>
-      <Field label="Beschreibung">
-        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Was wurde gemacht?" onKeyDown={onEnter} />
+      <Field label={t("time.description")}>
+        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t("time.whatDone")} onKeyDown={onEnter} />
       </Field>
     </Dialog>
   );
@@ -685,6 +691,7 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
  * yet; each can be booked (prefilled like in the Kalender) or marked „nicht buchen“.
  */
 function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; rows: TimeEntryRow[]; wbs: ProjectTree[]; las: [string, string][]; onPropose: () => void }) {
+  const t = useT();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [booking, setBooking] = useState<{ event: CalendarEvent; prefill: EntryPrefill; hint: WbsHint | null } | null>(null);
   const [tick, setTick] = useState(0);
@@ -707,7 +714,7 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
   if (!list.length) return null;
   const shown = open ? list : list.slice(0, 4);
   const book = async (e: CalendarEvent) => {
-    if (!wbs.some((p) => p.netzplaene.length)) return s().toast({ tone: "warning", title: "Noch kein Netzplan", detail: "Zum Buchen zuerst unter Projekte einen Netzplan anlegen." });
+    if (!wbs.some((p) => p.netzplaene.length)) return s().toast({ tone: "warning", title: t("time.noNetzplan"), detail: t("time.noNetzplanText") });
     const hint = await api.calendarWbsHint(e.key).catch(() => null);
     setBooking({ event: e, hint, prefill: bookingPrefill(e, hint, target) });
   };
@@ -716,16 +723,16 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
       await api.calendarSetSkip(e.key, true);
       setTick((x) => x + 1);
     } catch (err) {
-      s().error("Nicht gespeichert", err);
+      s().error(t("common.notSaved"), err);
     }
   };
   return (
-    <section className="card ts-meetings" aria-label="Termine übernehmen">
+    <section className="card ts-meetings" aria-label={t("time.meetings")}>
       <div className="card-head">
-        <h2>Termine übernehmen</h2>
-        <span className="faint grow">{list.length} {list.length === 1 ? "Termin" : "Termine"} dieser Woche noch nicht gebucht</span>
-        <Button size="sm" icon={WandSparkles} onClick={onPropose} title="Woche vorschlagen: alle Termine mit Fokus-Sitzungen und bearbeiteten Seiten auf einmal prüfen und übernehmen">
-          Alle übernehmen…
+        <h2>{t("time.meetings")}</h2>
+        <span className="faint grow">{t("time.meetingsOpen", { n: list.length })}</span>
+        <Button size="sm" icon={WandSparkles} onClick={onPropose} title={t("time.meetingsAllTitle")}>
+          {t("time.meetingsAll")}
         </Button>
       </div>
       <ul className="ts-meeting-list">
@@ -740,15 +747,15 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
             </span>
             <span className="faint num">{fmtMinutes(durationMinutes(e))} h</span>
             <Button size="sm" icon={Timer} onClick={() => void book(e)}>
-              Buchen
+              {t("time.book")}
             </Button>
-            <IconButton icon={X} size="sm" label={`„${e.title}“ nicht buchen`} onClick={() => void skip(e)} />
+            <IconButton icon={X} size="sm" label={t("time.dontBook", { title: e.title })} onClick={() => void skip(e)} />
           </li>
         ))}
       </ul>
       {list.length > 4 && (
         <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>
-          {open ? "Weniger zeigen" : `Alle ${list.length} zeigen`}
+          {open ? t("common.showLess") : t("common.showAll", { n: list.length })}
         </Button>
       )}
       {booking && (
@@ -762,12 +769,18 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
             <div className="calv-book-note">
               <CalendarDays size={14} aria-hidden />
               <span>
-                Aus dem Termin „{booking.event.title}“ ({timeRange(booking.event)}){booking.hint ? <> · WBS wie beim letzten Mal: <b>{booking.hint.reference}</b></> : null}
+                {t("time.fromMeeting", { title: booking.event.title, time: timeRange(booking.event) })}
+                {booking.hint ? (
+                  <>
+                    {" · "}
+                    {t("time.wbsLikeLast")} <b>{booking.hint.reference}</b>
+                  </>
+                ) : null}
               </span>
             </div>
           }
           onClose={() => setBooking(null)}
-          onSaved={(id) => void api.calendarLinkEntry(booking.event.key, id).catch((err) => s().error("Buchung nicht mit dem Termin verknüpft", err))}
+          onSaved={(id) => void api.calendarLinkEntry(booking.event.key, id).catch((err) => s().error(t("time.linkFailed"), err))}
         />
       )}
     </section>
@@ -784,6 +797,7 @@ const FORMATS: { value: ExportFormat; label: string; ext: string }[] = [
 ];
 
 function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
+  const t = useT();
   const [format, setFormat] = useState<ExportFormat>("sap_cats");
   const [from, setFrom] = useState(isoDay(week));
   const [to, setTo] = useState(isoDay(addDays(week, 6)));
@@ -819,11 +833,15 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
         await navigator.clipboard.writeText(res.content);
         if (mark && res.exported_ids.length) await api.setStatus(res.exported_ids, "exported");
       }
-      s().toast({ tone: "success", title: target === "file" ? "Export gespeichert" : "In Zwischenablage kopiert", detail: `${res.exported_ids.length} Einträge${mark ? ", als exportiert markiert" : ""}` });
+      s().toast({
+        tone: "success",
+        title: target === "file" ? t("time.exportSaved") : t("time.exportCopied"),
+        detail: mark ? t("time.exportedMarked", { n: res.exported_ids.length }) : t("time.entriesCount", { n: res.exported_ids.length }),
+      });
       if (mark) s().bumpEntries();
       onClose();
     } catch (e) {
-      s().error("Export fehlgeschlagen", e);
+      s().error(t("time.exportFailed"), e);
     } finally {
       setBusy(false);
     }
@@ -834,17 +852,20 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
     <Dialog
       open
       onClose={onClose}
-      title="Zeiten exportieren"
-      description="Für den Upload in SAP CATS, Jira oder andere Systeme."
+      title={t("time.exportTitle")}
+      description={t("time.exportDesc")}
       width={680}
       footer={
         <>
-          <span className="faint small grow">{count} Einträge{preview?.skipped.length ? `, ${preview.skipped.length} übersprungen` : ""}</span>
+          <span className="faint small grow">
+            {t("time.entriesCount", { n: count })}
+            {preview?.skipped.length ? `, ${t("time.skipped", { n: preview.skipped.length })}` : ""}
+          </span>
           <Button icon={Clipboard} onClick={() => doExport("clipboard")} disabled={!count} loading={busy}>
-            Kopieren
+            {t("common.copy")}
           </Button>
           <Button variant="primary" icon={Download} onClick={() => doExport("file")} disabled={!count} loading={busy}>
-            Speichern unter…
+            {t("common.saveAs")}
           </Button>
         </>
       }
@@ -853,21 +874,21 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
         <Segmented value={format} options={FORMATS} onChange={setFormat} />
         <div className="row-gap">
           <CalendarDays size={14} className="faint" />
-          <DateInput value={from} onChange={setFrom} aria-label="Von" className="w-date" />
-          <span className="faint">bis</span>
-          <DateInput value={to} onChange={setTo} aria-label="Bis" className="w-date" />
+          <DateInput value={from} onChange={setFrom} aria-label={t("common.from")} className="w-date" />
+          <span className="faint">{t("common.to")}</span>
+          <DateInput value={to} onChange={setTo} aria-label={t("common.until")} className="w-date" />
         </div>
         <label className="row-gap small">
-          <Switch checked={onlyReleased} onChange={setOnlyReleased} label="Nur freigegebene" /> Nur freigegebene Einträge
+          <Switch checked={onlyReleased} onChange={setOnlyReleased} label={t("time.onlyReleasedShort")} /> {t("time.onlyReleased")}
         </label>
         <label className="row-gap small">
-          <Switch checked={mark} onChange={setMark} label="Als exportiert markieren" /> Danach als exportiert markieren
+          <Switch checked={mark} onChange={setMark} label={t("time.markExported")} /> {t("time.markAfter")}
         </label>
       </div>
       {format === "jira_worklog" && preview && preview.skipped.length > 0 && (
-        <p className="warn-note small">Für einige Einträge fehlt die Jira-Zuordnung. Lege sie unter Einstellungen › Zeiterfassung fest.</p>
+        <p className="warn-note small">{t("time.jiraMissing")}</p>
       )}
-      <pre className="export-preview">{preview ? preview.content || "Keine Einträge im Zeitraum" : "…"}</pre>
+      <pre className="export-preview">{preview ? preview.content || t("time.noEntriesRange") : "…"}</pre>
     </Dialog>
   );
 }

@@ -49,10 +49,18 @@ pub fn settings_export(state: State<'_, AppState>, path: String) -> Result<()> {
 pub fn settings_file_read(path: String) -> Result<String> {
     let path = PathBuf::from(path.trim());
     if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
-        return Err(Error::State("Bitte eine .json-Datei wählen".into()));
+        return Err(Error::State(
+            annalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
+        ));
     }
     if std::fs::metadata(&path).at(&path)?.len() > MAX_IMPORT_BYTES {
-        return Err(Error::State("Die Datei ist zu groß für eine Einstellungsdatei".into()));
+        return Err(Error::State(
+            annalo_core::tr!(
+                "Die Datei ist zu groß für eine Einstellungsdatei",
+                "The file is too large for a settings file"
+            )
+            .into(),
+        ));
     }
     std::fs::read_to_string(&path).at(&path)
 }
@@ -60,9 +68,9 @@ pub fn settings_file_read(path: String) -> Result<String> {
 /// Writes a custom theme as a theme file (Settings → Darstellung → Exportieren).
 #[tauri::command(async)]
 pub fn theme_export(path: String, theme: prefs::CustomTheme) -> Result<()> {
-    let theme = prefs::normalize_custom_themes(vec![theme])
-        .pop()
-        .ok_or_else(|| Error::State("Das Theme enthält ungültige Farben".into()))?;
+    let theme = prefs::normalize_custom_themes(vec![theme]).pop().ok_or_else(|| {
+        Error::State(annalo_core::tr!("Das Theme enthält ungültige Farben", "The theme contains invalid colors").into())
+    })?;
     std::fs::write(path.trim(), prefs::theme_file_json(&theme)).at(path.trim())?;
     Ok(())
 }
@@ -152,7 +160,8 @@ pub fn window_state_save(app: AppHandle) -> Result<()> {
     let scale = w.scale_factor().unwrap_or(1.0);
     let pos = w.outer_position().map_err(|e| Error::State(e.to_string()))?.to_logical::<i32>(scale);
     let size = w.inner_size().map_err(|e| Error::State(e.to_string()))?.to_logical::<u32>(scale);
-    let path = window_file(&app).ok_or_else(|| Error::State("Kein Konfigurationsordner".into()))?;
+    let path = window_file(&app)
+        .ok_or_else(|| Error::State(annalo_core::tr!("Kein Konfigurationsordner", "No configuration folder").into()))?;
     let mut state = WindowState { x: pos.x, y: pos.y, width: size.width, height: size.height, maximized };
     // A maximized window keeps the normal geometry saved before.
     if maximized && let Some(old) = load_window_state(&path) {
@@ -204,8 +213,9 @@ pub fn check_cost_limit(state: &AppState, override_limit: bool) -> Result<()> {
     }
     let s = cost_status_of(state)?;
     if let CostLevel::Blocked { .. } = s.level {
-        return Err(Error::State(format!(
+        return Err(Error::State(annalo_core::trf!(
             "{COST_LIMIT_PREFIX} {:.2} von {:.2} USD in diesem Monat verbraucht",
+            "{COST_LIMIT_PREFIX_EN} {:.2} of {:.2} USD used this month",
             s.spent_usd,
             s.limit_usd.unwrap_or_default()
         )));
@@ -215,3 +225,5 @@ pub fn check_cost_limit(state: &AppState, override_limit: bool) -> Result<()> {
 
 /// Start of the error message of a blocked request (the UI offers „Trotzdem senden“).
 pub const COST_LIMIT_PREFIX: &str = "KI-Kostenlimit erreicht:";
+/// The same in English (the UI knows both).
+pub const COST_LIMIT_PREFIX_EN: &str = "AI cost limit reached:";

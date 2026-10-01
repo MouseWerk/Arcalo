@@ -8,6 +8,7 @@
 //! calendar is `outlook:<hash>`, the hash taken over its StoreID and EntryID (or, for a
 //! colleague's calendar opened by name, over that name): stable across syncs and restarts.
 
+use crate::{tr, trf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -103,7 +104,7 @@ impl OutlookCalendar {
     pub fn default_calendar(color: &str) -> Self {
         OutlookCalendar {
             id: OUTLOOK.into(),
-            name: "Kalender".into(),
+            name: tr!("Kalender", "Calendar").into(),
             default: true,
             color: color.into(),
             enabled: true,
@@ -200,17 +201,25 @@ fn classify(v: &Value) -> OutlookKind {
     }
 }
 
-/// The German text of a folder error of the script.
+/// The text of a folder error of the script, in the display language.
 pub fn folder_error_text(code: &str, detail: &str) -> String {
     let detail = detail.trim();
     let tail = if detail.is_empty() { String::new() } else { format!(" ({detail})") };
     match code {
-        "denied" => format!("Kein Zugriff auf diesen Kalender{tail}. Um Leserechte bitten oder die Freigabe prüfen."),
-        "not_found" => format!(
-            "Den Kalender gibt es in Outlook nicht mehr (gelöscht, verschoben oder nicht mehr freigegeben){tail}."
+        "denied" => trf!(
+            "Kein Zugriff auf diesen Kalender{tail}. Um Leserechte bitten oder die Freigabe prüfen.",
+            "No access to this calendar{tail}. Ask for read access or check the sharing."
         ),
-        "unresolved" => "Der Name oder die Adresse ist im Adressbuch nicht eindeutig zu finden.".into(),
-        _ => format!("Der Kalender ließ sich nicht öffnen{tail}."),
+        "not_found" => trf!(
+            "Den Kalender gibt es in Outlook nicht mehr (gelöscht, verschoben oder nicht mehr freigegeben){tail}.",
+            "The calendar no longer exists in Outlook (deleted, moved or no longer shared){tail}."
+        ),
+        "unresolved" => tr!(
+            "Der Name oder die Adresse ist im Adressbuch nicht eindeutig zu finden.",
+            "The name or address cannot be found unambiguously in the address book."
+        )
+        .into(),
+        _ => trf!("Der Kalender ließ sich nicht öffnen{tail}.", "The calendar could not be opened{tail}."),
     }
 }
 
@@ -256,7 +265,7 @@ pub fn parse_discovery(v: &Value) -> Vec<DiscoveredCalendar> {
         };
         let mut name = text(&c, "name");
         if name.is_empty() {
-            name = if owner.is_empty() { "Kalender".into() } else { owner.clone() };
+            name = if owner.is_empty() { tr!("Kalender", "Calendar").into() } else { owner.clone() };
         }
         out.push(DiscoveredCalendar {
             id,

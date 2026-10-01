@@ -11,7 +11,7 @@ import { useApp } from "../store/app";
 import { useTimeTracking } from "../lib/timetracking";
 import { Badge, Button, Dialog, Field, IconButton, Input, Segmented, Select, TextArea, type SelectOption } from "./ui";
 import { DateInput, dayLabel } from "./DateInput";
-import { fileSize } from "../lib/format";
+import { dateLocale, fileSize } from "../lib/format";
 import { reloadEditors } from "../editor/NoteEditor";
 import {
   DUE_CHOICES,
@@ -29,6 +29,7 @@ import {
   type MailStatus,
   type TaskTarget,
 } from "../lib/mail";
+import { useT } from "../lib/i18n";
 
 type Action = "task" | "note" | "both";
 
@@ -120,19 +121,20 @@ export function MailImportHost() {
 }
 
 function MailDialog() {
+  const t = useT();
   const { mails, index, busy, error, set } = useMailDialog();
   const [status, setStatus] = useState<MailStatus | null>(null);
   useEffect(() => void mailApi.status().then(setStatus, () => setStatus({ outlook_available: false, local_ai: null })), []);
   const close = () => set({ open: false, mails: [], index: 0, busy: null, error: null });
   const mail = mails[index] ?? null;
-  const title = mails.length > 1 ? `E-Mail übernehmen (${index + 1} von ${mails.length})` : "E-Mail übernehmen";
+  const title = mails.length > 1 ? t("mail.titleOf", { i: index + 1, n: mails.length }) : t("mail.title");
   return (
-    <Dialog open onClose={close} title={title} width={760} description={mail ? undefined : "Aus Outlook, einer .eml- oder .msg-Datei oder den kopierten Kopfzeilen einer E-Mail."}>
+    <Dialog open onClose={close} title={title} width={760} description={mail ? undefined : t("mail.desc")}>
       <div className="mailx">
         {error && (
           <div className="mailx-error" role="alert">
             <span>{error}</span>
-            <IconButton icon={X} label="Hinweis schließen" size="sm" onClick={() => set({ error: null })} />
+            <IconButton icon={X} label={t("mail.closeNotice")} size="sm" onClick={() => set({ error: null })} />
           </div>
         )}
         {mail ? <MailForm key={`${index}-${mail.entry_id}-${mail.file}`} mail={mail} status={status} onDone={close} /> : <MailSources status={status} busy={busy} />}
@@ -143,6 +145,7 @@ function MailDialog() {
 
 /** Where a mail comes from, when none is loaded yet. */
 function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDialogState["busy"] }) {
+  const t = useT();
   const [text, setText] = useState("");
   const [drop, setDrop] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
@@ -152,7 +155,7 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
     try {
       const m = await mailApi.parseText(value);
       if (m) d().set({ mails: [m], index: 0, busy: null });
-      else d().set({ busy: null, error: "Keine Kopfzeilen erkannt. Erwartet werden Zeilen wie „Von:“, „Gesendet:“, „An:“ und „Betreff:“ (oder „From:“, „Sent:“, „To:“, „Subject:“)." });
+      else d().set({ busy: null, error: t("mail.noHeaders") });
     } catch (e) {
       d().set({ busy: null, error: String(e) });
     }
@@ -162,13 +165,13 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
       <div className="mailx-source-row">
         <div className="mailx-source">
           <div className="mailx-source-head">
-            <Inbox size={16} aria-hidden /> Outlook (klassisch)
+            <Inbox size={16} aria-hidden /> {t("calset.outlook")}
           </div>
-          <p className="faint">Übernimmt die in Outlook markierten E-Mails oder die geöffnete E-Mail.</p>
+          <p className="faint">{t("mail.outlookDesc")}</p>
           <Button variant="primary" icon={MailIcon} loading={busy === "outlook"} disabled={!status?.outlook_available || !!busy} onClick={() => void captureFromOutlook()} className="mailx-outlook">
-            Aktuelle E-Mail übernehmen
+            {t("cmd.mailCapture")}
           </Button>
-          {status && !status.outlook_available && <p className="faint mailx-small">Nur unter Windows mit Outlook (klassisch).</p>}
+          {status && !status.outlook_available && <p className="faint mailx-small">{t("mail.outlookOnly")}</p>}
         </div>
         <div
           className={`mailx-source mailx-drop ${drop ? "over" : ""}`}
@@ -181,11 +184,11 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
           onDrop={() => setDrop(false)}
         >
           <div className="mailx-source-head">
-            <FileUp size={16} aria-hidden /> Datei
+            <FileUp size={16} aria-hidden /> {t("feed.kind.file")}
           </div>
-          <p className="faint">.eml- oder .msg-Dateien hierher oder irgendwo ins Fenster ziehen.</p>
+          <p className="faint">{t("mail.fileDesc")}</p>
           <Button icon={FileUp} loading={busy === "file"} disabled={!!busy} onClick={() => picker.current?.click()}>
-            Datei wählen…
+            {t("mail.chooseFile")}
           </Button>
           <input
             ref={picker}
@@ -201,12 +204,12 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
           />
         </div>
       </div>
-      <Field label="Kopfzeilen einfügen" hint="Aus einer weitergeleiteten oder kopierten E-Mail: „Von:“, „Gesendet:“, „An:“, „Betreff:“ und darunter der Text.">
+      <Field label={t("mail.paste")} hint={t("mail.pasteHint")}>
         <TextArea
           className="mailx-paste"
           rows={5}
           value={text}
-          placeholder={"Von: Müller, Anna <anna.mueller@example.com>\nGesendet: Donnerstag, 24. September 2026 14:32\nAn: …\nBetreff: …"}
+          placeholder={t("mail.pastePlaceholder")}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             const pasted = e.clipboardData.getData("text/plain");
@@ -216,15 +219,13 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
               void parse(pasted);
             }
           }}
-          aria-label="Kopfzeilen einer E-Mail"
+          aria-label={t("mail.pasteLabel")}
         />
       </Field>
       <div className="mailx-paste-foot">
-        <p className="faint mailx-small">
-          Direkt aus Outlook gezogene E-Mails kommen nur als virtuelle Dateien an, die Annalo nicht lesen kann. Dafür die E-Mail in Outlook markieren und „Aktuelle E-Mail übernehmen“ wählen (Tastenkürzel unter Einstellungen → Kalender) oder sie als Datei speichern.
-        </p>
+        <p className="faint mailx-small">{t("mail.dragNote")}</p>
         <Button disabled={!header || !!busy} loading={busy === "paste"} onClick={() => void parse()}>
-          Kopfzeilen lesen
+          {t("mail.readHeaders")}
         </Button>
       </div>
     </div>
@@ -232,21 +233,22 @@ function MailSources({ status, busy }: { status: MailStatus | null; busy: MailDi
 }
 
 const dateTime = (iso: string) =>
-  new Date(iso).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString(dateLocale(), { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | null; onDone: () => void }) {
+  const t = useT();
   const s = useApp.getState;
   const settings = useApp((st) => st.settings?.settings.mail);
   const pages = useApp((st) => st.pages);
   const activeTab = useApp((st) => st.tabs.find((t) => t.id === st.activeTabId) ?? null);
   const current = activeTab?.kind === "page" && activeTab.pageId != null ? pages.get(activeTab.pageId) ?? null : null;
   const [action, setAction] = useState<Action>(settings?.default_action ?? "task");
-  const [taskText, setTaskText] = useState(cleanSubject(mail.subject) || "E-Mail beantworten");
+  const [taskText, setTaskText] = useState(cleanSubject(mail.subject) || t("mail.reply"));
   const [target, setTarget] = useState<string>(current ? "current" : "daily");
   const [due, setDue] = useState("");
   const [priority, setPriority] = useState(String(priorityFromImportance(mail.importance)));
   const [noteTitle, setNoteTitle] = useState(cleanSubject(mail.subject) || mail.subject);
-  const [parent, setParent] = useState(settings?.notes_parent || "E-Mails");
+  const [parent, setParent] = useState(settings?.notes_parent || t("mail.parentDefault"));
   const [vorgang, setVorgang] = useState("");
   // Time tracking off: no Vorgang field (it is only there for booking later).
   const timeOn = useTimeTracking();
@@ -268,16 +270,16 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
 
   const targetOptions = useMemo<SelectOption[]>(() => {
     const out: SelectOption[] = [];
-    if (current) out.push({ value: "current", label: `Aktuelle Seite: ${current.title}` });
-    out.push({ value: "daily", label: "Tagesnotiz (heute)" });
-    if (withNote) out.push({ value: "note", label: "In die neue Notiz" });
+    if (current) out.push({ value: "current", label: t("mail.target.current", { title: current.title }) });
+    out.push({ value: "daily", label: t("mail.target.daily") });
+    if (withNote) out.push({ value: "note", label: t("mail.target.note") });
     const others = [...pages.values()]
       .filter((p) => !p.deleted_at && p.id !== current?.id)
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .slice(0, 400);
-    others.forEach((p, i) => out.push({ value: `page:${p.id}`, label: p.title, group: i === 0 ? "Andere Seite" : undefined }));
+    others.forEach((p, i) => out.push({ value: `page:${p.id}`, label: p.title, group: i === 0 ? t("mail.target.other") : undefined }));
     return out;
-  }, [pages, current, withNote]);
+  }, [pages, current, withNote, t]);
 
   const suggest = async () => {
     setSuggesting(true);
@@ -287,7 +289,7 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
       if (r.due) setDue(r.due);
       if (action === "note") setAction("both");
     } catch (e) {
-      s().error("Kein Vorschlag", e);
+      s().error(t("mail.noSuggestion"), e);
     } finally {
       setSuggesting(false);
     }
@@ -316,18 +318,18 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
       const ids = [out.task_page?.id, out.note_page?.id].filter((x): x is number => x != null);
       reloadEditors(ids);
       const open = out.note_page ?? out.task_page;
-      const what = out.note_page && out.task_page ? "Aufgabe und Notiz angelegt" : out.note_page ? "Notiz angelegt" : "Aufgabe angelegt";
-      const where = out.task_page && out.task_page.id !== out.note_page?.id ? `Aufgabe in „${out.task_page.title}“` : undefined;
+      const what = out.note_page && out.task_page ? t("mail.created.both") : out.note_page ? t("mail.created.note") : t("mail.created.task");
+      const where = out.task_page && out.task_page.id !== out.note_page?.id ? t("mail.taskIn", { title: out.task_page.title }) : undefined;
       s().toast({
         tone: "success",
         title: what,
-        detail: [where, out.attachments.length ? `${out.attachments.length} ${out.attachments.length === 1 ? "Anhang" : "Anhänge"} gespeichert` : ""].filter(Boolean).join(" · ") || undefined,
-        action: open ? { label: "Öffnen", run: () => s().openPage(open.id) } : undefined,
+        detail: [where, out.attachments.length ? t("mail.attachmentsSaved", { n: out.attachments.length }) : ""].filter(Boolean).join(" · ") || undefined,
+        action: open ? { label: t("links.open"), run: () => s().openPage(open.id) } : undefined,
       });
       if (index + 1 < mails.length) useMailDialog.getState().set({ index: index + 1 });
       else onDone();
     } catch (e) {
-      s().error("E-Mail nicht übernommen", e);
+      s().error(t("mail.importFailed"), e);
     } finally {
       setSaving(false);
     }
@@ -340,30 +342,30 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
     return n;
   });
   const valid = (!withTask || taskText.trim() !== "") && (!withNote || noteTitle.trim() !== "" || mail.subject.trim() !== "");
-  const sourceLabel = { outlook: "Outlook", eml: ".eml", msg: ".msg", text: "Eingefügt" }[mail.source];
+  const sourceLabel = { outlook: "Outlook", eml: ".eml", msg: ".msg", text: t("mail.pasted") }[mail.source];
 
   return (
     <div className="mailx-form">
-      <section className="mailx-card" aria-label="E-Mail">
+      <section className="mailx-card" aria-label={t("mail.mail")}>
         <div className="mailx-card-head">
-          <div className="mailx-subject">{mail.subject || "(ohne Betreff)"}</div>
+          <div className="mailx-subject">{mail.subject || t("mail.noSubject")}</div>
           <div className="mailx-badges">
-            {mail.importance >= 2 && <Badge tone="warning">Wichtig</Badge>}
+            {mail.importance >= 2 && <Badge tone="warning">{t("mail.important")}</Badge>}
             <Badge>{sourceLabel}</Badge>
           </div>
         </div>
         <dl className="mailx-meta">
-          <dt>Von</dt>
+          <dt>{t("mail.from")}</dt>
           <dd className="ellipsis" title={senderLabel(mail)}>{senderLabel(mail)}</dd>
           {mail.received && (
             <>
-              <dt>Datum</dt>
+              <dt>{t("time.date")}</dt>
               <dd>{dateTime(mail.received)}</dd>
             </>
           )}
           {mail.to.length > 0 && (
             <>
-              <dt>An</dt>
+              <dt>{t("mail.to")}</dt>
               <dd className="ellipsis" title={mail.to.join("; ")}>{mail.to.join("; ")}</dd>
             </>
           )}
@@ -374,35 +376,33 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
             </>
           )}
         </dl>
-        {mail.body ? <div className="mailx-preview">{preview(mail.body)}</div> : <div className="mailx-preview faint">Kein Text</div>}
+        {mail.body ? <div className="mailx-preview">{preview(mail.body)}</div> : <div className="mailx-preview faint">{t("mail.noText")}</div>}
         {mails.length > 1 && (
           <div className="mailx-pager">
-            <IconButton icon={ChevronLeft} label="Vorherige E-Mail" size="sm" disabled={index === 0} onClick={() => useMailDialog.getState().set({ index: index - 1 })} />
-            <span className="faint">
-              {index + 1} von {mails.length}
-            </span>
-            <IconButton icon={ChevronRight} label="Nächste E-Mail" size="sm" disabled={index + 1 >= mails.length} onClick={() => useMailDialog.getState().set({ index: index + 1 })} />
+            <IconButton icon={ChevronLeft} label={t("mail.prev")} size="sm" disabled={index === 0} onClick={() => useMailDialog.getState().set({ index: index - 1 })} />
+            <span className="faint">{t("mail.pos", { i: index + 1, n: mails.length })}</span>
+            <IconButton icon={ChevronRight} label={t("mail.next")} size="sm" disabled={index + 1 >= mails.length} onClick={() => useMailDialog.getState().set({ index: index + 1 })} />
           </div>
         )}
       </section>
 
       <div className="mailx-fields">
         <Segmented<Action>
-          label="Übernehmen als"
+          label={t("mail.takeAs")}
           value={action}
           onChange={setAction}
           options={[
-            { value: "task", label: "Aufgabe" },
-            { value: "note", label: "Notiz" },
-            { value: "both", label: "Beides" },
+            { value: "task", label: t("err.kind.task") },
+            { value: "note", label: t("mail.note") },
+            { value: "both", label: t("mail.both") },
           ]}
         />
 
         {withTask && (
-          <fieldset className="mailx-group" aria-label="Aufgabe">
-            <Field label="Aufgabe">
+          <fieldset className="mailx-group" aria-label={t("err.kind.task")}>
+            <Field label={t("err.kind.task")}>
               <div className="mailx-inline">
-                <Input value={taskText} onChange={(e) => setTaskText(e.target.value)} aria-label="Text der Aufgabe" data-autofocus className="mailx-task-text" />
+                <Input value={taskText} onChange={(e) => setTaskText(e.target.value)} aria-label={t("mail.taskText")} data-autofocus className="mailx-task-text" />
                 {mail.body.trim() !== "" && (
                   <Button
                     icon={Sparkles}
@@ -410,21 +410,21 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
                     size="sm"
                     loading={suggesting}
                     disabled={!status?.local_ai}
-                    title={status?.local_ai ? `Mit ${status.local_ai} – der Text verlässt diesen Computer nicht` : "Nur mit einem lokalen KI-Modell (Einstellungen → KI: Anbieter als „lokal“ markieren und für die Stufe „Lokal“ wählen)"}
+                    title={status?.local_ai ? t("mail.suggestLocal", { model: status.local_ai }) : t("mail.suggestNoLocal")}
                     onClick={() => void suggest()}
                   >
-                    Aufgabe vorschlagen
+                    {t("mail.suggest")}
                   </Button>
                 )}
               </div>
             </Field>
-            <Field label="Ziel">
-              <Select value={target} onChange={(e) => setTarget(e.target.value)} options={targetOptions} aria-label="Ziel der Aufgabe" className="mailx-target" />
+            <Field label={t("mail.target")}>
+              <Select value={target} onChange={(e) => setTarget(e.target.value)} options={targetOptions} aria-label={t("mail.targetLabel")} className="mailx-target" />
             </Field>
             <div className="mailx-row">
-              <Field label="Fällig">
+              <Field label={t("mail.due")}>
                 <div className="mailx-due">
-                  <div className="mailx-chips" role="group" aria-label="Schnellauswahl Fälligkeit">
+                  <div className="mailx-chips" role="group" aria-label={t("mail.dueQuick")}>
                     {DUE_CHOICES.map((c) => {
                       const day = dueFor(c.id);
                       return (
@@ -434,19 +434,19 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
                       );
                     })}
                   </div>
-                  <DateInput value={due} onChange={setDue} aria-label="Fälligkeitsdatum" className="mailx-date" />
-                  {due && <IconButton icon={X} label="Ohne Fälligkeit" size="sm" onClick={() => setDue("")} />}
+                  <DateInput value={due} onChange={setDue} aria-label={t("mail.dueDate")} className="mailx-date" />
+                  {due && <IconButton icon={X} label={t("mail.noDue")} size="sm" onClick={() => setDue("")} />}
                 </div>
               </Field>
-              <Field label="Priorität">
+              <Field label={t("mail.priority")}>
                 <Segmented
-                  label="Priorität"
+                  label={t("mail.priority")}
                   value={priority}
                   onChange={setPriority}
                   options={[
-                    { value: "0", label: "Normal" },
-                    { value: "1", label: "Mittel" },
-                    { value: "2", label: "Hoch" },
+                    { value: "0", label: t("mail.prio.normal") },
+                    { value: "1", label: t("mail.prio.medium") },
+                    { value: "2", label: t("mail.prio.high") },
                   ]}
                 />
               </Field>
@@ -455,25 +455,25 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
         )}
 
         {withNote && (
-          <fieldset className="mailx-group" aria-label="Notiz">
+          <fieldset className="mailx-group" aria-label={t("mail.note")}>
             <div className="mailx-row">
-              <Field label="Titel der Notiz">
-                <Input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} aria-label="Titel der Notiz" />
+              <Field label={t("mail.noteTitle")}>
+                <Input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} aria-label={t("mail.noteTitle")} />
               </Field>
-              <Field label="Unter Seite">
-                <Input value={parent} onChange={(e) => setParent(e.target.value)} aria-label="Übergeordnete Seite" placeholder="E-Mails" />
+              <Field label={t("mail.underPage")}>
+                <Input value={parent} onChange={(e) => setParent(e.target.value)} aria-label={t("mail.parentPage")} placeholder={t("mail.parentDefault")} />
               </Field>
             </div>
           </fieldset>
         )}
 
         {canAttach && mail.attachments.length > 0 && (
-          <fieldset className="mailx-group" aria-label="Anhänge">
+          <fieldset className="mailx-group" aria-label={t("mail.attachments")}>
             <div className="mailx-group-head">
-              <Paperclip size={14} aria-hidden /> Anhänge speichern
+              <Paperclip size={14} aria-hidden /> {t("mail.saveAttachments")}
               {inlineCount > 0 && (
                 <button type="button" className="mailx-link" onClick={() => setWithInline(!withInline)}>
-                  {withInline ? "Eingebettete Bilder ausblenden" : `${inlineCount} eingebettete ${inlineCount === 1 ? "Bild" : "Bilder"} zeigen`}
+                  {withInline ? t("mail.hideInline") : t("mail.showInline", { n: inlineCount })}
                 </button>
               )}
             </div>
@@ -481,28 +481,28 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
               {offered.map((a) => (
                 <li key={a.index}>
                   <label>
-                    <input type="checkbox" className="check" checked={picked.has(a.index)} onChange={() => toggle(a.index)} aria-label={`Anhang ${a.name} speichern`} />
+                    <input type="checkbox" className="check" checked={picked.has(a.index)} onChange={() => toggle(a.index)} aria-label={t("mail.saveAttachment", { name: a.name })} />
                     <span className="ellipsis">{a.name}</span>
                     <span className="faint num">{a.size ? fileSize(a.size) : ""}</span>
                   </label>
                 </li>
               ))}
             </ul>
-            {!withNote && picked.size > 0 && <p className="faint mailx-small">Anhänge werden gespeichert; eingebettet werden sie nur in eine Notiz.</p>}
+            {!withNote && picked.size > 0 && <p className="faint mailx-small">{t("mail.attachNoNote")}</p>}
           </fieldset>
         )}
 
         {(timeOn || mail.categories.length > 0) && <div className="mailx-row">
           {timeOn && (
-            <Field label="Vorgang (optional)" hint="Für die spätere Buchung, z. B. NP-8801/1020">
-              <Input value={vorgang} onChange={(e) => setVorgang(e.target.value)} aria-label="Vorgang" placeholder="NP-…/…" className="mono" />
+            <Field label={t("mail.vorgang")} hint={t("mail.vorgangHint")}>
+              <Input value={vorgang} onChange={(e) => setVorgang(e.target.value)} aria-label={t("wbs.vorgang")} placeholder="NP-…/…" className="mono" />
             </Field>
           )}
           {mail.categories.length > 0 && (
-            <Field label="Outlook-Kategorien">
+            <Field label={t("mail.categories")}>
               <label className="mailx-check">
                 <input type="checkbox" className="check" checked={useTags} onChange={() => setUseTags(!useTags)} />
-                <span>Als Tags übernehmen: {mail.categories.join(", ")}</span>
+                <span>{t("mail.asTags", { list: mail.categories.join(", ") })}</span>
               </label>
             </Field>
           )}
@@ -510,18 +510,18 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
       </div>
 
       <div className="mailx-foot">
-        <span className="faint mailx-small">Der Text der E-Mail bleibt auf diesem Computer.</span>
+        <span className="faint mailx-small">{t("mail.staysLocal")}</span>
         <div className="mailx-foot-actions">
           {mails.length > 1 && index + 1 < mails.length && (
             <Button variant="ghost" onClick={() => useMailDialog.getState().set({ index: index + 1 })}>
-              Überspringen
+              {t("mail.skip")}
             </Button>
           )}
           <Button variant="ghost" onClick={onDone}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" loading={saving} disabled={!valid || saving} onClick={() => void submit()} className="mailx-submit">
-            {saving ? "Wird übernommen …" : "Übernehmen"}
+            {saving ? t("mail.importing") : t("mail.import")}
           </Button>
         </div>
       </div>

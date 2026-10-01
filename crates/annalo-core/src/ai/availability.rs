@@ -6,6 +6,7 @@
 //! Private content (a privacy marker, or Settings → Datenschutz „Nur lokal“) is the exception:
 //! it only goes to the model of the local tier or to providers marked local, or is not sent.
 
+use crate::{tr, trf};
 use std::collections::HashMap;
 
 use super::provider::AiProvider;
@@ -138,7 +139,11 @@ pub fn resolve(
     local_only: bool,
 ) -> std::result::Result<RouteDecision, String> {
     if catalog.first_enabled().is_none() {
-        return Err("Kein KI-Anbieter eingerichtet: füge unter Einstellungen → KI einen Anbieter hinzu.".into());
+        return Err(tr!(
+            "Kein KI-Anbieter eingerichtet: füge unter Einstellungen → KI einen Anbieter hinzu.",
+            "No AI provider set up: add a provider under Settings → AI."
+        )
+        .into());
     }
     let wanted = catalog.canonical(ModelRef::new(&route.provider, &route.model));
     let mut out = RouteDecision { provider: wanted.provider.clone(), ..route.clone() };
@@ -148,9 +153,9 @@ pub fn resolve(
     }
     let name = catalog.name(&wanted.provider);
     let why = if catalog.provider(&wanted.provider).is_none() {
-        format!("Anbieter „{name}“ ist ausgeschaltet oder fehlt")
+        trf!("Anbieter „{name}“ ist ausgeschaltet oder fehlt", "Provider “{name}” is switched off or missing")
     } else {
-        format!("„{}“ gibt es bei {name} nicht", wanted.model)
+        trf!("„{}“ gibt es bei {name} nicht", "{name} has no “{}”", wanted.model)
     };
     let exclude = Exclude { models: vec![wanted.clone()], providers: vec![] };
     match fallback(config, route.tier, catalog, &exclude, private) {
@@ -160,12 +165,18 @@ pub fn resolve(
             out.model = r.model;
             Ok(out)
         }
-        None if private => Err(format!(
+        None if private => Err(trf!(
             "Das lokale Modell „{}“ gibt es auf dem {name}-Server nicht. Vertrauliche Inhalte bleiben lokal: \
              wähle unter Einstellungen → KI ein Modell für die Stufe Lokal oder markiere einen Anbieter als lokal.",
+            "The local model “{}” does not exist on the {name} server. Confidential content stays local: \
+             choose a model for the Local tier under Settings → AI or mark a provider as local.",
             wanted.model
         )),
-        None => Err(format!("Kein KI-Anbieter bietet ein Chat-Modell an (gewählt war „{}“).", wanted.model)),
+        None => Err(trf!(
+            "Kein KI-Anbieter bietet ein Chat-Modell an (gewählt war „{}“).",
+            "No AI provider offers a chat model (“{}” was chosen).",
+            wanted.model
+        )),
     }
 }
 
@@ -276,8 +287,9 @@ pub fn weaker_fallback_note(
     let local_tier = catalog.canonical(config.tier_ref(Tier::Local));
     let small = |r: &ModelRef| *r == local_tier || catalog.provider(&r.provider).is_some_and(|p| p.local);
     (small(to) && !small(from)).then(|| {
-        format!(
+        trf!(
             "Ausweichmodell „{}“ ist ein kleineres lokales Modell: die Antwort kann schwächer sein als mit „{}“",
+            "Fallback model “{}” is a smaller local model: the answer may be weaker than with “{}”",
             catalog.label(to),
             from.model
         )
@@ -287,10 +299,13 @@ pub fn weaker_fallback_note(
 /// The message shown when the server has no usable deployment of `model`.
 pub fn unavailable_message(model: &str, body: &str) -> String {
     let detail: String = body.chars().take(300).collect();
-    format!(
+    trf!(
         "Der KI-Server hat für das Modell „{model}“ gerade keine erreichbare Instanz. Entweder fehlt es in der \
          Konfiguration des Anbieters, oder alle Instanzen pausieren nach Fehlern (Cooldown, z. B. falscher Anbieter-Schlüssel \
-         oder Ratenlimit). Wähle unter Einstellungen → KI ein anderes Modell oder prüfe den Server.\n\nServer: {detail}"
+         oder Ratenlimit). Wähle unter Einstellungen → KI ein anderes Modell oder prüfe den Server.\n\nServer: {detail}",
+        "The AI server has no reachable instance for the model “{model}” right now. Either it is missing from the \
+         provider's configuration, or all instances are paused after errors (cooldown, e.g. a wrong provider key \
+         or a rate limit). Choose another model under Settings → AI or check the server.\n\nServer: {detail}"
     )
 }
 

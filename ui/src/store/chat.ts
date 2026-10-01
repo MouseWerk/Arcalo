@@ -8,23 +8,25 @@ import { api, errorText, on } from "../lib/api";
 import { streamingOn, warnCost, withCostLimit } from "../lib/aicost";
 import { answerRecord, autoTitle, chatMarkdown, restoreChat, turnId, type AskOpts, type Turn } from "../lib/chathistory";
 import { modelLabel } from "../lib/providers";
-import { t } from "../lib/i18n";
+import { t, type TKey } from "../lib/i18n";
 import type { ChatConversation, ChatMessage, ChatRecord, StreamEvent, Tier, ToolCall } from "../lib/types";
 import { useApp } from "./app";
 
 export type { Turn } from "../lib/chathistory";
 
-export const TOOL_LABELS: Record<string, string> = {
-  log_time: "Zeit buchen",
-  search_workspace: "Workspace durchsuchen",
-  budget_status: "Budget abfragen",
-  list_tasks: "Aufgaben abfragen",
-  time_summary: "Zeitübersicht abfragen",
-  activity_log: "Aktivität abfragen",
-  run_powershell: "PowerShell ausführen",
-  git: "Git-Befehl",
-  http_request: "HTTP-Anfrage",
+const TOOL_KEYS: Record<string, TKey> = {
+  log_time: "assist.tool.logTime",
+  search_workspace: "assist.tool.search",
+  budget_status: "assist.tool.budget",
+  list_tasks: "assist.tool.tasks",
+  time_summary: "assist.tool.time",
+  activity_log: "assist.tool.activity",
+  run_powershell: "assist.tool.powershell",
+  git: "assist.tool.git",
+  http_request: "assist.tool.http",
 };
+/** A tool's name in the display language (unknown tools as named). */
+export const toolLabel = (name: string) => (TOOL_KEYS[name] ? t(TOOL_KEYS[name]) : name);
 
 /** Longest question (characters); the composer says so before. */
 export const MAX_INPUT = 100_000;
@@ -187,7 +189,7 @@ async function runTools(calls: ToolCall[], live: () => boolean): Promise<{ resul
     }
     const id = turnId();
     const name = c.function.name;
-    const label = TOOL_LABELS[name] ?? name;
+    const label = toolLabel(name);
     set((st) => ({ turns: [...st.turns, { id, kind: "tool", name, label, status: "running" }] }));
     let card: { status: "done" | "error" | "rejected"; summary?: string; output?: string };
     let out: string;
@@ -215,7 +217,7 @@ async function runTools(calls: ToolCall[], live: () => boolean): Promise<{ resul
           else updateTurn(id, { status: "pending", summary: plan.summary, decide });
         });
         if (!ok) {
-          out = "Der Nutzer hat die Ausführung abgelehnt.";
+          out = t("assist.toolRejected");
           card = { status: "rejected", summary: plan.summary };
         } else {
           updateTurn(id, { status: "running", decide: undefined });

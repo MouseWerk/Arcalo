@@ -10,7 +10,7 @@ import { sidebarShown, toggleSidebar, useNarrowWindow } from "../lib/layout";
 import { useTimeTracking } from "../lib/timetracking";
 import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
-import { useT } from "../lib/i18n";
+import { t as tr, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "./Focus";
 import { openDayReview } from "../lib/reviewnav";
@@ -23,7 +23,7 @@ export async function openToday() {
     await s.refreshTree();
     s.openPage(p.id);
   } catch (e) {
-    s.error("Tagesnotiz konnte nicht geöffnet werden", e);
+    s.error(tr("ribbon.dailyFailed"), e);
   }
 }
 

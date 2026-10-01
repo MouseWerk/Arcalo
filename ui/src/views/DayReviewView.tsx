@@ -15,21 +15,21 @@ import { PageIcon } from "../components/icons";
 import { pickDate } from "../components/CalendarPopover";
 import { flushAllEditors } from "../editor/saves";
 import { revealText } from "../editor/reveal";
-import { dayTitle } from "../lib/activity";
-import { isoDay, time } from "../lib/format";
+import { dayTitle, fileKind } from "../lib/activity";
+import { fmtDayMonth, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
-import { MEETING_LABEL, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
+import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import type { DayReview, MeetingState, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
+import { useT } from "../lib/i18n";
 
 const MEETING_TONE: Record<MeetingState, Tone> = { booked: "success", open: "warning", skipped: "neutral", upcoming: "info", free: "neutral", done: "neutral" };
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString("de-DE")} ${n === 1 ? one : many}`;
-
 export function DayReviewView() {
+  const t = useT();
   const s = useApp.getState;
   const pages = useApp((st) => st.pages);
   const entriesVersion = useApp((st) => st.entriesVersion);
@@ -61,15 +61,15 @@ export function DayReviewView() {
 
   // Saves change the day: refetch shortly after, and every minute while open (today).
   useEffect(() => {
-    let t: number | undefined;
+    let timer: number | undefined;
     const bump = () => {
-      window.clearTimeout(t);
-      t = window.setTimeout(() => setTick((n) => n + 1), 700);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setTick((n) => n + 1), 700);
     };
     window.addEventListener("annalo:page-saved", bump);
     const every = window.setInterval(() => setTick((n) => n + 1), 60_000);
     return () => {
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
       window.clearInterval(every);
       window.removeEventListener("annalo:page-saved", bump);
     };
@@ -80,7 +80,7 @@ export function DayReviewView() {
     api
       .dayReview(date)
       .then((r) => n === seq.current && setReview(r))
-      .catch((e) => n === seq.current && s().error("Tagesrückblick nicht geladen", e));
+      .catch((e) => n === seq.current && s().error(t("review.loadFailed"), e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, entriesVersion, pages, tick, focusId, timeOn]);
 
@@ -100,12 +100,12 @@ export function DayReviewView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = root.current;
-      const t = document.activeElement as HTMLElement | null;
+      const focused = document.activeElement as HTMLElement | null;
       if (!el || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
       if (!el.closest(".pane")?.classList.contains("active")) return;
-      const pane = t?.closest(".pane");
+      const pane = focused?.closest(".pane");
       if (pane && !pane.contains(el)) return;
-      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='combobox']")) return;
+      if (focused?.closest("input, textarea, select, [contenteditable='true'], [role='combobox']")) return;
       if (document.querySelector(".dialog, .menu, .palette, .calendar, .select-pop")) return;
       if (e.key === "ArrowLeft") keys.current.go(-1);
       else if (e.key === "ArrowRight") keys.current.go(1);
@@ -133,15 +133,15 @@ export function DayReviewView() {
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: note.id, content: next, from: "review" } }));
       }
       await s().refreshTree();
-      const replaced = doc.content.includes("<!-- rückblick -->");
+      const replaced = !!findReviewBlock(doc.content);
       s().toast({
         tone: "success",
-        title: replaced ? "Rückblick in der Tagesnotiz aktualisiert" : "Rückblick in die Tagesnotiz übernommen",
-        detail: summaryText ? "Mit Zusammenfassung" : undefined,
-        action: { label: "Öffnen", run: () => s().openPage(note.id) },
+        title: replaced ? t("review.updated") : t("review.inserted"),
+        detail: summaryText ? t("review.withSummary") : undefined,
+        action: { label: t("links.open"), run: () => s().openPage(note.id) },
       });
     } catch (e) {
-      s().error("Nicht in die Tagesnotiz übernommen", e);
+      s().error(t("review.insertFailed"), e);
     } finally {
       setInserting(false);
     }
@@ -161,15 +161,15 @@ export function DayReviewView() {
     if (id == null) return false;
     if (!s().pages.has(id)) await s().refreshTree();
     if (s().pages.has(id)) return true;
-    s().toast({ tone: "info", title: "Nicht mehr vorhanden", detail: "Die Seite wurde gelöscht oder liegt im Papierkorb." });
+    s().toast({ tone: "info", title: t("feed.gone"), detail: t("feed.goneText") });
     return false;
   };
   const openPage = async (id: number | null, newTab: boolean) => {
     if (await known(id)) s().openPage(id!, { newTab });
   };
-  const openTask = async (t: ReviewTask, newTab: boolean) => {
+  const openTask = async (task: ReviewTask, newTab: boolean) => {
     // Opens the page and flashes the task (the top of the page when its text changed since).
-    if (await known(t.page_id)) void revealText(t.page_id!, t.text, (pid) => s().openPage(pid, { newTab }));
+    if (await known(task.page_id)) void revealText(task.page_id!, task.text, (pid) => s().openPage(pid, { newTab }));
   };
   const openMeeting = (m: ReviewMeeting) => openCalendarView({ date, key: m.key });
   const toSheet = (newTab = false) => openTimesheetDay(date, { newTab });
@@ -182,20 +182,20 @@ export function DayReviewView() {
       <div className="view rv-view">
         <header className="view-header rv-head">
           <div className="rv-heading">
-            <h1>Tagesrückblick</h1>
+            <h1>{t("ribbon.review")}</h1>
             <div className="view-sub rv-date">{title}</div>
           </div>
           <div className="view-actions rv-actions">
-            <div className="rv-nav" role="group" aria-label="Tag">
-              <IconButton icon={ChevronLeft} label="Vorheriger Tag (←)" onClick={() => go(-1)} />
-              <Button size="sm" variant="ghost" onClick={toToday} disabled={date === today} title="Heute (T)">
-                Heute
+            <div className="rv-nav" role="group" aria-label={t("calv.view.day")}>
+              <IconButton icon={ChevronLeft} label={t("review.prevDay")} onClick={() => go(-1)} />
+              <Button size="sm" variant="ghost" onClick={toToday} disabled={date === today} title={t("calv.todayKey")}>
+                {t("feed.range.today")}
               </Button>
-              <IconButton icon={ChevronRight} label="Nächster Tag (→)" onClick={() => go(1)} />
-              <IconButton icon={CalendarDays} label="Tag wählen" onClick={(e) => pickDate(e.currentTarget, date, setDate)} />
+              <IconButton icon={ChevronRight} label={t("review.nextDay")} onClick={() => go(1)} />
+              <IconButton icon={CalendarDays} label={t("review.pickDay")} onClick={(e) => pickDate(e.currentTarget, date, setDate)} />
             </div>
             <Button icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
-              In Tagesnotiz übernehmen
+              {t("review.insert")}
             </Button>
             <Button
               variant="primary"
@@ -204,9 +204,9 @@ export function DayReviewView() {
               loading={ai.busy}
               disabled={!r}
               onClick={summarize}
-              title={local.length ? "Schreibt eine kurze Zusammenfassung mit dem lokalen Modell" : "Nur mit einem lokalen Modell (z. B. Ollama) möglich"}
+              title={local.length ? t("review.summarizeTitle") : t("review.summarizeNoLocal")}
             >
-              Zusammenfassung schreiben
+              {t("review.summarize")}
             </Button>
           </div>
         </header>
@@ -223,28 +223,28 @@ export function DayReviewView() {
               <div className="rv-callout" role="status">
                 <Lock size={15} aria-hidden />
                 <div>
-                  <b>Nur mit einem lokalen Modell.</b> Der Rückblick enthält alle Seiten des Tages, auch vertrauliche. Die Zusammenfassung schreibt deshalb nur ein Anbieter, der als lokal markiert ist (z. B. Ollama) – nie ein Cloud-Anbieter.
+                  <b>{t("review.localOnly")}</b> {t("review.localOnlyText")}
                 </div>
                 <div className="rv-callout-actions">
                   <Button size="sm" icon={Settings2} onClick={() => openSettingsSection("ai")}>
-                    KI-Einstellungen
+                    {t("review.aiSettings")}
                   </Button>
-                  <IconButton icon={X} label="Schließen" size="sm" onClick={() => setNoLocal(false)} />
+                  <IconButton icon={X} label={t("common.close")} size="sm" onClick={() => setNoLocal(false)} />
                 </div>
               </div>
             )}
 
             {(ai.busy || ai.text || ai.error) && (
-              <section className="card rv-summary" aria-label="Zusammenfassung" aria-live="polite">
+              <section className="card rv-summary" aria-label={t("review.md.summary")} aria-live="polite">
                 <div className="card-head">
                   <h2>
-                    <Sparkles size={14} aria-hidden /> Zusammenfassung
+                    <Sparkles size={14} aria-hidden /> {t("review.md.summary")}
                   </h2>
-                  <span className="rv-summary-meta faint small">{ai.meta ? `lokal · ${ai.meta.model}` : ai.busy ? "wird lokal geschrieben…" : ""}</span>
+                  <span className="rv-summary-meta faint small">{ai.meta ? t("review.localModel", { model: ai.meta.model }) : ai.busy ? t("review.writing") : ""}</span>
                   <div className="rv-card-actions">
                     {ai.busy ? (
                       <Button size="sm" icon={Square} onClick={() => ai.cancel()}>
-                        Stoppen
+                        {t("time.stop")}
                       </Button>
                     ) : (
                       <>
@@ -259,11 +259,11 @@ export function DayReviewView() {
                               window.setTimeout(() => setCopied(false), 1200);
                             }}
                           >
-                            {copied ? "Kopiert" : "Kopieren"}
+                            {copied ? t("common.copied") : t("common.copy")}
                           </Button>
                         )}
-                        <IconButton icon={RefreshCw} label="Neu schreiben" size="sm" onClick={summarize} />
-                        <IconButton icon={X} label="Verwerfen" size="sm" onClick={() => ai.reset()} />
+                        <IconButton icon={RefreshCw} label={t("review.rewrite")} size="sm" onClick={summarize} />
+                        <IconButton icon={X} label={t("common.discard")} size="sm" onClick={() => ai.reset()} />
                       </>
                     )}
                   </div>
@@ -271,7 +271,7 @@ export function DayReviewView() {
                 <div className="rv-summary-body">
                   {ai.error ? (
                     <div className="msg-error">
-                      <div>Die Zusammenfassung ist fehlgeschlagen.</div>
+                      <div>{t("review.summaryFailed")}</div>
                       <div className="faint small">{ai.error}</div>
                     </div>
                   ) : !ai.text ? (
@@ -283,62 +283,62 @@ export function DayReviewView() {
                   ) : (
                     <div className={`prose prose-chat ${ai.busy ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(ai.text) }} />
                   )}
-                  {summaryText && <div className="faint small rv-summary-hint">„In Tagesnotiz übernehmen“ nimmt die Zusammenfassung mit.</div>}
+                  {summaryText && <div className="faint small rv-summary-hint">{t("review.summaryHint")}</div>}
                 </div>
               </section>
             )}
 
             <div className="rv-grid">
               {!r.without_time && <TimeCard r={r} onOpen={toSheet} />}
-              <Section icon={CalendarRange} tone="meetings" title="Termine" count={r.meetings.length} empty="Keine Termine im Kalender." className="rv-meetings">
+              <Section icon={CalendarRange} tone="meetings" title={t("review.md.meetings")} count={r.meetings.length} empty={t("review.noMeetings")} className="rv-meetings">
                 {r.meetings.map((m) => (
                   <button key={m.key} type="button" className={`rv-row rv-meeting state-${m.state}`} onClick={() => openMeeting(m)}>
-                    <span className="rv-when num">{m.all_day ? "ganztägig" : `${time(m.start)}–${time(m.end)}`}</span>
+                    <span className="rv-when num">{m.all_day ? t("cal.allDay") : `${time(m.start)}–${time(m.end)}`}</span>
                     <span className="rv-main">
-                      <span className="rv-title ellipsis">{m.title || "Termin"}</span>
+                      <span className="rv-title ellipsis">{m.title || t("cal.appointment")}</span>
                       {m.location && <span className="rv-sub ellipsis">{m.location}</span>}
                     </span>
-                    {m.state !== "done" && <Badge tone={MEETING_TONE[m.state]}>{MEETING_LABEL[m.state]}</Badge>}
+                    {m.state !== "done" && <Badge tone={MEETING_TONE[m.state]}>{t(MEETING_LABEL[m.state])}</Badge>}
                   </button>
                 ))}
                 {openMeetings(r).length > 0 && (
                   <button type="button" className="rv-foot-link" onClick={() => openCalendarView({ date })}>
-                    {plural(openMeetings(r).length, "Termin", "Termine")} noch buchen · im Kalender öffnen
+                    {t("review.meetingsToBook", { n: openMeetings(r).length })}
                   </button>
                 )}
               </Section>
-              <Section icon={FileText} tone="pages" title="Seiten" count={r.pages.length} empty="Keine Seite bearbeitet." className="rv-pages">
+              <Section icon={FileText} tone="pages" title={t("review.md.pages")} count={r.pages.length} empty={t("review.noPages")} className="rv-pages">
                 {r.pages.map((p, i) => (
                   <PageRow key={`${p.page_id ?? "x"}-${i}`} p={p} onOpen={(newTab) => void openPage(p.gone ? null : p.page_id, newTab)} />
                 ))}
               </Section>
-              <TasksCard r={r} onOpen={(t, newTab) => void openTask(t, newTab)} />
+              <TasksCard r={r} onOpen={(task, newTab) => void openTask(task, newTab)} />
               {r.focus.sessions.length > 0 && (
-                <Section icon={Target} tone="focus" title="Fokus" count={r.focus.sessions.length} extra={hm(r.focus.minutes)} className="rv-focus">
+                <Section icon={Target} tone="focus" title={t("review.md.focus")} count={r.focus.sessions.length} extra={hm(r.focus.minutes)} className="rv-focus">
                   {r.focus.sessions.map((f) => (
                     <button key={f.id} type="button" className="rv-row" onClick={(e) => !r.without_time && toSheet(e.ctrlKey || e.metaKey)}>
                       <span className="rv-when num">{time(f.started_at)}</span>
                       <span className="rv-main">
-                        <span className="rv-title ellipsis">{f.goal || f.reference || "Fokussitzung"}</span>
+                        <span className="rv-title ellipsis">{f.goal || f.reference || t("feed.focus")}</span>
                         {f.goal && f.reference && <span className="rv-sub mono ellipsis">{f.reference}</span>}
                       </span>
                       <span className="rv-meta num">
                         {hm(f.worked_minutes)}
-                        {f.status === "aborted" ? " · abgebrochen" : f.status === "running" ? " · läuft" : f.entry_id ? " · gebucht" : ""}
+                        {f.status === "aborted" ? ` · ${t("review.aborted")}` : f.status === "running" ? ` · ${t("time.runningLower")}` : f.entry_id ? ` · ${t("review.meeting.booked")}` : ""}
                       </span>
                     </button>
                   ))}
                 </Section>
               )}
               {r.files.length > 0 && (
-                <Section icon={Paperclip} tone="files" title="Dateien" count={r.files.length} className="rv-files">
+                <Section icon={Paperclip} tone="files" title={t("review.md.files")} count={r.files.length} className="rv-files">
                   {r.files.map((f) => (
-                    <button key={f.name} type="button" className="rv-row" onClick={() => void api.openAttachment(f.name).catch((e) => s().error("Datei nicht geöffnet", e))}>
+                    <button key={f.name} type="button" className="rv-row" onClick={() => void api.openAttachment(f.name).catch((e) => s().error(t("feed.fileOpenFailed"), e))}>
                       <span className="rv-when num">{time(f.at)}</span>
                       <span className="rv-main">
                         <span className="rv-title ellipsis">{f.name}</span>
                       </span>
-                      <span className="rv-meta">{f.kind}</span>
+                      <span className="rv-meta">{fileKind(f.kind)}</span>
                     </button>
                   ))}
                 </Section>
@@ -346,8 +346,8 @@ export function DayReviewView() {
             </div>
 
             {isEmpty(r) && (
-              <EmptyState icon={Sunset} title={date > today ? "Dieser Tag liegt noch vor dir" : "An diesem Tag wurde nichts aufgezeichnet"}>
-                Bearbeitete Seiten, Buchungen, erledigte Aufgaben, Termine und Fokussitzungen erscheinen hier.
+              <EmptyState icon={Sunset} title={date > today ? t("review.future") : t("review.nothing")}>
+                {t("review.emptyHint")}
               </EmptyState>
             )}
           </>
@@ -361,55 +361,56 @@ const isEmpty = (r: DayReview) =>
   !r.pages.length && !r.time.entries.length && !r.time.running_minutes && !r.tasks.done.length && !r.tasks.added.length && !r.meetings.length && !r.focus.sessions.length && !r.files.length;
 
 function Stats({ r }: { r: DayReview }) {
-  const t = r.time;
+  const t = useT();
+  const tm = r.time;
   const fresh = r.tasks.added.filter((x) => !x.done).length;
   const edited = r.pages.reduce((a, p) => a + p.minutes, 0);
   const open = openMeetings(r).length;
   return (
-    <section className={`rv-stats ${r.without_time ? "no-time" : ""}`} aria-label="Überblick">
+    <section className={`rv-stats ${r.without_time ? "no-time" : ""}`} aria-label={t("review.overview")}>
       {!r.without_time && <div className="rv-stat tone-time">
         <span className="rv-stat-label">
-          <Clock size={13} aria-hidden /> Gebucht
+          <Clock size={13} aria-hidden /> {t("calv.booked")}
         </span>
         <span className="rv-stat-value num">
-          {hours(t.booked_minutes)}
-          {t.target_minutes > 0 && <span className="rv-stat-of"> / {hours(t.target_minutes)}</span>}
+          {hours(tm.booked_minutes)}
+          {tm.target_minutes > 0 && <span className="rv-stat-of"> / {hours(tm.target_minutes)}</span>}
         </span>
-        <Progress value={progress(r)} tone={t.target_minutes > 0 && t.missing_minutes === 0 ? "success" : "accent"} />
+        <Progress value={progress(r)} tone={tm.target_minutes > 0 && tm.missing_minutes === 0 ? "success" : "accent"} />
         <span className="rv-stat-sub">
-          {t.target_minutes <= 0 ? "kein Arbeitstag" : t.missing_minutes > 0 ? `${hours(t.missing_minutes)} fehlen` : "Soll erreicht"}
-          {t.running_minutes > 0 && ` · Timer ${hm(t.running_minutes)}`}
+          {tm.target_minutes <= 0 ? t("review.noWorkday") : tm.missing_minutes > 0 ? t("review.md.missing", { h: hours(tm.missing_minutes) }) : t("review.targetReached")}
+          {tm.running_minutes > 0 && ` · ${t("review.timer", { time: hm(tm.running_minutes) })}`}
         </span>
       </div>}
       <div className="rv-stat tone-meetings">
         <span className="rv-stat-label">
-          <CalendarRange size={13} aria-hidden /> Termine
+          <CalendarRange size={13} aria-hidden /> {t("review.md.meetings")}
         </span>
         <span className="rv-stat-value num">{r.meetings.length}</span>
-        <span className="rv-stat-sub">{open ? `${open} nicht gebucht` : r.meetings.length ? (r.without_time ? "im Kalender" : "alles erledigt") : "keine"}</span>
+        <span className="rv-stat-sub">{open ? t("review.notBooked", { n: open }) : r.meetings.length ? t(r.without_time ? "tt.reviewInCalendar" : "review.allDone") : t("review.none")}</span>
       </div>
       <div className="rv-stat tone-tasks">
         <span className="rv-stat-label">
-          <CheckSquare size={13} aria-hidden /> Erledigt
+          <CheckSquare size={13} aria-hidden /> {t("review.done")}
         </span>
         <span className="rv-stat-value num">{r.tasks.done_total}</span>
         <span className="rv-stat-sub">
-          {[fresh ? `${fresh} neu` : "", r.tasks.overdue_total ? `${r.tasks.overdue_total} überfällig` : ""].filter(Boolean).join(" · ") || "Aufgaben"}
+          {[fresh ? t("review.md.added", { n: fresh }) : "", r.tasks.overdue_total ? t("review.md.overdue", { n: r.tasks.overdue_total }) : ""].filter(Boolean).join(" · ") || t("review.md.tasks")}
         </span>
       </div>
       <div className="rv-stat tone-pages">
         <span className="rv-stat-label">
-          <FileText size={13} aria-hidden /> Seiten
+          <FileText size={13} aria-hidden /> {t("review.md.pages")}
         </span>
         <span className="rv-stat-value num">{r.pages.length}</span>
-        <span className="rv-stat-sub">{edited ? `~${hm(edited)} bearbeitet` : "bearbeitet"}</span>
+        <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: hm(edited) }) : t("review.edited")}</span>
       </div>
       <div className="rv-stat tone-focus">
         <span className="rv-stat-label">
-          <Target size={13} aria-hidden /> Fokus
+          <Target size={13} aria-hidden /> {t("review.md.focus")}
         </span>
         <span className="rv-stat-value num">{hm(r.focus.minutes)}</span>
-        <span className="rv-stat-sub">{plural(r.focus.sessions.length, "Sitzung", "Sitzungen")}</span>
+        <span className="rv-stat-sub">{t("review.md.sessions", { n: r.focus.sessions.length })}</span>
       </div>
     </section>
   );
@@ -452,14 +453,15 @@ function Section({
 }
 
 function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => void }) {
-  const t = r.time;
-  const max = Math.max(1, ...t.items.map((w) => w.minutes));
+  const t = useT();
+  const tm = r.time;
+  const max = Math.max(1, ...tm.items.map((w) => w.minutes));
   return (
-    <Section icon={Clock} tone="time" title="Zeit" count={t.items.length} extra={t.target_minutes > 0 ? `${hours(t.booked_minutes)} von ${hours(t.target_minutes)}` : hours(t.booked_minutes)} className="rv-time">
-      {t.items.length === 0 ? (
-        <div className="rv-empty">{t.running_minutes > 0 ? `Ein Timer läuft seit ${hm(t.running_minutes)}.` : "Nichts gebucht."}</div>
+    <Section icon={Clock} tone="time" title={t("review.md.time")} count={tm.items.length} extra={tm.target_minutes > 0 ? t("review.hoursOf", { h: hours(tm.booked_minutes), target: hours(tm.target_minutes) }) : hours(tm.booked_minutes)} className="rv-time">
+      {tm.items.length === 0 ? (
+        <div className="rv-empty">{tm.running_minutes > 0 ? t("review.timerRunning", { time: hm(tm.running_minutes) }) : t("review.nothingBooked")}</div>
       ) : (
-        t.items.map((w) => (
+        tm.items.map((w) => (
           <button key={w.label} type="button" className="rv-row rv-wbs" onClick={(e) => onOpen(e.ctrlKey || e.metaKey)} title={w.descriptions.join("\n")}>
             <span className="rv-main">
               <span className="rv-title">
@@ -475,11 +477,11 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
           </button>
         ))
       )}
-      {t.gaps.length > 0 && (
+      {tm.gaps.length > 0 && (
         <div className="rv-gaps" role="status">
           <AlertTriangle size={13} aria-hidden />
-          <span>Ohne Buchung:</span>
-          {t.gaps.map((g) => (
+          <span>{t("review.gaps")}</span>
+          {tm.gaps.map((g) => (
             <button key={g.start} type="button" className="gap-chip" onClick={() => onOpen()}>
               {time(g.start)}–{time(g.end)} <span className="faint">({hm(g.minutes)})</span>
             </button>
@@ -487,14 +489,16 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
         </div>
       )}
       <button type="button" className="rv-foot-link" onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}>
-        {t.missing_minutes > 0 ? `${hours(t.missing_minutes)} fehlen · in der Zeiterfassung buchen` : "In der Zeiterfassung öffnen"}
+        {tm.missing_minutes > 0 ? t("review.missingBook", { h: hours(tm.missing_minutes) }) : t("review.openTimesheet")}
       </button>
     </Section>
   );
 }
 
 function PageRow({ p, onOpen }: { p: ReviewPage; onOpen: (newTab: boolean) => void }) {
-  const bits = [p.minutes > 0 ? `~${p.minutes} min` : "", p.word_delta ? `${p.word_delta > 0 ? "+" : "−"}${Math.abs(p.word_delta).toLocaleString("de-DE")} Wörter` : "", p.edits > 0 ? plural(p.edits, "Änderung", "Änderungen") : ""].filter(Boolean);
+  const t = useT();
+  const words = (n: number) => t("review.words", { n: Math.abs(n), count: `${n > 0 ? "+" : "−"}${int(Math.abs(n))}` });
+  const bits = [p.minutes > 0 ? `~${p.minutes} min` : "", p.word_delta ? words(p.word_delta) : "", p.edits > 0 ? t("feed.changes", { n: p.edits }) : ""].filter(Boolean);
   return (
     <button type="button" className={`rv-row rv-page ${p.gone ? "gone" : ""}`} onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}>
       <span className="rv-when num">{time(p.last_at)}</span>
@@ -502,8 +506,8 @@ function PageRow({ p, onOpen }: { p: ReviewPage; onOpen: (newTab: boolean) => vo
         <span className="rv-title">
           <PageIcon name={p.icon ?? undefined} size={14} />
           <span className="ellipsis">{p.title}</span>
-          {p.created && <Badge tone="accent">neu</Badge>}
-          {p.daily && <Badge>Tagesnotiz</Badge>}
+          {p.created && <Badge tone="accent">{t("review.md.new")}</Badge>}
+          {p.daily && <Badge>{t("capture.daily")}</Badge>}
         </span>
         <span className="rv-sub">{bits.join(" · ")}</span>
       </span>
@@ -511,18 +515,19 @@ function PageRow({ p, onOpen }: { p: ReviewPage; onOpen: (newTab: boolean) => vo
   );
 }
 
-function TasksCard({ r, onOpen }: { r: DayReview; onOpen: (t: ReviewTask, newTab: boolean) => void }) {
+function TasksCard({ r, onOpen }: { r: DayReview; onOpen: (task: ReviewTask, newTab: boolean) => void }) {
+  const t = useT();
   const k = r.tasks;
   const fresh = k.added.filter((x) => !x.done);
   const groups: { id: string; label: string; items: ReviewTask[]; total: number; tone?: Tone }[] = [
-    { id: "done", label: "Erledigt", items: k.done, total: k.done_total },
-    { id: "added", label: "Neu", items: fresh, total: fresh.length },
-    { id: "due", label: "Heute fällig", items: k.due, total: k.due_total, tone: "warning" },
-    { id: "overdue", label: "Überfällig", items: k.overdue, total: k.overdue_total, tone: "danger" },
+    { id: "done", label: t("review.done"), items: k.done, total: k.done_total },
+    { id: "added", label: t("qs.new"), items: fresh, total: fresh.length },
+    { id: "due", label: t("review.dueToday"), items: k.due, total: k.due_total, tone: "warning" },
+    { id: "overdue", label: t("tasks.overdue"), items: k.overdue, total: k.overdue_total, tone: "danger" },
   ];
   const count = k.done_total + fresh.length + k.due_total + k.overdue_total;
   return (
-    <Section icon={CheckSquare} tone="tasks" title="Aufgaben" count={count} empty="Keine Aufgaben erledigt oder fällig." className="rv-tasks">
+    <Section icon={CheckSquare} tone="tasks" title={t("review.md.tasks")} count={count} empty={t("review.noTasks")} className="rv-tasks">
       {groups
         .filter((g) => g.items.length)
         .map((g) => (
@@ -531,16 +536,16 @@ function TasksCard({ r, onOpen }: { r: DayReview; onOpen: (t: ReviewTask, newTab
               <span>{g.label}</span>
               <span className="num faint">{g.total}</span>
             </div>
-            {g.items.map((t, i) => (
-              <button key={`${t.page_id}-${t.text}-${i}`} type="button" className={`rv-row rv-task ${g.id === "done" ? "done" : ""}`} onClick={(e) => onOpen(t, e.ctrlKey || e.metaKey)}>
+            {g.items.map((task, i) => (
+              <button key={`${task.page_id}-${task.text}-${i}`} type="button" className={`rv-row rv-task ${g.id === "done" ? "done" : ""}`} onClick={(e) => onOpen(task, e.ctrlKey || e.metaKey)}>
                 <span className="rv-check" aria-hidden>
                   {g.id === "done" ? <Check size={11} strokeWidth={3} /> : null}
                 </span>
                 <span className="rv-main">
-                  <span className="rv-title ellipsis">{t.text}</span>
-                  <span className="rv-sub ellipsis">{t.page_title}</span>
+                  <span className="rv-title ellipsis">{task.text}</span>
+                  <span className="rv-sub ellipsis">{task.page_title}</span>
                 </span>
-                {t.due && g.tone && <Badge tone={g.tone}>{g.id === "due" ? "heute" : new Date(`${t.due}T12:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</Badge>}
+                {task.due && g.tone && <Badge tone={g.tone}>{g.id === "due" ? t("review.today") : fmtDayMonth(new Date(`${task.due}T12:00:00`))}</Badge>}
               </button>
             ))}
           </div>

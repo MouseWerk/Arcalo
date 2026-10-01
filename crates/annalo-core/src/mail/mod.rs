@@ -20,6 +20,8 @@ pub mod msg;
 pub mod outlook;
 pub mod paste;
 
+use crate::tr;
+use crate::trf;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -37,6 +39,11 @@ pub const SCHEME: &str = "annalo-mail://";
 
 /// Parent page of new mail notes when the settings name none.
 pub const DEFAULT_PARENT: &str = "E-Mails";
+
+/// [`DEFAULT_PARENT`] for a new workspace, in the display language.
+pub fn default_parent() -> &'static str {
+    tr!(DEFAULT_PARENT, "Emails")
+}
 
 /// Longest mail text kept (characters), like the Outlook script cuts it.
 pub const MAX_BODY: usize = 20_000;
@@ -175,7 +182,7 @@ pub struct MailSettings {
 impl Default for MailSettings {
     fn default() -> Self {
         MailSettings {
-            notes_parent: DEFAULT_PARENT.into(),
+            notes_parent: default_parent().into(),
             shortcut: String::new(),
             save_attachments: false,
             private_notes: true,
@@ -188,7 +195,7 @@ impl MailSettings {
     pub fn normalized(mut self) -> MailSettings {
         self.notes_parent = crate::notes::clean_title(&self.notes_parent);
         if self.notes_parent.is_empty() {
-            self.notes_parent = DEFAULT_PARENT.into();
+            self.notes_parent = default_parent().into();
         }
         self.shortcut = self.shortcut.trim().to_owned();
         if !matches!(self.default_action.as_str(), "task" | "note" | "both") {
@@ -418,7 +425,7 @@ impl Database {
                 },
             )
             .optional()?
-            .ok_or_else(|| Error::State("Diese E-Mail ist in Annalo nicht (mehr) verknüpft".into()))
+            .ok_or_else(|| Error::State(tr!("Diese E-Mail ist in Annalo nicht (mehr) verknüpft", "This e-mail is not linked in Annalo (any more)").into()))
     }
 }
 
@@ -586,25 +593,26 @@ pub fn note_markdown(
     files: &StoredFiles,
     zone: &Zone,
 ) -> String {
+    let k = crate::i18n::key;
     let mut front = vec![];
     if !mail.sender_full().is_empty() {
-        front.push(format!("von: {}", yaml(&mail.sender_full())));
+        front.push(format!("{}: {}", k("von"), yaml(&mail.sender_full())));
     }
     if !mail.to.is_empty() {
-        front.push(format!("an: {}", yaml(&mail.to.join("; "))));
+        front.push(format!("{}: {}", k("an"), yaml(&mail.to.join("; "))));
     }
     if !mail.cc.is_empty() {
         front.push(format!("cc: {}", yaml(&mail.cc.join("; "))));
     }
     if let Some(t) = mail.received {
-        front.push(format!("datum: {}", zone.to_wall(t).format("%Y-%m-%d %H:%M")));
+        front.push(format!("{}: {}", k("datum"), zone.to_wall(t).format("%Y-%m-%d %H:%M")));
     }
-    front.push(format!("betreff: {}", yaml(&mail.subject)));
+    front.push(format!("{}: {}", k("betreff"), yaml(&mail.subject)));
     if let Some(id) = link_id {
         front.push(format!("e-mail: {SCHEME}{id}"));
     }
     if !vorgang.trim().is_empty() {
-        front.push(format!("vorgang: {}", vorgang.trim()));
+        front.push(format!("{}: {}", k("vorgang"), vorgang.trim()));
     }
     let tags: Vec<String> = tags.iter().map(|t| tag_of(t)).filter(|t| !t.is_empty()).collect();
     if !tags.is_empty() {
@@ -616,7 +624,7 @@ pub fn note_markdown(
         body.push_str("\n\n");
     }
     if mail.body.trim().is_empty() {
-        body.push_str("> *(kein Text)*\n");
+        body.push_str(tr!("> *(kein Text)*\n", "> *(no text)*\n"));
     } else {
         for l in mail.body.lines() {
             let l = l.trim_end();
@@ -629,11 +637,11 @@ pub fn note_markdown(
             }
         }
         if mail.truncated {
-            body.push_str(">\n> *(gekürzt)*\n");
+            body.push_str(tr!(">\n> *(gekürzt)*\n", ">\n> *(shortened)*\n"));
         }
     }
     if !files.attachments.is_empty() {
-        body.push_str("\n## Anhänge\n\n");
+        body.push_str(tr!("\n## Anhänge\n\n", "\n## Attachments\n\n"));
         for a in &files.attachments {
             body.push_str(&format!("![[{a}]]\n\n"));
         }
@@ -642,7 +650,7 @@ pub fn note_markdown(
         body.push_str(&format!("\nOriginal: [[{o}]]\n"));
     }
     let mut body = body.trim_end().to_owned();
-    body.push_str("\n\n## Notizen\n\n");
+    body.push_str(tr!("\n\n## Notizen\n\n", "\n\n## Notes\n\n"));
     format!("---\n{}\n---\n{body}", front.join("\n"))
 }
 
@@ -660,15 +668,23 @@ impl Database {
     ) -> Result<MailCreated> {
         let mail = &req.mail;
         if req.task.is_none() && req.note.is_none() {
-            return Err(Error::State("Bitte „Aufgabe“ oder „Notiz“ wählen".into()));
+            return Err(Error::State(
+                tr!("Bitte „Aufgabe“ oder „Notiz“ wählen", "Please choose “Task” or “Note”").into(),
+            ));
         }
         if let Some(t) = &req.task
             && t.text.trim().is_empty()
         {
-            return Err(Error::State("Die Aufgabe braucht einen Text".into()));
+            return Err(Error::State(tr!("Die Aufgabe braucht einen Text", "The task needs a text").into()));
         }
         if matches!(req.task.as_ref().map(|t| &t.target), Some(TaskTarget::Note)) && req.note.is_none() {
-            return Err(Error::State("Die Aufgabe soll in die Notiz, es wird aber keine Notiz angelegt".into()));
+            return Err(Error::State(
+                tr!(
+                    "Die Aufgabe soll in die Notiz, es wird aber keine Notiz angelegt",
+                    "The task should go into the note, but no note is created"
+                )
+                .into(),
+            ));
         }
         let vorgang = req.vorgang.trim();
         self.atomic(|| {
@@ -689,7 +705,7 @@ impl Database {
                     t if t.is_empty() => settings.notes_parent.clone(),
                     t => t,
                 };
-                let parent_title = if parent_title.is_empty() { DEFAULT_PARENT.to_owned() } else { parent_title };
+                let parent_title = if parent_title.is_empty() { default_parent().to_owned() } else { parent_title };
                 let parent = match self
                     .conn()
                     .query_row(
@@ -743,7 +759,7 @@ impl Database {
                     TaskTarget::Page { id } => {
                         let p = self.page(id)?;
                         if p.deleted_at.is_some() {
-                            return Err(Error::State(format!("„{}“ liegt im Papierkorb", p.title)));
+                            return Err(Error::State(trf!("„{}“ liegt im Papierkorb", "“{}” is in the trash", p.title)));
                         }
                         p
                     }
@@ -780,18 +796,31 @@ pub struct Parsed {
 /// Reads an `.eml` or `.msg` file (by content: a compound file is a `.msg`).
 pub fn parse_file(name: &str, bytes: &[u8]) -> Result<Parsed> {
     if bytes.is_empty() {
-        return Err(Error::State(format!("„{name}“ ist leer")));
+        return Err(Error::State(trf!("„{name}“ ist leer", "“{name}” is empty")));
     }
     if bytes.len() > MAX_FILE {
-        return Err(Error::State(format!("„{name}“ ist größer als {} MB", MAX_FILE / 1024 / 1024)));
+        return Err(Error::State(trf!(
+            "„{name}“ ist größer als {} MB",
+            "“{name}” is larger than {} MB",
+            MAX_FILE / 1024 / 1024
+        )));
     }
     let mut parsed = if msg::is_compound(bytes) {
-        msg::parse(bytes)
-            .map_err(|e| Error::State(format!("„{name}“ ließ sich nicht als Outlook-Nachricht lesen: {e}")))?
+        msg::parse(bytes).map_err(|e| {
+            Error::State(trf!(
+                "„{name}“ ließ sich nicht als Outlook-Nachricht lesen: {e}",
+                "“{name}” could not be read as an Outlook message: {e}"
+            ))
+        })?
     } else if name.to_ascii_lowercase().ends_with(".msg") {
-        return Err(Error::State(format!("„{name}“ ist keine Outlook-Nachricht (.msg)")));
+        return Err(Error::State(trf!(
+            "„{name}“ ist keine Outlook-Nachricht (.msg)",
+            "“{name}” is not an Outlook message (.msg)"
+        )));
     } else {
-        eml::parse(bytes).ok_or_else(|| Error::State(format!("„{name}“ ist keine lesbare E-Mail (.eml)")))?
+        eml::parse(bytes).ok_or_else(|| {
+            Error::State(trf!("„{name}“ ist keine lesbare E-Mail (.eml)", "“{name}” is not a readable e-mail (.eml)"))
+        })?
     };
     parsed.mail.file_name = name.rsplit(['/', '\\']).next().unwrap_or(name).to_owned();
     parsed.mail = std::mem::take(&mut parsed.mail).normalized();
@@ -853,18 +882,29 @@ pub struct Suggestion {
     pub due: Option<String>,
 }
 
-/// The instruction for the local model (German, JSON answer).
+/// The instruction for the local model (display language, JSON answer with fixed keys).
 pub fn suggestion_messages(mail: &Mail, today: NaiveDate) -> (String, String) {
-    let system = format!(
-        "Du liest eine E-Mail und formulierst daraus genau eine Aufgabe für den Empfänger. Antworte nur mit JSON: \
-         {{\"aufgabe\": \"kurzer Imperativ, höchstens 12 Wörter\", \"faellig\": \"YYYY-MM-DD oder null\"}}. \
-         Ein Datum nur, wenn die E-Mail eine Frist nennt; relative Angaben (bis Freitag, nächste Woche) von heute aus \
-         umrechnen. Heute ist {} ({}).",
-        today.format("%Y-%m-%d"),
-        weekday_de(today)
-    );
+    let system = if crate::i18n::is_en() {
+        format!(
+            "You read an e-mail and phrase exactly one task for its recipient from it. Answer with JSON only: \
+             {{\"aufgabe\": \"short imperative in English, at most 12 words\", \"faellig\": \"YYYY-MM-DD or null\"}}. \
+             A date only when the e-mail names a deadline; convert relative dates (by Friday, next week) from \
+             today. Today is {} ({}).",
+            today.format("%Y-%m-%d"),
+            today.format("%A")
+        )
+    } else {
+        format!(
+            "Du liest eine E-Mail und formulierst daraus genau eine Aufgabe für den Empfänger. Antworte nur mit JSON: \
+             {{\"aufgabe\": \"kurzer Imperativ, höchstens 12 Wörter\", \"faellig\": \"YYYY-MM-DD oder null\"}}. \
+             Ein Datum nur, wenn die E-Mail eine Frist nennt; relative Angaben (bis Freitag, nächste Woche) von heute aus \
+             umrechnen. Heute ist {} ({}).",
+            today.format("%Y-%m-%d"),
+            weekday_de(today)
+        )
+    };
     let body: String = mail.body.chars().take(6000).collect();
-    let user = format!("Betreff: {}\nVon: {}\n\n{}", mail.subject, mail.sender(), body);
+    let user = trf!("Betreff: {}\nVon: {}\n\n{}", "Subject: {}\nFrom: {}\n\n{}", mail.subject, mail.sender(), body);
     (system, user)
 }
 

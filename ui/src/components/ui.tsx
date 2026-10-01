@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Loader2, X, type LucideIcon } from "lucide-react";
+import { t } from "../lib/i18n";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -144,7 +145,7 @@ export function EmptyState({ icon: Icon, title, children, action }: { icon: Luci
 }
 
 export function Spinner({ size = 16 }: { size?: number }) {
-  return <Loader2 size={size} className="spin faint" aria-label="Lädt" />;
+  return <Loader2 size={size} className="spin faint" aria-label={t("common.loading")} />;
 }
 
 export function Dialog({
@@ -213,7 +214,7 @@ export function Dialog({
             <div className="dialog-title">{title}</div>
             {description && <div className="dialog-desc">{description}</div>}
           </div>
-          <IconButton icon={X} label="Schließen" onClick={onClose} />
+          <IconButton icon={X} label={t("common.close")} onClick={onClose} />
         </div>
         {children && <div className="dialog-body">{children}</div>}
         {footer && <div className="dialog-foot">{footer}</div>}

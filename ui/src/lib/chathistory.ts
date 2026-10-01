@@ -3,6 +3,7 @@
 
 import { fmtDate, formatPrefs, weekdayShort } from "./format";
 import type { ChatConversation, ChatMessage, ChatRecord, ContextChunk, StoredChatRecord, Tier, ToolCall } from "./types";
+import { t } from "./i18n";
 
 export interface TurnMeta {
   model: string;
@@ -171,7 +172,7 @@ export function autoTitle(question: string, max = 48): string {
   const first = /^(.{12,}?[.?!])(\s|$)/.exec(text)?.[1];
   if (first) text = first;
   text = text.replace(/[.!:;,]+$/, "");
-  if (!text) return "Neuer Chat";
+  if (!text) return t("chat.newChat");
   if (text.length > max) {
     const cut = text.slice(0, max - 1);
     const space = cut.lastIndexOf(" ");

@@ -391,7 +391,7 @@ function PageTree({
       }
       await s().refreshTree();
     } catch (e) {
-      s().error("Verschieben nicht möglich", e);
+      s().error(tStatic("sb.moveFailed"), e);
     }
   };
 
@@ -401,13 +401,13 @@ function PageTree({
       await api.movePage(n.id, parentId, position);
       await s().refreshTree();
     } catch (e) {
-      s().error("Verschieben nicht möglich", e);
+      s().error(tStatic("sb.moveFailed"), e);
     }
   };
   const copy = (text: string, what: string) =>
     navigator.clipboard.writeText(text).then(
-      () => s().toast({ tone: "success", title: `${what} kopiert` }),
-      (e) => s().error("Kopieren nicht möglich", e),
+      () => s().toast({ tone: "success", title: tStatic("sb.copied", { what }) }),
+      (e) => s().error(tStatic("sb.copyFailed"), e),
     );
   const descendants = (n: PageNode): number[] => n.children.flatMap((c) => (c.children.length ? [c.id, ...descendants(c)] : []));
 
@@ -416,49 +416,49 @@ function PageTree({
     const i = sibs.findIndex((x) => x.id === n.id);
     const parent = n.parent_id != null ? s().pages.get(n.parent_id) : undefined;
     return [
-    { label: "In neuem Tab öffnen", icon: CornerDownRight, shortcut: keys("Mod Klick"), onSelect: () => s().openPage(n.id, { newTab: true }) },
-    { label: "Rechts daneben öffnen", icon: Columns2, shortcut: keys("Alt Klick"), onSelect: () => s().openPage(n.id, { split: true }) },
+    { label: tStatic("sb.openNewTab"), icon: CornerDownRight, shortcut: keys(`Mod ${tStatic("sb.click")}`), onSelect: () => s().openPage(n.id, { newTab: true }) },
+    { label: tStatic("sb.openRight"), icon: Columns2, shortcut: keys(`Alt ${tStatic("sb.click")}`), onSelect: () => s().openPage(n.id, { split: true }) },
     "separator",
     {
-      label: "Neu",
+      label: tStatic("qs.new"),
       icon: FilePlus2,
       submenu: [
-        { label: "Unterseite", icon: CornerDownRight, onSelect: () => createSubpage(n.id) },
+        { label: tStatic("sb.subpage"), icon: CornerDownRight, onSelect: () => createSubpage(n.id) },
         {
-          label: "Seite daneben",
+          label: tStatic("sb.sibling"),
           icon: FilePlus2,
           onSelect: async () => {
             try {
-              const p = await api.createPage("Unbenannt", n.parent_id, s().settings?.settings.editor?.default_icon ?? "file-text");
+              const p = await api.createPage(tStatic("page.untitled"), n.parent_id, s().settings?.settings.editor?.default_icon ?? "file-text");
               await api.movePage(p.id, n.parent_id, i + 1);
               await s().refreshTree();
               s().openPage(p.id);
               setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 120);
             } catch (e) {
-              s().error("Seite konnte nicht angelegt werden", e);
+              s().error(tStatic("sb.createFailed"), e);
             }
           },
         },
-        { label: "Unterseite aus Vorlage…", icon: LayoutTemplate, onSelect: () => newPageFromTemplate(n.id) },
+        { label: tStatic("sb.fromTemplate"), icon: LayoutTemplate, onSelect: () => newPageFromTemplate(n.id) },
       ],
     },
     {
-      label: "Duplizieren",
+      label: tStatic("dash.duplicate"),
       icon: Copy,
       onSelect: async () => {
         try {
           const doc = await api.page(n.id);
-          const p = await api.createPage(`${n.title} (Kopie)`, n.parent_id, n.icon, doc.content);
+          const p = await api.createPage(tStatic("sb.copyTitle", { title: n.title }), n.parent_id, n.icon, doc.content);
           await api.movePage(p.id, n.parent_id, i + 1);
           await s().refreshTree();
           s().openPage(p.id);
         } catch (e) {
-          s().error("Duplizieren nicht möglich", e);
+          s().error(tStatic("sb.duplicateFailed"), e);
         }
       },
     },
     {
-      label: "Symbol ändern",
+      label: tStatic("sb.changeIcon"),
       icon: Shapes,
       submenu: Object.entries(PAGE_ICONS).map(([name, Icon]) => ({
         label: iconLabel(name),
@@ -469,19 +469,19 @@ function PageTree({
             await api.setIcon(n.id, name);
             await s().refreshTree();
           } catch (e) {
-            s().error("Symbol konnte nicht geändert werden", e);
+            s().error(tStatic("sb.iconFailed"), e);
           }
         },
       })),
     },
     {
-      label: "Verschieben",
+      label: tStatic("sb.move"),
       icon: MoveVertical,
       submenu: [
-        { label: "Nach oben", icon: ArrowUp, disabled: i <= 0, onSelect: () => move(n, n.parent_id, i - 1) },
-        { label: "Nach unten", icon: ArrowDown, disabled: i < 0 || i >= sibs.length - 1, onSelect: () => move(n, n.parent_id, i + 1) },
+        { label: tStatic("sb.moveUp"), icon: ArrowUp, disabled: i <= 0, onSelect: () => move(n, n.parent_id, i - 1) },
+        { label: tStatic("sb.moveDown"), icon: ArrowDown, disabled: i < 0 || i >= sibs.length - 1, onSelect: () => move(n, n.parent_id, i + 1) },
         {
-          label: "Eine Ebene höher",
+          label: tStatic("sb.levelUp"),
           icon: CornerLeftUp,
           disabled: !parent,
           onSelect: () => {
@@ -490,39 +490,39 @@ function PageTree({
             move(n, parent.parent_id, up.findIndex((x) => x.id === parent.id) + 1);
           },
         },
-        { label: "Auf die oberste Ebene", icon: ArrowUpToLine, disabled: n.parent_id == null, onSelect: () => move(n, null, s().tree.length) },
+        { label: tStatic("sb.toTop"), icon: ArrowUpToLine, disabled: n.parent_id == null, onSelect: () => move(n, null, s().tree.length) },
       ],
     },
     {
-      label: "Kopieren",
+      label: tStatic("common.copy"),
       icon: ClipboardCopy,
       submenu: [
-        { label: "Link [[…]]", icon: Link2, onSelect: () => copy(`[[${n.title}]]`, "Link") },
-        { label: "Titel", icon: Type, onSelect: () => copy(n.title, "Titel") },
-        { label: "Inhalt als Markdown", icon: FileText, onSelect: () => api.page(n.id).then((d) => copy(d.content, "Inhalt"), (e) => s().error("Kopieren nicht möglich", e)) },
+        { label: tStatic("sb.copyLink"), icon: Link2, onSelect: () => copy(`[[${n.title}]]`, tStatic("sb.what.link")) },
+        { label: tStatic("sb.what.title"), icon: Type, onSelect: () => copy(n.title, tStatic("sb.what.title")) },
+        { label: tStatic("sb.copyMarkdown"), icon: FileText, onSelect: () => api.page(n.id).then((d) => copy(d.content, tStatic("sb.what.content")), (e) => s().error(tStatic("sb.copyFailed"), e)) },
       ],
     },
     ...(n.children.length
       ? [
-          { label: "Alle Unterseiten aufklappen", icon: ChevronsUpDown, onSelect: () => setCollapsed(new Set([...collapsed].filter((id) => id !== n.id && !descendants(n).includes(id)))) },
-          { label: "Alle Unterseiten einklappen", icon: ChevronsDownUp, onSelect: () => setCollapsed(new Set([...collapsed, ...descendants(n)])) },
+          { label: tStatic("sb.expandAll"), icon: ChevronsUpDown, onSelect: () => setCollapsed(new Set([...collapsed].filter((id) => id !== n.id && !descendants(n).includes(id)))) },
+          { label: tStatic("sb.collapseAll"), icon: ChevronsDownUp, onSelect: () => setCollapsed(new Set([...collapsed, ...descendants(n)])) },
         ]
       : []),
     "separator",
     {
-      label: n.favorite ? "Aus Favoriten entfernen" : "Zu Favoriten",
+      label: n.favorite ? tStatic("sb.unfavorite") : tStatic("sb.favorite"),
       icon: n.favorite ? StarOff : Star,
       onSelect: async () => {
         try {
           await api.setFavorite(n.id, !n.favorite);
           s().refreshTree();
         } catch (e) {
-          s().error("Lesezeichen konnte nicht gesetzt werden", e);
+          s().error(tStatic("sb.favoriteFailed"), e);
         }
       },
     },
     {
-      label: "Umbenennen",
+      label: tStatic("att.renameButton"),
       icon: PencilLine,
       onSelect: () => {
         s().openPage(n.id);
@@ -530,7 +530,7 @@ function PageTree({
       },
     },
     "separator" as const,
-    { label: "Löschen", icon: Trash2, danger: true, onSelect: () => deletePage(n) },
+    { label: tStatic("common.delete"), icon: Trash2, danger: true, onSelect: () => deletePage(n) },
     ];
   };
 
@@ -710,7 +710,7 @@ function PageTree({
   };
 
   return (
-    <div className={`tree ${shown ? "is-virtual" : ""}`} role="tree" aria-label="Seiten" ref={treeRef} style={shown ? { height: rows.length * view.rowH } : undefined}>
+    <div className={`tree ${shown ? "is-virtual" : ""}`} role="tree" aria-label={tStatic("sb.pages")} ref={treeRef} style={shown ? { height: rows.length * view.rowH } : undefined}>
       {shown ? shown.map(row) : rows.map((_, i) => row(i))}
       {menu}
     </div>
@@ -780,7 +780,7 @@ const TreeRow = memo(function TreeRow({
       </span>
       <PageIcon name={n.icon} size={15} className="tree-icon" />
       <span className="tree-label">{n.title}</span>
-      {conflict && <span className="tree-conflict" title="Konflikt: hier und auf dem Server geändert" aria-label="Konflikt" />}
+      {conflict && <span className="tree-conflict" title={tStatic("sb.conflictTip")} aria-label={tStatic("cf.conflict")} />}
       {hot && <span className="tree-row-actions">
         <IconButton
           icon={MoreHorizontal}
@@ -850,28 +850,28 @@ export async function stopTimer() {
     const long = longTimerHours(t.entry.start_time, new Date());
     if (long != null) {
       const ok = await s.confirm({
-        title: "Timer lief sehr lange",
-        message: `Der Timer läuft seit ${long} Stunden. Trotzdem so buchen? Die Buchung lässt sich danach in der Zeiterfassung korrigieren.`,
-        confirmLabel: `${long} h buchen`,
+        title: tStatic("timer.longTitle"),
+        message: tStatic("timer.longMessage", { n: long }),
+        confirmLabel: tStatic("timer.bookHours", { n: long }),
       });
       if (!ok) return; // timer keeps running
     }
     if (t.idle_minutes > 0) {
       const choice = await s.choose({
-        title: "Leerlauf erkannt",
-        message: `Du warst ${t.idle_minutes} Minuten inaktiv. Soll diese Zeit von der Buchung abgezogen werden?`,
-        confirmLabel: "Leerlauf abziehen",
-        altLabel: "Voll buchen",
+        title: tStatic("timer.idleTitle"),
+        message: tStatic("timer.idleMessage", { n: t.idle_minutes }),
+        confirmLabel: tStatic("timer.idleSubtract"),
+        altLabel: tStatic("timer.bookFull"),
       });
       if (choice === "cancel") return; // timer keeps running
       subtract = choice === "confirm";
     }
     const out = await api.timerStop(subtract);
-    if (out.discarded) s.toast({ tone: "info", title: "Nicht gebucht", detail: "Der Timer lief weniger als eine Minute." });
-    else s.toast({ tone: "success", title: `${fmtMinutes(out.entry.duration_minutes)} h gebucht`, detail: out.entry.description || undefined });
+    if (out.discarded) s.toast({ tone: "info", title: tStatic("focus.notBooked"), detail: tStatic("timer.underMinute") });
+    else s.toast({ tone: "success", title: tStatic("ne.booked", { h: fmtMinutes(out.entry.duration_minutes) }), detail: out.entry.description || undefined });
     s.alerts(out.alerts);
     s.bumpEntries();
   } catch (e) {
-    s.error("Timer konnte nicht gestoppt werden", e);
+    s.error(tStatic("timer.stopFailed"), e);
   }
 }

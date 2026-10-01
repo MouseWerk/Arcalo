@@ -9,6 +9,7 @@ import { isFileLinkTarget } from "../editor/fileEmbed";
 import { titleSet } from "../lib/links";
 import { PageIcon } from "./icons";
 import type { PageDoc } from "../lib/types";
+import { t } from "../lib/i18n";
 
 /** Settings → Editor: hover preview on/off and its delay. */
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
@@ -134,12 +135,12 @@ export function LinkPreview() {
           {preview!.text ? (
             <div ref={body} className="prose prose-chat link-preview-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview!.text) }} />
           ) : (
-            <div className="link-preview-empty">Leere Seite</div>
+            <div className="link-preview-empty">{t("preview.empty")}</div>
           )}
           {(preview!.more || cut) && <div className="link-preview-fade" aria-hidden />}
         </>
       ) : (
-        <div className="link-preview-empty">„{shown.target}“ existiert noch nicht – Klick auf den Link legt die Seite an.</div>
+        <div className="link-preview-empty">{t("preview.missing", { target: shown.target })}</div>
       )}
     </div>
   );

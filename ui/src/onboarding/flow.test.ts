@@ -5,7 +5,7 @@ import {
   STEPS, STEP_LABELS, STEP_SECTIONS, aiChoiceOf, clampTarget, companyProvider, isStep, isUntouchedDefault, nextStep, prevStep, progressOf, summaryRows, timeTrackingOn,
   withCompanyProvider, withLocalModel, withRounding, withThemePick, withTimeTracking, withWorkday, withoutAi,
 } from "./flow";
-import { languageFromLocales } from "./lang";
+import { langFromLocales } from "../lib/language";
 
 const litellm: AiProvider = { id: "litellm", name: "", kind: "litellm", base_url: "http://localhost:4000", local: false, enabled: true, bypass_proxy: false, api_version: "", models: [] };
 
@@ -62,13 +62,14 @@ describe("first-run steps", () => {
   });
 
   it("guesses the language from the OS locales", () => {
-    expect(languageFromLocales(["de-DE", "en-US"])).toBe("de");
-    expect(languageFromLocales(["de-AT"])).toBe("de");
-    expect(languageFromLocales(["en-GB", "de-DE"])).toBe("en");
-    expect(languageFromLocales(["fr-FR"])).toBe("en");
-    expect(languageFromLocales(["", "de"])).toBe("de");
-    expect(languageFromLocales([])).toBe("de");
-    expect(languageFromLocales(undefined)).toBe("de");
+    expect(langFromLocales(["de-DE", "en-US"])).toBe("de");
+    expect(langFromLocales(["de-AT"])).toBe("de");
+    expect(langFromLocales(["en-GB", "de-DE"])).toBe("en");
+    expect(langFromLocales(["fr-FR"])).toBe("en");
+    expect(langFromLocales(["", "de"])).toBe("de");
+    // Nothing to go by: English, the default language.
+    expect(langFromLocales([])).toBe("en");
+    expect(langFromLocales(undefined)).toBe("en");
   });
 
   it("theme cards set their slot; a fixed mode follows the card", () => {

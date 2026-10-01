@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button, IconButton, Input, Switch, TextArea } from "../../components/ui";
 import { api } from "../../lib/api";
-import { AI_PRESETS, meetingSummaryInstruction } from "../../lib/aitext";
+import { aiPresets, meetingSummaryInstruction } from "../../lib/aitext";
 import { useT, type TKey } from "../../lib/i18n";
 import { usd } from "../../lib/format";
 import type { AiPrefs, AiPresetDef, CostStatus } from "../../lib/types";
@@ -33,7 +33,7 @@ export function AiPrefGroups({ draft, update }: SectionProps) {
   useEffect(() => {
     api.costStatus().then(setCost, () => setCost(null));
   }, [ai.monthly_cost_limit_usd]);
-  const presets: AiPresetDef[] = ai.inline_presets ?? AI_PRESETS.map((p) => ({ label: p.label, instruction: p.instruction }));
+  const presets: AiPresetDef[] = ai.inline_presets ?? aiPresets().map((p) => ({ label: p.label, instruction: p.instruction }));
   const setPresets = (next: AiPresetDef[]) => set({ inline_presets: next });
   const movePreset = (i: number, d: number) => {
     const next = [...presets];

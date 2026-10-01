@@ -21,6 +21,7 @@ import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
 import { describeError, logUi } from "./lib/devlog";
+import { followLocale } from "./lib/prefs";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -43,7 +44,7 @@ window.addEventListener("error", (e) => {
 });
 window.addEventListener("unhandledrejection", (e) => {
   w.__annaloErrors.push(String(e.reason));
-  logUi("ERROR", `Unbehandelte Ablehnung: ${describeError(e.reason)}`);
+  logUi("ERROR", `Unhandled rejection: ${describeError(e.reason)}`);
 });
 const origError = console.error;
 console.error = (...args: unknown[]) => {
@@ -63,6 +64,10 @@ import("@tauri-apps/api/core")
   .catch(() => {});
 // macOS: the tab bar sits in the title bar (overlay); the chrome leaves room for the traffic lights.
 if (IS_MAC && !captureMode) document.documentElement.classList.add("os-macos");
+
+// The small windows follow the language and formats of the settings (the main window does so
+// through its store).
+if (captureMode || searchMode || presenterMode) followLocale();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -2,6 +2,7 @@
 // (duration, text, WBS) and takes over; totals per day against the target; overlaps.
 
 import type { AcceptedProposal, Proposal, ProposalDay, TimeEntryRow } from "./types";
+import { t } from "./i18n";
 
 export interface ReviewRow {
   id: string;
@@ -40,9 +41,9 @@ export function initRows(proposals: Proposal[], fmt: (m: number) => string): Rev
 
 /** Why a row cannot be taken over, or null. */
 export function rowProblem(r: ReviewRow): string | null {
-  if (r.netzplanId == null) return "Netzplan wählen";
-  if (!(r.minutes > 0 && r.minutes <= 24 * 60)) return "Dauer prüfen";
-  if (!r.text.trim()) return "Beschreibung fehlt";
+  if (r.netzplanId == null) return t("week.problem.netzplan");
+  if (!(r.minutes > 0 && r.minutes <= 24 * 60)) return t("week.problem.duration");
+  if (!r.text.trim()) return t("week.problem.text");
   return null;
 }
 

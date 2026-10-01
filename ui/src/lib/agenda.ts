@@ -1,9 +1,10 @@
 // The Kalender view's logic: visible ranges, the overlap layout of the time grid, month cells,
 // booking prefill and whether an appointment is already booked.
 
-import { addDays, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
+import { addDays, dateLocale, dayOfMonth, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
 import { addMonths, monthGrid } from "./calendar";
 import type { CalendarEvent, CalendarSettings, OutlookCalendar, TimeEntryRow, WbsHint } from "./types";
+import { t } from "./i18n";
 
 export type CalView = "day" | "workweek" | "week" | "month" | "agenda";
 
@@ -66,7 +67,7 @@ export function step(view: CalView, anchor: Date, dir: -1 | 1): Date {
   }
 }
 
-const locale = () => (formatPrefs().lang === "en" ? "en-GB" : "de-DE");
+const locale = dateLocale;
 
 /** Heading of the range: „Freitag, 25. September 2026“, „21.–27. September 2026“, „September 2026“. */
 export function rangeTitle(view: CalView, range: Range, anchor: Date): string {
@@ -78,14 +79,14 @@ export function rangeTitle(view: CalView, range: Range, anchor: Date): string {
   const long = (d: Date) => d.toLocaleDateString(l, { day: "numeric", month: "long", year: "numeric" });
   if (a.getFullYear() !== b.getFullYear()) return `${long(a)} – ${long(b)}`;
   if (a.getMonth() !== b.getMonth()) return `${a.toLocaleDateString(l, { day: "numeric", month: "long" })} – ${long(b)}`;
-  return `${a.getDate()}.–${long(b)}`;
+  return `${dayOfMonth(a)}–${long(b)}`;
 }
 
-/** „KW 39“ (or „KW 39–40“ when the range spans two weeks). */
+/** „KW 39“ (or „KW 39–40“ when the range spans two weeks); „Week 39“ in English. */
 export function weekLabel(range: Range): string {
   const a = isoWeek(range.days[0]);
   const b = isoWeek(range.days[range.days.length - 1]);
-  return a === b ? `KW ${a}` : `KW ${a}–${b}`;
+  return t("time.weekNo", { n: a === b ? String(a) : `${a}–${b}` });
 }
 
 interface Timed {
@@ -192,7 +193,7 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 
 /** „10:00–11:30“, or „ganztägig“. */
 export function timeRange(e: CalendarEvent): string {
-  if (e.all_day) return "ganztägig";
+  if (e.all_day) return t("cal.allDay");
   return `${hhmm(new Date(e.start))}–${hhmm(new Date(e.end))}`;
 }
 
@@ -220,7 +221,7 @@ export function bookingPrefill(e: CalendarEvent, hint: WbsHint | null, targetHou
     day: isoDay(start),
     from: e.all_day ? "09:00" : hhmm(start),
     minutes,
-    description: e.private && e.title === "Privater Termin" ? "Termin" : e.title,
+    description: e.private && (e.title === "Privater Termin" || e.title === "Private appointment") ? t("cal.appointment") : e.title,
     netzplanId: hint?.netzplan_id ?? null,
     vorgangNr: hint?.vorgang_nr ?? null,
     leistungsart: hint?.leistungsart ?? null,

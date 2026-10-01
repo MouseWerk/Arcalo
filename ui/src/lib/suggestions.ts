@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // Suggestions of the assistant's empty state, built from what is going on: the open page (and
 // its Vorgang), overdue and due tasks, gaps in this week's bookings, budget warnings and the
 // time of day. At most five, the most specific first.
@@ -27,8 +28,6 @@ export interface SuggestionContext {
 /** Kinds that are about booking time. */
 const TIME_KINDS: ReadonlySet<SuggestionKind> = new Set<SuggestionKind>(["time", "budget", "report"]);
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 export function buildSuggestions(c: SuggestionContext): Suggestion[] {
   const out: Suggestion[] = [];
   const time = c.time !== false;
@@ -37,20 +36,20 @@ export function buildSuggestions(c: SuggestionContext): Suggestion[] {
   const weekday = c.now.getDay(); // 0 = Sunday
 
   if (c.page) {
-    add("page", `„${c.page.title}“ zusammenfassen`);
-    if (c.page.reference && time) add("budget", `Wie steht das Budget von ${c.page.reference}?`);
-    else if (c.page.openTasks > 0) add("tasks", `Offene Aufgaben in „${c.page.title}“ priorisieren`);
-    else add("page", `Nächste Schritte zu „${c.page.title}“ vorschlagen`);
+    add("page", t("sugg.summarize", { title: c.page.title }));
+    if (c.page.reference && time) add("budget", t("sugg.budget", { ref: c.page.reference }));
+    else if (c.page.openTasks > 0) add("tasks", t("sugg.prioritizePage", { title: c.page.title }));
+    else add("page", t("sugg.nextSteps", { title: c.page.title }));
   }
-  if (c.overdue > 0) add("tasks", `${plural(c.overdue, "überfällige Aufgabe", "überfällige Aufgaben")} priorisieren`);
-  else if (c.dueToday > 0) add("tasks", `Was steht heute an? (${plural(c.dueToday, "Aufgabe", "Aufgaben")} fällig)`);
-  if (c.gapDays.length) add("time", `Lücken in der Zeiterfassung prüfen (${c.gapDays.join(", ")})`);
-  if (c.budget && !out.some((s) => s.kind === "budget")) add("budget", `Wie steht das Budget von ${c.budget}?`);
+  if (c.overdue > 0) add("tasks", t("sugg.overdue", { n: c.overdue }));
+  else if (c.dueToday > 0) add("tasks", t("sugg.dueToday", { n: c.dueToday }));
+  if (c.gapDays.length) add("time", t("sugg.gaps", { days: c.gapDays.join(", ") }));
+  if (c.budget && !out.some((s) => s.kind === "budget")) add("budget", t("sugg.budget", { ref: c.budget }));
   // Friday, or Thursday afternoon: the weekly status mail is due.
-  if (c.hasBookings && (weekday === 5 || (weekday === 4 && hour >= 14))) add("report", "Wochenbericht erstellen");
-  if (hour < 11 && weekday >= 1 && weekday <= 5) add("plan", "Tagesplan für heute erstellen");
-  if (c.openTasks > 0 && !out.some((s) => s.kind === "tasks")) add("tasks", "Welche Aufgaben sind noch offen?");
-  if (c.hasBookings) add("time", "Was habe ich diese Woche gebucht?");
-  add("plan", "Was sollte ich als Nächstes erledigen?");
+  if (c.hasBookings && (weekday === 5 || (weekday === 4 && hour >= 14))) add("report", t("sugg.report"));
+  if (hour < 11 && weekday >= 1 && weekday <= 5) add("plan", t("sugg.plan"));
+  if (c.openTasks > 0 && !out.some((s) => s.kind === "tasks")) add("tasks", t("sugg.open"));
+  if (c.hasBookings) add("time", t("sugg.booked"));
+  add("plan", t("sugg.next"));
   return out.slice(0, 5);
 }

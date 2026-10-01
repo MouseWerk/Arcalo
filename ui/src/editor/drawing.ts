@@ -4,6 +4,7 @@
 
 import { Node, type Editor } from "@tiptap/core";
 import { api } from "../lib/api";
+import { t } from "../lib/i18n";
 
 /** `name.excalidraw`: a plain file name (no folders, not hidden), like the Rust side checks. */
 export function isDrawingName(name: string): boolean {
@@ -100,7 +101,7 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
       dom.className = "drawing-embed";
       dom.contentEditable = "false";
       dom.dataset.drawing = name;
-      dom.title = `${drawingLabel(name)} – klicken zum Bearbeiten`;
+      dom.title = t("draw.clickToEdit", { name: drawingLabel(name) });
 
       const img = document.createElement("img");
       img.className = "drawing-preview";
@@ -108,23 +109,23 @@ export const DrawingEmbed = Node.create<DrawingOptions>({
       img.draggable = false;
       const empty = document.createElement("span");
       empty.className = "drawing-empty";
-      empty.textContent = "Leere Zeichnung – klicken zum Zeichnen";
+      empty.textContent = t("draw.emptyClick");
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "drawing-edit";
-      edit.textContent = "Bearbeiten";
+      edit.textContent = t("links.editShort");
       dom.append(img, empty, edit);
 
       // No preview file (new or emptied drawing) shows the placeholder.
       img.onload = () => dom.classList.remove("is-empty");
       img.onerror = () => {
         dom.classList.add("is-empty");
-        empty.textContent = "Leere Zeichnung – klicken zum Zeichnen";
+        empty.textContent = t("draw.emptyClick");
         // A drawing made elsewhere (or before previews existed) has no preview but is not empty.
         api
           .readDrawing(name)
           .then((scene) => {
-            if (sceneHasContent(scene)) empty.textContent = "Noch keine Vorschau – klicken zum Öffnen";
+            if (sceneHasContent(scene)) empty.textContent = t("draw.noPreview");
           })
           .catch(() => {});
       };

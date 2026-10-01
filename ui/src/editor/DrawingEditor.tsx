@@ -7,7 +7,7 @@ import { Excalidraw, MainMenu, WelcomeScreen, exportToSvg, hashElementsVersion, 
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, LibraryItems } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 import { api, errorText, storeFile } from "../lib/api";
-import { currentLang } from "../lib/i18n";
+import { currentLang, useT } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { DRAWING_SAVED_EVENT, drawingLabel } from "./drawing";
 import { parseDrawing } from "./drawingFormat";
@@ -67,6 +67,7 @@ async function render(elements: Elements, appState: AppState, files: BinaryFiles
 }
 
 export default function DrawingEditor({ name, onClose }: { name: string; onClose: () => void }) {
+  const t = useT();
   const [initial, setInitial] = useState<ExcalidrawInitialDataState | null>(null);
   // A file that could not be read as a drawing: shown as such, never overwritten.
   const [broken, setBroken] = useState<{ reason: string; raw: string | null } | null>(null);
@@ -98,7 +99,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
         if (!alive) return;
         // Missing (e.g. an embed from an imported vault without the file): start empty.
         if (/nicht gefunden|not found/i.test(errorText(e))) start({ elements: [] });
-        else setBroken({ reason: `Die Datei kann nicht gelesen werden: ${errorText(e)}`, raw: null });
+        else setBroken({ reason: t("draw.unreadable", { msg: errorText(e) }), raw: null });
       },
     );
     return () => {
@@ -114,11 +115,11 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
   const startOver = async () => {
     try {
       const kept = broken?.raw ? await keepCopy(broken.raw) : null;
-      if (kept) useApp.getState().toast({ tone: "info", title: "Kopie der alten Datei behalten", detail: kept });
+      if (kept) useApp.getState().toast({ tone: "info", title: t("draw.keptCopy"), detail: kept });
       setBroken(null);
       start({ elements: [] });
     } catch (e) {
-      useApp.getState().error("Kopie nicht möglich – die Datei bleibt unverändert", e);
+      useApp.getState().error(t("draw.copyFailed"), e);
     }
   };
 
@@ -157,7 +158,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
         return true;
       } catch (e) {
         setStatus("error");
-        useApp.getState().toast({ tone: "danger", title: "Zeichnung nicht gespeichert", detail: errorText(e) });
+        useApp.getState().toast({ tone: "danger", title: t("draw.notSaved"), detail: errorText(e) });
         return false;
       }
     });
@@ -221,7 +222,9 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
     void close();
   };
 
-  const statusText = broken ? "Nicht geöffnet" : { saved: "Gespeichert", saving: "Speichert…", dirty: "Ungespeichert", error: "Nicht gespeichert" }[status];
+  const statusText = broken
+    ? t("draw.notOpened")
+    : { saved: t("common.savedTitle"), saving: t("draw.saving"), dirty: t("draw.unsaved"), error: t("common.notSaved") }[status];
 
   return (
     // Keys stay inside the overlay: the app's global shortcuts (Ctrl K, Ctrl N, …) must not fire while drawing.
@@ -230,7 +233,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
       className="drawing-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label={`Zeichnung ${drawingLabel(name)}`}
+      aria-label={t("draw.label", { name: drawingLabel(name) })}
       onKeyDownCapture={onKeyDownCapture}
       onKeyDown={(e) => e.stopPropagation()}
     >
@@ -240,22 +243,22 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
           {statusText}
         </span>
         <button type="button" className="btn btn-primary drawing-done" onClick={() => void close()}>
-          Fertig
+          {t("common.done")}
         </button>
       </header>
       <div className="drawing-canvas">
         {broken && (
           <div className="drawing-broken" role="alert">
             <FileWarning size={28} strokeWidth={1.5} aria-hidden />
-            <div className="drawing-broken-title">Zeichnung kann nicht geöffnet werden</div>
+            <div className="drawing-broken-title">{t("draw.cannotOpen")}</div>
             <p>{broken.reason}</p>
-            <p className="faint">Die Datei bleibt unverändert. Mit „Neu beginnen“ wird eine Kopie als {`${name}.bak`} behalten und eine leere Zeichnung angelegt.</p>
+            <p className="faint">{t("draw.brokenText", { file: `${name}.bak` })}</p>
             <div className="drawing-broken-actions">
               <button type="button" className="btn btn-ghost" onClick={() => void startOver()}>
-                Neu beginnen
+                {t("draw.startOver")}
               </button>
               <button type="button" className="btn btn-primary" onClick={onClose} autoFocus>
-                Schließen
+                {t("common.close")}
               </button>
             </div>
           </div>

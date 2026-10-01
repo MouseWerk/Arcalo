@@ -1,5 +1,6 @@
 //! High-level time tracking: slash-command logging and budget / ETC alerts.
 
+use crate::{tr, trf};
 use chrono::{DateTime, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +102,9 @@ pub fn log_slash_command_in<Tz: TimeZone>(
         (d, None) => local_to_utc(offset, d.resolve(today).and_time(DEFAULT_START))?,
     };
     if !clamped && start + duration > now + chrono::Duration::minutes(1) {
-        return Err(Error::State("Buchungen dürfen nicht in der Zukunft enden".into()));
+        return Err(Error::State(
+            tr!("Buchungen dürfen nicht in der Zukunft enden", "Time entries must not end in the future").into(),
+        ));
     }
 
     let entry = db.insert_time_entry(&NewTimeEntry {
@@ -133,7 +136,11 @@ fn local_to_utc<Tz: TimeZone>(offset: &Tz, dt: chrono::NaiveDateTime) -> Result<
         .or_else(|| offset.from_local_datetime(&(dt + chrono::Duration::hours(1))).earliest())
         .map(|t| t.with_timezone(&Utc))
         .ok_or_else(|| {
-            Error::State(format!("Die Uhrzeit {} gibt es wegen der Zeitumstellung nicht", dt.format("%d.%m.%Y %H:%M")))
+            Error::State(trf!(
+                "Die Uhrzeit {} gibt es wegen der Zeitumstellung nicht",
+                "The time {} does not exist because of the clock change",
+                dt.format("%d.%m.%Y %H:%M")
+            ))
         })
 }
 

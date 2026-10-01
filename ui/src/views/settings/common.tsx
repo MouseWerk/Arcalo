@@ -197,6 +197,7 @@ export function SectionHead({ title, intro }: { title: string; intro?: string })
 
 /** Records a global shortcut from the pressed keys; `active` shows whether the saved one is registered. */
 export function ShortcutField({ value, onChange, label, placeholder, active }: { value: string; onChange: (v: string) => void; label: string; placeholder: string; active?: boolean }) {
+  const t = useT();
   return (
     <div className="unit-input shortcut-input">
       <Input
@@ -213,7 +214,7 @@ export function ShortcutField({ value, onChange, label, placeholder, active }: {
         className="mono"
       />
       {IS_MAC && value && <kbd>{formatShortcut(value)}</kbd>}
-      {value && active !== undefined && (active ? <Badge tone="success">Aktiv</Badge> : <Badge tone="warning">Nicht registriert</Badge>)}
+      {value && active !== undefined && (active ? <Badge tone="success">{t("shortcut.active")}</Badge> : <Badge tone="warning">{t("shortcut.notRegistered")}</Badge>)}
     </div>
   );
 }

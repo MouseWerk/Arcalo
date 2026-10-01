@@ -2,19 +2,22 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::{tr, trf};
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Every message is German and complete: it reaches the UI as it is (errors cross the IPC
-/// boundary as their `Display` text), so re-wrapping one in [`Error::State`] adds no prefix.
+/// Every message is complete and in the display language ([`crate::i18n`]): it reaches the UI
+/// as it is (errors cross the IPC boundary as their `Display` text), so re-wrapping one in
+/// [`Error::State`] adds no prefix.
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Datenbankfehler: {}", db_text(.0))]
+    #[error("{}: {}", tr!("Datenbankfehler", "Database error"), db_text(.0))]
     Db(#[from] rusqlite::Error),
-    #[error("Ungültige Daten: {0}")]
+    #[error("{}: {}", tr!("Ungültige Daten", "Invalid data"), .0)]
     Json(#[from] serde_json::Error),
-    #[error("Verbindungsfehler: {}", http_text(.0))]
+    #[error("{}: {}", tr!("Verbindungsfehler", "Connection error"), http_text(.0))]
     Http(#[from] reqwest::Error),
-    #[error("Dateifehler: {}", io_text(.0))]
+    #[error("{}: {}", tr!("Dateifehler", "File error"), io_text(.0))]
     Io(#[from] std::io::Error),
     /// An I/O error of one file or folder: the message names it (see [`IoAt::at`]).
     #[error("{}", file_text(path, *dir, source))]
@@ -24,13 +27,13 @@ pub enum Error {
         dir: bool,
         source: std::io::Error,
     },
-    #[error("Eingabe nicht verstanden: {0}")]
+    #[error("{}: {}", tr!("Eingabe nicht verstanden", "Input not understood"), .0)]
     Parse(String),
-    #[error("{} „{key}“ nicht gefunden", kind_name(kind))]
+    #[error("{}", not_found_text(kind, key))]
     NotFound { kind: &'static str, key: String },
     #[error("{0}")]
     State(String),
-    #[error("KI-Server meldet Fehler {status}: {body}")]
+    #[error("{}", trf!("KI-Server meldet Fehler {status}: {body}", "The AI server reports error {status}: {body}"))]
     Provider { status: u16, body: String },
 }
 
@@ -82,45 +85,60 @@ impl Error {
     }
 }
 
-/// The German noun for a [`Error::NotFound`] kind.
-fn kind_name(kind: &str) -> &str {
-    match kind {
-        "netzplan" => "Netzplan",
-        "vorgang" => "Vorgang",
-        "leistungsart" => "Leistungsart",
-        "page" => "Seite",
-        "project" => "Projekt",
-        "task" => "Aufgabe",
-        "tool" => "Werkzeug",
-        "entry" => "Eintrag",
-        "backup" => "Sicherung",
-        "version" => "Version",
-        "attachment" => "Anhang",
-        "link" => "Link",
-        other => other,
-    }
+/// „Seite „X“ nicht gefunden“ / “Page “X” not found” for a [`Error::NotFound`] kind.
+fn not_found_text(kind: &str, key: &str) -> String {
+    let (de, en) = match kind {
+        "netzplan" => ("Netzplan", "Network"),
+        "vorgang" => ("Vorgang", "Activity"),
+        "leistungsart" => ("Leistungsart", "Activity type"),
+        "page" => ("Seite", "Page"),
+        "project" => ("Projekt", "Project"),
+        "task" => ("Aufgabe", "Task"),
+        "tool" => ("Werkzeug", "Tool"),
+        "entry" => ("Eintrag", "Entry"),
+        "backup" => ("Sicherung", "Backup"),
+        "version" => ("Version", "Version"),
+        "attachment" => ("Anhang", "Attachment"),
+        "calendar" => ("Kalender", "Calendar"),
+        "drawing" => ("Zeichnung", "Drawing"),
+        "trashed_file" => ("Datei im Papierkorb", "File in the trash"),
+        "link" => ("Link", "Link"),
+        other => (other, other),
+    };
+    trf!("{de} „{key}“ nicht gefunden", "{en} “{key}” not found")
 }
 
-/// An I/O error in plain German (the OS text names no cause a user can act on).
+/// An I/O error in plain words (the OS text names no cause a user can act on).
 pub fn io_text(e: &std::io::Error) -> String {
     use std::io::ErrorKind as K;
     let what = match e.kind() {
-        K::NotFound => "Datei oder Ordner nicht gefunden",
-        K::PermissionDenied => "Zugriff verweigert (fehlende Berechtigung oder schreibgeschützt)",
-        K::AlreadyExists => "Die Datei existiert bereits",
-        K::StorageFull | K::QuotaExceeded => "Der Datenträger ist voll",
-        K::ReadOnlyFilesystem => "Der Datenträger ist schreibgeschützt",
-        K::IsADirectory => "Ein Ordner wurde erwartet, eine Datei gefunden",
-        K::NotADirectory => "Ein Ordner wurde erwartet, aber es ist eine Datei",
-        K::DirectoryNotEmpty => "Der Ordner ist nicht leer",
-        K::ResourceBusy => "Die Datei wird von einem anderen Programm verwendet",
-        K::FileTooLarge => "Die Datei ist zu groß",
-        K::InvalidFilename => "Ungültiger Dateiname",
-        K::TimedOut => "Zeitüberschreitung",
-        K::Interrupted => "Vorgang unterbrochen",
-        K::UnexpectedEof => "Die Datei endet unerwartet (unvollständig?)",
-        K::InvalidData => "Die Datei hat ein unerwartetes Format",
-        K::CrossesDevices => "Verschieben zwischen Laufwerken nicht möglich",
+        K::NotFound => tr!("Datei oder Ordner nicht gefunden", "File or folder not found"),
+        K::PermissionDenied => tr!(
+            "Zugriff verweigert (fehlende Berechtigung oder schreibgeschützt)",
+            "Access denied (missing permission or read-only)"
+        ),
+        K::AlreadyExists => tr!("Die Datei existiert bereits", "The file already exists"),
+        K::StorageFull | K::QuotaExceeded => tr!("Der Datenträger ist voll", "The disk is full"),
+        K::ReadOnlyFilesystem => tr!("Der Datenträger ist schreibgeschützt", "The disk is read-only"),
+        K::IsADirectory => {
+            tr!("Ein Ordner wurde erwartet, eine Datei gefunden", "A file was expected, a folder was found")
+        }
+        K::NotADirectory => {
+            tr!("Ein Ordner wurde erwartet, aber es ist eine Datei", "A folder was expected, but it is a file")
+        }
+        K::DirectoryNotEmpty => tr!("Der Ordner ist nicht leer", "The folder is not empty"),
+        K::ResourceBusy => {
+            tr!("Die Datei wird von einem anderen Programm verwendet", "The file is in use by another program")
+        }
+        K::FileTooLarge => tr!("Die Datei ist zu groß", "The file is too large"),
+        K::InvalidFilename => tr!("Ungültiger Dateiname", "Invalid file name"),
+        K::TimedOut => tr!("Zeitüberschreitung", "Timed out"),
+        K::Interrupted => tr!("Vorgang unterbrochen", "Operation interrupted"),
+        K::UnexpectedEof => {
+            tr!("Die Datei endet unerwartet (unvollständig?)", "The file ends unexpectedly (incomplete?)")
+        }
+        K::InvalidData => tr!("Die Datei hat ein unerwartetes Format", "The file has an unexpected format"),
+        K::CrossesDevices => tr!("Verschieben zwischen Laufwerken nicht möglich", "Cannot move between drives"),
         _ => return e.to_string(),
     };
     format!("{what} ({e})")
@@ -130,28 +148,40 @@ pub fn io_text(e: &std::io::Error) -> String {
 fn file_text(path: &Path, dir: bool, e: &std::io::Error) -> String {
     use std::io::ErrorKind as K;
     let p = path.display();
-    let (noun, the) = if dir { ("Ordner", "den Ordner") } else { ("Datei", "die Datei") };
+    let (noun, the) = match (dir, crate::i18n::is_en()) {
+        (true, false) => ("Ordner", "den Ordner"),
+        (false, false) => ("Datei", "die Datei"),
+        (true, true) => ("Folder", "the folder"),
+        (false, true) => ("File", "the file"),
+    };
     // Windows reports a file open in another program as a sharing or lock violation.
     if cfg!(windows) && matches!(e.raw_os_error(), Some(32 | 33)) {
-        return format!("Die Datei ist in einem anderen Programm geöffnet: {p}");
+        return trf!(
+            "Die Datei ist in einem anderen Programm geöffnet: {p}",
+            "The file is open in another program: {p}"
+        );
     }
     match e.kind() {
-        K::NotFound => format!("{noun} nicht gefunden: {p}"),
-        K::PermissionDenied => format!("Keine Berechtigung für {the} {p}"),
-        K::AlreadyExists => format!("{noun} existiert bereits: {p}"),
-        K::StorageFull | K::QuotaExceeded => format!("Der Datenträger ist voll: {p}"),
-        K::ReadOnlyFilesystem => format!("Der Datenträger ist schreibgeschützt: {p}"),
-        K::IsADirectory => format!("Ein Ordner, keine Datei: {p}"),
-        K::NotADirectory => format!("Kein Ordner, sondern eine Datei: {p}"),
-        K::DirectoryNotEmpty => format!("Der Ordner ist nicht leer: {p}"),
-        K::ResourceBusy => format!("{noun} wird von einem anderen Programm verwendet: {p}"),
-        K::FileTooLarge => format!("Die Datei ist zu groß: {p}"),
-        K::InvalidFilename => format!("Ungültiger Name: {p}"),
-        K::CrossesDevices => format!("Verschieben auf ein anderes Laufwerk nicht möglich: {p}"),
-        K::UnexpectedEof => format!("Die Datei ist unvollständig: {p}"),
-        K::InvalidData => format!("Die Datei hat ein unerwartetes Format: {p}"),
-        K::TimedOut => format!("Zeitüberschreitung bei {p}"),
-        _ => format!("Dateifehler bei {p}: {e}"),
+        K::NotFound => trf!("{noun} nicht gefunden: {p}", "{noun} not found: {p}"),
+        K::PermissionDenied => trf!("Keine Berechtigung für {the} {p}", "No permission for {the} {p}"),
+        K::AlreadyExists => trf!("{noun} existiert bereits: {p}", "{noun} already exists: {p}"),
+        K::StorageFull | K::QuotaExceeded => trf!("Der Datenträger ist voll: {p}", "The disk is full: {p}"),
+        K::ReadOnlyFilesystem => trf!("Der Datenträger ist schreibgeschützt: {p}", "The disk is read-only: {p}"),
+        K::IsADirectory => trf!("Ein Ordner, keine Datei: {p}", "A folder, not a file: {p}"),
+        K::NotADirectory => trf!("Kein Ordner, sondern eine Datei: {p}", "Not a folder but a file: {p}"),
+        K::DirectoryNotEmpty => trf!("Der Ordner ist nicht leer: {p}", "The folder is not empty: {p}"),
+        K::ResourceBusy => {
+            trf!("{noun} wird von einem anderen Programm verwendet: {p}", "{noun} is in use by another program: {p}")
+        }
+        K::FileTooLarge => trf!("Die Datei ist zu groß: {p}", "The file is too large: {p}"),
+        K::InvalidFilename => trf!("Ungültiger Name: {p}", "Invalid name: {p}"),
+        K::CrossesDevices => {
+            trf!("Verschieben auf ein anderes Laufwerk nicht möglich: {p}", "Cannot move to another drive: {p}")
+        }
+        K::UnexpectedEof => trf!("Die Datei ist unvollständig: {p}", "The file is incomplete: {p}"),
+        K::InvalidData => trf!("Die Datei hat ein unerwartetes Format: {p}", "The file has an unexpected format: {p}"),
+        K::TimedOut => trf!("Zeitüberschreitung bei {p}", "Timed out at {p}"),
+        _ => trf!("Dateifehler bei {p}: {e}", "File error at {p}: {e}"),
     }
 }
 
@@ -183,12 +213,21 @@ fn db_text(e: &rusqlite::Error) -> String {
     use rusqlite::ErrorCode as C;
     if let rusqlite::Error::SqliteFailure(f, _) = e {
         let what = match f.code {
-            C::DiskFull => Some("Der Datenträger ist voll – die Änderung wurde nicht gespeichert"),
-            C::ReadOnly => Some("Die Datenbank ist schreibgeschützt"),
-            C::DatabaseBusy | C::DatabaseLocked => Some("Die Datenbank ist gerade gesperrt"),
-            C::DatabaseCorrupt | C::NotADatabase => Some("Die Datenbank ist beschädigt"),
-            C::CannotOpen => Some("Die Datenbank lässt sich nicht öffnen"),
-            C::SystemIoFailure => Some("Lese- oder Schreibfehler auf dem Datenträger"),
+            C::DiskFull => Some(tr!(
+                "Der Datenträger ist voll – die Änderung wurde nicht gespeichert",
+                "The disk is full – the change was not saved"
+            )),
+            C::ReadOnly => Some(tr!("Die Datenbank ist schreibgeschützt", "The database is read-only")),
+            C::DatabaseBusy | C::DatabaseLocked => {
+                Some(tr!("Die Datenbank ist gerade gesperrt", "The database is locked right now"))
+            }
+            C::DatabaseCorrupt | C::NotADatabase => {
+                Some(tr!("Die Datenbank ist beschädigt", "The database is damaged"))
+            }
+            C::CannotOpen => Some(tr!("Die Datenbank lässt sich nicht öffnen", "The database cannot be opened")),
+            C::SystemIoFailure => {
+                Some(tr!("Lese- oder Schreibfehler auf dem Datenträger", "Read or write error on the disk"))
+            }
             _ => None,
         };
         if let Some(what) = what {
@@ -213,19 +252,31 @@ pub fn http_text(e: &reqwest::Error) -> String {
     }
     let lower = chain.to_lowercase();
     let cause = if e.is_timeout() || lower.contains("timed out") || lower.contains("deadline") {
-        "Zeitüberschreitung – der Server hat nicht rechtzeitig geantwortet"
+        tr!(
+            "Zeitüberschreitung – der Server hat nicht rechtzeitig geantwortet",
+            "Timed out – the server did not answer in time"
+        )
     } else if lower.contains("proxy") || lower.contains("tunnel") {
-        "Proxy nicht erreichbar oder er lehnt die Verbindung ab"
+        tr!(
+            "Proxy nicht erreichbar oder er lehnt die Verbindung ab",
+            "Proxy not reachable, or it refuses the connection"
+        )
     } else if lower.contains("certificate") || lower.contains("unknownissuer") || lower.contains("tls") {
-        "Das Zertifikat des Servers wird nicht anerkannt (Netzwerkeinstellungen: Zertifikate)"
+        tr!(
+            "Das Zertifikat des Servers wird nicht anerkannt (Netzwerkeinstellungen: Zertifikate)",
+            "The server's certificate is not trusted (network settings: certificates)"
+        )
     } else if lower.contains("dns") || lower.contains("lookup") || lower.contains("resolve") {
-        "Servername nicht gefunden"
+        tr!("Servername nicht gefunden", "Server name not found")
     } else if lower.contains("connection refused") {
-        "Verbindung abgelehnt – läuft der Dienst unter dieser Adresse?"
+        tr!(
+            "Verbindung abgelehnt – läuft der Dienst unter dieser Adresse?",
+            "Connection refused – is the service running at this address?"
+        )
     } else if e.is_body() || e.is_decode() || lower.contains("connection closed") || lower.contains("eof") {
-        "Die Verbindung brach während der Antwort ab"
+        tr!("Die Verbindung brach während der Antwort ab", "The connection broke off during the answer")
     } else if e.is_connect() {
-        "Keine Verbindung zum Server"
+        tr!("Keine Verbindung zum Server", "No connection to the server")
     } else {
         return chain;
     };
@@ -264,6 +315,29 @@ mod tests {
         assert!(full.to_string().contains("Datenträger ist voll"));
         assert_eq!(Error::Parse("x".into()).to_string(), "Eingabe nicht verstanden: x");
         assert_eq!(Error::Provider { status: 500, body: "b".into() }.to_string(), "KI-Server meldet Fehler 500: b");
+    }
+
+    #[test]
+    fn messages_follow_the_display_language() {
+        use crate::i18n::with_lang;
+        use crate::prefs::Language::En;
+        use std::io::ErrorKind as K;
+        with_lang(En, || {
+            assert_eq!(Error::Parse("x".into()).to_string(), "Input not understood: x");
+            assert_eq!(Error::not_found("page", "Plan").to_string(), "Page “Plan” not found");
+            assert_eq!(
+                Error::Provider { status: 500, body: "b".into() }.to_string(),
+                "The AI server reports error 500: b"
+            );
+            let io = Error::from(std::io::Error::from(K::StorageFull));
+            assert!(io.to_string().starts_with("File error: The disk is full"), "{io}");
+            let p = std::path::Path::new("/nowhere/a.pdf");
+            let e = Error::File { path: p.to_path_buf(), dir: false, source: std::io::Error::from(K::NotFound) };
+            assert_eq!(e.to_string(), format!("File not found: {}", p.display()));
+            let e = Error::File { path: p.to_path_buf(), dir: true, source: std::io::Error::from(K::PermissionDenied) };
+            assert_eq!(e.to_string(), format!("No permission for the folder {}", p.display()));
+        });
+        assert_eq!(Error::not_found("page", "Plan").to_string(), "Seite „Plan“ nicht gefunden");
     }
 
     #[test]

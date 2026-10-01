@@ -4,6 +4,7 @@
 //! that entry. Breaks are never booked. The running session lives in the database, so it
 //! survives a restart; one that ran out meanwhile is completed on the next [`state`].
 
+use crate::{tr, trf};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -17,10 +18,24 @@ use crate::model::{EntrySource, NewTimeEntry, TimeEntry};
 pub const MAX_MINUTES: f64 = 240.0;
 /// Longest break (minutes).
 pub const MAX_BREAK: i64 = 60;
-/// Description of a booking without a goal.
+/// Description of a booking without a goal (German workspaces; see [`default_goal`]).
 pub const DEFAULT_GOAL: &str = "Fokussitzung";
+/// The same in English.
+pub const DEFAULT_GOAL_EN: &str = "Focus session";
 /// First words of the line in the daily note.
 pub const LINE_PREFIX: &str = "Fokus heute:";
+/// The same in English (a line in either language is replaced).
+pub const LINE_PREFIX_EN: &str = "Focus today:";
+
+/// The description of a booking without a goal, in the display language.
+pub fn default_goal() -> &'static str {
+    tr!(DEFAULT_GOAL, DEFAULT_GOAL_EN)
+}
+
+/// Whether `goal` is the description of a booking without a goal (either language).
+pub fn is_default_goal(goal: &str) -> bool {
+    goal == DEFAULT_GOAL || goal == DEFAULT_GOAL_EN
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FocusSession {
@@ -170,10 +185,15 @@ pub struct FocusStart {
 /// Starts a session. Refused while another one runs.
 pub fn start(db: &Database, s: &FocusStart, now: DateTime<Utc>) -> Result<FocusSession> {
     if !(s.minutes.is_finite() && s.minutes > 0.0 && s.minutes <= MAX_MINUTES) {
-        return Err(Error::State(format!("Die Sitzung muss zwischen 1 und {MAX_MINUTES} Minuten lang sein")));
+        return Err(Error::State(trf!(
+            "Die Sitzung muss zwischen 1 und {MAX_MINUTES} Minuten lang sein",
+            "The session must be between 1 and {MAX_MINUTES} minutes long"
+        )));
     }
     if running(db)?.is_some() {
-        return Err(Error::State("Es läuft bereits eine Fokussitzung".into()));
+        return Err(Error::State(
+            tr!("Es läuft bereits eine Fokussitzung", "A focus session is already running").into(),
+        ));
     }
     let (np, vorgang, label) = match s.reference.trim() {
         "" => (None, None, String::new()),
@@ -231,10 +251,11 @@ pub fn state<Tz: TimeZone>(db: &Database, now: DateTime<Utc>, tz: &Tz) -> Result
 /// Completes the running session at its planned end (it may be called a little late or, by
 /// clock skew, a few seconds early) and books it.
 pub fn finish<Tz: TimeZone>(db: &Database, now: DateTime<Utc>, tz: &Tz) -> Result<FocusOutcome> {
-    let s = running(db)?.ok_or_else(|| Error::State("Keine Fokussitzung läuft".into()))?;
+    let s = running(db)?
+        .ok_or_else(|| Error::State(tr!("Keine Fokussitzung läuft", "No focus session is running").into()))?;
     let end = s.ends_at();
     if now + chrono::Duration::seconds(5) < end {
-        return Err(Error::State("Die Fokussitzung läuft noch".into()));
+        return Err(Error::State(tr!("Die Fokussitzung läuft noch", "The focus session is still running").into()));
     }
     // A completed session counts at least one minute (very short test sessions).
     let worked = (s.planned_minutes.round() as i64).max(1);
@@ -243,7 +264,8 @@ pub fn finish<Tz: TimeZone>(db: &Database, now: DateTime<Utc>, tz: &Tz) -> Resul
 
 /// Ends the running session early; with `book` the minutes so far are booked.
 pub fn abort<Tz: TimeZone>(db: &Database, now: DateTime<Utc>, book: bool, tz: &Tz) -> Result<FocusOutcome> {
-    let s = running(db)?.ok_or_else(|| Error::State("Keine Fokussitzung läuft".into()))?;
+    let s = running(db)?
+        .ok_or_else(|| Error::State(tr!("Keine Fokussitzung läuft", "No focus session is running").into()))?;
     let end = now.min(s.ends_at()).max(s.started_at);
     let worked = ((end - s.started_at).num_seconds() as f64 / 60.0).round() as i64;
     close(db, &s, "aborted", end, worked, book, tz)
@@ -298,7 +320,7 @@ fn book_session<Tz: TimeZone>(
     worked: i64,
     tz: &Tz,
 ) -> Result<(TimeEntry, bool)> {
-    let description = if s.goal.trim().is_empty() { DEFAULT_GOAL.to_owned() } else { s.goal.trim().to_owned() };
+    let description = if s.goal.trim().is_empty() { default_goal().to_owned() } else { s.goal.trim().to_owned() };
     let settings = db.load_settings().unwrap_or_default();
     let day = day_start(end.with_timezone(tz).date_naive(), tz);
     let existing: Option<i64> = db
@@ -398,15 +420,24 @@ pub fn daily_line(r: &FocusReport) -> Option<String> {
         return None;
     }
     let mut line = format!(
-        "{LINE_PREFIX} {} {}, {}",
+        "{} {} {}, {}",
+        tr!(LINE_PREFIX, LINE_PREFIX_EN),
         r.sessions,
-        if r.sessions == 1 { "Sitzung" } else { "Sitzungen" },
+        match (r.sessions == 1, crate::i18n::is_en()) {
+            (true, false) => "Sitzung",
+            (false, false) => "Sitzungen",
+            (true, true) => "session",
+            (false, true) => "sessions",
+        },
         hm(r.minutes)
     );
     let parts: Vec<String> = r
         .by_reference
         .iter()
-        .map(|s| format!("{} {}", if s.reference.is_empty() { "ohne Vorgang" } else { &s.reference }, hm(s.minutes)))
+        .map(|s| {
+            let what = if s.reference.is_empty() { tr!("ohne Vorgang", "no activity") } else { &s.reference };
+            format!("{what} {}", hm(s.minutes))
+        })
         .collect();
     if !parts.is_empty() {
         line.push_str(" — ");
@@ -418,7 +449,11 @@ pub fn daily_line(r: &FocusReport) -> Option<String> {
 /// Writes (or replaces) the focus line in the daily note of `day`. Returns the note's id.
 pub fn write_daily_line<Tz: TimeZone>(db: &Database, day: NaiveDate, tz: &Tz) -> Result<i64> {
     let r = report(db, day, day, tz)?;
-    let line = daily_line(&r).ok_or_else(|| Error::State("An diesem Tag gab es noch keine Fokussitzung".into()))?;
+    let line = daily_line(&r).ok_or_else(|| {
+        Error::State(
+            tr!("An diesem Tag gab es noch keine Fokussitzung", "There was no focus session on this day yet").into(),
+        )
+    })?;
     db.atomic(|| {
         let page = db.daily_note(day)?;
         let content = db.page_doc(page.id)?.content;
@@ -426,7 +461,7 @@ pub fn write_daily_line<Tz: TimeZone>(db: &Database, day: NaiveDate, tz: &Tz) ->
         let mut lines: Vec<String> = content
             .lines()
             .map(|l| {
-                if !replaced && l.trim_start().starts_with(LINE_PREFIX) {
+                if !replaced && [LINE_PREFIX, LINE_PREFIX_EN].iter().any(|p| l.trim_start().starts_with(p)) {
                     replaced = true;
                     line.clone()
                 } else {

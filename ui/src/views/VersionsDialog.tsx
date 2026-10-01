@@ -9,8 +9,10 @@ import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { dateLong, fileSize, relative, time, versionTimes } from "../lib/format";
 import { collapseDiff, lineDiff } from "../lib/linediff";
 import type { VersionInfo } from "../lib/types";
+import { useT } from "../lib/i18n";
 
 export function VersionsDialog({ page, open, onClose }: { page: { id: number; title: string }; open: boolean; onClose: () => void }) {
+  const t = useT();
   const [versions, setVersions] = useState<VersionInfo[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [content, setContent] = useState<Record<number, string>>({});
@@ -32,7 +34,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
     if (!open) return;
     setVersions(null);
     setContent({});
-    load().catch((e) => s().error("Versionen konnten nicht geladen werden", e));
+    load().catch((e) => s().error(t("ver.loadFailed"), e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, page.id]);
 
@@ -41,7 +43,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
     api
       .versionContent(selected)
       .then((c) => setContent((m) => ({ ...m, [selected]: c })))
-      .catch((e) => s().error("Version konnte nicht geladen werden", e));
+      .catch((e) => s().error(t("ver.loadOneFailed"), e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
@@ -65,11 +67,11 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
     try {
       await flushAllEditors();
       const id = await api.snapshotPage(page.id);
-      if (id == null) s().toast({ tone: "info", title: "Keine Änderung", detail: "Die neueste Version entspricht schon dem aktuellen Stand." });
-      else s().toast({ tone: "success", title: "Version gesichert" });
+      if (id == null) s().toast({ tone: "info", title: t("ver.noChange"), detail: t("ver.noChangeDetail") });
+      else s().toast({ tone: "success", title: t("ver.saved") });
       await load(id ?? undefined);
     } catch (e) {
-      s().error("Version konnte nicht gesichert werden", e);
+      s().error(t("ver.saveFailed"), e);
     } finally {
       setBusy(false);
     }
@@ -79,9 +81,9 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
     const v = versions?.find((x) => x.id === selected);
     if (!v) return;
     const ok = await s().confirm({
-      title: "Version wiederherstellen?",
-      message: `„${page.title}“ bekommt den Stand vom ${dateLong(v.created_at)}, ${time(v.created_at)}. Der jetzige Inhalt bleibt als Version erhalten.`,
-      confirmLabel: "Wiederherstellen",
+      title: t("ver.restoreTitle"),
+      message: t("ver.restoreMessage", { title: page.title, date: dateLong(v.created_at), time: time(v.created_at) }),
+      confirmLabel: t("trash.restore"),
     });
     if (!ok) return;
     setBusy(true);
@@ -89,10 +91,10 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
       await flushAllEditors();
       await api.restoreVersion(page.id, v.id);
       reloadEditors([page.id]);
-      s().toast({ tone: "success", title: "Version wiederhergestellt" });
+      s().toast({ tone: "success", title: t("ver.restored") });
       onClose();
     } catch (e) {
-      s().error("Wiederherstellen fehlgeschlagen", e);
+      s().error(t("trash.restoreFailed"), e);
     } finally {
       setBusy(false);
     }
@@ -102,18 +104,18 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
     <Dialog
       open={open}
       onClose={onClose}
-      title="Versionen"
-      description={`Frühere Stände von „${page.title}“`}
+      title={t("ver.title")}
+      description={t("ver.desc", { title: page.title })}
       width={860}
       footer={
         <>
           <Button icon={Save} onClick={snapshot} loading={busy} className="versions-snapshot">
-            Jetzt Version sichern
+            {t("ver.saveNow")}
           </Button>
           <span className="spacer" style={{ flex: 1 }} />
-          <Button onClick={onClose}>Schließen</Button>
-          <Button variant="primary" icon={RotateCcw} onClick={restore} disabled={busy || selected == null || text == null || same} title={same ? "Entspricht dem aktuellen Stand" : undefined}>
-            Wiederherstellen
+          <Button onClick={onClose}>{t("common.close")}</Button>
+          <Button variant="primary" icon={RotateCcw} onClick={restore} disabled={busy || selected == null || text == null || same} title={same ? t("ver.same") : undefined}>
+            {t("trash.restore")}
           </Button>
         </>
       }
@@ -124,11 +126,11 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
         </div>
       ) : versions.length === 0 ? (
         <div className="versions-empty faint">
-          <History size={18} /> Noch keine Versionen. Sie entstehen beim Bearbeiten oder mit „Jetzt Version sichern“.
+          <History size={18} /> {t("ver.none")}
         </div>
       ) : (
         <div className="versions">
-          <div className="versions-list" role="listbox" aria-label="Versionen">
+          <div className="versions-list" role="listbox" aria-label={t("ver.title")}>
             {versions.map((v, i) => (
               <button
                 key={v.id}
@@ -141,7 +143,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
               >
                 <span className="versions-when num">
                   {labels[i]}
-                  {i === 0 && <span className="versions-tag">{content[v.id] != null && content[v.id] === current ? "Aktuell" : "Neueste"}</span>}
+                  {i === 0 && <span className="versions-tag">{content[v.id] != null && content[v.id] === current ? t("ver.current") : t("ver.newest")}</span>}
                 </span>
                 <span className="versions-meta faint">
                   {relative(v.created_at)} · {fileSize(v.size)}
@@ -149,7 +151,7 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
               </button>
             ))}
             <p className="versions-note faint">
-              Beim Bearbeiten höchstens alle {interval} Min. gesichert, 30 Tage aufbewahrt.
+              {t("ver.note", { n: interval })}
             </p>
           </div>
           <div className="versions-preview">
@@ -157,8 +159,8 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
               value={mode}
               onChange={setMode}
               options={[
-                { value: "text", label: "Inhalt" },
-                { value: "diff", label: "Unterschiede zu jetzt" },
+                { value: "text", label: t("ver.content") },
+                { value: "diff", label: t("ver.diff") },
               ]}
             />
             {text == null ? (
@@ -170,13 +172,13 @@ export function VersionsDialog({ page, open, onClose }: { page: { id: number; ti
             ) : (
               <>
                 <div className="versions-legend faint">
-                  {changes === 0 ? "Keine Unterschiede zum aktuellen Stand." : <><span className="diff-del">− nur jetzt</span> <span className="diff-add">+ nur in dieser Version</span></>}
+                  {changes === 0 ? t("ver.noDiff") : <><span className="diff-del">− {t("ver.onlyNow")}</span> <span className="diff-add">+ {t("ver.onlyHere")}</span></>}
                 </div>
                 <pre className="versions-pre versions-diff" ref={diffRef}>
                   {rows?.map((l, i) =>
                     l.kind === "skip" ? (
                       <div key={i} className="diff-skip">
-                        … {l.count} unveränderte Zeilen
+                        … {t("ver.unchanged", { n: l.count })}
                       </div>
                     ) : (
                       <div key={i} className={`diff-${l.kind}`}>

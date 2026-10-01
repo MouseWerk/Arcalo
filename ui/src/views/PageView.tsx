@@ -34,8 +34,10 @@ import { keys } from "../lib/shortcut";
 import { hint, withHint } from "../lib/keymap";
 import { withSaved } from "../lib/pagesave";
 import { openDayReview } from "../lib/reviewnav";
+import { t as tr, useT } from "../lib/i18n";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
+  useT();
   const [doc, setDoc] = useState<PageDoc | null>(null);
   const [missing, setMissing] = useState(false);
   // The frontmatter as the editor holds it (it saves it with the body).
@@ -216,7 +218,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       if (!useApp.getState().pages.has(page.id)) await useApp.getState().refreshTree();
       useApp.getState().openPage(page.id, { newTab: newTab && !altKey.current, split: altKey.current });
     } catch (e) {
-      useApp.getState().error("Link konnte nicht geöffnet werden", e);
+      useApp.getState().error(tr("pv.linkFailed"), e);
     }
   }, []);
   const openTag = useCallback((tag: string) => useApp.getState().openTab({ kind: "tag", tag }, { newTab: true }), []);
@@ -232,8 +234,8 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   if (missing)
     return (
       <>
-        <ViewHeader tab={tab} title="Seite nicht gefunden" />
-        <EmptyState icon={FileText} title="Seite nicht gefunden">Sie wurde vermutlich gelöscht.</EmptyState>
+        <ViewHeader tab={tab} title={tr("pv.notFound")} />
+        <EmptyState icon={FileText} title={tr("pv.notFound")}>{tr("pv.notFoundText")}</EmptyState>
       </>
     );
   if (!doc)
@@ -343,6 +345,7 @@ function PageHeader({
   source: boolean;
   children: React.ReactNode;
 }) {
+  useT();
   const toolbarOn = useApp((st) => st.settings?.settings.editor?.toolbar ?? true);
   const [title, setTitle] = useState(doc.title);
   // `[ ] | # ^` were typed and replaced (they belong to the link syntax).
@@ -364,10 +367,10 @@ function PageHeader({
       onChange({ title: t });
       reloadEditors();
       await s().refreshTree();
-      if (n > 0) s().toast({ tone: "info", title: "Umbenannt", detail: `Links in ${n} ${n === 1 ? "Seite" : "Seiten"} aktualisiert` });
+      if (n > 0) s().toast({ tone: "info", title: tr("page.renamed"), detail: tr("page.linksUpdated", { n }) });
     } catch (e) {
       setTitle(doc.title);
-      s().error("Umbenennen nicht möglich", e);
+      s().error(tr("page.renameFailed"), e);
     }
   };
 
@@ -411,28 +414,28 @@ function PageHeader({
     <>
       {daily && (
         <>
-          <IconButton icon={ChevronLeft} label="Vorheriger Tag" size="md" onClick={() => goDay(-1)} />
-          <IconButton icon={CalendarDays} label={`Kalender (${keys("Mod Shift C")})`} size="md" onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
-          <IconButton icon={ChevronRight} label="Nächster Tag" size="md" onClick={() => goDay(1)} />
+          <IconButton icon={ChevronLeft} label={tr("pv.prevDay")} size="md" onClick={() => goDay(-1)} />
+          <IconButton icon={CalendarDays} label={tr("pv.calendar", { keys: keys("Mod Shift C") })} size="md" onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
+          <IconButton icon={ChevronRight} label={tr("pv.nextDay")} size="md" onClick={() => goDay(1)} />
         </>
       )}
       <IconButton
         icon={source ? Eye : FileCode2}
-        label={withHint(source ? "Normaler Editor" : "Markdown-Quelltext", "toggle_source")}
+        label={withHint(source ? tr("pv.normalEditor") : tr("editor.source"), "toggle_source")}
         active={source}
         size="md"
         onClick={() => togglePageSource(doc.id)}
       />
       <IconButton
         icon={full ? Minimize2 : MoveHorizontal}
-        label={withHint(full ? "Normale Breite" : "Volle Breite", "full_width")}
+        label={withHint(full ? tr("pv.normalWidth") : tr("pv.fullWidth"), "full_width")}
         active={full}
         size="md"
         onClick={() => setPageMode("full", doc.id, !full)}
       />
       <IconButton
         icon={Star}
-        label={doc.favorite ? "Lesezeichen entfernen" : "Lesezeichen setzen"}
+        label={doc.favorite ? tr("pv.unbookmark") : tr("pv.bookmark")}
         active={doc.favorite}
         className={doc.favorite ? "star-on" : ""}
         size="md"
@@ -442,38 +445,38 @@ function PageHeader({
             onChange({ favorite: !doc.favorite });
             s().refreshTree();
           } catch (e) {
-            s().error("Lesezeichen konnte nicht gesetzt werden", e);
+            s().error(tr("sb.favoriteFailed"), e);
           }
         }}
       />
       <IconButton
         icon={MoreHorizontal}
-        label="Weitere Aktionen"
+        label={tr("pv.more")}
         size="md"
         onClick={(e) =>
           openMenuAt(e, [
-            { label: "Umbenennen", icon: PencilLine, onSelect: () => titleInput.current?.select() },
-            { label: "Symbol ändern", icon: SmilePlus, onSelect: () => setIconOpen(true) },
-            { label: "Rechts daneben öffnen", icon: Columns2, onSelect: () => s().splitTab(tab.id) },
-            { label: "Link kopieren", icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
-            { label: "Präsentieren", icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
-            { label: "Drucken / als PDF", icon: Printer, onSelect: () => printActivePane() },
-            { label: "Als HTML-Datei teilen…", icon: Share2, onSelect: () => sharePageAsHtml(doc.id, false) },
+            { label: tr("att.renameButton"), icon: PencilLine, onSelect: () => titleInput.current?.select() },
+            { label: tr("sb.changeIcon"), icon: SmilePlus, onSelect: () => setIconOpen(true) },
+            { label: tr("sb.openRight"), icon: Columns2, onSelect: () => s().splitTab(tab.id) },
+            { label: tr("pv.copyLink"), icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
+            { label: tr("cmd.present"), icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
+            { label: tr("pv.print"), icon: Printer, onSelect: () => printActivePane() },
+            { label: tr("pv.shareHtml"), icon: Share2, onSelect: () => sharePageAsHtml(doc.id, false) },
             ...(s().pages.get(doc.id)?.children.length
-              ? [{ label: "Mit Unterseiten als HTML teilen…", icon: Share2, onSelect: () => sharePageAsHtml(doc.id, true) }]
+              ? [{ label: tr("pv.shareHtmlTree"), icon: Share2, onSelect: () => sharePageAsHtml(doc.id, true) }]
               : []),
-            { label: "Versionen…", icon: History, onSelect: () => setVersionsOpen(true) },
-            { label: "Besprechung zusammenfassen", icon: NotebookPen, onSelect: onSummary },
-            { label: "Unterseite anlegen", icon: CornerDownRight, onSelect: () => createSubpage(doc.id) },
+            { label: tr("pv.versions"), icon: History, onSelect: () => setVersionsOpen(true) },
+            { label: tr("pv.summarize"), icon: NotebookPen, onSelect: onSummary },
+            { label: tr("pv.newSubpage"), icon: CornerDownRight, onSelect: () => createSubpage(doc.id) },
             ...(viewType === null
               ? []
               : [
-                  viewType !== "tabelle" ? { label: "Als Tabelle anzeigen", icon: Table2, onSelect: () => onViewType("tabelle") } : null,
-                  viewType !== "board" ? { label: "Als Board anzeigen", icon: KanbanSquare, onSelect: () => onViewType("board") } : null,
-                  viewType !== "liste" ? { label: "Als Liste anzeigen", icon: List, onSelect: () => onViewType("liste") } : null,
+                  viewType !== "tabelle" ? { label: tr("pv.asTable"), icon: Table2, onSelect: () => onViewType("tabelle") } : null,
+                  viewType !== "board" ? { label: tr("pv.asBoard"), icon: KanbanSquare, onSelect: () => onViewType("board") } : null,
+                  viewType !== "liste" ? { label: tr("pv.asList"), icon: List, onSelect: () => onViewType("liste") } : null,
                 ].filter((x) => x !== null)),
             "separator",
-            { label: "Seite löschen", icon: Trash2, danger: true, onSelect: () => deletePage(doc) },
+            { label: tr("pv.delete"), icon: Trash2, danger: true, onSelect: () => deletePage(doc) },
           ])
         }
       />
@@ -497,7 +500,7 @@ function PageHeader({
           toolbarOn || source ? (
             <div className="vh-center">
               {toolbarOn && <div className="vh-toolbar" ref={toolbarSlot} hidden={source} />}
-              {source && <div className="vh-mode">Markdown-Quelltext</div>}
+              {source && <div className="vh-mode">{tr("editor.source")}</div>}
             </div>
           ) : undefined
         }
@@ -508,7 +511,7 @@ function PageHeader({
         <div className={`page ${full ? "page-full" : ""}`}>
           <header className="page-header">
             <div className="page-title-row">
-              <button type="button" className="page-icon-btn" aria-label="Symbol ändern" onClick={() => setIconOpen((v) => !v)}>
+              <button type="button" className="page-icon-btn" aria-label={tr("sb.changeIcon")} onClick={() => setIconOpen((v) => !v)}>
                 <PageIcon name={doc.icon} size={26} />
               </button>
               <textarea
@@ -517,7 +520,7 @@ function PageHeader({
                 rows={1}
                 value={title}
                 spellCheck={false}
-                aria-label="Seitentitel"
+                aria-label={tr("pv.titleAria")}
                 onChange={(e) => {
                   const typed = e.target.value.replace(/\n/g, " ");
                   const clean = cleanTitleChars(typed);
@@ -537,20 +540,20 @@ function PageHeader({
             </div>
             {titleHint && (
               <div className="page-subtitle page-title-hint" role="status">
-                [ ] | # ^ gehören zur Link-Schreibweise und werden in Titeln ersetzt.
+                {tr("pv.titleHint")}
               </div>
             )}
             {daily && (
               <div className="page-subtitle">
                 {dateLong(daily.toISOString())}
-                <button type="button" className="page-review-link" onClick={(e) => openDayReview(doc.daily_date!, { newTab: e.ctrlKey || e.metaKey })} title="Tagesrückblick dieses Tages öffnen">
+                <button type="button" className="page-review-link" onClick={(e) => openDayReview(doc.daily_date!, { newTab: e.ctrlKey || e.metaKey })} title={tr("pv.reviewTip")}>
                   <Sunset size={12} aria-hidden />
-                  Rückblick
+                  {tr("pv.review")}
                 </button>
               </div>
             )}
             {iconOpen && (
-              <div className="icon-picker" role="listbox" aria-label="Symbol wählen">
+              <div className="icon-picker" role="listbox" aria-label={tr("pv.chooseIcon")}>
                 {Object.entries(PAGE_ICONS).map(([name, Icon]) => (
                   <button
                     key={name}
@@ -565,7 +568,7 @@ function PageHeader({
                         setIconOpen(false);
                         s().refreshTree();
                       } catch (e) {
-                        s().error("Symbol konnte nicht geändert werden", e);
+                        s().error(tr("sb.iconFailed"), e);
                       }
                     }}
                   >
@@ -587,6 +590,7 @@ function PageHeader({
 }
 
 function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed: boolean; onAdd: () => void }) {
+  useT();
   const { body } = splitFrontmatter(doc.content);
   // Inline #tags are already clickable in the text; only show the others (frontmatter tags).
   const lower = body.toLowerCase();
@@ -595,7 +599,7 @@ function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed
   const extraTags = hasTagsProp ? [] : doc.tags.filter((t) => !lower.includes(`#${t.toLowerCase()}`));
   return (
     <div className="props">
-      <span className="prop faint">Bearbeitet {relative(doc.updated_at)}</span>
+      <span className="prop faint">{tr("pv.edited", { when: relative(doc.updated_at) })}</span>
       {extraTags.map((t) => (
         <button key={t} type="button" className="tag-chip" onClick={() => useApp.getState().openTab({ kind: "tag", tag: t }, { newTab: true })}>
           <Hash size={11} />
@@ -603,8 +607,8 @@ function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed
         </button>
       ))}
       {!typed && !parseFrontmatter(fm).some((p) => (p.key || p.value.trim()) && !isManagedKey(p.key)) && (
-        <button type="button" className="prop-add" onClick={onAdd} title={`Eigenschaft hinzufügen (${keys("Mod ;")})`}>
-          <Plus size={13} /> Eigenschaft hinzufügen
+        <button type="button" className="prop-add" onClick={onAdd} title={`${tr("props.add")} (${keys("Mod ;")})`}>
+          <Plus size={13} /> {tr("props.add")}
         </button>
       )}
     </div>
@@ -612,11 +616,12 @@ function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed
 }
 
 function Backlinks({ doc }: { doc: PageDoc }) {
+  useT();
   if (!doc.backlinks.length) return null;
   return (
-    <section className="backlinks" aria-label="Rückverweise">
+    <section className="backlinks" aria-label={tr("pv.backlinks")}>
       <h2>
-        <Link2 size={14} /> Verlinkt von {doc.backlinks.length} {doc.backlinks.length === 1 ? "Seite" : "Seiten"}
+        <Link2 size={14} /> {tr("pv.linkedFrom", { n: doc.backlinks.length })}
       </h2>
       {doc.backlinks.map((b) => (
         <button key={b.page_id} type="button" className="backlink" onClick={(e) => useApp.getState().openPage(b.page_id, { newTab: e.ctrlKey || e.metaKey })}>
@@ -654,7 +659,7 @@ async function newPageParent(): Promise<number | null> {
   return null;
 }
 
-export async function createSubpage(parentId: number | null, title = "Unbenannt") {
+export async function createSubpage(parentId: number | null, title = tr("page.untitled")) {
   const s = useApp.getState();
   try {
     const parent = parentId ?? (await newPageParent());
@@ -664,7 +669,7 @@ export async function createSubpage(parentId: number | null, title = "Unbenannt"
     s.openPage(p.id);
     setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 120);
   } catch (e) {
-    s.error("Seite konnte nicht angelegt werden", e);
+    s.error(tr("page.createFailed"), e);
   }
 }
 
@@ -672,20 +677,19 @@ export async function deletePage(page: { id: number; title: string }) {
   const s = useApp.getState();
   const kids = s.pages.get(page.id)?.children.length ?? 0;
   const days = s.settings?.settings.notes?.trash_retention_days ?? 30;
-  const message = kids
-    ? `„${page.title}“ und ${kids} ${kids === 1 ? "Unterseite" : "Unterseiten"} werden in den Papierkorb verschoben. Nach ${days} Tagen werden sie endgültig gelöscht.`
-    : `„${page.title}“ wird in den Papierkorb verschoben. Nach ${days} Tagen wird die Seite endgültig gelöscht.`;
+  const message = kids ? tr("pv.deleteTree", { title: page.title, n: kids, days }) : tr("pv.deleteOne", { title: page.title, days });
   // A single page just moves to the trash (undo in the toast); only subtrees ask first.
-  if (kids && !(await s.confirm({ title: "Seite löschen?", message, confirmLabel: "Löschen", danger: true }))) return;
+  if (kids && !(await s.confirm({ title: tr("pv.deleteTitle"), message, confirmLabel: tr("common.delete"), danger: true }))) return;
   try {
     await api.deletePage(page.id);
     await s.refreshTree();
-    s.toast({ tone: "info", title: "Seite gelöscht", detail: `„${page.title}“ liegt im Papierkorb`, action: { label: "Rückgängig", run: () => restorePage(page.id, page.title) } });
+    s.toast({ tone: "info", title: tr("pv.deleted"), detail: tr("pv.inTrash", { title: page.title }), action: { label: tr("common.undo"), run: () => restorePage(page.id, page.title) } });
   } catch (e) {
-    s.error("Seite konnte nicht gelöscht werden", e);
+    s.error(tr("pv.deleteFailed"), e);
   }
 }
 
 export function NewPageButton() {
-  return <Button icon={FileText} onClick={() => createSubpage(null)}>Neue Seite</Button>;
+  useT();
+  return <Button icon={FileText} onClick={() => createSubpage(null)}>{tr("sidebar.newPage")}</Button>;
 }

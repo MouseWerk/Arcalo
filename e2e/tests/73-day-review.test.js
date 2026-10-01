@@ -28,7 +28,8 @@ before(async () => {
   app = await launch({ env: outlookEnv(fx.outlook) });
   await app.invoke("calendar_source_add", { name: "Heute", url: null, path: file });
   const view = await app.invoke("settings_get");
-  await app.invoke("settings_save", { settings: { ...view.settings, calendar: { ...view.settings.calendar, outlook: true } } });
+  // Every day a workday: today has a target and is in the Kalender's work week, whatever the weekday.
+  await app.invoke("settings_save", { settings: { ...view.settings, workdays: [1, 2, 3, 4, 5, 6, 7], calendar: { ...view.settings.calendar, outlook: true } } });
   await app.invoke("calendar_sync_now", { source: null });
   await app.browser.waitUntil(async () => (await app.invoke("calendar_status")).sources.every((s) => !s.enabled || (s.status?.synced_at && !s.syncing)), { timeout: 20000, timeoutMsg: "not synced" });
 
@@ -74,14 +75,24 @@ test("the day's sections show what was done", async () => {
   assert.ok(r.pages.some((p) => p.title === "Rückblick Konzept" && p.created));
   assert.ok(r.tasks.done.some((t) => t.text === "Angebot schreiben"));
   assert.ok(r.focus.sessions.some((s) => s.goal === "Rückblick Fokus"));
-  assert.ok(r.time.gaps.some((g) => g.minutes >= 60), "gap between the bookings");
+  // The gap between the bookings counts once the day is past it (the test may run at any hour).
+  if (new Date().getHours() >= 7) assert.ok(r.time.gaps.some((g) => g.minutes >= 60), "gap between the bookings");
 
   await openReview();
   await app.waitText(".pane.active .tab.active", /Tagesrückblick/);
   assert.match(await app.text(".rv-date"), /^Heute · /);
   // Time per WBS, the gap, the target.
   await app.waitText(".rv-time .rv-wbs", /NP-8801\/1020/);
-  assert.match(await app.text(".rv-time .rv-gaps"), /Ohne Buchung:\s+00:20–06:00[\s\S]*07:30–\d\d:\d\d/);
+  // The gaps the core found, as the view shows them (they depend on the time of day).
+  const hhmm = (s) => {
+    const d = new Date(s);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  if (r.time.gaps.length) {
+    const shown = await app.text(".rv-time .rv-gaps");
+    assert.match(shown, /^Ohne Buchung:/);
+    for (const g of r.time.gaps) assert.ok(shown.includes(`${hhmm(g.start)}–${hhmm(g.end)}`), `${shown} lacks ${g.start}–${g.end}`);
+  }
   assert.match(await app.text(".rv-stat.tone-time"), /\/ 8 h/);
   // Meetings with their booking state.
   const meetings = await rows(".rv-meetings .rv-meeting");
@@ -177,6 +188,9 @@ test("the Kalender day header and narrow panes", async () => {
     await app.keys(["Escape"]);
     await app.browser.waitUntil(async () => !(await (await app.$(".pane.active .calv-detail")).isExisting()), { timeoutMsg: "detail still open" });
   }
+  // A seven-day week leaves no room for the chips: today's own view has them.
+  if (!(await app.browser.execute((d) => !!document.querySelector(`.pane.active .calv-dayhead[data-date="${d}"] .calv-review-btn`)?.offsetWidth, today)))
+    await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .calv-dayhead-date`);
   await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .calv-review-btn`);
   await app.waitText(".pane.active .rv-date", /^Heute · /);
   // A narrow window: one column, no horizontal scroll.

@@ -6,6 +6,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import { CellSelection } from "@tiptap/pm/tables";
 import { IconButton } from "../components/ui";
 import { TABLE_ACTIONS, inHeaderRow, runTableAction } from "./table-actions";
+import { useT } from "../lib/i18n";
 
 /** The DOM element of the table around the selection. */
 function tableElement(editor: Editor): HTMLElement | null {
@@ -19,6 +20,7 @@ function tableElement(editor: Editor): HTMLElement | null {
 }
 
 export function TableToolbar({ editor, hidden }: { editor: Editor; hidden: boolean }) {
+  const t = useT();
   const header = useEditorState({ editor, selector: ({ editor: e }) => inHeaderRow(e.state) });
   return (
     <BubbleMenu
@@ -38,7 +40,7 @@ export function TableToolbar({ editor, hidden }: { editor: Editor; hidden: boole
           {(i === 4 || i === 6) && <span className="bubble-sep" />}
           <IconButton
             icon={a.icon}
-            label={a.title}
+            label={t(a.title)}
             data-action={a.id}
             className={a.danger ? "danger" : ""}
             disabled={a.bodyOnly && header}

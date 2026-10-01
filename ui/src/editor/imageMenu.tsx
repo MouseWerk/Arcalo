@@ -10,12 +10,13 @@ import type { MenuEntry } from "../components/ui";
 import { IconButton } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { t, type TKey } from "../lib/i18n";
 
-const SIZES: { label: string; width: number | null }[] = [
-  { label: "Klein (240 px)", width: 240 },
-  { label: "Mittel (480 px)", width: 480 },
-  { label: "Groß (720 px)", width: 720 },
-  { label: "Originalgröße", width: null },
+const SIZES: { label: TKey; width: number | null }[] = [
+  { label: "img.small", width: 240 },
+  { label: "img.medium", width: 480 },
+  { label: "img.large", width: 720 },
+  { label: "img.original", width: null },
 ];
 
 /** Copies an image as PNG to the clipboard (other formats are converted). */
@@ -50,25 +51,25 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
   };
   const failed = (what: string) => (e: unknown) => s.error(what, e);
   return [
-    { label: "Vollbild ansehen", icon: Maximize2, onSelect: () => view(img.currentSrc || img.src, name) },
+    { label: t("img.fullscreen"), icon: Maximize2, onSelect: () => view(img.currentSrc || img.src, name) },
     ...(embed
       ? ([
-          { label: "Größe", icon: Ruler, submenu: SIZES.map((z) => ({ label: z.label, checked: (node.attrs.alt ?? null) === (z.width ? String(z.width) : null), onSelect: () => setWidth(z.width) })) },
+          { label: t("img.size"), icon: Ruler, submenu: SIZES.map((z) => ({ label: t(z.label), checked: (node.attrs.alt ?? null) === (z.width ? String(z.width) : null), onSelect: () => setWidth(z.width) })) },
           "separator",
-          { label: "Öffnen", icon: ExternalLink, onSelect: () => api.openAttachment(name).catch(failed("Bild ließ sich nicht öffnen")) },
-          { label: "Im Ordner zeigen", icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed("Ordner ließ sich nicht öffnen")) },
+          { label: t("file.open"), icon: ExternalLink, onSelect: () => api.openAttachment(name).catch(failed(t("img.openFailed"))) },
+          { label: t("file.showInFolder"), icon: FolderOpen, onSelect: () => api.openAttachment(name, true).catch(failed(t("common.openFolderFailed"))) },
         ] as MenuEntry[])
       : []),
     "separator",
     {
-      label: "Bild kopieren",
+      label: t("img.copy"),
       icon: ClipboardCopy,
-      onSelect: () => copyImage(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: "Bild kopiert" }), failed("Bild ließ sich nicht kopieren")),
+      onSelect: () => copyImage(img.currentSrc || img.src).then(() => s.toast({ tone: "success", title: t("img.copied") }), failed(t("img.copyFailed"))),
     },
-    ...(embed ? [{ label: "Einbettung kopieren", icon: Copy, onSelect: () => navigator.clipboard.writeText(`![[${name}]]`) } as MenuEntry] : []),
+    ...(embed ? [{ label: t("file.copyEmbed"), icon: Copy, onSelect: () => navigator.clipboard.writeText(`![[${name}]]`) } as MenuEntry] : []),
     "separator",
     {
-      label: "Aus der Notiz entfernen",
+      label: t("file.removeFromNote"),
       icon: Trash2,
       danger: true,
       onSelect: () => {
@@ -91,7 +92,7 @@ export function ImageViewer({ src, name, onClose }: { src: string; name: string;
       <img src={src} alt={name} onClick={(e) => e.stopPropagation()} />
       <div className="image-viewer-bar" onClick={(e) => e.stopPropagation()}>
         <span className="image-viewer-name">{name}</span>
-        <IconButton icon={X} label="Schließen" onClick={onClose} />
+        <IconButton icon={X} label={t("common.close")} onClick={onClose} />
       </div>
     </div>,
     document.body,

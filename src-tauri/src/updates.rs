@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 
 use crate::{Result, lock};
+use annalo_core::{tr, trf};
 
 /// A download that receives nothing for this long is given up (a stalled proxy or connection).
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
@@ -112,36 +113,62 @@ struct Progress {
 }
 
 fn not_configured() -> Error {
-    Error::State(core::NOT_CONFIGURED.into())
+    Error::State(core::not_configured().into())
 }
 
 /// What went wrong, in words a user can act on; the technical detail goes to the log.
 fn reason(e: &UpdaterError) -> String {
     match e {
-        UpdaterError::Reqwest(r) if r.is_timeout() => "Zeitüberschreitung – der Update-Server antwortet nicht".into(),
-        UpdaterError::Reqwest(r) if r.is_connect() => {
-            "Keine Verbindung zum Update-Server (offline, oder Proxy unter Einstellungen → Netzwerk prüfen)".into()
+        UpdaterError::Reqwest(r) if r.is_timeout() => tr!(
+            "Zeitüberschreitung – der Update-Server antwortet nicht",
+            "Timed out – the update server does not answer"
+        )
+        .into(),
+        UpdaterError::Reqwest(r) if r.is_connect() => tr!(
+            "Keine Verbindung zum Update-Server (offline, oder Proxy unter Einstellungen → Netzwerk prüfen)",
+            "No connection to the update server (offline, or check the proxy under Settings → Network)"
+        )
+        .into(),
+        UpdaterError::Reqwest(r) if r.is_body() || r.is_decode() => {
+            tr!("Die Verbindung wurde unterbrochen", "The connection was interrupted").into()
         }
-        UpdaterError::Reqwest(r) if r.is_body() || r.is_decode() => "Die Verbindung wurde unterbrochen".into(),
-        UpdaterError::Reqwest(r) => format!("Netzwerkfehler ({r})"),
-        UpdaterError::ReleaseNotFound => "Der Update-Server hat keine Versionsinformation geliefert".into(),
-        UpdaterError::Serialization(_) | UpdaterError::Semver(_) => "Die Versionsinformation ist ungültig".into(),
-        UpdaterError::TargetNotFound(_) | UpdaterError::TargetsNotFound(_) => {
-            "Für dieses System gibt es in dieser Version kein Update-Paket".into()
+        UpdaterError::Reqwest(r) => trf!("Netzwerkfehler ({})", "Network error ({})", r),
+        UpdaterError::ReleaseNotFound => tr!(
+            "Der Update-Server hat keine Versionsinformation geliefert",
+            "The update server sent no version information"
+        )
+        .into(),
+        UpdaterError::Serialization(_) | UpdaterError::Semver(_) => {
+            tr!("Die Versionsinformation ist ungültig", "The version information is invalid").into()
         }
-        UpdaterError::Network(msg) => format!("Der Server hat die Datei nicht geliefert ({})", msg.trim_matches('`')),
+        UpdaterError::TargetNotFound(_) | UpdaterError::TargetsNotFound(_) => tr!(
+            "Für dieses System gibt es in dieser Version kein Update-Paket",
+            "This version has no update package for this system"
+        )
+        .into(),
+        UpdaterError::Network(msg) => trf!(
+            "Der Server hat die Datei nicht geliefert ({})",
+            "The server did not deliver the file ({})",
+            msg.trim_matches('`')
+        ),
         UpdaterError::Minisign(_)
         | UpdaterError::Base64(_)
         | UpdaterError::SignatureUtf8(_)
         | UpdaterError::SignedVersionMismatch { .. }
-        | UpdaterError::MissingSignedVersion => {
-            "Die Signatur des Updates ist ungültig – die Datei wurde verworfen, es wurde nichts installiert".into()
-        }
+        | UpdaterError::MissingSignedVersion => tr!(
+            "Die Signatur des Updates ist ungültig – die Datei wurde verworfen, es wurde nichts installiert",
+            "The update's signature is invalid – the file was discarded, nothing was installed"
+        )
+        .into(),
         UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::StorageFull => {
-            "Nicht genug freier Speicherplatz".into()
+            tr!("Nicht genug freier Speicherplatz", "Not enough free disk space").into()
         }
         UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::PermissionDenied => {
-            format!("Keine Schreibrechte für den Programmordner ({io})")
+            trf!(
+                "Keine Schreibrechte für den Programmordner ({})",
+                "No write permission for the program folder ({})",
+                io
+            )
         }
         other => other.to_string(),
     }
@@ -171,7 +198,7 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
         return Err(not_configured());
     }
     if updates.installing.load(Ordering::SeqCst) {
-        return Err(Error::State("Das Update wird gerade installiert".into()));
+        return Err(Error::State(tr!("Das Update wird gerade installiert", "The update is being installed").into()));
     }
     // Windows: the installer ends this process; the workspace is closed cleanly first.
     let handle = app.clone();
@@ -197,10 +224,14 @@ pub async fn update_check(app: AppHandle, updates: State<'_, Updates>) -> Result
         });
     if let Some(url) = test_var("ANNALO_UPDATE_ENDPOINT") {
         let url = url.parse().map_err(|e| Error::State(format!("ANNALO_UPDATE_ENDPOINT: {e}")))?;
-        builder = builder.endpoints(vec![url]).map_err(|e| failed("Update-Prüfung nicht möglich", e))?;
+        builder = builder
+            .endpoints(vec![url])
+            .map_err(|e| failed(tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
     }
-    let updater = builder.build().map_err(|e| failed("Update-Prüfung nicht möglich", e))?;
-    let found = updater.check().await.map_err(|e| failed("Update-Prüfung fehlgeschlagen", e))?;
+    let updater =
+        builder.build().map_err(|e| failed(tr!("Update-Prüfung nicht möglich", "Update check not possible"), e))?;
+    let found =
+        updater.check().await.map_err(|e| failed(tr!("Update-Prüfung fehlgeschlagen", "Update check failed"), e))?;
     let info = found.as_ref().map(UpdateInfo::of);
     crate::devlog::debug(
         "update",
@@ -222,9 +253,13 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
     if let Some(why) = core::manual_update_reason(crate::portable::active(), packaged()) {
         return Err(Error::State(why.into()));
     }
-    let update = lock(&updates.pending).clone().ok_or_else(|| Error::State("Kein Update gefunden".into()))?;
+    let update = lock(&updates.pending)
+        .clone()
+        .ok_or_else(|| Error::State(tr!("Kein Update gefunden", "No update found").into()))?;
     if updates.installing.swap(true, Ordering::SeqCst) {
-        return Err(Error::State("Das Update wird bereits installiert".into()));
+        return Err(Error::State(
+            tr!("Das Update wird bereits installiert", "The update is already being installed").into(),
+        ));
     }
     let res = download_and_install(&app, &update).await;
     updates.installing.store(false, Ordering::SeqCst);
@@ -251,7 +286,7 @@ async fn download_and_install(app: &AppHandle, update: &Update) -> Result<()> {
             || {},
         )
         .await
-        .map_err(|e| failed("Download fehlgeschlagen", e))?;
+        .map_err(|e| failed(tr!("Download fehlgeschlagen", "Download failed"), e))?;
     // The next start shows its window (even when autostarted minimized) and says what happened.
     let dir = app.state::<crate::AppState>().data_dir.clone();
     if let Err(e) = core::write_restart_marker(&dir, &update.version) {
@@ -261,7 +296,7 @@ async fn download_and_install(app: &AppHandle, update: &Update) -> Result<()> {
         core::clear_restart_marker(&dir);
         // Windows: the installer could not be started after the workspace was closed for it.
         crate::resume_after_failed_exit(app);
-        failed("Installation fehlgeschlagen", e)
+        failed(tr!("Installation fehlgeschlagen", "Installation failed"), e)
     })
 }
 

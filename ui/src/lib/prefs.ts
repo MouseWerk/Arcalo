@@ -27,11 +27,7 @@ export function applyPrefs(s: Settings) {
     // this runs often, and the page must not do any extra work while typing).
     rememberSplash({ off: a.startup_animation === false, reduced: a.reduce_motion });
   }
-  if (s.locale) {
-    setLang(s.locale.language);
-    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format });
-  }
-  if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
+  applyLocale(s);
   // „Zeiterfassung verwenden“ off: time-entry chips in notes look like plain chips (CSS).
   root.toggleAttribute("data-time-off", s.time?.enabled === false);
   const keymap = effectiveKeymap(s.keymap);
@@ -45,6 +41,32 @@ export function applyPrefs(s: Settings) {
   // Window backdrop (Windows 11): the effect, and the opacity live.
   setBackdropPrefs(a?.window_effect, a?.window_opacity);
 }
+/** Display language and regional formats (also in the small windows). */
+export function applyLocale(s: Settings) {
+  if (s.locale) {
+    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: s.locale.number_format ?? "comma" });
+    setLang(s.locale.language);
+  }
+  if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
+}
+
+/**
+ * The quick capture, quick search and presenter windows: language and formats from the
+ * settings, again whenever they change (`settings://changed`), so a switch applies there live.
+ */
+export function followLocale() {
+  const load = () =>
+    import("./api")
+      .then(({ api }) => api.settings())
+      .then((v) => {
+        applyLocale(v.settings);
+        refreshI18n();
+      })
+      .catch(() => {});
+  void load();
+  void import("./api").then(({ on }) => on("settings://changed", () => void load()));
+}
+
 let lastKeymap = "";
 
 let zoom = 100;

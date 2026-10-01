@@ -16,6 +16,7 @@
 // `==text==` is highlighted and `<!-- spalten -->` blocks become columns.
 
 import { FIRST_LINE_RE } from "./frontmatter";
+import { t } from "./i18n";
 
 export interface SlideFootnote {
   n: number;
@@ -149,8 +150,8 @@ function slideTitle(md: string, n: number): string {
   }
   const first = lines.find((l) => l.trim() && !TOC_RE.test(l) && !/^ {0,3}(```|~~~|!\[\[|\||<!--)/.test(l));
   const text = first ? plain(first.replace(/^ {0,3}([-*+>]|\d+[.)])\s+(\[[ xX]\]\s+)?/, "")) : "";
-  if (!text && lines.some((l) => TOC_RE.test(l))) return "Inhalt";
-  return text ? (text.length > 60 ? `${text.slice(0, 59)}…` : text) : `Folie ${n}`;
+  if (!text && lines.some((l) => TOC_RE.test(l))) return t("slides.toc");
+  return text ? (text.length > 60 ? `${text.slice(0, 59)}…` : text) : t("slides.slide", { n });
 }
 
 const plain = (s: string) =>
@@ -266,15 +267,15 @@ export function prepareSlideMarkdown(md: string, deck: Pick<Slide, "footnotes" |
       continue;
     }
     // Columns: blank lines around the HTML so the Markdown inside the columns is still parsed.
-    if (t === "<!-- spalten -->") {
+    if (t === "<!-- spalten -->" || t === "<!-- columns -->") {
       out.push("", `<div class="slide-columns"><div class="slide-column">`, "");
       continue;
     }
-    if (t === "<!-- spalte -->") {
+    if (t === "<!-- spalte -->" || t === "<!-- column -->") {
       out.push("", `</div><div class="slide-column">`, "");
       continue;
     }
-    if (t === "<!-- /spalten -->") {
+    if (t === "<!-- /spalten -->" || t === "<!-- /columns -->") {
       out.push("", "</div></div>", "");
       continue;
     }

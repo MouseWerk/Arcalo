@@ -10,7 +10,9 @@ import { useApp } from "../../store/app";
 import { anchorMenu, Button, Dialog, IconButton } from "../../components/ui";
 import { dayLabel } from "../../components/DateInput";
 import { pickDate } from "../../components/CalendarPopover";
-import { COLORS, COLOR_LABELS, colorIndex, hasOptions, writeFromText, type Cell, type CellWrite, type PropDef, type PropKind, type SelectOption } from "../../lib/collection";
+import { COLORS, colorLabels, colorIndex, hasOptions, kindLabel, writeFromText, type Cell, type CellWrite, type PropDef, type PropKind, type SelectOption } from "../../lib/collection";
+import { decimal } from "../../lib/format";
+import { t, useT } from "../../lib/i18n";
 
 export const KIND_ICON: Record<PropKind, LucideIcon> = {
   text: Type,
@@ -23,19 +25,20 @@ export const KIND_ICON: Record<PropKind, LucideIcon> = {
   link: Link2,
 };
 
-const nf = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 6 });
-export const fmtNumber = (n: number) => nf.format(n);
+/** A number in the regional notation (up to six decimals). */
+export const fmtNumber = (n: number) => decimal(n, 6);
 
 // ------------------------------------------------------------------ chips
 
 export function OptionChip({ name, color, invalid, onRemove }: { name: string; color: number | null; invalid?: boolean; onRemove?: () => void }) {
+  const t = useT();
   return (
     <span className={`opt-chip ${color === null ? "opt-none" : `opt-${color}`}${invalid ? " opt-invalid" : ""}`}>
       <span className="opt-chip-label">{name}</span>
       {onRemove && (
         <button
           type="button"
-          aria-label={`${name} entfernen`}
+          aria-label={t("coll.removeValue", { name })}
           tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
@@ -56,6 +59,7 @@ const optionColor = (def: PropDef | undefined, name: string) => {
 
 /** How a cell reads (table, cards): chips, a formatted number or date, a checkbox, a link. */
 export function CellDisplay({ def, cell, placeholder = "" }: { def?: PropDef; cell: Cell; placeholder?: string }) {
+  const t = useT();
   if (cell.error) return <span className="cell-raw">{cell.text}</span>;
   const v = cell.value;
   if (!v) return placeholder ? <span className="faint">{placeholder}</span> : null;
@@ -75,7 +79,7 @@ export function CellDisplay({ def, cell, placeholder = "" }: { def?: PropDef; ce
     case "date":
       return <span className="num">{dayLabel(v.value)}</span>;
     case "checkbox":
-      return v.value ? <CheckSquare size={15} className="cell-check on" aria-label="Ja" /> : <Square size={15} className="cell-check" aria-label="Nein" />;
+      return v.value ? <CheckSquare size={15} className="cell-check on" aria-label={t("common.yes")} /> : <Square size={15} className="cell-check" aria-label={t("common.no")} />;
     case "person":
       return (
         <span className="cell-person">
@@ -118,9 +122,9 @@ export function Popover({ anchor, onClose, children, className = "", label }: { 
   close.current = onClose;
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      const t = e.target as Element | null;
+      const target = e.target as Element | null;
       // Dropdown lists and calendars opened from the popup live in their own portal.
-      if (t && (ref.current?.contains(t) || t.closest?.(".menu, .calendar, .select-pop"))) return;
+      if (target && (ref.current?.contains(target) || target.closest?.(".menu, .calendar, .select-pop"))) return;
       close.current();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -161,6 +165,7 @@ export function OptionPicker({
   onAddOption?: (name: string) => Promise<void> | void;
   onClose: () => void;
 }) {
+  const t = useT();
   const multi = def.kind === "multi_select";
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -187,8 +192,8 @@ export function OptionPicker({
           autoFocus
           className="opt-picker-input"
           value={q}
-          placeholder={onAddOption ? "Option suchen oder anlegen" : "Option suchen"}
-          aria-label="Option suchen"
+          placeholder={onAddOption ? t("coll.searchOrAdd") : t("coll.searchOption")}
+          aria-label={t("coll.searchOption")}
           spellCheck={false}
           onChange={(e) => {
             setQ(e.target.value);
@@ -223,10 +228,10 @@ export function OptionPicker({
         ))}
         {canAdd && (
           <button type="button" className={`opt-picker-item opt-picker-add ${sel === shown.length ? "sel" : ""}`} onMouseEnter={() => setSel(shown.length)} onClick={() => pick(q.trim(), true)}>
-            <Plus size={13} /> „{q.trim()}“ als Option anlegen
+            <Plus size={13} /> {t("coll.addOption", { name: q.trim() })}
           </button>
         )}
-        {!count && <div className="opt-picker-empty faint">Keine Optionen</div>}
+        {!count && <div className="opt-picker-empty faint">{t("coll.noOptions")}</div>}
       </div>
     </div>
   );
@@ -245,8 +250,8 @@ function pageTitles(q: string): string[] {
   const lower = q.replace(/^\[\[|\]\]$/g, "").trim().toLowerCase();
   const titles = [...useApp.getState().pages.values()].map((p) => p.title);
   return titles
-    .filter((t) => !lower || t.toLowerCase().includes(lower))
-    .sort((a, b) => Number(!a.toLowerCase().startsWith(lower)) - Number(!b.toLowerCase().startsWith(lower)) || a.localeCompare(b, "de"))
+    .filter((x) => !lower || x.toLowerCase().includes(lower))
+    .sort((a, b) => Number(!a.toLowerCase().startsWith(lower)) - Number(!b.toLowerCase().startsWith(lower)) || a.localeCompare(b))
     .slice(0, 8);
 }
 
@@ -369,7 +374,7 @@ export const suggestPersons = async (q: string) => {
   const lower = q.replace(/^@/, "").trim().toLowerCase();
   return (await knownPersons()).filter((p) => !lower || p.toLowerCase().includes(lower));
 };
-export const suggestLinks = (q: string) => pageTitles(q).map((t) => `[[${t}]]`);
+export const suggestLinks = (q: string) => pageTitles(q).map((x) => `[[${x}]]`);
 
 // ------------------------------------------------------------------ typed value (property editor)
 
@@ -378,6 +383,7 @@ export const suggestLinks = (q: string) => pageTitles(q).map((t) => `[[${t}]]`);
  * values stay visible (red underline, reason as tooltip) until they are changed.
  */
 export function TypedValue({ def, cell, label, onWrite, onAddOption }: { def: PropDef; cell: Cell; label: string; onWrite: (v: CellWrite) => void; onAddOption: (name: string) => Promise<void> | void }) {
+  const t = useT();
   const [picker, setPicker] = useState<Element | null>(null);
   const kind = def.kind;
   const input = (props: { suggest?: (q: string) => Promise<string[]> | string[]; placeholder?: string; initial?: string }) => (
@@ -385,7 +391,7 @@ export function TypedValue({ def, cell, label, onWrite, onAddOption }: { def: Pr
       <ComboInput
         value={props.initial ?? cell.text}
         label={label}
-        placeholder={props.placeholder ?? "Leer"}
+        placeholder={props.placeholder ?? t("coll.empty")}
         suggest={props.suggest}
         invalid={cell.error}
         onCommit={(text) => text.trim() !== (props.initial ?? cell.text).trim() && onWrite(writeFromText(def, text))}
@@ -407,8 +413,8 @@ export function TypedValue({ def, cell, label, onWrite, onAddOption }: { def: Pr
     const selected = cell.value?.kind === "select" ? [cell.value.value] : cell.value?.kind === "multi_select" ? cell.value.value : cell.items;
     return (
       <>
-        <button type="button" className="prop-value-input prop-options" aria-label={`${label}: ${cell.text || "leer"}`} aria-haspopup="dialog" onClick={(e) => setPicker(e.currentTarget)}>
-          <Invalid error={cell.error}>{cell.text ? selected.map((s) => <OptionChip key={s} name={s} color={optionColor(def, s)} invalid={optionColor(def, s) === null} />) : <span className="faint">Leer</span>}</Invalid>
+        <button type="button" className="prop-value-input prop-options" aria-label={`${label}: ${cell.text || t("coll.emptyLower")}`} aria-haspopup="dialog" onClick={(e) => setPicker(e.currentTarget)}>
+          <Invalid error={cell.error}>{cell.text ? selected.map((s) => <OptionChip key={s} name={s} color={optionColor(def, s)} invalid={optionColor(def, s) === null} />) : <span className="faint">{t("coll.empty")}</span>}</Invalid>
         </button>
         {picker && (
           <Popover anchor={picker} label={label} onClose={() => setPicker(null)}>
@@ -426,24 +432,24 @@ export function TypedValue({ def, cell, label, onWrite, onAddOption }: { def: Pr
           <button
             type="button"
             className="prop-value-input prop-date"
-            aria-label={`${label}: ${iso ? dayLabel(iso) : cell.text || "kein Datum"}, Datum wählen`}
+            aria-label={t("coll.dateLabel", { label, date: iso ? dayLabel(iso) : cell.text || t("coll.noDate") })}
             aria-haspopup="dialog"
             onClick={(e) => pickDate(e.currentTarget, iso, (v) => onWrite(v))}
           >
-            {iso ? dayLabel(iso) : cell.text ? <span className="cell-raw">{cell.text}</span> : <span className="faint">Datum wählen</span>}
+            {iso ? dayLabel(iso) : cell.text ? <span className="cell-raw">{cell.text}</span> : <span className="faint">{t("calv.pickDate")}</span>}
           </button>
         </Invalid>
-        {cell.text && <IconButton icon={X} label="Datum entfernen" size="sm" className="prop-clear" onClick={() => onWrite(null)} />}
+        {cell.text && <IconButton icon={X} label={t("coll.removeDate")} size="sm" className="prop-clear" onClick={() => onWrite(null)} />}
       </span>
     );
   }
   if (kind === "number") return input({ initial: cell.value?.kind === "number" ? fmtNumber(cell.value.value) : cell.text });
-  if (kind === "person") return input({ suggest: suggestPersons, placeholder: "Name" });
+  if (kind === "person") return input({ suggest: suggestPersons, placeholder: t("links.name") });
   if (kind === "link") {
     return (
       <>
-        {input({ suggest: suggestLinks, placeholder: "URL oder [[Seite]]" })}
-        {cell.value?.kind === "link" && <IconButton icon={Link2} label="Link öffnen" size="sm" className="prop-pick" onClick={(e) => openLink(cell.value!.value as string, e.ctrlKey || e.metaKey)} />}
+        {input({ suggest: suggestLinks, placeholder: t("coll.linkPlaceholder") })}
+        {cell.value?.kind === "link" && <IconButton icon={Link2} label={t("coll.openLink")} size="sm" className="prop-pick" onClick={(e) => openLink(cell.value!.value as string, e.ctrlKey || e.metaKey)} />}
       </>
     );
   }
@@ -464,7 +470,7 @@ export async function openLink(value: string, newTab: boolean) {
       await openUrl(/^www\./i.test(value) ? `https://${value}` : value);
     }
   } catch (e) {
-    s.error("Link konnte nicht geöffnet werden", e);
+    s.error(t("links.openFailed"), e);
   }
 }
 
@@ -475,6 +481,8 @@ export const editText = (cell: Cell) => (cell.value?.kind === "number" ? fmtNumb
 
 /** Edits the options of a (multi) select: names, colors, order. Renames are reported for the pages. */
 export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose: () => void; onSave: (options: SelectOption[], renames: [string, string][]) => void }) {
+  const t = useT();
+  const colorNames = colorLabels();
   const [rows, setRows] = useState(() => def.options.map((o) => ({ ...o, was: o.name })));
   const [colorFor, setColorFor] = useState<{ i: number; el: Element } | null>(null);
   const names = rows.map((r) => r.name.trim().toLowerCase());
@@ -498,16 +506,16 @@ export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose:
     <Dialog
       open
       onClose={onClose}
-      title={`Optionen von „${def.key}“`}
-      description="Umbenannte Optionen werden auf allen Seiten im Ordner angepasst."
+      title={t("coll.optionsOf", { key: def.key })}
+      description={t("coll.optionsDesc")}
       width={440}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" disabled={dup} onClick={save}>
-            Speichern
+            {t("common.save")}
           </Button>
         </>
       }
@@ -515,29 +523,29 @@ export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose:
       <div className="opt-edit" role="list">
         {rows.map((r, i) => (
           <div key={i} className="opt-edit-row" role="listitem">
-            <button type="button" className={`opt-swatch opt-${colorIndex(r.color)}`} aria-label={`Farbe von ${r.name || "Option"}: ${COLOR_LABELS[colorIndex(r.color)]}`} onClick={(e) => setColorFor({ i, el: e.currentTarget })} />
+            <button type="button" className={`opt-swatch opt-${colorIndex(r.color)}`} aria-label={t("coll.colorOf", { name: r.name || t("coll.option"), color: colorNames[colorIndex(r.color)] })} onClick={(e) => setColorFor({ i, el: e.currentTarget })} />
             <input
               className="input opt-edit-name"
               value={r.name}
-              aria-label="Name der Option"
+              aria-label={t("coll.optionName")}
               aria-invalid={(!!r.name.trim() && names.indexOf(r.name.trim().toLowerCase()) !== i) || undefined}
               spellCheck={false}
               onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
               onKeyDown={(e) => e.key === "Enter" && !dup && save()}
             />
-            <IconButton icon={ArrowUp} label="Nach oben" size="sm" disabled={i === 0} onClick={() => move(i, -1)} />
-            <IconButton icon={ArrowDown} label="Nach unten" size="sm" disabled={i === rows.length - 1} onClick={() => move(i, 1)} />
-            <IconButton icon={Trash2} label="Option löschen" size="sm" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} />
+            <IconButton icon={ArrowUp} label={t("common.up")} size="sm" disabled={i === 0} onClick={() => move(i, -1)} />
+            <IconButton icon={ArrowDown} label={t("common.down")} size="sm" disabled={i === rows.length - 1} onClick={() => move(i, 1)} />
+            <IconButton icon={Trash2} label={t("coll.deleteOption")} size="sm" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} />
           </div>
         ))}
         <button type="button" className="prop-add" onClick={() => setRows((rs) => [...rs, { name: "", color: COLORS[rs.length % COLORS.length], was: "" }])}>
-          <Plus size={13} /> Option hinzufügen
+          <Plus size={13} /> {t("coll.addOptionButton")}
         </button>
-        {dup && <div className="prop-key-hint" role="alert">Jede Option nur einmal</div>}
+        {dup && <div className="prop-key-hint" role="alert">{t("coll.optionOnce")}</div>}
       </div>
       {colorFor && (
-        <Popover anchor={colorFor.el} label="Farbe wählen" onClose={() => setColorFor(null)}>
-          <div className="opt-colors" role="listbox" aria-label="Farbe">
+        <Popover anchor={colorFor.el} label={t("coll.pickColor")} onClose={() => setColorFor(null)}>
+          <div className="opt-colors" role="listbox" aria-label={t("links.color")}>
             {COLORS.map((c, ci) => (
               <button
                 key={c}
@@ -550,7 +558,7 @@ export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose:
                   setColorFor(null);
                 }}
               >
-                <span className={`opt-swatch opt-${ci}`} aria-hidden /> {COLOR_LABELS[ci]}
+                <span className={`opt-swatch opt-${ci}`} aria-hidden /> {colorNames[ci]}
               </button>
             ))}
           </div>
@@ -561,8 +569,8 @@ export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose:
 }
 
 /** Menu entries „Typ ändern“ for a property. */
-export function kindMenu(current: PropKind, onPick: (k: PropKind) => void, kinds: { kind: PropKind; label: string }[]) {
-  return kinds.map((k) => ({ label: k.label, icon: KIND_ICON[k.kind], checked: k.kind === current, onSelect: () => k.kind !== current && onPick(k.kind) }));
+export function kindMenu(current: PropKind, onPick: (k: PropKind) => void, kinds: { kind: PropKind }[]) {
+  return kinds.map((k) => ({ label: kindLabel(k.kind), icon: KIND_ICON[k.kind], checked: k.kind === current, onSelect: () => k.kind !== current && onPick(k.kind) }));
 }
 
 /** Converts options when the type changes: selects keep theirs, others start from the values seen. */

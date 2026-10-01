@@ -9,13 +9,14 @@ import { useApp } from "../../store/app";
 import { Badge, Button, Dialog, Field, IconButton, Input, Progress, Select, Switch } from "../../components/ui";
 import { KIND_LABELS, URL_HINTS, isLoopback, needsKey, providerName, validateProvider } from "../../lib/providers";
 import type { AiProvider, ProviderKind, ProviderTest, ProviderTestStep, PullProgress } from "../../lib/types";
+import { useT, type TKey } from "../../lib/i18n";
 
-const STEP_LABELS: Record<ProviderTestStep["id"], string> = {
-  reach: "Erreichbar",
-  auth: "Zugang",
-  chat: "Chat",
-  tools: "Werkzeuge",
-  embed: "Embeddings",
+const STEP_LABELS: Record<ProviderTestStep["id"], TKey> = {
+  reach: "fr.ai.test.reach",
+  auth: "fr.ai.test.auth",
+  chat: "fr.ai.test.chat",
+  tools: "fr.ai.test.tools",
+  embed: "fr.ai.test.embed",
 };
 
 /** Comma or line separated names → list. */
@@ -43,6 +44,7 @@ export function ProviderDialog({
   /** The provider as edited; the key was already stored when one was entered. */
   onSave: (p: AiProvider) => void;
 }) {
+  const t = useT();
   const s = useApp.getState;
   const [p, setP] = useState(initial);
   const [key, setKey] = useState("");
@@ -75,7 +77,7 @@ export function ProviderDialog({
     s().set({ settings: v });
     setHasKey(value !== null);
     setKey("");
-    s().toast({ tone: "success", title: value ? "API-Token gespeichert" : "API-Token entfernt", detail: v.api_key_storage });
+    s().toast({ tone: "success", title: value ? t("prov.tokenSaved") : t("prov.tokenRemoved"), detail: v.api_key_storage });
   };
 
   const runTest = async () => {
@@ -97,7 +99,7 @@ export function ProviderDialog({
       if (key.trim()) await storeKey(key.trim());
       onSave(withNames());
     } catch (e) {
-      s().error("Schlüssel konnte nicht gespeichert werden", e);
+      s().error(t("prov.keySaveFailed"), e);
     } finally {
       setSaving(false);
     }
@@ -109,19 +111,19 @@ export function ProviderDialog({
       open
       onClose={onClose}
       width={560}
-      title={isNew ? `${providerName(p)} hinzufügen` : `${providerName(p)} bearbeiten`}
+      title={isNew ? t("prov.addTitle", { name: providerName(p) }) : t("prov.editTitle", { name: providerName(p) })}
       description={hint}
       footer={
         <>
           <Button icon={PlugZap} onClick={runTest} loading={testing} disabled={!!error} className="provider-test-btn">
-            Verbindung testen
+            {t("prov.test")}
           </Button>
           <span className="grow" />
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={submit} loading={saving} disabled={!!error}>
-            {isNew ? "Hinzufügen" : "Übernehmen"}
+            {isNew ? t("common.add") : t("prov.apply")}
           </Button>
         </>
       }
@@ -134,8 +136,8 @@ export function ProviderDialog({
         }}
       >
         <div className="provider-form-row">
-          <Field label="Art">
-            <Select value={p.kind} onChange={(e) => setKind(e.target.value as ProviderKind)} aria-label="Art des Anbieters">
+          <Field label={t("prov.kind")}>
+            <Select value={p.kind} onChange={(e) => setKind(e.target.value as ProviderKind)} aria-label={t("prov.kindLabel")}>
               {(Object.keys(KIND_LABELS) as ProviderKind[]).map((k) => (
                 <option key={k} value={k}>
                   {KIND_LABELS[k]}
@@ -143,28 +145,28 @@ export function ProviderDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Name">
-            <Input value={p.name} onChange={(e) => set({ name: e.target.value })} placeholder={KIND_LABELS[p.kind]} aria-label="Name des Anbieters" />
+          <Field label={t("prov.name")}>
+            <Input value={p.name} onChange={(e) => set({ name: e.target.value })} placeholder={KIND_LABELS[p.kind]} aria-label={t("prov.nameLabel")} />
           </Field>
         </div>
-        <Field label="Adresse" hint={error && p.base_url.trim() ? <span className="field-error">{error}</span> : URL_HINTS[p.kind]}>
-          <Input value={p.base_url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" aria-label="Server-URL" data-autofocus spellCheck={false} />
+        <Field label={t("prov.address")} hint={error && p.base_url.trim() ? <span className="field-error">{error}</span> : URL_HINTS[p.kind]}>
+          <Input value={p.base_url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" aria-label={t("prov.serverUrl")} data-autofocus spellCheck={false} />
         </Field>
         {p.kind === "azure" && (
           <div className="provider-form-row">
-            <Field label="API-Version">
-              <Input value={p.api_version} onChange={(e) => set({ api_version: e.target.value })} placeholder="2024-10-21" aria-label="API-Version" />
+            <Field label={t("prov.apiVersion")}>
+              <Input value={p.api_version} onChange={(e) => set({ api_version: e.target.value })} placeholder="2024-10-21" aria-label={t("prov.apiVersion")} />
             </Field>
-            <Field label="Deployments" hint="Namen der Deployments, mit Komma getrennt">
-              <Input value={names} onChange={(e) => setNames(e.target.value)} placeholder="gpt-4o, text-embedding-3-small" aria-label="Deployments" />
+            <Field label={t("prov.deployments")} hint={t("prov.deploymentsHint")}>
+              <Input value={names} onChange={(e) => setNames(e.target.value)} placeholder={"gpt-4o, text-embedding-3-small"} aria-label={t("prov.deployments")} />
             </Field>
           </div>
         )}
         {p.kind !== "ollama" && (
           <div className="field">
             <span className="field-label provider-key-label">
-              {p.kind === "azure" ? "API-Schlüssel (api-key)" : "API-Schlüssel"}
-              {hasKey ? <Badge tone="success">Hinterlegt</Badge> : keyNeeded ? <Badge tone="warning">Fehlt</Badge> : <Badge>Nicht nötig</Badge>}
+              {p.kind === "azure" ? t("prov.keyAzure") : t("prov.key")}
+              {hasKey ? <Badge tone="success">{t("prov.keyStored")}</Badge> : keyNeeded ? <Badge tone="warning">{t("prov.keyMissing")}</Badge> : <Badge>{t("prov.keyNotNeeded")}</Badge>}
             </span>
             <div className="provider-key">
               <div className="key-input">
@@ -173,39 +175,39 @@ export function ProviderDialog({
                   type={showKey ? "text" : "password"}
                   value={key}
                   onChange={(e) => (setKey(e.target.value), setTest(null))}
-                  placeholder={hasKey ? "Neuen Schlüssel eingeben, um ihn zu ersetzen" : p.kind === "litellm" ? "sk-… (Virtual Key oder Master Key)" : "sk-…"}
-                  aria-label="API-Token"
+                  placeholder={hasKey ? t("prov.keyReplace") : p.kind === "litellm" ? t("prov.keyLitellm") : "sk-…"}
+                  aria-label={t("prov.token")}
                   autoComplete="off"
                   spellCheck={false}
                 />
-                <IconButton icon={showKey ? EyeOff : Eye} label={showKey ? "Verbergen" : "Anzeigen"} size="sm" onClick={() => setShowKey(!showKey)} />
+                <IconButton icon={showKey ? EyeOff : Eye} label={showKey ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowKey(!showKey)} />
               </div>
-              {hasKey && <IconButton icon={Trash2} label="Token entfernen" onClick={() => void storeKey(null).catch((e) => s().error("Schlüssel konnte nicht entfernt werden", e))} />}
+              {hasKey && <IconButton icon={Trash2} label={t("prov.tokenRemove")} onClick={() => void storeKey(null).catch((e) => s().error(t("prov.keyRemoveFailed"), e))} />}
             </div>
-            <span className="field-hint">Wird im Schlüsselspeicher des Systems abgelegt, nie in den Einstellungen oder im Export.</span>
+            <span className="field-hint">{t("prov.keyHint")}</span>
           </div>
         )}
         <div className="provider-switches">
           <label className="provider-switch">
             <span>
-              <span className="provider-switch-label">Lokal</span>
-              <span className="provider-switch-desc">Läuft auf diesem Rechner oder im eigenen Netz: bekommt auch vertrauliche Inhalte (#privat, „Nur lokal“), Kosten 0.</span>
+              <span className="provider-switch-label">{t("set.ai.localBadge")}</span>
+              <span className="provider-switch-desc">{t("prov.localDesc")}</span>
             </span>
-            <Switch checked={p.local} onChange={(v) => set({ local: v })} label="Lokaler Anbieter" />
+            <Switch checked={p.local} onChange={(v) => set({ local: v })} label={t("prov.localLabel")} />
           </label>
           <label className="provider-switch">
             <span>
-              <span className="provider-switch-label">Proxy umgehen</span>
-              <span className="provider-switch-desc">Direkt verbinden statt über den Proxy aus Einstellungen → Netzwerk.</span>
+              <span className="provider-switch-label">{t("prov.bypass")}</span>
+              <span className="provider-switch-desc">{t("prov.bypassDesc")}</span>
             </span>
-            <Switch checked={p.bypass_proxy} onChange={(v) => set({ bypass_proxy: v })} label="Proxy umgehen" />
+            <Switch checked={p.bypass_proxy} onChange={(v) => set({ bypass_proxy: v })} label={t("prov.bypass")} />
           </label>
         </div>
         {p.kind !== "azure" && p.kind !== "ollama" && (
           <details className="provider-more">
-            <summary>Weitere Modelle</summary>
-            <Field label="Zusätzliche Modellnamen" hint="Für Server, die nicht alle Modelle auflisten. Mit Komma getrennt.">
-              <Input value={names} onChange={(e) => setNames(e.target.value)} placeholder="meta-llama/llama-3.3-70b-instruct" aria-label="Zusätzliche Modelle" />
+            <summary>{t("prov.moreModels")}</summary>
+            <Field label={t("prov.extraNames")} hint={t("prov.extraNamesHint")}>
+              <Input value={names} onChange={(e) => setNames(e.target.value)} placeholder="meta-llama/llama-3.3-70b-instruct" aria-label={t("prov.extraModels")} />
             </Field>
           </details>
         )}
@@ -218,12 +220,13 @@ export function ProviderDialog({
 }
 
 function TestResult({ test }: { test: ProviderTest }) {
+  const t = useT();
   return (
-    <ul className="provider-test" aria-label="Testergebnis">
+    <ul className="provider-test" aria-label={t("prov.testResult")}>
       {test.steps.map((st) => (
         <li key={st.id} className={st.ok === true ? "ok" : st.ok === false ? "fail" : "skip"} data-step={st.id}>
           {st.ok === true ? <CheckCircle2 size={14} /> : st.ok === false ? <XCircle size={14} /> : <MinusCircle size={14} />}
-          <span className="provider-test-label">{STEP_LABELS[st.id]}</span>
+          <span className="provider-test-label">{t(STEP_LABELS[st.id])}</span>
           <span className="provider-test-detail" title={st.detail}>
             {st.detail}
           </span>
@@ -236,6 +239,7 @@ function TestResult({ test }: { test: ProviderTest }) {
 
 /** Ollama: the models it has and downloading another one (`/api/pull`) with progress. */
 function OllamaModels({ provider, models, onPulled }: { provider: AiProvider; models: string[] | null; onPulled: () => void }) {
+  const t = useT();
   const s = useApp.getState;
   const [name, setName] = useState("");
   const [progress, setProgress] = useState<PullProgress | null>(null);
@@ -248,14 +252,14 @@ function OllamaModels({ provider, models, onPulled }: { provider: AiProvider; mo
     const model = name.trim();
     if (!model) return;
     rid.current = `pull-${Date.now()}`;
-    setProgress({ request_id: rid.current, status: "Starte…", total: null, completed: null });
+    setProgress({ request_id: rid.current, status: t("prov.pullStarting"), total: null, completed: null });
     try {
       await api.pullOllama(rid.current, provider, model);
-      s().toast({ tone: "success", title: `„${model}“ geladen` });
+      s().toast({ tone: "success", title: t("prov.pulled", { model }) });
       setName("");
       onPulled();
     } catch (e) {
-      s().error(`„${model}“ konnte nicht geladen werden`, e);
+      s().error(t("prov.pullFailed", { model }), e);
     } finally {
       setProgress(null);
     }
@@ -263,21 +267,21 @@ function OllamaModels({ provider, models, onPulled }: { provider: AiProvider; mo
   const share = progress?.total ? (progress.completed ?? 0) / progress.total : 0;
   return (
     <div className="field ollama-pull">
-      <span className="field-label">Modell laden</span>
-      {models && <span className="field-hint">{models.length ? `Vorhanden: ${models.join(", ")}` : "Noch keine Modelle geladen."}</span>}
+      <span className="field-label">{t("prov.pull")}</span>
+      {models && <span className="field-hint">{models.length ? t("prov.present", { models: models.join(", ") }) : t("prov.noModels")}</span>}
       <div className="provider-key">
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="z. B. llama3.2, qwen2.5:7b, nomic-embed-text"
-          aria-label="Modell laden"
+          placeholder={t("prov.pullPlaceholder")}
+          aria-label={t("prov.pull")}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void pull())}
           disabled={!!progress}
         />
         <Button icon={Download} onClick={pull} loading={!!progress} disabled={!name.trim()}>
-          Laden
+          {t("prov.pullButton")}
         </Button>
-        {progress && <IconButton icon={XCircle} label="Download abbrechen" onClick={() => void api.cancelChat(rid.current)} />}
+        {progress && <IconButton icon={XCircle} label={t("prov.pullCancel")} onClick={() => void api.cancelChat(rid.current)} />}
       </div>
       {progress && (
         <div className="ollama-progress" role="status">

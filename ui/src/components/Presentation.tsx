@@ -11,12 +11,14 @@ import { useApp } from "../store/app";
 import { renderMarkdown } from "../lib/markdown";
 import { highlightCodeBlocks } from "../editor/languages";
 import { elapsedLabel, fitScale, jumpTarget, prepareSlideMarkdown, splitSlides, type Slide } from "../lib/slides";
-import { CALLOUT_LABELS } from "../editor/extensions";
+import { calloutLabel } from "../editor/extensions";
 import { fileExtension, fileIcon, fileKind, isImageName, isPdfName } from "../editor/fileEmbed";
 import { isDrawingName } from "../editor/drawing";
 import { drawPdfPreview } from "../lib/pdf";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { useMenu } from "./ui";
+import { useT } from "../lib/i18n";
+import { time } from "../lib/format";
 
 /** Design size of a slide; it is scaled to the screen (and to the previews). */
 const STAGE_W = 1600;
@@ -76,7 +78,7 @@ function hydrate(root: HTMLElement, refit: () => void) {
     text.textContent = nl >= 0 ? rest.slice(nl + 1) : "";
     const title = document.createElement("div");
     title.className = "slide-callout-title";
-    title.textContent = custom || CALLOUT_LABELS[type] || type;
+    title.textContent = custom || calloutLabel(type);
     bq.insertBefore(title, p);
     if (!p.textContent?.trim() && p.children.length === 0) p.remove();
   }
@@ -219,10 +221,11 @@ function useElapsed(startedAt: number) {
 }
 
 function TimerLabel({ deck, big }: { deck: DeckState; big?: boolean }) {
+  const t = useT();
   const elapsed = useElapsed(deck.startedAt);
   const over = deck.target != null && elapsed > deck.target * 60_000;
   return (
-    <span className={`present-timer num ${over ? "over" : ""} ${big ? "big" : ""}`} aria-label="Vergangene Zeit">
+    <span className={`present-timer num ${over ? "over" : ""} ${big ? "big" : ""}`} aria-label={t("present.elapsed")}>
       {elapsedLabel(elapsed)}
       {deck.target != null && <span className="present-target"> / {elapsedLabel(deck.target * 60_000)}</span>}
     </span>
@@ -233,6 +236,7 @@ const TARGETS = [5, 10, 15, 20, 30, 45, 60];
 
 /** Current and next slide, notes, timer and controls (overlay or presenter window). */
 export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNav: (n: Nav) => void; overlay?: boolean }) {
+  const t = useT();
   const cur = deck.slides[deck.index] ?? null;
   const next = deck.slides[deck.index + 1] ?? null;
   const notes = useMemo(() => (cur?.notes ? renderMarkdown(cur.notes) : ""), [cur]);
@@ -240,43 +244,57 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
   const elapsed = useElapsed(deck.startedAt);
   const left = deck.target != null ? deck.target * 60_000 - elapsed : null;
   return (
-    <div className={`presenter ${overlay ? "presenter-overlay" : ""}`} role="region" aria-label="Referentenansicht" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+    <div className={`presenter ${overlay ? "presenter-overlay" : ""}`} role="region" aria-label={t("present.presenter")} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
       <div className="presenter-main">
         <div className="presenter-label">
-          Aktuelle Folie <span className="num">{deck.slides.length ? deck.index + 1 : 0} / {deck.slides.length}</span>
+          {t("present.current")} <span className="num">{deck.slides.length ? deck.index + 1 : 0} / {deck.slides.length}</span>
           {cur && <span className="faint ellipsis"> · {cur.title}</span>}
         </div>
-        <SlideView slide={cur} className={`presenter-current ${deck.beamer ? "beamer" : ""}`} label="Vorschau der aktuellen Folie" />
+        <SlideView slide={cur} className={`presenter-current ${deck.beamer ? "beamer" : ""}`} label={t("present.currentPreview")} />
       </div>
       <aside className="presenter-side">
         <div className="presenter-clock">
           <TimerLabel deck={deck} big />
-          {left != null && <span className={`presenter-left num ${left < 0 ? "over" : ""}`}>{left < 0 ? `+${elapsedLabel(-left)} über der Zeit` : `noch ${elapsedLabel(left)}`}</span>}
-          <span className="presenter-now num">{new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</span>
+          {left != null && <span className={`presenter-left num ${left < 0 ? "over" : ""}`}>{left < 0 ? t("present.over", { time: elapsedLabel(-left) }) : t("present.left", { time: elapsedLabel(left) })}</span>}
+          <span className="presenter-now num">{t("present.clock", { time: time(new Date().toISOString()) })}</span>
         </div>
-        <div className="presenter-label">{next ? <>Nächste Folie · <span className="ellipsis">{next.title}</span></> : "Letzte Folie"}</div>
-        {next ? <SlideView slide={next} className={`presenter-next ${deck.beamer ? "beamer" : ""}`} label="Vorschau der nächsten Folie" /> : <div className="presenter-next presenter-end">Ende</div>}
-        <div className="presenter-label">Notizen</div>
-        <div className="presenter-notes prose" aria-label="Notizen">
-          {notes ? <div ref={(el) => void (el && highlightCodeBlocks(el))} dangerouslySetInnerHTML={{ __html: notes }} /> : <p className="faint">Keine Notizen zu dieser Folie. Notizen stehen in einem Callout <code>&gt; [!notiz]</code> oder in einem Absatz, der mit <code>Notiz:</code> beginnt.</p>}
+        <div className="presenter-label">
+          {next ? (
+            <>
+              {t("present.next")} · <span className="ellipsis">{next.title}</span>
+            </>
+          ) : (
+            t("present.last")
+          )}
+        </div>
+        {next ? <SlideView slide={next} className={`presenter-next ${deck.beamer ? "beamer" : ""}`} label={t("present.nextPreview")} /> : <div className="presenter-next presenter-end">{t("present.end")}</div>}
+        <div className="presenter-label">{t("present.notes")}</div>
+        <div className="presenter-notes prose" aria-label={t("present.notes")}>
+          {notes ? (
+            <div ref={(el) => void (el && highlightCodeBlocks(el))} dangerouslySetInnerHTML={{ __html: notes }} />
+          ) : (
+            <p className="faint">
+              {t("present.noNotes")} <code>{t("present.noNotesCallout")}</code> {t("present.noNotesOr")} <code>{t("present.noNotesPrefix")}</code> {t("present.noNotesEnd")}
+            </p>
+          )}
         </div>
         <div className="presenter-controls">
-          <button type="button" className="present-btn" aria-label="Vorherige Folie" disabled={deck.index <= 0} onClick={() => onNav({ action: "prev" })}>
+          <button type="button" className="present-btn" aria-label={t("present.prev")} disabled={deck.index <= 0} onClick={() => onNav({ action: "prev" })}>
             <ChevronLeft size={18} />
           </button>
-          <button type="button" className="present-btn" aria-label="Nächste Folie" disabled={deck.index >= deck.slides.length - 1} onClick={() => onNav({ action: "next" })}>
+          <button type="button" className="present-btn" aria-label={t("present.nextSlide")} disabled={deck.index >= deck.slides.length - 1} onClick={() => onNav({ action: "next" })}>
             <ChevronRight size={18} />
           </button>
           <button
             type="button"
             className="present-btn"
-            aria-label="Zielzeit"
+            aria-label={t("present.target")}
             onClick={(e) =>
               openMenuAt(e, [
-                { label: "Ohne Zielzeit", checked: deck.target == null, onSelect: () => onNav({ action: "target", minutes: null }) },
-                ...TARGETS.map((m) => ({ label: `${m} Minuten`, checked: deck.target === m, onSelect: () => onNav({ action: "target", minutes: m }) })),
+                { label: t("present.noTarget"), checked: deck.target == null, onSelect: () => onNav({ action: "target", minutes: null }) },
+                ...TARGETS.map((m) => ({ label: t("present.minutes", { n: m }), checked: deck.target === m, onSelect: () => onNav({ action: "target", minutes: m }) })),
                 "separator" as const,
-                { label: "Zeit neu starten", onSelect: () => onNav({ action: "reset" }) },
+                { label: t("present.reset"), onSelect: () => onNav({ action: "reset" }) },
               ])
             }
           >
@@ -284,7 +302,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
           </button>
           <span className="grow" />
           <button type="button" className="present-btn present-end" onClick={() => onNav({ action: "end" })}>
-            Beenden
+            {t("present.stop")}
           </button>
         </div>
       </aside>
@@ -318,6 +336,7 @@ function keyNav(e: KeyboardEvent, typed: { current: string }): Nav | null {
 // ---------------------------------------------------------------- main view
 
 function Presentation({ pageId }: { pageId: number }) {
+  const t = useT();
   const s = useApp.getState;
   const [title, setTitle] = useState("");
   const [slides, setSlides] = useState<Slide[] | null>(null);
@@ -341,7 +360,7 @@ function Presentation({ pageId }: { pageId: number }) {
         setSlides(splitSlides(doc.content));
       })
       .catch((e) => {
-        s().error("Präsentation nicht möglich", e);
+        s().error(t("present.failed"), e);
         s().set({ presenting: null });
       });
     void api.presentationBegin().catch(() => {});
@@ -471,14 +490,14 @@ function Presentation({ pageId }: { pageId: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!slides || !deck) return <div className="presentation loading" aria-label="Präsentation" />;
+  if (!slides || !deck) return <div className="presentation loading" aria-label={t("present.title")} />;
   const cur = slides[index] ?? null;
   return (
     <div
       className={`presentation ${beamer ? "beamer" : ""} ${hud ? "hud-on" : ""}`}
       role="dialog"
       aria-modal="true"
-      aria-label={`Präsentation: ${title}`}
+      aria-label={t("present.titleOf", { title })}
       onMouseMove={wake}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button, .presenter, .menu")) return;
@@ -491,9 +510,11 @@ function Presentation({ pageId }: { pageId: number }) {
       }}
     >
       {count === 0 ? (
-        <div className="present-empty">Diese Seite ist leer. Mit <kbd>---</kbd> zwischen Absätzen wird sie in Folien geteilt.</div>
+        <div className="present-empty">
+          {t("present.empty")} <kbd>---</kbd> {t("present.emptyEnd")}
+        </div>
       ) : (
-        <SlideView slide={cur} className="present-slide" label={`Folie ${index + 1}`} />
+        <SlideView slide={cur} className="present-slide" label={t("present.slide", { n: index + 1 })} />
       )}
       <div className="present-progress" aria-hidden>
         <span style={{ width: `${count ? ((index + 1) / count) * 100 : 0}%` }} />
@@ -507,20 +528,20 @@ function Presentation({ pageId }: { pageId: number }) {
       </div>
       <div className="present-hud" onClick={(e) => e.stopPropagation()}>
         <span className="present-title ellipsis">{title}</span>
-        <button type="button" className="present-btn" aria-label="Vorherige Folie" disabled={index <= 0} onClick={() => nav({ action: "prev" })}>
+        <button type="button" className="present-btn" aria-label={t("present.prev")} disabled={index <= 0} onClick={() => nav({ action: "prev" })}>
           <ChevronLeft size={18} />
         </button>
-        <button type="button" className="present-btn" aria-label="Nächste Folie" disabled={index >= count - 1} onClick={() => nav({ action: "next" })}>
+        <button type="button" className="present-btn" aria-label={t("present.nextSlide")} disabled={index >= count - 1} onClick={() => nav({ action: "next" })}>
           <ChevronRight size={18} />
         </button>
         <span className="present-sep" />
-        <button type="button" className={`present-btn ${presenter !== "off" ? "on" : ""}`} aria-pressed={presenter !== "off"} onClick={() => void togglePresenter()} title="Referentenansicht (R)">
-          <MonitorSpeaker size={16} /> Referentenansicht
+        <button type="button" className={`present-btn ${presenter !== "off" ? "on" : ""}`} aria-pressed={presenter !== "off"} onClick={() => void togglePresenter()} title={t("present.presenterKey")}>
+          <MonitorSpeaker size={16} /> {t("present.presenter")}
         </button>
-        <button type="button" className={`present-btn ${beamer ? "on" : ""}`} aria-pressed={beamer} onClick={() => nav({ action: "beamer" })} title="Heller Beamer-Stil (B)">
-          <Sun size={16} /> Beamer
+        <button type="button" className={`present-btn ${beamer ? "on" : ""}`} aria-pressed={beamer} onClick={() => nav({ action: "beamer" })} title={t("present.beamerKey")}>
+          <Sun size={16} /> {t("present.beamer")}
         </button>
-        <button type="button" className="present-btn" aria-label="Präsentation beenden" onClick={end} title="Beenden (Esc)">
+        <button type="button" className="present-btn" aria-label={t("present.stopPresentation")} onClick={end} title={t("present.stopKey")}>
           <X size={16} />
         </button>
       </div>
@@ -533,6 +554,7 @@ function Presentation({ pageId }: { pageId: number }) {
 
 /** The presenter window (`index.html#presenter`): mirrors the deck of the main window. */
 export function PresenterApp() {
+  const t = useT();
   const [deck, setDeck] = useState<DeckState | null>(null);
   const typed = useRef("");
   useEffect(() => {
@@ -561,7 +583,7 @@ export function PresenterApp() {
   if (!deck)
     return (
       <div className="presenter-wait">
-        <PresentationIcon size={20} /> Warte auf die Präsentation…
+        <PresentationIcon size={20} /> {t("present.waiting")}
       </div>
     );
   return <PresenterPanel deck={deck} onNav={send} />;
