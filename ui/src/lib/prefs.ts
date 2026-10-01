@@ -2,6 +2,7 @@
 // Zeiterfassung, Tastatur) to the document and the formatting helpers.
 
 import type { Settings } from "./types";
+import { setBackdropPrefs } from "./backdrop";
 import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
@@ -39,18 +40,10 @@ export function applyPrefs(s: Settings) {
   }
   // Labels, shortcut hints and formats may have changed.
   refreshI18n();
-  const mica = !!a?.mica;
-  if (mica !== lastMica) {
-    lastMica = mica;
-    // Windows 11 only: the shell reports whether the Mica backdrop is on.
-    import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke<boolean>("window_backdrop"))
-      .then((on) => root.classList.toggle("os-windows", on))
-      .catch(() => {});
-  }
+  // Window backdrop (Windows 11): the effect, and the opacity live.
+  setBackdropPrefs(a?.window_effect, a?.window_opacity);
 }
 let lastKeymap = "";
-let lastMica: boolean | null = null;
 
 let zoom = 100;
 /** UI scale through the webview's zoom (layout and hit testing stay consistent). */

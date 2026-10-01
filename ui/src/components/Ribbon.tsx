@@ -82,6 +82,8 @@ export function Ribbon() {
   const shown = sidebarShown(sidebarOpen, panelOpen, useNarrowWindow());
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const focus = useApp((s) => s.focus);
+  // „Zeiterfassung verwenden“ off: no timesheet and projects in the ribbon.
+  const timeOn = useApp((s) => s.settings?.settings.time?.enabled !== false);
   const s = useApp.getState;
   const side = "right" as const;
   return (
@@ -102,9 +104,9 @@ export function Ribbon() {
       <IconButton icon={Search} label={withHint(t("ribbon.palette"), "palette")} tooltipSide={side} size="lg" onClick={() => s().set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" })} />
       <span className="ribbon-sep" />
       <IconButton icon={CalendarRange} label={withHint(t("ribbon.calendarView"), "calendar_view")} active={tab?.kind === "calendar"} tooltipSide={side} size="lg" className="ribbon-calendar-view" onClick={() => s().openTab({ kind: "calendar" })} />
-      <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />
+      {timeOn && <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />}
       <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
-      <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />
+      {timeOn && <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />}
       <IconButton icon={Activity} label={t("ribbon.activity")} active={tab?.kind === "activity"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "activity" })} />
       <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />

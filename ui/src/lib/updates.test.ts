@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoCheckAllowed, progressLabel, progressValue } from "./updates";
+import { autoCheckAllowed, manualUpdate, progressLabel, progressValue } from "./updates";
 
 const status = (enabled: boolean) => ({ enabled, current_version: "1.0.0", available: null });
 
@@ -26,5 +26,15 @@ describe("download progress", () => {
     expect(progressValue({ downloaded: 1, total: null, percent: null })).toBe(0);
     expect(progressValue({ downloaded: 1, total: 2, percent: 50 })).toBe(0.5);
     expect(progressValue({ downloaded: 3, total: 2, percent: 140 })).toBe(1);
+  });
+});
+
+describe("manualUpdate", () => {
+  it("installs itself unless portable or packaged", () => {
+    expect(manualUpdate(null)).toBe(null);
+    expect(manualUpdate(status(true))).toBe(null);
+    expect(manualUpdate({ ...status(true), package: true })).toBe("package");
+    expect(manualUpdate({ ...status(true), portable: true })).toBe("portable");
+    expect(manualUpdate({ ...status(true), portable: true, package: true })).toBe("portable");
   });
 });

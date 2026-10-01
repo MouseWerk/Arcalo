@@ -62,7 +62,28 @@ and by `entry_id`.
   parent is gone; title and daily-note clashes are resolved. Entries older than 30 days are purged on start.
 - **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `annalo-YYYYMMDD-HHMMSS.db`;
   older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
-  backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`.
+  backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`. It also copies the
+  attachments folder incrementally (new and changed files, e.g. a drawing saved again; nothing is deleted). A backup
+  holds the whole database (pages, versions, tasks, bookings, calendar cache, settings) and the attachments; secrets
+  and logs are not part of it.
+- **Backup destinations** (`backupdest.rs`, shell `backupdest.rs`): `settings.backup_targets` lists further folders
+  (UNC shares, mapped drives, `/Volumes`/`/mnt` mounts, synced cloud folders) with keep count, maximum age and whether
+  attachments and the Markdown mirror go along. After every local backup a worker thread copies the newest backup to each
+  due destination, into `<destination>/<computer>/` (so two computers sharing a share never prune each other): written as
+  `<name>.partial` (chunked, `fsync`, size checked), then `<name>.sha256` (`sha256sum` format), then renamed. Retention
+  deletes only `annalo-YYYYMMDD-HHMMSS.db` files that have their checksum file, in this computer's folder. Every copy
+  runs on its own thread under `run_watched`: without progress for 60 s (`ANNALO_BACKUP_STALL_SECS` in debug builds) it is
+  given up and the thread is abandoned, so a hung share never blocks the app, other destinations or quitting; the next
+  copy to it waits until the old thread ended. A destination folder is created only below an existing parent and never
+  again once it worked (an unmounted share must not become a local folder). Failures are classified (`Problem`:
+  unreachable, denied, read_only, full, timeout, checksum, …; the UI words them), retried after 1, 5, then every 15
+  minutes and on every new backup, and warned about once (`backup://destination-failed`) after 24 h or three missed
+  backups. Status lives in `<data dir>/backup-destinations.json` together with the destination list, so the start-up
+  recovery can use it without the database. Credentials are the operating system's (Windows session, Keychain, mounts).
+- **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Annalo backups in
+  the backup folder or a destination, copies the file into the data folder as `restore-pending.db` (checksum and
+  `PRAGMA quick_check` verified) and the UI restarts; the next start renames the database to
+  `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it.
 - **Markdown mirror** (`mirror.rs`): after each successful backup (with `markdown_mirror`, default on) the shell
   writes the vault export plus `Zeiterfassung/YYYY-MM.csv` (BOM, `;`, decimal comma) and a `README.txt` marker into
   `markdown_mirror_dir` or `<backup dir>/markdown`. It is built in `.markdown.staging` and swapped in by renaming the old
@@ -142,8 +163,10 @@ and by `entry_id`.
 - **Start-up failures** (shell `recovery.rs`): a data folder that cannot be created, a database that cannot be opened
   (damaged, not a database, locked, read-only storage: `Error::is_storage`) or one of a newer schema (`db::NEWER_SCHEMA`)
   show a native dialog instead of a panic without a window: „Letzte Sicherung wiederherstellen“ (only for a damaged
-  database with backups in `<data dir>/backups`: `backup::restore_latest` keeps the broken files as
-  `workspace.db.broken-<stamp>` and copies the newest backup, then restarts), „Ordner öffnen“, „Beenden“. Settings are read
+  database with backups in `<data dir>/backups`, the configured backup folder or a reachable destination from
+  `backup-destinations.json`, each listed for at most 5 s: `backupdest::restore_newest` copies the newest backup that
+  passes its checksum and SQLite check next to the database, keeps the broken files as `workspace.db.broken-<stamp>`
+  and puts it in place, then restarts), „Ordner öffnen“, „Beenden“. Settings are read
   key by key (`parse_settings_lenient`, one level deep): a value of the wrong type falls back to its default, the raw JSON
   is kept in the meta row `settings.broken` and a notice names the keys. A data folder that opens but cannot be written, and
   network settings that cannot be applied, are start notices (`DataDirStatus.notice` with a `title`).
@@ -240,12 +263,55 @@ and by `entry_id`.
   `search_workspace` plus quick actions (`ui/src/lib/quicksearch.ts`); a chosen result goes through
   `search_open`, which hides it, shows the main window and emits `search://open` (`{kind:"page", page_id, new_tab}`,
   `timesheet`, `timer_stop`) to it. `/zeit …` is booked via `capture_submit`. The query is kept for 60 s.
-- Start page: `settings.dashboard` (`{ widgets: [{ id, kind, size: "s"|"m"|"l" }], note }`, normalized on load:
-  unknown kinds dropped, ids made unique) is saved by `dashboard_save` only; `settings_save` keeps the stored
-  dashboard. The grid has four columns (s = 1, m = 2, l = all) and falls back to two and one via `@container pane`.
+- Start page (1.6): `settings.dashboard` = `{ version: 2, boards: [{ id, name, widgets: [{ id, kind, x, y, w, h,
+  title?, config? }] }], active, notes: { widgetId: text } }` in a 12-column grid of 28 px rows. `Dashboard::normalized`
+  drops unknown kinds, makes board and widget ids unique, keeps widgets inside the grid, caps boards (12), widgets (40),
+  a widget's `config` (16 KB, objects only) and notes. It is saved by `dashboard_save` only; `settings_save` keeps the
+  stored dashboard. The list of 1.3–1.5 (`widgets` with `size`, `note`) stays readable: the UI moves it onto the board
+  „Heute“ (`migrateLegacy` in `lib/dashboard.ts`) and saves it once; a start page never saved shows the boards
+  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings.
+- Start page UI: `lib/dashgrid.ts` is the layout engine (collisions push down, then everything floats up; keyboard
+  `nudge`/`grow`; `reflow` to 6 or 1 columns by the grid's width, measured with a ResizeObserver), `lib/dashboard.ts`
+  the catalogue, presets, board edits, export/import (`annalo-dashboard` JSON), the parts a widget needs and the budget
+  forecast, `lib/dashquery.ts` the query line of the „Abfrage“ widget. Widgets live in `components/dashboard/`
+  (`day`, `time`, `pages`, `tools`), share `common.tsx`, and adapt to their own width (`container: dw`).
+- `dashboard_data(request)` (`annalo_core::dashboard`, async, read connection): `{ today, parts: [{ key, part }] }` →
+  `{ parts: { key: data | { error } }, ms }`. A part is one of `today`, `agenda`, `tasks`, `week`, `budgets`,
+  `project`, `recent`, `page`, `query`, `feed`, `focus`, `proposal`, `review`, `timer_refs`, `month`, `suggestions`;
+  equal parts of several widgets share a key, the budgets with the hours of the last 28 days are loaded once per call.
+  The UI (`components/dashboard/data.tsx`) asks only for widgets in view (IntersectionObserver), keeps shown data
+  while reloading and reloads the parts whose topics changed (`data://entries`, `data://tasks`, `data://pages`,
+  `calendar://synced`, `focus://changed`, saved pages, the WBS), batched into one call. Timing is kept in
+  `window.__annaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
 - Reminders: `end_of_day_reminder` and `late_timer_reminder` are pure functions of time, settings,
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
+
+## First run (`onboarding.rs` in core, `ui/src/onboarding/`)
+
+- Decision: at start, before anything is saved, `onboarding_classify` records once in the meta row `onboarding.first_seen`
+  whether the workspace existed before the intro (stored settings, the answered welcome choice `meta.onboarded`, pages or
+  projects → `existing`, else `fresh`). `onboarding_status` (`onboarding::decide`, pure) plays intro and setup for a fresh
+  workspace until `settings.onboarding.completed_version` is set; an existing one gets the toast „Neu in 1.6: Einführung
+  ansehen“ once (meta `onboarding.whats_new`). `onboarding_complete` stores `completed_version` (`INTRO_VERSION`) and
+  `completed_at` (closing the setup counts too); `onboarding_reset` („Einrichtung zurücksetzen“, Settings → Über) clears
+  them, `meta.onboarded` and the hint and sets `first_seen = reset` (the intro plays again at the next start without
+  guessing the language). `settings_save` keeps the stored `onboarding` like the dashboard. The flags live in the
+  workspace database, so a portable copy carries them. Debug builds skip everything with `ANNALO_SKIP_ONBOARDING=1` (the
+  e2e harness sets it unless a test asks for the intro).
+- UI: `FirstRun` (rendered by `App` only, so the capture, search and presenter windows never show it) covers the window
+  above the app (z 45: dialogs, menus and toasts stay above), keeps keys inside and traps Tab. `Intro` plays seven scenes
+  (welcome plus notes, `/zeit` and the week, assistant, calendar and „Woche vorschlagen“, quick capture, local-first):
+  CSS-only motion on a 560 × 420 canvas scaled to the free space, one progress segment per scene whose `animationend`
+  advances, paused by hover or focus on the scene, Space or the button; arrows move, Esc and „Überspringen“ go to the
+  setup; reduced motion (OS or Settings → Darstellung) shows static slides that fade. `Intake` has ten steps (`flow.ts`:
+  the order and pure setting patches, tested) with a step list (a compact line below 1000 px), a progress bar and
+  back / skip / next. Every answer is saved at once through `writeSettings` (queued, on top of the newest settings) or the
+  existing commands (`onboarding_finish`, `ollama_detect`, the provider dialog with `provider_key_set`,
+  `calendar_source_add`, `git_token_set` and `git_sync_test`, `autostart_set`, `capture_show`). „Mehr in den
+  Einstellungen“ pauses the flow on that settings section with a toast that resumes it. A fresh install guesses the
+  language from the OS locale (`lang.ts`, the adapter to the i18n layer). `time.enabled = false` („Zeiterfassung
+  verwenden“) hides the ribbon's Zeiterfassung and Projekte and their palette commands.
 
 ## Auto-update (`updates.rs` in the shell, `update.rs` in core)
 
@@ -259,6 +325,17 @@ and by `entry_id`.
   on „Jetzt nach Updates suchen“. Installing always needs a click: editors are flushed (`lib/exit.ts`, shared
   with quit/close), the download reports `update://progress`, and `prepare_exit` closes the workspace and
   releases the single-instance lock right before the NSIS installer takes over and relaunches the app.
+- `prepare_exit` waits for a running backup (a cut-off `VACUUM INTO` would be the newest backup a recovery
+  restores), and the update's exit hook also runs `cleanup_before_exit` (tray icon). If the installer or the
+  new process cannot be started, `resume_after_failed_exit` opens the workspace again.
+- `core::update::is_newer` decides (semver precedence; a release build is never offered a pre-release).
+  Portable copies and .deb/.rpm installs (`bundle_type`) never install: `manual_update_reason`, and the UI
+  opens the release page. The feed's `linux-x86_64` entry is the AppImage, which the plugin replaces in place.
+- Right before installing, `.annalo-update` (target version) is written into the data folder; the next start
+  reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
+  version did not change (installer cancelled, UAC denied), that the update was not installed.
+- Debug builds only: `ANNALO_UPDATE_ENDPOINT`, `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_BUNDLE=deb` point the
+  updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
 ## Network (`network.rs` in core and shell)
 
@@ -305,6 +382,27 @@ and by `entry_id`.
   `new_outlook`, `server_exec`, `constrained`, `folder`, `com`) and become German messages that point to ICS where
   COM cannot work. For development and tests `ANNALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
   `ANNALO_TEST_FIXTURES=1`.
+- Outlook calendars (`calsync/calendars.rs`, 1.6): `-Mode discover` lists calendar folders: the default one, every
+  store of `Namespace.Stores` (primary, delegate and additional mailboxes, PSTs; public folders skipped) walked for
+  `DefaultItemType = 1` (calendars fully, other folders two levels deep, Deleted Items skipped), the calendar module of
+  the navigation pane (`GetNavigationModule(1)` → `NavigationGroups` → `NavigationFolders`, through a never shown
+  explorer when Outlook has none; colleagues' calendars, rooms, groups) and people added by name
+  (`GetSharedDefaultFolder`). Each comes with EntryID, StoreID, name, store/owner, path, store type, navigation group,
+  item count and a per-folder error; a folder that refuses access is tried as free/busy (`Recipient.FreeBusy`). The
+  core classifies them (`own`, `file`, `mailbox`, `shared`, `room`, `group`; everything but own and file counts as
+  shared). The default calendar keeps the source id `outlook` (so events, marks and WBS memory of 1.5 stay); others are
+  `outlook:<12 hex of SHA-256 over StoreID|EntryID>` (uppercased), a person opened by name hashes its name. The
+  choice lives in `settings.calendar.outlook_calendars` (id, ids, name, owner, path, kind, color, enabled, booking,
+  free/busy); `normalized()` (also on loading) adds the default calendar to 1.5 settings with `outlook_color`, which
+  stays its color. Reading: all selected calendars in one run with `-Calendars <json file>` (`GetDefaultFolder(9)`,
+  else `GetFolderFromID`, else `GetSharedDefaultFolder`, else free/busy blocks), each with its own result and status
+  row; the timeout grows by 20 s per calendar. `calendar_events` returns a meeting found in several Outlook calendars
+  (same uid and start) once: the copy with a mark, else the one of the calendar listed first (own before shared),
+  naming the others in `also_in`. Week proposal, day review and the quick capture's „Jetzt“ read
+  `booking_sources()` (calendars with „Für Buchungsvorschläge verwenden“, default off for shared ones). Which
+  calendars the Kalender and the „Termine“ widget show is a view setting (`lib/calvisibility.ts`, localStorage).
+  Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
+  describe the default calendar alone.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,
   TEXT escapes, lenient components. Zones (`calsync/tz.rs`): IANA names (also behind a `/mozilla.org/…/` path), the
   Windows ids Outlook writes (CLDR `windowsZones` table, e.g. `W. Europe Standard Time` → `Europe/Berlin`), fixed
@@ -450,9 +548,15 @@ and by `entry_id`.
   the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid
   hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "annalo-theme", version: 1, name, dark,
   colors}` (`theme_export` / `theme_file_read`, checked by `prefs::parse_theme_file`).
-- Mica (Windows 11) is off by default; `migrate_appearance_defaults` switches it off once for settings saved with the
-  old default (and turns the old default accent `indigo` into `theme`). When on, sidebar and ribbon are the theme's
-  sidebar color at 93 %.
+- Window backdrop (`appearance.window_effect`: `none`/`mica`/`acrylic`, `window_opacity` 40–100, default 80): off by
+  default; `migrate_appearance_defaults` switches it off once for settings saved with the old default (and turns the
+  old default accent `indigo` into `theme`); the 1.3–1.5 switch `mica: true` becomes `window_effect: "mica"` on load
+  (`upgrade_settings`). `src-tauri/src/backdrop.rs` offers Mica from Windows build 22000 and Acrylic from 22523 (drawn
+  as a system backdrop); only then is the window transparent, so Windows 10, macOS and Linux stay opaque.
+  `window_set_backdrop(effect, dark)` applies it (the Mica variant follows the theme; clearing needs `set_effects(None)`).
+  The UI (`lib/backdrop.ts`) sets `<html data-backdrop>` and `--glass`; app.css ("window backdrop") paints one base
+  layer on the body (sidebar color at `--glass`) and one on `.main` (canvas at `--glass`), everything between is
+  transparent, so splitters and gaps can never be holes. `ANNALO_TEST_BACKDROP=1` simulates both effects (e2e 91).
 - Dropdowns are `components/Select.tsx` (combobox + listbox in a portal) with the API of a controlled `<select>`; the
   e2e harness `app.select(selector, value)` opens it and clicks the option.
 - Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the

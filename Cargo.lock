@@ -90,6 +90,7 @@ dependencies = [
  "reqwest",
  "rrule",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

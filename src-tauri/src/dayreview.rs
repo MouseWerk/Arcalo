@@ -29,7 +29,8 @@ const REMINDED: &str = "day_review.day";
 
 fn review(state: &AppState, db: &Database, date: NaiveDate) -> Result<DayReview> {
     let settings = state.settings();
-    let sources = settings.calendar.active_sources(outlook::available());
+    // Meetings to book: not those of calendars shared by colleagues (unless chosen).
+    let sources = settings.calendar.booking_sources(outlook::available());
     core::day_review(db, date, &Local, &ReviewOptions::from_settings(&settings, Some(sources), Utc::now()))
 }
 

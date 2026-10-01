@@ -296,3 +296,84 @@
   .settings-nav-group-label { padding: 4px 10px 3px; }
   .settings-nav-item { height: 26px; }
 }
+
+/* ---- window backdrop: opacity slider ---- */
+.opacity-slider { display: inline-flex; align-items: center; gap: 12px; }
+.opacity-slider input {
+  --fill: 50%;
+  width: 200px;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.opacity-slider input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent) var(--fill), var(--bg-active) var(--fill));
+}
+.opacity-slider input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-sm), inset 0 0 0 4px var(--bg-raised), inset 0 0 0 9px var(--accent);
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.opacity-slider input:hover:not(:disabled)::-webkit-slider-thumb { box-shadow: var(--shadow-sm), inset 0 0 0 3px var(--bg-raised), inset 0 0 0 9px var(--accent); }
+.opacity-slider input:focus-visible { outline: none; }
+.opacity-slider input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.opacity-slider.off { opacity: 0.45; }
+.opacity-slider.off input { cursor: default; }
+.opacity-value { min-width: 42px; text-align: right; color: var(--text-2); font-size: var(--fs-sm); }
+
+/* ---- backup destinations ---- */
+.bdest-list { display: grid; gap: 10px; padding: 14px 0; }
+.bdest-empty { margin: 0; }
+.bdest-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-canvas);
+}
+.bdest-card[data-health="failing"] { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
+.bdest-card[data-health="off"] .bdest-title, .bdest-card[data-health="off"] .bdest-opts { opacity: 0.6; }
+.bdest-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bdest-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent-text); }
+.bdest-card[data-health="failing"] .bdest-icon { background: var(--warning-soft); color: var(--warning); }
+.bdest-title { display: grid; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.bdest-kind { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bdest-head > .switch, .bdest-head > .icon-btn { flex: none; }
+.bdest-status { min-width: 0; font-size: var(--fs-sm); }
+.bdest-hint { margin: 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--info-soft); color: var(--text-2); line-height: 1.5; }
+.bdest-opts { display: grid; gap: 10px; min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.bdest-optline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; min-width: 0; }
+.bdest-opt { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.bdest-opt .input { width: 64px; }
+.bdest-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.bdest-test { flex: 1 1 200px; }
+.bdest-add { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; width: 100%; }
+.bdest-add .bdest-input { flex: 1 1 260px; min-width: 0; width: auto; font-size: var(--fs-sm); }
+.bdest-add > .btn { flex: none; }
+.bdest-dup { color: var(--warning); }
+.set-row:has(.bdest-add) > .set-row-control { flex: 1 1 380px; }
+.backup-row .backup-source { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 45%; color: var(--text-2); }
+.backup-row .backup-source > svg { flex: none; }
+.backup-source-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backup-row .backup-sum { color: var(--success); }
+.backup-row .backup-restore { flex: none; opacity: 0.55; }
+.backup-row:hover .backup-restore, .backup-row .backup-restore:focus-visible { opacity: 1; }
+.backup-list > .set-status { padding: 6px 0; font-size: var(--fs-sm); }
+@container setcard (max-width: 560px) {
+  .backup-row { flex-wrap: wrap; row-gap: 2px; padding: 4px 0; }
+  .backup-row .backup-source { max-width: 100%; order: 5; flex-basis: 100%; }
+  .bdest-add .bdest-input { flex-basis: 100%; }
+}

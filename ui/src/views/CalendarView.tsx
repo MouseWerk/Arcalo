@@ -16,10 +16,12 @@ import {
   bookedEntry, bookingPrefill, durationMinutes, hasSources, isAllDayLike, keyAction, layoutDay, minutesOfDay, monthCells, onDay as coversDay, rangeTitle, sourceColor, sourceName, step, timeRange, viewRange, weekLabel,
   type BookingPrefill, type CalView, type Range,
 } from "../lib/agenda";
+import { legendSources, setCalendarHidden, useHiddenCalendars, visibleEvents } from "../lib/calvisibility";
+import { useT } from "../lib/i18n";
 import { openSettingsSection, takeCalendarFocus } from "../lib/calnav";
 import { useWbs } from "./wbs";
 import { EntryDialog } from "./TimesheetView";
-import type { CalendarEvent, CalendarSettings, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
+import type { CalendarEvent, CalendarSettings, CalendarSourceInfo, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
 import { openDayReview } from "../lib/reviewnav";
 
 /** Pixels per hour in the time grid. */
@@ -135,7 +137,13 @@ export function CalendarView() {
     const apply = () => {
       const f = takeCalendarFocus();
       if (!f) return;
-      if (f.date) setAnchor(new Date(`${f.date}T12:00:00`));
+      if (f.date) {
+        const day = new Date(`${f.date}T12:00:00`);
+        setAnchor(day);
+        // A weekend day is not in the work week: show the whole week for it (not stored).
+        const wd = useApp.getState().settings?.settings.workdays ?? [1, 2, 3, 4, 5];
+        if (!wd.includes(((day.getDay() + 6) % 7) + 1)) setViewState((v) => (v === "workweek" ? "week" : v));
+      }
       if (f.key) setSelected(f.key);
     };
     apply();
@@ -143,7 +151,9 @@ export function CalendarView() {
     return () => window.removeEventListener("annalo:calendar-focus", apply);
   }, []);
 
-  const shown = events;
+  // Calendars hidden in the legend (the view only; they keep syncing).
+  const hidden = useHiddenCalendars();
+  const shown = useMemo(() => visibleEvents(events, hidden), [events, hidden]);
   const booked = useMemo(() => new Map(shown.map((e) => [e.key, bookedEntry(e, entries)])), [shown, entries]);
   const current = shown.find((e) => e.key === selected) ?? null;
   const syncing = status?.sources.some((x) => x.enabled && x.syncing) ?? false;
@@ -306,6 +316,8 @@ export function CalendarView() {
           </EmptyState>
         </div>
       ) : (
+        <>
+        <CalendarLegend sources={legendSources(status)} hidden={hidden} />
         <div className="calv-main">
           <div className="calv-body">
             {view === "month" ? (
@@ -340,6 +352,7 @@ export function CalendarView() {
             />
           )}
         </div>
+        </>
       )}
 
       {booking && (
@@ -367,6 +380,46 @@ export function CalendarView() {
               .catch((e) => s().error("Buchung nicht mit dem Termin verknüpft", e));
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- legend
+
+/** The calendars with their colors; a click hides or shows one in the view (sync stays as it is). */
+function CalendarLegend({ sources, hidden }: { sources: CalendarSourceInfo[]; hidden: ReadonlySet<string> }) {
+  const t = useT();
+  if (sources.length < 2) return null;
+  const off = sources.filter((x) => hidden.has(x.id)).length;
+  return (
+    <div className="calv-legend" role="group" aria-label={t("olcal.legend")}>
+      {sources.map((src) => {
+        const on = !hidden.has(src.id);
+        const name = src.name;
+        return (
+          <button
+            type="button"
+            key={src.id}
+            className={`calv-legend-item ${on ? "" : "off"}`}
+            style={{ "--ev": src.color } as CSSProperties}
+            aria-pressed={on}
+            data-source={src.id}
+            data-tooltip={on ? t("olcal.hide", { name }) : t("olcal.show", { name })}
+            onClick={() => setCalendarHidden(src.id, on)}
+          >
+            <span className="calv-legend-dot" aria-hidden />
+            <span className="ellipsis">{name}</span>
+          </button>
+        );
+      })}
+      {off > 0 && (
+        <span className="calv-legend-note faint">
+          {t("olcal.hiddenNote", { n: off })}
+          <button type="button" className="calv-linkbtn" onClick={() => sources.forEach((x) => setCalendarHidden(x.id, false))}>
+            {t("olcal.showAll")}
+          </button>
+        </span>
       )}
     </div>
   );
@@ -705,6 +758,8 @@ function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }:
   const people = allPeople ? e.attendees : e.attendees.slice(0, 8);
   const entry = booked && "netzplan_nr" in booked ? booked : null;
   const linkKind = e.link?.includes("teams.") ? "Teams" : e.link?.includes("zoom.") ? "Zoom" : e.link?.includes("webex.") ? "Webex" : e.link?.includes("meet.google.") ? "Google Meet" : "Online";
+  const t = useT();
+  const calendar = cal?.outlook_calendars?.find((c) => c.id === e.source);
   return (
     <aside className="calv-detail" aria-label="Termin">
       <div className="calv-detail-head">
@@ -760,6 +815,32 @@ function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }:
             {e.private ? " · privat" : ""}
           </span>
         </div>
+        {calendar?.free_busy && (
+          <div className="calv-detail-row faint">
+            <EyeOff size={14} aria-hidden />
+            <span>{t("olcal.freeBusyEvent")}</span>
+          </div>
+        )}
+        {!!e.also_in?.length && (
+          <div className="calv-detail-row calv-also-in">
+            <Layers size={14} aria-hidden />
+            <span>
+              {t("olcal.alsoIn")}
+              {e.also_in.map((x) => (
+                <span key={x} className="calv-also-cal" style={{ "--ev": sourceColor(x, cal) } as CSSProperties}>
+                  <span className="calv-dot" aria-hidden />
+                  {sourceName(x, cal)}
+                </span>
+              ))}
+            </span>
+          </div>
+        )}
+        {calendar && !calendar.booking && (
+          <div className="calv-detail-row faint">
+            <Timer size={14} aria-hidden />
+            <span>{t("olcal.notForBooking")}</span>
+          </div>
+        )}
       </div>
       {e.link && (
         <Button icon={Video} className="calv-join" onClick={() => void openUrl(e.link!).catch((err) => useApp.getState().error("Link ließ sich nicht öffnen", err))}>

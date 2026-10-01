@@ -8,12 +8,7 @@
   transition: opacity 160ms ease-out;
 }
 body.ready .app { opacity: 1; }
-/* Windows 11 with Mica switched on: the backdrop shows only faintly through the chrome. The
-   tint is the theme's own sidebar color at 93 %, so text keeps its contrast even when the
-   window is inactive (then Windows replaces Mica with a flat grey). Off: solid theme colors. */
-:root.os-windows body { background: transparent; }
-:root.os-windows .app { background: transparent; }
-:root.os-windows :is(.sidebar, .ribbon) { background: color-mix(in srgb, var(--bg-sidebar) 93%, transparent); }
+/* Windows 11 with a backdrop (Mica, Acrylic): see "window backdrop" at the end. */
 /* macOS: the window content reaches into the title bar (overlay); the traffic lights sit in the
    top-left corner, so the column below them and the row next to them make room. */
 .ribbon-titlebar { display: none; }
@@ -1187,97 +1182,7 @@ body.capture-mode { background: transparent; }
 .cite-card .link-preview-title { min-width: 0; }
 .cite-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* -------------------------------------------------------------- dashboard */
-
-.home-dash { max-width: 1120px; padding: 6vh 40px 48px; }
-.home-head { display: flex; align-items: center; gap: 16px; }
-.home-head .home-logo { margin: 0; }
-.home-head p { margin: 2px 0 0; }
-.dash-top { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 24px; }
-.dash-top > .home-head { flex: 1 1 auto; min-width: 0; }
-.dash-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-height: 30px; margin-left: auto; }
-.dash-hint { font-size: var(--fs-xs); margin-right: auto; }
-.dash-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 12px; }
-.dash-empty { grid-column: 1 / -1; padding: 32px; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
-.dw { display: flex; flex-direction: column; min-width: 0; min-height: 132px; overflow: hidden; }
-.dw-s { grid-column: span 1; }
-.dw-m { grid-column: span 2; }
-.dw-l { grid-column: 1 / -1; }
-@container pane (max-width: 860px) {
-  .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dw-m, .dw-l { grid-column: 1 / -1; }
-  .home-dash { padding: 32px 20px 40px; }
-}
-@container pane (max-width: 520px) {
-  .dash-grid { grid-template-columns: minmax(0, 1fr); }
-  .dw-s, .dw-m, .dw-l { grid-column: 1 / -1; }
-  .dash-hint { display: none; }
-}
-.dw-head { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 8px 0 14px; }
-.dw-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dw-body { flex: 1; min-height: 0; padding: 4px 14px 12px; display: flex; flex-direction: column; }
-.dw .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.dw-empty { color: var(--text-3); font-size: var(--fs-sm); padding: 6px 0; }
-.dw-empty .inline-icon { vertical-align: -1px; }
-.dw-big { font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.02em; color: var(--text); }
-.dw-list { list-style: none; margin: 0 -6px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
-.dw-page, .dw-task-text, .dw-more, .dw-budget {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 6px; border: 0; border-radius: var(--r-sm);
-  background: transparent; text-align: left; color: var(--text); font-size: var(--fs-sm);
-}
-.dw-page:hover, .dw-task-text:hover, .dw-more:hover, .dw-budget:hover { background: var(--bg-hover); }
-.dw-page svg { color: var(--text-3); flex: none; }
-.dw-start svg { color: var(--accent-text); }
-.dw-when { font-size: var(--fs-xs); flex: none; }
-.dw-more { color: var(--text-3); }
-.dw-task { display: flex; align-items: center; gap: 2px; padding-left: 6px; }
-.dw-check { flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--bg-input); padding: 0; }
-.dw-check:hover { border-color: var(--accent); background: var(--accent-soft); }
-.dw-today { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.dw-add { margin-top: auto; height: 30px; font-size: var(--fs-sm); }
-.dw-budget { flex-direction: column; align-items: stretch; gap: 4px; }
-.dw-budget-head, .dw-budget-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dw-budget-bar .progress { flex: 1; }
-.dw-budget-bar .num { font-size: var(--fs-xs); min-width: 36px; text-align: right; }
-.dw-week { display: flex; flex-direction: column; gap: 10px; width: 100%; flex: 1; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; border-radius: var(--r-sm); }
-.dw-week-sum { display: flex; align-items: baseline; gap: 6px; }
-.dw-week-sum .badge { align-self: center; }
-.dw-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; flex: 1; min-height: 88px; }
-.dw-bar-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
-.dw-bar-track { position: relative; flex: 1; width: 100%; max-width: 30px; min-height: 48px; border-radius: 4px; background: var(--bg-active); overflow: hidden; }
-.dw-bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 4px 4px 0 0; transition: height var(--dur) var(--ease-out); }
-.dw-bar-target { position: absolute; left: 0; right: 0; bottom: calc(var(--target) * 100%); height: 0; border-top: 1px dashed var(--text-3); z-index: 1; opacity: 0.7; }
-.dw-bar-col.gap .dw-bar-track { box-shadow: inset 0 0 0 1px var(--warning); }
-.dw-bar-col.weekend .dw-bar-fill { background: var(--text-3); }
-.dw-bar-col.weekend .dw-bar-day { color: var(--text-3); }
-.dw-bar-h { font-size: var(--fs-xs); color: var(--text-2); min-height: 1.2em; }
-.dw-bar-day { font-size: var(--fs-xs); color: var(--text-2); }
-.dw-bar-col.today .dw-bar-day { color: var(--accent-text); font-weight: 600; }
-.dw-timer { display: flex; align-items: center; gap: 10px; flex: 1; }
-.dw-timer-main { display: grid; min-width: 0; }
-.dw-note { flex: 1; min-height: 96px; resize: none; font-size: var(--fs-sm); line-height: 1.5; padding: 8px 10px; user-select: text; }
-.dw-cal-head { display: flex; align-items: center; gap: 2px; font-size: var(--fs-sm); font-weight: 600; margin-bottom: 4px; }
-.dw-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; }
-.dw-cal-wd { text-align: center; font-size: var(--fs-2xs); color: var(--text-3); padding-bottom: 2px; }
-.dw-cal-day { position: relative; height: 24px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; font-size: var(--fs-xs); color: var(--text); font-variant-numeric: tabular-nums; }
-.dw-cal-day:hover { background: var(--bg-hover); }
-.dw-cal-day.outside { color: var(--text-3); opacity: 0.6; }
-.dw-cal-day.today { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent-text); font-weight: 600; }
-.dw-cal-day.has-note::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--accent); }
-.dw-cal-day.tone-met { background: var(--success-soft); }
-.dw-cal-day.tone-below { background: var(--warning-soft); }
-/* edit mode */
-.dash.editing .dw { border-style: dashed; cursor: grab; }
-.dash.editing .dw-body { opacity: 0.55; pointer-events: none; }
-.dw.dragging { opacity: 0.4; }
-.dw.drop-before { box-shadow: -3px 0 0 0 var(--accent); }
-.dw.drop-after { box-shadow: 3px 0 0 0 var(--accent); }
-.dw-grip { flex: none; margin-left: -6px; }
-.dw-tools { display: flex; align-items: center; gap: 2px; flex: none; }
-.dw-sizes { display: inline-flex; margin-right: 4px; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
-.dw-sizes button { width: 22px; height: 20px; padding: 0; border: 0; background: transparent; font-size: var(--fs-2xs); font-weight: 600; color: var(--text-3); }
-.dw-sizes button + button { border-left: 1px solid var(--border); }
-.dw-sizes button[aria-pressed="true"] { background: var(--bg-active); color: var(--text); }
+/* The start page's grid and widgets: dashboard.css. */
 
 /* ----------------------------------------------------------- quick search */
 
@@ -2430,6 +2335,93 @@ body.presenter-window .presenter { height: 100vh; }
 /* the task list: link to a mail */
 .mail-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin: 0 2px; padding: 0 7px 0 6px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font: inherit; font-size: var(--fs-xs); vertical-align: 0.1em; cursor: pointer; }
 .mail-chip:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* ---- window backdrop (Mica / Acrylic on Windows 11, lib/backdrop.ts) ---- */
+/* <html data-backdrop> while an effect shows; --glass is the opacity (0.4–1, set live). One
+   base layer on the body, the theme's sidebar color at --glass, covers the whole window, so
+   splitters, the 1px gaps beside them, the room around the ribbon, the window buttons and the
+   splash crossfade can never be holes. The content column adds a second layer (the canvas at
+   --glass), clearly more opaque than the chrome. Everything in between is transparent, and the
+   borders are lines drawn over the layers. Text colors never change. */
+:root[data-backdrop] {
+  --glass: 0.8;
+  --glass-chrome: color-mix(in srgb, var(--bg-sidebar) calc(var(--glass) * 100%), transparent);
+  --glass-content: color-mix(in srgb, var(--bg-canvas) calc(var(--glass) * 100%), transparent);
+  --glass-line: color-mix(in srgb, var(--border) 75%, transparent);
+  background: transparent;
+}
+:root[data-backdrop] body { background: var(--glass-chrome); }
+:root[data-backdrop] :is(.app, .ribbon, .sidebar, .panel, .tabbar, .statusbar) { background: transparent; }
+:root[data-backdrop] :is(.main, .app.focus .main) { background: var(--glass-content); }
+:root[data-backdrop] :is(.ribbon, .sidebar, .panel, .tabbar, .statusbar, .side-tabs, .panel-tabs, .sidebar-foot) { border-color: var(--glass-line); }
+:root[data-backdrop] :is(.pane + .resizer + .pane, .pane.multi + .resizer + .pane) { border-left-color: var(--glass-line); }
+:root[data-backdrop] .pane.multi.active .tabbar { background: color-mix(in srgb, var(--bg-active) 45%, transparent); }
+/* Views with a surface of their own: tinted over the content layer instead of painted over it. */
+:root[data-backdrop] :is(.settings-nav, .settings-topbar) { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
+:root[data-backdrop] .calv { background: transparent; }
+:root[data-backdrop] :is(.calv-sticky, .calv-month-head) { background: var(--glass-content); }
+
+/* ---- Outlook calendar selection ---- */
+.olcal { display: grid; gap: 10px; padding: 14px 0 16px; border-top: 1px solid var(--border); min-width: 0; }
+.olcal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.olcal-head-text { display: grid; gap: 3px; min-width: 0; }
+.olcal-title { font-weight: 600; }
+.olcal-desc { max-width: 620px; font-size: var(--fs-sm); line-height: 1.5; }
+.olcal-found { font-size: var(--fs-xs); }
+.olcal-error { color: var(--danger); }
+.olcal-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-canvas); overflow: hidden; }
+.olcal-empty { padding: 14px; font-size: var(--fs-sm); text-align: center; }
+.olcal-row { display: grid; grid-template-columns: 16px 16px minmax(0, 1fr) auto; grid-template-areas: "check swatch text booking" ". . colors colors"; align-items: start; column-gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.olcal-row > .check { margin-top: 2px; }
+.olcal-row > .olcal-swatch { margin-top: 3px; }
+.olcal-row > .olcal-booking { align-self: center; }
+.olcal-row:first-child { border-top: 0; }
+.olcal-row > .check { grid-area: check; }
+.olcal-row:not(.on) .olcal-text { opacity: 0.72; }
+.olcal-row.refused .olcal-text { opacity: 0.6; }
+.olcal-swatch { grid-area: swatch; width: 14px; height: 14px; padding: 0; border: 2px solid var(--bg-canvas); border-radius: 50%; box-shadow: 0 0 0 1px var(--border); cursor: pointer; }
+.olcal-swatch:hover, .olcal-swatch[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--text-3); }
+.olcal-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.olcal-text { grid-area: text; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.olcal-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; font-weight: 600; }
+.olcal-name > .ellipsis { max-width: 100%; white-space: nowrap; }
+.olcal-name .badge { flex: none; font-weight: 500; }
+.olcal-owner { font-size: var(--fs-xs); }
+.olcal-status { font-size: var(--fs-xs); }
+.olcal-booking { grid-area: booking; display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-xs); cursor: pointer; white-space: nowrap; }
+.olcal-colors { grid-area: colors; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0 2px; }
+.olcal-color { width: 20px; height: 20px; padding: 0; border: 2px solid var(--bg-canvas); border-radius: 50%; box-shadow: 0 0 0 1px var(--border); cursor: pointer; }
+.olcal-color[aria-checked="true"] { box-shadow: 0 0 0 2px var(--text); }
+.olcal-color:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.olcal-people { display: grid; gap: 6px; }
+.olcal-people-label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; }
+.olcal-people-label svg { color: var(--text-3); }
+.olcal-people-add { display: flex; gap: 8px; }
+.olcal-people-add > .input { flex: 1; min-width: 0; max-width: 360px; }
+.olcal-people-hint { font-size: var(--fs-xs); line-height: 1.5; }
+.olcal-people-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.olcal-person { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 2px 0 9px; border: 1px solid var(--border); border-radius: 999px; font-size: var(--fs-xs); }
+@container setcard (max-width: 440px) {
+  .olcal-row { grid-template-columns: 16px 16px minmax(0, 1fr); grid-template-areas: "check swatch text" ". . booking" ". . colors"; row-gap: 6px; }
+  .olcal-booking { justify-self: start; }
+  .olcal-head { flex-direction: column; }
+}
+/* Kalender view: the legend hides or shows calendars in the view */
+.calv-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 20px 0; }
+.calv-legend-item { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; height: 24px; padding: 0 10px 0 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-raised); color: var(--text-2); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.calv-legend-item:hover { border-color: color-mix(in srgb, var(--ev) 45%, var(--border)); color: var(--text); }
+.calv-legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.calv-legend-dot { flex: none; width: 9px; height: 9px; border: 2px solid var(--ev); border-radius: 50%; background: var(--ev); }
+.calv-legend-item.off { color: var(--text-3); background: transparent; border-style: dashed; }
+.calv-legend-item.off .calv-legend-dot { background: transparent; }
+.calv-legend-item.off .ellipsis { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
+.calv-legend-note { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; font-size: var(--fs-xs); }
+.calv-also-in > span { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.calv-also-cal { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+@container pane (max-width: 600px) {
+  .calv-legend { padding: 8px 14px 0; }
+  .calv-legend-note { width: 100%; margin-left: 0; }
+}
 
 /* ---- macOS popups ---- */
 

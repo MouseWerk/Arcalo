@@ -3,6 +3,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
+import type * as B from "./backupdest";
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
 
@@ -138,6 +139,12 @@ export const api = {
   calendarSourceRemove: (id: string) => call<T.CalendarStatus>("calendar_source_remove", { id }),
   /** Syncs one source (its error is thrown) or all active ones now. */
   calendarSyncNow: (source?: string) => call<T.CalendarStatus>("calendar_sync_now", { source: source ?? null }),
+  /** Lists the calendars of Outlook (default, other folders and stores, shared, rooms, groups). */
+  calendarOutlookDiscover: () => call<T.CalendarStatus>("calendar_outlook_discover"),
+  calendarOutlookUpdate: (id: string, patch: { enabled?: boolean; color?: string; booking?: boolean }) =>
+    call<T.CalendarStatus>("calendar_outlook_update", { id, enabled: patch.enabled ?? null, color: patch.color ?? null, booking: patch.booking ?? null }),
+  /** People whose calendars discovery opens by name; discovers again. */
+  calendarOutlookPeople: (people: string[]) => call<T.CalendarStatus>("calendar_outlook_people", { people }),
   calendarSetSkip: (key: string, skip: boolean) => call<void>("calendar_set_skip", { key, skip }),
   calendarLinkEntry: (key: string, entryId: number) => call<void>("calendar_link_entry", { key, entryId }),
   /** The WBS last booked for this series or subject. */
@@ -174,8 +181,23 @@ export const api = {
   removeDemo: () => call<number>("demo_remove"),
   onboardingNeeded: () => call<boolean>("onboarding_needed"),
   finishOnboarding: (samples: boolean) => call<void>("onboarding_finish", { samples }),
+  /** First-run intro: play it (fresh install) or show the upgrade hint. */
+  onboardingStatus: () => call<T.OnboardingStatus>("onboarding_status"),
+  /** Stores `onboarding.completed_version` / `completed_at`. */
+  onboardingComplete: () => call<T.SettingsView>("onboarding_complete"),
+  onboardingHintShown: () => call<void>("onboarding_hint_shown"),
+  /** Resets the first-run flags only (never data). */
+  onboardingReset: () => call<T.SettingsView>("onboarding_reset"),
   backupNow: () => call<T.BackupInfo>("backup_now"),
   backups: () => call<T.BackupInfo[]>("backup_list"),
+  backupDestinations: () => call<B.DestView[]>("backup_destinations"),
+  /** „Jetzt testen“: write, read back and delete a probe file in `path`. */
+  testBackupDestination: (path: string) => call<B.DestTest>("backup_destination_test", { path }),
+  retryBackupDestinations: () => call<void>("backup_destination_retry"),
+  /** Backups in the active destinations (unreachable ones listed in `offline`). */
+  remoteBackups: () => call<B.RemoteBackups>("backup_remote_list"),
+  /** Copies and checks the backup; the next start puts it in place (restart right after). */
+  restoreBackup: (path: string) => call<B.RestoreStaged>("backup_restore", { path }),
   mirrorStatus: () => call<T.MirrorStatus>("mirror_status"),
   openMirror: () => call<void>("mirror_open"),
   gitSyncNow: (allowDeletions = false) => call<T.GitSyncOutcome>("git_sync_now", { allowDeletions }),
@@ -257,6 +279,10 @@ export const api = {
   timerResumeLast: () => call<void>("timer_resume_last"),
   /** Saves the start page's widgets and scratch note only. */
   saveDashboard: (dashboard: T.Dashboard) => call<T.SettingsView>("dashboard_save", { dashboard }),
+  /** Everything the visible start-page widgets need, in one call (see lib/dashboard.ts `partsOf`). */
+  dashboardData: (today: string, parts: { key: string; part: unknown }[]) => call<{ parts: Record<string, unknown>; ms: number }>("dashboard_data", { request: { today, parts } }),
+  /** Writes an exported start-page board (JSON). */
+  dashboardFileWrite: (path: string, json: string) => call<void>("dashboard_file_write", { path, json }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
   /** Opens the ribbon link at `index`, or entry `item` of the group there. */
   openQuickLink: (index: number, item: number | null = null) => call<void>("quick_link_open", { index, item }),

@@ -1,5 +1,7 @@
 // Mirrors of the Rust types that cross the IPC boundary (serde snake_case).
 
+import type { BackupTargets } from "./backupdest";
+
 export interface Page {
   id: number;
   parent_id: number | null;
@@ -264,6 +266,8 @@ export interface Settings {
   workdays: number[];
   backup_dir: string | null;
   backup_keep: number;
+  /** Further folders (network shares, cloud folders) that receive a copy of every backup. */
+  backup_targets: BackupTargets;
   /** After every backup, write the workspace as Markdown files (+ time entries as CSV). */
   markdown_mirror: boolean;
   /** Mirror folder; null = `markdown` in the backup folder. */
@@ -289,6 +293,8 @@ export interface Settings {
   capture: CapturePrefs;
   /** „E-Mail als Aufgabe / Notiz“ (Settings → Kalender → E-Mail). */
   mail: MailSettings;
+  /** First-run intro and setup (saved by its own commands, kept by `settings_save`). */
+  onboarding: OnboardingState;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -308,6 +314,18 @@ export interface Settings {
   locale: LocalePrefs;
   /** In-app shortcuts that differ from the defaults: command id → "Ctrl+Shift+D" ("" = off). */
   keymap: Record<string, string>;
+}
+export interface OnboardingState {
+  /** The intro version completed (e.g. "1.6.0"). */
+  completed_version: string | null;
+  completed_at: string | null;
+}
+export interface OnboardingStatus extends OnboardingState {
+  /** Play the intro and the setup (fresh install). */
+  intro: boolean;
+  /** One-time hint for a workspace from before the intro. */
+  whats_new: boolean;
+  existing: boolean;
 }
 export type ProxyMode = "none" | "system" | "manual" | "pac";
 export interface NetworkSettings {
@@ -357,7 +375,10 @@ export interface AppearancePrefs {
   density: "compact" | "normal" | "comfortable";
   line_width: "narrow" | "normal" | "wide" | "full";
   reduce_motion: boolean;
-  mica: boolean;
+  /** Window backdrop (Windows 11); elsewhere the window stays opaque. */
+  window_effect: "none" | "mica" | "acrylic";
+  /** How much the theme covers the backdrop, in percent (40–100). */
+  window_opacity: number;
   custom_titlebar: boolean;
   startup_animation: boolean;
 }
@@ -384,6 +405,8 @@ export interface NotesPrefs {
   max_versions: number;
 }
 export interface TimePrefs {
+  /** „Zeiterfassung verwenden“: off hides the timesheet, projects and their commands. */
+  enabled: boolean;
   week_start: "monday" | "sunday";
   rounding: { step_minutes: number; mode: "up" | "nearest"; min_minutes: number };
   hours_display: "decimal" | "clock";
@@ -508,17 +531,38 @@ export interface GitTest {
   branches: string[];
   error: string | null;
 }
-export type WidgetKind = "today" | "week" | "budgets" | "recent" | "favorites" | "timer" | "note" | "calendar" | "focus" | "agenda";
-export type WidgetSize = "s" | "m" | "l";
-export interface Widget {
+/** A widget of the start page before 1.6 (one list, three widths). */
+export interface LegacyWidget {
   id: string;
-  kind: WidgetKind;
-  size: WidgetSize;
+  kind: string;
+  size: "s" | "m" | "l";
+}
+/** A widget on a board: place and size in the 12-column grid, own title and settings. */
+export interface GridWidget {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title?: string;
+  config?: Record<string, unknown>;
+}
+export interface Board {
+  id: string;
+  name: string;
+  widgets: GridWidget[];
 }
 export interface Dashboard {
-  widgets: Widget[];
-  /** Scratch text of the „Notiz“ widget. */
-  note: string;
+  /** 2 since 1.6 (boards); 0 before. */
+  version: number;
+  boards: Board[];
+  active: string;
+  /** Texts of the „Notiz“ widgets by widget id. */
+  notes: Record<string, string>;
+  /** Before 1.6 (moved onto a board by the start page); missing when never saved. */
+  widgets?: LegacyWidget[] | null;
+  note?: string;
 }
 /** Payload of `search://open`: what the quick search asks the main window to show. */
 export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" };
@@ -836,6 +880,10 @@ export interface UpdateStatus {
   available: UpdateInfo | null;
   /** Portable copy: new versions are downloaded from the release page, not installed. */
   portable?: boolean;
+  /** Installed as .deb/.rpm: the package manager updates it, the release page has the package. */
+  package?: boolean;
+  /** Reported once after a start that followed an update: the version, and whether it runs now. */
+  restarted?: { version: string; installed: boolean } | null;
 }
 export interface UpdateProgress {
   downloaded: number;
@@ -1030,10 +1078,52 @@ export interface MailSettings {
   /** What the dialog offers first. */
   default_action: "task" | "note" | "both";
 }
+/** Where an Outlook calendar lives. */
+export type OutlookKind = "own" | "file" | "mailbox" | "shared" | "room" | "group";
+/** An Outlook calendar chosen once in „Kalender auswählen“. */
+export interface OutlookCalendar {
+  /** `outlook` (default calendar) or `outlook:<hash>`. */
+  id: string;
+  store_id: string;
+  entry_id: string;
+  recipient: string;
+  name: string;
+  /** Mailbox, store or person. */
+  owner: string;
+  path: string;
+  kind: OutlookKind;
+  default: boolean;
+  /** Only free/busy times are readable. */
+  free_busy: boolean;
+  color: string;
+  enabled: boolean;
+  /** „Für Buchungsvorschläge verwenden“. */
+  booking: boolean;
+}
+/** A row of „Kalender auswählen“ (stored or only discovered). */
+export interface OutlookCalendarRow extends OutlookCalendar {
+  stored: boolean;
+  /** Found by the last discovery; null before one. */
+  found: boolean | null;
+  items: number | null;
+  error: string | null;
+  shared: boolean;
+  status: CalendarSyncStatus | null;
+  syncing: boolean;
+}
+export interface OutlookDiscovery {
+  running: boolean;
+  at: string | null;
+  error: string | null;
+}
 export interface CalendarSettings {
-  /** Read the default calendar of Outlook Classic (Windows). */
+  /** Read Outlook Classic (Windows): the selected calendars. */
   outlook: boolean;
+  /** Color of the default calendar. */
   outlook_color: string;
+  outlook_calendars?: OutlookCalendar[];
+  /** People whose calendars discovery opens by name. */
+  outlook_recipients?: string[];
   sources: IcsSource[];
   sync_minutes: number;
   past_days: number;
@@ -1071,6 +1161,8 @@ export interface CalendarEvent {
   note_page_id: number | null;
   /** The time entry booked from this appointment. */
   entry_id: number | null;
+  /** Other selected calendars with the same meeting (shown once). */
+  also_in?: string[];
 }
 export interface CalendarSyncStatus {
   source: string;
@@ -1080,10 +1172,17 @@ export interface CalendarSyncStatus {
   events: number;
 }
 export interface CalendarSourceInfo {
-  /** `outlook` or `ics:<id>`. */
+  /** `outlook`, `outlook:<hash>` or `ics:<id>`. */
   id: string;
   name: string;
   kind: "outlook" | "url" | "file";
+  /** Mailbox or person of an Outlook calendar. */
+  owner: string;
+  /** Someone else's calendar. */
+  shared: boolean;
+  free_busy: boolean;
+  /** Its meetings are proposed for booking. */
+  booking: boolean;
   color: string;
   enabled: boolean;
   /** Scheme and host of a subscription. */
@@ -1097,6 +1196,9 @@ export interface CalendarStatus {
   outlook_available: boolean;
   sources: CalendarSourceInfo[];
   secret_storage: string;
+  /** „Kalender auswählen“. */
+  outlook_calendars: OutlookCalendarRow[];
+  discovery: OutlookDiscovery;
 }
 export interface WbsHint {
   netzplan_id: number;

@@ -27,7 +27,8 @@ pub fn week_proposal(
     week_start: NaiveDate,
     rest_of_today: Option<bool>,
 ) -> Result<WeekProposal> {
-    let sources = state.settings().calendar.active_sources(outlook::available());
+    // Only calendars used for booking proposals (a colleague's calendar is not, by default).
+    let sources = state.settings().calendar.booking_sources(outlook::available());
     let opts = ProposeOptions { rest_of_today: rest_of_today.unwrap_or(false), sources: Some(sources) };
     core::propose(&state.reader(), week_start, Utc::now(), &Zone::Local, &opts)
 }

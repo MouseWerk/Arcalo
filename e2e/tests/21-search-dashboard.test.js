@@ -36,19 +36,18 @@ const clearInput = async (el) => {
   await app.keys(["Backspace"]);
   await app.browser.waitUntil(async () => (await el.getValue()) === "", { timeoutMsg: "input not cleared" });
 };
-const clickMenuItem = (label) =>
-  app.browser.execute((l) => [...document.querySelectorAll(".menu [role=menuitem]")].find((b) => b.textContent.trim() === l)?.click(), label);
 
 test("the start page shows the default widgets with the demo data", async () => {
   await app.waitFor(".dash-grid .dw");
-  assert.deepEqual(await order(), ["today", "week", "timer", "budgets", "recent"]);
+  // 1.6: the board „Heute“ of the preset „Tagesstart“, in reading order.
+  assert.deepEqual(await order(), ["today", "agenda", "week", "budget", "recent"]);
   // Budgets: Vorgang 1010 of the demo is at the warning threshold.
-  await app.waitText('[data-widget="budgets"] .dw-budget', /NP-8801\/1010[\s\S]*Warnung/);
-  // Week: seven bars with the booked hours; recent pages; quick timer starts.
+  await app.waitText('[data-widget="budget"] .dw-budget', /NP-8801\/1010[\s\S]*Warnung/);
+  // Week: seven bars with the booked hours; recent pages; quick timer starts in „Heute“.
   assert.equal((await app.$$('[data-widget="week"] .dw-bar-col')).length, 7);
   await app.waitText('[data-widget="week"] .dw-week-sum', /von \d+(,\d)? h/);
   await app.waitText('[data-widget="recent"] .dw-page', /Architektur/);
-  await app.waitFor('[data-widget="timer"] [aria-label^="Timer starten: NP-88"]');
+  await app.waitFor('[data-widget="today"] [aria-label^="Timer starten: NP-88"]');
   await app.shot("dashboard");
 });
 
@@ -65,77 +64,51 @@ test("Heute adds a task to the daily note and checks it off", async () => {
   await app.browser.waitUntil(async () => !/Dashboard-Aufgabe E2E/.test(await app.text('[data-widget="today"]')), { timeoutMsg: "done task still listed" });
 });
 
-test("the timer widget starts the last reference and stops it", async () => {
-  await app.click('[data-widget="timer"] .dw-start');
-  await app.waitFor('[data-widget="timer"] .dw-timer.running');
+test("the timer in „Heute“ starts the last reference and stops it", async () => {
+  await app.click('[data-widget="today"] .dw-start');
+  await app.waitFor('[data-widget="today"] .dw-timer.running');
   assert.ok(await app.invoke("timer_status"));
-  await clickText('[data-widget="timer"] button', "Stoppen");
+  await clickText('[data-widget="today"] button', "Stoppen");
   await app.browser.waitUntil(async () => (await app.invoke("timer_status")) === null, { timeoutMsg: "timer still running" });
-  await app.waitFor('[data-widget="timer"] .dw-start');
+  await app.waitFor('[data-widget="today"] .dw-start');
 });
 
 test("edit mode adds, removes, reorders and resizes, and it persists", async () => {
   await app.dismissToasts();
   await clickText(".dash-bar button", "Anpassen");
   await app.waitFor(".dash.editing");
-  // Add a note widget from the menu.
+  // Add a note widget from the gallery (it goes to the first free place, below the rest).
   await clickText(".dash-bar button", "Widget hinzufügen");
-  await app.waitFor(".menu");
-  await clickMenuItem("Notiz");
+  await app.click('.dash-gallery-card[data-kind="note"]');
   await app.waitFor('[data-widget="note"]');
-  // Remove „Budgets“, move the timer forward, make „Zuletzt bearbeitet“ wide.
-  await app.click('[data-widget="budgets"] [aria-label="Entfernen"]');
-  await app.click('[data-widget="timer"] [aria-label="Nach vorn"]');
-  await app.click('[data-widget="recent"] [aria-label="Größe Breit"]');
-  assert.deepEqual(await order(), ["today", "timer", "week", "recent", "note"]);
-  // Drag & drop: the note in front of „Heute“ (HTML5 drag events, as the browser sends them).
-  await app.browser.execute(() => {
-    const src = document.querySelector('[data-widget="note"]');
-    const dst = document.querySelector('[data-widget="today"]');
-    const dt = new DataTransfer();
-    const r = dst.getBoundingClientRect();
-    const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.top + 5 };
-    src.dispatchEvent(new DragEvent("dragstart", at));
-  });
-  await app.browser.pause(50);
-  await app.browser.execute(() => {
-    const dst = document.querySelector('[data-widget="today"]');
-    const r = dst.getBoundingClientRect();
-    const dt = new DataTransfer();
-    dt.setData("application/x-annalo-widget", "note");
-    const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.top + 5 };
-    dst.dispatchEvent(new DragEvent("dragover", at));
-  });
-  await app.browser.pause(50);
-  await app.browser.execute(() => {
-    const src = document.querySelector('[data-widget="note"]');
-    const dst = document.querySelector('[data-widget="today"]');
-    const r = dst.getBoundingClientRect();
-    const dt = new DataTransfer();
-    dt.setData("application/x-annalo-widget", "note");
-    const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 5, clientY: r.top + 5 };
-    dst.dispatchEvent(new DragEvent("drop", at));
-    src.dispatchEvent(new DragEvent("dragend", at));
-  });
-  await app.browser.waitUntil(async () => (await order())[0] === "note", { timeoutMsg: "drop did not reorder" });
+  // Remove „Budget“, make „Zuletzt bearbeitet“ extra large, move the note up with the keyboard.
+  await app.click('[data-widget="budget"] [aria-label="Entfernen"]');
+  // Narrow widgets offer the sizes in a menu.
+  await app.click('[data-widget="recent"] [aria-label="Widget-Optionen"]');
+  await clickText(".menu [role=menuitem]", "Größe XL");
+  const before = (await order()).indexOf("note");
+  await app.browser.execute(() => document.querySelector('[data-widget="note"]').focus());
+  await app.keys(["ArrowUp"]);
+  await app.browser.waitUntil(async () => (await order()).indexOf("note") < before, { timeoutMsg: "keyboard move did not reorder" });
   await app.shot("dashboard-edit");
   await clickText(".dash-bar button", "Fertig");
   await app.browser.waitUntil(async () => !(await (await app.$(".dash.editing")).isExisting()));
-  const expected = ["note", "today", "timer", "week", "recent"];
-  const saved = (await app.invoke("settings_get")).settings.dashboard.widgets;
-  assert.deepEqual(saved.map((w) => w.id), expected);
-  assert.equal(saved.find((w) => w.id === "recent").size, "l");
+  const expected = await order();
+  const saved = (await app.invoke("settings_get")).settings.dashboard.boards[0].widgets;
+  assert.deepEqual(saved.map((w) => w.id).sort(), [...expected].sort());
+  assert.ok(!saved.some((w) => w.kind === "budget"));
+  assert.equal(saved.find((w) => w.id === "recent").w, 12);
 
   // The scratch note saves itself.
   const note = await app.waitFor('[data-widget="note"] textarea');
   await note.click();
   await app.type("Merkzettel E2E");
-  await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.dashboard.note === "Merkzettel E2E", { timeoutMsg: "note not saved" });
+  await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.dashboard.notes.note === "Merkzettel E2E", { timeoutMsg: "note not saved" });
 
   await reload();
   await app.waitFor(".dash-grid .dw");
   assert.deepEqual(await order(), expected);
-  assert.match(await app.$('[data-widget="recent"]').then((e) => e.getAttribute("class")), /\bdw-l\b/);
+  assert.equal(await app.browser.execute(() => document.querySelector('[data-widget="recent"]').style.gridColumn), "1 / span 12");
   assert.equal(await (await app.$('[data-widget="note"] textarea')).getValue(), "Merkzettel E2E");
 
   // Cancel leaves everything as saved; a new tab shows the dashboard too.

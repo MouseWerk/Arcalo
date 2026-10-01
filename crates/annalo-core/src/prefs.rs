@@ -42,6 +42,11 @@ choice!(EditorFont { #[default] Sans = "sans", Serif = "serif", Mono = "mono" } 
 choice!(CodeFont { #[default] JetBrains = "jetbrains", System = "system" } default JetBrains);
 choice!(Density { Compact = "compact", #[default] Normal = "normal", Comfortable = "comfortable" } default Normal);
 choice!(LineWidth { Narrow = "narrow", #[default] Normal = "normal", Wide = "wide", Full = "full" } default Normal);
+choice!(WindowEffect { #[default] None = "none", Mica = "mica", Acrylic = "acrylic" } default None);
+
+/// Lowest backdrop opacity: below it the backdrop shows so strongly that text loses contrast.
+pub const WINDOW_OPACITY_MIN: u32 = 40;
+pub const WINDOW_OPACITY_DEFAULT: u32 = 80;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -63,9 +68,14 @@ pub struct AppearancePrefs {
     pub density: Density,
     pub line_width: LineWidth,
     pub reduce_motion: bool,
-    /// Mica backdrop on Windows 11. Off by default: behind a bright desktop it washes out the
-    /// sidebar (older settings are switched off once, see `Database::migrate_appearance_defaults`).
-    pub mica: bool,
+    /// Backdrop of the window on Windows 11 (Mica or Acrylic). Off by default: behind a bright
+    /// desktop it washes out the sidebar (older settings are switched off once, see
+    /// `Database::migrate_appearance_defaults`). Settings before 1.6 stored `mica: bool`, which
+    /// becomes this when they are loaded.
+    pub window_effect: WindowEffect,
+    /// How much the theme's background covers the backdrop, in percent
+    /// ([`WINDOW_OPACITY_MIN`]–100; at 100 the backdrop is not visible).
+    pub window_opacity: u32,
     /// Windows: own title bar (the tabs sit at the top edge, own window buttons) instead of the
     /// system one. Takes effect at the next start.
     pub custom_titlebar: bool,
@@ -87,7 +97,8 @@ impl Default for AppearancePrefs {
             density: Density::Normal,
             line_width: LineWidth::Normal,
             reduce_motion: false,
-            mica: false,
+            window_effect: WindowEffect::None,
+            window_opacity: WINDOW_OPACITY_DEFAULT,
             custom_titlebar: true,
             startup_animation: true,
         }
@@ -456,6 +467,8 @@ impl Rounding {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TimePrefs {
+    /// „Zeiterfassung verwenden“: off hides the timesheet, projects and their commands.
+    pub enabled: bool,
     pub week_start: WeekStart,
     pub rounding: Rounding,
     pub hours_display: HoursDisplay,
@@ -470,6 +483,7 @@ pub struct TimePrefs {
 impl Default for TimePrefs {
     fn default() -> Self {
         TimePrefs {
+            enabled: true,
             week_start: WeekStart::Monday,
             rounding: Rounding::default(),
             hours_display: HoursDisplay::Decimal,
@@ -793,11 +807,14 @@ mod tests {
             (d.accent.as_str(), d.theme_light.as_str(), d.theme_dark.as_str()),
             ("theme", "annalo-light", "annalo-dark")
         );
-        assert!(!d.mica && d.custom_themes.is_empty());
+        assert!(d.window_effect == WindowEffect::None && d.custom_themes.is_empty());
+        assert_eq!(d.window_opacity, WINDOW_OPACITY_DEFAULT);
         // Settings from before themes load with the new fields at their defaults.
-        let old: AppearancePrefs =
-            serde_json::from_str(r#"{"accent":"teal","mica":true,"density":"compact"}"#).unwrap();
-        assert_eq!((old.accent.as_str(), old.mica, old.theme_dark.as_str()), ("teal", true, "annalo-dark"));
+        let old: AppearancePrefs = serde_json::from_str(r#"{"accent":"teal","density":"compact"}"#).unwrap();
+        assert_eq!((old.accent.as_str(), old.theme_dark.as_str()), ("teal", "annalo-dark"));
+        // An effect this version does not know (a newer one, a typo) is no effect.
+        let odd: AppearancePrefs = serde_json::from_str(r#"{"window_effect":"blur"}"#).unwrap();
+        assert_eq!(odd.window_effect, WindowEffect::None);
         assert_eq!(normalize_accent(" THEME ").as_deref(), Some("theme"));
         assert_eq!(normalize_theme_id("  ", DEFAULT_THEME_DARK), "annalo-dark");
         assert_eq!(normalize_theme_id(" nord-dark ", DEFAULT_THEME_DARK), "nord-dark");
