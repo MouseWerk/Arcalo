@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass,
+  FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass, History, MessageSquarePlus,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -35,6 +35,7 @@ import { flatLinks, isGroup, normalizeLinks } from "../lib/quicklinks";
 import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
 import { iconOf } from "./LinkDialogs";
 import { startFirstRun } from "../onboarding/state";
+import { newChat, showHistory } from "../store/chat";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
 const TIME_COMMANDS = ["timer", "timesheet", "week-proposal", "projects", "weekly-report", "focus-note"];
@@ -274,6 +275,8 @@ export function CommandPalette() {
           }
         },
       },
+      { id: "chat-history", title: t("cmd.chatHistory"), icon: ic(History), run: () => showHistory() },
+      { id: "chat-new", title: t("cmd.newChat"), icon: ic(MessageSquarePlus), run: () => (newChat(), openAssistant()) },
     ];
     // „Zeiterfassung verwenden“ off: the timesheet and project commands are hidden.
     const timeOff = s().settings?.settings.time?.enabled === false;

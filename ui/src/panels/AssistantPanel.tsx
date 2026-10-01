@@ -1,485 +1,183 @@
 // The AI assistant: streaming chat over the configured AI providers with workspace context,
-// sources, cost/speed metrics and approval-gated tools.
+// sources, cost/speed metrics, approval-gated tools and the chat history. The conversation
+// itself lives in `store/chat.ts`, so closing the panel loses nothing.
 
-import { streamingOn, warnCost, withCostLimit } from "../lib/aicost";
-import { memo, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowUp, CalendarRange, Check, ChevronDown, Copy, FilePlus2, FileText, Gauge, GitBranch, Globe, ListChecks, Loader2, Plus, Search, Settings2, ShieldAlert, Sparkles, Square, Terminal, Timer, Wrench, X, AlertTriangle, ClipboardType, FileInput, MessageSquarePlus, PencilLine, Quote, RefreshCw, History } from "lucide-react";
-import { api, errorText, on } from "../lib/api";
-import { aiErrorSummary, routeNotes, waitText } from "../lib/aierror";
-import { renderMarkdown, renderMarkdownCached } from "../lib/markdown";
-import { citedNumbers, linkCitations } from "../lib/citations";
-import { revealText } from "../editor/reveal";
-import { previewMarkdown } from "../components/LinkPreview";
-import { useApp } from "../store/app";
-import { Button, IconButton, useMenu, type MenuEntry } from "../components/ui";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, ClipboardType, Copy, FilePlus2, FileInput, FileText, History, Languages, Lightbulb, ListChecks, Lock, MessageSquarePlus, PencilLine, Plus, Quote, RefreshCw, Settings2, Sparkles, Square, Timer, WifiOff, Wrench, X } from "lucide-react";
+import { api } from "../lib/api";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
-import { h1, usd } from "../lib/format";
+import { t, useT } from "../lib/i18n";
 import { modelLabel, usableProvider } from "../lib/providers";
-import type { ChatMessage, ContextChunk, RouteDecision, StreamEvent, Tier, ToolCall } from "../lib/types";
-import type { SuggestionKind } from "../lib/suggestions";
+import type { RouteDecision, Tier } from "../lib/types";
+import type { Turn } from "../lib/chathistory";
+import { IconButton, useMenu, type MenuEntry } from "../components/ui";
+import { useApp } from "../store/app";
+import { currentPage, ensureChatListeners, MAX_INPUT, newChat, regenerate, renameChat, sendChat, setTier, setUseTools, stopChat, useChat } from "../store/chat";
 import { useSuggestions } from "./useSuggestions";
+import { HistoryView } from "./assistant/HistoryView";
+import { TurnView } from "./assistant/TurnView";
+import { SUGGESTION_ICONS } from "./assistant/icons";
+import { answerTitle, copyText } from "./assistant/actions";
 
-type Turn =
-  | { id: string; kind: "user"; text: string }
-  | {
-      id: string;
-      kind: "assistant";
-      text: string;
-      streaming: boolean;
-      meta?: { model: string; tier: Tier; ttft: number | null; tps: number | null; tokens: number; cost: number; exact: boolean; reasons: string[] };
-      sources?: ContextChunk[];
-      error?: string;
-      cancelled?: boolean;
-      /** The server pauses the model; the request is repeated at `until` (ms). */
-      waiting?: { until: number; model: string };
-      /** Offers „In neue Seite einfügen“ with this title (weekly report). */
-      pageTitle?: string;
-    }
-  | { id: string; kind: "tool"; name: string; label: string; status: "running" | "done" | "error" | "pending" | "rejected"; summary?: string; output?: string; decide?: (ok: boolean) => void };
-
-const TOOL_META: Record<string, { label: string; icon: typeof Search }> = {
-  log_time: { label: "Zeit buchen", icon: Timer },
-  search_workspace: { label: "Workspace durchsuchen", icon: Search },
-  budget_status: { label: "Budget abfragen", icon: Gauge },
-  list_tasks: { label: "Aufgaben abfragen", icon: ListChecks },
-  time_summary: { label: "Zeitübersicht abfragen", icon: CalendarRange },
-  activity_log: { label: "Aktivität abfragen", icon: History },
-  run_powershell: { label: "PowerShell ausführen", icon: Terminal },
-  git: { label: "Git-Befehl", icon: GitBranch },
-  http_request: { label: "HTTP-Anfrage", icon: Globe },
-};
-
-const SUGGESTION_ICON: Record<SuggestionKind, typeof Search> = {
-  page: FileText,
-  tasks: ListChecks,
-  time: Timer,
-  budget: Gauge,
-  report: CalendarRange,
-  plan: Sparkles,
-};
+export { openSource } from "./assistant/TurnView";
 
 /** Quick follow-ups under the last answer. */
 const FOLLOW_UPS = ["Kürzer", "Als Stichpunkte", "Als Tabelle", "Auf Englisch"];
-
-const uid = () => Math.random().toString(36).slice(2, 10);
-/** Characters of an answer shown in the chat; the rest stays available for copying and saving. */
-const MAX_SHOWN = 100_000;
-const tierLabel: Record<Tier, string> = { local: "Lokal", standard: "Standard", reasoning: "Reasoning" };
+const tierKey: Record<Tier, "chat.tier.local" | "chat.tier.standard" | "chat.tier.reasoning"> = { local: "chat.tier.local", standard: "chat.tier.standard", reasoning: "chat.tier.reasoning" };
 
 export function AssistantPanel() {
-  const settings = useApp((s) => s.settings);
-  const activeDoc = useApp((s) => s.activeDoc);
-  const activeTab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [tier, setTier] = useState<Tier | null>(() => (localStorage.getItem("annalo.tier") as Tier | null) || null);
-  const [useTools, setUseTools] = useState(() => localStorage.getItem("annalo.tools") !== "0");
-  const [includePage, setIncludePage] = useState(true);
-  const [preview, setPreview] = useState<RouteDecision | null>(null);
-  const history = useRef<ChatMessage[]>([]);
-  const requestId = useRef<string | null>(null);
-  // Every send belongs to a run; „Stoppen“ and „Neuer Chat“ end it. After each wait a send
-  // checks that its run is still the current one.
-  const run = useRef(0);
-  // Tool calls waiting for the user's approval: ended runs reject them.
-  const approvals = useRef(new Set<(ok: boolean) => void>());
-  // The send that owns `busy` (a send of an abandoned chat no longer clears it).
-  const activeSend = useRef<object | null>(null);
-  const scroller = useRef<HTMLDivElement>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const stick = useRef(true);
-  const [menu, openMenu, openMenuAt] = useMenu();
-  const s = useApp.getState;
-
-  const pageContext = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
-  // Suggestions are shown in an empty chat of the visible assistant tab only.
-  const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
-  const suggestions = useSuggestions(pageContext, shown && turns.length === 0);
-
-  const update = (id: string, patch: Partial<Turn>) => setTurns((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Turn) : t)));
-
-  // Stream deltas into the current assistant turn, batched per frame. Only into a turn that is
-  // still streaming for the same request: a batch left over when the complete answer arrives
-  // is dropped (it would show the answer twice).
-  const stream = useRef({ buffer: "", frame: 0, rid: null as string | null });
-  const endStream = () => {
-    cancelAnimationFrame(stream.current.frame);
-    stream.current = { buffer: "", frame: 0, rid: null };
-  };
-  useEffect(() => {
-    const st = stream.current;
-    const un = on<{ request_id: string; event: StreamEvent }>("ai://stream", ({ request_id, event }) => {
-      if (request_id !== requestId.current) return;
-      if (event.type === "waiting") {
-        const waiting = { until: Date.now() + event.seconds * 1000, model: event.model };
-        setTurns((ts) => {
-          const last = ts[ts.length - 1];
-          if (!last || last.kind !== "assistant" || !last.streaming) return ts;
-          return [...ts.slice(0, -1), { ...last, waiting }];
-        });
-        return;
-      }
-      // Settings → KI „Antworten live anzeigen“ off: the answer appears when complete.
-      if (event.type === "delta" && streamingOn()) {
-        const cur = stream.current;
-        if (cur.rid !== request_id) {
-          cancelAnimationFrame(cur.frame);
-          stream.current = { buffer: "", frame: 0, rid: request_id };
-        }
-        stream.current.buffer += event.text;
-        if (!stream.current.frame)
-          stream.current.frame = requestAnimationFrame(() => {
-            const { buffer: chunk, rid } = stream.current;
-            stream.current.frame = 0;
-            stream.current.buffer = "";
-            if (!chunk || rid !== requestId.current) return;
-            setTurns((ts) => {
-              const last = ts[ts.length - 1];
-              if (!last || last.kind !== "assistant" || !last.streaming) return ts;
-              return [...ts.slice(0, -1), { ...last, text: last.text + chunk, waiting: undefined }];
-            });
-          });
-      }
-    });
-    const un2 = on("ai://meter", (m) => s().set({ meter: m as never }));
-    return () => {
-      un.then((f) => f());
-      un2.then((f) => f());
-      cancelAnimationFrame(st.frame);
-      cancelAnimationFrame(stream.current.frame);
-    };
-  }, [s]);
-
-  useEffect(() => {
-    const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [turns]);
+  useT();
+  const historyOpen = useChat((s) => s.historyOpen);
+  useEffect(() => ensureChatListeners(), []);
 
   // A palette question may arrive before this panel mounts; take it once idle.
   const pendingAsk = useApp((st) => st.pendingAsk);
+  const busy = useChat((s) => s.busy);
   useEffect(() => {
-    const q = s().pendingAsk;
+    const q = useApp.getState().pendingAsk;
     if (!q || busy) return;
-    s().set({ pendingAsk: null });
-    if (typeof q === "string") send(q);
-    else send(q.text, { pageTitle: q.pageTitle, tools: q.tools, display: q.display });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useApp.getState().set({ pendingAsk: null });
+    useChat.setState({ historyOpen: false });
+    if (typeof q === "string") sendChat(q);
+    else sendChat(q.text, { pageTitle: q.pageTitle, tools: q.tools, display: q.display });
   }, [pendingAsk, busy]);
-
-  useEffect(() => {
-    if (!input.trim()) return setPreview(null);
-    const t = setTimeout(() => api.routePreview(input, useTools, tier).then(setPreview).catch(() => {}), 250);
-    return () => clearTimeout(t);
-  }, [input, tier, useTools]);
-
-  const runTools = async (calls: ToolCall[], live: () => boolean): Promise<ChatMessage[]> => {
-    const results: ChatMessage[] = [];
-    for (const c of calls) {
-      // Stopped: the remaining calls are answered without running them.
-      if (!live()) {
-        results.push({ role: "tool", tool_call_id: c.id, content: "Abgebrochen." });
-        continue;
-      }
-      const id = uid();
-      const meta = TOOL_META[c.function.name];
-      setTurns((ts) => [...ts, { id, kind: "tool", name: c.function.name, label: meta?.label ?? c.function.name, status: "running" }]);
-      try {
-        const plan = await api.planTool(c.function.name, c.function.arguments);
-        let out: string;
-        if (plan.risk === "workspace") {
-          out = await api.runWorkspaceTool(c.function.name, c.function.arguments);
-          if (c.function.name === "log_time") {
-            try {
-              s().alerts(JSON.parse(out).alerts ?? []);
-            } catch {
-              /* ignore */
-            }
-            s().bumpEntries();
-          }
-          update(id, { status: "done", summary: summarizeArgs(c) });
-        } else {
-          const ok = await new Promise<boolean>((resolve) => {
-            const decide = (v: boolean) => {
-              approvals.current.delete(decide);
-              resolve(v);
-            };
-            approvals.current.add(decide);
-            if (!live()) decide(false);
-            else update(id, { status: "pending", summary: plan.summary, decide });
-          });
-          if (!ok) {
-            update(id, { status: "rejected", decide: undefined });
-            out = "Der Nutzer hat die Ausführung abgelehnt.";
-          } else {
-            update(id, { status: "running", decide: undefined });
-            out = await api.runSystemTool(plan.call);
-            update(id, { status: "done", output: out });
-          }
-        }
-        results.push({ role: "tool", tool_call_id: c.id, content: out });
-      } catch (e) {
-        update(id, { status: "error", output: errorText(e) });
-        results.push({ role: "tool", tool_call_id: c.id, content: `Fehler: ${errorText(e)}` });
-      }
-    }
-    return results;
-  };
-
-  async function send(textArg?: string, opts: { pageTitle?: string; tools?: boolean; display?: string } = {}) {
-    const text = (textArg ?? input).trim();
-    const tools = opts.tools ?? useTools;
-    if (!text || busy) return;
-    setInput("");
-    setBusy(true);
-    const me = {};
-    activeSend.current = me;
-    const myRun = run.current;
-    const live = () => run.current === myRun;
-    // The chat this send writes to; „Neuer Chat“ starts another one.
-    const chat = history.current;
-    const current = () => history.current === chat;
-    stick.current = true;
-    setTurns((ts) => [...ts, { id: uid(), kind: "user", text: opts.display ?? text }]);
-    const turnStart = chat.length;
-    chat.push({ role: "user", content: text });
-    try {
-      for (let round = 0; round < 5; round++) {
-        const aid = uid();
-        const rid = crypto.randomUUID();
-        requestId.current = rid;
-        setTurns((ts) => [...ts, { id: aid, kind: "assistant", text: "", streaming: true, pageTitle: opts.pageTitle }]);
-        const out = await withCostLimit((overrideLimit) =>
-          api.chat({ requestId: rid, messages: chat, useTools: tools, tier, pageId: includePage && pageContext ? pageContext.id : null, overrideLimit }),
-        );
-        // A new chat meanwhile: this answer belongs to the old one.
-        if (!current()) return;
-        warnCost(out.cost_warning);
-        const c = out.completion;
-        if (requestId.current === rid) requestId.current = null;
-        endStream();
-        update(aid, {
-          text: c.content,
-          streaming: false,
-          cancelled: c.finish_reason === "cancelled" || !live(),
-          // All of them, in order: `[n]` in the answer is `sources[n - 1]`.
-          sources: out.context,
-          meta: {
-            // With several providers: `model · Provider`.
-            model: modelLabel(s().settings?.settings.providers ?? [], out.route.provider, out.route.model),
-            tier: out.route.tier,
-            ttft: c.usage.ttft_ms,
-            tps: c.usage.tokens_per_second,
-            tokens: c.usage.prompt_tokens + c.usage.completion_tokens,
-            cost: c.usage.cost_usd,
-            exact: c.exact_usage,
-            reasons: out.route.reasons,
-          },
-        });
-        s().set({ meter: out.meter });
-        // Stopped: tool calls of this answer are not run (and not kept in the history).
-        if (!live() && c.tool_calls.length) {
-          chat.push({ role: "assistant", content: c.content || "" });
-          break;
-        }
-        chat.push({ role: "assistant", content: c.content || null, tool_calls: c.tool_calls.length ? c.tool_calls : undefined });
-        if (!c.tool_calls.length || c.finish_reason === "cancelled" || !live()) break;
-        if (!c.content) setTurns((ts) => ts.filter((t) => t.id !== aid));
-        const results = await runTools(c.tool_calls, live);
-        if (!current()) return;
-        chat.push(...results);
-        if (!live()) break;
-      }
-    } catch (e) {
-      if (!current()) return;
-      requestId.current = null;
-      endStream();
-      setTurns((ts) => {
-        const last = ts[ts.length - 1];
-        if (last?.kind === "assistant" && last.streaming) return [...ts.slice(0, -1), { ...last, streaming: false, error: errorText(e) }];
-        return [...ts, { id: uid(), kind: "assistant", text: "", streaming: false, error: errorText(e) }];
-      });
-      chat.splice(turnStart);
-    } finally {
-      if (activeSend.current === me) {
-        activeSend.current = null;
-        setBusy(false);
-        textarea.current?.focus();
-      }
-    }
-  }
-
-  /** Ends the running answer: cancels the request and rejects waiting tool approvals. */
-  const stop = () => {
-    run.current++;
-    const rid = requestId.current;
-    if (rid) api.cancelChat(rid).catch(() => {});
-    for (const decide of [...approvals.current]) decide(false);
-  };
-  // Right-click in the chat: the selection, the message under the pointer, the chat.
-  const chatMenu = (target: HTMLElement): MenuEntry[] => {
-    const out: MenuEntry[] = [];
-    const selected = window.getSelection()?.toString().trim() ?? "";
-    const copy = (text: string, what: string) =>
-      navigator.clipboard.writeText(text).then(
-        () => s().toast({ tone: "success", title: `${what} kopiert` }),
-        (err) => s().error("Kopieren nicht möglich", err),
-      );
-    if (selected) {
-      out.push(
-        { label: "Auswahl kopieren", icon: Copy, onSelect: () => copy(selected, "Auswahl") },
-        {
-          label: "Auswahl zitieren",
-          icon: Quote,
-          onSelect: () => {
-            setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`);
-            textarea.current?.focus();
-          },
-        },
-        "separator",
-      );
-    }
-    const id = target.closest<HTMLElement>("[data-turn]")?.dataset.turn;
-    const turn = turns.find((t) => t.id === id);
-    const idx = turns.findIndex((t) => t.id === id);
-    if (turn?.kind === "assistant" && turn.text && !turn.streaming) {
-      const plain = target.closest<HTMLElement>("[data-turn]")?.querySelector<HTMLElement>(".prose-chat")?.innerText ?? turn.text;
-      const lastUser = [...turns.slice(0, idx)].reverse().find((t) => t.kind === "user");
-      out.push(
-        { label: "Antwort kopieren (Markdown)", icon: Copy, onSelect: () => copy(turn.text, "Antwort") },
-        { label: "Als reinen Text kopieren", icon: ClipboardType, onSelect: () => copy(plain, "Text") },
-        ...(pageContext
-          ? [
-              {
-                label: `An „${pageContext.title}“ anhängen`,
-                icon: FileInput,
-                onSelect: async () => {
-                  try {
-                    await flushAllEditors();
-                    const doc = await api.page(pageContext.id);
-                    await api.savePage(pageContext.id, `${doc.content.trimEnd()}\n\n${turn.text.trim()}\n`);
-                    reloadEditors([pageContext.id]);
-                    s().toast({ tone: "success", title: `An „${pageContext.title}“ angehängt` });
-                  } catch (err) {
-                    s().error("Anhängen nicht möglich", err);
-                  }
-                },
-              } as MenuEntry,
-            ]
-          : []),
-        {
-          label: "Als neue Seite speichern",
-          icon: FilePlus2,
-          onSelect: async () => {
-            const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");
-            try {
-              const p = await api.createPage(title, null, "sparkles", turn.text);
-              await s().refreshTree();
-              s().openPage(p.id, { newTab: true });
-            } catch (err) {
-              s().error("Seite nicht angelegt", err);
-            }
-          },
-        },
-        "separator",
-        { label: "Neu generieren", icon: RefreshCw, disabled: busy || !lastUser || idx !== turns.length - 1, onSelect: () => lastUser && send((lastUser as { text: string }).text) },
-        { label: "Nachfragen", icon: MessageSquarePlus, disabled: busy, submenu: FOLLOW_UPS.map((f) => ({ label: f, onSelect: () => send(`${f}, bitte.`) })) },
-        "separator",
-      );
-    } else if (turn?.kind === "user") {
-      out.push(
-        { label: "Kopieren", icon: Copy, onSelect: () => copy(turn.text, "Nachricht") },
-        {
-          label: "Bearbeiten",
-          icon: PencilLine,
-          onSelect: () => {
-            setInput(turn.text);
-            textarea.current?.focus();
-          },
-        },
-        { label: "Erneut senden", icon: RefreshCw, disabled: busy, onSelect: () => send(turn.text) },
-        "separator",
-      );
-    }
-    if (turns.length) out.push({ label: "Neuer Chat", icon: Plus, onSelect: () => newChat() });
-    while (out[out.length - 1] === "separator") out.pop();
-    return out;
-  };
-
-  const newChat = () => {
-    if (busy) stop();
-    // A reply still on its way belongs to the old chat and is dropped.
-    requestId.current = null;
-    endStream();
-    history.current = [];
-    activeSend.current = null;
-    setBusy(false);
-    setTurns([]);
-  };
-
-  const router = settings?.settings.router;
-  const providers = settings?.settings.providers ?? [];
-  // The tier's model, with its provider when there are several.
-  const tierModel = (provider: string | undefined, model: string | undefined) => (model ? modelLabel(providers, provider, model) : undefined);
-  const tierOptions: { value: Tier | null; label: string; model?: string }[] = [
-    { value: null, label: "Automatisch", model: settings?.settings.auto_route === false ? tierModel(router?.standard_provider, router?.standard_model) : "nach Aufgabe" },
-    { value: "local", label: "Lokal", model: tierModel(router?.local_provider, router?.local_model) },
-    { value: "standard", label: "Standard", model: tierModel(router?.standard_provider, router?.standard_model) },
-    { value: "reasoning", label: "Reasoning", model: tierModel(router?.reasoning_provider, router?.reasoning_model) },
-  ];
-  const currentTier = tierOptions.find((o) => o.value === tier) ?? tierOptions[0];
 
   return (
     <div className="assistant">
-      <div className="assistant-head">
+      <ChatHeader />
+      {historyOpen ? <HistoryView /> : <ChatBody />}
+      {!historyOpen && <Composer />}
+    </div>
+  );
+}
+
+/** Title of the chat (rename by click or F2), the lock of a private chat, history and „Neuer Chat“. */
+function ChatHeader() {
+  const conversation = useChat((s) => s.conversation);
+  const priv = useChat((s) => s.private);
+  const historyOpen = useChat((s) => s.historyOpen);
+  const hasTurns = useChat((s) => s.turns.length > 0);
+  const [editing, setEditing] = useState(false);
+  const title = conversation?.title || (hasTurns ? t("chat.unsavedTitle") : t("chat.newChat"));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F2" || historyOpen || !conversation) return;
+      if (!(e.target instanceof Node) || !document.querySelector(".assistant")?.contains(e.target)) return;
+      e.preventDefault();
+      setEditing(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [historyOpen, conversation]);
+  return (
+    <div className="assistant-head">
+      <IconButton
+        icon={History}
+        label={historyOpen ? t("chat.backToChat") : t("chat.history")}
+        size="md"
+        active={historyOpen}
+        aria-pressed={historyOpen}
+        onClick={() => useChat.setState({ historyOpen: !historyOpen })}
+      />
+      {historyOpen ? (
+        <span className="assistant-title">
+          <span className="assistant-title-text">{t("chat.history")}</span>
+        </span>
+      ) : editing && conversation ? (
+        <input
+          className="assistant-title-input"
+          defaultValue={conversation.title}
+          aria-label={t("chat.renameChat")}
+          autoFocus
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              setEditing(false);
+              renameChat(e.currentTarget.value);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(false);
+            }
+          }}
+          onBlur={(e) => {
+            setEditing(false);
+            renameChat(e.currentTarget.value);
+          }}
+        />
+      ) : (
         <button
           type="button"
-          className="model-pill"
-          onClick={(e) =>
-            openMenuAt(
-              e,
-              [
-                ...tierOptions.map((o) => ({
-                  label: `${o.label}${o.model ? ` · ${o.model}` : ""}`,
-                  checked: o.value === tier,
-                  onSelect: () => {
-                    setTier(o.value);
-                    o.value ? localStorage.setItem("annalo.tier", o.value) : localStorage.removeItem("annalo.tier");
-                  },
-                })),
-                "separator" as const,
-                {
-                  label: useTools ? "Werkzeuge deaktivieren" : "Werkzeuge aktivieren",
-                  icon: Wrench,
-                  onSelect: () => {
-                    setUseTools(!useTools);
-                    localStorage.setItem("annalo.tools", useTools ? "0" : "1");
-                  },
-                },
-                { label: "KI-Einstellungen", icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
-              ],
-            )
-          }
+          className="assistant-title"
+          disabled={!conversation}
+          title={conversation ? t("chat.renameHint") : undefined}
+          aria-label={conversation ? `${title} – ${t("chat.renameChat")}` : undefined}
+          onClick={() => setEditing(true)}
         >
-          <Sparkles size={13} />
-          <span>{currentTier.label}</span>
-          {currentTier.value && <span className="faint mono">{currentTier.model}</span>}
-          <ChevronDown size={13} className="faint" />
+          {priv && <Lock size={12} className="chat-lock" aria-label={t("chat.privateChat")} />}
+          <span className="assistant-title-text">{title}</span>
         </button>
-        <span className="grow" />
-        <IconButton icon={Plus} label="Neuer Chat" size="md" onClick={newChat} />
-      </div>
+      )}
+      {!historyOpen && priv && <span className="chat-private-badge" title={t("chat.privateHint")}>{t("chat.private")}</span>}
+      <IconButton icon={Plus} label="Neuer Chat" size="md" onClick={() => newChat()} />
+    </div>
+  );
+}
 
+/** The messages, or the empty state with suggestions; follows the answer while you are at the end. */
+function ChatBody() {
+  const turns = useChat((s) => s.turns);
+  const busy = useChat((s) => s.busy);
+  const notice = useChat((s) => s.notice);
+  const followTick = useChat((s) => s.followTick);
+  const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  const [away, setAway] = useState(false);
+  const [menu, openMenu] = useMenu();
+  const s = useApp.getState;
+
+  const toEnd = (smooth = false) => {
+    const el = scroller.current;
+    if (!el) return;
+    stick.current = true;
+    setAway(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+  };
+  // A new question or an opened chat scrolls to the end; a growing answer only while at the end.
+  useLayoutEffect(() => toEnd(), [followTick]);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [turns]);
+  // Images, opened tool output and a wider panel change the height without new turns.
+  useEffect(() => {
+    const el = scroller.current;
+    const inner = content.current;
+    if (!el || !inner || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [turns.length === 0]);
+
+  const lastUserIdx = turns.map((x) => x.kind).lastIndexOf("user");
+  const last = turns[turns.length - 1];
+
+  return (
+    <div className="assistant-body">
       <div
         className="assistant-scroll"
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          stick.current = atEnd;
+          if (away === atEnd) setAway(!atEnd);
         }}
         onContextMenu={(e) => {
-          const items = chatMenu(e.target as HTMLElement);
+          const items = chatMenu(e.target as HTMLElement, turns, busy);
           if (!items.length) return;
           e.preventDefault();
           openMenu(e, items);
@@ -492,382 +190,350 @@ export function AssistantPanel() {
           }
         }}
       >
-        {turns.length === 0 ? (
-          <div className="assistant-empty">
-            <div className="assistant-empty-icon">
-              <Sparkles size={20} strokeWidth={1.5} />
-            </div>
-            <div className="assistant-empty-title">Wie kann ich helfen?</div>
-            <p className="faint">Ich kenne deine Notizen, Projekte und Zeitbuchungen und kann für dich buchen.</p>
-            {settings && !usableProvider(settings) && (
-              <button type="button" className="setup-hint" onClick={() => s().openTab({ kind: "settings" })}>
-                <Settings2 size={14} /> KI-Anbieter in den Einstellungen verbinden
-              </button>
-            )}
-            <div className="suggestions">
-              {suggestions.map((q) => {
-                const Icon = SUGGESTION_ICON[q.kind];
-                return (
-                  <button key={q.text} type="button" className="ai-suggestion" onClick={() => send(q.text)}>
-                    <Icon size={14} strokeWidth={1.75} aria-hidden />
-                    <span>{q.text}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <>
-            {turns.map((t) => (
-              <TurnView key={t.id} turn={t} />
-            ))}
-            {!busy && turns[turns.length - 1]?.kind === "assistant" && !(turns[turns.length - 1] as { error?: string }).error && (
-              <div className="follow-ups" aria-label="Nachfragen">
-                {FOLLOW_UPS.map((f) => (
-                  <button key={f} type="button" className="follow-up" onClick={() => send(`${f}, bitte.`)}>
-                    {f}
-                  </button>
+        <div className="assistant-content" ref={content}>
+          {turns.length === 0 ? (
+            <EmptyChat />
+          ) : (
+            <>
+              {notice && (
+                <div className="chat-notice" role="note">
+                  <RefreshCw size={13} aria-hidden />
+                  <span>{notice}</span>
+                  <IconButton icon={X} label={t("chat.dismiss")} size="sm" onClick={() => useChat.setState({ notice: null })} />
+                </div>
+              )}
+              <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label={t("chat.messages")}>
+                {turns.map((x, i) => (
+                  <TurnView key={x.id} turn={x} last={i === turns.length - 1} busy={i >= lastUserIdx ? busy : false} editable={i === lastUserIdx && !busy} />
                 ))}
               </div>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="composer">
-        {pageContext && (
-          <div className="composer-context">
-            <button type="button" className={`context-chip ${includePage ? "" : "off"}`} onClick={() => setIncludePage(!includePage)} title={includePage ? "Seite wird mitgesendet" : "Seite wird nicht mitgesendet"}>
-              <FileText size={12} />
-              <span>{pageContext.title}</span>
-              {includePage ? <X size={11} /> : <Plus size={11} />}
-            </button>
-            {preview && (
-              <span className="route-hint" title={preview.reasons.join("\n")}>
-                <span className={`tier-dot tier-${preview.tier}`} /> {tierLabel[preview.tier]}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="composer-box">
-          <textarea
-            ref={textarea}
-            rows={1}
-            value={input}
-            placeholder="Frage stellen oder Aufgabe beschreiben…"
-            aria-label="Nachricht an den Assistenten"
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
-            }}
-            onKeyDown={(e) => {
-              // Enter during IME composition picks the candidate, it does not send.
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
-          {busy ? (
-            <button type="button" className="send-btn stop" aria-label="Antwort stoppen" onClick={stop}>
-              <Square size={12} fill="currentColor" />
-            </button>
-          ) : (
-            <button type="button" className="send-btn" aria-label="Senden" disabled={!input.trim()} onClick={() => send()}>
-              <ArrowUp size={15} strokeWidth={2.25} />
-            </button>
+              {!busy && last?.kind === "assistant" && !last.error && (
+                <div className="follow-ups" aria-label={t("chat.followUps")}>
+                  {FOLLOW_UPS.map((f) => (
+                    <button key={f} type="button" className="follow-up" onClick={() => sendChat(`${f}, bitte.`)}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
-        <div className="composer-foot faint">
-          <span>Enter senden · Shift Enter neue Zeile</span>
-          {!useTools && <span>Werkzeuge aus</span>}
-        </div>
       </div>
+      {away && turns.length > 0 && (
+        <button type="button" className="scroll-end" onClick={() => toEnd(true)} aria-label={t("chat.toEnd")}>
+          <ArrowDown size={13} aria-hidden />
+          <span>{t("chat.toEnd")}</span>
+        </button>
+      )}
       {menu}
     </div>
   );
 }
 
-function summarizeArgs(c: ToolCall) {
-  try {
-    const a = JSON.parse(c.function.arguments);
-    return a.command ?? a.query ?? a.netzplan ?? (a.from && a.to ? `${a.from} – ${a.to}` : "");
-  } catch {
-    return "";
+/** Right-click in the chat: the selection, the message under the pointer, the chat. */
+function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[] {
+  const s = useApp.getState;
+  const out: MenuEntry[] = [];
+  const selected = window.getSelection()?.toString().trim() ?? "";
+  const copy = (text: string, what: string) => copyText(text, () => s().toast({ tone: "success", title: t("chat.copiedWhat", { what }) }));
+  const setInput = (f: (v: string) => string) => {
+    useChat.setState((st) => ({ input: f(st.input), focusTick: st.focusTick + 1 }));
+  };
+  if (selected) {
+    out.push(
+      { label: "Auswahl kopieren", icon: Copy, onSelect: () => copy(selected, t("chat.what.selection")) },
+      { label: "Auswahl zitieren", icon: Quote, onSelect: () => setInput((v) => `${selected.split("\n").map((l) => `> ${l}`).join("\n")}\n\n${v}`) },
+      "separator",
+    );
   }
+  const row = target.closest<HTMLElement>("[data-turn]");
+  const id = row?.dataset.turn;
+  const idx = turns.findIndex((x) => x.id === id);
+  const turn = turns[idx];
+  const page = currentPage();
+  if (turn?.kind === "assistant" && turn.text && !turn.streaming) {
+    out.push(
+      { label: "Antwort kopieren (Markdown)", icon: Copy, onSelect: () => copy(turn.text, t("chat.what.answer")) },
+      { label: "Als reinen Text kopieren", icon: ClipboardType, onSelect: () => copy(plainText(row) ?? turn.text, t("chat.what.text")) },
+      ...(page
+        ? [
+            {
+              label: `An „${page.title}“ anhängen`,
+              icon: FileInput,
+              onSelect: async () => {
+                try {
+                  await flushAllEditors();
+                  const doc = await api.page(page.id);
+                  await api.savePage(page.id, `${doc.content.trimEnd()}\n\n${turn.text.trim()}\n`);
+                  reloadEditors([page.id]);
+                  s().toast({ tone: "success", title: t("chat.appended", { title: page.title }) });
+                } catch (err) {
+                  s().error(t("chat.insertFailed"), err);
+                }
+              },
+            } as MenuEntry,
+          ]
+        : []),
+      {
+        label: "Als neue Seite speichern",
+        icon: FilePlus2,
+        onSelect: async () => {
+          try {
+            const p = await api.createPage(turn.pageTitle ?? answerTitle(turn.text), null, "sparkles", turn.text);
+            await s().refreshTree();
+            s().openPage(p.id, { newTab: true });
+          } catch (err) {
+            s().error(t("chat.pageFailed"), err);
+          }
+        },
+      },
+      "separator",
+      { label: "Neu generieren", icon: RefreshCw, disabled: busy || idx !== turns.length - 1, onSelect: () => regenerate(turn.id) },
+      { label: "Nachfragen", icon: MessageSquarePlus, disabled: busy, submenu: FOLLOW_UPS.map((f) => ({ label: f, onSelect: () => sendChat(`${f}, bitte.`) })) },
+      "separator",
+    );
+  } else if (turn?.kind === "user") {
+    out.push(
+      { label: "Kopieren", icon: Copy, onSelect: () => copy(turn.text, t("chat.what.message")) },
+      { label: "Bearbeiten", icon: PencilLine, onSelect: () => setInput(() => turn.text) },
+      { label: "Erneut senden", icon: RefreshCw, disabled: busy, onSelect: () => sendChat(turn.prompt, { ...turn.opts }) },
+      "separator",
+    );
+  }
+  if (turns.length) out.push({ label: "Neuer Chat", icon: Plus, onSelect: () => newChat() });
+  while (out[out.length - 1] === "separator") out.pop();
+  return out;
 }
 
-/** Opens a source: the page scrolled to the cited passage (flashed), or the timesheet. */
-export function openSource(src: ContextChunk) {
-  const s = useApp.getState();
-  if (src.page_id == null) return s.openTab({ kind: "timesheet" });
-  revealText(src.page_id, src.text, (id) => s.openPage(id)).catch(() => {});
+/** The answer as the user reads it, without the code boxes' labels and buttons. */
+function plainText(row: HTMLElement | null): string | null {
+  const prose = row?.querySelector<HTMLElement>(".prose-chat");
+  if (!prose) return null;
+  const heads = [...prose.querySelectorAll<HTMLElement>(".code-head")];
+  for (const h of heads) h.hidden = true;
+  const text = prose.innerText;
+  for (const h of heads) h.hidden = false;
+  return text.trim();
 }
 
-const sourceLabel = (src: ContextChunk) => {
-  const title = src.title ?? src.source.replace(/^Seite: /, "");
-  return src.heading ? `${title} › ${src.heading}` : title;
-};
-
-/** Hover card of a citation chip, in the look of the link preview. */
-function CiteCard({ src, n, rect, onEnter, onLeave }: { src: ContextChunk; n: number; rect: DOMRect; onEnter: () => void; onLeave: () => void }) {
-  const W = 380;
-  const H = 260;
-  const below = rect.bottom + 8 + H < window.innerHeight;
-  const left = Math.max(8, Math.min(rect.left - 20, window.innerWidth - W - 8));
-  const top = below ? rect.bottom + 6 : Math.max(8, rect.top - H - 6);
-  const preview = previewMarkdown(src.text, 600);
-  return createPortal(
-    <div className="link-preview cite-card" role="tooltip" style={{ left, top, width: W, maxHeight: H }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
-      <button type="button" className="link-preview-title" onClick={() => openSource(src)}>
-        <span className="cite cite-static">{n}</span>
-        {src.page_id != null ? <FileText size={14} /> : <Timer size={14} />}
-        <span className="cite-card-title">{sourceLabel(src)}</span>
-      </button>
-      <div className="prose prose-chat link-preview-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.text) }} />
-      {preview.more && <div className="link-preview-fade" aria-hidden />}
-    </div>,
-    document.body,
-  );
-}
-
-/** A failed request: the cause in plain words and what to do; the server's message under „Details“. */
-function ErrorNote({ message }: { message: string }) {
-  const e = aiErrorSummary(message);
+/** An empty chat: what the assistant can do, suggestions from the open page and the data, quick starts. */
+function EmptyChat() {
+  const settings = useApp((st) => st.settings);
+  const activeDoc = useApp((st) => st.activeDoc);
+  const activeTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTabId));
+  const page = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
+  // Suggestions are shown in an empty chat of the visible assistant tab only.
+  const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
+  const suggestions = useSuggestions(page, shown);
+  const s = useApp.getState;
+  const quick: { label: string; icon: typeof Timer; text: string }[] = [
+    { label: t("chat.quick.book"), icon: Timer, text: t("chat.quick.bookText") },
+    { label: t("chat.quick.tasks"), icon: ListChecks, text: t("chat.quick.tasksText") },
+    { label: t("chat.quick.ideas"), icon: Lightbulb, text: t("chat.quick.ideasText") },
+    { label: t("chat.quick.translate"), icon: Languages, text: t("chat.quick.translateText") },
+  ];
   return (
-    <div className="msg-error" role="alert">
-      <div className="msg-error-head">
-        <AlertTriangle size={14} aria-hidden />
-        <span>{e.title}</span>
+    <div className="assistant-empty">
+      <div className="assistant-empty-icon">
+        <Sparkles size={20} strokeWidth={1.5} />
       </div>
-      <div className="msg-error-hint">{e.hint}</div>
-      <details className="msg-error-details">
-        <summary>Details</summary>
-        <div className="mono">{message}</div>
-      </details>
-      {e.settings && (
-        <Button size="sm" icon={Settings2} onClick={() => useApp.getState().openTab({ kind: "settings" })}>
-          Verbindung prüfen
-        </Button>
+      <div className="assistant-empty-title">{t("chat.emptyTitle")}</div>
+      <p className="faint">{t("chat.emptyText")}</p>
+      {settings && !usableProvider(settings) && (
+        <button type="button" className="setup-hint" onClick={() => s().openTab({ kind: "settings" })}>
+          <Settings2 size={14} /> {t("chat.connectProvider")}
+        </button>
       )}
+      <div className="suggestions">
+        {suggestions.map((q) => {
+          const Icon = SUGGESTION_ICONS[q.kind];
+          return (
+            <button key={q.text} type="button" className="ai-suggestion" onClick={() => sendChat(q.text)}>
+              <Icon size={14} strokeWidth={1.75} aria-hidden />
+              <span>{q.text}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="quick-prompts" aria-label={t("chat.quickStart")}>
+        {quick.map((q) => (
+          <button
+            key={q.label}
+            type="button"
+            className="quick-prompt"
+            onClick={() => useChat.setState((st) => ({ input: q.text, focusTick: st.focusTick + 1 }))}
+          >
+            <q.icon size={12} strokeWidth={1.75} aria-hidden />
+            <span>{q.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-// Earlier turns keep their objects while an answer streams in, so only the streaming one renders.
-const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
+/** The question box: grows with the text, Enter sends, Shift+Enter breaks the line; page and model chips. */
+function Composer() {
+  const input = useChat((s) => s.input);
+  const busy = useChat((s) => s.busy);
+  const tier = useChat((s) => s.tier);
+  const useTools = useChat((s) => s.useTools);
+  const includePage = useChat((s) => s.includePage);
+  const focusTick = useChat((s) => s.focusTick);
+  const convId = useChat((s) => s.conversation?.id ?? null);
+  const priv = useChat((s) => s.private);
+  const settings = useApp((s) => s.settings);
+  const activeDoc = useApp((st) => st.activeDoc);
+  const activeTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTabId));
+  const page = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
+  const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
+  const [preview, setPreview] = useState<RouteDecision | null>(null);
+  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
-  const [copied, setCopied] = useState(false);
-  const [cite, setCite] = useState<{ n: number; rect: DOMRect } | null>(null);
-  const hideTimer = useRef<number | undefined>(undefined);
-  const showTimer = useRef<number | undefined>(undefined);
-  useEffect(
-    () => () => {
-      window.clearTimeout(hideTimer.current);
-      window.clearTimeout(showTimer.current);
-    },
-    [],
-  );
-  if (turn.kind === "user") return <div className="msg-user" data-turn={turn.id}>{turn.text}</div>;
 
-  if (turn.kind === "tool") {
-    const Icon = TOOL_META[turn.name]?.icon ?? Wrench;
-    if (turn.status === "pending")
-      return (
-        <div className="tool-approval" role="alertdialog" aria-label="Freigabe erforderlich">
-          <div className="tool-approval-head">
-            <ShieldAlert size={15} />
-            <span>{turn.label}: Freigabe erforderlich</span>
-          </div>
-          <pre className="tool-approval-cmd">{turn.summary}</pre>
-          <div className="tool-approval-actions">
-            <Button size="sm" variant="ghost" onClick={() => turn.decide?.(false)}>
-              Ablehnen
-            </Button>
-            <Button size="sm" variant="primary" onClick={() => turn.decide?.(true)}>
-              Ausführen
-            </Button>
-          </div>
-        </div>
-      );
-    return (
-      <div className={`tool-step tool-${turn.status}`}>
-        <span className="tool-step-icon">{turn.status === "running" ? <Loader2 size={13} className="spin" /> : <Icon size={13} />}</span>
-        <span className="tool-step-label">{turn.label}</span>
-        {turn.summary && <span className="tool-step-arg mono">{turn.summary}</span>}
-        {turn.status === "done" && <Check size={13} className="tool-ok" />}
-        {turn.status === "rejected" && <span className="faint">abgelehnt</span>}
-        {turn.status === "error" && <span className="tool-err">{turn.output}</span>}
-        {turn.status === "done" && turn.output && <pre className="tool-output">{turn.output}</pre>}
-      </div>
-    );
-  }
+  useEffect(() => {
+    const update = () => setOffline(navigator.onLine === false);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+  // As tall as the text up to a limit, then it scrolls (also for text put in by „Bearbeiten“).
+  useLayoutEffect(() => {
+    const el = textarea.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
+  // Back into the box after an answer or a new chat, unless the user went on elsewhere.
+  useEffect(() => {
+    const el = textarea.current;
+    if (!focusTick || !el || !shown) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || el.closest(".assistant")?.contains(active)) el.focus();
+  }, [focusTick, shown]);
+  useEffect(() => {
+    if (!input.trim()) return setPreview(null);
+    const timer = setTimeout(() => api.routePreview(input, useTools, tier, convId).then(setPreview).catch(() => {}), 250);
+    return () => clearTimeout(timer);
+  }, [input, tier, useTools, convId]);
 
-  const m = turn.meta;
-  const sources = turn.sources ?? [];
-  const citeOf = (el: EventTarget | null) => (el instanceof Element ? el.closest<HTMLElement>(".cite[data-cite]") : null);
-  const hideSoon = () => {
-    window.clearTimeout(showTimer.current);
-    window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setCite(null), 220);
+  const router = settings?.settings.router;
+  const providers = settings?.settings.providers ?? [];
+  // The tier's model, with its provider when there are several.
+  const tierModel = (provider: string | undefined, model: string | undefined) => (model ? modelLabel(providers, provider, model) : undefined);
+  const tierOptions: { value: Tier | null; label: string; model?: string }[] = [
+    { value: null, label: t("chat.tier.auto"), model: settings?.settings.auto_route === false ? tierModel(router?.standard_provider, router?.standard_model) : t("chat.tier.byTask") },
+    { value: "local", label: t("chat.tier.local"), model: tierModel(router?.local_provider, router?.local_model) },
+    { value: "standard", label: t("chat.tier.standard"), model: tierModel(router?.standard_provider, router?.standard_model) },
+    { value: "reasoning", label: t("chat.tier.reasoning"), model: tierModel(router?.reasoning_provider, router?.reasoning_model) },
+  ];
+  const currentTier = tierOptions.find((o) => o.value === tier) ?? tierOptions[0];
+  const tooLong = input.length > MAX_INPUT;
+  const nearLimit = input.length > MAX_INPUT * 0.8;
+  const send = () => {
+    if (busy || tooLong || !input.trim()) return;
+    const text = input;
+    useChat.setState({ input: "" });
+    sendChat(text);
   };
-  // Cited sources first for the chips below the answer.
-  const cited = citedNumbers(turn.text, sources.length);
-  // A huge answer is shown shortened (rendering megabytes of Markdown freezes the window).
-  const cut = turn.text.length > MAX_SHOWN;
-  const shown = cut ? turn.text.slice(0, MAX_SHOWN) : turn.text;
-  const html = turn.streaming ? renderMarkdown(shown) : linkCitations(renderMarkdownCached(shown), sources.length);
-  const chipSources = dedupeSources([...cited.map((n) => sources[n - 1]), ...sources]);
-  const numberOf = (src: ContextChunk) => sources.indexOf(src) + 1;
+
   return (
-    <div className="msg-ai" data-turn={turn.id}>
-      {turn.error ? (
-        <ErrorNote message={turn.error} />
-      ) : turn.streaming && !turn.text && turn.waiting ? (
-        <WaitNote until={turn.waiting.until} />
-      ) : turn.streaming && !turn.text ? (
-        <div className="thinking">
-          <span />
-          <span />
-          <span />
+    <div className="composer">
+      {offline && (
+        <div className="composer-note" role="status">
+          <WifiOff size={13} aria-hidden />
+          <span>{t("chat.offline")}</span>
         </div>
-      ) : (
-        <div
-          className={`prose prose-chat ${turn.streaming ? "streaming" : ""}`}
-          dangerouslySetInnerHTML={{ __html: html }}
-          onMouseOver={(e) => {
-            const el = citeOf(e.target);
-            if (!el) return;
-            window.clearTimeout(hideTimer.current);
-            window.clearTimeout(showTimer.current);
-            const n = Number(el.dataset.cite);
-            showTimer.current = window.setTimeout(() => el.isConnected && setCite({ n, rect: el.getBoundingClientRect() }), 180);
-          }}
-          onMouseOut={(e) => citeOf(e.target) && hideSoon()}
-          onClick={(e) => {
-            const el = citeOf(e.target);
-            const src = el && sources[Number(el.dataset.cite) - 1];
-            if (!src) return;
-            e.preventDefault();
-            e.stopPropagation();
-            setCite(null);
-            openSource(src);
-          }}
+      )}
+      <div className={`composer-box ${tooLong ? "invalid" : ""}`}>
+        <textarea
+          ref={textarea}
+          rows={1}
+          value={input}
+          placeholder={t("chat.placeholder")}
+          aria-label="Nachricht an den Assistenten"
+          aria-invalid={tooLong || undefined}
+          onChange={(e) => useChat.setState({ input: e.target.value })}
           onKeyDown={(e) => {
-            const el = citeOf(e.target);
-            const src = el && sources[Number(el.dataset.cite) - 1];
-            if (src && (e.key === "Enter" || e.key === " ")) {
+            // Enter during IME composition picks the candidate, it does not send.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
               e.preventDefault();
-              openSource(src);
+              send();
+            } else if (e.key === "Escape" && busy) {
+              e.preventDefault();
+              stopChat();
             }
           }}
         />
-      )}
-      {cite && sources[cite.n - 1] && (
-        <CiteCard src={sources[cite.n - 1]} n={cite.n} rect={cite.rect} onEnter={() => window.clearTimeout(hideTimer.current)} onLeave={hideSoon} />
-      )}
-      {cut && (
-        <div className="faint small msg-cut">
-          Sehr lange Antwort: angezeigt werden die ersten {MAX_SHOWN.toLocaleString("de-DE")} von {turn.text.length.toLocaleString("de-DE")} Zeichen. Kopieren und „Als neue Seite speichern“ übernehmen alles.
-        </div>
-      )}
-      {turn.cancelled && <div className="faint small">Abgebrochen</div>}
-      {!turn.streaming && !turn.error && turn.sources && turn.sources.length > 0 && (
-        <div className="sources">
-          <span className="sources-label">Quellen</span>
-          {chipSources.slice(0, 3).map((src) => (
+        <div className="composer-bar">
+          {page && (
             <button
-              key={numberOf(src)}
               type="button"
-              className="source"
-              data-source={numberOf(src)}
-              title={`[${numberOf(src)}] ${sourceLabel(src)}\n\n${src.text.slice(0, 300)}`}
-              onClick={() => openSource(src)}
+              className={`context-chip ${includePage ? "" : "off"}`}
+              aria-pressed={includePage}
+              onClick={() => useChat.setState({ includePage: !includePage })}
+              title={includePage ? t("chat.pageSent") : t("chat.pageNotSent")}
             >
-              {src.page_id != null ? <FileText size={11} /> : <Timer size={11} />}
-              {src.source.replace(/^Seite: /, "")}
+              <FileText size={12} aria-hidden />
+              <span>{page.title}</span>
+              {includePage ? <X size={11} aria-hidden /> : <Plus size={11} aria-hidden />}
             </button>
-          ))}
-        </div>
-      )}
-      {m && !turn.streaming && routeNotes(m.reasons).length > 0 && (
-        <div className="msg-route-notes" role="note">
-          {routeNotes(m.reasons).map((r) => (
-            <span key={r}>{r}</span>
-          ))}
-        </div>
-      )}
-      {m && !turn.streaming && (
-        <div className="msg-meta">
-          <span className="msg-meta-stats">
-            <span title={m.reasons.join("\n")}>
-              <span className={`tier-dot tier-${m.tier}`} /> {m.model}
+          )}
+          <button
+            type="button"
+            className="model-pill"
+            aria-label={`${t("chat.modelChoice")}: ${currentTier.label}`}
+            onClick={(e) =>
+              openMenuAt(e, [
+                ...tierOptions.map((o) => ({
+                  label: `${o.label}${o.model ? ` · ${o.model}` : ""}`,
+                  checked: o.value === tier,
+                  onSelect: () => setTier(o.value),
+                })),
+                "separator" as const,
+                { label: useTools ? "Werkzeuge deaktivieren" : "Werkzeuge aktivieren", icon: Wrench, onSelect: () => setUseTools(!useTools) },
+                { label: t("chat.aiSettings"), icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
+              ])
+            }
+          >
+            {priv ? <Lock size={12} aria-hidden /> : <Sparkles size={12} aria-hidden />}
+            <span className="model-pill-label">{priv ? t("chat.tier.local") : currentTier.label}</span>
+            {!priv && currentTier.value && <span className="faint mono model-pill-model">{currentTier.model}</span>}
+            {!priv && !currentTier.value && preview && (
+              <span className="route-hint" title={preview.reasons.join("\n")}>
+                <span className={`tier-dot tier-${preview.tier}`} /> {t(tierKey[preview.tier])}
+              </span>
+            )}
+            <ChevronDown size={12} className="faint" aria-hidden />
+          </button>
+          <span className="grow" />
+          {nearLimit && (
+            <span className={`composer-count ${tooLong ? "over" : ""}`} aria-live="polite">
+              {input.length.toLocaleString("de-DE")} / {MAX_INPUT.toLocaleString("de-DE")}
             </span>
-            {m.ttft != null && <span title="Zeit bis zum ersten Token">{h1(m.ttft / 1000)} s</span>}
-            {m.tps != null && <span title="Tokens pro Sekunde">{Math.round(m.tps)} t/s</span>}
-            <span>
-              {m.tokens.toLocaleString("de-DE")} Tokens{m.exact ? "" : " (geschätzt)"}
-            </span>
-            {m.cost > 0 && <span>{usd(m.cost)}</span>}
-          </span>
-          <span className="msg-actions">
-          <IconButton
-            icon={copied ? Check : Copy}
-            label="Kopieren"
-            size="sm"
-            tooltipSide="top"
-            onClick={() => {
-              navigator.clipboard.writeText(turn.text);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            }}
-          />
-          <IconButton
-            icon={FilePlus2}
-            label={turn.pageTitle ? "In neue Seite einfügen" : "Als Seite speichern"}
-            size="sm"
-            tooltipSide="top"
-            onClick={async () => {
-              const title = turn.pageTitle ?? (turn.text.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").slice(0, 60) || "Antwort");
-              try {
-                const p = await api.createPage(title, null, turn.pageTitle ? "file-text" : "sparkles", turn.text);
-                await s().refreshTree();
-                s().openPage(p.id, { newTab: true });
-              } catch (e) {
-                s().error("Seite nicht angelegt", e);
-              }
-            }}
-          />
-          </span>
+          )}
+          {busy ? (
+            <button type="button" className="send-btn stop" aria-label="Antwort stoppen" title={t("chat.stopHint")} onClick={stopChat}>
+              <Square size={11} fill="currentColor" />
+            </button>
+          ) : (
+            <button type="button" className="send-btn" aria-label="Senden" disabled={!input.trim() || tooLong} onClick={send}>
+              <ArrowUp size={15} strokeWidth={2.25} />
+            </button>
+          )}
         </div>
-      )}
-    </div>
-  );
-});
-
-function dedupeSources(src: ContextChunk[]) {
-  const seen = new Set<string>();
-  return src.filter((x) => {
-    if (x.page_id == null && x.time_entry_id == null) return false;
-    const k = x.page_id != null ? `p${x.page_id}` : `t${x.time_entry_id}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
-
-/** „Server kurz ausgelastet, neuer Versuch in 5 s“, counting down; Stop cancels the wait. */
-function WaitNote({ until }: { until: number }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(id);
-  }, []);
-  return (
-    <div className="msg-waiting" role="status">
-      <Loader2 size={13} className="spin" />
-      {waitText((until - now) / 1000)}
+      </div>
+      <div className="composer-foot faint">
+        <span>{tooLong ? t("chat.tooLong", { max: MAX_INPUT.toLocaleString("de-DE") }) : t("chat.keysHint")}</span>
+        {!useTools && <span>{t("chat.toolsOff")}</span>}
+      </div>
+      {menu}
     </div>
   );
 }

@@ -268,6 +268,9 @@ settings also cover proxy and certificates for company networks and Git backup.
 - Smart `/zeit`: `/zeit 2h habe am Interface-Mapping gearbeitet` on a page without `vorgang:` asks the AI for the Vorgang and shows „Buchen auf NP-8801/1020 · Systemintegration (DEV)?“ with the reason – Enter books, Tab picks another reference, Esc cancels (also in quick capture). Nothing is booked without confirmation
 - Suggestions from what is going on (the open page, overdue tasks, gaps in the week's bookings, budget warnings), follow-ups under every answer, and a right-click menu: copy, append the answer to the open page, save as page, regenerate, edit a question
 - Shows sources, time to first token, tokens/s, tokens and cost per answer and per session
+- Chat history: every chat is saved as it goes (a stopped answer with what arrived) and titled from its first question. The history button in the panel's header (or „Chat-Verlauf durchsuchen“ in Ctrl K) lists chats by Heute, Gestern, Letzte 7 Tage and Älter, searches titles and messages, and pins, renames (F2), duplicates, saves as a page or deletes them (Entf, with „Rückgängig“). An old chat opens as it was and goes on with the current model; the panel says when that model changed. Closing the panel keeps a running answer
+- Private chats: a chat that touched `#privat` content (or ran with „Nur lokal“) is marked with a lock and stays on the local model when continued, also for questions without the marker; a page saved from it carries the marker. Chats live only in the local database and are part of every backup. Settings → Datenschutz → Chat-Verlauf keeps them forever, 90 or 30 days (pinned ones stay) or not at all, and has „Alle Chats löschen“
+- Answers fit the panel at any width: long links, words and paths wrap, code blocks scroll in their own box with the language and a copy button, tables scroll sideways. Each answer has copy, insert into the open page, save as page and regenerate; the last question can be edited and sent again. The composer grows with the text (Enter sends, Shift Enter breaks the line, Esc stops), with chips for the page context and the model
 
 ## First steps
 
@@ -353,7 +356,7 @@ Settings are grouped (Allgemein, Arbeiten, KI, System) and searchable. Besides t
 | Notizen | daily note title (`2026-09-24`, `24.09.2026`, `Donnerstag, 24.09.2026`) and folder, trash retention, version interval and count |
 | Zeiterfassung | week start, rounding (1/5/6/10/15 min, up or nearest) and minimum for bookings and timer stops, hours as `1,50` or `1:30`, default Leistungsart per Netzplan, CATS separator and column order, export file name |
 | KI | temperature, answer length, streaming, citations, allowed tools (system tools off by default), monthly cost limit (warning at 80 %, blocked at 100 % unless sent anyway), inline AI actions, meeting summary template |
-| Datenschutz | private tags, whether the assistant sees the open page, local model only |
+| Datenschutz | private tags, whether the assistant sees the open page, local model only, how long chats are kept, „Alle Chats löschen“ |
 | Benachrichtigungen | each reminder and notice on/off, quiet hours for desktop notifications |
 | Verwaltung | export all settings to JSON (never tokens or passwords), import with a preview of the changes, reset one section or everything |
 
