@@ -145,6 +145,10 @@ export function CaptureApp() {
   const pickPopup = useRef<PopupHandle>(null);
   const tags = useRef<[string, number][] | null>(null);
   const hideTimer = useRef<number>(0);
+  // The field is disabled while saving and loses the focus: back to it once it is enabled again.
+  useEffect(() => {
+    if (!busy && document.activeElement === document.body) (pickInput.current ?? input.current)?.focus();
+  }, [busy]);
   const height = useRef(0);
   // The text and target of the newest capture: Ctrl+Z puts them back.
   const lastSubmitted = useRef<{ text: string; target: TargetChoice } | null>(null);
@@ -386,6 +390,9 @@ export function CaptureApp() {
   }, [picker, pages, recentIds, ctx, last, prefs.inbox_title]);
 
   const openPicker = (query = "") => {
+    // Still typing after a save: the window stays (like any other input does).
+    window.clearTimeout(hideTimer.current);
+    setDone(null);
     setSugg(null);
     setPicker({ query });
     requestAnimationFrame(() => pickInput.current?.focus());

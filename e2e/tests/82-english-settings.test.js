@@ -21,8 +21,9 @@ const found = [];
 async function check(name) {
   await app.browser.pause(400);
   await app.shot(`en-82-${name}`);
-  // The Markdown copy's folder layout is a file format and stays as it is.
-  for (const h of await germanLeftovers(app, [/Zeiterfassung\/YYYY-MM\.csv/])) found.push(`${name}: ${h}`);
+  // The Markdown copy's folder layout is a file format and stays as it is; the developer log
+  // shows lines as they were written (the first start of this workspace ran in German).
+  for (const h of await germanLeftovers(app, [/Zeiterfassung\/YYYY-MM\.csv/, /^global shortcut not available: /])) found.push(`${name}: ${h}`);
 }
 
 test("every settings section is English", async () => {

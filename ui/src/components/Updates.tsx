@@ -49,6 +49,8 @@ export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
     useUpdates.setState((s) => ({ status, available: status.available ?? s.available }));
     // The first start after an update (reported once): it worked, or the installer did not finish.
     const r = status.restarted;
+    // In the language of the settings, which may still be loading at start.
+    for (let i = 0; r && !useApp.getState().settings && i < 100; i++) await new Promise((ok) => setTimeout(ok, 50));
     if (r?.installed) useApp.getState().toast({ tone: "success", title: t("upd.restarted", { version: r.version }) });
     else if (r) useApp.getState().toast({ tone: "warning", persistent: true, title: t("upd.notInstalled", { version: r.version }), detail: t("upd.notInstalledDetail", { current: status.current_version }) });
     return status;
