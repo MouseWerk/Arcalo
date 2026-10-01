@@ -11,11 +11,11 @@ export interface FormatPrefs {
   hours: "decimal" | "clock";
   /** 24.09.2026, 2026-09-24, 24/09/2026 or 09/24/2026. */
   dateFormat: "de" | "iso" | "en-gb" | "en-us";
-  /** 1.234,5 (comma) or 1,234.5 (point). */
-  numberFormat: "comma" | "point";
+  /** 1.234,5 (comma), 1,234.5 (point) or by the display language (auto: German comma, English point). */
+  numberFormat: "auto" | "comma" | "point";
   lang: "de" | "en";
 }
-const prefs: FormatPrefs = { weekStartsOn: 1, hours: "decimal", dateFormat: "de", numberFormat: "comma", lang: "en" };
+const prefs: FormatPrefs = { weekStartsOn: 1, hours: "decimal", dateFormat: "de", numberFormat: "auto", lang: "en" };
 export const formatPrefs = (): Readonly<FormatPrefs> => prefs;
 export function setFormatPrefs(p: Partial<FormatPrefs>) {
   Object.assign(prefs, p);
@@ -27,8 +27,10 @@ export function dateLocale(): string {
   const region = f === "en-us" ? "US" : f === "en-gb" ? "GB" : f === "de" ? "DE" : prefs.lang === "de" ? "DE" : "GB";
   return `${prefs.lang}-${region}`;
 }
+/** Whether numbers use a decimal point: chosen, or by the display language („auto“). */
+export const decimalPoint = () => prefs.numberFormat === "point" || (prefs.numberFormat === "auto" && prefs.lang === "en");
 /** Locale for numbers (decimal and thousands separators only). */
-export const numberLocale = () => (prefs.numberFormat === "point" ? "en-US" : "de-DE");
+export const numberLocale = () => (decimalPoint() ? "en-US" : "de-DE");
 
 const numberFormats = new Map<string, Intl.NumberFormat>();
 function nf(min: number, max: number) {
@@ -42,7 +44,7 @@ export const h1 = (x: number) => nf(1, 1).format(x);
 export const h2 = (x: number) => nf(2, 2).format(x);
 export const int = (x: number) => nf(0, 0).format(x);
 /** The regional decimal separator. */
-export const decimalSep = () => (prefs.numberFormat === "point" ? "." : ",");
+export const decimalSep = () => (decimalPoint() ? "." : ",");
 /** A number with up to `max` decimals in the regional notation: 1,5 or 1.5. */
 export const decimal = (x: number, max = 2) => nf(0, max).format(x);
 /** USD cost in the regional notation: 0,0024 $ or $0.0024 */
@@ -237,7 +239,7 @@ export const compact = (x: number) => (Number.isInteger(x) ? String(x) : h1(x));
 export function parseGermanNumber(s: string): number | null {
   let v = s.trim().replace(/[\s ']/g, "");
   // With the point as decimal separator, commas group thousands: "1,200.5".
-  if (prefs.numberFormat === "point" && /^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(v)) v = v.replace(/,/g, "");
+  if (decimalPoint() && /^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(v)) v = v.replace(/,/g, "");
   if (v.includes(",")) {
     if (v.indexOf(",") !== v.lastIndexOf(",")) return null;
     if (v.includes(".") && !/^-?\d{1,3}(\.\d{3})*,\d*$/.test(v)) return null;

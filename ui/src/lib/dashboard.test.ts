@@ -33,8 +33,8 @@ const noOverlaps = (ws: GridWidget[]) => {
 describe("catalogue and presets", () => {
   it("knows every widget kind the backend keeps", () => {
     // Same list as WIDGET_KINDS in crates/annalo-core/src/settings.rs.
-    expect([...WIDGET_KINDS].sort()).toEqual(["activity", "agenda", "budget", "calendar", "clock", "embed", "favorites", "focus", "links", "note", "pinned", "project", "proposal", "query", "recent", "review", "suggestions", "tasks", "timer", "today", "week"]);
-    expect(new Set(WIDGET_KINDS).size).toBe(21);
+    expect([...WIDGET_KINDS].sort()).toEqual(["activity", "agenda", "balance", "budget", "calendar", "chart", "clock", "deadlines", "embed", "favorites", "focus", "heatmap", "jira", "jira_query", "jira_sprint", "kanban", "links", "mail_flags", "next_meeting", "note", "pinned", "project", "proposal", "query", "recent", "review", "suggestions", "tasks", "team", "timer", "today", "vacation", "week"]);
+    expect(new Set(WIDGET_KINDS).size).toBe(33);
     for (const k of WIDGET_KINDS) {
       const d = WIDGETS[k];
       expect(d.size.w >= d.min.w && d.size.h >= d.min.h, k).toBe(true);
@@ -56,10 +56,13 @@ describe("catalogue and presets", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("sizes S to XL respect a widget's minimum", () => {
-    expect(sizeFor("clock", "s")).toEqual({ w: 3, h: 5 });
+  it("sizes small to wide and tall respect a widget's minimum", () => {
+    expect(sizeFor("clock", "s")).toEqual({ w: 3, h: 4 });
+    expect(sizeFor("clock", "m")).toEqual({ w: 4, h: 7 });
     expect(sizeFor("today", "s")).toEqual({ w: 6, h: 8 });
-    expect(sizeName({ kind: "clock", w: 12, h: 9 })).toBe("xl");
+    expect(sizeName({ kind: "clock", w: 8, h: 7 })).toBe("w");
+    expect(sizeName({ kind: "clock", w: 4, h: 14 })).toBe("t");
+    expect(sizeName({ kind: "clock", w: 8, h: 14 })).toBe("wt");
     expect(sizeName({ kind: "clock", w: 5, h: 5 })).toBeNull();
   });
 
@@ -112,7 +115,11 @@ describe("migration of the old widget list", () => {
     expect(loadDashboard({ version: 0, boards: [], active: "", notes: {}, widgets: [] }).boards[0].widgets).toEqual([]);
     const saved = loadDashboard({ version: 2, boards: [{ id: "a", name: "A", widgets: [{ id: "w", kind: "clock", x: 20, y: 0, w: 1, h: 1 }, { id: "z", kind: "wetter", x: 0, y: 0, w: 1, h: 1 }] }], active: "b", notes: {} });
     expect(saved.active).toBe("a");
-    expect(saved.boards[0].widgets).toEqual([{ id: "w", kind: "clock", x: 10, y: 0, w: 2, h: 3 }]);
+    // An unknown kind (a newer version's widget) is kept as it is; the board hides it.
+    expect(saved.boards[0].widgets).toEqual([
+      { id: "w", kind: "clock", x: 10, y: 0, w: 2, h: 3 },
+      { id: "z", kind: "wetter", x: 0, y: 0, w: 1, h: 1 },
+    ]);
     expect(toSaved({ ...moved, widgets: old, note: "x" })).not.toHaveProperty("widgets");
   });
 });
@@ -172,7 +179,8 @@ describe("board edits", () => {
     expect(r.notes).toEqual({ "note-2": "Hallo" });
     expect(importBoard("{", bs)).toEqual({ error: "dash.import.notJson" });
     expect(importBoard('{"format":"x"}', bs)).toEqual({ error: "dash.import.wrongFormat" });
-    expect(importBoard('{"format":"annalo-dashboard","board":{"widgets":[{"kind":"wetter"}]}}', bs)).toEqual({ error: "dash.import.noWidgets" });
+    expect(importBoard('{"format":"annalo-dashboard","board":{"widgets":[{"kind":"wetter"}]}}', bs)).toEqual({ error: "dash.import.onlyUnknown" });
+    expect(importBoard('{"format":"annalo-dashboard","board":{"widgets":[{"x":1}]}}', bs)).toEqual({ error: "dash.import.noWidgets" });
     // Out-of-grid positions are clamped and overlaps resolved.
     const odd = importBoard(JSON.stringify({ format: "annalo-dashboard", board: { name: "O", widgets: [{ kind: "clock", x: 99, y: 0, w: 3, h: 4 }, { kind: "clock", x: 9, y: 0, w: 3, h: 4 }] } }), []);
     if ("error" in odd) throw new Error(odd.error);

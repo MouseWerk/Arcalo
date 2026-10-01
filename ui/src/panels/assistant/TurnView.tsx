@@ -321,7 +321,7 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
       {cite && sources[cite.n - 1] && <CiteCard src={sources[cite.n - 1]} n={cite.n} rect={cite.rect} onEnter={() => window.clearTimeout(hideTimer.current)} onLeave={hideSoon} />}
       {cut && (
         <div className="faint small msg-cut">
-          <span>{t("chat.cut", { shown: limit.toLocaleString("de-DE"), total: turn.text.length.toLocaleString("de-DE") })}</span>
+          <span>{t("chat.cut", { shown: int(limit), total: int(turn.text.length) })}</span>
           <button type="button" className="link-btn" onClick={() => setLimit(limit + MAX_SHOWN)}>
             {t("chat.showMore")}
           </button>

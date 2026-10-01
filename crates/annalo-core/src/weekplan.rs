@@ -197,6 +197,8 @@ pub struct Day {
     pub to: DateTime<Utc>,
     pub workday: bool,
     pub booked_minutes: i64,
+    /// The day's own target (a public holiday or an absence: less or none); `None`: the plan's.
+    pub target_minutes: Option<i64>,
 }
 
 /// How [`build`] cuts and caps.
@@ -305,11 +307,9 @@ pub fn build(
             i = j.max(i + 1);
         }
         // Cap at the target: the weakest signals give up their latest slots first.
-        let allowed = if day.workday && plan.target_minutes > 0 {
-            Some((plan.target_minutes - day.booked_minutes).max(0))
-        } else {
-            None
-        };
+        let day_target = day.target_minutes.unwrap_or(plan.target_minutes);
+        let allowed =
+            if day.workday && plan.target_minutes > 0 { Some((day_target - day.booked_minutes).max(0)) } else { None };
         let mut capped = 0;
         if let Some(allowed) = allowed {
             let mut taken: Vec<usize> = (0..n).filter(|&i| assign[i].is_some()).collect();
@@ -351,7 +351,7 @@ pub fn build(
             i = j;
         }
         let started = day.from < plan.until;
-        let target = if day.workday { plan.target_minutes } else { 0 };
+        let target = if day.workday { day.target_minutes.unwrap_or(plan.target_minutes) } else { 0 };
         summaries.push(DaySummary {
             date: day.date,
             workday: day.workday,
@@ -626,16 +626,23 @@ pub fn propose(
     let today = zone.to_wall(now).date();
     let until = if opts.rest_of_today { midnight(today + chrono::Days::new(1)).max(now) } else { now };
     let c = collect(db, from, to, now, zone, opts.sources.as_deref())?;
+    let target = (settings.daily_target_hours * 60.0).round().max(0.0) as i64;
     let days: Vec<Day> = dates
         .iter()
-        .map(|&d| Day {
-            date: d,
-            from: midnight(d),
-            to: midnight(d + chrono::Days::new(1)),
-            workday: settings.workdays.contains(&d.weekday().number_from_monday()),
-            booked_minutes: c.booked.get(&d).copied().unwrap_or(0),
+        .map(|&d| {
+            let workday = settings.workdays.contains(&d.weekday().number_from_monday());
+            // Holidays and absence days are no gaps.
+            let own = if workday { crate::worktime::gap_target(db, d, target)? } else { target };
+            Ok(Day {
+                date: d,
+                from: midnight(d),
+                to: midnight(d + chrono::Days::new(1)),
+                workday,
+                booked_minutes: c.booked.get(&d).copied().unwrap_or(0),
+                target_minutes: (own != target).then_some(own),
+            })
         })
-        .collect();
+        .collect::<Result<_>>()?;
     // With the rest of today only today's appointments may lie ahead.
     let signals: Vec<Signal> = c
         .signals
@@ -887,6 +894,17 @@ impl WbsContext {
         }))
     }
 
+    /// An issue key in `text` (`PROJ-123` of a synced project) whose issue or project is mapped
+    /// to a WBS (Settings → Jira, or learned from the first booking).
+    fn issue(&self, db: &Database, text: &str) -> Result<Option<WbsGuess>> {
+        let Some(key) = db.issue_key_in(text)? else { return Ok(None) };
+        let Some(reference) = db.issue_wbs_for(&key)? else { return Ok(None) };
+        let Some((np, v)) = self.resolve_ref(db, &reference) else { return Ok(None) };
+        Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
+            trf!("Issue {key} gehört zu {r}", "Issue {key} belongs to {r}")
+        }))
+    }
+
     /// The newest finished entry described like `text`.
     fn by_description(&self, db: &Database, text: &str) -> Result<Option<WbsGuess>> {
         if text.trim().is_empty() {
@@ -957,6 +975,9 @@ impl WbsContext {
         if let Some(g) = self.text_memory(db, title)? {
             return Ok(Some(g));
         }
+        if let Some(g) = self.issue(db, title)? {
+            return Ok(Some(g));
+        }
         if let Some(page) = e.note_page_id
             && let Some(reference) = db.page_reference(page)?
             && let Some((np, v)) = self.resolve_ref(db, &reference)
@@ -997,6 +1018,9 @@ impl WbsContext {
         if let Some(g) = self.text_memory(db, goal)? {
             return Ok(Some(g));
         }
+        if let Some(g) = self.issue(db, goal)? {
+            return Ok(Some(g));
+        }
         if !crate::focus::is_default_goal(goal)
             && let Some(g) = self.by_description(db, goal)?
         {
@@ -1027,6 +1051,12 @@ impl WbsContext {
             return Ok(self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
                 trf!("Seite „{title}“ gehört zu {r}", "Page “{title}” belongs to {r}")
             }));
+        }
+        // An issue note (`jira: PROJ-123`) or a title naming an issue.
+        let issue_text =
+            format!("{title}\n{}", crate::pagework::frontmatter_value(&content, "jira").unwrap_or_default());
+        if let Some(g) = self.issue(db, &issue_text)? {
+            return Ok(Some(g));
         }
         // Parent pages (a project page with `vorgang:`), nearest first.
         let mut seen = HashSet::new();
@@ -1306,7 +1336,7 @@ pub fn open_days(db: &Database, now: DateTime<Utc>, zone: &Zone) -> Result<Vec<(
     let mut d = monday;
     while d < today {
         if settings.workdays.contains(&d.weekday().number_from_monday()) {
-            let missing = target - booked.get(&d).copied().unwrap_or(0);
+            let missing = crate::worktime::gap_target(db, d, target)? - booked.get(&d).copied().unwrap_or(0);
             if missing > 0 {
                 out.push((d, missing));
             }

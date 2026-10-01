@@ -286,6 +286,8 @@ export const api = {
   dashboardData: (today: string, parts: { key: string; part: unknown }[]) => call<{ parts: Record<string, unknown>; ms: number }>("dashboard_data", { request: { today, parts } }),
   /** Writes an exported start-page board (JSON). */
   dashboardFileWrite: (path: string, json: string) => call<void>("dashboard_file_write", { path, json }),
+  /** Takes inbox entry `index` (still reading `text`) off the inbox page `inbox`; with `target` it goes to that page. */
+  dashboardInboxMove: (inbox: number, index: number, text: string, target: number | null) => call<string | null>("dashboard_inbox_move", { inbox, index, text, target }),
   saveQuickLinks: (links: T.QuickLink[]) => call<T.SettingsView>("quick_links_save", { links }),
   /** Opens the ribbon link at `index`, or entry `item` of the group there. */
   openQuickLink: (index: number, item: number | null = null) => call<void>("quick_link_open", { index, item }),

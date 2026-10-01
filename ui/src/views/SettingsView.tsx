@@ -2,9 +2,10 @@
 // Netzwerk, Sicherung, Desktop) and the preferences (Darstellung, Editor, Notizen, Zeit,
 // Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung, Protokoll and Über.
 
+import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Upload, X, XCircle } from "lucide-react";
+import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -32,13 +33,14 @@ import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
+import { JiraSection } from "./settings/JiraSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
 import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "jira" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     label: "navgroup.general",
@@ -56,6 +58,7 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
       { id: "notes", label: "nav.notes", icon: NotebookPen },
       { id: "time", label: "nav.time", icon: Timer },
       { id: "calendar", label: "nav.calendar", icon: CalendarRange },
+      { id: "jira", label: "nav.jira", icon: Ticket },
     ],
   },
   {
@@ -79,7 +82,7 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
   },
 ];
 /** Sections that save every change immediately (no save bar). */
-const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about", "calendar"]);
+const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about", "calendar", "jira"]);
 
 export function SettingsView({ tab }: { tab?: Tab }) {
   const t = useT();
@@ -231,6 +234,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
           <>
             <TimeSection draft={draft} update={u} setEnabled={(v) => u({ time: { ...draft.time, enabled: v } })} />
             {timeTrackingOn(draft) && <TimePrefGroups draft={draft} update={u} />}
+            {timeTrackingOn(draft) && <BalancePrefGroup draft={draft} update={u} />}
           </>
         );
       case "ai":
@@ -242,6 +246,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         );
       case "calendar":
         return <CalendarSection draft={draft} update={u} />;
+      case "jira":
+        return <JiraSection draft={draft} update={u} />;
       case "privacy":
         return <PrivacySection draft={draft} update={u} />;
       case "network":

@@ -1116,3 +1116,18 @@
 /* Time-entry chips stay in the notes as plain, neutral chips (the entry is kept, nothing books). */
 :root[data-time-off] .time-chip { background: var(--bg-hover); color: var(--text-2); }
 :root[data-time-off] .time-chip.ProseMirror-selectednode { outline-color: var(--accent); }
+
+/* ---- jira: issue chips (decorations; the Markdown keeps the plain key) ---- */
+.ProseMirror .issue-chip, .ProseMirror .issue-chip-head, .ProseMirror .issue-chip-tail {
+  background: var(--bg-hover); border: 1px solid var(--border); border-left: 0; border-right: 0;
+  padding: 1px 0; line-height: 1.5; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+.ProseMirror .issue-chip-head { border-left: 1px solid var(--border); border-radius: 6px 0 0 6px; padding-left: 5px; padding-right: 3px; }
+.ProseMirror .issue-chip-head svg { vertical-align: -1px; }
+.ProseMirror .issue-chip { font-family: var(--font-mono); font-size: 0.86em; font-weight: 600; color: var(--accent-text); padding-right: 4px; }
+.ProseMirror .issue-chip.cat-done { color: var(--text-3); text-decoration: line-through; }
+.ProseMirror .issue-chip-tail { border-right: 1px solid var(--border); border-radius: 0 6px 6px 0; padding-right: 6px; user-select: none; }
+.ProseMirror .issue-chip-tail .issue-status { vertical-align: 0.12em; font-size: 0.66em; line-height: 1.6; }
+.ProseMirror .issue-chip-title { display: inline-block; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; line-height: inherit; margin-left: 5px; color: var(--text-2); }
+.ProseMirror .issue-chip.unknown { color: var(--text-2); }
+.ProseMirror .issue-chip-head:hover, .ProseMirror .issue-chip:hover, .ProseMirror .issue-chip-tail:hover { background: var(--bg-active); }

@@ -114,6 +114,8 @@ pub struct Settings {
     pub voice: crate::voice::VoiceSettings,
     /// First-run intro and setup: which intro was completed and when (kept by `settings_save`).
     pub onboarding: crate::onboarding::OnboardingState,
+    /// Jira sites, saved JQL searches and the sync (tokens live in the credential store).
+    pub jira: crate::issues::IssueSettings,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
@@ -284,7 +286,8 @@ pub struct LegacyWidget {
 pub struct Widget {
     /// Stable id within the board (keys, the text of a „Notiz“).
     pub id: String,
-    /// One of [`WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
+    /// One of [`WIDGET_KINDS`] or a kind the UI registers (see [`valid_widget_kind`]); kinds of
+    /// another shape are dropped by [`Dashboard::normalized`].
     pub kind: String,
     #[serde(default)]
     pub x: u32,
@@ -317,7 +320,8 @@ pub struct Board {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Dashboard {
-    /// 2 since 1.6 (boards in a grid); 0 before.
+    /// 3 since 1.7 (widgets of any registered kind are kept), 2 since 1.6 (boards in a grid);
+    /// 0 before.
     pub version: u32,
     pub boards: Vec<Board>,
     /// Id of the board shown.
@@ -334,9 +338,10 @@ pub struct Dashboard {
 
 /// Widget kinds of the grid (1.6): Heute, Termine, Aufgaben, Zeit diese Woche, Budget, Projekt,
 /// Zuletzt bearbeitet, Lesezeichen, Angeheftet, Notiz, Seite einbetten, Abfrage, Aktivität,
-/// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender.
+/// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender; Jira (1.7):
+/// Meine Issues, Jira-Abfrage, Sprint.
 /// The UI keeps the same list (`WIDGET_KINDS` in `lib/dashboard.ts`).
-pub const WIDGET_KINDS: [&str; 21] = [
+pub const WIDGET_KINDS: [&str; 33] = [
     "today",
     "agenda",
     "tasks",
@@ -358,7 +363,33 @@ pub const WIDGET_KINDS: [&str; 21] = [
     "suggestions",
     "timer",
     "calendar",
+    // 1.7: work and chart widgets.
+    "balance",
+    "vacation",
+    "deadlines",
+    "mail_flags",
+    "next_meeting",
+    "team",
+    "chart",
+    "heatmap",
+    "kanban",
+    // 1.7: Jira.
+    "jira",
+    "jira_query",
+    "jira_sprint",
 ];
+
+/// Whether `kind` can be a widget kind: one of [`WIDGET_KINDS`] or a kind a widget of the UI
+/// registers (lower-case letters, digits, `-` and `_`, at most 32 characters). Kinds this
+/// version does not know are kept, so a layout of a newer version survives a save (the UI
+/// hides them).
+pub fn valid_widget_kind(kind: &str) -> bool {
+    let b = kind.as_bytes();
+    !b.is_empty()
+        && b.len() <= 32
+        && b[0].is_ascii_lowercase()
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-' || *c == b'_')
+}
 
 /// Widget kinds of the list before 1.6.
 pub const LEGACY_WIDGET_KINDS: [&str; 10] =
@@ -397,7 +428,7 @@ fn unique_id(seen: &mut std::collections::HashSet<String>, raw: &str, fallback: 
 }
 
 impl Dashboard {
-    /// Drops unknown kinds, gives boards and widgets unique non-empty ids, keeps every widget
+    /// Drops malformed kinds, gives boards and widgets unique non-empty ids, keeps every widget
     /// inside the grid, and caps the counts, the settings of a widget and the notes.
     pub fn normalized(mut self) -> Self {
         if let Some(list) = &mut self.widgets {
@@ -417,7 +448,7 @@ impl Dashboard {
             if b.name.is_empty() {
                 b.name = "Board".into();
             }
-            b.widgets.retain(|w| WIDGET_KINDS.contains(&w.kind.as_str()));
+            b.widgets.retain(|w| valid_widget_kind(&w.kind));
             b.widgets.truncate(MAX_WIDGETS);
             let mut seen = std::collections::HashSet::new();
             for w in &mut b.widgets {
@@ -495,6 +526,7 @@ impl Default for Settings {
             mail: crate::mail::MailSettings::default(),
             voice: crate::voice::VoiceSettings::default(),
             onboarding: crate::onboarding::OnboardingState::default(),
+            jira: crate::issues::IssueSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -537,12 +569,22 @@ impl Settings {
     /// tools ([`crate::ai::tools::TIME_TOOLS`]) while time tracking is off.
     pub fn allowed_tools(&self) -> Vec<String> {
         let time = self.time_tracking();
-        self.ai
+        let mut out: Vec<String> = self
+            .ai
             .allowed_tools
             .iter()
             .filter(|t| time || !crate::ai::tools::TIME_TOOLS.contains(&t.as_str()))
             .cloned()
-            .collect()
+            .collect();
+        // Jira: the read-only tools with a site set up; comment and status change only with a
+        // site that allows them (Settings → Jira).
+        if self.jira.active().next().is_some() {
+            out.extend(crate::ai::tools::JIRA_READ_TOOLS.iter().map(|t| (*t).to_owned()));
+        }
+        if self.jira.active().any(|s| s.allow_writes) {
+            out.extend(crate::ai::tools::JIRA_WRITE_TOOLS.iter().map(|t| (*t).to_owned()));
+        }
+        out
     }
 
     /// Whether the model may run `tool` now (a time tool while time tracking is off says why not).
@@ -665,7 +707,9 @@ impl Settings {
             .filter(|(k, _)| !k.is_empty())
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
+        self.jira = std::mem::take(&mut self.jira).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
+        self.time.balance = std::mem::take(&mut self.time.balance).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
     }
@@ -1227,7 +1271,8 @@ mod tests {
                     {"id": "n", "kind": "agenda", "x": 0, "y": 2, "w": 40, "h": 0, "config": {"days": 3}},
                     {"id": "q", "kind": "query", "config": [1, 2]},
                     {"id": "b", "kind": "budget", "config": {"big": big}},
-                    {"id": "w", "kind": "wetter"}
+                    {"id": "w", "kind": "wetter"},
+                    {"id": "x", "kind": "Not a kind!"}
                 ]},
                 {"id": "heute", "name": "", "widgets": []}
             ]
@@ -1247,9 +1292,12 @@ mod tests {
                 ("n", "note", 8, 0, 4, 5),
                 ("n-2", "agenda", 0, 2, 12, 1),
                 ("q", "query", 0, 0, 1, 1),
-                ("b", "budget", 0, 0, 1, 1)
+                ("b", "budget", 0, 0, 1, 1),
+                // A kind of a newer version (or a widget not built in) is kept for the UI to hide.
+                ("w", "wetter", 0, 0, 1, 1)
             ]
         );
+        assert!(valid_widget_kind("jira-sprint") && !valid_widget_kind("") && !valid_widget_kind("9a"));
         assert_eq!(d.boards[0].widgets[1].config, serde_json::json!({"days": 3}));
         assert!(d.boards[0].widgets[2].config.is_null(), "settings must be an object");
         assert!(d.boards[0].widgets[3].config.is_null(), "too large settings are dropped");

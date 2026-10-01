@@ -11,6 +11,7 @@ import { modelLabel } from "../lib/providers";
 import { t, type TKey } from "../lib/i18n";
 import type { ChatConversation, ChatMessage, ChatRecord, StreamEvent, Tier, ToolCall } from "../lib/types";
 import { useApp } from "./app";
+import { jiraApi } from "../lib/jira";
 
 export type { Turn } from "../lib/chathistory";
 
@@ -24,6 +25,11 @@ const TOOL_KEYS: Record<string, TKey> = {
   run_powershell: "assist.tool.powershell",
   git: "assist.tool.git",
   http_request: "assist.tool.http",
+  jira_search: "assist.tool.jiraSearch",
+  jira_issue: "assist.tool.jiraIssue",
+  jira_my_issues: "assist.tool.jiraMine",
+  jira_comment: "assist.tool.jiraComment",
+  jira_transition: "assist.tool.jiraTransition",
 };
 /** A tool's name in the display language (unknown tools as named). */
 export const toolLabel = (name: string) => (TOOL_KEYS[name] ? t(TOOL_KEYS[name]) : name);
@@ -196,7 +202,8 @@ async function runTools(calls: ToolCall[], live: () => boolean): Promise<{ resul
     try {
       const plan = await api.planTool(name, c.function.arguments);
       if (plan.risk === "workspace") {
-        out = await api.runWorkspaceTool(name, c.function.arguments);
+        // Jira tools ask Jira (async, with the cache as fallback); the others read the workspace.
+        out = name.startsWith("jira_") ? await jiraApi.tool(name, c.function.arguments) : await api.runWorkspaceTool(name, c.function.arguments);
         if (name === "log_time") {
           try {
             s().alerts(JSON.parse(out).alerts ?? []);

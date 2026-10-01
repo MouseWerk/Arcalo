@@ -140,12 +140,12 @@ pub fn parse_hhmm(s: &str) -> Option<NaiveTime> {
     NaiveTime::from_hms_opt(h.parse().ok()?, m.parse().ok()?, 0)
 }
 
-/// Hours in German notation with at most one decimal, rounded down so 7:59 h never reads
-/// as the full 8: `330` min → `5,5`, `480` → `8`.
+/// Hours with at most one decimal in the reader's notation, rounded down so 7:59 h never reads
+/// as the full 8: `330` min → `5,5` (German) or `5.5` (English), `480` → `8`.
 pub fn format_hours(minutes: f64) -> String {
     let h = (minutes / 6.0 + 1e-9).floor() / 10.0;
     let s = format!("{h:.1}");
-    s.strip_suffix(".0").unwrap_or(&s).replace('.', ",")
+    crate::i18n::decimal(s.strip_suffix(".0").unwrap_or(&s).to_owned())
 }
 
 /// The end-of-day notification text, when one is due: at or after the reminder time on a
@@ -388,6 +388,11 @@ mod tests {
         assert_eq!(format_hours(0.0), "0");
         assert_eq!(format_hours(7.5 * 60.0), "7,5");
         assert_eq!(format_hours(479.0), "7,9");
+        // English: a decimal point (reminders, the tray, the day review).
+        let en = crate::i18n::with_lang(crate::prefs::Language::En, || {
+            [format_hours(330.0), format_hours(480.0), format_hours(1695.0)]
+        });
+        assert_eq!(en, ["5.5", "8", "28.2"]);
     }
 
     #[test]

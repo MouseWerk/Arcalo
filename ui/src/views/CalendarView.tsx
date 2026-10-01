@@ -2,6 +2,7 @@
 // and a list; a meeting opens a side panel to book it (prefilled, WBS remembered per series or
 // subject), write its meeting note or mark it „nicht buchen“.
 
+import { DayOffChip } from "../components/dashboard/work";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -500,6 +501,7 @@ function DayHead({ d, ov, onDay }: { d: Date; ov: DayOverview | undefined; onDay
         <span className="calv-dn">{d.getDate()}</span>
       </button>
       <div className="calv-dayhead-info">
+        <DayOffChip date={iso} />
         {ov?.has_note && (
           <button type="button" className="calv-chip-btn" onClick={() => void openDailyNote(iso)} data-tooltip={t("calv.openDaily")} aria-label={t("calv.openDaily")}>
             <FileText size={12} aria-hidden />

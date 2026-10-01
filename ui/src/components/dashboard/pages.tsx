@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Activity as ActivityIcon, CheckSquare, Clock3, Eye, FileText, Paperclip, PenLine, Pin, Star, Target } from "lucide-react";
+import { Activity as ActivityIcon, CheckSquare, Clock3, ExternalLink, Eye, FileText, Paperclip, PenLine, Pin, Star, Target } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
@@ -177,11 +177,14 @@ export function EmbedWidget({ widget, openSettings }: WidgetProps) {
     <Loadable loading={loading} error={error}>
       {() => (
         <div className="dw-embed">
-          <button type="button" className="dw-embed-title" onClick={(e) => s().openPage(data!.id, { newTab: e.ctrlKey || e.metaKey })}>
-            <PageIcon name={data!.icon} size={14} />
-            <span className="ellipsis">{data!.title}</span>
-            <span className="faint small">{relative(data!.updated_at)}</span>
-          </button>
+          <div className="dw-embed-head">
+            <button type="button" className="dw-embed-title" onClick={(e) => s().openPage(data!.id, { newTab: e.ctrlKey || e.metaKey })}>
+              <PageIcon name={data!.icon} size={14} />
+              <span className="ellipsis">{data!.title}</span>
+              <span className="faint small">{relative(data!.updated_at)}</span>
+            </button>
+            <IconButton icon={ExternalLink} size="sm" label={t("dash.open")} onClick={(e) => s().openPage(data!.id, { newTab: e.ctrlKey || e.metaKey })} />
+          </div>
           {bodyOf(data!.content).trim() ? <div className="dw-md" onClick={followLink} dangerouslySetInnerHTML={{ __html: html }} /> : <div className="dw-quiet">{t("dash.embedBlank")}</div>}
           {data!.truncated && <div className="faint small">{t("dash.embedCut")}</div>}
         </div>

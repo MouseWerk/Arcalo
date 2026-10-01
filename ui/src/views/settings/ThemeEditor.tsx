@@ -7,6 +7,7 @@ import { AlertTriangle, Check, Download, FileText, Hash, Search, Star } from "lu
 import { Badge, Button, Dialog, Input, Segmented, Select, Switch } from "../../components/ui";
 import { parseHex, toHex } from "../../lib/color";
 import { useT, type TKey } from "../../lib/i18n";
+import { decimalSep } from "../../lib/format";
 import { COLOR_KEYS, contrastChecks, customDef, withAccent, type ThemeDef } from "../../lib/themes";
 import type { CustomTheme, ThemeColors } from "../../lib/types";
 
@@ -87,7 +88,7 @@ export function ThemeEditor({
   const checks = contrastChecks(draft.colors);
   const isNew = !theme.id;
   const valid = draft.name.trim().length > 0;
-  const fmt = (r: number) => r.toFixed(1).replace(".", ",");
+  const fmt = (r: number) => r.toFixed(1).replace(".", decimalSep());
 
   return (
     <Dialog

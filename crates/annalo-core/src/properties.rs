@@ -815,7 +815,7 @@ pub struct CollectionView {
 }
 
 /// The frontmatter block of a Markdown text with its `---` lines (line endings normalized).
-fn frontmatter_block(markdown: &str) -> String {
+pub fn frontmatter_block(markdown: &str) -> String {
     let Some(lines) = frontmatter_lines(markdown) else { return String::new() };
     let mut out = String::from("---\n");
     for l in lines {

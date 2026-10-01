@@ -45,13 +45,15 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
 | `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `annalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 | `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
+| `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text), the last comments (JSON) and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
+| `issue_wbs_map`, `time_entry_issues` | Which Netzplan/Vorgang an issue or project books on (`learned` from the first booking) (v14); the issue key of a time entry (cascade with the entry) and its Jira worklog: `worklog_state` (`none`, `pending`, `posting`, `posted`, `failed`), `worklog_id` once posted (never posted twice), attempts and the next try |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 
@@ -270,7 +272,7 @@ and by `entry_id`.
   a widget's `config` (16 KB, objects only) and notes. It is saved by `dashboard_save` only; `settings_save` keeps the
   stored dashboard. The list of 1.3–1.5 (`widgets` with `size`, `note`) stays readable: the UI moves it onto the board
   „Heute“ (`migrateLegacy` in `lib/dashboard.ts`) and saves it once; a start page never saved shows the boards
-  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings.
+  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings. (1.7: see below.)
 - Start page UI: `lib/dashgrid.ts` is the layout engine (collisions push down, then everything floats up; keyboard
   `nudge`/`grow`; `reflow` to 6 or 1 columns by the grid's width, measured with a ResizeObserver), `lib/dashboard.ts`
   the catalogue, presets, board edits, export/import (`annalo-dashboard` JSON), the parts a widget needs and the budget
@@ -284,6 +286,70 @@ and by `entry_id`.
   while reloading and reloads the parts whose topics changed (`data://entries`, `data://tasks`, `data://pages`,
   `calendar://synced`, `focus://changed`, saved pages, the WBS), batched into one call. Timing is kept in
   `window.__annaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
+- Start page 1.7: `version: 3`. `Dashboard::normalized` keeps every well-formed kind (`valid_widget_kind`: a-z, 0-9,
+  `-`, `_`, at most 32 characters), so a widget of a newer version or of a feature not built in survives a save; the
+  UI keeps it on its board, hidden (`widgetShown`, `withHidden`), like the time widgets while time tracking is off.
+  A 1.6 layout opens unchanged (all boards, settings, notes, the board used last); the 1.3–1.5 list still becomes
+  the first board. Preset sizes are small 3×4, medium 4×7, wide 8×7, tall 4×14 and wide and tall 8×14
+  (`SIZES`, `resizeToPreset`), from the size buttons, the keys 1–5 in edit mode or the widget menu outside it.
+  Board files (`*.dashboard.json`, format `annalo-dashboard` version 2) leave out settings that hold credentials
+  (`publicConfig`: keys a widget lists in `secrets`, and any key that looks like a token, password or API key) and
+  are checked on import (version, at most 40 widgets, kinds, places, settings size, notes); unknown kinds are left
+  out with a notice. New parts: `resurface { seed }`, `writing { days }`, `pulled { limit }` and `inbox { limit }`
+  (`annalo_core::dashboard::notes`). Writing statistics come from the activity journal (characters changed per
+  hourly edit event, 6 characters a word), read by one indexed range query; the pages a Git sync took over are
+  recorded by the shell (`record_pulled`, settings meta `gitsync.pulled`, 50 entries); inbox entries are the
+  `**dd.mm.yyyy, HH:MM**` blocks quick capture writes into its inbox page, and `dashboard_inbox_move` files one
+  into a page (or removes it) only while its text is unchanged.
+
+### Start page widgets: how to add one
+
+A widget lives in a file of its own in `ui/src/components/dashboard/widgets/` and registers itself; every file there
+is loaded with the start page (`import.meta.glob` in `registry.tsx`), so no shared list needs an edit:
+
+```tsx
+import { Users } from "lucide-react";
+import { defineWidget } from "../define";
+import { configOf } from "../../../lib/dashboard";
+import { useLazyData } from "../data";
+import type { WidgetProps } from "../registry";
+
+function StandupWidget({ widget, openSettings }: WidgetProps) {
+  const c = configOf(widget);                       // settings with the defaults of `config`
+  const { data, error, loading, reload } = useLazyData(widget.id, () => loadStandup(c.team as string), { key: String(c.team), topics: ["sync"], every: 300_000 });
+  …
+}
+
+defineWidget({
+  kind: "standup",                 // unique: a-z, 0-9, -, _ (prefix by feature, e.g. "jira-sprint")
+  label: "dash.w.standup",         // name and one-line hint: keys in ui/src/locales/en.ts and de.ts
+  hint: "dash.w.standupHint",
+  group: "tools",                  // gallery group: day, time, pages, tools
+  size: { w: 4, h: 7 },            // first size in cells of the 12-column grid (rows of 28 px)
+  min: { w: 3, h: 4 },
+  config: () => ({ team: "", account: "" }),
+  icon: Users,                     // lucide icon of the header and the gallery
+  look: "list",                    // gallery schematic: list, bars, hbars, ring, timeline, clock, grid, text, tiles
+  body: StandupWidget,
+  settings: StandupSettings,       // optional: own fields in the settings dialog ({ widget, config, set })
+  opener: (w) => () => …,          // optional: what a click on the title opens
+  parts: (c, ctx) => [...],        // optional: parts of the batched `dashboard_data` (read with useWidgetData)
+  secrets: ["account"],            // optional: settings that hold or point at credentials: never exported
+  time: true,                      // optional: about booking time, hidden while time tracking is off
+});
+```
+
+- Data loads only once the widget scrolls into view: through `parts` (one batched backend call for every widget in
+  view; a new part kind needs a variant of `annalo_core::dashboard::Part`, its topics in `partTopics`) or with
+  `useLazyData` for anything else (an outside service, a status call). Topics (`entries`, `tasks`, `pages`,
+  `calendar`, `focus`, `wbs`, `sync`) reload it when that data changes.
+- A widget changes its own settings with `useBoard().setConfig(widget.id, patch)` (saved at once, or into the draft
+  in edit mode). Credentials never go into settings: keep them in the credential store and reference them by an id
+  listed in `secrets`.
+- Strings go into both locale files; the i18n scan (`i18n-strings.test.ts`) fails on text in the code. Widgets adapt
+  to their own width with `@container dw (…)` and use the theme tokens, no own colors.
+- Presets reference registered kinds by name (`PRESET_SPECS` in `lib/dashboard.ts`); a kind that is not registered
+  is left out of a preset.
 - Reminders: `end_of_day_reminder` and `late_timer_reminder` are pure functions of time, settings,
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.

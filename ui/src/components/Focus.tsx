@@ -13,6 +13,7 @@ import type { ZeitSuggestItem } from "../editor/extensions";
 import { BREAKS, LENGTHS, countdown, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
 import type { FocusDone } from "../lib/types";
 import { t as tr, useT } from "../lib/i18n";
+import { decimal } from "../lib/format";
 
 const s = useApp.getState;
 
@@ -312,7 +313,7 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
   const [goal, setGoal] = useState(preset.goal ?? (preset.reference ? "" : last.goal));
   const preset0 = LENGTHS.includes(last.minutes as (typeof LENGTHS)[number]) ? String(last.minutes) : "custom";
   const [length, setLength] = useState<string>(preset0);
-  const [custom, setCustom] = useState(preset0 === "custom" ? String(last.minutes).replace(".", ",") : "35");
+  const [custom, setCustom] = useState(preset0 === "custom" ? decimal(last.minutes) : "35");
   const [pause, setPause] = useState<string>(BREAKS.includes(last.breakMinutes as (typeof BREAKS)[number]) ? String(last.breakMinutes) : "5");
   const [focusMode, setFocusMode] = useState(last.focusMode);
   const [busy, setBusy] = useState(false);

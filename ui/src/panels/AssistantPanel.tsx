@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ClipboardType, Copy, FilePlus2, FileIn
 import { api } from "../lib/api";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { t, useT, type TKey } from "../lib/i18n";
+import { int } from "../lib/format";
 import { modelLabel, usableProvider } from "../lib/providers";
 import type { RouteDecision, Tier } from "../lib/types";
 import type { Turn } from "../lib/chathistory";
@@ -520,7 +521,7 @@ function Composer() {
           <span className="grow" />
           {nearLimit && (
             <span className={`composer-count ${tooLong ? "over" : ""}`} aria-live="polite">
-              {input.length.toLocaleString("de-DE")} / {MAX_INPUT.toLocaleString("de-DE")}
+              {int(input.length)} / {int(MAX_INPUT)}
             </span>
           )}
           {busy ? (
@@ -535,7 +536,7 @@ function Composer() {
         </div>
       </div>
       <div className="composer-foot faint">
-        <span>{tooLong ? t("chat.tooLong", { max: MAX_INPUT.toLocaleString("de-DE") }) : t("chat.keysHint")}</span>
+        <span>{tooLong ? t("chat.tooLong", { max: int(MAX_INPUT) }) : t("chat.keysHint")}</span>
         {!useTools && <span>{t("chat.toolsOff")}</span>}
       </div>
       {menu}

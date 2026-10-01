@@ -6,7 +6,7 @@ import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
-import { exportFileName } from "../../lib/prefs";
+import { exportFileName, numberFormatOf } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
 import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
@@ -296,7 +296,7 @@ export function LocaleSection({ draft, update }: SectionProps) {
         <Row label={t("set.locale.numberFormat")}>
           <Segmented
             label={t("set.locale.numberFormat")}
-            value={l.number_format ?? "comma"}
+            value={numberFormatOf(l)}
             options={[
               { value: "comma", label: "1.234,5" },
               { value: "point", label: "1,234.5" },

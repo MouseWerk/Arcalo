@@ -226,7 +226,8 @@ describe("no hard-coded UI text", () => {
     // I18N_REPORT=<file> writes the full list (the assertion diff is cut short).
     if (process.env.I18N_REPORT) fs.writeFileSync(process.env.I18N_REPORT, report.join("\n") + "\n");
     expect(report).toEqual([]);
-  });
+    // Parsing every source file takes a few seconds while the other test files run too.
+  }, 30_000);
 
   it("the scanner finds the kinds of text it is meant to find", () => {
     const tmp = path.join(SRC, "__scan_probe.tsx");

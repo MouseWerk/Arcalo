@@ -295,6 +295,8 @@ export interface Settings {
   mail: MailSettings;
   /** First-run intro and setup (saved by its own commands, kept by `settings_save`). */
   onboarding: OnboardingState;
+  /** Jira sites, saved JQL searches and the sync (tokens live in the credential store). */
+  jira?: import("./jira").IssueSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -414,6 +416,19 @@ export interface TimePrefs {
   cats_delimiter: "semicolon" | "comma" | "tab";
   cats_columns: "standard" | "without_wbs" | "date_first";
   export_file_pattern: string;
+  /** Overtime balance, vacation account and public holidays (1.7). */
+  balance?: BalancePrefs;
+}
+export interface BalancePrefs {
+  /** Target hours Monday..Sunday; empty: the daily target on the workdays. */
+  weekday_hours: number[];
+  /** YYYY-MM-DD; null: 1 January of the current year. */
+  start: string | null;
+  opening_hours: number;
+  vacation_days: number;
+  carry_over: number;
+  /** BY, NW, …; empty: no public holidays. */
+  state: string;
 }
 export interface AiPresetDef {
   label: string;
@@ -461,7 +476,8 @@ export interface LocalePrefs {
   language: "de" | "en";
   date_format: "de" | "iso" | "en-gb" | "en-us";
   /** Decimal separator: comma (1.234,5) or point (1,234.5). */
-  number_format: "comma" | "point";
+  /** Unset: as the display language writes numbers. */
+  number_format?: "comma" | "point";
 }
 export interface SystemProxy {
   http: string | null;
@@ -569,7 +585,7 @@ export interface Dashboard {
   note?: string;
 }
 /** Payload of `search://open`: what the quick search asks the main window to show. */
-export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" };
+export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" } | { kind: "issues" } | { kind: "issue"; key: string };
 export interface DesktopInfo {
   autostart: boolean;
   autostart_available: boolean;

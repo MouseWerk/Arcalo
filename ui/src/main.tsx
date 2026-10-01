@@ -11,6 +11,7 @@ import "./styles/prefs.css";
 import "./styles/settings.css";
 import "./styles/firstrun.css";
 import "./styles/dashboard.css";
+import "./styles/workwidgets.css";
 import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";

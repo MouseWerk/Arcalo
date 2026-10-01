@@ -12,7 +12,9 @@ export type QsAction =
   | { type: "timer_start" }
   | { type: "timer_stop" }
   | { type: "zeit"; line: string }
-  | { type: "timesheet" };
+  | { type: "timesheet" }
+  | { type: "issues" }
+  | { type: "issue"; key: string };
 
 export interface QsItem {
   id: string;
@@ -34,6 +36,8 @@ export interface QsContext {
   lastRef?: string | null;
   /** „Zeiterfassung verwenden“ (default on): off, no timer, timesheet, `/zeit` or time entries. */
   time?: boolean;
+  /** A Jira site is set up: „Issues“ and issue keys are offered. */
+  jira?: boolean;
 }
 
 /** The last query is kept when the window comes back within this time. */
@@ -55,6 +59,10 @@ function actions(q: string, ctx: QsContext): QsItem[] {
   const section = t("qs.actions");
   if (all || matches(q, ["tagesnotiz", "heute", "journal", "daily", "today"]))
     out.push({ id: "daily", section, title: t("capture.daily"), subtitle: t("qs.dailySub"), action: { type: "daily" } });
+  if (ctx.jira && !all && matches(q, ["issues", "jira", "tickets"]))
+    out.push({ id: "issues", section, title: t("tabs.issues"), subtitle: t("qs.issuesSub"), action: { type: "issues" } });
+  if (ctx.jira && /^[A-Z][A-Z0-9_]{1,11}-[1-9][0-9]{0,6}$/.test(q.trim().toUpperCase()))
+    out.push({ id: "issue", section, title: t("qs.issue", { key: q.trim().toUpperCase() }), subtitle: t("qs.issueSub"), action: { type: "issue", key: q.trim().toUpperCase() } });
   if (ctx.time === false) return out;
   if (ctx.timerRunning) {
     if (all || matches(q, ["timer", "stoppen", "stop"]))
