@@ -112,6 +112,8 @@ pub struct Settings {
     pub mail: crate::mail::MailSettings,
     /// First-run intro and setup: which intro was completed and when (kept by `settings_save`).
     pub onboarding: crate::onboarding::OnboardingState,
+    /// Jira sites, saved JQL searches and the sync (tokens live in the credential store).
+    pub jira: crate::issues::IssueSettings,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
@@ -332,9 +334,10 @@ pub struct Dashboard {
 
 /// Widget kinds of the grid (1.6): Heute, Termine, Aufgaben, Zeit diese Woche, Budget, Projekt,
 /// Zuletzt bearbeitet, Lesezeichen, Angeheftet, Notiz, Seite einbetten, Abfrage, Aktivität,
-/// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender.
+/// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender; Jira (1.7):
+/// Meine Issues, Jira-Abfrage, Sprint.
 /// The UI keeps the same list (`WIDGET_KINDS` in `lib/dashboard.ts`).
-pub const WIDGET_KINDS: [&str; 21] = [
+pub const WIDGET_KINDS: [&str; 24] = [
     "today",
     "agenda",
     "tasks",
@@ -356,6 +359,9 @@ pub const WIDGET_KINDS: [&str; 21] = [
     "suggestions",
     "timer",
     "calendar",
+    "jira",
+    "jira_query",
+    "jira_sprint",
 ];
 
 /// Widget kinds of the list before 1.6.
@@ -492,6 +498,7 @@ impl Default for Settings {
             capture: CapturePrefs::default(),
             mail: crate::mail::MailSettings::default(),
             onboarding: crate::onboarding::OnboardingState::default(),
+            jira: crate::issues::IssueSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -534,12 +541,22 @@ impl Settings {
     /// tools ([`crate::ai::tools::TIME_TOOLS`]) while time tracking is off.
     pub fn allowed_tools(&self) -> Vec<String> {
         let time = self.time_tracking();
-        self.ai
+        let mut out: Vec<String> = self
+            .ai
             .allowed_tools
             .iter()
             .filter(|t| time || !crate::ai::tools::TIME_TOOLS.contains(&t.as_str()))
             .cloned()
-            .collect()
+            .collect();
+        // Jira: the read-only tools with a site set up; comment and status change only with a
+        // site that allows them (Settings → Jira).
+        if self.jira.active().next().is_some() {
+            out.extend(crate::ai::tools::JIRA_READ_TOOLS.iter().map(|t| (*t).to_owned()));
+        }
+        if self.jira.active().any(|s| s.allow_writes) {
+            out.extend(crate::ai::tools::JIRA_WRITE_TOOLS.iter().map(|t| (*t).to_owned()));
+        }
+        out
     }
 
     /// Whether the model may run `tool` now (a time tool while time tracking is off says why not).
@@ -662,6 +679,7 @@ impl Settings {
             .filter(|(k, _)| !k.is_empty())
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
+        self.jira = std::mem::take(&mut self.jira).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
