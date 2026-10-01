@@ -181,13 +181,14 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
     default:
       return (
         <>
-          {/* These views open with their own heading; the tab names them too. */}
-          <ViewHeader tab={tab} title="" />
+          {/* These views open with their own heading; the tab names them too. Settings carry
+              back and forward in their own bar above the section, beside the menu. */}
+          {tab.kind !== "settings" && <ViewHeader tab={tab} title="" />}
           <div className="view-body">
             <Suspense fallback={<div className="view-loading" aria-busy="true" />}>
             {tab.kind === "timesheet" && <TimesheetView />}
             {tab.kind === "projects" && <ProjectsView />}
-            {tab.kind === "settings" && <SettingsView />}
+            {tab.kind === "settings" && <SettingsView tab={tab} />}
             {tab.kind === "tag" && <TagView tag={tab.tag!} />}
             {tab.kind === "trash" && <TrashView />}
             {tab.kind === "tasks" && <TasksView />}

@@ -1336,6 +1336,8 @@ const ENTRIES = {
   "olcal.c.cyan": ["Cyan", "Cyan"],
   "olcal.c.gold": ["Gold", "Gold"],
   "olcal.legend": ["Kalender", "Calendars"],
+  "cal.more": ["+{n} weitere", "+{n} more"],
+  "cal.moreLabel": ["{n} weitere Termine am {day} zeigen", "Show {n} more meetings on {day}"],
   "olcal.show": ["{name} einblenden", "Show {name}"],
   "olcal.hide": ["{name} ausblenden", "Hide {name}"],
   "olcal.hiddenNote": ["{n} ausgeblendet – nur in der Ansicht, synchronisiert wird weiter.", "{n} hidden – in the view only, syncing goes on."],

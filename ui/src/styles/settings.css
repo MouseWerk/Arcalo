@@ -5,7 +5,14 @@
    `setcard` container query), so nothing is ever cut off. Narrow panes swap the menu for a
    section dropdown next to the search. */
 
-.settings { display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; }
+/* The menu runs the full height of the pane; back and forward sit in the bar on top of the
+   section, on the row of the menu's title, so the pane has no separate header strip. The menu
+   list scrolls on its own; menu and section never push each other. */
+.settings { display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
+.settings-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.settings-bar { --settings-bar-h: 38px; flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; min-height: var(--settings-bar-h); padding: 0 8px; border-bottom: 1px solid transparent; transition: border-color var(--dur-fast); }
+.settings-bar.scrolled { border-bottom-color: var(--border); }
+.pane.multi:not(.active) .settings-bar .vh-nav { opacity: 0.72; }
 .settings-topbar { display: none; }
 
 /* ------------------------------------------------------------ menu */
@@ -13,11 +20,12 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 22px 10px 12px;
+  overflow: hidden;
+  padding: 0 10px 10px;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-sidebar) 60%, var(--bg-canvas));
 }
-.settings-nav-title { padding: 0 8px 12px; font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
+.settings-nav-title { display: flex; align-items: center; flex: none; height: 38px; margin-bottom: 4px; padding: 0 8px; font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
 .settings-search {
   display: flex;
   align-items: center;
@@ -35,6 +43,10 @@
 .settings-search input::placeholder { color: var(--text-3); }
 .settings-search-key { flex: none; margin-right: 4px; font-size: var(--fs-2xs); color: var(--text-3); }
 .settings-nav-list { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -4px 0; padding: 0 4px 8px; scrollbar-width: thin; }
+/* More items above or below: the edge fades instead of cutting an item in half. */
+.settings-nav-list.fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+.settings-nav-list.fade-top { mask-image: linear-gradient(to bottom, transparent, #000 20px); }
+.settings-nav-list.fade-top.fade-bottom { mask-image: linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 28px), transparent); }
 .settings-nav-group { display: grid; gap: 1px; }
 .settings-nav-group + .settings-nav-group { margin-top: 12px; }
 .settings-nav-group-label { padding: 6px 10px 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); }
@@ -64,8 +76,8 @@
 .settings-nav-item:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 
 /* ------------------------------------------------------------ content */
-.settings-scroll { position: relative; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
-.settings-body { max-width: 800px; padding: 36px 44px 120px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 30px; }
+.settings-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
+.settings-body { max-width: 800px; padding: 26px 44px 120px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 30px; }
 .settings-head { display: grid; gap: 6px; }
 .settings-head h1 { margin: 0; font-size: var(--fs-display); font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
 .settings-head p { margin: 0; max-width: 640px; color: var(--text-2); line-height: 1.55; }
@@ -180,20 +192,24 @@
 /* ------------------------------------------------------------ narrow panes */
 @container pane (max-width: 900px) {
   .settings { grid-template-columns: 204px minmax(0, 1fr); }
-  .settings-body { padding: 30px 30px 120px; }
+  .settings-body { padding: 24px 30px 120px; }
   .savebar { margin: 0 30px; }
 }
 @container pane (max-width: 760px) {
-  .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings { grid-template-columns: minmax(0, 1fr); }
   .settings > .settings-nav { display: none; }
-  .settings-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 10px 20px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-sidebar) 60%, var(--bg-canvas)); }
+  /* One bar: back and forward, the search and the section dropdown. */
+  .settings-bar { align-items: flex-start; padding: 9px 20px 9px 8px; border-bottom-color: var(--border); background: color-mix(in srgb, var(--bg-sidebar) 60%, var(--bg-canvas)); }
+  :root[data-backdrop] .settings-bar { background: color-mix(in srgb, var(--bg-sidebar) 60%, transparent); }
+  .settings-bar > .vh-nav { height: 32px; }
+  .settings-topbar { display: flex; flex: 1 1 0; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
   .settings-topbar .settings-search { flex: 1 1 180px; min-width: 0; }
   .settings-topbar .settings-section-select { flex: 0 1 220px; min-width: 150px; height: 32px; }
   .settings-body { padding: 22px 20px 120px; gap: 26px; }
   .savebar { margin: 0 16px; }
 }
 @container pane (max-width: 440px) {
-  .settings-topbar { padding: 8px 12px; }
+  .settings-bar { padding: 8px 12px 8px 6px; }
   .settings-topbar .settings-section-select { flex: 1 1 100%; }
   .settings-body { padding: 18px 12px 120px; }
   .set-group-body { padding: 0 12px; }
@@ -288,9 +304,10 @@
 .tp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .tp-input { width: 100%; }
 
-/* Short windows: the menu drops its title so all sections fit without scrolling. */
+/* Short windows: the menu drops its title (the search moves up to the row of back and forward)
+   and tightens, so all sections fit or the list scrolls with every item reachable. */
 @media (max-height: 820px) {
-  .settings-nav { padding-top: 14px; }
+  .settings-nav { padding-top: 3px; }
   .settings-nav-title { display: none; }
   .settings-nav-group + .settings-nav-group { margin-top: 6px; }
   .settings-nav-group-label { padding: 4px 10px 3px; }

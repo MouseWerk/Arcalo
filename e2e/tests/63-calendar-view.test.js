@@ -114,7 +114,7 @@ test("„Zeit buchen“ opens the entry dialog prefilled and links the entry", a
   await app.waitText(".calv-detail", /Jörg Weiß · Zoë Schmidt/);
   await app.waitText(".calv-detail .calv-book-state", /Noch nicht gebucht/);
   await app.shot("63-calendar-detail");
-  await app.click(".calv-detail-actions .btn-primary");
+  await app.click(".calv-detail-actions .calv-book-btn");
   await app.waitText(".dialog-title", /Zeit erfassen/);
   await app.waitText(".dialog .calv-book-note", /Aus dem Termin „Jour fixe Änderungen“/);
   assert.equal(await field("Datum"), de(at(0, 0)));
@@ -144,7 +144,7 @@ test("next week the same series suggests the WBS used last time", async () => {
   const next = week(1);
   await app.waitFor(`.calv-dayhead[data-date="${iso(next.monday)}"]`);
   await clickEvent("Jour fixe Änderungen");
-  await app.click(".calv-detail-actions .btn-primary");
+  await app.click(".calv-detail-actions .calv-book-btn");
   await app.waitText(".dialog .calv-book-note", /WBS wie beim letzten Mal/);
   assert.equal(await field("Netzplan"), String(netzplan.id));
   assert.equal(await field("Datum"), de(next.at(0, 0)));
