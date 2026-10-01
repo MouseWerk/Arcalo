@@ -110,6 +110,8 @@ pub struct Settings {
     pub capture: CapturePrefs,
     /// „E-Mail als Aufgabe / Notiz“: parent of mail notes, global shortcut, attachment default.
     pub mail: crate::mail::MailSettings,
+    /// Sprachnotizen: Whisper model and its source, language, input device, summary, audio.
+    pub voice: crate::voice::VoiceSettings,
     /// First-run intro and setup: which intro was completed and when (kept by `settings_save`).
     pub onboarding: crate::onboarding::OnboardingState,
 }
@@ -491,6 +493,7 @@ impl Default for Settings {
             calendar: crate::calsync::CalendarSettings::default(),
             capture: CapturePrefs::default(),
             mail: crate::mail::MailSettings::default(),
+            voice: crate::voice::VoiceSettings::default(),
             onboarding: crate::onboarding::OnboardingState::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
