@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use annalo_core::calsync::tz::Zone;
 use annalo_core::capture::{self as cap, CaptureTarget, CaptureUndo, QueuedCapture};
-use annalo_core::desktop::{self as core, CaptureOutcome};
+use annalo_core::desktop::{self as core, CaptureOutcome, CloseAction, Platform};
 use annalo_core::{Database, Error};
 use chrono::{DateTime, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,9 @@ pub struct Desktop {
     capture_requested: Mutex<Option<Instant>>,
     /// Milliseconds from the request to the capture window's first frame, last time (0 = not yet).
     capture_open_ms: AtomicU64,
+    /// The open popup (capture, search) was called up while another program had the focus: on
+    /// macOS dismissing it hides Annalo again, so that program gets the focus back.
+    popup_from_other_app: AtomicBool,
 }
 
 impl Desktop {
@@ -90,6 +93,9 @@ fn desktop(app: &AppHandle) -> State<'_, Desktop> {
 }
 
 pub fn show_main(app: &AppHandle) {
+    // macOS: Annalo may be hidden (a popup gave the focus back to another program).
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
         let _ = w.show();
@@ -268,11 +274,31 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
 #[tauri::command]
 pub fn window_hide(app: AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
-        #[cfg(target_os = "macos")]
-        let hide = true;
-        #[cfg(not(target_os = "macos"))]
-        let hide = desktop(&app).has_tray();
-        let _ = if hide { w.hide() } else { w.minimize() };
+        let _ = match core::close_action(Platform::current(), true, desktop(&app).has_tray()) {
+            CloseAction::Hide => w.hide(),
+            CloseAction::Minimize | CloseAction::Quit => w.minimize(),
+        };
+    }
+}
+
+/// What closing the main window does (the UI stores the editors, then hides or quits).
+#[tauri::command]
+pub fn window_close_action(app: AppHandle, state: State<AppState>) -> CloseAction {
+    let close_to_tray = state.settings().close_to_tray;
+    core::close_action(Platform::current(), close_to_tray, desktop(&app).has_tray())
+}
+
+/// „Fenster schließen“ (macOS menu, ⇧⌘W): dismisses the popup in front, else closes the main
+/// window the way its close button does (the UI stores the editors and hides it).
+pub fn close_front_window(app: &AppHandle) {
+    for label in [CAPTURE, SEARCH] {
+        if app.get_webview_window(label).is_some_and(|w| w.is_focused().unwrap_or(false)) {
+            hide_popup(app, label, true);
+            return;
+        }
+    }
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.close();
     }
 }
 
@@ -319,9 +345,8 @@ struct Popup {
     label: &'static str,
     title: &'static str,
     size: (f64, f64),
-    /// Transparent background: the page draws a rounded panel (not on macOS, which would need
-    /// the private-API feature; there the panel fills the window).
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    /// Transparent background: the page draws a rounded panel (macOS: needs the
+    /// `macos-private-api` feature, see Cargo.toml).
     transparent: bool,
 }
 
@@ -339,10 +364,13 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
                 .center()
                 .visible(false)
                 // Files dropped onto the page arrive as HTML drops (quick capture stores them).
-                .disable_drag_drop_handler();
-            // macOS needs the private-API feature for transparent windows.
-            #[cfg(not(target_os = "macos"))]
-            let b = b.transparent(p.transparent);
+                .disable_drag_drop_handler()
+                .transparent(p.transparent);
+            // macOS: no system shadow. It is computed from the transparent window's content and
+            // can stay a rectangle, or the old size after a resize; the panel has its own border.
+            // On every Space, also over a full-screen app (see `macos::float_over_spaces`).
+            #[cfg(target_os = "macos")]
+            let b = b.shadow(!p.transparent).visible_on_all_workspaces(true);
             // Portable: the same webview profile as the main window, in the data folder.
             let webview_dir =
                 app.try_state::<crate::AppState>().and_then(|s| crate::portable::webview_dir(&s.data_dir));
@@ -350,14 +378,46 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
                 Some(dir) => b.data_directory(dir),
                 None => b,
             };
-            b.build()?
+            let w = b.build()?;
+            #[cfg(target_os = "macos")]
+            macos::float_over_spaces(&w);
+            w
         }
     })
 }
 
+/// Whether one of Annalo's windows has the keyboard focus (Annalo is the active program).
+fn app_focused(app: &AppHandle) -> bool {
+    app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))
+}
+
+/// Hides a popup. `dismissed` (Esc, stored, its shortcut again): on macOS a popup called up from
+/// another program then hides Annalo too, so that program gets the focus back.
+fn hide_popup(app: &AppHandle, label: &str, dismissed: bool) {
+    let Some(w) = app.get_webview_window(label) else { return };
+    let focused = dismissed && w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false);
+    let _ = w.hide();
+    let from_other = desktop(app).popup_from_other_app.swap(false, Ordering::Relaxed);
+    let hide_app = core::hide_app_after_popup(Platform::current(), from_other, focused);
+    #[cfg(target_os = "macos")]
+    if hide_app {
+        let _ = app.hide();
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = hide_app;
+}
+
 fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow> {
     let w = popup_window(app, p)?;
-    w.center()?;
+    // Called up from another program (not when the popup is already in front).
+    if !(w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)) {
+        desktop(app).popup_from_other_app.store(!app_focused(app), Ordering::Relaxed);
+    }
+    // macOS: Annalo may be hidden (an earlier popup gave the focus back); the window must
+    // appear and take the keyboard focus from the program in front.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    center_on_primary(app, &w);
     w.show()?;
     w.set_focus()?;
     // Windows may refuse the foreground to a window shown from the background (focus-stealing
@@ -373,6 +433,24 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow>
         }
     });
     Ok(w)
+}
+
+/// Puts a popup in the middle of the primary screen (the main display), whatever screen the
+/// main window is on. The popup first moves onto that screen, so its size follows the screen's
+/// scaling before it is centred. Falls back to the current screen when there is none.
+fn center_on_primary(app: &AppHandle, w: &tauri::WebviewWindow) {
+    let Ok(Some(m)) = app.primary_monitor() else {
+        let _ = w.center();
+        return;
+    };
+    let (pos, size) = (m.position(), m.size());
+    let _ = w.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
+    let Ok(outer) = w.outer_size() else {
+        let _ = w.center();
+        return;
+    };
+    let (x, y) = core::centered_in((pos.x, pos.y, size.width, size.height), (outer.width, outer.height));
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
 /// Payload of `capture://shown`.
@@ -410,11 +488,10 @@ fn clipboard_text(selection: bool) -> Option<String> {
     (!t.trim().is_empty()).then(|| t.chars().take(20_000).collect())
 }
 
+/// Esc, or the capture was stored.
 #[tauri::command]
 pub fn capture_hide(app: AppHandle) {
-    if let Some(w) = app.get_webview_window(CAPTURE) {
-        let _ = w.hide();
-    }
+    hide_popup(&app, CAPTURE, true);
 }
 
 /// Opens the capture window (command palette, tests).
@@ -448,7 +525,7 @@ pub fn open_search(app: &AppHandle, toggle: bool) {
             && w.is_visible().unwrap_or(false)
             && w.is_focused().unwrap_or(false)
         {
-            let _ = w.hide();
+            hide_popup(&app, SEARCH, true);
             return;
         }
         let popup = Popup { label: SEARCH, title: "Suchen – Annalo", size: (640.0, 420.0), transparent: true };
@@ -458,11 +535,10 @@ pub fn open_search(app: &AppHandle, toggle: bool) {
     });
 }
 
+/// Esc in the quick search.
 #[tauri::command]
 pub fn search_hide(app: AppHandle) {
-    if let Some(w) = app.get_webview_window(SEARCH) {
-        let _ = w.hide();
-    }
+    hide_popup(&app, SEARCH, true);
 }
 
 /// What the quick search asks the main window to open (event `search://open`).
@@ -482,7 +558,7 @@ pub enum SearchTarget {
 /// Hides the quick search, brings the main window to the front and lets it open `target`.
 #[tauri::command]
 pub fn search_open(app: AppHandle, target: SearchTarget) {
-    search_hide(app.clone());
+    hide_popup(&app, SEARCH, false);
     show_main(&app);
     let _ = app.emit_to(MAIN, "search://open", target);
 }
@@ -759,7 +835,7 @@ pub fn capture_undo(app: AppHandle, state: State<AppState>) -> Result<RecentCapt
 /// Hides the capture window and opens `page_id` in the main window („Gespeichert in …“).
 #[tauri::command]
 pub fn capture_open(app: AppHandle, page_id: i64) {
-    capture_hide(app.clone());
+    hide_popup(&app, CAPTURE, false);
     show_main(&app);
     let _ = app.emit_to(MAIN, "search://open", SearchTarget::Page { page_id, new_tab: false });
 }
@@ -877,6 +953,30 @@ pub fn shortcut_role(app: &AppHandle, shortcut: &Shortcut) -> Option<Role> {
     let d = app.try_state::<Desktop>()?;
     let slots = *lock(&d.shortcuts);
     ROLES.into_iter().find(|r| slots[*r as usize].as_ref() == Some(shortcut))
+}
+
+// -------------------------------------------------------------------- macOS
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+
+    /// Lets a popup appear on the current Space, also above a full-screen app, instead of
+    /// switching to the desktop Space it was created on. (Tauri only offers „all Spaces“.)
+    pub fn float_over_spaces(w: &tauri::WebviewWindow) {
+        let Ok(ptr) = w.ns_window() else { return };
+        // The pointer is not `Send`; the window lives as long as the app (popups are only hidden).
+        let ptr = ptr as usize;
+        let _ = w.run_on_main_thread(move || {
+            // SAFETY: `ptr` is the popup's live NSWindow, used on the main thread.
+            let ns = unsafe { &*(ptr as *const NSWindow) };
+            ns.setCollectionBehavior(
+                ns.collectionBehavior()
+                    | NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary,
+            );
+        });
+    }
 }
 
 // ---------------------------------------------------------------- reminders

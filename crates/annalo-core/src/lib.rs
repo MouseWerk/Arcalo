@@ -54,6 +54,7 @@ pub mod backupdest;
 pub mod calendar;
 pub mod calsync;
 pub mod capture;
+pub mod chats;
 pub mod dashboard;
 pub mod datadir;
 pub mod dayreview;

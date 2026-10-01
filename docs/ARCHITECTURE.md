@@ -44,13 +44,14 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `calendar_sync` | Status of the last sync per source (v9): last success, last attempt, error, number of events |
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
 | `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `annalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
+| `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
 
 Migrations are numbered and tracked through `PRAGMA user_version`; a database newer than
 the binary is refused rather than modified.
 
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
-Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`.
+Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 
@@ -64,7 +65,7 @@ and by `entry_id`.
   older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
   backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`. It also copies the
   attachments folder incrementally (new and changed files, e.g. a drawing saved again; nothing is deleted). A backup
-  holds the whole database (pages, versions, tasks, bookings, calendar cache, settings) and the attachments; secrets
+  holds the whole database (pages, versions, tasks, bookings, calendar cache, chat history, settings) and the attachments; secrets
   and logs are not part of it.
 - **Backup destinations** (`backupdest.rs`, shell `backupdest.rs`): `settings.backup_targets` lists further folders
   (UNC shares, mapped drives, `/Volumes`/`/mnt` mounts, synced cloud folders) with keep count, maximum age and whether
@@ -176,9 +177,12 @@ and by `entry_id`.
   (e2e `60-startup-recovery`: the app is started without WebDriver, then again under it on the restored folder).
 - **History**: activity, AI usage and finished focus sessions older than 400 days are pruned on start
   (`prune_history`); purging a page clears the texts of its activity rows (title, task text, mentions).
-- **Close to tray / quit**: with `close_to_tray` the UI flushes its editors and calls `window_hide`;
-  „Beenden“ in the tray emits `app://quit-requested`, the UI flushes (asking if that fails) and calls
-  `app_quit`. Without it the UI destroys the main window and the shell exits.
+- **Close to tray / quit**: the UI asks `window_close_action` (`annalo_core::desktop::close_action`): on macOS the
+  window is always hidden (the app stays in the Dock, `RunEvent::Reopen` shows it again, ⌘Q quits); elsewhere
+  `close_to_tray` hides it (minimized without a tray icon). For hide/minimize the UI flushes its editors and calls
+  `window_hide`; „Beenden“ in the tray or the macOS menu (⌘Q) emits `app://quit-requested`, the UI flushes (asking
+  if that fails) and calls `app_quit`. Otherwise the UI destroys the main window and the shell exits. `RunEvent::Exit`
+  checkpoints the database when it is free (also for a quit the UI never sees: Dock menu, logout).
 
 ## Activity, focus sessions and presentations (`feed.rs`, `focus.rs`; shell `feed.rs`, `focus.rs`, `present.rs`)
 
@@ -241,6 +245,13 @@ and by `entry_id`.
   `capture://failed` (with the text) toasts. `ANNALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
   The draft (text and target) lives in `localStorage` (`annalo.capture.draft`). The popup windows disable the native
   drag-and-drop handler, so dropped files reach the page and are stored via `attachment_store`.
+- macOS popups: transparent through `macOSPrivateApi` (tauri feature `macos-private-api`; fine outside the Mac App
+  Store) and without the system shadow (it is computed from the transparent content and can stay rectangular);
+  `NSWindowCollectionBehavior` CanJoinAllSpaces + FullScreenAuxiliary so they appear on the current Space, also over a
+  full-screen app. Showing one unhides and activates the app; a popup called up from another program and dismissed
+  with Esc, after storing or with its shortcut hides the app again (`hide_app_after_popup`), so that program gets the
+  focus back. Enter/Esc while an input method composes stay with it (`ui/src/lib/ime.ts`; WebKit sends them with
+  keyCode 229 after `compositionend`). Manual checklist: `docs/testing/macos.md`.
 - „Auswahl übernehmen“ (`capture.selection_shortcut`, off by default) opens the capture window with text: the X11
   PRIMARY selection on Linux, else the clipboard (`arboard`, read in the shell; no simulated Ctrl+C – that would stop
   a program in a console window and needs accessibility permission on macOS). Every open also passes the clipboard text
@@ -781,6 +792,21 @@ quelle: "[[Konzept]]"
   after the user confirmed it. The page's content and tags go to the router, so `#privat` pages stay local. Without an API token the booking error is shown with a hint.
 - **Time summary** (`report.rs`): finished entries of local days `from..=to` grouped per Netzplan/Vorgang
   (hours, deduplicated descriptions) plus a total per day; offered to the assistant as the `time_summary` tool.
+- **Chat history** (`chats.rs`, shell `chats.rs`, `ui/src/store/chat.ts`, `ui/src/lib/chathistory.ts`): the conversation lives in a
+  zustand store outside React, so closing the panel, another panel tab or the focus mode keep it and a running answer. The first
+  question creates the conversation (`chat_create`, titled by `autoTitle`, a heuristic: first sentence, no greeting, quotes, code or
+  links; no model is asked), every finished round appends its messages in order (`chat_append`, one save at a time), a stopped
+  answer with what arrived, a failed one with its error and `in_context = 0`. Regenerate and „Bearbeiten und neu senden“ cut the
+  saved messages from the question on (`chat_truncate`). `restoreChat` turns saved messages back into panel turns and the model
+  history (tool calls without a saved answer get „Abgebrochen.“, answers without their call are dropped). `chat_list` sorts pinned
+  first, then by the last message, and searches the title and the questions and answers (`chat_messages_fts`, the best passage as
+  snippet). Deleting sets `deleted_at` (60 s undo); the next delete and the start purge. `settings.ai.chat_history` (`all`, `90`, `30`,
+  `off`) is applied on start and when it changes (pinned chats stay); with `off` the shell writes nothing.
+- **Private chats**: `ai_chat` takes the `conversation_id`; when the conversation is private the request routes like a private
+  marker (`ModelRouter::private_route`, so every fallback stays local and no cloud embedding is asked), and a turn whose prompt,
+  page, sources or earlier messages contain a marker (`privacy::any_private`) or that runs with „Nur lokal“ marks the conversation
+  private for good. Chats are never retrieved or offered to a tool; a page saved from a private chat gets the marker as a tag. They
+  are part of every backup like the rest of the database.
 - **Streaming** (`ai/client.rs`): SSE decoder tolerant of split chunks and keep-alives;
   tool-call deltas are merged by index; `stream_options.include_usage` for exact counts,
   LiteLLM's `x-litellm-response-cost` header preferred for cost, the price table as fallback, 0 for local providers.

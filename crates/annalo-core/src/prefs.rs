@@ -550,6 +550,25 @@ pub struct AiPrefs {
     pub streaming: bool,
     /// Tools offered to the model.
     pub allowed_tools: Vec<String>,
+    /// How long the assistant's conversations are kept.
+    pub chat_history: ChatRetention,
+}
+
+choice!(
+    /// Chat history: kept, kept for 90 or 30 days after the last message (pinned
+    /// conversations stay), or not saved at all.
+    ChatRetention { #[default] All = "all", Days90 = "90", Days30 = "30", Off = "off" } default All
+);
+
+impl ChatRetention {
+    /// Days a conversation is kept after its last message; `None` = no limit.
+    pub fn days(self) -> Option<i64> {
+        match self {
+            ChatRetention::Days90 => Some(90),
+            ChatRetention::Days30 => Some(30),
+            ChatRetention::All | ChatRetention::Off => None,
+        }
+    }
 }
 
 impl Default for AiPrefs {
@@ -563,6 +582,7 @@ impl Default for AiPrefs {
             citations: true,
             streaming: true,
             allowed_tools: WORKSPACE_TOOLS.iter().map(|s| (*s).to_owned()).collect(),
+            chat_history: ChatRetention::All,
         }
     }
 }

@@ -10,6 +10,7 @@ import { exportFileName } from "../../lib/prefs";
 import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
+import { ChatHistoryGroup } from "./ChatHistoryPrefs";
 
 // ------------------------------------------------------------------ notes
 
@@ -385,6 +386,7 @@ export function PrivacySection({ draft, update }: SectionProps) {
           <Switch label={t("set.privacy.localOnly")} checked={p.local_only} onChange={(v) => set({ local_only: v })} />
         </Row>
       </Group>
+      <ChatHistoryGroup draft={draft} update={update} />
     </>
   );
 }

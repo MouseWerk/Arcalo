@@ -238,8 +238,10 @@ export function App() {
         e.preventDefault();
         if (closing) return;
         closing = true;
-        // Close to tray: the app keeps running, so unsaved edits stay in the editors.
-        if (useApp.getState().settings?.settings.close_to_tray) {
+        // Close to tray (macOS: always, the app stays in the Dock): the app keeps running.
+        const toTray = useApp.getState().settings?.settings.close_to_tray;
+        const action = await api.closeAction().catch(() => (toTray ? "hide" : "quit"));
+        if (action !== "quit") {
           await flushAllEditors().catch(() => {});
           await api.hideWindow().catch((err) => useApp.getState().error(t("app.hideFailed"), err));
           closing = false;

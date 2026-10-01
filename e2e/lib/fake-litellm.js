@@ -147,6 +147,17 @@ export function startFakeLiteLLM({
         toolCall = { name: "log_time", arguments: JSON.stringify({ command: `/zeit ${booking[2]} ${booking[1].replace(",", ".")}h #DEV Gebucht vom Assistenten` }) };
       } else if (/git status/i.test(lastUser) && json.tools?.length) {
         toolCall = { name: "git", arguments: JSON.stringify({ args: ["status", "--short"], repo: "." }) };
+      } else if (/überlauf/i.test(lastUser)) {
+        // Everything that once widened the assistant panel: a long URL, an unbroken word, a path,
+        // a wide code block and a table of twelve columns.
+        const cols = Array.from({ length: 12 }, (_, i) => i + 1);
+        text = [
+          `Link: https://intranet.example.com/${"abteilung/projekt/".repeat(12)}dokument.pdf?version=${"9".repeat(30)}`,
+          "A".repeat(300),
+          `Pfad: \`C:\\Users\\${"Ordner\\".repeat(20)}datei.txt\``,
+          "```bash\n" + `curl -X POST https://api.example.com/v1/${"segment/".repeat(25)} --data '${"{\\\"k\\\":1}".repeat(10)}'` + "\n```",
+          `| ${cols.map((c) => `Spalte ${c}`).join(" | ")} |\n|${" --- |".repeat(12)}\n| ${cols.map((c) => `Wert ${c}`).join(" | ")} |`,
+        ].join("\n\n");
       } else if (/langsam/i.test(lastUser)) {
         text = Array.from({ length: 200 }, (_, i) => `Wort${i}`).join(" ");
       } else {

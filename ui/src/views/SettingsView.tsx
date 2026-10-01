@@ -1020,17 +1020,20 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         <p>{IS_MAC ? t("set.desktop.introMac") : t("set.desktop.intro")}</p>
       </header>
       <Group title={t("set.desktop.window")}>
-        <Row
-          label={desk.closeLabel}
-          description={
-            <>
-              {desk.closeHint}
-              {info && !info.tray && !IS_MAC && <Badge tone="warning">{t("set.desktop.noTray")}</Badge>}
-            </>
-          }
-        >
-          <Switch label={desk.closeLabel} checked={draft.close_to_tray} onChange={(v) => update({ close_to_tray: v })} />
-        </Row>
+        {/* macOS: closing always hides the window (the app stays in the Dock, ⌘Q quits). */}
+        {!IS_MAC && (
+          <Row
+            label={desk.closeLabel}
+            description={
+              <>
+                {desk.closeHint}
+                {info && !info.tray && <Badge tone="warning">{t("set.desktop.noTray")}</Badge>}
+              </>
+            }
+          >
+            <Switch label={desk.closeLabel} checked={draft.close_to_tray} onChange={(v) => update({ close_to_tray: v })} />
+          </Row>
+        )}
         <Row
           label={desk.autostartLabel}
           description={
@@ -1058,7 +1061,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         </Row>
       </Group>
       <Group title={t("set.desktop.search")} description={t("set.desktop.searchDesc")}>
-        <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.searchShortcutDesc")}>
+        <Row label={t("set.desktop.globalShortcut")} description={t("set.desktop.searchShortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+O`), search: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+F`) })}>
           <ShortcutField
             value={draft.search_shortcut}
             onChange={(v) => update({ search_shortcut: v })}

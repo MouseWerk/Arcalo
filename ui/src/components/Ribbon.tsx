@@ -13,6 +13,7 @@ import { t as tr, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "./Focus";
 import { openDayReview } from "../lib/reviewnav";
+import { useChat } from "../store/chat";
 
 export async function openToday() {
   const s = useApp.getState();
@@ -29,6 +30,7 @@ export function openAssistant() {
   const s = useApp.getState();
   s.set({ panelOpen: true, panelTab: "assistant" });
   savePref("annalo.panel", true);
+  useChat.setState({ historyOpen: false });
   setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(), 50);
 }
 

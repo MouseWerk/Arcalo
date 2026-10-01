@@ -10,6 +10,7 @@ import { TITLE, cellOf, columnKeys, defOf, fieldLabel, kindOf, writeFromText, ty
 import { CellDisplay, ComboInput, Invalid, KIND_ICON, OptionPicker, Popover, editText, openLink, suggestLinks, suggestPersons } from "./controls";
 import type { Ctx } from "./CollectionView";
 import { useT } from "../../lib/i18n";
+import { modLabel } from "../../lib/shortcut";
 
 const ROW_H = 34;
 /** Folders up to this size render every row; larger ones only the visible window. */
@@ -367,7 +368,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
                     ) : k === TITLE ? (
                       <span className="coll-title">
                         <PageIcon name={row.icon} size={14} />
-                        <button type="button" className="coll-title-link" tabIndex={-1} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)} title={t("coll.openTitle")}>
+                        <button type="button" className="coll-title-link" tabIndex={-1} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)} title={t("coll.openHint", { mod: modLabel() })}>
                           {row.title}
                         </button>
                         <button type="button" className="coll-open" tabIndex={-1} aria-label={t("coll.openName", { name: row.title })} onClick={(e) => ctx.open(row, e.ctrlKey || e.metaKey)}>

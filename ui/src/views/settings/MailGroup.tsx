@@ -12,6 +12,8 @@ import { mailApi } from "../../lib/mail";
 import type { DesktopInfo, MailSettings } from "../../lib/types";
 import { CommitInput, Group, Row, ShortcutField, type SectionProps } from "./common";
 import { t, useT } from "../../lib/i18n";
+import { formatShortcut } from "../../lib/shortcut";
+import { IS_MAC } from "../../lib/platform";
 
 const defaults = (): MailSettings => ({ notes_parent: t("mail.parentDefault"), shortcut: "", save_attachments: false, private_notes: true, default_action: "task" });
 
@@ -28,7 +30,7 @@ export function MailGroup({ draft, update }: SectionProps) {
   return (
     <Group title={t("mailset.title")} description={t("mailset.desc")}>
       {outlook && (
-        <Row label={t("set.desktop.globalShortcut")} description={t("mailset.shortcutDesc")}>
+        <Row label={t("set.desktop.globalShortcut")} description={t("mailset.shortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+J`) })}>
           <ShortcutField
             value={mail.shortcut}
             onChange={(v) => set({ shortcut: v })}

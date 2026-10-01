@@ -168,6 +168,19 @@ impl ModelRouter {
         }
     }
 
+    /// The local route for private content found outside the request's text (`why`), e.g. a
+    /// saved conversation marked private. Counts as a private marker for every fallback.
+    pub fn private_route(&self, why: &str) -> RouteDecision {
+        let r = self.config.tier_ref(Tier::Local);
+        RouteDecision {
+            tier: Tier::Local,
+            provider: r.provider,
+            model: r.model,
+            score: 0,
+            reasons: vec![format!("private marker found: {why}")],
+        }
+    }
+
     pub fn route(&self, input: &RouteInput) -> RouteDecision {
         let mut reasons = vec![];
         let decide = |tier, score, reasons| {

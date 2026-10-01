@@ -285,10 +285,6 @@ pub fn clean_temp(app: &AppHandle) {
 
 /// The global shortcut: brings the main window up and reads the current mail there.
 pub fn on_shortcut(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(crate::desktop::MAIN) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
+    crate::desktop::show_main(app);
     let _ = app.emit("mail://capture", ());
 }

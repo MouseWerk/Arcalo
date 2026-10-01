@@ -42,6 +42,13 @@ pub fn page_is_private(db: &Database, id: i64, markers: &[String]) -> Result<boo
     Ok(content.is_some_and(|c| has_marker(&c, &markers)))
 }
 
+/// Whether one of `texts` contains a privacy marker (what the router checks), for marking a
+/// saved conversation private.
+pub fn any_private<'a>(texts: impl IntoIterator<Item = &'a str>, markers: &[String]) -> bool {
+    let markers = normalize(markers);
+    !markers.is_empty() && texts.into_iter().any(|t| has_marker(t, &markers))
+}
+
 /// The private ones among `ids`.
 pub fn private_pages(db: &Database, ids: impl IntoIterator<Item = i64>, markers: &[String]) -> Result<HashSet<i64>> {
     let mut out = HashSet::new();
@@ -155,5 +162,17 @@ mod tests {
         });
         assert_eq!(d.tier, Tier::Local);
         assert_eq!(mark_tool_result("x".into(), false, &markers()), "x");
+    }
+
+    #[test]
+    fn a_private_conversation_routes_locally_as_a_private_marker() {
+        let m = markers();
+        assert!(any_private(["Frage", "Notiz #Privat"], &m));
+        assert!(!any_private(["Frage", "Antwort"], &m));
+        assert!(!any_private(["#privat"], &[]), "no markers, nothing private");
+        let router = ModelRouter::new(RouterConfig::default());
+        let d = router.private_route("private conversation, kept on the local model");
+        assert_eq!((d.tier, d.model.as_str()), (Tier::Local, router.model_for(Tier::Local)));
+        assert!(crate::ai::availability::local_required(&d, false), "fallbacks stay local");
     }
 }

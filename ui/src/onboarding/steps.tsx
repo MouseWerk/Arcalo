@@ -791,13 +791,16 @@ export function DesktopStep({ view, write }: { view: SettingsView; write: Write 
           </span>
           <Switch label={t(IS_MAC ? "fr.desk.autostartMac" : "fr.desk.autostart")} checked={!!info?.autostart} onChange={(v) => void setAutostart(v)} disabled={!!info?.portable} />
         </div>
-        <div className={`fr-toggle-card ${s.close_to_tray ? "on" : ""}`}>
-          <span className="fr-choice-text">
-            <span className="fr-choice-title">{t(IS_MAC ? "fr.desk.trayMac" : "fr.desk.tray")}</span>
-            <span className="fr-choice-sub">{t("fr.desk.trayText")}</span>
-          </span>
-          <Switch label={t(IS_MAC ? "fr.desk.trayMac" : "fr.desk.tray")} checked={s.close_to_tray} onChange={(v) => void write((x) => ({ ...x, close_to_tray: v }))} />
-        </div>
+        {/* macOS: closing always hides the window (the app stays in the Dock, ⌘Q quits). */}
+        {!IS_MAC && (
+          <div className={`fr-toggle-card ${s.close_to_tray ? "on" : ""}`}>
+            <span className="fr-choice-text">
+              <span className="fr-choice-title">{t("fr.desk.tray")}</span>
+              <span className="fr-choice-sub">{t("fr.desk.trayText")}</span>
+            </span>
+            <Switch label={t("fr.desk.tray")} checked={s.close_to_tray} onChange={(v) => void write((x) => ({ ...x, close_to_tray: v }))} />
+          </div>
+        )}
         <Field label={t("fr.desk.capture")} hint={t("fr.desk.captureHint")}>
           <div className="fr-inline grow">
             <ShortcutField

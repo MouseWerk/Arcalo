@@ -260,6 +260,8 @@ export const api = {
   setAutostart: (enabled: boolean) => call<T.DesktopInfo>("autostart_set", { enabled }),
   /** Hides the main window to the tray. */
   hideWindow: () => call<void>("window_hide"),
+  /** What closing the main window does (macOS: always hide; elsewhere „close to tray“). */
+  closeAction: () => call<"hide" | "minimize" | "quit">("window_close_action"),
   quit: () => call<void>("app_quit"),
   captureSubmit: (text: string, target?: T.CaptureTarget) => call<T.CaptureOutcome>("capture_submit", { text, target: target ?? null }),
   captureHide: () => call<void>("capture_hide"),
@@ -320,10 +322,24 @@ export const api = {
   presenterClose: () => call<void>("presenter_close"),
 
   // AI
-  routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null) => call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier }),
+  routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null, conversationId: number | null = null) =>
+    call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier, conversationId }),
   meter: () => call<T.SessionMeter>("ai_meter"),
-  chat: (a: { requestId: string; messages: T.ChatMessage[]; useTools: boolean; tier: T.Tier | null; pageId: number | null; overrideLimit?: boolean }) =>
-    call<T.ChatOutcome>("ai_chat", { overrideLimit: false, ...a }),
+  chat: (a: { requestId: string; messages: T.ChatMessage[]; useTools: boolean; tier: T.Tier | null; pageId: number | null; overrideLimit?: boolean; conversationId?: number | null }) =>
+    call<T.ChatOutcome>("ai_chat", { overrideLimit: false, conversationId: null, ...a }),
+  // assistant chat history
+  chatList: (query = "", archived = false) => call<T.ChatConversation[]>("chat_list", { query, archived }),
+  chatGet: (id: number) => call<T.ChatConversationDoc>("chat_get", { id }),
+  /** null when chats are not saved (Settings → Datenschutz). */
+  chatCreate: (title: string) => call<T.ChatConversation | null>("chat_create", { title }),
+  chatAppend: (id: number, messages: T.ChatRecord[], pageId: number | null, priv: boolean) =>
+    call<{ conversation: T.ChatConversation; seqs: number[] } | null>("chat_append", { id, messages, pageId, private: priv }),
+  chatTruncate: (id: number, seq: number) => call<number>("chat_truncate", { id, seq }),
+  chatUpdate: (id: number, patch: { title?: string; pinned?: boolean; archived?: boolean }) => call<T.ChatConversation>("chat_update", { id, patch }),
+  chatDelete: (id: number) => call<void>("chat_delete", { id }),
+  chatRestore: (id: number) => call<T.ChatConversation>("chat_restore", { id }),
+  chatDeleteAll: () => call<number>("chat_delete_all"),
+  chatDuplicate: (id: number, title: string) => call<T.ChatConversation | null>("chat_duplicate", { id, title }),
   /** Rewrites `text` by `instruction` (inline AI, meeting summary); streams like `chat`. */
   transform: (a: { requestId: string; instruction: string; text: string; pageId: number | null; tier?: T.Tier | null; overrideLimit?: boolean }) =>
     call<T.ChatOutcome>("ai_transform", { tier: null, overrideLimit: false, ...a }),

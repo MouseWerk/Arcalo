@@ -69,6 +69,22 @@ describe("keymap", () => {
     expect(comboLabel("Ctrl+[", true)).toContain("[");
   });
 
+  it("labels every default command the platform's way: ⌘ on macOS, Ctrl elsewhere", () => {
+    for (const [id, combo] of Object.entries(defaultKeymap(true))) {
+      const label = comboLabel(combo, true);
+      expect(label, id).not.toMatch(/Ctrl|Strg|Alt|Shift/);
+      if (combo.startsWith("Ctrl+")) expect(label, id).toContain("⌘");
+    }
+    for (const [id, combo] of Object.entries(defaultKeymap(false))) {
+      const label = comboLabel(combo, false);
+      expect(label, id).not.toMatch(/[⌘⌥⇧⌃]/);
+      if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Ctrl /);
+    }
+    expect(comboLabel("Ctrl+Shift+D", true)).toBe("⇧⌘D");
+    expect(comboLabel("Ctrl+W", true)).toBe("⌘W");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Ctrl Shift D");
+  });
+
   it("back/forward stay with text fields and the editor", () => {
     const input = document.createElement("input");
     const box = document.createElement("input");

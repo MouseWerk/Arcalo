@@ -359,33 +359,121 @@ impl NewEvent {
     }
 }
 
-/// The first online-meeting link in `texts` (Teams, Zoom, Webex, Google Meet, GoToMeeting).
+/// Hosts of online meetings whose links get a „Besprechung beitreten“ button.
+const MEETING_HOSTS: [&str; 18] = [
+    "teams.microsoft.com",
+    "teams.cloud.microsoft",
+    "teams.live.com",
+    "zoom.us",
+    "zoomgov.com",
+    "webex.com",
+    "meet.google.com",
+    "gotomeeting.com",
+    "meet.goto.com",
+    "gotomeet.me",
+    "meet.lync.com",
+    "join.skype.com",
+    "meet.jit.si",
+    "whereby.com",
+    "chime.aws",
+    "bluejeans.com",
+    "meet.ringcentral.com",
+    "zoho.com/meeting",
+];
+
+/// The first online-meeting link in `texts` (Teams, Zoom, Webex, Google Meet, GoToMeeting and
+/// others), also behind the link-protection wrappers of corporate mail (Microsoft Safe Links,
+/// Proofpoint URL Defense, Google redirects) and in `http://` form.
 pub fn meeting_link<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    const HOSTS: [&str; 7] = [
-        "teams.microsoft.com",
-        "teams.live.com",
-        "zoom.us",
-        "webex.com",
-        "meet.google.com",
-        "gotomeeting.com",
-        "meet.goto.com",
-    ];
     for text in texts {
         let mut rest = text;
-        while let Some(i) = rest.find("https://") {
+        while let Some(i) = next_url(rest) {
             let url: String = rest[i..]
                 .chars()
                 .take_while(|c| !c.is_whitespace() && !matches!(c, '<' | '>' | '"' | '\'' | ')' | ']' | '|'))
                 .collect();
             let url = url.trim_end_matches(['.', ',', ';']).to_owned();
-            let host = url[8..].split(['/', '?', '#', ':']).next().unwrap_or("").to_ascii_lowercase();
-            if HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}"))) {
+            let url = unwrap_protected(&url).unwrap_or(url);
+            if is_meeting_url(&url) {
                 return Some(url);
             }
-            rest = &rest[i + 8..];
+            rest = &rest[i + 7..];
         }
     }
     None
+}
+
+/// Byte offset of the next `https://` or `http://` in `text`.
+fn next_url(text: &str) -> Option<usize> {
+    let lower = text.to_ascii_lowercase();
+    match (lower.find("https://"), lower.find("http://")) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+fn is_meeting_url(url: &str) -> bool {
+    let Some(rest) = url.split_once("://").map(|(_, r)| r) else { return false };
+    let lower = rest.to_ascii_lowercase();
+    let host = lower.split(['/', '?', '#', ':']).next().unwrap_or("");
+    MEETING_HOSTS.iter().any(|h| match h.split_once('/') {
+        Some((h_host, path)) => {
+            (host == h_host || host.ends_with(&format!(".{h_host}")))
+                && lower[host.len()..].starts_with(&format!("/{path}"))
+        }
+        None => host == *h || host.ends_with(&format!(".{h}")),
+    })
+}
+
+/// The original address behind a link-protection wrapper, if `url` is one.
+fn unwrap_protected(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next()?.to_ascii_lowercase();
+    let query = url.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let param = |name: &str| {
+        query
+            .split('&')
+            .find_map(|kv| kv.split_once('=').filter(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v))
+            .map(percent_decode)
+    };
+    // Microsoft Defender Safe Links: …safelinks.protection.outlook.com/?url=<encoded>&data=…
+    if host.ends_with("safelinks.protection.outlook.com") {
+        return param("url");
+    }
+    // Google redirect: www.google.com/url?q=<encoded>
+    if (host == "www.google.com" || host == "google.com") && rest.contains("/url?") {
+        return param("q").or_else(|| param("url"));
+    }
+    if host == "urldefense.proofpoint.com" || host == "urldefense.com" {
+        // v3: urldefense.com/v3/__<url>__;<checksum>
+        if let Some(i) = url.find("/v3/__") {
+            let inner = &url[i + 6..];
+            let end = inner.find("__").unwrap_or(inner.len());
+            return Some(inner[..end].to_owned());
+        }
+        // v2: urldefense.proofpoint.com/v2/url?u=<url with -XX for %XX and _ for />
+        return param("u").map(|u| percent_decode(&u.replace('_', "/").replace('-', "%")));
+    }
+    None
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(a), Some(b)) = ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16))
+        {
+            out.push((a * 16 + b) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The key of an event instance: source, uid and instance.
@@ -1132,6 +1220,43 @@ mod tests {
             let text = d.to_string().to_lowercase();
             assert!(!text.contains("calendar_events") && !text.contains("termin"), "{}", d["function"]["name"]);
         }
+    }
+
+    #[test]
+    fn meeting_links_behind_wrappers_and_in_descriptions() {
+        // Microsoft Safe Links in a corporate Outlook description.
+        let safe = "Agenda: https://intranet.example.com/a https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fmeetup-join%2F19%253ameeting_X%2540thread.v2%2F0&data=05%7C02&reserved=0";
+        assert_eq!(
+            meeting_link([safe]).as_deref(),
+            Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting_X%40thread.v2/0")
+        );
+        // Proofpoint v2 and v3.
+        assert_eq!(
+            meeting_link(["https://urldefense.proofpoint.com/v2/url?u=https-3A__firma.zoom.us_j_123&d=x"]).as_deref(),
+            Some("https://firma.zoom.us/j/123")
+        );
+        assert_eq!(
+            meeting_link(["https://urldefense.com/v3/__https://meet.google.com/abc-defg-hij__;!!x$"]).as_deref(),
+            Some("https://meet.google.com/abc-defg-hij")
+        );
+        // Google redirect, http, new Teams domain, other services.
+        assert_eq!(
+            meeting_link(["https://www.google.com/url?q=https://acme.webex.com/meet/jdoe&sa=D"]).as_deref(),
+            Some("https://acme.webex.com/meet/jdoe")
+        );
+        assert_eq!(meeting_link(["Link: http://zoom.us/j/9"]).as_deref(), Some("http://zoom.us/j/9"));
+        assert_eq!(
+            meeting_link(["https://teams.cloud.microsoft/meet/123?p=abc"]).as_deref(),
+            Some("https://teams.cloud.microsoft/meet/123?p=abc")
+        );
+        assert_eq!(meeting_link(["Raum: https://meet.jit.si/Projekt"]).as_deref(), Some("https://meet.jit.si/Projekt"));
+        assert_eq!(meeting_link(["https://www.zoho.com/meeting/x"]).as_deref(), Some("https://www.zoho.com/meeting/x"));
+        assert_eq!(meeting_link(["https://www.zoho.com/crm"]), None);
+        // A wrapped link to an ordinary page is skipped; the meeting link later in the text wins.
+        let mixed = "https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fdoc&data=1 \n https://teams.microsoft.com/l/meetup-join/2";
+        assert_eq!(meeting_link([mixed]).as_deref(), Some("https://teams.microsoft.com/l/meetup-join/2"));
+        // Umlauts before the link do not shift the offsets.
+        assert_eq!(meeting_link(["Besprechung über https://zoom.us/j/1"]).as_deref(), Some("https://zoom.us/j/1"));
     }
 
     #[test]

@@ -107,6 +107,7 @@ pub async fn day_review_summary(
                     context: vec![],
                     meter,
                     cost_warning: cost_warning(&state),
+                    private: false,
                 });
             }
             Err(e) => {
