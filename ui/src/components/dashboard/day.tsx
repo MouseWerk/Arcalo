@@ -14,7 +14,8 @@ import { openCalendarView, openSettingsSection } from "../../lib/calnav";
 import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openDayReview } from "../../lib/reviewnav";
 import { requestWeekProposal } from "../../lib/weekplan";
-import { configOf, type TodayBlock } from "../../lib/dashboard";
+import { TODAY_TIME_BLOCKS, configOf, type TodayBlock } from "../../lib/dashboard";
+import { useTimeTracking } from "../../lib/timetracking";
 import type { CalendarEvent, TimeEntryRow, WbsHint } from "../../lib/types";
 import type { AgendaData, FocusData, MonthData, ReviewData, TasksData, TodayData } from "../../lib/dashtypes";
 import { Badge, Button, IconButton } from "../ui";
@@ -214,7 +215,9 @@ export function TodayWidget({ widget }: WidgetProps) {
   // Calendars hidden in the Kalender's legend are hidden here too.
   const hidden = useHiddenCalendars();
   const blocks = (configOf(widget).blocks ?? {}) as Partial<Record<TodayBlock, boolean>>;
-  const on = (b: TodayBlock) => blocks[b] !== false;
+  // Time tracking off: no hours ring, missing hours or timer (the blocks keep their setting).
+  const timeOn = useTimeTracking();
+  const on = (b: TodayBlock) => blocks[b] !== false && (timeOn || !TODAY_TIME_BLOCKS.has(b));
   const date = new Date(now);
   const todayIso = isoDay(date);
   return (
@@ -295,17 +298,19 @@ export function TodayWidget({ widget }: WidgetProps) {
                 <Button size="sm" variant="ghost" icon={PenLine} onClick={() => api.captureShow().catch((e) => s().error(t("dash.captureFailed"), e))}>
                   {t("dash.act.capture")}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={WandSparkles}
-                  onClick={() => {
-                    s().openTab({ kind: "timesheet" });
-                    requestWeekProposal();
-                  }}
-                >
-                  {t("dash.act.week")}
-                </Button>
+                {timeOn && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={WandSparkles}
+                    onClick={() => {
+                      s().openTab({ kind: "timesheet" });
+                      requestWeekProposal();
+                    }}
+                  >
+                    {t("dash.act.week")}
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" icon={Sunset} onClick={() => openDayReview()}>
                   {t("dash.act.review")}
                 </Button>
@@ -384,6 +389,7 @@ export function AgendaWidget({ widget }: WidgetProps) {
   // The widget's own choice of calendars, and those hidden in the Kalender's legend.
   const hidden = useHiddenCalendars();
   const { book, dialog } = useBooking(() => refresh(["calendar"]));
+  const timeOn = useTimeTracking();
   return (
     <Loadable loading={loading} error={error}>
       {() => {
@@ -413,7 +419,7 @@ export function AgendaWidget({ widget }: WidgetProps) {
                     const start = new Date(e.start).getTime();
                     const past = end <= now;
                     const live = !past && start <= now;
-                    const canBook = past && !e.all_day && !e.skip && e.entry_id == null && e.busy !== "free" && e.busy !== "oof";
+                    const canBook = timeOn && past && !e.all_day && !e.skip && e.entry_id == null && e.busy !== "free" && e.busy !== "oof";
                     return (
                       <li key={e.key} className={`dw-agenda-item ${past ? "past" : ""} ${live ? "live" : ""}`} style={{ "--ev": sourceColor(e.source, cal) } as CSSProperties}>
                         <button type="button" className="dw-agenda-row" onClick={() => openCalendarView({ date: day, key: e.key })} title={`${timeRange(e)} · ${sourceName(e.source, cal)}`}>
@@ -426,7 +432,7 @@ export function AgendaWidget({ widget }: WidgetProps) {
                         </button>
                         <span className="dw-agenda-actions">
                           {live && <Badge tone="accent">{t("dash.live")}</Badge>}
-                          {e.entry_id != null && <Badge tone="success">{t("dash.booked")}</Badge>}
+                          {timeOn && e.entry_id != null && <Badge tone="success">{t("dash.booked")}</Badge>}
                           {e.link && !past && <IconButton icon={Video} size="sm" label={t("dash.joinTitle", { title: e.title })} onClick={() => openUrl(e.link!).catch((err) => s().error(t("dash.joinFailed"), err))} />}
                           {canBook && (
                             <Button size="sm" variant="ghost" icon={Timer} onClick={() => void book(e)} aria-label={t("dash.bookTitle", { title: e.title })}>
@@ -579,6 +585,8 @@ export function ClockWidget({ widget }: WidgetProps) {
 
 export function ReviewWidget({ widget }: WidgetProps) {
   const { data, error, loading } = useWidgetData<ReviewData>(widget);
+  // Time tracking off: pages, tasks, meetings and focus; no hours, gaps or WBS.
+  const timeOn = useTimeTracking();
   return (
     <Loadable loading={loading} error={error}>
       {() => {
@@ -588,7 +596,7 @@ export function ReviewWidget({ widget }: WidgetProps) {
         const stats: [string, string][] = [
           [t("dash.rev.pages"), String(r.pages_edited + r.pages_created)],
           [t("dash.rev.tasks"), String(r.tasks_done)],
-          [t("dash.rev.meetings"), r.meetings_open ? `${r.meetings} (${t("dash.rev.open", { n: r.meetings_open })})` : String(r.meetings)],
+          [t("dash.rev.meetings"), r.meetings_open && timeOn ? `${r.meetings} (${t("dash.rev.open", { n: r.meetings_open })})` : String(r.meetings)],
           [t("dash.rev.focus"), hrs(r.focus_minutes)],
         ];
         return (
@@ -603,13 +611,13 @@ export function ReviewWidget({ widget }: WidgetProps) {
               <Empty icon={Sunset}>{t("dash.rev.empty")}</Empty>
             ) : (
               <>
-                <div className="dw-review-hours">
+                {timeOn && <div className="dw-review-hours">
                   <span className="num dw-big">{hrs(r.booked_minutes)}</span>
                   {r.target_minutes > 0 && <span className="faint num">/ {hrs(r.target_minutes)}</span>}
                   <span className="grow" />
                   {r.target_minutes > 0 && (r.booked_minutes >= r.target_minutes ? <Badge tone="success">{t("dash.targetMet")}</Badge> : <Badge tone="warning">{t("dash.gapShort", { h: hrs(r.target_minutes - r.booked_minutes) })}</Badge>)}
-                </div>
-                {r.target_minutes > 0 && (
+                </div>}
+                {timeOn && r.target_minutes > 0 && (
                   <div className="dw-meter" aria-hidden>
                     <span style={{ width: `${Math.min(1, share) * 100}%` }} />
                   </div>
@@ -622,7 +630,7 @@ export function ReviewWidget({ widget }: WidgetProps) {
                     </div>
                   ))}
                 </dl>
-                {r.top_wbs.length > 0 && (
+                {timeOn && r.top_wbs.length > 0 && (
                   <ul className="dw-list dw-review-wbs">
                     {r.top_wbs.map((w) => (
                       <li key={w.label} className="dw-row static">
@@ -676,7 +684,9 @@ export function CalendarWidget({ widget }: WidgetProps) {
     };
   }, [offset, range]);
   const list = offset === 0 ? data : other;
-  const days = useMemo(() => new Map((list ?? []).map((d) => [d.date, d])), [list]);
+  // Time tracking off: daily notes only, no booked hours.
+  const timeOn = useTimeTracking();
+  const days = useMemo(() => new Map((list ?? []).map((d) => [d.date, timeOn ? d : { ...d, booked_minutes: 0 }])), [list, timeOn]);
   const todayIso = isoDay(today);
   const target = settings?.daily_target_hours ?? 8;
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];

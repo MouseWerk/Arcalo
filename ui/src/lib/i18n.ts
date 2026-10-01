@@ -1758,6 +1758,22 @@ const ENTRIES = {
   "chat.set.deleteAllMessage": ["Jeder gespeicherte Chat wird endgültig gelöscht, auch angeheftete und private. Ältere Sicherungen behalten ihren Stand.", "Every saved chat is deleted for good, pinned and private ones included. Older backups keep their state."],
   "chat.set.deletedAll": ["{n} Chats gelöscht", "{n} chats deleted"],
   "chat.set.deleteAllFailed": ["Chats nicht gelöscht", "Chats not deleted"],
+  // ---- „Zeiterfassung verwenden“ off
+  "tt.offTitle": ["Zeiterfassung ist ausgeschaltet", "Time tracking is switched off"],
+  "tt.offText": ["Gebuchte Zeiten und Projekte bleiben erhalten. Einschalten unter Einstellungen → Zeiterfassung.", "Booked time and projects are kept. Switch it on in Settings → Time tracking."],
+  "tt.openSettings": ["Einstellungen öffnen", "Open settings"],
+  "fr.cal.leadNoTime": ["Termine erscheinen im Kalender neben deinen Notizen und Aufgaben, mit Besprechungsnotiz und Tagesrückblick.", "Meetings appear in the calendar next to your notes and tasks, with meeting notes and the day review."],
+  "fr.desk.trayTextNoTime": ["Schließen blendet nur das Fenster aus; Erinnerungen und die Schnellerfassung laufen weiter.", "Closing only hides the window; reminders and quick capture keep running."],
+  "tt.setIntroOff": ["Für Notizen, Aufgaben, Kalender und KI ohne Buchungen.", "For notes, tasks, calendar and AI without bookings."],
+  "tt.setUseDescOff": [
+    "Aus: Zeiterfassung, Projekte, Timer, /zeit, Budgets, Wochenvorschlag und die Erinnerungen dazu sind ausgeblendet, im Hintergrund läuft dafür nichts. Gebuchte Zeiten und Projekte bleiben erhalten und sind nach dem Einschalten wieder da.",
+    "Off: the timesheet, projects, timer, /zeit, budgets, the week proposal and their reminders are hidden, and nothing runs in the background for them. Booked time and projects are kept and come back when it is switched on.",
+  ],
+  "tt.searchDesc": ["Ein Suchfenster über allen Programmen: Seiten und Inhalte finden, Tagesnotiz öffnen. Auch über „Suchen…“ im Infobereich.", "A search window above all programs: find pages and content, open the daily note. Also via „Search…“ in the tray."],
+  "tt.captureDesc": [
+    "Ein kleines Fenster über allen anderen: Text landet in der Tagesnotiz, im Posteingang, in einer Seite (> am Anfang) oder in der Notiz der laufenden Besprechung. „todo … bis Fr“ wird eine Aufgabe mit Termin. Tab wechselt das Ziel.",
+    "A small window above all others: text goes to the daily note, the inbox, a page (> at the start) or the note of the running meeting. „todo … by Fri“ becomes a task with a date. Tab switches the target.",
+  ],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type TKey = keyof typeof ENTRIES;

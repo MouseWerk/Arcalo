@@ -231,6 +231,8 @@ pub struct CaptureOptions<'a> {
     pub thresholds: &'a Thresholds,
     /// Time zone of meeting notes.
     pub zone: &'a Zone,
+    /// „Zeiterfassung verwenden“: off, `/zeit` lines are text like any other line.
+    pub book_time: bool,
 }
 
 /// The page of `target`, and whether it was created now.
@@ -297,7 +299,7 @@ where
         if t.starts_with("```") || t.starts_with("~~~") {
             in_fence = !in_fence;
         }
-        if !in_fence && classify(t) == CaptureKind::Zeit {
+        if !in_fence && opts.book_time && classify(t) == CaptureKind::Zeit {
             zeit_lines.push(t);
         } else {
             rest.push_str(line);
@@ -443,7 +445,7 @@ mod tests {
         Utc.with_ymd_and_hms(2026, 9, 23, 12, 30, 0).unwrap() // 14:30 local
     }
     fn opts<'a>(t: &'a Thresholds, zone: &'a Zone) -> CaptureOptions<'a> {
-        CaptureOptions { inbox_title: INBOX_TITLE, thresholds: t, zone }
+        CaptureOptions { inbox_title: INBOX_TITLE, thresholds: t, zone, book_time: true }
     }
     fn content(db: &Database, id: i64) -> String {
         db.page_doc(id).unwrap().content
@@ -582,6 +584,24 @@ mod tests {
         let before = content(&db, p.id);
         assert!(capture_to(&db, "/zeit NP-0000 1h\nText", &target, &o, now(), &tz()).is_err());
         assert_eq!(content(&db, p.id), before);
+    }
+
+    #[test]
+    fn without_time_tracking_zeit_lines_are_text() {
+        let db = Database::open_in_memory().unwrap();
+        let pr = db.create_project("PRJ-1", "Rollout").unwrap();
+        db.create_netzplan(pr.id, "NP-8801", "NP-8801", "Integration", 10.0).unwrap();
+        let t = Thresholds::default();
+        let zone = Zone::Fixed(tz());
+        let o = CaptureOptions { book_time: false, ..opts(&t, &zone) };
+        let p = db.create_page(None, "Projekt", None).unwrap();
+        let target = CaptureTarget::Page { page_id: p.id };
+        // Nothing is booked, not even an unknown reference fails: the line lands as text.
+        let (out, _) = capture_to(&db, "/zeit NP-8801 1h Review\n/zeit NP-0000 1h", &target, &o, now(), &tz()).unwrap();
+        assert!(out.bookings.is_empty());
+        assert!(db.list_time_entries(&Default::default()).unwrap().is_empty());
+        let c = content(&db, p.id);
+        assert!(c.contains("/zeit NP-8801 1h Review") && c.contains("/zeit NP-0000 1h"), "{c}");
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { useTimeTracking } from "../lib/timetracking";
 import { addDays, dateLong, isoDay, weekdayLabels } from "../lib/format";
 import { addMonths, dayTone, hoursLabel, monthGrid, weekNumber } from "../lib/calendar";
 import type { DayOverview } from "../lib/types";
@@ -66,17 +67,19 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
   const todayIso = isoDay(today);
   const target = settings?.daily_target_hours ?? 8;
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
+  // Time tracking off: daily notes and tasks only, no booked hours.
+  const timeOn = useTimeTracking();
 
   useEffect(() => {
     let alive = true;
     api
       .dailyOverview(from, to)
-      .then((list) => alive && setDays(new Map(list.map((d) => [d.date, d]))))
+      .then((list) => alive && setDays(new Map(list.map((d) => [d.date, timeOn ? d : { ...d, booked_minutes: 0 }]))))
       .catch(() => alive && setDays(new Map()));
     return () => {
       alive = false;
     };
-  }, [from, to, entriesVersion]);
+  }, [from, to, entriesVersion, timeOn]);
 
   // Keep the popover inside the window.
   useLayoutEffect(() => {

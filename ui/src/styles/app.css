@@ -2637,3 +2637,12 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .prose-chat.streaming > :last-child::after, .thinking span { animation: none; }
   .tool-step-chevron { transition: none; }
 }
+
+/* ---- time tracking off ---- */
+/* Tagesrückblick without the „Gebucht“ tile: four tiles fill the row. */
+.rv-stats.no-time { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container pane (max-width: 560px) {
+  .rv-stats.no-time { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Aktivität without the „gebucht“ tile. */
+.activity-stats.no-time { grid-template-columns: repeat(3, minmax(0, 1fr)); }

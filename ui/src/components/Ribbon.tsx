@@ -7,6 +7,7 @@ import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
 import { QuickLinks } from "./QuickLinks";
 import { sidebarShown, toggleSidebar, useNarrowWindow } from "../lib/layout";
+import { useTimeTracking } from "../lib/timetracking";
 import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
 import { useT } from "../lib/i18n";
@@ -85,7 +86,7 @@ export function Ribbon() {
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const focus = useApp((s) => s.focus);
   // „Zeiterfassung verwenden“ off: no timesheet and projects in the ribbon.
-  const timeOn = useApp((s) => s.settings?.settings.time?.enabled !== false);
+  const timeOn = useTimeTracking();
   const s = useApp.getState;
   const side = "right" as const;
   return (

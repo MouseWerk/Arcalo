@@ -64,6 +64,8 @@ pub fn run(app: &AppHandle, action: Action, ready: bool) {
     match action {
         Action::Capture => desktop::open_capture(app, false),
         Action::Search => desktop::open_search(app, false),
+        // Time tracking off: the timer entry is gone; an old pinned one just shows the window.
+        Action::Timer if !time_tracking(app) => desktop::show_main(app),
         Action::Timer if !timer_running(app) => {
             if let Err(e) = desktop::timer_resume_last(app.clone()) {
                 desktop::notify(app, "Timer nicht gestartet", &e.to_string());
@@ -99,6 +101,10 @@ pub fn jump_take(app: AppHandle) {
     if let Some(a) = pending {
         run(&app, a, true);
     }
+}
+
+fn time_tracking(app: &AppHandle) -> bool {
+    app.try_state::<AppState>().is_some_and(|s| s.settings().time_tracking())
 }
 
 fn timer_running(app: &AppHandle) -> bool {
@@ -157,14 +163,17 @@ pub fn refresh(app: &AppHandle) {
         return;
     }
     let Some(state) = app.try_state::<AppState>() else { return };
-    let lang = state.settings().locale.language;
+    let settings = state.settings();
+    let lang = settings.locale.language;
+    // Time tracking off: no timer entries (rebuilt when the setting changes).
+    let time = settings.time_tracking();
     let c = {
         let db = state.db();
-        let timer = db.running_timer().ok().flatten().map(|e| {
+        let timer = db.running_timer().ok().flatten().filter(|_| time).map(|e| {
             let nr = db.netzplan_by_id(e.netzplan_id).map(|n| n.netzplan_nr).unwrap_or_default();
             core::timer_label(&nr, e.vorgang_nr.as_deref())
         });
-        let has_last = db.last_finished_entry().ok().flatten().is_some();
+        let has_last = time && db.last_finished_entry().ok().flatten().is_some();
         let recent: Vec<(i64, String)> =
             db.recent_pages(6).unwrap_or_default().into_iter().map(|p| (p.id, p.title)).collect();
         content(lang, timer.as_deref(), has_last, &recent)

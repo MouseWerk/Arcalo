@@ -19,12 +19,13 @@ import { dayTitle } from "../lib/activity";
 import { isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
+import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import type { DayReview, MeetingState, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
 
-const MEETING_TONE: Record<MeetingState, Tone> = { booked: "success", open: "warning", skipped: "neutral", upcoming: "info", free: "neutral" };
+const MEETING_TONE: Record<MeetingState, Tone> = { booked: "success", open: "warning", skipped: "neutral", upcoming: "info", free: "neutral", done: "neutral" };
 
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("de-DE")} ${n === 1 ? one : many}`;
 
@@ -45,6 +46,8 @@ export function DayReviewView() {
   const seq = useRef(0);
   const today = isoDay(new Date());
   const local = localProviders(providers);
+  // Time tracking switched: the review comes back with (or without) its time parts.
+  const timeOn = useTimeTracking();
 
   // Opened on a day from elsewhere (daily note, Kalender, reminder).
   useEffect(() => {
@@ -79,7 +82,7 @@ export function DayReviewView() {
       .then((r) => n === seq.current && setReview(r))
       .catch((e) => n === seq.current && s().error("Tagesrückblick nicht geladen", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, entriesVersion, pages, tick, focusId]);
+  }, [date, entriesVersion, pages, tick, focusId, timeOn]);
 
   // Another day: the summary belongs to the old one.
   const { reset } = ai;
@@ -286,7 +289,7 @@ export function DayReviewView() {
             )}
 
             <div className="rv-grid">
-              <TimeCard r={r} onOpen={toSheet} />
+              {!r.without_time && <TimeCard r={r} onOpen={toSheet} />}
               <Section icon={CalendarRange} tone="meetings" title="Termine" count={r.meetings.length} empty="Keine Termine im Kalender." className="rv-meetings">
                 {r.meetings.map((m) => (
                   <button key={m.key} type="button" className={`rv-row rv-meeting state-${m.state}`} onClick={() => openMeeting(m)}>
@@ -295,7 +298,7 @@ export function DayReviewView() {
                       <span className="rv-title ellipsis">{m.title || "Termin"}</span>
                       {m.location && <span className="rv-sub ellipsis">{m.location}</span>}
                     </span>
-                    <Badge tone={MEETING_TONE[m.state]}>{MEETING_LABEL[m.state]}</Badge>
+                    {m.state !== "done" && <Badge tone={MEETING_TONE[m.state]}>{MEETING_LABEL[m.state]}</Badge>}
                   </button>
                 ))}
                 {openMeetings(r).length > 0 && (
@@ -313,7 +316,7 @@ export function DayReviewView() {
               {r.focus.sessions.length > 0 && (
                 <Section icon={Target} tone="focus" title="Fokus" count={r.focus.sessions.length} extra={hm(r.focus.minutes)} className="rv-focus">
                   {r.focus.sessions.map((f) => (
-                    <button key={f.id} type="button" className="rv-row" onClick={(e) => toSheet(e.ctrlKey || e.metaKey)}>
+                    <button key={f.id} type="button" className="rv-row" onClick={(e) => !r.without_time && toSheet(e.ctrlKey || e.metaKey)}>
                       <span className="rv-when num">{time(f.started_at)}</span>
                       <span className="rv-main">
                         <span className="rv-title ellipsis">{f.goal || f.reference || "Fokussitzung"}</span>
@@ -363,8 +366,8 @@ function Stats({ r }: { r: DayReview }) {
   const edited = r.pages.reduce((a, p) => a + p.minutes, 0);
   const open = openMeetings(r).length;
   return (
-    <section className="rv-stats" aria-label="Überblick">
-      <div className="rv-stat tone-time">
+    <section className={`rv-stats ${r.without_time ? "no-time" : ""}`} aria-label="Überblick">
+      {!r.without_time && <div className="rv-stat tone-time">
         <span className="rv-stat-label">
           <Clock size={13} aria-hidden /> Gebucht
         </span>
@@ -377,13 +380,13 @@ function Stats({ r }: { r: DayReview }) {
           {t.target_minutes <= 0 ? "kein Arbeitstag" : t.missing_minutes > 0 ? `${hours(t.missing_minutes)} fehlen` : "Soll erreicht"}
           {t.running_minutes > 0 && ` · Timer ${hm(t.running_minutes)}`}
         </span>
-      </div>
+      </div>}
       <div className="rv-stat tone-meetings">
         <span className="rv-stat-label">
           <CalendarRange size={13} aria-hidden /> Termine
         </span>
         <span className="rv-stat-value num">{r.meetings.length}</span>
-        <span className="rv-stat-sub">{open ? `${open} nicht gebucht` : r.meetings.length ? "alles erledigt" : "keine"}</span>
+        <span className="rv-stat-sub">{open ? `${open} nicht gebucht` : r.meetings.length ? (r.without_time ? "im Kalender" : "alles erledigt") : "keine"}</span>
       </div>
       <div className="rv-stat tone-tasks">
         <span className="rv-stat-label">

@@ -14,6 +14,7 @@ import { isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
 import { PageIcon } from "../components/icons";
 import { zeitToken } from "./zeit-suggest";
+import { timeTrackingEnabled } from "../lib/timetracking";
 import { FIRST_LINE_RE } from "../lib/frontmatter";
 import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
@@ -199,7 +200,12 @@ export interface SlashOptions {
   onFile: ((editor: Editor) => void) | null;
 }
 
-export function slashItems(o: SlashOptions): SlashItem[] {
+/** The slash menu; `/zeit` only while time tracking is on. */
+export function slashItems(o: SlashOptions, time = timeTrackingEnabled()): SlashItem[] {
+  return allSlashItems(o).filter((i) => time || i.id !== "zeit");
+}
+
+function allSlashItems(o: SlashOptions): SlashItem[] {
   const today = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
   const isoToday = isoDay(new Date());
   return [
@@ -447,7 +453,9 @@ export const TimeEntryChip = Node.create({
         t.textContent = node.attrs.text;
         dom.append(t);
       }
-      dom.title = "Gebuchter Zeiteintrag";
+      // Time tracking off: a plain chip (neutral look in CSS), nothing about booking.
+      dom.title = timeTrackingEnabled() ? "Gebuchter Zeiteintrag" : "Zeiteintrag";
+      dom.addEventListener("mouseenter", () => (dom.title = timeTrackingEnabled() ? "Gebuchter Zeiteintrag" : "Zeiteintrag"));
       return { dom };
     };
   },
@@ -501,6 +509,8 @@ export const ZeitCommand = Extension.create<
         const { $from, empty } = editor.state.selection;
         if (!empty || $from.parent.type.name !== "paragraph") return false;
         const text = $from.parent.textContent.trim();
+        // Time tracking off: a `/zeit` line is just text.
+        if (!timeTrackingEnabled()) return false;
         // `/zeit NP-8801/1020 2h …`, or `/zeit 2h …` on a page linked to a Vorgang.
         if (!/^\/(zeit|time)\s+(\S+\s+\S+|\d\S*$)/i.test(text)) return false;
         // A second Enter while the booking is in flight must not book twice.
@@ -572,7 +582,7 @@ export const ZeitSuggest = Extension.create<{
         pluginKey: zeitSuggestKey,
         char: "/zeit",
         findSuggestionMatch: ({ $position }) => {
-          if ($position.parent.type.name !== "paragraph") return null;
+          if ($position.parent.type.name !== "paragraph" || !timeTrackingEnabled()) return null;
           const before = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc");
           const tok = zeitToken(before);
           if (!tok) return null;

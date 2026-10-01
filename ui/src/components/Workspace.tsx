@@ -1,9 +1,10 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
 import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Plus, Timer, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
-import { IconButton, useMenu, type MenuEntry } from "./ui";
+import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "./ui";
+import { TIME_TABS, useTimeTracking } from "../lib/timetracking";
 import { Home, TabIcon, tabTitle } from "./Shell";
 import { Resizer } from "./Resizer";
 import { ViewHeader } from "./ViewHeader";
@@ -151,6 +152,28 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
 }
 
 function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
+  const tr = useT();
+  const timeOn = useTimeTracking();
+  // A timesheet or projects tab left open when time tracking was switched off.
+  if (!timeOn && TIME_TABS.has(tab.kind))
+    return (
+      <>
+        <ViewHeader tab={tab} title="" />
+        <div className="view-body">
+          <EmptyState
+            icon={Timer}
+            title={tr("tt.offTitle")}
+            action={
+              <Button size="sm" onClick={() => useApp.getState().openTab({ kind: "settings" })}>
+                {tr("tt.openSettings")}
+              </Button>
+            }
+          >
+            {tr("tt.offText")}
+          </EmptyState>
+        </div>
+      </>
+    );
   switch (tab.kind) {
     case "page":
       return <PageView pageId={tab.pageId!} tab={tab} active={active} />;

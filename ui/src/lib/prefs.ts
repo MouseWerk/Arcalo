@@ -32,6 +32,8 @@ export function applyPrefs(s: Settings) {
     setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format });
   }
   if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
+  // „Zeiterfassung verwenden“ off: time-entry chips in notes look like plain chips (CSS).
+  root.toggleAttribute("data-time-off", s.time?.enabled === false);
   const keymap = effectiveKeymap(s.keymap);
   const key = JSON.stringify(keymap);
   if (key !== lastKeymap) {

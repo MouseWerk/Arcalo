@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Coffee, Play, Square, Target, X } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
+import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
 import { Button, Dialog, Field, Input, Segmented, Switch, useMenu } from "./ui";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
@@ -40,7 +41,7 @@ function showDone(done: FocusDone) {
     focusModeBySession = false;
     s().set({ focusMode: false });
   }
-  const { title, detail } = sessionSummary(done, held);
+  const { title, detail } = sessionSummary(done, held, done.held, timeTrackingEnabled());
   s().toast({
     tone: done.session.status === "done" ? "success" : "info",
     title,
@@ -55,7 +56,9 @@ function showDone(done: FocusDone) {
 export async function startFocus(c: FocusChoice) {
   try {
     saveChoice(c);
-    const st = await api.focusStart({ reference: c.reference.trim(), minutes: c.minutes, break_minutes: c.breakMinutes, goal: c.goal.trim() });
+    // Time tracking off: focus sessions without a Vorgang (nothing is booked).
+    const reference = timeTrackingEnabled() ? c.reference.trim() : "";
+    const st = await api.focusStart({ reference, minutes: c.minutes, break_minutes: c.breakMinutes, goal: c.goal.trim() });
     s().set({ focus: st, heldToasts: [], focusDialog: null });
     if (c.focusMode && !s().focusMode) {
       focusModeBySession = true;
@@ -77,7 +80,7 @@ export async function abortFocus() {
   if (!f || f.phase !== "work") return;
   const minutes = Math.round((Date.now() - new Date(f.session.started_at).getTime()) / 60_000);
   let book = false;
-  if (f.session.reference && minutes >= 1) {
+  if (f.session.reference && minutes >= 1 && timeTrackingEnabled()) {
     const choice = await s().choose({
       title: "Fokussitzung abbrechen?",
       message: `Bisher ${minutes} Min. auf ${f.session.reference}. Soll diese Zeit gebucht werden?`,
@@ -296,6 +299,7 @@ export function FocusDialogHost() {
 function FocusDialog({ preset }: { preset: { reference?: string; goal?: string } }) {
   const last = useMemo(lastChoice, []);
   const timer = useApp((st) => st.timer);
+  const timeOn = useTimeTracking();
   const [reference, setReference] = useState(preset.reference ?? last.reference);
   const [goal, setGoal] = useState(preset.goal ?? (preset.reference ? "" : last.goal));
   const preset0 = LENGTHS.includes(last.minutes as (typeof LENGTHS)[number]) ? String(last.minutes) : "custom";
@@ -318,7 +322,7 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
       open
       onClose={close}
       title="Fokussitzung"
-      description="Konzentriert arbeiten, dann Pause. Die Zeit wird als Entwurf auf den Vorgang gebucht; Hinweise warten bis zum Ende."
+      description={timeOn ? "Konzentriert arbeiten, dann Pause. Die Zeit wird als Entwurf auf den Vorgang gebucht; Hinweise warten bis zum Ende." : "Konzentriert arbeiten, dann Pause. Hinweise warten bis zum Ende."}
       width={500}
       footer={
         <>
@@ -332,11 +336,13 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
       }
     >
       <div className="focus-form" onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && !e.defaultPrevented && (e.preventDefault(), start())}>
-        <Field label="Vorgang" hint={reference.trim() ? undefined : "Ohne Vorgang wird nichts gebucht."}>
-          <RefCombo value={reference} onChange={setReference} />
-        </Field>
+        {timeOn && (
+          <Field label="Vorgang" hint={reference.trim() ? undefined : "Ohne Vorgang wird nichts gebucht."}>
+            <RefCombo value={reference} onChange={setReference} />
+          </Field>
+        )}
         <Field label="Ziel">
-          <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Woran arbeitest du?" aria-label="Ziel" data-autofocus={preset.reference ? true : undefined} />
+          <Input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Woran arbeitest du?" aria-label="Ziel" data-autofocus={preset.reference || !timeOn ? true : undefined} />
         </Field>
         <div className="focus-row">
           <Field label="Länge">
@@ -361,7 +367,7 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
           <span>Fokusmodus während der Sitzung</span>
           <span className="faint small">Seitenleiste, Panel und Leiste ausblenden</span>
         </div>
-        {timer && <p className="faint small focus-note">Ein Timer läuft – die Fokuszeit wird zusätzlich gebucht.</p>}
+        {timer && timeOn && <p className="faint small focus-note">Ein Timer läuft – die Fokuszeit wird zusätzlich gebucht.</p>}
       </div>
     </Dialog>
   );

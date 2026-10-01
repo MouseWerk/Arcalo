@@ -616,6 +616,9 @@ fn the_reminder_comes_on_the_last_workday_afternoon_once_a_week() {
     let mut off = s.clone();
     off.notifications.week_proposal = false;
     assert_eq!(week_reminder(fri(15), &off, &open, None), None);
+    let mut no_time = s.clone();
+    no_time.time.enabled = false;
+    assert_eq!(week_reminder(fri(15), &no_time, &open, None), None, "time tracking off");
     let mut quiet = s;
     quiet.notifications.quiet_hours = true;
     quiet.notifications.quiet_from = "14:30".into();

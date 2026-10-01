@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { t } from "../../lib/i18n";
-import { GROUP_LABELS, WIDGET_KINDS, WIDGETS, type WidgetGroup, type WidgetKind } from "../../lib/dashboard";
+import { GROUP_LABELS, WIDGETS, galleryKinds, type WidgetGroup, type WidgetKind } from "../../lib/dashboard";
 import { Dialog, Input } from "../ui";
 import { ICONS } from "./registry";
 
@@ -117,18 +117,19 @@ function Preview({ look }: { look: Look }) {
   }
 }
 
-export function Gallery({ onPick, onClose }: { onPick: (kind: WidgetKind) => void; onClose: () => void }) {
+export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: WidgetKind) => void; onClose: () => void; timeOn?: boolean }) {
   const [q, setQ] = useState("");
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const out = new Map<WidgetGroup, WidgetKind[]>();
-    for (const k of WIDGET_KINDS) {
+    // Time tracking off: no time widgets (the „Zeit“ group disappears with them).
+    for (const k of galleryKinds(timeOn)) {
       const d = WIDGETS[k];
       if (needle && !`${t(d.label)} ${t(d.hint)} ${k}`.toLowerCase().includes(needle)) continue;
       out.set(d.group, [...(out.get(d.group) ?? []), k]);
     }
     return out;
-  }, [q]);
+  }, [q, timeOn]);
   return (
     <Dialog open onClose={onClose} title={t("dash.gallery.title")} description={t("dash.gallery.desc")} width={760}>
       <div className="dash-gallery">

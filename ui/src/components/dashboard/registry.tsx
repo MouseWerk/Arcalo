@@ -1,5 +1,6 @@
 // Which component shows which widget kind, its icon, and where its title leads.
 
+import { timeTrackingEnabled } from "../../lib/timetracking";
 import type { ComponentType } from "react";
 import {
   Activity,
@@ -104,7 +105,7 @@ export function openerOf(w: GridWidget): (() => void) | null {
       return () => s().openTab({ kind: "timesheet" });
     case "budget":
     case "project":
-      return () => s().openTab({ kind: "projects" });
+      return timeTrackingEnabled() ? () => s().openTab({ kind: "projects" }) : null;
     case "activity":
       return () => s().openTab({ kind: "activity" });
     case "review":

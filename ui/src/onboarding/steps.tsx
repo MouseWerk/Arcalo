@@ -477,7 +477,7 @@ export function CalendarStep({ view, write }: { view: SettingsView; write: Write
     }
   };
   return (
-    <StepFrame step="calendar" title="fr.cal.title" lead="fr.cal.lead">
+    <StepFrame step="calendar" title="fr.cal.title" lead={timeTrackingOn(view.settings) ? "fr.cal.lead" : "fr.cal.leadNoTime"}>
       {status?.outlook_available && (
         <div className={`fr-toggle-card ${s.calendar.outlook ? "on" : ""}`}>
           <span className="fr-choice-icon" aria-hidden>
@@ -795,7 +795,7 @@ export function DesktopStep({ view, write }: { view: SettingsView; write: Write 
           <div className={`fr-toggle-card ${s.close_to_tray ? "on" : ""}`}>
             <span className="fr-choice-text">
               <span className="fr-choice-title">{t("fr.desk.tray")}</span>
-              <span className="fr-choice-sub">{t("fr.desk.trayText")}</span>
+              <span className="fr-choice-sub">{t(timeTrackingOn(view.settings) ? "fr.desk.trayText" : "fr.desk.trayTextNoTime")}</span>
             </span>
             <Switch label={t("fr.desk.tray")} checked={s.close_to_tray} onChange={(v) => void write((x) => ({ ...x, close_to_tray: v }))} />
           </div>
@@ -836,7 +836,8 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
   const capture = view.settings.capture_shortcut;
   const tips: [string, TKey][] = [
     [keys("Mod K"), "fr.tip.palette"],
-    ["/zeit", "fr.tip.zeit"],
+    // Without time tracking there is no /zeit to tell about.
+    ...(timeTrackingOn(view.settings) ? ([["/zeit", "fr.tip.zeit"]] as [string, TKey][]) : []),
     ["[[ ]]", "fr.tip.links"],
     ...(capture ? ([[formatShortcut(capture, IS_MAC, " "), "fr.tip.capture"]] as [string, TKey][]) : []),
   ];

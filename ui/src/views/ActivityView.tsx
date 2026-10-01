@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { useTimeTracking } from "../lib/timetracking";
 import { EmptyState, IconButton, Select, Spinner } from "../components/ui";
 import { DateInput, dayLabel } from "../components/DateInput";
 import { pickDate } from "../components/CalendarPopover";
@@ -60,6 +61,8 @@ export function ActivityView() {
   const [people, setPeople] = useState<string[]>([]);
   const [groups, setGroups] = useState<Set<KindGroup>>(new Set());
   const [items, setItems] = useState<Activity[] | null>(null);
+  // Time tracking off: no bookings in the timeline, no WBS filter, no booked hours.
+  const timeOn = useTimeTracking();
   const [summary, setSummary] = useState<FeedSummary | null>(null);
   const [tick, setTick] = useState(0);
   const seq = useRef(0);
@@ -122,13 +125,13 @@ export function ActivityView() {
     ])
       .then(([list, sum, ppl]) => {
         if (n !== seq.current) return;
-        setItems(list);
+        setItems(timeOn ? list : list.filter((a) => groupOf(a.kind) !== "time"));
         setSummary(sum);
         setPeople(ppl);
       })
       .catch((e) => n === seq.current && (setItems([]), s().error("Aktivität nicht geladen", e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds.from, bounds.to, kinds, wbsFilter, person, debounced]);
+  }, [bounds.from, bounds.to, kinds, wbsFilter, person, debounced, timeOn]);
   useEffect(load, [load, entriesVersion, pages, tick, focusId]);
 
   const single = days.from === days.to;
@@ -184,7 +187,7 @@ export function ActivityView() {
         <header className="view-header">
           <div>
             <h1>Aktivität</h1>
-            <div className="view-sub">Was wann passiert ist: Seiten, Aufgaben, Buchungen, Dateien und Fokus</div>
+            <div className="view-sub">{timeOn ? "Was wann passiert ist: Seiten, Aufgaben, Buchungen, Dateien und Fokus" : "Was wann passiert ist: Seiten, Aufgaben, Dateien und Fokus"}</div>
           </div>
           <div className="view-actions">
             <button
@@ -224,7 +227,7 @@ export function ActivityView() {
               <Search size={14} className="faint" aria-hidden />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Suchen…" aria-label="Aktivität durchsuchen" spellCheck={false} />
             </span>
-            <Select value={wbsFilter} onChange={(e) => setWbsFilter(e.target.value)} aria-label="Projekt, Netzplan oder Vorgang">
+            {timeOn && <Select value={wbsFilter} onChange={(e) => setWbsFilter(e.target.value)} aria-label="Projekt, Netzplan oder Vorgang">
               <option value="">Alle Projekte</option>
               {wbs.map((p) => (
                 <optgroup key={p.id} label={`${p.project_code} · ${p.name}`}>
@@ -242,7 +245,7 @@ export function ActivityView() {
                   ])}
                 </optgroup>
               ))}
-            </Select>
+            </Select>}
             <Select value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Person" disabled={!people.length && !person}>
               <option value="">Alle Personen</option>
               {people.map((p) => (
@@ -253,7 +256,7 @@ export function ActivityView() {
             </Select>
           </div>
           <div className="activity-kinds" role="group" aria-label="Art">
-            {KIND_GROUPS.map((g) => {
+            {KIND_GROUPS.filter((g) => timeOn || g.id !== "time").map((g) => {
               const Icon = GROUP_ICON[g.id];
               return (
                 <button key={g.id} type="button" aria-pressed={groups.has(g.id)} className={`chip chip-kind kind-${g.id} ${groups.has(g.id) ? "on" : ""}`} onClick={() => toggleGroup(g.id)}>
@@ -269,10 +272,10 @@ export function ActivityView() {
             <h2>{heading}</h2>
             {single && <span className="faint small">{days.from === isoDay(new Date()) ? "bisher" : ""}</span>}
           </div>
-          <div className="activity-stats">
+          <div className={`activity-stats ${timeOn ? "" : "no-time"}`}>
             <Stat value={summary?.pages_edited ?? 0} label={summary?.pages_edited === 1 ? "Seite bearbeitet" : "Seiten bearbeitet"} icon={FileText} tone="pages" />
             <Stat value={summary?.tasks_done ?? 0} label={summary?.tasks_done === 1 ? "Aufgabe erledigt" : "Aufgaben erledigt"} icon={CheckSquare} tone="tasks" />
-            <Stat value={`${((summary?.booked_minutes ?? 0) / 60).toLocaleString("de-DE", { maximumFractionDigits: 2 })} h`} label="gebucht" icon={Clock} tone="time" />
+            {timeOn && <Stat value={`${((summary?.booked_minutes ?? 0) / 60).toLocaleString("de-DE", { maximumFractionDigits: 2 })} h`} label="gebucht" icon={Clock} tone="time" />}
             <Stat value={summary?.focus_sessions ?? 0} label={summary?.focus_minutes ? `Fokus · ${hm(summary.focus_minutes)}` : "Fokussitzungen"} icon={Target} tone="focus" />
           </div>
         </section>

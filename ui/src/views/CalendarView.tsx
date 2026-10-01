@@ -23,6 +23,7 @@ import { useWbs } from "./wbs";
 import { EntryDialog } from "./TimesheetView";
 import type { CalendarEvent, CalendarSettings, CalendarSourceInfo, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
 import { openDayReview } from "../lib/reviewnav";
+import { useTimeTracking } from "../lib/timetracking";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -153,8 +154,14 @@ export function CalendarView() {
 
   // Calendars hidden in the legend (the view only; they keep syncing).
   const hidden = useHiddenCalendars();
-  const shown = useMemo(() => visibleEvents(events, hidden), [events, hidden]);
-  const booked = useMemo(() => new Map(shown.map((e) => [e.key, bookedEntry(e, entries)])), [shown, entries]);
+  // „Zeiterfassung verwenden“ off: no booked marks, „nicht buchen“, time lane or booked hours.
+  const timeOn = useTimeTracking();
+  const shown = useMemo(() => {
+    const visible = visibleEvents(events, hidden);
+    return timeOn ? visible : visible.map((e) => (e.skip ? { ...e, skip: false } : e));
+  }, [events, hidden, timeOn]);
+  const booked = useMemo(() => new Map(shown.map((e) => [e.key, timeOn ? bookedEntry(e, entries) : null])), [shown, entries, timeOn]);
+  const days = useMemo(() => (timeOn ? overview : new Map([...overview].map(([k, d]) => [k, { ...d, booked_minutes: 0 }]))), [overview, timeOn]);
   const current = shown.find((e) => e.key === selected) ?? null;
   const syncing = status?.sources.some((x) => x.enabled && x.syncing) ?? false;
   const errors = status?.sources.filter((x) => x.enabled && x.status?.error) ?? [];
@@ -267,7 +274,7 @@ export function CalendarView() {
           </div>
           <Select className="calv-view-select" aria-label="Ansicht" value={view} onChange={(e) => setView(e.target.value as CalView)} options={(["day", "workweek", "week", "month", "agenda"] as CalView[]).map((v) => ({ value: v, label: VIEW_LABELS[v] }))} />
           <div className="calv-actions">
-            <IconButton
+            {timeOn && <IconButton
               icon={Layers}
               label={showBookings ? "Gebuchte Zeit ausblenden" : "Gebuchte Zeit einblenden"}
               active={showBookings}
@@ -276,7 +283,7 @@ export function CalendarView() {
                 setShowBookings(!showBookings);
                 store("annalo.calendar.bookings", showBookings ? "0" : "1");
               }}
-            />
+            />}
             <IconButton icon={RefreshCw} label="Jetzt synchronisieren" className={syncing ? "spinning" : ""} disabled={!configured} onClick={() => void sync()} />
             <IconButton icon={Settings2} label="Kalender-Einstellungen" onClick={() => openSettingsSection("calendar")} />
           </div>
@@ -321,7 +328,7 @@ export function CalendarView() {
         <div className="calv-main">
           <div className="calv-body">
             {view === "month" ? (
-              <MonthGrid range={range} anchor={anchor} events={shown} overview={overview} cal={cal} booked={booked} selected={selected} onSelect={setSelected} onDay={openDay} />
+              <MonthGrid range={range} anchor={anchor} events={shown} overview={days} cal={cal} booked={booked} selected={selected} onSelect={setSelected} onDay={openDay} />
             ) : view === "agenda" ? (
               <AgendaList range={range} events={shown} cal={cal} booked={booked} selected={selected} onSelect={setSelected} />
             ) : (
@@ -329,8 +336,8 @@ export function CalendarView() {
                 range={range}
                 rangeKey={rangeKey}
                 events={shown}
-                entries={showBookings ? entries : []}
-                overview={overview}
+                entries={showBookings && timeOn ? entries : []}
+                overview={days}
                 cal={cal}
                 booked={booked}
                 now={now}
@@ -345,6 +352,7 @@ export function CalendarView() {
               event={current}
               cal={cal}
               booked={booked.get(current.key) ?? null}
+              timeOn={timeOn}
               onClose={() => setSelected(null)}
               onBook={() => void book(current)}
               onNote={() => void note(current)}
@@ -355,7 +363,7 @@ export function CalendarView() {
         </>
       )}
 
-      {booking && (
+      {booking && timeOn && (
         <EntryDialog
           entry={null}
           wbs={wbs}
@@ -742,7 +750,7 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
 
 // ---------------------------------------------------------------- detail
 
-function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; onClose: () => void; onBook: () => void; onNote: () => void; onSkip: () => void }) {
+function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, onSkip }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; timeOn: boolean; onClose: () => void; onBook: () => void; onNote: () => void; onSkip: () => void }) {
   const l = formatPrefs().lang === "en" ? "en-GB" : "de-DE";
   const [allPeople, setAllPeople] = useState(false);
   useEffect(() => setAllPeople(false), [e.key]);
@@ -835,7 +843,7 @@ function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }:
             </span>
           </div>
         )}
-        {calendar && !calendar.booking && (
+        {timeOn && calendar && !calendar.booking && (
           <div className="calv-detail-row faint">
             <Timer size={14} aria-hidden />
             <span>{t("olcal.notForBooking")}</span>
@@ -855,7 +863,7 @@ function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }:
         </div>
       )}
 
-      <div className={`calv-book-state ${booked ? "booked" : e.skip ? "skipped" : ""}`} role="status">
+      {timeOn && <div className={`calv-book-state ${booked ? "booked" : e.skip ? "skipped" : ""}`} role="status">
         {booked ? (
           <>
             <CheckCircle2 size={15} aria-hidden />
@@ -875,16 +883,18 @@ function EventDetail({ event: e, cal, booked, onClose, onBook, onNote, onSkip }:
             <span>Noch nicht gebucht</span>
           </>
         )}
-      </div>
+      </div>}
 
       <div className="calv-detail-actions">
-        <Button variant={booked || e.skip ? "secondary" : "primary"} icon={Timer} onClick={onBook}>
-          {booked ? "Noch einmal buchen" : "Zeit buchen"}
-        </Button>
-        <Button icon={NotebookPen} onClick={onNote}>
+        {timeOn && (
+          <Button variant={booked || e.skip ? "secondary" : "primary"} icon={Timer} onClick={onBook}>
+            {booked ? "Noch einmal buchen" : "Zeit buchen"}
+          </Button>
+        )}
+        <Button variant={timeOn ? "secondary" : "primary"} icon={NotebookPen} onClick={onNote}>
           {e.note_page_id != null ? "Besprechungsnotiz öffnen" : "Besprechungsnotiz"}
         </Button>
-        {!booked && (
+        {timeOn && !booked && (
           <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>
             {e.skip ? "Wieder zum Buchen vorschlagen" : "Nicht buchen"}
           </Button>

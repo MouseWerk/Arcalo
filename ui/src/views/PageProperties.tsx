@@ -6,6 +6,7 @@ import { openFocusDialog } from "../components/Focus";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
 import { Badge, Button, IconButton, Progress, useMenu, type MenuEntry } from "../components/ui";
 import { DATE_RE, LIST_KEYS, edited, isValidKey, parseFrontmatter, propertyValue, serializeFrontmatter, splitItems, type Property } from "../lib/frontmatter";
 import { dateShort, fmtHours, fmtMinutes } from "../lib/format";
@@ -22,7 +23,8 @@ import { KIND_ICON, OptionsDialog, TypedValue, kindMenu, optionsForKind } from "
 import { renameOptionValues, updateSchema } from "./collection/write";
 
 const TYPE_ICON: Record<Property["type"], LucideIcon> = { text: Type, date: CalendarDays, list: Tags, raw: Braces };
-const isWbsKey = (key: string) => /^(vorgang|netzplan)$/i.test(key);
+/** `vorgang:` / `netzplan:` with the WBS picker; plain text properties while time tracking is off. */
+const isWbsKey = (key: string) => /^(vorgang|netzplan)$/i.test(key) && timeTrackingEnabled();
 const isTagsKey = (key: string) => /^tags?$/i.test(key);
 const KEY_HINT = "Ungültiger Name: nicht mit Leerzeichen oder # - [ ] { } ' \" & * ! | > % @ ` ? , beginnen";
 
@@ -203,6 +205,7 @@ export function PropertyEditor({
 }
 
 function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Property; onChange: (c: Partial<Property>) => void; onRename: (key: string) => boolean; onRemove: () => void; onMenu?: (anchor: Element) => void }) {
+  useTimeTracking(); // re-render when the switch changes (isWbsKey reads it)
   const [key, setKey] = useState(prop.key);
   useEffect(() => setKey(prop.key), [prop.key]);
   const Icon = isWbsKey(prop.key) ? Workflow : TYPE_ICON[prop.type];
@@ -279,7 +282,7 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
   const commit = () => draft !== prop.value && onChange(draft);
   const key = prop.key.toLowerCase();
   const input =
-    key === "vorgang" ? (
+    key === "vorgang" && isWbsKey(key) ? (
       <RefCombo value={prop.value} draft={draft} setDraft={setDraft} label={prop.key} onCommit={commit} onPick={(v) => v !== prop.value && onChange(v)} onRevert={() => setDraft(prop.value)} />
     ) : (
       <input
@@ -516,7 +519,7 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
         className="prop-key"
         autoFocus
         value={draft}
-        placeholder="Name, z. B. vorgang"
+        placeholder={timeTrackingEnabled() ? "Name, z. B. vorgang" : "Name, z. B. status"}
         aria-label="Name der neuen Eigenschaft"
         aria-invalid={invalid || undefined}
         spellCheck={false}

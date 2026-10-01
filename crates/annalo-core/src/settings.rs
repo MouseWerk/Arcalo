@@ -509,7 +509,41 @@ impl Default for Settings {
 /// Address of the LiteLLM proxy in fresh settings.
 const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
 
+/// What a booking command answers while time tracking is switched off.
+pub const TIME_TRACKING_OFF: &str = "Die Zeiterfassung ist ausgeschaltet (Einstellungen → Zeiterfassung).";
+
 impl Settings {
+    /// „Zeiterfassung verwenden“: off, nothing books time and no timer, reminder or budget
+    /// check runs. The data stays; switching it on brings everything back.
+    pub fn time_tracking(&self) -> bool {
+        self.time.enabled
+    }
+
+    /// Commands that book time call this first: off, they refuse with [`TIME_TRACKING_OFF`].
+    pub fn require_time_tracking(&self) -> Result<()> {
+        if self.time_tracking() { Ok(()) } else { Err(crate::Error::State(TIME_TRACKING_OFF.into())) }
+    }
+
+    /// The assistant's tools: the allowed ones (Settings → KI → Werkzeuge), without the time
+    /// tools ([`crate::ai::tools::TIME_TOOLS`]) while time tracking is off.
+    pub fn allowed_tools(&self) -> Vec<String> {
+        let time = self.time_tracking();
+        self.ai
+            .allowed_tools
+            .iter()
+            .filter(|t| time || !crate::ai::tools::TIME_TOOLS.contains(&t.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    /// Whether the model may run `tool` now (a time tool while time tracking is off says why not).
+    pub fn check_tool(&self, tool: &str) -> Result<()> {
+        if crate::ai::tools::TIME_TOOLS.contains(&tool) {
+            self.require_time_tracking()?;
+        }
+        crate::ai::tools::check_allowed(tool, &self.allowed_tools())
+    }
+
     /// Keeps `litellm_base_url` and the provider [`LEGACY_ID`] in step. Older versions and
     /// scripts only know the old field: when it changed since `previous` and the provider's
     /// address did not, the old field wins; otherwise the provider's address is copied into it.
@@ -889,6 +923,22 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn time_tracking_switch_gates_booking_and_survives_older_settings() {
+        let mut s = Settings::default();
+        assert!(s.time_tracking() && s.require_time_tracking().is_ok());
+        s.time.enabled = false;
+        let e = s.require_time_tracking().unwrap_err().to_string();
+        assert!(e.contains("Zeiterfassung ist ausgeschaltet"), "{e}");
+        // Settings saved before the switch existed count as on.
+        let old: Settings = serde_json::from_str(r#"{"time":{"week_start":"monday"}}"#).unwrap();
+        assert!(old.time_tracking());
+        // Off survives a save and load.
+        let db = Database::open_in_memory().unwrap();
+        db.save_settings(&s).unwrap();
+        assert!(!db.load_settings().unwrap().time_tracking());
+    }
 
     #[test]
     fn roundtrip_and_defaults_for_missing_fields() {

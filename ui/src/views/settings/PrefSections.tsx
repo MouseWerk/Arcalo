@@ -7,6 +7,7 @@ import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import { exportFileName } from "../../lib/prefs";
+import { timeTrackingOn } from "../../lib/timetracking";
 import { fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
@@ -290,6 +291,7 @@ export function LocaleSection({ draft, update }: SectionProps) {
 export function NotificationsSection({ draft, update }: SectionProps) {
   const t = useT();
   const n = draft.notifications;
+  const time = timeTrackingOn(draft);
   const set = (p: Partial<NotificationPrefs>) => update({ notifications: { ...n, ...p } });
   const toggle = (key: keyof NotificationPrefs & ("end_of_day" | "late_timer" | "week_proposal" | "budget" | "backup_failed" | "git_failed" | "updates"), label: string, description?: string) => (
     <Row label={label} description={description}>
@@ -300,9 +302,10 @@ export function NotificationsSection({ draft, update }: SectionProps) {
     <>
       <SectionHead title={t("set.notify.title")} intro={t("set.notify.intro")} />
       <Group title={t("set.notify.desktop")}>
-        {toggle("end_of_day", t("set.notify.endOfDay"), draft.reminder_time ? t("set.notify.endOfDayAt", { time: draft.reminder_time }) : t("set.notify.endOfDayOff"))}
-        {toggle("late_timer", t("set.notify.lateTimer"), t("set.notify.lateTimerDesc"))}
-        {toggle("week_proposal", t("set.notify.weekProposal"), t("set.notify.weekProposalDesc"))}
+        {/* Time tracking off: no reminders about bookings, timers or the week proposal. */}
+        {time && toggle("end_of_day", t("set.notify.endOfDay"), draft.reminder_time ? t("set.notify.endOfDayAt", { time: draft.reminder_time }) : t("set.notify.endOfDayOff"))}
+        {time && toggle("late_timer", t("set.notify.lateTimer"), t("set.notify.lateTimerDesc"))}
+        {time && toggle("week_proposal", t("set.notify.weekProposal"), t("set.notify.weekProposalDesc"))}
         <Row label={t("set.notify.dayReview")} description={t("set.notify.dayReviewDesc")}>
           <div className="unit-input">
             {n.day_review && <Input className="time-input num notify-review-time" value={n.day_review_time} maxLength={5} placeholder="17:30" onChange={(e) => set({ day_review_time: e.target.value })} aria-label={t("set.notify.dayReviewTime")} />}
@@ -311,7 +314,7 @@ export function NotificationsSection({ draft, update }: SectionProps) {
         </Row>
       </Group>
       <Group title={t("set.notify.inApp")}>
-        {toggle("budget", t("set.notify.budget"), t("set.notify.budgetDesc"))}
+        {time && toggle("budget", t("set.notify.budget"), t("set.notify.budgetDesc"))}
         {toggle("backup_failed", t("set.notify.backup"))}
         {toggle("git_failed", t("set.notify.git"))}
         {toggle("updates", t("set.notify.updates"), t("set.notify.updatesDesc"))}

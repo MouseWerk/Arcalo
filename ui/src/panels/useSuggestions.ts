@@ -8,6 +8,7 @@ import { addDays, isoDay, weekStart } from "../lib/format";
 import { weekBars } from "../lib/dashboard";
 import { buildSuggestions, type Suggestion } from "../lib/suggestions";
 import { useApp } from "../store/app";
+import { useTimeTracking } from "../lib/timetracking";
 import type { PageDoc } from "../lib/types";
 
 const FALLBACK: Suggestion[] = buildSuggestions({ now: new Date(), page: null, overdue: 0, dueToday: 0, openTasks: 0, gapDays: [], budget: null, hasBookings: false });
@@ -18,6 +19,7 @@ const SETTLE_MS = 250;
 export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[] {
   const entriesVersion = useApp((s) => s.entriesVersion);
   const settings = useApp((s) => s.settings?.settings);
+  const timeOn = useTimeTracking();
   const [list, setList] = useState<Suggestion[]>(FALLBACK);
   const pageId = page?.id ?? null;
   const pageTitle = page?.title ?? null;
@@ -32,8 +34,9 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
       // Counts and the most critical budget come counted from the backend (not every open task).
       const [facts, days, work] = await Promise.all([
         api.suggestionFacts(today, pageId).catch(() => null),
-        api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []),
-        pageId != null ? api.pageWork(pageId).catch(() => null) : Promise.resolve(null),
+        // Time tracking off: no bookings or Vorgang to look at.
+        timeOn ? api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []) : Promise.resolve([]),
+        pageId != null && timeOn ? api.pageWork(pageId).catch(() => null) : Promise.resolve(null),
       ]);
       const week = weekBars(days, monday, settings?.daily_target_hours ?? 8, settings?.workdays ?? [1, 2, 3, 4, 5], now);
       const next = buildSuggestions({
@@ -45,6 +48,7 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
         gapDays: week.bars.filter((b) => b.gap > 0).map((b) => b.label),
         budget: facts?.worst_budget ?? null,
         hasBookings: week.bookedMinutes > 0,
+        time: timeOn,
       });
       if (alive) setList(next);
     }, SETTLE_MS);
@@ -52,6 +56,6 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [shown, pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays]);
+  }, [shown, pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays, timeOn]);
   return list;
 }

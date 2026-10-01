@@ -4,6 +4,7 @@
 import type { TKey } from "../lib/i18n";
 import { PRESETS, autoAssignTiers, findProvider, fromPreset, OLLAMA_URL, providerName } from "../lib/providers";
 import type { AiProvider, OllamaDetect, Settings } from "../lib/types";
+import { timeTrackingOn } from "../lib/timetracking";
 
 export const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "desktop", "done"] as const;
 export type StepId = (typeof STEPS)[number];
@@ -74,8 +75,8 @@ export function withRounding(s: Settings, step: number, mode: "up" | "nearest" =
 /** „Zeiterfassung mit SAP verwenden“: off hides the timesheet, projects and their commands. */
 export const withTimeTracking = (s: Settings, on: boolean): Settings => ({ ...s, time: { ...s.time, enabled: on } });
 
-/** Whether time tracking is on (settings from before the switch count as on). */
-export const timeTrackingOn = (s: Settings | null | undefined) => s?.time?.enabled !== false;
+/** Whether time tracking is on (the shared helper of lib/timetracking.ts). */
+export { timeTrackingOn };
 
 // ------------------------------------------------------------------------- AI
 

@@ -7,6 +7,7 @@ import { Badge, Button, IconButton } from "../../components/ui";
 import { useT } from "../../lib/i18n";
 import { COMMANDS, DEFAULT_KEYMAP, comboFromEvent, comboLabel, comboProblem, effectiveKeymap, findConflicts, keymapOverrides } from "../../lib/keymap";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
+import { TIME_SHORTCUTS, timeTrackingOn } from "../../lib/timetracking";
 
 export function KeyboardSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -31,7 +32,8 @@ export function KeyboardSection({ draft, update }: SectionProps) {
     <>
       <SectionHead title={t("set.keys.title")} intro={t("set.keys.intro")} />
       <Group title={t("set.keys.commands")} description={t("set.keys.commandsDesc")}>
-        {COMMANDS.map((c) => {
+        {/* Time tracking off: the timer shortcut is not listed (it does nothing then). */}
+        {COMMANDS.filter((c) => timeTrackingOn(draft) || !TIME_SHORTCUTS.has(c.id)).map((c) => {
           const combo = map[c.id];
           const own = conflictOf(c.id);
           const changed = combo !== DEFAULT_KEYMAP[c.id];

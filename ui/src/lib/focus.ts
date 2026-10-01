@@ -71,12 +71,15 @@ export function saveChoice(c: FocusChoice) {
 }
 
 /** Title and text of the message after a session: what was booked and what was held back. */
-export function sessionSummary(done: FocusDone, heldToasts: { title: string }[], held: HeldNotification[] = done.held): { title: string; detail: string } {
+export function sessionSummary(done: FocusDone, heldToasts: { title: string }[], held: HeldNotification[] = done.held, time = true): { title: string; detail: string } {
   const s = done.session;
   const title = s.status === "done" ? (s.break_minutes > 0 ? `Pause – ${s.break_minutes} Min.` : "Fokussitzung geschafft") : "Fokussitzung beendet";
   const parts: string[] = [];
   const minutes = done.entry ? s.worked_minutes : 0;
-  if (done.entry) parts.push(`${hm(minutes)} ${done.extended ? "zur Buchung addiert" : "gebucht"}${s.reference ? ` auf ${s.reference}` : ""} (Entwurf)`);
+  // Time tracking off: the focus time, nothing about booking.
+  if (!time) {
+    if (s.status === "done") parts.push(`${hm(s.worked_minutes)} Fokus`);
+  } else if (done.entry) parts.push(`${hm(minutes)} ${done.extended ? "zur Buchung addiert" : "gebucht"}${s.reference ? ` auf ${s.reference}` : ""} (Entwurf)`);
   else if (s.status === "done" && !s.reference) parts.push(`${hm(s.worked_minutes)} Fokus, ohne Vorgang nicht gebucht`);
   else if (s.status === "aborted") parts.push("Nicht gebucht");
   const titles = [...heldToasts.map((t) => t.title), ...held.map((h) => h.title)];

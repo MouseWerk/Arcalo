@@ -9,6 +9,7 @@ import { ChevronDown, Copy, Download, GripVertical, LayoutTemplate, MoreHorizont
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
 import { isoDay } from "../lib/format";
 import { t, useT } from "../lib/i18n";
 import { cellAt, columnsFor, COLS, GAP, grow, moveTo, nudge, readingOrder, rectPx, reflow, resizeTo, ROW_H } from "../lib/dashgrid";
@@ -24,10 +25,12 @@ import {
   newBoard,
   PRESETS,
   sizeFor,
+  shownWidgets,
   sizeName,
   SIZE_NAMES,
   titleOf,
   toSaved,
+  withHidden,
   type BoardAction,
   type PresetName,
   type SizeName,
@@ -44,7 +47,7 @@ import { WidgetSettings } from "./dashboard/WidgetSettings";
 const s = useApp.getState;
 
 /** The start page as stored now (another window or widget may have saved meanwhile). */
-const fresh = () => loadDashboard(s().settings?.settings.dashboard);
+const fresh = () => loadDashboard(s().settings?.settings.dashboard, timeTrackingEnabled());
 
 async function persist(next: DashboardT): Promise<boolean> {
   try {
@@ -59,7 +62,9 @@ async function persist(next: DashboardT): Promise<boolean> {
 export function Dashboard() {
   const tr = useT();
   const stored = useApp((st) => st.settings?.settings.dashboard);
-  const loaded = useMemo(() => loadDashboard(stored), [stored]);
+  // „Zeiterfassung verwenden“ off: time widgets stay on the boards, hidden (lib/dashboard.ts).
+  const timeOn = useTimeTracking();
+  const loaded = useMemo(() => loadDashboard(stored, timeOn), [stored, timeOn]);
   const [draft, setDraft] = useState<DashboardT | null>(null);
   const [saving, setSaving] = useState(false);
   const [gallery, setGallery] = useState(false);
@@ -123,7 +128,7 @@ export function Dashboard() {
 
   const addBoard = (preset: PresetName | null) =>
     change((d) => {
-      const b = newBoard(d.boards, preset ? t(PRESETS.find((p) => p.name === preset)!.label) : t("dash.board.new"), preset);
+      const b = newBoard(d.boards, preset ? t(PRESETS.find((p) => p.name === preset)!.label) : t("dash.board.new"), preset, timeOn);
       setRenaming(b.id);
       return { ...d, boards: [...d.boards, b], active: b.id };
     });
@@ -188,9 +193,9 @@ export function Dashboard() {
 
   const presetMenu = (e: ReactMouseEvent) =>
     openMenuAt(e, [
-      ...PRESETS.map((p) => ({ label: t(p.label), onSelect: () => dispatch({ type: "preset", name: p.name }) })),
+      ...PRESETS.map((p) => ({ label: t(p.label), onSelect: () => dispatch({ type: "preset", name: p.name, time: timeOn }) })),
       "separator",
-      { label: t("dash.reset"), icon: RotateCcw, onSelect: () => dispatch({ type: "preset", name: board?.id === "projekte" ? "lead" : "start" }) },
+      { label: t("dash.reset"), icon: RotateCcw, onSelect: () => dispatch({ type: "preset", name: board?.id === "projekte" ? "lead" : "start", time: timeOn }) },
     ]);
   const moreMenu = (e: ReactMouseEvent) =>
     openMenuAt(e, [
@@ -299,7 +304,8 @@ export function Dashboard() {
             key={board.id}
             board={board}
             editing={editing}
-            onLayout={(widgets) => dispatch({ type: "layout", widgets })}
+            timeOn={timeOn}
+            onLayout={(widgets) => dispatch({ type: "layout", widgets: withHidden(board.widgets, widgets, timeOn) })}
             onAction={dispatch}
             onSettings={setSettingsFor}
             onAdd={() => setGallery(true)}
@@ -308,6 +314,7 @@ export function Dashboard() {
       )}
       {gallery && (
         <Gallery
+          timeOn={timeOn}
           onClose={() => setGallery(false)}
           onPick={(kind: WidgetKind) => {
             setGallery(false);
@@ -340,7 +347,10 @@ export function Dashboard() {
 
 type Drag = { id: string; mode: "move" | "resize"; grabX: number; grabY: number; layout: GridWidget[]; px: number; py: number; start: GridWidget[] };
 
-function BoardGrid({ board, editing, onLayout, onAction, onSettings, onAdd }: { board: Board; editing: boolean; onLayout: (w: GridWidget[]) => void; onAction: (a: BoardAction) => void; onSettings: (id: string) => void; onAdd: () => void }) {
+function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSettings, onAdd }: { board: Board; editing: boolean; timeOn: boolean; onLayout: (w: GridWidget[]) => void; onAction: (a: BoardAction) => void; onSettings: (id: string) => void; onAdd: () => void }) {
+  // The board as shown: hidden time widgets left out and the gaps closed; edits work on this
+  // layout and `onLayout` puts the hidden ones back.
+  const board = useMemo(() => ({ ...stored, widgets: shownWidgets(stored.widgets, timeOn) }), [stored, timeOn]);
   const tr = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

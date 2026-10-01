@@ -882,7 +882,9 @@ fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
 
 #[tauri::command(async)]
 fn log_time(state: State<AppState>, line: String, page_id: Option<i64>) -> Result<LogOutcome> {
-    let t = state.settings().thresholds;
+    let settings = state.settings();
+    settings.require_time_tracking()?;
+    let t = settings.thresholds;
     let db = state.db();
     // Typed on a page linked to a Vorgang: `/zeit 1.5h …` books on that Vorgang.
     let default_ref = page_id.map(|id| db.page_reference(id)).transpose()?.flatten();
@@ -920,6 +922,7 @@ fn timer_start(
     leistungsart: Option<String>,
     description: String,
 ) -> Result<TimeEntry> {
+    state.settings().require_time_tracking()?;
     let db = state.db();
     // Without a Leistungsart the Netzplan's default applies (Settings → Zeiterfassung).
     let leistungsart = match leistungsart.filter(|l| !l.is_empty()) {
@@ -1004,6 +1007,7 @@ fn time_entry_create(
         return Err(Error::State("Dauer muss zwischen 1 Minute und 24 Stunden liegen".into()));
     }
     let settings = state.settings();
+    settings.require_time_tracking()?;
     let t = settings.thresholds;
     let db = state.db();
     let leistungsart = match leistungsart.filter(|v| !v.is_empty()) {
@@ -1096,10 +1100,12 @@ struct SuggestionFacts {
 /// Counts of open tasks (`today` is the local day, `YYYY-MM-DD`) and the most critical budget.
 #[tauri::command(async)]
 fn suggestion_facts(state: State<AppState>, today: String, page_id: Option<i64>) -> Result<SuggestionFacts> {
-    let t = state.settings().thresholds;
+    let settings = state.settings();
+    let t = settings.thresholds;
     let db = state.reader();
     let counts = db.open_task_counts(today.trim(), page_id)?;
-    let budgets = tracking::all_budgets(&db, &t)?;
+    // Time tracking off: no budget hint.
+    let budgets = if settings.time_tracking() { tracking::all_budgets(&db, &t)? } else { vec![] };
     Ok(SuggestionFacts {
         open_tasks: counts.open,
         overdue: counts.overdue,
@@ -1729,7 +1735,12 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
+    let time_switched = previous.time_tracking() != settings.time_tracking();
     rebuild_ai(&state, settings);
+    // Time tracking switched: tray menu and jump list without (or with) the timer entries.
+    if time_switched {
+        desktop::refresh_tray(&app);
+    }
     if chat_retention {
         chats::prune(&state);
     }
@@ -2230,13 +2241,23 @@ async fn ollama_pull(
 
 fn system_prompt(settings: &Settings) -> String {
     let now = Local::now();
-    let mut s = format!(
-        "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
-         Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
-         schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
-         gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
-        now.format("%A, %d.%m.%Y %H:%M")
-    );
+    // Time tracking off: a notes, tasks and calendar workspace; nothing about SAP booking.
+    let mut s = if settings.time_tracking() {
+        format!(
+            "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
+             Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
+             schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
+             gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
+            now.format("%A, %d.%m.%Y %H:%M")
+        )
+    } else {
+        format!(
+            "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Aufgaben und \
+             Termine. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
+             schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Nutze Tools nur, wenn nötig.",
+            now.format("%A, %d.%m.%Y %H:%M")
+        )
+    };
     if !settings.assistant_instructions.trim().is_empty() {
         s.push_str("\n\nZusätzliche Anweisungen des Nutzers:\n");
         s.push_str(settings.assistant_instructions.trim());
@@ -2460,7 +2481,7 @@ async fn ai_chat(
     let req = ChatRequest {
         model: route.model.clone(),
         messages: full,
-        tools: if use_tools { tools::definitions_allowed(&settings.ai.allowed_tools) } else { vec![] },
+        tools: if use_tools { tools::definitions_allowed(&settings.allowed_tools()) } else { vec![] },
         temperature: Some(settings.ai.temperature),
         max_tokens: settings.ai.max_tokens,
     };
@@ -2882,7 +2903,7 @@ enum ToolPlan {
 /// Classifies a tool call so the UI knows whether to ask the user first.
 #[tauri::command(async)]
 fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Result<ToolPlan> {
-    tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
+    state.settings().check_tool(&name)?;
     Ok(match tools::classify(&name) {
         Risk::Workspace => ToolPlan::Workspace,
         Risk::RequiresApproval => {
@@ -2894,7 +2915,7 @@ fn ai_plan_tool(state: State<AppState>, name: String, arguments: String) -> Resu
 
 #[tauri::command(async)]
 fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, arguments: String) -> Result<String> {
-    tools::check_allowed(&name, &state.settings().ai.allowed_tools)?;
+    state.settings().check_tool(&name)?;
     let args: serde_json::Value = serde_json::from_str(&arguments)?;
     let arg = |k: &str| args[k].as_str().unwrap_or_default().to_owned();
     let t = state.settings().thresholds;
@@ -2965,7 +2986,7 @@ async fn ai_run_system_tool(state: State<'_, AppState>, call: SystemCall) -> Res
         SystemCall::HttpRequest { .. } => "http_request",
     };
     let settings = state.settings();
-    tools::check_allowed(name, &settings.ai.allowed_tools)?;
+    settings.check_tool(name)?;
     let (http, network_error) = {
         let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
         (ai.tools_http.clone(), ai.network_error.clone())
@@ -3072,7 +3093,8 @@ fn spawn_activity_sampler(app: AppHandle) {
             let window = probe.foreground_window();
             let threshold = Duration::from_secs(state.settings().idle_threshold_minutes * 60);
             let is_idle = idle.is_some_and(|d| d >= threshold);
-            let running = state.db().running_timer().ok().flatten().is_some();
+            // Time tracking off: no idle detection for a timer (one left running is not tracked).
+            let running = state.settings().time_tracking() && state.db().running_timer().ok().flatten().is_some();
             let timer_idle_minutes = if running {
                 let mut acc = lock(&state.idle);
                 if let Some(d) = idle {
@@ -3122,6 +3144,8 @@ fn onboarding_status(state: State<AppState>) -> Result<annalo_core::onboarding::
 /// Stores the settings the first-run flags changed (and tells the other windows).
 fn onboarding_store(app: &AppHandle, state: &State<AppState>, settings: Settings) -> SettingsView {
     state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
+    // The setup may have switched time tracking: tray menu and jump list follow.
+    desktop::refresh_tray(app);
     let _ = app.emit("settings://changed", ());
     settings_get(state.clone())
 }
@@ -4015,6 +4039,23 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn without_time_tracking_the_assistant_knows_nothing_about_booking() {
+        let mut s = Settings::default();
+        assert!(system_prompt(&s).contains("/zeit"));
+        assert!(s.allowed_tools().iter().any(|t| t == "log_time"));
+        s.time.enabled = false;
+        let prompt = system_prompt(&s);
+        assert!(!prompt.contains("/zeit") && !prompt.contains("Zeiterfassung") && !prompt.contains("NP-"), "{prompt}");
+        let tools = s.allowed_tools();
+        for t in tools::TIME_TOOLS {
+            assert!(!tools.iter().any(|x| x == t), "{t} offered");
+            assert!(s.check_tool(t).unwrap_err().to_string().contains("Zeiterfassung ist ausgeschaltet"));
+        }
+        assert!(tools.iter().any(|t| t == "list_tasks"));
+        assert!(s.check_tool("list_tasks").is_ok());
+    }
 
     #[test]
     fn attachment_base64_is_bounded_and_whitespace_tolerant() {

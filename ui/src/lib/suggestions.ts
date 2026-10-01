@@ -20,19 +20,25 @@ export interface SuggestionContext {
   /** The Netzplan/Vorgang with the most critical budget, e.g. "NP-8801/1010". */
   budget: string | null;
   hasBookings: boolean;
+  /** „Zeiterfassung verwenden“ (default on): off, nothing about bookings, budgets or the weekly report. */
+  time?: boolean;
 }
+
+/** Kinds that are about booking time. */
+const TIME_KINDS: ReadonlySet<SuggestionKind> = new Set<SuggestionKind>(["time", "budget", "report"]);
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function buildSuggestions(c: SuggestionContext): Suggestion[] {
   const out: Suggestion[] = [];
-  const add = (kind: SuggestionKind, text: string) => !out.some((s) => s.text === text) && out.push({ kind, text });
+  const time = c.time !== false;
+  const add = (kind: SuggestionKind, text: string) => (time || !TIME_KINDS.has(kind)) && !out.some((s) => s.text === text) && out.push({ kind, text });
   const hour = c.now.getHours();
   const weekday = c.now.getDay(); // 0 = Sunday
 
   if (c.page) {
     add("page", `„${c.page.title}“ zusammenfassen`);
-    if (c.page.reference) add("budget", `Wie steht das Budget von ${c.page.reference}?`);
+    if (c.page.reference && time) add("budget", `Wie steht das Budget von ${c.page.reference}?`);
     else if (c.page.openTasks > 0) add("tasks", `Offene Aufgaben in „${c.page.title}“ priorisieren`);
     else add("page", `Nächste Schritte zu „${c.page.title}“ vorschlagen`);
   }

@@ -236,6 +236,20 @@ fn a_full_day_on_the_long_dst_day() {
     let m = summary_messages(&r, &Berlin);
     assert_eq!(m.len(), 2);
     assert!(m[0].content.as_deref().unwrap().contains("Offen für morgen"));
+
+    // Time tracking off: the same day without anything about booking.
+    let off = r.clone().without_time();
+    assert!(off.without_time && off.time.items.is_empty() && off.time.gaps.is_empty() && off.time.booked_minutes == 0);
+    assert!(
+        off.meetings.iter().all(|m| !matches!(m.state.as_str(), "booked" | "open" | "skipped") && m.entry_id.is_none())
+    );
+    let text = describe(&off, &Berlin);
+    assert!(!text.contains("Gebucht") && !text.contains("Buchung") && !text.contains("gebucht"), "{text}");
+    assert!(text.contains("Kundentermin (vorbei)"), "{text}");
+    let system = summary_messages(&off, &Berlin)[0].content.clone().unwrap();
+    assert!(!system.contains("gebucht") && !system.contains("Buchungen"), "{system}");
+    assert!(!reminder_body(&off).contains("gebucht"));
+    assert_eq!(off.pages, r.pages, "the rest stays");
 }
 
 #[test]

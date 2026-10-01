@@ -93,7 +93,11 @@ pub fn focus_state(app: AppHandle, state: State<AppState>) -> Result<Option<Focu
 }
 
 #[tauri::command(async)]
-pub fn focus_start(app: AppHandle, state: State<AppState>, start: FocusStart) -> Result<FocusState> {
+pub fn focus_start(app: AppHandle, state: State<AppState>, mut start: FocusStart) -> Result<FocusState> {
+    // Time tracking off: focus sessions stay, but without a Vorgang nothing is booked.
+    if !state.settings().time_tracking() {
+        start.reference.clear();
+    }
     // One that ran out meanwhile is booked first.
     let completed = focus::state(&state.db(), Utc::now(), &Local)?.and_then(|s| s.completed);
     if let Some(c) = completed {
@@ -116,6 +120,7 @@ pub fn focus_finish(app: AppHandle, state: State<AppState>) -> Result<FocusDone>
 /// Ends the running session early; with `book` the minutes so far are booked.
 #[tauri::command(async)]
 pub fn focus_abort(app: AppHandle, state: State<AppState>, book: bool) -> Result<FocusDone> {
+    let book = book && state.settings().time_tracking();
     let outcome = focus::abort(&state.db(), Utc::now(), book, &Local)?;
     Ok(done(&app, outcome, false))
 }

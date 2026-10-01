@@ -31,7 +31,9 @@ fn review(state: &AppState, db: &Database, date: NaiveDate) -> Result<DayReview>
     let settings = state.settings();
     // Meetings to book: not those of calendars shared by colleagues (unless chosen).
     let sources = settings.calendar.booking_sources(outlook::available());
-    core::day_review(db, date, &Local, &ReviewOptions::from_settings(&settings, Some(sources), Utc::now()))
+    let r = core::day_review(db, date, &Local, &ReviewOptions::from_settings(&settings, Some(sources), Utc::now()))?;
+    // Time tracking off: no time section, gaps or booking states (also in the summary).
+    Ok(if settings.time_tracking() { r } else { r.without_time() })
 }
 
 /// The review of the local day `date` (default today).

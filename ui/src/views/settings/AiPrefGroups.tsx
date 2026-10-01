@@ -10,6 +10,7 @@ import { useT, type TKey } from "../../lib/i18n";
 import { usd } from "../../lib/format";
 import type { AiPrefs, AiPresetDef, CostStatus } from "../../lib/types";
 import { Group, NumberInput, Row, Unfiltered, type SectionProps } from "./common";
+import { TIME_TOOLS, timeTrackingOn } from "../../lib/timetracking";
 
 /** Tools the assistant can be offered, workspace tools first. */
 export const TOOL_OPTIONS: { name: string; label: TKey; system: boolean }[] = [
@@ -65,7 +66,8 @@ export function AiPrefGroups({ draft, update }: SectionProps) {
       </Group>
 
       <Group title={t("set.ai.tools")} description={t("set.ai.toolsDesc")}>
-        {TOOL_OPTIONS.map((o) => (
+        {/* Time tracking off: the time tools are not offered (their switches keep their state). */}
+        {TOOL_OPTIONS.filter((o) => timeTrackingOn(draft) || !TIME_TOOLS.includes(o.name)).map((o) => (
           <Row key={o.name} label={t(o.label)} description={o.system ? t("set.ai.systemTool") : undefined} keywords={o.name}>
             <Switch label={t(o.label)} checked={ai.allowed_tools.includes(o.name)} onChange={(v) => toggleTool(o.name, v)} />
           </Row>

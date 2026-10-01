@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
+import { TIME_COMMANDS, useTimeTracking } from "../lib/timetracking";
 import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
@@ -38,7 +39,6 @@ import { startFirstRun } from "../onboarding/state";
 import { newChat, showHistory } from "../store/chat";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
-const TIME_COMMANDS = ["timer", "timesheet", "week-proposal", "projects", "weekly-report", "focus-note"];
 
 interface Item {
   id: string;
@@ -76,6 +76,7 @@ export function CommandPalette() {
   const initial = useApp((s) => s.paletteQuery);
   const pages = useApp((s) => s.pages);
   const timer = useApp((s) => s.timer);
+  const timeOn = useTimeTracking();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -112,7 +113,7 @@ export function CommandPalette() {
     const out: Item[] = [];
     const lower = query.toLowerCase();
 
-    if (mode === "all" && /^\/(zeit|time)\b/i.test(query)) {
+    if (mode === "all" && timeOn && /^\/(zeit|time)\b/i.test(query)) {
       out.push({
         id: "zeit",
         section: "Zeiterfassung",
@@ -279,7 +280,7 @@ export function CommandPalette() {
       { id: "chat-new", title: t("cmd.newChat"), icon: ic(MessageSquarePlus), run: () => (newChat(), openAssistant()) },
     ];
     // „Zeiterfassung verwenden“ off: the timesheet and project commands are hidden.
-    const timeOff = s().settings?.settings.time?.enabled === false;
+    const timeOff = !timeOn;
     const hidden = new Set(timeOff ? TIME_COMMANDS : []);
     out.push(
       ...commands
@@ -312,7 +313,7 @@ export function CommandPalette() {
     for (const h of hits) {
       if (h.kind === "note")
         out.push({ id: `note-${h.page_id}`, section: "Inhalte", title: h.title, snippet: h.snippet, icon: <PageIcon name={h.icon} size={16} />, run: (nt) => s().openPage(h.page_id, { newTab: nt }) });
-      else if (h.kind === "time_entry")
+      else if (h.kind === "time_entry" && timeOn)
         out.push({ id: `te-${h.id}`, section: "Zeiteinträge", title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) });
     }
     if (lower && !pageItems.some((p) => p.title.toLowerCase() === lower))
@@ -320,7 +321,7 @@ export function CommandPalette() {
     const tagHits = lower.startsWith("#") ? lower.slice(1) : null;
     if (tagHits) out.unshift({ id: "tag", section: "Tags", title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
-  }, [query, pages, hits, mode, timer]);
+  }, [query, pages, hits, mode, timer, timeOn]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
@@ -406,7 +407,7 @@ export function CommandPalette() {
           <span><kbd>Enter</kbd> öffnen</span>
           <span><kbd>{keys("Mod Enter")}</kbd> neuer Tab</span>
           <span className="grow" />
-          <span className="faint">/zeit buchen · ? fragen · # Tag</span>
+          <span className="faint">{timeOn ? "/zeit buchen · ? fragen · # Tag" : "? fragen · # Tag"}</span>
         </div>
       </div>
     </div>

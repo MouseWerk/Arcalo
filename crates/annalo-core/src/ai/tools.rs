@@ -95,6 +95,9 @@ pub fn definitions() -> Vec<Value> {
     ]
 }
 
+/// Tools about booking time: not offered while time tracking is off.
+pub const TIME_TOOLS: &[&str] = &["log_time", "budget_status", "time_summary"];
+
 /// The definitions of the tools in `allowed` (Settings → KI → Werkzeuge).
 pub fn definitions_allowed(allowed: &[String]) -> Vec<Value> {
     definitions().into_iter().filter(|d| allowed.iter().any(|a| d["function"]["name"] == a.as_str())).collect()

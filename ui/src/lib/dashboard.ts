@@ -4,7 +4,7 @@
 
 import { addDays, isoDay, weekStart } from "./format";
 import { t, type TKey } from "./i18n";
-import { COLS, clampRect, findFree, settle, type MinSize } from "./dashgrid";
+import { COLS, clampRect, compact, findFree, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
 import type { Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
 
@@ -100,11 +100,46 @@ export const WIDGETS: Record<WidgetKind, WidgetDef> = {
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];
 export const isKind = (k: string): k is WidgetKind => k in WIDGETS;
 
+// ------------------------------------------------------------------ time tracking off
+
+/**
+ * Widgets about booking time („Zeiterfassung verwenden“ off): not offered and not shown. They
+ * stay on their boards (hidden), so switching time tracking on brings them back in place.
+ */
+export const TIME_WIDGETS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(["week", "budget", "timer", "proposal"]);
+/** Not offered either: the project widget lives on a Netzplan (on a board it stays, without budgets). */
+const GALLERY_TIME: ReadonlySet<WidgetKind> = new Set<WidgetKind>([...TIME_WIDGETS, "project"]);
+
+/** Whether a widget of `kind` shows. */
+export const widgetShown = (kind: string, time: boolean) => time || !TIME_WIDGETS.has(kind as WidgetKind);
+
+/** The kinds the gallery offers. */
+export const galleryKinds = (time: boolean): WidgetKind[] => WIDGET_KINDS.filter((k) => time || !GALLERY_TIME.has(k));
+
+/** The widgets a board shows: without the time widgets while time tracking is off, closed up (no holes). */
+export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[] {
+  if (time) return widgets;
+  const shown = widgets.filter((w) => widgetShown(w.kind, false));
+  return shown.length === widgets.length ? widgets : compact(shown);
+}
+
+/**
+ * A layout edited while time widgets were hidden, with the hidden ones put back: the edited
+ * widgets keep their places, the hidden ones go below whatever they would hit.
+ */
+export function withHidden(all: GridWidget[], edited: GridWidget[], time: boolean): GridWidget[] {
+  if (time) return edited;
+  const hidden = all.filter((w) => !widgetShown(w.kind, false) && !edited.some((e) => e.id === w.id));
+  return hidden.length ? settle([...edited, ...hidden], edited.map((w) => w.id)) : edited;
+}
+
 export const GROUP_LABELS: Record<WidgetGroup, TKey> = { day: "dash.g.day", time: "dash.g.time", pages: "dash.g.pages", tools: "dash.g.tools" };
 
 /** The blocks of „Heute“ that can be switched off. */
 export const TODAY_BLOCKS = ["timeline", "hours", "timer", "tasks", "focus", "actions"] as const;
 export type TodayBlock = (typeof TODAY_BLOCKS)[number];
+/** Blocks of „Heute“ about booking time (hidden, and not offered, while time tracking is off). */
+export const TODAY_TIME_BLOCKS: ReadonlySet<TodayBlock> = new Set<TodayBlock>(["hours", "timer"]);
 const TODAY_BLOCKS_ON: Record<TodayBlock, boolean> = { timeline: true, hours: true, timer: true, tasks: true, focus: true, actions: true };
 
 /** A widget's settings with the kind's defaults for whatever is missing. */
@@ -201,10 +236,34 @@ const PRESET_SPECS: Record<PresetName, Spec[]> = {
   ],
 };
 
-/** The widgets of a preset, with ids not in `used`. */
-export function presetWidgets(name: PresetName, used: Iterable<string> = []): GridWidget[] {
+/** The presets without time tracking: the same ideas with tasks, meetings, pages and focus. */
+const PRESET_SPECS_NO_TIME: Record<PresetName, Spec[]> = {
+  start: [
+    ["today", 0, 0, 8, 13],
+    ["agenda", 8, 0, 4, 13, { days: 2 }],
+    ["tasks", 0, 13, 6, 7, { due: "week" }],
+    ["recent", 6, 13, 6, 7, { limit: 6 }],
+  ],
+  // „Projektleitung“ without budgets: the week's tasks and meetings, what happened, the pages.
+  lead: [
+    ["tasks", 0, 0, 6, 9, { due: "week" }],
+    ["agenda", 6, 0, 6, 9, { days: 7 }],
+    ["activity", 0, 9, 4, 8],
+    ["recent", 4, 9, 4, 8, { limit: 8 }],
+    ["review", 8, 9, 4, 8],
+  ],
+  minimal: [
+    ["clock", 0, 0, 6, 4],
+    ["focus", 6, 0, 6, 4, { week: false }],
+    ["tasks", 0, 4, 7, 7, { due: "today" }],
+    ["note", 7, 4, 5, 7],
+  ],
+};
+
+/** The widgets of a preset, with ids not in `used` (without time widgets while time tracking is off). */
+export function presetWidgets(name: PresetName, used: Iterable<string> = [], time = true): GridWidget[] {
   const taken = new Set(used);
-  return PRESET_SPECS[name].map(([kind, x, y, w, h, extra]) => {
+  return (time ? PRESET_SPECS : PRESET_SPECS_NO_TIME)[name].map(([kind, x, y, w, h, extra]) => {
     const id = newId(kind, taken);
     taken.add(id);
     return { id, kind, x, y, w, h, config: { ...WIDGETS[kind].config(), ...extra } };
@@ -212,9 +271,9 @@ export function presetWidgets(name: PresetName, used: Iterable<string> = []): Gr
 }
 
 /** The boards of a new start page: „Heute“ and „Projekte“. */
-export function defaultDashboard(): Dashboard {
-  const today = presetWidgets("start");
-  const lead = presetWidgets("lead", today.map((w) => w.id));
+export function defaultDashboard(time = true): Dashboard {
+  const today = presetWidgets("start", [], time);
+  const lead = presetWidgets("lead", today.map((w) => w.id), time);
   return {
     version: 2,
     boards: [
@@ -278,8 +337,8 @@ export function migrateLegacy(list: LegacyWidget[], note = ""): Dashboard {
  * The start page as the UI shows it: boards as saved; the old widget list moved onto a board;
  * a start page never saved gets the default boards. Unknown kinds are dropped.
  */
-export function loadDashboard(d: Dashboard | null | undefined): Dashboard {
-  if (!d || (!d.boards?.length && d.widgets == null)) return defaultDashboard();
+export function loadDashboard(d: Dashboard | null | undefined, time = true): Dashboard {
+  if (!d || (!d.boards?.length && d.widgets == null)) return defaultDashboard(time);
   if (!d.boards?.length) return migrateLegacy(d.widgets ?? [], d.note ?? "");
   const boards = d.boards.map((b) => ({ ...b, widgets: b.widgets.filter((w) => isKind(w.kind)).map((w) => clampRect(w, COLS, minOf(w))) }));
   const active = boards.some((b) => b.id === d.active) ? d.active : boards[0].id;
@@ -297,7 +356,7 @@ export type BoardAction =
   | { type: "duplicate"; id: string }
   | { type: "layout"; widgets: GridWidget[] }
   | { type: "config"; id: string; config: Record<string, unknown>; title?: string }
-  | { type: "preset"; name: PresetName };
+  | { type: "preset"; name: PresetName; time?: boolean };
 
 /** The widgets of `board` after one edit (ids stay unique across `boards`). */
 export function editBoard(board: Board, boards: Board[], a: BoardAction): Board {
@@ -323,14 +382,14 @@ export function editBoard(board: Board, boards: Board[], a: BoardAction): Board 
     case "config":
       return { ...board, widgets: board.widgets.map((w) => (w.id === a.id ? { ...w, config: a.config, title: a.title ?? w.title } : w)) };
     case "preset":
-      return { ...board, widgets: presetWidgets(a.name, used.filter((id) => !board.widgets.some((w) => w.id === id))) };
+      return { ...board, widgets: presetWidgets(a.name, used.filter((id) => !board.widgets.some((w) => w.id === id)), a.time !== false) };
   }
 }
 
 /** A new board named `name` (unique id), empty or from a preset. */
-export function newBoard(boards: Board[], name: string, preset: PresetName | null): Board {
+export function newBoard(boards: Board[], name: string, preset: PresetName | null, time = true): Board {
   const base = name.trim().toLowerCase().replace(/[^a-z0-9äöüß]+/g, "-").replace(/^-|-$/g, "") || "board";
-  return { id: newId(base, boards.map((b) => b.id)), name: name.trim() || t("dash.board.new"), widgets: preset ? presetWidgets(preset, allWidgetIds(boards)) : [] };
+  return { id: newId(base, boards.map((b) => b.id)), name: name.trim() || t("dash.board.new"), widgets: preset ? presetWidgets(preset, allWidgetIds(boards), time) : [] };
 }
 
 /** Boards with `id` moved one place left (-1) or right (1). */
@@ -470,13 +529,15 @@ export function reviewDay(today: Date, workdays: number[], lastWorkday: boolean)
 }
 
 /** The parts a widget shows (none for widgets that live on what the UI already has). */
-export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, workdays: number[] = [1, 2, 3, 4, 5]): Part[] {
+export function partsOf(w: Pick<GridWidget, "kind" | "config">, today: Date, workdays: number[] = [1, 2, 3, 4, 5], time = true): Part[] {
   const c = configOf(w);
   const monday = isoDay(weekStart(today, 1));
+  // Time tracking off: nothing is loaded for the hidden time widgets.
+  if (!widgetShown(w.kind, time)) return [];
   switch (w.kind as WidgetKind) {
     case "today": {
       const blocks = (c.blocks ?? {}) as Partial<Record<TodayBlock, boolean>>;
-      return blocks.timer === false ? [{ kind: "today" }] : [{ kind: "today" }, { kind: "timer_refs" }];
+      return blocks.timer === false || !time ? [{ kind: "today" }] : [{ kind: "today" }, { kind: "timer_refs" }];
     }
     case "agenda":
       return [{ kind: "agenda", days: Math.max(1, Math.min(31, num(c.days, 1))) }];

@@ -21,6 +21,7 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { restorePage } from "./TrashView";
 import { SourceEditor } from "../editor/SourceEditor";
 import { PAGE_COMMAND_EVENT, pageMode, setPageMode, togglePageSource, usePageMode, type PageCommand } from "../lib/pageModes";
+import { useTimeTracking } from "../lib/timetracking";
 import { ADD_PROPERTY_EVENT, PropertyEditor, WorkCard, pageReference, type FolderSchema } from "./PageProperties";
 import { CollectionView } from "./collection/CollectionView";
 import { FRONTMATTER_EVENT, registerFrontmatterOwner } from "./collection/write";
@@ -221,6 +222,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   const openTag = useCallback((tag: string) => useApp.getState().openTab({ kind: "tag", tag }, { newTab: true }), []);
   // Alt+click on a link opens it in the pane to the right.
   const altKey = useRef(false);
+  const timeOn = useTimeTracking();
   useEffect(() => {
     const track = (e: MouseEvent) => (altKey.current = e.altKey);
     window.addEventListener("mousedown", track, true);
@@ -279,7 +281,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           parentId={parentId}
           onChange={changeFm}
         />}
-        {reference && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
+        {reference && timeOn && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
         {switching ? (
           // Between the two editors while the page is fetched: typing here would be lost.
           <div className="editor-switching" aria-busy="true" />

@@ -117,7 +117,7 @@ where
     Tz::Offset: std::fmt::Display,
 {
     let zone = crate::calsync::tz::Zone::Local;
-    let opts = capture::CaptureOptions { inbox_title: capture::INBOX_TITLE, thresholds, zone: &zone };
+    let opts = capture::CaptureOptions { inbox_title: capture::INBOX_TITLE, thresholds, zone: &zone, book_time: true };
     Ok(capture::capture_to(db, text, &capture::CaptureTarget::Daily, &opts, now, tz)?.0)
 }
 
@@ -155,8 +155,9 @@ pub fn end_of_day_reminder(
     last_notified: Option<NaiveDate>,
 ) -> Option<String> {
     let at = parse_hhmm(settings.reminder_time.as_deref()?)?;
-    // Switched off, or in the quiet hours (Settings → Benachrichtigungen; retried afterwards).
-    if !settings.notifications.end_of_day || settings.notifications.is_quiet(now.time()) {
+    // Switched off (or time tracking is), or in the quiet hours (Settings → Benachrichtigungen;
+    // retried afterwards).
+    if !settings.time_tracking() || !settings.notifications.end_of_day || settings.notifications.is_quiet(now.time()) {
         return None;
     }
     let today = now.date();
@@ -403,6 +404,10 @@ mod tests {
         assert_eq!(end_of_day_reminder(at(sat, 18, 0), &s, 0, None), None);
         let off = Settings { reminder_time: None, ..Settings::default() };
         assert_eq!(end_of_day_reminder(at(wed, 18, 0), &off, 0, None), None);
+        // Time tracking off: no reminder about unbooked hours.
+        let mut no_time = Settings::default();
+        no_time.time.enabled = false;
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &no_time, 0, None), None);
         let broken = Settings { reminder_time: Some("abends".into()), ..Settings::default() };
         assert_eq!(end_of_day_reminder(at(wed, 18, 0), &broken, 0, None), None);
         let custom = Settings { reminder_time: Some("16:00".into()), daily_target_hours: 7.5, ..Settings::default() };

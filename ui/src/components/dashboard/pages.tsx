@@ -6,6 +6,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Activity as ActivityIcon, CheckSquare, Clock3, Eye, FileText, Paperclip, PenLine, Pin, Star, Target } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
+import { useTimeTracking } from "../../lib/timetracking";
 import { relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import { renderMarkdown } from "../../lib/markdown";
@@ -199,12 +200,15 @@ export function ActivityWidget({ widget }: WidgetProps) {
     const id = window.setInterval(() => refresh(["pages"]), 5 * 60_000);
     return () => window.clearInterval(id);
   }, [refresh]);
+  // Time tracking off: no bookings in the feed.
+  const timeOn = useTimeTracking();
+  const feed = (data ?? []).filter((a) => timeOn || groupOf(a.kind) !== "time");
   return (
     <Loadable loading={loading} error={error}>
       {() =>
-        data!.length ? (
+        feed.length ? (
           <ul className="dw-list dw-feed">
-            {data!.map((a) => {
+            {feed.map((a) => {
               const d = describe(a);
               const Icon = KIND_ICON[groupOf(a.kind)];
               return (

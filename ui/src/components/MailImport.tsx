@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { ChevronLeft, ChevronRight, FileUp, Inbox, Mail as MailIcon, Paperclip, Sparkles, X } from "lucide-react";
 import { on } from "../lib/api";
 import { useApp } from "../store/app";
+import { useTimeTracking } from "../lib/timetracking";
 import { Badge, Button, Dialog, Field, IconButton, Input, Segmented, Select, TextArea, type SelectOption } from "./ui";
 import { DateInput, dayLabel } from "./DateInput";
 import { fileSize } from "../lib/format";
@@ -247,6 +248,8 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
   const [noteTitle, setNoteTitle] = useState(cleanSubject(mail.subject) || mail.subject);
   const [parent, setParent] = useState(settings?.notes_parent || "E-Mails");
   const [vorgang, setVorgang] = useState("");
+  // Time tracking off: no Vorgang field (it is only there for booking later).
+  const timeOn = useTimeTracking();
   const [useTags, setUseTags] = useState(false);
   const [withInline, setWithInline] = useState(false);
   const offered = offeredAttachments(mail, withInline);
@@ -302,7 +305,7 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
       mail,
       task: withTask ? { target: taskTarget(), text: taskText.trim(), due: due || null, priority: Number(priority) } : null,
       note: withNote ? { parent: parent.trim(), title: noteTitle.trim() } : null,
-      vorgang: vorgang.trim(),
+      vorgang: timeOn ? vorgang.trim() : "",
       tags: useTags ? mail.categories : [],
       attachments: canAttach ? [...picked].sort((a, b) => a - b) : [],
     };
@@ -489,10 +492,12 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
           </fieldset>
         )}
 
-        <div className="mailx-row">
-          <Field label="Vorgang (optional)" hint="Für die spätere Buchung, z. B. NP-8801/1020">
-            <Input value={vorgang} onChange={(e) => setVorgang(e.target.value)} aria-label="Vorgang" placeholder="NP-…/…" className="mono" />
-          </Field>
+        {(timeOn || mail.categories.length > 0) && <div className="mailx-row">
+          {timeOn && (
+            <Field label="Vorgang (optional)" hint="Für die spätere Buchung, z. B. NP-8801/1020">
+              <Input value={vorgang} onChange={(e) => setVorgang(e.target.value)} aria-label="Vorgang" placeholder="NP-…/…" className="mono" />
+            </Field>
+          )}
           {mail.categories.length > 0 && (
             <Field label="Outlook-Kategorien">
               <label className="mailx-check">
@@ -501,7 +506,7 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
               </label>
             </Field>
           )}
-        </div>
+        </div>}
       </div>
 
       <div className="mailx-foot">

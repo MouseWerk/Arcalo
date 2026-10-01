@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
 import { useApp } from "../../store/app";
+import { useTimeTracking } from "../../lib/timetracking";
 import { fmtDate, h1, isoDay, relative, weekStart } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import { configOf, weekBars } from "../../lib/dashboard";
@@ -219,6 +220,7 @@ export function SuggestionsWidget({ widget }: WidgetProps) {
   const { data, error, loading } = useWidgetData<SuggestionData>(widget);
   const settings = useApp((st) => st.settings?.settings);
   const [asked, setAsked] = useState<string | null>(null);
+  const timeOn = useTimeTracking();
   const c = configOf(widget);
   return (
     <Loadable loading={loading} error={error}>
@@ -242,6 +244,7 @@ export function SuggestionsWidget({ widget }: WidgetProps) {
           gapDays: week.bars.filter((b) => b.gap > 0).map((b) => b.label),
           budget: d.worst_budget,
           hasBookings: week.bookedMinutes > 0,
+          time: timeOn,
         });
         const ask = (text: string) => {
           setAsked(text);

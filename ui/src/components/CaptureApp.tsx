@@ -56,6 +56,7 @@ import { lacksReference, referenceOffset, zeitToken, type ZeitToken } from "../e
 import { ZeitConfirm, type ZeitChoice } from "../editor/ZeitConfirm";
 import type { CaptureContext, CapturePrefs, Page, PageNode, ZeitGuess } from "../lib/types";
 import { resetZeitCache, zeitLaItems, zeitRefItems } from "../editor/zeit-source";
+import { timeTrackingOn } from "../lib/timetracking";
 import type { ZeitSuggestItem } from "../editor/extensions";
 import { PageIcon } from "./icons";
 
@@ -126,6 +127,8 @@ export function CaptureApp() {
   const [target, setTarget] = useState<TargetChoice>(draft?.target ?? DAILY);
   const [last, setLast] = useState<TargetChoice | null>(null);
   const [prefs, setPrefs] = useState<CapturePrefs>(DEFAULT_PREFS);
+  // „Zeiterfassung verwenden“: off, `/zeit` lines are text (no suggestions, no booking).
+  const [timeOn, setTimeOn] = useState(true);
   const [ctx, setCtx] = useState<CaptureContext | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [recentIds, setRecentIds] = useState<number[]>([]);
@@ -196,6 +199,7 @@ export function CaptureApp() {
         applyTheme(v.settings.theme, v.settings.appearance);
         const p = { ...DEFAULT_PREFS, ...(v.settings.capture ?? {}) };
         setPrefs(p);
+        setTimeOn(timeTrackingOn(v.settings));
         return p;
       })
       .catch(() => live.current.prefs);
@@ -294,7 +298,7 @@ export function CaptureApp() {
     const before = value.slice(0, caret);
     const id = ++req.current;
     const line = before.slice(before.lastIndexOf("\n") + 1);
-    const token = before.includes("\n") ? null : zeitToken(before);
+    const token = before.includes("\n") || !timeOn ? null : zeitToken(before);
     if (token) {
       (token.kind === "ref" ? zeitRefItems(token.query) : zeitLaItems(token.query))
         .then((items) => id === req.current && setSugg(items.length ? { kind: "zeit", from: token.from, token, items } : null))
@@ -308,7 +312,7 @@ export function CaptureApp() {
       if (wiki.query.trim() && !exact) items.push({ id: "create", title: `„${wiki.query.trim()}“ neu verlinken`, subtitle: "Seite wird beim Öffnen angelegt", icon: <FilePlus2 size={15} /> });
       return setSugg(items.length ? { kind: "wiki", from: before.length - line.length + wiki.from, items } : null);
     }
-    const tag = captureKind(line) === "zeit" ? null : tagToken(line);
+    const tag = captureKind(line) === "zeit" && timeOn ? null : tagToken(line);
     if (tag) {
       const show = (all: [string, number][]) => {
         if (id !== req.current) return;
@@ -442,7 +446,7 @@ export function CaptureApp() {
   const submit = async (value = text, confirmed = false): Promise<string | null> => {
     if (!value.trim() || busy) return null;
     const single = value.trim();
-    if (!confirmed && !single.includes("\n") && lacksReference(single)) {
+    if (!confirmed && timeOn && !single.includes("\n") && lacksReference(single)) {
       await askAi(single);
       return null;
     }
@@ -619,13 +623,16 @@ export function CaptureApp() {
 
   // ------------------------------------------------------------------ view
 
-  const kind = captureKind(text.split("\n").find((l) => l.trim()) ?? "");
+  const firstKind = captureKind(text.split("\n").find((l) => l.trim()) ?? "");
+  // Time tracking off: a `/zeit` line is stored as a note; the hint says so.
+  const zeitAsText = !timeOn && /^\s*\/(zeit|time)\b/im.test(text);
+  const kind = firstKind === "zeit" && !timeOn ? "note" : firstKind;
   const Icon = picker ? Search : ICONS[kind];
   const lines = text.split("\n").filter((l) => l.trim()).length;
   const where = targetPhrase(target);
   const daily = target.target.kind === "daily";
   // Only name /zeit when a line books time.
-  const multi = /^\s*\/zeit\b/m.test(text)
+  const multi = timeOn && /^\s*\/zeit\b/m.test(text)
     ? `/zeit bucht, der Rest ${daily ? "geht in die Tagesnotiz" : `wird ${where} gespeichert`}`
     : `sie ${daily ? "gehen in die Tagesnotiz" : `werden ${where} gespeichert`}`;
   const hint = !text.trim()
@@ -633,6 +640,7 @@ export function CaptureApp() {
     : lines > 1
       ? `Enter erfasst ${lines} Zeilen${multi.startsWith("/") ? ": " : ", "}${multi} · Esc schließt`
       : `${captureHint(kind, where)} · Esc schließt`;
+  const hintOff = zeitAsText ? `${hint} · Zeiterfassung ist aus: /zeit wird als Text gespeichert` : hint;
   const due = picker ? null : firstDue(text);
   const embeds = [...text.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1]);
   /** Daily notes read „Tagesnotiz 25.09.2026“ instead of their title. */
@@ -666,7 +674,7 @@ export function CaptureApp() {
       </>
     );
   else if (notice) status = notice;
-  else status = picker ? "Enter wählt · " + `${MOD}+Enter legt eine neue Seite an · Esc zurück` : hint;
+  else status = picker ? "Enter wählt · " + `${MOD}+Enter legt eine neue Seite an · Esc zurück` : hintOff;
 
   return (
     <div className="capture" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
@@ -727,7 +735,7 @@ export function CaptureApp() {
               className="capture-input"
               rows={1}
               value={text}
-              placeholder="Notiz, todo … bis Fr, [[Seite]], #tag oder /zeit NP-8801/1020 1h"
+              placeholder={timeOn ? "Notiz, todo … bis Fr, [[Seite]], #tag oder /zeit NP-8801/1020 1h" : "Notiz, todo … bis Fr, [[Seite]] oder #tag"}
               aria-label="Schnellerfassung"
               aria-autocomplete="list"
               aria-expanded={!!sugg}

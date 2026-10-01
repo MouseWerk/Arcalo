@@ -10,6 +10,7 @@ import { Button, Dialog, IconButton } from "./ui";
 import { clock, h1, usd } from "../lib/format";
 import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
+import { useTimeTracking } from "../lib/timetracking";
 import { Onboarding } from "./Onboarding";
 import { UpdateToast } from "./Updates";
 import { Dashboard } from "./Dashboard";
@@ -90,6 +91,7 @@ export function StatusBar() {
   const meter = useApp((s) => s.meter);
   const settings = useApp((s) => s.settings);
   const seconds = useTimerSeconds();
+  const timeOn = useTimeTracking();
   const s = useApp.getState;
   const configured = !!settings && usableProvider(settings);
   const onPage = useApp((st) => st.tabs.find((t) => t.id === st.activeTabId)?.kind === "page");
@@ -98,7 +100,7 @@ export function StatusBar() {
   const focusMode = useApp((st) => st.focusMode);
   return (
     <footer className="statusbar">
-      {timer ? (
+      {!timeOn ? null : timer ? (
         <button type="button" className="sb-item sb-timer" onClick={() => stopTimer()} title={t("status.stopTimer")}>
           <span className="rec-dot" aria-hidden />
           <span className="num">{clock(seconds)}</span>

@@ -110,6 +110,12 @@ Type `/zeit NP-8801/1020 2.5h #DEV Systemintegration` in any note. Netzplan, Vor
 with the remaining plan hours shown. A page linked to a Vorgang shows a work card with budget, ETC and a timer. The
 weekly timesheet exports to SAP CATS, Jira, CSV or JSON.
 
+Time tracking is optional. If you do not book time, switch off „Zeiterfassung verwenden“ (in the first-run setup or
+under Settings → Zeiterfassung): the timesheet, projects, timer, `/zeit`, budgets, the week proposal, the booking parts
+of the Kalender, start page and Tagesrückblick, the assistant's time tools and every reminder about bookings disappear,
+and nothing runs in the background for them. Annalo is then a notes, calendar and AI app. Booked time stays in the
+workspace and is back as soon as you switch it on again.
+
 <p align="center">
   <img src="docs/screenshots/zeit-suggest.png" width="49%" alt="/zeit autocomplete">
   <img src="docs/screenshots/page-work-card.png" width="49%" alt="Work card on a page linked to a Vorgang">

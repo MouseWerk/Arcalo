@@ -298,6 +298,8 @@ export const useApp = create<State>((set, get) => ({
   refreshConflicts: async () => set({ conflicts: await api.gitConflicts().catch(() => get().conflicts) }),
 
   openTab: (loc, opts) => {
+    // „Zeiterfassung verwenden“ off: the timesheet and projects do not open (lib/timetracking.ts).
+    if ((loc.kind === "timesheet" || loc.kind === "projects") && get().settings?.settings.time?.enabled === false) return;
     const { panes, activePaneId, paneSizes } = get();
     // Already open somewhere? Focus it (unless a split was requested).
     if (!opts?.split) {
@@ -486,6 +488,8 @@ export const useApp = create<State>((set, get) => ({
   alerts: (alerts) => {
     // Settings → Benachrichtigungen.
     if (get().settings?.settings.notifications?.budget === false) return;
+    // No budget warnings while time tracking is off.
+    if (get().settings?.settings.time?.enabled === false) return;
     // Focus session: budget alerts wait for its end like other messages.
     const hold = get().focus?.phase === "work";
     for (const a of alerts) {

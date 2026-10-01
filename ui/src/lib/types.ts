@@ -1287,6 +1287,8 @@ export interface DayReview {
   meetings: ReviewMeeting[];
   focus: { minutes: number; sessions: ReviewFocusSession[] };
   files: ReviewFile[];
+  /** Time tracking is off: no time section, gaps or booking states (meetings over are `done`). */
+  without_time?: boolean;
 }
 export interface ReviewPage {
   page_id: number | null;
@@ -1349,7 +1351,7 @@ export interface ReviewTask {
   due: string | null;
   done: boolean;
 }
-export type MeetingState = "booked" | "skipped" | "open" | "upcoming" | "free";
+export type MeetingState = "booked" | "skipped" | "open" | "upcoming" | "free" | "done";
 export interface ReviewMeeting {
   key: string;
   source: string;

@@ -1332,7 +1332,13 @@ pub fn week_reminder(
     last_week: Option<&str>,
 ) -> Option<String> {
     let n = &settings.notifications;
-    if !n.week_proposal || n.is_quiet(now.time()) || open.is_empty() || now.time() < REMINDER_FROM {
+    // Time tracking off: no week proposal, so no reminder either.
+    if !settings.time_tracking()
+        || !n.week_proposal
+        || n.is_quiet(now.time())
+        || open.is_empty()
+        || now.time() < REMINDER_FROM
+    {
         return None;
     }
     let today = now.date();

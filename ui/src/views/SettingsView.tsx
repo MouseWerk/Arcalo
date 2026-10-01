@@ -24,6 +24,7 @@ import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusN
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
 import { LocaleSection, NotesPrefGroups, NotificationsSection, PrivacySection, StartSection, TimePrefGroups } from "./settings/PrefSections";
+import { timeTrackingOn } from "../lib/timetracking";
 import { AiPrefGroups } from "./settings/AiPrefGroups";
 import { AiProvidersSection } from "./settings/AiProvidersSection";
 import { KeyboardSection } from "./settings/KeyboardSection";
@@ -204,10 +205,11 @@ export function SettingsView() {
           </>
         );
       case "time":
+        // „Zeiterfassung verwenden“ saves at once (every window follows); off, only the switch shows.
         return (
           <>
-            <TimeSection draft={draft} update={u} />
-            <TimePrefGroups draft={draft} update={u} />
+            <TimeSection draft={draft} update={u} setEnabled={(v) => instant({ time: { ...draft.time, enabled: v } })} />
+            {timeTrackingOn(draft) && <TimePrefGroups draft={draft} update={u} />}
           </>
         );
       case "ai":
@@ -388,8 +390,9 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
 
 // ------------------------------------------------------------------ time
 
-function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
+function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (p: Partial<Settings>) => void; setEnabled: (on: boolean) => void }) {
   const t = useT();
+  const on = timeTrackingOn(draft);
   const [las, setLas] = useState<[string, string][]>([]);
   const [newLa, setNewLa] = useState({ code: "", desc: "" });
   const [mapKey, setMapKey] = useState("");
@@ -400,18 +403,25 @@ function TimeSection({ draft, update }: { draft: Settings; update: (p: Partial<S
     reload();
   }, []);
   const pct = (x: number) => Math.round(x * 100);
-
-  return (
+  const head = (
     <>
       <header className="settings-head">
         <h1>{t("set.time.title")}</h1>
-        <p>Leerlauferkennung, Budgetwarnungen und Angaben für SAP- und Jira-Exporte.</p>
+        <p>{on ? "Leerlauferkennung, Budgetwarnungen und Angaben für SAP- und Jira-Exporte." : t("tt.setIntroOff")}</p>
       </header>
       <Group title={t("set.time.use")}>
-        <Row label={t("set.time.useLabel")} description={t("set.time.useDesc")}>
-          <Switch label={t("set.time.useLabel")} checked={draft.time.enabled !== false} onChange={(v) => update({ time: { ...draft.time, enabled: v } })} />
+        <Row label={t("set.time.useLabel")} description={t(on ? "set.time.useDesc" : "tt.setUseDescOff")}>
+          <Switch label={t("set.time.useLabel")} checked={on} onChange={setEnabled} />
         </Row>
       </Group>
+    </>
+  );
+  // Off: just the switch; the settings below stay stored for when it is switched on again.
+  if (!on) return head;
+
+  return (
+    <>
+      {head}
       <Group title={t("set.time.timer")}>
         <Row label={t("set.time.idle")} description="Pausen ohne Tastatur- oder Mauseingabe, die länger dauern, werden beim Stoppen zum Abziehen angeboten.">
           <div className="unit-input">
@@ -1011,6 +1021,7 @@ const desk = IS_MAC
     };
 
 function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
+  const t = useT();
   const [info, setInfo] = useState<DesktopInfo | null>(null);
   const s = useApp.getState;
   const view = useApp((st) => st.settings);
@@ -1076,7 +1087,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           />
         </Row>
       </Group>
-      <Group title="Schnellsuche" description="Ein Suchfenster über allen Programmen: Seiten, Inhalte und Buchungen finden, Tagesnotiz öffnen, Timer starten oder „/zeit …“ buchen. Auch über „Suchen…“ im Infobereich.">
+      <Group title="Schnellsuche" description={timeTrackingOn(draft) ? "Ein Suchfenster über allen Programmen: Seiten, Inhalte und Buchungen finden, Tagesnotiz öffnen, Timer starten oder „/zeit …“ buchen. Auch über „Suchen…“ im Infobereich." : t("tt.searchDesc")}>
         <Row
           label="Tastenkürzel (global)"
           description="Ins Feld klicken und die Tasten drücken, z. B. Ctrl+Shift+O. Ctrl+Shift+F bleibt die Suche in der Seitenleiste. Entf = aus."
@@ -1090,7 +1101,7 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
           />
         </Row>
       </Group>
-      <Group title="Feierabend-Erinnerung" description="Hinweis an Arbeitstagen, wenn weniger als das Tagessoll gebucht ist. Ein Klick darauf öffnet die Zeiterfassung. Läuft nach 20 Uhr noch ein Timer, erinnert Annalo einmal daran.">
+      {timeTrackingOn(draft) && <Group title="Feierabend-Erinnerung" description="Hinweis an Arbeitstagen, wenn weniger als das Tagessoll gebucht ist. Ein Klick darauf öffnet die Zeiterfassung. Läuft nach 20 Uhr noch ein Timer, erinnert Annalo einmal daran.">
         <Row label="Erinnern um">
           <div className="unit-input">
             {reminderOn && (
@@ -1109,10 +1120,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
             <Switch label="Feierabend-Erinnerung" checked={reminderOn} onChange={(v) => update({ reminder_time: v ? "17:30" : null })} />
           </div>
         </Row>
-      </Group>
+      </Group>}
       <Group
         title="Schnellerfassung"
-        description="Ein kleines Fenster über allen anderen: Text landet in der Tagesnotiz, im Posteingang, in einer Seite (> am Anfang) oder in der Notiz der laufenden Besprechung. „todo … bis Fr“ wird eine Aufgabe mit Termin, „/zeit …“ wird gebucht. Tab wechselt das Ziel."
+        description={timeTrackingOn(draft) ? "Ein kleines Fenster über allen anderen: Text landet in der Tagesnotiz, im Posteingang, in einer Seite (> am Anfang) oder in der Notiz der laufenden Besprechung. „todo … bis Fr“ wird eine Aufgabe mit Termin, „/zeit …“ wird gebucht. Tab wechselt das Ziel." : t("tt.captureDesc")}
       >
         <Row
           label="Tastenkürzel (global)"

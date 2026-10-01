@@ -36,7 +36,9 @@ pub fn week_proposal(
 /// Books the accepted proposals as drafts (one transaction) and links their sources.
 #[tauri::command(async)]
 pub fn week_proposal_apply(app: AppHandle, state: State<AppState>, items: Vec<Accepted>) -> Result<Applied> {
-    let thresholds = state.settings().thresholds;
+    let settings = state.settings();
+    settings.require_time_tracking()?;
+    let thresholds = settings.thresholds;
     let out = core::apply(&state.db(), &items, Utc::now(), &thresholds)?;
     let _ = app.emit("data://entries", ());
     Ok(out)
@@ -47,7 +49,8 @@ pub fn week_proposal_apply(app: AppHandle, state: State<AppState>, items: Vec<Ac
 pub fn periodic(app: &AppHandle) {
     let state = app.state::<AppState>();
     let settings = state.settings();
-    if !settings.notifications.week_proposal {
+    // Time tracking off: the scheduler does nothing (no database work either).
+    if !settings.time_tracking() || !settings.notifications.week_proposal {
         return;
     }
     let now = Local::now().naive_local();

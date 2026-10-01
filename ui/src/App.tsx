@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, on } from "./lib/api";
 import { requestWeekProposal } from "./lib/weekplan";
+import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { Sidebar, stopTimer } from "./components/Sidebar";
@@ -115,7 +116,7 @@ export function App() {
       on("app://quit-requested", async () => {
         if (await flushBeforeExit()) await api.quit().catch((e) => useApp.getState().error("Beenden fehlgeschlagen", e));
       }),
-      on("tray://timer-stop", () => stopTimer()),
+      on("tray://timer-stop", () => void (timeTrackingEnabled() && stopTimer())),
       // macOS app menu (its key equivalents ⌘, ⌘\ ⌘. never reach the keydown handler below).
       on<string>("menu://action", (action) => {
         const st = useApp.getState();
@@ -131,6 +132,7 @@ export function App() {
       on("nav://timesheet", () => useApp.getState().openTab({ kind: "timesheet" })),
       // Came back after the „Woche vorschlagen“ reminder.
       on("nav://week-proposal", () => {
+        if (!timeTrackingEnabled()) return;
         useApp.getState().openTab({ kind: "timesheet" });
         requestWeekProposal();
       }),
@@ -143,7 +145,7 @@ export function App() {
           if (!st.pages.has(t.page_id)) await st.refreshTree();
           st.openPage(t.page_id, { newTab: !!t.new_tab });
         } else if (t.kind === "timesheet") st.openTab({ kind: "timesheet" });
-        else if (t.kind === "timer_stop") {
+        else if (t.kind === "timer_stop" && timeTrackingEnabled()) {
           await st.refreshTimer();
           stopTimer();
         }
@@ -192,6 +194,8 @@ export function App() {
       const id = commandFor(e, currentKeymap());
       const command = id ? COMMAND_RUNNERS[id] : undefined;
       if (!command) return;
+      // „Zeiterfassung verwenden“ off: the timer shortcut does nothing (and the key stays free).
+      if (TIME_SHORTCUTS.has(id!) && !timeTrackingEnabled()) return;
       // Back/forward never while typing: there the keys move the caret (word jumps on macOS).
       if (!commandAllowed(id!, document.activeElement)) return;
       // The editor takes Ctrl+J on a selection (inline AI) and marks the event handled.

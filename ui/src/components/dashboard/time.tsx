@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { CalendarCheck, FolderKanban, Gauge, WandSparkles } from "lucide-react";
 import { useApp } from "../../store/app";
+import { useTimeTracking } from "../../lib/timetracking";
 import { fmtDate, h1, isoDay, weekStart } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { hoursLabel } from "../../lib/calendar";
@@ -203,6 +204,8 @@ export function ProjectWidget({ widget, openSettings }: WidgetProps) {
   const { data, error, loading } = useWidgetData<ProjectData>(widget);
   const { refresh } = useDash();
   const today = isoDay(new Date());
+  // Time tracking off: the project's notes, tasks and meetings, without budgets.
+  const timeOn = useTimeTracking();
   return (
     <Loadable loading={loading} error={error}>
       {() => {
@@ -214,8 +217,8 @@ export function ProjectWidget({ widget, openSettings }: WidgetProps) {
             </Empty>
           );
         const p = { ...data, events: visibleEvents(data.events, hidden) };
-        const total = p.budget[0];
-        const vorgaenge = p.budget.slice(1).sort(byRisk).slice(0, 3);
+        const total = timeOn ? p.budget[0] : undefined;
+        const vorgaenge = timeOn ? p.budget.slice(1).sort(byRisk).slice(0, 3) : [];
         return (
           <div className="dw-project">
             <div className="dw-project-head">

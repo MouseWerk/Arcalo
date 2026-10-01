@@ -9,6 +9,7 @@ import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
+import { useTimeTracking } from "../lib/timetracking";
 import { clock, fmtMinutes, longTimerHours } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
 import { COLLAPSED_EVENT, readCollapsed, writeCollapsed } from "../lib/collapsed";
@@ -128,6 +129,7 @@ function SidebarFooter() {
   const t = useT();
   const s = useApp.getState;
   const pages = useApp((st) => st.pages);
+  const timeOn = useTimeTracking();
   const [trashed, setTrashed] = useState(0);
   // The tree reloads after every delete/restore, so its identity is a good refresh signal.
   useEffect(() => {
@@ -135,11 +137,15 @@ function SidebarFooter() {
   }, [pages]);
   return (
     <div className="sidebar-foot">
-      <button type="button" className="side-foot-btn" onClick={() => s().openTab({ kind: "timesheet" })} title={t("sidebar.openTimesheet")}>
-        <Timer size={14} strokeWidth={1.75} />
-        <span>{t("sidebar.today")}</span>
-        <TodayHours />
-      </button>
+      {timeOn ? (
+        <button type="button" className="side-foot-btn" onClick={() => s().openTab({ kind: "timesheet" })} title={t("sidebar.openTimesheet")}>
+          <Timer size={14} strokeWidth={1.75} />
+          <span>{t("sidebar.today")}</span>
+          <TodayHours />
+        </button>
+      ) : (
+        <span style={{ flex: 1 }} />
+      )}
       <IconButton
         icon={Trash2}
         label={trashed ? `${t("sidebar.trash")} (${trashed})` : t("sidebar.trash")}
@@ -182,7 +188,8 @@ function SearchPane() {
     if (h.kind === "note") e.snippets.push(h.snippet);
     byPage.set(h.page_id, e);
   }
-  const entries = (hits ?? []).filter((h) => h.kind === "time_entry") as Extract<SearchHit, { kind: "time_entry" }>[];
+  const timeOn = useTimeTracking();
+  const entries = (timeOn ? (hits ?? []) : []).filter((h) => h.kind === "time_entry") as Extract<SearchHit, { kind: "time_entry" }>[];
   return (
     <div className="side-pane">
       <div className="side-search">
@@ -817,7 +824,9 @@ function TimerDock() {
   const t = useT();
   const timer = useApp((s) => s.timer);
   const seconds = useTimerSeconds();
-  if (!timer) return null;
+  // A timer left running stays in the data, but is not shown while time tracking is off.
+  const timeOn = useTimeTracking();
+  if (!timer || !timeOn) return null;
   const e = timer.entry;
   return (
     <div className="timer-dock" role="status">

@@ -8,6 +8,7 @@ import { api, on } from "../../lib/api";
 import { isoDay } from "../../lib/format";
 import { partKey, partsOf, partTopics, type DataTopic, type Part } from "../../lib/dashboard";
 import { useApp } from "../../store/app";
+import { useTimeTracking } from "../../lib/timetracking";
 import type { GridWidget } from "../../lib/types";
 
 export interface Entry {
@@ -58,6 +59,7 @@ function useToday(): Date {
 export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; seen: Set<string>; children: ReactNode }) {
   const today = useToday();
   const workdays = useApp((s) => s.settings?.settings.workdays);
+  const timeOn = useTimeTracking();
   const [store, setStore] = useState<Map<string, Entry>>(() => new Map());
   const storeRef = useRef(store);
   storeRef.current = store;
@@ -70,10 +72,10 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     const m = new Map<string, Part>();
     for (const w of widgets) {
       if (!seen.has(w.id)) continue;
-      for (const p of partsOf(w, today, workdays ?? [1, 2, 3, 4, 5])) m.set(partKey(p), p);
+      for (const p of partsOf(w, today, workdays ?? [1, 2, 3, 4, 5], timeOn)) m.set(partKey(p), p);
     }
     return m;
-  }, [widgets, seen, today, workdays]);
+  }, [widgets, seen, today, workdays, timeOn]);
   const wantedRef = useRef(wanted);
   wantedRef.current = wanted;
   const [tick, setTick] = useState(0);
@@ -211,7 +213,8 @@ export const useDash = () => useContext(DataContext);
 export function useWidgetData<T>(w: Pick<GridWidget, "kind" | "config">, index = 0): { data: T | undefined; error: string | undefined; loading: boolean } {
   const { entry, today } = useDash();
   const workdays = useApp((s) => s.settings?.settings.workdays);
-  const part = partsOf(w, today, workdays ?? [1, 2, 3, 4, 5])[index];
+  const timeOn = useTimeTracking();
+  const part = partsOf(w, today, workdays ?? [1, 2, 3, 4, 5], timeOn)[index];
   const e = part ? entry(partKey(part)) : undefined;
   return { data: e?.data as T | undefined, error: e?.error, loading: !!part && !e };
 }

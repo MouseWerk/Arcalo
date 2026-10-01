@@ -31,6 +31,8 @@ export interface QsContext {
   timerRunning: boolean;
   /** `NP-8801/1020` of the last booking, shown on „Timer starten“. */
   lastRef?: string | null;
+  /** „Zeiterfassung verwenden“ (default on): off, no timer, timesheet, `/zeit` or time entries. */
+  time?: boolean;
 }
 
 /** The last query is kept when the window comes back within this time. */
@@ -51,6 +53,7 @@ function actions(q: string, ctx: QsContext): QsItem[] {
   const all = !q;
   if (all || matches(q, ["tagesnotiz", "heute", "journal", "daily"]))
     out.push({ id: "daily", section: "Aktionen", title: "Tagesnotiz", subtitle: "Heutige Tagesnotiz öffnen", action: { type: "daily" } });
+  if (ctx.time === false) return out;
   if (ctx.timerRunning) {
     if (all || matches(q, ["timer", "stoppen", "stop"]))
       out.push({ id: "timer", section: "Aktionen", title: "Timer stoppen", subtitle: "Im Hauptfenster buchen", action: { type: "timer_stop" } });
@@ -65,7 +68,8 @@ function actions(q: string, ctx: QsContext): QsItem[] {
 /** Items for `query`, in display order. */
 export function quickItems(query: string, ctx: QsContext): QsItem[] {
   const q = query.trim();
-  if (isZeit(q)) {
+  const time = ctx.time !== false;
+  if (time && isZeit(q)) {
     const rest = q.replace(/^\/(zeit|time)\s*/i, "");
     return [{ id: "zeit", section: "Zeiterfassung", title: `Buchen: ${rest || "…"}`, subtitle: "Netzplan/Vorgang Dauer #Leistungsart Beschreibung", action: { type: "zeit", line: q } }];
   }
@@ -87,7 +91,7 @@ export function quickItems(query: string, ctx: QsContext): QsItem[] {
       const it: QsItem = { id: `page-${h.page_id}`, section: h.kind === "page" ? "Seiten" : "Inhalte", title: h.title, icon: h.icon, snippet: h.kind === "note" ? h.snippet : undefined, action: { type: "page", pageId: h.page_id } };
       byPage.set(h.page_id, it);
       (h.kind === "page" ? pages : passages).push(it);
-    } else {
+    } else if (time) {
       entries.push({ id: `te-${h.id}`, section: "Zeiteinträge", title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, action: { type: "timesheet" } });
     }
   }

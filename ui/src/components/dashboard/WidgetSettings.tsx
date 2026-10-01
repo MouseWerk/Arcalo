@@ -7,7 +7,8 @@ import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { isoDay } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
-import { configOf, isKind, titleOf, TODAY_BLOCKS, WIDGETS, type TodayBlock } from "../../lib/dashboard";
+import { configOf, isKind, titleOf, TODAY_BLOCKS, TODAY_TIME_BLOCKS, WIDGETS, type TodayBlock } from "../../lib/dashboard";
+import { timeTrackingEnabled } from "../../lib/timetracking";
 import { applyLine, DISPLAYS, emptyQuery, FIELDS, GROUPS, normalizeQuery, parseQueryLine, queryLine, SOURCES, type QueryDisplay, type QuerySource, type WidgetQuery } from "../../lib/dashquery";
 import { normalizeLinks, isGroup } from "../../lib/quicklinks";
 import { sourceColor, sourceName } from "../../lib/agenda";
@@ -121,7 +122,7 @@ function QueryBuilder({ c, set }: { c: Config; set: (patch: Config) => void }) {
         <Segmented
           label={t("dash.q.source")}
           value={q.source}
-          options={SOURCES.map((x) => ({ value: x.value, label: t(x.label) }))}
+          options={SOURCES.filter((x) => x.value !== "entries" || q.source === "entries" || timeTrackingEnabled()).map((x) => ({ value: x.value, label: t(x.label) }))}
           onChange={(v: QuerySource) => {
             const base = emptyQuery(v);
             const next = applyLine({ ...base, limit: q.limit }, line);
@@ -229,7 +230,7 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
       return (
         <Row label={t("dash.set.blocks")}>
           <div className="dws-checks">
-            {TODAY_BLOCKS.map((b) => (
+            {TODAY_BLOCKS.filter((b) => timeTrackingEnabled() || !TODAY_TIME_BLOCKS.has(b)).map((b) => (
               <label key={b} className="dws-check">
                 <input type="checkbox" checked={blocks[b] !== false} onChange={(e) => set({ blocks: { ...blocks, [b]: e.target.checked } })} />
                 <span>{t(`dash.block.${b}` as TKey)}</span>

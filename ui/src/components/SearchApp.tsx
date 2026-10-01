@@ -8,6 +8,7 @@ import { api, errorText, on } from "../lib/api";
 import { applyTheme } from "../lib/actions";
 import { hoursFromMinutes } from "../lib/format";
 import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem } from "../lib/quicksearch";
+import { timeTrackingOn } from "../lib/timetracking";
 import type { Page, SearchHit } from "../lib/types";
 import { PageIcon } from "./icons";
 import { keys } from "../lib/shortcut";
@@ -38,6 +39,8 @@ export function SearchApp() {
   const [recent, setRecent] = useState<Page[]>([]);
   const [timerRunning, setTimerRunning] = useState(false);
   const [lastRef, setLastRef] = useState<string | null>(null);
+  // „Zeiterfassung verwenden“: off, no timer, timesheet or /zeit here.
+  const [timeOn, setTimeOn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -52,6 +55,7 @@ export function SearchApp() {
       .then((v) => applyTheme(v.settings.theme, v.settings.appearance))
       .catch(() => {});
     const refresh = () => {
+      api.settings().then((v) => setTimeOn(timeTrackingOn(v.settings)), () => {});
       api.recentPages(6).then(setRecent, () => {});
       api.timerStatus().then((t) => setTimerRunning(!!t), () => {});
       lastReference().then(setLastRef, () => {});
@@ -91,7 +95,7 @@ export function SearchApp() {
   const [searching, setSearching] = useState(false);
   const [enterQueued, setEnterQueued] = useState<{ newTab: boolean } | null>(null);
   useEffect(() => {
-    if (query.length < 2 || isZeit(query)) {
+    if (query.length < 2 || (timeOn && isZeit(query))) {
       setHits([]);
       setSearching(false);
       return;
@@ -108,9 +112,9 @@ export function SearchApp() {
       alive = false;
       clearTimeout(t);
     };
-  }, [query]);
+  }, [query, timeOn]);
 
-  const items = useMemo(() => quickItems(query, { hits, recent, timerRunning, lastRef }), [query, hits, recent, timerRunning, lastRef]);
+  const items = useMemo(() => quickItems(query, { hits, recent, timerRunning, lastRef, time: timeOn }), [query, hits, recent, timerRunning, lastRef, timeOn]);
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
     list.current?.querySelector(".pal-item.sel")?.scrollIntoView({ block: "nearest" });
@@ -181,7 +185,7 @@ export function SearchApp() {
           <input
             ref={input}
             value={q}
-            placeholder="Seiten, Inhalte, Buchungen – oder /zeit …"
+            placeholder={timeOn ? "Seiten, Inhalte, Buchungen – oder /zeit …" : "Seiten und Inhalte"}
             aria-label="Schnellsuche"
             aria-controls="qs-list"
             spellCheck={false}
@@ -250,7 +254,7 @@ export function SearchApp() {
               <span><kbd>Enter</kbd> öffnen</span>
               <span><kbd>{keys("Mod Enter")}</kbd> neuer Tab</span>
               <span className="grow" />
-              <span className="faint">/zeit bucht</span>
+              {timeOn && <span className="faint">/zeit bucht</span>}
             </>
           )}
         </div>

@@ -22,6 +22,7 @@ export const MEETING_LABEL: Record<MeetingState, string> = {
   skipped: "nicht buchen",
   upcoming: "steht an",
   free: "frei",
+  done: "vorbei",
 };
 
 /** The day before or after `iso` (YYYY-MM-DD). */
@@ -53,7 +54,8 @@ function pageRef(title: string, gone: boolean): string {
 
 function meetingLine(m: ReviewMeeting): string {
   const when = m.all_day ? "ganztägig" : time(m.start);
-  return `${inline(m.title) || "Termin"} ${when} (${MEETING_LABEL[m.state]})`;
+  // Time tracking off: a meeting that is over needs no state.
+  return `${inline(m.title) || "Termin"} ${when}${m.state === "done" ? "" : ` (${MEETING_LABEL[m.state]})`}`;
 }
 
 const taskTexts = (tasks: ReviewTask[], max = 5) => {
@@ -80,15 +82,18 @@ export function cleanSummary(text: string): string {
 export function reviewMarkdown(r: DayReview, summary?: string | null): string {
   const out: string[] = [REVIEW_OPEN, "", REVIEW_HEADING, ""];
   const t = r.time;
-  let zeit = `**Zeit:** ${hours(t.booked_minutes)} gebucht`;
-  if (t.target_minutes > 0) zeit = `**Zeit:** ${hours(t.booked_minutes)} von ${hours(t.target_minutes)} gebucht${t.missing_minutes > 0 ? `, ${hours(t.missing_minutes)} fehlen` : ""}`;
-  if (t.running_minutes > 0) zeit += `, Timer läuft (${hm(t.running_minutes)})`;
-  out.push(zeit, "");
-  if (t.items.length) {
-    for (const w of t.items) out.push(`- ${w.label}${w.title ? ` ${inline(w.title)}` : ""}: ${hours(w.minutes)}`);
-    out.push("");
+  // Time tracking off: no „Zeit“ line, WBS or gaps.
+  if (!r.without_time) {
+    let zeit = `**Zeit:** ${hours(t.booked_minutes)} gebucht`;
+    if (t.target_minutes > 0) zeit = `**Zeit:** ${hours(t.booked_minutes)} von ${hours(t.target_minutes)} gebucht${t.missing_minutes > 0 ? `, ${hours(t.missing_minutes)} fehlen` : ""}`;
+    if (t.running_minutes > 0) zeit += `, Timer läuft (${hm(t.running_minutes)})`;
+    out.push(zeit, "");
+    if (t.items.length) {
+      for (const w of t.items) out.push(`- ${w.label}${w.title ? ` ${inline(w.title)}` : ""}: ${hours(w.minutes)}`);
+      out.push("");
+    }
+    if (t.gaps.length) out.push(`**Lücken:** ${t.gaps.map((g) => `${time(g.start)}–${time(g.end)}`).join(", ")}`, "");
   }
-  if (t.gaps.length) out.push(`**Lücken:** ${t.gaps.map((g) => `${time(g.start)}–${time(g.end)}`).join(", ")}`, "");
   if (r.meetings.length) out.push(`**Termine:** ${r.meetings.map(meetingLine).join(" · ")}`, "");
   const pages = r.pages.filter((p) => !(p.daily && p.page_id === r.daily_note_id));
   if (pages.length) {

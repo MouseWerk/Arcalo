@@ -66,9 +66,31 @@ pub struct DayReview {
     pub meetings: Vec<ReviewMeeting>,
     pub focus: ReviewFocus,
     pub files: Vec<ReviewFile>,
+    /// Time tracking is off ([`DayReview::without_time`]): nothing about booking in it.
+    #[serde(default)]
+    pub without_time: bool,
 }
 
 impl DayReview {
+    /// The review for a workspace without time tracking: no time section and gaps, meetings
+    /// that are over are just `done` (not booked, open or skipped), focus sessions without
+    /// their Vorgang and booking. Only the view changes; the data stays.
+    pub fn without_time(mut self) -> Self {
+        self.without_time = true;
+        self.time = ReviewTime { workday: self.time.workday, ..ReviewTime::default() };
+        for m in &mut self.meetings {
+            if matches!(m.state.as_str(), "booked" | "skipped" | "open") {
+                m.state = "done".into();
+            }
+            m.entry_id = None;
+        }
+        for f in &mut self.focus.sessions {
+            f.reference.clear();
+            f.entry_id = None;
+        }
+        self
+    }
+
     /// Nothing happened (and nothing was planned) that day.
     pub fn is_empty(&self) -> bool {
         self.pages.is_empty()
@@ -200,7 +222,8 @@ pub struct ReviewMeeting {
     /// Minutes within the day (0 for all-day appointments).
     pub minutes: i64,
     /// `booked`, `skipped` („nicht buchen“), `open` (to book), `upcoming` (not over yet) or
-    /// `free` (all-day, free, out of office or private: nothing to book).
+    /// `free` (all-day, free, out of office or private: nothing to book); `done` (over) instead
+    /// of the first three while time tracking is off.
     pub state: String,
     pub entry_id: Option<i64>,
     pub note_page_id: Option<i64>,
@@ -508,7 +531,7 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
         .collect::<rusqlite::Result<_>>()?
     };
 
-    Ok(DayReview { date, from, to, daily_note_id, pages, time, tasks, meetings, focus, files })
+    Ok(DayReview { date, from, to, daily_note_id, pages, time, tasks, meetings, focus, files, without_time: false })
 }
 
 /// Words added over the day on page `id`: the content at the start of the day is the first
@@ -608,7 +631,9 @@ pub fn reminder_body(r: &DayReview) -> String {
     if !r.pages.is_empty() {
         parts.push(plural(r.pages.len(), "Seite", "Seiten"));
     }
-    parts.push(format!("{} h gebucht", crate::desktop::format_hours(r.time.booked_minutes as f64)));
+    if !r.without_time {
+        parts.push(format!("{} h gebucht", crate::desktop::format_hours(r.time.booked_minutes as f64)));
+    }
     if r.tasks.done_total > 0 {
         parts.push(format!("{} erledigt", plural(r.tasks.done_total as usize, "Aufgabe", "Aufgaben")));
     }
@@ -667,16 +692,19 @@ where
     let weekday = WEEKDAYS[r.date.weekday().num_days_from_monday() as usize];
     let mut out = format!("Tag: {weekday}, {}\n", r.date.format("%d.%m.%Y"));
     let tm = &r.time;
-    out.push_str(&format!("Gebucht: {}", hm(tm.booked_minutes)));
-    if tm.target_minutes > 0 {
-        out.push_str(&format!(" von {} Soll", hm(tm.target_minutes)));
-        if tm.missing_minutes > 0 {
-            out.push_str(&format!(", es fehlen {}", hm(tm.missing_minutes)));
+    // Time tracking off: nothing about bookings, targets or gaps.
+    if !r.without_time {
+        out.push_str(&format!("Gebucht: {}", hm(tm.booked_minutes)));
+        if tm.target_minutes > 0 {
+            out.push_str(&format!(" von {} Soll", hm(tm.target_minutes)));
+            if tm.missing_minutes > 0 {
+                out.push_str(&format!(", es fehlen {}", hm(tm.missing_minutes)));
+            }
+        } else {
+            out.push_str(" (kein Arbeitstag)");
         }
-    } else {
-        out.push_str(" (kein Arbeitstag)");
+        out.push('\n');
     }
-    out.push('\n');
     if tm.running_minutes > 0 {
         out.push_str(&format!("Ein Timer läuft noch ({}).\n", hm(tm.running_minutes)));
     }
@@ -695,6 +723,7 @@ where
                 "skipped" => "nicht zu buchen",
                 "open" => "noch nicht gebucht",
                 "upcoming" => "steht noch an",
+                "done" => "vorbei",
                 _ => "frei",
             };
             let when = if m.all_day { "ganztägig".to_owned() } else { format!("{}–{}", t(m.start), t(m.end)) };
@@ -756,6 +785,14 @@ where
         Stichpunkte (- …) mit dem, was offen ist: fehlende Buchungen, nicht gebuchte Termine, fällige und \
         überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. Antworte nur mit dem Text in \
         Markdown, ohne Überschrift und ohne Einleitung.";
+    // Time tracking off: a notes and calendar day, no bookings.
+    let without_time = "Du schreibst in Annalo, einem Notizprogramm mit Kalender, den Tagesrückblick des Nutzers. \
+        Fasse den Tag auf Deutsch in 3 bis 6 Sätzen zusammen: woran gearbeitet wurde, welche Termine und Aufgaben \
+        wichtig waren. Sprich den Nutzer mit „du“ an, bleibe sachlich und erfinde nichts, was nicht in den Daten \
+        steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 Stichpunkte (- …) mit dem, \
+        was offen ist: fällige und überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. \
+        Antworte nur mit dem Text in Markdown, ohne Überschrift und ohne Einleitung.";
+    let system = if r.without_time { without_time } else { system };
     vec![ChatMessage::system(system.to_owned()), ChatMessage::user(format!("Daten des Tages:\n\n{}", describe(r, tz)))]
 }
 

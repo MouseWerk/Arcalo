@@ -49,8 +49,10 @@ const ROLE_NAMES: [&str; SLOTS] =
 #[derive(Clone)]
 struct TrayHandles {
     tray: TrayIcon,
-    stop: MenuItem<Wry>,
-    resume: MenuItem<Wry>,
+    /// „Timer stoppen“ and „Zuletzt verwendet starten“ (none while time tracking is off).
+    timer: Option<(MenuItem<Wry>, MenuItem<Wry>)>,
+    /// The menu was built for time tracking on (rebuilt when the setting changes).
+    time: bool,
 }
 
 #[derive(Default)]
@@ -96,15 +98,55 @@ pub fn show_main(app: &AppHandle) {
 
 // --------------------------------------------------------------------- tray
 
+/// The tray menu's entries in order (`-` is a separator): the timer entries only while time
+/// tracking is on.
+pub fn tray_entries(time: bool) -> Vec<&'static str> {
+    let mut ids = vec!["open", "search", "-"];
+    if time {
+        ids.extend(["stop", "resume"]);
+    }
+    ids.extend(["capture", "-", "quit"]);
+    ids
+}
+
+type TimerItems = Option<(MenuItem<Wry>, MenuItem<Wry>)>;
+
+/// The tray menu for [`tray_entries`], with the timer entries (disabled until `refresh_tray`).
+fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItems)> {
+    let menu = Menu::new(app)?;
+    let (mut stop, mut resume) = (None, None);
+    for id in tray_entries(time) {
+        let label = match id {
+            "-" => {
+                menu.append(&PredefinedMenuItem::separator(app)?)?;
+                continue;
+            }
+            "open" => "Öffnen",
+            "search" => "Suchen…",
+            "stop" => "Timer stoppen",
+            "resume" => "Zuletzt verwendet starten",
+            "capture" => "Schnellerfassung",
+            _ => "Beenden",
+        };
+        let timer = matches!(id, "stop" | "resume");
+        let item = MenuItem::with_id(app, id, label, !timer, None::<&str>)?;
+        menu.append(&item)?;
+        match id {
+            "stop" => stop = Some(item),
+            "resume" => resume = Some(item),
+            _ => {}
+        }
+    }
+    Ok((menu, stop.zip(resume)))
+}
+
+fn time_tracking(app: &AppHandle) -> bool {
+    app.try_state::<AppState>().is_none_or(|s| s.settings().time_tracking())
+}
+
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Öffnen", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Timer stoppen", false, None::<&str>)?;
-    let resume = MenuItem::with_id(app, "resume", "Zuletzt verwendet starten", false, None::<&str>)?;
-    let capture = MenuItem::with_id(app, "capture", "Schnellerfassung", true, None::<&str>)?;
-    let search = MenuItem::with_id(app, "search", "Suchen…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
-    let sep = || PredefinedMenuItem::separator(app);
-    let menu = Menu::with_items(app, &[&open, &search, &sep()?, &stop, &resume, &capture, &sep()?, &quit])?;
+    let time = time_tracking(app);
+    let (menu, timer) = tray_menu(app, time)?;
     // macOS: a menu bar extra opens its menu on click (the Dock icon shows the window).
     let mac = cfg!(target_os = "macos");
     let mut builder = TrayIconBuilder::with_id("main")
@@ -127,7 +169,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     let tray = builder.build(app)?;
-    *lock(&desktop(app).tray) = Some(TrayHandles { tray, stop, resume });
+    *lock(&desktop(app).tray) = Some(TrayHandles { tray, timer, time });
     refresh_tray(app);
     Ok(())
 }
@@ -135,6 +177,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         "open" => show_main(app),
+        // Left over from a menu built before time tracking was switched off.
+        "stop" | "resume" if !time_tracking(app) => {}
         // The UI stops the timer so it can ask about idle time first.
         "stop" => {
             show_main(app);
@@ -155,6 +199,7 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
 /// Starts a timer on the Netzplan/Vorgang of the most recent entry.
 fn resume_last(app: &AppHandle) -> Result<()> {
     let state = app.state::<AppState>();
+    state.settings().require_time_tracking()?;
     {
         let db = state.db();
         let last = db.last_finished_entry()?.ok_or_else(|| Error::State("Noch keine Buchung vorhanden".into()))?;
@@ -172,10 +217,20 @@ fn resume_last(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-/// Updates the tooltip (running timer) and which timer entry is enabled.
+/// Updates the tooltip (running timer) and which timer entry is enabled; rebuilds the menu
+/// when time tracking was switched on or off.
 pub fn refresh_tray(app: &AppHandle) {
     crate::jumplist::refresh(app);
     let Some(state) = app.try_state::<AppState>() else { return };
+    let time = state.settings().time_tracking();
+    rebuild_tray_menu(app, time);
+    if !time {
+        // Nothing about a timer, also not one left running from before.
+        if let Some(t) = lock(&desktop(app).tray).clone() {
+            let _ = t.tray.set_tooltip(Some(core::tray_tooltip(None)));
+        }
+        return;
+    }
     let (running, has_last) = {
         let db = state.db();
         let running = db.running_timer().ok().flatten().map(|e| {
@@ -189,8 +244,31 @@ pub fn refresh_tray(app: &AppHandle) {
     let Some(t) = handles else { return };
     let tip = core::tray_tooltip(running.as_ref().map(|(l, m)| (l.as_str(), *m)));
     let _ = t.tray.set_tooltip(Some(tip));
-    let _ = t.stop.set_enabled(running.is_some());
-    let _ = t.resume.set_enabled(running.is_none() && has_last);
+    if let Some((stop, resume)) = &t.timer {
+        let _ = stop.set_enabled(running.is_some());
+        let _ = resume.set_enabled(running.is_none() && has_last);
+    }
+}
+
+/// A new tray menu when the one shown was built for the other state of time tracking.
+fn rebuild_tray_menu(app: &AppHandle, time: bool) {
+    let Some(t) = lock(&desktop(app).tray).clone() else { return };
+    if t.time == time {
+        return;
+    }
+    match tray_menu(app, time) {
+        Ok((menu, timer)) => {
+            if let Err(e) = t.tray.set_menu(Some(menu)) {
+                crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}"));
+                return;
+            }
+            if let Some(h) = lock(&desktop(app).tray).as_mut() {
+                h.timer = timer;
+                h.time = time;
+            }
+        }
+        Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
+    }
 }
 
 /// Asks the UI to store pending edits; it then calls `app_quit`.
@@ -569,7 +647,12 @@ struct Stored {
 }
 
 fn capture_options<'a>(settings: &'a annalo_core::settings::Settings, zone: &'a Zone) -> cap::CaptureOptions<'a> {
-    cap::CaptureOptions { inbox_title: &settings.capture.inbox_title, thresholds: &settings.thresholds, zone }
+    cap::CaptureOptions {
+        inbox_title: &settings.capture.inbox_title,
+        thresholds: &settings.thresholds,
+        zone,
+        book_time: settings.time_tracking(),
+    }
 }
 
 /// Tells the windows what a capture changed.
@@ -959,7 +1042,12 @@ pub fn periodic(app: &AppHandle) {
     let settings = state.settings();
     let now = Local::now().naive_local();
     let today = now.date().to_string();
-    let (eod, late) = {
+    // Time tracking off: no reminder about unbooked hours or a running timer (the day review
+    // reminder below stays; the week proposal checks the setting itself).
+    let time = settings.time_tracking();
+    let (eod, late) = if !time {
+        (None, None)
+    } else {
         let db = state.db();
         let eod = booked_today(&db)
             .ok()
@@ -1019,6 +1107,8 @@ pub struct DesktopInfo {
     capture_open_ms: Option<u64>,
     /// Portable mode: no autostart entry (it would point into the user profile).
     portable: bool,
+    /// Entry ids of the tray menu shown now (`None`: no tray).
+    tray_menu: Option<Vec<&'static str>>,
 }
 
 #[tauri::command]
@@ -1028,7 +1118,9 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
     let autostart = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>().map(|m| m.is_enabled());
     // Copied out: one lock per statement (temporaries live until its end).
     let slots = *lock(&d.shortcuts);
+    let tray_menu = lock(&d.tray).as_ref().map(|t| tray_entries(t.time));
     DesktopInfo {
+        tray_menu,
         autostart: !portable && matches!(autostart, Some(Ok(true))),
         autostart_available: !portable && matches!(autostart, Some(Ok(_))),
         portable,
@@ -1056,6 +1148,14 @@ pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<DesktopInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_has_timer_entries_only_with_time_tracking() {
+        let on = tray_entries(true);
+        assert_eq!(on, ["open", "search", "-", "stop", "resume", "capture", "-", "quit"]);
+        let off = tray_entries(false);
+        assert_eq!(off, ["open", "search", "-", "capture", "-", "quit"]);
+    }
 
     #[test]
     fn shortcuts_parse_and_refuse_altgr() {
