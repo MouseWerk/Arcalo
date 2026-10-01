@@ -270,7 +270,7 @@ and by `entry_id`.
   a widget's `config` (16 KB, objects only) and notes. It is saved by `dashboard_save` only; `settings_save` keeps the
   stored dashboard. The list of 1.3–1.5 (`widgets` with `size`, `note`) stays readable: the UI moves it onto the board
   „Heute“ (`migrateLegacy` in `lib/dashboard.ts`) and saves it once; a start page never saved shows the boards
-  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings.
+  „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings. (1.7: see below.)
 - Start page UI: `lib/dashgrid.ts` is the layout engine (collisions push down, then everything floats up; keyboard
   `nudge`/`grow`; `reflow` to 6 or 1 columns by the grid's width, measured with a ResizeObserver), `lib/dashboard.ts`
   the catalogue, presets, board edits, export/import (`annalo-dashboard` JSON), the parts a widget needs and the budget
@@ -284,6 +284,70 @@ and by `entry_id`.
   while reloading and reloads the parts whose topics changed (`data://entries`, `data://tasks`, `data://pages`,
   `calendar://synced`, `focus://changed`, saved pages, the WBS), batched into one call. Timing is kept in
   `window.__annaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
+- Start page 1.7: `version: 3`. `Dashboard::normalized` keeps every well-formed kind (`valid_widget_kind`: a-z, 0-9,
+  `-`, `_`, at most 32 characters), so a widget of a newer version or of a feature not built in survives a save; the
+  UI keeps it on its board, hidden (`widgetShown`, `withHidden`), like the time widgets while time tracking is off.
+  A 1.6 layout opens unchanged (all boards, settings, notes, the board used last); the 1.3–1.5 list still becomes
+  the first board. Preset sizes are small 3×4, medium 4×7, wide 8×7, tall 4×14 and wide and tall 8×14
+  (`SIZES`, `resizeToPreset`), from the size buttons, the keys 1–5 in edit mode or the widget menu outside it.
+  Board files (`*.dashboard.json`, format `annalo-dashboard` version 2) leave out settings that hold credentials
+  (`publicConfig`: keys a widget lists in `secrets`, and any key that looks like a token, password or API key) and
+  are checked on import (version, at most 40 widgets, kinds, places, settings size, notes); unknown kinds are left
+  out with a notice. New parts: `resurface { seed }`, `writing { days }`, `pulled { limit }` and `inbox { limit }`
+  (`annalo_core::dashboard::notes`). Writing statistics come from the activity journal (characters changed per
+  hourly edit event, 6 characters a word), read by one indexed range query; the pages a Git sync took over are
+  recorded by the shell (`record_pulled`, settings meta `gitsync.pulled`, 50 entries); inbox entries are the
+  `**dd.mm.yyyy, HH:MM**` blocks quick capture writes into its inbox page, and `dashboard_inbox_move` files one
+  into a page (or removes it) only while its text is unchanged.
+
+### Start page widgets: how to add one
+
+A widget lives in a file of its own in `ui/src/components/dashboard/widgets/` and registers itself; every file there
+is loaded with the start page (`import.meta.glob` in `registry.tsx`), so no shared list needs an edit:
+
+```tsx
+import { Users } from "lucide-react";
+import { defineWidget } from "../define";
+import { configOf } from "../../../lib/dashboard";
+import { useLazyData } from "../data";
+import type { WidgetProps } from "../registry";
+
+function StandupWidget({ widget, openSettings }: WidgetProps) {
+  const c = configOf(widget);                       // settings with the defaults of `config`
+  const { data, error, loading, reload } = useLazyData(widget.id, () => loadStandup(c.team as string), { key: String(c.team), topics: ["sync"], every: 300_000 });
+  …
+}
+
+defineWidget({
+  kind: "standup",                 // unique: a-z, 0-9, -, _ (prefix by feature, e.g. "jira-sprint")
+  label: "dash.w.standup",         // name and one-line hint: keys in ui/src/locales/en.ts and de.ts
+  hint: "dash.w.standupHint",
+  group: "tools",                  // gallery group: day, time, pages, tools
+  size: { w: 4, h: 7 },            // first size in cells of the 12-column grid (rows of 28 px)
+  min: { w: 3, h: 4 },
+  config: () => ({ team: "", account: "" }),
+  icon: Users,                     // lucide icon of the header and the gallery
+  look: "list",                    // gallery schematic: list, bars, hbars, ring, timeline, clock, grid, text, tiles
+  body: StandupWidget,
+  settings: StandupSettings,       // optional: own fields in the settings dialog ({ widget, config, set })
+  opener: (w) => () => …,          // optional: what a click on the title opens
+  parts: (c, ctx) => [...],        // optional: parts of the batched `dashboard_data` (read with useWidgetData)
+  secrets: ["account"],            // optional: settings that hold or point at credentials: never exported
+  time: true,                      // optional: about booking time, hidden while time tracking is off
+});
+```
+
+- Data loads only once the widget scrolls into view: through `parts` (one batched backend call for every widget in
+  view; a new part kind needs a variant of `annalo_core::dashboard::Part`, its topics in `partTopics`) or with
+  `useLazyData` for anything else (an outside service, a status call). Topics (`entries`, `tasks`, `pages`,
+  `calendar`, `focus`, `wbs`, `sync`) reload it when that data changes.
+- A widget changes its own settings with `useBoard().setConfig(widget.id, patch)` (saved at once, or into the draft
+  in edit mode). Credentials never go into settings: keep them in the credential store and reference them by an id
+  listed in `secrets`.
+- Strings go into both locale files; the i18n scan (`i18n-strings.test.ts`) fails on text in the code. Widgets adapt
+  to their own width with `@container dw (…)` and use the theme tokens, no own colors.
+- Presets reference registered kinds by name (`PRESET_SPECS` in `lib/dashboard.ts`); a kind that is not registered
+  is left out of a preset.
 - Reminders: `end_of_day_reminder` and `late_timer_reminder` are pure functions of time, settings,
   booked minutes and the last notified day (kept in `settings` meta rows). Desktop notifications cannot
   report clicks, so after an end-of-day reminder the next focus of the main window opens the timesheet.
