@@ -88,6 +88,13 @@ const KINDS: [FileKind, string[]][] = [
   ["code", ["json", "xml", "yaml", "yml", "html", "htm", "css", "js", "ts", "py", "sql", "sh", "ps1", "bat", "log", "ini", "toml", "drawio", "bpmn", "vsdx"]],
 ];
 
+/** Audio files the webview plays inline (voice notes are FLAC). */
+const PLAYABLE = new Set(["flac", "wav", "mp3", "m4a", "ogg", "opus"]);
+
+export function isPlayableAudio(name: string): boolean {
+  return PLAYABLE.has(fileExtension(name) ?? "");
+}
+
 export function fileKind(name: string): FileKind {
   const ext = fileExtension(name) ?? "";
   return KINDS.find(([, exts]) => exts.includes(ext))?.[0] ?? "file";
@@ -110,6 +117,8 @@ export interface FileEmbedOptions {
   onOpenPdf: (name: string, page: number | null) => void;
   /** Draws the first page of a PDF into `canvas` (`width` CSS pixels), resolves to its page count. */
   renderPdfPreview: ((name: string, canvas: HTMLCanvasElement, width: number) => Promise<number>) | null;
+  /** Address of an attachment, for the audio player of voice notes and other recordings. */
+  audioUrl: ((name: string) => string) | null;
 }
 
 // `![[name.ext#sub|alt]]`: the name is checked with `isFileEmbedName` after matching.
@@ -133,7 +142,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
   draggable: true,
 
   addOptions() {
-    return { size: async () => null, onOpen: () => {}, onOpenPdf: () => {}, renderPdfPreview: null };
+    return { size: async () => null, onOpen: () => {}, onOpenPdf: () => {}, renderPdfPreview: null, audioUrl: null };
   },
   addAttributes() {
     return { name: { default: "" }, anchor: { default: null }, alt: { default: null } };
@@ -166,7 +175,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
   renderMarkdown: (node, _h, ctx) => embedMarkdown(node.attrs, !!ctx?.meta?.parentAttrs?.__inTableCell),
 
   addNodeView() {
-    const { size, onOpen, onOpenPdf, renderPdfPreview } = this.options;
+    const { size, onOpen, onOpenPdf, renderPdfPreview, audioUrl } = this.options;
     return ({ node }) => {
       const name: string = node.attrs.name;
       const base = baseName(name);
@@ -246,12 +255,31 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
           }, { rootMargin: "200px" });
           observer.observe(dom);
         }
+      } else if (audioUrl && isPlayableAudio(base)) {
+        // Voice notes: a player under the name; the name still opens the file in its app.
+        dom.className = "file-embed audio-embed";
+        const player = document.createElement("audio");
+        player.className = "audio-embed-player";
+        player.controls = true;
+        player.preload = "metadata";
+        player.src = audioUrl(base);
+        player.setAttribute("aria-label", t("file.audioPlayer", { name: base }));
+        // No decoder or no audio output (e.g. a server without sound): a hint instead of a broken player.
+        const hint = document.createElement("span");
+        hint.className = "audio-embed-hint";
+        hint.textContent = t("file.audioUnplayable");
+        player.addEventListener("error", () => {
+          if (alive) dom.classList.add("is-unplayable");
+        });
+        dom.append(bar, player, hint);
       } else {
         dom.append(bar);
       }
 
       dom.addEventListener("click", (e) => {
         if (e.button !== 0) return;
+        // Clicks on the player play, pause and seek; they do not open the file.
+        if ((e.target as HTMLElement).closest?.("audio")) return;
         e.preventDefault();
         if (pdf) onOpenPdf(base, anchorPage(node.attrs.anchor));
         else onOpen(base);

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass, History, MessageSquarePlus, Ticket,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Compass, History, MessageSquarePlus, Ticket, Mic,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -38,6 +38,7 @@ import { iconOf } from "./LinkDialogs";
 import { openBookmarkImport } from "./BookmarkImport";
 import { startFirstRun } from "../onboarding/state";
 import { newChat, showHistory } from "../store/chat";
+import { startVoice, stopVoice, useVoice } from "../lib/voice";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
 
@@ -192,6 +193,7 @@ export function CommandPalette() {
       { id: "mail-capture", title: t("cmd.mailCapture"), subtitle: t("cmd.mailCaptureSub"), icon: ic(Mail), run: () => setTimeout(() => void captureFromOutlook(), 0) },
       { id: "mail-dialog", title: t("cmd.mailDialog"), subtitle: t("cmd.mailDialogSub"), icon: ic(MailPlus), run: () => setTimeout(() => openMailDialog(), 0) },
       { id: "bookmarks-import", title: t("cmd.bookmarksImport"), subtitle: t("cmd.bookmarksImportSub"), icon: ic(BookmarkPlus), run: () => setTimeout(openBookmarkImport, 0) },
+      ...voiceCommands(),
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
         ? [
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },
@@ -426,4 +428,16 @@ export function askWeeklyReport(now = new Date()) {
   const text = t("palette.reportPrompt", { kw, from, to });
   const title = t("palette.reportTitle", { kw });
   useApp.getState().set({ panelOpen: true, panelTab: "assistant", pendingAsk: { text, display: title, pageTitle: title, tools: true } });
+}
+
+/** „Sprachnotiz aufnehmen“ (a new page, or into the open page) or „Aufnahme beenden“. */
+function voiceCommands(): { id: string; title: string; subtitle?: string; icon: React.ReactNode; run: () => void }[] {
+  if (useVoice.getState().status.recording) return [{ id: "voice-stop", title: t("voice.stopRecording"), icon: ic(Square), run: () => void stopVoice() }];
+  const st = useApp.getState();
+  const tab = st.tabs.find((x) => x.id === st.activeTabId);
+  const pageId = tab?.kind === "page" ? (tab.pageId ?? null) : null;
+  return [
+    { id: "voice", title: t("cmd.voice"), subtitle: t("cmd.voiceSub"), icon: ic(Mic), run: () => setTimeout(() => void startVoice(), 0) },
+    ...(pageId != null ? [{ id: "voice-here", title: t("cmd.voiceHere"), subtitle: t("cmd.voiceHereSub"), icon: ic(Mic), run: () => setTimeout(() => void startVoice({ pageId }), 0) }] : []),
+  ];
 }

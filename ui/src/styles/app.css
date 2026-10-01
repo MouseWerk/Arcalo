@@ -2955,3 +2955,45 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .jira-test-result.ok { background: var(--success-soft); color: var(--success); }
 .jira-test-result.bad { background: var(--danger-soft); color: var(--danger); }
 .jira-create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ---- voice notes: the voice bar ---- */
+.voice-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--statusbar-h) + 12px);
+  transform: translateX(-50%);
+  z-index: 75;
+  display: grid;
+  gap: 2px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 6px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-md);
+}
+.voice-row { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px; padding: 2px 4px 2px 8px; border-radius: var(--r-md); }
+.voice-row + .voice-row { border-top: 1px solid var(--border); border-radius: 0; }
+.voice-label { display: grid; min-width: 0; flex: 1; line-height: 1.25; }
+.voice-state { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-target { font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.voice-icon { flex: none; color: var(--text-3); }
+.voice-icon.ok { color: var(--success); }
+.voice-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse 2s infinite; }
+.voice-rec .voice-state { color: var(--danger); }
+.voice-rec.is-paused .voice-dot { animation: none; background: var(--text-3); }
+.voice-rec.is-paused .voice-state { color: var(--text-2); }
+.voice-time { flex: none; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+.voice-meter { flex: none; display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+.voice-meter > span { width: 3px; height: 100%; border-radius: 1px; background: var(--border-strong); opacity: 0.55; transition: background var(--dur-fast) var(--ease-out); }
+.voice-meter > span:nth-child(odd) { height: 70%; }
+.voice-meter > span.on { background: var(--success); opacity: 1; }
+.voice-meter > span.on.hot { background: var(--warning); }
+.voice-progress { flex: none; width: 96px; height: 4px; border-radius: 2px; background: var(--bg-active); overflow: hidden; }
+.voice-progress > span { display: block; height: 100%; background: var(--accent); transition: width var(--dur-fast) var(--ease-out); }
+.ribbon-voice.is-recording { color: var(--danger); }
+@media (max-width: 1000px) {
+  .voice-meter { display: none; }
+  .voice-progress { width: 64px; }
+}

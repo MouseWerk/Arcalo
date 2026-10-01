@@ -2,7 +2,7 @@ import {
   BookOpen, Box, Briefcase, Bug, Calendar, CalendarDays, ClipboardList, Code2, Database, FileText, Flag,
   Folder, FolderKanban, Globe, GraduationCap, Heart, Layers, Library, Lightbulb, ListTodo, Map, MessageSquare,
   Notebook, Rocket, Shield, Sparkles, Star, Target, Users, Zap, Blocks, LayoutTemplate, Mail, Server, Cloud,
-  Terminal, Ticket, BarChart3, Video, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, type LucideIcon,
+  Terminal, Ticket, BarChart3, Video, Mic, Link2, Wrench, Newspaper, Home, KanbanSquare, AppWindow, type LucideIcon,
 } from "lucide-react";
 import { t, type TKey } from "../lib/i18n";
 
@@ -42,6 +42,7 @@ export const PAGE_ICONS: Record<string, LucideIcon> = {
   "layout-template": LayoutTemplate,
   link: Link2,
   mail: Mail,
+  mic: Mic,
   server: Server,
   cloud: Cloud,
   terminal: Terminal,
@@ -91,6 +92,7 @@ const PAGE_ICON_LABELS: Record<string, TKey> = {
   "layout-template": "icon.layoutTemplate",
   link: "icon.link",
   mail: "icon.mail",
+  mic: "icon.mic",
   server: "icon.server",
   cloud: "icon.cloud",
   terminal: "icon.terminal",

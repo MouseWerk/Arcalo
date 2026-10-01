@@ -6,10 +6,11 @@ import { DayOffChip } from "../components/dashboard/work";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
+import { startVoice, useVoice } from "../lib/voice";
 import { Badge, Button, EmptyState, IconButton, Segmented, Select } from "../components/ui";
 import { openDailyNote, pickDate } from "../components/CalendarPopover";
 import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative } from "../lib/format";
@@ -357,6 +358,7 @@ export function CalendarView() {
               onClose={() => setSelected(null)}
               onBook={() => void book(current)}
               onNote={() => void note(current)}
+              onRecord={() => void startVoice({ meetingKey: current.key }).then((ok) => ok && setSyncTick((x) => x + 1))}
               onSkip={() => void skip(current)}
             />
           )}
@@ -816,7 +818,8 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
 
 // ---------------------------------------------------------------- detail
 
-function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, onSkip }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; timeOn: boolean; onClose: () => void; onBook: () => void; onNote: () => void; onSkip: () => void }) {
+function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, onRecord, onSkip }: { event: CalendarEvent; cal: CalendarSettings | undefined; booked: TimeEntryRow | { id: number } | null; timeOn: boolean; onClose: () => void; onBook: () => void; onNote: () => void; onRecord: () => void; onSkip: () => void }) {
+  const recording = useVoice((v) => !!v.status.recording);
   const t = useT();
   const l = dateLocale();
   const [allPeople, setAllPeople] = useState(false);
@@ -969,6 +972,9 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           )}
           <Button variant={!timeOn && !(e.link && !past) ? "primary" : "secondary"} icon={NotebookPen} onClick={onNote}>
             {e.note_page_id != null ? t("calv.openNote") : t("calv.note")}
+          </Button>
+          <Button variant="secondary" icon={Mic} className="calv-record-btn" disabled={recording} onClick={onRecord}>
+            {t("calv.record")}
           </Button>
           {timeOn && !booked && (
             <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>

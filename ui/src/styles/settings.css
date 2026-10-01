@@ -394,3 +394,16 @@
   .backup-row .backup-source { max-width: 100%; order: 5; flex-basis: 100%; }
   .bdest-add .bdest-input { flex-basis: 100%; }
 }
+
+/* ---- voice notes: Whisper models ---- */
+.voice-models { display: grid; gap: 8px; padding: 4px 0 12px; }
+.voice-model { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); min-width: 0; }
+.voice-model-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.voice-model-head .grow { flex: 1; }
+.voice-model-name { font-weight: 600; font-size: var(--fs-sm); }
+.voice-model-progress { display: grid; gap: 4px; min-width: 0; }
+.voice-model-progress .num { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-model-source { color: var(--text-3); }
+.voice-model-error { max-width: 100%; }
+.voice-model-error > span:last-child { white-space: pre-line; overflow-wrap: anywhere; }
+.set-row.stack .voice-source-input { width: 100%; }

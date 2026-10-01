@@ -1,7 +1,7 @@
 // Obsidian-style ribbon: a slim column of global actions left of the sidebar.
 
 import { useRef } from "react";
-import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, Search, ListChecks, PanelLeft, Settings, Sparkles, Sunset, Target, Ticket, Timer } from "lucide-react";
+import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, Search, ListChecks, Mic, PanelLeft, Settings, Sparkles, Sunset, Target, Ticket, Timer } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
@@ -15,6 +15,7 @@ import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "./Focus";
 import { openDayReview } from "../lib/reviewnav";
 import { useChat } from "../store/chat";
+import { startVoice, stopVoice, useVoice } from "../lib/voice";
 
 export async function openToday() {
   const s = useApp.getState();
@@ -87,6 +88,7 @@ export function Ribbon() {
   const focus = useApp((s) => s.focus);
   // „Zeiterfassung verwenden“ off: no timesheet and projects in the ribbon.
   const timeOn = useTimeTracking();
+  const recording = useVoice((v) => !!v.status.recording);
   const jiraOn = useApp((st) => (st.settings?.settings.jira?.sites.length ?? 0) > 0);
   const s = useApp.getState;
   const side = "right" as const;
@@ -116,6 +118,15 @@ export function Ribbon() {
       <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
+      <IconButton
+        icon={Mic}
+        label={t(recording ? "voice.stopRecording" : "voice.record")}
+        active={recording}
+        tooltipSide={side}
+        size="lg"
+        className={`ribbon-voice ${recording ? "is-recording" : ""}`}
+        onClick={() => void (recording ? stopVoice() : startVoice())}
+      />
       <span className="ribbon-sep" />
       <QuickLinks />
       <span className="grow" />

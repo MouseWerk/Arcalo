@@ -247,6 +247,8 @@ export interface SchemaOptions {
   onAi?: (editor: Editor) => void;
   /** Slash „Zusammenfassung“: meeting summary of the page. */
   onSummary?: (editor: Editor) => void;
+  /** `/voice`: records a voice note into this page. */
+  onVoice?: (editor: Editor) => void;
   /** Slash „Zeichnung“: new drawing at the caret. */
   onInsertDrawing?: (editor: Editor) => void;
   /** Click on a drawing embed: opens the drawing editor. */
@@ -312,12 +314,13 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       onOpenFile: (name, anchor) => (isPdfName(name) ? o.onOpenPdf?.(name, anchorPage(anchor == null ? null : `#${anchor}`)) : o.onOpenFile?.(name)),
     }),
     WikiLinkSuggest.configure({ search: o.searchPages ?? (async () => []) }),
-    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null, onFile: o.onPickFile ?? null }),
+    SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null, onFile: o.onPickFile ?? null, onVoice: o.onVoice ?? null }),
     ImageEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`) }),
     FileEmbed.configure({
       size: o.attachmentSize ?? (async () => null),
       onOpen: o.onOpenFile ?? (() => {}),
       onOpenPdf: o.onOpenPdf ?? (() => {}),
+      audioUrl: o.attachmentUrl ?? null,
       renderPdfPreview: o.renderPdfPreview ?? null,
     }),
     AttachmentDrop.configure({ uploadImage: o.uploadImage ?? null, uploadFile: o.uploadFile ?? null }),

@@ -8,7 +8,7 @@ import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket,
+  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic,
 } from "lucide-react";
 import { decimal, fmtDate, isoDay } from "../lib/format";
 
@@ -209,6 +209,8 @@ export interface SlashOptions {
   onDrawing: ((editor: Editor) => void) | null;
   /** Opens the file dialog and embeds the chosen files (`![[Angebot.pdf]]`). */
   onFile: ((editor: Editor) => void) | null;
+  /** `/voice` (`/sprache`): records a voice note whose transcript goes into this page. */
+  onVoice?: ((editor: Editor) => void) | null;
 }
 
 /** The slash menu; `/zeit` (`/time`) only while time tracking is on. */
@@ -268,6 +270,9 @@ function allSlashItems(o: SlashOptions): SlashItem[] {
       : []),
     ...(o.onDrawing
       ? [{ id: "drawing", title: t("slash.drawing"), subtitle: t("slash.drawing.sub"), icon: ic(PenTool), Icon: PenTool, section: insert, keywords: "zeichnung drawing excalidraw diagramm diagram skizze sketch whiteboard", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onDrawing!(e)) }]
+      : []),
+    ...(o.onVoice
+      ? [{ id: "voice", title: t("slash.voice"), subtitle: t("slash.voice.sub"), icon: ic(Mic), Icon: Mic, section: insert, keywords: "voice sprache sprachnotiz aufnahme aufnehmen record recording diktat dictate transkript transcript mikrofon microphone meeting", run: (e: Editor, r: Range) => (e.chain().focus().deleteRange(r).run(), o.onVoice!(e)) }]
       : []),
     ...(o.onTemplate
       ? [{ id: "template", title: t("slash.template"), subtitle: t("slash.template.sub"), icon: ic(LayoutTemplate), Icon: LayoutTemplate, section: insert, keywords: "vorlage template muster", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onTemplate!(e)) }]

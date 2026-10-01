@@ -5,7 +5,7 @@
 import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
+import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -33,6 +33,7 @@ import { NetworkSection, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
+import { VoiceSection } from "./settings/VoiceSection";
 import { JiraSection } from "./settings/JiraSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
@@ -40,7 +41,7 @@ import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "jira" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "voice" | "jira" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     label: "navgroup.general",
@@ -58,6 +59,7 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
       { id: "notes", label: "nav.notes", icon: NotebookPen },
       { id: "time", label: "nav.time", icon: Timer },
       { id: "calendar", label: "nav.calendar", icon: CalendarRange },
+      { id: "voice", label: "nav.voice", icon: Mic },
       { id: "jira", label: "nav.jira", icon: Ticket },
     ],
   },
@@ -246,6 +248,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         );
       case "calendar":
         return <CalendarSection draft={draft} update={u} />;
+      case "voice":
+        return <VoiceSection draft={draft} update={u} />;
       case "jira":
         return <JiraSection draft={draft} update={u} />;
       case "privacy":

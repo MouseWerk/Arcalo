@@ -1131,3 +1131,25 @@
 .ProseMirror .issue-chip-title { display: inline-block; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; line-height: inherit; margin-left: 5px; color: var(--text-2); }
 .ProseMirror .issue-chip.unknown { color: var(--text-2); }
 .ProseMirror .issue-chip-head:hover, .ProseMirror .issue-chip:hover, .ProseMirror .issue-chip-tail:hover { background: var(--bg-active); }
+
+/* ---- voice notes: audio player of `![[….flac]]` ---- */
+.file-embed.audio-embed {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: min(440px, 100%);
+  height: auto;
+  padding: 8px 10px 10px;
+  border-radius: var(--r-md);
+  vertical-align: bottom;
+  cursor: default;
+}
+.file-embed.audio-embed:hover { background: var(--bg-raised); }
+.audio-embed .file-embed-bar { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; }
+.audio-embed .file-embed-bar:hover .file-embed-name { color: var(--accent-text); }
+.audio-embed-player { display: block; width: 100%; height: 34px; border-radius: var(--r-sm); }
+.file-embed.audio-embed.is-missing .audio-embed-player { display: none; }
+.audio-embed-hint { display: none; font-size: var(--fs-xs); color: var(--text-3); }
+.file-embed.audio-embed.is-unplayable .audio-embed-player { display: none; }
+.file-embed.audio-embed.is-unplayable:not(.is-missing) .audio-embed-hint { display: block; }

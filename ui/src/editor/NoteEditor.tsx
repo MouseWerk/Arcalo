@@ -42,6 +42,7 @@ import { replaceChanged } from "./replaceChanged";
 import { flushAllEditors, registerFlusher, trackSave } from "./saves";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
+import { startVoice } from "../lib/voice";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -404,6 +405,7 @@ export function NoteEditor({
         onOpenDrawing: openDrawing,
         onAi: (editor) => openAi(editor),
         onSummary: () => window.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { detail: { id: doc.id } })),
+        onVoice: () => void startVoice({ pageId: doc.id }),
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
         onZeitLost: (res) =>

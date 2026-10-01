@@ -6,6 +6,7 @@ import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { Sidebar, stopTimer } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
+import { VoiceBar } from "./components/VoiceBar";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
 import { Workspace } from "./components/Workspace";
@@ -349,6 +350,7 @@ export function App() {
       <CalendarPopover />
       <WindowControls />
       <Toasts />
+      <VoiceBar />
       <FocusDialogHost />
       <PresentationHost />
       <MailImportHost />

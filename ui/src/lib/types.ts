@@ -293,6 +293,8 @@ export interface Settings {
   capture: CapturePrefs;
   /** „E-Mail als Aufgabe / Notiz“ (Settings → Kalender → E-Mail). */
   mail: MailSettings;
+  /** Sprachnotizen: Whisper model and source, language, input device, summary, audio. */
+  voice?: VoiceSettings;
   /** First-run intro and setup (saved by its own commands, kept by `settings_save`). */
   onboarding: OnboardingState;
   /** Jira sites, saved JQL searches and the sync (tokens live in the credential store). */
@@ -597,6 +599,7 @@ export interface DesktopInfo {
   /** Milliseconds from the last quick-capture request to its first frame. */
   capture_open_ms?: number | null;
   mail_shortcut_active?: boolean;
+  voice_shortcut_active?: boolean;
   /** Portable mode: no autostart entry. */
   portable?: boolean;
 }
@@ -1087,6 +1090,24 @@ export interface IcsSource {
   color: string;
   enabled: boolean;
 }
+/** Settings → Sprachnotizen. */
+export interface VoiceSettings {
+  /** `base`, `small` or `large-v3-turbo-q5`. */
+  model: string;
+  /** Admin source tried first: an address or a network folder with the model files ("" = none). */
+  source_url: string;
+  /** `auto`, `de` or `en`. */
+  language: string;
+  /** Input device name ("" = system default). */
+  input_device: string;
+  /** Windows: record the system audio too. */
+  system_audio: boolean;
+  auto_summary: boolean;
+  keep_audio: boolean;
+  /** Global shortcut that starts or stops a recording; "" = off. */
+  shortcut: string;
+}
+
 /** Settings → Kalender → E-Mail (Outlook). */
 export interface MailSettings {
   /** Top-level page of new mail notes. */
