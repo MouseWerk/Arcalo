@@ -82,7 +82,7 @@ test("the setup is completed with the keyboard and writes every answer", async (
   await app.browser.waitUntil(async () => (await settings()).locale.language === "en", { timeoutMsg: "English not saved" });
   await app.browser.waitUntil(async () => /Which language/.test(await stepTitle()), { timeoutMsg: "UI not in English" });
   await app.shot("firstrun-88-language");
-  await next(/How should Annalo look/);
+  await next(/How should Arcalo look/);
 
   await press('[data-choice="dark"]');
   await app.browser.waitUntil(async () => (await settings()).theme === "dark", { timeoutMsg: "dark not saved" });

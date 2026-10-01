@@ -52,8 +52,8 @@ pub fn available() -> bool {
 /// The message for an error code of the script, in the display language.
 fn error_text(code: &str, detail: &str) -> String {
     let drop = tr!(
-        "Alternativ die E-Mail als Datei speichern (Datei → Speichern unter, .msg) und in Annalo ziehen.",
-        "Or save the e-mail as a file (File → Save as, .msg) and drag it into Annalo."
+        "Alternativ die E-Mail als Datei speichern (Datei → Speichern unter, .msg) und in Arcalo ziehen.",
+        "Or save the e-mail as a file (File → Save as, .msg) and drag it into Arcalo."
     );
     match code {
         "not_running" => tr!(
@@ -72,8 +72,8 @@ fn error_text(code: &str, detail: &str) -> String {
             "The new Outlook runs here; it gives other programs no access to e-mails. {drop}"
         ),
         "server_exec" => tr!(
-            "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut versuchen.",
-            "Outlook runs with other rights than Annalo (e.g. “Run as administrator”). Start Outlook normally and try again."
+            "Outlook läuft mit anderen Rechten als Arcalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut versuchen.",
+            "Outlook runs with other rights than Arcalo (e.g. “Run as administrator”). Start Outlook normally and try again."
         )
         .into(),
         "constrained" => trf!(

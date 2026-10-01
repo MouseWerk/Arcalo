@@ -1,4 +1,4 @@
-# Annalo: e-mails from Outlook Classic through its COM object model, as one line of JSON on
+# Arcalo: e-mails from Outlook Classic through its COM object model, as one line of JSON on
 # standard output. Only ASCII is written (other characters as \uXXXX), so the console code page
 # does not matter. The file itself is ASCII too: Windows PowerShell reads scripts without a byte
 # order mark as ANSI.
@@ -14,7 +14,7 @@
 #                returns per mail (text cut at -MaxBody) plus flagDue (yyyy-MM-dd) and flagRequest.
 #
 # Outlook is never started for "read": an Outlook that is not running has nothing selected.
-# Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Annalo shows its own text.
+# Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 
 param(
     [ValidateSet('read', 'save', 'open', 'flagged')][string]$Mode = 'read',

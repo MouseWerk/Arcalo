@@ -75,7 +75,7 @@ export function buildHtmlDocument(sections: ExportSection[], opts: { created: st
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="Annalo">
+<meta name="generator" content="Arcalo">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; media-src data:">
 <title>${escapeHtml(main?.title ?? t("share.page"))}</title>
 <style>${EXPORT_CSS}</style>

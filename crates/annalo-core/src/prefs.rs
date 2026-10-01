@@ -259,12 +259,12 @@ pub fn parse_theme_file(json: &str) -> std::result::Result<CustomTheme, String> 
     let value: serde_json::Value = serde_json::from_str(json)
         .map_err(|_| tr!("Die Datei ist kein gültiges JSON", "The file is not valid JSON").to_owned())?;
     if value.get("format").and_then(|f| f.as_str()) != Some(THEME_FILE_FORMAT) {
-        return Err(tr!("Keine Annalo-Theme-Datei", "Not an Annalo theme file").into());
+        return Err(tr!("Keine Arcalo-Theme-Datei", "Not an Arcalo theme file").into());
     }
     if value.get("version").and_then(|v| v.as_u64()).unwrap_or(0) > 1 {
         return Err(tr!(
-            "Die Theme-Datei stammt aus einer neueren Annalo-Version",
-            "The theme file comes from a newer Annalo version"
+            "Die Theme-Datei stammt aus einer neueren Arcalo-Version",
+            "The theme file comes from a newer Arcalo version"
         )
         .into());
     }

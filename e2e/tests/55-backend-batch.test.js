@@ -106,7 +106,7 @@ test("window calls and reads do not wait for a long save", async () => {
       const t0 = performance.now();
       const save = inv("page_save", { id, content: text }).then(() => seen.push(["save", Math.round(performance.now() - t0)]));
       setTimeout(async () => {
-        await inv("plugin:window|set_title", { label: "main", value: "Annalo" });
+        await inv("plugin:window|set_title", { label: "main", value: "Arcalo" });
         seen.push(["title", Math.round(performance.now() - t0)]);
         await inv("page_get", { id: 1 });
         seen.push(["read", Math.round(performance.now() - t0)]);

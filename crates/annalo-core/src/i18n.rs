@@ -101,7 +101,7 @@ macro_rules! trf {
     };
 }
 
-/// Frontmatter keys Annalo reads and writes: the German name (as older notes have it) and its
+/// Frontmatter keys Arcalo reads and writes: the German name (as older notes have it) and its
 /// English alias. Both are read in every language (the first one in a page wins); new content
 /// is written with the display language's name. Same table as the UI's `KEY_ALIASES`.
 pub const KEY_ALIASES: [(&str, &str); 12] = [

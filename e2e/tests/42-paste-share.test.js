@@ -152,7 +152,7 @@ test("a page is shared as one self-contained HTML file", async () => {
   assert.match(html, /^<!DOCTYPE html>/);
   assert.match(html, /<title>Bericht<\/title>/);
   assert.match(html, /<img src="data:image\/png;base64,[A-Za-z0-9+/=]+"/, "image inlined");
-  assert.match(html, /Erstellt mit Annalo/);
+  assert.match(html, /Erstellt mit Arcalo/);
   assert.match(html, /<details class="callout callout-note"><summary>/);
   assert.match(html, /<sup class="fn-ref">/);
   assert.match(html, /<nav class="toc"/);

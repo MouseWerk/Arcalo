@@ -46,7 +46,7 @@ no sound output there. Check playback on Windows and macOS.
 
 ## Publishing the models (maintainers)
 
-The default source is the release `whisper-models-v1` of `MouseWerk/Annalo`. Run the workflow
+The default source is the release `whisper-models-v1` of `MouseWerk/Arcalo`. Run the workflow
 „Whisper models“ (Actions → Whisper models → Run workflow) or, with the GitHub CLI logged in,
 `scripts/publish-whisper-models.sh`. Both download the three files from Hugging Face, check them against
 the SHA-256 in `crates/annalo-core/src/voice/models.rs` and upload them as release assets (the release is

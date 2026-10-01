@@ -82,7 +82,7 @@ test("a foreign or missing mirror folder is refused with a clear message", async
     () => "",
     (e) => String(e).replace(/^Error: /, ""),
   );
-  assert.match(err, /keine Markdown-Kopie von Annalo/);
+  assert.match(err, /keine Markdown-Kopie von Arcalo/);
   assert.doesNotMatch(err, /invalid state/);
   await app.waitText(".toast", /keine Markdown-Kopie/);
   assert.ok(fs.existsSync(path.join(foreign, "Steuer.pdf")), "the foreign folder is untouched");

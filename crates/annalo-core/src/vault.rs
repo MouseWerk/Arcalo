@@ -97,7 +97,7 @@ fn read_text(p: &Path, rel: &Path, warnings: &mut Vec<String>) -> Result<String>
         ));
         warnings.push(trf!("{}: {mb} MB groß, gekürzt auf 2 MB", "{}: {mb} MB, shortened to 2 MB", rel.display()));
     }
-    // Obsidian Tasks marks due dates with a calendar symbol; Annalo writes `due:`.
+    // Obsidian Tasks marks due dates with a calendar symbol; Arcalo writes `due:`.
     Ok(text.replace(&format!("{} ", crate::tasks::OBSIDIAN_DUE), "due:").replace(crate::tasks::OBSIDIAN_DUE, "due:"))
 }
 
@@ -437,7 +437,7 @@ impl VaultSnapshot {
         self.contents.get(&id).map_or("", String::as_str)
     }
 
-    /// For Markdown that leaves Annalo (the explicit export, not the mirror, which Git sync
+    /// For Markdown that leaves Arcalo (the explicit export, not the mirror, which Git sync
     /// takes back): links to e-mails (`annalo-mail://`) become their text.
     pub fn for_export(mut self) -> Self {
         for c in self.contents.values_mut() {

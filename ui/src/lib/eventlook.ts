@@ -4,7 +4,7 @@
 //
 // The fill itself is CSS: `color-mix(in srgb, var(--ev) var(--ev-tint), var(--bg-canvas))`, with
 // the title in `--text` and time and place in `--ev-meta`. themeTokens() emits both tokens per
-// theme from eventTokens(); tokens.css carries the values for the two Annalo themes.
+// theme from eventTokens(); tokens.css carries the values for the two Arcalo themes.
 
 import { contrast, mix, parseHex, toHex, type Rgb } from "./color";
 

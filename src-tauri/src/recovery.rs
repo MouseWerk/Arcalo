@@ -42,14 +42,14 @@ impl Choice {
     }
 }
 
-/// Why Annalo cannot start.
+/// Why Arcalo cannot start.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Failure {
     /// The data folder cannot be created or written.
     Folder(String),
     /// The database cannot be opened (damaged, not a database, locked).
     Database(String),
-    /// The database was written by a newer Annalo.
+    /// The database was written by a newer Arcalo.
     Newer(String),
 }
 
@@ -77,10 +77,10 @@ impl Failure {
             Failure::Folder(m) => (
                 tr!("Datenordner nicht beschreibbar", "Data folder not writable"),
                 trf!(
-                    "Annalo kann im Datenordner nicht schreiben:\n{}\n\n{m}\n\nIst das Laufwerk voll, schreibgeschützt oder \
-                     nicht verbunden? Nach der Korrektur Annalo neu starten.",
-                    "Annalo cannot write in the data folder:\n{}\n\n{m}\n\nIs the drive full, read-only or not \
-                     connected? Start Annalo again once that is fixed.",
+                    "Arcalo kann im Datenordner nicht schreiben:\n{}\n\n{m}\n\nIst das Laufwerk voll, schreibgeschützt oder \
+                     nicht verbunden? Nach der Korrektur Arcalo neu starten.",
+                    "Arcalo cannot write in the data folder:\n{}\n\n{m}\n\nIs the drive full, read-only or not \
+                     connected? Start Arcalo again once that is fixed.",
                     dir.display()
                 ),
                 false,
@@ -163,7 +163,7 @@ pub fn show(app: &AppHandle, dir: &Path, failure: Failure) {
     let dir = dir.to_path_buf();
     app.dialog()
         .message(text)
-        .title(format!("Annalo – {title}"))
+        .title(format!("Arcalo – {title}"))
         .kind(MessageDialogKind::Error)
         .buttons(buttons)
         .show_with_result(move |res| {
@@ -213,13 +213,13 @@ fn answer(app: &AppHandle, dir: &Path, pressed: Choice) {
     }
 }
 
-/// Ends Annalo with exit code 1 (`AppHandle::exit` ends `App::run` with code 0).
+/// Ends Arcalo with exit code 1 (`AppHandle::exit` ends `App::run` with code 0).
 fn quit(app: &AppHandle) {
     app.cleanup_before_exit();
     std::process::exit(1);
 }
 
-/// Whether Annalo can write into `dir` (a read-only drive or folder permissions).
+/// Whether Arcalo can write into `dir` (a read-only drive or folder permissions).
 pub fn writable(dir: &Path) -> bool {
     let probe = dir.join(".annalo-write-test");
     let ok = std::fs::write(&probe, b"ok").is_ok();

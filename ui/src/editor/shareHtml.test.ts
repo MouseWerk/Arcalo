@@ -68,7 +68,7 @@ describe("share as HTML", () => {
     );
     expect(doc).toContain("<title>Projekt &lt;X&gt;</title>");
     expect(doc).toContain('<a href="#page-2">Kind</a>');
-    expect(doc).toContain("Erstellt mit Annalo am 24.09.2026");
+    expect(doc).toContain("Erstellt mit Arcalo am 24.09.2026");
     expect(doc).toContain("prefers-color-scheme:dark");
     expect(doc).not.toMatch(/(src|href)="https?:/);
     expect(doc).not.toMatch(/@import|url\(/);

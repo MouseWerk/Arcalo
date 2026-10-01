@@ -1,4 +1,4 @@
-// The visuals of the intro: small, crisp pieces of Annalo's own UI built from the theme tokens
+// The visuals of the intro: small, crisp pieces of Arcalo's own UI built from the theme tokens
 // (so they follow light, dark and every color theme). Motion is CSS only (firstrun.css): each
 // element starts after its `--d` delay; reduced motion shows the final state.
 

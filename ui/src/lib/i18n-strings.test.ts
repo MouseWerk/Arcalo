@@ -73,7 +73,7 @@ const TECHNICAL = [
 
 /** Proper names and technical words that read the same in both languages. */
 const NAMES = new Set([
-  "Annalo",
+  "Arcalo",
   // Key caps, and the language names, which are written in their own language.
   "Enter",
   "Esc",

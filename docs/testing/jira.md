@@ -17,7 +17,7 @@ Center. Use a test project: the worklog and create steps write into Jira.
 5. Add the three widgets; the Sprint widget needs a Scrum board with an active sprint in the project of
    most of your issues (or set the project in its settings).
 6. In a note, type a key of the test project: chip, hover card, click (note page), Ctrl+click (browser).
-7. A task `- [ ] Annalo test` → right-click → „Jira-Issue anlegen“; check the new issue's description.
+7. A task `- [ ] Arcalo test` → right-click → „Jira-Issue anlegen“; check the new issue's description.
    Move it to Done in Jira, „Aktualisieren“: the task is ticked.
 8. With „Arbeit auch in Jira protokollieren“: `/zeit NP-…/… 15m KEY-1 test` posts a worklog of 15 minutes
    with the comment. Delete it in Jira afterwards.

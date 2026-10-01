@@ -1,4 +1,4 @@
-//! The calendars of Outlook Classic Annalo can read („Kalender auswählen“): what discovery found
+//! The calendars of Outlook Classic Arcalo can read („Kalender auswählen“): what discovery found
 //! (the default calendar, further calendar folders of every store, calendars shared by
 //! colleagues, rooms and groups in the navigation pane), what the user selected, and the source
 //! ids they sync under.
@@ -22,7 +22,7 @@ pub const MAX_CALENDARS: usize = 40;
 /// At most this many people whose calendars are opened by name.
 pub const MAX_RECIPIENTS: usize = 20;
 
-/// Where an Outlook calendar lives, as far as it matters for Annalo.
+/// Where an Outlook calendar lives, as far as it matters for Arcalo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum OutlookKind {

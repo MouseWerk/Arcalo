@@ -277,7 +277,7 @@ export function App() {
   // Window title follows the active tab.
   const pages = useApp((s) => s.pages);
   useEffect(() => {
-    const title = active ? `${tabTitle(active, pages)} – Annalo` : "Annalo";
+    const title = active ? `${tabTitle(active, pages)} – Arcalo` : "Arcalo";
     document.title = title;
     getCurrentWindow().setTitle(title).catch(() => {});
   }, [active, pages]);

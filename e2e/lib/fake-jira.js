@@ -1,7 +1,7 @@
 // A fake Jira for end-to-end tests, in two flavors: Cloud (REST v3, Basic auth with e-mail and
 // API token, ADF descriptions, `/search/jql` with `nextPageToken`, Agile boards) and Server/Data
 // Center (REST v2, Bearer personal access token, wiki markup, `/search` with `startAt`, no Agile).
-// It understands the JQL Annalo sends (my open issues, `key in (…)`, `project = X`, `text ~ "…"`,
+// It understands the JQL Arcalo sends (my open issues, `key in (…)`, `project = X`, `text ~ "…"`,
 // `key = X`), pages its searches two issues at a time, stores created issues, comments,
 // transitions and worklogs, and records every request. It listens on a random port; `stop()`
 // closes it (connection refused, as offline), `start()` opens the same port again.

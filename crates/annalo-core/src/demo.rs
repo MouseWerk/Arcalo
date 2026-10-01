@@ -25,7 +25,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
         return Ok(false);
     }
     // The samples come in the display language (codes and numbers are the same in both).
-    let p = db.create_project("PRJ-2026-X", "Annalo Rollout")?;
+    let p = db.create_project("PRJ-2026-X", "Arcalo Rollout")?;
     let np = db.create_netzplan(
         p.id,
         "NP-8801",
@@ -92,7 +92,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     db.save_page_content(
         start.id,
         tr!(
-            "Annalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
+            "Arcalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
              ## So arbeitest du hier\n\n\
              - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
              - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
@@ -102,7 +102,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              - [ ] LiteLLM-Server in den Einstellungen verbinden\n\
              - [ ] Obsidian-Vault importieren\n\
              - [ ] Erstes Projekt unter [[PRJ-2026-X Rollout]] ansehen\n",
-            "Annalo is your local workspace for notes, projects and time tracking.\n\n\
+            "Arcalo is your local workspace for notes, projects and time tracking.\n\n\
              ## How you work here\n\n\
              - Notes are Markdown. Link pages with `[[Page name]]` and tag them with `#tag`.\n\
              - You book time right in the text: type `/time NP-8801/1020 1.5h Review` and press Enter.\n\
@@ -151,7 +151,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              - **Outbound**: REST-Schnittstelle Auftragsdaten (OpenAPI 3.1)\n\n\
              > **Risiko:** Vorgang 1020 liegt auf dem kritischen Pfad. Verzug verschiebt die Abnahme.\n\n\
              ## Betrieb\n\n\
-             ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n",
+             ```powershell\nGet-Service -Name 'Arcalo*' | Restart-Service\n```\n",
             "The middleware connects the ERP to the order portal through IDocs. #architecture\n\n\
              ## Components\n\n\
              - **Inbound**: IDoc receipt, mapping to the canonical data model\n\
@@ -159,7 +159,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              - **Outbound**: REST interface order data (OpenAPI 3.1)\n\n\
              > **Risk:** Activity 1020 is on the critical path. A delay moves the acceptance.\n\n\
              ## Operations\n\n\
-             ```powershell\nGet-Service -Name 'Annalo*' | Restart-Service\n```\n"
+             ```powershell\nGet-Service -Name 'Arcalo*' | Restart-Service\n```\n"
         ),
     )?;
     let jf = db.create_page(Some(proj.id), tr!("Jour fixe 22.09.", "Weekly sync 22.09."), Some("users"))?;

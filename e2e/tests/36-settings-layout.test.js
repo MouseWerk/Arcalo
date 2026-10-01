@@ -135,7 +135,7 @@ test("narrow panes: a section dropdown instead of the menu, nothing sideways or 
 test("Über: the update row wraps its buttons and long paths shorten in the middle", async () => {
   await openSettings();
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="about"]').click());
-  await app.waitText(".settings-head h1", /Annalo/);
+  await app.waitText(".settings-head h1", /Arcalo/);
   // An available update (the test build has no update key, so the state is set directly).
   await app.browser.execute(() =>
     window.__annaloUpdates.setState({

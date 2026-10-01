@@ -1,4 +1,4 @@
-//! `annalo` – headless access to an Annalo workspace database.
+//! `annalo` – headless access to an Arcalo workspace database.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "annalo", version, about = "Annalo workspace from the command line")]
+#[command(name = "annalo", version, about = "Arcalo workspace from the command line")]
 struct Cli {
     /// Workspace database file.
     #[arg(long, env = "ANNALO_DB", default_value = "annalo.db", global = true)]

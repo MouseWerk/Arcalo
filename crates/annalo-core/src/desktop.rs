@@ -211,7 +211,7 @@ pub fn tray_tooltip(running: Option<(&str, i64)>) -> String {
             let m = minutes.max(0);
             format!("{label} · {:02}:{:02}", m / 60, m % 60)
         }
-        None => "Annalo".to_owned(),
+        None => "Arcalo".to_owned(),
     }
 }
 
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn only_macos_hands_the_focus_back_after_a_popup() {
         assert!(hide_app_after_popup(Platform::MacOs, true, true));
-        assert!(!hide_app_after_popup(Platform::MacOs, false, true), "opened from Annalo: Annalo keeps the focus");
+        assert!(!hide_app_after_popup(Platform::MacOs, false, true), "opened from Arcalo: Arcalo keeps the focus");
         assert!(!hide_app_after_popup(Platform::MacOs, true, false), "clicked elsewhere: that program has it");
         assert!(!hide_app_after_popup(Platform::Windows, true, true));
         assert!(!hide_app_after_popup(Platform::Linux, true, true));
@@ -446,7 +446,7 @@ mod tests {
     fn tooltip_shows_running_timer() {
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", Some("1020")), 83))), "NP-8801/1020 · 01:23");
         assert_eq!(tray_tooltip(Some((&timer_label("NP-8801", None), 600))), "NP-8801 · 10:00");
-        assert_eq!(tray_tooltip(None), "Annalo");
+        assert_eq!(tray_tooltip(None), "Arcalo");
     }
 }
 

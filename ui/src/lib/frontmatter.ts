@@ -179,7 +179,7 @@ export function propertyValue(props: Property[], key: string): string | null {
 }
 
 /**
- * Frontmatter keys Annalo reads, German (as older notes have them) → English alias. Both
+ * Frontmatter keys Arcalo reads, German (as older notes have them) → English alias. Both
  * always work; the first one in a page wins. New content uses the display language's name.
  */
 export const KEY_ALIASES: Record<string, string> = {

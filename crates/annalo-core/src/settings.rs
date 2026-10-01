@@ -919,7 +919,7 @@ impl Database {
 
     /// Annalo 1.3, once: Mica was on by default and washed out the sidebar behind bright
     /// desktops, so saved settings that still have it on (the old default) switch it off; the
-    /// old default accent `indigo` becomes `theme` (the same color in the Annalo theme, and
+    /// old default accent `indigo` becomes `theme` (the same color in the Arcalo theme, and
     /// the matching accent in every other theme).
     pub fn migrate_appearance_defaults(&self) -> Result<()> {
         const FLAG: &str = "appearance_defaults_1_3";

@@ -1,4 +1,4 @@
-// Starts the real Annalo desktop binary under tauri-driver and returns a
+// Starts the real Arcalo desktop binary under tauri-driver and returns a
 // WebdriverIO session. Each call uses a fresh, isolated data directory.
 
 import { spawn, execSync } from "node:child_process";

@@ -279,7 +279,7 @@ pub fn link_ids(markdown: &str) -> Vec<String> {
     link_spans(markdown).into_iter().map(|(.., id)| id.to_owned()).collect()
 }
 
-/// `markdown` with every mail link replaced by its text, for Markdown that leaves Annalo
+/// `markdown` with every mail link replaced by its text, for Markdown that leaves Arcalo
 /// (the export): `E-Mail: Betreff (Absender, Datum)`.
 pub fn export_text(markdown: &str) -> String {
     let spans = link_spans(markdown);
@@ -427,7 +427,7 @@ impl Database {
                 },
             )
             .optional()?
-            .ok_or_else(|| Error::State(tr!("Diese E-Mail ist in Annalo nicht (mehr) verknüpft", "This e-mail is not linked in Annalo (any more)").into()))
+            .ok_or_else(|| Error::State(tr!("Diese E-Mail ist in Arcalo nicht (mehr) verknüpft", "This e-mail is not linked in Arcalo (any more)").into()))
     }
 }
 

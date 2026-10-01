@@ -62,7 +62,7 @@ describe("settings import", () => {
   it("rejects files that are not settings", () => {
     expect(parseSettingsImport("{kaputt", current()).error).toMatch(/kein gültiges JSON/);
     expect(parseSettingsImport("[1,2]", current()).error).toMatch(/keine Einstellungen/);
-    expect(parseSettingsImport(JSON.stringify({ format: "andere-app", settings: {} }), current()).error).toMatch(/keine Annalo/);
+    expect(parseSettingsImport(JSON.stringify({ format: "andere-app", settings: {} }), current()).error).toMatch(/keine Arcalo/);
     expect(parseSettingsImport(JSON.stringify({ format: EXPORT_FORMAT, version: 99, settings: { theme: "dark" } }), current()).error).toMatch(/neueren/);
     expect(parseSettingsImport(JSON.stringify({ foo: 1 }), current()).error).toMatch(/keine bekannten/);
   });

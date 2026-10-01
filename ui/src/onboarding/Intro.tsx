@@ -140,7 +140,7 @@ export function Intro({ onDone }: { onDone: () => void }) {
       <header className="fr-top" data-tauri-drag-region>
         <span className="fr-brand" data-tauri-drag-region>
           <AnnaloLogo size={18} />
-          Annalo
+          Arcalo
         </span>
         <button type="button" className="fr-skip" onClick={onDone}>
           {t("fr.intro.skip")}

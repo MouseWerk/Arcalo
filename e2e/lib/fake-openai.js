@@ -1,6 +1,6 @@
 // Fake OpenAI-compatible servers for end-to-end tests: an Ollama (native /api/tags,
 // /api/version and /api/pull, no auth) or an OpenAI-style API with a bearer key and without a
-// cost header (costs then come from Annalo's price table). Both stream chat completions, answer
+// cost header (costs then come from Arcalo's price table). Both stream chat completions, answer
 // tool calls, embed, and record every request. `stop()` closes the port (connection refused),
 // `start()` opens it again.
 

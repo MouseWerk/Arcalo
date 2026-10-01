@@ -1,5 +1,5 @@
-// Themes beyond Annalo Hell: code blocks, callouts, the slash menu, the formatting bubble, the
-// inline AI bar and the PDF tab in Annalo Dunkel, Nord, Solarized Light and high contrast, and the
+// Themes beyond Arcalo Hell: code blocks, callouts, the slash menu, the formatting bubble, the
+// inline AI bar and the PDF tab in Arcalo Dunkel, Nord, Solarized Light and high contrast, and the
 // white Beamer slides in a dark theme. Text is measured against the background it is drawn on (WCAG contrast).
 
 import { test as nodeTest, before, after } from "node:test";

@@ -811,14 +811,14 @@ where
     Tz::Offset: std::fmt::Display,
 {
     let system = tr!(
-        "Du schreibst in Annalo, einem Notiz- und Zeiterfassungsprogramm, den Tagesrückblick des Nutzers. \
+        "Du schreibst in Arcalo, einem Notiz- und Zeiterfassungsprogramm, den Tagesrückblick des Nutzers. \
         Fasse den Tag auf Deutsch in 3 bis 6 Sätzen zusammen: woran gearbeitet wurde, wie viel Zeit gebucht ist, \
         welche Termine und Aufgaben wichtig waren. Sprich den Nutzer mit „du“ an, bleibe sachlich und erfinde nichts, \
         was nicht in den Daten steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 \
         Stichpunkte (- …) mit dem, was offen ist: fehlende Buchungen, nicht gebuchte Termine, fällige und \
         überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. Antworte nur mit dem Text in \
         Markdown, ohne Überschrift und ohne Einleitung.",
-        "You write the user's day review in Annalo, a notes and time tracking app. Summarize the day in English \
+        "You write the user's day review in Arcalo, a notes and time tracking app. Summarize the day in English \
         in 3 to 6 sentences: what was worked on, how much time is booked, which meetings and tasks mattered. \
         Address the user as “you”, stay factual and invent nothing that is not in the data. Then write a line \
         “**Open for tomorrow:**” and below it 1 to 5 bullet points (- …) with what is open: missing time \
@@ -827,13 +827,13 @@ where
     );
     // Time tracking off: a notes and calendar day, no bookings.
     let without_time = tr!(
-        "Du schreibst in Annalo, einem Notizprogramm mit Kalender, den Tagesrückblick des Nutzers. \
+        "Du schreibst in Arcalo, einem Notizprogramm mit Kalender, den Tagesrückblick des Nutzers. \
         Fasse den Tag auf Deutsch in 3 bis 6 Sätzen zusammen: woran gearbeitet wurde, welche Termine und Aufgaben \
         wichtig waren. Sprich den Nutzer mit „du“ an, bleibe sachlich und erfinde nichts, was nicht in den Daten \
         steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 Stichpunkte (- …) mit dem, \
         was offen ist: fällige und überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. \
         Antworte nur mit dem Text in Markdown, ohne Überschrift und ohne Einleitung.",
-        "You write the user's day review in Annalo, a notes app with a calendar. Summarize the day in English \
+        "You write the user's day review in Arcalo, a notes app with a calendar. Summarize the day in English \
         in 3 to 6 sentences: what was worked on, which meetings and tasks mattered. Address the user as “you”, \
         stay factual and invent nothing that is not in the data. Then write a line “**Open for tomorrow:**” and \
         below it 1 to 5 bullet points (- …) with what is open: tasks due and overdue. If nothing is open, write \

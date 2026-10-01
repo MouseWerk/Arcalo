@@ -61,12 +61,12 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
     })
 }
 
-/// Part of the error for a database written by a newer Annalo (start-up tells it apart).
-pub const NEWER_SCHEMA: &str = "neueren Annalo-Version";
+/// Part of the error for a database written by a newer Arcalo (start-up tells it apart).
+pub const NEWER_SCHEMA: &str = "neueren Arcalo-Version";
 /// The same in English.
-pub const NEWER_SCHEMA_EN: &str = "newer Annalo version";
+pub const NEWER_SCHEMA_EN: &str = "newer Arcalo version";
 
-/// Whether an error message is the one for a database of a newer Annalo (either language).
+/// Whether an error message is the one for a database of a newer Arcalo (either language).
 pub fn is_newer_schema(message: &str) -> bool {
     message.contains(NEWER_SCHEMA) || message.contains(NEWER_SCHEMA_EN)
 }
@@ -75,8 +75,8 @@ pub fn is_newer_schema(message: &str) -> bool {
 fn check_not_newer(version: usize) -> Result<()> {
     if version > MIGRATIONS.len() {
         return Err(Error::State(trf!(
-            "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{version}, diese kennt v{}). Bitte Annalo aktualisieren.",
-            "The database comes from a {NEWER_SCHEMA_EN} (schema v{version}, this one knows v{}). Please update Annalo.",
+            "Die Datenbank stammt von einer {NEWER_SCHEMA} (Schema v{version}, diese kennt v{}). Bitte Arcalo aktualisieren.",
+            "The database comes from a {NEWER_SCHEMA_EN} (schema v{version}, this one knows v{}). Please update Arcalo.",
             MIGRATIONS.len()
         )));
     }
@@ -149,7 +149,7 @@ impl Database {
     }
 
     fn init(conn: Connection) -> Result<Self> {
-        // A database of a newer Annalo is refused before anything (even the journal mode) is written.
+        // A database of a newer Arcalo is refused before anything (even the journal mode) is written.
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         check_not_newer(version.max(0) as usize)?;
         conn.execute_batch(

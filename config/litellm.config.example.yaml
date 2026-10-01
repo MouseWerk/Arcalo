@@ -1,7 +1,7 @@
-# Example LiteLLM proxy config for Annalo.
+# Example LiteLLM proxy config for Arcalo.
 # Start with:  litellm --config config/litellm.config.example.yaml --port 4000
 #
-# The model names on the left ("model_name") are what Annalo routes to;
+# The model names on the left ("model_name") are what Arcalo routes to;
 # map them to whatever local or cloud models you use.
 model_list:
   - model_name: ollama/llama3.2          # Tier "local"
@@ -14,7 +14,7 @@ model_list:
       model: ollama/nomic-embed-text
       api_base: http://localhost:11434
     model_info:
-      mode: embedding                    # Annalo offers only embedding models for its search
+      mode: embedding                    # Arcalo offers only embedding models for its search
 
   - model_name: cloud-standard           # Tier "standard"
     litellm_params:
@@ -27,7 +27,7 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
 
 # A vLLM server as chat model: start vLLM with --enable-auto-tool-choice and a
-# --tool-call-parser so the assistant can use its tools (without, Annalo asks without tools).
+# --tool-call-parser so the assistant can use its tools (without, Arcalo asks without tools).
 #  - model_name: vllmserver
 #    litellm_params:
 #      model: hosted_vllm/<model>
@@ -37,7 +37,7 @@ model_list:
 
 # Every failed request counts against its deployment: after more than `allowed_fails` failures
 # within a minute LiteLLM pauses it for `cooldown_time` seconds and answers 429 "No deployments
-# available". Annalo waits out a short pause, but with one deployment per model a few more
+# available". Arcalo waits out a short pause, but with one deployment per model a few more
 # allowed failures avoid needless pauses.
 router_settings:
   allowed_fails: 3

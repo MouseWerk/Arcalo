@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes the Whisper models of voice notes as assets of the release `whisper-models-v1`
-# (the default download source of Annalo). Downloads each file from Hugging Face, checks its
+# (the default download source of Arcalo). Downloads each file from Hugging Face, checks its
 # SHA-256 against crates/annalo-core/src/voice/models.rs and uploads it with the GitHub CLI.
 #
 #   scripts/publish-whisper-models.sh            # all models
@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO="${REPO:-MouseWerk/Annalo}"
+REPO="${REPO:-MouseWerk/Arcalo}"
 TAG="whisper-models-v1"
 SOURCE="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 REGISTRY="crates/annalo-core/src/voice/models.rs"
@@ -26,7 +26,7 @@ models=$(awk '/file: "/ { gsub(/[",]/, "", $2); f = $2 } /sha256: "/ { gsub(/[",
 
 if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" --repo "$REPO" --title "Whisper models (voice notes)" \
-    --notes "Whisper models for Annalo's voice notes (whisper.cpp ggml format), mirrored from Hugging Face (ggerganov/whisper.cpp). Annalo checks every file against the SHA-256 in its source code." \
+    --notes "Whisper models for Arcalo's voice notes (whisper.cpp ggml format), mirrored from Hugging Face (ggerganov/whisper.cpp). Arcalo checks every file against the SHA-256 in its source code." \
     --latest=false
 fi
 
