@@ -43,6 +43,8 @@ pub struct OnboardingStatus {
     pub existing: bool,
     pub completed_version: Option<String>,
     pub completed_at: Option<String>,
+    /// Show the one-time notice „Annalo heißt jetzt Arcalo“ (a workspace from before 1.7).
+    pub rebrand_notice: bool,
 }
 
 /// The decision, as a pure function: `first_seen` is the recorded classification, `hint_shown`
@@ -84,6 +86,7 @@ impl Database {
             existing: matches!(first_seen.as_deref(), Some("existing" | "reset")),
             completed_version: state.completed_version,
             completed_at: state.completed_at,
+            rebrand_notice: !skip && self.rebrand_notice_pending()?,
         })
     }
 

@@ -329,6 +329,8 @@ export interface OnboardingStatus extends OnboardingState {
   intro: boolean;
   /** One-time hint for a workspace from before the intro. */
   whats_new: boolean;
+  /** One-time notice of the rename to Arcalo (a workspace from before 1.7). */
+  rebrand_notice?: boolean;
   existing: boolean;
 }
 export type ProxyMode = "none" | "system" | "manual" | "pac";
