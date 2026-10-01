@@ -488,7 +488,7 @@ pub struct Staged {
 
 /// Prepares restoring the backup `path` (local or in a destination): it is copied into the data
 /// folder and checked; the next start puts it in place of the database (the UI restarts right
-/// after). Only Annalo's own backups in the backup folder or a destination are accepted.
+/// after). Only the app's own backups in the backup folder or a destination are accepted.
 #[tauri::command]
 pub async fn backup_restore(app: AppHandle, path: String) -> Result<Staged> {
     let state = app.state::<AppState>();
@@ -496,16 +496,17 @@ pub async fn backup_restore(app: AppHandle, path: String) -> Result<Staged> {
     let name = file.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
     let local = state.backup_dir();
     let settings = state.settings();
-    // A destination holds one folder per computer: <destination>/<computer>/annalo-….db.
+    // A destination holds one folder per computer: <destination>/<computer>/arcalo-….db
+    // (annalo-….db before 1.7).
     let in_dest = |d: &Destination| {
         let root = file.parent().and_then(Path::parent);
         root.is_some_and(|p| dest::id_for(&p.display().to_string()) == dest::id_for(&d.path))
     };
     let known = file.parent() == Some(local.as_path()) || settings.backup_targets.destinations.iter().any(in_dest);
-    if !known || !name.starts_with("annalo-") || !name.ends_with(".db") {
+    if !known || !annalo_core::backup::has_backup_prefix(&name) {
         let f = Failure::new(
             Problem::Invalid,
-            trf!("Keine Sicherung von Annalo: {}", "Not an Annalo backup: {}", file.display()),
+            trf!("Keine Sicherung von Arcalo: {}", "Not an Arcalo backup: {}", file.display()),
             &path,
         );
         return Ok(Staged { ok: false, verified: false, failure: Some(f) });

@@ -34,7 +34,9 @@ pub const REPO_DIR: &str = "git-sync";
 pub const DB_FILE: &str = "annalo-workspace.db";
 pub const README_FILE: &str = "README.md";
 pub const ATTRIBUTES_FILE: &str = ".gitattributes";
-/// First line of [`ATTRIBUTES_FILE`]; marks a repository written by this sync.
+/// First line of [`ATTRIBUTES_FILE`]; marks a repository written by this sync. Kept from before
+/// the rename to Arcalo: repositories of 1.6 carry it, and a changed marker would make
+/// computers on different versions rewrite the file back and forth.
 const MARKER: &str = "# Annalo Git-Synchronisierung";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 pub const NOT_INSTALLED: &str = "Git ist nicht installiert (git-scm.com)";
@@ -56,11 +58,13 @@ const ATTRIBUTES: &str = "# Annalo Git-Synchronisierung\n\
 *.webp binary\n";
 
 /// First line of the sync's README (it marks the file as the sync's own, in every language).
-const README_TITLE: &str = "# Annalo – Git-Sicherung";
+const README_TITLE: &str = "# Arcalo – Git-Sicherung";
+/// [`README_TITLE`] of repositories written before 1.7 (Annalo).
+const LEGACY_README_TITLE: &str = "# Annalo – Git-Sicherung";
 
-const README: &str = "# Annalo – Git-Sicherung
+const README: &str = "# Arcalo – Git-Sicherung
 
-Dieses Repository wird von Annalo automatisch geschrieben: bei jeder Synchronisierung
+Dieses Repository wird von Arcalo automatisch geschrieben: bei jeder Synchronisierung
 wird es auf den Stand des Arbeitsbereichs gebracht. Änderungen hier werden dabei
 überschrieben.
 
@@ -69,13 +73,13 @@ wird es auf den Stand des Arbeitsbereichs gebracht. Änderungen hier werden dabe
 - `Zeiterfassung/JJJJ-MM.csv` enthält die abgeschlossenen Buchungen je Monat.
 - `annalo-workspace.db` (falls aktiviert) ist die letzte Sicherung der Datenbank.
 
-Wiederherstellen: in Annalo unter Einstellungen → Sicherung → „Aus Git wiederherstellen…“,
+Wiederherstellen: in Arcalo unter Einstellungen → Sicherung → „Aus Git wiederherstellen…“,
 oder das Repository klonen und als Obsidian-Vault importieren.
 ";
 
-const README_EN: &str = "# Annalo – Git-Sicherung
+const README_EN: &str = "# Arcalo – Git-Sicherung
 
-This repository is written by Annalo automatically (Git backup): every sync brings it up
+This repository is written by Arcalo automatically (Git backup): every sync brings it up
 to the state of the workspace. Changes made here are overwritten then.
 
 - Every page is a Markdown file (`.md`), subpages are in the folder of the same name.
@@ -83,7 +87,7 @@ to the state of the workspace. Changes made here are overwritten then.
 - `Zeiterfassung/YYYY-MM.csv` holds the finished time entries per month.
 - `annalo-workspace.db` (when switched on) is the latest backup of the database.
 
-Restore: in Annalo under Settings → Backup → “Restore from Git…”, or clone the repository
+Restore: in Arcalo under Settings → Backup → “Restore from Git…”, or clone the repository
 and import it as an Obsidian vault.
 ";
 
@@ -121,7 +125,7 @@ impl Default for GitSyncSettings {
             enabled: false,
             remote_url: String::new(),
             branch: "main".into(),
-            author_name: "Annalo".into(),
+            author_name: "Arcalo".into(),
             author_email: "annalo@localhost".into(),
             include_database: false,
             mode: SyncMode::WithBackup,
@@ -980,9 +984,9 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     // committed as the deletion of every note, or as someone else's files.
     if !req.source.is_dir() || !crate::mirror::is_mirror(req.source) {
         return Err(Error::State(trf!(
-            "Die Markdown-Kopie unter {} fehlt oder ist keine Markdown-Kopie von Annalo – \
+            "Die Markdown-Kopie unter {} fehlt oder ist keine Markdown-Kopie von Arcalo – \
              Git-Synchronisierung abgebrochen, damit auf dem Server nichts gelöscht wird",
-            "The Markdown copy at {} is missing or is not a Markdown copy by Annalo – Git sync stopped \
+            "The Markdown copy at {} is missing or is not a Markdown copy by Arcalo – Git sync stopped \
              so that nothing is deleted on the server",
             req.source.display()
         )));
@@ -1300,7 +1304,7 @@ pub fn pending_changes(source: &Path, repo: &Path) -> usize {
 /// Removes this sync's own README from a cloned repository before it is imported as a vault.
 pub fn strip_sync_files(dir: &Path) -> Result<()> {
     let readme = dir.join(README_FILE);
-    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with(README_TITLE)) {
+    if fs::read_to_string(&readme).is_ok_and(|s| s.starts_with(README_TITLE) || s.starts_with(LEGACY_README_TITLE)) {
         fs::remove_file(readme)?;
     }
     Ok(())
@@ -1316,6 +1320,20 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    #[test]
+    fn strip_sync_files_removes_the_readme_of_both_names() {
+        for title in [README_TITLE, LEGACY_README_TITLE] {
+            let dir = tmp("strip-readme");
+            fs::write(dir.join(README_FILE), format!("{title}\n\ntext")).unwrap();
+            strip_sync_files(&dir).unwrap();
+            assert!(!dir.join(README_FILE).exists(), "{title}");
+            fs::write(dir.join(README_FILE), "# Eigenes Projekt").unwrap();
+            strip_sync_files(&dir).unwrap();
+            assert!(dir.join(README_FILE).exists(), "a foreign README stays");
+            let _ = fs::remove_dir_all(&dir);
+        }
     }
 
     fn write(p: &Path, content: &str) {
@@ -1424,7 +1442,7 @@ mod tests {
         let n = normalize(&s).unwrap();
         assert_eq!(
             (n.remote_url.as_str(), n.branch.as_str(), n.author_name.as_str()),
-            ("https://x/y.git", "main", "Annalo")
+            ("https://x/y.git", "main", "Arcalo")
         );
         assert!(normalize(&GitSyncSettings { remote_url: "-oProxyCommand=x".into(), ..s }).is_err());
     }

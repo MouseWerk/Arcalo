@@ -1,6 +1,7 @@
 //! Database backups: consistent snapshots written with `VACUUM INTO` as
-//! `annalo-YYYYMMDD-HHMMSS.db` (UTC, so names sort chronologically across DST
-//! changes), pruned to the newest `keep`. Times are shown in local time.
+//! `arcalo-YYYYMMDD-HHMMSS.db` (UTC, so names sort chronologically across DST
+//! changes), pruned to the newest `keep`. Times are shown in local time. Backups from before
+//! the rename to Arcalo (`annalo-YYYYMMDD-HHMMSS.db`) are listed, restored and pruned alike.
 
 use crate::trf;
 use std::fs;
@@ -13,6 +14,20 @@ use crate::db::Database;
 use crate::error::{Error, IoAt, Result};
 
 const STAMP: &str = "%Y%m%d-%H%M%S";
+/// File name prefix of new backups.
+pub const PREFIX: &str = "arcalo-";
+/// File name prefix of backups written before 1.7 (Annalo).
+pub const LEGACY_PREFIX: &str = "annalo-";
+
+/// The `YYYYMMDD-HHMMSS` part of a backup's file name (`arcalo-….db` or `annalo-….db`).
+pub fn stamp_part(file_name: &str) -> Option<&str> {
+    file_name.strip_prefix(PREFIX).or_else(|| file_name.strip_prefix(LEGACY_PREFIX))?.strip_suffix(".db")
+}
+
+/// Whether `file_name` is named like a backup of this app (either prefix, any stamp).
+pub fn has_backup_prefix(file_name: &str) -> bool {
+    (file_name.starts_with(PREFIX) || file_name.starts_with(LEGACY_PREFIX)) && file_name.ends_with(".db")
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BackupInfo {
@@ -22,9 +37,10 @@ pub struct BackupInfo {
     pub size_bytes: u64,
 }
 
-/// Parses `annalo-YYYYMMDD-HHMMSS.db` (UTC) into local time; other files in the folder are ignored.
+/// Parses `arcalo-YYYYMMDD-HHMMSS.db` (or `annalo-…`, UTC) into local time; other files in the
+/// folder are ignored.
 fn backup_time(file_name: &str) -> Option<DateTime<Local>> {
-    let stamp = file_name.strip_prefix("annalo-")?.strip_suffix(".db")?;
+    let stamp = stamp_part(file_name)?;
     let naive = NaiveDateTime::parse_from_str(stamp, STAMP).ok()?;
     Some(naive.and_utc().with_timezone(&Local))
 }
@@ -49,8 +65,8 @@ pub fn list_backups(dir: &Path) -> Result<Vec<BackupInfo>> {
             info(&e.path(), &name)
         })
         .collect();
-    // UTC stamps: the name order is the creation order.
-    out.sort_by(|a, b| b.file_name.cmp(&a.file_name));
+    // Newest first by the UTC stamp in the name (both prefixes mix in one folder after the rename).
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at).then_with(|| b.file_name.cmp(&a.file_name)));
     Ok(out)
 }
 
@@ -62,7 +78,7 @@ pub fn backup_to(db: &Database, dir: &Path, keep: usize) -> Result<BackupInfo> {
 /// `now` is UTC.
 fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Result<BackupInfo> {
     fs::create_dir_all(dir).at(dir)?;
-    let name = format!("annalo-{}.db", now.format(STAMP));
+    let name = format!("{PREFIX}{}.db", now.format(STAMP));
     let path = dir.join(&name);
     // VACUUM INTO refuses existing files; a second backup within the same second replaces the first.
     if path.exists() {
@@ -132,7 +148,7 @@ mod tests {
         fs::write(&db_file, b"kein SQLite").unwrap();
         assert!(Database::open(&db_file).is_err());
         let used = restore_latest(&db_file, &backups, Utc::now()).unwrap();
-        assert!(used.file_name.starts_with("annalo-"));
+        assert!(used.file_name.starts_with("arcalo-"));
         let db = Database::open(&db_file).unwrap();
         let p = db.page_by_title("Gesichert").unwrap().unwrap();
         assert_eq!(db.page_doc(p.id).unwrap().content, "aus der Sicherung");
@@ -158,7 +174,7 @@ mod tests {
         }
         let list = list_backups(&dir).unwrap();
         let names: Vec<_> = list.iter().map(|b| b.file_name.as_str()).collect();
-        assert_eq!(names, ["annalo-20260923-040000.db", "annalo-20260923-030000.db"]);
+        assert_eq!(names, ["arcalo-20260923-040000.db", "arcalo-20260923-030000.db"]);
         assert!(list[0].size_bytes > 0);
         assert!(dir.join("notiz.txt").exists(), "other files are left alone");
 
@@ -175,6 +191,40 @@ mod tests {
         let earlier = backup_at(&db, &dir, 1, at(2)).unwrap();
         assert_eq!(list_backups(&dir).unwrap(), vec![earlier.clone()]);
         assert_eq!(earlier.created_at, at(2).and_utc().with_timezone(&Local), "UTC name, local display");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backups_from_before_the_rename_are_listed_restored_and_pruned() {
+        let dir = std::env::temp_dir().join(format!("annalo-backup-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let backups = dir.join("backups");
+        fs::create_dir_all(&backups).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Alt", None).unwrap();
+        db.save_page_content(p.id, "aus Annalo 1.6").unwrap();
+        // Written by 1.6: an `annalo-` name, newer than the `arcalo-` one beside it.
+        let at = |h: u32| chrono::NaiveDate::from_ymd_opt(2026, 9, 23).unwrap().and_hms_opt(h, 0, 0).unwrap();
+        backup_at(&db, &backups, 5, at(1)).unwrap();
+        let legacy = backups.join("annalo-20260923-020000.db");
+        db.conn().execute("VACUUM INTO ?1", [legacy.to_str().unwrap()]).unwrap();
+        let names: Vec<_> = list_backups(&backups).unwrap().into_iter().map(|b| b.file_name).collect();
+        assert_eq!(names, ["annalo-20260923-020000.db", "arcalo-20260923-010000.db"], "newest first, both prefixes");
+        assert_eq!(stamp_part("annalo-20260923-020000.db"), Some("20260923-020000"));
+        assert!(has_backup_prefix("annalo-x.db") && has_backup_prefix("arcalo-x.db") && !has_backup_prefix("x.db"));
+
+        let db_file = dir.join("workspace.db");
+        fs::write(&db_file, b"kaputt").unwrap();
+        let used = restore_latest(&db_file, &backups, Utc::now()).unwrap();
+        assert_eq!(used.file_name, "annalo-20260923-020000.db");
+        let restored = Database::open(&db_file).unwrap();
+        assert_eq!(restored.page_doc(p.id).unwrap().content, "aus Annalo 1.6");
+        drop(restored);
+
+        // A new backup prunes the old names like its own.
+        backup_at(&db, &backups, 1, at(3)).unwrap();
+        let names: Vec<_> = list_backups(&backups).unwrap().into_iter().map(|b| b.file_name).collect();
+        assert_eq!(names, ["arcalo-20260923-030000.db"]);
         let _ = fs::remove_dir_all(&dir);
     }
 }

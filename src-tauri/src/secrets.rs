@@ -8,11 +8,15 @@
 //! Portable mode: the credential store belongs to the user of the computer, not to the data
 //! folder on the stick. A portable copy names its entries `<account>@<namespace>`
 //! (`datadir::secret_namespace` of its data folder), so it neither reads nor overwrites the
-//! secrets of an installed Annalo or of another portable copy. Secrets therefore do not travel
+//! secrets of an installed copy or of another portable copy. Secrets therefore do not travel
 //! with the folder: on another computer they are entered once more (the settings say so).
 
 use std::path::{Path, PathBuf};
 
+/// Service name of every entry in the credential store. It stays "Annalo" after the rename to
+/// Arcalo (1.7): the API keys, tokens and passwords saved by earlier versions live under it, and
+/// a new name would make them look lost. Users never see it outside the system's own credential
+/// manager. Do not change it without a migration of all entries.
 const SERVICE: &str = "Annalo";
 
 pub struct SecretStore {
@@ -189,6 +193,12 @@ fn account_name(account: &str, data_dir: &Path, portable: bool) -> String {
 #[cfg(test)]
 mod namespace_tests {
     use super::*;
+
+    #[test]
+    fn the_service_name_survives_the_rename() {
+        // Entries saved by Annalo 1.6 and earlier are found only under this name.
+        assert_eq!(SERVICE, "Annalo");
+    }
 
     #[test]
     fn portable_copies_use_their_own_credentials() {

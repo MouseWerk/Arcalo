@@ -10,9 +10,11 @@
 //! closed workspace before the database is opened ([`prepare`]). The old folder is left
 //! untouched.
 //!
-//! Portable mode: a file `annalo-portable` next to the executable (or a folder `data/` there
-//! holding the marker `.annalo-portable`) keeps everything in `<exe dir>/data`, and
+//! Portable mode: a file `arcalo-portable` next to the executable (or a folder `data/` there
+//! holding the marker `.arcalo-portable`) keeps everything in `<exe dir>/data`, and
 //! `location.json` is neither read nor written ([`portable_data_dir`], [`prepare_portable`]).
+//! The markers of copies from before the rename to Arcalo (`annalo-portable`,
+//! `data/.annalo-portable`) count too, so the new ZIP unpacked over an old folder keeps its data.
 
 use crate::{tr, trf};
 use std::path::{Path, PathBuf};
@@ -83,11 +85,15 @@ pub fn resolve(env: Option<PathBuf>, config_dir: Option<&Path>, default: PathBuf
 }
 
 /// Marker file next to the executable that switches on portable mode.
-pub const PORTABLE_MARKER: &str = "annalo-portable";
+pub const PORTABLE_MARKER: &str = "arcalo-portable";
+/// [`PORTABLE_MARKER`] of copies from before 1.7 (Annalo).
+pub const LEGACY_PORTABLE_MARKER: &str = "annalo-portable";
 /// The data folder of a portable copy, next to the executable.
 pub const PORTABLE_DATA: &str = "data";
 /// Marker inside `data/`: the folder alone (without [`PORTABLE_MARKER`]) also means portable.
-pub const PORTABLE_DATA_MARKER: &str = ".annalo-portable";
+pub const PORTABLE_DATA_MARKER: &str = ".arcalo-portable";
+/// [`PORTABLE_DATA_MARKER`] of copies from before 1.7 (Annalo).
+pub const LEGACY_PORTABLE_DATA_MARKER: &str = ".annalo-portable";
 
 /// The folder of the running executable; `env` (`ANNALO_EXE_DIR`, tests) stands in for it.
 pub fn exe_dir(env: Option<PathBuf>) -> Option<PathBuf> {
@@ -98,7 +104,9 @@ pub fn exe_dir(env: Option<PathBuf>) -> Option<PathBuf> {
 /// `<exe dir>/data` when the copy next to `exe_dir` is portable, else `None`.
 pub fn portable_data_dir(exe_dir: &Path) -> Option<PathBuf> {
     let data = exe_dir.join(PORTABLE_DATA);
-    (exe_dir.join(PORTABLE_MARKER).is_file() || data.join(PORTABLE_DATA_MARKER).is_file()).then_some(data)
+    let marked = [PORTABLE_MARKER, LEGACY_PORTABLE_MARKER].iter().any(|m| exe_dir.join(m).is_file())
+        || [PORTABLE_DATA_MARKER, LEGACY_PORTABLE_DATA_MARKER].iter().any(|m| data.join(m).is_file());
+    marked.then_some(data)
 }
 
 /// Like [`prepare`], with a portable data folder first: `env` still wins (tests), then
@@ -425,6 +433,14 @@ mod tests {
         // A marker that is a folder is not a marker.
         std::fs::remove_file(exe.join("data").join(PORTABLE_DATA_MARKER)).unwrap();
         std::fs::create_dir_all(exe.join(PORTABLE_MARKER)).unwrap();
+        assert_eq!(portable_data_dir(&exe), None);
+        // The markers of an Annalo copy (the new ZIP unpacked over an old folder) count too.
+        std::fs::write(exe.join(LEGACY_PORTABLE_MARKER), b"").unwrap();
+        assert_eq!(portable_data_dir(&exe), Some(exe.join("data")));
+        std::fs::remove_file(exe.join(LEGACY_PORTABLE_MARKER)).unwrap();
+        std::fs::write(exe.join("data").join(LEGACY_PORTABLE_DATA_MARKER), b"").unwrap();
+        assert_eq!(portable_data_dir(&exe), Some(exe.join("data")));
+        std::fs::remove_file(exe.join("data").join(LEGACY_PORTABLE_DATA_MARKER)).unwrap();
         assert_eq!(portable_data_dir(&exe), None);
 
         assert_eq!(exe_dir(Some(exe.clone())), Some(exe.clone()));

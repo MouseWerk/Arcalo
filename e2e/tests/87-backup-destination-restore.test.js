@@ -100,9 +100,9 @@ test("a backup in the destination is restored from the settings after a checksum
   await app.shot("87-restore-confirm");
   await app.click(".dialog .btn-danger");
   // Staged and restarted: the new process applies it before opening the database.
-  await until("restarted", () => (log().match(/Annalo [\d.]+ started/g) ?? []).length >= 2);
-  await until("restored", () => /database restored from .*annalo-/.test(log()));
-  assert.match(log(), /restore of annalo-\d{8}-\d{6}\.db prepared/);
+  await until("restarted", () => (log().match(/Arcalo [\d.]+ started/g) ?? []).length >= 2);
+  await until("restored", () => /database restored from .*arcalo-/.test(log()));
+  assert.match(log(), /restore of arcalo-\d{8}-\d{6}\.db prepared/);
   await sleep(1500);
   await app.close().catch(() => {});
   app = null;
@@ -134,7 +134,7 @@ test("the start-up recovery restores from the destination when the local backups
     });
   });
   assert.equal(code, 0, "restored and restarted");
-  await until("recovery logged", () => /database restored from backup annalo-/.test(log()));
+  await until("recovery logged", () => /database restored from backup arcalo-/.test(log()));
   assert.match(log(), /neueste von 1 Sicherungen \(davon 1 in weiteren Sicherungszielen\)/);
   await sleep(1500);
   killApp();

@@ -3,7 +3,7 @@
 // there in the background with its SHA-256 checksum. An unreachable destination stays pending
 // without holding anything up, a hanging one is given up after the stall timeout (shortened here
 // with ANNALO_BACKUP_STALL_SECS; ANNALO_TEST_SLOW_DEST makes every step to it take 20 s), and the
-// retention of a destination only touches Annalo's own files of this computer.
+// retention of a destination only touches the app's own files of this computer.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -36,7 +36,7 @@ after(async () => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-const backupsIn = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^annalo-\d{8}-\d{6}\.db$/.test(f)).sort() : []);
+const backupsIn = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^(annalo|arcalo)-\d{8}-\d{6}\.db$/.test(f)).sort() : []);
 const views = () => app.invoke("backup_destinations");
 const view = async (p) => (await views()).find((v) => v.path === p);
 
@@ -172,7 +172,7 @@ test("retention keeps the newest backups of this computer and never touches othe
   s.backup_targets.destinations = s.backup_targets.destinations.filter((d) => d.path === share).map((d) => ({ ...d, keep: 2 }));
   await app.invoke("settings_save", { settings: s });
   const dir = path.join(share, host);
-  // Files that are not Annalo's own backups of this computer.
+  // Files that are not the app's own backups of this computer.
   fs.writeFileSync(path.join(dir, "Notizen.txt"), "fremd");
   fs.writeFileSync(path.join(dir, "annalo-20200101-000000.db"), "ohne Prüfsumme");
   const other = path.join(share, "anderer-pc");
