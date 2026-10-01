@@ -473,8 +473,13 @@ fn details(c: &Component) -> Details {
     }
     let url_props: Vec<String> =
         ["X-MICROSOFT-SKYPETEAMSMEETINGURL", "X-GOOGLE-CONFERENCE", "URL"].iter().filter_map(|n| c.text(n)).collect();
-    let link =
-        meeting_link(url_props.iter().map(String::as_str).chain([location.as_str(), body.as_deref().unwrap_or("")]));
+    // The HTML description (Outlook/Exchange) often carries the join link when the plain one is cut.
+    let alt_desc = c.text("X-ALT-DESC").unwrap_or_default();
+    let link = meeting_link(url_props.iter().map(String::as_str).chain([
+        location.as_str(),
+        body.as_deref().unwrap_or(""),
+        alt_desc.as_str(),
+    ]));
     Details {
         title: c.text("SUMMARY").unwrap_or_default(),
         location,

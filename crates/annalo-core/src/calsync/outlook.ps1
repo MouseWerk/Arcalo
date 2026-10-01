@@ -368,9 +368,17 @@ function Add-Appointment($it) {
                     $t = [string]$it.PropertyAccessor.GetProperty($teamsUrl)
                     if ($t) { [void]$urls.Add($t) }
                 } catch { }
-                foreach ($m in [regex]::Matches(([string]$o.location) + ' ' + $text, 'https://[^\s<>"]+')) {
+                # Meeting links (also behind Safe Links / URL Defense wrappers) first, so a Teams
+                # link at the end of a long agenda is never cut off by the limit.
+                $found = [regex]::Matches(([string]$o.location) + ' ' + $text, 'https?://[^\s<>"]+')
+                $meet = 'teams\.|zoom|webex|meet\.|goto|lync|skype|jit\.si|whereby|chime\.aws|bluejeans|ringcentral|safelinks|urldefense|google\.com/url'
+                foreach ($m in $found) {
                     if ($urls.Count -ge 20) { break }
-                    [void]$urls.Add($m.Value)
+                    if ($m.Value -match $meet) { [void]$urls.Add($m.Value) }
+                }
+                foreach ($m in $found) {
+                    if ($urls.Count -ge 20) { break }
+                    if ($m.Value -notmatch $meet) { [void]$urls.Add($m.Value) }
                 }
                 $o.urls = @($urls)
             }
