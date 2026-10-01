@@ -1,12 +1,13 @@
 // „Widget hinzufügen“: every widget with a small preview, grouped and searchable.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { GROUP_LABELS, WIDGETS, galleryKinds, type WidgetGroup, type WidgetKind } from "../../lib/dashboard";
 import { Dialog, Input } from "../ui";
 import { iconOf } from "./registry";
 import { viewOf, type GalleryLook as Look } from "./define";
+import { workApi } from "../../lib/workwidgets";
 
 const LOOK: Record<WidgetKind, Look> = {
   today: "timeline",
@@ -30,6 +31,15 @@ const LOOK: Record<WidgetKind, Look> = {
   query: "hbars",
   links: "tiles",
   suggestions: "list",
+  balance: "bars",
+  vacation: "ring",
+  deadlines: "list",
+  mail_flags: "list",
+  next_meeting: "timeline",
+  team: "list",
+  chart: "bars",
+  heatmap: "grid",
+  kanban: "tiles",
 };
 
 /** A schematic of the widget: neutral shapes in the theme's colors. */
@@ -118,17 +128,21 @@ function Preview({ look }: { look: Look }) {
 
 export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: WidgetKind) => void; onClose: () => void; timeOn?: boolean }) {
   const [q, setQ] = useState("");
+  const [mailFlags, setMailFlags] = useState(false);
+  useEffect(() => {
+    workApi.flaggedAvailable().then(setMailFlags, () => {});
+  }, []);
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const out = new Map<WidgetGroup, WidgetKind[]>();
     // Time tracking off: no time widgets (the „Zeit“ group disappears with them).
-    for (const k of galleryKinds(timeOn)) {
+    for (const k of galleryKinds(timeOn, mailFlags)) {
       const d = WIDGETS[k];
       if (needle && !`${t(d.label)} ${t(d.hint)} ${k}`.toLowerCase().includes(needle)) continue;
       out.set(d.group, [...(out.get(d.group) ?? []), k]);
     }
     return out;
-  }, [q, timeOn]);
+  }, [q, timeOn, mailFlags]);
   return (
     <Dialog open onClose={onClose} title={t("dash.gallery.title")} description={t("dash.gallery.desc")} width={760}>
       <div className="dash-gallery">

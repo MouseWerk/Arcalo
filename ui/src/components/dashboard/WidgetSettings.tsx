@@ -21,6 +21,7 @@ import { NetzplanSelect, useWbs } from "../../views/wbs";
 import { QueryView } from "./tools";
 import { viewOf } from "./define";
 import { cityOf, timeZones } from "../../lib/worldclock";
+import { WORK_SETTINGS } from "./workSettings";
 
 type Config = Record<string, unknown>;
 
@@ -400,9 +401,11 @@ function KindFields({ w, c, set }: { w: GridWidget; c: Config; set: (patch: Conf
         </Row>
       );
     default: {
-      // Registered widgets bring their own fields (define.ts).
+      // Registered widgets bring their own fields (define.ts); the work widgets theirs.
       const Own = viewOf(w.kind)?.settings;
-      return Own ? <Own widget={w} config={c} set={set} /> : <div className="faint small">{t("dash.set.nothing")}</div>;
+      if (Own) return <Own widget={w} config={c} set={set} />;
+      const Extra = WORK_SETTINGS[w.kind];
+      return Extra ? <Extra c={c} set={set} Row={Row} /> : <div className="faint small">{t("dash.set.nothing")}</div>;
     }
   }
 }
@@ -472,7 +475,7 @@ function PinnedPages({ ids, onChange }: { ids: number[]; onChange: (ids: number[
 export function WidgetSettings({ widget, onClose, onApply }: { widget: GridWidget; onClose: () => void; onApply: (config: Config, title: string) => void }) {
   const [c, setC] = useState<Config>(() => configOf(widget));
   const [title, setTitle] = useState(widget.title ?? "");
-  const wide = widget.kind === "query";
+  const wide = widget.kind === "query" || widget.kind === "chart";
   const hint = isKind(widget.kind) ? t(WIDGETS[widget.kind].hint) : "";
   return (
     <Dialog

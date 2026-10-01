@@ -189,6 +189,7 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
       ["gitsync://pulled", ["sync", "pages"]],
       ["backup://failed", ["sync"]],
       ["backup://destinations", ["sync"]],
+      ["data://absences", ["absences"]],
     ];
     const un = subs.map(([ev, topics]) => on(ev, () => soon(topics)));
     const saved = () => soon(["pages", "tasks"], 600);

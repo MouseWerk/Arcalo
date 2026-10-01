@@ -26,6 +26,7 @@ mod secrets;
 mod syncmerge;
 mod updates;
 mod weekplan;
+mod worktime;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -4163,6 +4164,12 @@ pub fn run() {
             dashboard::dashboard_data,
             dashboard::dashboard_file_write,
             dashboard::dashboard_inbox_move,
+            worktime::absence_list,
+            worktime::absence_save,
+            worktime::absence_remove,
+            worktime::mail_flagged,
+            worktime::mail_flagged_open,
+            worktime::mail_flagged_available,
             quick_links_save,
             quick_link_open,
             bookmarks::bookmarks_sources,

@@ -42,13 +42,13 @@ pub fn set_lang(lang: Language) -> bool {
     LANG.swap(v, Ordering::Relaxed) != v
 }
 
-/// Sets the decimal separator of numbers and hours (`Auto` follows the language).
-pub fn set_number_format(f: NumberFormat) {
+/// Sets the decimal separator of numbers and hours (`None` follows the language).
+pub fn set_number_format(f: Option<NumberFormat>) {
     NUMBERS.store(
         match f {
-            NumberFormat::Auto => 0,
-            NumberFormat::Comma => 1,
-            NumberFormat::Point => 2,
+            None => 0,
+            Some(NumberFormat::Comma) => 1,
+            Some(NumberFormat::Point) => 2,
         },
         Ordering::Relaxed,
     );
@@ -180,9 +180,9 @@ mod tests {
         assert_eq!(with_numbers(1, Language::En), "28,00", "comma chosen in English");
         assert_eq!(with_numbers(2, Language::De), "28.00", "point chosen in German");
         // The process-wide setting maps the choices.
-        set_number_format(NumberFormat::Point);
+        set_number_format(Some(NumberFormat::Point));
         assert_eq!(NUMBERS.load(Ordering::Relaxed), 2);
-        set_number_format(NumberFormat::Auto);
+        set_number_format(None);
         assert_eq!(NUMBERS.load(Ordering::Relaxed), 0);
     }
 

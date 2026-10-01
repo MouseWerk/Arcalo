@@ -44,7 +44,7 @@ export function applyPrefs(s: Settings) {
 /** Display language and regional formats (also in the small windows). */
 export function applyLocale(s: Settings) {
   if (s.locale) {
-    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: s.locale.number_format ?? "auto" });
+    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: numberFormatOf(s.locale) });
     setLang(s.locale.language);
   }
   if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
@@ -112,3 +112,6 @@ export function exportFileName(pattern: string, v: { from: string; to: string; f
     .trim();
   return name || "zeiten";
 }
+
+/** The decimal notation: as chosen, else as the display language writes numbers (28.00 / 28,00). */
+export const numberFormatOf = (l: { language: string; number_format?: "comma" | "point" | null }): "comma" | "point" => l.number_format ?? (l.language === "en" ? "point" : "comma");
