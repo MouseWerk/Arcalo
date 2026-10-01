@@ -111,6 +111,22 @@ The “Query” widget is your own: pages, tasks, bookings or meetings filtered 
 
 <p align="center"><img src="docs/screenshots/dashboard.png" width="90%" alt="Start page: the Today widget with the meeting running now, due tasks, timer, meetings, time this week, budgets and recent pages"></p>
 
+### More widgets, in five sizes
+
+1.7 adds widgets for the working day: your **overtime balance** (booked hours against the target of every
+day, with an opening balance), **vacation** with days left, taken and planned and the public holidays of every
+German state, **deadlines** from open tasks and date properties, **flagged Outlook e-mails** (Windows, Outlook
+Classic), the **next meeting** with a live countdown and “Join”, **team availability** from your colleagues'
+calendars, **charts** over a page's table or your bookings, an **activity heatmap**, a **Kanban mini-board**,
+a **scratchpad**, the **inbox**, **“A year ago”**, **writing stats**, more time zones in the **clock**, a
+**checklist** and the state of **backups and Git sync**. Every widget comes in five sizes (keys 1 to 5 in
+edit mode), and a board exports to a `.dashboard.json` file that others can import; credentials are never
+written into it.
+
+<p align="center"><img src="docs/screenshots/dashboard-widgets-dark.png" width="90%" alt="Start page with the overtime balance, vacation, the next meeting with a countdown, hours per activity as a bar chart, deadlines and team availability"></p>
+
+<p align="center"><img src="docs/screenshots/balance-vacation-dark.png" width="60%" alt="Overtime balance of +11.75 h and the vacation account with days left, taken and planned and the next public holiday"></p>
+
 ### Time tracking with `/time`
 
 Type `/time NP-8801/1020 2.5h #DEV System integration` in any note. Network, activity and activity type
@@ -131,6 +147,32 @@ workspace and is back as soon as you switch it on again.
   <img src="docs/screenshots/timesheet-dark.png" width="49%" alt="Weekly timesheet">
   <img src="docs/screenshots/projects-dark.png" width="49%" alt="Projects with budget, EAC and critical path">
 </p>
+
+### Jira, Cloud and Server
+
+Settings → Jira connects Jira Cloud (Atlassian e-mail and API token) or Jira Server / Data Center (personal
+access token); the token lives in the Windows Credential Manager or the macOS Keychain. Your open issues and
+saved JQL searches sync in the background and stay available offline. The **Issues** page groups them by
+site, project, status, sprint or priority; an opened issue shows its description, the last comments, the
+pages that name it and the activity it books on. A key such as `PROJ-123` in a note becomes a live chip with
+type, status and title and a hover card. `/time 1h PROJ-123 Fix login` books on the issue's activity and can
+post a worklog to Jira. There are widgets for your issues, a saved search and the active sprint.
+
+<p align="center">
+  <img src="docs/screenshots/jira-issues-dark.png" width="59%" alt="The Issues page with an opened bug: details, description, a comment and the page that names it">
+  <img src="docs/screenshots/jira-chip-dark.png" width="39%" alt="An issue key in a note as a chip with its hover card">
+</p>
+
+### Voice notes
+
+Record from the ribbon, the command palette, `/voice` in a note, a meeting in the calendar or a global
+shortcut. whisper.cpp transcribes on your computer (German or English, models Base, Small or Large v3 Turbo,
+downloaded once from your administrator's address, the `whisper-models-v1` release on GitHub or Hugging
+Face, each checked against its SHA-256); the audio is kept as FLAC and never uploaded. “Summarize” adds a
+summary, decisions and the action items as real tasks with `@Person` and `due:`; `#privat` notes stay on the
+local model.
+
+<p align="center"><img src="docs/screenshots/voice-note-dark.png" width="70%" alt="A voice note with the audio file, the collapsed transcript, a summary, a decision, two tasks and an open point"></p>
 
 ### AI that stays on your server
 
