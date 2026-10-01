@@ -113,7 +113,7 @@ test("a task becomes a Jira issue from its context menu", async () => {
   await app.waitFor('.pane.active .ProseMirror .issue-chip[data-issue="PROJ-126"]', 10000);
   const created = jira.issues.find((i) => i.key === "PROJ-126");
   assert.equal(created.summary, "Fix SSO für Kunde");
-  assert.match(created.description, /Angelegt aus der Notiz „Sprint-Planung“ in Annalo/);
+  assert.match(created.description, /Angelegt aus der Notiz „Sprint-Planung“ in Arcalo/);
   await sleep(1200);
   assert.match((await app.invoke("page_get", { id: pageId })).content, /- \[ \] Fix SSO für Kunde PROJ-126/);
 });

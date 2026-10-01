@@ -1,6 +1,6 @@
 // Start-up recovery (1.4.1): the real app on a damaged database with a backup restores the
 // backup and starts with its pages (the broken file is kept as workspace.db.broken-…); a database
-// of a newer Annalo explains that in German and quits without touching the file. The native
+// of a newer Arcalo explains that in German and quits without touching the file. The native
 // dialog cannot be clicked through WebDriver: debug builds take the answer from
 // ANNALO_TEST_RECOVERY_CHOICE, everything else (dialog text, restore, restart, exit code) is real.
 import { test as nodeTest, after } from "node:test";
@@ -87,7 +87,7 @@ test("a damaged database is restored from the last backup; the app starts with t
   // The dialog offers the restore; the answer „Letzte Sicherung wiederherstellen“ restores and restarts.
   const code = await run(dir, "restore");
   assert.equal(code, 0, "the first process ends after starting the restored app");
-  await until("restore logged", () => /database restored from backup annalo-/.test(log(dir)));
+  await until("restore logged", () => /database restored from backup arcalo-/.test(log(dir)));
   const text = log(dir);
   assert.match(text, /recovery dialog “Datenbank beschädigt”: Die Datenbank im Datenordner lässt sich nicht öffnen/);
   assert.match(text, /verwendet die neueste von 1 Sicherungen/);
@@ -97,7 +97,7 @@ test("a damaged database is restored from the last backup; the app starts with t
   assert.deepEqual(fs.readFileSync(path.join(dir, broken[0])), garbage, "the broken file is kept unchanged");
   assert.equal(fs.readFileSync(db).subarray(0, 15).toString("latin1"), "SQLite format 3");
   // The restarted app opens the restored database.
-  await until("restarted app started", () => (log(dir).match(/Annalo [\d.]+ started/g) ?? []).length >= 2);
+  await until("restarted app started", () => (log(dir).match(/Arcalo [\d.]+ started/g) ?? []).length >= 2);
   await sleep(1500);
   killApp();
   await sleep(500);
@@ -112,7 +112,7 @@ test("a damaged database is restored from the last backup; the app starts with t
   app = null;
 });
 
-test("a database of a newer Annalo is explained in German; quitting leaves it untouched", async () => {
+test("a database of a newer Arcalo is explained in German; quitting leaves it untouched", async () => {
   assert.ok(backupFile, "needs the backup of the first test");
   const dir = tmp("newer");
   const db = path.join(dir, "workspace.db");
@@ -124,7 +124,7 @@ test("a database of a newer Annalo is explained in German; quitting leaves it un
   const code = await run(dir, "quit");
   assert.equal(code, 1, `quits with exit code 1: ${log(dir)}`);
   const text = log(dir);
-  assert.match(text, /recovery dialog “Neuere Datenbank”: Die Datenbank stammt von einer neueren Annalo-Version \(Schema v999, diese kennt v\d+\)\. Bitte Annalo aktualisieren\./);
+  assert.match(text, /recovery dialog “Neuere Datenbank”: Die Datenbank stammt von einer neueren Arcalo-Version \(Schema v999, diese kennt v\d+\)\. Bitte Arcalo aktualisieren\./);
   assert.match(text, /answered by the test: Quit/);
   assert.deepEqual(fs.readFileSync(db), bytes, "the newer database is not changed");
   assert.deepEqual(fs.readdirSync(dir).filter((f) => f.includes("broken")), [], "nothing set aside");

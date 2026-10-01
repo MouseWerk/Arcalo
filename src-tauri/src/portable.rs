@@ -1,4 +1,5 @@
-//! Portable mode: a file `annalo-portable` next to `Annalo.exe` (or `data/.annalo-portable`)
+//! Portable mode: a file `arcalo-portable` next to `Arcalo.exe` (or `data/.arcalo-portable`;
+//! the `annalo-` markers of copies from before 1.7 count too)
 //! keeps all data in `<exe dir>/data` (see `annalo_core::datadir`). A portable copy writes
 //! nothing into the user profile it runs on: no `location.json`, no autostart entry, no
 //! taskbar jump list, the webview's profile in `data/webview`, and updates are downloaded
@@ -65,8 +66,8 @@ pub fn webview_dir(data_dir: &Path) -> Option<PathBuf> {
 /// Why a feature that needs an installation is off.
 pub fn not_portable() -> &'static str {
     annalo_core::tr!(
-        "Im portablen Modus nicht verfügbar: Annalo schreibt dann nichts in das Benutzerprofil dieses Rechners",
-        "Not available in portable mode: Annalo then writes nothing into this computer's user profile"
+        "Im portablen Modus nicht verfügbar: Arcalo schreibt dann nichts in das Benutzerprofil dieses Rechners",
+        "Not available in portable mode: Arcalo then writes nothing into this computer's user profile"
     )
 }
 

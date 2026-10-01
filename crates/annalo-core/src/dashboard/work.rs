@@ -124,7 +124,7 @@ pub struct Deadline {
     pub page_id: Option<i64>,
     /// Task ordinal on the page (tasks only).
     pub ordinal: Option<i64>,
-    /// Where it opens outside Annalo (Jira).
+    /// Where it opens outside Arcalo (Jira).
     pub url: Option<String>,
     /// 0 none, 1 medium, 2 high.
     pub priority: u8,

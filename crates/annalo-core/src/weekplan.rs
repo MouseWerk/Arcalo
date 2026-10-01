@@ -1399,8 +1399,8 @@ pub fn week_reminder(
         })
         .collect();
     Some(trf!(
-        "Noch offen: {}. Annalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.",
-        "Still open: {}. Annalo proposes the time entries from meetings, focus and pages.",
+        "Noch offen: {}. Arcalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.",
+        "Still open: {}. Arcalo proposes the time entries from meetings, focus and pages.",
         days.join(", ")
     ))
 }

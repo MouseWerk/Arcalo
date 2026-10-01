@@ -2,7 +2,7 @@
    the app is ready (lib/splash.ts). A file, not a <style> block in index.html: Tauri adds
    hashes for inline styles to the CSP, and then browsers ignore 'unsafe-inline', which would
    block every style the app sets at runtime (accent color, popup positions).
-   The colors below are the Annalo theme; lib/splash.ts sets --splash-bg/-text/-muted/-accent
+   The colors below are the Arcalo theme; lib/splash.ts sets --splash-bg/-text/-muted/-accent
    from the color theme of the last start (Settings → Darstellung). */
 #splash {
   --splash-bg: #f4f4f5;

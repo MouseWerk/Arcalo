@@ -1,5 +1,5 @@
 //! Backup destinations: further folders that receive a copy of every local backup – a network
-//! share (`\\server\freigabe\Annalo`), a mapped drive (`Z:\Sicherung`), a mounted NAS
+//! share (`\\server\freigabe\Arcalo`), a mapped drive (`Z:\Sicherung`), a mounted NAS
 //! (`/Volumes/…`, `/mnt/…`) or a synced cloud folder (OneDrive, Nextcloud).
 //!
 //! The backup is always written locally first ([`crate::backup`]); the copies follow in the
@@ -10,7 +10,7 @@
 //!
 //! Each computer writes into its own subfolder (`<ziel>/<rechnername>/`), so two installations
 //! sharing one folder never prune each other's backups. Pruning only touches files that match
-//! `annalo-YYYYMMDD-HHMMSS.db` and have their checksum file: other files in the folder are
+//! `arcalo-YYYYMMDD-HHMMSS.db` (or `annalo-…` from before 1.7) and have their checksum file: other files in the folder are
 //! never deleted.
 //!
 //! A share that stops answering (VPN off, server down) can block a file operation for minutes.
@@ -586,7 +586,7 @@ pub struct Delivered {
 
 /// One copy to do: the local backup and the destination.
 pub struct Job {
-    /// The local backup file (`annalo-….db`).
+    /// The local backup file (`arcalo-….db`).
     pub backup: PathBuf,
     /// The destination folder as configured.
     pub dest: PathBuf,
@@ -747,7 +747,7 @@ fn differs(from: &Path, to: &Path) -> bool {
 }
 
 /// Makes `dst` a copy of the folder tree `src`: new and changed files are copied, files and
-/// folders that are no longer in `src` are deleted – only inside `dst`, which belongs to Annalo.
+/// folders that are no longer in `src` are deleted – only inside `dst`, which belongs to Arcalo.
 pub fn sync_tree(src: &Path, dst: &Path, act: &Activity) -> Result<()> {
     sync_files(src, dst, act)?;
     let mut keep = std::collections::HashSet::new();
@@ -777,15 +777,15 @@ pub fn sync_tree(src: &Path, dst: &Path, act: &Activity) -> Result<()> {
     Ok(())
 }
 
-/// Parses `annalo-YYYYMMDD-HHMMSS.db` (UTC).
+/// Parses `arcalo-YYYYMMDD-HHMMSS.db` or `annalo-…` (UTC).
 fn stamp_of(name: &str) -> Option<NaiveDateTime> {
-    let stamp = name.strip_prefix("annalo-")?.strip_suffix(".db")?;
+    let stamp = crate::backup::stamp_part(name)?;
     NaiveDateTime::parse_from_str(stamp, STAMP).ok().filter(|_| stamp.len() == 15)
 }
 
 /// Deletes old backups in one computer's folder `dir`: beyond the newest `keep` and (with
-/// `keep_days`) older than that many days. Only Annalo's own files are touched: names of the
-/// form `annalo-YYYYMMDD-HHMMSS.db` with their `.sha256` next to them. `fresh` (the backup just
+/// `keep_days`) older than that many days. Only the app's own files are touched: names of the
+/// form `arcalo-YYYYMMDD-HHMMSS.db` (or `annalo-…`) with their `.sha256` next to them. `fresh` (the backup just
 /// written) always stays. Left-over `.partial` files of such names older than a day go too.
 pub fn prune(
     dir: &Path,
@@ -816,7 +816,7 @@ pub fn prune(
             ours.push((name, t));
         }
     }
-    ours.sort_by(|a, b| b.0.cmp(&a.0));
+    ours.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.cmp(&a.0)));
     let cutoff = (keep_days > 0).then(|| now.naive_utc() - TimeDelta::days(keep_days as i64));
     let mut removed = Vec::new();
     let mut kept = 0;
@@ -1472,6 +1472,28 @@ mod tests {
         assert!(removed.is_empty(), "22nd is fresh, 23rd and 24th are young: {removed:?}");
         let removed = prune(&dir, 10, 1, now, "annalo-20260924-120000.db", &act).unwrap();
         assert_eq!(removed, ["annalo-20260923-120000.db", "annalo-20260922-120000.db"]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pruning_counts_annalo_and_arcalo_backups_by_their_time() {
+        let root = tmp("prune-rename");
+        let dir = root.join("pc");
+        fs::create_dir_all(&dir).unwrap();
+        let now = "2026-09-25T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        // 1.6 wrote `annalo-`, 1.7 writes `arcalo-`; an old Annalo backup sorts by its stamp.
+        for name in [
+            "annalo-20260921-120000.db",
+            "annalo-20260923-120000.db",
+            "arcalo-20260922-120000.db",
+            "arcalo-20260924-120000.db",
+        ] {
+            fs::write(dir.join(name), b"x").unwrap();
+            fs::write(dir.join(format!("{name}{SUM}")), "0  x\n").unwrap();
+        }
+        let removed = prune(&dir, 2, 0, now, "arcalo-20260924-120000.db", &Activity::new(None)).unwrap();
+        assert_eq!(removed, ["arcalo-20260922-120000.db", "annalo-20260921-120000.db"]);
+        assert!(dir.join("annalo-20260923-120000.db").exists(), "the newer Annalo backup stays");
         let _ = fs::remove_dir_all(&root);
     }
 

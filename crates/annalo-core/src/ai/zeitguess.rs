@@ -30,7 +30,7 @@ pub struct Candidate {
     pub reference: String,
     /// Vorgang (or Netzplan) description.
     pub title: String,
-    /// `Systemintegration ERP · PRJ-2026-X Annalo Rollout`
+    /// `Systemintegration ERP · PRJ-2026-X Arcalo Rollout`
     pub context: String,
     /// Leistungsarten booked on it recently, most used first.
     pub leistungsarten: Vec<String>,
@@ -156,14 +156,14 @@ pub fn unreferenced(line: &str) -> Option<Unreferenced<'_>> {
 /// The system prompt; the reason comes in the display language.
 pub fn system_prompt() -> &'static str {
     tr!(
-        "Du ordnest Zeitbuchungen in Annalo dem passenden Vorgang zu. \
+        "Du ordnest Zeitbuchungen in Arcalo dem passenden Vorgang zu. \
 Wähle aus der Liste der buchbaren Referenzen genau die, zu der die Tätigkeit am besten passt. \
 Zuletzt gebuchte Referenzen stehen oben und sind bei ähnlicher Eignung vorzuziehen. \
 Antworte ausschließlich mit einem JSON-Objekt, ohne Codeblock und ohne weiteren Text: \
 {\"reference\": \"<Referenz exakt aus der Liste>\", \"leistungsart\": \"<Code aus der Liste>\" oder null, \
 \"confidence\": <Zahl von 0 bis 1>, \"reason\": \"<kurze Begründung auf Deutsch>\"}. \
 Erfinde keine Referenzen. Wenn nichts passt, wähle die wahrscheinlichste und gib eine niedrige confidence an.",
-        "You assign time entries in Annalo to the right activity. \
+        "You assign time entries in Arcalo to the right activity. \
 From the list of bookable references, choose exactly the one the work fits best. \
 Recently booked references come first and are preferred when they fit about equally well. \
 Answer with a JSON object only, without a code block and without other text: \

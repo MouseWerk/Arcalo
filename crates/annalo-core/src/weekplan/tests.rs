@@ -603,7 +603,7 @@ fn the_reminder_comes_on_the_last_workday_afternoon_once_a_week() {
         [(NaiveDate::from_ymd_opt(2026, 9, 21).unwrap(), 150), (NaiveDate::from_ymd_opt(2026, 9, 23).unwrap(), 60)];
     assert_eq!(
         week_reminder(fri(15), &s, &open, None).as_deref(),
-        Some("Noch offen: Mo 2,5 h, Mi 1 h. Annalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.")
+        Some("Noch offen: Mo 2,5 h, Mi 1 h. Arcalo schlägt die Buchungen aus Terminen, Fokus und Seiten vor.")
     );
     assert_eq!(week_reminder(fri(13), &s, &open, None), None, "before 14:00");
     assert_eq!(week_reminder(fri(15), &s, &[], None), None, "nothing open");

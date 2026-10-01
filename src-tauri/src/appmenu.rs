@@ -17,34 +17,34 @@ const ACTIONS: [(&str, &str); 4] =
 const QUIT: &str = "menu:quit";
 const CLOSE_WINDOW: &str = "menu:close_window";
 const WEBSITE: &str = "menu:website";
-const WEBSITE_URL: &str = "https://github.com/MouseWerk/Annalo";
+const WEBSITE_URL: &str = "https://github.com/MouseWerk/Arcalo";
 
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item = |id: &str, text: &str, accel: Option<&str>| MenuItem::with_id(app, id, text, true, accel);
     let sep = || PredefinedMenuItem::separator(app);
     let about = AboutMetadata {
-        name: Some("Annalo".into()),
+        name: Some("Arcalo".into()),
         version: Some(app.package_info().version.to_string()),
         ..Default::default()
     };
 
     let app_menu = Submenu::with_items(
         app,
-        "Annalo",
+        "Arcalo",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some(tr!("Über Annalo", "About Annalo")), Some(about))?,
+            &PredefinedMenuItem::about(app, Some(tr!("Über Arcalo", "About Arcalo")), Some(about))?,
             &sep()?,
             &item("menu:settings", tr!("Einstellungen …", "Settings …"), Some("Cmd+,"))?,
             &sep()?,
             &PredefinedMenuItem::services(app, Some(tr!("Dienste", "Services")))?,
             &sep()?,
-            &PredefinedMenuItem::hide(app, Some(tr!("Annalo ausblenden", "Hide Annalo")))?,
+            &PredefinedMenuItem::hide(app, Some(tr!("Arcalo ausblenden", "Hide Arcalo")))?,
             &PredefinedMenuItem::hide_others(app, Some(tr!("Andere ausblenden", "Hide Others")))?,
             &PredefinedMenuItem::show_all(app, Some(tr!("Alle einblenden", "Show All")))?,
             &sep()?,
             // Not the predefined quit (`terminate:`), which would skip storing open editors.
-            &item(QUIT, tr!("Annalo beenden", "Quit Annalo"), Some("Cmd+Q"))?,
+            &item(QUIT, tr!("Arcalo beenden", "Quit Arcalo"), Some("Cmd+Q"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -91,7 +91,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             // ⌘K stays with the window (it toggles the palette there).
             &item("menu:palette", tr!("Befehlspalette", "Command Palette"), None)?,
-            &item(WEBSITE, tr!("Annalo auf GitHub", "Annalo on GitHub"), None)?,
+            &item(WEBSITE, tr!("Arcalo auf GitHub", "Arcalo on GitHub"), None)?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &edit, &view, &window, &help])

@@ -123,7 +123,7 @@ test("the same version is no update", async () => {
   app = await launch({ env: { ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url } });
   assert.equal(await app.invoke("update_check"), null);
   await checkNow();
-  await app.waitText(".toast", /Annalo ist aktuell/);
+  await app.waitText(".toast", /Arcalo ist aktuell/);
 });
 
 test("a .deb install offers the release page instead of installing", async () => {

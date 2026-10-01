@@ -1,7 +1,7 @@
 name: Whisper models
 
 # Publishes the Whisper models of voice notes to the release `whisper-models-v1` (the default
-# download source of Annalo), checked against the SHA-256 in the source code. Run by hand.
+# download source of Arcalo), checked against the SHA-256 in the source code. Run by hand.
 on:
   workflow_dispatch:
 

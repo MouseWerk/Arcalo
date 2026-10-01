@@ -113,7 +113,7 @@ pub async fn presenter_open(app: AppHandle) -> Result<bool> {
     let pos = home.position().to_logical::<f64>(scale);
     let size = home.size().to_logical::<f64>(scale);
     let p = WebviewWindowBuilder::new(&app, PRESENTER, WebviewUrl::App("index.html#presenter".into()))
-        .title("Referentenansicht – Annalo")
+        .title("Referentenansicht – Arcalo")
         .position(pos.x + 40.0, pos.y + 40.0)
         .inner_size((size.width - 80.0).max(800.0), (size.height - 80.0).max(560.0))
         .build()

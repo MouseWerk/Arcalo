@@ -69,6 +69,7 @@ version = "1.0.0"
 dependencies = [
  "annalo-core",
  "arboard",
+ "auto-launch",
  "base64 0.22.1",
  "chrono",
  "cpal",
@@ -91,6 +92,7 @@ dependencies = [
  "whisper-rs",
  "windows 0.61.3",
  "windows-sys 0.61.2",
+ "winreg 0.10.1",
 ]
 
 [[package]]

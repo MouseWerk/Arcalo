@@ -9,7 +9,7 @@ use std::path::Path;
 /// GitHub repository the releases are published to.
 use crate::tr;
 
-pub const REPOSITORY: &str = "MouseWerk/Annalo";
+pub const REPOSITORY: &str = "MouseWerk/Arcalo";
 
 /// Shown when a build has no update key.
 pub const NOT_CONFIGURED: &str = "Automatische Updates sind in diesem Build nicht eingerichtet";
@@ -51,7 +51,7 @@ fn parse(version: &str) -> Option<semver::Version> {
 pub const PORTABLE_MANUAL: &str = "Im portablen Modus wird nicht automatisch installiert – bitte die neue Version von der Release-Seite herunterladen";
 /// Shown instead of installing when a package manager owns the installation (.deb, .rpm).
 pub const PACKAGE_MANUAL: &str =
-    "Annalo ist als Paket installiert – bitte das neue Paket von der Release-Seite herunterladen";
+    "Arcalo ist als Paket installiert – bitte das neue Paket von der Release-Seite herunterladen";
 
 /// Why this copy does not install updates itself (`None`: it does). A portable copy would be
 /// installed into the user profile instead of updating its folder; a .deb or .rpm belongs to the
@@ -65,7 +65,7 @@ pub fn manual_update_reason(portable: bool, package: bool) -> Option<&'static st
     } else if package {
         Some(tr!(
             PACKAGE_MANUAL,
-            "Annalo is installed as a package – please download the new package from the release page"
+            "Arcalo is installed as a package – please download the new package from the release page"
         ))
     } else {
         None
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn release_links_use_the_tag() {
-        let url = "https://github.com/MouseWerk/Annalo/releases/tag/v1.2.0";
+        let url = "https://github.com/MouseWerk/Arcalo/releases/tag/v1.2.0";
         assert_eq!(release_url("1.2.0"), url);
         assert_eq!(release_url("v1.2.0"), url);
     }

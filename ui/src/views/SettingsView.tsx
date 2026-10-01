@@ -1336,7 +1336,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           <AnnaloLogo size={34} />
         </span>
         <div>
-          <h1>Annalo</h1>
+          <h1>Arcalo</h1>
           <p>{t("upd.version", { version })}</p>
         </div>
       </header>

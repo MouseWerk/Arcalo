@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Settings, SettingsView } from "../lib/types";
 
 // The IPC layer is replaced by a fake that keeps one settings object.
-const stored: { view: SettingsView; saves: Settings[]; status: Record<string, unknown>; completed: number; hints: number; resets: number } = {
+const stored: { view: SettingsView; saves: Settings[]; status: Record<string, unknown>; completed: number; hints: number; resets: number; rebrands: number; opened: string[] } = {
   view: { settings: { locale: { language: "de" }, daily_target_hours: 8 } } as unknown as SettingsView,
   saves: [],
   status: {},
   completed: 0,
   hints: 0,
   resets: 0,
+  rebrands: 0,
+  opened: [],
 };
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: async (url: string) => void stored.opened.push(url) }));
 vi.mock("../lib/api", () => ({
   api: {
     settings: async () => stored.view,
@@ -20,6 +23,7 @@ vi.mock("../lib/api", () => ({
     },
     onboardingStatus: async () => stored.status,
     onboardingHintShown: async () => void stored.hints++,
+    rebrandNoticeShown: async () => void stored.rebrands++,
     onboardingComplete: async () => {
       stored.completed++;
       stored.view = { ...stored.view, settings: { ...stored.view.settings, onboarding: { completed_version: "1.6.0", completed_at: "2026-09-25T08:00:00Z" } } };
@@ -39,7 +43,8 @@ const { checkFirstRun, finishFirstRun, pauseForSettings, resetOnboarding, resume
 
 beforeEach(() => {
   stored.saves = [];
-  stored.completed = stored.hints = stored.resets = 0;
+  stored.completed = stored.hints = stored.resets = stored.rebrands = 0;
+  stored.opened = [];
   useApp.setState({ settings: stored.view, toasts: [] });
   useFirstRun.setState({ phase: "off", paused: false, step: "language", workspace: null });
 });
@@ -81,6 +86,23 @@ describe("first-run start and end", () => {
     expect(toast.title).toMatch(/1\.6/);
     toast.action!.run();
     expect(useFirstRun.getState()).toMatchObject({ phase: "intro", mode: "upgrade" });
+  });
+
+  it("tells an upgraded workspace once that Annalo is now Arcalo", async () => {
+    stored.status = { intro: false, whats_new: false, rebrand_notice: true };
+    expect(await checkFirstRun()).toBeNull();
+    expect(stored.rebrands).toBe(1);
+    const toasts = useApp.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].title).toMatch(/Annalo.*Arcalo/);
+    toasts[0].action!.run();
+    await Promise.resolve();
+    expect(stored.opened).toEqual(["https://github.com/MouseWerk/Arcalo/releases/tag/v1.7.0"]);
+    // Together with the 1.6 hint: both, the rename first.
+    useApp.setState({ toasts: [] });
+    stored.status = { intro: false, whats_new: true, rebrand_notice: true };
+    expect(await checkFirstRun()).toBe("hint");
+    expect(useApp.getState().toasts.map((x) => x.title)).toEqual([expect.stringMatching(/Arcalo/), expect.stringMatching(/1\.6/)]);
   });
 
   it("does nothing when completed", async () => {

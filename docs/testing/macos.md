@@ -10,13 +10,13 @@ shortcuts (quick capture ⇧⌘Space, quick search ⇧⌘O). Note the build and 
 ## Closing and quitting
 
 - [ ] Type in a page, then click the red button at once. The window disappears, the Dock icon keeps its
-      running dot, the menu bar still shows Annalo while it is active.
+      running dot, the menu bar still shows Arcalo while it is active.
 - [ ] Click the Dock icon: the window comes back in front with the text you typed.
 - [ ] ⇧⌘W (Fenster → „Fenster schließen“) hides the window the same way; the Dock icon brings it back.
 - [ ] ⌘W closes the current tab only, the window stays.
-- [ ] With the window hidden, open Annalo again from Launchpad or Finder: the window comes back (no second instance).
+- [ ] With the window hidden, open Arcalo again from Launchpad or Finder: the window comes back (no second instance).
 - [ ] Settings → Desktop has no „Beim Schließen …“ switch on the Mac.
-- [ ] Type in a page, press ⌘Q at once: Annalo quits. Start it again: the text is there.
+- [ ] Type in a page, press ⌘Q at once: Arcalo quits. Start it again: the text is there.
 - [ ] Hide the window, then quit from the menu bar icon („Beenden“) and from the Dock menu („Beenden“).
       Both quit; after a restart nothing is lost and no „database locked“ or recovery dialog appears.
 - [ ] Hide the menu bar icon (hold ⌘ and drag it out of the menu bar, or a menu bar manager): closing still
@@ -24,14 +24,14 @@ shortcuts (quick capture ⇧⌘Space, quick search ⇧⌘O). Note the build and 
 
 ## Quick capture
 
-- [ ] From Safari (Annalo's window hidden): ⇧⌘Space opens the capture window in front, with the cursor in
+- [ ] From Safari (Arcalo's window hidden): ⇧⌘Space opens the capture window in front, with the cursor in
       the field. Type a line, Enter: it is stored, the window goes away and Safari has the keyboard focus
       again (type in its address bar without clicking).
-- [ ] Same with Annalo's main window visible behind Safari: after Esc, Safari has the focus again.
-- [ ] From Annalo itself (main window focused): ⇧⌘Space, Esc: the main window has the focus again.
+- [ ] Same with Arcalo's main window visible behind Safari: after Esc, Safari has the focus again.
+- [ ] From Arcalo itself (main window focused): ⇧⌘Space, Esc: the main window has the focus again.
 - [ ] Put Safari or Keynote in full screen (its own Space): ⇧⌘Space opens the capture window over it,
       without switching Spaces. Esc returns to the full-screen app.
-- [ ] Switch to another desktop Space: the capture window opens there, not on the Space Annalo was started on.
+- [ ] Switch to another desktop Space: the capture window opens there, not on the Space Arcalo was started on.
 - [ ] Typing: umlauts with a German keyboard (ä ö ü ß), with ⌥U then U on a US layout (ü), and a word with
       the Japanese or Chinese input method: Enter commits the composition and does not store the capture;
       Esc during the composition cancels it and does not close the window.
@@ -44,7 +44,7 @@ shortcuts (quick capture ⇧⌘Space, quick search ⇧⌘O). Note the build and 
 
 - [ ] ⇧⌘O from another app opens the search in front with the cursor in the field; ⇧⌘O again or Esc closes
       it and the other app has the focus again.
-- [ ] Choosing a page opens it in Annalo's main window, which comes to the front (also when it was hidden).
+- [ ] Choosing a page opens it in Arcalo's main window, which comes to the front (also when it was hidden).
 - [ ] Opens over a full-screen app on its own Space.
 
 ## Rounded windows
@@ -68,9 +68,9 @@ shortcuts (quick capture ⇧⌘Space, quick search ⇧⌘O). Note the build and 
 
 ## Updates and start
 
-- [ ] With an update available: Settings → Über → install. Annalo stores the editors, installs, quits and
+- [ ] With an update available: Settings → Über → install. Arcalo stores the editors, installs, quits and
       starts the new version by itself; the new version opens the same workspace without a recovery dialog.
-- [ ] Autostart on: a LaunchAgent for Annalo exists in `~/Library/LaunchAgents`. Log out and in: Annalo runs
+- [ ] Autostart on: a LaunchAgent for Arcalo exists in `~/Library/LaunchAgents`. Log out and in: Arcalo runs
       in the Dock without a window; a click on the Dock icon shows it. Autostart off removes the entry.
-- [ ] Start-up recovery dialog (e.g. data folder not writable): „Beenden“ ends Annalo; nothing keeps
+- [ ] Start-up recovery dialog (e.g. data folder not writable): „Beenden“ ends Arcalo; nothing keeps
       running in the Dock.

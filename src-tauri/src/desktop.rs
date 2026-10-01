@@ -85,7 +85,7 @@ pub struct Desktop {
     /// Milliseconds from the request to the capture window's first frame, last time (0 = not yet).
     capture_open_ms: AtomicU64,
     /// The open popup (capture, search) was called up while another program had the focus: on
-    /// macOS dismissing it hides Annalo again, so that program gets the focus back.
+    /// macOS dismissing it hides Arcalo again, so that program gets the focus back.
     popup_from_other_app: AtomicBool,
 }
 
@@ -100,7 +100,7 @@ fn desktop(app: &AppHandle) -> State<'_, Desktop> {
 }
 
 pub fn show_main(app: &AppHandle) {
-    // macOS: Annalo may be hidden (a popup gave the focus back to another program).
+    // macOS: Arcalo may be hidden (a popup gave the focus back to another program).
     #[cfg(target_os = "macos")]
     let _ = app.show();
     if let Some(w) = app.get_webview_window(MAIN) {
@@ -202,7 +202,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let mac = cfg!(target_os = "macos");
     let mut builder = TrayIconBuilder::with_id("main")
         .menu(&menu)
-        .tooltip("Annalo")
+        .tooltip("Arcalo")
         .show_menu_on_left_click(mac)
         .on_menu_event(on_menu)
         .on_tray_icon_event(move |tray, event| {
@@ -418,7 +418,7 @@ pub fn open_capture(app: &AppHandle, selection: bool) {
 }
 
 const CAPTURE_POPUP: Popup =
-    Popup { label: CAPTURE, title: "Schnellerfassung – Annalo", size: (640.0, 148.0), transparent: true };
+    Popup { label: CAPTURE, title: "Schnellerfassung – Arcalo", size: (640.0, 148.0), transparent: true };
 
 /// Creates the capture window hidden a moment after start, so the shortcut only has to show it.
 pub fn precreate_capture(app: &AppHandle) {
@@ -483,13 +483,13 @@ fn popup_window(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindo
     })
 }
 
-/// Whether one of Annalo's windows has the keyboard focus (Annalo is the active program).
+/// Whether one of Arcalo's windows has the keyboard focus (Arcalo is the active program).
 fn app_focused(app: &AppHandle) -> bool {
     app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))
 }
 
 /// Hides a popup. `dismissed` (Esc, stored, its shortcut again): on macOS a popup called up from
-/// another program then hides Annalo too, so that program gets the focus back.
+/// another program then hides Arcalo too, so that program gets the focus back.
 fn hide_popup(app: &AppHandle, label: &str, dismissed: bool) {
     let Some(w) = app.get_webview_window(label) else { return };
     let focused = dismissed && w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false);
@@ -510,7 +510,7 @@ fn show_popup(app: &AppHandle, p: &Popup) -> tauri::Result<tauri::WebviewWindow>
     if !(w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)) {
         desktop(app).popup_from_other_app.store(!app_focused(app), Ordering::Relaxed);
     }
-    // macOS: Annalo may be hidden (an earlier popup gave the focus back); the window must
+    // macOS: Arcalo may be hidden (an earlier popup gave the focus back); the window must
     // appear and take the keyboard focus from the program in front.
     #[cfg(target_os = "macos")]
     let _ = app.show();
@@ -625,7 +625,7 @@ pub fn open_search(app: &AppHandle, toggle: bool) {
             hide_popup(&app, SEARCH, true);
             return;
         }
-        let popup = Popup { label: SEARCH, title: "Suchen – Annalo", size: (640.0, 420.0), transparent: true };
+        let popup = Popup { label: SEARCH, title: "Suchen – Arcalo", size: (640.0, 420.0), transparent: true };
         if let Err(e) = show_popup(&app, &popup) {
             crate::devlog::error("desktop", format!("quick search failed: {e}"));
         }
@@ -1166,7 +1166,7 @@ pub fn periodic(app: &AppHandle) {
         (eod, late)
     };
     if let Some(msg) = eod {
-        notify(app, &msg, tr!("Zur Zeiterfassung: Annalo öffnen", "To time tracking: open Annalo"));
+        notify(app, &msg, tr!("Zur Zeiterfassung: Arcalo öffnen", "To time tracking: open Arcalo"));
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             desktop(app).pending_timesheet.store(true, Ordering::Relaxed);

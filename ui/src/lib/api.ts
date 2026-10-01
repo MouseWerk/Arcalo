@@ -189,6 +189,8 @@ export const api = {
   /** Stores `onboarding.completed_version` / `completed_at`. */
   onboardingComplete: () => call<T.SettingsView>("onboarding_complete"),
   onboardingHintShown: () => call<void>("onboarding_hint_shown"),
+  /** The notice of the rename to Arcalo was shown (once per workspace). */
+  rebrandNoticeShown: () => call<void>("rebrand_notice_shown"),
   /** Resets the first-run flags only (never data). */
   onboardingReset: () => call<T.SettingsView>("onboarding_reset"),
   backupNow: () => call<T.BackupInfo>("backup_now"),

@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Annalo records voice notes and meetings only while you record one; the audio is transcribed on this Mac.</string>
+  <string>Arcalo records voice notes and meetings only while you record one; the audio is transcribed on this Mac.</string>
 </dict>
 </plist>

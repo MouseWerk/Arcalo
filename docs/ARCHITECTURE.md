@@ -63,7 +63,7 @@ and by `entry_id`.
   subpages trashed earlier stay separate entries). Every normal query (tree, search, links, tags, RAG,
   export) skips trashed pages. Restoring puts a page back under its parent, or at the top level if the
   parent is gone; title and daily-note clashes are resolved. Entries older than 30 days are purged on start.
-- **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `annalo-YYYYMMDD-HHMMSS.db`;
+- **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `arcalo-YYYYMMDD-HHMMSS.db` (`annalo-…` from before 1.7 are listed, restored and pruned alike);
   older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
   backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`. It also copies the
   attachments folder incrementally (new and changed files, e.g. a drawing saved again; nothing is deleted). A backup
@@ -74,7 +74,7 @@ and by `entry_id`.
   attachments and the Markdown mirror go along. After every local backup a worker thread copies the newest backup to each
   due destination, into `<destination>/<computer>/` (so two computers sharing a share never prune each other): written as
   `<name>.partial` (chunked, `fsync`, size checked), then `<name>.sha256` (`sha256sum` format), then renamed. Retention
-  deletes only `annalo-YYYYMMDD-HHMMSS.db` files that have their checksum file, in this computer's folder. Every copy
+  deletes only `arcalo-`/`annalo-YYYYMMDD-HHMMSS.db` files that have their checksum file, in this computer's folder. Every copy
   runs on its own thread under `run_watched`: without progress for 60 s (`ANNALO_BACKUP_STALL_SECS` in debug builds) it is
   given up and the thread is abandoned, so a hung share never blocks the app, other destinations or quitting; the next
   copy to it waits until the old thread ended. A destination folder is created only below an existing parent and never
@@ -83,7 +83,7 @@ and by `entry_id`.
   minutes and on every new backup, and warned about once (`backup://destination-failed`) after 24 h or three missed
   backups. Status lives in `<data dir>/backup-destinations.json` together with the destination list, so the start-up
   recovery can use it without the database. Credentials are the operating system's (Windows session, Keychain, mounts).
-- **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Annalo backups in
+- **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Arcalo backups in
   the backup folder or a destination, copies the file into the data folder as `restore-pending.db` (checksum and
   `PRAGMA quick_check` verified) and the UI restarts; the next start renames the database to
   `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it.
@@ -137,8 +137,8 @@ and by `entry_id`.
   rename link rewrites in other pages always snapshot first; „Jetzt Version sichern“ (`page_snapshot`)
   stores the current state. At most 50 per page; older than 30 days are pruned on start. A restore saves
   through `save_page_content`, so search, links, tags and tasks follow. The dialog shows a line diff (LCS).
-- **Portable mode** (`datadir::portable_data_dir`, shell `portable.rs`): a file `annalo-portable` next to the executable
-  (or `data/.annalo-portable`) puts everything in `<exe dir>/data` (`ANNALO_EXE_DIR` stands in for the executable's folder in
+- **Portable mode** (`datadir::portable_data_dir`, shell `portable.rs`): a file `arcalo-portable` (or `annalo-portable`) next to the executable
+  (or `data/.arcalo-portable`, `data/.annalo-portable`) puts everything in `<exe dir>/data` (`ANNALO_EXE_DIR` stands in for the executable's folder in
   tests; `ANNALO_DATA_DIR` still wins); `location.json` is ignored and „Speicherort ändern“ refused. Nothing is written into
   the user profile: no autostart entry (`autostart_set` refuses, the switch explains why), no taskbar jump list, the
   webview profile in `data/webview`, and updates are downloaded from the release page instead of installed
@@ -146,7 +146,7 @@ and by `entry_id`.
   belongs to the user and not to the stick: a portable copy names its entries `<account>@<12 hex of the data path's
   SHA-256>` (`datadir::secret_namespace`), so it never reads or overwrites an installed copy's secrets; they are entered
   again on another computer (an encrypted file on the stick would need a password prompt at every start). The release
-  workflow publishes `Annalo_<version>_x64-portable.zip` (Annalo.exe, marker, LIESMICH.txt) next to the installer; it is
+  workflow publishes `Arcalo_<version>_x64-portable.zip` (Arcalo.exe, marker, LIESMICH.txt) next to the installer; it is
   not part of `latest.json`.
 - **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
@@ -605,11 +605,11 @@ defineWidget({
   keymap (`keymap.ts`: commands, defaults, recording from key events with AltGr protection, conflicts with other
   commands, editor keys and global shortcuts). The App's keydown handler looks commands up in the keymap.
 - Color themes (`ui/src/lib/themes.ts`): `settings.theme` picks the mode (system/light/dark), `appearance.theme_light` /
-  `theme_dark` the theme per mode (built-in id or `custom-…`, unknown ids show Annalo). A theme is nine main colors
+  `theme_dark` the theme per mode (built-in id or `custom-…`, unknown ids show Arcalo). A theme is nine main colors
   (`ThemeColors`: background, surface, text, muted, border, accent, success, warning, danger) plus optional tuning;
   `themeTokens` derives the full token set of `tokens.css` (hover/selection tints, strong borders, raised surfaces, soft
   status colors, shadows) and raises text/muted/status colors that miss 4.5:1 / 3:1. The active theme's CSS goes into
-  one `<style id="annalo-theme">` (`:root:root`, empty for the Annalo themes, which are `tokens.css`), followed by the
+  one `<style id="annalo-theme">` (`:root:root`, empty for the Arcalo themes, which are `tokens.css`), followed by the
   accent on top (`accent: "theme"` = the theme's own; high contrast keeps its accent). `data-theme` follows the
   theme's kind, `data-theme-id` names it; the splash remembers its background, text and accent. `themes.test.ts` checks
   the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid

@@ -395,8 +395,8 @@ fn error_text(code: &str, detail: &str) -> String {
             "The new Outlook runs here; it gives other programs no access to the calendar. {ics}"
         ),
         "server_exec" => tr!(
-            "Outlook läuft mit anderen Rechten als Annalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut synchronisieren.",
-            "Outlook runs with other rights than Annalo (e.g. “Run as administrator”). Start Outlook normally and sync again."
+            "Outlook läuft mit anderen Rechten als Arcalo (z. B. „Als Administrator ausführen“). Outlook normal starten und erneut synchronisieren.",
+            "Outlook runs with other rights than Arcalo (e.g. “Run as administrator”). Start Outlook normally and sync again."
         )
         .into(),
         "constrained" => trf!(

@@ -25,14 +25,16 @@ use crate::vault;
 /// Marker file at the root of a mirror.
 pub const README_NAME: &str = "README.txt";
 /// First line of [`README_NAME`]; identifies a folder as a mirror that may be replaced.
-pub(crate) const MARKER: &str = "Annalo – Markdown-Kopie";
+pub(crate) const MARKER: &str = "Arcalo – Markdown-Kopie";
+/// [`MARKER`] of mirrors written before 1.7 (Annalo); such folders stay replaceable.
+const LEGACY_MARKER: &str = "Annalo – Markdown-Kopie";
 /// Folder for the monthly time-entry CSV files.
 pub const TIME_DIR: &str = "Zeiterfassung";
 
-const README: &str = "Annalo – Markdown-Kopie\r
+const README: &str = "Arcalo – Markdown-Kopie\r
 \r
 Dieser Ordner ist eine schreibgeschützte Kopie des Arbeitsbereichs, damit die\r
-Notizen auch ohne Annalo lesbar bleiben. Er wird bei jeder Sicherung\r
+Notizen auch ohne Arcalo lesbar bleiben. Er wird bei jeder Sicherung\r
 vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 \r
 - Jede Seite ist eine Markdown-Datei (.md), Unterseiten liegen im gleichnamigen Ordner.\r
@@ -40,23 +42,23 @@ vollständig neu erzeugt: Änderungen hier gehen dabei verloren.\r
 - Zeiterfassung/JJJJ-MM.csv enthält die abgeschlossenen Buchungen je Monat\r
   (Semikolon getrennt, Dezimalkomma, UTF-8 – lässt sich direkt in Excel öffnen).\r
 \r
-Wiederherstellen: die Datenbank aus einer Sicherung (annalo-….db) verwenden,\r
-oder diesen Ordner in Annalo als Obsidian-Vault importieren.\r
+Wiederherstellen: die Datenbank aus einer Sicherung (arcalo-….db, vor 1.7 annalo-….db) verwenden,\r
+oder diesen Ordner in Arcalo als Obsidian-Vault importieren.\r
 ";
 
 /// The README in English; its first line stays [`MARKER`], which identifies the folder.
-const README_EN: &str = "Annalo – Markdown-Kopie\r
+const README_EN: &str = "Arcalo – Markdown-Kopie\r
 \r
 This folder is a read-only copy of the workspace (Markdown copy), so the notes stay\r
-readable without Annalo. It is made anew with every backup: changes made here are lost.\r
+readable without Arcalo. It is made anew with every backup: changes made here are lost.\r
 \r
 - Every page is a Markdown file (.md), subpages are in the folder of the same name.\r
 - Embedded images, drawings and files are in attachments/.\r
 - Zeiterfassung/YYYY-MM.csv holds the finished time entries per month\r
   (separated by semicolons, decimal comma, UTF-8 – opens directly in Excel).\r
 \r
-Restore: use the database from a backup (annalo-….db), or import this folder into\r
-Annalo as an Obsidian vault.\r
+Restore: use the database from a backup (arcalo-….db, before 1.7 annalo-….db), or import this folder into\r
+Arcalo as an Obsidian vault.\r
 ";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -130,7 +132,7 @@ where
 
 /// True when `dir` holds a mirror written by [`write_mirror`].
 pub fn is_mirror(dir: &Path) -> bool {
-    fs::read_to_string(dir.join(README_NAME)).is_ok_and(|s| s.starts_with(MARKER))
+    fs::read_to_string(dir.join(README_NAME)).is_ok_and(|s| s.starts_with(MARKER) || s.starts_with(LEGACY_MARKER))
 }
 
 /// Held while a mirror folder is swapped, and by readers that need one complete state
@@ -174,8 +176,8 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
         let empty = fs::read_dir(target).at(target)?.next().is_none();
         if !empty && !is_mirror(target) {
             return Err(Error::State(trf!(
-                "Der Ordner {} ist nicht leer und keine Markdown-Kopie von Annalo – bitte einen leeren Ordner wählen",
-                "The folder {} is not empty and not a Markdown copy by Annalo – please choose an empty folder",
+                "Der Ordner {} ist nicht leer und keine Markdown-Kopie von Arcalo – bitte einen leeren Ordner wählen",
+                "The folder {} is not empty and not a Markdown copy by Arcalo – please choose an empty folder",
                 target.display()
             )));
         }
@@ -440,5 +442,15 @@ mod tests {
         assert!(!target.join("Notiz.md").exists());
         assert!(target.join("Umbenannt.md").exists());
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn mirrors_written_before_the_rename_stay_recognized() {
+        let dir = tmp("legacy");
+        fs::write(dir.join(README_NAME), "Annalo – Markdown-Kopie\r\n\r\nalt").unwrap();
+        assert!(is_mirror(&dir), "an Annalo mirror may be replaced");
+        fs::write(dir.join(README_NAME), "Anderes Projekt").unwrap();
+        assert!(!is_mirror(&dir));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

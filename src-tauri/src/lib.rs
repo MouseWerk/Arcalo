@@ -1,4 +1,4 @@
-//! Annalo desktop shell: exposes `annalo-core` to the web UI over Tauri IPC.
+//! Arcalo desktop shell: exposes `annalo-core` to the web UI over Tauri IPC.
 
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -22,6 +22,7 @@ mod network;
 mod portable;
 mod prefs;
 mod present;
+mod rebrand;
 mod recovery;
 mod secrets;
 mod syncmerge;
@@ -1951,7 +1952,7 @@ fn start_program(app: &AppHandle, path: &str) -> std::result::Result<(), String>
                 .stderr(std::process::Stdio::null())
                 .spawn()
                 .map_err(|e| e.to_string())?;
-            // Reaped when it ends (no zombie while Annalo runs).
+            // Reaped when it ends (no zombie while Arcalo runs).
             std::thread::spawn(move || child.wait());
             return Ok(());
         }
@@ -2309,7 +2310,7 @@ async fn embed_step(client: &AiClient, settings: &Settings, provider: &AiProvide
         };
     };
     let start = Instant::now();
-    let res = client.embed(&model, &["Annalo".to_string()]).await;
+    let res = client.embed(&model, &["Arcalo".to_string()]).await;
     let latency_ms = start.elapsed().as_millis() as u64;
     match res {
         Ok(v) => TestStep {
@@ -2396,11 +2397,11 @@ fn system_prompt(settings: &Settings) -> String {
     // tracking off: a notes, tasks and calendar workspace; nothing about SAP booking.
     let mut s = if settings.time_tracking() {
         trf!(
-            "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
+            "Du bist der Assistent von Arcalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
              Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
              schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
              gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
-            "You are the assistant of Annalo, a local workspace for notes, projects and time tracking. \
+            "You are the assistant of Arcalo, a local workspace for notes, projects and time tracking. \
              Today is {}. Answer precisely and in English, unless the user writes in another language. \
              Use Markdown. Refer to pages with [[Page name]]. Time is booked with the /time syntax, e.g. \
              /time NP-8801/1020 2.5h #DEV 'Description'. Use tools only when needed.",
@@ -2408,10 +2409,10 @@ fn system_prompt(settings: &Settings) -> String {
         )
     } else {
         trf!(
-            "Du bist der Assistent von Annalo, einem lokalen Arbeitsbereich für Notizen, Aufgaben und \
+            "Du bist der Assistent von Arcalo, einem lokalen Arbeitsbereich für Notizen, Aufgaben und \
              Termine. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
              schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Nutze Tools nur, wenn nötig.",
-            "You are the assistant of Annalo, a local workspace for notes, tasks and meetings. \
+            "You are the assistant of Arcalo, a local workspace for notes, tasks and meetings. \
              Today is {}. Answer precisely and in English, unless the user writes in another language. \
              Use Markdown. Refer to pages with [[Page name]]. Use tools only when needed.",
             now.format(tr!("%A, %d.%m.%Y %H:%M", "%A, %B %-d, %Y %H:%M"))
@@ -3392,6 +3393,12 @@ fn onboarding_hint_shown(state: State<AppState>) -> Result<()> {
     state.db().onboarding_hint_shown()
 }
 
+/// The notice of the rename to Arcalo was shown (once per workspace).
+#[tauri::command(async)]
+fn rebrand_notice_shown(state: State<AppState>) -> Result<()> {
+    state.db().rebrand_notice_shown()
+}
+
 /// „Einrichtung zurücksetzen“: the first-run flags only; nothing else is touched.
 #[tauri::command(async)]
 fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
@@ -3417,7 +3424,7 @@ fn create_main_window(
 ) -> tauri::Result<tauri::WebviewWindow> {
     let mut builder = tauri::WebviewWindowBuilder::new(app, desktop::MAIN, tauri::WebviewUrl::default())
         .visible(visible)
-        .title("Annalo")
+        .title("Arcalo")
         .min_inner_size(900.0, 560.0)
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
@@ -3580,8 +3587,8 @@ fn data_dir_env_guard() -> Result<()> {
     if portable::active() {
         return Err(Error::State(
             tr!(
-                "Im portablen Modus liegen die Daten immer im Ordner „data“ neben Annalo.exe",
-                "In portable mode the data is always in the “data” folder next to Annalo.exe"
+                "Im portablen Modus liegen die Daten immer im Ordner „data“ neben Arcalo.exe",
+                "In portable mode the data is always in the “data” folder next to Arcalo.exe"
             )
             .into(),
         ));
@@ -3749,7 +3756,7 @@ pub fn run() {
     if let Some(dir) = &portable
         && !portable::lock_instance(dir)
     {
-        eprintln!("Annalo already runs on {}", dir.display());
+        eprintln!("Arcalo already runs on {}", dir.display());
         return;
     }
     if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
@@ -3834,7 +3841,7 @@ pub fn run() {
             devlog::info(
                 "core",
                 format!(
-                    "Annalo {} started ({} {}), data folder {}{}",
+                    "Arcalo {} started ({} {}), data folder {}{}",
                     env!("CARGO_PKG_VERSION"),
                     std::env::consts::OS,
                     std::env::consts::ARCH,
@@ -3887,6 +3894,13 @@ pub fn run() {
             if opts.demo.unwrap_or(false) {
                 demo::seed(&db, Utc::now())?;
             }
+            // Once: a workspace from before 1.7 gets the notice of the rename to Arcalo (before
+            // the intro's classification, whose first row tells a 1.6 workspace).
+            if let Err(e) = db.rebrand_classify() {
+                devlog::warn("rebrand", format!("rename check failed: {e}"));
+            }
+            // The autostart entry and shortcuts of the old name (every start; nothing once done).
+            rebrand::migrate(app.handle());
             // Once: a workspace from before the intro is an upgrade (no intro, a hint instead).
             if let Err(e) = db.onboarding_classify() {
                 devlog::warn("core", format!("first-run check failed: {e}"));
@@ -4200,6 +4214,7 @@ pub fn run() {
             onboarding_status,
             onboarding_complete,
             onboarding_hint_shown,
+            rebrand_notice_shown,
             onboarding_reset,
             window_backdrop,
             window_frame,
@@ -4331,14 +4346,14 @@ pub fn run() {
             voice::voice_model_delete,
         ])
         .build(tauri::generate_context!())
-        .expect("error while running Annalo")
+        .expect("error while running Arcalo")
         .run(on_run_event);
 }
 
 fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
     match event {
         // macOS: closing hides the window and the app stays in the Dock; clicking the Dock icon
-        // (or opening Annalo again) brings the window back, also while a popup is visible.
+        // (or opening Arcalo again) brings the window back, also while a popup is visible.
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Reopen { .. } => desktop::show_main(app),
         // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI

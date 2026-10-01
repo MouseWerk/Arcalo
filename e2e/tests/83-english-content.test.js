@@ -1,4 +1,4 @@
-// What Annalo writes and says in English: the daily note's sections, a new page's title, the
+// What Arcalo writes and says in English: the daily note's sections, a new page's title, the
 // delete toast, core error messages, the dashboard query with English words, and a live switch
 // to German and back (UI and core follow at once).
 import { test as nodeTest, before, after } from "node:test";

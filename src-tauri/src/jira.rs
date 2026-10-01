@@ -591,8 +591,8 @@ pub async fn jira_create_issue(
     }
     let note = page_id.and_then(|id| state.reader().page(id).ok()).map(|p| p.title);
     let description = match note {
-        Some(t) => trf!("Angelegt aus der Notiz „{t}“ in Annalo.", "Created from the note “{t}” in Annalo."),
-        None => tr!("Angelegt in Annalo.", "Created in Annalo.").to_owned(),
+        Some(t) => trf!("Angelegt aus der Notiz „{t}“ in Arcalo.", "Created from the note “{t}” in Arcalo."),
+        None => tr!("Angelegt in Arcalo.", "Created in Arcalo.").to_owned(),
     };
     let c = client(&state, &s)?;
     let key =

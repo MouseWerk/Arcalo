@@ -13,7 +13,7 @@ use crate::db::Database;
 use crate::error::{Error, Result};
 
 /// The calendar marker Obsidian Tasks puts before a due date; read for imported notes,
-/// never written (Annalo writes `due:`).
+/// never written (Arcalo writes `due:`).
 pub const OBSIDIAN_DUE: &str = "\u{1F4C5}";
 
 /// A task item as found in a page's Markdown.

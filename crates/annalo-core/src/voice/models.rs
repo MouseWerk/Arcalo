@@ -1,8 +1,8 @@
-//! The Whisper models Annalo offers (whisper.cpp `ggml` files), their fixed size and SHA-256,
+//! The Whisper models Arcalo offers (whisper.cpp `ggml` files), their fixed size and SHA-256,
 //! and where they are downloaded from, in this order:
 //!
 //! 1. the admin source of Settings → Sprachnotizen (an address or a network folder),
-//! 2. the release `whisper-models-v1` of the Annalo repository on GitHub
+//! 2. the release `whisper-models-v1` of the Arcalo repository on GitHub
 //!    (published by `scripts/publish-whisper-models.sh`),
 //! 3. Hugging Face (`ggerganov/whisper.cpp`), the original source.
 //!
@@ -48,10 +48,10 @@ pub const MODELS: [ModelInfo; 3] = [
 
 pub const DEFAULT_MODEL: &str = "small";
 
-/// Release tag of the model files in the Annalo repository.
+/// Release tag of the model files in the Arcalo repository.
 pub const RELEASE_TAG: &str = "whisper-models-v1";
-/// Release assets of the Annalo repository (source 2).
-pub const GITHUB_BASE: &str = "https://github.com/MouseWerk/Annalo/releases/download/whisper-models-v1";
+/// Release assets of the Arcalo repository (source 2).
+pub const GITHUB_BASE: &str = "https://github.com/MouseWerk/Arcalo/releases/download/whisper-models-v1";
 /// whisper.cpp's own files (source 3).
 pub const HUGGINGFACE_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
@@ -174,7 +174,7 @@ mod tests {
             s,
             [
                 Source::Url(
-                    "https://github.com/MouseWerk/Annalo/releases/download/whisper-models-v1/ggml-base.bin".into()
+                    "https://github.com/MouseWerk/Arcalo/releases/download/whisper-models-v1/ggml-base.bin".into()
                 ),
                 Source::Url("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin".into()),
             ]

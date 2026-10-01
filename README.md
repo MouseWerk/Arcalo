@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/brand/annalo-icon-1024.png" width="112" alt="Annalo logo">
+  <img src="docs/brand/annalo-icon-1024.png" width="112" alt="Arcalo logo">
 </p>
 
-<h1 align="center">Annalo</h1>
+<h1 align="center">Arcalo</h1>
 
 <p align="center">
   <b>Notes, time tracking and your own AI in one local-first desktop app.</b><br>
@@ -10,18 +10,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MouseWerk/Annalo/actions/workflows/ci.yml"><img src="https://github.com/MouseWerk/Annalo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://github.com/MouseWerk/Annalo/releases/latest"><img src="https://img.shields.io/github/v/release/MouseWerk/Annalo?label=release" alt="Latest release"></a>
+  <a href="https://github.com/MouseWerk/Arcalo/actions/workflows/ci.yml"><img src="https://github.com/MouseWerk/Arcalo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/MouseWerk/Arcalo/releases/latest"><img src="https://img.shields.io/github/v/release/MouseWerk/Arcalo?label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6b5bd6" alt="Platforms">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20Rust%20%C2%B7%20React-2f2f3a" alt="Tauri 2, Rust, React">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/split-view.png" alt="Annalo: two notes side by side with the assistant panel" width="100%">
+  <img src="docs/screenshots/split-view.png" alt="Arcalo: two notes side by side with the assistant panel" width="100%">
 </p>
 
-*Annalo* comes from the Latin *annales*, the year-by-year record of what happened: your notes and your working
-hours, kept together.
+*Arcalo* comes from the Latin *arca*, the chest where the Romans kept their records: your notes and your working
+hours, kept together. Up to version 1.6 the app was called Annalo; 1.7 updates an Annalo installation in place and
+keeps its data, settings and credentials (see `docs/testing/rebrand-windows.md`).
 
 Everything lives in one SQLite database on your computer. There is no cloud account and no telemetry. The only
 network traffic is what you set up yourself: your AI providers, your calendars, an optional Git remote for backups,
@@ -37,16 +38,16 @@ and switches live under Settings → Language & format.
 
 ## Download
 
-Get the latest version from the [**Releases page**](https://github.com/MouseWerk/Annalo/releases/latest).
+Get the latest version from the [**Releases page**](https://github.com/MouseWerk/Arcalo/releases/latest).
 
 | System | File | Notes |
 |---|---|---|
-| **Windows 10/11** (x64) | `Annalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
-| **Windows 10/11** portable | `Annalo_<version>_x64-portable.zip` | Unpack anywhere (a USB stick) and start `Annalo.exe`: all data stays in `data` next to it, nothing is written to the user profile (no autostart, no jump list). Updates: unpack the new ZIP over the folder. API keys and tokens are kept in each computer's Credential Manager, not on the stick |
-| **macOS 11+** Apple Silicon | `Annalo_<version>_aarch64.dmg` | Drag into *Applications*. Updates itself. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
-| **macOS 11+** Intel | `Annalo_<version>_x64.dmg` | Same as above |
-| **Linux** (x64) | `Annalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Annalo_*.AppImage && ./Annalo_*.AppImage`. Updates itself in place, like Windows and macOS |
-| **Linux** (x64) | `Annalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Annalo_*.deb`. Shows new versions with “Open release page”; the package manager installs them |
+| **Windows 10/11** (x64) | `Arcalo_<version>_x64-setup.exe` | Installs per user into `%LOCALAPPDATA%`, **no admin rights needed**. Updates itself. WebView2 is installed silently if it is missing |
+| **Windows 10/11** portable | `Arcalo_<version>_x64-portable.zip` | Unpack anywhere (a USB stick) and start `Arcalo.exe`: all data stays in `data` next to it, nothing is written to the user profile (no autostart, no jump list). Updates: unpack the new ZIP over the folder. API keys and tokens are kept in each computer's Credential Manager, not on the stick |
+| **macOS 11+** Apple Silicon | `Arcalo_<version>_aarch64.dmg` | Drag into *Applications*. Updates itself. Not notarized: see [macOS](#macos) for the one-time Gatekeeper step |
+| **macOS 11+** Intel | `Arcalo_<version>_x64.dmg` | Same as above |
+| **Linux** (x64) | `Arcalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Arcalo_*.AppImage && ./Arcalo_*.AppImage`. Updates itself in place, like Windows and macOS |
+| **Linux** (x64) | `Arcalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Arcalo_*.deb`. Shows new versions with “Open release page”; the package manager installs them |
 
 The first start plays a short intro (about half a minute, skippable with Esc) and then walks through a setup that
 writes your answers straight into the settings: language, theme, working time and whether you book time at all,
@@ -119,7 +120,7 @@ activity shows a work card with budget, ETC and a timer. The weekly timesheet ex
 Time tracking is optional. If you do not book time, switch off “Use time tracking” (in the first-run setup or under
 Settings → Time tracking): the timesheet, projects, timer, `/time`, budgets, the week proposal, the booking parts of
 the Calendar, start page and daily review, the assistant's time tools and every reminder about bookings disappear,
-and nothing runs in the background for them. Annalo is then a notes, calendar and AI app. Booked time stays in the
+and nothing runs in the background for them. Arcalo is then a notes, calendar and AI app. Booked time stays in the
 workspace and is back as soon as you switch it on again.
 
 <p align="center">
@@ -170,7 +171,7 @@ be marked “Don't book”, and the timesheet lists the week's meetings that are
 </p>
 
 “Propose the week” turns the week's meetings, focus sessions and page editing into a timesheet draft that you check
-by day and take over in one go. Every line says where it comes from and how sure Annalo is about the activity (“like
+by day and take over in one go. Every line says where it comes from and how sure Arcalo is about the activity (“like
 last week”, “Page … belongs to NP-8801/1030”); an activity you change is remembered for that page or meeting series.
 Meetings from calendars that colleagues shared are left out unless you switch “Use for booking suggestions” on for
 that calendar.
@@ -203,7 +204,7 @@ Safari on Windows, macOS and Linux, every profile with its name, or a browser's 
 the dialog). The browsers' files are only read. Pick folders and links in a tree; folders of the bookmarks bar become
 link groups, its links ribbon links, and whatever does not fit the ribbon (40 entries, 60 per group) or you send there
 becomes a Markdown page under “Bookmarks”. Links already in the ribbon are skipped, so importing again adds only what
-is new, and the toast's “Undo” takes the whole import back. Safari needs Full Disk Access for Annalo; without it,
+is new, and the toast's “Undo” takes the whole import back. Safari needs Full Disk Access for Arcalo; without it,
 export the bookmarks in Safari and import the HTML file.
 
 <p align="center"><img src="docs/screenshots/bookmark-import.png" width="90%" alt="Import bookmarks: the bookmarks bar, an existing group and a new group with a preview of the ribbon"></p>
@@ -228,7 +229,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 
 <p align="center">
   <img src="docs/screenshots/theme-picker.png" width="49%" alt="Theme picker">
-  <img src="docs/screenshots/theme-tokyo-night.png" width="49%" alt="Annalo in the Tokyo Night theme">
+  <img src="docs/screenshots/theme-tokyo-night.png" width="49%" alt="Arcalo in the Tokyo Night theme">
 </p>
 <p align="center">
   <img src="docs/screenshots/settings-backdrop-dark.png" width="49%" alt="Window backdrop Mica or Acrylic with the opacity slider">
@@ -321,7 +322,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 
 <img src="docs/screenshots/first-run-intro.png" width="42%" align="right" alt="The intro on first start: the scene about time tracking">
 
-1. **Install and start.** A short intro shows what Annalo does, then the setup asks for language, theme, working time
+1. **Install and start.** A short intro shows what Arcalo does, then the setup asks for language, theme, working time
    (and whether you book time in SAP), workspace, AI (none, a local Ollama found automatically, or your company's
    server with a connection test), calendar, Git sync, backups and desktop. Every answer is saved at once, every step
    can be skipped and changed later under Settings. Settings → About has “Replay the introduction” (also in the
@@ -399,7 +400,7 @@ Settings are grouped (General, Work, AI, System) and searchable. Besides the con
 | Section | What |
 |---|---|
 | Appearance | light/dark, 20 color themes and your own, accent color (presets or any hex; lightness is adjusted for WCAG contrast in both modes), UI/editor/code fonts, scale 90–125 %, density, line width, reduced motion, startup animation, window backdrop Mica or Acrylic with an opacity slider (Windows 11), custom title bar with the tabs at the top edge (Windows, like Obsidian; the system title bar is one switch away) |
-| Language & format | English or German for the whole app, live: menus, tray, messages, notifications and what Annalo writes into new notes; date format |
+| Language & format | English or German for the whole app, live: menus, tray, messages, notifications and what Arcalo writes into new notes; date format |
 | Startup | open the last tabs, the start page or today's note; remember window size and position; start minimized; import bookmarks |
 | Keyboard | rebind every in-app shortcut, with conflict detection (commands, editor keys, global shortcuts); Ctrl+Alt is rejected (AltGr) |
 | Editor | spell check language, autosave delay, typographic quotes, closing brackets, Tab width and line numbers in code blocks, link hover preview, scroll outline, icon and location of new pages |
@@ -435,19 +436,19 @@ Settings → Backup).
 
 ## macOS
 
-Releases contain `Annalo_<version>_aarch64.dmg` (Apple Silicon) and `Annalo_<version>_x64.dmg` (Intel), macOS 11
-or newer. Open the disk image and drag **Annalo** into *Applications*.
+Releases contain `Arcalo_<version>_aarch64.dmg` (Apple Silicon) and `Arcalo_<version>_x64.dmg` (Intel), macOS 11
+or newer. Open the disk image and drag **Arcalo** into *Applications*.
 
 The app is **ad-hoc signed but not notarized**, so Gatekeeper blocks the first start (“cannot be opened because the
 developer cannot be verified” or “is damaged”). Once, either:
 
-- in Finder, right-click (Ctrl-click) *Annalo* in *Applications* → **Open** → **Open**
+- in Finder, right-click (Ctrl-click) *Arcalo* in *Applications* → **Open** → **Open**
   (on macOS 15: System Settings → Privacy & Security → “Open Anyway”), or
-- in the Terminal: `xattr -cr "/Applications/Annalo.app"`
+- in the Terminal: `xattr -cr "/Applications/Arcalo.app"`
 
 On macOS the app follows the platform conventions: a menu bar in the app's language (⌘, settings, ⌘\ sidebar, ⌘.
 focus mode), the tab bar sits in the title bar, and every in-app shortcut uses ⌘ instead of Ctrl. Closing the window
-(the red button or ⇧⌘W) saves your edits and keeps Annalo running in the Dock with its timers and reminders; a click on
+(the red button or ⇧⌘W) saves your edits and keeps Arcalo running in the Dock with its timers and reminders; a click on
 the Dock icon brings the window back, ⌘Q quits cleanly, ⌘W closes the current tab. Quick capture defaults to ⌘⇧Space;
 quick capture and quick search appear on the current Space, also over a full-screen app, and hand the focus back
 when they close. “Open at login” adds a LaunchAgent. API keys and the Git token are kept in the login keychain; idle
@@ -473,13 +474,13 @@ The first three sign the app; with all six it is also notarized and stapled, and
 
 The app updates itself from GitHub releases: at start, every 6 hours (Settings → About → “Check for updates
 automatically”) and via “Check for updates now” it reads
-`https://github.com/MouseWerk/Annalo/releases/latest/download/latest.json`. A newer version shows a toast
+`https://github.com/MouseWerk/Arcalo/releases/latest/download/latest.json`. A newer version shows a toast
 “Version X available” with “Install and restart” and the release notes (“What's new?”); nothing is installed
 without that click. Before installing, all open editors are saved and a running backup is finished; the signed NSIS
 installer then runs passively and restarts the app (on macOS the signed `.app.tar.gz` replaces the app bundle, on
 Linux the signed AppImage replaces itself, then it restarts). The `.deb` shows the same message with “Open release
 page” instead, and the portable ZIP is updated by hand. If an update cannot be installed (offline, a proxy that does
-not answer, a signature that does not match, a full disk, an installer blocked by policy), Annalo says so in plain
+not answer, a signature that does not match, a full disk, an installer blocked by policy), Arcalo says so in plain
 words and keeps your workspace open.
 
 Updates must be signed. The public key is committed (`src-tauri/updater.pub`) and compiled into release builds;
@@ -504,12 +505,12 @@ secrets; apps installed with the old key must be updated once by hand.
 - **Daily backups** of the database and the attachments into `backups` (folder configurable), with a readable **Markdown copy** of all
   pages, images and bookings (`Zeiterfassung/YYYY-MM.csv`, Excel-ready)
 - **Network and cloud destinations**: Settings → Backup → “Additional backup destinations” copies every backup in the
-  background to further folders, such as `\\server\share\Annalo`, a mapped drive, `/Volumes/NAS` or a OneDrive or
+  background to further folders, such as `\\server\share\Arcalo`, a mapped drive, `/Volumes/NAS` or a OneDrive or
   Nextcloud folder, each computer into its own subfolder with a SHA-256 checksum. Copies are written under a temporary
   name and renamed when complete, so a synced cloud folder never uploads half a file. “Test now” checks a destination.
-  A share that is offline or hangs never holds up the app; Annalo retries quietly and only warns after a day. Backups
+  A share that is offline or hangs never holds up the app; Arcalo retries quietly and only warns after a day. Backups
   from the destinations can be restored from the same page (“Restore…”), and the start-up recovery finds them too.
-  Annalo never stores share passwords
+  Arcalo never stores share passwords
 - **Trash** keeps deleted pages for 30 days. **Version history** keeps earlier states of every page, with a diff
 - **Git sync** pushes the Markdown copy to your own private repository (see below)
 - **Secrets** (AI provider keys, Git token, proxy password, calendar subscription addresses) are stored in the Windows Credential Manager or the macOS

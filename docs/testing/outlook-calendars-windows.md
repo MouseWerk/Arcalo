@@ -7,7 +7,7 @@ error there except the ones expected below.
 
 ## Setup
 
-- Windows 10 or 11, Outlook Classic signed in, Annalo 1.6 installed (not as administrator).
+- Windows 10 or 11, Outlook Classic signed in, Arcalo 1.6 installed (not as administrator).
 - A test profile with: your mailbox with a sub-calendar („Projekt X“ under Kalender), a second
   mailbox, a PST file with a calendar, a colleague's calendar shared with full details, a
   colleague who shares only free/busy, a room mailbox, optionally a Microsoft 365 group.
@@ -67,7 +67,7 @@ error there except the ones expected below.
 
 ## Regional formats and restart
 
-15. Switch Windows to English (United States) date and time formats, restart Annalo, sync all:
+15. Switch Windows to English (United States) date and time formats, restart Arcalo, sync all:
     the same numbers of appointments.
-16. Restart Annalo: the selection, colors and „Buchungsvorschläge“ switches are kept; the list
+16. Restart Arcalo: the selection, colors and „Buchungsvorschläge“ switches are kept; the list
     shows the stored calendars until „Kalender suchen“ runs again.

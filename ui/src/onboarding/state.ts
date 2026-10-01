@@ -1,6 +1,7 @@
 // State of the first-run flow (intro, then the setup) and how it starts, pauses and ends.
 // Only the main window hosts it; the capture, search and presenter windows never do.
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { create } from "zustand";
 import { api } from "../lib/api";
 import { openSettingsSection } from "../lib/calnav";
@@ -66,10 +67,26 @@ export function resumeFirstRun() {
   useFirstRun.setState({ paused: false });
 }
 
-/** At start: the intro on a fresh install, the one-time hint after an upgrade. */
+/** Once per workspace from before 1.7: Annalo is now called Arcalo. */
+export const REBRAND_NOTES_URL = "https://github.com/MouseWerk/Arcalo/releases/tag/v1.7.0";
+
+async function showRebrandNotice() {
+  await api.rebrandNoticeShown().catch(() => {});
+  useApp.getState().toast({
+    tone: "info",
+    persistent: true,
+    title: t("rebrand.title"),
+    detail: t("rebrand.detail"),
+    action: { label: t("rebrand.action"), run: () => void openUrl(REBRAND_NOTES_URL).catch(() => {}) },
+  });
+}
+
+/** At start: the intro on a fresh install, the one-time hint after an upgrade (and, once, the
+ * notice of the rename to Arcalo). */
 export async function checkFirstRun(): Promise<"intro" | "hint" | null> {
   const status = await api.onboardingStatus().catch(() => null);
   if (!status) return null;
+  if (status.rebrand_notice) await showRebrandNotice();
   if (status.intro) {
     // After „Einrichtung zurücksetzen“ the stored choices stay (no language guess).
     startFirstRun(status.existing ? "rerun" : "fresh");

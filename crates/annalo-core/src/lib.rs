@@ -1,6 +1,6 @@
 //! # annalo-core
 //!
-//! The platform-independent core of Annalo. Everything the UI shell needs
+//! The platform-independent core of Arcalo. Everything the UI shell needs
 //! lives here so it can be tested headless and reused by the CLI:
 //!
 //! * [`db`] – embedded SQLite store (FTS5 full-text search, embeddings as BLOBs)
@@ -84,6 +84,7 @@ pub mod outlookcom;
 pub mod pagework;
 pub mod prefs;
 pub mod properties;
+pub mod rebrand;
 pub mod report;
 pub mod search;
 pub mod settings;

@@ -89,7 +89,7 @@ test("the picker switches themes: tokens change, the mode follows, the choice pe
   assert.equal(await app.browser.execute(() => document.querySelector('.accent-swatch[data-accent="teal"]').disabled), true);
   await app.click('[data-theme-card="annalo-light"]');
   await app.browser.waitUntil(async () => (await themeId()) === "annalo-light");
-  // Annalo is tokens.css itself: no theme CSS is injected.
+  // Arcalo is tokens.css itself: no theme CSS is injected.
   assert.equal(await app.browser.execute(() => document.getElementById("annalo-theme")?.textContent ?? ""), "");
 });
 
@@ -150,7 +150,7 @@ test("custom themes round-trip through a theme file; invalid files are refused",
     fs.writeFileSync(p, typeof content === "string" ? content : JSON.stringify(content));
     return app.invoke("theme_file_read", { path: p });
   };
-  await assert.rejects(bad("settings.json", { format: "annalo-settings", version: 1, settings: {} }), /Keine Annalo-Theme-Datei/);
+  await assert.rejects(bad("settings.json", { format: "annalo-settings", version: 1, settings: {} }), /Keine Arcalo-Theme-Datei/);
   await assert.rejects(bad("broken.json", "{ kaputt"), /kein gültiges JSON/);
   await assert.rejects(bad("color.json", { ...exported, colors: { ...exported.colors, accent: "blau" } }), /Ungültige Farbe „accent“/);
   const { danger, ...partial } = exported.colors;

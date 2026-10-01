@@ -1,4 +1,4 @@
-# Annalo: reads calendars of Outlook Classic through its COM object model and writes the result
+# Arcalo: reads calendars of Outlook Classic through its COM object model and writes the result
 # as one line of JSON to standard output. Only ASCII is written (other characters as \uXXXX), so
 # the console code page does not matter. The file itself is ASCII too: Windows PowerShell reads
 # scripts without a byte order mark as ANSI.
@@ -13,7 +13,7 @@
 #   the calendars in the navigation pane (shared calendars of colleagues, rooms, groups) and the
 #   default calendars of the people listed in -Recipients (a JSON file of names or addresses).
 #
-# Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Annalo shows its own text.
+# Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 # Private appointments keep only their time unless -Private is given; the text of an
 # appointment is only read for -Body (kept) or -Links (only web addresses are passed on).
 
@@ -464,7 +464,7 @@ function Read-FreeBusy($r) {
 }
 
 if (-not $Calendars) {
-    # Only the default calendar (the output of Annalo before calendar selection).
+    # Only the default calendar (the output of Arcalo before calendar selection).
     try { Read-Folder $defaultFolder } catch { Fail 'folder' $_.Exception.Message }
     Write-Json ([ordered]@{ ok = $true; version = $version; mode = $script:mode; skipped = $script:skipped; items = @($script:list) })
     exit 0
