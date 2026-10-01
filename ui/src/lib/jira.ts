@@ -211,7 +211,8 @@ export function startIssueIndex() {
   if (started) return;
   started = true;
   void useIssueIndex.getState().load();
-  void on("jira://synced", () => void useIssueIndex.getState().load());
+  // Without the app backend (unit tests) there is nothing to listen to.
+  on("jira://synced", () => void useIssueIndex.getState().load()).catch(() => {});
 }
 
 // ------------------------------------------------------------------ keys
