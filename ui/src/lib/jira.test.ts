@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, overdue, priorityRank, valuesOf, type Issue } from "./jira";
 import { guessKind } from "../views/settings/JiraSection";
-import { typeOf } from "../editor/issueChips";
+import { typeOf } from "./issueTypes";
 import { quickItems } from "./quicksearch";
 
 const issue = (key: string, p: Partial<Issue> = {}): Issue => ({

@@ -15,7 +15,7 @@ import { t, useT, type TKey } from "../lib/i18n";
 import { emptyIssueQuery, filterIssues, GROUP_BYS, groupIssues, jiraApi, overdue, valuesOf, type GroupBy, type Issue, type IssueQuery, type IssueView, type JiraStatus } from "../lib/jira";
 import { addIssueTask, copyIssueKey, openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
 import { openSettingsSection } from "../lib/calnav";
-import { TYPE_SVG, typeOf } from "../editor/issueChips";
+import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { useTimeTracking } from "../lib/timetracking";
 
 const PREF = "annalo.issues.view";

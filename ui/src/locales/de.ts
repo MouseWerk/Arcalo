@@ -4023,7 +4023,7 @@ export const de: Catalog = {
   "slash.jira.sub": "Aus der Aufgabe in dieser Zeile",
   "dash.w.jira": "Meine Issues",
   "dash.w.jiraHint": "Deine offenen Jira-Issues, zuletzt geänderte zuerst.",
-  "dash.w.jiraQuery": "Jira-Abfrage",
+  "dash.w.jiraQuery": "Jira-Suche",
   "dash.w.jiraQueryHint": "Die Issues einer gespeicherten JQL-Suche, mit den Spalten deiner Wahl.",
   "dash.w.jiraSprint": "Sprint",
   "dash.w.jiraSprintHint": "Der aktive Sprint mit seinen offenen Issues und einem Burndown.",

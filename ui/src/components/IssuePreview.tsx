@@ -6,7 +6,7 @@ import { ExternalLink } from "lucide-react";
 import { useApp } from "../store/app";
 import { jiraApi, useIssueIndex, type ChipIssue } from "../lib/jira";
 import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
-import { TYPE_SVG, typeOf } from "../editor/issueChips";
+import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { fmtDate } from "../lib/format";
 import { t } from "../lib/i18n";
 

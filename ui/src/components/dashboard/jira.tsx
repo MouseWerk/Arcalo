@@ -1,4 +1,4 @@
-// Jira widgets of the start page: „Meine Issues“ (the default search), „Jira-Abfrage“ (one saved
+// Jira widgets of the start page: „Meine Issues“ (the default search), „Jira-Suche“ (one saved
 // JQL search each; title, columns and count are its settings) and „Sprint“ (the active sprint
 // with a small burndown; without Agile it says so quietly). Their settings fields are here too,
 // so the widget framework only needs to know the kinds.
@@ -16,7 +16,7 @@ import { useApp } from "../../store/app";
 
 const NO_QUERIES: never[] = [];
 import { Button, Input, Select } from "../ui";
-import { TYPE_SVG, typeOf } from "../../editor/issueChips";
+import { TYPE_SVG, typeOf } from "../../lib/issueTypes";
 import { Empty, Loadable, More, s } from "./common";
 import type { WidgetProps } from "./registry";
 
