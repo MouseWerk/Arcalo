@@ -284,7 +284,8 @@ pub struct LegacyWidget {
 pub struct Widget {
     /// Stable id within the board (keys, the text of a „Notiz“).
     pub id: String,
-    /// One of [`WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
+    /// One of [`WIDGET_KINDS`] or a kind the UI registers (see [`valid_widget_kind`]); kinds of
+    /// another shape are dropped by [`Dashboard::normalized`].
     pub kind: String,
     #[serde(default)]
     pub x: u32,
@@ -317,7 +318,8 @@ pub struct Board {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Dashboard {
-    /// 2 since 1.6 (boards in a grid); 0 before.
+    /// 3 since 1.7 (widgets of any registered kind are kept), 2 since 1.6 (boards in a grid);
+    /// 0 before.
     pub version: u32,
     pub boards: Vec<Board>,
     /// Id of the board shown.
@@ -375,6 +377,18 @@ pub const WIDGET_KINDS: [&str; 33] = [
     "jira_sprint",
 ];
 
+/// Whether `kind` can be a widget kind: one of [`WIDGET_KINDS`] or a kind a widget of the UI
+/// registers (lower-case letters, digits, `-` and `_`, at most 32 characters). Kinds this
+/// version does not know are kept, so a layout of a newer version survives a save (the UI
+/// hides them).
+pub fn valid_widget_kind(kind: &str) -> bool {
+    let b = kind.as_bytes();
+    !b.is_empty()
+        && b.len() <= 32
+        && b[0].is_ascii_lowercase()
+        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-' || *c == b'_')
+}
+
 /// Widget kinds of the list before 1.6.
 pub const LEGACY_WIDGET_KINDS: [&str; 10] =
     ["today", "week", "budgets", "recent", "favorites", "timer", "note", "calendar", "focus", "agenda"];
@@ -412,7 +426,7 @@ fn unique_id(seen: &mut std::collections::HashSet<String>, raw: &str, fallback: 
 }
 
 impl Dashboard {
-    /// Drops unknown kinds, gives boards and widgets unique non-empty ids, keeps every widget
+    /// Drops malformed kinds, gives boards and widgets unique non-empty ids, keeps every widget
     /// inside the grid, and caps the counts, the settings of a widget and the notes.
     pub fn normalized(mut self) -> Self {
         if let Some(list) = &mut self.widgets {
@@ -432,7 +446,7 @@ impl Dashboard {
             if b.name.is_empty() {
                 b.name = "Board".into();
             }
-            b.widgets.retain(|w| WIDGET_KINDS.contains(&w.kind.as_str()));
+            b.widgets.retain(|w| valid_widget_kind(&w.kind));
             b.widgets.truncate(MAX_WIDGETS);
             let mut seen = std::collections::HashSet::new();
             for w in &mut b.widgets {
@@ -1254,7 +1268,8 @@ mod tests {
                     {"id": "n", "kind": "agenda", "x": 0, "y": 2, "w": 40, "h": 0, "config": {"days": 3}},
                     {"id": "q", "kind": "query", "config": [1, 2]},
                     {"id": "b", "kind": "budget", "config": {"big": big}},
-                    {"id": "w", "kind": "wetter"}
+                    {"id": "w", "kind": "wetter"},
+                    {"id": "x", "kind": "Not a kind!"}
                 ]},
                 {"id": "heute", "name": "", "widgets": []}
             ]
@@ -1274,9 +1289,12 @@ mod tests {
                 ("n", "note", 8, 0, 4, 5),
                 ("n-2", "agenda", 0, 2, 12, 1),
                 ("q", "query", 0, 0, 1, 1),
-                ("b", "budget", 0, 0, 1, 1)
+                ("b", "budget", 0, 0, 1, 1),
+                // A kind of a newer version (or a widget not built in) is kept for the UI to hide.
+                ("w", "wetter", 0, 0, 1, 1)
             ]
         );
+        assert!(valid_widget_kind("jira-sprint") && !valid_widget_kind("") && !valid_widget_kind("9a"));
         assert_eq!(d.boards[0].widgets[1].config, serde_json::json!({"days": 3}));
         assert!(d.boards[0].widgets[2].config.is_null(), "settings must be an object");
         assert!(d.boards[0].widgets[3].config.is_null(), "too large settings are dropped");

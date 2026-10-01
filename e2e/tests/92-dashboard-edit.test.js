@@ -149,13 +149,14 @@ test("dragging moves a widget and the handle resizes it on the grid", async () =
   const before = await place("clock");
   await drag('.pane.active .dw[data-widget="clock"] .dw-resize', colW * 2, 0);
   await app.browser.waitUntil(async () => (await place("clock"))?.w === before.w + 2, { timeoutMsg: "resize handle did not resize" });
-  // S/M/L/XL buttons.
-  await app.click('.pane.active .dw[data-widget="clock"] [aria-label="Größe S"]');
+  // The preset size buttons (small, medium, wide, tall, wide and tall).
+  await app.click('.pane.active .dw[data-widget="clock"] [aria-label="Größe: Klein"]');
   // Narrow now: the sizes are in the menu.
   await app.click('.pane.active .dw[data-widget="clock"] [aria-label="Widget-Optionen"]');
-  await menuItem("Größe M");
-  await app.browser.waitUntil(async () => (await place("clock"))?.w === 6);
-  await app.click('.pane.active .dw[data-widget="clock"] [aria-label="Größe S"]');
+  await menuItem("Größe: Mittel");
+  await app.browser.waitUntil(async () => (await place("clock"))?.w === 4);
+  await app.click('.pane.active .dw[data-widget="clock"] [aria-label="Widget-Optionen"]');
+  await menuItem("Größe: Klein");
   await app.browser.waitUntil(async () => (await place("clock"))?.w === 3);
 });
 

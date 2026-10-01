@@ -498,3 +498,129 @@
 .dwj-legend i { display: inline-block; width: 12px; height: 0; border-top: 2px solid var(--accent); margin-left: 6px; }
 .dwj-legend i.dwj-key-ideal { border-top: 2px dashed var(--text-3); }
 .dwj-stale { margin-top: -4px; }
+
+/* ---- start page 1.7: sizes, widget menu, notes and helper widgets ---- */
+/* Preset sizes drawn to scale (edit mode and the widget menu). */
+.dw-sizes button { width: 24px; display: inline-grid; place-items: center; }
+.dw-size-glyph { display: block; }
+.dw-size-frame { fill: none; stroke: currentColor; stroke-opacity: 0.45; }
+.dw-size-fill { fill: currentColor; fill-opacity: 0.35; }
+.dw-sizes button[aria-pressed="true"] .dw-size-fill { fill-opacity: 0.9; }
+.dw-hover-tools { display: flex; align-items: center; gap: 1px; margin-left: auto; flex: none; }
+.dw-hover-tools .dw-gear { margin-left: 0; }
+.dw-menu { opacity: 0; transition: opacity var(--dur-fast); }
+.dw:hover .dw-menu, .dw-menu:focus-visible, .dw-menu[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .dw-gear, .dw-menu { opacity: 1; } }
+
+/* Uhr: more time zones below the local time, or beside it in wide widgets. */
+.dw-clock.with-zones { align-content: start; gap: 12px; }
+.dw-clock-main { display: grid; gap: 2px; }
+.dw-zones { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--border); display: grid; gap: 2px; }
+.dw-zones li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 10px; font-size: var(--fs-sm); padding: 2px 0; }
+.dw-zone-city { color: var(--text-2); }
+.dw-zone-time { font-weight: 600; color: var(--text); min-width: 5ch; text-align: right; }
+@container dw (min-width: 560px) {
+  .dw-clock.with-zones { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-content: center; gap: 24px; }
+  .dw-clock.with-zones .dw-zones { border-top: 0; border-left: 1px solid var(--border); padding: 0 0 0 20px; }
+}
+@container dw (max-width: 220px) {
+  .dw-zone-off { display: none; }
+  .dw-zones li { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
+/* Seite einbetten: title and „Öffnen“ */
+.dw-embed-head { display: flex; align-items: center; gap: 6px; }
+.dw-embed-head .dw-embed-title { flex: 1; min-width: 0; margin-bottom: 0; }
+
+/* Notizzettel */
+.dw-scratch-tools { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast); }
+.dw-scratch:hover .dw-scratch-tools, .dw-scratch-tools:focus-within { opacity: 1; }
+.dw-scratch .dw-md ul:has(> li > .dw-scratch-check) { list-style: none; padding-left: 2px; }
+.dw-scratch .dw-md li:has(> .dw-scratch-check) { display: flex; align-items: baseline; gap: 8px; }
+.dw-scratch-check { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--accent-strong); cursor: pointer; transform: translateY(2px); }
+.dw-scratch li:has(> .dw-scratch-check:checked) { color: var(--text-3); text-decoration: line-through; }
+
+/* Posteingang */
+.dw-inbox { display: grid; align-content: start; gap: 2px; }
+.dw-inbox-item { position: relative; display: flex; align-items: center; }
+.dw-inbox-text { flex: 1; }
+/* The actions cover the time on hover, so the text keeps the full width. */
+.dw-inbox-actions {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: flex; gap: 1px; padding-left: 8px;
+  background: linear-gradient(to right, transparent, var(--bg-hover) 8px); border-radius: var(--r-sm); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast);
+}
+.dw-inbox-item:hover .dw-inbox-actions, .dw-inbox-actions:focus-within { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .dw-inbox-actions, .dw-scratch-tools { opacity: 1; } }
+
+/* Vor einem Jahr */
+.dw-resurface { display: grid; align-content: start; gap: 14px; }
+.dw-year + .dw-year { margin-top: 6px; }
+.dw-year-head { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-sm); font-weight: 600; color: var(--text); padding: 2px 0; }
+.dw-year-daily { margin-left: auto; font-size: var(--fs-xs); }
+.dw-random-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.dw-random-head .dw-sub { margin: 0; }
+.dw-random-card {
+  display: grid; gap: 4px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.dw-random-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.dw-random-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
+.dw-random-title svg { color: var(--text-3); flex: none; }
+.dw-random-title .dw-when { margin-left: auto; font-weight: 400; }
+.dw-random-text { font-size: var(--fs-sm); line-height: 1.5; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Schreiben */
+.dw-writing { flex: 1; display: grid; grid-template-rows: auto minmax(40px, 1fr) auto; gap: 8px; min-height: 0; }
+.dw-writing-sum { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dw-writing-sum > div:first-child { display: flex; align-items: baseline; gap: 8px; }
+.dw-writing-bars { display: flex; align-items: flex-end; gap: 3px; min-height: 40px; }
+.dw-writing-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; border-radius: 3px; }
+.dw-writing-bar i { display: block; width: 100%; border-radius: 3px 3px 1px 1px; background: var(--accent); opacity: 0.55; transition: height var(--dur) var(--ease-out), opacity var(--dur-fast); }
+.dw-writing-bar:hover i { opacity: 0.9; }
+.dw-writing-bar.today i { opacity: 1; }
+.dw-writing-bar.zero { background: linear-gradient(to top, var(--bg-active) 2px, transparent 2px); }
+.dw-writing-axis { display: flex; justify-content: space-between; }
+
+/* Fokus-Timer */
+.dw-pomo { flex: 1; display: grid; justify-items: center; align-content: center; gap: 10px; text-align: center; }
+.dw-pomo-time { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.02em; }
+.dw-pomo.idle .dw-pomo-time { color: var(--text-3); }
+.dw-pomo-info { display: grid; gap: 2px; max-width: 100%; }
+.dw-pomo-phase { font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
+.dw-pomo-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+@container dw (min-width: 380px) {
+  .dw-pomo { grid-template-columns: auto minmax(0, 1fr); justify-items: start; text-align: left; column-gap: 18px; }
+  .dw-pomo .dw-ring { grid-row: span 2; }
+  .dw-pomo-actions { justify-content: flex-start; }
+}
+
+/* Checkliste */
+.dw-checklist { flex: 1; display: grid; grid-template-rows: auto auto auto; align-content: start; gap: 6px; }
+.dw-check-item { position: relative; display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 3px 6px; border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.dw-check-item:hover { background: var(--bg-hover); }
+.dw-check-item.done .dw-check-text { color: var(--text-3); text-decoration: line-through; }
+.dw-check-text { min-width: 0; overflow-wrap: anywhere; }
+.dw-check-tools {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: flex; padding-left: 8px;
+  background: linear-gradient(to right, transparent, var(--bg-hover) 8px); border-radius: var(--r-sm); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast);
+}
+.dw-check-item:hover .dw-check-tools, .dw-check-tools:focus-within { opacity: 1; pointer-events: auto; }
+.dw-check-add .input { width: 100%; height: 30px; font-size: var(--fs-sm); }
+.dw-check-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dw-check-foot .dw-link { font-size: var(--fs-xs); }
+
+/* Sicherung & Sync */
+.dw-status { display: grid; align-content: start; gap: 12px; }
+.dw-status-block + .dw-status-block { padding-top: 10px; border-top: 1px solid var(--border); }
+.dw-status-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; min-height: 28px; }
+.dw-status-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; }
+.dw-status-head .btn { margin-left: auto; flex: none; }
+.dw-status-line { font-size: var(--fs-sm); color: var(--text-2); }
+.dw-status-error { font-size: var(--fs-xs); color: var(--danger); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dw-status-dests { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.dw-status-dests li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dw-health { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--text-3); }
+.dw-health.h-ok { background: var(--success); }
+.dw-health.h-warn { background: var(--warning); }
+.dw-health.h-error { background: var(--danger); }
+.dw-health.h-off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); }

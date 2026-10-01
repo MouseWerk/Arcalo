@@ -5,10 +5,9 @@ import { Search } from "lucide-react";
 import { t } from "../../lib/i18n";
 import { GROUP_LABELS, WIDGETS, galleryKinds, type WidgetGroup, type WidgetKind } from "../../lib/dashboard";
 import { Dialog, Input } from "../ui";
-import { ICONS } from "./registry";
+import { iconOf } from "./registry";
+import { viewOf, type GalleryLook as Look } from "./define";
 import { workApi } from "../../lib/workwidgets";
-
-type Look = "list" | "bars" | "ring" | "timeline" | "clock" | "grid" | "text" | "tiles" | "hbars";
 
 const LOOK: Record<WidgetKind, Look> = {
   today: "timeline",
@@ -172,10 +171,10 @@ export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: Wid
             <h3 className="dw-sub">{t(GROUP_LABELS[g])}</h3>
             <div className="dash-gallery-grid">
               {kinds.map((k) => {
-                const Icon = ICONS[k];
+                const Icon = iconOf(k);
                 return (
                   <button key={k} type="button" className="dash-gallery-card" data-kind={k} onClick={() => onPick(k)} aria-label={`${t(WIDGETS[k].label)}: ${t(WIDGETS[k].hint)}`}>
-                    <Preview look={LOOK[k]} />
+                    <Preview look={(Object.hasOwn(LOOK, k) ? LOOK[k] : viewOf(k)?.look) ?? "list"} />
                     <span className="dash-gallery-name">
                       <Icon size={14} aria-hidden />
                       {t(WIDGETS[k].label)}

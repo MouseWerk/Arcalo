@@ -220,7 +220,7 @@ pub fn replace_dir<T>(target: &Path, fill: impl FnOnce(&Path) -> Result<T>) -> R
 }
 
 fn german_hours(minutes: i64) -> String {
-    format!("{:.2}", minutes as f64 / 60.0).replace('.', ",")
+    crate::i18n::decimal(format!("{:.2}", minutes as f64 / 60.0))
 }
 
 fn status_de(s: StatusFlag) -> &'static str {

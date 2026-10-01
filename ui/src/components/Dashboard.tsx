@@ -1,8 +1,11 @@
-// The start page (also shown in new tabs): boards as tabs („Heute“, „Projekte“, own ones), each
-// a grid of widgets in 12 columns. „Anpassen“ switches to edit mode: add widgets from the
-// gallery, drag or move them with the keyboard, resize, set them up, duplicate and remove,
-// apply a preset, export and import a board; „Fertig“ saves. Narrow panes show the same board
-// in fewer columns. The widgets' data comes in one batched call (dashboard/data.tsx).
+// The start page (also shown in new tabs): boards (start pages) as tabs („Heute“, „Projekte“,
+// own ones from templates such as „Sprint“ or „Persönlich“), each a grid of widgets in 12
+// columns; the board used last opens. „Anpassen“ switches to edit mode: add widgets from the
+// gallery, drag or move them with the keyboard, resize them with the handle, the keys or the
+// preset sizes (also in each widget's menu outside edit mode), set them up, duplicate and
+// remove, apply a preset, export and import a board; „Fertig“ saves. Narrow panes show the
+// same board in fewer columns. The widgets' data comes in one batched call (dashboard/data.tsx);
+// how to add a widget is described in dashboard/define.ts.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronDown, Copy, Download, GripVertical, LayoutTemplate, MoreHorizontal, Plus, RotateCcw, Settings2, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
@@ -10,10 +13,11 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
-import { isoDay } from "../lib/format";
 import { t, useT } from "../lib/i18n";
 import { cellAt, columnsFor, COLS, GAP, grow, moveTo, nudge, readingOrder, rectPx, reflow, resizeTo, ROW_H } from "../lib/dashgrid";
 import {
+  boardFileName,
+  configOf,
   editBoard,
   exportBoard,
   importBoard,
@@ -24,10 +28,12 @@ import {
   narrowMinOf,
   newBoard,
   PRESETS,
-  sizeFor,
+  resizeToPreset,
   shownWidgets,
   sizeName,
+  SIZE_LABELS,
   SIZE_NAMES,
+  SIZES,
   titleOf,
   toSaved,
   withHidden,
@@ -37,10 +43,10 @@ import {
   type WidgetKind,
 } from "../lib/dashboard";
 import type { Board, Dashboard as DashboardT, GridWidget } from "../lib/types";
-import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
+import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
 import { DashData } from "./dashboard/data";
 import { BoardContext } from "./dashboard/board";
-import { BODIES, ICONS, openerOf } from "./dashboard/registry";
+import { bodyOf, iconOf, openerOf } from "./dashboard/registry";
 import { Gallery } from "./dashboard/Gallery";
 import { WidgetSettings } from "./dashboard/WidgetSettings";
 
@@ -114,8 +120,10 @@ export function Dashboard() {
         if ((cur.notes[id] ?? "") === text) return;
         void persist({ ...cur, notes: { ...cur.notes, [id]: text } });
       },
+      setConfig: (id: string, patch: Record<string, unknown>) =>
+        change((d) => ({ ...d, boards: d.boards.map((b) => ({ ...b, widgets: b.widgets.map((w) => (w.id === id ? { ...w, config: { ...configOf(w), ...patch } } : w)) })) })),
     }),
-    [loaded.notes],
+    [loaded.notes, change],
   );
 
   const finish = async () => {
@@ -160,7 +168,7 @@ export function Dashboard() {
   };
 
   const exportTo = async (b: Board) => {
-    const path = await saveDialog({ defaultPath: `annalo-startseite-${b.name.toLowerCase().replace(/[^a-z0-9äöüß]+/g, "-")}-${isoDay(new Date())}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+    const path = await saveDialog({ defaultPath: boardFileName(b), filters: [{ name: t("dash.board.fileType"), extensions: ["json"] }] });
     if (!path) return;
     try {
       await api.dashboardFileWrite(path, exportBoard(b, fresh().notes));
@@ -170,7 +178,7 @@ export function Dashboard() {
     }
   };
   const importFrom = async () => {
-    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: "JSON", extensions: ["json"] }] });
+    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: t("dash.board.fileType"), extensions: ["json"] }] });
     if (typeof path !== "string") return;
     try {
       importText(await api.readSettingsFile(path));
@@ -182,13 +190,24 @@ export function Dashboard() {
     const r = importBoard(text, dash.boards);
     if ("error" in r) return s().toast({ tone: "danger", title: t("dash.importFailed"), detail: t(r.error) });
     change((d) => ({ ...d, boards: [...d.boards, r.board], active: r.board.id, notes: { ...d.notes, ...r.notes } }));
-    s().toast({ tone: "success", title: t("dash.imported", { name: r.board.name }) });
+    // Widgets this version does not know are left out, and said so.
+    if (r.dropped.length) s().toast({ tone: "warning", title: t("dash.imported", { name: r.board.name }), detail: t("dash.import.dropped", { n: r.dropped.length, kinds: r.dropped.join(", ") }) });
+    else s().toast({ tone: "success", title: t("dash.imported", { name: r.board.name }) });
   };
-  // Tests and scripts import a board without the file dialog.
+  // Tests and scripts import a board, or export one to a path, without the file dialog.
   useEffect(() => {
     const f = (e: Event) => importText((e as CustomEvent<string>).detail);
+    const x = (e: Event) => {
+      const { board: id, path } = (e as CustomEvent<{ board: string; path: string }>).detail;
+      const b = fresh().boards.find((y) => y.id === id);
+      if (b) void api.dashboardFileWrite(path, exportBoard(b, fresh().notes));
+    };
     window.addEventListener("annalo:dashboard-import", f);
-    return () => window.removeEventListener("annalo:dashboard-import", f);
+    window.addEventListener("annalo:dashboard-export", x);
+    return () => {
+      window.removeEventListener("annalo:dashboard-import", f);
+      window.removeEventListener("annalo:dashboard-export", x);
+    };
   });
 
   const presetMenu = (e: ReactMouseEvent) =>
@@ -420,6 +439,10 @@ function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSetti
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
       e.preventDefault();
       onAction({ type: "duplicate", id: w.id });
+    } else if (full && !e.ctrlKey && !e.metaKey && !e.altKey && /^[1-5]$/.test(e.key)) {
+      // 1–5: the preset sizes (small, medium, wide, tall, wide and tall).
+      e.preventDefault();
+      next = resizeToPreset(board.widgets, w.id, SIZE_NAMES[Number(e.key) - 1]);
     }
     if (next && next !== board.widgets) {
       onLayout(next);
@@ -508,8 +531,7 @@ function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSetti
                 onAction={onAction}
                 onSettings={() => onSettings(w.id)}
                 onSize={(name) => {
-                  const sz = sizeFor(w.kind, name);
-                  const next = resizeTo(board.widgets, w.id, sz.w, sz.h, COLS, minOf(w));
+                  const next = resizeToPreset(board.widgets, w.id, name);
                   onLayout(next);
                   setAnnounce(describe(next.find((x) => x.id === w.id)!));
                 }}
@@ -567,14 +589,16 @@ function WidgetCard({
 }) {
   const tr = useT();
   const [menu, , openMenuAt] = useMenu();
-  if (!isKind(w.kind)) return null;
-  const Body = BODIES[w.kind];
-  const Icon = ICONS[w.kind];
+  const Body = bodyOf(w.kind);
+  if (!isKind(w.kind) || !Body) return null;
+  const Icon = iconOf(w.kind);
   const title = titleOf(w);
   const open = openerOf(w);
   const current = sizeName(w);
   // Narrow widgets keep room for their title: sizes and „Duplizieren“ go into a menu.
   const compact = w.w <= 4;
+  const sizes: MenuItem[] = SIZE_NAMES.map((n) => ({ label: tr("dash.sizeName", { size: tr(SIZE_LABELS[n]) }), checked: current === n, onSelect: () => onSize(n) }));
+  const sizeItems: MenuEntry[] = full ? [...sizes, "separator"] : [];
   return (
     <article
       className={`card dw dw-k-${w.kind} ${dragged ? `lifted ${dragMode}` : ""} ${w.w <= 4 ? "narrow" : ""}`}
@@ -604,20 +628,14 @@ function WidgetCard({
                 icon={MoreHorizontal}
                 label={tr("dash.widgetMenu")}
                 size="sm"
-                onClick={(e) =>
-                  openMenuAt(e, [
-                    ...(full ? SIZE_NAMES.map((n) => ({ label: tr("dash.sizeName", { size: n.toUpperCase() }), checked: current === n, onSelect: () => onSize(n) })) : []),
-                    ...(full ? (["separator"] as const) : []),
-                    { label: tr("dash.duplicate"), icon: Copy, onSelect: () => onAction({ type: "duplicate", id: w.id }) },
-                  ])
-                }
+                onClick={(e) => openMenuAt(e, [...sizeItems, { label: tr("dash.duplicate"), icon: Copy, onSelect: () => onAction({ type: "duplicate", id: w.id }) }])}
               />
             ) : (
               full && (
                 <div className="dw-sizes" role="group" aria-label={tr("dash.size")}>
                   {SIZE_NAMES.map((n) => (
-                    <button key={n} type="button" aria-pressed={current === n} aria-label={tr("dash.sizeName", { size: n.toUpperCase() })} onClick={() => onSize(n)}>
-                      {n.toUpperCase()}
+                    <button key={n} type="button" aria-pressed={current === n} aria-label={tr("dash.sizeName", { size: tr(SIZE_LABELS[n]) })} title={tr(SIZE_LABELS[n])} onClick={() => onSize(n)}>
+                      <SizeGlyph name={n} />
                     </button>
                   ))}
                 </div>
@@ -628,7 +646,24 @@ function WidgetCard({
             <IconButton icon={X} label={tr("dash.remove")} size="sm" onClick={() => onAction({ type: "remove", id: w.id })} />
           </div>
         ) : (
-          <IconButton icon={Settings2} label={tr("dash.settingsOf", { name: title })} size="sm" className="dw-gear" onClick={onSettings} />
+          <div className="dw-hover-tools">
+            <IconButton icon={Settings2} label={tr("dash.settingsOf", { name: title })} size="sm" className="dw-gear" onClick={onSettings} />
+            <IconButton
+              icon={MoreHorizontal}
+              label={tr("dash.menuOf", { name: title })}
+              size="sm"
+              className="dw-menu"
+              onClick={(e) =>
+                openMenuAt(e, [
+                  ...(full ? [{ label: tr("dash.size"), submenu: sizes }] : []),
+                  { label: tr("dash.settings"), icon: Settings2, onSelect: onSettings },
+                  { label: tr("dash.duplicate"), icon: Copy, onSelect: () => onAction({ type: "duplicate", id: w.id }) },
+                  "separator",
+                  { label: tr("dash.remove"), icon: Trash2, danger: true, onSelect: () => onAction({ type: "remove", id: w.id }) },
+                ])
+              }
+            />
+          </div>
         )}
       </header>
       <div className="dw-body" inert={editing}>
@@ -637,6 +672,20 @@ function WidgetCard({
       {editing && full && <span className="dw-resize" role="presentation" onPointerDown={onResizeStart} title={tr("dash.resize")} />}
       {menu}
     </article>
+  );
+}
+
+/** A preset size drawn to scale on a 2 × 2 tile (wide = two tiles side by side, …). */
+export function SizeGlyph({ name }: { name: SizeName }) {
+  const sz = SIZES[name];
+  // Medium fills one tile (a third of the width), small a little less.
+  const w = name === "s" ? 3.5 : sz.w >= 8 ? 11 : 5;
+  const h = name === "s" ? 3.5 : sz.h >= 14 ? 11 : 5;
+  return (
+    <svg className="dw-size-glyph" width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+      <rect className="dw-size-frame" x="0.5" y="0.5" width="13" height="13" rx="2.5" />
+      <rect className="dw-size-fill" x="1.5" y="1.5" width={w} height={h} rx="1.25" />
+    </svg>
   );
 }
 

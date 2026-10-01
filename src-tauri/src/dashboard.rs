@@ -1,6 +1,6 @@
-//! Start page („Startseite“): the data of its widgets in one call, and writing a board to a
-//! file (export). The logic lives in `annalo_core::dashboard`; the boards themselves are saved
-//! with the settings (`dashboard_save`).
+//! Start page („Startseite“): the data of its widgets in one call, writing a board to a file
+//! (export) and filing an inbox entry. The logic lives in `annalo_core::dashboard`; the boards
+//! themselves are saved with the settings (`dashboard_save`).
 
 use std::time::Instant;
 
@@ -9,7 +9,7 @@ use annalo_core::calsync::outlook;
 use annalo_core::dashboard::{self as core, Ctx, Request, Response};
 use annalo_core::error::IoAt;
 use chrono::{Local, Utc};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::{AppState, Result};
 
@@ -29,6 +29,23 @@ pub fn dashboard_data(state: State<AppState>, request: Request) -> Result<Respon
         core::dashboard_data(&ctx, &request.parts)?
     };
     Ok(Response { parts, ms: started.elapsed().as_secs_f64() * 1000.0 })
+}
+
+/// Takes entry `index` (still reading `text`) off the inbox page and, with `target`, appends it
+/// to that page („Ablegen in …“); without, it is done („Erledigt“). Returns the target's title.
+#[tauri::command(async)]
+pub fn dashboard_inbox_move(
+    app: AppHandle,
+    state: State<AppState>,
+    inbox: i64,
+    index: usize,
+    text: String,
+    target: Option<i64>,
+) -> Result<Option<String>> {
+    let title = core::notes::inbox_move(&state.db(), inbox, index, &text, target)?;
+    let pages: Vec<i64> = std::iter::once(inbox).chain(target).collect();
+    let _ = app.emit("data://pages", &pages);
+    Ok(title)
 }
 
 /// Writes an exported board (JSON the UI built) to `path`.

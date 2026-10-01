@@ -1345,6 +1345,19 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
         Ok(p) => {
+            // For the start page's „Per Git-Sync geändert“.
+            use annalo_core::dashboard::notes::{PulledChange, record_pulled};
+            let changes: Vec<(i64, PulledChange)> = p
+                .conflicts
+                .iter()
+                .map(|id| (*id, PulledChange::Conflict))
+                .chain(p.created.iter().map(|id| (*id, PulledChange::Created)))
+                .chain(p.trashed.iter().map(|id| (*id, PulledChange::Trashed)))
+                .chain(p.pages.iter().map(|id| (*id, PulledChange::Changed)))
+                .collect();
+            if let Err(e) = record_pulled(&state.db(), &changes, chrono::Utc::now()) {
+                devlog::warn("git", format!("pulled pages not recorded for the start page: {e}"));
+            }
             let files = state.git_repo_dir().join(attachments::DIR_NAME);
             if files.is_dir()
                 && let Err(e) = copy_new_attachments(&files, &state.attachments_dir())
@@ -1794,6 +1807,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
     let relocalize = annalo_core::i18n::set_lang(settings.locale.language);
+    annalo_core::i18n::set_number_format(settings.locale.number_format);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     // Another saved Jira search: its issues are read now.
     let jira_resync: Vec<String> = if previous.jira.queries != settings.jira.queries {
@@ -3823,6 +3837,7 @@ pub fn run() {
             // system's language).
             if let Ok(s) = db.load_settings() {
                 annalo_core::i18n::set_lang(s.locale.language);
+                annalo_core::i18n::set_number_format(s.locale.number_format);
             }
             if let Err(e) = db.localize_default_leistungsarten() {
                 devlog::warn("core", format!("activity types not localized: {e}"));
@@ -4176,6 +4191,7 @@ pub fn run() {
             dashboard_save,
             dashboard::dashboard_data,
             dashboard::dashboard_file_write,
+            dashboard::dashboard_inbox_move,
             worktime::absence_list,
             worktime::absence_save,
             worktime::absence_remove,

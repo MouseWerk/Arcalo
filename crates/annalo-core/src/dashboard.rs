@@ -6,8 +6,10 @@
 //! Things several parts need (the budgets, the burn of the last four weeks) are loaded once per
 //! call. Everything reads; nothing here writes.
 //!
-//! [`query`] evaluates the saved queries of the „Abfrage“ widget.
+//! [`query`] evaluates the saved queries of the „Abfrage“ widget, [`notes`] answers the notes
+//! widgets (a year ago, writing, pulled by Git sync, the inbox).
 
+pub mod notes;
 pub mod query;
 pub mod work;
 
@@ -84,6 +86,17 @@ pub enum Part {
     Month { from: NaiveDate, to: NaiveDate },
     /// „KI-Vorschläge“: counts the suggestions are built from.
     Suggestions,
+    /// „Vor einem Jahr“: this day in earlier years and a random older note picked by `seed`.
+    Resurface {
+        #[serde(default)]
+        seed: u64,
+    },
+    /// „Schreiben“: words and new pages per day of the last `days` days.
+    Writing { days: u32 },
+    /// „Per Git-Sync geändert“: pages the last syncs pulled from others.
+    Pulled { limit: usize },
+    /// „Posteingang“: the captures waiting on the inbox page.
+    Inbox { limit: usize },
     /// The work and chart widgets of 1.7 (balance, vacation, deadlines, team, charts, …).
     #[serde(untagged)]
     Work(work::WorkPart),
@@ -406,6 +419,10 @@ pub fn part<Tz: TimeZone>(ctx: &Ctx<Tz>, p: &Part) -> Result<serde_json::Value> 
         Part::TimerRefs => json(timer_refs(ctx)?),
         Part::Month { from, to } => json(calendar::daily_overview(ctx.db, *from, *to, ctx.tz)?),
         Part::Suggestions => json(suggestions(ctx)?),
+        Part::Resurface { seed } => json(notes::resurface(ctx, *seed)?),
+        Part::Writing { days } => json(notes::writing(ctx, *days)?),
+        Part::Pulled { limit } => json(notes::pulled(ctx, *limit)?),
+        Part::Inbox { limit } => json(notes::inbox(ctx, *limit)?),
         Part::Work(p) => work::part(ctx, p),
     }
 }

@@ -123,7 +123,8 @@ describe("dashboard without time tracking", () => {
   });
 
   it("presets fall back to widgets without time; „Projektleitung“ becomes tasks, meetings, activity", () => {
-    for (const p of PRESETS) {
+    // „Sprint“ and „Persönlich“ have no time widgets (the same either way; dashboard17.test.ts).
+    for (const p of PRESETS.filter((x) => x.name !== "sprint" && x.name !== "personal")) {
       const on = presetWidgets(p.name, [], true);
       const off = presetWidgets(p.name, [], false);
       expect(off.length).toBeGreaterThan(2);

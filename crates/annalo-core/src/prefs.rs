@@ -766,7 +766,7 @@ impl Default for StartPrefs {
 // -------------------------------------------------------------------- locale
 
 choice!(Language { #[default] De = "de", En = "en" } default De);
-choice!(DateFormat { #[default] De = "de", Iso = "iso" } default De);
+choice!(DateFormat { #[default] De = "de", Iso = "iso", EnGb = "en-gb", EnUs = "en-us" } default De);
 choice!(NumberFormat { #[default] Comma = "comma", Point = "point" } default Comma);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
