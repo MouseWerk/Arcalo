@@ -93,6 +93,7 @@ pub mod update;
 pub mod vault;
 pub mod versions;
 pub mod weekplan;
+pub mod worktime;
 pub mod zeit;
 
 pub use db::Database;

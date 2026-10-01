@@ -334,7 +334,7 @@ pub struct Dashboard {
 /// Zuletzt bearbeitet, Lesezeichen, Angeheftet, Notiz, Seite einbetten, Abfrage, Aktivität,
 /// Fokus, Links, Wochenvorschlag, Uhr, Tagesrückblick, KI-Vorschläge, Timer, Kalender.
 /// The UI keeps the same list (`WIDGET_KINDS` in `lib/dashboard.ts`).
-pub const WIDGET_KINDS: [&str; 21] = [
+pub const WIDGET_KINDS: [&str; 30] = [
     "today",
     "agenda",
     "tasks",
@@ -356,6 +356,16 @@ pub const WIDGET_KINDS: [&str; 21] = [
     "suggestions",
     "timer",
     "calendar",
+    // 1.7: work and chart widgets.
+    "balance",
+    "vacation",
+    "deadlines",
+    "mail_flags",
+    "next_meeting",
+    "team",
+    "chart",
+    "heatmap",
+    "kanban",
 ];
 
 /// Widget kinds of the list before 1.6.
@@ -663,6 +673,7 @@ impl Settings {
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
+        self.time.balance = std::mem::take(&mut self.time.balance).normalized();
         // Kept for older versions, which read only this flag.
         self.open_daily_on_start = self.start.open == StartOpen::Daily;
     }
