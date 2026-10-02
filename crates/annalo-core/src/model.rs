@@ -149,6 +149,9 @@ pub struct Page {
     /// Set while the page is in the trash.
     #[serde(default)]
     pub deleted_at: Option<String>,
+    /// `canvas` for a canvas page (JSON Canvas content, [`crate::canvas`]); `None` for a note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// A page with its children, for the sidebar tree.

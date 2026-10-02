@@ -865,7 +865,7 @@ impl Database {
             crate::db::PAGE_COLS
         ))?;
         let rows = st
-            .query_map([parent_id], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(9)?)))?
+            .query_map([parent_id], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(10)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?
             .into_iter()
             .map(|(page, content)| CollectionRow {
@@ -893,7 +893,7 @@ impl Database {
             .query_map([parent_id], |r| {
                 Ok(CollectionViewRow {
                     page: crate::db::map_page(r)?,
-                    frontmatter: frontmatter_block(&r.get::<_, String>(9)?),
+                    frontmatter: frontmatter_block(&r.get::<_, String>(10)?),
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -966,7 +966,7 @@ impl Database {
             crate::db::PAGE_COLS
         ))?;
         let parents = st
-            .query_map([SCHEMA_KEY], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(9)?)))?
+            .query_map([SCHEMA_KEY], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(10)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut out = vec![];
         for (parent, content) in parents {

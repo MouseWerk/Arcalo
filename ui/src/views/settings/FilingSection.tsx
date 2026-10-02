@@ -63,6 +63,7 @@ export function FilingSection({ draft, update }: SectionProps) {
     mail: draft.mail?.notes_parent ?? "",
     bookmarks: t("fl.default.bookmarks"),
     inbox: "",
+    canvas: t("fl.default.canvas"),
   };
   const folderOf = (k: FileType) => (k === "journal" ? draft.notes.daily_folder : k === "mail" ? (draft.mail?.notes_parent ?? "") : (typeFiling(filing, k).folder ?? ""));
   const setFolder = (k: FileType, v: string) => {

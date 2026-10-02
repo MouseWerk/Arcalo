@@ -47,6 +47,10 @@ export const api = {
   setFavorite: (id: number, favorite: boolean) => call<void>("page_set_favorite", { id, favorite }),
   setIcon: (id: number, icon: string | null) => call<void>("page_set_icon", { id, icon }),
   resolvePage: (title: string, create: boolean) => call<T.Page | null>("page_resolve", { title, create }),
+  /** A new canvas below `parentId`, or filed into the canvas folder (Ordner & Ablage). */
+  createCanvas: (title: string, parentId: number | null = null) => call<T.Page>("canvas_create", { parentId, title }),
+  /** A page's file in the Markdown mirror, as a canvas note card stores it. */
+  canvasNotePath: (pageId: number) => call<string>("canvas_note_path", { pageId }),
   recentPages: (limit = 8) => call<T.Page[]>("recent_pages", { limit }),
   dailyNote: (date?: string) => call<T.Page>("daily_note", { date: date ?? null }),
   /** Per day `from..=to` (YYYY-MM-DD, local): daily note, booked minutes, open tasks due. */

@@ -58,6 +58,12 @@ Migration v19 adds the filing (`filing.rs`): `pages.file_type`/`file_date`/`file
 project of a page the app created; daily and meeting notes are marked by the migration), `pages.system_folder`/`system_key`
 (folders the filing created or adopted and their place: `root`, `y2026`, `m2026-10`, `w2026-40`, `g:<group>`),
 `folder_prefs` (sort and color per folder, `0` = top level) and `move_undo` (the last tidy-up or bulk move). No page is moved.
+Migration v20 adds `pages.kind` (`canvas`, NULL for a note): a canvas page (`canvas.rs`, `ui/src/views/canvas/`,
+`ui/src/lib/canvas/`) keeps a JSON Canvas document in `content`, byte for byte. The derived indexes read it: search chunks and
+tags come from the cards' text, `page_links` from note cards (`file` nodes ending in `.md`, by their stem) and `[[links]]` in
+text cards, no tasks. Rewrites (page or attachment renamed, import) replace single string values in place
+(`canvas::rewrite_strings`), so unknown fields, order and formatting stay. Mirror, Git sync and vault import/export use
+`.canvas` files; the explicit vault export points note cards to the pages' current paths.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 

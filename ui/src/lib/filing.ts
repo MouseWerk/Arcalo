@@ -5,13 +5,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Page, PageNode } from "./types";
 
-export type FileType = "journal" | "meeting" | "voice" | "jira" | "mail" | "bookmarks" | "inbox";
+export type FileType = "journal" | "meeting" | "voice" | "jira" | "mail" | "bookmarks" | "inbox" | "canvas";
 export type Granularity = "none" | "year" | "month" | "week" | "series";
 export type RuleKind = "tag" | "property" | "jira" | "netzplan" | "title";
 export type FolderSort = "manual" | "name" | "modified" | "created";
 export type FolderColor = "accent" | "info" | "success" | "warning" | "danger" | "violet" | "muted";
 
-export const FILE_TYPES: FileType[] = ["journal", "meeting", "voice", "jira", "mail", "bookmarks", "inbox"];
+export const FILE_TYPES: FileType[] = ["journal", "meeting", "voice", "jira", "mail", "bookmarks", "inbox", "canvas"];
 export const FOLDER_SORTS: FolderSort[] = ["manual", "name", "modified", "created"];
 export const FOLDER_COLORS: FolderColor[] = ["accent", "info", "success", "warning", "danger", "violet", "muted"];
 
@@ -83,6 +83,7 @@ export const DEFAULT_GRANULARITY: Record<FileType, Granularity> = {
   mail: "month",
   bookmarks: "none",
   inbox: "none",
+  canvas: "none",
 };
 
 export const typeFiling = (f: FilingSettings | undefined, kind: FileType): TypeFiling => f?.types?.[kind] ?? { folder: "", granularity: DEFAULT_GRANULARITY[kind] };

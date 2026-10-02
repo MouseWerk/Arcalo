@@ -13,6 +13,8 @@ export interface Page {
   daily_date: string | null;
   /** Set while the page is in the trash. */
   deleted_at?: string | null;
+  /** `canvas` for a canvas page (JSON Canvas content); absent for a note. */
+  kind?: string | null;
 }
 export interface PageNode extends Page {
   children: PageNode[];

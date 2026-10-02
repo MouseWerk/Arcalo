@@ -1209,8 +1209,10 @@ fn blob_text(git: &Git, repo: &Path, rev: &str, path: &str) -> Result<Option<Str
     Ok(Some(git.check(Some(repo), &["cat-file", "blob", &format!("{rev}:{path}")])?))
 }
 
+/// A note or a canvas: a file that maps to a page.
 fn is_note(path: &str) -> bool {
-    path.to_ascii_lowercase().ends_with(".md")
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".canvas")
 }
 
 /// Makes the index and working tree hold `path` as in commit `rev` (removed when it has none).

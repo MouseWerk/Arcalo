@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
+  LayoutDashboard,
 } from "lucide-react";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
@@ -14,6 +15,7 @@ import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
 import { PageIcon } from "./icons";
 import { createSubpage } from "../views/PageView";
+import { createCanvas } from "../views/canvas/create";
 import { requestAddProperty } from "../views/PageProperties";
 import { requestPageCommand } from "../lib/pageModes";
 import { stopTimer } from "./Sidebar";
@@ -181,6 +183,7 @@ export function CommandPalette() {
 
     const commands: Omit<Item, "section">[] = [
       { id: "new", title: t("cmd.newPage"), icon: ic(FilePlus2), hint: hint("new_page"), run: () => createSubpage(null) },
+      { id: "new-canvas", title: t("cmd.newCanvas"), icon: ic(LayoutDashboard), run: () => void createCanvas(null) },
       { id: "from-template", title: t("cmd.fromTemplate"), icon: ic(LayoutTemplate), run: () => newPageFromTemplate() },
       {
         id: "today",

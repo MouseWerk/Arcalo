@@ -40,6 +40,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0017_jira_worklog_sync.sql"),
     include_str!("../migrations/0018_focus_block_writes.sql"),
     include_str!("../migrations/0019_filing.sql"),
+    include_str!("../migrations/0020_canvas.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -49,7 +50,8 @@ const REINDEX_MARKER: &str = "-- annalo:reindex";
 /// the migration that needs it and cleared with the re-index, so a crash in between re-runs it.
 const NEEDS_REINDEX: &str = "needs_reindex";
 
-pub(crate) const PAGE_COLS: &str = "id, parent_id, title, icon, position, updated_at, favorite, daily_date, deleted_at";
+pub(crate) const PAGE_COLS: &str =
+    "id, parent_id, title, icon, position, updated_at, favorite, daily_date, deleted_at, kind";
 
 pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
     Ok(Page {
@@ -62,6 +64,7 @@ pub(crate) fn map_page(r: &Row) -> rusqlite::Result<Page> {
         favorite: r.get(6)?,
         daily_date: r.get(7)?,
         deleted_at: r.get(8)?,
+        kind: r.get(9)?,
     })
 }
 

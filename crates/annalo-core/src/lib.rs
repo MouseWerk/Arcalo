@@ -57,6 +57,7 @@ pub mod bookmarks;
 pub mod briefing;
 pub mod calendar;
 pub mod calsync;
+pub mod canvas;
 pub mod capture;
 pub mod chats;
 pub mod dashboard;

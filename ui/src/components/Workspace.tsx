@@ -28,6 +28,7 @@ const CalendarView = lazyView(() => import("../views/CalendarView").then((m) => 
 const DayReviewView = lazyView(() => import("../views/DayReviewView").then((m) => m.DayReviewView));
 const IssuesView = lazyView(() => import("../views/IssuesView").then((m) => m.IssuesView));
 const GraphView = lazyView(() => import("../views/GraphView").then((m) => m.GraphView));
+const CanvasView = lazyView<{ pageId: number; tab: Tab; active: boolean }>(() => import("../views/canvas/CanvasView").then((m) => m.CanvasView));
 const BriefingView = lazyView(() => import("../views/BriefingView").then((m) => m.BriefingView));
 const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, BriefingView];
 
@@ -181,7 +182,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
     );
   switch (tab.kind) {
     case "page":
-      return <PageView pageId={tab.pageId!} tab={tab} active={active} />;
+      return <PageOrCanvas pageId={tab.pageId!} tab={tab} active={active} />;
     case "home":
       return (
         <>
@@ -446,4 +447,21 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       {menu}
     </div>
   );
+}
+
+/** A page tab: the editor, or the board of a canvas page. */
+function PageOrCanvas({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
+  const kind = useApp((s) => (s.pages.has(pageId) ? (s.pages.get(pageId)?.kind ?? "note") : null));
+  // A page created elsewhere (an import, the sync) is not in the tree yet: load it before choosing.
+  const [checked, setChecked] = useState(false);
+  useEffect(() => {
+    if (kind != null) return;
+    let alive = true;
+    useApp.getState().refreshTree().finally(() => alive && setChecked(true));
+    return () => {
+      alive = false;
+    };
+  }, [kind, pageId]);
+  if (kind == null && !checked) return null;
+  return kind === "canvas" ? <CanvasView pageId={pageId} tab={tab} active={active} /> : <PageView pageId={pageId} tab={tab} active={active} />;
 }

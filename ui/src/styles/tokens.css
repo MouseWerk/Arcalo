@@ -91,6 +91,13 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.07);
+  /* Canvas boards: background, cards, edges and the JSON Canvas preset colors 1–6. */
+  --cv-bg: #141518;
+  --cv-card: #1c1d21;
+  --cv-card-border: rgb(255 255 255 / 0.1);
+  --cv-edge: #6b6f7a;
+  --cv-grid: rgb(255 255 255 / 0.07);
+  --cv-c1: #f2555a; --cv-c2: #ff8b3e; --cv-c3: #f0c040; --cv-c4: #3dd68c; --cv-c5: #2cc4d9; --cv-c6: #b48cf0;
 }
 
 :root[data-theme="light"] {
@@ -147,6 +154,12 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.06);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.16), 0 0 0 1px rgb(0 0 0 / 0.07);
+  --cv-bg: #f7f7f8;
+  --cv-card: #ffffff;
+  --cv-card-border: rgb(15 15 20 / 0.12);
+  --cv-edge: #9a9ca5;
+  --cv-grid: rgb(15 15 20 / 0.09);
+  --cv-c1: #e5484d; --cv-c2: #ef6a1a; --cv-c3: #d49b00; --cv-c4: #2b9a63; --cv-c5: #0b98ad; --cv-c6: #8250c8;
 }
 
 /* ---- chart series (start page charts, 1.7) ----
