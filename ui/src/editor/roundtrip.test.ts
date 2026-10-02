@@ -187,7 +187,7 @@ describe("file embeds", () => {
   };
   it("parses files as file embeds, images and drawings keep their nodes", () => {
     const editor = editorFor("![[a.pdf]] ![[b.png]] ![[c.excalidraw]] ![[d.docx#x|y]] ![[Notiz]]\n");
-    expect(nodes(editor).map((n) => n.type)).toEqual(["fileEmbed", "imageEmbed", "drawingEmbed", "fileEmbed", "wikiLink"]);
+    expect(nodes(editor).map((n) => n.type)).toEqual(["fileEmbed", "imageEmbed", "drawingEmbed", "fileEmbed", "pageEmbed"]);
     expect(nodes(editor)[3].attrs).toMatchObject({ name: "d.docx", anchor: "#x", alt: "y" });
     editor.destroy();
   });

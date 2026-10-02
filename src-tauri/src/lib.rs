@@ -290,6 +290,16 @@ fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
     state.reader().page_doc(id)
 }
 
+/// What `![[target#anchor]]` shows: the page, its section or block (see `annalo_core::embeds`).
+#[tauri::command(async)]
+fn page_embed(
+    state: State<AppState>,
+    target: String,
+    anchor: Option<String>,
+) -> Result<annalo_core::embeds::EmbedView> {
+    state.reader().page_embed(&target, anchor.as_deref())
+}
+
 /// Saves a page. Returns tags, unresolved links and the new time only: the caller has the
 /// content, and a save does not change the page's backlinks.
 #[tauri::command(async)]
@@ -678,6 +688,24 @@ fn html_file_write(path: String, html: String) -> Result<()> {
         ));
     }
     std::fs::write(p, html).at(p)?;
+    Ok(())
+}
+
+/// Writes an exported diagram (`.svg` or `.png`, from a Mermaid block) to `path`.
+#[tauri::command(async)]
+fn diagram_file_write(path: String, data: Vec<u8>) -> Result<()> {
+    let p = std::path::Path::new(&path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ext != "svg" && ext != "png" {
+        return Err(Error::State(
+            tr!(
+                "Nur .svg- und .png-Dateien können so gespeichert werden",
+                "Only .svg and .png files can be saved this way"
+            )
+            .into(),
+        ));
+    }
+    std::fs::write(p, data).at(p)?;
     Ok(())
 }
 
@@ -4139,6 +4167,8 @@ pub fn run() {
             attachment_import,
             attachment_read,
             attachment_size,
+            page_embed,
+            diagram_file_write,
             link_title,
             html_file_write,
             drawing_create,

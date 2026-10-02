@@ -17,6 +17,7 @@ import { useApp } from "../store/app";
 import { h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, toMarkdown } from "./schema";
+import { anchorItems, embedMount, richMount } from "./liveMounts";
 import { zeitLaItems, zeitRefItems } from "./zeit-source";
 import { IconButton, useMenu } from "../components/ui";
 import { findKey } from "./find";
@@ -273,13 +274,20 @@ export function NoteEditor({
     await p;
   };
 
+  /** The page's current title (embeds stop at cycles through it; diagram exports are named by it). */
+  const pageTitle = () => useApp.getState().pages.get(doc.id)?.title ?? doc.title;
   const editor = useEditor(
     {
       extensions: buildExtensions({
+        embedPage: embedMount(pageTitle, (t, newTab) => cb.current.onOpenLink(t, newTab)),
+        richBlock: richMount(pageTitle),
         onOpenLink: (t, newTab) => cb.current.onOpenLink(t, newTab),
         onOpenTag: (t) => cb.current.onOpenTag(t),
         isKnown: (t) => titleSet(useApp.getState().pages).has(t.toLowerCase()),
         searchPages: async (q) => {
+          // `Seite#`: the page's headings, `Seite#^`: its block ids.
+          const anchors = await anchorItems(q);
+          if (anchors) return anchors;
           const pages = [...useApp.getState().pages.values()];
           const lower = q.toLowerCase().trim();
           const matches = pages

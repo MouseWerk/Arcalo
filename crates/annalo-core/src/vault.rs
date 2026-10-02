@@ -511,7 +511,7 @@ mod tests {
         fs::write(vault.join(".obsidian/app.json"), "{}").unwrap();
         fs::create_dir_all(vault.join("Projekte/Rollout")).unwrap();
         fs::write(vault.join("Projekte.md"), "Übersicht aller [[Rollout]]-Themen #projekt").unwrap();
-        fs::write(vault.join("Projekte/Rollout/Plan.md"), "# Plan\n\nSiehe [[Projekte]]").unwrap();
+        fs::write(vault.join("Projekte/Rollout/Plan.md"), "# Plan\n\nSiehe [[Projekte]]\n\n![[Projekte#Ziele]]\n\n![[Inbox#^a1]]").unwrap();
         fs::write(
             vault.join("Inbox.md"),
             "- [ ] Aufgabe\n\n![[bild.png]]\n\n![[Skizze.excalidraw]]\n\n![[handbuch.pdf#page=2]]",
@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(fs::read_to_string(out.join("attachments/Skizze.excalidraw.svg")).unwrap(), "<svg/>");
         assert_eq!(fs::read(out.join("attachments/handbuch.pdf")).unwrap(), [0u8; 4]);
         let root = out.join(vault.file_name().unwrap());
-        assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]");
+        assert_eq!(fs::read_to_string(root.join("Projekte/Rollout/Plan.md")).unwrap(), "# Plan\n\nSiehe [[Projekte]]\n\n![[Projekte#Ziele]]\n\n![[Inbox#^a1]]");
         assert!(root.join("Projekte.md").is_file());
         assert!(root.join("Inbox.md").is_file());
     }

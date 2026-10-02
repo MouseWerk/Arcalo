@@ -66,6 +66,7 @@ pub mod db;
 pub mod demo;
 pub mod desktop;
 pub mod drawings;
+pub mod embeds;
 pub mod error;
 pub mod export;
 pub mod feed;

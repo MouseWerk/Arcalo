@@ -1630,3 +1630,14 @@ export interface Briefing {
   ai_ready: boolean;
 }
 export type BriefingStart = "none" | "open" | "notify";
+
+/** What a page embed `![[Seite#Abschnitt]]` shows (annalo_core::embeds::EmbedView). */
+export interface EmbedView {
+  page_id: number | null;
+  title: string;
+  icon: string | null;
+  updated_at: string | null;
+  /** The embedded Markdown; null when the page or the section is missing. */
+  content: string | null;
+  missing: "page" | "section" | null;
+}
