@@ -196,8 +196,9 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   assert.match(await app.text(".pane.active .calv-detail .mw-prep-btn"), /Vorbereitung aktualisieren/);
   await app.click(".pane.active .calv-detail .mw-prep-btn");
   await app.browser.waitUntil(async () => cloud.chats().length === base + 2, { timeout: 15000, timeoutMsg: "refreshed" });
-  await app.browser.waitUntil(async () => /Eigene Frage an Jörg/.test(await paneText()), { timeout: 10000, timeoutMsg: "prep page in front again" });
   const after = (await app.invoke("page_get", { id: prepId })).content;
+  assert.match(after, /Eigene Frage an Jörg/, "the user's text is saved");
+  await app.browser.waitUntil(async () => /Eigene Frage an Jörg/.test(await paneText()), { timeout: 15000, timeoutMsg: "prep page in front again" });
   assert.equal(after.match(/<!-- arcalo:auto -->/g).length, 1, "one generated part");
   assert.match(after, /<!-- \/arcalo:auto -->[\s\S]*Eigene Frage an Jörg/, "the user's text stays below");
   assert.equal(await app.invoke("meeting_prep_page", { key: eventKey }), prepId, "the same page");
