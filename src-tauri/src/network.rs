@@ -613,8 +613,7 @@ pub async fn network_legacy_probe(app: AppHandle, profile: String) -> Result<Vec
     Ok(out)
 }
 
-/// Settings being saved: what an admin policy locks stays; returns an error text when a
-/// profile with a password is removed (the password goes too).
+/// Settings being saved: what an admin policy locks (routes, profiles) stays as it says.
 pub fn enforce_policy(previous: &NetworkSettings, next: &mut NetworkSettings) {
     let policy = crate::policy::get().network();
     policy.enforce(previous, next);

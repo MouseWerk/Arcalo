@@ -1194,7 +1194,7 @@ impl std::fmt::Display for PinMismatch {
 impl std::error::Error for PinMismatch {}
 
 mod tls {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -1217,7 +1217,7 @@ mod tls {
     pub(super) struct PinVerifier {
         pub inner: Arc<dyn ServerCertVerifier>,
         pub pins: Vec<Pin>,
-        pub capture: Option<Arc<Mutex<Option<(Vec<u8>, String)>>>>,
+        pub capture: Option<super::Capture>,
     }
 
     impl ServerCertVerifier for PinVerifier {
@@ -1272,7 +1272,7 @@ mod tls {
     pub(super) fn config(
         extra_roots: &[Vec<u8>],
         pins: Vec<Pin>,
-        capture: Option<Arc<Mutex<Option<(Vec<u8>, String)>>>>,
+        capture: Option<super::Capture>,
     ) -> Result<rustls::ClientConfig, rustls::Error> {
         let provider = rustls::crypto::CryptoProvider::get_default()
             .cloned()

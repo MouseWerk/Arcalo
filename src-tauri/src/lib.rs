@@ -2155,7 +2155,7 @@ async fn provider_models(state: &AppState, provider: AiProvider, key: Option<Str
     let settings = state.settings();
     let unchanged = key.as_deref().is_none_or(str::is_empty) && settings.providers.contains(&provider);
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
-    let client = provider_client(&settings, &provider, key, &proxy_passwords(&state))?;
+    let client = provider_client(&settings, &provider, key, &proxy_passwords(state))?;
     let start = Instant::now();
     let res = client.models().await;
     let latency_ms = start.elapsed().as_millis() as u64;

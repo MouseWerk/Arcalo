@@ -36,8 +36,6 @@ use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 use crate::{Result, lock, rollback};
 use annalo_core::{tr, trf};
 
-/// A download that receives nothing for this long is given up (a stalled proxy or connection).
-
 /// Stage file of a verified download (`updates/` in the data folder).
 const STAGED_FILE: &str = "staged.json";
 

@@ -3,12 +3,13 @@
 
 import type { Settings } from "./types";
 import { t } from "./i18n";
+import { upgradeNetwork } from "./network";
 
 export const EXPORT_FORMAT = "annalo-settings";
 export const EXPORT_VERSION = 1;
 
 /** Objects whose keys are data (user-chosen), not settings names. */
-const RECORDS = new Set(["jira_issue_map", "keymap", "network.pac_results", "time.default_leistungsart"]);
+const RECORDS = new Set(["jira_issue_map", "keymap", "network.routes", "time.default_leistungsart"]);
 
 export interface ImportResult {
   settings: Settings | null;
@@ -94,7 +95,6 @@ const NULLABLE = new Set([
   "daily_template",
   "reminder_time",
   "palette_shortcut",
-  "network.extra_ca_path",
   "editor.default_icon",
   "ai.max_tokens",
   "ai.inline_presets",
@@ -122,6 +122,8 @@ export function parseSettingsImport(text: string, current: Settings): ImportResu
     if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
     obj = obj.settings as Record<string, unknown>;
   }
+  // Files of 1.9 and older have one network setting: it becomes the default profile.
+  if (kind(obj.network) === "object") obj = { ...obj, network: upgradeNetwork(obj.network as Record<string, unknown>) };
   const known = Object.keys(obj).filter((k) => k in current);
   if (known.length === 0) return { settings: null, warnings: [], error: t("sio.noKnown") };
   const warnings: string[] = [];

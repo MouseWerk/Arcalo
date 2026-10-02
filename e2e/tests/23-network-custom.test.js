@@ -1,4 +1,4 @@
-// Settings → Netzwerk (manual proxy with credentials, PAC) through a local forward proxy, and
+// Settings → Netzwerk (the default profile: manual proxy with credentials, PAC) through a local forward proxy, and
 // the customization pass: accent color and density, English UI, a rebound shortcut, the
 // settings search and the export/import round trip.
 import { test as nodeTest, before, after } from "node:test";
@@ -87,11 +87,25 @@ const openSection = async (id) => {
 };
 const cssVar = (name) => app.browser.execute((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
+/** The network settings with `patch` on the default profile („Standard“). */
+const onStandard = (net, patch) => ({ ...net, profiles: net.profiles.map((p, i) => (i ? p : { ...p, ...patch })) });
+/** Runs „Testen“ of the LiteLLM row in Settings → Netzwerk and returns the result text. */
+const testLiteLLM = async (expect = /Verbunden/) => {
+  const sel = '.net-svc[data-service="ai:litellm"] .net-svc-test button';
+  await app.waitFor(sel);
+  await app.browser.execute((s) => document.querySelector(s).scrollIntoView({ block: "center" }), sel);
+  await app.click(sel);
+  await app.waitText('.net-svc-result[data-for="ai:litellm"]', expect, 15000);
+  return app.text('.net-svc-result[data-for="ai:litellm"]');
+};
+
 test("network settings are off by default and backwards compatible", async () => {
   const view = await app.invoke("settings_get");
-  assert.equal(view.settings.network.mode, "system");
-  assert.equal(view.settings.network.accept_invalid_certs, false);
-  assert.deepEqual(view.settings.network.apply_to, { ai: true, git: true, updates: true, tools: true });
+  assert.equal(view.settings.network.profiles.length, 1);
+  const std = view.settings.network.profiles[0];
+  assert.deepEqual([std.id, std.mode], ["standard", "system"]);
+  assert.equal(std.legacy_accept_invalid_certs, false);
+  assert.deepEqual(view.settings.network.routes, {}, "every service on the default profile");
   const status = await app.invoke("network_status");
   assert.equal(status.password_set, false);
 });
@@ -100,7 +114,7 @@ test("manual proxy with credentials: the connection test goes through the proxy"
   await app.invoke("api_key_set", { key: llm.apiKey });
   await saveSettings((s) => ({
     litellm_base_url: llm.url,
-    network: { ...s.network, mode: "manual", http_proxy: `127.0.0.1:${proxy.port}`, no_proxy: "", proxy_user: "proxy-user" },
+    network: onStandard(s.network, { mode: "manual", http_proxy: `127.0.0.1:${proxy.port}`, no_proxy: "", proxy_user: "proxy-user" }),
   }));
   const status = await app.invoke("proxy_password_set", { password: "geh eim" });
   assert.equal(status.password_set, true);
@@ -111,10 +125,8 @@ test("manual proxy with credentials: the connection test goes through the proxy"
   await app.waitText(".settings-head h1", /Netzwerk/);
   assert.equal(await app.browser.execute(() => document.querySelector('[aria-label="Proxy-Modus"] [aria-checked="true"]')?.textContent), "Manuell");
   const before = proxy.seen.length;
-  await clickText(".set-group button", /^Verbindung testen$/);
-  await app.waitText(".net-test-result", /Verbunden/, 15000);
-  const text = await app.text(".net-test-result");
-  assert.match(text, new RegExp(`über http://127\\.0\\.0\\.1:${proxy.port}`));
+  const text = await testLiteLLM();
+  assert.match(text, new RegExp(`über Proxy 127\\.0\\.0\\.1:${proxy.port}`));
   assert.ok(!text.includes("geh eim"), "no credentials in the result");
   const hit = proxy.seen.slice(before).find((r) => r.url === `${llm.url}/v1/models`);
   assert.ok(hit, JSON.stringify(proxy.seen));
@@ -129,11 +141,11 @@ test("manual proxy with credentials: the connection test goes through the proxy"
 
   // An exception bypasses the proxy; unsaved settings can be tested.
   const view = await app.invoke("settings_get");
-  const direct = await app.invoke("network_test", { network: { ...view.settings.network, no_proxy: "127.0.0.1" }, baseUrl: null, password: null });
+  const direct = await app.invoke("network_test", { network: onStandard(view.settings.network, { no_proxy: "127.0.0.1" }), baseUrl: null, password: null });
   assert.equal(direct.ok, true);
   assert.equal(direct.proxy, null);
   // A wrong password is reported by the proxy test, not stored.
-  const bad = await app.invoke("network_test", { network: { ...view.settings.network, http_proxy: "127.0.0.1:1" }, baseUrl: null, password: null });
+  const bad = await app.invoke("network_test", { network: onStandard(view.settings.network, { http_proxy: "127.0.0.1:1" }), baseUrl: null, password: null });
   assert.equal(bad.ok, false);
   assert.equal(bad.proxy, "http://127.0.0.1:1");
 });
@@ -148,20 +160,20 @@ test("PAC: the script is evaluated in the sandbox and its answer is used", async
   await clickText('[aria-label="Proxy-Modus"] button', /^PAC$/);
   const pacUrl = await app.$('input[aria-label="Adresse der PAC-Datei"]');
   await pacUrl.setValue(`http://127.0.0.1:${proxy.port}/proxy.pac`);
+  await settingsSettled(app);
   const before = proxy.seen.length;
-  await clickText(".set-group button", /^Verbindung testen$/);
-  await app.waitText(".net-test-result", /Verbunden/, 15000);
-  assert.match(await app.text(".net-test-result"), new RegExp(`über http://127\\.0\\.0\\.1:${proxy.port}`));
+  const text = await testLiteLLM(/Verbunden.*PAC → PROXY/);
+  assert.match(text, /PAC → PROXY 127\.0\.0\.1/);
   assert.ok(proxy.seen.length > before);
   await app.waitText(".pac-result", /PROXY 127\.0\.0\.1/);
   await settingsSettled(app);
   await app.waitText(".toast-title", /Einstellung geändert/);
-  const saved = await app.invoke("settings_get");
-  assert.equal(saved.settings.network.mode, "pac");
-  assert.match(saved.settings.network.pac_results["*"], /^PROXY 127\.0\.0\.1:\d+; DIRECT$/);
-  assert.equal(saved.settings.network.pac_results["github.com"], "DIRECT");
+  const saved = (await app.invoke("settings_get")).settings.network.profiles[0];
+  assert.equal(saved.mode, "pac");
+  assert.match(saved.pac_results["*"], /^PROXY 127\.0\.0\.1:\d+; DIRECT$/);
+  assert.equal(saved.pac_results["github.com"], "DIRECT");
   // Back to direct connections for the rest of the file.
-  await saveSettings((s) => ({ network: { ...s.network, mode: "none" } }));
+  await saveSettings((s) => ({ network: onStandard(s.network, { mode: "none" }) }));
 });
 
 test("accent color and density change the CSS variables", async () => {

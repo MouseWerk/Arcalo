@@ -33,7 +33,7 @@ import { timeTrackingOn } from "../lib/timetracking";
 import { AiPrefGroups } from "./settings/AiPrefGroups";
 import { AiProvidersSection } from "./settings/AiProvidersSection";
 import { KeyboardSection } from "./settings/KeyboardSection";
-import { NetworkSection, withPacResults } from "./settings/NetworkSection";
+import { NetworkSection, usesPac, withPacResults } from "./settings/NetworkSection";
 import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
@@ -222,7 +222,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     try {
       let toSave = next;
       // PAC: the answers for the app's hosts are computed here (the core has no JS engine).
-      if (toSave.network.mode === "pac") toSave = await withPacResults(toSave);
+      if (usesPac(toSave)) toSave = await withPacResults(toSave);
       const saved = await api.saveSettings(toSave);
       s().set({ settings: saved });
       applyTheme(saved.settings.theme);
