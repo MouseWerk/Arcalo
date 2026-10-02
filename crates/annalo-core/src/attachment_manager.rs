@@ -250,17 +250,25 @@ impl Database {
     /// Pages per referenced file name (lower-case), trashed pages included.
     pub fn attachment_usage(&self) -> Result<HashMap<String, Vec<PageUse>>> {
         let mut st = self.conn().prepare(
-            "SELECT id, title, content, deleted_at IS NOT NULL FROM pages
-             WHERE instr(content, '[[') > 0 OR instr(content, '](') > 0
+            "SELECT id, title, content, deleted_at IS NOT NULL, kind = 'canvas' FROM pages
+             WHERE instr(content, '[[') > 0 OR instr(content, '](') > 0 OR kind = 'canvas'
              ORDER BY deleted_at IS NOT NULL, title COLLATE NOCASE, id",
         )?;
         let rows = st.query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, bool>(3)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, Option<bool>>(4)?.unwrap_or(false),
+            ))
         })?;
         let mut out: HashMap<String, Vec<PageUse>> = HashMap::new();
         for row in rows {
-            let (id, title, content, trashed) = row?;
-            for name in referenced_files(&content) {
+            let (id, title, content, trashed, canvas) = row?;
+            // A canvas shows files as cards (and in text cards).
+            let names = if canvas { crate::canvas::files(&content) } else { referenced_files(&content) };
+            for name in names {
                 let uses = out.entry(name.to_lowercase()).or_default();
                 if !uses.iter().any(|u| u.id == id) {
                     uses.push(PageUse { id, title: title.clone(), trashed });
@@ -411,7 +419,11 @@ pub fn rename(db: &Database, attachments_dir: &Path, old: &str, new: &str) -> Re
         for u in uses {
             let content: String =
                 db.conn().query_row("SELECT content FROM pages WHERE id = ?1", params![u.id], |r| r.get(0))?;
-            let updated = replace_file_refs(&content, old, &new);
+            let updated = if db.is_canvas(u.id)? {
+                crate::canvas::rename_file(&content, old, &new)
+            } else {
+                replace_file_refs(&content, old, &new)
+            };
             if updated != content {
                 // Rewritten by the rename, not by the user: keep what they wrote.
                 db.store_version(u.id, &content, now)?;

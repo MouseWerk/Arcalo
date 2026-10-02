@@ -338,13 +338,19 @@ mod tests {
         let renamed = rename_page(OBSIDIAN, "kickoff", "Start");
         assert_eq!(renamed, OBSIDIAN.replace("[[Kickoff]]", "[[Start]]"));
         // Keys are never rewritten, only values of the key.
-        assert_eq!(rename_page(r#"{"text":"file","file":"text.md"}"#, "text", "Neu"), r#"{"text":"file","file":"Neu.md"}"#);
+        assert_eq!(
+            rename_page(r#"{"text":"file","file":"text.md"}"#, "text", "Neu"),
+            r#"{"text":"file","file":"Neu.md"}"#
+        );
         // Escapes in other strings survive.
         let esc = r#"{"nodes":[{"id":"x","type":"text","text":"Zeile\n\"[[A]]\" ä"}]}"#;
         let out = rename_page(esc, "A", "B");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["nodes"][0]["text"], "Zeile\n\"[[B]]\" ä");
-        assert_eq!(rename_file(OBSIDIAN, "plan.png", "plan 2.png"), OBSIDIAN.replace("assets/plan.png", "assets/plan 2.png"));
+        assert_eq!(
+            rename_file(OBSIDIAN, "plan.png", "plan 2.png"),
+            OBSIDIAN.replace("assets/plan.png", "assets/plan 2.png")
+        );
         let mut paths = std::collections::HashMap::new();
         paths.insert("sap rollout".to_owned(), "Arbeit/SAP Rollout.md".to_owned());
         assert_eq!(with_paths(OBSIDIAN, &paths), OBSIDIAN.replace("Projekte/SAP Rollout.md", "Arbeit/SAP Rollout.md"));

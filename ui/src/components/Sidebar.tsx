@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, MoreHorizontal, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
   ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
   ArrowDownUp, FolderInput, Palette, SlidersHorizontal, Undo2, Wand2, LayoutList,
+  LayoutDashboard,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -14,6 +15,7 @@ import type { LucideIcon } from "lucide-react";
 import { useTimeTracking } from "../lib/timetracking";
 import { clock, fmtMinutes, longTimerHours } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
+import { createCanvas, isCanvas } from "../views/canvas/create";
 import { COLLAPSED_EVENT, readCollapsed, writeCollapsed } from "../lib/collapsed";
 import type { PageNode, SearchHit } from "../lib/types";
 import { t as tStatic, useT } from "../lib/i18n";
@@ -123,6 +125,7 @@ export function Sidebar() {
           <div className="side-toolbar">
             <span className="side-title">{t("sidebar.files")}</span>
             <IconButton icon={FilePlus2} label={t("sidebar.newPage")} size="md" onClick={() => createSubpage(null)} />
+            <IconButton icon={LayoutDashboard} label={t("sidebar.newCanvas")} size="md" data-new-canvas onClick={() => void createCanvas(null)} />
             <IconButton
               icon={allCollapsed ? ChevronsUpDown : ChevronsDownUp}
               label={allCollapsed ? t("sidebar.expandAll") : t("sidebar.collapseAll")}
@@ -525,6 +528,7 @@ function PageTree({
       icon: FilePlus2,
       submenu: [
         { label: tStatic("sb.subpage"), icon: CornerDownRight, onSelect: () => createSubpage(n.id) },
+        { label: tStatic("sidebar.newCanvas"), icon: LayoutDashboard, onSelect: () => void createCanvas(n.id) },
         {
           label: tStatic("sb.sibling"),
           icon: FilePlus2,
@@ -549,7 +553,9 @@ function PageTree({
       onSelect: async () => {
         try {
           const doc = await api.page(n.id);
-          const p = await api.createPage(tStatic("sb.copyTitle", { title: n.title }), n.parent_id, n.icon, doc.content);
+          const copy = tStatic("sb.copyTitle", { title: n.title });
+          const p = isCanvas(n) ? await api.createCanvas(copy, n.parent_id) : await api.createPage(copy, n.parent_id, n.icon, doc.content);
+          if (isCanvas(n)) await api.savePage(p.id, doc.content);
           await api.movePage(p.id, n.parent_id, i + 1);
           await s().refreshTree();
           s().openPage(p.id);

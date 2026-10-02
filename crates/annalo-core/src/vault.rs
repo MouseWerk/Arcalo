@@ -552,11 +552,8 @@ pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path)
         } else {
             snap.content(path.page_id)
         };
-        let files = if canvas {
-            crate::canvas::files(content)
-        } else {
-            crate::attachment_manager::export_files(content)
-        };
+        let files =
+            if canvas { crate::canvas::files(content) } else { crate::attachment_manager::export_files(content) };
         for name in files {
             if seen.insert(name.clone()) {
                 embedded.push(name);
@@ -589,6 +586,49 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    #[test]
+    fn canvas_files_import_and_export_unchanged() {
+        let vault = tmp("canvas-in");
+        fs::create_dir_all(vault.join("Projekt/assets")).unwrap();
+        fs::write(vault.join("Projekt/Plan.md"), "Plan").unwrap();
+        fs::write(vault.join("Projekt/assets/foto.png"), [9u8, 9]).unwrap();
+        // Tabs, CRLF and fields Arcalo does not know: all kept.
+        let board = "{\r\n\t\"nodes\":[\r\n\t\t{\"id\":\"n1\",\"type\":\"file\",\"file\":\"Projekt/Plan.md\",\"x\":0,\"y\":0,\"width\":400,\"height\":300,\"plugin\":{\"a\":1}},\r\n\t\t{\"id\":\"n2\",\"type\":\"file\",\"file\":\"Projekt/assets/foto.png\",\"x\":500,\"y\":0,\"width\":200,\"height\":200}\r\n\t],\r\n\t\"edges\":[{\"id\":\"e\",\"fromNode\":\"n1\",\"toNode\":\"n2\",\"label\":\"Bild\"}]\r\n}";
+        fs::write(vault.join("Projekt/Board.canvas"), board).unwrap();
+        fs::write(vault.join("Projekt/Kaputt.canvas"), "{nicht json").unwrap();
+        let att = tmp("canvas-att");
+        let db = Database::open_in_memory().unwrap();
+        let report = import_vault(&db, &vault, &att).unwrap();
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        let page = db.page_by_title("Board").unwrap().unwrap();
+        assert_eq!(page.kind.as_deref(), Some(crate::canvas::KIND));
+        assert_eq!(db.page_doc(page.id).unwrap().content, board);
+        assert!(att.join("foto.png").is_file());
+        // The note card is a backlink of „Plan“.
+        let plan = db.page_by_title("Plan").unwrap().unwrap();
+        assert_eq!(db.page_doc(plan.id).unwrap().backlinks[0].page_id, page.id);
+        let paths = page_paths(&db).unwrap();
+        let file = paths.iter().find(|p| p.page_id == page.id).unwrap().file.clone().unwrap();
+        assert!(file.ends_with("Projekt/Board.canvas"), "{file}");
+
+        // The mirror keeps the bytes (Git sync compares them with the page).
+        let out = tmp("canvas-out");
+        export_snapshot(&VaultSnapshot::read(&db).unwrap(), &out, &att).unwrap();
+        let top = vault.file_name().unwrap().to_str().unwrap().to_owned();
+        let root = out.join(&top);
+        assert_eq!(fs::read_to_string(root.join("Projekt/Board.canvas")).unwrap(), board);
+        assert_eq!(fs::read(out.join("attachments/foto.png")).unwrap(), [9u8, 9]);
+        // The export points note cards to where the pages are now.
+        db.move_page(plan.id, None, 0).unwrap();
+        let out2 = tmp("canvas-export");
+        export_vault(&db, &out2, &att).unwrap();
+        let exported = fs::read_to_string(out2.join(&top).join("Projekt/Board.canvas")).unwrap();
+        assert_eq!(exported, board.replace("\"Projekt/Plan.md\"", "\"Plan.md\""));
+        for d in [vault, att, out, out2] {
+            let _ = fs::remove_dir_all(d);
+        }
     }
 
     #[test]

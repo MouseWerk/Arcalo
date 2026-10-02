@@ -268,6 +268,11 @@ impl Database {
     /// Saves like [`Database::save_page_content`] and returns what the editor shows of the
     /// save: tags, unresolved links and the new time (no content, no backlinks).
     pub fn save_page(&self, id: i64, content: &str) -> Result<SavedPage> {
+        if self.is_canvas(id)? && !crate::canvas::is_valid(content) {
+            return Err(Error::State(
+                tr!("Keine gültige Canvas-Datei (JSON Canvas)", "Not a valid canvas file (JSON Canvas)").into(),
+            ));
+        }
         self.save_page_content(id, content)?;
         let updated_at: String =
             self.conn().query_row("SELECT updated_at FROM pages WHERE id = ?1", [id], |r| r.get(0))?;

@@ -8,6 +8,7 @@ mod backupdest;
 mod bookmarks;
 mod briefing;
 mod calsync;
+mod canvas;
 mod chats;
 mod dashboard;
 mod dayreview;
@@ -4387,6 +4388,8 @@ pub fn run() {
             graph::graph_state_get,
             graph::graph_state_set,
             filing::page_create_filed,
+            canvas::canvas_create,
+            canvas::canvas_note_path,
             jira::jira_add_task,
             jira::jira_entry_issues,
             jira::jira_projects,

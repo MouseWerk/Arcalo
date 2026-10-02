@@ -64,12 +64,17 @@ pub struct Pulled {
 
 fn stem(path: &str) -> String {
     let name = path.rsplit('/').next().unwrap_or(path);
-    let stem = name.len().checked_sub(3).and_then(|n| name.get(..n)).unwrap_or(name);
+    let ext = if is_canvas_path(&name.to_lowercase()) { ".canvas".len() } else { 3 };
+    let stem = name.len().checked_sub(ext).and_then(|n| name.get(..n)).unwrap_or(name);
     if stem.trim().is_empty() { annalo_core::tr!("Ohne Titel", "Untitled").into() } else { stem.to_owned() }
 }
 
+fn is_canvas_path(lower: &str) -> bool {
+    lower.ends_with(".canvas")
+}
+
 fn is_page_path(lower: &str) -> bool {
-    lower.ends_with(".md") && lower != "readme.md" && !lower.starts_with("zeiterfassung/")
+    (lower.ends_with(".md") || is_canvas_path(lower)) && lower != "readme.md" && !lower.starts_with("zeiterfassung/")
 }
 
 /// Takes over the notes the server changed. A note unchanged here since the last sync gets
@@ -139,6 +144,16 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let Some(theirs) = &c.theirs else { continue };
                     let dir = c.path.rsplit_once('/').map(|(d, _)| d.to_lowercase());
                     let parent = dir.and_then(|d| by_folder.get(&d).copied());
+                    if is_canvas_path(&lower) {
+                        // A canvas from another computer (or Obsidian); an unreadable file stays on the server.
+                        if !annalo_core::canvas::is_valid(theirs) {
+                            continue;
+                        }
+                        let page = db.create_page(parent, &stem(&c.path), Some(annalo_core::canvas::ICON))?;
+                        db.make_canvas(page.id, theirs)?;
+                        out.created.push(page.id);
+                        continue;
+                    }
                     let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
                     db.save_page_content(page.id, theirs)?;
                     out.created.push(page.id);
@@ -338,6 +353,31 @@ mod tests {
         db.trash_page(edited.id).unwrap();
         assert_eq!(live(&db).unwrap().len(), 1);
         assert_eq!(hold_paths(&db), ["Notiz.md"]);
+    }
+
+    #[test]
+    fn canvases_come_back_from_the_server() {
+        let db = Database::open_in_memory().unwrap();
+        let board = db.create_page(None, "Board", None).unwrap();
+        let old = r#"{"nodes":[],"edges":[]}"#;
+        db.make_canvas(board.id, old).unwrap();
+        let new = r#"{"nodes":[{"id":"a","type":"text","text":"Neu","x":0,"y":0,"width":10,"height":10}],"edges":[]}"#;
+        let out = apply(
+            &db,
+            &[
+                change("Board.canvas", Some(old), Some(old), Some(new), false),
+                change("Zweites.canvas", None, None, Some(new), false),
+                change("Kaputt.canvas", None, None, Some("{kein json"), false),
+            ],
+            Local::now(),
+        )
+        .unwrap();
+        assert_eq!(out.pages, [board.id]);
+        assert_eq!(db.page_doc(board.id).unwrap().content, new);
+        assert_eq!(out.created.len(), 1);
+        let created = db.page(out.created[0]).unwrap();
+        assert_eq!((created.title.as_str(), created.kind.as_deref()), ("Zweites", Some("canvas")));
+        assert_eq!(db.page_doc(created.id).unwrap().content, new);
     }
 
     #[test]

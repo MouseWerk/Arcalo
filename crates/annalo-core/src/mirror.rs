@@ -445,6 +445,23 @@ mod tests {
     }
 
     #[test]
+    fn canvases_are_mirrored_as_canvas_files() {
+        let base = tmp("canvas");
+        let db = Database::open_in_memory().unwrap();
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 2).unwrap();
+        let c = db.create_canvas(None, "Rollout", today).unwrap();
+        let json =
+            r#"{"nodes":[{"id":"a","type":"text","text":"Hallo","x":0,"y":0,"width":200,"height":80}],"edges":[]}"#;
+        db.save_page_content(c.id, json).unwrap();
+        let target = base.join("markdown");
+        let r = write_mirror(&db, &target, &base.join("att"), &Utc).unwrap();
+        assert_eq!(r.pages, 1);
+        let folder = db.page(c.parent_id.unwrap()).unwrap().title;
+        assert_eq!(fs::read_to_string(target.join(folder).join("Rollout.canvas")).unwrap(), json);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn mirrors_written_before_the_rename_stay_recognized() {
         let dir = tmp("legacy");
         fs::write(dir.join(README_NAME), "Annalo – Markdown-Kopie\r\n\r\nalt").unwrap();

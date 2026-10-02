@@ -8,7 +8,7 @@ import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic, Workflow, ListFilter, FileInput,
+  type LucideIcon, LayoutDashboard, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic, Workflow, ListFilter, FileInput,
 } from "lucide-react";
 import { decimal, fmtDate, isoDay } from "../lib/format";
 
@@ -270,6 +270,19 @@ function allSlashItems(o: SlashOptions): SlashItem[] {
           if (!requestCreateIssue(e, e.state.selection.from, pageId)) st.toast({ tone: "info", title: t("jira.notATask") });
         } }]
       : []),
+    { id: "canvas", title: t("slash.canvas"), subtitle: t("slash.canvas.sub"), icon: ic(LayoutDashboard), Icon: LayoutDashboard, section: insert, keywords: "canvas board whiteboard tafel karten cards mindmap brainstorming planung planning", run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      const st = useApp.getState();
+      const pageId = st.tabs.find((x) => x.id === st.activeTabId)?.pageId ?? null;
+      const at = e.state.selection.from;
+      void import("../views/canvas/create").then(({ createCanvas }) =>
+        createCanvas(pageId, { open: false }).then((page) => {
+          if (!page || e.isDestroyed) return;
+          e.chain().focus().insertContentAt(at, [{ type: "wikiLink", attrs: { target: page.title } }, { type: "text", text: " " }]).run();
+          useApp.getState().openPage(page.id, { split: true });
+        }),
+      );
+    } },
     { id: "subpage", title: t("slash.subpage"), icon: ic(FilePlus2), Icon: FilePlus2, section: insert, keywords: "seite page unterseite subpage", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("[[").run() },
     ...(o.onImage
       ? [{ id: "image", title: t("slash.image"), subtitle: t("slash.image.sub", { keys: keys("Mod V") }), icon: ic(ImagePlus), Icon: ImagePlus, section: insert, keywords: "bild image foto photo screenshot anhang", run: (e: Editor, r: Range) => (e.chain().deleteRange(r).run(), o.onImage!(e)) }]

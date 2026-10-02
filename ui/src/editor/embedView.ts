@@ -80,7 +80,7 @@ function blockOf(node: HTMLElement): HTMLElement {
 }
 
 /** Makes rendered page HTML interactive: nested embeds, diagrams, queries, links. Returns cleanup. */
-function hydrate(body: HTMLElement, host: EmbedHost, title: string): () => void {
+export function hydrate(body: HTMLElement, host: EmbedHost, title: string): () => void {
   const cleanups: (() => void)[] = [];
   for (const span of body.querySelectorAll<HTMLElement>("span[data-page-embed]")) {
     const ref: EmbedRef = { target: span.dataset.pageEmbed ?? "", anchor: span.dataset.anchor ?? null, alt: span.dataset.alt ?? null };
