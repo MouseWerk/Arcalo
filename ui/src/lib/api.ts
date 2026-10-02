@@ -174,6 +174,14 @@ export const api = {
   /** Summary of a day by a local model only; streams like `chat`. */
   dayReviewSummary: (requestId: string, date: string) => call<T.ChatOutcome>("day_review_summary", { requestId, date }),
 
+  // Morgen-Briefing
+  /** Today's briefing in one call; `hidden`: calendars the views hide. */
+  briefing: (hidden: string[]) => call<T.Briefing>("briefing", { hidden }),
+  /** „Was ist heute wichtig“: cached for the day unless `refresh`. */
+  briefingSummary: (requestId: string, hidden: string[], refresh: boolean) => call<T.BriefingSummary>("briefing_summary", { requestId, hidden, refresh }),
+  /** The first start of the day: open the briefing, notify, or nothing (stored per day). */
+  briefingStart: () => call<T.BriefingStart>("briefing_start"),
+
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),

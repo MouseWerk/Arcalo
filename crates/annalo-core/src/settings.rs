@@ -116,6 +116,8 @@ pub struct Settings {
     pub onboarding: crate::onboarding::OnboardingState,
     /// Jira sites, saved JQL searches and the sync (tokens live in the credential store).
     pub jira: crate::issues::IssueSettings,
+    /// Morgen-Briefing: when it shows up and its sections.
+    pub briefing: crate::briefing::BriefingSettings,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
@@ -527,6 +529,7 @@ impl Default for Settings {
             voice: crate::voice::VoiceSettings::default(),
             onboarding: crate::onboarding::OnboardingState::default(),
             jira: crate::issues::IssueSettings::default(),
+            briefing: crate::briefing::BriefingSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -708,6 +711,7 @@ impl Settings {
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
         self.jira = std::mem::take(&mut self.jira).normalized();
+        self.briefing = std::mem::take(&mut self.briefing).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
         self.time.balance = std::mem::take(&mut self.time.balance).normalized();
         // Kept for older versions, which read only this flag.
@@ -759,6 +763,7 @@ impl Settings {
                 self.open_daily_on_start = d.open_daily_on_start;
             }
             "locale" => self.locale = d.locale,
+            "briefing" => self.briefing = d.briefing,
             "keyboard" => self.keymap = d.keymap,
             other => {
                 return Err(crate::error::Error::State(trf!(

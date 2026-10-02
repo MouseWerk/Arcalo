@@ -968,7 +968,14 @@ impl Database {
             let page = self.create_page(Some(parent), &title, Some("users"))?;
             self.save_page_content(page.id, &content)?;
             self.calendar_mark_row(key)?;
-            self.conn().execute("UPDATE calendar_marks SET note_page_id = ?2 WHERE key = ?1", params![key, page.id])?;
+            // Subject and series too: the briefing finds the last note of a series or subject by them.
+            let series = if e.recurring { e.uid.clone() } else { String::new() };
+            self.conn().execute(
+                "UPDATE calendar_marks SET note_page_id = ?2,
+                        title = CASE WHEN title = '' THEN ?3 ELSE title END,
+                        series = CASE WHEN series = '' THEN ?4 ELSE series END WHERE key = ?1",
+                params![key, page.id, e.title.to_lowercase(), series],
+            )?;
             Ok((self.page(page.id)?, true))
         })
     }

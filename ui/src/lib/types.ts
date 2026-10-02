@@ -299,6 +299,8 @@ export interface Settings {
   onboarding: OnboardingState;
   /** Jira sites, saved JQL searches and the sync (tokens live in the credential store). */
   jira?: import("./jira").IssueSettings;
+  /** Morgen-Briefing (briefing.rs); missing in settings of older versions. */
+  briefing?: BriefingSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
@@ -1526,3 +1528,98 @@ export interface BlockPatch {
   end?: string;
   reference?: string;
 }
+// ---- Morgen-Briefing (briefing.rs)
+export type BriefingMode = "off" | "start" | "notify";
+export type BriefingSectionId = "ai" | "meetings" | "tasks" | "jira" | "time";
+export interface BriefingSection {
+  id: BriefingSectionId;
+  on: boolean;
+}
+export interface BriefingSettings {
+  mode: BriefingMode;
+  /** HH:MM; empty: at the first start of the day. */
+  notify_time: string;
+  sections: BriefingSection[];
+}
+export interface BriefingPrep {
+  page_id: number;
+  title: string;
+  kind: "own" | "series" | "subject";
+  at: string;
+}
+export interface BriefingMeeting {
+  key: string;
+  source: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  link: string | null;
+  free: boolean;
+  past: boolean;
+  note_page_id: number | null;
+  prep: BriefingPrep | null;
+}
+export interface BriefingIssue {
+  site: string;
+  key: string;
+  summary: string;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  url: string;
+  blocked: boolean;
+}
+export interface BriefingJira {
+  overdue: BriefingIssue[];
+  due: BriefingIssue[];
+  blocked: BriefingIssue[];
+  overdue_total: number;
+  due_total: number;
+  blocked_total: number;
+}
+export interface BriefingTask {
+  page_id: number;
+  page_title: string;
+  ordinal: number;
+  text: string;
+  due: string | null;
+  priority: number;
+}
+export interface BriefingTasks {
+  overdue: BriefingTask[];
+  today: BriefingTask[];
+  overdue_total: number;
+  today_total: number;
+}
+export interface BriefingTime {
+  date: string;
+  target_minutes: number;
+  booked_minutes: number;
+  missing_minutes: number;
+  holiday: string | null;
+  absence: "vacation" | "sick" | "comp" | "other" | null;
+  half: boolean;
+}
+export interface BriefingSummary {
+  date: string;
+  text: string;
+  model: string;
+  at: string;
+  local: boolean;
+}
+export interface Briefing {
+  date: string;
+  workday: boolean;
+  sections: BriefingSectionId[];
+  meetings: BriefingMeeting[];
+  next_meeting: string | null;
+  jira: BriefingJira | null;
+  tasks: BriefingTasks;
+  time: BriefingTime | null;
+  private: boolean;
+  summary: BriefingSummary | null;
+  ai_ready: boolean;
+}
+export type BriefingStart = "none" | "open" | "notify";

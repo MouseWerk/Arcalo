@@ -6,6 +6,7 @@ mod appmenu;
 mod backdrop;
 mod backupdest;
 mod bookmarks;
+mod briefing;
 mod calsync;
 mod chats;
 mod dashboard;
@@ -4340,6 +4341,9 @@ pub fn run() {
             mail::mail_suggest,
             dayreview::day_review,
             dayreview::day_review_summary,
+            briefing::briefing,
+            briefing::briefing_summary,
+            briefing::briefing_start,
             voice::voice_devices,
             voice::voice_start,
             voice::voice_pause,

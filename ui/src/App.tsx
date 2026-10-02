@@ -39,6 +39,7 @@ import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
 import { BookmarkImportHost } from "./components/BookmarkImport";
 import { openDayReview } from "./lib/reviewnav";
+import { offerBriefing, openBriefing, startBriefing } from "./lib/briefing";
 import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
 import { t, useT } from "./lib/i18n";
@@ -68,6 +69,8 @@ export function App() {
         s.openPage(p.id);
       } else if (open === "dashboard") s.openTab({ kind: "home" });
       document.body.classList.add("ready");
+      // Settings → Briefing: the first start of a workday opens it (or notifies).
+      if (!useApp.getState().onboarding) void startBriefing();
       // First start: the intro and the setup; after an upgrade a one-time hint instead.
       void checkFirstRun();
       void s.refreshConflicts();
@@ -146,6 +149,10 @@ export function App() {
       }),
       // Came back after the „Tagesrückblick ansehen“ reminder.
       on("nav://day-review", () => openDayReview()),
+      // Morgen-Briefing: the tray entry, or back after its notification.
+      on("nav://briefing", () => openBriefing()),
+      // Its notification while the app is in front: offered here too.
+      on("briefing://notified", () => offerBriefing()),
       // A result chosen in the quick-search window (it may have created the page).
       on<SearchTarget>("search://open", async (t) => {
         const st = useApp.getState();
