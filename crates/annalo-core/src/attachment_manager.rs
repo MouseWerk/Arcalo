@@ -414,6 +414,7 @@ pub fn rename(db: &Database, attachments_dir: &Path, old: &str, new: &str) -> Re
     }
     let rewrite = db.atomic(|| {
         let uses = db.pages_using(old)?;
+        db.rename_pdf_highlights(old, &new)?;
         let now = Utc::now();
         let mut changed = Vec::new();
         for u in uses {

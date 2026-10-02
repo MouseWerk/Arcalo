@@ -5,18 +5,22 @@
 // Large PDFs stay light: pages render only near the viewport, a render is cancelled when its
 // page scrolls away, and canvases and text layers of pages far from the viewport are released
 // (at most a few screens of pages hold pixels). A text layer (pdf.js TextLayer) over each
-// rendered page makes the text selectable and carries the search highlights.
+// rendered page makes the text selectable and carries the search highlights. Selected text can
+// be highlighted in colors (stored per attachment, `pdfHighlights.tsx`) and taken into a note.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask, TextLayer } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { ChevronDown, ChevronUp, ExternalLink, MoveHorizontal, PanelTop, Search, X, ZoomIn, ZoomOut } from "lucide-react";
-import { IconButton } from "../components/ui";
+import { ChevronDown, ChevronUp, ExternalLink, ListPlus, MoveHorizontal, PanelTop, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { IconButton, useMenu } from "../components/ui";
 import { api, errorText } from "../lib/api";
 import { loadPdfjs, openPdf, pdfWorkerKind } from "../lib/pdf";
 import { findHits, matchOffsets, type PdfHit } from "../lib/pdfsearch";
 import { useApp } from "../store/app";
 import { t, useT } from "../lib/i18n";
+import type { PdfHighlight } from "../lib/types";
+import { HighlightLayer, HighlightPopover, SelectionBar, currentNote, hasTextLayer, pageChoices, readSelection, takeIntoNote, type PdfSelection } from "./pdfHighlights";
 
+const NO_MARKS: PdfHighlight[] = [];
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
 /** Gap between pages and around the column (px, as in the CSS). */
 const GAP = 16;
@@ -63,7 +67,7 @@ function highlight(layer: TextLayer, mark: Mark | null): HTMLElement | null {
   return current;
 }
 
-function PdfPage({ doc, index, scale, size, root, mark }: { doc: PDFDocumentProxy; index: number; scale: number; size: Size; root: HTMLElement | null; mark: Mark | null }) {
+function PdfPage({ doc, index, scale, size, root, mark, marks, flash, onMark }: { doc: PDFDocumentProxy; index: number; scale: number; size: Size; root: HTMLElement | null; mark: Mark | null; marks: PdfHighlight[]; flash: number | null; onMark: (h: PdfHighlight, el: HTMLElement) => void }) {
   useT();
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -175,11 +179,12 @@ function PdfPage({ doc, index, scale, size, root, mark }: { doc: PDFDocumentProx
     <div ref={box} className="pdf-page" data-page={index + 1} style={style}>
       <canvas ref={canvas} aria-label={t("pdf.page", { n: index + 1 })} />
       <div ref={textBox} className="textLayer" />
+      <HighlightLayer marks={marks} flash={flash} onOpen={onMark} />
     </div>
   );
 }
 
-function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; page: number | null; onClose: () => void; mode: "overlay" | "tab" }) {
+function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name: string; page: number | null; highlight?: number | null; onClose: () => void; mode: "overlay" | "tab" }) {
   useT();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
@@ -192,6 +197,12 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
   const [hits, setHits] = useState<{ query: string; list: PdfHit[]; at: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const [workerKind, setWorkerKind] = useState<string>("");
+  const [hls, setHls] = useState<PdfHighlight[]>([]);
+  const [selection, setSelection] = useState<PdfSelection | null>(null);
+  const [popover, setPopover] = useState<{ h: PdfHighlight; x: number; y: number } | null>(null);
+  const [flash, setFlash] = useState<number | null>(highlight ?? null);
+  const [noText, setNoText] = useState(false);
+  const [menu, , openMenuAt] = useMenu();
   const frame = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -237,6 +248,71 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
       void opened?.loadingTask.destroy();
     };
   }, [name]);
+
+  useEffect(() => {
+    let alive = true;
+    api.pdfHighlights(name).then((l) => alive && setHls(l), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [name]);
+
+  // A scan has no text layer: highlights need text.
+  useEffect(() => {
+    if (!doc) return;
+    let alive = true;
+    void hasTextLayer(pageItems, doc.numPages).then((has) => alive && setNoText(!has), () => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc]);
+
+  // A link `[[x.pdf#page=3&hl=7]]` opens on the page and flashes the highlight.
+  useEffect(() => {
+    if (flash == null || !doc || !hls.length) return;
+    const h = hls.find((x) => x.id === flash);
+    if (!h) return;
+    let tries = 0;
+    let timer = 0;
+    const find = () => {
+      const el = scroller.current?.querySelector<HTMLElement>(`.pdf-mark[data-mark-id="${h.id}"]`);
+      if (el) el.scrollIntoView({ block: "center" });
+      else if (tries++ < 30) {
+        timer = window.setTimeout(find, 100);
+        return;
+      }
+      timer = window.setTimeout(() => setFlash(null), 2400);
+    };
+    timer = window.setTimeout(find, 150);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, hls.length]);
+
+  const byPage = useMemo(() => {
+    const m = new Map<number, PdfHighlight[]>();
+    for (const h of hls) m.set(h.page, [...(m.get(h.page) ?? []), h]);
+    return m;
+  }, [hls]);
+
+  const addHighlight = async (color: string) => {
+    const sel = selection;
+    setSelection(null);
+    if (!sel) return;
+    try {
+      const h = await api.addPdfHighlight({ attachment: name, page: sel.page, rects: sel.rects, text: sel.text, color });
+      setHls((l) => [...l, h]);
+      window.getSelection()?.removeAllRanges();
+    } catch (e) {
+      useApp.getState().error(t("pdfh.failed"), e);
+    }
+  };
+  /** „In Notiz übernehmen“ (one highlight, or all with `null`): into the open note, else a picked one. */
+  const take = (id: number | null, anchor: HTMLElement | null) => {
+    const pageId = currentNote();
+    if (pageId != null) return void takeIntoNote(name, id, pageId);
+    if (anchor) openMenuAt(anchor, pageChoices((p) => void takeIntoNote(name, id, p)));
+  };
 
   // The column's width decides the „fit to width“ scale.
   useEffect(() => {
@@ -471,25 +547,89 @@ function PdfDocument({ name, page: startPage, onClose, mode }: { name: string; p
               }}
             />
           )}
+          <IconButton
+            icon={ListPlus}
+            label={hls.length ? `${t("pdfh.all")} (${t("pdfh.count", { n: hls.length })})` : t("pdfh.all")}
+            onClick={(e) => take(null, e.currentTarget)}
+            disabled={!hls.length}
+            className="pdf-take-all"
+          />
           <IconButton icon={ExternalLink} label={t("file.openExternal")} onClick={openExternal} />
           {overlay && <IconButton icon={X} label={t("common.close")} onClick={onClose} className="pdf-close" />}
         </div>
       </header>
-      <div ref={scrollRef} className="pdf-scroll" onScroll={onScroll}>
+      {noText && <div className="pdf-notext">{t("pdfh.noText")}</div>}
+      <div
+        ref={scrollRef}
+        className="pdf-scroll"
+        onScroll={() => {
+          onScroll();
+          // The bar follows its selection.
+          if (selection && scroller.current) setSelection(readSelection(scroller.current));
+        }}
+        onMouseUp={() => {
+          // After the browser has finished the selection.
+          window.setTimeout(() => setSelection(scroller.current && !noText ? readSelection(scroller.current) : null), 0);
+        }}
+      >
         {error ? (
           <div className="pdf-message is-error">{t("pdf.showFailed", { error })}</div>
         ) : !doc ? (
           <div className="pdf-message">{t("ws.pdfLoading")}</div>
         ) : (
-          sizes.map((s, i) => <PdfPage key={i} doc={doc} index={i} scale={scale} size={s} root={root} mark={marks.get(i + 1) ?? null} />)
+          sizes.map((s, i) => (
+            <PdfPage
+              key={i}
+              doc={doc}
+              index={i}
+              scale={scale}
+              size={s}
+              root={root}
+              mark={marks.get(i + 1) ?? null}
+              marks={byPage.get(i + 1) ?? NO_MARKS}
+              flash={flash}
+              onMark={(h, el) => {
+                const r = el.getBoundingClientRect();
+                setSelection(null);
+                setPopover({ h, x: r.left + r.width / 2, y: r.bottom });
+              }}
+            />
+          ))
         )}
       </div>
+      {selection && <SelectionBar sel={selection} onPick={(c) => void addHighlight(c)} />}
+      {popover && (
+        <HighlightPopover
+          h={popover.h}
+          at={popover}
+          onClose={() => setPopover(null)}
+          onChange={(h) => {
+            setHls((l) => l.map((x) => (x.id === h.id ? h : x)));
+            setPopover((p) => (p ? { ...p, h } : p));
+          }}
+          onDelete={() => {
+            const id = popover.h.id;
+            setPopover(null);
+            api.deletePdfHighlight(id).then(() => setHls((l) => l.filter((x) => x.id !== id)), (e) => useApp.getState().error(t("pdfh.failed"), e));
+          }}
+          onTake={() => {
+            const id = popover.h.id;
+            setPopover(null);
+            take(id, scroller.current?.querySelector<HTMLElement>(`.pdf-mark[data-mark-id="${id}"]`) ?? null);
+          }}
+          onTakeElsewhere={(el) => {
+            const id = popover.h.id;
+            openMenuAt(el, pageChoices((p) => void takeIntoNote(name, id, p)));
+          }}
+        />
+      )}
+      {menu}
     </div>
   );
 }
 
-export default function PdfViewer({ name, page, onClose }: { name: string; page: number | null; onClose: () => void }) {
-  return <PdfDocument name={name} page={page} onClose={onClose} mode="overlay" />;
+export default function PdfViewer({ name, page, highlight, onClose }: { name: string; page: number | null; highlight?: number | null; onClose: () => void }) {
+  return <PdfDocument name={name} page={page} highlight={highlight} onClose={onClose} mode="overlay" />;
 }
 
 /** The viewer in a tab (a PDF dropped on the tab bar, „In einem Tab öffnen“, the attachment manager). */

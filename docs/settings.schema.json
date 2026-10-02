@@ -802,6 +802,11 @@
             "null"
           ]
         },
+        "duplicate_hints": {
+          "default": true,
+          "description": "„Ähnliche Seite“ hint in the page header.",
+          "type": "boolean"
+        },
         "hover_delay_ms": {
           "default": 450,
           "format": "uint32",
@@ -817,6 +822,16 @@
           "default": "Inbox",
           "description": "Title of the page that collects new pages with [`NewPageLocation::Inbox`].",
           "type": "string"
+        },
+        "link_suggestions": {
+          "default": true,
+          "description": "„Nicht verlinkte Erwähnungen“ in the links panel.",
+          "type": "boolean"
+        },
+        "mention_hints": {
+          "default": false,
+          "description": "Dotted underline under unlinked page titles in the editor (click links them).",
+          "type": "boolean"
         },
         "new_page_location": {
           "allOf": [
@@ -850,6 +865,11 @@
           "format": "uint32",
           "minimum": 0.0,
           "type": "integer"
+        },
+        "tag_suggestions": {
+          "default": true,
+          "description": "Tag suggestions under the page properties.",
+          "type": "boolean"
         },
         "toolbar": {
           "default": true,
@@ -2662,14 +2682,18 @@
         "autosave_ms": 450,
         "code_line_numbers": false,
         "default_icon": null,
+        "duplicate_hints": true,
         "hover_delay_ms": 450,
         "hover_preview": true,
         "inbox_title": "Inbox",
+        "link_suggestions": true,
+        "mention_hints": false,
         "new_page_location": "top",
         "scroll_outline": true,
         "smart_quotes": false,
         "spellcheck": "de",
         "tab_size": 4,
+        "tag_suggestions": true,
         "toolbar": true
       },
       "description": "Editor: autosave, tab size, spell checking, toolbar, link previews."
@@ -3152,7 +3176,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 8,
+      "default": 9,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

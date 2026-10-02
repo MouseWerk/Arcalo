@@ -417,6 +417,26 @@ export const api = {
   runSystemTool: (callSpec: unknown) => call<string>("ai_run_system_tool", { call: callSpec }),
   indexPending: () => call<number>("ai_index_pending"),
   embeddingStatus: () => call<T.EmbeddingStatus>("ai_embedding_status"),
+
+  // ---- link and tag suggestions, duplicates, PDF highlights (1.10)
+  mentions: (pageId: number) => call<T.MentionReport>("mentions_get", { pageId }),
+  linkMentions: (source: number, target: number, start: number | null = null) => call<number>("mentions_link", { source, target, start }),
+  ignoreMention: (pageId: number, term: string) => call<void>("mentions_ignore", { pageId, term }),
+  tagSuggestions: (pageId: number) => call<T.TagSuggestion[]>("tags_suggest", { pageId }),
+  tagSuggestionsAi: (pageId: number) => call<T.TagSuggestion[]>("tags_suggest_ai", { pageId }),
+  dismissTag: (pageId: number, tag: string) => call<void>("tags_dismiss", { pageId, tag }),
+  duplicates: (pageId: number) => call<T.DuplicateHint[]>("duplicates_for", { pageId }),
+  allDuplicates: () => call<T.DuplicatePair[]>("duplicates_all"),
+  ignoreDuplicate: (a: number, b: number) => call<void>("duplicates_ignore", { a, b }),
+  mergePages: (keep: number, other: number) => call<T.MergeOutcome>("pages_merge", { keep, other }),
+  undoMerge: () => call<number[]>("pages_merge_undo"),
+  pdfHighlights: (name: string) => call<T.PdfHighlight[]>("pdf_highlights_list", { name }),
+  addPdfHighlight: (highlight: T.NewPdfHighlight) => call<T.PdfHighlight>("pdf_highlight_add", { highlight }),
+  updatePdfHighlight: (id: number, patch: { color?: string; note?: string }) =>
+    call<T.PdfHighlight>("pdf_highlight_update", { id, color: patch.color ?? null, note: patch.note ?? null }),
+  deletePdfHighlight: (id: number) => call<void>("pdf_highlight_delete", { id }),
+  pdfHighlightMarkdown: (name: string, id: number | null) => call<string>("pdf_highlight_markdown", { name, id }),
+  appendToPage: (pageId: number, markdown: string) => call<void>("page_append", { pageId, markdown }),
 };
 
 export function on<P>(event: string, handler: (payload: P) => void): Promise<UnlistenFn> {

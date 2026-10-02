@@ -333,6 +333,14 @@ pub struct EditorPrefs {
     pub inbox_title: String,
     /// Formatting toolbar above notes.
     pub toolbar: bool,
+    /// „Nicht verlinkte Erwähnungen“ in the links panel.
+    pub link_suggestions: bool,
+    /// Dotted underline under unlinked page titles in the editor (click links them).
+    pub mention_hints: bool,
+    /// Tag suggestions under the page properties.
+    pub tag_suggestions: bool,
+    /// „Ähnliche Seite“ hint in the page header.
+    pub duplicate_hints: bool,
 }
 
 impl Default for EditorPrefs {
@@ -351,6 +359,10 @@ impl Default for EditorPrefs {
             new_page_location: NewPageLocation::Top,
             inbox_title: "Inbox".into(),
             toolbar: true,
+            link_suggestions: true,
+            mention_hints: false,
+            tag_suggestions: true,
+            duplicate_hints: true,
         }
     }
 }

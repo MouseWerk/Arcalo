@@ -15,6 +15,7 @@ import { Callouts, DueWords, ImageEmbed, MarkdownImage, SlashCommand, TagHighlig
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
 import { AttachmentDrop, FileEmbed, anchorPage, isPdfName } from "./fileEmbed";
+import { pdfAnchor } from "../lib/linking";
 import { CiteFlash } from "./reveal";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
@@ -240,7 +241,7 @@ export interface SchemaOptions {
   /** Click on a file chip: opens the file in its default app. */
   onOpenFile?: (name: string) => void;
   /** Click on a PDF card: opens the PDF viewer. */
-  onOpenPdf?: (name: string, page: number | null) => void;
+  onOpenPdf?: (name: string, page: number | null, highlight?: number | null) => void;
   /** Renders the first page of a PDF into a canvas; resolves to the page count. */
   renderPdfPreview?: (name: string, canvas: HTMLCanvasElement, width: number) => Promise<number>;
   onPickTemplate?: (editor: Editor) => void;
@@ -317,7 +318,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       isKnown: o.isKnown ?? (() => true),
       fileSize: o.attachmentSize ?? (async () => null),
       // Like a file embed: PDFs in the viewer, other files in their default app.
-      onOpenFile: (name, anchor) => (isPdfName(name) ? o.onOpenPdf?.(name, anchorPage(anchor == null ? null : `#${anchor}`)) : o.onOpenFile?.(name)),
+      onOpenFile: (name, anchor) => (isPdfName(name) ? o.onOpenPdf?.(name, anchorPage(anchor == null ? null : `#${anchor}`), pdfAnchor(anchor).highlight) : o.onOpenFile?.(name)),
     }),
     WikiLinkSuggest.configure({ search: o.searchPages ?? (async () => []) }),
     SlashCommand.configure({ onTemplate: o.onPickTemplate ?? null, onImage: o.onPickImage ?? null, onAi: o.onAi ?? null, onSummary: o.onSummary ?? null, onDrawing: o.onInsertDrawing ?? null, onFile: o.onPickFile ?? null, onVoice: o.onVoice ?? null }),

@@ -22,6 +22,7 @@ mod focus;
 mod graph;
 mod jira;
 mod jumplist;
+mod linking;
 mod mail;
 mod meetwork;
 mod network;
@@ -4568,6 +4569,23 @@ pub fn run() {
             filing::page_create_filed,
             canvas::canvas_create,
             canvas::canvas_note_path,
+            linking::mentions_get,
+            linking::mentions_link,
+            linking::mentions_ignore,
+            linking::tags_suggest,
+            linking::tags_dismiss,
+            linking::tags_suggest_ai,
+            linking::duplicates_for,
+            linking::duplicates_all,
+            linking::duplicates_ignore,
+            linking::pages_merge,
+            linking::pages_merge_undo,
+            linking::pdf_highlights_list,
+            linking::pdf_highlight_add,
+            linking::pdf_highlight_update,
+            linking::pdf_highlight_delete,
+            linking::pdf_highlight_markdown,
+            linking::page_append,
             jira::jira_add_task,
             jira::jira_entry_issues,
             jira::jira_projects,

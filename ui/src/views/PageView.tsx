@@ -28,6 +28,9 @@ import { CollectionView } from "./collection/CollectionView";
 import { FRONTMATTER_EVENT, registerFrontmatterOwner } from "./collection/write";
 import { isManagedKey, parseSchema, parseView, setView, type ViewType } from "../lib/collection";
 import { VersionsDialog } from "./VersionsDialog";
+import { DuplicateHint } from "./DuplicateHint";
+import { TagSuggestions } from "./TagSuggestions";
+import { useMentionHints } from "../editor/mentionHints";
 import { sharePageAsHtml } from "../editor/shareHtml";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
@@ -210,6 +213,10 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     };
   }, [pageId]);
 
+  // Dotted hints under unlinked titles (Settings → Editor), refreshed after each save.
+  const hintsOn = useApp((st) => !!st.settings?.settings.editor?.mention_hints);
+  useMentionHints(doc?.id, doc?.updated_at, hintsOn && !source);
+
   const openLink = useCallback(async (target: string, newTab: boolean) => {
     if (openIfFileLink(target)) return;
     try {
@@ -275,6 +282,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         onViewType={(t) => changeFm(setView(fmRef.current, { ...parseView(fmRef.current), type: t }))}
       >
         <ConflictBanner pageId={doc.id} />
+        {!source && <DuplicateHint page={{ id: doc.id, title: doc.title }} savedAt={doc.updated_at} />}
         {!source && <Properties doc={doc} fm={fm} typed={!!folder?.defs.length} onAdd={() => setAddingProp(true)} />}
         {!source && <PropertyEditor
           fm={fm}
@@ -284,6 +292,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
           parentId={parentId}
           onChange={changeFm}
         />}
+        {!source && <TagSuggestions pageId={doc.id} tags={doc.tags} fm={fm} onFm={changeFm} />}
         {reference && timeOn && <WorkCard pageId={doc.id} reference={reference} title={doc.title} />}
         {switching ? (
           // Between the two editors while the page is fetched: typing here would be lost.

@@ -13,13 +13,14 @@ import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { anchorPage, baseName, isFileEmbedName, isFileLinkTarget, isImageName, isPdfName } from "./fileEmbed";
 import { titleSet } from "../lib/links";
+import { pdfAnchor } from "../lib/linking";
 import { t } from "../lib/i18n";
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 let root: Root | null = null;
 
 /** Opens the PDF viewer for an attachment (one at a time), optionally on `page`. */
-export function openPdfViewer(name: string, page: number | null = null) {
+export function openPdfViewer(name: string, page: number | null = null, highlight: number | null = null) {
   const base = baseName(name);
   if (!isPdfName(base)) return;
   if (!root) {
@@ -31,7 +32,7 @@ export function openPdfViewer(name: string, page: number | null = null) {
   const close = () => root?.render(null);
   root.render(
     <Suspense fallback={<div className="pdf-overlay pdf-loading" role="dialog" aria-label={t("pdf.loading")}>{t("ws.pdfLoading")}</div>}>
-      <PdfViewer key={`${base}-${Date.now()}`} name={base} page={page} onClose={close} />
+      <PdfViewer key={`${base}-${Date.now()}`} name={base} page={page} highlight={highlight} onClose={close} />
     </Suspense>,
   );
 }
@@ -48,7 +49,7 @@ export function openFile(name: string) {
 export function openIfFileLink(target: string, anchor: string | null = null): boolean {
   if (!isFileLinkTarget(target) || titleSet(useApp.getState().pages).has(target.trim().toLowerCase())) return false;
   const name = baseName(target.trim());
-  if (isPdfName(name)) openPdfViewer(name, anchorPage(anchor == null ? null : `#${anchor}`));
+  if (isPdfName(name)) openPdfViewer(name, anchorPage(anchor == null ? null : `#${anchor}`), pdfAnchor(anchor).highlight);
   else openFile(name);
   return true;
 }

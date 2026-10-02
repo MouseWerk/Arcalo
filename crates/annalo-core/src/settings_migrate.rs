@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 8;
+pub const SETTINGS_VERSION: u32 = 9;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -43,6 +43,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 5, name: "log-level-and-due-tasks", run: log_level_and_due_tasks },
     Step { from: 6, name: "network-profiles", run: network_profiles },
     Step { from: 7, name: "meeting-prep", run: meeting_prep },
+    Step { from: 8, name: "link-suggestions", run: link_suggestions },
 ];
 
 /// What [`migrate`] did.
@@ -270,6 +271,22 @@ fn meeting_prep(s: &mut Map<String, Value>) -> Option<String> {
     (!notes.is_empty()).then(|| notes.join(", "))
 }
 
+/// 1.10: the link, tag and duplicate suggestions of the editor are written with their
+/// defaults (on, the inline hints off), so the settings file shows them.
+fn link_suggestions(s: &mut Map<String, Value>) -> Option<String> {
+    let editor = s.get_mut("editor")?.as_object_mut()?;
+    let mut added = vec![];
+    for (k, v) in
+        [("link_suggestions", true), ("mention_hints", false), ("tag_suggestions", true), ("duplicate_hints", true)]
+    {
+        if !editor.contains_key(k) {
+            editor.insert(k.into(), Value::Bool(v));
+            added.push(k);
+        }
+    }
+    (!added.is_empty()).then(|| format!("editor: {} added", added.join(", ")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,13 +353,19 @@ mod tests {
             [
                 "log-level-and-due-tasks: notifications.task_due = true",
                 "network-profiles: network → profile Standard",
-                "meeting-prep: briefing.prep_auto = false, briefing.prep_minutes = 30"
+                "meeting-prep: briefing.prep_auto = false, briefing.prep_minutes = 30",
+                "link-suggestions: editor: link_suggestions, mention_hints, tag_suggestions, duplicate_hints added"
             ]
         );
         v.as_object_mut().unwrap().remove("version");
         before["notifications"]["task_due"] = Value::Bool(true);
         before["briefing"]["prep_auto"] = Value::Bool(false);
         before["briefing"]["prep_minutes"] = Value::from(30);
+        for (k, on) in
+            [("link_suggestions", true), ("mention_hints", false), ("tag_suggestions", true), ("duplicate_hints", true)]
+        {
+            before["editor"][k] = Value::Bool(on);
+        }
         assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
         v.as_object_mut().unwrap().remove("network");
         before.as_object_mut().unwrap().remove("network");
@@ -615,5 +638,23 @@ mod tests {
         // And wrong values are found.
         let bad = serde_json::json!({"theme": 3, "editor": {"tab_size": "vier"}, "workdays": ["Mo"]});
         assert_eq!(check(&bad).len(), 3, "{:?}", check(&bad));
+    }
+
+    #[test]
+    fn link_suggestion_keys_are_added_once() {
+        let mut v = serde_json::json!({"version": 8, "editor": {"toolbar": false, "mention_hints": true}});
+        let m = migrate(&mut v);
+        assert_eq!(m.to, SETTINGS_VERSION);
+        assert!(
+            m.notes.iter().any(|n| n.starts_with("link-suggestions: editor: link_suggestions, tag_suggestions")),
+            "{m:?}"
+        );
+        // A choice already made stays.
+        assert_eq!(v["editor"]["mention_hints"], true);
+        let s = Database::parse_settings(&v.to_string()).unwrap();
+        assert!(s.editor.link_suggestions && s.editor.tag_suggestions && s.editor.duplicate_hints && !s.editor.toolbar);
+        let mut again = v.clone();
+        again.as_object_mut().unwrap().remove("version");
+        assert!(migrate(&mut again).notes.iter().all(|n| !n.starts_with("link-suggestions")));
     }
 }

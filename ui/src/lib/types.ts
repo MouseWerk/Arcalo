@@ -478,6 +478,10 @@ export interface EditorPrefs {
   new_page_location: "top" | "current" | "inbox";
   inbox_title: string;
   toolbar: boolean;
+  link_suggestions: boolean;
+  mention_hints: boolean;
+  tag_suggestions: boolean;
+  duplicate_hints: boolean;
 }
 export interface NotesPrefs {
   daily_title: "iso" | "de" | "long";
@@ -1802,4 +1806,87 @@ export interface EmbedView {
   /** The embedded Markdown; null when the page or the section is missing. */
   content: string | null;
   missing: "page" | "section" | null;
+}
+
+// ---- link and tag suggestions, duplicates, PDF highlights (1.10)
+
+/** An unlinked mention: `text` at `start..end` (UTF-8 bytes of the page's Markdown). */
+export interface Mention {
+  start: number;
+  end: number;
+  text: string;
+  page_id: number;
+  title: string;
+  before: string;
+  after: string;
+}
+
+export interface MentionGroup {
+  page_id: number;
+  title: string;
+  icon: string | null;
+  mentions: Mention[];
+}
+
+export interface MentionReport {
+  /** Pages named in the open page without a link. */
+  outgoing: MentionGroup[];
+  /** Pages that name the open page without linking it. */
+  incoming: MentionGroup[];
+}
+
+export interface TagSuggestion {
+  tag: string;
+  score: number;
+  pages: number;
+  /** Proposed by the AI, not used anywhere yet. */
+  new: boolean;
+}
+
+export interface DuplicateHint {
+  page_id: number;
+  title: string;
+  icon: string | null;
+  score: number;
+  text_score: number;
+  title_score: number;
+}
+
+export interface DuplicatePair {
+  a: number;
+  a_title: string;
+  b: number;
+  b_title: string;
+  score: number;
+  text_score: number;
+  title_score: number;
+}
+
+export interface MergeOutcome {
+  keep: number;
+  other: number;
+  relinked: number;
+  changed: number[];
+}
+
+export type PdfRect = [number, number, number, number];
+
+export interface PdfHighlight {
+  id: number;
+  attachment: string;
+  page: number;
+  rects: PdfRect[];
+  text: string;
+  color: string;
+  note: string;
+  created_at: string;
+}
+
+export interface NewPdfHighlight {
+  attachment: string;
+  page: number;
+  rects: PdfRect[];
+  text: string;
+  color: string;
+  note?: string;
 }

@@ -6,6 +6,7 @@ import { useApp, type PanelTab } from "../store/app";
 import { EmptyState } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { AssistantPanel } from "./AssistantPanel";
+import { UnlinkedMentions } from "./Mentions";
 import { api } from "../lib/api";
 import { linkContext } from "../components/linkContext";
 import { outgoingLinks, titleSet } from "../lib/links";
@@ -128,6 +129,7 @@ function LinksPanel() {
           </span>
         </button>
       ))}
+      <UnlinkedMentions pageId={doc.id} title={doc.title} />
       <h3>{tr("panel.outgoing")} <span className="faint">{unique.length}</span></h3>
       {unique.length === 0 && <p className="faint small">{tr("panel.noOutgoing")}</p>}
       {unique.map((t) => {

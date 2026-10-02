@@ -1,5 +1,5 @@
 // Settings → Editor: spellcheck, autosave, typing aids, code blocks, link previews, the
-// scroll outline and where new pages go.
+// scroll outline, link/tag/duplicate suggestions and where new pages go.
 
 import { Segmented, Select, Switch } from "../../components/ui";
 import { PAGE_ICONS, iconLabel } from "../../components/icons";
@@ -66,6 +66,20 @@ export function EditorSection({ draft, update }: SectionProps) {
         </Row>
         <Row label={t("set.editor.scrollOutline")} description={t("set.editor.scrollOutlineDesc")}>
           <Switch label={t("set.editor.scrollOutline")} checked={e.scroll_outline} onChange={(v) => set({ scroll_outline: v })} />
+        </Row>
+      </Group>
+      <Group title={t("set.editor.suggestions")}>
+        <Row label={t("set.editor.linkSuggestions")} description={t("set.editor.linkSuggestionsDesc")}>
+          <Switch label={t("set.editor.linkSuggestions")} checked={e.link_suggestions} onChange={(v) => set({ link_suggestions: v })} />
+        </Row>
+        <Row label={t("set.editor.mentionHints")} description={t("set.editor.mentionHintsDesc")}>
+          <Switch label={t("set.editor.mentionHints")} checked={e.mention_hints} onChange={(v) => set({ mention_hints: v })} />
+        </Row>
+        <Row label={t("set.editor.tagSuggestions")} description={t("set.editor.tagSuggestionsDesc")}>
+          <Switch label={t("set.editor.tagSuggestions")} checked={e.tag_suggestions} onChange={(v) => set({ tag_suggestions: v })} />
+        </Row>
+        <Row label={t("set.editor.duplicateHints")} description={t("set.editor.duplicateHintsDesc")}>
+          <Switch label={t("set.editor.duplicateHints")} checked={e.duplicate_hints} onChange={(v) => set({ duplicate_hints: v })} />
         </Row>
       </Group>
       <Group title={t("set.editor.newPages")}>

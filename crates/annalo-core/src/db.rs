@@ -41,6 +41,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0018_focus_block_writes.sql"),
     include_str!("../migrations/0019_filing.sql"),
     include_str!("../migrations/0020_canvas.sql"),
+    include_str!("../migrations/0026_link_suggestions.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

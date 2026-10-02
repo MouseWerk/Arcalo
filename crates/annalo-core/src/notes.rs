@@ -222,7 +222,14 @@ pub fn chunks(markdown: &str) -> Vec<String> {
 
 /// Makes the rows `(id, value)` of a derived table equal `wanted`: removes the ones no longer
 /// wanted and inserts the new ones, leaving the rest untouched.
-fn sync_rows(db: &Database, id: i64, wanted: &[String], select: &str, delete: &str, insert: &str) -> Result<()> {
+pub(crate) fn sync_rows(
+    db: &Database,
+    id: i64,
+    wanted: &[String],
+    select: &str,
+    delete: &str,
+    insert: &str,
+) -> Result<()> {
     let conn = db.conn();
     let have: std::collections::HashSet<String> =
         conn.prepare_cached(select)?.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
@@ -347,6 +354,8 @@ impl Database {
             "DELETE FROM page_tags WHERE page_id = ?1 AND tag = ?2",
             "INSERT OR IGNORE INTO page_tags (page_id, tag) VALUES (?1, ?2)",
         )?;
+        self.reindex_aliases(id, if canvas { "" } else { content })?;
+        self.reindex_minhash(id, if canvas { "" } else { content })?;
         self.reindex_tasks(id, if canvas { "" } else { content })
     }
 
