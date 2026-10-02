@@ -34,6 +34,7 @@ import { withPacResults } from "./views/settings/NetworkSection";
 import { warnDestination } from "./views/settings/BackupDestinations";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
+import { PlanPickerHost } from "./components/PlanPicker";
 import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
 import { BookmarkImportHost } from "./components/BookmarkImport";
@@ -352,6 +353,7 @@ export function App() {
       <Toasts />
       <VoiceBar />
       <FocusDialogHost />
+      <PlanPickerHost />
       <PresentationHost />
       <MailImportHost />
       <BookmarkImportHost />

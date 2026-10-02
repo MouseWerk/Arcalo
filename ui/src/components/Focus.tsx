@@ -10,15 +10,15 @@ import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
 import { Button, Dialog, Field, Input, Segmented, Switch, useMenu } from "./ui";
 import { zeitRefItems } from "../editor/zeit-source";
 import type { ZeitSuggestItem } from "../editor/extensions";
-import { BREAKS, LENGTHS, countdown, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
+import { BREAKS, LENGTHS, MAX_MINUTES, countdown, lastChoice, parseMinutes, phaseProgress, remainingMs, saveChoice, sessionSummary, type FocusChoice } from "../lib/focus";
 import type { FocusDone } from "../lib/types";
 import { t as tr, useT } from "../lib/i18n";
 import { decimal } from "../lib/format";
 
 const s = useApp.getState;
 
-/** Opens the start dialog, optionally with a Vorgang and goal. */
-export function openFocusDialog(preset: { reference?: string; goal?: string } = {}) {
+/** Opens the start dialog, optionally with a Vorgang and goal (and the length and id of the focus block it starts from). */
+export function openFocusDialog(preset: { reference?: string; goal?: string; minutes?: number; blockId?: number } = {}) {
   s().set({ focusDialog: preset });
 }
 
@@ -55,12 +55,12 @@ function showDone(done: FocusDone) {
   s().bumpEntries();
 }
 
-export async function startFocus(c: FocusChoice) {
+export async function startFocus(c: FocusChoice, blockId?: number) {
   try {
     saveChoice(c);
     // Time tracking off: focus sessions without a Vorgang (nothing is booked).
     const reference = timeTrackingEnabled() ? c.reference.trim() : "";
-    const st = await api.focusStart({ reference, minutes: c.minutes, break_minutes: c.breakMinutes, goal: c.goal.trim() });
+    const st = await api.focusStart({ reference, minutes: c.minutes, break_minutes: c.breakMinutes, goal: c.goal.trim(), block_id: blockId ?? null });
     s().set({ focus: st, heldToasts: [], focusDialog: null });
     if (c.focusMode && !s().focusMode) {
       focusModeBySession = true;
@@ -304,16 +304,18 @@ export function FocusDialogHost() {
   return <FocusDialog preset={preset} />;
 }
 
-function FocusDialog({ preset }: { preset: { reference?: string; goal?: string } }) {
+function FocusDialog({ preset }: { preset: { reference?: string; goal?: string; minutes?: number; blockId?: number } }) {
   useT();
   const last = useMemo(lastChoice, []);
   const timer = useApp((st) => st.timer);
   const timeOn = useTimeTracking();
   const [reference, setReference] = useState(preset.reference ?? last.reference);
   const [goal, setGoal] = useState(preset.goal ?? (preset.reference ? "" : last.goal));
-  const preset0 = LENGTHS.includes(last.minutes as (typeof LENGTHS)[number]) ? String(last.minutes) : "custom";
+  // A focus block gives its own length.
+  const wanted = preset.minutes ? Math.min(MAX_MINUTES, preset.minutes) : last.minutes;
+  const preset0 = LENGTHS.includes(wanted as (typeof LENGTHS)[number]) ? String(wanted) : "custom";
   const [length, setLength] = useState<string>(preset0);
-  const [custom, setCustom] = useState(preset0 === "custom" ? decimal(last.minutes) : "35");
+  const [custom, setCustom] = useState(preset0 === "custom" ? decimal(wanted) : "35");
   const [pause, setPause] = useState<string>(BREAKS.includes(last.breakMinutes as (typeof BREAKS)[number]) ? String(last.breakMinutes) : "5");
   const [focusMode, setFocusMode] = useState(last.focusMode);
   const [busy, setBusy] = useState(false);
@@ -323,7 +325,7 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string }
   const start = async () => {
     if (minutes == null || busy) return;
     setBusy(true);
-    await startFocus({ reference, minutes, breakMinutes: Number(pause), goal, focusMode });
+    await startFocus({ reference, minutes, breakMinutes: Number(pause), goal, focusMode }, preset.blockId);
     setBusy(false);
   };
   return (

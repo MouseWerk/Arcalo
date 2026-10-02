@@ -155,6 +155,15 @@ export const api = {
 
   // Woche vorschlagen
   /** The timesheet draft for the week starting at `weekStart` (YYYY-MM-DD, local). */
+  // focus blocks (time blocking)
+  blocks: (from: string, to: string) => call<T.FocusBlock[]>("blocks_list", { from, to }),
+  blockCreate: (block: T.NewBlock) => call<T.FocusBlock>("block_create", { block }),
+  blockUpdate: (id: number, patch: T.BlockPatch) => call<T.FocusBlock>("block_update", { id, patch }),
+  blockDelete: (id: number) => call<void>("block_delete", { id }),
+  blockTaskDone: (id: number) => call<void>("block_task_done", { id }),
+  /** Free starts on a day for a block of `minutes`. */
+  blockFreeSlots: (date: string, minutes: number) => call<string[]>("block_free_slots", { date, minutes }),
+  blocksOutlookRetry: () => call<void>("blocks_outlook_retry"),
   weekProposal: (weekStart: string, restOfToday = false) => call<T.WeekProposal>("week_proposal", { weekStart, restOfToday }),
   /** Books the accepted proposals as drafts in one go and links their sources. */
   weekProposalApply: (items: T.AcceptedProposal[]) => call<T.AppliedProposals>("week_proposal_apply", { items }),
@@ -303,7 +312,7 @@ export const api = {
   /** The current phase; completes a session that ran out meanwhile. */
   focusState: () => call<T.FocusState | null>("focus_state"),
   /** `minutes` may be fractional (tests use 0.05). */
-  focusStart: (start: { reference: string; minutes: number; break_minutes: number; goal: string }) => call<T.FocusState>("focus_start", { start }),
+  focusStart: (start: { reference: string; minutes: number; break_minutes: number; goal: string; block_id?: number | null }) => call<T.FocusState>("focus_start", { start }),
   focusFinish: () => call<T.FocusDone>("focus_finish"),
   focusAbort: (book: boolean) => call<T.FocusDone>("focus_abort", { book }),
   focusEndBreak: () => call<void>("focus_end_break"),

@@ -90,6 +90,7 @@ pub mod search;
 pub mod settings;
 pub mod tasks;
 pub mod templates;
+pub mod timeblocks;
 pub mod tracking;
 pub mod trash;
 pub mod update;

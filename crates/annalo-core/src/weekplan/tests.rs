@@ -638,3 +638,63 @@ fn open_days_are_the_earlier_workdays_below_the_target() {
     assert_eq!(days, [(21, 150), (23, 480), (24, 480)]);
     assert_eq!(week_key(NaiveDate::from_ymd_opt(2026, 9, 25).unwrap()), "2026-W39");
 }
+
+#[test]
+fn unbooked_past_blocks_are_proposed_once_with_their_links_wbs() {
+    use crate::timeblocks::{BlockLink, NewBlock};
+    let Fx { db, np, np2 } = setup();
+    db.issue_wbs_set("issue", "ERP-7", "NP-8801/1020", false).unwrap();
+    let tasks = page(&db, None, "Schulung", "---\nvorgang: NP-8802/2010\n---\n- [ ] Folien bauen\n");
+    let mk = |title: &str, start: DateTime<Utc>, minutes: i64, link: BlockLink| {
+        db.block_create(
+            &NewBlock {
+                title: title.into(),
+                start: Some(start),
+                end: Some(start + Duration::minutes(minutes)),
+                link,
+                ..Default::default()
+            },
+            t(20, 0, 0),
+            false,
+        )
+        .unwrap()
+    };
+    let issue = mk("Schnittstelle", t(22, 9, 0), 60, BlockLink::Issue { key: "ERP-7".into() });
+    let task = mk("", t(23, 13, 0), 90, BlockLink::Task { page_id: tasks, ordinal: 0, text: "Folien bauen".into() });
+    let focused = mk("Mit Fokus", t(24, 9, 0), 60, BlockLink::None);
+    mk("Zukunft", t(25, 15, 0), 60, BlockLink::Issue { key: "ERP-7".into() });
+    // A focus session started from a block: the session is the signal, not the block.
+    let s = focus(&db, Some(np), Some("1010"), "Mit Fokus", t(24, 9, 0), 50);
+    db.conn().execute("UPDATE focus_sessions SET block_id = ?2 WHERE id = ?1", params![s, focused.id]).unwrap();
+
+    let w = week(&db, t(25, 12, 0));
+    let blocks: Vec<&Proposal> = w.proposals.iter().filter(|p| p.kind == SourceKind::Block).collect();
+    assert_eq!(blocks.len(), 2, "{:?}", spans(&w.proposals));
+    let (a, b) = (blocks[0], blocks[1]);
+    assert_eq!((a.text.as_str(), a.minutes, a.confidence), ("Schnittstelle", 60, Confidence::High));
+    assert_eq!(a.wbs.as_ref().unwrap().reference, "NP-8801/1020");
+    assert_eq!((b.text.as_str(), b.minutes, b.confidence), ("Folien bauen", 90, Confidence::High));
+    assert_eq!(b.wbs.as_ref().unwrap().netzplan_id, np2);
+    assert!(w.proposals.iter().any(|p| p.kind == SourceKind::Focus && p.text == "Mit Fokus"));
+    assert!(w.proposals.iter().all(|p| p.text != "Zukunft"), "future blocks are not proposed");
+
+    // Taken over: the block is booked and never proposed again.
+    let acc = Accepted {
+        start: a.start,
+        minutes: a.minutes,
+        text: a.text.clone(),
+        netzplan_id: np,
+        vorgang_nr: Some("1020".into()),
+        leistungsart: None,
+        sources: a.sources.clone(),
+        wbs_changed: false,
+        original_text: a.text.clone(),
+    };
+    let done = apply(&db, &[acc], t(25, 12, 0), &Thresholds::default()).unwrap();
+    assert_eq!(db.block(issue.id).unwrap().entry_id, Some(done.entry_ids[0]));
+    let w = week(&db, t(25, 12, 0));
+    let left: Vec<String> =
+        w.proposals.iter().filter(|p| p.kind == SourceKind::Block).map(|p| p.text.clone()).collect();
+    assert_eq!(left, ["Folien bauen"]);
+    assert_eq!(db.block(task.id).unwrap().entry_id, None);
+}

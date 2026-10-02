@@ -115,7 +115,7 @@ interface State {
   /** Toasts held back during a focus session, shown as a summary afterwards. */
   heldToasts: Omit<Toast, "id">[];
   /** The focus dialog is open (with a preset Vorgang and goal). */
-  focusDialog: { reference?: string; goal?: string } | null;
+  focusDialog: { reference?: string; goal?: string; minutes?: number; blockId?: number } | null;
   /** The page shown as a presentation. */
   presenting: { pageId: number } | null;
   /** Pages with an undecided Git sync conflict („Konflikt“). */

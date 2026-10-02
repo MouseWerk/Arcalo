@@ -55,6 +55,9 @@ pub struct FocusSession {
     pub booked_minutes: i64,
     pub entry_id: Option<i64>,
     pub break_until: Option<DateTime<Utc>>,
+    /// The focus block it was started from.
+    #[serde(default)]
+    pub block_id: Option<i64>,
 }
 
 impl FocusSession {
@@ -109,7 +112,7 @@ pub fn hm(minutes: i64) -> String {
 }
 
 const COLS: &str = "id, netzplan_id, vorgang_nr, reference, goal, started_at, planned_minutes, break_minutes, ended_at,
-     status, worked_minutes, booked_minutes, entry_id, break_until";
+     status, worked_minutes, booked_minutes, entry_id, break_until, block_id";
 
 fn map(r: &Row) -> rusqlite::Result<FocusSession> {
     let opt_ts = |i: usize| -> rusqlite::Result<Option<DateTime<Utc>>> {
@@ -130,6 +133,7 @@ fn map(r: &Row) -> rusqlite::Result<FocusSession> {
         booked_minutes: r.get(11)?,
         entry_id: r.get(12)?,
         break_until: opt_ts(13)?,
+        block_id: r.get(14)?,
     })
 }
 
@@ -149,7 +153,7 @@ pub fn running(db: &Database) -> Result<Option<FocusSession>> {
 }
 
 /// Netzplan and canonical Vorgang of `NP-8801/1020` (or a WBS element, like `/zeit`).
-fn resolve(db: &Database, reference: &str) -> Result<(i64, Option<String>, String)> {
+pub(crate) fn resolve(db: &Database, reference: &str) -> Result<(i64, Option<String>, String)> {
     let (np_ref, v_ref) = match reference.split_once('/') {
         Some((n, v)) => (n.trim(), Some(v.trim()).filter(|v| !v.is_empty())),
         None => (reference.trim(), None),
@@ -180,6 +184,8 @@ pub struct FocusStart {
     pub minutes: f64,
     pub break_minutes: i64,
     pub goal: String,
+    /// The focus block the session was started from ([`crate::timeblocks`]).
+    pub block_id: Option<i64>,
 }
 
 /// Starts a session. Refused while another one runs.
@@ -206,9 +212,19 @@ pub fn start(db: &Database, s: &FocusStart, now: DateTime<Utc>) -> Result<FocusS
         // A new session ends the break of the previous one.
         db.conn().execute("UPDATE focus_sessions SET break_until = ?1 WHERE break_until > ?1", [ts(now)])?;
         db.conn().execute(
-            "INSERT INTO focus_sessions (netzplan_id, vorgang_nr, reference, goal, started_at, planned_minutes, break_minutes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![np, vorgang, label, s.goal.trim(), ts(now), s.minutes, s.break_minutes.clamp(0, MAX_BREAK)],
+            "INSERT INTO focus_sessions (netzplan_id, vorgang_nr, reference, goal, started_at, planned_minutes, break_minutes,
+               block_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, (SELECT id FROM focus_blocks WHERE id = ?8))",
+            params![
+                np,
+                vorgang,
+                label,
+                s.goal.trim(),
+                ts(now),
+                s.minutes,
+                s.break_minutes.clamp(0, MAX_BREAK),
+                s.block_id
+            ],
         )?;
         session(db, db.conn().last_insert_rowid())
     })
@@ -508,7 +524,8 @@ mod tests {
     }
 
     fn begin(db: &Database, reference: &str, minutes: f64, goal: &str, now: DateTime<Utc>) -> FocusSession {
-        let s = FocusStart { reference: reference.into(), minutes, break_minutes: 5, goal: goal.into() };
+        let s =
+            FocusStart { reference: reference.into(), minutes, break_minutes: 5, goal: goal.into(), block_id: None };
         start(db, &s, now).unwrap()
     }
 

@@ -624,3 +624,6 @@
 .dw-health.h-warn { background: var(--warning); }
 .dw-health.h-error { background: var(--danger); }
 .dw-health.h-off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+
+/* ---- focus blocks: planned time behind the booked bar of the week widget ---- */
+.dw-bar-plan { position: absolute; left: 0; right: 0; bottom: 0; border: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent); border-bottom: 0; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--accent) 8%, transparent); }

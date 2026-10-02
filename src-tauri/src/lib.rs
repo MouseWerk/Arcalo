@@ -26,6 +26,7 @@ mod rebrand;
 mod recovery;
 mod secrets;
 mod syncmerge;
+mod timeblocks;
 mod updates;
 mod voice;
 mod weekplan;
@@ -4065,6 +4066,7 @@ pub fn run() {
             backupdest::init(app.handle());
             spawn_backup_scheduler(app.handle().clone());
             calsync::spawn_scheduler(app.handle().clone());
+            timeblocks::spawn_scheduler(app.handle().clone());
             jira::spawn_scheduler(app.handle().clone());
             mail::clean_temp(app.handle());
             Ok(())
@@ -4319,6 +4321,13 @@ pub fn run() {
             calsync::calendar_link_entry,
             calsync::calendar_wbs_hint,
             calsync::calendar_meeting_note,
+            timeblocks::blocks_list,
+            timeblocks::block_create,
+            timeblocks::block_update,
+            timeblocks::block_delete,
+            timeblocks::block_task_done,
+            timeblocks::block_free_slots,
+            timeblocks::blocks_outlook_retry,
             weekplan::week_proposal,
             weekplan::week_proposal_apply,
             mail::mail_status,

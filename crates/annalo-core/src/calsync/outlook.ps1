@@ -12,6 +12,10 @@
 #   every store (own mailbox, further mailboxes and shared mailboxes in the profile, PST files),
 #   the calendars in the navigation pane (shared calendars of colleagues, rooms, groups) and the
 #   default calendars of the people listed in -Recipients (a JSON file of names or addresses).
+# -Mode write: the appointments of Arcalo's focus blocks in the default calendar, from -Ops (a
+#   JSON file: [{id, op: upsert|delete, entryId, subject, start, end, category}], local times):
+#   busy, no reminder, the category; one result per write ({id, ok, entryId, globalId}). Only an
+#   Outlook that already runs is used, it is never started: {"ok":false,"error":"not_running"}.
 #
 # Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 # Private appointments keep only their time unless -Private is given; the text of an
@@ -27,7 +31,8 @@ param(
     [switch]$Links,
     [string]$Mode = 'read',
     [string]$Calendars = '',
-    [string]$Recipients = ''
+    [string]$Recipients = '',
+    [string]$Ops = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +65,70 @@ function Read-JsonFile($path) {
         foreach ($x in $v) { [void]$list.Add($x) }
     }
     return ,$list
+}
+
+# ---------------------------------------------------------------- write
+
+if ($Mode -eq 'write') {
+    if (-not (Get-Process -Name 'OUTLOOK' -ErrorAction SilentlyContinue)) {
+        if (Get-Process -Name 'olk' -ErrorAction SilentlyContinue) { Fail 'new_outlook' '' }
+        Fail 'not_running' ''
+    }
+    try {
+        $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+    } catch {
+        Fail 'not_running' $_.Exception.Message
+    }
+    try {
+        $ns = $outlook.GetNamespace('MAPI')
+        $calendar = $ns.GetDefaultFolder(9)
+    } catch {
+        Fail 'folder' $_.Exception.Message
+    }
+    $categoryDone = $false
+    $results = New-Object System.Collections.ArrayList
+    foreach ($o in (Read-JsonFile $Ops)) {
+        $res = [ordered]@{ id = [string]$o.id; ok = $true; entryId = ''; globalId = '' }
+        try {
+            $item = $null
+            if ($o.entryId) {
+                try { $item = $ns.GetItemFromID([string]$o.entryId) } catch { $item = $null }
+            }
+            if ($o.op -eq 'delete') {
+                if ($item) { $item.Delete() }
+            } else {
+                # Gone from Outlook meanwhile (deleted there): written again.
+                if (-not $item) { $item = $calendar.Items.Add(1) }
+                $item.Subject = [string]$o.subject
+                $item.Start = [datetime]::ParseExact([string]$o.start, 'yyyy-MM-ddTHH:mm:ss', $inv)
+                $item.End = [datetime]::ParseExact([string]$o.end, 'yyyy-MM-ddTHH:mm:ss', $inv)
+                $item.BusyStatus = 2
+                $item.ReminderSet = $false
+                if ($o.category) {
+                    # Into the master category list once, so Outlook shows it with a color.
+                    if (-not $categoryDone) {
+                        $categoryDone = $true
+                        try {
+                            $known = $false
+                            foreach ($c in $ns.Categories) { if ($c.Name -eq [string]$o.category) { $known = $true } }
+                            if (-not $known) { [void]$ns.Categories.Add([string]$o.category) }
+                        } catch { }
+                    }
+                    $item.Categories = [string]$o.category
+                }
+                $item.Save()
+                $res.entryId = [string]$item.EntryID
+                try { $res.globalId = [string]$item.GlobalAppointmentID } catch { }
+            }
+        } catch {
+            $res.ok = $false
+            $res.error = 'save'
+            $res.message = [string]$_.Exception.Message
+        }
+        [void]$results.Add($res)
+    }
+    Write-Json ([ordered]@{ ok = $true; results = @($results) })
+    exit 0
 }
 
 if ($Mode -ne 'discover') {

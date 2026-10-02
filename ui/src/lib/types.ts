@@ -935,6 +935,8 @@ export interface FocusSession {
   booked_minutes: number;
   entry_id: number | null;
   break_until: string | null;
+  /** The focus block it was started from. */
+  block_id?: number | null;
 }
 export interface FocusOutcome {
   session: FocusSession;
@@ -1179,6 +1181,10 @@ export interface CalendarSettings {
   include_body: boolean;
   /** Keep a Teams/Zoom/Webex link found in the text. */
   meeting_links: boolean;
+  /** Write focus blocks to the default Outlook calendar. */
+  blocks_outlook?: boolean;
+  /** Length of a block dropped into the Kalender (minutes). */
+  block_minutes?: number;
 }
 export type Busy = "free" | "tentative" | "busy" | "oof" | "elsewhere";
 export interface CalendarEvent {
@@ -1253,7 +1259,7 @@ export interface WbsHint {
 }
 
 // ---- Woche vorschlagen
-export type ProposalSourceKind = "calendar" | "focus" | "page";
+export type ProposalSourceKind = "calendar" | "focus" | "block" | "page";
 export type ProposalConfidence = "none" | "low" | "medium" | "high";
 export interface ProposalSource {
   kind: ProposalSourceKind;
@@ -1469,4 +1475,54 @@ export interface StoredChatRecord extends ChatRecord {
 export interface ChatConversationDoc {
   conversation: ChatConversation;
   messages: StoredChatRecord[];
+}
+
+// ---- focus blocks (time blocking)
+
+/** What a focus block is for. */
+export type BlockLink =
+  | { kind: "none" }
+  | { kind: "task"; page_id: number; ordinal: number; text: string }
+  | { kind: "issue"; key: string }
+  | { kind: "page"; page_id: number };
+
+export interface FocusBlock {
+  id: number;
+  title: string;
+  start: string;
+  end: string;
+  link: BlockLink;
+  netzplan_id: number | null;
+  vorgang_nr: string | null;
+  /** Set on the block (`NP-8801/1020`), "" without one. */
+  reference: string;
+  /** The block's reference, else the issue's mapped WBS or the page's `vorgang:`. */
+  suggested_reference: string | null;
+  page_title: string | null;
+  task_done: boolean | null;
+  issue_summary: string | null;
+  issue_status: string | null;
+  issue_url: string | null;
+  outlook: "none" | "pending" | "written";
+  outlook_error: string | null;
+  outlook_entry_id: string | null;
+  entry_id: number | null;
+  focus_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewBlock {
+  title?: string;
+  start: string;
+  end: string;
+  link?: BlockLink;
+  reference?: string;
+}
+
+export interface BlockPatch {
+  title?: string;
+  start?: string;
+  end?: string;
+  reference?: string;
 }

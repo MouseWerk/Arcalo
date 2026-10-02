@@ -561,6 +561,8 @@ async fn sync_source(app: &AppHandle, id: &str) -> Result<usize> {
 /// Reads the Outlook calendars `ids` in one run of the script; each gets its own outcome (a
 /// calendar that cannot be read does not fail the others).
 async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<usize>)> {
+    // Focus blocks waiting for Outlook first: their appointments then come back as the blocks.
+    let _ = crate::timeblocks::flush(app, false).await;
     let state = app.state::<AppState>();
     let settings = state.settings().calendar;
     let mut out = vec![];

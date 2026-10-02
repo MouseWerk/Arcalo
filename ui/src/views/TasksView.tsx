@@ -2,11 +2,12 @@
 // checkbox in the page's Markdown; open editors of that page reload via data://tasks.
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronUp, ChevronsUp, ListChecks, Mail } from "lucide-react";
+import { CalendarClock, CalendarPlus, ChevronUp, ChevronsUp, ListChecks, Mail } from "lucide-react";
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
 import { useApp } from "../store/app";
-import { Badge, EmptyState, Segmented, Select, Spinner } from "../components/ui";
+import { Badge, EmptyState, IconButton, Segmented, Select, Spinner } from "../components/ui";
+import { openPlanPicker, setPlanData, type PlanItem } from "../lib/blocks";
 import { PageIcon } from "../components/icons";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { TASK_GROUPS, taskGroup, taskSegments } from "../lib/tasks";
@@ -241,6 +242,8 @@ export function TasksView() {
   );
 }
 
+const planItem = (t: Task): PlanItem => ({ kind: "task", page_id: t.page_id, ordinal: t.ordinal, text: t.text, page_title: t.page_title });
+
 interface TaskActions {
   toggle: (t: Task) => void;
   openLink: (target: string, newTab: boolean) => void;
@@ -251,7 +254,14 @@ const TaskRow = memo(function TaskRow({ task: t, group, busy, year, act }: { tas
   const s = useApp.getState;
   const overdue = !t.done && group === "overdue";
   return (
-    <li className={`task-row ${t.done ? "done" : ""}`} data-page={t.page_id} data-ordinal={t.ordinal}>
+    <li
+      className={`task-row ${t.done ? "done" : ""}`}
+      data-page={t.page_id}
+      data-ordinal={t.ordinal}
+      // Drag into the Kalender to plan it (open tasks only).
+      draggable={!t.done}
+      onDragStart={(e) => setPlanData(e.dataTransfer, planItem(t))}
+    >
       <input
         type="checkbox"
         className="task-check"
@@ -289,6 +299,7 @@ const TaskRow = memo(function TaskRow({ task: t, group, busy, year, act }: { tas
               <CalendarClock size={12} /> {dueLabel(t.due, year)}
             </Badge>
           )}
+          {!t.done && <IconButton icon={CalendarPlus} size="sm" className="task-plan" label={tr("blocks.plan")} onClick={() => openPlanPicker(planItem(t))} />}
           <button type="button" className="task-page" onClick={(e) => s().openPage(t.page_id, { newTab: e.ctrlKey || e.metaKey })} title={tr("tasks.openPage", { title: t.page_title })}>
             <PageIcon name={t.page_icon} size={13} />
             <span className="task-page-label">{t.page_title}</span>

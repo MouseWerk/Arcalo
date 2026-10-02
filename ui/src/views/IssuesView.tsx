@@ -3,7 +3,7 @@
 // searchable. A row opens the issue: description, last comments, the pages that name it, its WBS.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff } from "lucide-react";
+import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff } from "lucide-react";
 import { on } from "../lib/api";
 import { useApp } from "../store/app";
 
@@ -17,6 +17,7 @@ import { addIssueTask, copyIssueKey, openIssueInBrowser, openIssueNote } from ".
 import { openSettingsSection } from "../lib/calnav";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { useTimeTracking } from "../lib/timetracking";
+import { openPlanPicker, setPlanData } from "../lib/blocks";
 
 const PREF = "annalo.issues.view";
 interface ViewPref {
@@ -48,6 +49,7 @@ export function issueMenu(i: Issue): MenuEntry[] {
     { label: t("jira.copyKey"), icon: Copy, onSelect: () => void copyIssueKey(i.key) },
     "separator",
     { label: t("jira.addTask"), icon: ListPlus, onSelect: () => void addIssueTask(i.key) },
+    { label: t("blocks.plan"), icon: CalendarPlus, onSelect: () => openPlanPicker({ kind: "issue", key: i.key, summary: i.summary }) },
   ];
 }
 
@@ -213,7 +215,7 @@ export function IssuesView() {
               )}
               <ul className="issues-list">
                 {g.issues.map((i) => (
-                  <li key={`${i.site}:${i.key}`} className={`issue-row ${open === i.key ? "open" : ""} ${i.status_category === "done" ? "done" : ""}`} data-issue-row={i.key}>
+                  <li key={`${i.site}:${i.key}`} className={`issue-row ${open === i.key ? "open" : ""} ${i.status_category === "done" ? "done" : ""}`} data-issue-row={i.key} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })}>
                     <div
                       className="issue-row-main"
                       role="button"
