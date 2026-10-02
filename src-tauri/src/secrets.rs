@@ -370,6 +370,8 @@ pub struct Migration {
 
 /// The account of a field of the file (the reverse of the constructors above; ids never
 /// contain `_`).
+// The file-to-keyring move only runs on Linux (the tests run it everywhere).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn account_of_field(field: &str) -> Option<String> {
     Some(match field {
         "litellm_api_key" => "litellm-api-key".into(),
@@ -395,6 +397,7 @@ fn account_of_field(field: &str) -> Option<String> {
 
 /// Moves the secrets of `file` into `store`: each one is written, read back and compared, and
 /// only then removed from the file; the file is deleted once empty. Repeating it is harmless.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn migrate(file: &SecretFile, store: &dyn Backend, data_dir: &Path, portable: bool) -> Migration {
     let mut out = Migration::default();
     if !file.path.exists() {
