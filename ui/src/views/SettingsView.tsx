@@ -139,6 +139,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   };
   // A menu longer than the window scrolls; its edges fade where more items are.
   const [navEdges, setNavEdges] = useState("");
+  // The list appears only once the settings are loaded: the watchers start when it mounts.
+  const [navList, setNavList] = useState<HTMLElement | null>(null);
   const measureNav = () => {
     const l = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
     if (!l) return;
@@ -146,13 +148,15 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     setNavEdges(edges);
   };
   useEffect(() => {
-    const l = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
+    const l = navList;
     if (!l) return;
     measureNav();
-    // After the layout of a resize or a group opening (the media queries change the item
-    // heights, so the list's own size alone does not tell).
+    // On a resize or a group opening (the media queries change the item heights, so the list's
+    // own size alone does not tell): now (reading the size lays out) and once more after the
+    // next frame.
     let frame = 0;
     const later = () => {
+      measureNav();
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(measureNav);
     };
@@ -169,7 +173,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       window.removeEventListener("resize", later);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!view]);
+  }, [navList]);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(0);
@@ -523,7 +527,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
         {search}
-        <div className={`settings-nav-list ${navEdges}`} onScroll={measureNav}>
+        <div className={`settings-nav-list ${navEdges}`} ref={setNavList} onScroll={measureNav}>
           {NAV.map((g) => {
             const shut = collapsed.has(g.id) && !(!searching && g.items.some((x) => x.id === section));
             return (

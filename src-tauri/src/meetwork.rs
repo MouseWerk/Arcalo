@@ -93,7 +93,7 @@ async fn ask(
 
 // ------------------------------------------------------------------ prep
 
-/// The user's own names: the Jira accounts (left out of the attendees' notes).
+/// The Jira accounts of the user (part of [`own_identities`]).
 fn me(state: &AppState) -> Vec<String> {
     state
         .reader()
@@ -122,7 +122,7 @@ pub struct PrepOutcome {
 async fn prepare(app: &AppHandle, state: &AppState, request_id: &str, key: &str, ai: bool) -> Result<PrepOutcome> {
     // One reader at a time: the reader is a lock.
     let e = state.reader().calendar_event(key)?;
-    let (past, mine) = (history(state, &e)?, me(state));
+    let (past, mine) = (history(state, &e)?, own_identities(state));
     let data = prep::prep_data(&state.reader(), &e, &past, &state.settings(), &mine)?;
     let event = e;
     let outcome = if ai {
@@ -360,7 +360,8 @@ pub fn followup_build(state: State<AppState>, page_id: i64) -> Result<FollowUpVi
     Ok(followup::view(build_followup(&state, page_id)?, mail_outlook::available()))
 }
 
-/// The user's own addresses and names, left out of a follow-up mail's recipients: Settings →
+/// The user's own addresses and names, left out of a follow-up mail's recipients and of the
+/// attendees of a meeting preparation: Settings →
 /// E-Mail „Eigene Adressen“, the Jira accounts and the Git sync's author (Outlook's signed-in
 /// account is left out by the draft itself).
 fn own_identities(state: &AppState) -> Vec<String> {
