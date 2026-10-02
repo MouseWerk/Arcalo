@@ -74,6 +74,7 @@ pub mod feed;
 pub mod filing;
 pub mod focus;
 pub mod gitsync;
+pub mod graph;
 pub mod i18n;
 pub mod issues;
 pub mod linktitle;

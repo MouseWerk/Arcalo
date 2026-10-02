@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
 } from "lucide-react";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
@@ -250,6 +250,8 @@ export function CommandPalette() {
       { id: "tasks", title: t("cmd.tasks"), subtitle: t("cmd.tasksSub"), icon: ic(ListChecks), hint: hint("tasks"), run: () => s().openTab({ kind: "tasks" }) },
       { id: "projects", title: t("cmd.projects"), icon: ic(Briefcase), run: () => s().openTab({ kind: "projects" }) },
       ...(s().settings?.settings.jira?.sites.length ? [{ id: "issues", title: t("cmd.issues"), subtitle: t("cmd.issuesSub"), icon: ic(Ticket), run: () => s().openTab({ kind: "issues" }) }] : []),
+      { id: "graph", title: t("cmd.graph"), subtitle: t("cmd.graphSub"), icon: ic(Waypoints), run: () => s().openTab({ kind: "graph" }) },
+      { id: "local-graph", title: t("cmd.localGraph"), subtitle: t("cmd.localGraphSub"), icon: ic(Network), run: () => s().set({ panelOpen: true, panelTab: "graph" }) },
       { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },
       { id: "briefing", title: t("cmd.briefing"), subtitle: t("cmd.briefingSub"), icon: ic(Sun), run: () => openBriefing() },
       { id: "day-review", title: t("cmd.review"), subtitle: t("cmd.reviewSub"), icon: ic(Sunset), run: () => openDayReview() },

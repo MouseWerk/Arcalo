@@ -1,7 +1,7 @@
 // Right panel: assistant, outline and links of the active page.
 
-import { useEffect, useState } from "react";
-import { FileText, Image as ImageIcon, ListTree, Link2, Paperclip, PenTool, Sparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { FileText, Image as ImageIcon, ListTree, Link2, Network, Paperclip, PenTool, Sparkles } from "lucide-react";
 import { useApp, type PanelTab } from "../store/app";
 import { EmptyState } from "../components/ui";
 import { PageIcon } from "../components/icons";
@@ -13,6 +13,9 @@ import { baseName, fileExtension, isImageName, isPdfName } from "../editor/fileE
 import { openFile, openPdfViewer } from "../editor/files";
 import { t as tr, useT } from "../lib/i18n";
 
+// The local graph brings the canvas and the layout along: loaded with its tab.
+const LocalGraph = lazy(() => import("./LocalGraph").then((m) => ({ default: m.LocalGraph })));
+
 export function RightPanel() {
   useT();
   const tab = useApp((s) => s.panelTab);
@@ -21,6 +24,7 @@ export function RightPanel() {
     { id: "assistant", label: tr("panel.assistant"), icon: Sparkles },
     { id: "outline", label: tr("panel.outline"), icon: ListTree },
     { id: "links", label: tr("panel.links"), icon: Link2 },
+    { id: "graph", label: tr("panel.graph"), icon: Network },
   ];
   return (
     <aside className="panel" aria-label={tr("panel.label")}>
@@ -38,6 +42,11 @@ export function RightPanel() {
         </div>
         {tab === "outline" && <OutlinePanel />}
         {tab === "links" && <LinksPanel />}
+        {tab === "graph" && (
+          <Suspense fallback={<div className="view-loading" aria-busy="true" />}>
+            <LocalGraph />
+          </Suspense>
+        )}
       </div>
     </aside>
   );

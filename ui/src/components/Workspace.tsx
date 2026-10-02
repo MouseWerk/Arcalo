@@ -27,6 +27,7 @@ const AttachmentsView = lazyView(() => import("../views/AttachmentsView").then((
 const CalendarView = lazyView(() => import("../views/CalendarView").then((m) => m.CalendarView));
 const DayReviewView = lazyView(() => import("../views/DayReviewView").then((m) => m.DayReviewView));
 const IssuesView = lazyView(() => import("../views/IssuesView").then((m) => m.IssuesView));
+const GraphView = lazyView(() => import("../views/GraphView").then((m) => m.GraphView));
 const BriefingView = lazyView(() => import("../views/BriefingView").then((m) => m.BriefingView));
 const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, BriefingView];
 
@@ -224,6 +225,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "review" && <DayReviewView />}
             {tab.kind === "briefing" && <BriefingView />}
             {tab.kind === "issues" && <IssuesView />}
+            {tab.kind === "graph" && <GraphView />}
             {tab.kind === "conflict" && <ConflictView pageId={tab.pageId!} />}
             </Suspense>
           </div>

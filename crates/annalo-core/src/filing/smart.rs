@@ -58,7 +58,7 @@ const LIVE: &str = "p.deleted_at IS NULL AND p.system_folder IS NULL";
 const LEAF: &str = "NOT EXISTS (SELECT 1 FROM pages c WHERE c.parent_id = p.id AND c.deleted_at IS NULL)";
 
 /// Pages with a `jira:` property and their project key.
-const JIRA_CTE: &str = "WITH j AS (
+pub(crate) const JIRA_CTE: &str = "WITH j AS (
     SELECT p.id, ltrim(substr(p.content, instr(p.content, char(10) || 'jira:') + 6, 40)) AS k
       FROM pages p WHERE p.deleted_at IS NULL AND p.content LIKE '---%' AND instr(p.content, char(10) || 'jira:') > 0
 ), jp AS (
@@ -67,7 +67,7 @@ const JIRA_CTE: &str = "WITH j AS (
 
 /// Pages with a Netzplan: from `vorgang: NP/…` or `netzplan: NP` in the frontmatter and from
 /// their bookings.
-const NETZPLAN_CTE: &str = "WITH v AS (
+pub(crate) const NETZPLAN_CTE: &str = "WITH v AS (
     SELECT p.id, ltrim(substr(p.content, instr(p.content, char(10) || 'vorgang:') + 9, 60)) AS t
       FROM pages p WHERE p.deleted_at IS NULL AND p.content LIKE '---%' AND instr(p.content, char(10) || 'vorgang:') > 0
 ), n AS (

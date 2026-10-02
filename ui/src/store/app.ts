@@ -8,7 +8,7 @@ import { applyPrefs } from "../lib/prefs";
 import { t } from "../lib/i18n";
 import { h1 } from "../lib/format";
 
-export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict" | "calendar" | "review" | "issues" | "briefing";
+export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict" | "calendar" | "review" | "issues" | "briefing" | "graph";
 /** A place a tab can show. */
 export interface Loc {
   kind: TabKind;
@@ -29,7 +29,7 @@ export interface Pane {
   tabs: Tab[];
   activeTabId: string;
 }
-export type PanelTab = "assistant" | "outline" | "links";
+export type PanelTab = "assistant" | "outline" | "links" | "graph";
 
 export interface Toast {
   id: number;

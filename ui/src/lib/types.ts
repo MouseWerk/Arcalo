@@ -600,7 +600,7 @@ export interface Dashboard {
   note?: string;
 }
 /** Payload of `search://open`: what the quick search asks the main window to show. */
-export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" } | { kind: "issues" } | { kind: "issue"; key: string };
+export type SearchTarget = { kind: "page"; page_id: number; new_tab?: boolean } | { kind: "timesheet" } | { kind: "timer_stop" } | { kind: "issues" } | { kind: "issue"; key: string } | { kind: "graph" };
 export interface DesktopInfo {
   autostart: boolean;
   autostart_available: boolean;
