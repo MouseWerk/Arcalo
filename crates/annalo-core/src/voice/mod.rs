@@ -137,6 +137,121 @@ pub fn remove_embed(content: &str, name: &str) -> String {
     out.join("\n")
 }
 
+/// Where the transcript of the voice note with the audio `name` is: the byte range of the
+/// transcript callout (`> [!note]- Transkript …` and its `>` lines) after the embed, or an empty
+/// range right after the embed when there is none. `None` without the embed.
+pub fn transcript_range(content: &str, name: &str) -> Option<std::ops::Range<usize>> {
+    let embed = format!("![[{name}]]");
+    let mut offset = 0;
+    let mut lines = content.split_inclusive('\n').peekable();
+    // The embed's own line.
+    loop {
+        let line = lines.next()?;
+        offset += line.len();
+        if line.trim() == embed {
+            break;
+        }
+    }
+    let after_embed = offset;
+    let mut start = None;
+    let mut end = offset;
+    for line in lines {
+        let t = line.trim();
+        match start {
+            None if t.is_empty() => {}
+            None if is_transcript_head(t) => start = Some(offset),
+            None => break,
+            Some(_) if t.starts_with('>') => {}
+            Some(_) => break,
+        }
+        offset += line.len();
+        if start.is_some() {
+            end = offset;
+        }
+    }
+    match start {
+        Some(s) => Some(s..end),
+        None => Some(after_embed..after_embed),
+    }
+}
+
+/// The first line of a transcript callout (in either language), or the status line of one being
+/// written.
+fn is_transcript_head(line: &str) -> bool {
+    let head = line.trim_start_matches('>').trim();
+    let title = head.strip_prefix("[!note]-").or_else(|| head.strip_prefix("[!note]")).map(str::trim);
+    title.is_some_and(|t| t.starts_with("Transkript") || t.starts_with("Transcript"))
+}
+
+/// „Neu transkribieren“: the transcript of the voice note with the audio `name` gives way to the
+/// status line of `token` ([`finish_block`] puts the new one there). `None` without the embed.
+pub fn begin_again(content: &str, name: &str, token: &str) -> Option<String> {
+    let r = transcript_range(content, name)?;
+    let line = pending_line(token);
+    let mut out = String::with_capacity(content.len() + line.len() + 2);
+    out.push_str(&content[..r.start]);
+    if r.is_empty() {
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push('\n');
+        out.push_str(&line);
+        out.push('\n');
+        if !content[r.end..].is_empty() && !content[r.end..].starts_with('\n') {
+            out.push('\n');
+        }
+    } else {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out.push_str(&content[r.end..]);
+    Some(out)
+}
+
+/// A recording left in `<data>/voice/` by a crash or a forced quit („unfertige Aufnahme“).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Unfinished {
+    /// File name in the voice folder (`rec-….wav`).
+    pub name: String,
+    pub duration_ms: i64,
+    /// When it was last written (RFC 3339): about when the recording ended.
+    pub modified: chrono::DateTime<chrono::Utc>,
+}
+
+/// The unfinished recordings in `dir`, oldest first; `busy` names files still in use (the
+/// running recording, transcriptions that read them). Files without any audio are removed.
+pub fn unfinished(dir: &std::path::Path, busy: &[String]) -> Vec<Unfinished> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return vec![] };
+    let mut out: Vec<Unfinished> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.to_lowercase().ends_with(".wav") || busy.contains(&name) {
+                return None;
+            }
+            let meta = e.metadata().ok().filter(|m| m.is_file())?;
+            let samples = audio::wav_samples(meta.len());
+            if samples == 0 {
+                let _ = std::fs::remove_file(e.path());
+                return None;
+            }
+            let modified =
+                meta.modified().map(chrono::DateTime::<chrono::Utc>::from).unwrap_or_else(|_| chrono::Utc::now());
+            Some(Unfinished { name, duration_ms: i64::from(samples) * 1000 / i64::from(audio::RATE), modified })
+        })
+        .collect();
+    out.sort_by(|a, b| a.modified.cmp(&b.modified).then_with(|| a.name.cmp(&b.name)));
+    out
+}
+
+/// Whether `name` is a plain file name of the voice folder (no path, a WAV).
+pub fn is_recording_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains(['/', '\\', ':'])
+        && !name.starts_with('.')
+        && name.to_lowercase().ends_with(".wav")
+}
+
 /// Title of the page new voice notes go below (top level, created on first use).
 pub fn parent_title() -> &'static str {
     tr!("Sprachnotizen", "Voice notes")
@@ -200,6 +315,20 @@ impl Database {
         self.save_page_content(page_id, &next)
     }
 
+    /// „Neu transkribieren“: puts the status line of `token` where the transcript of the voice
+    /// note with the audio `name` is on `page_id`. Returns the page and the transcript replaced.
+    pub fn voice_again(&self, page_id: i64, name: &str, token: &str) -> Result<(Page, String)> {
+        let doc = self.page_doc(page_id)?;
+        let previous = transcript_range(&doc.content, name).map(|r| doc.content[r].to_owned()).unwrap_or_default();
+        let next = begin_again(&doc.content, name, token).ok_or_else(|| {
+            crate::error::Error::State(
+                tr!("Die Aufnahme steht nicht mehr auf der Seite", "The recording is no longer on the page").into(),
+            )
+        })?;
+        self.save_page_content(page_id, &next)?;
+        Ok((doc.page, previous))
+    }
+
     /// Appends a summary (see [`actions::summary_block`]); returns the number of tasks in it.
     pub fn voice_append_summary(&self, page_id: i64, summary: &str, today: chrono::NaiveDate) -> Result<usize> {
         let block = actions::summary_block(summary, today);
@@ -248,6 +377,60 @@ mod tests {
             assert_eq!(remove_embed(&done, "Sprachnotiz.flac").matches("flac").count(), 0);
             assert!(remove_embed(&done, "Sprachnotiz.flac").contains("## Sprachnotiz 14:30\n\n> [!quote]-"));
         }
+    }
+
+    #[test]
+    fn transcribing_again_replaces_the_transcript() {
+        let page = "# Jour fixe\n\n## Sprachnotiz 14:30\n\n![[a.flac]]\n\n> [!note]- Transkript · 00:12 · Deutsch\n> **00:00** Hallo\n>\n> **00:05** Welt\n\n## Zusammenfassung\nKurz.\n";
+        let next = begin_again(page, "a.flac", "r1").unwrap();
+        assert_eq!(
+            next,
+            "# Jour fixe\n\n## Sprachnotiz 14:30\n\n![[a.flac]]\n\n*Transkription läuft … (r1)*\n\n## Zusammenfassung\nKurz.\n"
+        );
+        let done = finish_block(&next, "r1", "> [!note]- Transcript · 00:12 · English\n> **00:00** Hello\n");
+        assert!(done.contains(
+            "![[a.flac]]\n\n> [!note]- Transcript · 00:12 · English\n> **00:00** Hello\n\n## Zusammenfassung"
+        ));
+        // The English callout is found too (a second run).
+        assert!(
+            begin_again(&done, "a.flac", "r2")
+                .unwrap()
+                .contains("![[a.flac]]\n\n*Transkription läuft … (r2)*\n\n## Zusammenfassung")
+        );
+        // No transcript yet (it failed): the status line goes right after the embed.
+        let bare = "## Sprachnotiz 14:30\n\n![[a.flac]]\n\nNotiz";
+        assert_eq!(
+            begin_again(bare, "a.flac", "r3").unwrap(),
+            "## Sprachnotiz 14:30\n\n![[a.flac]]\n\n*Transkription läuft … (r3)*\n\nNotiz"
+        );
+        assert_eq!(
+            begin_again("![[a.flac]]", "a.flac", "r4").unwrap(),
+            "![[a.flac]]\n\n*Transkription läuft … (r4)*\n"
+        );
+        // Another embed or none: nothing.
+        assert!(begin_again(bare, "b.flac", "r5").is_none());
+        // Text after the embed that is no transcript stays.
+        let other = "![[a.flac]]\n\n> [!tip] Hinweis\n";
+        assert_eq!(transcript_range(other, "a.flac"), Some(12..12));
+    }
+
+    #[test]
+    fn unfinished_recordings_are_listed() {
+        let dir = std::env::temp_dir().join(format!("annalo-voice-unfinished-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("rec-a.wav"), vec![0u8; 44 + 32_000]).unwrap();
+        std::fs::write(dir.join("rec-b.wav"), vec![0u8; 44 + 16_000]).unwrap();
+        std::fs::write(dir.join("rec-empty.wav"), vec![0u8; 44]).unwrap();
+        std::fs::write(dir.join("notes.txt"), "x").unwrap();
+        let list = unfinished(&dir, &["rec-b.wav".to_owned()]);
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].name.as_str(), list[0].duration_ms), ("rec-a.wav", 1000));
+        assert!(!dir.join("rec-empty.wav").exists(), "nothing recorded: removed");
+        assert_eq!(unfinished(&dir, &[]).len(), 2);
+        assert!(is_recording_name("rec-a.wav"));
+        assert!(!is_recording_name("../rec-a.wav") && !is_recording_name("notes.txt") && !is_recording_name(""));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(unfinished(&dir, &[]).is_empty());
     }
 
     #[test]

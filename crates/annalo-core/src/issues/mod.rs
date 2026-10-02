@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{Database, parse_ts, ts};
 use crate::error::{Error, Result};
+use crate::model::TimeEntry;
 use crate::{tr, trf};
 
 // ------------------------------------------------------------------ settings
@@ -267,6 +268,14 @@ pub struct Issue {
     /// `new`, `indeterminate` or `done`.
     pub status_category: String,
     pub priority: String,
+    /// The priority as a level 1 (lowest) to 5 (highest), 0 unknown ([`priority_level`]): the
+    /// colors do not depend on the language or names of the Jira instance.
+    #[serde(default)]
+    pub priority_level: u8,
+    /// Jira's id of the priority (only while syncing: the order of the instance's list maps
+    /// custom priorities, [`apply_priority_order`]).
+    #[serde(default, skip_serializing)]
+    pub priority_id: String,
     pub assignee: String,
     pub reporter: String,
     pub issue_type: String,
@@ -385,6 +394,10 @@ pub trait IssueProvider {
     async fn log_work(&self, work: &WorkLog) -> Result<String>;
     /// The worklogs of an issue (to find one an interrupted post left).
     async fn worklogs(&self, key: &str) -> Result<Vec<RemoteWorklog>>;
+    /// Changes a posted worklog (the entry's duration, start or comment changed).
+    async fn update_work(&self, id: &str, work: &WorkLog) -> Result<()>;
+    /// Deletes a posted worklog (its entry was deleted). One that is gone already counts as done.
+    async fn delete_work(&self, key: &str, id: &str) -> Result<()>;
     /// The active sprint of the project's board; `None` without Agile or without a sprint.
     async fn sprint(&self, project: &str) -> Result<Option<Sprint>>;
 }
@@ -496,8 +509,27 @@ pub struct PendingWorklog {
     pub entry_id: i64,
     pub site: String,
     pub work: WorkLog,
+    /// Posted before: the entry changed and this worklog is updated.
+    pub worklog_id: Option<String>,
     /// A try before this one may have reached Jira: look for its worklog first.
     pub retry: bool,
+}
+
+/// The worklog of a deleted entry that Jira still has to remove.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorklogDelete {
+    pub id: i64,
+    pub site: String,
+    pub issue_key: String,
+    pub worklog_id: String,
+}
+
+/// Whether a change of an entry reaches its Jira worklog: its duration (as Jira gets it), its
+/// start to the minute or its comment changed.
+pub fn worklog_differs(before: &TimeEntry, after: &TimeEntry) -> bool {
+    worklog_seconds(before.duration_minutes.unwrap_or(0)) != worklog_seconds(after.duration_minutes.unwrap_or(0))
+        || (before.start_time - after.start_time).num_seconds().abs() >= 60
+        || before.description.trim() != after.description.trim()
 }
 
 /// The worklog state of a time entry (Zeiterfassung shows it).
@@ -509,6 +541,77 @@ pub struct EntryIssue {
     pub worklog_state: String,
     pub worklog_id: Option<String>,
     pub error: Option<String>,
+    /// Whether changes reach Jira (time tracking on, the site logs work; set by the shell).
+    #[serde(default)]
+    pub syncs: bool,
+}
+
+// ------------------------------------------------------------------ priority
+
+/// The level of a priority name Jira ships (English, German, Server's classic scheme): 5
+/// highest to 1 lowest, 0 for a name it does not know.
+fn level_of_name(name: &str) -> u8 {
+    match name.trim().to_lowercase().as_str() {
+        "highest" | "blocker" | "höchste" | "hoechste" | "sehr hoch" => 5,
+        "high" | "critical" | "hoch" | "kritisch" => 4,
+        "medium" | "major" | "mittel" | "normal" | "schwer" | "schwerwiegend" => 3,
+        "low" | "minor" | "niedrig" | "gering" | "geringfügig" => 2,
+        "lowest" | "trivial" | "niedrigste" | "sehr niedrig" => 1,
+        _ => 0,
+    }
+}
+
+/// The level of a priority, independent of the instance's language and names: a known name,
+/// else the default icon (`…/images/icons/priorities/high.svg`, the same in every language),
+/// else Jira's default ids 1 (highest) to 5 (lowest). 0 when nothing fits (a custom priority:
+/// [`apply_priority_order`] places it by the instance's order).
+pub fn priority_level(name: &str, id: &str, icon_url: &str) -> u8 {
+    let by_name = level_of_name(name);
+    if by_name > 0 {
+        return by_name;
+    }
+    let file = icon_url.split(['?', '#']).next().unwrap_or("").rsplit('/').next().unwrap_or("");
+    let by_icon = level_of_name(file.split('.').next().unwrap_or(""));
+    if by_icon > 0 {
+        return by_icon;
+    }
+    match id.trim().parse::<u8>() {
+        Ok(n @ 1..=5) => 6 - n,
+        _ => 0,
+    }
+}
+
+/// Levels by position in the instance's priority list (`GET priority`, highest first): the
+/// first is 5, the last 1, the others spread between.
+pub fn levels_by_order(ids: &[String]) -> HashMap<String, u8> {
+    let n = ids.len();
+    ids.iter()
+        .enumerate()
+        .map(|(i, id)| {
+            let level = if n <= 1 { 3 } else { 5 - ((i * 4 + (n - 1) / 2) / (n - 1)) as u8 };
+            (id.clone(), level)
+        })
+        .collect()
+}
+
+/// Whether some issue's priority needs the instance's order to get a level.
+pub fn needs_priority_order(fetched: &Fetched) -> bool {
+    fetched.issues.values().any(|i| i.priority_level == 0 && !i.priority_id.is_empty())
+}
+
+/// Gives the issues whose priority is unknown by name, icon and id their place in the
+/// instance's order. Returns how many changed.
+pub fn apply_priority_order(fetched: &mut Fetched, order: &HashMap<String, u8>) -> usize {
+    let mut n = 0;
+    for i in fetched.issues.values_mut() {
+        if i.priority_level == 0
+            && let Some(l) = order.get(&i.priority_id)
+        {
+            i.priority_level = *l;
+            n += 1;
+        }
+    }
+    n
 }
 
 // ------------------------------------------------------------------ burndown
@@ -645,7 +748,7 @@ pub struct IssueBacklink {
 }
 
 const ISSUE_COLS: &str = "site, key, remote_id, summary, status, status_category, priority, assignee, reporter, issue_type, \
-     project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches";
+     project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments, matches, priority_level";
 
 fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
     let comments: String = r.get(19)?;
@@ -672,6 +775,8 @@ fn map_issue(r: &rusqlite::Row) -> rusqlite::Result<Issue> {
         description: r.get(18)?,
         comments: serde_json::from_str(&comments).unwrap_or_default(),
         matches: serde_json::from_str(&matches).unwrap_or_default(),
+        priority_level: r.get(21)?,
+        priority_id: String::new(),
     })
 }
 
@@ -715,11 +820,11 @@ impl Database {
     pub fn issue_put(&self, site: &str, i: &Issue, now: DateTime<Utc>) -> Result<()> {
         self.conn().execute(
             &format!(
-                "INSERT INTO issues ({ISSUE_COLS}, seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                "INSERT INTO issues ({ISSUE_COLS}, seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?23, ?22)
                  ON CONFLICT (site, key) DO UPDATE SET remote_id = ?3, summary = ?4, status = ?5, status_category = ?6, priority = ?7,
                    assignee = ?8, reporter = ?9, issue_type = ?10, project_key = ?11, project_name = ?12, sprint = ?13, sprint_state = ?14,
                    due_date = ?15, updated = ?16, resolved = ?17, url = ?18, description = ?19, comments = ?20,
-                   matches = CASE WHEN ?21 = '[]' THEN matches ELSE ?21 END, seen_at = ?22"
+                   matches = CASE WHEN ?21 = '[]' THEN matches ELSE ?21 END, seen_at = ?22, priority_level = ?23"
             ),
             params![
                 site,
@@ -744,6 +849,7 @@ impl Database {
                 serde_json::to_string(&i.comments)?,
                 serde_json::to_string(&i.matches)?,
                 ts(now),
+                i.priority_level,
             ],
         )?;
         if !i.project_key.is_empty() {
@@ -1026,6 +1132,7 @@ impl Database {
                         worklog_state: r.get(3)?,
                         worklog_id: r.get(4)?,
                         error: r.get(5)?,
+                        syncs: false,
                     })
                 })
                 .optional()?
@@ -1040,9 +1147,9 @@ impl Database {
     /// was being posted when the app stopped counts as failed).
     pub fn worklogs_due(&self, now: DateTime<Utc>) -> Result<Vec<PendingWorklog>> {
         let mut st = self.conn().prepare(
-            "SELECT l.entry_id, l.site, l.issue_key, e.start_time, IFNULL(e.duration_minutes, 0), e.description, l.attempts, l.worklog_state
+            "SELECT l.entry_id, l.site, l.issue_key, e.start_time, IFNULL(e.duration_minutes, 0), e.description, l.attempts, l.worklog_state, l.worklog_id
              FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id
-             WHERE l.worklog_id IS NULL AND e.status_flag <> 'running'
+             WHERE e.status_flag <> 'running'
                AND (l.worklog_state IN ('pending', 'posting') OR (l.worklog_state = 'failed' AND IFNULL(l.next_try, '') <= ?1))
              ORDER BY l.entry_id LIMIT 50",
         )?;
@@ -1050,22 +1157,24 @@ impl Database {
             let start: String = r.get(3)?;
             let attempts: i64 = r.get(6)?;
             let state: String = r.get(7)?;
+            let worklog_id: Option<String> = r.get(8)?;
             Ok(PendingWorklog {
                 entry_id: r.get(0)?,
                 site: r.get(1)?,
                 work: WorkLog { key: r.get(2)?, started: parse_ts(&start)?, minutes: r.get(4)?, comment: r.get(5)? },
-                retry: attempts > 0 || state == "posting",
+                retry: worklog_id.is_none() && (attempts > 0 || state == "posting"),
+                worklog_id,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Claims a worklog for posting; `false` when it is posted already or being posted (never
-    /// posted twice).
+    /// Claims a worklog for posting (or, posted before, for its update); `false` when it is
+    /// posted and unchanged (never posted twice: a posted one keeps its id and is updated).
     pub fn worklog_claim(&self, entry_id: i64) -> Result<bool> {
         let n = self.conn().execute(
             "UPDATE time_entry_issues SET worklog_state = 'posting'
-             WHERE entry_id = ?1 AND worklog_id IS NULL AND worklog_state IN ('pending', 'failed', 'posting')",
+             WHERE entry_id = ?1 AND worklog_state IN ('pending', 'failed', 'posting')",
             [entry_id],
         )?;
         Ok(n == 1)
@@ -1090,7 +1199,7 @@ impl Database {
             + 1;
         self.conn().execute(
             "UPDATE time_entry_issues SET worklog_state = 'failed', attempts = ?2, error = ?3, next_try = ?4
-             WHERE entry_id = ?1 AND worklog_id IS NULL",
+             WHERE entry_id = ?1 AND worklog_state <> 'posted'",
             params![entry_id, attempts, error, ts(now + worklog_retry_delay(attempts))],
         )?;
         Ok(())
@@ -1101,6 +1210,75 @@ impl Database {
         self.conn().execute(
             "UPDATE time_entry_issues SET next_try = NULL WHERE entry_id = ?1 AND worklog_state = 'failed'",
             [entry_id],
+        )?;
+        Ok(())
+    }
+
+    /// The posted worklog of an entry (site, issue, worklog id), if any.
+    pub fn entry_worklog(&self, entry_id: i64) -> Result<Option<(String, String, String)>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT site, issue_key, worklog_id FROM time_entry_issues WHERE entry_id = ?1 AND worklog_id IS NOT NULL",
+                [entry_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?)
+    }
+
+    /// The entry changed after its worklog was posted: the worklog is updated at the next run.
+    /// Returns whether one is due now.
+    pub fn worklog_changed(&self, entry_id: i64) -> Result<bool> {
+        let n = self.conn().execute(
+            "UPDATE time_entry_issues SET worklog_state = 'pending', attempts = 0, next_try = NULL, error = NULL
+             WHERE entry_id = ?1 AND worklog_id IS NOT NULL",
+            [entry_id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// The entry is being deleted: its posted worklog is queued for deletion in Jira.
+    pub fn worklog_queue_delete(&self, entry_id: i64) -> Result<bool> {
+        let n = self.conn().execute(
+            "INSERT INTO jira_worklog_deletes (site, issue_key, worklog_id)
+             SELECT site, issue_key, worklog_id FROM time_entry_issues WHERE entry_id = ?1 AND worklog_id IS NOT NULL",
+            [entry_id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Worklog deletions due now (new, or failed and waiting long enough).
+    pub fn worklog_deletes_due(&self, now: DateTime<Utc>) -> Result<Vec<WorklogDelete>> {
+        let mut st = self.conn().prepare(
+            "SELECT id, site, issue_key, worklog_id FROM jira_worklog_deletes
+             WHERE IFNULL(next_try, '') <= ?1 ORDER BY id LIMIT 50",
+        )?;
+        let rows = st.query_map([ts(now)], |r| {
+            Ok(WorklogDelete { id: r.get(0)?, site: r.get(1)?, issue_key: r.get(2)?, worklog_id: r.get(3)? })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Jira removed the worklog (or it was gone already).
+    pub fn worklog_deleted(&self, id: i64) -> Result<()> {
+        self.conn().execute("DELETE FROM jira_worklog_deletes WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// A deletion failed; the next try waits ([`worklog_retry_delay`]).
+    pub fn worklog_delete_failed(&self, id: i64, error: &str, now: DateTime<Utc>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE jira_worklog_deletes SET attempts = attempts + 1, error = ?2,
+               next_try = CASE attempts WHEN 0 THEN ?3 WHEN 1 THEN ?4 WHEN 2 THEN ?5 ELSE ?6 END
+             WHERE id = ?1",
+            params![
+                id,
+                error,
+                ts(now + worklog_retry_delay(1)),
+                ts(now + worklog_retry_delay(2)),
+                ts(now + worklog_retry_delay(3)),
+                ts(now + worklog_retry_delay(4)),
+            ],
         )?;
         Ok(())
     }
@@ -1144,16 +1322,21 @@ pub fn jira_deadlines(
 ) -> Result<Vec<crate::dashboard::work::Deadline>> {
     let until = w.until.format("%Y-%m-%d").to_string();
     let mut st = db.conn().prepare(
-        "SELECT key, MAX(summary), MAX(project_name), MAX(project_key), MAX(due_date), MAX(url), MAX(priority) FROM issues
+        "SELECT key, MAX(summary), MAX(project_name), MAX(project_key), MAX(due_date), MAX(url), MAX(priority), MAX(priority_level) FROM issues
          WHERE status_category <> 'done' AND matches <> '[]' AND due_date IS NOT NULL AND due_date <= ?1
          GROUP BY key ORDER BY key",
     )?;
-    let rows: Vec<(String, String, String, String, String, String, String)> = st
-        .query_map([until], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?
+    type Row = (String, String, String, String, String, String, String, u8);
+    let rows: Vec<Row> = st
+        .query_map([until], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+        })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(rows
         .into_iter()
-        .filter_map(|(key, summary, project_name, project_key, due, url, priority)| {
+        .filter_map(|(key, summary, project_name, project_key, due, url, name, level)| {
+            // Rows cached before the levels came: by the name.
+            let priority = if level > 0 { level } else { priority_level(&name, "", "") };
             let date = NaiveDate::parse_from_str(&due, "%Y-%m-%d").ok()?;
             Some(crate::dashboard::work::Deadline {
                 source: "jira".into(),
@@ -1163,9 +1346,9 @@ pub fn jira_deadlines(
                 page_id: None,
                 ordinal: None,
                 url: Some(url).filter(|u| !u.is_empty()),
-                priority: match priority.to_lowercase().as_str() {
-                    "highest" | "blocker" | "critical" | "high" => 2,
-                    "medium" | "major" => 1,
+                priority: match priority {
+                    4.. => 2,
+                    3 => 1,
                     _ => 0,
                 },
                 key: format!("jira:{key}"),

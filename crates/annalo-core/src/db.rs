@@ -36,6 +36,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0012_chats.sql"),
     include_str!("../migrations/0013_absences.sql"),
     include_str!("../migrations/0014_issues.sql"),
+    include_str!("../migrations/0017_jira_worklog_sync.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

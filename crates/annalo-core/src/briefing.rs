@@ -285,6 +285,14 @@ pub fn start_action(
     }
 }
 
+/// The app kept running into a new day (tray overnight): whether to run the first-start check
+/// again now. `seen` is the day of the last check (none before the UI started); it runs once
+/// the local date differs and the user is there (main window focused, or input after idling).
+/// [`start_action`] then applies the usual rules (once a day, briefing days, the time).
+pub fn new_day_check(seen: Option<NaiveDate>, today: NaiveDate, present: bool) -> bool {
+    present && seen.is_some_and(|d| d != today)
+}
+
 /// Whether the notification at the set time is due now: notification mode with a time, at or
 /// after it, not yet today, not in the quiet hours (retried after them), a briefing day.
 pub fn notify_due(now: NaiveDateTime, settings: &Settings, last: Option<NaiveDate>, briefing_day: bool) -> bool {

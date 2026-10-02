@@ -441,6 +441,12 @@ impl IssueProvider for Fake {
     async fn worklogs(&self, _key: &str) -> Result<Vec<RemoteWorklog>> {
         Ok(vec![])
     }
+    async fn update_work(&self, _id: &str, _work: &WorkLog) -> Result<()> {
+        Ok(())
+    }
+    async fn delete_work(&self, _key: &str, _id: &str) -> Result<()> {
+        Ok(())
+    }
     async fn sprint(&self, _project: &str) -> Result<Option<Sprint>> {
         Ok(None)
     }
@@ -574,4 +580,107 @@ fn open_issues_with_a_due_date_are_deadlines() {
     assert!(list[0].url.as_deref().is_some_and(|u| u.ends_with("/browse/PROJ-1")));
     let all = crate::dashboard::work::deadlines(&db, w.today, 40, &[]).unwrap();
     assert!(all.items.iter().any(|d| d.source == "jira"));
+}
+
+#[test]
+fn a_posted_worklog_follows_edits_and_deletion() {
+    let db = setup();
+    let mut s = db.load_settings().unwrap();
+    s.jira.sites.push(JiraSite { id: "acme".into(), name: "Acme".into(), log_work: true, ..Default::default() });
+    db.save_settings(&s).unwrap();
+    store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
+    let out =
+        log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 review", now(), &cet(), &Thresholds::default()).unwrap();
+    let id = out.entry.id;
+    assert!(db.entry_worklog(id).unwrap().is_none(), "not posted yet");
+    assert!(!db.worklog_changed(id).unwrap(), "unposted: the post reads the entry as it is");
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10042").unwrap();
+    assert_eq!(db.entry_worklog(id).unwrap(), Some(("acme".into(), "PROJ-5".into(), "10042".into())));
+
+    // Only duration, start and comment reach Jira.
+    let before = db.time_entry(id).unwrap();
+    let same = db.update_time_entry(id, Some("1010"), None, before.start_time, 45, &before.description).unwrap();
+    assert!(!worklog_differs(&before, &same), "another Vorgang is no change for Jira");
+    let after = db.update_time_entry(id, Some("1020"), None, before.start_time, 60, "review and fixes").unwrap();
+    assert!(worklog_differs(&before, &after));
+    assert!(db.worklog_changed(id).unwrap());
+    let due = db.worklogs_due(now()).unwrap();
+    assert_eq!(due.len(), 1);
+    assert_eq!(
+        (due[0].worklog_id.as_deref(), due[0].work.minutes, due[0].work.comment.as_str(), due[0].retry),
+        (Some("10042"), 60, "review and fixes", false)
+    );
+    assert!(db.worklog_claim(id).unwrap());
+    // A failed update waits and keeps the worklog id (never posted as a second worklog).
+    db.worklog_failed(id, "offline", now()).unwrap();
+    let e = &db.issue_entries(&[id]).unwrap()[0];
+    assert_eq!((e.worklog_state.as_str(), e.worklog_id.as_deref()), ("failed", Some("10042")));
+    db.worklog_retry_now(id).unwrap();
+    assert_eq!(db.worklogs_due(now()).unwrap()[0].worklog_id.as_deref(), Some("10042"));
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10042").unwrap();
+    assert!(db.worklogs_due(now() + Duration::hours(2)).unwrap().is_empty());
+
+    // Deleting the entry queues the worklog's deletion; it outlives the entry.
+    assert!(db.worklog_queue_delete(id).unwrap());
+    db.delete_time_entry(id).unwrap();
+    let del = db.worklog_deletes_due(now()).unwrap();
+    assert_eq!(del.len(), 1);
+    assert_eq!((del[0].issue_key.as_str(), del[0].worklog_id.as_str()), ("PROJ-5", "10042"));
+    db.worklog_delete_failed(del[0].id, "offline", now()).unwrap();
+    assert!(db.worklog_deletes_due(now()).unwrap().is_empty(), "waits");
+    assert_eq!(db.worklog_deletes_due(now() + Duration::minutes(2)).unwrap().len(), 1);
+    db.worklog_deleted(del[0].id).unwrap();
+    assert!(db.worklog_deletes_due(now() + Duration::days(1)).unwrap().is_empty());
+    // An entry without a posted worklog queues nothing.
+    let other =
+        log_slash_command(&db, "/zeit NP-8801/1020 15m PROJ-5 call", now(), &cet(), &Thresholds::default()).unwrap();
+    assert!(!db.worklog_queue_delete(other.entry.id).unwrap());
+}
+
+#[test]
+fn priorities_get_levels_in_any_language() {
+    // Names Jira ships, English and German, and the classic Server scheme.
+    for (name, level) in [("Highest", 5), ("Höchste", 5), ("Hoch", 4), ("Mittel", 3), ("Niedrig", 2), ("Niedrigste", 1)]
+    {
+        assert_eq!(priority_level(name, "", ""), level, "{name}");
+    }
+    assert_eq!(priority_level("Blocker", "", ""), 5);
+    assert_eq!(priority_level("Minor", "", ""), 2);
+    // A renamed or translated priority: the default icon, then the default id.
+    assert_eq!(priority_level("Sofort", "10001", "https://jira.firma.de/images/icons/priorities/highest.svg"), 5);
+    assert_eq!(priority_level("Wichtig", "", "https://acme.atlassian.net/images/icons/priorities/high_new.svg?x=1"), 0);
+    assert_eq!(priority_level("Wichtig", "2", "https://jira.firma.de/custom/42.png"), 4);
+    assert_eq!(priority_level("Kaum", "5", ""), 1);
+    assert_eq!(priority_level("Eigene", "10200", "https://jira.firma.de/custom/42.png"), 0);
+    // Custom priorities by the instance's order (highest first).
+    let ids: Vec<String> = ["10200", "10201", "10202"].iter().map(|s| (*s).to_owned()).collect();
+    let order = levels_by_order(&ids);
+    assert_eq!((order["10200"], order["10201"], order["10202"]), (5, 3, 1));
+    let five: Vec<String> = (1..=5).map(|n| n.to_string()).collect();
+    let o5 = levels_by_order(&five);
+    assert_eq!(five.iter().map(|i| o5[i]).collect::<Vec<_>>(), [5, 4, 3, 2, 1]);
+    assert_eq!(levels_by_order(&ids[..1])["10200"], 3);
+
+    // Parsed from Jira: the id and icon come along; a custom one gets its place on sync.
+    let mut v = cloud_issue();
+    v["fields"]["priority"] = json!({ "name": "Dringend", "id": "10201", "iconUrl": "https://x/custom.png" });
+    let i = parse_issue(&v, "acme", "https://acme.atlassian.net", None).unwrap();
+    assert_eq!((i.priority_level, i.priority_id.as_str()), (0, "10201"));
+    let mut f = Fetched::default();
+    f.issues.insert(i.key.clone(), i);
+    assert!(needs_priority_order(&f));
+    assert_eq!(apply_priority_order(&mut f, &order), 1);
+    assert_eq!(f.issues["PROJ-123"].priority_level, 3);
+    assert!(!needs_priority_order(&f));
+    assert_eq!(parse_priorities(&json!([{ "id": "1" }, { "id": 2 }, {}])), ["1", "2"]);
+
+    // Stored and read back.
+    let db = setup();
+    let mut hi = issue("PROJ-7", "new");
+    hi.priority = "Höchste".into();
+    hi.priority_level = 5;
+    store(&db, &[(hi, &["mine"])]);
+    assert_eq!(db.issue_get("PROJ-7").unwrap().unwrap().priority_level, 5);
 }

@@ -5,6 +5,7 @@
 //! The text goes through the router like every request; a briefing with private content
 //! (`#privat`, a private appointment or page) is routed to the local model.
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use annalo_core::ai::availability;
@@ -23,6 +24,27 @@ use crate::{AppState, Result, prefs};
 /// The notification was shown while the app was in the background: the next focus of the
 /// main window opens the briefing.
 static PENDING: AtomicBool = AtomicBool::new(false);
+
+/// The day of the last first-start check (none until the UI ran it after the start). Left in
+/// the tray overnight, the app runs the check again on the new day ([`core::new_day_check`]).
+static SEEN: Mutex<Option<NaiveDate>> = Mutex::new(None);
+
+fn seen() -> Option<NaiveDate> {
+    *SEEN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn set_seen(day: NaiveDate) {
+    *SEEN.lock().unwrap_or_else(|e| e.into_inner()) = Some(day);
+}
+
+/// Debug builds: `ANNALO_TEST_BRIEFING_DAY=<yyyy-mm-dd>` is taken as the day of the check at
+/// the start, so the next tick or focus sees a new day.
+fn test_seen_day() -> Option<NaiveDate> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    std::env::var("ANNALO_TEST_BRIEFING_DAY").ok()?.trim().parse().ok()
+}
 
 /// Whether any AI provider can be asked (one with a key, or one that needs none).
 fn ai_ready(state: &AppState) -> bool {
@@ -104,11 +126,17 @@ pub async fn briefing_summary(
 /// briefing (`open`) or notifies (`notify`, notification mode without a time); stored per day.
 #[tauri::command(async)]
 pub fn briefing_start(app: AppHandle, state: State<AppState>) -> Result<StartAction> {
+    let today = Local::now().date_naive();
+    set_seen(test_seen_day().filter(|_| seen().is_none()).unwrap_or(today));
+    start_check(&app, &state, today)
+}
+
+/// The first-start check of `today` (see [`briefing_start`]); sends the notification itself.
+fn start_check(app: &AppHandle, state: &AppState, today: NaiveDate) -> Result<StartAction> {
     let settings = state.settings();
     if settings.briefing.mode == BriefingMode::Off {
         return Ok(StartAction::None);
     }
-    let today = Local::now().date_naive();
     let body = {
         let db = state.db();
         let day = core::is_briefing_day(&db, &settings, today)?;
@@ -120,15 +148,43 @@ pub fn briefing_start(app: AppHandle, state: State<AppState>) -> Result<StartAct
         if action == StartAction::Open {
             return Ok(action);
         }
-        build(&state, &db, &[]).map(|b| core::notify_body(&b)).unwrap_or_default()
+        build(state, &db, &[]).map(|b| core::notify_body(&b)).unwrap_or_default()
     };
-    notify(&app, tr!("Morgen-Briefing", "Morning briefing"), &body);
+    notify(app, tr!("Morgen-Briefing", "Morning briefing"), &body);
     Ok(StartAction::Notify)
+}
+
+/// The app ran into a new day and the user is there (`present`): the first-start check of the
+/// new day, as at a start. The UI opens the briefing or offers it like after its own call.
+fn new_day(app: &AppHandle, present: bool) {
+    let today = Local::now().date_naive();
+    if !core::new_day_check(seen(), today, present) {
+        return;
+    }
+    set_seen(today);
+    let state = app.state::<AppState>();
+    match start_check(app, &state, today) {
+        Ok(StartAction::Open) => {
+            let _ = app.emit_to(MAIN, "nav://briefing", ());
+        }
+        Ok(StartAction::Notify) => {
+            let _ = app.emit_to(MAIN, "briefing://notified", ());
+        }
+        Ok(StartAction::None) => {}
+        Err(e) => crate::devlog::warn("briefing", format!("check on a new day: {}", e.detail())),
+    }
+}
+
+/// Input after a pause (activity sampler): the user is back, maybe on a new day.
+pub fn on_activity(app: &AppHandle) {
+    new_day(app, true);
 }
 
 /// Called with the other reminders (~30 s): the notification at the set time, once a
 /// briefing day (Settings → Briefing, notification mode).
 pub fn periodic(app: &AppHandle) {
+    let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
+    new_day(app, focused);
     let state = app.state::<AppState>();
     let settings = state.settings();
     if settings.briefing.mode != BriefingMode::Notify || settings.briefing.notify_time.is_empty() {
@@ -156,6 +212,7 @@ pub fn periodic(app: &AppHandle) {
 
 /// The main window got the focus: open the briefing after the notification.
 pub fn on_focus(app: &AppHandle) {
+    new_day(app, true);
     if PENDING.swap(false, Ordering::Relaxed) {
         let _ = app.emit_to(MAIN, "nav://briefing", ());
     }

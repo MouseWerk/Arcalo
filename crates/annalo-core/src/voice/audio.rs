@@ -227,6 +227,47 @@ pub fn read_16k(path: &Path) -> Result<Vec<f32>> {
     Ok(to_16k_mono(&w.samples, w.rate, w.channels))
 }
 
+/// Reads a FLAC file (a stored voice note) as samples −1..1.
+pub fn read_flac(path: &Path) -> Result<Wav> {
+    let bad = |e: claxon::Error| Error::State(trf!("Keine lesbare FLAC-Datei ({e})", "Not a readable FLAC file ({e})"));
+    let mut reader = claxon::FlacReader::open(path).map_err(bad)?;
+    let info = reader.streaminfo();
+    let scale = (1u64 << info.bits_per_sample.saturating_sub(1).min(31)) as f32;
+    let samples = reader.samples().map(|s| s.map(|v| v as f32 / scale)).collect::<std::result::Result<Vec<_>, _>>();
+    let samples = samples.map_err(bad)?;
+    if info.channels == 0 || info.sample_rate == 0 {
+        return Err(bad_wav());
+    }
+    Ok(Wav { rate: info.sample_rate, channels: info.channels as usize, samples })
+}
+
+/// Reads a voice note's audio (FLAC as stored, or WAV) as 16 kHz mono for Whisper.
+pub fn read_16k_any(path: &Path) -> Result<Vec<f32>> {
+    let flac = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flac"));
+    let w = if flac { read_flac(path)? } else { read_wav(path)? };
+    Ok(to_16k_mono(&w.samples, w.rate, w.channels))
+}
+
+/// Samples in a recording file of `len` bytes written by [`WavWriter`] (16-bit mono after the
+/// 44-byte header), whatever its header says.
+pub fn wav_samples(len: u64) -> u32 {
+    (len.saturating_sub(44) / 2).min(u64::from(u32::MAX)) as u32
+}
+
+/// A recording cut off by a crash: its header gets the length of what is in the file (the
+/// header is only brought up to date now and then while recording). Returns the samples.
+pub fn repair_wav(path: &Path) -> Result<u32> {
+    let len = std::fs::metadata(path).at(path)?.len();
+    let samples = wav_samples(len);
+    let mut f = std::fs::OpenOptions::new().write(true).open(path).at(path)?;
+    // An odd last byte (half a sample) is cut.
+    f.set_len(44 + u64::from(samples) * 2).at(path)?;
+    f.seek(SeekFrom::Start(0)).at(path)?;
+    f.write_all(&header(samples)).at(path)?;
+    f.sync_all().at(path)?;
+    Ok(samples)
+}
+
 /// Feeds a recording's 16-bit samples to the FLAC encoder block by block (no full copy in memory).
 struct WavSource {
     input: BufReader<File>,
@@ -351,6 +392,33 @@ mod tests {
         assert_eq!(&bytes[..4], b"fLaC");
         assert_eq!(bytes.len() as u64, size);
         assert!(size < std::fs::metadata(&wav).unwrap().len());
+        // The stored FLAC reads back for „Neu transkribieren“.
+        let again = read_16k_any(&flac).unwrap();
+        assert_eq!(again.len(), 32_000);
+        assert!((again[100] - t[100]).abs() < 1e-3);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_recording_cut_off_by_a_crash_is_repaired() {
+        let dir = std::env::temp_dir().join(format!("annalo-voice-crash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("rec-1.wav");
+        let mut w = WavWriter::create(&wav).unwrap();
+        let t = tone(RATE, 1.0, 1);
+        w.write(&t[..4_000]).unwrap();
+        w.sync().unwrap();
+        w.write(&t[4_000..]).unwrap();
+        // The app dies: buffered samples reach the file, the header still says 4000.
+        drop(w);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&wav).unwrap();
+        f.write_all(&[7]).unwrap(); // half a sample
+        drop(f);
+        assert_eq!(wav_samples(std::fs::metadata(&wav).unwrap().len()), 16_000);
+        assert_eq!(repair_wav(&wav).unwrap(), 16_000);
+        assert_eq!(std::fs::metadata(&wav).unwrap().len(), 44 + 32_000);
+        assert_eq!(read_16k(&wav).unwrap().len(), 16_000);
+        assert_eq!(wav_samples(10), 0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

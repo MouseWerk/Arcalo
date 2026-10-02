@@ -114,6 +114,12 @@ fn first_start_of_the_day() {
     b.notify_time = "08:30".into();
     assert_eq!(start_action(&b, today, yesterday, true), StartAction::None, "the time decides");
 
+    // Running overnight: the check again on a new day, only when the user is there.
+    assert!(new_day_check(yesterday, today, true));
+    assert!(!new_day_check(yesterday, today, false), "not while away");
+    assert!(!new_day_check(Some(today), today, true), "same day");
+    assert!(!new_day_check(None, today, true), "before the UI ran the start check");
+
     let mut s = settings();
     s.briefing = b;
     let at = |h, m| today.and_hms_opt(h, m, 0).unwrap();

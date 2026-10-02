@@ -5,12 +5,12 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { mailLinkId, openMailLink } from "../lib/mail";
-import { Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight, Ticket } from "lucide-react";
+import { AudioLines, Bold, Code, Highlighter, Italic, Link2, Sparkles, Strikethrough, SquareArrowOutUpRight, Ticket } from "lucide-react";
 import { jiraReady, requestCreateIssue } from "./taskIssue";
 import { api, attachmentUrl, errorText, storeFile, uploadAttachment } from "../lib/api";
 import { drawPdfPreview } from "../lib/pdf";
 import { fileMenu, openFile, openPdfViewer, pickFiles } from "./files";
-import { fileEmbedAt } from "./fileEmbed";
+import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
@@ -42,7 +42,7 @@ import { replaceChanged } from "./replaceChanged";
 import { flushAllEditors, registerFlusher, trackSave } from "./saves";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
-import { startVoice } from "../lib/voice";
+import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -448,7 +448,10 @@ export function NoteEditor({
             const file = (event.target as HTMLElement).closest?.<HTMLElement>(".ProseMirror .file-embed, .ProseMirror .pdf-embed");
             const fileAt = file && editorRef.current ? fileEmbedAt(editorRef.current, file) : null;
             if (fileAt && editorRef.current) {
-              openImgMenu(event, fileMenu(editorRef.current, fileAt.pos));
+              const items = fileMenu(editorRef.current, fileAt.pos);
+              // A voice note's audio: „Neu transkribieren“ first.
+              const again = isVoiceAudio(fileAt.name) ? [{ label: tr("voice.again.menu"), icon: AudioLines, onSelect: () => openTranscribeAgain(doc.id, fileAt.name) }, "separator" as const] : [];
+              openImgMenu(event, [...again, ...items]);
               return true;
             }
             // On a task: „Jira-Issue anlegen“.
@@ -501,6 +504,15 @@ export function NoteEditor({
     },
     [doc.id],
   );
+
+  // „Neu transkribieren“ on a voice note's audio in this page.
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const again = (e: Event) => openTranscribeAgain(doc.id, (e as CustomEvent<string>).detail);
+    dom.addEventListener(TRANSCRIBE_AGAIN_EVENT, again);
+    return () => dom.removeEventListener(TRANSCRIBE_AGAIN_EVENT, again);
+  }, [editor, doc.id]);
 
   useEffect(() => {
     editorRef.current = editor;

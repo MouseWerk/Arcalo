@@ -9,7 +9,7 @@ import { on } from "../../lib/api";
 import { configOf } from "../../lib/dashboard";
 import { fmtDate, isoDay } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
-import { burndownPaths, columnsOf, JIRA_COLUMNS, jiraApi, overdue, type Issue, type JiraColumn, type SprintView } from "../../lib/jira";
+import { burndownPaths, columnsOf, JIRA_COLUMNS, jiraApi, overdue, priorityClass, type Issue, type JiraColumn, type SprintView } from "../../lib/jira";
 import { openIssue } from "../../lib/jiraActions";
 import { openSettingsSection } from "../../lib/calnav";
 import { useApp } from "../../store/app";
@@ -44,7 +44,7 @@ function Cell({ issue, col, today }: { issue: Issue; col: JiraColumn; today: str
     case "status":
       return <span className={`issue-status cat-${issue.status_category}`}>{issue.status}</span>;
     case "priority":
-      return issue.priority ? <span className={`issue-prio prio-${issue.priority.toLowerCase()}`}>{issue.priority}</span> : null;
+      return issue.priority ? <span className={`issue-prio ${priorityClass(issue)}`}>{issue.priority}</span> : null;
     case "assignee":
       return issue.assignee ? <span className="faint ellipsis dwj-assignee">{issue.assignee}</span> : null;
     case "due":

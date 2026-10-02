@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, overdue, priorityRank, valuesOf, type Issue } from "./jira";
+import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
 import { guessKind } from "../views/settings/JiraSection";
 import { typeOf } from "./issueTypes";
 import { quickItems } from "./quicksearch";
@@ -108,5 +108,46 @@ describe("quick search", () => {
     expect(quickItems("jira", ctx).some((i) => i.action.type === "issues")).toBe(true);
     expect(quickItems("proj-12", ctx).find((i) => i.action.type === "issue")?.action).toEqual({ type: "issue", key: "PROJ-12" });
     expect(quickItems("proj-12", { ...ctx, jira: false }).some((i) => i.action.type === "issue")).toBe(false);
+  });
+});
+
+describe("priority colors in any language", () => {
+  it("uses the synced level, else the name", () => {
+    expect(priorityClass({ priority: "Höchste", priority_level: 0 })).toBe("prio-up");
+    expect(priorityClass({ priority: "Hoch" })).toBe("prio-up");
+    expect(priorityClass({ priority: "Mittel" })).toBe("");
+    expect(priorityClass({ priority: "Niedrig" })).toBe("prio-down");
+    expect(priorityClass({ priority: "Niedrigste" })).toBe("prio-down");
+    // A custom Server priority: only its level knows.
+    expect(priorityClass({ priority: "Sofort erledigen", priority_level: 5 })).toBe("prio-up");
+    expect(priorityClass({ priority: "Irgendwann", priority_level: 1 })).toBe("prio-down");
+    expect(priorityClass({ priority: "Eigene" })).toBe("");
+    expect(priorityLevel({ priority: " HIGH " })).toBe(4);
+  });
+  it("groups localized priorities by their level", () => {
+    const names = { site: (id: string) => id, empty: "Ohne" };
+    const de = [issue("A-1", { priority: "Niedrig", priority_level: 2 }), issue("A-2", { priority: "Sofort", priority_level: 5 }), issue("A-3", { priority: "Mittel", priority_level: 3 })];
+    expect(groupIssues(de, "priority", names).map((g) => g.label)).toEqual(["Sofort", "Mittel", "Niedrig"]);
+    expect(priorityRank("Höchste")).toBeLessThan(priorityRank("Niedrigste"));
+  });
+});
+
+describe("Jira worklogs of time entries", () => {
+  const e = (p: Partial<EntryIssue>): EntryIssue => ({ entry_id: 1, issue_key: "PROJ-5", site: "acme", worklog_state: "none", worklog_id: null, error: null, syncs: true, ...p });
+  it("shows posted, pending and failed; a site that does not log work shows the key only", () => {
+    expect(worklogShown(e({ worklog_state: "posted", worklog_id: "10" }))).toBe("posted");
+    expect(worklogShown(e({ worklog_state: "pending" }))).toBe("pending");
+    expect(worklogShown(e({ worklog_state: "posting" }))).toBe("pending");
+    // An edit of a posted entry: pending again until Jira has it.
+    expect(worklogShown(e({ worklog_state: "pending", worklog_id: "10" }))).toBe("pending");
+    expect(worklogShown(e({ worklog_state: "failed", error: "offline" }))).toBe("failed");
+    expect(worklogShown(e({ worklog_state: "none" }))).toBe("none");
+    expect(worklogShown(e({ worklog_state: "pending", syncs: false }))).toBe("none");
+    expect(worklogShown(e({ worklog_state: "pending", worklog_id: "10", syncs: false }))).toBe("posted");
+  });
+  it("names the issues whose worklog a deletion removes", () => {
+    const list = [e({ worklog_id: "10", worklog_state: "posted" }), e({ entry_id: 2, worklog_id: "11", worklog_state: "posted" }), e({ entry_id: 3, issue_key: "OPS-7" }), e({ entry_id: 4, issue_key: "OPS-8", worklog_id: "12", syncs: false })];
+    expect(worklogDeleteKeys(list)).toEqual(["PROJ-5"]);
+    expect(worklogDeleteKeys([])).toEqual([]);
   });
 });
