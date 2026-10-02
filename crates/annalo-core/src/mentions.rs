@@ -955,12 +955,15 @@ mod tests {
         .unwrap();
         let id: i64 = db.conn().query_row("SELECT id FROM pages WHERE title = 'Kunde 2'", [], |r| r.get(0)).unwrap();
         let mut best = std::time::Duration::MAX;
-        for _ in 0..3 {
+        for _ in 0..5 {
             let t = std::time::Instant::now();
             let r = db.unlinked_mentions(id).unwrap();
             best = best.min(t.elapsed());
             assert!(!r.outgoing.is_empty() && !r.incoming.is_empty());
         }
-        assert!(best.as_millis() < 50, "mention scan took {best:?}");
+        // The budget guards against a scan of every page (seconds, not milliseconds); shared CI
+        // runners run the tests in parallel and get a wider margin.
+        let budget = if std::env::var_os("CI").is_some() { 250 } else { 50 };
+        assert!(best.as_millis() < budget, "mention scan took {best:?} (budget {budget} ms)");
     }
 }
