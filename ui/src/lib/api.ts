@@ -297,9 +297,16 @@ export const api = {
   /** Requests LiteLLM's model list with unsaved network settings; reports the proxy used. */
   networkTest: (network: T.NetworkSettings | null, baseUrl: string | null, password: string | null) =>
     call<T.NetworkTest>("network_test", { network, baseUrl, password }),
-  fetchPac: (url: string, network: T.NetworkSettings | null = null) => call<string>("network_fetch_pac", { url, network }),
+  fetchPac: (url: string, profile: T.ProxyProfile | null = null) => call<string>("network_fetch_pac", { url, profile }),
   caInfo: (path: string) => call<T.CaInfo>("network_ca_info", { path }),
-  setProxyPassword: (password: string | null) => call<T.NetworkStatus>("proxy_password_set", { password }),
+  setProxyPassword: (password: string | null, profile: string | null = null) => call<T.NetworkStatus>("proxy_password_set", { password, profile }),
+  /** Services, their profile and the route they take with (unsaved) settings. */
+  networkServices: (network: T.NetworkSettings | null) => call<T.ServiceRow[]>("network_services", { network }),
+  /** A real request to the service's target through its profile. */
+  networkServiceTest: (service: string, network: T.NetworkSettings | null, password: string | null) =>
+    call<T.NetworkTest>("network_service_test", { service, network, password }),
+  networkCertificate: (url: string, service: string | null = null) => call<T.CertDetails | null>("network_certificate", { url, service, network: null }),
+  networkLegacyProbe: (profile: string) => call<T.LegacyProbe[]>("network_legacy_probe", { profile }),
 
   // settings files and defaults
   exportSettings: (path: string) => call<void>("settings_export", { path }),

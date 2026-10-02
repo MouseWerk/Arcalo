@@ -355,7 +355,11 @@ export interface OnboardingStatus extends OnboardingState {
   existing: boolean;
 }
 export type ProxyMode = "none" | "system" | "manual" | "pac";
-export interface NetworkSettings {
+/** A named way out (Settings → Netzwerk): proxy, exceptions, extra root CAs, timeouts. */
+export interface ProxyProfile {
+  /** `[a-z0-9-]`, stable; `standard` is the default profile. Empty for a new one (the core assigns it). */
+  id: string;
+  name: string;
   mode: ProxyMode;
   http_proxy: string;
   https_proxy: string;
@@ -366,9 +370,60 @@ export interface NetworkSettings {
   pac_results: Record<string, string>;
   proxy_user: string;
   extra_ca_path: string | null;
-  accept_invalid_certs: boolean;
-  timeout_secs: number;
-  apply_to: { ai: boolean; git: boolean; updates: boolean; tools: boolean };
+  connect_timeout_secs: number;
+  /** 0 = the service's own (downloads 60 s). */
+  read_timeout_secs: number;
+  /** The global "accept invalid certificates" of 1.9, kept until converted ("unsicher"). */
+  legacy_accept_invalid_certs: boolean;
+}
+/** „Diesem Server vertrauen“: host plus SHA-256 of its certificate. */
+export interface TrustedHost {
+  host: string;
+  sha256: string;
+  spki_sha256: string;
+  subject: string | null;
+  not_after: string | null;
+}
+export interface NetworkSettings {
+  profiles: ProxyProfile[];
+  /** Service key (`ai:<id>`, `jira:<id>`, `updates`, …) or group → profile id; missing = default profile. */
+  routes: Record<string, string>;
+  trusted_hosts: TrustedHost[];
+}
+export interface RouteInfo {
+  profile_id: string;
+  profile_name: string;
+  mode: ProxyMode;
+  proxy: string | null;
+  pac_answer: string | null;
+  bypassed: boolean;
+  insecure: boolean;
+}
+export type ServiceGroup = "updates" | "release_notes" | "voice_models" | "ai" | "jira" | "git_sync" | "ics" | "link_preview" | "http_tool";
+export interface ServiceRow {
+  key: string;
+  group: ServiceGroup;
+  /** Provider, site or calendar name. */
+  name: string;
+  /** Scheme and host of the target; null = no fixed target. */
+  target: string | null;
+  route: RouteInfo;
+  locked: boolean;
+}
+export interface CertDetails {
+  host: string;
+  sha256: string;
+  spki_sha256: string;
+  subject: string | null;
+  issuer: string | null;
+  not_after: string | null;
+  self_signed: boolean;
+}
+export interface LegacyProbe {
+  host: string;
+  valid: boolean;
+  certificate: CertDetails | null;
+  error: string | null;
 }
 /** The main colors of a color theme (`#rrggbb`); lib/themes.ts derives the other tokens. */
 export interface ThemeColors {
@@ -520,20 +575,26 @@ export interface CaInfo {
   not_after: string | null;
 }
 export interface NetworkStatus {
+  /** The default profile has a stored password. */
   password_set: boolean;
+  /** Ids of the profiles with a stored password. */
+  passwords: string[];
   system: SystemProxy;
-  ca: CaInfo | null;
-  ca_error: string | null;
   platform: string;
+  /** What an organization's policy fixes: service key or group → profile id, locked profiles. */
+  policy: { routes: Record<string, string>; lock_profiles: boolean; origins: string[] };
 }
 export interface NetworkTest {
   ok: boolean;
   url: string;
   /** Proxy used (without credentials); null = direct. */
   proxy: string | null;
+  route: RouteInfo | null;
   status: number | null;
   latency_ms: number;
   error: string | null;
+  /** The server's certificate when the error is about it. */
+  certificate: CertDetails | null;
 }
 export interface CostStatus {
   spent_usd: number;

@@ -96,7 +96,10 @@ fn outlook_errors_become_german_messages() {
 fn the_mail_script_is_ascii_and_has_its_modes() {
     assert!(outlook::SCRIPT.is_ascii(), "Windows PowerShell reads scripts without BOM as ANSI");
     for needle in [
-        "[ValidateSet('read', 'save', 'open', 'flagged')]",
+        "[ValidateSet('read', 'save', 'open', 'flagged', 'draft')]",
+        "CreateItem(0)",
+        "HTMLBody",
+        "[Text.Encoding]::UTF8",
         "GetDefaultFolder(28)",
         "TaskDueDate",
         "ActiveExplorer().Selection",

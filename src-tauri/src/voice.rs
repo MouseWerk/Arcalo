@@ -1017,6 +1017,17 @@ fn model(id: &str) -> Result<&'static models::ModelInfo> {
 }
 
 /// The default sources (GitHub release, Hugging Face), replaced in tests.
+/// The first download address of a model (the per-service test of Settings → Netzwerk);
+/// `None` when the admin's source is a folder.
+pub fn model_source_url(custom: &str) -> Option<String> {
+    let (gh, hf) = default_bases();
+    let info = models::MODELS.first()?;
+    models::sources(info, custom, &gh, &hf).into_iter().find_map(|s| match s {
+        models::Source::Url(u) => Some(u),
+        _ => None,
+    })
+}
+
 fn default_bases() -> (String, String) {
     match test_var("ANNALO_TEST_MODEL_BASES").as_deref().and_then(|v| v.split_once('|')) {
         Some((gh, hf)) => (gh.to_owned(), hf.to_owned()),
@@ -1052,13 +1063,7 @@ pub fn voice_model_download(app: AppHandle, state: State<'_, AppState>, id: Stri
     }
     let cancel = lock(&v.download).as_ref().map(|(_, c)| c.clone()).unwrap_or_default();
     let settings = state.settings();
-    let network = annalo_core::network::Prepared::new(
-        &settings.network,
-        state.proxy_secret.get().as_deref(),
-        annalo_core::network::Purpose::Updates,
-    )?;
-    let client =
-        network.apply(reqwest::Client::builder()).read_timeout(Duration::from_secs(60)).build().map_err(Error::Http)?;
+    let client = crate::network::client_for(&state, &annalo_core::network::Service::VoiceModels)?;
     let (gh, hf) = default_bases();
     let sources = models::sources(info, &settings.voice.source_url, &gh, &hf);
     let dir = models_dir(&state);
@@ -1121,7 +1126,8 @@ pub async fn voice_model_import(app: AppHandle, id: String, path: String) -> Res
     let info = model(&id)?;
     let dir = models_dir(&app.state::<AppState>());
     let source = models::Source::File(PathBuf::from(&path));
-    let client = reqwest::Client::new();
+    // A file source: no network, but the client comes from the one place that builds them.
+    let client = crate::network::client_for(&app.state::<AppState>(), &annalo_core::network::Service::VoiceModels)?;
     download::fetch(&client, &info.into(), &[source], &dir, &AtomicBool::new(false), |_| {}).await.map_err(|e| {
         Error::State(trf!("Die Datei ist nicht das Modell „{}“: {e}", "The file is not the model “{}”: {e}", info.id))
     })?;

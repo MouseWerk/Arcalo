@@ -604,13 +604,13 @@ fn status_report_per_scope_and_period() {
 
 #[test]
 fn settings_step_adds_the_prep_keys() {
-    let mut v = serde_json::json!({ "version": 6, "briefing": { "mode": "start" } });
+    let mut v = serde_json::json!({ "version": 7, "briefing": { "mode": "start" } });
     let m = crate::settings_migrate::migrate(&mut v);
     assert!(m.notes.iter().any(|n| n.contains("meeting-prep")), "{:?}", m.notes);
     assert_eq!(v["briefing"]["prep_auto"], false);
     assert_eq!(v["briefing"]["prep_minutes"], 30);
     // Already set: kept.
-    let mut w = serde_json::json!({ "version": 6, "briefing": { "prep_auto": true, "prep_minutes": 10 } });
+    let mut w = serde_json::json!({ "version": 7, "briefing": { "prep_auto": true, "prep_minutes": 10 } });
     crate::settings_migrate::migrate(&mut w);
     assert_eq!(w["briefing"]["prep_auto"], true);
     assert_eq!(w["briefing"]["prep_minutes"], 10);

@@ -258,28 +258,6 @@
       },
       "type": "object"
     },
-    "ApplyTo": {
-      "description": "Which connections use the proxy settings. Connections that do not keep the program's default behavior (reqwest and Git read the proxy environment variables).",
-      "properties": {
-        "ai": {
-          "default": true,
-          "type": "boolean"
-        },
-        "git": {
-          "default": true,
-          "type": "boolean"
-        },
-        "tools": {
-          "default": true,
-          "type": "boolean"
-        },
-        "updates": {
-          "default": true,
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "BackupTargets": {
       "description": "All destinations of the workspace.",
       "properties": {
@@ -1264,83 +1242,46 @@
     },
     "NetworkSettings": {
       "properties": {
-        "accept_invalid_certs": {
-          "default": false,
-          "description": "Accept any certificate (dangerous; only for diagnosis).",
-          "type": "boolean"
-        },
-        "apply_to": {
-          "allOf": [
+        "profiles": {
+          "default": [
             {
-              "$ref": "#/definitions/ApplyTo"
+              "connect_timeout_secs": 30,
+              "extra_ca_path": null,
+              "http_proxy": "",
+              "https_proxy": "",
+              "id": "standard",
+              "legacy_accept_invalid_certs": false,
+              "mode": "system",
+              "name": "Standard",
+              "no_proxy": "localhost, 127.0.0.1, ::1",
+              "pac_results": {},
+              "pac_url": "",
+              "proxy_user": "",
+              "read_timeout_secs": 0,
+              "socks_proxy": ""
             }
           ],
-          "default": {
-            "ai": true,
-            "git": true,
-            "tools": true,
-            "updates": true
-          }
+          "description": "The profiles; the one with id `standard` is the default and always exists.",
+          "items": {
+            "$ref": "#/definitions/ProxyProfile"
+          },
+          "type": "array"
         },
-        "extra_ca_path": {
-          "default": null,
-          "description": "PEM (one or more certificates) or DER file of an additional root CA.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "http_proxy": {
-          "default": "",
-          "description": "`host:port` or a URL; used for `http://` targets.",
-          "type": "string"
-        },
-        "https_proxy": {
-          "default": "",
-          "description": "Used for `https://` targets; empty = the HTTP proxy.",
-          "type": "string"
-        },
-        "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ProxyMode"
-            }
-          ],
-          "default": "system"
-        },
-        "no_proxy": {
-          "default": "localhost, 127.0.0.1, ::1",
-          "description": "Exceptions: `host`, `*.domain`, `.domain`, IP, CIDR, `<local>`, `*`; comma separated.",
-          "type": "string"
-        },
-        "pac_results": {
+        "routes": {
           "additionalProperties": {
             "type": "string"
           },
           "default": {},
-          "description": "`FindProxyForURL` answers per host (`*` = default), filled by the UI.",
+          "description": "Service ([`Service::key`], or its group: `ai`, `jira`, `ics`) → profile id. Services without an entry use the default profile.",
           "type": "object"
         },
-        "pac_url": {
-          "default": "",
-          "type": "string"
-        },
-        "proxy_user": {
-          "default": "",
-          "description": "User name for the proxy; the password is in the credential store.",
-          "type": "string"
-        },
-        "socks_proxy": {
-          "default": "",
-          "description": "`host:port` or `socks5://host:port`; used when no HTTP(S) proxy is set.",
-          "type": "string"
-        },
-        "timeout_secs": {
-          "default": 30,
-          "description": "Connect timeout in seconds (and the total timeout of tests and tool requests).",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
+        "trusted_hosts": {
+          "default": [],
+          "description": "Servers trusted by certificate fingerprint.",
+          "items": {
+            "$ref": "#/definitions/TrustedHost"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -1707,6 +1648,94 @@
           "type": "string"
         }
       ]
+    },
+    "ProxyProfile": {
+      "description": "A named way out („Firma“, „VPN“, „Direkt“): proxy, exceptions, extra root CA and timeouts.",
+      "properties": {
+        "connect_timeout_secs": {
+          "default": 30,
+          "description": "Connect timeout in seconds (and the total timeout of tests and tool requests).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "extra_ca_path": {
+          "default": null,
+          "description": "PEM (one or more certificates) or DER file of additional root CAs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_proxy": {
+          "default": "",
+          "description": "`host:port` or a URL; used for `http://` targets.",
+          "type": "string"
+        },
+        "https_proxy": {
+          "default": "",
+          "description": "Used for `https://` targets; empty = the HTTP proxy.",
+          "type": "string"
+        },
+        "id": {
+          "default": "standard",
+          "description": "`[a-z0-9-]`, stable (routes and the credential account refer to it); `standard` is the default profile.",
+          "type": "string"
+        },
+        "legacy_accept_invalid_certs": {
+          "default": false,
+          "description": "Accept any certificate: the global switch of 1.9 and older, kept for the profiles that had it („unsicher“) until it is converted into trusted servers.",
+          "type": "boolean"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProxyMode"
+            }
+          ],
+          "default": "system"
+        },
+        "name": {
+          "default": "Standard",
+          "type": "string"
+        },
+        "no_proxy": {
+          "default": "localhost, 127.0.0.1, ::1",
+          "description": "Exceptions: `host`, `*.domain`, `.domain`, IP, CIDR, `<local>`, `*`; comma separated.",
+          "type": "string"
+        },
+        "pac_results": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "`FindProxyForURL` answers per host (`*` = default), filled by the UI.",
+          "type": "object"
+        },
+        "pac_url": {
+          "default": "",
+          "description": "`http(s)://` or `file://` address of a PAC script.",
+          "type": "string"
+        },
+        "proxy_user": {
+          "default": "",
+          "description": "User name for the proxy; the password is in the credential store ([`password_account`]).",
+          "type": "string"
+        },
+        "read_timeout_secs": {
+          "default": 0,
+          "description": "Read timeout in seconds; 0 = the service's own (downloads: 60 s, others none).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "socks_proxy": {
+          "default": "",
+          "description": "`host:port` or `socks5://host:port`; used when no HTTP(S) proxy is set.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "QuickLink": {
       "description": "A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a group of such links (shown as one icon that opens a list of them).",
@@ -2129,6 +2158,42 @@
             }
           ],
           "default": "monday"
+        }
+      },
+      "type": "object"
+    },
+    "TrustedHost": {
+      "description": "„Diesem Server vertrauen“: a host whose leaf certificate is accepted when its SHA-256 matches (and only then: a different certificate is rejected even if a CA vouches for it).",
+      "properties": {
+        "host": {
+          "default": "",
+          "description": "Host name or IP address, lower case, without port.",
+          "type": "string"
+        },
+        "not_after": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "default": "",
+          "description": "SHA-256 of the leaf certificate (DER), 64 hex digits.",
+          "type": "string"
+        },
+        "spki_sha256": {
+          "default": "",
+          "description": "SHA-256 of its public key (`SubjectPublicKeyInfo`), Base64; Git pins with it.",
+          "type": "string"
+        },
+        "subject": {
+          "default": null,
+          "description": "Subject (CN) and expiry, for the list.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -2741,23 +2806,26 @@
         }
       ],
       "default": {
-        "accept_invalid_certs": false,
-        "apply_to": {
-          "ai": true,
-          "git": true,
-          "tools": true,
-          "updates": true
-        },
-        "extra_ca_path": null,
-        "http_proxy": "",
-        "https_proxy": "",
-        "mode": "system",
-        "no_proxy": "localhost, 127.0.0.1, ::1",
-        "pac_results": {},
-        "pac_url": "",
-        "proxy_user": "",
-        "socks_proxy": "",
-        "timeout_secs": 30
+        "profiles": [
+          {
+            "connect_timeout_secs": 30,
+            "extra_ca_path": null,
+            "http_proxy": "",
+            "https_proxy": "",
+            "id": "standard",
+            "legacy_accept_invalid_certs": false,
+            "mode": "system",
+            "name": "Standard",
+            "no_proxy": "localhost, 127.0.0.1, ::1",
+            "pac_results": {},
+            "pac_url": "",
+            "proxy_user": "",
+            "read_timeout_secs": 0,
+            "socks_proxy": ""
+          }
+        ],
+        "routes": {},
+        "trusted_hosts": []
       },
       "description": "Proxy, extra root CA and timeouts (the proxy password lives in the credential store)."
     },
@@ -3084,7 +3152,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 7,
+      "default": 8,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

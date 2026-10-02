@@ -241,6 +241,19 @@ impl SecretStore {
         Self::named(data_dir, annalo_core::network::PASSWORD_ACCOUNT, "proxy_password")
     }
 
+    /// The proxy password of the network profile `id` (the default profile keeps the
+    /// credential of earlier versions).
+    pub fn proxy_profile(data_dir: &Path, id: &str) -> Self {
+        if id == annalo_core::network::DEFAULT_PROFILE {
+            return Self::proxy(data_dir);
+        }
+        Self::named(
+            data_dir,
+            &annalo_core::network::password_account(id),
+            &format!("proxy_password_{}", id.replace('-', "_")),
+        )
+    }
+
     /// The address of the ICS subscription `id` (Settings → Kalender): it may carry a secret token.
     pub fn calendar(data_dir: &Path, id: &str) -> Self {
         Self::named(data_dir, &format!("calendar-ics-{id}"), &format!("calendar_ics_{id}"))
@@ -369,6 +382,8 @@ fn account_of_field(field: &str) -> Option<String> {
                 format!("ai-provider-{}", id.replace('_', "-"))
             } else if let Some(id) = f.strip_prefix("calendar_ics_") {
                 format!("calendar-ics-{id}")
+            } else if let Some(id) = f.strip_prefix("proxy_password_") {
+                annalo_core::network::password_account(&id.replace('_', "-"))
             } else if let Some(id) = f.strip_prefix("jira_") {
                 format!("jira-{}", id.replace('_', "-"))
             } else {

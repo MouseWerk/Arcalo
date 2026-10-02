@@ -73,7 +73,7 @@ use annalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
 use annalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
 use annalo_core::mirror::{self, MirrorReport};
 use annalo_core::model::*;
-use annalo_core::network::Purpose;
+use annalo_core::network::Service;
 use annalo_core::netzplan::{self, Schedule};
 use annalo_core::notes::{PageDoc, SavedPage};
 use annalo_core::pagework::{self, PageWork};
@@ -108,28 +108,34 @@ struct AiRuntime {
     /// Clients of the switched-on AI providers, by provider id.
     clients: HashMap<String, Arc<AiClient>>,
     router: Arc<ModelRouter>,
-    /// Client of the assistant's `http_request` tool (and link titles); `None` when the network
-    /// settings cannot be applied.
-    tools_http: Option<tools::HttpClient>,
+    /// HTTP clients of the other services by service key (`network::client_for`), built on
+    /// first use with these settings.
+    http: Mutex<HashMap<String, tools::HttpClient>>,
     /// Why the network settings cannot be applied (a missing CA file): requests fail with this
     /// instead of going out without proxy and certificates.
     network_error: Option<String>,
 }
 
-/// A client of `provider`: its key, the network settings (without proxy when it bypasses
-/// it) and the price table.
+/// A client of `provider`: its key, the network profile it is routed to (direct on the
+/// default profile when it bypasses the proxy) and the price table.
 fn provider_client(
     settings: &Settings,
     provider: &AiProvider,
     key: Option<String>,
-    proxy_password: Option<&str>,
+    passwords: annalo_core::network::Passwords<'_>,
 ) -> Result<AiClient> {
-    let net = provider.network(&settings.network);
-    let http = annalo_core::network::http_client(&net, proxy_password, Purpose::Ai)?;
+    let net = network::effective(&settings.network);
+    let service = provider.service();
+    let http = annalo_core::network::client_for(&net, passwords, &service)?;
     let mut client = AiClient::for_provider(provider.clone(), key, http);
     client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
-    client.request_timeout = net.timeout();
+    client.request_timeout = net.timeout_for(&service);
     Ok(client)
+}
+
+/// The proxy passwords of the profiles, as the clients look them up.
+fn proxy_passwords(state: &AppState) -> impl Fn(&str) -> Option<String> + '_ {
+    |id| network::secret(state, id).get()
 }
 
 /// The stored keys of `providers`, by id.
@@ -138,11 +144,11 @@ fn provider_keys(data_dir: &std::path::Path, providers: &[AiProvider]) -> HashMa
 }
 
 impl AiRuntime {
-    fn new(settings: Settings, keys: &HashMap<String, String>, proxy_password: Option<String>) -> Self {
-        for k in keys.values() {
+    fn new(settings: Settings, keys: &HashMap<String, String>, proxy_passwords: &HashMap<String, String>) -> Self {
+        for k in keys.values().chain(proxy_passwords.values()) {
             devlog::remember_secret(Some(k));
         }
-        devlog::remember_secret(proxy_password.as_deref());
+        let passwords = |id: &str| proxy_passwords.get(id).cloned();
         let mut network_error = None;
         let mut failed = |e: Error| {
             let msg = trf!(
@@ -152,14 +158,11 @@ impl AiRuntime {
             devlog::error("net", &msg);
             network_error = Some(msg);
         };
-        let tools_http =
-            annalo_core::network::http_client(&settings.network, proxy_password.as_deref(), Purpose::Tools)
-                .map_err(&mut failed)
-                .ok();
+        let _ = network::check(&network::effective(&settings.network)).map_err(&mut failed);
         let mut clients = HashMap::new();
         for p in settings.providers.iter().filter(|p| p.enabled) {
             let key = keys.get(&p.id).cloned();
-            match provider_client(&settings, p, key, proxy_password.as_deref()) {
+            match provider_client(&settings, p, key, &passwords) {
                 Ok(client) => {
                     clients.insert(p.id.clone(), Arc::new(client));
                 }
@@ -167,14 +170,14 @@ impl AiRuntime {
             }
         }
         let router = Arc::new(ModelRouter::new(settings.router.clone()));
-        AiRuntime { clients, router, tools_http, network_error, settings }
+        AiRuntime { clients, router, http: Mutex::new(HashMap::new()), network_error, settings }
     }
 }
 
 /// Rebuilds the AI runtime (clients, router) from `settings` and the stored secrets.
 pub(crate) fn rebuild_ai(state: &AppState, settings: Settings) {
     let keys = provider_keys(&state.data_dir, &settings.providers);
-    let rt = AiRuntime::new(settings, &keys, state.proxy_secret.get());
+    let rt = AiRuntime::new(settings.clone(), &keys, &network::passwords_of(&state.data_dir, &settings.network));
     *state.ai.write().unwrap_or_else(|e| e.into_inner()) = rt;
     // Another server or key may offer other models, and a fixed server gets another chance.
     lock(&state.server_models).clear();
@@ -194,8 +197,6 @@ pub struct AppState {
     secrets: SecretStore,
     /// Access token of the Git sync.
     git_secret: SecretStore,
-    /// Password of the proxy (Settings → Netzwerk).
-    proxy_secret: SecretStore,
     /// One Git sync at a time (scheduler, backup and „Jetzt synchronisieren“).
     git_lock: Mutex<()>,
     data_dir: PathBuf,
@@ -671,7 +672,7 @@ fn attachment_size(state: State<AppState>, name: String) -> Option<u64> {
 /// network settings; the URL itself when there is none or the page cannot be read.
 #[tauri::command]
 async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
-    let Some(http) = state.ai.read().unwrap_or_else(|e| e.into_inner()).tools_http.clone() else {
+    let Ok(http) = network::client_for(&state, &Service::LinkPreview) else {
         return Ok(url);
     };
     match annalo_core::linktitle::fetch_title(&http, &url).await {
@@ -1830,9 +1831,12 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.markdown_mirror_dir = settings.markdown_mirror_dir.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty());
     settings.git_sync = gitsync::normalize(&settings.git_sync)?;
     settings.network = settings.network.normalized()?;
+    // What an organization's policy fixes (routes, locked profiles) stays as it says.
+    network::enforce_policy(&previous.network, &mut settings.network);
     settings.normalize();
     // A missing or unreadable CA file is reported now, not on the next request.
-    annalo_core::network::Prepared::new(&settings.network, state.proxy_secret.get().as_deref(), Purpose::Ai)?;
+    network::check(&settings.network)?;
+    network::forget_removed(&state, &previous.network, &settings.network);
     settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     if let Some(t) = &settings.reminder_time {
         let time = annalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
@@ -2152,7 +2156,7 @@ async fn provider_models(state: &AppState, provider: AiProvider, key: Option<Str
     let settings = state.settings();
     let unchanged = key.as_deref().is_none_or(str::is_empty) && settings.providers.contains(&provider);
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
-    let client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let client = provider_client(&settings, &provider, key, &proxy_passwords(state))?;
     let start = Instant::now();
     let res = client.models().await;
     let latency_ms = start.elapsed().as_millis() as u64;
@@ -2271,7 +2275,7 @@ async fn ai_provider_test(
     provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
     let key = key.filter(|k| !k.is_empty()).or_else(|| state.provider_secret(&provider.id).get());
     let has_key = key.is_some();
-    let mut client = provider_client(&settings, &provider, key, state.proxy_secret.get().as_deref())?;
+    let mut client = provider_client(&settings, &provider, key, &proxy_passwords(&state))?;
     // A test must end: a server that accepts but never answers fails the step after a minute.
     client.first_byte_timeout = Duration::from_secs(60);
     let mut steps = vec![];
@@ -2473,7 +2477,7 @@ async fn ollama_detect(state: State<'_, AppState>, base_url: Option<String>) -> 
     let url = base_url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| annalo_core::ai::provider::OLLAMA_URL.into());
     let provider = AiProvider::ollama("ollama", url.trim());
     let url = provider.root();
-    let client = provider_client(&state.settings(), &provider, None, None)?;
+    let client = provider_client(&state.settings(), &provider, None, &proxy_passwords(&state))?;
     let probe = async {
         let version = client.ollama_version().await?;
         let models = client.models().await.unwrap_or_default();
@@ -2507,7 +2511,7 @@ async fn ollama_pull(
     if model.is_empty() {
         return Err(Error::State(tr!("Kein Modellname", "No model name").into()));
     }
-    let client = provider_client(&state.settings(), &provider, None, state.proxy_secret.get().as_deref())?;
+    let client = provider_client(&state.settings(), &provider, None, &proxy_passwords(&state))?;
     let cancel = Arc::new(AtomicBool::new(false));
     lock(&state.cancels).insert(request_id.clone(), cancel.clone());
     let res = client
@@ -3335,12 +3339,8 @@ async fn ai_run_system_tool(app: AppHandle, state: State<'_, AppState>, call: Sy
         call.validate()?;
         return jira::run_write(&app, &call).await;
     }
-    let (http, network_error) = {
-        let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
-        (ai.tools_http.clone(), ai.network_error.clone())
-    };
-    let http = http.ok_or_else(|| Error::State(network_error.unwrap_or_default()))?;
-    tools::execute_system_tool(&call, &http, settings.network.timeout()).await
+    let http = network::client_for(&state, &Service::HttpTool)?;
+    tools::execute_system_tool(&call, &http, network::timeout_for(&state, &Service::HttpTool)).await
 }
 
 /// Embeds note chunks that have no embedding yet. Returns the number indexed. An embedding
@@ -4147,7 +4147,8 @@ pub fn run() {
             }
             // Network settings that cannot be applied (a missing CA file): requests fail with the
             // reason instead of going out without the proxy.
-            if let Err(e) = annalo_core::network::http_client(&settings.network, None, Purpose::Tools)
+            network::policy_warnings(&settings.network);
+            if let Err(e) = network::check(&settings.network)
                 && notice.is_none()
             {
                 notice = Some(datadir::Notice::titled("warning", tr!("Netzwerkeinstellungen ungültig", "Network settings invalid"), trf!(
@@ -4171,14 +4172,14 @@ pub fn run() {
             ];
             secrets::init(&dir);
             let secrets = SecretStore::new(&dir);
-            let proxy_secret = SecretStore::proxy(&dir);
+            let proxy_passwords = network::passwords_of(&dir, &settings.network);
             let idle_threshold = Duration::from_secs(settings.idle_threshold_minutes * 60);
             let start = settings.start.clone();
             let effect = settings.appearance.window_effect;
             let custom_frame = settings.appearance.custom_titlebar;
             let geometry = prefs::saved_window(app.handle(), &settings);
             let keys = provider_keys(&dir, &settings.providers);
-            let ai = AiRuntime::new(settings, &keys, proxy_secret.get());
+            let ai = AiRuntime::new(settings, &keys, &proxy_passwords);
 
             let reader = match Database::open_read_only(dir.join(datadir::DB_FILE)) {
                 Ok(r) => Some(Mutex::new(r)),
@@ -4194,7 +4195,6 @@ pub fn run() {
                 ai: RwLock::new(ai),
                 secrets,
                 git_secret: SecretStore::git(&dir),
-                proxy_secret,
                 git_lock: Mutex::new(()),
                 data_dir: dir,
                 data_dir_notice: notice,
@@ -4428,6 +4428,10 @@ pub fn run() {
             ai_embedding_status,
             network::network_status,
             network::network_test,
+            network::network_services,
+            network::network_service_test,
+            network::network_certificate,
+            network::network_legacy_probe,
             network::network_fetch_pac,
             network::network_ca_info,
             network::proxy_password_set,

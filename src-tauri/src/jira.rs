@@ -67,13 +67,9 @@ fn client_with(state: &AppState, site: &JiraSite, token: Option<&str>, kind: Sit
             .into(),
         ));
     }
-    let (http, network_error, timeout) = {
-        let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
-        (ai.tools_http.clone(), ai.network_error.clone(), ai.settings.network.timeout())
-    };
-    let http = http.ok_or_else(|| {
-        Error::State(network_error.unwrap_or_else(|| tr!("Kein Netzwerk-Client", "No network client").into()))
-    })?;
+    let service = annalo_core::network::Service::Jira(site.id.clone());
+    let http = crate::network::client_for(state, &service)?;
+    let timeout = crate::network::timeout_for(state, &service);
     Ok(JiraClient::new(&site.id, &site.url, kind, &site.email, &token, http, timeout))
 }
 

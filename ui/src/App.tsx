@@ -31,7 +31,7 @@ import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
 import { takeUpdateSession } from "./lib/updatesession";
 import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
-import { withPacResults } from "./views/settings/NetworkSection";
+import { usesPac, withPacResults } from "./views/settings/NetworkSection";
 import { warnDestination } from "./views/settings/BackupDestinations";
 import type { SettingsView } from "./lib/types";
 import { FocusDialogHost, useFocusEngine } from "./components/Focus";
@@ -438,10 +438,10 @@ export function notify(kind: "budget" | "backup_failed" | "git_failed" | "update
 /** Re-evaluates the PAC script at start and saves changed answers (mode PAC only). */
 async function refreshPac(view: SettingsView) {
   const s = view.settings;
-  if (s.network?.mode !== "pac" || !s.network.pac_url) return;
+  if (!s.network?.profiles || !usesPac(s)) return;
   try {
     const next = await withPacResults(s);
-    if (JSON.stringify(next.network.pac_results) !== JSON.stringify(s.network.pac_results)) {
+    if (JSON.stringify(next.network) !== JSON.stringify(s.network)) {
       const saved = await api.saveSettings(next);
       useApp.getState().set({ settings: saved });
     }
