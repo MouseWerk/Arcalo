@@ -209,7 +209,7 @@ fn copy_running(target: &Path) -> Result<(CopyKind, Option<PathBuf>)> {
         let dir = exe()?.parent().map(Path::to_path_buf).ok_or_else(|| Error::State("no program folder".into()))?;
         let to = target.join("app");
         copy_tree(&dir, &to)?;
-        return Ok((CopyKind::WindowsDir, Some(to)));
+        Ok((CopyKind::WindowsDir, Some(to)))
     }
     #[cfg(target_os = "macos")]
     {
@@ -223,7 +223,7 @@ fn copy_running(target: &Path) -> Result<(CopyKind, Option<PathBuf>)> {
         if !ok {
             return Err(Error::State("tar failed".into()));
         }
-        return Ok((CopyKind::MacApp, Some(to)));
+        Ok((CopyKind::MacApp, Some(to)))
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
