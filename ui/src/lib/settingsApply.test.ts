@@ -89,7 +89,8 @@ describe("menu groups", () => {
 });
 
 describe("states that wait for a field", () => {
-  const net = (p: object) => ({ network: { mode: "none", http_proxy: "", https_proxy: "", socks_proxy: "", pac_url: "", ...p } }) as unknown as Settings;
+  const net = (p: object) =>
+    ({ network: { profiles: [{ id: "standard", mode: "system" }, { id: "firma", mode: "none", http_proxy: "", https_proxy: "", socks_proxy: "", pac_url: "", ...p }] } }) as unknown as Settings;
   it("a manual proxy or PAC without an address, a filing rule without tag or folder", () => {
     expect(waitsForField(net({ mode: "manual" }))).toBe("network");
     expect(waitsForField(net({ mode: "manual", socks_proxy: "socks5://s:1" }))).toBeNull();

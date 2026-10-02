@@ -59,13 +59,14 @@ export function isDestructive(before: Settings, after: Settings): boolean {
 
 /**
  * The part of the settings that cannot be stored yet because a field it needs is still empty
- * (a manual proxy without an address, a PAC mode without its script; a filing rule, a price
+ * (a proxy profile in mode manual without an address, or PAC without its script; a filing rule, a price
  * row, an AI preset or a Jira search not filled in yet, which the core would drop): the form shows it, its save waits for the field.
  */
 export function waitsForField(s: Settings): "network" | "filing" | "prices" | "ai" | "jira" | null {
-  const n = s.network;
-  if (n?.mode === "manual" && ![n.http_proxy, n.https_proxy, n.socks_proxy].some((x) => x?.trim())) return "network";
-  if (n?.mode === "pac" && !n.pac_url?.trim()) return "network";
+  for (const n of s.network?.profiles ?? []) {
+    if (n.mode === "manual" && ![n.http_proxy, n.https_proxy, n.socks_proxy].some((x) => x?.trim())) return "network";
+    if (n.mode === "pac" && !n.pac_url?.trim()) return "network";
+  }
   if (s.filing?.rules?.some((r) => !r.key?.trim().replace(/^#+/, "") || !r.folder?.trim())) return "filing";
   // A new row of the price table, an inline AI preset or a saved Jira search still being filled in.
   if (s.prices?.some((r) => !r.model?.trim())) return "prices";

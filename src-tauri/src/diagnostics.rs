@@ -154,7 +154,7 @@ mod tests {
     fn the_bundle_holds_info_settings_and_logs_but_no_secrets() {
         let mut settings = annalo_core::settings::Settings::default();
         settings.git_sync.remote_url = "https://bob:ghp_supersecret123@github.com/x/y.git".into();
-        settings.network.http_proxy = "http://proxyuser:proxy-pass-9@proxy:8080".into();
+        settings.network.profiles[0].http_proxy = "http://proxyuser:proxy-pass-9@proxy:8080".into();
         settings.litellm_base_url = "https://llm.example.com/v1?api_key=sk-hidden-777".into();
         let info = json!({ "version": "1.10.0", "schema_version": 21 });
         let logs = vec![("annalo.log".to_owned(), b"2026-10-01T10:00:00.000+02:00 INFO [git] ok\n".to_vec())];

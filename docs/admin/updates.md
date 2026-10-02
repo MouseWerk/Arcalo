@@ -118,6 +118,8 @@ Policies are read at every start. Higher sources win per value:
 
 Settings → About shows „Managed by your organization“ with the source of the policy and locks
 the managed fields. Invalid values are ignored and logged (Settings → Log, category „update“).
+The same sources also carry the network policies (`NetworkRoute.<service>`,
+`LockNetworkProfiles`): see docs/admin/network.md.
 
 ### Registry example (.reg)
 

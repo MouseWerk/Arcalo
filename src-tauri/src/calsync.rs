@@ -94,7 +94,7 @@ pub struct CalendarStatus {
     discovery: Discovery,
 }
 
-fn secret(state: &AppState, id: &str) -> SecretStore {
+pub(crate) fn secret(state: &AppState, id: &str) -> SecretStore {
     SecretStore::calendar(&state.data_dir, id)
 }
 
@@ -646,15 +646,9 @@ async fn read_source(app: &AppHandle, id: &str, (from, to): Window) -> Result<Ve
                         .into(),
                     )
                 })?;
-                let (http, network_error, timeout) = {
-                    let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
-                    (ai.tools_http.clone(), ai.network_error.clone(), ai.settings.network.timeout())
-                };
-                let http = http.ok_or_else(|| {
-                    Error::State(
-                        network_error.unwrap_or_else(|| tr!("Kein Netzwerk-Client", "No network client").into()),
-                    )
-                })?;
+                let service = annalo_core::network::Service::Ics(src.id.clone());
+                let http = crate::network::client_for(&state, &service)?;
+                let timeout = crate::network::timeout_for(&state, &service);
                 ics::fetch(&http, &url, timeout).await?
             }
         };

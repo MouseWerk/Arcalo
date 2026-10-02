@@ -31,18 +31,26 @@ const current = (): Settings =>
     dev_log_verbose: false,
     git_sync: { enabled: false, remote_url: "", branch: "main", author_name: "Annalo", author_email: "a@b", include_database: false, mode: "with_backup" },
     network: {
-      mode: "system",
-      http_proxy: "",
-      https_proxy: "",
-      socks_proxy: "",
-      no_proxy: "localhost",
-      pac_url: "",
-      pac_results: {},
-      proxy_user: "",
-      extra_ca_path: null,
-      accept_invalid_certs: false,
-      timeout_secs: 30,
-      apply_to: { ai: true, git: true, updates: true, tools: true },
+      profiles: [
+        {
+          id: "standard",
+          name: "Standard",
+          mode: "system",
+          http_proxy: "",
+          https_proxy: "",
+          socks_proxy: "",
+          no_proxy: "localhost",
+          pac_url: "",
+          pac_results: {},
+          proxy_user: "",
+          extra_ca_path: null,
+          connect_timeout_secs: 30,
+          read_timeout_secs: 0,
+          legacy_accept_invalid_certs: false,
+        },
+      ],
+      routes: {},
+      trusted_hosts: [],
     },
     appearance: { accent: "indigo", ui_font: "inter", editor_font: "sans", code_font: "jetbrains", ui_scale: 100, density: "normal", line_width: "normal", reduce_motion: false, window_effect: "mica", window_opacity: 80, custom_titlebar: true, startup_animation: true },
     editor: { spellcheck: "de", autosave_ms: 450, smart_quotes: false, auto_pair: false, tab_size: 4, code_line_numbers: false, hover_preview: true, hover_delay_ms: 450, scroll_outline: true, default_icon: null, new_page_location: "top", inbox_title: "Inbox", toolbar: true },
@@ -54,7 +62,7 @@ const current = (): Settings =>
     start: { open: "tabs", restore_window: true, minimized: false },
     locale: { language: "de", date_format: "de" },
     keymap: {},
-  }) as Settings;
+  }) as unknown as Settings;
 
 const file = (settings: unknown) => JSON.stringify({ format: EXPORT_FORMAT, version: 1, app_version: "1.0.0", settings });
 
@@ -93,8 +101,10 @@ describe("settings import", () => {
     expect(s.appearance.ui_scale).toBe(100);
     expect(s.workdays).toEqual([1, 2, 3]);
     expect(s.jira_issue_map).toEqual({ "NP-1": "AET-1" });
-    expect(s.network.mode).toBe("manual");
-    expect(s.network.apply_to).toEqual({ ai: true, git: false, updates: true, tools: true });
+    // The one network setting of 1.9 becomes the default profile; Git did not use it.
+    expect(s.network.profiles[0]).toMatchObject({ id: "standard", mode: "manual", http_proxy: "proxy:8080" });
+    expect(s.network.profiles[1]).toMatchObject({ id: "standard-system", mode: "system" });
+    expect(s.network.routes).toEqual({ git_sync: "standard-system" });
     expect(s.reminder_time).toBeNull();
     expect(s.embedding_model).toBe("firma-embed");
     expect(s.keymap).toEqual({ daily_note: "Ctrl+Shift+J" });

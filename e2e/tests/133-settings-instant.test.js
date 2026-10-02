@@ -58,12 +58,13 @@ test("typing is one change: saved once it pauses, one undo restores the text bef
 });
 
 test("an address applies on Enter, an invalid one stays with an inline error", async () => {
-  const mode = (await storedSettings(app)).network.mode;
+  // The fields of the default profile („Standard“, selected when the section opens).
+  const mode = (await storedSettings(app)).network.profiles[0].mode;
   await openSection("network");
   // „Manuell“ waits for an address before it is stored (a manual proxy needs one).
   await app.browser.execute(() => [...document.querySelectorAll('.pane.active [role="radiogroup"][aria-label="Proxy-Modus"] [role="radio"]')].find((b) => b.textContent.trim() === "Manuell").click());
   await settingsSettled(app);
-  assert.equal((await storedSettings(app)).network.mode, mode, "not stored without an address");
+  assert.equal((await storedSettings(app)).network.profiles[0].mode, mode, "not stored without an address");
   const field = '.pane.active input[aria-label="HTTP-Proxy"]';
   const el = await app.waitFor(field);
   await el.click();
@@ -72,7 +73,7 @@ test("an address applies on Enter, an invalid one stays with an inline error", a
   await app.waitText(".pane.active .field-error", /Ungültige Adresse/);
   assert.equal(await app.browser.execute((f) => document.querySelector(f).getAttribute("aria-invalid"), field), "true");
   await settingsSettled(app);
-  assert.equal((await storedSettings(app)).network.http_proxy, "", "not stored");
+  assert.equal((await storedSettings(app)).network.profiles[0].http_proxy, "", "not stored");
   await app.browser.execute((f) => {
     const i = document.querySelector(f);
     i.focus();
@@ -81,12 +82,12 @@ test("an address applies on Enter, an invalid one stays with an inline error", a
   await app.type("proxy.firma.de:8080");
   await app.keys(["Enter"]);
   await settingsSettled(app);
-  const net = (await storedSettings(app)).network;
+  const net = (await storedSettings(app)).network.profiles[0];
   assert.deepEqual([net.mode, net.http_proxy], ["manual", "http://proxy.firma.de:8080"], "mode and address stored together (normalized)");
   assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active .field-error")), false);
   await app.shot("133-network-inline");
   const back = await storedSettings(app);
-  await app.invoke("settings_save", { settings: { ...back, network: { ...back.network, mode, http_proxy: "" } } });
+  await app.invoke("settings_save", { settings: { ...back, network: { ...back.network, profiles: back.network.profiles.map((p, i) => (i ? p : { ...p, mode, http_proxy: "" })) } } });
   await app.dismissToasts();
 });
 
@@ -134,7 +135,7 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
   const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-nav-group-label")].map((g) => g.textContent.trim()));
   assert.deepEqual(groups, ["Allgemein", "Arbeiten", "KI & Sprache", "Daten & Sicherheit", "System"]);
   const count = await app.browser.execute(() => document.querySelectorAll(".pane.active .settings-nav-item").length);
-  assert.equal(count, 21);
+  assert.equal(count, 22, "21 sections and „Sicherheit“ (1.10)");
   // Collapse „Arbeiten“: its items hide, the state survives a reload.
   await app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
   const hidden = () => app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-items').hidden);

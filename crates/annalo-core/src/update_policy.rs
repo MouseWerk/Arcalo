@@ -88,6 +88,11 @@ pub struct Policy {
     pub pinned_version: Option<String>,
     pub install_window: Option<InstallWindow>,
     pub check_interval_hours: Option<u32>,
+    /// `NetworkRoute.<service>`: service key or group (`ai`, `ai:<id>`, `updates`, …) → the
+    /// name or id of the profile it must use (`Standard` = the default profile).
+    pub network_routes: std::collections::BTreeMap<String, String>,
+    /// `LockNetworkProfiles`: the proxy profiles cannot be changed.
+    pub lock_network_profiles: Option<bool>,
     /// Where the values came from (registry key, file), for the log and Settings.
     pub origins: Vec<String>,
     /// Values that were ignored, with the reason.
@@ -111,20 +116,29 @@ impl Policy {
             let bad = |p: &mut Policy| {
                 p.warnings.push(trf!("{}: {} = „{}“ ungültig", "{}: {} = “{}” invalid", origin, name, text))
             };
+            let lname = name.trim().to_ascii_lowercase();
+            if let Some(key) = lname.strip_prefix("networkroute.") {
+                if crate::network::valid_route_key(key) && !text.is_empty() {
+                    p.network_routes.insert(key.to_owned(), text);
+                    any = true;
+                } else {
+                    bad(&mut p);
+                }
+                continue;
+            }
             match name.trim().to_ascii_lowercase().as_str() {
                 "updatemode" => match UpdateMode::parse(&text) {
                     Some(m) => p.update_mode = Some(m),
                     None => bad(&mut p),
                 },
                 "updateurl" => p.update_url = Some(text).filter(|t| !t.is_empty()),
-                "allowgithubfallback" => match value {
-                    Value::Bool(b) => p.allow_github_fallback = Some(b),
-                    Value::Number(n) => p.allow_github_fallback = Some(n != 0),
-                    Value::Text(_) => match text.to_ascii_lowercase().as_str() {
-                        "1" | "true" | "yes" | "on" => p.allow_github_fallback = Some(true),
-                        "0" | "false" | "no" | "off" => p.allow_github_fallback = Some(false),
-                        _ => bad(&mut p),
-                    },
+                "allowgithubfallback" => match as_bool(&value, &text) {
+                    Some(b) => p.allow_github_fallback = Some(b),
+                    None => bad(&mut p),
+                },
+                "locknetworkprofiles" => match as_bool(&value, &text) {
+                    Some(b) => p.lock_network_profiles = Some(b),
+                    None => bad(&mut p),
                 },
                 "pinnedversion" => {
                     let v = text.trim_start_matches('v');
@@ -200,6 +214,8 @@ impl Policy {
             pinned_version: self.pinned_version.or(lower.pinned_version),
             install_window: self.install_window.or(lower.install_window),
             check_interval_hours: self.check_interval_hours.or(lower.check_interval_hours),
+            network_routes: lower.network_routes.into_iter().chain(self.network_routes).collect(),
+            lock_network_profiles: self.lock_network_profiles.or(lower.lock_network_profiles),
             origins: self.origins.into_iter().chain(lower.origins).collect(),
             warnings: self.warnings.into_iter().chain(lower.warnings).collect(),
         }
@@ -216,6 +232,14 @@ impl Policy {
                 })
             })
             .unwrap_or_default()
+    }
+
+    /// What the policy fixes in Settings → Netzwerk.
+    pub fn network(&self) -> crate::network::NetworkPolicy {
+        crate::network::NetworkPolicy {
+            routes: self.network_routes.clone(),
+            lock_profiles: self.lock_network_profiles.unwrap_or(false),
+        }
     }
 
     /// The names of the managed fields (Settings locks them).
@@ -240,6 +264,19 @@ impl Policy {
             out.push("interval");
         }
         out
+    }
+}
+
+/// A switch as the registry (DWORD), a plist or JSON stores it.
+fn as_bool(value: &Value, text: &str) -> Option<bool> {
+    match value {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => Some(*n != 0),
+        Value::Text(_) => match text.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        },
     }
 }
 

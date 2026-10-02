@@ -173,6 +173,8 @@ dependencies = [
  "reqwest",
  "rrule",
  "rusqlite",
+ "rustls",
+ "rustls-platform-verifier",
  "schemars 0.8.22",
  "semver",
  "serde",

@@ -124,7 +124,9 @@ pub struct AiClient {
 impl AiClient {
     /// A LiteLLM proxy at `base_url` (its root, e.g. `http://localhost:4000`).
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Self {
-        Self::with_http(base_url, api_key, reqwest::Client::new())
+        let net = crate::network::NetworkSettings::default();
+        let service = crate::network::Service::Ai { id: "litellm".into(), local: false };
+        Self::with_http(base_url, api_key, crate::network::client_for(&net, &|_| None, &service).unwrap_or_default())
     }
 
     /// A LiteLLM proxy with a configured HTTP client (proxy, extra CA, timeouts:
