@@ -3111,6 +3111,8 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .task-row[draggable="true"], .dw-task[draggable="true"] { -webkit-user-drag: element; }
 @media (hover: none) {
   .task-row .task-plan, .dw-task .dw-plan { opacity: 1; }
+}
+
 /* ---- Morgen-Briefing (views/BriefingView.tsx) ---- */
 .bf-view { --k-ai: var(--accent); --k-jira: var(--warning); --k-time: var(--violet); }
 .bf-view .tone-ai { --k: var(--k-ai); }
