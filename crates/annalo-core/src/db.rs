@@ -96,7 +96,7 @@ pub struct Database {
     depth: std::sync::atomic::AtomicUsize,
     /// The stored settings JSON and what it parsed to: a save reads the settings (version
     /// policy), and parsing them each time costs more than the save itself for small pages.
-    pub(crate) settings_cache: std::cell::RefCell<Option<(String, crate::settings::Settings)>>,
+    pub(crate) settings_cache: std::cell::RefCell<Option<(String, crate::settings::Parsed)>>,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {

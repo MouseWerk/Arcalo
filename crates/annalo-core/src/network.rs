@@ -42,6 +42,7 @@ const MAX_CA_BYTES: u64 = 4 * 1024 * 1024;
 // ------------------------------------------------------------------ settings
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyMode {
     /// Always connect directly.
@@ -57,6 +58,7 @@ pub enum ProxyMode {
 /// Which connections use the proxy settings. Connections that do not keep the program's
 /// default behavior (reqwest and Git read the proxy environment variables).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct ApplyTo {
     pub ai: bool,
@@ -72,6 +74,7 @@ impl Default for ApplyTo {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct NetworkSettings {
     pub mode: ProxyMode,

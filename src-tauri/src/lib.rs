@@ -1347,6 +1347,18 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
     devlog::remember_secret(token.as_deref());
     // Notes with an open conflict keep the server's version until merged.
     let hold = syncmerge::hold_paths(&state.db());
+    // The settings file, when the settings are synced too.
+    let settings_file = if settings.git_sync.sync_settings {
+        match state.db().settings_sync_file(&gitsync::hostname()) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                devlog::warn("settings", format!("settings file for the sync not written: {e}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
     let res = (|| {
         let source = state.git_source_dir();
         if settings.markdown_mirror {
@@ -1377,6 +1389,7 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
                 now: Local::now(),
                 hold: &hold,
                 allow_deletions,
+                settings_file: settings_file.clone(),
             },
         )
     })();
@@ -1384,6 +1397,9 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
         && !out.remote_changes.is_empty()
     {
         take_over_pulled(app, &state, out);
+    }
+    if let Ok(SyncOutcome { settings_file: Some(text), .. }) = &res {
+        take_over_settings(app, text);
     }
     let db = state.db();
     match &res {
@@ -1761,6 +1777,12 @@ struct SettingsView {
     /// Effective backup folder (the configured one or the default).
     backup_dir: String,
     version: &'static str,
+    /// Per shareable section: „Für alle Arbeitsbereiche“ (`global`) or „Nur dieser“ (`workspace`).
+    scopes: std::collections::BTreeMap<String, annalo_core::settings_layers::Scope>,
+    /// Whether sections can be shared at all (a shared folder is set).
+    shared: bool,
+    /// The last settings sync that changed settings here (for „Rückgängig“).
+    sync_last: Option<annalo_core::settings_sync::LastMerge>,
 }
 
 #[tauri::command]
@@ -1781,6 +1803,9 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         data_dir: state.data_dir.display().to_string(),
         backup_dir: state.backup_dir().display().to_string(),
         version: env!("CARGO_PKG_VERSION"),
+        scopes: annalo_core::settings_layers::scopes(&state.settings()),
+        shared: annalo_core::settings_layers::shared_dir().is_some(),
+        sync_last: state.db().settings_sync_last().ok().flatten(),
     }
 }
 
@@ -1819,22 +1844,28 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.capture_shortcut = settings.capture_shortcut.trim().to_owned();
     settings.palette_shortcut = settings.palette_shortcut.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     settings.search_shortcut = settings.search_shortcut.trim().to_owned();
+    // What is stored (the database, which a scope change or a settings sync may have changed
+    // ahead of the running settings).
+    let stored = state.db().load_settings()?;
     // The start page saves its widgets itself (`dashboard_save`); a settings draft opened
     // earlier must not overwrite them.
-    settings.dashboard = state.settings().dashboard;
+    settings.dashboard = stored.dashboard.clone();
     // The same for the sidebar's links (`quick_links_save`).
-    settings.quick_links = state.settings().quick_links;
+    settings.quick_links = stored.quick_links.clone();
     // And for the calendar sources (`calendar_source_*`; their addresses are secrets).
-    settings.calendar.sources = state.settings().calendar.sources;
+    settings.calendar.sources = stored.calendar.sources.clone();
+    // And for the shared sections' scopes (`settings_scope_set`) and the version of the shape.
+    settings.workspace_scopes = stored.workspace_scopes.clone();
+    settings.version = stored.version.max(annalo_core::settings_migrate::SETTINGS_VERSION);
     // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
-    let stored_cal = state.settings().calendar;
+    let stored_cal = stored.calendar.clone();
     settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
     settings.calendar.outlook_recipients = stored_cal.outlook_recipients;
     settings.calendar = std::mem::take(&mut settings.calendar).normalized();
     // And for the first-run flags (`onboarding_complete` / `onboarding_reset`).
-    settings.onboarding = state.settings().onboarding;
+    settings.onboarding = stored.onboarding.clone();
     // And for the Jira sites (`jira_site_*`; their tokens are secrets).
-    settings.jira.sites = state.settings().jira.sites;
+    settings.jira.sites = stored.jira.sites.clone();
     settings.jira = std::mem::take(&mut settings.jira).normalized();
     // An inbox title still at the other language's default follows the language.
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
@@ -1922,6 +1953,55 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // Other windows (and a settings page opened elsewhere) take over the change.
     let _ = app.emit("settings://changed", ());
     Ok(settings_get(state))
+}
+
+/// Settings → a shareable section: „Für alle Arbeitsbereiche“ or „Nur dieser Arbeitsbereich“.
+/// To „Für alle“ the shared value is taken (when there is one) and applied like a save.
+#[tauri::command]
+fn settings_scope_set(
+    app: AppHandle,
+    state: State<AppState>,
+    section: String,
+    scope: annalo_core::settings_layers::Scope,
+) -> Result<SettingsView> {
+    let s = state.db().set_settings_scope(&section, scope)?;
+    devlog::info("settings", format!("section {section} now {scope:?}"));
+    settings_save(app, state, serde_json::to_value(&s)?)
+}
+
+/// Takes back the settings the last settings sync took from the server.
+#[tauri::command]
+fn settings_sync_undo(app: AppHandle, state: State<AppState>) -> Result<SettingsView> {
+    let s = state.db().settings_sync_undo()?;
+    devlog::info("settings", "last settings sync taken back");
+    settings_save(app, state, serde_json::to_value(&s)?)
+}
+
+/// Applies the settings file of a sync (see `settings_sync`): what changed later on another
+/// computer is taken over, logged and announced (`settings://synced`, with „Rückgängig“).
+fn take_over_settings(app: &AppHandle, text: &str) {
+    let state = app.state::<AppState>();
+    let applied = state.db().settings_sync_apply(text);
+    match applied {
+        Ok((next, changes)) if !changes.is_empty() => {
+            let keys: Vec<&str> = changes.iter().map(|c| c.key.as_str()).collect();
+            devlog::info(
+                "settings",
+                format!("settings sync: {} taken from the server: {}", keys.len(), keys.join(", ")),
+            );
+            match serde_json::to_value(&next)
+                .map_err(Error::from)
+                .and_then(|v| settings_save(app.clone(), app.state(), v))
+            {
+                Ok(_) => {
+                    let _ = app.emit("settings://synced", keys.len());
+                }
+                Err(e) => devlog::error("settings", format!("synced settings not applied: {e}")),
+            }
+        }
+        Ok(_) => {}
+        Err(e) => devlog::error("settings", format!("settings sync failed: {e}")),
+    }
 }
 
 /// Saves only the start page's widgets and scratch note (the rest of the settings stays as it is).
@@ -3620,6 +3700,22 @@ struct DataDirStatus {
     portable: bool,
 }
 
+/// Folder of the settings shared by every workspace on this computer (see `settings_layers`):
+/// the app's config folder; in portable mode the folder next to `data`; with
+/// `ANNALO_DATA_DIR` (tests) `ANNALO_SHARED_SETTINGS_DIR` or the data folder itself.
+fn shared_settings_dir(app: &AppHandle, data_dir: &std::path::Path) -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("ANNALO_SHARED_SETTINGS_DIR") {
+        return Some(PathBuf::from(d));
+    }
+    if std::env::var_os("ANNALO_DATA_DIR").is_some() {
+        return Some(data_dir.to_path_buf());
+    }
+    if portable::active() {
+        return data_dir.parent().map(std::path::Path::to_path_buf);
+    }
+    app.path().app_config_dir().ok()
+}
+
 fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     app.path().app_config_dir().map_err(|e| Error::State(e.to_string()))
 }
@@ -3936,6 +4032,24 @@ pub fn run() {
                     return Ok(());
                 }
             };
+            // Settings of an older version are brought up to date once, then the sections
+            // shared by every workspace on this computer are taken over.
+            match db.migrate_settings() {
+                Ok(m) if m.ran() => devlog::info(
+                    "settings",
+                    format!("settings version {} → {}: {}", m.from, m.to, if m.notes.is_empty() { "no changes".to_owned() } else { m.notes.join("; ") }),
+                ),
+                Ok(_) => {}
+                Err(e) => devlog::warn("settings", format!("settings migration failed: {e}")),
+            }
+            annalo_core::settings_layers::set_shared_dir(shared_settings_dir(app.handle(), &dir));
+            match db.adopt_shared_settings() {
+                Ok(taken) if !taken.is_empty() => {
+                    devlog::info("settings", format!("shared settings taken over: {}", taken.join(", ")))
+                }
+                Ok(_) => {}
+                Err(e) => devlog::warn("settings", format!("shared settings not read: {e}")),
+            }
             // The language of the settings, as the UI shows it (the first run sets it from the
             // system's language).
             if let Ok(mut s) = db.load_settings() {
@@ -4253,6 +4367,8 @@ pub fn run() {
             syncmerge::git_conflict_keep_both,
             settings_get,
             settings_save,
+            settings_scope_set,
+            settings_sync_undo,
             api_key_set,
             ai_test_connection,
             provider_key_set,

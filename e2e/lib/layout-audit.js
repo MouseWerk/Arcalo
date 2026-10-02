@@ -55,7 +55,18 @@ export function auditLayout(rootSelector) {
     }
   }
   // 3. Overlapping controls (not nested in each other).
-  const boxes = controls.map((el) => [el, el.getBoundingClientRect()]);
+  // The part of a control scrolled under the edge of its scroll container (a long menu) is not
+  // on screen: only the shown part counts.
+  const shownRect = (el) => {
+    const r = el.getBoundingClientRect();
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      if (!/(auto|scroll)/.test(getComputedStyle(p).overflowY)) continue;
+      const pr = p.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: Math.max(r.top, pr.top), bottom: Math.min(r.bottom, pr.bottom) };
+    }
+    return r;
+  };
+  const boxes = controls.map((el) => [el, shownRect(el)]);
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
       const [a, ra] = boxes[i];

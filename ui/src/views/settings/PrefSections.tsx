@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, IconButton, Input, Segmented, Select, Switch } from "../../components/ui";
+import { Badge, Button, IconButton, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
@@ -11,6 +11,7 @@ import { timeTrackingOn } from "../../lib/timetracking";
 import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
+import { checkTime } from "../../lib/settingsApply";
 import { ChatHistoryGroup } from "./ChatHistoryPrefs";
 import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
@@ -335,7 +336,7 @@ export function NotificationsSection({ draft, update }: SectionProps) {
         </Row>
         <Row label={t("set.notify.dayReview")} description={t("set.notify.dayReviewDesc")}>
           <div className="unit-input">
-            {n.day_review && <Input className="time-input num notify-review-time" value={n.day_review_time} maxLength={5} placeholder="17:30" onChange={(e) => set({ day_review_time: e.target.value })} aria-label={t("set.notify.dayReviewTime")} />}
+            {n.day_review && <CommitInput className="time-input num notify-review-time" value={n.day_review_time} maxLength={5} placeholder="17:30" onCommit={(v) => set({ day_review_time: v })} validate={(v) => (checkTime(v) ? t("settings.err.time") : null)} aria-label={t("set.notify.dayReviewTime")} />}
             <Switch label={t("set.notify.dayReview")} checked={n.day_review} onChange={(v) => set({ day_review: v })} />
           </div>
         </Row>
@@ -351,9 +352,9 @@ export function NotificationsSection({ draft, update }: SectionProps) {
           <div className="unit-input">
             {n.quiet_hours && (
               <>
-                <Input className="time-input num" value={n.quiet_from} maxLength={5} onChange={(e) => set({ quiet_from: e.target.value })} aria-label={t("set.notify.from")} />
+                <CommitInput className="time-input num" value={n.quiet_from} maxLength={5} onCommit={(v) => set({ quiet_from: v })} validate={(v) => (checkTime(v) ? t("settings.err.time") : null)} aria-label={t("set.notify.from")} />
                 <span className="faint">–</span>
-                <Input className="time-input num" value={n.quiet_to} maxLength={5} onChange={(e) => set({ quiet_to: e.target.value })} aria-label={t("set.notify.to")} />
+                <CommitInput className="time-input num" value={n.quiet_to} maxLength={5} onCommit={(v) => set({ quiet_to: v })} validate={(v) => (checkTime(v) ? t("settings.err.time") : null)} aria-label={t("set.notify.to")} />
               </>
             )}
             <Switch label={t("set.notify.quietHours")} checked={n.quiet_hours} onChange={(v) => set({ quiet_hours: v })} />

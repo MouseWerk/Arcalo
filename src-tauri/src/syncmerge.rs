@@ -484,6 +484,7 @@ mod tests {
                     now: Local::now(),
                     hold: &hold_paths(db),
                     allow_deletions: false,
+                    settings_file: None,
                 },
             )?;
             apply(db, &out.remote_changes, Local::now())

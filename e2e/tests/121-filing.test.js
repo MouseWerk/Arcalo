@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { voiceFixtures } from "../lib/voice.js";
 
 const test = guarded(nodeTest, () => app);
@@ -143,7 +144,7 @@ test("rules: settings section, test a page, the first matching rule decides on c
   await folder.click();
   await app.type("Kunden/X");
   await app.keys(["Enter"]);
-  await app.browser.execute(() => [...document.querySelectorAll(".savebar button")].find((b) => b.textContent.trim() === "Speichern")?.click());
+  await settingsSettled(app);
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.filing?.rules?.length === 1, { timeoutMsg: "rule not saved" });
   const view = await app.invoke("settings_get");
   assert.deepEqual(

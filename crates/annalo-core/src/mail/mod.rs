@@ -165,6 +165,7 @@ fn one_line(s: &str) -> String {
 
 /// Settings → Kalender → E-Mail (Outlook).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct MailSettings {
     /// Top-level page below which mail notes are created.

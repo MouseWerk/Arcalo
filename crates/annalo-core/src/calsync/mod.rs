@@ -37,6 +37,7 @@ pub const PALETTE: [&str; 8] = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db
 
 /// Where an ICS source comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum IcsKind {
     /// A subscription URL; the URL (it may carry a secret token) lives in the credential store.
@@ -47,6 +48,7 @@ pub enum IcsKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct IcsSource {
     /// `[a-z0-9]`, stable; the source id is `ics:<id>`.
@@ -81,6 +83,7 @@ impl IcsSource {
 
 /// Settings → Kalender.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct CalendarSettings {
     /// Read Outlook Classic (Windows): the calendars selected in `outlook_calendars`.

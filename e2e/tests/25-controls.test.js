@@ -4,6 +4,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { clickUndo, settingsSettled } from "../lib/settings.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -35,7 +36,16 @@ function sweepSection(done) {
         await wait();
         continue;
       }
-      if (!sw.isConnected) continue;
+      if (!sw.isConnected) {
+        // The switch rebuilt its section (time tracking off): switch it back through its new element.
+        const same = [...body.querySelectorAll('[role="switch"]')].find((x) => x.getAttribute("aria-label") === sw.getAttribute("aria-label"));
+        if (same && same.getAttribute("aria-checked") !== before) {
+          same.click();
+          await wait();
+        }
+        out.switches++;
+        continue;
+      }
       if (!(await until(() => sw.getAttribute("aria-checked") !== before))) out.problems.push(`switch did not toggle: ${label(sw)}`);
       else {
         sw.click();
@@ -92,7 +102,7 @@ function sweepSection(done) {
   })().then(done, (e) => done({ problems: [String(e)], switches: 0, radios: 0, selects: 0 }));
 }
 
-test("settings: every switch, option and dropdown reacts; Verwerfen restores the saved state", async () => {
+test("settings: every switch, option and dropdown reacts and applies at once; undo and „Abschnitt zurücksetzen“ restore", async () => {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav-item");
   const saved = JSON.stringify((await app.invoke("settings_get")).settings);
@@ -104,24 +114,43 @@ test("settings: every switch, option and dropdown reacts; Verwerfen restores the
     const r = await app.browser.executeAsync(sweepSection);
     assert.deepEqual(r.problems, [], `section ${s}`);
     for (const k of Object.keys(totals)) totals[k] += r[k];
-    // Undo: the save bar offers „Verwerfen“, afterwards nothing is unsaved.
-    if (await app.browser.execute(() => !!document.querySelector(".savebar"))) {
-      // The bar may still be sliding in or re-rendering: wait for its button instead of assuming it.
-      const discard = () => app.browser.execute(() => {
-        const b = [...document.querySelectorAll(".savebar button")].find((x) => /Verwerfen/.test(x.textContent));
-        b?.click();
-        return !!b || !document.querySelector(".savebar");
-      });
-      await app.browser.waitUntil(discard, { timeoutMsg: `no Verwerfen in ${s}: ${await app.browser.execute(() => document.querySelector(".savebar")?.textContent)}` });
-      await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".savebar"))), { timeoutMsg: `savebar stays in ${s}` });
-    }
+    // Every change was saved at once; there is no save bar to confirm or discard.
+    await settingsSettled(app, 15000);
+    assert.equal(await app.browser.execute(() => !!document.querySelector(".savebar")), false, `save bar in ${s}`);
+    await app.dismissToasts();
   }
   assert.ok(totals.switches > 20 && totals.radios > 10 && totals.selects > 5, JSON.stringify(totals));
-  // Nothing was saved along the way.
+  // Every control was switched back: what is stored is what was there before.
   const now = (await app.invoke("settings_get")).settings;
   for (const k of ["appearance", "editor", "notes", "time", "ai", "notifications", "privacy", "start", "locale", "network"]) {
     assert.deepEqual(now[k], JSON.parse(saved)[k], `settings.${k} changed`);
   }
+  // „Rückgängig“ in the toast restores the state before one change.
+  await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="notifications"]').click());
+  const sw = await app.waitFor('.pane.active .settings-body button[role="switch"]');
+  const label = await sw.getAttribute("aria-label");
+  await sw.click();
+  await settingsSettled(app);
+  assert.notDeepEqual((await app.invoke("settings_get")).settings.notifications, JSON.parse(saved).notifications, `${label} applied`);
+  await clickUndo(app);
+  await settingsSettled(app);
+  assert.deepEqual((await app.invoke("settings_get")).settings.notifications, JSON.parse(saved).notifications, `${label} undone`);
+  await app.dismissToasts();
+  // „Abschnitt zurücksetzen“ brings the defaults back, and its undo the state before.
+  await sw.click();
+  await settingsSettled(app);
+  await app.dismissToasts();
+  const changed = (await app.invoke("settings_get")).settings.notifications;
+  await app.click(".pane.active .settings-reset");
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Abschnitt zurückgesetzt/);
+  assert.deepEqual((await app.invoke("settings_get")).settings.notifications, JSON.parse(saved).notifications, "defaults again");
+  await clickUndo(app);
+  await settingsSettled(app);
+  assert.deepEqual((await app.invoke("settings_get")).settings.notifications, changed, "reset undone");
+  await sw.click();
+  await settingsSettled(app);
+  await app.dismissToasts();
 });
 
 test("time tracking: week navigation, new entry, release, bulk actions, export, quick booking", async () => {

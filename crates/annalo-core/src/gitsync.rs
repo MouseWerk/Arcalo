@@ -94,6 +94,7 @@ and import it as an Obsidian vault.
 // ------------------------------------------------------------------ settings
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SyncMode {
     /// After every backup (daily, and „Jetzt sichern“).
@@ -106,6 +107,7 @@ pub enum SyncMode {
 /// Settings of the Git sync. The access token is not part of it; the desktop shell keeps
 /// it in the OS credential store.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct GitSyncSettings {
     pub enabled: bool,
@@ -117,6 +119,9 @@ pub struct GitSyncSettings {
     /// Also commit the latest database backup as `annalo-workspace.db`.
     pub include_database: bool,
     pub mode: SyncMode,
+    /// Also sync the settings (no secrets, nothing machine-specific) as `settings.json`, merged
+    /// per setting (see [`crate::settings_sync`]).
+    pub sync_settings: bool,
 }
 
 impl Default for GitSyncSettings {
@@ -129,6 +134,7 @@ impl Default for GitSyncSettings {
             author_email: "annalo@localhost".into(),
             include_database: false,
             mode: SyncMode::WithBackup,
+            sync_settings: false,
         }
     }
 }
@@ -145,6 +151,7 @@ pub fn normalize(s: &GitSyncSettings) -> Result<GitSyncSettings> {
         author_email: pick(&s.author_email, &d.author_email),
         include_database: s.include_database,
         mode: s.mode,
+        sync_settings: s.sync_settings,
     };
     check_branch(&out.branch)?;
     if !out.remote_url.is_empty() {
@@ -297,7 +304,8 @@ fn is_git_dir(name: &str) -> bool {
 /// Root entries of the working tree the tree sync never removes: `.git` and the files
 /// written by the sync itself (`README.md` only while the source has none).
 fn protected(src: &Path) -> Vec<String> {
-    let mut p = vec![".git".to_owned(), ATTRIBUTES_FILE.to_owned(), DB_FILE.to_owned()];
+    let mut p =
+        vec![".git".to_owned(), ATTRIBUTES_FILE.to_owned(), DB_FILE.to_owned(), crate::settings_sync::FILE.to_owned()];
     if !src.join(README_FILE).exists() {
         p.push(README_FILE.to_owned());
     }
@@ -492,6 +500,18 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<Vec
 }
 
 /// Writes the sync's own files next to the notes (`database`: see [`prepare_tree`]).
+/// Writes this computer's settings file, merged with the one in the working tree (the
+/// server's after a fresh start, else the last synced one).
+fn write_settings_file(repo: &Path, ours: &str) -> Result<()> {
+    let path = repo.join(crate::settings_sync::FILE);
+    let there = fs::read_to_string(&path).ok();
+    let merged = crate::settings_sync::merge_text(there.as_deref(), ours);
+    if there.as_deref() != Some(merged.as_str()) {
+        fs::write(&path, merged)?;
+    }
+    Ok(())
+}
+
 fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>) -> Result<()> {
     fs::write(repo.join(ATTRIBUTES_FILE), ATTRIBUTES)?;
     if !source.join(README_FILE).exists() {
@@ -836,6 +856,9 @@ pub struct SyncRequest<'a> {
     pub hold: &'a [String],
     /// The user confirmed a commit that deletes many notes (see [`mass_deletion`]).
     pub allow_deletions: bool,
+    /// This computer's settings file ([`crate::settings_sync::FILE`]) when the settings are
+    /// synced; merged with the one in the repository per setting.
+    pub settings_file: Option<String>,
 }
 
 /// Start of the error a sync returns when it stopped before deleting many notes; the shell
@@ -901,6 +924,9 @@ pub struct SyncOutcome {
     /// Notes the server changed (Markdown files only), for the shell to take over.
     #[serde(default, skip_serializing)]
     pub remote_changes: Vec<RemoteChange>,
+    /// The merged settings file after the sync (when the request had one), for the shell to apply.
+    #[serde(default, skip_serializing)]
+    pub settings_file: Option<String>,
 }
 
 /// Last run, as shown in the settings.
@@ -1038,6 +1064,9 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             hold_path(git, repo, path)?;
         }
     }
+    if let Some(ours) = &req.settings_file {
+        write_settings_file(repo, ours)?;
+    }
     git.check(Some(repo), &["add", "-A"])?;
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
@@ -1067,6 +1096,7 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             fallback: false,
             message: "Nichts zu synchronisieren".into(),
             remote_changes: vec![],
+            settings_file: None,
         });
     };
     let short = |git: &Git| -> Result<Option<String>> {
@@ -1116,6 +1146,10 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             fallback,
             message,
             remote_changes,
+            settings_file: req
+                .settings_file
+                .as_ref()
+                .and_then(|_| fs::read_to_string(repo.join(crate::settings_sync::FILE)).ok()),
         }
     };
 
@@ -1277,6 +1311,14 @@ fn merge_remote(
             continue;
         }
         let (mine_id, theirs_id) = (blob_id(git, repo, ours, path)?, blob_id(git, repo, theirs, path)?);
+        // The settings file changed on both sides: merged per setting, the later change wins.
+        if path == crate::settings_sync::FILE && mine_id != theirs_id {
+            if let (Some(m), Some(t)) = (blob_text(git, repo, ours, path)?, blob_text(git, repo, theirs, path)?) {
+                fs::write(repo.join(path), crate::settings_sync::merge_text(Some(&t), &m))?;
+                git.check(Some(repo), &["add", "--", path])?;
+            }
+            continue;
+        }
         // Same change on both sides, a deletion on one side, or not a note: this side's state stays.
         if mine_id == theirs_id || mine_id.is_none() || theirs_id.is_none() || !note {
             continue;
@@ -1544,6 +1586,7 @@ mod tests {
                         now: Local::now(),
                         hold: &[],
                         allow_deletions: false,
+                        settings_file: None,
                     },
                 )
             }
@@ -1623,6 +1666,7 @@ mod tests {
                     now: Local::now(),
                     hold,
                     allow_deletions: false,
+                    settings_file: None,
                 },
             )
             .unwrap()
@@ -1737,6 +1781,7 @@ mod tests {
                 now: Local::now(),
                 hold: &[],
                 allow_deletions: false,
+                settings_file: None,
             },
         )
         .unwrap();
@@ -1759,6 +1804,7 @@ mod tests {
                 now: Local::now(),
                 hold: &[],
                 allow_deletions: false,
+                settings_file: None,
             },
         )
         .unwrap_err()
@@ -1831,6 +1877,7 @@ mod safety_tests {
                     now: Local::now(),
                     hold: &[],
                     allow_deletions: allow,
+                    settings_file: None,
                 },
             )
         }
@@ -2033,5 +2080,66 @@ mod safety_tests {
         drop(guard);
         writer.join().unwrap();
         assert!(!marker.exists(), "swapped once the reader is done");
+    }
+
+    #[test]
+    fn settings_file_is_merged_per_setting_across_computers() {
+        use crate::settings::Settings;
+        use crate::settings_sync::{FILE, SyncFile, build};
+        use std::collections::BTreeMap;
+        if !git_available() {
+            eprintln!("git not available, skipped");
+            return;
+        }
+        let base = tmp("settings");
+        let bare = base.join("remote.git");
+        sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
+        let settings =
+            GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
+        let git = Git::new(None, &settings.remote_url);
+        let run = |pc: &str, file: String| {
+            sync(
+                &git,
+                &SyncRequest {
+                    repo: &base.join(format!("{pc}/git-sync")),
+                    source: &base.join(format!("{pc}/mirror")),
+                    database: None,
+                    settings: &settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &[],
+                    allow_deletions: false,
+                    settings_file: Some(file),
+                },
+            )
+            .unwrap()
+        };
+        for pc in ["a", "b"] {
+            mark(&base.join(pc).join("mirror"));
+            fs::write(base.join(format!("{pc}/mirror/Notiz.md")), "# Notiz\n").unwrap();
+        }
+        let a = Settings { theme: "dark".into(), ..Default::default() };
+        let mut b = Settings::default();
+        b.editor.tab_size = 4;
+        b.theme = "light".into();
+        let fa = build(&a, &BTreeMap::from([("theme".into(), 200)]), "a").to_text();
+        let fb = build(&b, &BTreeMap::from([("theme".into(), 100), ("editor.tab_size".into(), 300)]), "b").to_text();
+        run("a", fa.clone());
+        // b starts from a's history: the file there is merged with b's own.
+        let out = run("b", fb.clone());
+        let merged = SyncFile::parse(out.settings_file.as_deref().unwrap());
+        assert_eq!(merged.settings["theme"].value, "dark", "a changed the theme later");
+        assert_eq!(merged.settings["editor.tab_size"].value, 4, "b's own later change stays");
+        // Both change again; the one with the later time wins on both computers.
+        let a2 = build(&a, &BTreeMap::from([("theme".into(), 200), ("editor.spellcheck".into(), 500)]), "a");
+        let mut a2 = a2;
+        a2.settings.get_mut("editor.spellcheck").unwrap().value = "en".into();
+        let out_a = run("a", a2.to_text());
+        let fa_now = SyncFile::parse(out_a.settings_file.as_deref().unwrap());
+        assert_eq!(fa_now.settings["editor.tab_size"].value, 4, "pulled from b");
+        assert_eq!(fa_now.settings["editor.spellcheck"].value, "en");
+        let on_server = fs::read_to_string(base.join(format!("a/git-sync/{FILE}"))).unwrap();
+        assert!(!on_server.contains("token"));
+        let _ = fs::remove_dir_all(&base);
     }
 }

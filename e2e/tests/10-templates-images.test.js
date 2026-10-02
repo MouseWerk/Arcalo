@@ -2,6 +2,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -61,8 +62,8 @@ test("settings pick the template for new daily notes", async () => {
   await app.waitFor(sel);
   const id = String(await pageId("Kundentermin"));
   await app.select(sel, id);
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast", /gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast", /Einstellung geändert/);
   assert.equal((await app.invoke("settings_get")).settings.daily_template, Number(id));
   const day = await app.invoke("daily_note", { date: "2030-01-02" });
   assert.match((await app.invoke("page_get", { id: day.id })).content, /^Termin: 2030-01-02$/m);

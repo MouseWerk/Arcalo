@@ -58,6 +58,7 @@ const CHUNK: usize = 1 << 20;
 
 /// One further folder for backups (Settings → Sicherung → „Weitere Sicherungsziele“).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Destination {
     /// Stable id (derived from the path when empty).
@@ -91,6 +92,7 @@ impl Default for Destination {
 
 /// All destinations of the workspace.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct BackupTargets {
     pub destinations: Vec<Destination>,

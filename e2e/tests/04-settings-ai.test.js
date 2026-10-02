@@ -1,6 +1,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { startFakeLiteLLM } from "../lib/fake-litellm.js";
 
 const test = guarded(nodeTest, () => app);
@@ -28,9 +29,8 @@ test("settings: server URL, token and connection test", async () => {
   const url = await app.$('.dialog input[aria-label="Server-URL"]');
   await url.setValue(llm.url);
   await app.click(".dialog .btn-primary");
-  await app.waitFor(".savebar");
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
 
   // Without a token the server refuses.
   await app.click('button[aria-label="Verbindungen prüfen"]');
@@ -58,8 +58,8 @@ test("settings: models are picked from the server list", async () => {
   await app.select('[role="combobox"][aria-label="Reasoning-Modell"]', "firma-reasoning");
   await app.select('[role="combobox"][aria-label="Embedding-Modell"]', "firma-embed");
   await app.shot("settings-models");
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
   const view = await app.invoke("settings_get");
   assert.equal(view.settings.router.standard_model, "firma-standard");
   assert.equal(view.settings.embedding_model, "firma-embed");

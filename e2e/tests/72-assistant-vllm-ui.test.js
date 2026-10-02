@@ -7,6 +7,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { startFakeLiteLLM } from "../lib/fake-litellm.js";
 import { startFakeOpenAI } from "../lib/fake-openai.js";
 
@@ -114,8 +115,8 @@ test("the embedding picker offers embedding models only, the chat model is marke
   await app.keys(["Escape"]);
   await app.shot("settings-embedding-picker");
   await app.select(sel, "");
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
   assert.equal((await app.invoke("settings_get")).settings.embedding_model, null);
 });
 

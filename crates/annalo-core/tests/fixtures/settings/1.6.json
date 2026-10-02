@@ -1,0 +1,363 @@
+{
+  "litellm_base_url": "http://localhost:4000",
+  "providers": [
+    {
+      "id": "litellm",
+      "name": "LiteLLM",
+      "kind": "litellm",
+      "base_url": "http://localhost:4000",
+      "local": false,
+      "enabled": true,
+      "bypass_proxy": false,
+      "api_version": "",
+      "models": []
+    }
+  ],
+  "router": {
+    "local_model": "ollama/llama3.2",
+    "standard_model": "cloud-standard",
+    "reasoning_model": "cloud-reasoning",
+    "local_provider": "litellm",
+    "standard_provider": "litellm",
+    "reasoning_provider": "litellm",
+    "standard_threshold": 30,
+    "reasoning_threshold": 60,
+    "private_markers": [
+      "#privat",
+      "#private",
+      "#vertraulich",
+      "#confidential"
+    ]
+  },
+  "auto_route": true,
+  "embedding_model": null,
+  "embedding_provider": "litellm",
+  "prices": [
+    {
+      "provider": "",
+      "model": "gpt-4o*",
+      "input_per_mtok": 2.5,
+      "output_per_mtok": 10.0
+    },
+    {
+      "provider": "",
+      "model": "gpt-4o-mini*",
+      "input_per_mtok": 0.15,
+      "output_per_mtok": 0.6
+    },
+    {
+      "provider": "",
+      "model": "gpt-4.1*",
+      "input_per_mtok": 2.0,
+      "output_per_mtok": 8.0
+    },
+    {
+      "provider": "",
+      "model": "gpt-4.1-mini*",
+      "input_per_mtok": 0.4,
+      "output_per_mtok": 1.6
+    },
+    {
+      "provider": "",
+      "model": "gpt-4.1-nano*",
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.4
+    },
+    {
+      "provider": "",
+      "model": "o3*",
+      "input_per_mtok": 2.0,
+      "output_per_mtok": 8.0
+    },
+    {
+      "provider": "",
+      "model": "o3-mini*",
+      "input_per_mtok": 1.1,
+      "output_per_mtok": 4.4
+    },
+    {
+      "provider": "",
+      "model": "o4-mini*",
+      "input_per_mtok": 1.1,
+      "output_per_mtok": 4.4
+    },
+    {
+      "provider": "",
+      "model": "text-embedding-3-small*",
+      "input_per_mtok": 0.02,
+      "output_per_mtok": 0.0
+    },
+    {
+      "provider": "",
+      "model": "text-embedding-3-large*",
+      "input_per_mtok": 0.13,
+      "output_per_mtok": 0.0
+    },
+    {
+      "provider": "",
+      "model": "mistral-large*",
+      "input_per_mtok": 2.0,
+      "output_per_mtok": 6.0
+    },
+    {
+      "provider": "",
+      "model": "mistral-small*",
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.3
+    },
+    {
+      "provider": "",
+      "model": "mistral-embed*",
+      "input_per_mtok": 0.1,
+      "output_per_mtok": 0.0
+    },
+    {
+      "provider": "",
+      "model": "llama-3.3-70b*",
+      "input_per_mtok": 0.59,
+      "output_per_mtok": 0.79
+    },
+    {
+      "provider": "",
+      "model": "llama-3.1-8b*",
+      "input_per_mtok": 0.05,
+      "output_per_mtok": 0.08
+    }
+  ],
+  "assistant_instructions": "",
+  "thresholds": {
+    "warning": 0.75,
+    "critical": 0.9
+  },
+  "idle_threshold_minutes": 5,
+  "pernr": "00012345",
+  "jira_issue_map": {
+    "NP-8801/1020": "AET-12"
+  },
+  "theme": "dark",
+  "open_daily_on_start": false,
+  "daily_target_hours": 7.8,
+  "workdays": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "backup_dir": null,
+  "backup_keep": 14,
+  "backup_targets": {
+    "destinations": [],
+    "local_latest_only": false
+  },
+  "markdown_mirror": true,
+  "markdown_mirror_dir": null,
+  "daily_template": null,
+  "close_to_tray": false,
+  "reminder_time": "17:30",
+  "capture_shortcut": "Ctrl+Shift+Space",
+  "palette_shortcut": null,
+  "auto_update_check": true,
+  "dev_log_verbose": false,
+  "git_sync": {
+    "enabled": true,
+    "remote_url": "https://git.firma.de/mia/notizen.git",
+    "branch": "main",
+    "author_name": "Mia Meyer",
+    "author_email": "mia@firma.de",
+    "include_database": false,
+    "mode": "with_backup"
+  },
+  "network": {
+    "mode": "manual",
+    "http_proxy": "http://proxy.firma.de:8080",
+    "https_proxy": "",
+    "socks_proxy": "",
+    "no_proxy": "localhost, 127.0.0.1, ::1",
+    "pac_url": "",
+    "pac_results": {},
+    "proxy_user": "",
+    "extra_ca_path": null,
+    "accept_invalid_certs": false,
+    "timeout_secs": 30,
+    "apply_to": {
+      "ai": true,
+      "git": true,
+      "updates": true,
+      "tools": true
+    }
+  },
+  "appearance": {
+    "accent": "teal",
+    "theme_light": "annalo-light",
+    "theme_dark": "annalo-dark",
+    "custom_themes": [],
+    "ui_font": "inter",
+    "editor_font": "sans",
+    "code_font": "jetbrains",
+    "ui_scale": 100,
+    "density": "normal",
+    "line_width": "normal",
+    "reduce_motion": false,
+    "window_effect": "mica",
+    "window_opacity": 80,
+    "custom_titlebar": true,
+    "startup_animation": true
+  },
+  "editor": {
+    "spellcheck": "de",
+    "autosave_ms": 450,
+    "smart_quotes": false,
+    "auto_pair": false,
+    "tab_size": 2,
+    "code_line_numbers": false,
+    "hover_preview": true,
+    "hover_delay_ms": 450,
+    "scroll_outline": true,
+    "default_icon": null,
+    "new_page_location": "top",
+    "inbox_title": "Inbox",
+    "toolbar": true
+  },
+  "notes": {
+    "daily_title": "iso",
+    "daily_folder": "Journal",
+    "trash_retention_days": 30,
+    "version_interval_minutes": 10,
+    "max_versions": 50
+  },
+  "time": {
+    "enabled": true,
+    "week_start": "monday",
+    "rounding": {
+      "step_minutes": 0,
+      "mode": "up",
+      "min_minutes": 0
+    },
+    "hours_display": "decimal",
+    "default_leistungsart": {},
+    "cats_delimiter": "semicolon",
+    "cats_columns": "standard",
+    "export_file_pattern": "zeiten-{von}-{bis}",
+    "balance": {
+      "weekday_hours": [],
+      "start": null,
+      "opening_hours": 0.0,
+      "vacation_days": 30.0,
+      "carry_over": 0.0,
+      "state": ""
+    }
+  },
+  "ai": {
+    "temperature": 0.3,
+    "max_tokens": null,
+    "inline_presets": null,
+    "meeting_template": null,
+    "monthly_cost_limit_usd": null,
+    "citations": true,
+    "streaming": true,
+    "allowed_tools": [
+      "log_time",
+      "search_workspace",
+      "budget_status",
+      "list_tasks",
+      "time_summary",
+      "activity_log"
+    ],
+    "chat_history": "all"
+  },
+  "notifications": {
+    "end_of_day": true,
+    "late_timer": true,
+    "budget": true,
+    "backup_failed": true,
+    "git_failed": true,
+    "updates": true,
+    "week_proposal": true,
+    "day_review": false,
+    "day_review_time": "17:30",
+    "quiet_hours": false,
+    "quiet_from": "22:00",
+    "quiet_to": "07:00"
+  },
+  "privacy": {
+    "read_open_page": true,
+    "local_only": false
+  },
+  "start": {
+    "open": "tabs",
+    "restore_window": true,
+    "minimized": false
+  },
+  "locale": {
+    "language": "de",
+    "date_format": "de"
+  },
+  "keymap": {
+    "open_daily": "Ctrl+Shift+D"
+  },
+  "search_shortcut": "Ctrl+Shift+O",
+  "dashboard": {
+    "version": 2,
+    "boards": [
+      {
+        "id": "heute",
+        "name": "Heute",
+        "widgets": [
+          {
+            "id": "today",
+            "kind": "today",
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          {
+            "id": "note",
+            "kind": "note",
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          }
+        ]
+      }
+    ],
+    "active": "heute",
+    "notes": {
+      "note": "Montag: Angebot Kunde X"
+    }
+  },
+  "quick_links": [],
+  "calendar": {
+    "outlook": false,
+    "outlook_color": "#2563eb",
+    "outlook_recipients": [],
+    "sources": [],
+    "sync_minutes": 15,
+    "past_days": 30,
+    "future_days": 90,
+    "private_details": false,
+    "include_body": false,
+    "meeting_links": true,
+    "blocks_outlook": false,
+    "block_minutes": 60
+  },
+  "capture": {
+    "default_target": "daily",
+    "inbox_title": "Posteingang",
+    "selection_shortcut": "",
+    "auto_hide_ms": 1200,
+    "meeting_target": true
+  },
+  "mail": {
+    "notes_parent": "E-Mails",
+    "shortcut": "",
+    "save_attachments": false,
+    "private_notes": true,
+    "default_action": "task"
+  },
+  "onboarding": {
+    "completed_version": null,
+    "completed_at": null
+  }
+}

@@ -14,6 +14,7 @@ use crate::trf;
 
 /// What the app does about new versions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateMode {
     /// Check, download in the background, install when the app quits.
@@ -279,6 +280,7 @@ pub fn read_files(paths: &[PathBuf]) -> Vec<Policy> {
 
 /// The user's update settings (Settings → Über).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct UpdatePrefs {
     pub mode: UpdateMode,

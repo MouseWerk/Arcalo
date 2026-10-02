@@ -34,6 +34,7 @@ impl Default for PriceTable {
 /// One row of the editable price table (Settings → KI → Preise): per 1M input/output tokens
 /// in USD, for a model name (`*` at the end = prefix) on one provider or on any (`""`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PriceRule {
     #[serde(default)]
     pub provider: String,

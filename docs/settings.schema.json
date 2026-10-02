@@ -1,0 +1,3124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AiPrefs": {
+      "properties": {
+        "allowed_tools": {
+          "default": [
+            "log_time",
+            "search_workspace",
+            "budget_status",
+            "list_tasks",
+            "time_summary",
+            "activity_log"
+          ],
+          "description": "Tools offered to the model.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "chat_history": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ChatRetention"
+            }
+          ],
+          "default": "all",
+          "description": "How long the assistant's conversations are kept."
+        },
+        "citations": {
+          "default": true,
+          "description": "Numbered sources `[1]` in answers.",
+          "type": "boolean"
+        },
+        "inline_presets": {
+          "default": null,
+          "description": "Presets of the inline AI bar; `None` = the built-in ones.",
+          "items": {
+            "$ref": "#/definitions/AiPreset"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "max_tokens": {
+          "default": null,
+          "description": "Limit of answer tokens; `None` = the model's default.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "meeting_template": {
+          "default": null,
+          "description": "Instruction of „Besprechung zusammenfassen“; `None` = the built-in one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "monthly_cost_limit_usd": {
+          "default": null,
+          "description": "Monthly cost limit in USD; warns at 80 %, blocks at 100 % unless overridden.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "streaming": {
+          "default": true,
+          "description": "Show answers while they are generated.",
+          "type": "boolean"
+        },
+        "temperature": {
+          "default": 0.30000001192092896,
+          "description": "0.0–2.0.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "AiPreset": {
+      "description": "A preset of the inline AI bar.",
+      "properties": {
+        "instruction": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instruction",
+        "label"
+      ],
+      "type": "object"
+    },
+    "AiProvider": {
+      "properties": {
+        "api_version": {
+          "default": "",
+          "description": "Azure OpenAI: the `api-version` query parameter.",
+          "type": "string"
+        },
+        "base_url": {
+          "default": "",
+          "type": "string"
+        },
+        "bypass_proxy": {
+          "default": false,
+          "description": "Connect directly instead of through the proxy of Settings → Netzwerk (default for providers on this machine).",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "Stable id (`[a-z0-9-]`): referenced by the tiers and the credential store.",
+          "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProviderKind"
+            }
+          ],
+          "default": "openai"
+        },
+        "local": {
+          "default": false,
+          "description": "Runs on this machine or in the own network: may receive content marked private (`#privat`, Settings → Datenschutz „Nur lokal“). Its requests cost nothing.",
+          "type": "boolean"
+        },
+        "models": {
+          "default": [],
+          "description": "Model (Azure: deployment) names added by hand, for providers that do not list theirs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AppearancePrefs": {
+      "properties": {
+        "accent": {
+          "default": "theme",
+          "description": "`theme` (the color theme's own accent), a preset name (`indigo`, `blue`, …) or `#rrggbb`.",
+          "type": "string"
+        },
+        "code_font": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CodeFont"
+            }
+          ],
+          "default": "jetbrains"
+        },
+        "custom_themes": {
+          "default": [],
+          "description": "Themes made in Settings → Darstellung or imported from a theme file.",
+          "items": {
+            "$ref": "#/definitions/CustomTheme"
+          },
+          "type": "array"
+        },
+        "custom_titlebar": {
+          "default": true,
+          "description": "Windows: own title bar (the tabs sit at the top edge, own window buttons) instead of the system one. Takes effect at the next start.",
+          "type": "boolean"
+        },
+        "density": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Density"
+            }
+          ],
+          "default": "normal"
+        },
+        "editor_font": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/EditorFont"
+            }
+          ],
+          "default": "sans"
+        },
+        "line_width": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/LineWidth"
+            }
+          ],
+          "default": "normal"
+        },
+        "reduce_motion": {
+          "default": false,
+          "type": "boolean"
+        },
+        "startup_animation": {
+          "default": true,
+          "description": "The animated logo while the app starts.",
+          "type": "boolean"
+        },
+        "theme_dark": {
+          "default": "annalo-dark",
+          "description": "Color theme shown in dark mode.",
+          "type": "string"
+        },
+        "theme_light": {
+          "default": "annalo-light",
+          "description": "Color theme shown in light mode: a built-in id (`annalo-light`, `nord-light`, …) or the id of a custom theme. Unknown ids show the default theme.",
+          "type": "string"
+        },
+        "ui_font": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/UiFont"
+            }
+          ],
+          "default": "inter"
+        },
+        "ui_scale": {
+          "default": 100,
+          "description": "UI zoom in percent (90–125).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "window_effect": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WindowEffect"
+            }
+          ],
+          "default": "none",
+          "description": "Backdrop of the window on Windows 11 (Mica or Acrylic). Off by default: behind a bright desktop it washes out the sidebar (older settings are switched off once, see `Database::migrate_appearance_defaults`). Settings before 1.6 stored `mica: bool`, which becomes this when they are loaded."
+        },
+        "window_opacity": {
+          "default": 80,
+          "description": "How much the theme's background covers the backdrop, in percent ([`WINDOW_OPACITY_MIN`]–100; at 100 the backdrop is not visible).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ApplyTo": {
+      "description": "Which connections use the proxy settings. Connections that do not keep the program's default behavior (reqwest and Git read the proxy environment variables).",
+      "properties": {
+        "ai": {
+          "default": true,
+          "type": "boolean"
+        },
+        "git": {
+          "default": true,
+          "type": "boolean"
+        },
+        "tools": {
+          "default": true,
+          "type": "boolean"
+        },
+        "updates": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "BackupTargets": {
+      "description": "All destinations of the workspace.",
+      "properties": {
+        "destinations": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/Destination"
+          },
+          "type": "array"
+        },
+        "local_latest_only": {
+          "default": false,
+          "description": "The destinations replace the local folder: once every switched-on destination has the newest backup, the local folder keeps only that one.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "BalancePrefs": {
+      "description": "Settings of the balance and the vacation account (`time.balance`).",
+      "properties": {
+        "carry_over": {
+          "default": 0.0,
+          "description": "Days carried over from the previous year.",
+          "format": "double",
+          "type": "number"
+        },
+        "opening_hours": {
+          "default": 0.0,
+          "description": "Balance on the start day (hours, may be negative).",
+          "format": "double",
+          "type": "number"
+        },
+        "start": {
+          "default": null,
+          "description": "First day the balance counts; `None`: 1 January of the current year.",
+          "format": "date",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "default": "",
+          "description": "State for public holidays (`BY`, `NW`, …); empty: none.",
+          "type": "string"
+        },
+        "vacation_days": {
+          "default": 30.0,
+          "description": "Vacation days per year.",
+          "format": "double",
+          "type": "number"
+        },
+        "weekday_hours": {
+          "default": [],
+          "description": "Target hours Monday..Sunday; empty: the daily target on the workdays.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Board": {
+      "description": "One start page („Heute“, „Projekte“, …), shown as a tab.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "widgets": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/Widget"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BriefingMode": {
+      "description": "When the briefing shows up by itself.",
+      "oneOf": [
+        {
+          "description": "Opens with the first start of a workday.",
+          "enum": [
+            "start"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A desktop notification that opens it.",
+          "enum": [
+            "notify"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only when opened (palette, ribbon, Heute, tray); also an unknown mode.",
+          "enum": [
+            "off"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "BriefingSection": {
+      "description": "One section with its switch; the list order is the order on the page.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "on"
+      ],
+      "type": "object"
+    },
+    "BriefingSettings": {
+      "description": "Settings → Briefing.",
+      "properties": {
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BriefingMode"
+            }
+          ],
+          "default": "off"
+        },
+        "notify_time": {
+          "default": "",
+          "description": "`HH:MM` of the notification; empty = at the first start of the day.",
+          "type": "string"
+        },
+        "sections": {
+          "default": [
+            {
+              "id": "ai",
+              "on": true
+            },
+            {
+              "id": "meetings",
+              "on": true
+            },
+            {
+              "id": "tasks",
+              "on": true
+            },
+            {
+              "id": "jira",
+              "on": true
+            },
+            {
+              "id": "time",
+              "on": true
+            }
+          ],
+          "items": {
+            "$ref": "#/definitions/BriefingSection"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "CalendarSettings": {
+      "description": "Settings → Kalender.",
+      "properties": {
+        "block_minutes": {
+          "default": 60,
+          "description": "Length of a block dropped into the Kalender (minutes, 15–240 on the 15-minute grid).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "blocks_outlook": {
+          "default": false,
+          "description": "Write focus blocks to the default Outlook calendar („Fokusblöcke in Outlook eintragen“).",
+          "type": "boolean"
+        },
+        "future_days": {
+          "default": 90,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "include_body": {
+          "default": false,
+          "description": "Keep the text (body/description) of appointments.",
+          "type": "boolean"
+        },
+        "meeting_links": {
+          "default": true,
+          "description": "Look for a Teams/Zoom/Webex link in the appointment text (only the link is kept).",
+          "type": "boolean"
+        },
+        "outlook": {
+          "default": false,
+          "description": "Read Outlook Classic (Windows): the calendars selected in `outlook_calendars`.",
+          "type": "boolean"
+        },
+        "outlook_calendars": {
+          "default": [
+            {
+              "booking": true,
+              "color": "#2563eb",
+              "default": true,
+              "enabled": true,
+              "entry_id": "",
+              "free_busy": false,
+              "id": "outlook",
+              "kind": "own",
+              "name": "Kalender",
+              "owner": "",
+              "path": "",
+              "recipient": "",
+              "store_id": ""
+            }
+          ],
+          "description": "The Outlook calendars chosen once („Kalender auswählen“); the default calendar is always the first, with the source id `outlook`.",
+          "items": {
+            "$ref": "#/definitions/OutlookCalendar"
+          },
+          "type": "array"
+        },
+        "outlook_color": {
+          "default": "#2563eb",
+          "description": "Color of the default calendar (also kept in its entry of `outlook_calendars`).",
+          "type": "string"
+        },
+        "outlook_recipients": {
+          "default": [],
+          "description": "People (names or addresses) whose default calendar discovery opens by name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "past_days": {
+          "default": 30,
+          "description": "Window of a sync: days back and ahead of today.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "private_details": {
+          "default": false,
+          "description": "Keep subject, place and attendees of private appointments (otherwise „Privater Termin“).",
+          "type": "boolean"
+        },
+        "sources": {
+          "default": [],
+          "description": "ICS files and subscriptions.",
+          "items": {
+            "$ref": "#/definitions/IcsSource"
+          },
+          "type": "array"
+        },
+        "sync_minutes": {
+          "default": 15,
+          "description": "Minutes between background syncs.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "CaptureDefault": {
+      "enum": [
+        "daily",
+        "inbox",
+        "last"
+      ],
+      "type": "string"
+    },
+    "CapturePrefs": {
+      "description": "Quick capture (Settings → Desktop → Schnellerfassung).",
+      "properties": {
+        "auto_hide_ms": {
+          "default": 1200,
+          "description": "Hide the window this long after „Gespeichert in …“ (0–10000 ms).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "default_target": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CaptureDefault"
+            }
+          ],
+          "default": "daily",
+          "description": "Where a capture goes when the window opens."
+        },
+        "inbox_title": {
+          "default": "Posteingang",
+          "description": "Title of the page that collects captures with a timestamp.",
+          "type": "string"
+        },
+        "meeting_target": {
+          "default": true,
+          "description": "Offer the meeting running now (or started less than 15 minutes ago) as target.",
+          "type": "boolean"
+        },
+        "selection_shortcut": {
+          "default": "",
+          "description": "Global shortcut „Auswahl übernehmen“: opens quick capture with the selection (Linux) or the clipboard text; `\"\"` = off.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CatsColumns": {
+      "enum": [
+        "standard",
+        "without_wbs",
+        "date_first"
+      ],
+      "type": "string"
+    },
+    "CatsDelimiter": {
+      "enum": [
+        "semicolon",
+        "comma",
+        "tab"
+      ],
+      "type": "string"
+    },
+    "ChatRetention": {
+      "enum": [
+        "all",
+        "90",
+        "30",
+        "off"
+      ],
+      "type": "string"
+    },
+    "CodeFont": {
+      "enum": [
+        "jetbrains",
+        "system"
+      ],
+      "type": "string"
+    },
+    "CustomTheme": {
+      "description": "A color theme made by the user.",
+      "properties": {
+        "colors": {
+          "$ref": "#/definitions/ThemeColors"
+        },
+        "dark": {
+          "description": "Shown in dark mode (and listed with the dark themes).",
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "`custom-…`; assigned when saved if missing, foreign or taken.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "colors",
+        "dark",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DailyTitle": {
+      "enum": [
+        "iso",
+        "de",
+        "long"
+      ],
+      "type": "string"
+    },
+    "Dashboard": {
+      "properties": {
+        "active": {
+          "default": "",
+          "description": "Id of the board shown.",
+          "type": "string"
+        },
+        "boards": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/Board"
+          },
+          "type": "array"
+        },
+        "note": {
+          "description": "… and the text of its „Notiz“.",
+          "type": "string"
+        },
+        "notes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Texts of the „Notiz“ widgets, by widget id.",
+          "type": "object"
+        },
+        "version": {
+          "default": 0,
+          "description": "3 since 1.7 (widgets of any registered kind are kept), 2 since 1.6 (boards in a grid); 0 before.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "widgets": {
+          "description": "Before 1.6: the one widget list (`None`: the start page was never saved) …",
+          "items": {
+            "$ref": "#/definitions/LegacyWidget"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DateFormat": {
+      "enum": [
+        "de",
+        "iso",
+        "en-gb",
+        "en-us"
+      ],
+      "type": "string"
+    },
+    "Density": {
+      "enum": [
+        "compact",
+        "normal",
+        "comfortable"
+      ],
+      "type": "string"
+    },
+    "Destination": {
+      "description": "One further folder for backups (Settings → Sicherung → „Weitere Sicherungsziele“).",
+      "properties": {
+        "attachments": {
+          "default": true,
+          "description": "Also copy the attachments folder (images, drawings, files), incrementally.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "Stable id (derived from the path when empty).",
+          "type": "string"
+        },
+        "keep": {
+          "default": 14,
+          "description": "Backups kept in the destination (1–365).",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "keep_days": {
+          "default": 0,
+          "description": "Backups older than this many days are deleted as well; 0 = only `keep` counts.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "markdown": {
+          "default": false,
+          "description": "Also copy the Markdown copy (only when it is switched on).",
+          "type": "boolean"
+        },
+        "path": {
+          "default": "",
+          "description": "Folder as the user entered it (UNC paths keep their backslashes).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "EditorFont": {
+      "enum": [
+        "sans",
+        "serif",
+        "mono"
+      ],
+      "type": "string"
+    },
+    "EditorPrefs": {
+      "properties": {
+        "auto_pair": {
+          "default": false,
+          "description": "Typing an opening bracket inserts the closing one.",
+          "type": "boolean"
+        },
+        "autosave_ms": {
+          "default": 450,
+          "description": "Autosave delay after the last change (250–3000 ms).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "code_line_numbers": {
+          "default": false,
+          "type": "boolean"
+        },
+        "default_icon": {
+          "default": null,
+          "description": "Icon of new pages (Lucide name); `None` = none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hover_delay_ms": {
+          "default": 450,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "hover_preview": {
+          "default": true,
+          "description": "Preview of a linked page when hovering a `[[link]]`.",
+          "type": "boolean"
+        },
+        "inbox_title": {
+          "default": "Inbox",
+          "description": "Title of the page that collects new pages with [`NewPageLocation::Inbox`].",
+          "type": "string"
+        },
+        "new_page_location": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NewPageLocation"
+            }
+          ],
+          "default": "top"
+        },
+        "scroll_outline": {
+          "default": true,
+          "description": "Heading markers at the right edge of a page.",
+          "type": "boolean"
+        },
+        "smart_quotes": {
+          "default": false,
+          "description": "\"…\" → „…“, '…' → ‚…‘, \" - \" → \" – \".",
+          "type": "boolean"
+        },
+        "spellcheck": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Spellcheck"
+            }
+          ],
+          "default": "de"
+        },
+        "tab_size": {
+          "default": 4,
+          "description": "Spaces per Tab in code blocks (2–8).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolbar": {
+          "default": true,
+          "description": "Formatting toolbar above notes.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "FilingRule": {
+      "description": "„Wenn … → Ordner“.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "folder": {
+          "default": "",
+          "description": "Folder path from the top level, `Kunden/X`.",
+          "type": "string"
+        },
+        "id": {
+          "default": "",
+          "type": "string"
+        },
+        "key": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/RuleKind"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "FilingSettings": {
+      "properties": {
+        "rules": {
+          "default": [],
+          "description": "In order: the first matching rule wins.",
+          "items": {
+            "$ref": "#/definitions/FilingRule"
+          },
+          "type": "array"
+        },
+        "types": {
+          "additionalProperties": {
+            "$ref": "#/definitions/TypeFiling"
+          },
+          "default": {},
+          "description": "Per type; a missing type uses its defaults.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "GitSyncSettings": {
+      "description": "Settings of the Git sync. The access token is not part of it; the desktop shell keeps it in the OS credential store.",
+      "properties": {
+        "author_email": {
+          "default": "annalo@localhost",
+          "type": "string"
+        },
+        "author_name": {
+          "default": "Arcalo",
+          "type": "string"
+        },
+        "branch": {
+          "default": "main",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_database": {
+          "default": false,
+          "description": "Also commit the latest database backup as `annalo-workspace.db`.",
+          "type": "boolean"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SyncMode"
+            }
+          ],
+          "default": "with_backup"
+        },
+        "remote_url": {
+          "default": "",
+          "description": "`https://…`, `git@host:…`, `ssh://…`, `file://…` or a local path.",
+          "type": "string"
+        },
+        "sync_settings": {
+          "default": false,
+          "description": "Also sync the settings (no secrets, nothing machine-specific) as `settings.json`, merged per setting (see [`crate::settings_sync`]).",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Granularity": {
+      "description": "Date subfolders below a type's root (`Series`: meetings by their subject instead).",
+      "enum": [
+        "none",
+        "year",
+        "month",
+        "week",
+        "series"
+      ],
+      "type": "string"
+    },
+    "HoursDisplay": {
+      "enum": [
+        "decimal",
+        "clock"
+      ],
+      "type": "string"
+    },
+    "IcsKind": {
+      "description": "Where an ICS source comes from.",
+      "oneOf": [
+        {
+          "description": "A subscription URL; the URL (it may carry a secret token) lives in the credential store.",
+          "enum": [
+            "url"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A local `.ics` file, read again on every sync.",
+          "enum": [
+            "file"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "IcsSource": {
+      "properties": {
+        "color": {
+          "default": "#0d9488",
+          "description": "`#rrggbb`.",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "`[a-z0-9]`, stable; the source id is `ics:<id>`.",
+          "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/IcsKind"
+            }
+          ],
+          "default": "url"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "description": "The file of a file source (empty for URL sources: their URL is a secret).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "IssueSettings": {
+      "description": "Settings → Jira.",
+      "properties": {
+        "queries": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/SavedQuery"
+          },
+          "type": "array"
+        },
+        "sites": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/JiraSite"
+          },
+          "type": "array"
+        },
+        "sync_minutes": {
+          "default": 10,
+          "description": "Minutes between background syncs.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tick_done_tasks": {
+          "default": true,
+          "description": "Tick a task naming an issue once the issue is done in Jira.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "JiraSite": {
+      "description": "A Jira site. Its token lives in the credential store (`jira-<id>`), never here.",
+      "properties": {
+        "allow_writes": {
+          "default": false,
+          "description": "The assistant may comment on issues and change their status (each after a confirmation).",
+          "type": "boolean"
+        },
+        "color": {
+          "default": "#2563eb",
+          "description": "`#rrggbb`.",
+          "type": "string"
+        },
+        "email": {
+          "default": "",
+          "description": "Cloud: the e-mail of the Atlassian account (with the API token as password).",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "`[a-z0-9-]`, stable (credential account, cache rows).",
+          "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SiteKind"
+            }
+          ],
+          "default": "cloud"
+        },
+        "log_work": {
+          "default": false,
+          "description": "„Arbeit auch in Jira protokollieren“: a booking with an issue key posts a worklog.",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "`https://firma.atlassian.net` or `https://jira.firma.de` (a context path is kept).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Language": {
+      "enum": [
+        "de",
+        "en"
+      ],
+      "type": "string"
+    },
+    "LegacyWidget": {
+      "description": "A widget of the start page before 1.6 (one list, three widths). The start page moves the list onto a board of the grid ([`Dashboard::boards`]) with the same widgets.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "One of [`LEGACY_WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].",
+          "type": "string"
+        },
+        "size": {
+          "$ref": "#/definitions/WidgetSize"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "size"
+      ],
+      "type": "object"
+    },
+    "LineWidth": {
+      "enum": [
+        "narrow",
+        "normal",
+        "wide",
+        "full"
+      ],
+      "type": "string"
+    },
+    "LinkKind": {
+      "description": "What a ribbon entry is.",
+      "oneOf": [
+        {
+          "enum": [
+            "group"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A program, started directly.",
+          "enum": [
+            "app"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Unknown kinds (e.g. from a newer version) open like a link.",
+          "enum": [
+            "link"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "LocalePrefs": {
+      "properties": {
+        "date_format": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DateFormat"
+            }
+          ],
+          "default": "de"
+        },
+        "language": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Language"
+            }
+          ],
+          "default": "de"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NumberFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Decimal comma (28,00) or point (28.00); `None`: as the display language writes it."
+        }
+      },
+      "type": "object"
+    },
+    "MailSettings": {
+      "description": "Settings → Kalender → E-Mail (Outlook).",
+      "properties": {
+        "default_action": {
+          "default": "task",
+          "description": "What the dialog offers first: `task`, `note` or `both`.",
+          "type": "string"
+        },
+        "notes_parent": {
+          "default": "E-Mails",
+          "description": "Top-level page below which mail notes are created.",
+          "type": "string"
+        },
+        "private_notes": {
+          "default": true,
+          "description": "Mail notes get the first privacy marker as tag, so the assistant keeps them on the local model.",
+          "type": "boolean"
+        },
+        "save_attachments": {
+          "default": false,
+          "description": "Attachments are ticked when the dialog opens.",
+          "type": "boolean"
+        },
+        "shortcut": {
+          "default": "",
+          "description": "Global shortcut of „Aktuelle E-Mail übernehmen“ (`\"\"` = off, the default).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "NetworkSettings": {
+      "properties": {
+        "accept_invalid_certs": {
+          "default": false,
+          "description": "Accept any certificate (dangerous; only for diagnosis).",
+          "type": "boolean"
+        },
+        "apply_to": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ApplyTo"
+            }
+          ],
+          "default": {
+            "ai": true,
+            "git": true,
+            "tools": true,
+            "updates": true
+          }
+        },
+        "extra_ca_path": {
+          "default": null,
+          "description": "PEM (one or more certificates) or DER file of an additional root CA.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_proxy": {
+          "default": "",
+          "description": "`host:port` or a URL; used for `http://` targets.",
+          "type": "string"
+        },
+        "https_proxy": {
+          "default": "",
+          "description": "Used for `https://` targets; empty = the HTTP proxy.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProxyMode"
+            }
+          ],
+          "default": "system"
+        },
+        "no_proxy": {
+          "default": "localhost, 127.0.0.1, ::1",
+          "description": "Exceptions: `host`, `*.domain`, `.domain`, IP, CIDR, `<local>`, `*`; comma separated.",
+          "type": "string"
+        },
+        "pac_results": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "`FindProxyForURL` answers per host (`*` = default), filled by the UI.",
+          "type": "object"
+        },
+        "pac_url": {
+          "default": "",
+          "type": "string"
+        },
+        "proxy_user": {
+          "default": "",
+          "description": "User name for the proxy; the password is in the credential store.",
+          "type": "string"
+        },
+        "socks_proxy": {
+          "default": "",
+          "description": "`host:port` or `socks5://host:port`; used when no HTTP(S) proxy is set.",
+          "type": "string"
+        },
+        "timeout_secs": {
+          "default": 30,
+          "description": "Connect timeout in seconds (and the total timeout of tests and tool requests).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "NewPageLocation": {
+      "enum": [
+        "top",
+        "current",
+        "inbox"
+      ],
+      "type": "string"
+    },
+    "NotesPrefs": {
+      "properties": {
+        "daily_folder": {
+          "default": "Journal",
+          "description": "Top-level page that holds the daily notes.",
+          "type": "string"
+        },
+        "daily_title": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DailyTitle"
+            }
+          ],
+          "default": "iso"
+        },
+        "max_versions": {
+          "default": 50,
+          "description": "Versions kept per page (5–500).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "trash_retention_days": {
+          "default": 30,
+          "description": "Days pages stay in the trash (7–365).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "version_interval_minutes": {
+          "default": 10,
+          "description": "Minutes between two automatic version snapshots of a page (5–60).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "NotificationPrefs": {
+      "properties": {
+        "backup_failed": {
+          "default": true,
+          "type": "boolean"
+        },
+        "budget": {
+          "default": true,
+          "description": "Budget warnings after bookings.",
+          "type": "boolean"
+        },
+        "day_review": {
+          "default": false,
+          "description": "„Tagesrückblick ansehen“ once a workday at `day_review_time` (off by default).",
+          "type": "boolean"
+        },
+        "day_review_time": {
+          "default": "17:30",
+          "description": "`HH:MM` (local time) of the day review reminder.",
+          "type": "string"
+        },
+        "end_of_day": {
+          "default": true,
+          "description": "End-of-day reminder (its time is `reminder_time`).",
+          "type": "boolean"
+        },
+        "git_failed": {
+          "default": true,
+          "type": "boolean"
+        },
+        "late_timer": {
+          "default": true,
+          "description": "Reminder when a timer still runs after 20:00.",
+          "type": "boolean"
+        },
+        "quiet_from": {
+          "default": "22:00",
+          "type": "string"
+        },
+        "quiet_hours": {
+          "default": false,
+          "description": "No desktop notifications between `quiet_from` and `quiet_to`.",
+          "type": "boolean"
+        },
+        "quiet_to": {
+          "default": "07:00",
+          "type": "string"
+        },
+        "task_due": {
+          "default": true,
+          "description": "Tasks due today, from 09:00 on a day (with „Erledigt“, „Schlummern“ and „Öffnen“).",
+          "type": "boolean"
+        },
+        "updates": {
+          "default": true,
+          "description": "„Version X verfügbar“.",
+          "type": "boolean"
+        },
+        "week_proposal": {
+          "default": true,
+          "description": "„Woche vorschlagen“ on the last workday of the week from 14:00 when days are open.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "NumberFormat": {
+      "enum": [
+        "comma",
+        "point"
+      ],
+      "type": "string"
+    },
+    "OnboardingState": {
+      "description": "Settings part: which intro was completed and when (RFC 3339, UTC).",
+      "properties": {
+        "completed_at": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "completed_version": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "OutlookCalendar": {
+      "description": "A selected (or once selected) Outlook calendar in the settings.",
+      "properties": {
+        "booking": {
+          "default": true,
+          "description": "„Für Buchungsvorschläge verwenden“: its meetings go into the week proposal, the day review and the quick capture's „Jetzt“.",
+          "type": "boolean"
+        },
+        "color": {
+          "default": "#2563eb",
+          "description": "`#rrggbb`.",
+          "type": "string"
+        },
+        "default": {
+          "default": false,
+          "description": "The default calendar of the profile.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Synced (while Outlook is switched on).",
+          "type": "boolean"
+        },
+        "entry_id": {
+          "default": "",
+          "type": "string"
+        },
+        "free_busy": {
+          "default": false,
+          "description": "Only free/busy times can be read (no subjects).",
+          "type": "boolean"
+        },
+        "id": {
+          "default": "",
+          "description": "Source id: `outlook` for the default calendar, else `outlook:<hash>`.",
+          "type": "string"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutlookKind"
+            }
+          ],
+          "default": "own"
+        },
+        "name": {
+          "default": "",
+          "description": "Folder name („Kalender“, „Projekt X“).",
+          "type": "string"
+        },
+        "owner": {
+          "default": "",
+          "description": "Mailbox, store or person („anna.mueller@firma.de“, „Archiv 2025“, „Raum Zürich“).",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "description": "Folder path in Outlook (`\\\\anna@firma.de\\Kalender\\Projekt X`).",
+          "type": "string"
+        },
+        "recipient": {
+          "default": "",
+          "description": "Name or address of the person whose default calendar this is (opened by name, or read as free/busy when the folder itself cannot be opened).",
+          "type": "string"
+        },
+        "store_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OutlookKind": {
+      "description": "Where an Outlook calendar lives, as far as it matters for Arcalo.",
+      "oneOf": [
+        {
+          "description": "The user's own mailbox (default calendar, its sub-calendars, a second own account).",
+          "enum": [
+            "own"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A PST file or another store outside Exchange (IMAP, internet calendars).",
+          "enum": [
+            "file"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Another mailbox in the profile: a shared or team mailbox, a delegate's mailbox.",
+          "enum": [
+            "mailbox"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A colleague's calendar opened in the navigation pane or by name.",
+          "enum": [
+            "shared"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A room calendar.",
+          "enum": [
+            "room"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A Microsoft 365 group calendar.",
+          "enum": [
+            "group"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PriceRule": {
+      "description": "One row of the editable price table (Settings → KI → Preise): per 1M input/output tokens in USD, for a model name (`*` at the end = prefix) on one provider or on any (`\"\"`).",
+      "properties": {
+        "input_per_mtok": {
+          "format": "double",
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output_per_mtok": {
+          "format": "double",
+          "type": "number"
+        },
+        "provider": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_per_mtok",
+        "model",
+        "output_per_mtok"
+      ],
+      "type": "object"
+    },
+    "PrivacyPrefs": {
+      "properties": {
+        "local_only": {
+          "default": false,
+          "description": "Every request goes to the local model.",
+          "type": "boolean"
+        },
+        "read_open_page": {
+          "default": true,
+          "description": "The assistant sees the open page.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ProviderKind": {
+      "oneOf": [
+        {
+          "description": "LiteLLM proxy: `<root>/v1/…`, bearer token, cost in a response header.",
+          "enum": [
+            "litellm"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Azure OpenAI: `<endpoint>/openai/deployments/<deployment>/…?api-version=…` with an `api-key` header; the model name is the deployment name.",
+          "enum": [
+            "azure"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Ollama: OpenAI-compatible `<root>/v1/…`, native `/api/tags` and `/api/pull`, no key.",
+          "enum": [
+            "ollama"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Any OpenAI-compatible API; the base URL includes the version (`…/v1`). Unknown kinds (from a newer version) load as this.",
+          "enum": [
+            "openai"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ProxyMode": {
+      "oneOf": [
+        {
+          "enum": [
+            "manual"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Always connect directly.",
+          "enum": [
+            "none"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The operating system's settings (WinINet on Windows, environment elsewhere).",
+          "enum": [
+            "system"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Proxy auto-config; answers evaluated by the UI.",
+          "enum": [
+            "pac"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "QuickLink": {
+      "description": "A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a group of such links (shown as one icon that opens a list of them).",
+      "properties": {
+        "color": {
+          "description": "A group's icon color (`blau`, `grün`, …; empty = like the other ribbon icons).",
+          "type": "string"
+        },
+        "icon": {
+          "default": "",
+          "description": "Name of a page icon (`globe`, `folder`, …).",
+          "type": "string"
+        },
+        "items": {
+          "description": "A group's links and programs, in order (groups do not nest).",
+          "items": {
+            "$ref": "#/definitions/QuickLink"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/LinkKind"
+            }
+          ],
+          "description": "Link, program or group; links saved before groups existed have none (= link)."
+        },
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "The address or path (empty for a group).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "RoundMode": {
+      "enum": [
+        "up",
+        "nearest"
+      ],
+      "type": "string"
+    },
+    "Rounding": {
+      "description": "Rounding of booked durations (bookings and timer stops).",
+      "properties": {
+        "min_minutes": {
+          "default": 0,
+          "description": "Bookings shorter than this are raised to it (0 = off).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RoundMode"
+            }
+          ],
+          "default": "up"
+        },
+        "step_minutes": {
+          "default": 0,
+          "description": "Step in minutes; 0 = off. Allowed: 0, 1, 5, 6, 10, 15.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RouterConfig": {
+      "properties": {
+        "local_model": {
+          "type": "string"
+        },
+        "local_provider": {
+          "default": "",
+          "description": "Provider ids of the tiers; `\"\"` = the first provider (settings of older versions).",
+          "type": "string"
+        },
+        "private_markers": {
+          "description": "Markers that force local processing (case-insensitive).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reasoning_model": {
+          "type": "string"
+        },
+        "reasoning_provider": {
+          "default": "",
+          "type": "string"
+        },
+        "reasoning_threshold": {
+          "description": "Scores at or above this go to the reasoning tier.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "standard_model": {
+          "type": "string"
+        },
+        "standard_provider": {
+          "default": "",
+          "type": "string"
+        },
+        "standard_threshold": {
+          "description": "Scores at or above this go to the standard tier.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "local_model",
+        "private_markers",
+        "reasoning_model",
+        "reasoning_threshold",
+        "standard_model",
+        "standard_threshold"
+      ],
+      "type": "object"
+    },
+    "RuleKind": {
+      "description": "What a rule looks at.",
+      "oneOf": [
+        {
+          "description": "`key` is the tag (without `#`; subtags `key/…` match too).",
+          "enum": [
+            "tag"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Frontmatter `key: value` (an empty value: the property is set).",
+          "enum": [
+            "property"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`key` is a Jira project key (`jira:` property or a title starting with `ABC-12`).",
+          "enum": [
+            "jira"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`key` is a Netzplan (`vorgang: NP-1/0010` or `netzplan: NP-1`).",
+          "enum": [
+            "netzplan"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The title starts with `key`.",
+          "enum": [
+            "title"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SavedQuery": {
+      "description": "A saved JQL search: its issues are synced with the default search and it can be shown as a „Jira-Abfrage“ widget.",
+      "properties": {
+        "id": {
+          "default": "",
+          "type": "string"
+        },
+        "jql": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "site": {
+          "default": "",
+          "description": "The site id.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Scope": {
+      "oneOf": [
+        {
+          "description": "„Für alle Arbeitsbereiche“: the shared value.",
+          "enum": [
+            "global"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "„Nur dieser Arbeitsbereich“: the workspace's own value.",
+          "enum": [
+            "workspace"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SiteKind": {
+      "description": "Cloud (REST v3, e-mail and API token) or Server/Data Center (REST v2, personal access token).",
+      "enum": [
+        "cloud",
+        "server"
+      ],
+      "type": "string"
+    },
+    "Spellcheck": {
+      "enum": [
+        "de",
+        "en",
+        "de-en",
+        "off"
+      ],
+      "type": "string"
+    },
+    "StartOpen": {
+      "enum": [
+        "tabs",
+        "dashboard",
+        "daily"
+      ],
+      "type": "string"
+    },
+    "StartPrefs": {
+      "properties": {
+        "minimized": {
+          "default": false,
+          "description": "Start hidden in the tray (minimized without a tray).",
+          "type": "boolean"
+        },
+        "open": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/StartOpen"
+            }
+          ],
+          "default": "tabs"
+        },
+        "restore_window": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "SyncMode": {
+      "oneOf": [
+        {
+          "description": "After every backup (daily, and „Jetzt sichern“).",
+          "enum": [
+            "with_backup"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Every hour (the mirror is refreshed first).",
+          "enum": [
+            "hourly"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ThemeColors": {
+      "description": "The main colors of a custom theme; the UI derives the remaining tokens (hover, strong borders, soft tints, shadows) from them.",
+      "properties": {
+        "accent": {
+          "type": "string"
+        },
+        "background": {
+          "description": "Page and editor background.",
+          "type": "string"
+        },
+        "border": {
+          "type": "string"
+        },
+        "danger": {
+          "type": "string"
+        },
+        "muted": {
+          "description": "Secondary text (descriptions, hints).",
+          "type": "string"
+        },
+        "success": {
+          "type": "string"
+        },
+        "surface": {
+          "description": "Sidebar, ribbon and tab bar.",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accent",
+        "background",
+        "border",
+        "danger",
+        "muted",
+        "success",
+        "surface",
+        "text",
+        "warning"
+      ],
+      "type": "object"
+    },
+    "Thresholds": {
+      "properties": {
+        "critical": {
+          "description": "Consumed share of the plan that raises a critical alert (e.g. 0.9).",
+          "format": "double",
+          "type": "number"
+        },
+        "warning": {
+          "description": "Consumed share of the plan that raises a warning (e.g. 0.75).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "critical",
+        "warning"
+      ],
+      "type": "object"
+    },
+    "TimePrefs": {
+      "properties": {
+        "balance": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BalancePrefs"
+            }
+          ],
+          "default": {
+            "carry_over": 0.0,
+            "opening_hours": 0.0,
+            "start": null,
+            "state": "",
+            "vacation_days": 30.0,
+            "weekday_hours": []
+          },
+          "description": "Overtime balance, vacation account and public holidays."
+        },
+        "cats_columns": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CatsColumns"
+            }
+          ],
+          "default": "standard"
+        },
+        "cats_delimiter": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CatsDelimiter"
+            }
+          ],
+          "default": "semicolon"
+        },
+        "default_leistungsart": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Leistungsart used when a booking has none, per Netzplan number (`NP-8801` → `DEV`).",
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "description": "„Zeiterfassung verwenden“: off hides the timesheet, projects and their commands.",
+          "type": "boolean"
+        },
+        "export_file_pattern": {
+          "default": "zeiten-{von}-{bis}",
+          "description": "Default file name of exports without extension; `{von}`, `{bis}`, `{format}`, `{kw}`, `{pernr}`.",
+          "type": "string"
+        },
+        "hours_display": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/HoursDisplay"
+            }
+          ],
+          "default": "decimal"
+        },
+        "rounding": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Rounding"
+            }
+          ],
+          "default": {
+            "min_minutes": 0,
+            "mode": "up",
+            "step_minutes": 0
+          }
+        },
+        "week_start": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WeekStart"
+            }
+          ],
+          "default": "monday"
+        }
+      },
+      "type": "object"
+    },
+    "TypeFiling": {
+      "description": "Settings → Ordner & Ablage, one type.",
+      "properties": {
+        "folder": {
+          "default": "",
+          "description": "Root folder (a path `A/B` is allowed); empty: the default name (journal and mail: Settings → Notizen / E-Mail).",
+          "type": "string"
+        },
+        "granularity": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Granularity"
+            }
+          ],
+          "default": "none"
+        }
+      },
+      "type": "object"
+    },
+    "UiFont": {
+      "enum": [
+        "system",
+        "inter"
+      ],
+      "type": "string"
+    },
+    "UpdateMode": {
+      "description": "What the app does about new versions.",
+      "oneOf": [
+        {
+          "description": "Check, download in the background, install when the app quits.",
+          "enum": [
+            "auto"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Check and show the new version; installing needs a click.",
+          "enum": [
+            "notify"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "No automatic checks (a policy: no checks at all).",
+          "enum": [
+            "off"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "UpdatePrefs": {
+      "description": "The user's update settings (Settings → Über).",
+      "properties": {
+        "allow_github_fallback": {
+          "default": true,
+          "description": "Ask GitHub when the own source fails.",
+          "type": "boolean"
+        },
+        "check_interval_hours": {
+          "default": 6,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/UpdateMode"
+            }
+          ],
+          "default": "auto"
+        },
+        "restore_session": {
+          "default": true,
+          "description": "„Jetzt neu starten“ opens the same tabs again.",
+          "type": "boolean"
+        },
+        "source_url": {
+          "default": "",
+          "description": "Own update source: a `latest.json` URL or a folder; blank = GitHub.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VoiceSettings": {
+      "description": "Settings → Sprachnotizen.",
+      "properties": {
+        "auto_summary": {
+          "default": false,
+          "description": "Summarize with the configured AI right after the transcription.",
+          "type": "boolean"
+        },
+        "input_device": {
+          "default": "",
+          "description": "Name of the input device (`\"\"` = the system default).",
+          "type": "string"
+        },
+        "keep_audio": {
+          "default": true,
+          "description": "Keep the audio file once the transcript is written.",
+          "type": "boolean"
+        },
+        "language": {
+          "default": "auto",
+          "description": "`auto` (German or English, detected), `de` or `en`.",
+          "type": "string"
+        },
+        "model": {
+          "default": "small",
+          "description": "Whisper model id (`base`, `small`, `large-v3-turbo-q5`, see [`models::MODELS`]).",
+          "type": "string"
+        },
+        "shortcut": {
+          "default": "",
+          "description": "Global shortcut that starts or stops a recording (`\"\"` = off).",
+          "type": "string"
+        },
+        "source_url": {
+          "default": "",
+          "description": "Admin source tried before the defaults: an `https://` address or a folder (UNC share, mounted drive, `file://`) holding the model files under their usual names. `\"\"` = none.",
+          "type": "string"
+        },
+        "system_audio": {
+          "default": false,
+          "description": "Windows: record the system audio too (WASAPI loopback), e.g. the other side of a call.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "WeekStart": {
+      "enum": [
+        "monday",
+        "sunday"
+      ],
+      "type": "string"
+    },
+    "Widget": {
+      "description": "A widget on a board: its place in the grid (`x`, `w` in columns of [`GRID_COLUMNS`], `y`, `h` in rows) and its own settings (their shape belongs to the UI).",
+      "properties": {
+        "config": true,
+        "h": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "Stable id within the board (keys, the text of a „Notiz“).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "One of [`WIDGET_KINDS`] or a kind the UI registers (see [`valid_widget_kind`]); kinds of another shape are dropped by [`Dashboard::normalized`].",
+          "type": "string"
+        },
+        "title": {
+          "description": "Own title instead of the widget's name.",
+          "type": "string"
+        },
+        "w": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "x": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "y": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "WidgetSize": {
+      "description": "Width of a widget of the start page before 1.6: one, two or all four columns.",
+      "oneOf": [
+        {
+          "enum": [
+            "s",
+            "l"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Unknown sizes (e.g. from a newer version) fall back to medium.",
+          "enum": [
+            "m"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "WindowEffect": {
+      "enum": [
+        "none",
+        "mica",
+        "acrylic"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "ai": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AiPrefs"
+        }
+      ],
+      "default": {
+        "allowed_tools": [
+          "log_time",
+          "search_workspace",
+          "budget_status",
+          "list_tasks",
+          "time_summary",
+          "activity_log"
+        ],
+        "chat_history": "all",
+        "citations": true,
+        "inline_presets": null,
+        "max_tokens": null,
+        "meeting_template": null,
+        "monthly_cost_limit_usd": null,
+        "streaming": true,
+        "temperature": 0.30000001192092896
+      },
+      "description": "KI: tools the assistant may use, chat history, streaming, cost limit."
+    },
+    "appearance": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AppearancePrefs"
+        }
+      ],
+      "default": {
+        "accent": "theme",
+        "code_font": "jetbrains",
+        "custom_themes": [],
+        "custom_titlebar": true,
+        "density": "normal",
+        "editor_font": "sans",
+        "line_width": "normal",
+        "reduce_motion": false,
+        "startup_animation": true,
+        "theme_dark": "annalo-dark",
+        "theme_light": "annalo-light",
+        "ui_font": "inter",
+        "ui_scale": 100,
+        "window_effect": "none",
+        "window_opacity": 80
+      },
+      "description": "Darstellung: themes, accent, fonts, density, window backdrop."
+    },
+    "assistant_instructions": {
+      "default": "",
+      "description": "Extra instructions appended to the assistant's system prompt.",
+      "type": "string"
+    },
+    "auto_route": {
+      "default": true,
+      "description": "Route by prompt complexity; when off, `router.standard_model` is always used.",
+      "type": "boolean"
+    },
+    "auto_update_check": {
+      "default": true,
+      "description": "Look for a new release at start and every few hours (only in builds with an update key). Updates are never installed without the user's click.",
+      "type": "boolean"
+    },
+    "backup_dir": {
+      "default": null,
+      "description": "Folder for automatic backups; `None` = `backups` in the data folder.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "backup_keep": {
+      "default": 14,
+      "description": "Number of backups kept; older ones are deleted.",
+      "format": "uint",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "backup_targets": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BackupTargets"
+        }
+      ],
+      "default": {
+        "destinations": [],
+        "local_latest_only": false
+      },
+      "description": "Further folders that receive a copy of every backup (network shares, cloud folders)."
+    },
+    "briefing": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BriefingSettings"
+        }
+      ],
+      "default": {
+        "mode": "off",
+        "notify_time": "",
+        "sections": [
+          {
+            "id": "ai",
+            "on": true
+          },
+          {
+            "id": "meetings",
+            "on": true
+          },
+          {
+            "id": "tasks",
+            "on": true
+          },
+          {
+            "id": "jira",
+            "on": true
+          },
+          {
+            "id": "time",
+            "on": true
+          }
+        ]
+      },
+      "description": "Morgen-Briefing: when it shows up and its sections."
+    },
+    "calendar": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CalendarSettings"
+        }
+      ],
+      "default": {
+        "block_minutes": 60,
+        "blocks_outlook": false,
+        "future_days": 90,
+        "include_body": false,
+        "meeting_links": true,
+        "outlook": false,
+        "outlook_calendars": [
+          {
+            "booking": true,
+            "color": "#2563eb",
+            "default": true,
+            "enabled": true,
+            "entry_id": "",
+            "free_busy": false,
+            "id": "outlook",
+            "kind": "own",
+            "name": "Kalender",
+            "owner": "",
+            "path": "",
+            "recipient": "",
+            "store_id": ""
+          }
+        ],
+        "outlook_color": "#2563eb",
+        "outlook_recipients": [],
+        "past_days": 30,
+        "private_details": false,
+        "sources": [],
+        "sync_minutes": 15
+      },
+      "description": "Calendar sync: Outlook, ICS files and subscriptions (subscription URLs live in the credential store)."
+    },
+    "capture": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CapturePrefs"
+        }
+      ],
+      "default": {
+        "auto_hide_ms": 1200,
+        "default_target": "daily",
+        "inbox_title": "Posteingang",
+        "meeting_target": true,
+        "selection_shortcut": ""
+      },
+      "description": "Quick capture: default target, inbox page, „Auswahl übernehmen“, auto-hide."
+    },
+    "capture_shortcut": {
+      "default": "Ctrl+Shift+Space",
+      "description": "Global shortcut for the quick-capture window, e.g. `Ctrl+Shift+Space`.",
+      "type": "string"
+    },
+    "close_to_tray": {
+      "default": false,
+      "description": "Closing the main window hides it to the tray instead of quitting.",
+      "type": "boolean"
+    },
+    "daily_target_hours": {
+      "default": 8.0,
+      "description": "Target working hours per workday; days below it are flagged in the timesheet.",
+      "format": "double",
+      "type": "number"
+    },
+    "daily_template": {
+      "default": null,
+      "description": "Template page for new daily notes; `None` = built-in sections.",
+      "format": "int64",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "dashboard": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/Dashboard"
+        }
+      ],
+      "default": {
+        "active": "",
+        "boards": [],
+        "notes": {},
+        "version": 0
+      },
+      "description": "Widgets of the start page (and of new tabs)."
+    },
+    "dev_log_json": {
+      "default": false,
+      "description": "Developer log: also write the events as JSON lines (`logs/annalo.jsonl`).",
+      "type": "boolean"
+    },
+    "dev_log_level": {
+      "default": "",
+      "description": "Developer log level (`error` … `trace`); empty: `dev_log_verbose` decides (debug or info).",
+      "type": "string"
+    },
+    "dev_log_verbose": {
+      "default": false,
+      "description": "Developer log (Settings → Protokoll): also write debug lines (AI requests, syncs, backups).",
+      "type": "boolean"
+    },
+    "editor": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/EditorPrefs"
+        }
+      ],
+      "default": {
+        "auto_pair": false,
+        "autosave_ms": 450,
+        "code_line_numbers": false,
+        "default_icon": null,
+        "hover_delay_ms": 450,
+        "hover_preview": true,
+        "inbox_title": "Inbox",
+        "new_page_location": "top",
+        "scroll_outline": true,
+        "smart_quotes": false,
+        "spellcheck": "de",
+        "tab_size": 4,
+        "toolbar": true
+      },
+      "description": "Editor: autosave, tab size, spell checking, toolbar, link previews."
+    },
+    "embedding_model": {
+      "default": null,
+      "description": "Embedding model for semantic search; `None` = keyword search only.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "embedding_provider": {
+      "default": "litellm",
+      "description": "Provider of the embedding model; `\"\"` = the first provider.",
+      "type": "string"
+    },
+    "filing": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/FilingSettings"
+        }
+      ],
+      "default": {
+        "rules": [],
+        "types": {}
+      },
+      "description": "Ordner & Ablage: folder and granularity per page type, rules."
+    },
+    "git_sync": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/GitSyncSettings"
+        }
+      ],
+      "default": {
+        "author_email": "annalo@localhost",
+        "author_name": "Arcalo",
+        "branch": "main",
+        "enabled": false,
+        "include_database": false,
+        "mode": "with_backup",
+        "remote_url": "",
+        "sync_settings": false
+      },
+      "description": "Push the Markdown mirror to a Git remote (the access token lives in the credential store)."
+    },
+    "idle_threshold_minutes": {
+      "default": 5,
+      "description": "Pauses longer than this are offered for subtraction when a timer stops.",
+      "format": "uint64",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "jira": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/IssueSettings"
+        }
+      ],
+      "default": {
+        "queries": [],
+        "sites": [],
+        "sync_minutes": 10,
+        "tick_done_tasks": true
+      },
+      "description": "Jira sites, saved JQL searches and the sync (tokens live in the credential store)."
+    },
+    "jira_issue_map": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "`NP-8801/1020` or `NP-8801` → Jira issue key.",
+      "type": "object"
+    },
+    "keymap": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "In-app shortcuts that differ from the defaults: command id → `Ctrl+Shift+D` (`\"\"` = off).",
+      "type": "object"
+    },
+    "litellm_base_url": {
+      "default": "http://localhost:4000",
+      "description": "Root URL of the LiteLLM proxy, e.g. `https://llm.example.com`. Kept in step with the address of the provider [`LEGACY_ID`] for older versions and scripts (see [`Settings::sync_legacy`]).",
+      "type": "string"
+    },
+    "locale": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/LocalePrefs"
+        }
+      ],
+      "default": {
+        "date_format": "de",
+        "language": "de"
+      },
+      "description": "Sprache: language, date and number format."
+    },
+    "mail": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/MailSettings"
+        }
+      ],
+      "default": {
+        "default_action": "task",
+        "notes_parent": "E-Mails",
+        "private_notes": true,
+        "save_attachments": false,
+        "shortcut": ""
+      },
+      "description": "„E-Mail als Aufgabe / Notiz“: parent of mail notes, global shortcut, attachment default."
+    },
+    "markdown_mirror": {
+      "default": true,
+      "description": "After every backup, write the workspace as Markdown files (+ time entries as CSV).",
+      "type": "boolean"
+    },
+    "markdown_mirror_dir": {
+      "default": null,
+      "description": "Folder of the Markdown mirror; `None` = `markdown` in the backup folder.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "network": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/NetworkSettings"
+        }
+      ],
+      "default": {
+        "accept_invalid_certs": false,
+        "apply_to": {
+          "ai": true,
+          "git": true,
+          "tools": true,
+          "updates": true
+        },
+        "extra_ca_path": null,
+        "http_proxy": "",
+        "https_proxy": "",
+        "mode": "system",
+        "no_proxy": "localhost, 127.0.0.1, ::1",
+        "pac_results": {},
+        "pac_url": "",
+        "proxy_user": "",
+        "socks_proxy": "",
+        "timeout_secs": 30
+      },
+      "description": "Proxy, extra root CA and timeouts (the proxy password lives in the credential store)."
+    },
+    "notes": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/NotesPrefs"
+        }
+      ],
+      "default": {
+        "daily_folder": "Journal",
+        "daily_title": "iso",
+        "max_versions": 50,
+        "trash_retention_days": 30,
+        "version_interval_minutes": 10
+      },
+      "description": "Notizen: daily notes, trash and version history."
+    },
+    "notifications": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/NotificationPrefs"
+        }
+      ],
+      "default": {
+        "backup_failed": true,
+        "budget": true,
+        "day_review": false,
+        "day_review_time": "17:30",
+        "end_of_day": true,
+        "git_failed": true,
+        "late_timer": true,
+        "quiet_from": "22:00",
+        "quiet_hours": false,
+        "quiet_to": "07:00",
+        "task_due": true,
+        "updates": true,
+        "week_proposal": true
+      },
+      "description": "Benachrichtigungen: which reminders show, quiet hours."
+    },
+    "onboarding": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/OnboardingState"
+        }
+      ],
+      "default": {
+        "completed_at": null,
+        "completed_version": null
+      },
+      "description": "First-run intro and setup: which intro was completed and when (kept by `settings_save`)."
+    },
+    "open_daily_on_start": {
+      "default": false,
+      "description": "Open today's daily note on start.",
+      "type": "boolean"
+    },
+    "palette_shortcut": {
+      "default": null,
+      "description": "Global shortcut that brings up the command palette, e.g. `Ctrl+Shift+K`; `None` or `\"\"` = off (the default: Ctrl+K works inside the app).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pernr": {
+      "default": null,
+      "description": "SAP personnel number for CATS exports.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prices": {
+      "default": [
+        {
+          "input_per_mtok": 2.5,
+          "model": "gpt-4o*",
+          "output_per_mtok": 10.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.15,
+          "model": "gpt-4o-mini*",
+          "output_per_mtok": 0.6,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 2.0,
+          "model": "gpt-4.1*",
+          "output_per_mtok": 8.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.4,
+          "model": "gpt-4.1-mini*",
+          "output_per_mtok": 1.6,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.1,
+          "model": "gpt-4.1-nano*",
+          "output_per_mtok": 0.4,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 2.0,
+          "model": "o3*",
+          "output_per_mtok": 8.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 1.1,
+          "model": "o3-mini*",
+          "output_per_mtok": 4.4,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 1.1,
+          "model": "o4-mini*",
+          "output_per_mtok": 4.4,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.02,
+          "model": "text-embedding-3-small*",
+          "output_per_mtok": 0.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.13,
+          "model": "text-embedding-3-large*",
+          "output_per_mtok": 0.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 2.0,
+          "model": "mistral-large*",
+          "output_per_mtok": 6.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.1,
+          "model": "mistral-small*",
+          "output_per_mtok": 0.3,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.1,
+          "model": "mistral-embed*",
+          "output_per_mtok": 0.0,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.59,
+          "model": "llama-3.3-70b*",
+          "output_per_mtok": 0.79,
+          "provider": ""
+        },
+        {
+          "input_per_mtok": 0.05,
+          "model": "llama-3.1-8b*",
+          "output_per_mtok": 0.08,
+          "provider": ""
+        }
+      ],
+      "description": "Prices per 1M tokens for providers that do not report costs (LiteLLM does; local providers are free).",
+      "items": {
+        "$ref": "#/definitions/PriceRule"
+      },
+      "type": "array"
+    },
+    "privacy": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PrivacyPrefs"
+        }
+      ],
+      "default": {
+        "local_only": false,
+        "read_open_page": true
+      },
+      "description": "Datenschutz: what the AI may read, local-only mode."
+    },
+    "providers": {
+      "default": [
+        {
+          "api_version": "",
+          "base_url": "http://localhost:4000",
+          "bypass_proxy": false,
+          "enabled": true,
+          "id": "litellm",
+          "kind": "litellm",
+          "local": false,
+          "models": [],
+          "name": "LiteLLM"
+        }
+      ],
+      "description": "AI providers in order of preference; keys live in the credential store, one per id.",
+      "items": {
+        "$ref": "#/definitions/AiProvider"
+      },
+      "type": "array"
+    },
+    "quick_links": {
+      "default": [],
+      "description": "Links at the top of the sidebar (web pages, tools, folders).",
+      "items": {
+        "$ref": "#/definitions/QuickLink"
+      },
+      "type": "array"
+    },
+    "reminder_time": {
+      "default": "17:30",
+      "description": "End-of-day reminder as `HH:MM` (local time); `None` = off.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "router": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/RouterConfig"
+        }
+      ],
+      "default": {
+        "local_model": "ollama/llama3.2",
+        "local_provider": "litellm",
+        "private_markers": [
+          "#privat",
+          "#private",
+          "#vertraulich",
+          "#confidential"
+        ],
+        "reasoning_model": "cloud-reasoning",
+        "reasoning_provider": "litellm",
+        "reasoning_threshold": 60,
+        "standard_model": "cloud-standard",
+        "standard_provider": "litellm",
+        "standard_threshold": 30
+      },
+      "description": "Provider and model per tier."
+    },
+    "search_shortcut": {
+      "default": "Ctrl+Shift+O",
+      "description": "Global shortcut of the quick-search window (Spotlight-like), e.g. `Ctrl+Shift+O`; `\"\"` = off.",
+      "type": "string"
+    },
+    "start": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/StartPrefs"
+        }
+      ],
+      "default": {
+        "minimized": false,
+        "open": "tabs",
+        "restore_window": true
+      },
+      "description": "Start: what opens at start, window restore, start minimized."
+    },
+    "theme": {
+      "default": "system",
+      "description": "`system`, `light` or `dark`.",
+      "type": "string"
+    },
+    "thresholds": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/Thresholds"
+        }
+      ],
+      "default": {
+        "critical": 0.9,
+        "warning": 0.75
+      },
+      "description": "Budget warning and critical levels (share of the budget used)."
+    },
+    "time": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/TimePrefs"
+        }
+      ],
+      "default": {
+        "balance": {
+          "carry_over": 0.0,
+          "opening_hours": 0.0,
+          "start": null,
+          "state": "",
+          "vacation_days": 30.0,
+          "weekday_hours": []
+        },
+        "cats_columns": "standard",
+        "cats_delimiter": "semicolon",
+        "default_leistungsart": {},
+        "enabled": true,
+        "export_file_pattern": "zeiten-{von}-{bis}",
+        "hours_display": "decimal",
+        "rounding": {
+          "min_minutes": 0,
+          "mode": "up",
+          "step_minutes": 0
+        },
+        "week_start": "monday"
+      },
+      "description": "Zeiterfassung: on/off, rounding, CATS export, balance."
+    },
+    "updates": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/UpdatePrefs"
+        }
+      ],
+      "default": {
+        "allow_github_fallback": true,
+        "check_interval_hours": 6,
+        "mode": "auto",
+        "restore_session": true,
+        "source_url": ""
+      },
+      "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
+    },
+    "version": {
+      "default": 6,
+      "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
+      "format": "uint32",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "voice": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/VoiceSettings"
+        }
+      ],
+      "default": {
+        "auto_summary": false,
+        "input_device": "",
+        "keep_audio": true,
+        "language": "auto",
+        "model": "small",
+        "shortcut": "",
+        "source_url": "",
+        "system_audio": false
+      },
+      "description": "Sprachnotizen: Whisper model and its source, language, input device, summary, audio."
+    },
+    "workdays": {
+      "default": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "description": "Workdays as ISO weekday numbers (1 = Monday … 7 = Sunday).",
+      "items": {
+        "format": "uint32",
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "workspace_scopes": {
+      "additionalProperties": {
+        "$ref": "#/definitions/Scope"
+      },
+      "default": {},
+      "description": "Sections this workspace decided for itself or shares with every workspace on this computer (see [`crate::settings_layers`]); sections not listed follow their default.",
+      "type": "object"
+    }
+  },
+  "title": "Settings",
+  "type": "object"
+}

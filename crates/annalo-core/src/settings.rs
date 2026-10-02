@@ -22,8 +22,12 @@ use crate::prefs::{
 use crate::tracking::Thresholds;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Settings {
+    /// Version of the stored shape (see [`crate::settings_migrate`]); settings without one are
+    /// from 1.9 or older. A newer version's number is kept.
+    pub version: u32,
     /// Root URL of the LiteLLM proxy, e.g. `https://llm.example.com`. Kept in step with the
     /// address of the provider [`LEGACY_ID`] for older versions and scripts (see [`Settings::sync_legacy`]).
     pub litellm_base_url: String,
@@ -42,6 +46,7 @@ pub struct Settings {
     pub prices: Vec<PriceRule>,
     /// Extra instructions appended to the assistant's system prompt.
     pub assistant_instructions: String,
+    /// Budget warning and critical levels (share of the budget used).
     pub thresholds: Thresholds,
     /// Pauses longer than this are offered for subtraction when a timer stops.
     pub idle_threshold_minutes: u64,
@@ -94,14 +99,23 @@ pub struct Settings {
     pub git_sync: GitSyncSettings,
     /// Proxy, extra root CA and timeouts (the proxy password lives in the credential store).
     pub network: NetworkSettings,
+    /// Darstellung: themes, accent, fonts, density, window backdrop.
     pub appearance: AppearancePrefs,
+    /// Editor: autosave, tab size, spell checking, toolbar, link previews.
     pub editor: EditorPrefs,
+    /// Notizen: daily notes, trash and version history.
     pub notes: NotesPrefs,
+    /// Zeiterfassung: on/off, rounding, CATS export, balance.
     pub time: TimePrefs,
+    /// KI: tools the assistant may use, chat history, streaming, cost limit.
     pub ai: AiPrefs,
+    /// Benachrichtigungen: which reminders show, quiet hours.
     pub notifications: NotificationPrefs,
+    /// Datenschutz: what the AI may read, local-only mode.
     pub privacy: PrivacyPrefs,
+    /// Start: what opens at start, window restore, start minimized.
     pub start: StartPrefs,
+    /// Sprache: language, date and number format.
     pub locale: LocalePrefs,
     /// In-app shortcuts that differ from the defaults: command id → `Ctrl+Shift+D` (`""` = off).
     pub keymap: BTreeMap<String, String>,
@@ -127,11 +141,15 @@ pub struct Settings {
     pub briefing: crate::briefing::BriefingSettings,
     /// Ordner & Ablage: folder and granularity per page type, rules.
     pub filing: crate::filing::FilingSettings,
+    /// Sections this workspace decided for itself or shares with every workspace on this
+    /// computer (see [`crate::settings_layers`]); sections not listed follow their default.
+    pub workspace_scopes: BTreeMap<String, crate::settings_layers::Scope>,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
 /// group of such links (shown as one icon that opens a list of them).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct QuickLink {
     pub name: String,
     /// The address or path (empty for a group).
@@ -153,6 +171,7 @@ pub struct QuickLink {
 
 /// What a ribbon entry is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum LinkKind {
     /// A program, started directly.
@@ -271,6 +290,7 @@ pub fn quick_link_at(links: &[QuickLink], index: usize, item: Option<usize>) -> 
 
 /// Width of a widget of the start page before 1.6: one, two or all four columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum WidgetSize {
     #[serde(rename = "s")]
     Small,
@@ -284,6 +304,7 @@ pub enum WidgetSize {
 /// A widget of the start page before 1.6 (one list, three widths). The start page moves the
 /// list onto a board of the grid ([`Dashboard::boards`]) with the same widgets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LegacyWidget {
     pub id: String,
     /// One of [`LEGACY_WIDGET_KINDS`]; unknown kinds are dropped by [`Dashboard::normalized`].
@@ -294,6 +315,7 @@ pub struct LegacyWidget {
 /// A widget on a board: its place in the grid (`x`, `w` in columns of [`GRID_COLUMNS`], `y`,
 /// `h` in rows) and its own settings (their shape belongs to the UI).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Widget {
     /// Stable id within the board (keys, the text of a „Notiz“).
     pub id: String,
@@ -321,6 +343,7 @@ fn one() -> u32 {
 
 /// One start page („Heute“, „Projekte“, …), shown as a tab.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Board {
     pub id: String,
     pub name: String,
@@ -329,6 +352,7 @@ pub struct Board {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Dashboard {
     /// 3 since 1.7 (widgets of any registered kind are kept), 2 since 1.6 (boards in a grid);
@@ -500,6 +524,7 @@ impl Dashboard {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            version: crate::settings_migrate::SETTINGS_VERSION,
             litellm_base_url: DEFAULT_LITELLM_URL.into(),
             providers: vec![AiProvider::litellm(DEFAULT_LITELLM_URL)],
             router: RouterConfig::default(),
@@ -543,6 +568,7 @@ impl Default for Settings {
             jira: crate::issues::IssueSettings::default(),
             briefing: crate::briefing::BriefingSettings::default(),
             filing: crate::filing::FilingSettings::default(),
+            workspace_scopes: BTreeMap::new(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -559,7 +585,7 @@ impl Default for Settings {
 }
 
 /// Address of the LiteLLM proxy in fresh settings.
-const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
+pub(crate) const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
 
 /// What a booking command answers while time tracking is switched off.
 pub fn time_tracking_off() -> &'static str {
@@ -778,6 +804,18 @@ impl Settings {
             }
             "locale" => self.locale = d.locale,
             "briefing" => self.briefing = d.briefing,
+            "filing" => self.filing = d.filing,
+            // The Whisper model and the device are kept (a download, a choice of hardware).
+            "voice" => {
+                let (model, device) =
+                    (std::mem::take(&mut self.voice.model), std::mem::take(&mut self.voice.input_device));
+                self.voice = crate::voice::VoiceSettings { model, input_device: device, ..d.voice };
+            }
+            // Sites stay (their tokens are in the credential store).
+            "jira" => {
+                let sites = std::mem::take(&mut self.jira.sites);
+                self.jira = crate::issues::IssueSettings { sites, ..d.jira };
+            }
             "keyboard" => self.keymap = d.keymap,
             other => {
                 return Err(crate::error::Error::State(trf!(
@@ -809,32 +847,86 @@ const OLD_PALETTE_DEFAULT: &str = "Alt+Space";
 
 const KEY: &str = "app";
 
+/// Stored settings, parsed: the settings, the keys that could not be read, the keys this
+/// version does not know (path and value, kept for the next save) and what the version
+/// steps did.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Parsed {
+    pub settings: Settings,
+    pub bad: Vec<String>,
+    pub unknown: Vec<(Vec<String>, serde_json::Value)>,
+    pub migration: crate::settings_migrate::Migration,
+}
+
+/// Collects the keys of `stored` that `known` (the parsed settings, serialized) lacks, at any
+/// depth of objects both have. `null` values are not kept (an unset optional field).
+fn unknown_keys(
+    stored: &serde_json::Value,
+    known: &serde_json::Value,
+    path: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, serde_json::Value)>,
+) {
+    let (Some(s), Some(k)) = (stored.as_object(), known.as_object()) else { return };
+    for (key, v) in s {
+        path.push(key.clone());
+        match k.get(key) {
+            Some(kv) => unknown_keys(v, kv, path, out),
+            None if !v.is_null() => out.push((path.clone(), v.clone())),
+            None => {}
+        }
+        path.pop();
+    }
+}
+
+/// Puts a kept key back at `path` when its parent object is still there and the key is not.
+fn restore_key(value: &mut serde_json::Value, path: &[String], v: &serde_json::Value) {
+    let Some((last, parents)) = path.split_last() else { return };
+    let mut cur = value;
+    for p in parents {
+        match cur.get_mut(p) {
+            Some(next) => cur = next,
+            None => return,
+        }
+    }
+    if let Some(obj) = cur.as_object_mut() {
+        obj.entry(last.clone()).or_insert_with(|| v.clone());
+    }
+}
+
 impl Database {
     pub fn load_settings(&self) -> Result<Settings> {
         Ok(self.load_settings_checked()?.0)
     }
 
+    /// The stored settings JSON, if any.
+    fn raw_settings(&self) -> Result<Option<String>> {
+        Ok(self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?)
+    }
+
     /// [`Database::load_settings`] and the settings that could not be read (their defaults
     /// are used; see [`Database::parse_settings_lenient`]).
     pub fn load_settings_checked(&self) -> Result<(Settings, Vec<String>)> {
-        let raw: Option<String> =
-            self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get(0)).optional()?;
-        // Unchanged JSON (the usual case, e.g. on every page save) is not parsed again.
-        if let (Some(json), Some((cached, s))) = (&raw, &*self.settings_cache.borrow())
+        let raw = self.raw_settings()?;
+        let parsed = self.parse_cached(raw.as_deref());
+        Ok((parsed.settings, parsed.bad))
+    }
+
+    /// Parses `raw` (the stored JSON), from the cache when it is unchanged (the usual case,
+    /// e.g. on every page save). Only settings that parsed cleanly are cached: the caller must
+    /// learn about unreadable ones.
+    pub(crate) fn parse_cached(&self, raw: Option<&str>) -> Parsed {
+        if let (Some(json), Some((cached, p))) = (raw, &*self.settings_cache.borrow())
             && json == cached
         {
-            return Ok((s.clone(), vec![]));
+            return p.clone();
         }
-        let (mut s, bad) = match &raw {
-            Some(json) => Self::parse_settings_lenient(json),
-            None => (Settings::default(), vec![]),
+        let parsed = match raw {
+            Some(json) => Self::parse_settings_full(json),
+            None => Parsed { settings: Settings::default(), ..Default::default() },
         };
-        s.dashboard = s.dashboard.normalized();
-        // Settings of 1.5 know only the default Outlook calendar: it gets its entry in the list.
-        s.calendar = std::mem::take(&mut s.calendar).normalized();
-        // Only settings that parsed cleanly are kept: the caller must learn about unreadable ones.
-        *self.settings_cache.borrow_mut() = raw.filter(|_| bad.is_empty()).map(|json| (json, s.clone()));
-        Ok((s, bad))
+        *self.settings_cache.borrow_mut() =
+            raw.filter(|_| parsed.bad.is_empty()).map(|json| (json.to_owned(), parsed.clone()));
+        parsed
     }
 
     /// Parses stored settings JSON; see [`Database::parse_settings_lenient`].
@@ -845,14 +937,19 @@ impl Database {
     /// Parses stored settings JSON key by key (and one level deeper): a value of the wrong
     /// type (hand-edited, from another version) falls back to its default instead of making
     /// all settings unreadable. Returns the keys that were dropped (`*` for unreadable JSON).
-    /// Settings from before the start preferences keep „Tagesnotiz beim Start öffnen“
-    /// (`open_daily_on_start` → `start.open = daily`).
+    /// Settings of an older version are brought up to date first ([`crate::settings_migrate`]).
     pub fn parse_settings_lenient(json: &str) -> (Settings, Vec<String>) {
+        let p = Self::parse_settings_full(json);
+        (p.settings, p.bad)
+    }
+
+    pub(crate) fn parse_settings_full(json: &str) -> Parsed {
         use serde_json::Value;
-        let value = match serde_json::from_str::<Value>(json) {
+        let mut value = match serde_json::from_str::<Value>(json) {
             Ok(v @ Value::Object(_)) => v,
-            _ => return (Settings::default(), vec!["*".into()]),
+            _ => return Parsed { settings: Settings::default(), bad: vec!["*".into()], ..Default::default() },
         };
+        let migration = crate::settings_migrate::migrate(&mut value);
         let fits = |v: &Value| serde_json::from_value::<Settings>(v.clone()).is_ok();
         let mut bad = vec![];
         let merged = if fits(&value) {
@@ -883,36 +980,50 @@ impl Database {
             }
             base
         };
-        let mut s: Settings = serde_json::from_value(merged).unwrap_or_default();
-        Self::upgrade_settings(&value, &mut s);
-        (s, bad)
+        let settings: Settings = serde_json::from_value(merged).unwrap_or_default();
+        // Keys this version does not read (a newer version's, a hand-written one): kept for
+        // the next save. Values that were unreadable are not among them (they are known keys).
+        let mut unknown = vec![];
+        if let Ok(known) = serde_json::to_value(&settings) {
+            unknown_keys(&value, &known, &mut vec![], &mut unknown);
+        }
+        Parsed { settings, bad, unknown, migration }
     }
 
-    fn upgrade_settings(value: &serde_json::Value, s: &mut Settings) {
-        if value.get("start").is_none() && s.open_daily_on_start {
-            s.start.open = StartOpen::Daily;
+    /// Brings the stored settings to [`crate::settings_migrate::SETTINGS_VERSION`] once and
+    /// writes them back (called at start; the shell logs what changed). Unreadable settings
+    /// are left for the start's own handling.
+    pub fn migrate_settings(&self) -> Result<crate::settings_migrate::Migration> {
+        let Some(raw) = self.raw_settings()? else { return Ok(Default::default()) };
+        let p = self.parse_cached(Some(&raw));
+        if !p.migration.ran() || !p.bad.is_empty() {
+            return Ok(p.migration);
         }
-        // Settings from before AI providers: the LiteLLM server becomes the one provider, its
-        // token stays where it is (the credential of the provider `litellm`).
-        if value.get("providers").is_none() {
-            s.providers = vec![AiProvider::litellm(&s.litellm_base_url)];
-            s.router.fill_providers(LEGACY_ID);
-            s.embedding_provider = LEGACY_ID.into();
-        }
-        // Settings from before the backdrop choice (1.6): the Mica switch becomes the effect,
-        // the opacity starts at its default.
-        let appearance = value.get("appearance");
-        if appearance.is_some_and(|a| a.get("window_effect").is_none())
-            && appearance.and_then(|a| a.get("mica")).and_then(serde_json::Value::as_bool) == Some(true)
-        {
-            s.appearance.window_effect = WindowEffect::Mica;
-        }
+        self.write_settings(&p.settings, &p.unknown)?;
+        Ok(p.migration)
     }
 
+    /// Saves the settings. Keys of the stored settings this version does not know stay; the
+    /// time of every changed setting is recorded for the settings sync
+    /// ([`crate::settings_sync`]); sections shared by every workspace go to the shared file
+    /// ([`crate::settings_layers`]).
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
+        let raw = self.raw_settings()?;
+        let before = self.parse_cached(raw.as_deref());
+        self.write_settings(s, &before.unknown)?;
+        crate::settings_sync::record_changes(self, &before.settings, s, crate::settings_sync::now_ms())?;
+        crate::settings_layers::store_shared(s);
+        Ok(())
+    }
+
+    fn write_settings(&self, s: &Settings, unknown: &[(Vec<String>, serde_json::Value)]) -> Result<()> {
+        let mut value = serde_json::to_value(s)?;
+        for (path, v) in unknown {
+            restore_key(&mut value, path, v);
+        }
         self.conn().execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![KEY, serde_json::to_string(s)?],
+            params![KEY, serde_json::to_string(&value)?],
         )?;
         Ok(())
     }

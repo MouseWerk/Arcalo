@@ -172,6 +172,7 @@ fn local_to_utc<Tz: TimeZone>(offset: &Tz, dt: chrono::NaiveDateTime) -> Result<
 // ------------------------------------------------------------------- budgets
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Thresholds {
     /// Consumed share of the plan that raises a warning (e.g. 0.75).
     pub warning: f64,

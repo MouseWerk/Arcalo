@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { startFakeLiteLLM } from "../lib/fake-litellm.js";
 
 const test = guarded(nodeTest, () => app);
@@ -153,8 +154,8 @@ test("PAC: the script is evaluated in the sandbox and its answer is used", async
   assert.match(await app.text(".net-test-result"), new RegExp(`über http://127\\.0\\.0\\.1:${proxy.port}`));
   assert.ok(proxy.seen.length > before);
   await app.waitText(".pac-result", /PROXY 127\.0\.0\.1/);
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
   const saved = await app.invoke("settings_get");
   assert.equal(saved.settings.network.mode, "pac");
   assert.match(saved.settings.network.pac_results["*"], /^PROXY 127\.0\.0\.1:\d+; DIRECT$/);
@@ -235,8 +236,8 @@ test("a rebound shortcut runs its command; conflicts are shown", async () => {
   await app.click('.key-recorder[data-command="daily_note"]');
   await app.keys(["Control", "Shift", "l"]);
   await app.browser.waitUntil(async () => /Ctrl\s*Shift\s*L/.test(await app.text('.key-recorder[data-command="daily_note"]')));
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
   const view = await app.invoke("settings_get");
   assert.deepEqual(view.settings.keymap, { daily_note: "Ctrl+Shift+L" });
   // The ribbon shows the new shortcut, and it opens today's daily note.
@@ -286,7 +287,7 @@ test("export and import of all settings (no secrets) round-trip", async () => {
   await app.waitFor(".settings-diff");
   assert.match(await app.text(".settings-diff"), /appearance\.accent/);
   await clickText(".dialog button", /^Übernehmen$/);
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await app.waitText(".toast-title", /Einstellungen übernommen/);
   assert.equal((await app.invoke("settings_get")).settings.appearance.accent, "theme");
   assert.deepEqual(await app.consoleErrors(), []);
 });

@@ -25,6 +25,7 @@ const WHATS_NEW: &str = "onboarding.whats_new";
 
 /// Settings part: which intro was completed and when (RFC 3339, UTC).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct OnboardingState {
     pub completed_version: Option<String>,

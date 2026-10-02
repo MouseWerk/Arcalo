@@ -3,7 +3,6 @@
   "items": [
     {
       "id": "filing",
-      "image": "1.9.0-filing.png",
       "action": {
         "type": "settings",
         "section": "filing"
@@ -11,17 +10,18 @@
       "en": {
         "title": "Every page in its folder",
         "text": "Daily notes, meeting notes, voice and mail notes and Jira issues now file themselves into folders by date or series. Your own rules decide first, and existing pages are never moved.",
-        "action": "Set up folders"
+        "action": "Set up folders",
+        "image": "1.9.0-filing-en.png"
       },
       "de": {
         "title": "Jede Seite in ihrem Ordner",
         "text": "Tagesnotizen, Besprechungen, Sprach- und Mail-Notizen und Jira-Vorgänge legen sich jetzt selbst in Ordner nach Datum oder Serie ab. Eigene Regeln entscheiden zuerst, bestehende Seiten werden nie verschoben.",
-        "action": "Ordner einrichten"
+        "action": "Ordner einrichten",
+        "image": "1.9.0-filing-de.png"
       }
     },
     {
       "id": "smart-folders",
-      "image": "1.9.0-smart-folders.png",
       "action": {
         "type": "command",
         "command": "toggle_sidebar"
@@ -29,24 +29,27 @@
       "en": {
         "title": "Smart folders and a faster page tree",
         "text": "Recently edited, favorites, orphaned pages and pages by tag or Jira project sit above the tree. Filter the tree by title, select several pages and move them at once.",
-        "action": "Show the sidebar"
+        "action": "Show the sidebar",
+        "image": "1.9.0-smart-folders-en.png"
       },
       "de": {
         "title": "Intelligente Ordner und ein schnellerer Seitenbaum",
         "text": "Zuletzt bearbeitet, Favoriten, verwaiste Seiten und Seiten nach Tag oder Jira-Projekt stehen über dem Baum. Den Baum nach Titel filtern, mehrere Seiten auswählen und auf einmal verschieben.",
-        "action": "Seitenleiste zeigen"
+        "action": "Seitenleiste zeigen",
+        "image": "1.9.0-smart-folders-de.png"
       }
     },
     {
       "id": "embeds",
-      "image": "1.9.0-embeds.png",
       "en": {
         "title": "Embeds, live queries and diagrams in notes",
-        "text": "![[Page]] shows another page or one of its sections right in the note, a query block lists tasks or pages live, and a mermaid block draws flowcharts, sequences and Gantt charts."
+        "text": "![[Page]] shows another page or one of its sections right in the note, a query block lists tasks or pages live, and a mermaid block draws flowcharts, sequences and Gantt charts.",
+        "image": "1.9.0-embeds-en.png"
       },
       "de": {
         "title": "Einbettungen, Live-Abfragen und Diagramme in Notizen",
-        "text": "![[Seite]] zeigt eine andere Seite oder einen ihrer Abschnitte direkt in der Notiz, ein query-Block listet Aufgaben oder Seiten live, und ein mermaid-Block zeichnet Ablauf-, Sequenz- und Gantt-Diagramme."
+        "text": "![[Seite]] zeigt eine andere Seite oder einen ihrer Abschnitte direkt in der Notiz, ein query-Block listet Aufgaben oder Seiten live, und ein mermaid-Block zeichnet Ablauf-, Sequenz- und Gantt-Diagramme.",
+        "image": "1.9.0-embeds-de.png"
       }
     },
     {

@@ -24,6 +24,7 @@ pub const OLLAMA_URL: &str = "http://localhost:11434";
 pub const AZURE_API_VERSION: &str = "2024-10-21";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     /// LiteLLM proxy: `<root>/v1/…`, bearer token, cost in a response header.
@@ -52,6 +53,7 @@ impl ProviderKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct AiProvider {
     /// Stable id (`[a-z0-9-]`): referenced by the tiers and the credential store.

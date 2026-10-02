@@ -24,6 +24,7 @@ pub const MAX_RECIPIENTS: usize = 20;
 
 /// Where an Outlook calendar lives, as far as it matters for Arcalo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, PartialOrd, Ord)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum OutlookKind {
     /// The user's own mailbox (default calendar, its sub-calendars, a second own account).
@@ -50,6 +51,7 @@ impl OutlookKind {
 
 /// A selected (or once selected) Outlook calendar in the settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct OutlookCalendar {
     /// Source id: `outlook` for the default calendar, else `outlook:<hash>`.

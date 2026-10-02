@@ -23,6 +23,7 @@ pub use holidays::{Holiday, holidays_between};
 
 /// Settings of the balance and the vacation account (`time.balance`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct BalancePrefs {
     /// Target hours Monday..Sunday; empty: the daily target on the workdays.

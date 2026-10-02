@@ -10,7 +10,8 @@ import { useT } from "../../lib/i18n";
 import { UPDATE_URL, resolvePac } from "../../lib/pac";
 import { useApp } from "../../store/app";
 import type { NetworkSettings, NetworkStatus, NetworkTest, ProxyMode, Settings } from "../../lib/types";
-import { Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
+import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
+import { checkProxy, checkUrl } from "../../lib/settingsApply";
 
 /** Evaluates the PAC for the app's hosts and returns the settings with the answers. */
 export async function withPacResults(s: Settings): Promise<Settings> {
@@ -136,19 +137,19 @@ export function NetworkSection({ draft, update }: SectionProps) {
         {net.mode === "manual" && (
           <>
             <Row label={t("net.httpProxy")} description={t("net.hostPort")}>
-              <Input value={net.http_proxy} onChange={(e) => set({ http_proxy: e.target.value })} placeholder={t("net.proxyPh")} aria-label={t("net.httpProxy")} className="mono w-360" />
+              <CommitInput value={net.http_proxy} onCommit={(v) => set({ http_proxy: v })} validate={(v) => (checkProxy(v) ? t("settings.err.url") : null)} placeholder={t("net.proxyPh")} aria-label={t("net.httpProxy")} className="mono w-360" />
             </Row>
             <Row label={t("net.httpsProxy")} description={t("net.httpsProxyDesc")}>
-              <Input value={net.https_proxy} onChange={(e) => set({ https_proxy: e.target.value })} placeholder={net.http_proxy || t("net.proxyPh")} aria-label={t("net.httpsProxy")} className="mono w-360" />
+              <CommitInput value={net.https_proxy} onCommit={(v) => set({ https_proxy: v })} validate={(v) => (checkProxy(v) ? t("settings.err.url") : null)} placeholder={net.http_proxy || t("net.proxyPh")} aria-label={t("net.httpsProxy")} className="mono w-360" />
             </Row>
             <Row label={t("net.socksProxy")} description={t("net.socksProxyDesc")}>
-              <Input value={net.socks_proxy} onChange={(e) => set({ socks_proxy: e.target.value })} placeholder={t("net.socksPh")} aria-label={t("net.socksProxy")} className="mono w-360" />
+              <CommitInput value={net.socks_proxy} onCommit={(v) => set({ socks_proxy: v })} validate={(v) => (checkProxy(v, ["socks5", "socks5h", "socks4", "socks4a", "socks"]) ? t("settings.err.url") : null)} placeholder={t("net.socksPh")} aria-label={t("net.socksProxy")} className="mono w-360" />
             </Row>
           </>
         )}
         {net.mode === "pac" && (
           <Row stack label={t("net.pacUrl")} description={t("net.pacDesc")}>
-            <Input value={net.pac_url} onChange={(e) => set({ pac_url: e.target.value })} placeholder="http://wpad.firma.de/proxy.pac" aria-label={t("net.pacUrl")} className="mono grow" />
+            <CommitInput value={net.pac_url} onCommit={(v) => set({ pac_url: v })} validate={(v) => (checkUrl(v, { schemes: ["http", "https", "file"] }) ? t("settings.err.url") : null)} placeholder="http://wpad.firma.de/proxy.pac" aria-label={t("net.pacUrl")} className="mono grow" />
           </Row>
         )}
         {net.mode === "pac" && (

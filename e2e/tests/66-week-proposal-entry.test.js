@@ -4,6 +4,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { serveTeam } from "../lib/calendar-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
@@ -100,7 +101,6 @@ test("coming back after the reminder opens the proposal; the reminder can be swi
   await app.keys(["Control", ","]);
   await app.click('.settings-nav-item[data-section="notifications"]');
   await app.click('.switch[aria-label="Woche vorschlagen"]');
-  await app.waitFor(".savebar");
-  await app.click(".savebar .btn-primary");
+  await settingsSettled(app);
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.notifications.week_proposal === false, { timeoutMsg: "not saved" });
 });

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
@@ -26,11 +27,8 @@ const openSection = async (id) => {
   if (!onSettings) await app.keys(["Control", ","]);
   await app.click(`.settings-nav-item[data-section="${id}"]`);
 };
-/** Saves the settings draft when the section has a save bar (instant-apply sections do not). */
-const saveIfNeeded = async () => {
-  const bar = await app.browser.execute(() => !!document.querySelector(".savebar .btn-primary"));
-  if (bar) await app.browser.execute(() => document.querySelector(".savebar .btn-primary")?.click());
-};
+/** Settings apply at once: waits until the change is stored. */
+const saveIfNeeded = () => settingsSettled(app);
 const notify = (op, arg = null) => app.invoke("notify_test", { op, arg });
 const logText = () => fs.readFileSync(path.join(app.dataDir, "logs", "annalo.log"), "utf8");
 const zipList = (file) => execFileSync("unzip", ["-Z1", file], { encoding: "utf8" }).split("\n").filter(Boolean);

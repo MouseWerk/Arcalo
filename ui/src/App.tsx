@@ -120,6 +120,25 @@ export function App() {
           applyTheme(next.settings.theme);
         }
       }),
+      // The Git sync took over settings changed on another computer: say so, with „Rückgängig“.
+      on<number>("settings://synced", (n) =>
+        useApp.getState().toast({
+          tone: "info",
+          title: t("settings.synced", { n }),
+          timeout: 15000,
+          action: {
+            label: t("common.undo"),
+            run: () =>
+              void api.undoSettingsSync().then(
+                (saved) => {
+                  useApp.getState().set({ settings: saved });
+                  applyTheme(saved.settings.theme);
+                },
+                (e) => useApp.getState().error(t("settings.saveFailed"), e),
+              ),
+          },
+        }),
+      ),
       // A task was toggled outside the editor: open editors of that page take over the new Markdown.
       on<number>("data://tasks", (pageId) => reloadEditors([pageId])),
       on<ActivityTick>("activity://tick", (t) => {

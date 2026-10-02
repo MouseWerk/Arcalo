@@ -41,6 +41,10 @@ export interface Toast {
   persistent?: boolean;
   /** Shown even during a focus session (the session's own messages). */
   urgent?: boolean;
+  /** A toast with the same key replaces this one (one toast per ongoing change). */
+  key?: string;
+  /** Milliseconds until it closes (default by tone). */
+  timeout?: number;
 }
 
 export interface ConfirmRequest {
@@ -477,8 +481,9 @@ export const useApp = create<State>((set, get) => ({
       return;
     }
     const id = ++toastSeq;
-    set({ toasts: [...get().toasts, { ...t, id }].filter((x, i, all) => x.persistent || i >= all.length - 3) });
-    const ms = t.tone === "danger" ? 8000 : t.action ? 7000 : t.tone === "success" ? 3200 : 4500;
+    const rest = t.key ? get().toasts.filter((x) => x.key !== t.key) : get().toasts;
+    set({ toasts: [...rest, { ...t, id }].filter((x, i, all) => x.persistent || i >= all.length - 3) });
+    const ms = t.timeout ?? (t.tone === "danger" ? 8000 : t.action ? 7000 : t.tone === "success" ? 3200 : 4500);
     if (!t.persistent) setTimeout(() => get().dismissToast(id), ms);
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),

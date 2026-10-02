@@ -103,7 +103,9 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ...rest }: { 
   useEffect(() => {
     if (!editing) setRaw(String(value));
   }, [value, editing]);
+  const t = useT();
   const parsed = raw.trim() === "" ? NaN : Number(raw.replace(",", "."));
+  const invalid = !Number.isFinite(parsed) || parsed < min || parsed > max;
   const commit = () => {
     const v = Number.isFinite(parsed) ? Math.round(Math.min(max, Math.max(min, parsed)) / step) * step : value;
     const fixed = Number(v.toFixed(4));
@@ -111,31 +113,68 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ...rest }: { 
     if (fixed !== value) onCommit(fixed);
   };
   return (
-    <Input
-      {...rest}
-      type="number"
-      min={min}
-      max={max}
-      step={step}
-      value={raw}
-      aria-invalid={!Number.isFinite(parsed) || parsed < min || parsed > max}
-      onFocus={() => setEditing(true)}
-      onChange={(e) => setRaw(e.target.value)}
-      onBlur={() => {
-        setEditing(false);
-        commit();
-      }}
-      onKeyDown={(e) => e.key === "Enter" && commit()}
-    />
+    <>
+      <Input
+        {...rest}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={raw}
+        aria-invalid={invalid}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => setRaw(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          commit();
+        }}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+      {/* While typing: what is allowed (leaving the field brings the value into the range). */}
+      {editing && invalid && (
+        <span className="field-error" role="alert">
+          {t("settings.err.number", { min: String(min), max: String(max) })}
+        </span>
+      )}
+    </>
   );
 }
 
 /** Text input that reports its value on blur or Enter. */
-export function CommitInput({ value, onCommit, ...rest }: { value: string; onCommit: (v: string) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+export function CommitInput({ value, onCommit, validate, ...rest }: { value: string; onCommit: (v: string) => void; validate?: (v: string) => string | null } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
   const [raw, setRaw] = useState(value);
-  useEffect(() => setRaw(value), [value]);
-  const commit = () => raw.trim() !== value && onCommit(raw.trim());
-  return <Input {...rest} value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && commit()} />;
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setRaw(value);
+    setError(null);
+  }, [value]);
+  // Applies on blur or Enter; a value that does not pass `validate` stays here with its error.
+  const commit = () => {
+    const v = raw.trim();
+    const err = validate?.(v) ?? null;
+    setError(err);
+    if (!err && v !== value) onCommit(v);
+  };
+  return (
+    <>
+      <Input
+        {...rest}
+        value={raw}
+        aria-invalid={error ? true : rest["aria-invalid"]}
+        onChange={(e) => {
+          setRaw(e.target.value);
+          if (error) setError(validate?.(e.target.value.trim()) ?? null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+      {error && (
+        <span className="field-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
 }
 
 /** Start and end of a long path or URL: the end (file or folder name) always stays visible. */

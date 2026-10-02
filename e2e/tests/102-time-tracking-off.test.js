@@ -7,6 +7,7 @@ import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { writeMeetingNow } from "../lib/calendar-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
@@ -58,22 +59,14 @@ const clickText = async (sel, pattern) => {
 };
 const timeOn = async () => (await app.invoke("settings_get")).settings.time.enabled;
 
-/** Settings → Zeiterfassung, the switch „Zeiterfassung verwenden“, then „Speichern“. */
+/** Settings → Zeiterfassung, the switch „Zeiterfassung verwenden“ (applies at once). */
 async function setTimeTracking(on) {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.click('.settings-nav-item[data-section="time"]');
   const sw = await app.waitFor('button[role="switch"][aria-label="Zeiterfassung verwenden"]');
   if ((await sw.getAttribute("aria-checked")) !== String(on)) await sw.click();
-  // The section follows the draft at once; the rest of the app after saving.
-  await app.browser.waitUntil(
-    () => app.browser.execute(() => {
-      const b = [...document.querySelectorAll(".savebar button")].find((x) => /Speichern/.test(x.textContent));
-      b?.click();
-      return !!b;
-    }),
-    { timeoutMsg: "no Speichern" },
-  );
+  await settingsSettled(app);
   await app.browser.waitUntil(async () => (await timeOn()) === on, { timeoutMsg: "switch not saved" });
   await app.browser.waitUntil(() => app.browser.execute((v) => document.documentElement.hasAttribute("data-time-off") === !v, on), { timeoutMsg: "UI did not follow" });
 }

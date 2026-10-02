@@ -254,6 +254,10 @@ export interface PriceRule {
   output_per_mtok: number;
 }
 export interface Settings {
+  /** Version of the stored shape (written by the core). */
+  version?: number;
+  /** Shareable sections this workspace decided for (see `SettingsView.scopes`). */
+  workspace_scopes?: Record<string, SettingsScope>;
   litellm_base_url: string;
   providers: AiProvider[];
   router: RouterConfig;
@@ -546,6 +550,8 @@ export interface GitSyncSettings {
   author_email: string;
   include_database: boolean;
   mode: GitSyncMode;
+  /** Also sync the settings (no secrets, nothing machine-specific). */
+  sync_settings?: boolean;
 }
 export interface GitSyncStatus {
   enabled: boolean;
@@ -671,6 +677,21 @@ export interface SettingsView {
   /** Effective backup folder. */
   backup_dir: string;
   version: string;
+  /** Per shareable section (appearance, ai, filing, jira, dashboard): shared or own. */
+  scopes?: Record<string, SettingsScope>;
+  /** Whether sections can be shared with the other workspaces on this computer. */
+  shared?: boolean;
+  /** The last settings sync that changed settings here. */
+  sync_last?: SettingsSyncMerge | null;
+}
+/** „Für alle Arbeitsbereiche“ or „Nur dieser Arbeitsbereich“. */
+export type SettingsScope = "global" | "workspace";
+export interface SettingsSyncMerge {
+  /** ms since the epoch. */
+  at: number;
+  host: string;
+  changes: { key: string; before: unknown; after: unknown }[];
+  undone: boolean;
 }
 export interface TrashEntry extends Page {
   deleted_at: string;

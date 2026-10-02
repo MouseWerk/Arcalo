@@ -34,6 +34,7 @@ use crate::{tr, trf};
 
 /// Cloud (REST v3, e-mail and API token) or Server/Data Center (REST v2, personal access token).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SiteKind {
     #[default]
@@ -59,6 +60,7 @@ impl SiteKind {
 
 /// A Jira site. Its token lives in the credential store (`jira-<id>`), never here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct JiraSite {
     /// `[a-z0-9-]`, stable (credential account, cache rows).
@@ -97,6 +99,7 @@ impl Default for JiraSite {
 /// A saved JQL search: its issues are synced with the default search and it can be shown as a
 /// „Jira-Abfrage“ widget.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct SavedQuery {
     pub id: String,
@@ -108,6 +111,7 @@ pub struct SavedQuery {
 
 /// Settings → Jira.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct IssueSettings {
     pub sites: Vec<JiraSite>,

@@ -1,18 +1,21 @@
-// Settings: grouped sections with a search over all rows. The connection sections (KI,
+// Settings: grouped sections (collapsible menu groups) with a search over all rows. Every
+// change applies at once with an undo toast; sections can be reset, and the shareable ones
+// apply to every workspace or only to this one. The connection sections (KI,
 // Netzwerk, Sicherung, Desktop) and the preferences (Darstellung, Editor, Notizen, Zeit,
 // Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung, Protokoll and Über.
 
 import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { AnnaloLogo } from "../components/Logo";
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, RotateCcw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
+import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import { Bell, CalendarRange, CheckCircle2, Compass, ChevronDown, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, RotateCcw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
 import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
-import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } from "../components/ui";
+import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
+import { changedKeys, checkTime, checkUrl, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
@@ -21,7 +24,7 @@ import { checkForUpdates, loadUpdateStatus, showReleaseNotes, undoSkip, UpdateAc
 import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
 import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
-import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
+import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, SettingsScope, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
@@ -46,17 +49,19 @@ import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
 type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
-const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
+const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
+    id: "general",
     label: "navgroup.general",
     items: [
       { id: "appearance", label: "nav.appearance", icon: Palette },
-      { id: "locale", label: "nav.locale", icon: Languages },
       { id: "start", label: "nav.start", icon: Power },
       { id: "keyboard", label: "nav.keyboard", icon: Keyboard },
+      { id: "notifications", label: "nav.notifications", icon: Bell },
     ],
   },
   {
+    id: "work",
     label: "navgroup.work",
     items: [
       { id: "editor", label: "nav.editor", icon: PenLine },
@@ -64,33 +69,45 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
       { id: "filing", label: "nav.filing", icon: FolderTree },
       { id: "time", label: "nav.time", icon: Timer },
       { id: "calendar", label: "nav.calendar", icon: CalendarRange },
-      { id: "voice", label: "nav.voice", icon: Mic },
       { id: "jira", label: "nav.jira", icon: Ticket },
       { id: "briefing", label: "nav.briefing", icon: Sun },
     ],
   },
   {
-    label: "navgroup.ai",
+    id: "ai",
+    label: "navgroup.aiLang",
     items: [
       { id: "ai", label: "nav.ai", icon: Sparkles },
-      { id: "privacy", label: "nav.privacy", icon: Shield },
+      { id: "voice", label: "nav.voice", icon: Mic },
+      { id: "locale", label: "nav.locale", icon: Languages },
     ],
   },
   {
+    id: "data",
+    label: "navgroup.data",
+    items: [
+      { id: "backup", label: "nav.backup", icon: DatabaseBackup },
+      { id: "privacy", label: "nav.privacy", icon: Shield },
+      { id: "network", label: "nav.network", icon: Globe },
+      { id: "admin", label: "nav.admin", icon: SlidersHorizontal },
+    ],
+  },
+  {
+    id: "system",
     label: "navgroup.system",
     items: [
-      { id: "network", label: "nav.network", icon: Globe },
-      { id: "notifications", label: "nav.notifications", icon: Bell },
-      { id: "backup", label: "nav.backup", icon: DatabaseBackup },
       { id: "desktop", label: "nav.desktop", icon: Monitor },
-      { id: "admin", label: "nav.admin", icon: SlidersHorizontal },
       { id: "logs", label: "nav.devlog", icon: ScrollText },
       { id: "about", label: "nav.about", icon: Info },
     ],
   },
 ];
-/** Sections that save every change immediately (no save bar). */
-const INSTANT = new Set<Section>(["appearance", "locale", "backup", "logs", "about", "calendar", "jira"]);
+/** Sections with „Abschnitt zurücksetzen“ (ids as in `Settings::reset_section`). */
+const RESET = new Set<Section>(["appearance", "locale", "start", "keyboard", "editor", "notes", "filing", "time", "voice", "jira", "briefing", "ai", "privacy", "network", "notifications"]);
+/** Sections that can be shared with the other workspaces (`settings_layers`): menu section → layer. */
+const SCOPED: Partial<Record<Section, string>> = { appearance: "appearance", ai: "ai", filing: "filing", jira: "jira", start: "dashboard" };
+/** Typing is saved once it pauses this long (switches and dropdowns save at once). */
+const SAVE_PAUSE = 450;
 
 export function SettingsView({ tab }: { tab?: Tab }) {
   const t = useT();
@@ -111,6 +128,13 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     return () => window.removeEventListener("annalo:settings-section", onRequest);
   }, []);
   const nav = useRef<HTMLElement>(null);
+  // Collapsed groups of the menu (remembered); the group of the open section always shows.
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  const toggleGroup = (id: string) => {
+    const next = toggled(collapsed, id);
+    setCollapsed(next);
+    saveCollapsed(next);
+  };
   // A menu longer than the window scrolls; its edges fade where more items are.
   const [navEdges, setNavEdges] = useState("");
   const measureNav = () => {
@@ -125,15 +149,23 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     measureNav();
     const watch = new ResizeObserver(measureNav);
     watch.observe(l);
+    for (const c of l.children) watch.observe(c);
     return () => watch.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [!!view]);
   const [draft, setDraft] = useState<Settings | null>(null);
-  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(0);
+  // Saves run one after the other; `pending` counts saves scheduled or running.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
+  const [busy, setBusy] = useState(false);
+  // The latest settings (ahead of the store while saves are pending), the change being typed,
+  // and the save waiting for the typing to pause.
+  const latest = useRef<Settings | null>(null);
+  const burst = useRef<Burst | null>(null);
+  const burstSeq = useRef(0);
+  const timer = useRef<number | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const s = useApp.getState;
@@ -164,25 +196,27 @@ export function SettingsView({ tab }: { tab?: Tab }) {
 
   useEffect(() => {
     if (!view) s().refreshSettings();
-    // While instant saves are still running the draft is ahead of the stored settings: keep it.
-    else if (!pending.current) setDraft(structuredClone(view.settings));
+    // While saves are still pending the draft is ahead of the stored settings: keep it.
+    else if (!pending.current) {
+      const held = latest.current && waitsForField(latest.current);
+      const waiting = held && latest.current ? { [held]: latest.current[held] } : null;
+      latest.current = { ...structuredClone(view.settings), ...waiting };
+      setDraft(latest.current);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
+  // Leaving the settings saves what is still being typed.
+  const flushRef = useRef(() => {});
+  useEffect(() => () => flushRef.current(), []);
 
-  // The start page saves its widgets itself; they are not part of this form.
-  const dirty = useMemo(
-    () => !!view && !!draft && JSON.stringify({ ...view.settings, dashboard: null }) !== JSON.stringify({ ...draft, dashboard: null }),
-    [view, draft],
-  );
   if (!view || !draft) return null;
 
-  const update = (patch: Partial<Settings>) => setDraft({ ...draft, ...patch });
-  const save = async (next = draft): Promise<boolean> => {
+  /** Saves `next`; on a failure the form goes back to what is stored. */
+  const save = async (next: Settings): Promise<boolean> => {
     if (next.thresholds.warning >= next.thresholds.critical) {
       s().toast({ tone: "warning", title: t("settings.notSaved"), detail: t("settings.thresholdOrder") });
       return false;
     }
-    setSaving(true);
     try {
       let toSave = next;
       // PAC: the answers for the app's hosts are computed here (the core has no JS engine).
@@ -190,34 +224,153 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       const saved = await api.saveSettings(toSave);
       s().set({ settings: saved });
       applyTheme(saved.settings.theme);
-      s().toast({ tone: "success", title: t("settings.saved") });
       return true;
     } catch (e) {
       s().error(t("settings.saveFailed"), e);
       return false;
-    } finally {
-      setSaving(false);
     }
   };
-  const instant = (p: Partial<Settings>) => {
-    const next = { ...draft, ...p };
-    setDraft(next);
-    // One save after the other: with quick clicks the last choice is the one that stays.
+  /** Queues a save of the latest settings; the undo toast of `b` follows once it is stored. */
+  const persist = (b: Burst | null, opts: { silent?: boolean; destructive?: boolean; title?: string } = {}) => {
+    const draftNow = latest.current;
+    if (!draftNow) return;
+    const stored = useApp.getState().settings?.settings;
+    const held = waitsForField(draftNow);
+    const next = held && stored ? { ...draftNow, [held]: stored[held] } : draftNow;
     pending.current++;
+    setBusy(true);
     queue.current = queue.current
       .then(() => save(next))
+      .then((ok) => {
+        if (ok && b && !opts.silent) offerUndo(b, opts);
+      })
       .finally(() => {
-        // The last one done: the draft follows what is stored now.
+        // The last one done: the form follows what is stored now.
         if (--pending.current === 0) {
+          setBusy(false);
           const stored = useApp.getState().settings;
-          if (stored) setDraft(structuredClone(stored.settings));
+          if (stored) {
+            const held = latest.current && waitsForField(latest.current);
+            const waiting = held && latest.current ? { [held]: latest.current[held] } : null;
+            latest.current = { ...structuredClone(stored.settings), ...waiting };
+            setDraft(latest.current);
+          }
         }
       });
   };
-  const updaterFor = (id: Section) => (INSTANT.has(id) ? instant : update);
+  const flush = () => {
+    if (timer.current == null) return;
+    window.clearTimeout(timer.current);
+    timer.current = null;
+    pending.current--;
+    persist(burst.current);
+  };
+  flushRef.current = flush;
+  /** „Rückgängig“ for one change: restores the keys it touched to their values before it. */
+  const offerUndo = (b: Burst, opts: { destructive?: boolean; title?: string }) => {
+    const keys = [...b.touched];
+    const after = latest.current ?? draft;
+    if (!changedKeys(pick(b.before, keys) as Settings, pick(after, keys) as Settings).length) return;
+    const destructive = opts.destructive ?? isDestructive(b.before, after);
+    s().toast({
+      key: `settings-undo-${b.id}`,
+      tone: "info",
+      title: opts.title ?? t("settings.changed"),
+      detail: searching ? undefined : t(NAV.flatMap((g) => g.items).find((x) => x.id === section)?.label ?? "settings.title"),
+      timeout: undoTimeout(destructive),
+      action: {
+        label: t("common.undo"),
+        run: () => {
+          flush();
+          apply(pick(b.before, keys), { undo: true });
+        },
+      },
+    });
+  };
+  /**
+   * Every change applies at once: switches and dropdowns save now, typing once it pauses (or
+   * on leaving the field). Each change gets an undo toast.
+   */
+  const apply = (patch: Partial<Settings>, opts: { undo?: boolean; destructive?: boolean; title?: string; now?: boolean } = {}) => {
+    const base = latest.current ?? draft;
+    const next = { ...base, ...patch };
+    latest.current = next;
+    setDraft(next);
+    if (opts.undo || opts.destructive || opts.title) {
+      if (timer.current != null) flush();
+      burst.current = null;
+      const b = opts.undo ? null : continueBurst(null, patch, base, Date.now(), ++burstSeq.current);
+      persist(b, opts);
+      if (opts.undo) s().toast({ tone: "success", title: t("settings.undone") });
+      return;
+    }
+    // Not storable yet (a field it needs is empty): the form shows it, its save waits (other
+    // changes are saved meanwhile, with the stored value of that part).
+    const held = waitsForField(next);
+    if (held && Object.keys(patch).every((k) => k === held)) {
+      if (!burst.current || !waitsForField(base)) burst.current = continueBurst(null, patch, base, Date.now(), ++burstSeq.current);
+      return;
+    }
+    const before = burst.current;
+    // The first storable state after waiting continues the change that started the wait.
+    const b = waitsForField(base) && before ? before : continueBurst(before, patch, base, Date.now(), burstSeq.current + 1);
+    if (b !== before) {
+      // Another change: the one still being typed is saved first.
+      if (timer.current != null) flush();
+      burstSeq.current = b.id;
+      burst.current = b;
+    }
+    const typing = document.activeElement instanceof HTMLInputElement && !["checkbox", "radio", "range"].includes(document.activeElement.type) || document.activeElement instanceof HTMLTextAreaElement;
+    if (timer.current != null) window.clearTimeout(timer.current);
+    else pending.current++;
+    setBusy(true);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      pending.current--;
+      persist(b);
+    }, typing && !opts.now ? SAVE_PAUSE : 0);
+  };
+  const update = (p: Partial<Settings>) => apply(p);
+  /** The defaults of one section, applied like a change (with a longer undo). */
+  const resetSection = async (id: Section) => {
+    try {
+      const defaults = await api.settingsDefaults(id);
+      const base = latest.current ?? draft;
+      const keys = changedKeys(base, defaults).filter((k) => !["dashboard", "quick_links", "onboarding", "version", "workspace_scopes"].includes(k));
+      if (!keys.length) {
+        s().toast({ tone: "info", title: t("settings.alreadyDefault") });
+        return;
+      }
+      apply(pick(defaults, keys), { destructive: true, title: t("settings.sectionReset") });
+    } catch (e) {
+      s().error(t("admin.resetFailed"), e);
+    }
+  };
+  /** „Für alle Arbeitsbereiche“ / „Nur dieser Arbeitsbereich“ of a shareable section. */
+  const setScope = async (layer: string, scope: SettingsScope) => {
+    flush();
+    await queue.current;
+    try {
+      const saved = await api.setSettingsScope(layer, scope);
+      s().set({ settings: saved });
+      applyTheme(saved.settings.theme);
+      s().toast({ tone: "success", title: scope === "global" ? t("settings.scope.nowGlobal") : t("settings.scope.nowWorkspace") });
+    } catch (e) {
+      s().error(t("settings.saveFailed"), e);
+    }
+  };
+  /** Admin: an import or a reset of everything, applied at once with undo. */
+  const saveAll = async (next: Settings): Promise<boolean> => {
+    flush();
+    const base = latest.current ?? draft;
+    const keys = changedKeys(base, next);
+    apply(pick(next, keys), { destructive: true, title: t("settings.applied") });
+    await queue.current;
+    return true;
+  };
 
   const render = (id: Section) => {
-    const u = updaterFor(id);
+    const u = update;
     switch (id) {
       case "appearance":
         return <AppearanceSection draft={draft} update={u} />;
@@ -237,7 +390,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
           </>
         );
       case "time":
-        // „Zeiterfassung verwenden“ off: only the switch shows (saved like the rest, then every window follows).
+        // „Zeiterfassung verwenden“ off: only the switch shows (saved at once, then every window follows).
         return (
           <>
             <TimeSection draft={draft} update={u} setEnabled={(v) => u({ time: { ...draft.time, enabled: v } })} />
@@ -273,7 +426,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       case "desktop":
         return <DesktopSection draft={draft} update={u} />;
       case "admin":
-        return <AdminSection save={save} />;
+        return <AdminSection save={saveAll} />;
       case "logs":
         return <DevLogSection draft={draft} update={u} />;
       case "about":
@@ -307,39 +460,77 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       {searching ? <IconButton icon={X} label={t("common.clear")} size="sm" onClick={() => setQuery("")} /> : <kbd className="settings-search-key">{keys("Mod F")}</kbd>}
     </div>
   );
+  const layer = SCOPED[section];
+  const scope = layer ? view.scopes?.[layer] : undefined;
+  const tools = !searching && (RESET.has(section) || (layer && scope && view.shared)) && (
+    <div className="settings-section-tools">
+      {layer && scope && view.shared && (
+        <div className="settings-scope" title={t(layer === "dashboard" ? "settings.scope.hintDashboard" : "settings.scope.hint")}>
+          <Segmented<SettingsScope>
+            label={t(layer === "dashboard" ? "settings.scope.labelDashboard" : "settings.scope.label")}
+            value={scope}
+            options={[
+              { value: "global", label: t("settings.scope.global") },
+              { value: "workspace", label: t("settings.scope.workspace") },
+            ]}
+            onChange={(v) => void setScope(layer, v)}
+          />
+        </div>
+      )}
+      {RESET.has(section) && (
+        <Button variant="ghost" size="sm" icon={RotateCcw} className="settings-reset" onClick={() => void resetSection(section)}>
+          {t("settings.resetSection")}
+        </Button>
+      )}
+    </div>
+  );
   return (
     <div
       className={`settings ${searching ? "searching" : ""}`}
+      data-pending={busy ? "" : undefined}
+      onBlur={(e) => {
+        // Leaving a text field saves what was typed.
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) flush();
+      }}
       onKeyDown={(e) => {
         // Mod+F inside the settings goes to their search.
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
           e.preventDefault();
           e.currentTarget.querySelector<HTMLInputElement>(".settings-search input")?.focus();
         }
+        if (e.key === "Enter" && (e.target instanceof HTMLInputElement)) flush();
       }}
     >
       <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
         {search}
         <div className={`settings-nav-list ${navEdges}`} onScroll={measureNav}>
-          {NAV.map((g) => (
-            <div key={g.label} className="settings-nav-group" role="group" aria-label={t(g.label)}>
-              <div className="settings-nav-group-label">{t(g.label)}</div>
-              {g.items.map((x) => (
-                <button
-                  key={x.id}
-                  type="button"
-                  data-section={x.id}
-                  aria-current={!searching && section === x.id ? "page" : undefined}
-                  className={`settings-nav-item ${!searching && section === x.id ? "active" : ""}`}
-                  onClick={() => open(x.id)}
-                >
-                  <x.icon size={15} strokeWidth={1.75} aria-hidden />
-                  {t(x.label)}
+          {NAV.map((g) => {
+            const shut = collapsed.has(g.id) && !(!searching && g.items.some((x) => x.id === section));
+            return (
+              <div key={g.id} className={`settings-nav-group ${shut ? "collapsed" : ""}`} role="group" aria-label={t(g.label)} data-group={g.id}>
+                <button type="button" className="settings-nav-group-label" aria-expanded={!shut} onClick={() => toggleGroup(g.id)}>
+                  <ChevronDown size={12} strokeWidth={2} aria-hidden className="settings-nav-chevron" />
+                  <span>{t(g.label)}</span>
                 </button>
-              ))}
-            </div>
-          ))}
+                <div className="settings-nav-items" hidden={shut}>
+                  {g.items.map((x) => (
+                    <button
+                      key={x.id}
+                      type="button"
+                      data-section={x.id}
+                      aria-current={!searching && section === x.id ? "page" : undefined}
+                      className={`settings-nav-item ${!searching && section === x.id ? "active" : ""}`}
+                      onClick={() => open(x.id)}
+                    >
+                      <x.icon size={15} strokeWidth={1.75} aria-hidden />
+                      {t(x.label)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </nav>
       <div className="settings-main">
@@ -376,20 +567,12 @@ export function SettingsView({ tab }: { tab?: Tab }) {
                 ))}
               </>
             ) : (
-              render(section)
+              <>
+                {tools}
+                {render(section)}
+              </>
             )}
           </div>
-          {dirty && (
-            <div className="savebar" role="region" aria-label={t("settings.unsaved")}>
-              <span>{t("settings.unsaved")}</span>
-              <Button variant="ghost" onClick={() => setDraft(structuredClone(view.settings))}>
-                {t("common.discard")}
-              </Button>
-              <Button variant="primary" onClick={() => save()} loading={saving}>
-                {t("common.save")}
-              </Button>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -830,6 +1013,40 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
 
 const BIG_DB = 50 * 1024 * 1024;
 
+/** The last settings merge from another computer, with „Abgleich rückgängig machen“. */
+function SettingsMergeRow() {
+  const t = useT();
+  const last = useApp((s) => s.settings?.sync_last);
+  const [busy, setBusy] = useState(false);
+  if (!last?.changes.length) return null;
+  const keys = last.changes.map((c) => c.key);
+  const shown = keys.length > 4 ? `${keys.slice(0, 4).join(", ")}, …` : keys.join(", ");
+  const undo = async () => {
+    setBusy(true);
+    try {
+      const saved = await api.undoSettingsSync();
+      useApp.getState().set({ settings: saved });
+      applyTheme(saved.settings.theme);
+      useApp.getState().toast({ tone: "success", title: t("set.git.mergeUndone") });
+    } catch (e) {
+      useApp.getState().error(t("settings.saveFailed"), e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Row label={t("set.git.lastMerge")} description={t("set.git.lastMergeText", { n: keys.length, when: dateTime(new Date(last.at).toISOString()), host: last.host || "?", keys: shown })}>
+      {last.undone ? (
+        <Badge>{t("set.git.lastMergeUndone")}</Badge>
+      ) : (
+        <Button icon={RotateCcw} onClick={() => void undo()} loading={busy} className="settings-merge-undo">
+          {t("set.git.undoMerge")}
+        </Button>
+      )}
+    </Row>
+  );
+}
+
 function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; update: (p: Partial<Settings>) => void; dbSize: number | null; onSynced: () => void }) {
   const t = useT();
   const git = draft.git_sync;
@@ -976,6 +1193,10 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       >
         <Switch label={t("set.git.database")} checked={git.include_database} onChange={(v) => setGit({ include_database: v })} />
       </Row>
+      <Row label={t("set.git.syncSettings")} description={t("set.git.syncSettingsDesc")} keywords="settings.json">
+        <Switch label={t("set.git.syncSettings")} checked={!!git.sync_settings} onChange={(v) => setGit({ sync_settings: v })} />
+      </Row>
+      <SettingsMergeRow />
       <Row label={t("set.git.connection")} description={t("set.git.connectionDesc")}>
         <div className={`conn ${test ? (test.ok ? "ok" : "fail") : ""}`}>
           {testing ? (
@@ -1132,14 +1353,14 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
         <Row label={t("set.desktop.remindAt")}>
           <div className="unit-input">
             {reminderOn && (
-              <Input
+              <CommitInput
                 inputMode="numeric"
-                pattern="([01]\d|2[0-3]):[0-5]\d"
                 placeholder="17:30"
                 maxLength={5}
                 className="time-input num"
                 value={draft.reminder_time ?? ""}
-                onChange={(e) => update({ reminder_time: e.target.value })}
+                onCommit={(v) => update({ reminder_time: v })}
+                validate={(v) => (checkTime(v) ? t("settings.err.time") : null)}
                 aria-label={t("set.desktop.reminderTime")}
               />
             )}
@@ -1392,6 +1613,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
                 value={managed("source") && policy ? (policy.source_url ?? "") : prefs.source_url}
                 disabled={managed("source")}
                 onCommit={(v) => setPrefs({ source_url: v })}
+                validate={(v) => (checkUrl(v) ? t("settings.err.url") : null)}
               />
             </div>
           </Row>

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { launchEnglish, germanLeftovers } from "../lib/english.js";
 
 const test = guarded(nodeTest, () => app);
@@ -29,10 +30,7 @@ const openSection = async (id) => {
   if (!onSettings) await app.keys(["Control", ","]);
   await app.click(`.settings-nav-item[data-section="${id}"]`);
 };
-const saveIfNeeded = async () => {
-  const bar = await app.browser.execute(() => !!document.querySelector(".savebar .btn-primary"));
-  if (bar) await app.browser.execute(() => document.querySelector(".savebar .btn-primary")?.click());
-};
+const saveIfNeeded = () => settingsSettled(app);
 const notify = (op, arg = null) => app.invoke("notify_test", { op, arg });
 
 test("Settings → Log: the level, JSON lines and the diagnostics bundle in English", async () => {

@@ -33,6 +33,20 @@ macro_rules! choice {
                 Ok(v.as_str().and_then($name::parse).unwrap_or($name::$d))
             }
         }
+        #[cfg(test)]
+        impl schemars::JsonSchema for $name {
+            fn schema_name() -> String {
+                stringify!($name).into()
+            }
+            fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+                schemars::schema::SchemaObject {
+                    instance_type: Some(schemars::schema::InstanceType::String.into()),
+                    enum_values: Some(vec![$(serde_json::Value::from($s)),+]),
+                    ..Default::default()
+                }
+                .into()
+            }
+        }
     };
 }
 
@@ -50,6 +64,7 @@ pub const WINDOW_OPACITY_MIN: u32 = 40;
 pub const WINDOW_OPACITY_DEFAULT: u32 = 80;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct AppearancePrefs {
     /// `theme` (the color theme's own accent), a preset name (`indigo`, `blue`, …) or `#rrggbb`.
@@ -147,6 +162,7 @@ pub fn normalize_theme_id(id: &str, default: &str) -> String {
 /// The main colors of a custom theme; the UI derives the remaining tokens (hover, strong
 /// borders, soft tints, shadows) from them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ThemeColors {
     /// Page and editor background.
     pub background: String,
@@ -184,6 +200,7 @@ impl ThemeColors {
 
 /// A color theme made by the user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CustomTheme {
     /// `custom-…`; assigned when saved if missing, foreign or taken.
     #[serde(default)]
@@ -291,6 +308,7 @@ choice!(Spellcheck { #[default] De = "de", En = "en", DeEn = "de-en", Off = "off
 choice!(NewPageLocation { #[default] Top = "top", Current = "current", Inbox = "inbox" } default Top);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct EditorPrefs {
     pub spellcheck: Spellcheck,
@@ -349,6 +367,7 @@ choice!(DailyTitle {
 } default Iso);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct NotesPrefs {
     pub daily_title: DailyTitle,
@@ -435,6 +454,7 @@ impl CatsColumns {
 
 /// Rounding of booked durations (bookings and timer stops).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct Rounding {
     /// Step in minutes; 0 = off. Allowed: 0, 1, 5, 6, 10, 15.
@@ -474,6 +494,7 @@ impl Rounding {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct TimePrefs {
     /// „Zeiterfassung verwenden“: off hides the timesheet, projects and their commands.
@@ -524,6 +545,7 @@ impl TimePrefs {
 
 /// A preset of the inline AI bar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AiPreset {
     pub label: String,
     pub instruction: String,
@@ -535,6 +557,7 @@ pub const WORKSPACE_TOOLS: &[&str] =
     &["log_time", "search_workspace", "budget_status", "list_tasks", "time_summary", "activity_log"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct AiPrefs {
     /// 0.0–2.0.
@@ -634,6 +657,7 @@ choice!(CaptureDefault {
 
 /// Quick capture (Settings → Desktop → Schnellerfassung).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct CapturePrefs {
     /// Where a capture goes when the window opens.
@@ -664,6 +688,7 @@ impl Default for CapturePrefs {
 // ------------------------------------------------------------- notifications
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct NotificationPrefs {
     /// End-of-day reminder (its time is `reminder_time`).
@@ -728,6 +753,7 @@ impl NotificationPrefs {
 // ------------------------------------------------------------------- privacy
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct PrivacyPrefs {
     /// The assistant sees the open page.
@@ -752,6 +778,7 @@ choice!(StartOpen {
 } default Tabs);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct StartPrefs {
     pub open: StartOpen,
@@ -773,6 +800,7 @@ choice!(DateFormat { #[default] De = "de", Iso = "iso", EnGb = "en-gb", EnUs = "
 choice!(NumberFormat { #[default] Comma = "comma", Point = "point" } default Comma);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct LocalePrefs {
     pub language: Language,

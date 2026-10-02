@@ -10,6 +10,8 @@ export interface HighlightText {
   text: string;
   /** Label of the action button (optional; a generic one otherwise). */
   action?: string;
+  /** Image in this language (a screenshot with this language's text); else the item's `image`. */
+  image?: string;
 }
 
 /** What the action button does: open a view, a settings section, or run a command (keymap ids). */
@@ -20,7 +22,8 @@ export type HighlightAction =
 
 export interface Highlight {
   id: string;
-  /** File name in docs/releases/highlights/img (a small PNG). */
+  /** File name in docs/releases/highlights/img (a small PNG) for every language; a language's
+   *  own `image` (in `en` / `de`) wins. */
   image?: string;
   action?: HighlightAction;
   en: HighlightText;
@@ -76,6 +79,9 @@ export function highlightsBetween(all: VersionHighlights[], from: string | null 
 
 /** The text of a highlight in the display language. */
 export const textOf = (h: Highlight, lang: Lang): HighlightText => h[lang] ?? h.en;
+
+/** The image file of a highlight in the display language: the language's own, else the shared one. */
+export const imageOf = (h: Highlight, lang: Lang): string | undefined => h[lang]?.image ?? h.image;
 
 /** URL of a bundled highlight image. */
 export function imageUrl(name: string | undefined): string | undefined {

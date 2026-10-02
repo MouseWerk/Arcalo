@@ -13,7 +13,7 @@ import { flushBeforeExit } from "../lib/exit";
 import { renderMarkdown } from "../lib/markdown";
 import { fmtDate } from "../lib/format";
 import { autoCheckAllowed, checkIntervalMs, effectiveMode, FIRST_CHECK_DELAY_MS, manualUpdate, NOT_CONFIGURED, progressLabel, progressValue, REMIND_DAYS, updateHint } from "../lib/updates";
-import { bundledNotes, HIGHLIGHTS, highlightsBetween, imageUrl, textOf, type Highlight, type VersionHighlights } from "../lib/highlights";
+import { bundledNotes, HIGHLIGHTS, highlightsBetween, imageOf, imageUrl, textOf, type Highlight, type VersionHighlights } from "../lib/highlights";
 import { saveUpdateSession } from "../lib/updatesession";
 import { openSettingsSection } from "../lib/calnav";
 import type { UpdateInfo, UpdateProgress, UpdateStatus } from "../lib/types";
@@ -463,7 +463,7 @@ export function WhatsNewDialog() {
             <ul className="whatsnew-list">
               {v.items.map((h) => {
                 const text = textOf(h, lang);
-                const img = imageUrl(h.image);
+                const img = imageUrl(imageOf(h, lang));
                 return (
                   <li key={h.id} className={`whatsnew-item ${img ? "has-image" : ""}`} data-id={h.id}>
                     {img ? <img className="whatsnew-image" src={img} alt="" /> : <span className="whatsnew-dot" aria-hidden><Sparkles size={14} /></span>}

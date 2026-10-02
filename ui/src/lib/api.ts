@@ -198,6 +198,8 @@ export const api = {
   // settings
   settings: () => call<T.SettingsView>("settings_get"),
   saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),
+  setSettingsScope: (section: string, scope: T.SettingsScope) => call<T.SettingsView>("settings_scope_set", { section, scope }),
+  undoSettingsSync: () => call<T.SettingsView>("settings_sync_undo"),
   /** The operating system's locale tag (e.g. „de-DE“), or null when unknown. */
   osLocale: () => call<string | null>("os_locale"),
   setApiKey: (key: string | null) => call<T.SettingsView>("api_key_set", { key }),

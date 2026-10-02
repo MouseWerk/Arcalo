@@ -119,6 +119,7 @@ impl FileType {
 
 /// Date subfolders below a type's root (`Series`: meetings by their subject instead).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Granularity {
     #[default]
@@ -131,6 +132,7 @@ pub enum Granularity {
 
 /// Settings → Ordner & Ablage, one type.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct TypeFiling {
     /// Root folder (a path `A/B` is allowed); empty: the default name (journal and mail:
@@ -141,6 +143,7 @@ pub struct TypeFiling {
 
 /// What a rule looks at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RuleKind {
     /// `key` is the tag (without `#`; subtags `key/…` match too).
@@ -157,6 +160,7 @@ pub enum RuleKind {
 
 /// „Wenn … → Ordner“.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct FilingRule {
     #[serde(default)]
     pub id: String,
@@ -177,6 +181,7 @@ fn yes() -> bool {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct FilingSettings {
     /// Per type; a missing type uses its defaults.

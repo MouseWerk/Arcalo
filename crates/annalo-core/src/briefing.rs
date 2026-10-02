@@ -46,6 +46,7 @@ pub const SECTIONS: [&str; 5] = ["ai", "meetings", "tasks", "jira", "time"];
 
 /// When the briefing shows up by itself.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BriefingMode {
     /// Opens with the first start of a workday.
@@ -60,6 +61,7 @@ pub enum BriefingMode {
 
 /// One section with its switch; the list order is the order on the page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BriefingSection {
     pub id: String,
     pub on: bool,
@@ -67,6 +69,7 @@ pub struct BriefingSection {
 
 /// Settings → Briefing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct BriefingSettings {
     pub mode: BriefingMode,

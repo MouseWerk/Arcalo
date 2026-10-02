@@ -3,12 +3,13 @@
 // also the gear panel on the briefing itself.
 
 import { ArrowDown, ArrowUp, CalendarRange, Clock, ListChecks, Sparkles, Sun, Ticket, type LucideIcon } from "lucide-react";
-import { Button, IconButton, Input, Segmented, Switch } from "../../components/ui";
+import { Button, IconButton, Segmented, Switch } from "../../components/ui";
 import { t as tr, useT, type TKey } from "../../lib/i18n";
 import { briefingSettings, moveSection, openBriefing, toggleSection } from "../../lib/briefing";
 import { timeTrackingOn } from "../../lib/timetracking";
 import type { BriefingMode, BriefingSection as Section, BriefingSectionId, BriefingSettings, Settings } from "../../lib/types";
-import { Group, Row, SectionHead, type SectionProps } from "./common";
+import { CommitInput, Group, Row, SectionHead, type SectionProps } from "./common";
+import { checkTime } from "../../lib/settingsApply";
 
 export const SECTION_LABEL: Record<BriefingSectionId, TKey> = {
   ai: "brief.s.ai",
@@ -78,7 +79,7 @@ export function BriefingSection({ draft, update }: SectionProps) {
         </Row>
         {b.mode === "notify" && (
           <Row label={t("brief.time")} description={t("brief.timeDesc")}>
-            <Input className="time-input num bf-notify-time" value={b.notify_time} maxLength={5} placeholder="08:30" onChange={(e) => set({ notify_time: e.target.value })} aria-label={t("brief.time")} />
+            <CommitInput className="time-input num bf-notify-time" value={b.notify_time} maxLength={5} placeholder="08:30" onCommit={(v) => set({ notify_time: v })} validate={(v) => (v && checkTime(v) ? t("settings.err.time") : null)} aria-label={t("brief.time")} />
           </Row>
         )}
         <Row label={t("brief.openNow")} description={t("brief.openNowDesc")}>

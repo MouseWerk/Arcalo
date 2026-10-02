@@ -24,6 +24,7 @@ use crate::{tr, trf};
 
 /// Settings → Sprachnotizen.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct VoiceSettings {
     /// Whisper model id (`base`, `small`, `large-v3-turbo-q5`, see [`models::MODELS`]).

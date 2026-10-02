@@ -19,6 +19,7 @@ pub enum Tier {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RouterConfig {
     pub local_model: String,
     pub standard_model: String,

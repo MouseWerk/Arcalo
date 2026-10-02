@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { compareVersions, HIGHLIGHTS, highlightsBetween, imageUrl, knownVersions, NOTE_VERSIONS, textOf, type VersionHighlights } from "./highlights";
+import { compareVersions, HIGHLIGHTS, highlightsBetween, imageOf, imageUrl, knownVersions, NOTE_VERSIONS, textOf, type VersionHighlights } from "./highlights";
 
 const v = (version: string): VersionHighlights => ({ version, items: [{ id: "x", en: { title: "T", text: "S." }, de: { title: "T", text: "S." } }] });
 
@@ -55,9 +55,10 @@ describe("bundled highlights", () => {
           expect(text.text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
           if (item.action) expect(text.action ?? "", `${item.id} ${lang} action label`).not.toBe("");
         }
-        if (item.image) {
-          expect(fs.existsSync(path.join(ROOT, "docs/releases/highlights/img", item.image)), item.image).toBe(true);
-          expect(imageUrl(item.image)).toBeTruthy();
+        for (const name of [item.image, item.en.image, item.de.image]) {
+          if (!name) continue;
+          expect(fs.existsSync(path.join(ROOT, "docs/releases/highlights/img", name)), name).toBe(true);
+          expect(imageUrl(name)).toBeTruthy();
         }
         const a = item.action;
         if (a?.type === "settings") expect(SECTIONS.has(a.section), a.section).toBe(true);
@@ -65,4 +66,23 @@ describe("bundled highlights", () => {
       }
     });
   }
+});
+
+describe("highlight images per language", () => {
+  const item = { id: "x", image: "shared.png", en: { title: "T", text: "x", image: "x-en.png" }, de: { title: "T", text: "x" } };
+  it("takes the language's own image, else the shared one", () => {
+    expect(imageOf(item, "en")).toBe("x-en.png");
+    expect(imageOf(item, "de")).toBe("shared.png");
+    expect(imageOf({ ...item, image: undefined, en: { title: "T", text: "x" } }, "en")).toBeUndefined();
+  });
+  it("from 1.9 on: screenshots exist in both languages (an English window shows English text)", () => {
+    for (const h of HIGHLIGHTS.filter((v) => compareVersions(v.version, "1.9.0") >= 0)) {
+      for (const i of h.items) {
+        if (!i.image && !i.en.image && !i.de.image) continue;
+        expect(i.en.image, `${h.version} ${i.id} en`).toBeTruthy();
+        expect(i.de.image, `${h.version} ${i.id} de`).toBeTruthy();
+        expect(i.en.image).not.toBe(i.de.image);
+      }
+    }
+  });
 });

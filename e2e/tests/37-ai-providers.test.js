@@ -5,6 +5,7 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { settingsSettled } from "../lib/settings.js";
 import { startFakeOpenAI } from "../lib/fake-openai.js";
 
 const test = guarded(nodeTest, () => app);
@@ -102,8 +103,8 @@ test("tiers are assigned across both providers and saved", async () => {
   // The price of the standard model comes from the built-in table.
   await app.waitText(".model-picker-price", /0,15\s\$ \/ 0,60\s\$ je 1 Mio\. Tokens/);
   await app.waitText(".model-picker-price", /Kostenlos \(lokal\)/);
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
 
   const view = await app.invoke("settings_get");
   const s = view.settings;
@@ -149,8 +150,8 @@ test("the price table is editable and saved", async () => {
   await app.keys(["Tab"]);
   await app.select(`[role="combobox"][aria-label="Anbieter (Zeile ${n})"]`, "openai");
   await app.shot("settings-prices");
-  await app.click(".savebar .btn-primary");
-  await app.waitText(".toast-title", /Einstellungen gespeichert/);
+  await settingsSettled(app);
+  await app.waitText(".toast-title", /Einstellung geändert/);
   const { settings } = await app.invoke("settings_get");
   assert.deepEqual(settings.prices.at(-1), { provider: "openai", model: "mein-modell*", input_per_mtok: 1.5, output_per_mtok: 0 });
 });
