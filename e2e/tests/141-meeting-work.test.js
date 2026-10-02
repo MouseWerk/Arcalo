@@ -273,7 +273,8 @@ test("Nachfass-Mail as an Outlook draft with attendees, subject and escaped body
   const drafts = fs.readFileSync(`${fixture}.drafts`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.equal(drafts.length, 1);
   const d = drafts[0];
-  assert.deepEqual(d.to, ["Anna Müller", "Jörg Weiß", "Mia Meyer"]);
+  // Mia Meyer is the user (her Jira account): the mail does not go to herself.
+  assert.deepEqual(d.to, ["Anna Müller", "Jörg Weiß"]);
   assert.match(d.subject, /^Zusammenfassung: Jour fixe Portal \(\d{2}\.\d{2}\.\d{4}\)$/);
   assert.match(d.html, /<meta charset="utf-8">/);
   assert.match(d.html, /Hallo zusammen,/);
