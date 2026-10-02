@@ -2,13 +2,14 @@
 // block, a progress ring, hours and dates in the chosen format.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Play, Square, type LucideIcon } from "lucide-react";
+import { CalendarPlus, Play, Square, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { clock, fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, Task, TimeEntryRow } from "../../lib/types";
-import { Badge, Button, Spinner } from "../ui";
+import { Badge, Button, IconButton, Spinner } from "../ui";
+import { openPlanPicker, setPlanData, type PlanItem } from "../../lib/blocks";
 import { PageIcon } from "../icons";
 import { stopTimer, useTimerSeconds } from "../Sidebar";
 
@@ -122,9 +123,10 @@ export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task,
     }
   };
   const overdue = !!task.due && task.due < today;
+  const plan: PlanItem = { kind: "task", page_id: task.page_id, ordinal: task.ordinal, text: task.text, page_title: task.page_title };
   const text = task.text.replace(/\s#[\p{L}\p{N}_/-]+/gu, "").trim() || task.text;
   return (
-    <li className={`dw-task ${gone ? "done" : ""}`}>
+    <li className={`dw-task ${gone ? "done" : ""}`} draggable={!gone} onDragStart={(e) => setPlanData(e.dataTransfer, plan)}>
       <button type="button" role="checkbox" aria-checked={gone} aria-label={t("dash.taskDone", { text: task.text })} className="dw-check" disabled={busy || gone} onClick={done} />
       <button type="button" className="dw-task-text" onClick={(e) => s().openPage(task.page_id, { newTab: e.ctrlKey || e.metaKey })} title={task.page_title}>
         <span className="grow ellipsis">{text}</span>
@@ -132,6 +134,7 @@ export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task,
         {task.priority >= 2 && <Badge tone="warning">{t("dash.prioHigh")}</Badge>}
         {overdue ? <Badge tone="danger">{t("dash.overdue")}</Badge> : task.due && task.due !== today ? <span className="faint num dw-when">{dayLabel(task.due)}</span> : null}
       </button>
+      {!gone && <IconButton icon={CalendarPlus} size="sm" className="dw-plan" label={t("blocks.plan")} onClick={() => openPlanPicker(plan)} />}
     </li>
   );
 }

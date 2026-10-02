@@ -3008,6 +3008,111 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .quick-links { gap: 1px; min-height: 32px; }
 }
 
+/* ---- focus blocks (time blocking) ---- */
+/* Planned time: no fill of a calendar color but a dashed outline in the accent over a faint
+   accent tint, so a plan never reads as a meeting; the title in the text color, time and link
+   in --text-2. A selected block gets the solid focus ring like a meeting. */
+.calv-block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 3px 6px 3px 7px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 72%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-canvas));
+  color: var(--text);
+  font-size: var(--fs-xs);
+  line-height: 14px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+.calv-block:hover { background: color-mix(in srgb, var(--accent) 11%, var(--bg-canvas)); z-index: 2; }
+.calv-block:focus-visible, .calv-block.selected { outline: 2px solid var(--border-focus); outline-offset: 1px; z-index: 3; }
+.calv-block.selected { border-style: solid; }
+.calv-block.dragging { z-index: 5; cursor: grabbing; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--accent) 14%, var(--bg-canvas)); }
+.calv-block.past { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: color-mix(in srgb, var(--accent) 4%, var(--bg-canvas)); }
+.calv-block.past .calv-block-title { color: var(--text-2); font-weight: 550; }
+.calv-block.done .calv-block-title .ellipsis { text-decoration: line-through; text-decoration-color: var(--text-3); }
+.calv-block-title { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 16px; letter-spacing: -0.005em; }
+.calv-block-title svg { flex: none; color: var(--accent-text); }
+.calv-block-meta { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.calv-block .ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calv-block-link::before { content: "·"; margin-right: 6px; color: var(--text-3); }
+.calv-block.short { flex-direction: row; align-items: center; gap: 6px; padding-block: 0; }
+.calv-block.short .calv-block-meta { flex: none; }
+.calv-block-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: ns-resize; }
+.calv-block-handle::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 18px; height: 2px; margin-left: -9px; border-radius: 1px; background: var(--accent); opacity: 0; transition: opacity var(--dur-fast); }
+.calv-block:hover .calv-block-handle::after, .calv-block.selected .calv-block-handle::after { opacity: 0.7; }
+
+/* Where a dragged task or issue lands. */
+.calv-col.dropping { background-color: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+.calv-block-ghost { position: absolute; left: 3px; right: 4px; z-index: 4; display: flex; align-items: flex-start; padding: 3px 7px; border: 1.5px dashed var(--accent); border-radius: 5px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; pointer-events: none; font-variant-numeric: tabular-nums; }
+.calv-col.has-lane .calv-block-ghost { right: 26%; }
+
+/* Day head: planned next to booked („2 / 1,5 h“). */
+.calv-plan-vs { display: inline-flex; align-items: center; gap: 3px; }
+.calv-planned-sum { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 5px; border: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); border-radius: var(--r-xs); color: var(--text-2); font-size: var(--fs-2xs); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calv-planned-sum svg { color: var(--accent-text); }
+.calv-plan-vs > .calv-planned-sum + .calv-booked-sum::before { content: "/"; margin: 0 2px 0 -1px; color: var(--text-3); font-weight: 500; }
+@container calcol (max-width: 130px) {
+  .calv-plan-vs svg { display: none; }
+}
+
+/* The side panel of a block. */
+.calv-block-swatch { flex: none; width: 10px; height: 10px; border: 1.5px dashed var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.calv-block-detail .calv-detail-top { padding-bottom: 14px; }
+.calv-block-name.input { height: auto; padding: 4px 8px 4px 10px; border-color: transparent; border-left: 3px dashed var(--accent); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: transparent; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.calv-block-name.input:hover { border-color: var(--border); border-left-color: var(--accent); }
+.calv-block-name.input:focus { border-color: var(--border-focus); border-left-color: var(--accent); background: var(--bg-canvas); }
+.calv-block-section { padding: 12px 0; border-top: 1px solid var(--border); }
+.calv-block-section h3 { margin: 0 0 8px; color: var(--text-3); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.calv-block-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-sm); line-height: 1.45; }
+.calv-block-link-row .btn { max-width: 100%; }
+.calv-block-task, .calv-block-issue { display: inline-flex; align-items: flex-start; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.calv-block-task svg { flex: none; margin-top: 3px; color: var(--accent-text); }
+.calv-block-task.done { color: var(--text-2); text-decoration: line-through; }
+.calv-block-task.done svg { color: var(--success); }
+.calv-block-ref { font-size: var(--fs-sm); color: var(--text-2); }
+.calv-block-ref b { color: var(--text); }
+.calv-block-states { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.calv-block-states:empty { display: none; }
+.calv-block-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--text-2); font-size: var(--fs-sm); }
+.calv-block-state svg { flex: none; color: var(--text-3); }
+.calv-block-state.ok svg { color: var(--success); }
+.calv-block-state.warn svg { color: var(--warning); }
+.calv-block-error { display: block; }
+.calv-block-actions { padding-top: 12px; border-top: 1px solid var(--border); }
+.calv-block-actions .calv-block-delete { color: var(--danger); }
+.calv-empty .empty-action { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+
+/* „Im Kalender planen…“ */
+.plan-picker { display: grid; gap: 14px; }
+.plan-picker-row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; }
+.plan-picker-row .field { margin: 0; }
+.plan-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
+.plan-picker-head .faint { font-weight: 500; }
+.plan-picker-wait { display: grid; place-items: center; min-height: 72px; }
+.plan-picker-none { margin: 0; font-size: var(--fs-sm); }
+.plan-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.plan-slot { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: var(--r-sm); background: var(--bg-canvas); color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 550; cursor: pointer; transition: background var(--dur-fast), border-color var(--dur-fast); }
+.plan-slot svg { color: var(--accent-text); }
+.plan-slot:hover { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-canvas)); }
+.plan-slot:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.plan-slot:disabled { opacity: 0.5; cursor: default; }
+
+/* Plan buttons on task rows: shown on hover and focus. */
+.task-row .task-plan, .dw-task .dw-plan { opacity: 0; transition: opacity var(--dur-fast); }
+.task-row:hover .task-plan, .task-row:focus-within .task-plan, .dw-task:hover .dw-plan, .dw-task:focus-within .dw-plan, .task-plan:focus-visible, .dw-plan:focus-visible { opacity: 1; }
+.task-row[draggable="true"], .dw-task[draggable="true"] { -webkit-user-drag: element; }
+@media (hover: none) {
+  .task-row .task-plan, .dw-task .dw-plan { opacity: 1; }
+}
+
 /* ---- Morgen-Briefing (views/BriefingView.tsx) ---- */
 .bf-view { --k-ai: var(--accent); --k-jira: var(--warning); --k-time: var(--violet); }
 .bf-view .tone-ai { --k: var(--k-ai); }

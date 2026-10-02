@@ -3,10 +3,10 @@
 // subject), write its meeting note or mark it „nicht buchen“.
 
 import { DayOffChip } from "../components/dashboard/work";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarDays, CalendarRange, Check, Target, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
@@ -27,6 +27,9 @@ import { openDayReview } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
 import { useT, t as tr, type TKey } from "../lib/i18n";
 import { blockFit } from "../lib/eventlook";
+import { BlockDetail, BlockItem, DropGhost, deleteBlock, saveBlock, useBlocks } from "./CalendarBlocks";
+import { blockIdOf, blockKey, blockMinutes, canPlan, dropRange, linkOf, minuteAt, plannedMinutes, readPlanData, type PlanItem } from "../lib/blocks";
+import type { BlockPatch, FocusBlock } from "../lib/types";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -84,6 +87,8 @@ export function CalendarView() {
   const [now, setNow] = useState(() => new Date());
   const { wbs, las } = useWbs();
   const root = useRef<HTMLDivElement>(null);
+  // Without a calendar the grid can still be used for focus blocks alone (remembered).
+  const [planOnly, setPlanOnly] = useState(() => stored("annalo.calendar.planOnly", ["1", "0"] as const, "0") === "1");
   const s = useApp.getState;
 
   const startsOn = formatPrefs().weekStartsOn;
@@ -167,9 +172,26 @@ export function CalendarView() {
   const booked = useMemo(() => new Map(shown.map((e) => [e.key, timeOn ? bookedEntry(e, entries) : null])), [shown, entries, timeOn]);
   const days = useMemo(() => (timeOn ? overview : new Map([...overview].map(([k, d]) => [k, { ...d, booked_minutes: 0 }]))), [overview, timeOn]);
   const current = shown.find((e) => e.key === selected) ?? null;
+  const { blocks, patch: patchBlock } = useBlocks(range.from, range.to, version);
+  const currentBlock = blocks.find((b) => b.id === blockIdOf(selected)) ?? null;
+  const changeBlock = (b: FocusBlock, p: BlockPatch) => void saveBlock(b, p, patchBlock);
+  const removeBlock = (b: FocusBlock) => {
+    if (blockIdOf(selected) === b.id) setSelected(null);
+    void deleteBlock(b, patchBlock);
+  };
+  const createBlock = async (day: Date, minute: number, item: PlanItem) => {
+    const { start, end } = dropRange(day, minute, blockMinutes(cal));
+    try {
+      const b = await api.blockCreate({ start: start.toISOString(), end: end.toISOString(), link: linkOf(item), title: item.kind === "page" ? item.title : "" });
+      patchBlock(b.id, b);
+      setSelected(blockKey(b.id));
+    } catch (e) {
+      s().error(t("blocks.createFailed"), e);
+    }
+  };
   const syncing = status?.sources.some((x) => x.enabled && x.syncing) ?? false;
   const errors = status?.sources.filter((x) => x.enabled && x.status?.error) ?? [];
-  const configured = status ? hasSources(cal, status.outlook_available) : true;
+  const configured = (status ? hasSources(cal, status.outlook_available) : true) || planOnly || blocks.length > 0;
 
   const go = (dir: -1 | 1) => setAnchor((a) => step(view, a, dir));
   const today = () => setAnchor(new Date());
@@ -257,7 +279,7 @@ export function CalendarView() {
   const pickerDay = isoDay(anchor);
 
   return (
-    <div className={`calv ${current ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label={t("nav.calendar")}>
+    <div className={`calv ${current || currentBlock ? "with-detail" : ""}`} ref={root} tabIndex={-1} aria-label={t("nav.calendar")}>
       <header className="calv-head">
         <div className="calv-heading">
           <h1>{title}</h1>
@@ -316,9 +338,21 @@ export function CalendarView() {
             icon={CalendarRange}
             title={t("calv.none")}
             action={
-              <Button variant="primary" icon={Settings2} onClick={() => openSettingsSection("calendar")}>
-                {t("calv.setUp")}
-              </Button>
+              <>
+                <Button variant="primary" icon={Settings2} onClick={() => openSettingsSection("calendar")}>
+                  {t("calv.setUp")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="calv-plan-only"
+                  onClick={() => {
+                    setPlanOnly(true);
+                    store("annalo.calendar.planOnly", "1");
+                  }}
+                >
+                  {t("blocks.planOnly")}
+                </Button>
+              </>
             }
           >
             {status?.outlook_available ? t("calv.noneOutlook") : t("calv.noneIcs")}
@@ -346,9 +380,17 @@ export function CalendarView() {
                 selected={selected}
                 onSelect={setSelected}
                 onDay={openDay}
+                blocks={blocks}
+                dropLength={blockMinutes(cal)}
+                onDropItem={(d, m, item) => void createBlock(d, m, item)}
+                onBlockChange={changeBlock}
+                onBlockDelete={removeBlock}
               />
             )}
           </div>
+          {currentBlock && !current && (
+            <BlockDetail block={currentBlock} timeOn={timeOn} onClose={() => setSelected(null)} onChange={changeBlock} onDelete={removeBlock} />
+          )}
           {current && (
             <EventDetail
               event={current}
@@ -491,7 +533,7 @@ function evLabel(e: CalendarEvent, booked: Booked) {
   return parts.join(", ");
 }
 
-function DayHead({ d, ov, onDay }: { d: Date; ov: DayOverview | undefined; onDay: (d: Date) => void }) {
+function DayHead({ d, ov, planned, onDay }: { d: Date; ov: DayOverview | undefined; planned: number; onDay: (d: Date) => void }) {
   const t = useT();
   const iso = isoDay(d);
   const isToday = iso === isoDay(new Date());
@@ -515,10 +557,22 @@ function DayHead({ d, ov, onDay }: { d: Date; ov: DayOverview | undefined; onDay
             {ov.open_tasks}
           </button>
         )}
-        {!!ov?.booked_minutes && (
-          <span className="calv-booked-sum" data-tooltip={t("calv.booked")} aria-label={t("calv.hoursBooked", { h: fmtMinutes(ov.booked_minutes) })}>
-            <Timer size={11} aria-hidden />
-            {fmtMinutes(ov.booked_minutes)} h
+        {(planned > 0 || !!ov?.booked_minutes) && (
+          // Planned next to booked: „2 / 1,5 h“.
+          <span className="calv-plan-vs" data-tooltip={planned > 0 && ov?.booked_minutes ? t("blocks.planVsBooked", { p: fmtMinutes(planned), b: fmtMinutes(ov.booked_minutes) }) : undefined}>
+            {planned > 0 && (
+              <span className="calv-planned-sum" aria-label={t("blocks.plannedSum", { h: fmtMinutes(planned) })} data-tooltip={ov?.booked_minutes ? undefined : t("blocks.plannedSum", { h: fmtMinutes(planned) })}>
+                <Target size={11} aria-hidden />
+                {fmtMinutes(planned)}
+                {!ov?.booked_minutes && " h"}
+              </span>
+            )}
+            {!!ov?.booked_minutes && (
+              <span className="calv-booked-sum" data-tooltip={planned > 0 ? undefined : t("calv.booked")} aria-label={t("calv.hoursBooked", { h: fmtMinutes(ov.booked_minutes) })}>
+                <Timer size={11} aria-hidden />
+                {fmtMinutes(ov.booked_minutes)} h
+              </span>
+            )}
           </span>
         )}
         {iso <= isoDay(new Date()) && (
@@ -543,9 +597,17 @@ function TimeGrid(props: {
   selected: string | null;
   onSelect: (k: string) => void;
   onDay: (d: Date) => void;
+  blocks: FocusBlock[];
+  dropLength: number;
+  onDropItem: (day: Date, minute: number, item: PlanItem) => void;
+  onBlockChange: (b: FocusBlock, p: BlockPatch) => void;
+  onBlockDelete: (b: FocusBlock) => void;
 }) {
   const t = useT();
-  const { range, events, entries, overview, cal, booked, now, selected, onSelect, onDay } = props;
+  const { range, events, entries, overview, cal, booked, now, selected, onSelect, onDay, blocks } = props;
+  // Where a dragged task or issue would land: day and minute.
+  const [dropAt, setDropAt] = useState<{ iso: string; minute: number } | null>(null);
+  const minuteOf = (e: DragEvent<HTMLElement>) => minuteAt(e.clientY - e.currentTarget.getBoundingClientRect().top, HOUR);
   const scroll = useRef<HTMLDivElement>(null);
   const scrolledFor = useRef("");
   const allDay = events.filter(isAllDayLike);
@@ -571,7 +633,7 @@ function TimeGrid(props: {
           <div className="calv-row calv-heads">
             <div className="calv-gutter" />
             {range.days.map((d) => (
-              <DayHead key={isoDay(d)} d={d} ov={overview.get(isoDay(d))} onDay={onDay} />
+              <DayHead key={isoDay(d)} d={d} ov={overview.get(isoDay(d))} planned={plannedMinutes(blocks, d)} onDay={onDay} />
             ))}
           </div>
           <div className="calv-row calv-allday">
@@ -601,9 +663,13 @@ function TimeGrid(props: {
               </span>
             ))}
           </div>
-          {range.days.map((d) => {
+          {range.days.map((d, dayIndex) => {
             const iso = isoDay(d);
-            const placed = layoutDay(timed, d);
+            // Meetings and planned blocks side by side.
+            const placed = layoutDay<{ start: string; end: string; e?: CalendarEvent; b?: FocusBlock }>(
+              [...timed.map((e) => ({ start: e.start, end: e.end, e })), ...blocks.map((b) => ({ start: b.start, end: b.end, b }))],
+              d,
+            );
             const lane = layoutDay(
               entries.filter((x) => x.status_flag !== "running" && x.duration_minutes).map((x) => ({ start: x.start_time, end: entryEnd(x), x })),
               d,
@@ -611,11 +677,51 @@ function TimeGrid(props: {
             );
             const weekend = [0, 6].includes(d.getDay());
             return (
-              <div key={iso} className={`calv-col ${weekend ? "weekend" : ""} ${iso === todayIso ? "today" : ""} ${lane.length ? "has-lane" : ""}`} data-date={iso}>
+              <div
+                key={iso}
+                className={`calv-col ${weekend ? "weekend" : ""} ${iso === todayIso ? "today" : ""} ${lane.length ? "has-lane" : ""} ${dropAt?.iso === iso ? "dropping" : ""}`}
+                data-date={iso}
+                onDragOver={(e) => {
+                  if (!canPlan([...e.dataTransfer.types])) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  const minute = minuteOf(e);
+                  if (dropAt?.iso !== iso || dropAt.minute !== minute) setDropAt({ iso, minute });
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropAt((x) => (x?.iso === iso ? null : x));
+                }}
+                onDrop={(e) => {
+                  const item = readPlanData(e.dataTransfer);
+                  setDropAt(null);
+                  if (!item) return;
+                  e.preventDefault();
+                  props.onDropItem(d, minuteOf(e), item);
+                }}
+              >
                 <div className="calv-meetings">
                   {placed.map((p) => {
-                    const e = p.item;
                     const height = Math.max((p.height / 60) * HOUR - 2, 16);
+                    if (p.item.b) {
+                      const b = p.item.b;
+                      return (
+                        <BlockItem
+                          key={`b${b.id}`}
+                          block={b}
+                          hourPx={HOUR}
+                          dayIndex={dayIndex}
+                          dayCount={range.days.length}
+                          selected={selected === blockKey(b.id)}
+                          past={new Date(b.end) <= now}
+                          compact={height < 34}
+                          style={{ top: (p.top / 60) * HOUR, height, left: `calc((100% + 2px) * ${p.col / p.cols})`, width: `calc((100% + 2px) / ${p.cols} - 2px)` }}
+                          onSelect={(id) => onSelect(blockKey(id))}
+                          onChange={props.onBlockChange}
+                          onDelete={props.onBlockDelete}
+                        />
+                      );
+                    }
+                    const e = p.item.e!;
                     // Side by side with a 2px gap between overlapping meetings.
                     const style = {
                       ...eventStyle(e, cal),
@@ -670,6 +776,7 @@ function TimeGrid(props: {
                     })}
                   </div>
                 )}
+                {dropAt?.iso === iso && <DropGhost minute={dropAt.minute} length={props.dropLength} hourPx={HOUR} />}
                 {iso === todayIso && <div className="calv-now" style={{ top: (minutesOfDay(now) / 60) * HOUR }} aria-hidden />}
               </div>
             );

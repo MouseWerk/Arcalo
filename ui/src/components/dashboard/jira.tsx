@@ -11,6 +11,7 @@ import { fmtDate, isoDay } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { burndownPaths, columnsOf, JIRA_COLUMNS, jiraApi, overdue, priorityClass, type Issue, type JiraColumn, type SprintView } from "../../lib/jira";
 import { openIssue } from "../../lib/jiraActions";
+import { setPlanData } from "../../lib/blocks";
 import { openSettingsSection } from "../../lib/calnav";
 import { useApp } from "../../store/app";
 
@@ -64,7 +65,7 @@ function IssueRows({ issues, columns }: { issues: Issue[]; columns: JiraColumn[]
         const kind = typeOf(i.issue_type);
         return (
           <li key={`${i.site}:${i.key}`}>
-            <button type="button" className="dw-row dwj-row" data-issue-row={i.key} title={`${i.key} ${i.summary}`} onClick={(e) => void openIssue(i.key, { browser: e.ctrlKey || e.metaKey, newTab: e.shiftKey })}>
+            <button type="button" className="dw-row dwj-row" data-issue-row={i.key} title={`${i.key} ${i.summary}`} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })} onClick={(e) => void openIssue(i.key, { browser: e.ctrlKey || e.metaKey, newTab: e.shiftKey })}>
               <span className={`issue-type-icon issue-type-${kind}`} dangerouslySetInnerHTML={{ __html: TYPE_SVG[kind] }} aria-hidden />
               <span className="mono dwj-key">{i.key}</span>
               <span className="grow ellipsis">{i.summary}</span>

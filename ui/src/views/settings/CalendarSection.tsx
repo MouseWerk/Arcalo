@@ -8,7 +8,7 @@ import { FileUp, FolderOpen, Link2, MoreHorizontal, Palette, Pencil, RefreshCw, 
 import { api, on } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { relative } from "../../lib/format";
-import { Button, Dialog, Field, IconButton, Input, Switch, useMenu } from "../../components/ui";
+import { Button, Dialog, Field, IconButton, Input, Select, Switch, useMenu } from "../../components/ui";
 import { t, useT, type TKey } from "../../lib/i18n";
 import type { CalendarSettings, CalendarSourceInfo, CalendarStatus } from "../../lib/types";
 import { MailGroup } from "./MailGroup";
@@ -190,6 +190,22 @@ export function CalendarSection({ draft, update }: SectionProps) {
         <Row label={t("calset.links")} description={t("calset.linksDesc")}>
           <Switch label={t("calset.links")} checked={cal.meeting_links} onChange={(v) => set({ meeting_links: v })} />
         </Row>
+      </Group>
+
+      <Group title={t("blocks.settings")} description={t("blocks.settingsDesc")}>
+        <Row label={t("blocks.lengthSetting")} description={t("blocks.lengthDesc")}>
+          <Select
+            aria-label={t("blocks.lengthSetting")}
+            value={String(cal.block_minutes ?? 60)}
+            onChange={(e) => set({ block_minutes: Number(e.target.value) })}
+            options={[15, 30, 45, 60, 90, 120, 180, 240].map((m) => ({ value: String(m), label: t("focus.minutes", { n: m }) }))}
+          />
+        </Row>
+        {status?.outlook_available && (
+          <Row label={t("blocks.outlook")} description={t("blocks.outlookDesc")}>
+            <Switch label={t("blocks.outlook")} checked={!!cal.blocks_outlook} onChange={(v) => set({ blocks_outlook: v })} />
+          </Row>
+        )}
       </Group>
 
       <MailGroup draft={draft} update={update} />

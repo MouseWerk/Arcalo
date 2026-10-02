@@ -468,6 +468,19 @@ defineWidget({
   naming the others in `also_in`. Week proposal, day review and the quick capture's „Jetzt“ read
   `booking_sources()` (calendars with „Für Buchungsvorschläge verwenden“, default off for shared ones). Which
   calendars the Kalender and the „Termine“ widget show is a view setting (`lib/calvisibility.ts`, localStorage).
+- Focus blocks (`timeblocks.rs`, `calsync/outlookwrite.rs`, 1.8): `focus_blocks` (migration 15) holds planned
+  stretches (UTC, snapped to 15 minutes) with an optional link (task = page id + ordinal + text, issue key, page) and
+  Netzplan/Vorgang; `focus_sessions.block_id` names the block a session started from. The UI drags `application/x-annalo-plan`
+  (or a sidebar page) onto a day column and moves/resizes blocks with pointer events and the keyboard (`lib/blocks.ts`,
+  `views/CalendarBlocks.tsx`); „Im Kalender planen…“ asks `block_free_slots` (08–18 local, busy meetings and blocks
+  avoided). Outlook write-back: every change queues one row per block in `focus_block_outbox` (`upsert`/`delete`, a
+  `seq` so a change during a write is not lost); the shell reads the due rows, runs `outlook.ps1 -Mode write -Ops <json>`
+  without the database lock (it attaches with `GetActiveObject`, never starts Outlook: `not_running`), stores EntryID and
+  global id and retries failures with 1–30 minutes back-off (scheduler every minute and before each Outlook sync).
+  `calendar_events` hides `outlook` events whose uid is a block's appointment (also while its delete waits).
+  `ANNALO_OUTLOOK_WRITE_LOG` (with `ANNALO_TEST_FIXTURES=1`) replaces the script by a JSON-lines log; a file
+  `<log>.offline` stands for a closed Outlook. „Woche vorschlagen“ adds unbooked past blocks as `block` signals
+  (priority between meetings and page edits; WBS from the block, the issue mapping or the task's page, high when linked).
   Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
   describe the default calendar alone.
 - ICS (`calsync/ics.rs`): line unfolding on the bytes (a fold inside a UTF-8 character heals), parameters with quotes,

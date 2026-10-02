@@ -6,7 +6,8 @@
 //!
 //! * **Signals** ([`collect`]): appointments that are over (not all-day, not free or out of
 //!   office, not private without details, not marked „nicht buchen“, not booked), finished focus
-//!   sessions without a booking, and page edits from the activity journal (one row per page and
+//!   sessions without a booking, focus blocks that are over and unbooked (not those a focus
+//!   session was started from: that session is the signal), and page edits from the activity journal (one row per page and
 //!   hour: the editing session ends at its last save and lasts about two minutes per save, 10 to
 //!   60 minutes; daily notes and single tiny edits do not count, nor edits on days off).
 //! * **WBS** ([`resolve`]): first what the user decided (the series or subject of a booked
@@ -43,16 +44,19 @@ use crate::tracking::{self, BudgetStatus, Thresholds};
 pub enum SourceKind {
     Calendar,
     Focus,
+    /// A planned focus block ([`crate::timeblocks`]).
+    Block,
     Page,
 }
 
 impl SourceKind {
     /// Which signal gets a contested slot: focus sessions were really worked, meetings are
-    /// in the calendar, page edits are an estimate.
+    /// in the calendar, blocks were planned, page edits are an estimate.
     fn priority(self) -> u8 {
         match self {
-            SourceKind::Focus => 3,
-            SourceKind::Calendar => 2,
+            SourceKind::Focus => 4,
+            SourceKind::Calendar => 3,
+            SourceKind::Block => 2,
             SourceKind::Page => 1,
         }
     }
@@ -564,6 +568,26 @@ pub fn collect(
         }
     }
 
+    // Focus blocks that are unbooked (a block a focus session ran from is that session's).
+    for b in db.blocks_in(from, to)? {
+        let started: bool = db
+            .conn()
+            .query_row("SELECT 1 FROM focus_sessions WHERE block_id = ?1 LIMIT 1", [b.id], |_| Ok(true))
+            .optional()?
+            .unwrap_or(false);
+        if b.entry_id.is_some() || started {
+            continue;
+        }
+        signals.push(Signal {
+            kind: SourceKind::Block,
+            start: b.start,
+            end: b.end,
+            text: b.title.clone(),
+            source: SourceRef { kind: SourceKind::Block, id: b.id.to_string(), label: b.title.clone() },
+            wbs: ctx.for_block(db, &b)?,
+        });
+    }
+
     // Page editing sessions.
     {
         let mut st = db.conn().prepare_cached(
@@ -1029,6 +1053,36 @@ impl WbsContext {
         Ok(if crate::focus::is_default_goal(goal) { None } else { self.similar(goal) })
     }
 
+    /// A focus block: its Netzplan/Vorgang, the WBS of its issue or of its task's page (a
+    /// link is a strong signal: high confidence), else like a focus session's goal.
+    pub fn for_block(&self, db: &Database, b: &crate::timeblocks::FocusBlock) -> Result<Option<WbsGuess>> {
+        use crate::timeblocks::BlockLink;
+        if let Some(np) = b.netzplan_id {
+            return Ok(self.guess(np, b.vorgang_nr.clone(), None, Confidence::High, Basis::Link, |r| {
+                trf!("Fokusblock auf {r}", "Focus block on {r}")
+            }));
+        }
+        let linked = match &b.link {
+            BlockLink::Issue { key } => match db.issue_wbs_for(key)? {
+                Some(reference) => self.resolve_ref(db, &reference).and_then(|(np, v)| {
+                    self.guess(np, v, None, Confidence::High, Basis::Link, |r| {
+                        trf!("Fokusblock für {key} ({r})", "Focus block for {key} ({r})")
+                    })
+                }),
+                None => None,
+            },
+            BlockLink::Task { page_id, .. } | BlockLink::Page { page_id } => self
+                .for_page(db, *page_id)?
+                .filter(|g| matches!(g.basis, Basis::Link | Basis::Learned))
+                .map(|g| WbsGuess { confidence: Confidence::High, ..g }),
+            BlockLink::None => None,
+        };
+        if linked.is_some() {
+            return Ok(linked);
+        }
+        self.for_focus(db, None, None, &b.title)
+    }
+
     /// A page: remembered for the page, its `vorgang:`, a parent's, a WBS it mentions (text or
     /// tag), booked from it before or like its title, similarity of the title.
     pub fn for_page(&self, db: &Database, page_id: i64) -> Result<Option<WbsGuess>> {
@@ -1270,6 +1324,12 @@ pub fn apply(db: &Database, items: &[Accepted], now: DateTime<Utc>, thresholds: 
                         db.conn().execute(
                             "UPDATE focus_sessions SET entry_id = ?2, booked_minutes = worked_minutes
                              WHERE id = ?1 AND entry_id IS NULL AND status <> 'running'",
+                            params![s.id.parse::<i64>().unwrap_or(-1), entry.id],
+                        )?;
+                    }
+                    SourceKind::Block => {
+                        db.conn().execute(
+                            "UPDATE focus_blocks SET entry_id = ?2 WHERE id = ?1 AND entry_id IS NULL",
                             params![s.id.parse::<i64>().unwrap_or(-1), entry.id],
                         )?;
                     }

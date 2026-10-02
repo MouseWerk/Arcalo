@@ -1,10 +1,12 @@
 // Widgets of the booked time: Zeit diese Woche, Timer, Budget, Projekt and Wochenvorschlag.
 
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { api } from "../../lib/api";
+import { plannedMinutes } from "../../lib/blocks";
 import { CalendarCheck, FolderKanban, Gauge, WandSparkles } from "lucide-react";
 import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
-import { fmtDate, h1, isoDay, weekStart } from "../../lib/format";
+import { addDays, fmtDate, h1, isoDay, weekStart } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { hoursLabel } from "../../lib/calendar";
 import { timeRange } from "../../lib/agenda";
@@ -13,7 +15,7 @@ import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openTimesheetDay } from "../../lib/reviewnav";
 import { requestWeekProposal } from "../../lib/weekplan";
 import { budgetForecast, configOf, weekBars, type Forecast } from "../../lib/dashboard";
-import type { AlertLevel, TimeEntryRow } from "../../lib/types";
+import type { AlertLevel, FocusBlock, TimeEntryRow } from "../../lib/types";
 import type { BudgetRow, BudgetsData, ProjectData, ProposalData, WeekData } from "../../lib/dashtypes";
 import { Badge, Button, Progress, type Tone } from "../ui";
 import { PageIcon } from "../icons";
@@ -29,6 +31,14 @@ export function WeekWidget({ widget }: WidgetProps) {
   const { data, error, loading } = useWidgetData<WeekData>(widget);
   const settings = useApp((st) => st.settings?.settings);
   const mode = configOf(widget).mode === "wbs" ? "wbs" : "day";
+  // Planned focus blocks of the week, next to the booked time.
+  const [blocks, setBlocks] = useState<FocusBlock[]>([]);
+  const weekStart = data?.week_start;
+  useEffect(() => {
+    if (!weekStart) return;
+    const from = new Date(`${weekStart}T00:00:00`);
+    void api.blocks(from.toISOString(), addDays(from, 7).toISOString()).then(setBlocks, () => setBlocks([]));
+  }, [weekStart]);
   return (
     <Loadable loading={loading} error={error}>
       {() => {
@@ -44,6 +54,8 @@ export function WeekWidget({ widget }: WidgetProps) {
           labels,
         );
         const gaps = week.bars.filter((b) => b.gap > 0);
+        const planned = (iso: string) => plannedMinutes(blocks, new Date(`${iso}T12:00:00`));
+        const scale = Math.max(1, ...week.bars.map((b) => (b.fill > 0 ? b.minutes / b.fill : 0)), week.targetLine > 0 ? (settings?.daily_target_hours ?? 8) * 60 : 0);
         const max = Math.max(1, ...d.wbs.map((w) => w.minutes));
         return (
           <div className="dw-week">
@@ -61,13 +73,14 @@ export function WeekWidget({ widget }: WidgetProps) {
                     type="button"
                     role="listitem"
                     className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
-                    title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
+                    title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${planned(b.date) ? ` · ${t("blocks.plannedSum", { h: hoursLabel(planned(b.date)) })}` : ""}${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
                     aria-label={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? `, ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
                     onClick={() => openTimesheetDay(b.date)}
                   >
                     <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
                     <span className="dw-bar-track">
                       {b.workday && week.targetLine > 0 && <span className="dw-bar-target" aria-hidden />}
+                      {planned(b.date) > 0 && <span className="dw-bar-plan" style={{ height: `${Math.min(1, planned(b.date) / scale) * 100}%` }} aria-hidden />}
                       <span className="dw-bar-fill" style={{ height: `${b.fill * 100}%` }} />
                     </span>
                     <span className="dw-bar-day">{b.label}</span>

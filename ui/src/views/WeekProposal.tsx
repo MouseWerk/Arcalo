@@ -2,7 +2,7 @@
 // edits), laid out by day. Rows are checked, edited and taken over in one go as drafts.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarDays, CheckCircle2, FileText, Target, WandSparkles } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, FileText, Target, WandSparkles } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Input, Spinner, Switch, type Tone } from "../components/ui";
@@ -22,6 +22,7 @@ const CONFIDENCE: Record<ProposalConfidence, { readonly label: string; tone: Ton
 const SOURCE: Record<ProposalSourceKind, { icon: typeof CalendarDays; label: TKey }> = {
   calendar: { icon: CalendarDays, label: "tabs.calendar" },
   focus: { icon: Target, label: "wp.src.focus" },
+  block: { icon: CalendarClock, label: "wp.src.block" },
   page: { icon: FileText, label: "wp.src.page" },
 };
 

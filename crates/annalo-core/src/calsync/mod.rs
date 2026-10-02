@@ -14,6 +14,7 @@
 pub mod calendars;
 pub mod ics;
 pub mod outlook;
+pub mod outlookwrite;
 pub mod tz;
 
 use crate::{tr, trf};
@@ -104,6 +105,10 @@ pub struct CalendarSettings {
     pub include_body: bool,
     /// Look for a Teams/Zoom/Webex link in the appointment text (only the link is kept).
     pub meeting_links: bool,
+    /// Write focus blocks to the default Outlook calendar („Fokusblöcke in Outlook eintragen“).
+    pub blocks_outlook: bool,
+    /// Length of a block dropped into the Kalender (minutes, 15–240 on the 15-minute grid).
+    pub block_minutes: u32,
 }
 
 impl Default for CalendarSettings {
@@ -120,6 +125,8 @@ impl Default for CalendarSettings {
             private_details: false,
             include_body: false,
             meeting_links: true,
+            blocks_outlook: false,
+            block_minutes: crate::timeblocks::DEFAULT_MINUTES,
         }
     }
 }
@@ -137,6 +144,7 @@ impl CalendarSettings {
         self.sync_minutes = self.sync_minutes.clamp(5, 24 * 60);
         self.past_days = self.past_days.clamp(1, 365);
         self.future_days = self.future_days.clamp(1, 365);
+        self.block_minutes = (self.block_minutes.clamp(15, 240) + 7) / 15 * 15;
         if !valid_color(&self.outlook_color) {
             self.outlook_color = PALETTE[0].into();
         }
@@ -476,6 +484,13 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Uids of the appointments Arcalo wrote for focus blocks ([`crate::timeblocks`]), also of
+/// blocks whose appointment is still to be deleted: they show as the block, never as a meeting.
+const OWN_BLOCKS: &str = "SELECT outlook_uid FROM focus_blocks WHERE outlook_uid IS NOT NULL
+     UNION SELECT outlook_entry_id FROM focus_blocks WHERE outlook_entry_id IS NOT NULL
+     UNION SELECT uid FROM focus_block_outbox WHERE op = 'delete' AND uid IS NOT NULL
+     UNION SELECT entry_id FROM focus_block_outbox WHERE op = 'delete' AND entry_id IS NOT NULL";
+
 /// The key of an event instance: source, uid and instance.
 pub fn event_key(source: &str, uid: &str, instance: &str) -> String {
     format!("{source}|{uid}|{instance}")
@@ -672,7 +687,7 @@ impl Database {
              LEFT JOIN calendar_marks m ON m.key = e.source || '|' || e.uid || '|' || e.instance
              LEFT JOIN pages p ON p.id = m.note_page_id AND p.deleted_at IS NULL
              LEFT JOIN time_entries t ON t.id = m.entry_id
-             WHERE e.start_at < ?2 AND e.end_at > ?1
+             WHERE e.start_at < ?2 AND e.end_at > ?1 AND NOT (e.source = '{OUTLOOK}' AND e.uid IN ({OWN_BLOCKS}))
              ORDER BY e.start_at, e.all_day DESC, e.title"
         ))?;
         let rows = st.query_map(params![ts(from), ts(to)], map_event)?;
