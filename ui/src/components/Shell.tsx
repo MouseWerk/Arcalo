@@ -12,7 +12,7 @@ import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { useTimeTracking } from "../lib/timetracking";
 import { Onboarding } from "./Onboarding";
-import { UpdateToast } from "./Updates";
+import { UpdateLayer, UpdateStatusItem } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { FocusStatus } from "./Focus";
 import { t, t as tr, useT } from "../lib/i18n";
@@ -122,6 +122,7 @@ export function StatusBar() {
       )}
       <FocusStatus />
       <span className="sb-spacer" />
+      <UpdateStatusItem />
       {focusMode && (
         <button type="button" className="sb-item" onClick={() => s().set({ focusMode: false })} title={t("status.endFocus")}>
           {t("status.focusMode")} <kbd>Esc</kbd>
@@ -188,7 +189,7 @@ export function Toasts() {
   const icon = { info: Info, success: CheckCircle2, warning: AlertTriangle, danger: XCircle };
   return (
     <div className="toasts" aria-live="polite">
-      <UpdateToast />
+      <UpdateLayer />
       {toasts.map((t) => {
         const Icon = icon[t.tone];
         return (

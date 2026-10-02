@@ -29,6 +29,7 @@ import { requestPageCommand } from "./lib/pageModes";
 import { sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
+import { takeUpdateSession } from "./lib/updatesession";
 import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
 import { withPacResults } from "./views/settings/NetworkSection";
 import { warnDestination } from "./views/settings/BackupDestinations";
@@ -63,7 +64,8 @@ export function App() {
       s.set({ settings: view });
       applyTheme(view.settings.theme);
       // Settings → Start: the last tabs (restored from the layout), the start page or today's note.
-      const open = view.settings.start?.open ?? (view.settings.open_daily_on_start ? "daily" : "tabs");
+      // After „Jetzt neu starten“ for an update: exactly the tabs that were open.
+      const open = takeUpdateSession() ? "tabs" : (view.settings.start?.open ?? (view.settings.open_daily_on_start ? "daily" : "tabs"));
       if (await api.onboardingNeeded().catch(() => false)) s.set({ onboarding: true });
       else if (open === "daily") {
         const p = await api.dailyNote();
@@ -125,6 +127,12 @@ export function App() {
         if (st.timer && t.timer_idle_minutes != null && t.timer_idle_minutes !== st.timer.idle_minutes)
           st.set({ timer: { ...st.timer, idle_minutes: t.timer_idle_minutes, is_idle: t.is_idle } });
       }),
+      // „Neu in Arcalo“: a highlight's action runs a command of the keymap.
+      (() => {
+        const run = (e: Event) => COMMAND_RUNNERS[(e as CustomEvent<string>).detail]?.();
+        window.addEventListener("annalo:run-command", run);
+        return Promise.resolve(() => window.removeEventListener("annalo:run-command", run));
+      })(),
       // Tray „Beenden“: store edits, then quit for real.
       on("app://quit-requested", async () => {
         if (await flushBeforeExit()) await api.quit().catch((e) => useApp.getState().error(t("app.quitFailed"), e));

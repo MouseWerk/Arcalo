@@ -81,6 +81,9 @@ pub struct Settings {
     /// Look for a new release at start and every few hours (only in builds with an update
     /// key). Updates are never installed without the user's click.
     pub auto_update_check: bool,
+    /// Update mode, own source, interval and session restore (Settings → Über; an organization's
+    /// policy can override them, see `update_policy`).
+    pub updates: crate::update_policy::UpdatePrefs,
     /// Developer log (Settings → Protokoll): also write debug lines (AI requests, syncs, backups).
     pub dev_log_verbose: bool,
     /// Push the Markdown mirror to a Git remote (the access token lives in the credential store).
@@ -520,6 +523,7 @@ impl Default for Settings {
             capture_shortcut: DEFAULT_CAPTURE_SHORTCUT.into(),
             palette_shortcut: None,
             auto_update_check: true,
+            updates: Default::default(),
             dev_log_verbose: false,
             git_sync: GitSyncSettings::default(),
             search_shortcut: DEFAULT_SEARCH_SHORTCUT.into(),

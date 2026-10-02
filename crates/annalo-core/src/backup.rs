@@ -104,6 +104,52 @@ pub fn prune(dir: &Path, keep: usize, fresh: &str) -> Result<Vec<String>> {
     Ok(gone)
 }
 
+/// Writes a snapshot of `db` as `dir/name` (a tagged backup such as the one before an update,
+/// which the rotation of [`backup_to`] does not count or delete). Older files starting with
+/// `tag` are deleted except the newest `keep_tagged` (the new one included).
+pub fn backup_named(
+    db: &Database,
+    dir: &Path,
+    name: &str,
+    tag: &str,
+    keep_tagged: usize,
+) -> Result<std::path::PathBuf> {
+    fs::create_dir_all(dir).at(dir)?;
+    let path = dir.join(name);
+    if path.exists() {
+        fs::remove_file(&path).at(&path)?;
+    }
+    let target =
+        path.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
+    db.conn().execute("VACUUM INTO ?1", [target])?;
+    let mut tagged: Vec<(std::time::SystemTime, std::path::PathBuf)> = fs::read_dir(dir)
+        .at(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(tag) && n != name))
+        .map(|e| (e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH), e.path()))
+        .collect();
+    tagged.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, old) in tagged.into_iter().skip(keep_tagged.max(1) - 1) {
+        let _ = fs::remove_file(old);
+    }
+    Ok(path)
+}
+
+/// Puts the backup file `backup` in place of the database `db_file`. The current file and its
+/// WAL files are kept as `<name>.<keep_as>-<stamp>`.
+pub fn restore_from(db_file: &Path, backup: &Path, keep_as: &str, now: DateTime<Utc>) -> Result<()> {
+    let stamp = now.format(STAMP);
+    for ext in ["", "-wal", "-shm"] {
+        let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));
+        if from.exists() {
+            fs::rename(&from, format!("{}{ext}.{keep_as}-{stamp}", db_file.display())).at(&from)?;
+        }
+    }
+    let tmp = db_file.with_extension("restore-part");
+    fs::copy(backup, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file)?;
+    Ok(())
+}
+
 /// Puts the newest backup of `backups` in place of the database `db_file` (start-up recovery
 /// of a broken database). The broken file and its WAL files are kept as
 /// `<name>.broken-<stamp>`. Returns the backup used.
@@ -115,15 +161,7 @@ pub fn restore_latest(db_file: &Path, backups: &Path, now: DateTime<Utc>) -> Res
             backups.display()
         ))
     })?;
-    let stamp = now.format(STAMP);
-    for ext in ["", "-wal", "-shm"] {
-        let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));
-        if from.exists() {
-            fs::rename(&from, format!("{}{ext}.broken-{stamp}", db_file.display())).at(&from)?;
-        }
-    }
-    let tmp = db_file.with_extension("restore-part");
-    fs::copy(&latest.path, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file)?;
+    restore_from(db_file, Path::new(&latest.path), "broken", now)?;
     Ok(latest)
 }
 
@@ -225,6 +263,37 @@ mod tests {
         backup_at(&db, &backups, 1, at(3)).unwrap();
         let names: Vec<_> = list_backups(&backups).unwrap().into_iter().map(|b| b.file_name).collect();
         assert_eq!(names, ["arcalo-20260923-030000.db"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tagged_backups_stay_out_of_the_rotation() {
+        let dir = std::env::temp_dir().join(format!("annalo-backup-tagged-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let db = Database::open_in_memory().unwrap();
+        let tag = "arcalo-pre-update-";
+        let a = backup_named(&db, &dir, "arcalo-pre-update-1.8.0-1.9.0.db", tag, 2).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        backup_named(&db, &dir, "arcalo-pre-update-1.9.0-1.9.1.db", tag, 2).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let c = backup_named(&db, &dir, "arcalo-pre-update-1.9.1-1.9.2.db", tag, 2).unwrap();
+        assert!(!a.exists(), "only the newest two are kept");
+        assert!(c.exists() && dir.join("arcalo-pre-update-1.9.0-1.9.1.db").exists());
+        assert!(list_backups(&dir).unwrap().is_empty(), "not listed with the regular backups");
+        backup_to(&db, &dir, 1).unwrap();
+        assert!(c.exists(), "the rotation leaves them alone");
+        // Restoring keeps the current file aside.
+        let db_file = dir.join("workspace.db");
+        fs::write(&db_file, b"now").unwrap();
+        restore_from(&db_file, &c, "before-rollback", Utc::now()).unwrap();
+        assert_eq!(fs::read(&db_file).unwrap(), fs::read(&c).unwrap());
+        assert!(
+            fs::read_dir(&dir).unwrap().any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("workspace.db.before-rollback-"))
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

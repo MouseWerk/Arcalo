@@ -5,7 +5,7 @@
 import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
+import { Bell, CalendarRange, CheckCircle2, Compass, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, RotateCcw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
 import { collapsePages, foldersBelow } from "../lib/collapsed";
 import { useApp } from "../store/app";
@@ -16,11 +16,12 @@ import { Badge, Button, Field, IconButton, Input, Select, Switch, TextArea } fro
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
-import { NOT_CONFIGURED } from "../lib/updates";
-import { checkForUpdates, loadUpdateStatus, UpdateAction, useUpdates } from "../components/Updates";
+import { effectiveMode, INTERVALS, isManaged, NOT_CONFIGURED, updateHint } from "../lib/updates";
+import { checkForUpdates, loadUpdateStatus, showReleaseNotes, undoSkip, UpdateAction, useUpdates } from "../components/Updates";
+import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
 import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
-import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings } from "../lib/types";
+import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
@@ -1277,18 +1278,55 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
   const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
+  const prefs: UpdatePrefs = { mode: "auto", source_url: "", allow_github_fallback: true, check_interval_hours: 6, restore_session: true, ...draft.updates };
+  const setPrefs = (p: Partial<UpdatePrefs>) => update({ updates: { ...prefs, ...p }, ...(p.mode ? { auto_update_check: p.mode !== "off" } : {}) });
+  const policy = status.policy;
+  const managed = (f: UpdateManagedField) => isManaged(status, f);
+  const anyManaged = !!policy?.managed.length;
+  const userMode: UpdateMode = draft.auto_update_check === false ? "off" : prefs.mode;
+  const mode = managed("mode") && policy ? policy.mode : userMode;
+  const hint = updateHint(status, available);
   let state: React.ReactNode;
-  let tone: "neutral" | "success" | "info" | "busy" = "neutral";
+  let tone: "neutral" | "success" | "info" | "busy" | "warning" = "neutral";
   if (!status.enabled) state = t(NOT_CONFIGURED) + ".";
+  else if (policy?.disabled) (state = t("upd.policyOff")), (tone = "warning");
+  else if (hint.kind === "ready") (state = hint.installNow || !hint.window ? t("upd.readyState", { version: hint.version }) : t("upd.sbReadyWindow", { version: hint.version, window: hint.window })), (tone = "info");
+  else if (hint.kind === "downloading") (state = t("upd.downloadingBg", { version: hint.version })), (tone = "busy");
+  else if (hint.kind === "paused") (state = t("upd.sbPaused", { version: hint.version })), (tone = "info");
   else if (available) (state = t("upd.available", { version: available.version })), (tone = "info");
   else if (phase === "checking") (state = t("upd.checking")), (tone = "busy");
   else if (checkedAt) (state = t("upd.current", { when: relative(checkedAt.toISOString()) })), (tone = "success");
   else state = t("upd.notChecked");
+  const lock = (f: UpdateManagedField) => (managed(f) ? <span className="managed-badge">{t("upd.managedShort")}</span> : null);
+  const askRollback = async () => {
+    const r = status.rollback;
+    if (!r) return;
+    const ok = await useApp.getState().confirm({
+      title: t("upd.rollbackTitle", { version: r.from }),
+      message: t("upd.rollbackWarning", { from: r.from, to: r.to, date: dateTime(r.created) }),
+      confirmLabel: t("upd.rollbackConfirm"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await flushAllEditors();
+      await api.updateRollback();
+      await loadUpdateStatus();
+    } catch (e) {
+      useApp.getState().error(t("upd.rollbackFailed"), e);
+    }
+  };
   return (
     <Group
       title={t("set.about.updates")}
-      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : t("upd.desc")}
+      description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : mode === "auto" ? t("upd.descAuto") : t("upd.desc")}
     >
+      {anyManaged && (
+        <div className="update-managed" role="note">
+          <StatusNote tone="info">{t("upd.managed")}</StatusNote>
+          {status.policy_origins?.length ? <span className="faint update-managed-origin">{status.policy_origins.join(" · ")}</span> : null}
+        </div>
+      )}
       {/* Status and actions: the buttons wrap below the text as soon as they do not fit beside it. */}
       <Row stack label={t("upd.status")} description={<StatusNote tone={tone} className="update-state">{state}</StatusNote>}>
         <div className="set-actions">
@@ -1297,13 +1335,13 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
               <Button variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 {t("upd.whatsNew")}
               </Button>
-              <UpdateAction />
+              {(effectiveMode(status) !== "auto" || hint.kind === "ready") && <UpdateAction />}
             </>
           )}
           <Button
             variant={available ? "ghost" : "secondary"}
             icon={RefreshCw}
-            disabled={!status.enabled || busy}
+            disabled={!status.enabled || busy || !!policy?.disabled}
             loading={phase === "checking"}
             title={status.enabled ? undefined : t(NOT_CONFIGURED)}
             onClick={() => void checkForUpdates(true)}
@@ -1313,14 +1351,152 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
         </div>
       </Row>
       {status.enabled && (
-        <Row label={t("upd.auto")} description={t("upd.autoDesc")}>
-          <Switch label={t("upd.auto")} checked={draft.auto_update_check} onChange={(v) => update({ auto_update_check: v })} />
-        </Row>
+        <>
+          <Row label={t("upd.mode")} description={mode === "auto" ? t("upd.modeAutoDesc") : mode === "notify" ? t("upd.modeNotifyDesc") : t("upd.modeOffDesc")}>
+            <div className="update-field">
+              {lock("mode")}
+              <Select
+                className="update-mode-select"
+                aria-label={t("upd.mode")}
+                value={mode}
+                disabled={managed("mode")}
+                options={[
+                  { value: "auto", label: t("upd.modeAuto") },
+                  { value: "notify", label: t("upd.modeNotify") },
+                  { value: "off", label: t("upd.modeOff") },
+                ]}
+                onChange={(e) => setPrefs({ mode: e.target.value as UpdateMode })}
+              />
+            </div>
+          </Row>
+          <Row label={t("upd.interval")} description={t("upd.intervalDesc")}>
+            <div className="update-field">
+              {lock("interval")}
+              <Select
+                className="update-interval-select"
+                aria-label={t("upd.interval")}
+                value={String(managed("interval") && policy ? policy.check_interval_hours : prefs.check_interval_hours)}
+                disabled={managed("interval") || mode === "off"}
+                options={[...new Set([...INTERVALS, policy?.check_interval_hours ?? 6])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: t("upd.everyHours", { n: h }) }))}
+                onChange={(e) => setPrefs({ check_interval_hours: Number(e.target.value) })}
+              />
+            </div>
+          </Row>
+          <Row label={t("upd.source")} description={t("upd.sourceDesc")}>
+            <div className="update-field update-source">
+              {lock("source")}
+              <CommitInput
+                className="update-source-input"
+                aria-label={t("upd.source")}
+                placeholder={t("upd.sourcePlaceholder")}
+                value={managed("source") && policy ? (policy.source_url ?? "") : prefs.source_url}
+                disabled={managed("source")}
+                onCommit={(v) => setPrefs({ source_url: v })}
+              />
+            </div>
+          </Row>
+          <Row label={t("upd.github")} description={t("upd.githubDesc")}>
+            <div className="update-field">
+              {lock("github")}
+              <Switch
+                label={t("upd.github")}
+                checked={managed("github") && policy ? policy.allow_github_fallback : prefs.allow_github_fallback}
+                disabled={managed("github")}
+                onChange={(v) => setPrefs({ allow_github_fallback: v })}
+              />
+            </div>
+          </Row>
+          {policy?.pinned_version && (
+            <Row label={t("upd.pinned")} description={t("upd.pinnedDesc", { version: policy.pinned_version })}>
+              <div className="update-field">
+                {lock("pinned")}
+                <span className="num">{policy.pinned_version}</span>
+              </div>
+            </Row>
+          )}
+          {policy?.install_window && (
+            <Row label={t("upd.window")} description={t("upd.windowDesc", { window: policy.install_window })}>
+              <div className="update-field">
+                {lock("window")}
+                <span className="num">{policy.install_window}</span>
+              </div>
+            </Row>
+          )}
+          <Row label={t("upd.restoreSession")} description={t("upd.restoreSessionDesc")}>
+            <Switch label={t("upd.restoreSession")} checked={prefs.restore_session} onChange={(v) => setPrefs({ restore_session: v })} />
+          </Row>
+          {status.skipped && (
+            <Row label={t("upd.skippedLabel")} description={t("upd.skippedDesc", { version: status.skipped })}>
+              <Button variant="secondary" className="update-unskip" onClick={() => void undoSkip(true)}>
+                {t("common.undo")}
+              </Button>
+            </Row>
+          )}
+          {status.remind_after && (
+            <Row label={t("upd.remindLabel")} description={t("upd.remindDesc", { date: fmtDate(status.remind_after) })}>
+              <Button variant="secondary" className="update-unremind" onClick={() => void undoSkip(true)}>
+                {t("upd.remindNow")}
+              </Button>
+            </Row>
+          )}
+          {!!status.bad_versions?.length && (
+            <Row label={t("upd.badLabel")} description={t("upd.badDesc", { versions: status.bad_versions.join(", ") })}>
+              <span />
+            </Row>
+          )}
+          {status.rollback && (
+            <Row stack label={t("upd.rollbackLabel", { version: status.rollback.from })} description={t("upd.rollbackDesc", { from: status.rollback.from, to: status.rollback.to })}>
+              <div className="set-actions">
+                <Button variant="danger" icon={RotateCcw} className="update-rollback" onClick={() => void askRollback()}>
+                  {t("upd.rollbackAction", { version: status.rollback.from })}
+                </Button>
+              </div>
+            </Row>
+          )}
+        </>
       )}
     </Group>
   );
 }
 
+/** Settings → Über → „Neu in Arcalo“: every version with highlights or bundled notes. */
+function WhatsNewGroup() {
+  const t = useT();
+  const current = useUpdates((s) => s.status?.current_version);
+  const versions = knownVersions();
+  const [all, setAll] = useState(false);
+  const shown = all ? versions : versions.slice(0, 4);
+  if (!versions.length) return null;
+  return (
+    <Group title={t("wn.group")} description={t("wn.groupDesc")}>
+      <div className="whatsnew-versions">
+        {shown.map((v) => {
+          const hl = HIGHLIGHTS.find((h) => h.version === v);
+          return (
+            <div key={v} className="whatsnew-row" data-version={v}>
+              <span className="whatsnew-row-version num">{t("upd.version", { version: v })}</span>
+              {current && compareVersions(current, v) === 0 && <Badge tone="accent">{t("wn.installed")}</Badge>}
+              <span className="sb-spacer" />
+              {hl && (
+                <Button size="sm" variant="ghost" icon={Sparkles} onClick={() => useUpdates.setState({ whatsNew: { versions: [hl] } })}>
+                  {t("wn.highlights")}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" icon={ScrollText} onClick={() => void showReleaseNotes(v)}>
+                {t("wn.notes")}
+              </Button>
+            </div>
+          );
+        })}
+        {versions.length > 4 && (
+          <Button size="sm" variant="ghost" className="whatsnew-more" onClick={() => setAll(!all)}>
+            {all ? t("wn.fewer") : t("wn.older", { n: versions.length - 4 })}
+          </Button>
+        )}
+      </div>
+    </Group>
+  );
+}
 function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (p: Partial<Settings>) => void; onOpenLog: () => void }) {
   const t = useT();
   const view = useApp((s) => s.settings)!;
@@ -1350,6 +1526,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
         </div>
       </header>
       <UpdatesGroup draft={draft} update={update} />
+      <WhatsNewGroup />
       <Group title={t("set.about.data")}>
         {status?.portable && (
           <Row

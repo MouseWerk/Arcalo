@@ -21,11 +21,13 @@ mod jira;
 mod jumplist;
 mod mail;
 mod network;
+mod policy;
 mod portable;
 mod prefs;
 mod present;
 mod rebrand;
 mod recovery;
+mod rollback;
 mod secrets;
 mod syncmerge;
 mod timeblocks;
@@ -3517,6 +3519,8 @@ fn show_main_once(app: &AppHandle, why: &str) {
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     show_main_once(&app, "ui");
+    // The health check of the update rollback: this version started fine.
+    updates::mark_healthy(&app);
     desktop::precreate_capture(&app);
 }
 
@@ -3872,9 +3876,11 @@ pub fn run() {
             if let Some(n) = &startup.notice {
                 devlog::warn("core", format!("data folder: {}", n.message));
             }
+            // Before the database is opened: failed starts of a fresh update offer the way back.
+            let version = updates::current_version(app.handle());
+            rollback::early_check(app.handle(), &dir, &version);
             // Started by the update (or after an installer that did not finish).
-            let after_update =
-                annalo_core::update::take_restart_marker(&dir, &app.package_info().version.to_string());
+            let after_update = annalo_core::update::take_restart_marker(&dir, &version);
             if let Some(a) = &after_update {
                 let how = if a.installed { "installed" } else { "not installed, still the old version" };
                 devlog::info("update", format!("first start after the update to {}: {how}", a.version));
@@ -4010,6 +4016,7 @@ pub fn run() {
                     None
                 }
             };
+            let state_dir = dir.clone();
             app.manage(AppState {
                 db: Mutex::new(db),
                 reader,
@@ -4035,7 +4042,8 @@ pub fn run() {
             app.manage(jira::JiraSync::default());
             // The window after an update always shows: the user clicked „Installieren“ and waits for it.
             let updated = after_update.is_some();
-            app.manage(updates::Updates::after(after_update));
+            app.manage(updates::Updates::after(after_update, rollback::take_notice(&state_dir)));
+            updates::load_staged(app.handle());
             app.manage(backupdest::Destinations::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
@@ -4307,6 +4315,15 @@ pub fn run() {
             updates::update_status,
             updates::update_check,
             updates::update_install,
+            updates::update_download,
+            updates::update_pause,
+            updates::update_restart_now,
+            updates::update_skip,
+            updates::update_unskip,
+            updates::update_remind,
+            updates::update_whats_new_seen,
+            updates::update_rollback,
+            updates::update_release_notes,
             devlog::devlog_write,
             devlog::devlog_read,
             devlog::devlog_stats,
@@ -4409,7 +4426,11 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
         tauri::RunEvent::Reopen { .. } => desktop::show_main(app),
         // The process ends: ⌘Q/„Beenden“ after the UI stored its editors, but also a quit the UI
         // never hears of (macOS: Dock menu „Beenden“, logging out).
-        tauri::RunEvent::Exit => checkpoint_on_exit(app),
+        tauri::RunEvent::Exit => {
+            // A downloaded update is installed (macOS, Linux; Windows at the next quit).
+            updates::on_exit(app);
+            checkpoint_on_exit(app);
+        }
         _ => {}
     }
 }

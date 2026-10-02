@@ -7,6 +7,11 @@ publishing a release that changes the update path, and at least once per minor r
 Up to 1.6 the app was called Annalo: its files are named `Annalo_…`. The update from 1.6 to 1.7 (the rename)
 has its own checklist in `rebrand-windows.md`.
 
+Since 1.9 the default mode is „Automatisch“ (background download, install on quit). Sections 1–8 test the
+click-to-install flow: set Settings → Über → Updates to „Nur benachrichtigen“ first. The automatic flow, the
+rollback after failed starts, organization policies and „Diese Version überspringen“ have their checklist in
+`docs/releases/v1.9.0.md`; the background is in `docs/admin/updates.md`.
+
 ## Before you start
 
 - A signed release of the **previous** version installed (e.g. 1.5.0), and the **new** version published as a
@@ -146,3 +151,9 @@ The published feed must contain, per release: `version`, `notes`, `pub_date` (RF
 `windows-x86_64` (the NSIS `…_x64-setup.exe`), `darwin-aarch64` and `darwin-x86_64` (`….app.tar.gz`) and
 `linux-x86_64` (`…_amd64.AppImage`), each with the content of its `.sig` file and a URL under
 `https://github.com/MouseWerk/Arcalo/releases/download/v<version>/`.
+
+Debug builds also take `ANNALO_UPDATE_CURRENT` (the version the copy pretends to run, e.g. `1.8.5`),
+`ANNALO_UPDATE_FAKE_INSTALL=1` (an install writes `updates/fake-install.json` instead of running the installer),
+`ANNALO_TEST_FAIL_START=1` (the start ends right after the health marker, like a crash) and
+`ANNALO_TEST_ROLLBACK_ANSWER=yes|no` (answers the rollback question without the native dialog); see
+`e2e/tests/126-update-background.test.js` and `127-update-policy-rollback.test.js`.

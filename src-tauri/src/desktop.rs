@@ -287,7 +287,8 @@ pub fn refresh_tray(app: &AppHandle) {
     if !time {
         // Nothing about a timer, also not one left running from before.
         if let Some(t) = lock(&desktop(app).tray).clone() {
-            let _ = t.tray.set_tooltip(Some(crate::voice::tray_tip(app, core::tray_tooltip(None))));
+            let tip = crate::voice::tray_tip(app, core::tray_tooltip(None));
+            let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
         }
         return;
     }
@@ -303,7 +304,7 @@ pub fn refresh_tray(app: &AppHandle) {
     let handles = lock(&desktop(app).tray).clone();
     let Some(t) = handles else { return };
     let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m)| (l.as_str(), *m))));
-    let _ = t.tray.set_tooltip(Some(tip));
+    let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
     if let Some((stop, resume)) = &t.timer {
         let _ = stop.set_enabled(running.is_some());
         let _ = resume.set_enabled(running.is_none() && has_last);
@@ -359,8 +360,8 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
         // Without close-to-tray the UI destroys the main window; a hidden capture window
-        // must not keep the process alive then.
-        (MAIN, WindowEvent::Destroyed) => app.exit(0),
+        // must not keep the process alive then. Closing it quits: a downloaded update installs.
+        (MAIN, WindowEvent::Destroyed) => crate::updates::quit(app),
         #[cfg(any(windows, target_os = "macos"))]
         (CAPTURE | SEARCH, WindowEvent::Focused(false)) => {
             let _ = window.hide();
@@ -405,7 +406,8 @@ pub fn close_front_window(app: &AppHandle) {
 /// Quits after the UI has stored its edits.
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
-    app.exit(0);
+    // A downloaded update is installed now (mode „automatisch“).
+    crate::updates::quit(&app);
 }
 
 // ------------------------------------------------------------ quick capture

@@ -310,6 +310,8 @@ export interface Settings {
   filing?: import("./filing").FilingSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
+  /** Settings → Über → Updates (an organization's policy can override them). */
+  updates?: UpdatePrefs;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
   dev_log_verbose: boolean;
   /** Push the Markdown mirror to a Git remote; the token lives in the credential store. */
@@ -908,6 +910,8 @@ export interface UpdateInfo {
   date: string | null;
   /** Release page with the full changelog. */
   url: string;
+  /** Where `latest.json` came from („GitHub“, an internal server or share). */
+  source?: string;
 }
 export interface UpdateStatus {
   /** The build has an update key; otherwise updates are not set up. */
@@ -919,7 +923,51 @@ export interface UpdateStatus {
   /** Installed as .deb/.rpm: the package manager updates it, the release page has the package. */
   package?: boolean;
   /** Reported once after a start that followed an update: the version, and whether it runs now. */
-  restarted?: { version: string; installed: boolean } | null;
+  restarted?: { version: string; installed: boolean; from?: string } | null;
+  /** What applies: the organization's policy over the settings (`managed` lists the locked fields). */
+  policy?: UpdatePolicy;
+  policy_origins?: string[];
+  /** The install window allows installing now. */
+  install_now?: boolean;
+  skipped?: string | null;
+  remind_after?: string | null;
+  bad_versions?: string[];
+  whats_new_seen?: string | null;
+  download?: UpdateDownload;
+  /** A downloaded, verified update that installs when Arcalo quits. */
+  ready?: string | null;
+  /** „Zur vorherigen Version zurückkehren“ is possible. */
+  rollback?: { from: string; to: string; created: string } | null;
+  /** Reported once after a rollback. */
+  rolled_back?: { from: string; to: string; database: boolean } | null;
+}
+export type UpdateMode = "auto" | "notify" | "off";
+export type UpdateManagedField = "mode" | "source" | "github" | "pinned" | "window" | "interval";
+export interface UpdatePolicy {
+  mode: UpdateMode;
+  /** The organization switched updates off: not even a manual check. */
+  disabled: boolean;
+  source_url: string | null;
+  allow_github_fallback: boolean;
+  pinned_version: string | null;
+  /** `18:00–07:00` */
+  install_window: string | null;
+  check_interval_hours: number;
+  managed: UpdateManagedField[];
+}
+export interface UpdateDownload {
+  phase: "idle" | "downloading" | "paused" | "ready" | "failed";
+  downloaded: number;
+  total: number | null;
+  percent: number | null;
+  error: string | null;
+}
+export interface UpdatePrefs {
+  mode: UpdateMode;
+  source_url: string;
+  allow_github_fallback: boolean;
+  check_interval_hours: number;
+  restore_session: boolean;
 }
 export interface UpdateProgress {
   downloaded: number;

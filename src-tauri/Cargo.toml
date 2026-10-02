@@ -23,11 +23,14 @@ serde_json = "1.0.151"
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
+# The native question of the update rollback, shown before the window exists.
+rfd = { version = "0.16", default-features = false, features = ["gtk3", "common-controls-v6"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+semver = "1"
 tokio = { version = "1.53.1", features = ["sync", "time"] }
 # Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
 arboard = { version = "3", default-features = false }

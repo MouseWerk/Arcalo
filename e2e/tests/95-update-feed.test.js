@@ -24,7 +24,12 @@ const next = (v) => v.replace(/^(\d+)\.(\d+)\.(\d+).*$/, (_, a, b, c) => `${a}.$
 before(async () => {
   feed = await startFeed({ key, version: "0.0.0" });
   app = await launch({ env: { ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url } });
+  // „Nur benachrichtigen“: the click-to-install flow this file covers (the background download
+  // of the mode „automatisch“, the default since 1.9, is 126-update-background.test.js).
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...view.settings, updates: { ...view.settings.updates, mode: "notify" } } });
   const status = await app.invoke("update_status");
+  assert.equal(status.policy.mode, "notify");
   feed.version = next(status.current_version);
 });
 after(async () => {

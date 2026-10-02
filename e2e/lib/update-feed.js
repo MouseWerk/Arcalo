@@ -3,7 +3,9 @@
 // user can meet (tampered file, 404, a download cut off midway, a slow download).
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 
 /** A fresh Ed25519 key in minisign format, as the Tauri updater reads it. */
 export function throwawayKey() {
@@ -34,11 +36,13 @@ export function throwawayKey() {
 /**
  * Serves `/latest.json` and `/annalo-update.bin`. `feed.mode`: "ok", "tampered" (one byte of the
  * file changed after signing), "missing" (latest.json 404), "cut" (the connection drops at a
- * third of the file), "slow" (the file trickles in over a few seconds, then fails its signature).
+ * third of the file), "slow" (the file trickles in over a few seconds, then fails its signature),
+ * "throttle" (the valid file trickles in over a few seconds). "ok" and "throttle" answer a
+ * `Range` request with the rest of the file (206); `feed.ranges` lists the offsets asked for.
  */
 export async function startFeed({ key, version, size = 3 * 1024 * 1024, notes = "## Neu\n\n- Getestet" }) {
   const file = crypto.randomBytes(size);
-  const feed = { mode: "ok", version, requests: [] };
+  const feed = { mode: "ok", version, requests: [], ranges: [] };
   const server = http.createServer((req, res) => {
     feed.requests.push(req.url);
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -54,16 +58,22 @@ export async function startFeed({ key, version, size = 3 * 1024 * 1024, notes = 
       return res.end(JSON.stringify(body));
     }
     if (req.url === "/annalo-update.bin") {
-      const bytes = Buffer.from(file);
+      let bytes = Buffer.from(file);
       if (feed.mode === "tampered" || feed.mode === "slow") bytes[bytes.length >> 1] ^= 0xff;
-      res.writeHead(200, { "content-type": "application/octet-stream", "content-length": bytes.length });
+      const range = /^bytes=(\d+)-$/.exec(req.headers.range ?? "");
+      if (range && (feed.mode === "ok" || feed.mode === "throttle")) {
+        const from = Number(range[1]);
+        feed.ranges.push(from);
+        bytes = bytes.subarray(Math.min(from, bytes.length));
+        res.writeHead(206, { "content-type": "application/octet-stream", "content-length": bytes.length, "content-range": `bytes ${from}-${file.length - 1}/${file.length}` });
+      } else res.writeHead(200, { "content-type": "application/octet-stream", "content-length": bytes.length });
       if (feed.mode === "cut") {
         res.write(bytes.subarray(0, bytes.length / 3));
         return setTimeout(() => req.socket.destroy(), 200);
       }
-      if (feed.mode === "slow") {
+      if (feed.mode === "slow" || feed.mode === "throttle") {
         let at = 0;
-        const step = Math.ceil(bytes.length / 20);
+        const step = Math.ceil(file.length / 20);
         const tick = setInterval(() => {
           if (res.destroyed) return clearInterval(tick);
           res.write(bytes.subarray(at, at + step));
@@ -88,4 +98,22 @@ export async function startFeed({ key, version, size = 3 * 1024 * 1024, notes = 
     });
   feed.server = server;
   return feed;
+}
+
+/**
+ * A mirrored release in a folder (an internal share): `latest.json` naming the file by its bare
+ * name, as the mirror script writes it, and the signed file next to it.
+ */
+export function writeShare(dir, { key, version, size = 256 * 1024 }) {
+  const file = crypto.randomBytes(size);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "Arcalo-update.bin"), file);
+  const body = {
+    version,
+    notes: "## Neu\n\n- Von der Freigabe",
+    pub_date: "2026-10-01T12:00:00Z",
+    platforms: { "linux-x86_64": { signature: key.sign(file, version), url: "Arcalo-update.bin" } },
+  };
+  fs.writeFileSync(path.join(dir, "latest.json"), JSON.stringify(body));
+  return file;
 }

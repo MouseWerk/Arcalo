@@ -88,11 +88,15 @@ pub struct AfterUpdate {
     pub version: String,
     /// This start runs that version (otherwise the installer did not finish, e.g. UAC denied).
     pub installed: bool,
+    /// The version the update came from (markers from before 1.9 have none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
-/// Notes that `version` is being installed (see [`take_restart_marker`]).
-pub fn write_restart_marker(dir: &Path, version: &str) -> std::io::Result<()> {
-    std::fs::write(dir.join(RESTART_MARKER), version.trim())
+/// Notes that `version` is being installed over `from` (see [`take_restart_marker`]).
+pub fn write_restart_marker(dir: &Path, version: &str, from: Option<&str>) -> std::io::Result<()> {
+    let from = from.map(|f| format!("\nfrom={}", f.trim())).unwrap_or_default();
+    std::fs::write(dir.join(RESTART_MARKER), format!("{}{from}", version.trim()))
 }
 
 /// Forgets the marker (the install failed and this process keeps running).
@@ -105,10 +109,15 @@ pub fn take_restart_marker(dir: &Path, current: &str) -> Option<AfterUpdate> {
     let path = dir.join(RESTART_MARKER);
     let text = std::fs::read_to_string(&path).ok()?;
     let _ = std::fs::remove_file(&path);
-    let version = text.trim().trim_start_matches('v').to_string();
+    let mut lines = text.lines();
+    let version = lines.next().unwrap_or_default().trim().trim_start_matches('v').to_string();
     let target = parse(&version)?;
     let installed = parse(current).is_some_and(|c| c.cmp_precedence(&target).is_eq());
-    Some(AfterUpdate { version, installed })
+    let from = lines
+        .find_map(|l| l.trim().strip_prefix("from="))
+        .map(|f| f.trim().trim_start_matches('v').to_string())
+        .filter(|f| parse(f).is_some());
+    Some(AfterUpdate { version, installed, from })
 }
 
 /// Whole download percentage, `None` while the size is unknown.
@@ -192,13 +201,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(take_restart_marker(&dir, "1.6.0"), None);
-        write_restart_marker(&dir, "1.6.0").unwrap();
-        assert_eq!(take_restart_marker(&dir, "1.6.0"), Some(AfterUpdate { version: "1.6.0".into(), installed: true }));
+        write_restart_marker(&dir, "1.6.0", None).unwrap();
+        assert_eq!(
+            take_restart_marker(&dir, "1.6.0"),
+            Some(AfterUpdate { version: "1.6.0".into(), installed: true, from: None })
+        );
         assert_eq!(take_restart_marker(&dir, "1.6.0"), None, "removed after reading");
         // The installer did not finish (UAC denied, cancelled): the old version starts again.
-        write_restart_marker(&dir, "1.6.0").unwrap();
-        assert_eq!(take_restart_marker(&dir, "1.5.0"), Some(AfterUpdate { version: "1.6.0".into(), installed: false }));
-        write_restart_marker(&dir, "1.6.0").unwrap();
+        write_restart_marker(&dir, "1.6.0", Some("1.5.0")).unwrap();
+        assert_eq!(
+            take_restart_marker(&dir, "1.5.0"),
+            Some(AfterUpdate { version: "1.6.0".into(), installed: false, from: Some("1.5.0".into()) })
+        );
+        // A marker from before 1.9: only the version.
+        std::fs::write(dir.join(RESTART_MARKER), "v1.6.0\n").unwrap();
+        assert_eq!(
+            take_restart_marker(&dir, "1.6.0"),
+            Some(AfterUpdate { version: "1.6.0".into(), installed: true, from: None })
+        );
+        write_restart_marker(&dir, "1.6.0", None).unwrap();
         clear_restart_marker(&dir);
         assert_eq!(take_restart_marker(&dir, "1.6.0"), None);
         std::fs::write(dir.join(RESTART_MARKER), "not a version").unwrap();

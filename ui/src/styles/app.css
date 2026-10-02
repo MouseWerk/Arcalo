@@ -3264,3 +3264,110 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .filing-test { display: flex; gap: 8px; align-items: center; }
 .filing-test > input { width: 220px; }
 .filing-result { padding: 4px 0 2px; }
+
+/* ---- updates 2.0: status-bar hint, „Neu in Arcalo“, managed settings ---- */
+
+.sb-update { gap: 6px; min-width: 0; max-width: min(640px, 60vw); }
+.sb-update > svg { flex: none; color: var(--accent-text); }
+.sb-update[data-state="failed"] > svg { color: var(--warning); }
+.sb-update-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.sb-update-bar { position: relative; width: 56px; height: 4px; border-radius: 2px; background: var(--border-strong); overflow: hidden; flex: none; }
+.sb-update-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: inherit; transition: width 0.3s ease; }
+.sb-update-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-2);
+  flex: none;
+}
+.sb-update-btn:hover { background: var(--bg-hover); color: var(--text); }
+.sb-update-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  flex: none;
+}
+.sb-update-action:hover { background: var(--bg-hover); }
+.sb-update-action.primary { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-text); }
+.sb-update-action.primary:hover { background: var(--accent-soft); }
+.sb-update-action:disabled { opacity: 0.6; }
+.sb-update-ready { padding-right: 4px; }
+.sb-update-ready:hover { background: transparent; }
+
+.whatsnew { display: flex; flex-direction: column; gap: 18px; }
+.whatsnew-version-title { margin: 0 0 8px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); }
+.whatsnew-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.whatsnew-item { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; }
+.whatsnew-item.has-image { grid-template-columns: 168px 1fr; }
+.whatsnew-image {
+  width: 168px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top left;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-canvas);
+}
+.whatsnew-dot { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); }
+.whatsnew-item-title { font-weight: 600; color: var(--text); margin: 2px 0 3px; }
+.whatsnew-text p { margin: 0; color: var(--text-2); line-height: 1.5; }
+.whatsnew-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.whatsnew-action:hover { text-decoration: underline; }
+.whatsnew-loading { display: grid; place-items: center; padding: 32px 0; }
+.release-notes { max-height: 60vh; overflow: auto; }
+@media (max-width: 720px) {
+  .whatsnew-item.has-image { grid-template-columns: 1fr; }
+  .whatsnew-image { width: 100%; }
+}
+
+.whatsnew-versions { display: flex; flex-direction: column; }
+.whatsnew-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.whatsnew-row:last-of-type { border-bottom: 0; }
+.whatsnew-row-version { font-weight: 500; color: var(--text); }
+.whatsnew-more { align-self: flex-start; margin-top: 4px; }
+
+.update-managed { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 10px; margin-bottom: 6px; border-radius: var(--r-sm); background: var(--accent-soft); }
+.update-managed-origin { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.update-field { display: flex; align-items: center; gap: 8px; justify-content: flex-end; min-width: 0; }
+.update-source .update-source-input { width: 280px; max-width: 100%; }
+.managed-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+@container pane (max-width: 640px) {
+  .update-source .update-source-input { width: 180px; }
+  .sb-update { max-width: 46vw; }
+}

@@ -243,9 +243,23 @@ export const api = {
   restart: () => call<void>("app_restart"),
   updateStatus: () => call<T.UpdateStatus>("update_status"),
   /** Asks the release feed; null when this is the newest version. Never installs. */
-  updateCheck: () => call<T.UpdateInfo | null>("update_check"),
+  updateCheck: (manual = false) => call<T.UpdateInfo | null>("update_check", { manual }),
   /** Downloads and installs the found update, then restarts (`update://progress` events). */
   updateInstall: () => call<void>("update_install"),
+  /** Background download: continue after a pause or a failure, or pause it (`update://state` events). */
+  updateDownload: () => call<void>("update_download"),
+  updatePause: () => call<void>("update_pause"),
+  /** Installs the downloaded update now and restarts. */
+  updateRestartNow: () => call<void>("update_restart_now"),
+  updateSkip: (version: string) => call<void>("update_skip", { version }),
+  /** Undoes a skipped version and „Später erinnern“. */
+  updateUnskip: () => call<void>("update_unskip"),
+  updateRemind: (days: number) => call<string>("update_remind", { days }),
+  updateWhatsNewSeen: (version: string) => call<void>("update_whats_new_seen", { version }),
+  /** „Zur vorherigen Version zurückkehren“: restores the database of before the update and the previous program. */
+  updateRollback: () => call<void>("update_rollback"),
+  /** Release notes (Markdown) of a version the app does not bundle, from the repository. */
+  updateReleaseNotes: (version: string) => call<string>("update_release_notes", { version }),
 
   // developer log (Settings → Protokoll)
   devlogWrite: (level: T.DevLogLevel, source: string, message: string) => call<void>("devlog_write", { level, source, message }),
