@@ -303,7 +303,7 @@ fn pages<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Group
     );
     let mut st = db.conn().prepare(&sql)?;
     let found: Vec<(Page, String)> = st
-        .query_map(rusqlite::params_from_iter(args), |r| Ok((map_page(r)?, r.get::<_, String>(9)?)))?
+        .query_map(rusqlite::params_from_iter(args), |r| Ok((map_page(r)?, r.get::<_, String>(10)?)))?
         .collect::<rusqlite::Result<_>>()?;
 
     // Schemas of the parents, loaded once each.

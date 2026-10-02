@@ -54,6 +54,11 @@ fn is_md(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("md"))
 }
 
+/// A JSON Canvas file (`.canvas`, [`crate::canvas`]).
+fn is_canvas(p: &Path) -> bool {
+    p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(crate::canvas::EXTENSION))
+}
+
 fn stem(p: &Path) -> String {
     p.file_stem().and_then(|s| s.to_str()).unwrap_or(tr!("Ohne Titel", "Untitled")).to_owned()
 }
@@ -106,6 +111,8 @@ struct Planned {
     title: String,
     icon: &'static str,
     content: Option<String>,
+    /// A canvas (`.canvas`): `content` is its JSON, kept as it is.
+    canvas: bool,
     /// Folder of the note in the vault (relative), for the attachment renames.
     dir: PathBuf,
     children: Vec<Planned>,
@@ -168,10 +175,18 @@ fn create_pages(db: &Database, parent: i64, pages: Vec<Planned>, renamed: &[(Str
             // The notes refer to renamed files by their old names.
             for (old, new, scope) in renamed {
                 if p.dir.starts_with(scope) {
-                    content = crate::attachment_manager::replace_file_refs(&content, old, new);
+                    content = if p.canvas {
+                        crate::canvas::rename_file(&content, old, new)
+                    } else {
+                        crate::attachment_manager::replace_file_refs(&content, old, new)
+                    };
                 }
             }
-            db.save_page_content(page.id, &content)?;
+            if p.canvas {
+                db.make_canvas(page.id, &content)?;
+            } else {
+                db.save_page_content(page.id, &content)?;
+            }
         }
         create_pages(db, page.id, p.children, renamed)?;
     }
@@ -239,7 +254,7 @@ impl Walk<'_> {
                 };
                 self.report.folders += 1;
                 let children = self.dir(path)?;
-                out.push(Planned { title, icon: "folder", content, dir: here.clone(), children });
+                out.push(Planned { title, icon: "folder", content, canvas: false, dir: here.clone(), children });
             } else if is_md(path) {
                 let title = stem(path);
                 if folder_names.iter().any(|f| f == &title) {
@@ -251,6 +266,30 @@ impl Walk<'_> {
                     title,
                     icon: "file-text",
                     content: Some(content),
+                    canvas: false,
+                    dir: here.clone(),
+                    children: vec![],
+                });
+            } else if is_canvas(path) {
+                self.tick()?;
+                let bytes = fs::read(path).at(path)?;
+                let (text, _) = decode_text(&bytes);
+                let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned();
+                if bytes.len() > MAX_NOTE_BYTES || !crate::canvas::is_valid(&text) {
+                    self.report.skipped += 1;
+                    self.report.warnings.push(trf!(
+                        "{}: keine lesbare Canvas-Datei, übersprungen",
+                        "{}: not a readable canvas file, skipped",
+                        self.rel(path).display()
+                    ));
+                    continue;
+                }
+                self.report.pages += 1;
+                out.push(Planned {
+                    title: stem(path),
+                    icon: crate::canvas::ICON,
+                    content: Some(text),
+                    canvas: true,
                     dir: here.clone(),
                     children: vec![],
                 });
@@ -325,11 +364,12 @@ fn is_plain_file(p: &Path) -> bool {
 }
 
 fn has_markdown(dir: &Path) -> bool {
-    visible_entries(dir).is_ok_and(|v| v.iter().any(|p| if p.is_dir() { has_markdown(p) } else { is_md(p) }))
+    visible_entries(dir)
+        .is_ok_and(|v| v.iter().any(|p| if p.is_dir() { has_markdown(p) } else { is_md(p) || is_canvas(p) }))
 }
 
 /// Characters Windows does not allow in file names.
-fn file_name(title: &str) -> String {
+pub(crate) fn file_name(title: &str) -> String {
     let cleaned: String =
         title
             .chars()
@@ -359,7 +399,8 @@ fn file_name(title: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PagePath {
     pub page_id: i64,
-    /// `Ordner/Titel.md`, `None` for a page with subpages and no content of its own.
+    /// `Ordner/Titel.md` (`Titel.canvas` for a canvas), `None` for a page with subpages and no
+    /// content of its own.
     pub file: Option<String>,
     /// `Ordner/Titel` for a page with subpages.
     pub folder: Option<String>,
@@ -390,7 +431,8 @@ impl Planner<'_> {
         for node in nodes {
             let base = file_name(&node.page.title);
             let written = has_content(node.page.id) || node.children.is_empty();
-            let file = written.then(|| self.unique(dir, &base, ".md"));
+            let ext = if node.page.kind.as_deref() == Some(crate::canvas::KIND) { ".canvas" } else { ".md" };
+            let file = written.then(|| self.unique(dir, &base, ext));
             let folder = (!node.children.is_empty()).then(|| self.unique(dir, &base, ""));
             out.push(PagePath { page_id: node.page.id, file, folder: folder.clone() });
             if let Some(sub) = folder {
@@ -420,6 +462,8 @@ pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
 pub struct VaultSnapshot {
     tree: Vec<PageNode>,
     contents: std::collections::HashMap<i64, String>,
+    /// An export that leaves Arcalo: note cards of canvases get the pages' current paths.
+    export: bool,
 }
 
 impl VaultSnapshot {
@@ -430,7 +474,7 @@ impl VaultSnapshot {
             .prepare_cached("SELECT id, content FROM pages WHERE deleted_at IS NULL")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
-        Ok(VaultSnapshot { tree, contents })
+        Ok(VaultSnapshot { tree, contents, export: false })
     }
 
     fn content(&self, id: i64) -> &str {
@@ -445,6 +489,7 @@ impl VaultSnapshot {
                 *c = crate::mail::export_text(c);
             }
         }
+        self.export = true;
         self
     }
 }
@@ -465,12 +510,54 @@ pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path)
         "",
         &mut planned,
     );
+    // Canvases: the page of each note card by title (the first of a title, like links).
+    let mut kinds: std::collections::HashMap<i64, bool> = std::collections::HashMap::new();
+    fn walk(nodes: &[PageNode], out: &mut std::collections::HashMap<i64, bool>) {
+        for n in nodes {
+            out.insert(n.page.id, n.page.kind.as_deref() == Some(crate::canvas::KIND));
+            walk(&n.children, out);
+        }
+    }
+    walk(&snap.tree, &mut kinds);
+    let mut by_title: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if snap.export {
+        let titles: std::collections::HashMap<i64, String> = {
+            fn titles(nodes: &[PageNode], out: &mut std::collections::HashMap<i64, String>) {
+                for n in nodes {
+                    out.insert(n.page.id, n.page.title.to_lowercase());
+                    titles(&n.children, out);
+                }
+            }
+            let mut out = std::collections::HashMap::new();
+            titles(&snap.tree, &mut out);
+            out
+        };
+        for path in &planned {
+            if let (Some(file), Some(title)) = (&path.file, titles.get(&path.page_id))
+                && file.ends_with(".md")
+            {
+                by_title.entry(title.clone()).or_insert_with(|| file.clone());
+            }
+        }
+    }
     let mut count = 0;
     let mut embedded: Vec<String> = vec![];
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for path in &planned {
-        let content = snap.content(path.page_id);
-        for name in crate::attachment_manager::export_files(content) {
+        let canvas = kinds.get(&path.page_id).copied().unwrap_or(false);
+        let moved;
+        let content = if canvas && snap.export {
+            moved = crate::canvas::with_paths(snap.content(path.page_id), &by_title);
+            moved.as_str()
+        } else {
+            snap.content(path.page_id)
+        };
+        let files = if canvas {
+            crate::canvas::files(content)
+        } else {
+            crate::attachment_manager::export_files(content)
+        };
+        for name in files {
             if seen.insert(name.clone()) {
                 embedded.push(name);
             }

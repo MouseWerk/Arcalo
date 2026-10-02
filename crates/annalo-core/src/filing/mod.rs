@@ -44,10 +44,11 @@ pub enum FileType {
     Mail,
     Bookmarks,
     Inbox,
+    Canvas,
 }
 
 impl FileType {
-    pub const ALL: [FileType; 7] = [
+    pub const ALL: [FileType; 8] = [
         FileType::Journal,
         FileType::Meeting,
         FileType::Voice,
@@ -55,6 +56,7 @@ impl FileType {
         FileType::Mail,
         FileType::Bookmarks,
         FileType::Inbox,
+        FileType::Canvas,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -66,6 +68,7 @@ impl FileType {
             FileType::Mail => "mail",
             FileType::Bookmarks => "bookmarks",
             FileType::Inbox => "inbox",
+            FileType::Canvas => "canvas",
         }
     }
 
@@ -83,6 +86,7 @@ impl FileType {
             FileType::Mail => [crate::mail::DEFAULT_PARENT, "Emails"],
             FileType::Bookmarks => ["Lesezeichen", "Bookmarks"],
             FileType::Inbox => ["", ""],
+            FileType::Canvas => ["Canvas", "Canvases"],
         }
     }
 
@@ -101,13 +105,14 @@ impl FileType {
             FileType::Mail => "mail",
             FileType::Bookmarks => "link",
             FileType::Inbox => "inbox",
+            FileType::Canvas => crate::canvas::ICON,
         }
     }
 
     pub fn default_granularity(self) -> Granularity {
         match self {
             FileType::Journal | FileType::Meeting | FileType::Voice | FileType::Mail => Granularity::Month,
-            FileType::Jira | FileType::Bookmarks | FileType::Inbox => Granularity::None,
+            FileType::Jira | FileType::Bookmarks | FileType::Inbox | FileType::Canvas => Granularity::None,
         }
     }
 }

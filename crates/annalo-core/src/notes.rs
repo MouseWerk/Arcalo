@@ -275,7 +275,7 @@ impl Database {
             id,
             updated_at,
             tags: self.page_tags(id)?,
-            unresolved_links: self.unresolved_links(wiki_links(content))?,
+            unresolved_links: self.unresolved_links(self.outgoing_links(id, content)?)?,
         })
     }
 
@@ -284,6 +284,10 @@ impl Database {
     /// embedding), so editing a long note rewrites and re-embeds only the edited section.
     pub(crate) fn reindex_page(&self, id: i64, content: &str) -> Result<()> {
         let conn = self.conn();
+        // A canvas is indexed by its cards' text, not by its JSON.
+        let canvas = self.is_canvas(id)?;
+        let canvas_text = if canvas { crate::canvas::index_markdown(content) } else { String::new() };
+        let text = if canvas { canvas_text.as_str() } else { content };
         // Old chunk rows by text (a text may occur more than once).
         let mut old: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
         {
@@ -298,7 +302,7 @@ impl Database {
         let mut fresh: Vec<(i64, String)> = vec![];
         {
             let mut mv = conn.prepare_cached("UPDATE notes_blocks SET position = ?2 WHERE id = ?1")?;
-            for (i, chunk) in chunks(content).into_iter().enumerate() {
+            for (i, chunk) in chunks(text).into_iter().enumerate() {
                 match old.get_mut(&chunk).and_then(|rows| rows.pop()) {
                     Some((_, pos)) if pos == i as i64 => {}
                     Some((row_id, _)) => {
@@ -321,7 +325,7 @@ impl Database {
             }
         }
         // Links and tags: only added and removed rows.
-        let links: Vec<String> = wiki_links(content).into_iter().map(|t| t.to_lowercase()).collect();
+        let links: Vec<String> = self.outgoing_links(id, content)?.into_iter().map(|t| t.to_lowercase()).collect();
         sync_rows(
             self,
             id,
@@ -333,12 +337,17 @@ impl Database {
         sync_rows(
             self,
             id,
-            &tags(content),
+            &tags(text),
             "SELECT tag FROM page_tags WHERE page_id = ?1",
             "DELETE FROM page_tags WHERE page_id = ?1 AND tag = ?2",
             "INSERT OR IGNORE INTO page_tags (page_id, tag) VALUES (?1, ?2)",
         )?;
-        self.reindex_tasks(id, content)
+        self.reindex_tasks(id, if canvas { "" } else { content })
+    }
+
+    /// The pages a page links to: `[[links]]` of a note, note cards and text-card links of a canvas.
+    pub(crate) fn outgoing_links(&self, id: i64, content: &str) -> Result<Vec<String>> {
+        Ok(if self.is_canvas(id)? { crate::canvas::links(content) } else { wiki_links(content) })
     }
 
     /// The link targets among `targets` that name no page (outside the trash), in their
@@ -446,12 +455,16 @@ impl Database {
         let content: String = conn.query_row("SELECT content FROM pages WHERE id = ?1", [id], |r| r.get(0))?;
         let backlinks = {
             let mut st = conn.prepare_cached(
-                "SELECT p.id, p.title, p.icon, p.content FROM page_links l JOIN pages p ON p.id = l.from_page
+                "SELECT p.id, p.title, p.icon, p.content, p.kind FROM page_links l JOIN pages p ON p.id = l.from_page
                  WHERE l.target = ?1 AND p.id <> ?2 AND p.deleted_at IS NULL ORDER BY p.updated_at DESC",
             )?;
             let needle = page.title.to_lowercase();
             st.query_map(params![needle, id], |r| {
                 let content: String = r.get(3)?;
+                if r.get::<_, Option<String>>(4)?.as_deref() == Some(crate::canvas::KIND) {
+                    let context = tr!("Karte auf dieser Canvas", "Card on this canvas").to_owned();
+                    return Ok(Backlink { page_id: r.get(0)?, title: r.get(1)?, icon: r.get(2)?, context });
+                }
                 let context = content
                     .lines()
                     .find(|l| {
@@ -467,7 +480,7 @@ impl Database {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?
         };
-        let unresolved_links = self.unresolved_links(wiki_links(&content))?;
+        let unresolved_links = self.unresolved_links(self.outgoing_links(id, &content)?)?;
         Ok(PageDoc { page, content, tags, backlinks, unresolved_links })
     }
 
@@ -495,7 +508,11 @@ impl Database {
             let mut changed = 0;
             let now = chrono::Utc::now();
             for (pid, content) in sources {
-                let updated = replace_link_target(&content, &old, title);
+                let updated = if self.is_canvas(pid)? {
+                    crate::canvas::rename_page(&content, &old, title)
+                } else {
+                    replace_link_target(&content, &old, title)
+                };
                 if updated != content {
                     // Rewritten by the rename, not by the user: keep what they wrote.
                     self.store_version(pid, &content, now)?;

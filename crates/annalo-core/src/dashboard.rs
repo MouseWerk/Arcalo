@@ -620,7 +620,7 @@ fn project_pages(db: &Database, nr: &str, limit: usize) -> Result<Vec<Page>> {
         crate::db::PAGE_COLS
     ))?;
     let mut out = vec![];
-    for row in st.query_map([nr], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(9)?)))? {
+    for row in st.query_map([nr], |r| Ok((crate::db::map_page(r)?, r.get::<_, String>(10)?)))? {
         let (page, content) = row?;
         let linked = crate::pagework::page_reference(&content).is_some_and(|r| {
             let r = r.trim();
