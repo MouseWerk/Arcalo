@@ -116,6 +116,9 @@ test("the setup is completed with the keyboard and writes every answer", async (
   await app.type(backupDir);
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await settings()).backup_dir === backupDir, { timeoutMsg: "backup folder not saved" });
+  // Security (1.10): optional, everything off; nothing chosen here.
+  await next(/^Security$/);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".fr-sec [role=\"switch\"][aria-checked=\"true\"]").length), 0, "encryption and app lock off by default");
   await next(/desktop/);
   assert.ok(await app.browser.execute(() => [...document.querySelectorAll(".fr-step-desktop button")].some((b) => /Try it now/.test(b.textContent))));
   await next(/all set/);
@@ -129,6 +132,7 @@ test("the setup is completed with the keyboard and writes every answer", async (
   assert.match(summary.calendar, /Outlook/);
   assert.equal(summary.sync, "Off");
   assert.match(summary.backup, new RegExp(path.basename(backupDir)));
+  assert.equal(summary.security, "Off");
   // No time tracking chosen: the tips leave out /zeit (/time), the others stay.
   const tips = await app.text(".fr-tips");
   assert.doesNotMatch(tips, /\/(zeit|time)/);

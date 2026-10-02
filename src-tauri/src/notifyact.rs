@@ -427,6 +427,15 @@ fn test_mode() -> bool {
 
 /// Shows `note` with its buttons (held back during a focus session like every notification).
 pub fn show(app: &AppHandle, note: Note) {
+    // App-Sperre: a notification without content and without buttons (they would act unlocked).
+    if crate::security::is_locked() {
+        crate::devlog::debug("notify", "shown without content (locked)");
+        if !test_mode() {
+            let (title, body) = crate::security::locked_notification();
+            crate::desktop::notify(app, title, body);
+        }
+        return;
+    }
     if crate::focus::hold(app, &note.title, &note.body) {
         return;
     }
@@ -579,6 +588,11 @@ pub fn register(app: &AppHandle) {
 /// A click arrived (button, notification, Windows protocol activation). `ready`: the UI
 /// listens already (false during a first start, then opening waits for it).
 pub fn activate(app: &AppHandle, subject: Subject, act: Act, ready: bool) {
+    // A button of a notification shown before the lock: only the lock screen.
+    if crate::security::is_locked() {
+        crate::desktop::show_main(app);
+        return;
+    }
     if let Err(e) = handle(app, &subject, act, ready) {
         crate::desktop::notify(app, tr!("Aktion fehlgeschlagen", "Action failed"), &e.to_string());
     }

@@ -61,6 +61,10 @@ static PENDING: Mutex<Option<Action>> = Mutex::new(None);
 /// Runs a jump-list action. Page actions go through the main window; `ready` is false while
 /// the UI of a first start is still loading, then the action waits for `jump_take`.
 pub fn run(app: &AppHandle, action: Action, ready: bool) {
+    if crate::security::is_locked() {
+        crate::desktop::show_main(app);
+        return;
+    }
     match action {
         Action::Capture => desktop::open_capture(app, false),
         Action::Search => desktop::open_search(app, false),

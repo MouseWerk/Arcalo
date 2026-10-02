@@ -1,6 +1,7 @@
 // The setup steps. Each one is thin: it writes its answer to the settings at once (write.ts,
 // flow.ts) through the existing APIs, and links to its settings section for the rest.
 
+import { security } from "../lib/security";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Check, CheckCircle2, Cloud, Cpu, CalendarRange, Eye, EyeOff, FilePlus2, FolderInput, FolderOpen, Globe, KeyRound, LayoutDashboard, Loader2, Lock, MinusCircle, Monitor, Moon, PlugZap, RefreshCw, Server, ShieldCheck, Sun, XCircle, Zap,
@@ -829,12 +830,18 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [ics, setIcs] = useState(0);
   const [token, setToken] = useState(false);
+  const encrypt = useFirstRun((st) => !!st.encrypt);
+  const [sec, setSec] = useState({ encrypted: false, lock: false });
   useEffect(() => {
+    Promise.all([security.cipherStatus(), security.lockStatus()]).then(
+      ([c, l]) => setSec({ encrypted: c.state === "encrypted", lock: l.config.mode !== "off" && l.has_pin }),
+      () => {},
+    );
     api.desktopInfo().then((i) => setAutostart(i.autostart), () => setAutostart(null));
     api.calendarStatus().then((c) => setIcs(c.sources.filter((x) => x.kind !== "outlook").length), () => {});
     api.gitSyncStatus().then((g) => setToken(g.token_set), () => {});
   }, []);
-  const rows = summaryRows(view.settings, { t, weekdays: weekdayLabels(1), keys: view.provider_keys, autostart, icsCount: ics, workspace, gitTokenSet: token });
+  const rows = summaryRows(view.settings, { t, weekdays: weekdayLabels(1), keys: view.provider_keys, autostart, icsCount: ics, workspace, gitTokenSet: token, security: { encrypt, ...sec } });
   const capture = view.settings.capture_shortcut;
   const tips: [string, TKey][] = [
     [keys("Mod K"), "fr.tip.palette"],

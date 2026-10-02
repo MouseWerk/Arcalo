@@ -137,6 +137,10 @@ fn level_icon(l: AlertLevel) -> &'static str {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    // An encrypted workspace opens with its recovery key (the CLI has no credential store).
+    if let Ok(code) = std::env::var("ARCALO_RECOVERY_KEY") {
+        annalo_core::cipher::set_key(Some(annalo_core::cipher::DbKey::from_recovery_code(&code)?));
+    }
     let db = Database::open(&cli.db)?;
     let now = Utc::now();
     let t = Thresholds::default();

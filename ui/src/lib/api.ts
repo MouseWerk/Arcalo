@@ -7,7 +7,10 @@ import { t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
 import type * as G from "./graph";
 
-const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
+// App-Sperre: a command refused while locked never settles (the app behind the lock screen is
+// unmounted; its last requests are simply dropped instead of showing errors).
+const call = <R>(cmd: string, args?: Record<string, unknown>) =>
+  invoke<R>(cmd, args).catch((e: unknown) => (e === "app-locked" ? new Promise<R>(() => {}) : Promise.reject(e)));
 
 export const api = {
   // pages

@@ -147,8 +147,10 @@ pub struct EntryFilter {
 }
 
 impl Database {
+    /// Opens (or creates) the workspace at `path`; an encrypted file is opened with the key of
+    /// this process (see [`crate::cipher`]).
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::init(Connection::open(path)?)
+        Self::init(crate::cipher::open_conn(path.as_ref(), rusqlite::OpenFlags::default())?)
     }
 
     pub fn open_in_memory() -> Result<Self> {
@@ -176,8 +178,8 @@ impl Database {
     /// and a save never waits for them. Refuses a database this build cannot read.
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
         use rusqlite::OpenFlags;
-        let conn = Connection::open_with_flags(
-            path,
+        let conn = crate::cipher::open_conn(
+            path.as_ref(),
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.execute_batch("PRAGMA temp_store = MEMORY;")?;

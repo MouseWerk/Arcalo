@@ -40,7 +40,8 @@ import { CalendarSection } from "./settings/CalendarSection";
 import { VoiceSection } from "./settings/VoiceSection";
 import { JiraSection } from "./settings/JiraSection";
 import { FilingSection } from "./settings/FilingSection";
-import { FolderTree } from "lucide-react";
+import { FolderTree, LockKeyhole } from "lucide-react";
+import { SecuritySection } from "./settings/SecuritySection";
 import { BriefingSection } from "./settings/BriefingSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
@@ -48,7 +49,7 @@ import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "security" | "desktop" | "admin" | "logs" | "about";
 const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     id: "general",
@@ -88,6 +89,7 @@ const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: t
     items: [
       { id: "backup", label: "nav.backup", icon: DatabaseBackup },
       { id: "privacy", label: "nav.privacy", icon: Shield },
+      { id: "security", label: "nav.security", icon: LockKeyhole },
       { id: "network", label: "nav.network", icon: Globe },
       { id: "admin", label: "nav.admin", icon: SlidersHorizontal },
     ],
@@ -423,6 +425,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         return <NotificationsSection draft={draft} update={u} />;
       case "backup":
         return <BackupSection draft={draft} update={u} />;
+      case "security":
+        return <SecuritySection draft={draft} update={u} onOpen={(id) => setSection(id as Section)} />;
       case "desktop":
         return <DesktopSection draft={draft} update={u} />;
       case "admin":

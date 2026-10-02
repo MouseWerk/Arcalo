@@ -16,7 +16,15 @@ minisign-verify = "0.2.5"
 plist = "1.10.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "rustls", "socks"] }
 rrule = "0.14.0"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+# The database can be encrypted (SQLCipher; plain files open unchanged). The crypto library is
+# chosen per platform below; see docs/security/encryption.md.
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher"] }
+# Encryption at rest: the PIN hash of the app lock, the passphrase-wrapped database key.
+argon2 = "0.5.3"
+aes-gcm = "0.10.3"
+data-encoding = "2.6.0"
+zeroize = "1.8"
+getrandom = "0.3"
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -27,6 +35,12 @@ tracing = "0.1.44"
 tokio = { version = "1.53.1", features = ["time", "macros", "rt"] }
 flacenc = "0.5"
 claxon = "0.4"
+
+# SQLCipher's crypto: macOS uses CommonCrypto (part of the system, nothing to build for both
+# architectures); Windows and Linux link a vendored static OpenSSL, so users need no OpenSSL.
+# Building it needs Perl and make (preinstalled on the CI runners).
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

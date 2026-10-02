@@ -16,6 +16,8 @@ import { App } from "./App";
 import { CaptureApp } from "./components/CaptureApp";
 import { SearchApp } from "./components/SearchApp";
 import { PresenterApp } from "./components/Presentation";
+import { KeyGateApp } from "./components/KeyGateApp";
+import { LockGate, PopupLockGate } from "./components/LockScreen";
 import { initBackdrop } from "./lib/backdrop";
 import { IS_MAC } from "./lib/platform";
 import { splashShown, startSplash } from "./lib/splash";
@@ -30,8 +32,10 @@ const captureMode = location.hash === "#capture" || new URLSearchParams(location
 const searchMode = !captureMode && (location.hash === "#search" || new URLSearchParams(location.search).has("search"));
 // The presenter view of a presentation on a second monitor.
 const presenterMode = location.hash === "#presenter";
+// The recovery screen of an encrypted database whose key is missing (instead of the app).
+const keygateMode = location.hash === "#keygate";
 
-startSplash(captureMode || searchMode || presenterMode);
+startSplash(captureMode || searchMode || presenterMode || keygateMode);
 trackModKey();
 installTooltips();
 
@@ -57,7 +61,7 @@ console.error = (...args: unknown[]) => {
 // Follow the OS theme until settings are loaded.
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 // Windows 11: the window can have a Mica or Acrylic backdrop that the app lets show through.
-if (!captureMode && !searchMode && !presenterMode) initBackdrop();
+if (!captureMode && !searchMode && !presenterMode && !keygateMode) initBackdrop();
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
 import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_frame"))
@@ -72,14 +76,31 @@ if (captureMode || searchMode || presenterMode) followLocale();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {captureMode ? <CaptureApp /> : searchMode ? <SearchApp /> : presenterMode ? <PresenterApp /> : <App />}
+    {keygateMode ? (
+      <KeyGateApp />
+    ) : captureMode ? (
+      <PopupLockGate>
+        <CaptureApp />
+      </PopupLockGate>
+    ) : searchMode ? (
+      <PopupLockGate>
+        <SearchApp />
+      </PopupLockGate>
+    ) : presenterMode ? (
+      <PresenterApp />
+    ) : (
+      // App-Sperre: the lock screen instead of the app while locked.
+      <LockGate>
+        <App />
+      </LockGate>
+    )}
   </StrictMode>,
 );
 
 // The main window starts hidden and appears once the app script runs: the page and the splash
 // styles are loaded by then, so there is no unstyled page and no white flash before the splash.
 // (Not after a requestAnimationFrame: hidden webviews do not run frames.)
-if (!captureMode && !searchMode && !presenterMode) {
+if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
   import("@tauri-apps/api/core")
     .then(({ invoke }) => invoke("window_ready"))
     .catch(() => {})

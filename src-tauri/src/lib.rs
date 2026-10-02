@@ -33,6 +33,7 @@ mod rebrand;
 mod recovery;
 mod rollback;
 mod secrets;
+mod security;
 mod syncmerge;
 mod timeblocks;
 mod updates;
@@ -3452,6 +3453,7 @@ fn spawn_activity_sampler(app: AppHandle) {
             ticks = ticks.wrapping_add(1);
             let state = app.state::<AppState>();
             let idle = probe.idle_duration();
+            security::tick(&app, idle);
             let window = probe.foreground_window();
             let threshold = Duration::from_secs(state.settings().idle_threshold_minutes * 60);
             let is_idle = idle.is_some_and(|d| d >= threshold);
@@ -3950,6 +3952,11 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
+                    // Locked: every shortcut shows the lock screen (no capture, search or recording).
+                    if security::is_locked() {
+                        desktop::show_main(app);
+                        return;
+                    }
                     match desktop::shortcut_role(app, shortcut) {
                         Some(desktop::Role::Capture) => desktop::open_capture(app, false),
                         Some(desktop::Role::Selection) => desktop::open_capture(app, true),
@@ -4025,6 +4032,13 @@ pub fn run() {
                 std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
             // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
             let restored = backupdest::apply_pending_restore(&dir);
+            // Encrypted database: its key, a requested switch (Settings → Sicherheit), and the
+            // recovery screen when the key is missing or wrong.
+            let prepared = security::prepare(&dir);
+            if let Some(reason) = prepared.blocked {
+                security::show_keygate(app.handle(), &dir, reason);
+                return Ok(());
+            }
             let db = match Database::open(dir.join(datadir::DB_FILE)) {
                 Ok(db) => db,
                 Err(e) => {
@@ -4032,6 +4046,7 @@ pub fn run() {
                     return Ok(());
                 }
             };
+            security::opened(&dir);
             // Settings of an older version are brought up to date once, then the sections
             // shared by every workspace on this computer are taken over.
             match db.migrate_settings() {
@@ -4065,7 +4080,7 @@ pub fn run() {
             }
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.
-            let mut notice = restored.or(startup.notice.clone());
+            let mut notice = prepared.notice.or(restored).or(startup.notice.clone());
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(
@@ -4191,6 +4206,8 @@ pub fn run() {
                 caps: Mutex::new(Capabilities::default()),
             });
 
+            // App-Sperre: locked before the first frame when it is on.
+            security::init_lock(app.handle());
             app.manage(desktop::Desktop::default());
             app.manage(voice::Voice::default());
             app.manage(calsync::CalendarSync::default());
@@ -4262,7 +4279,27 @@ pub fn run() {
             mail::clean_temp(app.handle());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(security::guard(tauri::generate_handler![
+            security::keygate_status,
+            security::keygate_unlock,
+            security::keygate_quit,
+            security::keygate_restore,
+            security::keygate_open_folder,
+            security::cipher_status,
+            security::cipher_recovery_key,
+            security::cipher_recovery_save,
+            security::cipher_switch,
+            security::cipher_password,
+            security::cipher_drop_old,
+            security::cipher_drop_plain_backups,
+            security::applock_status,
+            security::applock_configure,
+            security::applock_unlock,
+            security::applock_unlock_os,
+            security::applock_reset,
+            security::applock_lock_now,
+            security::applock_show_main,
+            security::applock_test_idle,
             workspace_tree,
             page_get,
             page_save,
@@ -4586,7 +4623,7 @@ pub fn run() {
             voice::voice_unfinished,
             voice::voice_unfinished_save,
             voice::voice_unfinished_discard,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
         .run(on_run_event);

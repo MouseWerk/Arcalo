@@ -251,6 +251,17 @@ impl SecretStore {
         Self::named(data_dir, &format!("jira-{id}"), &format!("jira_{}", id.replace('-', "_")))
     }
 
+    /// The key of the encrypted database (hex; Settings → Sicherheit). Per computer: a portable
+    /// copy elsewhere opens with the recovery key or the password (`cipher::WrappedKey`).
+    pub fn db_key(data_dir: &Path) -> Self {
+        Self::named(data_dir, "db-key", "db_key")
+    }
+
+    /// The Argon2id hash of the app lock's PIN (never the PIN itself).
+    pub fn app_lock_pin(data_dir: &Path) -> Self {
+        Self::named(data_dir, "app-lock-pin", "app_lock_pin")
+    }
+
     /// Human-readable name of the backend, shown in the settings.
     pub fn backend(&self) -> &'static str {
         label(kind(), crate::portable::active())
@@ -351,6 +362,8 @@ fn account_of_field(field: &str) -> Option<String> {
         "litellm_api_key" => "litellm-api-key".into(),
         "git_token" => "git-token".into(),
         "proxy_password" => annalo_core::network::PASSWORD_ACCOUNT.into(),
+        "db_key" => "db-key".into(),
+        "app_lock_pin" => "app-lock-pin".into(),
         f => {
             if let Some(id) = f.strip_prefix("ai_provider_") {
                 format!("ai-provider-{}", id.replace('_', "-"))

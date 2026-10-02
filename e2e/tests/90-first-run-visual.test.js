@@ -11,7 +11,7 @@ before(async () => (app = await launch({ demo: false, onboarding: true })));
 after(async () => app?.close());
 
 const SCENES = ["welcome", "notes", "time", "ai", "calendar", "capture", "local"];
-const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "desktop", "done"];
+const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "security", "desktop", "done"];
 
 async function look(lang, theme, extra = {}) {
   const view = await app.invoke("settings_get");
