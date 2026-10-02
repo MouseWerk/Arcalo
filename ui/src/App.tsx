@@ -163,6 +163,7 @@ export function App() {
           st.openPage(t.page_id, { newTab: !!t.new_tab });
         } else if (t.kind === "timesheet") st.openTab({ kind: "timesheet" });
         else if (t.kind === "issues") st.openTab({ kind: "issues" });
+        else if (t.kind === "graph") st.openTab({ kind: "graph" });
         else if (t.kind === "issue") void openIssueNote(t.key);
         else if (t.kind === "timer_stop" && timeTrackingEnabled()) {
           await st.refreshTimer();

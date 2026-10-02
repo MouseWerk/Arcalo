@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
 import { t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
+import type * as G from "./graph";
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
 
@@ -14,6 +15,12 @@ export const api = {
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
   /** What `![[target#anchor]]` shows (page, heading section or block). */
   pageEmbed: (target: string, anchor: string | null) => call<T.EmbedView>("page_embed", { target, anchor }),
+  // graph view
+  graphData: (filter: G.GraphFilter) => call<G.GraphData>("graph_data", { filter }),
+  graphPatch: (ids: number[], filter: G.GraphFilter) => call<G.GraphData>("graph_patch", { ids, filter }),
+  /** `layout`, `presets` or `view`, stored per workspace. */
+  graphStateGet: (key: "layout" | "presets" | "view") => call<unknown>("graph_state_get", { key }),
+  graphStateSet: (key: "layout" | "presets" | "view", value: unknown) => call<void>("graph_state_set", { key, value }),
   /** Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content. */
   savePage: (id: number, content: string) => call<T.SavedPage>("page_save", { id, content }),
   /** The child pages of a page with their typed properties (table and board views). */

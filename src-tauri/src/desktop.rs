@@ -662,6 +662,8 @@ pub enum SearchTarget {
     Issue {
         key: String,
     },
+    /// The graph view.
+    Graph,
 }
 
 /// Hides the quick search, brings the main window to the front and lets it open `target`.
