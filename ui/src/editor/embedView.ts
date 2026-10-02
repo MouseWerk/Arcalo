@@ -9,7 +9,7 @@ import { api, attachmentUrl, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { t } from "../lib/i18n";
 import type { EmbedView } from "../lib/types";
-import { embedLabel, embedProblem, type EmbedRef, type RichKind } from "./embedSyntax";
+import { embedLabel, embedProblem, withoutTitleHeading, type EmbedRef, type RichKind } from "./embedSyntax";
 import { renderPageHtml, type AttachmentSource } from "./shareHtml";
 import { track, whenVisible, PRINT_PREPARE_EVENT } from "./lazyRender";
 import { mountDiagram } from "./diagramView";
@@ -22,6 +22,8 @@ export interface EmbedHost {
   depth: number;
   /** Opens a page by title (creates it when missing, like a link). */
   onOpen: (target: string, newTab: boolean) => void;
+  /** The frame shows the title itself: a first heading that repeats it is left out. */
+  hideTitleHeading?: boolean;
 }
 
 const ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
@@ -86,7 +88,7 @@ export function hydrate(body: HTMLElement, host: EmbedHost, title: string): () =
     const ref: EmbedRef = { target: span.dataset.pageEmbed ?? "", anchor: span.dataset.anchor ?? null, alt: span.dataset.alt ?? null };
     const frame = el("div", "page-embed");
     blockOf(span).replaceWith(frame);
-    cleanups.push(mountPageEmbed(frame, ref, { ...host, stack: [...host.stack, title.toLowerCase()], depth: host.depth + 1 }));
+    cleanups.push(mountPageEmbed(frame, ref, { ...host, stack: [...host.stack, title.toLowerCase()], depth: host.depth + 1, hideTitleHeading: false }));
   }
   for (const code of body.querySelectorAll<HTMLElement>("pre > code")) {
     const lang = /language-([\w-]+)/.exec(code.className)?.[1]?.toLowerCase();
@@ -235,7 +237,8 @@ export function mountPageEmbed(dom: HTMLElement, ref: EmbedRef, host: EmbedHost)
       return;
     }
     if (v.content === shown && dom.dataset.state === "ready") return;
-    const html = await renderPageHtml(v.content, { id, files: NO_FILES, anchors: new Map(), live: { imageUrl: attachmentUrl } });
+    const md = host.hideTitleHeading && !ref.anchor ? withoutTitleHeading(v.content, v.title) : v.content;
+    const html = await renderPageHtml(md, { id, files: NO_FILES, anchors: new Map(), live: { imageUrl: attachmentUrl } });
     if (!alive) return;
     cleanupBody();
     const content = el("div", "pe-content prose");

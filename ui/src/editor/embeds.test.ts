@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockIds, countRichBlocks, embedProblem, markdownHeadings, mermaidKind, pageEmbedMarkdown, parsePageEmbed, richKind, splitTarget } from "./embedSyntax";
+import { blockIds, countRichBlocks, embedProblem, markdownHeadings, mermaidKind, pageEmbedMarkdown, parsePageEmbed, richKind, splitTarget, withoutTitleHeading } from "./embedSyntax";
 import { backendQuery, parseNoteQuery, sortRows } from "../lib/noteQuery";
 import type { QueryRow } from "../lib/dashtypes";
 
@@ -130,5 +130,18 @@ describe("share as HTML with embeds, diagrams and queries", () => {
     expect(html).toContain('<figure class="diagram"><svg id="d">');
     expect(html).toContain('<div class="query-result"><table class="query">');
     expect(html).not.toContain("language-mermaid");
+  });
+});
+
+describe("withoutTitleHeading", () => {
+  it("drops a first heading that repeats the title, front matter stays", () => {
+    expect(withoutTitleHeading("# Plan\n\nText", "plan")).toBe("Text");
+    expect(withoutTitleHeading("\n# Plan #\nText", "Plan")).toBe("\nText");
+    expect(withoutTitleHeading("---\nstatus: offen\n---\n# Plan\n\nText", "Plan")).toBe("---\nstatus: offen\n---\nText");
+  });
+  it("keeps other headings and text", () => {
+    expect(withoutTitleHeading("# Ziele\n\nText", "Plan")).toBe("# Ziele\n\nText");
+    expect(withoutTitleHeading("## Plan\nText", "Plan")).toBe("## Plan\nText");
+    expect(withoutTitleHeading("Text\n# Plan", "Plan")).toBe("Text\n# Plan");
   });
 });

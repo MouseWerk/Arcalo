@@ -81,6 +81,20 @@ export const noteTitle = (path: string) => baseName(path).replace(/\.md$/i, "");
 
 const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 
+/**
+ * Whether the text is a canvas the board can show and save: empty (a new board) or a JSON
+ * object. Anything else (a Git conflict, a broken file) must not be replaced by an empty board.
+ */
+export function isReadableCanvas(text: string): boolean {
+  if (!text.trim()) return true;
+  try {
+    const raw: unknown = JSON.parse(text);
+    return !!raw && typeof raw === "object" && !Array.isArray(raw);
+  } catch {
+    return false;
+  }
+}
+
 /** Reads a canvas; anything unreadable becomes an empty board (the file stays as it was until saved). */
 export function parseCanvas(text: string): CanvasDoc {
   let raw: unknown = null;

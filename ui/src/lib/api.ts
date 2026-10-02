@@ -247,6 +247,9 @@ export const api = {
   /** Saves the merged content, closes the conflict and syncs again. */
   resolveGitConflict: (pageId: number, content: string) =>
     call<{ doc: T.PageDoc; sync: T.GitSyncOutcome | null; sync_error: string | null }>("git_conflict_resolve", { pageId, content }),
+  /** A canvas conflict: this computer's version stays, the server's becomes a canvas next to it. */
+  keepBothGitConflict: (pageId: number) =>
+    call<{ doc: T.PageDoc; sync: T.GitSyncOutcome | null; sync_error: string | null }>("git_conflict_keep_both", { pageId }),
   appInfo: () => call<{ version: string; data_dir: string; platform: string; portable: boolean }>("app_info"),
   dataDirStatus: () => call<T.DataDirStatus>("data_dir_status"),
   inspectDataDir: (path: string) => call<T.DataDirTarget>("data_dir_inspect", { path }),

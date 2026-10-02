@@ -608,8 +608,18 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
+        // Still running (a stalled chunk): never two downloads into the same part file.
+        if updates.downloading.swap(true, Ordering::SeqCst) {
+            updates.pause.store(false, Ordering::SeqCst);
+            return Err(Error::State(
+                tr!(
+                    "Der Download läuft noch – bitte gleich noch einmal versuchen",
+                    "The download is still running – please try again in a moment"
+                )
+                .into(),
+            ));
+        }
         updates.pause.store(false, Ordering::SeqCst);
-        updates.downloading.store(true, Ordering::SeqCst);
         let staged = ensure_staged(&app).await;
         updates.downloading.store(false, Ordering::SeqCst);
         let staged = staged?.ok_or_else(|| Error::State(tr!("Download pausiert", "Download paused").into()))?;

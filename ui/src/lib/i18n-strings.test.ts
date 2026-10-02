@@ -136,6 +136,7 @@ const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
   { file: "lib/capture.ts", text: /^\[Hh\]eute|^\[Nn\]ext|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
   { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
   { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
+  { file: "views/settings/FilingSection.tsx", text: /^März$/, why: "month folder names exactly as the core writes them (filing::month_name), per folder language" },
   { file: "lib/jira.ts", text: /^höchste$/, why: "a priority name Jira sends (matched for its level, never shown)" },
   { file: /^(lib\/dayreview.ts|views\/DayReviewView.tsx)$/, text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
   {

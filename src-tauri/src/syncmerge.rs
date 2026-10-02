@@ -108,6 +108,8 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let current = db.page_doc(id)?.content;
                     let unchanged_here = c.mine.as_deref() == Some(current.as_str());
                     match (&c.theirs, c.conflict || !unchanged_here) {
+                        // A canvas the server holds as unreadable JSON stays as it is here.
+                        (Some(theirs), false) if is_canvas_path(&lower) && !annalo_core::canvas::is_valid(theirs) => {}
                         (Some(theirs), false) => {
                             if &current != theirs {
                                 db.snapshot_page(id)?;
@@ -206,26 +208,35 @@ pub struct ConflictView {
     base: Option<String>,
     mine: String,
     theirs: String,
+    /// A canvas (JSON): decided as a whole („Meine“, „Andere“, „Beide behalten“), not merged
+    /// by text.
+    canvas: bool,
     /// Block merge of this computer's current content and the server's version.
     merge: MergeResult,
+}
+
+fn is_canvas_page(db: &Database, page_id: i64) -> Result<bool> {
+    Ok(db.page_kind(page_id)?.as_deref() == Some(annalo_core::canvas::KIND))
 }
 
 /// Both versions of a conflicted page and their block merge.
 #[tauri::command(async)]
 pub fn git_conflict_get(state: State<AppState>, page_id: i64) -> Result<ConflictView> {
     let db = state.db();
-    let c = live(&db)?.into_iter().find(|c| c.page_id == page_id).ok_or_else(|| {
-        Error::State(
-            annalo_core::tr!(
-                "Für diese Seite gibt es keinen Konflikt (mehr)",
-                "There is no conflict (any more) for this page"
-            )
-            .into(),
-        )
-    })?;
+    let c = live(&db)?.into_iter().find(|c| c.page_id == page_id).ok_or_else(no_conflict)?;
     let mine = db.page_doc(page_id)?.content;
+    let canvas = is_canvas_page(&db, page_id)?;
     let merge = merge::merge3(c.base.as_deref(), &mine, &c.theirs);
-    Ok(ConflictView { page_id, title: db.page(page_id)?.title, at: c.at, base: c.base, mine, theirs: c.theirs, merge })
+    Ok(ConflictView {
+        page_id,
+        title: db.page(page_id)?.title,
+        at: c.at,
+        base: c.base,
+        mine,
+        theirs: c.theirs,
+        canvas,
+        merge,
+    })
 }
 
 #[derive(Serialize)]
@@ -237,25 +248,68 @@ pub struct Resolved {
 }
 
 /// „Übernehmen“: saves the merged content (the previous one is kept as a version), closes
-/// the conflict and syncs, so the server gets the result.
+/// the conflict and syncs, so the server gets the result. A canvas only takes a whole, valid
+/// JSON Canvas document (one side), never a text merge.
 #[tauri::command]
 pub async fn git_conflict_resolve(app: AppHandle, page_id: i64, content: String) -> Result<Resolved> {
+    close_and_sync(app, page_id, move |db| {
+        if is_canvas_page(db, page_id)? && !annalo_core::canvas::is_valid(&content) {
+            return Err(Error::State(
+                annalo_core::tr!("Keine gültige Canvas-Datei (JSON Canvas)", "Not a valid canvas file (JSON Canvas)")
+                    .into(),
+            ));
+        }
+        db.snapshot_page(page_id)?;
+        db.save_page_content(page_id, &content)
+    })
+    .await
+}
+
+/// „Beide behalten“ for a canvas: this computer's version stays in the page, the server's
+/// becomes a new canvas next to it („<Titel> (Server)“).
+#[tauri::command]
+pub async fn git_conflict_keep_both(app: AppHandle, page_id: i64) -> Result<Resolved> {
+    close_and_sync(app, page_id, move |db| {
+        let c = load(db).into_iter().find(|c| c.page_id == page_id).ok_or_else(no_conflict)?;
+        keep_theirs_as_copy(db, page_id, &c.theirs).map(|_| ())
+    })
+    .await
+}
+
+/// The server's version of a conflicted canvas as a new canvas below the same parent.
+fn keep_theirs_as_copy(db: &Database, page_id: i64, theirs: &str) -> Result<i64> {
+    let page = db.page(page_id)?;
+    let title = crate::unique_title(db, &format!("{} (Server)", page.title))?;
+    let copy = db.create_page(page.parent_id, &title, Some(annalo_core::canvas::ICON))?;
+    db.make_canvas(copy.id, theirs)?;
+    Ok(copy.id)
+}
+
+fn no_conflict() -> Error {
+    Error::State(
+        annalo_core::tr!(
+            "Für diese Seite gibt es keinen Konflikt (mehr)",
+            "There is no conflict (any more) for this page"
+        )
+        .into(),
+    )
+}
+
+/// Applies `decide` and closes the conflict in one transaction, then syncs.
+async fn close_and_sync(
+    app: AppHandle,
+    page_id: i64,
+    decide: impl FnOnce(&Database) -> Result<()> + Send + 'static,
+) -> Result<Resolved> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         {
             let db = state.db();
             if !live(&db)?.iter().any(|c| c.page_id == page_id) {
-                return Err(Error::State(
-                    annalo_core::tr!(
-                        "Für diese Seite gibt es keinen Konflikt (mehr)",
-                        "There is no conflict (any more) for this page"
-                    )
-                    .into(),
-                ));
+                return Err(no_conflict());
             }
             db.atomic(|| {
-                db.snapshot_page(page_id)?;
-                db.save_page_content(page_id, &content)?;
+                decide(&db)?;
                 let rest: Vec<Conflict> = load(&db).into_iter().filter(|c| c.page_id != page_id).collect();
                 store(&db, &rest)
             })?;
@@ -479,5 +533,31 @@ mod tests {
         run(&a, "a", None).unwrap();
         assert_eq!(live_titles(&a), ["Heute", "Notiz", "Plan", "Projekt"]);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn canvas_conflicts_are_decided_whole() {
+        let db = Database::open_in_memory().unwrap();
+        let mine =
+            r#"{"nodes":[{"id":"a","type":"text","text":"hier","x":0,"y":0,"width":10,"height":10}],"edges":[]}"#;
+        let theirs =
+            r#"{"nodes":[{"id":"b","type":"text","text":"dort","x":0,"y":0,"width":10,"height":10}],"edges":[]}"#;
+        let board = db.create_page(None, "Board", None).unwrap();
+        db.make_canvas(board.id, mine).unwrap();
+        let now = Local::now();
+        // Unreadable JSON from the server never replaces a readable board.
+        let broken = "<<<<<<< ours\n{}";
+        let out = apply(&db, &[change("Board.canvas", Some(mine), Some(mine), Some(broken), false)], now).unwrap();
+        assert!(out.pages.is_empty());
+        assert_eq!(db.page_doc(board.id).unwrap().content, mine);
+        // „Beide behalten“: the server's board becomes a canvas of its own next to it.
+        let copy = keep_theirs_as_copy(&db, board.id, theirs).unwrap();
+        let page = db.page(copy).unwrap();
+        assert_eq!(page.title, "Board (Server)");
+        assert_eq!(page.parent_id, board.parent_id);
+        assert!(is_canvas_page(&db, copy).unwrap());
+        assert_eq!(db.page_doc(copy).unwrap().content, theirs);
+        assert_eq!(db.page_doc(board.id).unwrap().content, mine);
+        assert!(keep_theirs_as_copy(&db, board.id, broken).is_err());
     }
 }

@@ -1132,6 +1132,8 @@ export interface GitConflictView {
   base: string | null;
   mine: string;
   theirs: string;
+  /** A canvas: decided as a whole (mine, theirs or both), never merged by text. */
+  canvas?: boolean;
   merge: { chunks: MergeChunk[]; conflicts: number };
 }
 export interface GitPulled {

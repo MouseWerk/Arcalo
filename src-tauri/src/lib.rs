@@ -4234,6 +4234,7 @@ pub fn run() {
             syncmerge::git_conflicts,
             syncmerge::git_conflict_get,
             syncmerge::git_conflict_resolve,
+            syncmerge::git_conflict_keep_both,
             settings_get,
             settings_save,
             api_key_set,

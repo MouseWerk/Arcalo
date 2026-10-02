@@ -35,6 +35,16 @@ export const pageEmbedMarkdown = (r: Partial<EmbedRef>, inCell = false) =>
 /** `Seite › Überschrift` (a block id shows as it is written). */
 export const embedLabel = (r: Pick<EmbedRef, "target" | "anchor">) => (r.anchor ? `${r.target} › ${r.anchor}` : r.target);
 
+/**
+ * The content without a first heading that only repeats `title` (a frame that shows the title
+ * itself, such as a canvas note card). Front matter before it stays.
+ */
+export function withoutTitleHeading(md: string, title: string): string {
+  const m = /^(﻿?(?:---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$))?\s*)#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/.exec(md);
+  if (!m || m[2].trim().toLowerCase() !== title.trim().toLowerCase()) return md;
+  return m[1] + md.slice(m[0].length).replace(/^\s*\n/, "");
+}
+
 /** Splits `Seite#Abschnitt` as typed in the autocomplete. */
 export function splitTarget(q: string): { target: string; anchor: string | null } {
   const i = q.indexOf("#");

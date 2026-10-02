@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { applyPatch, patchScope, type GraphData, type GraphFilter, type VNode } from "../../lib/graph";
+import { applyPatch, defaultSettings, normalizeSettings, patchScope, type GraphData, type GraphFilter, type GraphSettings, type VNode } from "../../lib/graph";
 import { useApp } from "../../store/app";
 import type { PageNode } from "../../lib/types";
 import { openFile, openPdfViewer } from "../../editor/files";
@@ -188,4 +188,43 @@ export function saveLayout(pos: Map<string, [number, number]>) {
       void api.graphStateSet("layout", { v: 1, pos: Object.fromEntries(entries) }).catch(() => {});
     }, 800);
   });
+}
+
+// The view settings of the graph view (filter, color groups, display), shared with the local
+// graph so both color the nodes the same way.
+let viewSettings: GraphSettings | null = null;
+let viewLoading: Promise<GraphSettings> | null = null;
+const viewListeners = new Set<(s: GraphSettings) => void>();
+
+/** The stored view settings, loaded once. */
+export function loadGraphSettings(): Promise<GraphSettings> {
+  if (viewSettings) return Promise.resolve(viewSettings);
+  viewLoading ??= api
+    .graphStateGet("view")
+    .then(normalizeSettings, () => defaultSettings())
+    .then((s) => (viewSettings ??= s));
+  return viewLoading;
+}
+
+/** The settings as changed in the graph view (the caller stores them). */
+export function publishGraphSettings(s: GraphSettings) {
+  viewSettings = s;
+  viewListeners.forEach((l) => l(s));
+}
+
+export const currentGraphSettings = () => viewSettings;
+
+/** The view settings, following changes made in the graph view. */
+export function useGraphSettings(): GraphSettings | null {
+  const [s, setS] = useState<GraphSettings | null>(viewSettings);
+  useEffect(() => {
+    let alive = true;
+    viewListeners.add(setS);
+    void loadGraphSettings().then((v) => alive && setS(v));
+    return () => {
+      alive = false;
+      viewListeners.delete(setS);
+    };
+  }, []);
+  return s;
 }

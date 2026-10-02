@@ -13,7 +13,7 @@ import { int } from "../lib/format";
 import { Button, EmptyState, IconButton, Input, Select, Spinner, Switch, useMenu } from "../components/ui";
 import { DateInput } from "../components/DateInput";
 import { GraphCanvas, type GraphCanvasHandle } from "../components/graph/GraphCanvas";
-import { loadLayout, openGraphNode, saveLayout, useGraphData } from "../components/graph/source";
+import { currentGraphSettings, loadGraphSettings, loadLayout, openGraphNode, publishGraphSettings, saveLayout, useGraphData } from "../components/graph/source";
 import {
   activeFilterCount,
   buildModel,
@@ -24,7 +24,6 @@ import {
   listRows,
   nodeColors,
   normalizePresets,
-  normalizeSettings,
   searchNodes,
   type GraphDisplay,
   type GraphFilter,
@@ -38,12 +37,11 @@ import {
   } from "../lib/graph";
 import type { PageNode } from "../lib/types";
 
-/** Settings of the last session (kept for reopening within the session). */
-let lastSettings: GraphSettings | null = null;
 let settingsTimer = 0;
 
+/** Stores the settings (shared with the local graph at once, saved a moment later). */
 function storeSettings(s: GraphSettings) {
-  lastSettings = s;
+  publishGraphSettings(s);
   window.clearTimeout(settingsTimer);
   settingsTimer = window.setTimeout(() => void api.graphStateSet("view", s).catch(() => {}), 600);
 }
@@ -52,7 +50,7 @@ const GRAPH_EXPORT_EVENT = "annalo:graph-export";
 
 export function GraphView() {
   useT();
-  const [settings, setSettings] = useState<GraphSettings | null>(lastSettings);
+  const [settings, setSettings] = useState<GraphSettings | null>(currentGraphSettings);
   const [presets, setPresets] = useState<GraphPreset[]>([]);
   const [seed, setSeed] = useState<Map<string, [number, number]> | null>(null);
   const [panel, setPanel] = useState(false);
@@ -65,11 +63,7 @@ export function GraphView() {
 
   useEffect(() => {
     let off = false;
-    if (!lastSettings)
-      void api
-        .graphStateGet("view")
-        .then((raw) => !off && setSettings((lastSettings = normalizeSettings(raw))))
-        .catch(() => !off && setSettings((lastSettings = defaultSettings())));
+    void loadGraphSettings().then((s) => !off && setSettings(s));
     void api.graphStateGet("presets").then((raw) => !off && setPresets(normalizePresets(raw)), () => {});
     void loadLayout().then((m) => !off && setSeed(m));
     return () => {

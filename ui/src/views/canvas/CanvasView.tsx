@@ -21,6 +21,7 @@ import { useApp, type Tab } from "../../store/app";
 import type { PageDoc } from "../../lib/types";
 import { registerFlusher, trackSave } from "../../editor/saves";
 import type { EmbedHost } from "../../editor/embedView";
+import { ConflictBanner } from "../ConflictView";
 import { Button, Dialog, IconButton, Input, Spinner, useMenu, type MenuEntry } from "../../components/ui";
 import { ViewHeader } from "../../components/ViewHeader";
 import { CanvasHistory } from "../../lib/canvas/history";
@@ -30,7 +31,7 @@ import {
   type Align, type Handle, type Point, type Rect,
 } from "../../lib/canvas/geometry";
 import {
-  cardKind, DEFAULT_SIZE, isImagePath, newId, parseCanvas, patchEdge, patchNode, PRESET_COLORS, removeItems, serializeCanvas, withNode,
+  cardKind, DEFAULT_SIZE, isImagePath, isReadableCanvas, newId, parseCanvas, patchEdge, patchNode, PRESET_COLORS, removeItems, serializeCanvas, withNode,
   type CanvasDoc, type CanvasEdge, type CanvasNode, type CardKind, type Side,
 } from "../../lib/canvas/model";
 import { Card, EdgeLabels, EdgeLayer, Group, Minimap, type CardHost, type EdgeDraft } from "./CanvasCards";
@@ -89,6 +90,8 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
   useT();
   const [page, setPage] = useState<PageDoc | null>(null);
   const [missing, setMissing] = useState(false);
+  /** The stored text is no canvas (e.g. a broken file): shown, never overwritten. */
+  const [unreadable, setUnreadable] = useState(false);
   const [doc, setDocState] = useState<CanvasDoc>({ nodes: [], edges: [] });
   const docRef = useRef(doc);
   const nodeMap = useMemo(() => new Map(doc.nodes.map((n) => [n.id, n])), [doc.nodes]);
@@ -162,11 +165,14 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     const text = serializeCanvas(docRef.current);
     dirty.current = false;
     if (text === savedText.current) return;
+    const before = savedText.current;
     savedText.current = text;
     try {
       await trackSave(api.savePage(pageId, text));
       window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: pageId, content: text } }));
     } catch (e) {
+      // Not stored: the next save tries again (the same text included).
+      if (savedText.current === text) savedText.current = before;
       dirty.current = true;
       useApp.getState().error(t("canvas.saveFailed"), e);
     }
@@ -176,6 +182,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     let alive = true;
     setPage(null);
     setMissing(false);
+    setUnreadable(false);
     history.current.clear();
     api
       .page(pageId)
@@ -184,6 +191,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         setPage(d);
         savedText.current = d.content;
         dirty.current = false;
+        setUnreadable(!isReadableCanvas(d.content));
         const parsed = parseCanvas(d.content);
         setDoc(parsed);
         const remembered = storedViews()[pageId];
@@ -211,6 +219,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         .then((d) => {
           if (dirty.current || d.content === savedText.current) return;
           savedText.current = d.content;
+          setUnreadable(!isReadableCanvas(d.content));
           setDoc(parseCanvas(d.content));
           setPage(d);
         })
@@ -486,7 +495,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
   const commitRef = useRef(commit);
   commitRef.current = commit;
   const host = useMemo<CardHost>(() => {
-    const embed: EmbedHost = { stack: [], depth: 1, onOpen: (target, newTab) => void openNoteRef.current(target, newTab) };
+    const embed: EmbedHost = { stack: [], depth: 1, onOpen: (target, newTab) => void openNoteRef.current(target, newTab), hideTitleHeading: true };
     Object.defineProperty(embed, "stack", { get: () => [titleRef.current.toLowerCase()] });
     return {
       embed,
@@ -957,6 +966,16 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         <div className="center-fill faint">{t("pv.notFoundText")}</div>
       </>
     );
+  if (unreadable)
+    return (
+      <>
+        <ViewHeader tab={tab} title={page?.title ?? ""} />
+        <div className="center-fill cv-unreadable">
+          <strong>{t("canvas.unreadable")}</strong>
+          <span className="faint">{t("canvas.unreadableText")}</span>
+        </div>
+      </>
+    );
 
   // Edges live in canvas units: panning and zooming never redraw them, only changes do.
   const margin = 300 / view.zoom;
@@ -997,6 +1016,9 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
           </>
         }
       />
+      <div className="cv-conflict">
+        <ConflictBanner pageId={pageId} />
+      </div>
       <div
         ref={rootRef}
         className={`cv-board${panning ? " is-panning" : ""}${snapOn ? " is-snapping" : ""}`}

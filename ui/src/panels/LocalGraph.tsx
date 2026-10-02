@@ -8,7 +8,7 @@ import { useApp } from "../store/app";
 import { t, useT } from "../lib/i18n";
 import { EmptyState, IconButton, Segmented, Spinner } from "../components/ui";
 import { GraphCanvas, type GraphCanvasHandle } from "../components/graph/GraphCanvas";
-import { openGraphNode, useGraphData } from "../components/graph/source";
+import { openGraphNode, useGraphData, useGraphSettings } from "../components/graph/source";
 import { buildModel, defaultDisplay, defaultFilter, folderPalette, nodeColors, pageKey } from "../lib/graph";
 
 const FILTER = defaultFilter();
@@ -37,8 +37,12 @@ export function LocalGraph() {
     () => (data && focus && data.nodes.some((n) => n.id === pageId) ? buildModel(data, { orphans: true, unresolved: true, tagNodes: false, depth }, focus) : null),
     [data, focus, depth, pageId],
   );
-  const palette = useMemo(() => (data ? folderPalette(data.nodes) : null), [data]);
-  const colors = useMemo(() => (model ? nodeColors(model.nodes, [], palette) : []), [model, palette]);
+  // The color groups and folder colors of the graph view, so a page has the same color in both.
+  const view = useGraphSettings();
+  const folderColors = view?.display.folderColors ?? true;
+  const palette = useMemo(() => (data && folderColors ? folderPalette(data.nodes) : null), [data, folderColors]);
+  const groups = view?.groups;
+  const colors = useMemo(() => (model ? nodeColors(model.nodes, groups ?? [], palette) : []), [model, groups, palette]);
 
   if (pageId == null) return <EmptyState icon={Network} title={t("panel.noPage")} />;
   if (!data)

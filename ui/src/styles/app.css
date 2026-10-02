@@ -3623,3 +3623,26 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .cv-minimap-box { display: none; }
   .cv-tools { bottom: 64px; }
 }
+
+/* ---- canvas conflict ---- */
+.cf-canvas-text { margin: 0 0 14px; color: var(--text-2); }
+.cf-canvas-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.cf-canvas-side { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); }
+.cf-canvas-sum { margin-top: 6px; font-weight: 550; }
+.cf-canvas-foot { flex-wrap: wrap; gap: 8px; }
+.cf-canvas-foot .cf-foot-note { flex: 1 1 260px; }
+
+/* ---- canvas: unreadable content ---- */
+.cv-unreadable { align-content: center; gap: 6px; padding: 24px; text-align: center; }
+.cv-unreadable .faint { max-width: 460px; }
+
+/* ---- briefing: meeting title next to the join button ---- */
+/* A long (or unbreakable) title wraps inside its column; the badge moves below it instead of
+   running into „Beitreten“. */
+.bf-meeting .rv-title { flex-wrap: wrap; row-gap: 2px; max-width: 100%; }
+.bf-meeting .rv-title > .ellipsis { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- canvas: Git conflict banner above the board ---- */
+.cv-conflict:empty { display: none; }
+.cv-conflict { flex: none; padding: 8px 16px 0; }
+.cv-conflict .cf-banner { margin: 0; }

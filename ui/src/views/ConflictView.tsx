@@ -4,7 +4,7 @@
 // own text; „Übernehmen“ saves the result (the previous content stays a version) and syncs.
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, FileText, GitMerge, Pencil, RotateCcw } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, FileText, GitMerge, Pencil, RotateCcw } from "lucide-react";
 import { api, errorText } from "../lib/api";
 import type { GitConflictView, MergeChunk } from "../lib/types";
 import { useApp } from "../store/app";
@@ -14,6 +14,7 @@ import { lineDiff } from "../lib/linediff";
 import { buildResult, choiceText, chooseAll, conflictIndexes, type Choice } from "../lib/conflict";
 import { reloadEditors } from "../editor/NoteEditor";
 import { t, useT, type TKey } from "../lib/i18n";
+import { parseCanvas } from "../lib/canvas/model";
 
 type Conflict = Extract<MergeChunk, { kind: "conflict" }>;
 
@@ -107,14 +108,17 @@ export function ConflictView({ pageId }: { pageId: number }) {
   const result = manual ?? buildResult(chunks, choices);
   const choose = (i: number, c: Choice) => setChoices((m) => new Map(m).set(i, c));
 
-  const apply = async () => {
-    if (result == null || !view) return;
+  const apply = async (content = result, both = false) => {
+    if (content == null || !view) return;
     setBusy(true);
     try {
-      const out = await api.resolveGitConflict(pageId, result);
+      const out = both ? await api.keepBothGitConflict(pageId) : await api.resolveGitConflict(pageId, content);
       reloadEditors([pageId]);
+      window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids: [pageId] } }));
+      if (both) await s().refreshTree();
       await s().refreshConflicts();
       if (out.sync_error) s().toast({ tone: "warning", title: t("cf.mergedNotSynced"), detail: out.sync_error });
+      else if (both) s().toast({ tone: "success", title: t("cf.solved"), detail: t("cf.keptBoth", { title: view.title }) });
       else s().toast({ tone: "success", title: t("cf.solved"), detail: out.sync ? t("cf.mergedSynced", { title: view.title }) : t("cf.merged", { title: view.title }) });
       s().openTab({ kind: "page", pageId });
     } catch (e) {
@@ -134,6 +138,7 @@ export function ConflictView({ pageId }: { pageId: number }) {
       </div>
     );
   if (!view) return <Spinner />;
+  if (view.canvas) return <CanvasConflict view={view} busy={busy} onMine={() => void apply(view.mine)} onTheirs={() => void apply(view.theirs)} onBoth={() => void apply(view.mine, true)} />;
 
   return (
     <div className="view-scroll cf-scroll">
@@ -248,5 +253,66 @@ function ConflictBlock({ index, total, chunk, choice, onChoose }: { index: numbe
         />
       )}
     </section>
+  );
+}
+
+/** What a side of a canvas conflict holds: its cards and connections, or that it is unreadable. */
+function canvasSummary(text: string): { cards: number; edges: number } | null {
+  try {
+    const raw = JSON.parse(text) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  } catch {
+    return null;
+  }
+  const doc = parseCanvas(text);
+  return { cards: doc.nodes.filter((n) => n.type !== "group").length, edges: doc.edges.length };
+}
+
+/** A canvas conflict: decided as a whole, never merged by text (that would break its JSON). */
+function CanvasConflict({ view, busy, onMine, onTheirs, onBoth }: { view: GitConflictView; busy: boolean; onMine: () => void; onTheirs: () => void; onBoth: () => void }) {
+  useT();
+  const mine = useMemo(() => canvasSummary(view.mine), [view.mine]);
+  const theirs = useMemo(() => canvasSummary(view.theirs), [view.theirs]);
+  const side = (which: "mine" | "theirs", sum: ReturnType<typeof canvasSummary>) => (
+    <div className="cf-canvas-side" data-side={which}>
+      <div className="cf-side-label">{t(which === "mine" ? "cf.mineLabel" : "cf.theirsLabel")}</div>
+      <div className="cf-canvas-sum">
+        {!view[which].trim() ? t(which === "mine" ? "cf.removedHere" : "cf.removedServer") : sum ? t("cf.canvasCounts", { n: sum.cards, edges: sum.edges }) : t("cf.canvasUnreadable")}
+      </div>
+    </div>
+  );
+  return (
+    <div className="view-scroll cf-scroll">
+      <div className="view narrow cf-view">
+        <header className="view-header">
+          <div>
+            <h1>{t("cf.title")}</h1>
+            <div className="view-sub">{t("cf.sub", { title: view.title, date: fmtDate(view.at), time: time(view.at) })}</div>
+          </div>
+          <div className="view-actions">
+            <Button icon={FileText} onClick={() => useApp.getState().openPage(view.page_id, { newTab: true })}>
+              {t("cf.openPage")}
+            </Button>
+          </div>
+        </header>
+        <p className="cf-canvas-text">{t("cf.canvasText")}</p>
+        <div className="cf-canvas-sides">
+          {side("mine", mine)}
+          {side("theirs", theirs)}
+        </div>
+        <footer className="cf-foot cf-canvas-foot">
+          <span className="cf-foot-note">{t("cf.keepBothHint", { title: view.title })}</span>
+          <Button disabled={busy || !mine} onClick={onMine} className="cf-keep-mine">
+            {t("cf.keepMine")}
+          </Button>
+          <Button disabled={busy || !theirs} onClick={onTheirs} className="cf-keep-theirs">
+            {t("cf.keepTheirs")}
+          </Button>
+          <Button variant="primary" icon={Copy} disabled={busy || !mine || !theirs} loading={busy} onClick={onBoth} className="cf-keep-both">
+            {t("cf.keepBoth")}
+          </Button>
+        </footer>
+      </div>
+    </div>
   );
 }

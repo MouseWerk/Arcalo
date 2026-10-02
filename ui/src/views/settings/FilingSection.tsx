@@ -23,9 +23,13 @@ import { CommitInput, Group, Row, StatusNote, type SectionProps } from "./common
 const RULE_KINDS: RuleKind[] = ["tag", "property", "jira", "netzplan", "title"];
 const GRANULARITIES: Granularity[] = ["none", "year", "month", "week"];
 
+const MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 /** `10 – Oktober` in the display language (as the core names the folder). */
 export function monthFolder(month: number, lang = currentLang()): string {
-  const name = new Intl.DateTimeFormat(lang === "de" ? "de-DE" : "en-US", { month: "long" }).format(new Date(2026, month - 1, 15));
+  // The names the backend gives the folders (filing::month_name), not the webview's Intl data.
+  const name = (lang === "de" ? MONTHS_DE : MONTHS_EN)[month - 1] ?? "";
   return `${String(month).padStart(2, "0")} – ${name}`;
 }
 
