@@ -3686,6 +3686,7 @@ export const de: Catalog = {
   "sb.openNewTab": "In neuem Tab öffnen",
   "sb.openRight": "Rechts daneben öffnen",
   "sb.click": "Klick",
+  "sb.middleClick": "Mittelklick",
   "sb.subpage": "Unterseite",
   "sb.sibling": "Seite daneben",
   "sb.createFailed": "Seite konnte nicht angelegt werden",

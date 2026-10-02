@@ -517,7 +517,7 @@ function PageTree({
     const i = sibs.findIndex((x) => x.id === n.id);
     const parent = n.parent_id != null ? s().pages.get(n.parent_id) : undefined;
     return [
-    { label: tStatic("sb.openNewTab"), icon: CornerDownRight, shortcut: keys(`Mod ${tStatic("sb.click")}`), onSelect: () => s().openPage(n.id, { newTab: true }) },
+    { label: tStatic("sb.openNewTab"), icon: CornerDownRight, shortcut: tStatic("sb.middleClick"), onSelect: () => s().openPage(n.id, { newTab: true }) },
     { label: tStatic("sb.openRight"), icon: Columns2, shortcut: keys(`Alt ${tStatic("sb.click")}`), onSelect: () => s().openPage(n.id, { split: true }) },
     "separator",
     {
@@ -712,10 +712,20 @@ function PageTree({
       setSelected(new Set(rangeIds(rows.map((r) => r.node.id), anchor.current ?? activePageId ?? null, n.id)));
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && selected.size) return toggleSelected(n.id);
+    // Ctrl/Cmd+click selects, as in the file managers; the open page joins a new selection.
+    // A new tab is the middle click or the context menu.
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      if (!selected.size && activePageId != null && activePageId !== n.id) {
+        setSelected(new Set([activePageId, n.id]));
+        anchor.current = n.id;
+        return;
+      }
+      return toggleSelected(n.id);
+    }
     if (selected.size) setSelected(new Set());
     anchor.current = n.id;
-    s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey });
+    s().openPage(n.id, { split: e.altKey });
   };
 
   // The latest closures, reached through one stable object.
