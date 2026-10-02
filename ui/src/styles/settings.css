@@ -523,3 +523,8 @@
 
 .field-error { display: block; margin-top: 4px; font-size: var(--fs-xs); color: var(--danger); }
 .commit-field { display: grid; min-width: 0; }
+
+/* ---- undo toasts keep clear of controls ---- */
+/* Every change shows an undo toast at the bottom; a control scrolled into view (focus, Tab,
+   search) stops above the toast stack instead of under it. */
+.settings-scroll { scroll-padding-bottom: 130px; }

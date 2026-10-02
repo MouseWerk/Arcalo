@@ -26,7 +26,7 @@ async function saveWith(patch) {
 
 test("the mail settings live in Settings → Kalender", async () => {
   const view = await app.invoke("settings_get");
-  assert.deepEqual(view.settings.mail, { notes_parent: "E-Mails", shortcut: "", save_attachments: false, private_notes: true, default_action: "task" });
+  assert.deepEqual(view.settings.mail, { notes_parent: "E-Mails", shortcut: "", save_attachments: false, private_notes: true, default_action: "task", own_addresses: [] });
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-body");
   await app.click('.settings-nav-item[data-section="calendar"]');

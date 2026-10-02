@@ -51,12 +51,13 @@ test("1.5: the default calendar is booked, noted and marked", async () => {
   await app.close();
   app = null;
 
-  // What 1.5 stored: no list of Outlook calendars.
+  // What 1.5 stored: no list of Outlook calendars and no settings version (1.10 added it).
   const db = new DatabaseSync(path.join(dataDir, "workspace.db"));
   const row = db.prepare("SELECT value FROM settings WHERE key = 'app'").get();
   const settings = JSON.parse(row.value);
   delete settings.calendar.outlook_calendars;
   delete settings.calendar.outlook_recipients;
+  delete settings.version;
   db.prepare("UPDATE settings SET value = ? WHERE key = 'app'").run(JSON.stringify(settings));
   db.close();
 });

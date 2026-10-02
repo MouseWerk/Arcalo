@@ -2,7 +2,7 @@
 // dismiss. Local suggestions come from similar and linked pages; „Tags mit KI vorschlagen“
 // asks the model (tags of the vocabulary, new ones marked „neu“).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Hash, Sparkles, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -19,13 +19,18 @@ export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tag
   const [asking, setAsking] = useState(false);
   const s = useApp.getState;
   const tagKey = tags.join(",");
+  // The page asked for last: a newly opened page asks at once, so the row is there before
+  // anyone aims at the text it moves down; tag edits on the same page wait for a pause.
+  const asked = useRef<number | null>(null);
 
   useEffect(() => {
     if (!enabled) return setList([]);
     let alive = true;
+    const delay = asked.current === pageId ? 300 : 0;
+    asked.current = pageId;
     const timer = window.setTimeout(() => {
       api.tagSuggestions(pageId).then((l) => alive && setList((cur) => [...l, ...cur.filter((c) => c.new && !l.some((x) => x.tag === c.tag))]), () => {});
-    }, 300);
+    }, delay);
     return () => {
       alive = false;
       window.clearTimeout(timer);

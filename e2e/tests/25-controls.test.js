@@ -88,6 +88,15 @@ function sweepSection(done) {
       const value = await choose(sel, (options) => options.find((o) => o.dataset.value !== before));
       if (value === null) out.problems.push(`dropdown did not open: ${label(sel)}`);
       if (value == null || !sel.isConnected) continue;
+      // Some choices ask first (the app lock wants a PIN): cancel, the value stays.
+      const dialog = document.querySelector(".dialog, .confirm");
+      if (dialog) {
+        dialog.querySelector(".btn-ghost, .btn-secondary, [aria-label='Schließen']")?.click();
+        await wait();
+        if (sel.dataset.value !== before) out.problems.push(`select changed although its dialog was cancelled: ${label(sel)}`);
+        out.selects++;
+        continue;
+      }
       if (!(await until(() => sel.dataset.value === value))) out.problems.push(`select did not change: ${label(sel)}`);
       // A change can resize the window (Skalierung zooms the webview), and a resize closes an open
       // list: when it closed before the choice, open it again.

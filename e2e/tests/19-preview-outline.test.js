@@ -16,6 +16,15 @@ const openFromTree = async (title) => {
 test("hovering a [[link]] shows a preview card of that page", async () => {
   await openFromTree("PRJ-2026-X Rollout");
   const link = await app.waitFor('.ProseMirror a[data-wikilink][data-target="Architektur"]');
+  // Rows that load with the page (tag suggestions above the text) are in place first: a link
+  // that moves away from a still mouse is not hovered any more.
+  let y = null;
+  await app.browser.waitUntil(async () => {
+    const now = await app.browser.execute((e) => Math.round(e.getBoundingClientRect().y), link);
+    const still = now === y;
+    y = now;
+    return still;
+  }, { timeout: 5000, interval: 400, timeoutMsg: "the link keeps moving" });
   await link.moveTo();
   await app.waitText(".link-preview-title", /Architektur/);
   assert.match(await app.textOf(await app.$(".link-preview-body")), /Middleware/);
