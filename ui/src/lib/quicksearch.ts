@@ -14,6 +14,7 @@ export type QsAction =
   | { type: "zeit"; line: string }
   | { type: "timesheet" }
   | { type: "issues" }
+  | { type: "graph" }
   | { type: "issue"; key: string };
 
 export interface QsItem {
@@ -61,6 +62,8 @@ function actions(q: string, ctx: QsContext): QsItem[] {
     out.push({ id: "daily", section, title: t("capture.daily"), subtitle: t("qs.dailySub"), action: { type: "daily" } });
   if (ctx.jira && !all && matches(q, ["issues", "jira", "tickets"]))
     out.push({ id: "issues", section, title: t("tabs.issues"), subtitle: t("qs.issuesSub"), action: { type: "issues" } });
+  if (!all && matches(q, ["graph", "graphansicht", "netz", "links"]))
+    out.push({ id: "graph", section, title: t("tabs.graph"), subtitle: t("qs.graphSub"), action: { type: "graph" } });
   if (ctx.jira && /^[A-Z][A-Z0-9_]{1,11}-[1-9][0-9]{0,6}$/.test(q.trim().toUpperCase()))
     out.push({ id: "issue", section, title: t("qs.issue", { key: q.trim().toUpperCase() }), subtitle: t("qs.issueSub"), action: { type: "issue", key: q.trim().toUpperCase() } });
   if (ctx.time === false) return out;

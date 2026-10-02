@@ -17,6 +17,7 @@ mod feed;
 mod files;
 mod filing;
 mod focus;
+mod graph;
 mod jira;
 mod jumplist;
 mod mail;
@@ -4381,6 +4382,10 @@ pub fn run() {
             filing::smart_counts,
             filing::smart_pages,
             filing::smart_groups,
+            graph::graph_data,
+            graph::graph_patch,
+            graph::graph_state_get,
+            graph::graph_state_set,
             filing::page_create_filed,
             jira::jira_add_task,
             jira::jira_entry_issues,

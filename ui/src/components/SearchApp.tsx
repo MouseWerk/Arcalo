@@ -156,6 +156,9 @@ export function SearchApp() {
         case "issues":
           await api.searchOpen({ kind: "issues" });
           break;
+        case "graph":
+          await api.searchOpen({ kind: "graph" });
+          break;
         case "issue":
           await api.searchOpen({ kind: "issue", key: a.key });
           break;
