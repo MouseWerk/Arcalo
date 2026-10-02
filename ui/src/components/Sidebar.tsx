@@ -4,11 +4,13 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragE
 import {
   ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, MoreHorizontal, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
   ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
+  ArrowDownUp, FolderInput, Palette, SlidersHorizontal, Undo2, Wand2, LayoutList,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
-import { Button, IconButton, useMenu, type MenuEntry } from "./ui";
+import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
+import type { LucideIcon } from "lucide-react";
 import { useTimeTracking } from "../lib/timetracking";
 import { clock, fmtMinutes, longTimerHours } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
@@ -20,6 +22,10 @@ import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
 import { stripMarkdown } from "../lib/plaintext";
 import { treeWindow } from "../lib/treeWindow";
+import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, rangeIds, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
+import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
+import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
+import type { TKey } from "../lib/i18n";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -66,7 +72,8 @@ export function Sidebar() {
     } catch {
       return;
     }
-    const showsDaily = activePageId != null && journal.children.some((c) => c.id === activePageId);
+    const within = (list: PageNode[]): boolean => list.some((c) => c.id === activePageId || within(c.children));
+    const showsDaily = activePageId != null && within(journal.children);
     if (seen !== String(journal.id) && !showsDaily && !collapsed.has(journal.id)) saveCollapsed(new Set(collapsed).add(journal.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree]);
@@ -78,6 +85,29 @@ export function Sidebar() {
     { id: "tags", label: t("sidebar.tags"), icon: Hash },
   ];
   const withChildren = useMemo(() => [...pages.values()].filter((p) => p.children.length).map((p) => p.id), [pages]);
+  // Ordner & Ablage: the filter, the top level's sort and whether the smart folders show.
+  const [filter, setFilter] = useState("");
+  const [rootStyle, setRootStyle] = useState<FolderStyle>(DEFAULT_STYLE);
+  const [smartShown, setSmartShown] = useState(() => !smartHidden());
+  const [treeMenu, , openTreeMenuAt] = useMenu();
+  useEffect(() => {
+    filingApi.folderStyle(0).then(setRootStyle, () => {});
+    const on = () => setSmartShown(!smartHidden());
+    window.addEventListener(SMART_EVENT, on);
+    return () => window.removeEventListener(SMART_EVENT, on);
+  }, []);
+  const setRoot = (style: FolderStyle) => {
+    setRootStyle(style);
+    filingApi.setFolderStyle(0, style).catch((e) => useApp.getState().error(t("fl.styleFailed"), e));
+  };
+  const treeMenuItems = (): MenuEntry[] => [
+    { label: t("fl.sortTop"), icon: ArrowDownUp, submenu: sortMenu(rootStyle, setRoot) },
+    "separator",
+    { label: t("fl.tidy"), icon: Wand2, onSelect: () => openTidyUp(null) },
+    { label: t("fl.undoLast"), icon: Undo2, onSelect: () => void undoLastMove() },
+    "separator",
+    { label: smartShown ? t("fl.smartHide") : t("fl.smartShow"), icon: LayoutList, checked: smartShown, onSelect: () => setSmartHidden(smartShown) },
+  ];
   const allCollapsed = withChildren.length > 0 && withChildren.every((id) => collapsed.has(id));
 
   return (
@@ -99,8 +129,27 @@ export function Sidebar() {
               size="md"
               onClick={() => saveCollapsed(allCollapsed ? new Set() : new Set(withChildren))}
             />
+            <IconButton icon={SlidersHorizontal} label={t("fl.treeMenu")} size="md" className="tree-options" onClick={(e) => openTreeMenuAt(e, treeMenuItems())} />
+            {treeMenu}
           </div>
+          {tree.length > 0 && (
+            <div className="tree-filter">
+              <Search size={13} aria-hidden />
+              <input
+                value={filter}
+                placeholder={t("fl.filter")}
+                aria-label={t("fl.filter")}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && filter) (e.preventDefault(), e.stopPropagation(), setFilter(""));
+                  else if (e.key === "ArrowDown") (e.preventDefault(), document.querySelector<HTMLElement>(".sidebar .tree .tree-row")?.focus());
+                }}
+              />
+              {filter && <IconButton icon={X} label={t("fl.filterClear")} size="sm" onClick={() => setFilter("")} />}
+            </div>
+          )}
           <div className="sidebar-scroll">
+            {tree.length > 0 && !filter && <SmartFolders />}
             {tree.length === 0 ? (
               // During onboarding the welcome choice explains the empty workspace.
               !onboarding && <div className="side-empty">
@@ -110,7 +159,7 @@ export function Sidebar() {
                 </Button>
               </div>
             ) : (
-              <PageTree nodes={tree} activePageId={activePageId} collapsed={collapsed} setCollapsed={saveCollapsed} />
+              <PageTree nodes={tree} activePageId={activePageId} collapsed={collapsed} setCollapsed={saveCollapsed} filter={filter} rootStyle={rootStyle} />
             )}
           </div>
         </>
@@ -316,6 +365,19 @@ type DropPos = "before" | "inside" | "after";
 /** Trees with this many visible rows render only the rows in view (plus a margin). */
 const VIRTUAL_ROWS = 150;
 
+/** „Sortieren“: the order of a folder's children and „Ordner zuerst“. */
+function sortMenu(style: FolderStyle, set: (s: FolderStyle) => void): MenuItem[] {
+  return [
+    ...FOLDER_SORTS.map((sort) => ({ label: tStatic(`fl.sort.${sort}` as TKey), checked: style.sort === sort, onSelect: () => set({ ...style, sort }) })),
+    { label: tStatic("fl.foldersFirst"), icon: FolderTree, checked: style.folders_first, onSelect: () => set({ ...style, folders_first: !style.folders_first }) },
+  ];
+}
+
+/** Color dots for the „Farbe“ menu (theme tokens, so they follow light and dark). */
+const SWATCHES = Object.fromEntries(
+  FOLDER_COLORS.map((c) => [c, (({ size = 14 }: { size?: number }) => <span className={`tree-swatch tint-${c}`} style={{ width: size - 4, height: size - 4 }} aria-hidden />) as unknown as LucideIcon]),
+) as Record<string, LucideIcon>;
+
 /** Handlers of a tree row; one stable object, so rows can skip re-rendering. */
 interface RowActions {
   toggle: (id: number) => void;
@@ -341,13 +403,22 @@ function PageTree({
   activePageId,
   collapsed,
   setCollapsed,
+  filter = "",
+  rootStyle = DEFAULT_STYLE,
 }: {
   nodes: PageNode[];
   activePageId?: number;
   collapsed: Set<number>;
   setCollapsed: (s: Set<number>) => void;
+  /** Shows the matching pages and their ancestors. */
+  filter?: string;
+  /** Sort of the top level. */
+  rootStyle?: FolderStyle;
 }) {
-  const [drag, setDrag] = useState<{ id: number; over?: number; pos?: DropPos } | null>(null);
+  const [drag, setDrag] = useState<{ id: number; over?: number; pos?: DropPos; many?: boolean } | null>(null);
+  // Multi-select: Shift-click (range), Ctrl-click once a selection exists, Shift+arrows, Ctrl+Space.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const anchor = useRef<number | null>(null);
   const [menu, openMenu, openMenuAt] = useMenu();
   const s = useApp.getState;
 
@@ -372,10 +443,24 @@ function PageTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePageId]);
 
+  const parentOf = (id: number) => s().pages.get(id)?.parent_id;
+  const selection = () => topSelected(selected, parentOf);
   const onDrop = async (target: PageNode, pos: DropPos) => {
     const id = drag?.id;
+    const many = drag?.many;
     setDrag(null);
     if (id == null || id === target.id) return;
+    if (many) {
+      const ids = selection().filter((x) => x !== target.id);
+      setSelected(new Set());
+      const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id);
+      if (out && pos === "inside") {
+        const next = new Set(collapsed);
+        next.delete(target.id);
+        setCollapsed(next);
+      }
+      return;
+    }
     const pages = s().pages;
     try {
       if (pos === "inside") {
@@ -411,7 +496,23 @@ function PageTree({
     );
   const descendants = (n: PageNode): number[] => n.children.flatMap((c) => (c.children.length ? [c.id, ...descendants(c)] : []));
 
+  const setStyle = async (n: PageNode, style: FolderStyle) => {
+    try {
+      await filingApi.setFolderStyle(n.id, style);
+      await s().refreshTree();
+    } catch (e) {
+      s().error(tStatic("fl.styleFailed"), e);
+    }
+  };
   const menuItems = (n: PageNode): MenuEntry[] => {
+    if (selected.size > 1 && selected.has(n.id)) {
+      const ids = selection();
+      return [
+        { label: tStatic("fl.moveN", { n: ids.length }), icon: FolderInput, onSelect: () => openMoveTo(ids) },
+        { label: tStatic("fl.clearSelection"), icon: X, onSelect: () => setSelected(new Set()) },
+      ];
+    }
+    const style = n.style ?? DEFAULT_STYLE;
     const sibs = siblingsOf(n);
     const i = sibs.findIndex((x) => x.id === n.id);
     const parent = n.parent_id != null ? s().pages.get(n.parent_id) : undefined;
@@ -475,9 +576,19 @@ function PageTree({
       })),
     },
     {
+      label: tStatic("fl.color"),
+      icon: Palette,
+      submenu: [
+        { label: tStatic("fl.color.none"), checked: !style.color, onSelect: () => setStyle(n, { ...style, color: null }) },
+        ...FOLDER_COLORS.map((c) => ({ label: tStatic(`fl.color.${c}` as TKey), icon: SWATCHES[c], checked: style.color === c, onSelect: () => setStyle(n, { ...style, color: c }) })),
+      ],
+    },
+    ...(n.children.length ? [{ label: tStatic("fl.sort"), icon: ArrowDownUp, submenu: sortMenu(style, (st) => setStyle(n, st)) }] : []),
+    {
       label: tStatic("sb.move"),
       icon: MoveVertical,
       submenu: [
+        { label: tStatic("fl.moveTo"), icon: FolderInput, onSelect: () => openMoveTo([n.id]) },
         { label: tStatic("sb.moveUp"), icon: ArrowUp, disabled: i <= 0, onSelect: () => move(n, n.parent_id, i - 1) },
         { label: tStatic("sb.moveDown"), icon: ArrowDown, disabled: i < 0 || i >= sibs.length - 1, onSelect: () => move(n, n.parent_id, i + 1) },
         {
@@ -504,6 +615,7 @@ function PageTree({
     },
     ...(n.children.length
       ? [
+          { label: tStatic("fl.tidy"), icon: Wand2, onSelect: () => openTidyUp(n.id, n.title) },
           { label: tStatic("sb.expandAll"), icon: ChevronsUpDown, onSelect: () => setCollapsed(new Set([...collapsed].filter((id) => id !== n.id && !descendants(n).includes(id)))) },
           { label: tStatic("sb.collapseAll"), icon: ChevronsDownUp, onSelect: () => setCollapsed(new Set([...collapsed, ...descendants(n)])) },
         ]
@@ -561,6 +673,16 @@ function PageTree({
       return;
     }
     const handled = () => e.preventDefault();
+    if (key === "Escape" && selected.size) return (handled(), setSelected(new Set()));
+    if (key === " " && (e.ctrlKey || e.metaKey)) return (handled(), toggleSelected(n.id));
+    if (e.shiftKey && (key === "ArrowDown" || key === "ArrowUp")) {
+      handled();
+      const next = at(i + (key === "ArrowDown" ? 1 : -1));
+      if (next == null) return;
+      setSelected(new Set([...(selected.size ? selected : [n.id]), next]));
+      focusRow(next);
+      return;
+    }
     if (key === "Enter" || key === " ") (handled(), s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }));
     else if (key === "ArrowDown") (handled(), focusRow(at(i + 1)));
     else if (key === "ArrowUp") (handled(), focusRow(at(i - 1)));
@@ -577,13 +699,32 @@ function PageTree({
     }
   };
 
+  const toggleSelected = (id: number) => {
+    const next = new Set(selected);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSelected(next);
+    anchor.current = id;
+  };
+  const click = (n: PageNode, e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setSelected(new Set(rangeIds(rows.map((r) => r.node.id), anchor.current ?? activePageId ?? null, n.id)));
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && selected.size) return toggleSelected(n.id);
+    if (selected.size) setSelected(new Set());
+    anchor.current = n.id;
+    s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey });
+  };
+
   // The latest closures, reached through one stable object.
-  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId });
-  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId };
+  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected });
+  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected };
   const actions = useMemo<RowActions>(
     () => ({
       toggle: (id) => latest.current.toggle(id),
-      open: (n, e) => s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }),
+      open: (n, e) => latest.current.click(n, e),
       menu: (n, e) => latest.current.openMenu(e, latest.current.menuItems(n)),
       menuAt: (n, e) => latest.current.openMenuAt(e, latest.current.menuItems(n)),
       key: (n, e) => latest.current.onRowKey(e, n),
@@ -592,12 +733,13 @@ function PageTree({
         e.dataTransfer.effectAllowed = "move";
         // Own type, so dropping into the editor does not paste the id as text.
         e.dataTransfer.setData("application/x-annalo-page", String(n.id));
-        latest.current.setDrag({ id: n.id });
+        const sel = latest.current.selected;
+        latest.current.setDrag({ id: n.id, many: sel.size > 1 && sel.has(n.id) });
       },
       dragEnd: () => latest.current.setDrag(null),
       dragOver: (n, e) => {
         const d = latest.current.drag;
-        if (!d || d.id === n.id) return;
+        if (!d || d.id === n.id || (d.many && latest.current.selected.has(n.id))) return;
         e.preventDefault();
         const r = e.currentTarget.getBoundingClientRect();
         const y = (e.clientY - r.top) / r.height;
@@ -606,7 +748,7 @@ function PageTree({
       },
       dragLeave: (n) => {
         const d = latest.current.drag;
-        if (d?.over === n.id) latest.current.setDrag({ id: d.id });
+        if (d?.over === n.id) latest.current.setDrag({ id: d.id, many: d.many });
       },
       drop: (n, e) => {
         e.preventDefault();
@@ -617,18 +759,26 @@ function PageTree({
     [],
   );
 
-  // Visible rows in document order; recomputed only when the tree or the collapsed set changes.
+  // Visible rows in document order, each folder in its own sort; recomputed only when the tree,
+  // the collapsed set or the filter changes. A filter shows the hits with their ancestors open.
+  const filtered = useMemo(() => filterIds(nodes, filter), [nodes, filter]);
   const rows = useMemo(() => {
     const out: { node: PageNode; depth: number }[] = [];
-    const walk = (list: PageNode[], depth: number) => {
-      for (const n of list) {
+    const walk = (list: PageNode[], depth: number, style: FolderStyle | null | undefined) => {
+      for (const n of sortNodes(list, style)) {
+        if (filtered && !filtered.shown.has(n.id)) continue;
         out.push({ node: n, depth });
-        if (n.children.length && !collapsed.has(n.id)) walk(n.children, depth + 1);
+        if (n.children.length && (filtered ? true : !collapsed.has(n.id))) walk(n.children, depth + 1, n.style);
       }
     };
-    walk(nodes, 0);
+    walk(nodes, 0, rootStyle);
     return out;
-  }, [nodes, collapsed]);
+  }, [nodes, collapsed, filtered, rootStyle]);
+  // A selection keeps only pages that still exist.
+  useEffect(() => {
+    if (selected.size && [...selected].some((id) => !s().pages.has(id))) setSelected(new Set([...selected].filter((id) => s().pages.has(id))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes]);
 
   const focusable = activePageId != null && s().pages.has(activePageId) ? activePageId : nodes[0]?.id;
 
@@ -700,7 +850,9 @@ function PageTree({
         depth={depth}
         top={shown ? i * view.rowH : undefined}
         active={activePageId === node.id}
-        open={!collapsed.has(node.id)}
+        open={filtered ? node.children.some((c) => filtered.shown.has(c.id)) : !collapsed.has(node.id)}
+        selected={selected.has(node.id)}
+        hit={!!filtered?.hits.has(node.id)}
         drop={drag?.over === node.id ? drag.pos : undefined}
         focusable={focusable === node.id}
         conflict={conflictIds.has(node.id)}
@@ -710,10 +862,29 @@ function PageTree({
   };
 
   return (
-    <div className={`tree ${shown ? "is-virtual" : ""}`} role="tree" aria-label={tStatic("sb.pages")} ref={treeRef} style={shown ? { height: rows.length * view.rowH } : undefined}>
-      {shown ? shown.map(row) : rows.map((_, i) => row(i))}
-      {menu}
-    </div>
+    <>
+      {selected.size > 1 && (
+        <div className="tree-selection" role="status">
+          <span>{tStatic("fl.selected", { n: selected.size })}</span>
+          <Button size="sm" variant="ghost" icon={FolderInput} onClick={() => openMoveTo(selection())}>
+            {tStatic("fl.moveTo")}
+          </Button>
+          <IconButton icon={X} size="sm" label={tStatic("fl.clearSelection")} onClick={() => setSelected(new Set())} />
+        </div>
+      )}
+      {filtered && rows.length === 0 && <div className="side-empty tree-filter-empty">{tStatic("fl.filterEmpty", { q: filter.trim() })}</div>}
+      <div
+        className={`tree ${shown ? "is-virtual" : ""}`}
+        role="tree"
+        aria-label={tStatic("sb.pages")}
+        aria-multiselectable
+        ref={treeRef}
+        style={shown ? { height: rows.length * view.rowH } : undefined}
+      >
+        {shown ? shown.map(row) : rows.map((_, i) => row(i))}
+        {menu}
+      </div>
+    </>
   );
 }
 
@@ -723,6 +894,8 @@ const TreeRow = memo(function TreeRow({
   top,
   active,
   open,
+  selected,
+  hit,
   drop,
   focusable,
   conflict,
@@ -734,6 +907,10 @@ const TreeRow = memo(function TreeRow({
   top?: number;
   active: boolean;
   open: boolean;
+  /** Part of the multi-selection. */
+  selected: boolean;
+  /** Matches the tree filter. */
+  hit: boolean;
   drop?: DropPos;
   focusable: boolean;
   conflict: boolean;
@@ -746,7 +923,8 @@ const TreeRow = memo(function TreeRow({
       role="treeitem"
       aria-level={depth + 1}
       aria-expanded={n.children.length ? open : undefined}
-      className={`tree-row ${active ? "active" : ""} ${drop ? `drop-${drop}` : ""}`}
+      className={`tree-row ${active ? "active" : ""} ${selected ? "selected" : ""} ${hit ? "hit" : ""} ${drop ? `drop-${drop}` : ""}`}
+      aria-selected={selected}
       style={top == null ? { paddingLeft: 6 + depth * 14 } : { paddingLeft: 6 + depth * 14, position: "absolute", top, left: 0, right: 0 }}
       data-id={n.id}
       tabIndex={focusable ? 0 : -1}
@@ -778,7 +956,7 @@ const TreeRow = memo(function TreeRow({
       >
         {n.children.length > 0 && <ChevronRight size={12} className={`chev ${open ? "open" : ""}`} />}
       </span>
-      <PageIcon name={n.icon} size={15} className="tree-icon" />
+      <PageIcon name={n.icon} size={15} className={`tree-icon ${n.style?.color ? `tint-${n.style.color}` : ""}`} />
       <span className="tree-label">{n.title}</span>
       {conflict && <span className="tree-conflict" title={tStatic("sb.conflictTip")} aria-label={tStatic("cf.conflict")} />}
       {hot && <span className="tree-row-actions">

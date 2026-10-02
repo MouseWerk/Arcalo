@@ -3,8 +3,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2,
 } from "lucide-react";
+import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
 import { TIME_COMMANDS, useTimeTracking } from "../lib/timetracking";
@@ -193,10 +194,23 @@ export function CommandPalette() {
       { id: "calendar-sync", title: t("cmd.calendarSync"), icon: ic(RefreshCw), run: () => void syncCalendarsNow() },
       { id: "mail-capture", title: t("cmd.mailCapture"), subtitle: t("cmd.mailCaptureSub"), icon: ic(Mail), run: () => setTimeout(() => void captureFromOutlook(), 0) },
       { id: "mail-dialog", title: t("cmd.mailDialog"), subtitle: t("cmd.mailDialogSub"), icon: ic(MailPlus), run: () => setTimeout(() => openMailDialog(), 0) },
+      { id: "tidy-up", title: t("fl.tidy"), subtitle: t("fl.tidySub"), icon: ic(Wand2), run: () => setTimeout(() => openTidyUp(null), 0) },
+      { id: "undo-tidy", title: t("fl.undoLast"), subtitle: t("fl.undoLastSub"), icon: ic(Undo2), run: () => void undoLastMove() },
       { id: "bookmarks-import", title: t("cmd.bookmarksImport"), subtitle: t("cmd.bookmarksImportSub"), icon: ic(BookmarkPlus), run: () => setTimeout(openBookmarkImport, 0) },
       ...voiceCommands(),
       ...(s().tabs.find((x) => x.id === s().activeTabId)?.kind === "page"
         ? [
+            {
+              id: "move-to",
+              title: t("fl.moveTo"),
+              subtitle: t("fl.moveToSub"),
+              icon: ic(FolderInput),
+              run: () => {
+                const tab = s().tabs.find((x) => x.id === s().activeTabId);
+                const id = tab?.kind === "page" ? tab.pageId : undefined;
+                if (id != null) setTimeout(() => openMoveTo([id]), 0);
+              },
+            },
             { id: "add-property", title: t("cmd.addProperty"), subtitle: t("cmd.addPropertySub"), icon: ic(ListPlus), hint: hint("add_property"), run: () => setTimeout(requestAddProperty, 0) },
             { id: "toggle-source", title: t("cmd.toggleSource"), icon: ic(FileCode2), hint: hint("toggle_source"), run: () => setTimeout(() => requestPageCommand("source"), 0) },
             { id: "full-width", title: t("cmd.fullWidth"), icon: ic(MoveHorizontal), hint: hint("full_width"), run: () => setTimeout(() => requestPageCommand("full"), 0) },

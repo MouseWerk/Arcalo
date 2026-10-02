@@ -708,19 +708,11 @@ impl Database {
                     t => t,
                 };
                 let parent_title = if parent_title.is_empty() { default_parent().to_owned() } else { parent_title };
-                let parent = match self
-                    .conn()
-                    .query_row(
-                        "SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL AND title = ?1 COLLATE NOCASE ORDER BY id LIMIT 1",
-                        [&parent_title],
-                        |r| r.get::<_, i64>(0),
-                    )
-                    .optional()?
-                {
-                    Some(id) => id,
-                    None => self.create_page(None, &parent_title, Some("mail"))?.id,
-                };
-                let base = match crate::notes::clean_title(if spec.title.trim().is_empty() { &mail.subject } else { &spec.title }) {
+                let base = match crate::notes::clean_title(if spec.title.trim().is_empty() {
+                    &mail.subject
+                } else {
+                    &spec.title
+                }) {
                     t if t.is_empty() => "E-Mail".to_owned(),
                     t => t,
                 };
@@ -745,13 +737,17 @@ impl Database {
                 }
                 let mut seen = std::collections::HashSet::new();
                 tags.retain(|t| seen.insert(tag_of(t)));
-                let page = self.create_page(Some(parent), &title, Some("mail"))?;
+                let page = self.create_page(None, &title, Some("mail"))?;
                 let mut content = note_markdown(mail, link.as_deref(), link_id.as_deref(), vorgang, &tags, files, zone);
                 if let Some(t) = req.task.as_ref().filter(|t| t.target == TaskTarget::Note) {
                     content.push_str(&task_line(t, None, "", &req.tags));
                     content.push('\n');
                 }
                 self.save_page_content(page.id, &content)?;
+                // E-Mails/2026/10 – Oktober below the chosen parent (Settings → Ordner & Ablage).
+                let day = zone.to_wall(mail.received.unwrap_or(now)).date();
+                let info = crate::filing::FileInfo { kind: crate::filing::FileType::Mail, date: day, group: None };
+                self.file_page_in(page.id, &info, Some(&parent_title))?;
                 note_page = Some(self.page(page.id)?);
             }
             let mut task_page = None;
@@ -761,7 +757,11 @@ impl Database {
                     TaskTarget::Page { id } => {
                         let p = self.page(id)?;
                         if p.deleted_at.is_some() {
-                            return Err(Error::State(trf!("„{}“ liegt im Papierkorb", "“{}” is in the trash", p.title)));
+                            return Err(Error::State(trf!(
+                                "„{}“ liegt im Papierkorb",
+                                "“{}” is in the trash",
+                                p.title
+                            )));
                         }
                         p
                     }

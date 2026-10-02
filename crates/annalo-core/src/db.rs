@@ -39,6 +39,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0015_focus_blocks.sql"),
     include_str!("../migrations/0017_jira_worklog_sync.sql"),
     include_str!("../migrations/0018_focus_block_writes.sql"),
+    include_str!("../migrations/0019_filing.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -1018,17 +1019,38 @@ impl Database {
             }
             children.entry(parent).or_default().push(p);
         }
-        fn build(parent: Option<i64>, children: &mut HashMap<Option<i64>, Vec<Page>>) -> Vec<PageNode> {
+        // Created time, filing folder and folder style (sorting, colors) per page.
+        type Extra = (String, Option<String>, Option<crate::filing::FolderStyle>);
+        let mut extra: HashMap<i64, Extra> = self
+            .conn
+            .prepare_cached(
+                "SELECT p.id, p.created_at, p.system_folder, f.sort, f.folders_first, f.color
+                 FROM pages p LEFT JOIN folder_prefs f ON f.page_id = p.id WHERE p.deleted_at IS NULL",
+            )?
+            .query_map([], |r| {
+                let style = match r.get::<_, Option<String>>(3)? {
+                    Some(sort) => Some(crate::filing::FolderStyle { sort, folders_first: r.get(4)?, color: r.get(5)? }),
+                    None => None,
+                };
+                Ok((r.get::<_, i64>(0)?, (r.get(1)?, r.get(2)?, style)))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        fn build(
+            parent: Option<i64>,
+            children: &mut HashMap<Option<i64>, Vec<Page>>,
+            extra: &mut HashMap<i64, Extra>,
+        ) -> Vec<PageNode> {
             let Some(pages) = children.remove(&parent) else { return vec![] };
             pages
                 .into_iter()
                 .map(|p| {
-                    let kids = build(Some(p.id), children);
-                    PageNode { page: p, children: kids }
+                    let kids = build(Some(p.id), children, extra);
+                    let (created_at, system, style) = extra.remove(&p.id).unwrap_or_default();
+                    PageNode { page: p, children: kids, created_at, system, style }
                 })
                 .collect()
         }
-        Ok(build(None, &mut children))
+        Ok(build(None, &mut children, &mut extra))
     }
 
     // --------------------------------------------------------------- ai usage

@@ -949,15 +949,6 @@ impl Database {
         };
         let content = format!("---\n{}\n---\n{body}", front.join("\n"));
         self.atomic(|| {
-            let parent = match self.conn().query_row(
-                "SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL AND title IN (?1 COLLATE NOCASE, ?2 COLLATE NOCASE) \
-                 ORDER BY title COLLATE NOCASE = ?3 DESC, id LIMIT 1",
-                [MEETINGS_TITLE, MEETINGS_TITLE_EN, meetings_title()],
-                |r| r.get::<_, i64>(0),
-            ).optional()? {
-                Some(id) => id,
-                None => self.create_page(None, meetings_title(), Some("users"))?.id,
-            };
             let base = crate::notes::clean_title(&format!("{} {}", e.title, date.format(tr!("%d.%m.%Y", "%Y-%m-%d"))));
             let mut title = base.clone();
             let mut n = 2;
@@ -965,8 +956,15 @@ impl Database {
                 title = format!("{base} {n}");
                 n += 1;
             }
-            let page = self.create_page(Some(parent), &title, Some("users"))?;
+            let page = self.create_page(None, &title, Some("users"))?;
             self.save_page_content(page.id, &content)?;
+            // Besprechungen/2026/10 – Oktober (or by series), Settings → Ordner & Ablage.
+            let info = crate::filing::FileInfo {
+                kind: crate::filing::FileType::Meeting,
+                date,
+                group: Some(crate::notes::clean_title(&e.title)).filter(|t| !t.is_empty()),
+            };
+            self.file_page(page.id, &info)?;
             self.calendar_mark_row(key)?;
             // Subject and series too: the briefing finds the last note of a series or subject by them.
             let series = if e.recurring { e.uid.clone() } else { String::new() };
@@ -1188,8 +1186,7 @@ mod tests {
             content.contains("teilnehmer: \"Jörg, Zoë\"") && content.contains("## Teilnehmer\n\n- Jörg\n- Zoë"),
             "{content}"
         );
-        let parent = db.page(page.parent_id.unwrap()).unwrap();
-        assert_eq!(parent.title, MEETINGS_TITLE);
+        assert_eq!(db.page_path(page.id).unwrap(), format!("{MEETINGS_TITLE} / 2026 / 09 – September"));
         let (again, created) = db.calendar_meeting_note(&key, &zone).unwrap();
         assert_eq!((again.id, created), (page.id, false));
         // A trashed note is replaced by a new one.

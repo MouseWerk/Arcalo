@@ -291,7 +291,20 @@ fn resolve<Tz: TimeZone>(
                 .optional()?;
             Ok((db.daily_note(date)?, existed.is_none()))
         }
-        CaptureTarget::Inbox => page_titled(db, opts.inbox_title, "inbox"),
+        CaptureTarget::Inbox => {
+            let (page, created) = page_titled(db, opts.inbox_title, "inbox")?;
+            if !created {
+                return Ok((page, false));
+            }
+            // Flat at the top level unless Settings → Ordner & Ablage names a folder.
+            let info = crate::filing::FileInfo {
+                kind: crate::filing::FileType::Inbox,
+                date: chrono::Local::now().date_naive(),
+                group: None,
+            };
+            db.file_page(page.id, &info)?;
+            Ok((db.page(page.id)?, true))
+        }
         CaptureTarget::NewPage { title } => page_titled(db, title, "file-text"),
         CaptureTarget::Page { page_id } => {
             let page = db.page(*page_id)?;

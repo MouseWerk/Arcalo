@@ -101,7 +101,9 @@ test("the second mail becomes a note with its attachment", async () => {
   const tree = await app.invoke("workspace_tree");
   const parent = tree.find((n) => n.title === "E-Mails");
   assert.ok(parent, "parent page created");
-  const note = parent.children.find((n) => n.title === "Protokoll Lenkungskreis");
+  // Filed into the received month below the parent (Ordner & Ablage, 1.9): E-Mails/2026/09 – September.
+  const month = parent.children.find((n) => n.title === "2026")?.children.find((n) => n.title === "09 – September");
+  const note = month?.children.find((n) => n.title === "Protokoll Lenkungskreis");
   assert.ok(note, JSON.stringify(parent.children.map((c) => c.title)));
   const md = await content(note.id);
   assert.match(md, /^---\nvon: "Weiß, Jörg"\nan: "Kleindienst, Maurice"\ndatum: 2026-09-23 \d\d:05\nbetreff: "Protokoll Lenkungskreis"\ne-mail: annalo-mail:\/\/[0-9a-z]{8}\ntags: \[e-mail, privat\]\n---\n/);

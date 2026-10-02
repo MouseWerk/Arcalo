@@ -7,6 +7,7 @@
 //! * [`notes`] – Markdown documents, backlinks, tags, daily notes
 //! * [`properties`] – typed page properties: the schema child pages share, typed values, filters
 //! * [`pagework`] – pages linked to a Vorgang (`vorgang:` property): budget and bookings
+//! * [`filing`] – folders & filing: where new pages go, rules, tidy-up, smart folders
 //! * [`trash`] – page trash (restore, purge, 30-day expiry)
 //! * [`versions`] – page version history (snapshots, restore)
 //! * [`backup`] – database snapshots (`VACUUM INTO`) with rotation
@@ -68,6 +69,7 @@ pub mod drawings;
 pub mod error;
 pub mod export;
 pub mod feed;
+pub mod filing;
 pub mod focus;
 pub mod gitsync;
 pub mod i18n;

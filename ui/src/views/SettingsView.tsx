@@ -35,6 +35,8 @@ import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
 import { VoiceSection } from "./settings/VoiceSection";
 import { JiraSection } from "./settings/JiraSection";
+import { FilingSection } from "./settings/FilingSection";
+import { FolderTree } from "lucide-react";
 import { BriefingSection } from "./settings/BriefingSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
 import { takeSettingsSection } from "../lib/calnav";
@@ -42,7 +44,7 @@ import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "desktop" | "admin" | "logs" | "about";
 const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     label: "navgroup.general",
@@ -58,6 +60,7 @@ const NAV: { label: TKey; items: { id: Section; label: TKey; icon: typeof Server
     items: [
       { id: "editor", label: "nav.editor", icon: PenLine },
       { id: "notes", label: "nav.notes", icon: NotebookPen },
+      { id: "filing", label: "nav.filing", icon: FolderTree },
       { id: "time", label: "nav.time", icon: Timer },
       { id: "calendar", label: "nav.calendar", icon: CalendarRange },
       { id: "voice", label: "nav.voice", icon: Mic },
@@ -252,6 +255,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         return <CalendarSection draft={draft} update={u} />;
       case "voice":
         return <VoiceSection draft={draft} update={u} />;
+      case "filing":
+        return <FilingSection draft={draft} update={u} />;
       case "jira":
         return <JiraSection draft={draft} update={u} />;
       case "briefing":

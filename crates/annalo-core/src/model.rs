@@ -157,4 +157,12 @@ pub struct PageNode {
     #[serde(flatten)]
     pub page: Page,
     pub children: Vec<PageNode>,
+    #[serde(default)]
+    pub created_at: String,
+    /// Set for a folder of the filing (its type, or `rule`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    /// Sort and color of the folder's children, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<crate::filing::FolderStyle>,
 }

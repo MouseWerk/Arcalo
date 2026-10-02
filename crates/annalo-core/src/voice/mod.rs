@@ -295,7 +295,6 @@ impl Database {
         let page = match page_id {
             Some(id) => self.page_doc(id)?.page,
             None => {
-                let parent = self.voice_parent()?;
                 let base = page_title(local);
                 let mut title = base.clone();
                 let mut n = 2;
@@ -303,11 +302,18 @@ impl Database {
                     title = format!("{base} ({n})");
                     n += 1;
                 }
-                self.create_page(Some(parent), &title, Some("mic"))?
+                self.create_page(None, &title, Some("mic"))?
             }
         };
         let content = self.page_doc(page.id)?.content;
         self.save_page_content(page.id, &append_block(&content, &block))?;
+        if page_id.is_none() {
+            // Sprachnotizen/2026/10 – Oktober (Settings → Ordner & Ablage).
+            let info =
+                crate::filing::FileInfo { kind: crate::filing::FileType::Voice, date: local.date(), group: None };
+            self.file_page(page.id, &info)?;
+            return self.page(page.id);
+        }
         Ok(page)
     }
 
@@ -446,12 +452,16 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let page = db.voice_begin(None, at(), Some("Sprachnotiz 2026-10-01 14-30.flac"), "t1").unwrap();
         assert_eq!(page.title, "Sprachnotiz 01.10.2026 14:30");
+        assert_eq!(db.page_path(page.id).unwrap(), "Sprachnotizen / 2026 / 10 – Oktober");
         let parent = db.voice_parent().unwrap();
-        assert_eq!(page.parent_id, Some(parent));
+        assert_eq!(
+            db.page(page.parent_id.unwrap()).unwrap().parent_id.and_then(|y| db.page(y).unwrap().parent_id),
+            Some(parent)
+        );
         // A second one in the same minute gets its own title.
         let second = db.voice_begin(None, at(), None, "t2").unwrap();
         assert_eq!(second.title, "Sprachnotiz 01.10.2026 14:30 (2)");
-        assert_eq!(db.voice_parent().unwrap(), parent);
+        assert_eq!(second.parent_id, page.parent_id);
 
         db.voice_finish(
             page.id,

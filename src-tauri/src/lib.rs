@@ -15,6 +15,7 @@ mod desktop;
 mod devlog;
 mod feed;
 mod files;
+mod filing;
 mod focus;
 mod jira;
 mod jumplist;
@@ -4322,6 +4323,18 @@ pub fn run() {
             jira::jira_issue_view,
             jira::jira_issue_fetch,
             jira::jira_issue_note,
+            filing::filing_tidy_plan,
+            filing::filing_tidy_apply,
+            filing::pages_move,
+            filing::move_last,
+            filing::move_undo,
+            filing::filing_preview,
+            filing::folder_style_get,
+            filing::folder_style_set,
+            filing::smart_counts,
+            filing::smart_pages,
+            filing::smart_groups,
+            filing::page_create_filed,
             jira::jira_add_task,
             jira::jira_entry_issues,
             jira::jira_projects,

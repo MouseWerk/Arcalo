@@ -16,6 +16,11 @@ export interface Page {
 }
 export interface PageNode extends Page {
   children: PageNode[];
+  created_at?: string;
+  /** A folder of the filing (its type, or `rule`). */
+  system?: string | null;
+  /** Sort and color of the folder's children (Ordner & Ablage). */
+  style?: import("./filing").FolderStyle | null;
 }
 export interface Backlink {
   page_id: number;
@@ -301,6 +306,8 @@ export interface Settings {
   jira?: import("./jira").IssueSettings;
   /** Morgen-Briefing (briefing.rs); missing in settings of older versions. */
   briefing?: BriefingSettings;
+  /** Ordner & Ablage: folder and granularity per page type, rules. */
+  filing?: import("./filing").FilingSettings;
   /** Look for new releases at start and every 6 h (builds with an update key only). */
   auto_update_check: boolean;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */

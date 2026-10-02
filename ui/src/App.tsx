@@ -38,6 +38,7 @@ import { PlanPickerHost } from "./components/PlanPicker";
 import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
 import { BookmarkImportHost } from "./components/BookmarkImport";
+import { FilingHost } from "./components/FilingDialogs";
 import { openDayReview } from "./lib/reviewnav";
 import { offerBriefing, openBriefing, startBriefing } from "./lib/briefing";
 import { FirstRun } from "./onboarding/FirstRun";
@@ -365,6 +366,7 @@ export function App() {
       <PresentationHost />
       <MailImportHost />
       <BookmarkImportHost />
+      <FilingHost />
       <ConfirmHost />
       <TemplateHost />
       <FirstRun />

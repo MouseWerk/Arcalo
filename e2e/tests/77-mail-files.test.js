@@ -42,7 +42,9 @@ test("an .eml dropped onto a note opens the dialog instead of an embed", async (
   await app.waitText(".toast", /Notiz angelegt/);
 
   const parent = (await app.invoke("workspace_tree")).find((n) => n.title === "E-Mails");
-  const note = parent.children.find((n) => n.title === "Rückfrage Liefertermin");
+  // Filed into a year/month folder below the parent (Ordner & Ablage, 1.9).
+  const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
+  const note = below(parent.children).find((n) => n.title === "Rückfrage Liefertermin");
   const md = await content(note.id);
   const id = /\(annalo-mail:\/\/([0-9a-z]{8})\)/.exec(md)?.[1];
   assert.ok(id, md);

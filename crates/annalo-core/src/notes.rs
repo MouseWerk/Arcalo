@@ -596,30 +596,12 @@ impl Database {
             return Ok(p);
         }
         let settings = self.load_settings().unwrap_or_default();
-        let folder = Some(settings.notes.daily_folder.trim()).filter(|f| !f.is_empty()).unwrap_or(JOURNAL_TITLE);
-        let journal = match self
-            .conn()
-            .query_row(
-                &format!(
-                    "SELECT {} FROM pages WHERE parent_id IS NULL AND title = ?1 AND deleted_at IS NULL",
-                    crate::db::PAGE_COLS
-                ),
-                [folder],
-                crate::db::map_page,
-            )
-            .optional()?
-        {
-            Some(j) => j,
-            None => self.create_page(None, folder, Some("calendar-days"))?,
-        };
         // The title follows Settings → Notizen; `daily_date` always keeps the ISO date.
         let mut title = settings.notes.daily_title.title(date);
         if self.page_by_title(&title)?.is_some() {
             title = key.clone();
         }
-        let page = self.create_page(Some(journal.id), &title, Some("calendar"))?;
-        // Newest day first under the Journal.
-        self.move_page(page.id, Some(journal.id), 0)?;
+        let page = self.create_page(None, &title, Some("calendar"))?;
         self.conn().execute("UPDATE pages SET daily_date = ?2 WHERE id = ?1", params![page.id, key])?;
         // The UI shows the weekday and date under the title, so the body starts with the sections.
         // A trashed, deleted or moved template falls back to the built-in sections.
@@ -635,6 +617,11 @@ impl Database {
             None => tr!("## Fokus\n\n- [ ] \n\n## Notizen\n\n", "## Focus\n\n- [ ] \n\n## Notes\n\n").to_owned(),
         };
         self.save_page_content(page.id, &content)?;
+        // Into the Journal (Settings → Ordner & Ablage: `Journal/2026/10 – Oktober`), newest first.
+        self.file_page(
+            page.id,
+            &crate::filing::FileInfo { kind: crate::filing::FileType::Journal, date, group: None },
+        )?;
         self.page(page.id)
     }
 }
@@ -814,7 +801,7 @@ mod tests {
         assert_eq!(p.title, "2026-09-23");
         assert_eq!(db.daily_note(d).unwrap().id, p.id);
         assert!(db.page_doc(p.id).unwrap().content.starts_with("## Fokus"));
-        assert_eq!(db.page(p.parent_id.unwrap()).unwrap().title, JOURNAL_TITLE);
+        assert!(db.page_path(p.id).unwrap().starts_with(&format!("{JOURNAL_TITLE} / ")));
     }
 
     #[test]
@@ -832,7 +819,7 @@ mod tests {
         let p = db.daily_note(d).unwrap();
         assert_eq!(p.title, "Mittwoch, 23.09.2026");
         assert_eq!(p.daily_date.as_deref(), Some("2026-09-23"));
-        assert_eq!(db.page(p.parent_id.unwrap()).unwrap().title, "Tagebuch");
+        assert_eq!(db.page_path(p.id).unwrap(), "Tagebuch / 2026 / 09 – September");
         assert_eq!(db.daily_note(d).unwrap().id, p.id, "found by date, not title");
 
         // Trash: 7 days instead of 30.

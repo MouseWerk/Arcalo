@@ -397,8 +397,9 @@ fn a_mail_becomes_note_and_task_with_one_link() {
     assert_eq!(id.len(), 8);
     let note = out.note_page.unwrap();
     assert_eq!(note.title, "Angebot (Portal) ＃42 Rückfrage");
-    let parent = db.page(note.parent_id.unwrap()).unwrap();
-    assert_eq!((parent.title.as_str(), parent.icon.as_deref()), ("E-Mails", Some("mail")));
+    assert_eq!(db.page_path(note.id).unwrap(), "E-Mails / 2026 / 09 – September");
+    let root = db.page_by_title("E-Mails").unwrap().unwrap();
+    assert_eq!((root.parent_id, root.icon.as_deref()), (None, Some("mail")));
     let content = db.page_doc(note.id).unwrap().content;
     assert!(content.starts_with("---\nvon: \"Müller, Anna <anna.mueller@example.com>\"\nan: \"Kleindienst, Maurice\"\ndatum: 2026-09-24 14:32\nbetreff: \"Angebot [Portal] #42 Rückfrage\"\n"), "{content}");
     assert!(
@@ -473,7 +474,7 @@ fn pasted_and_file_mails_link_as_they_can() {
     assert!(out.task_page.is_none());
     let note = out.note_page.unwrap();
     assert_eq!(note.title, "Budget Q4");
-    assert_eq!(db.page(note.parent_id.unwrap()).unwrap().title, "Posteingang");
+    assert!(db.page_path(note.id).unwrap().starts_with("Posteingang / "));
     let content = db.page_doc(note.id).unwrap().content;
     assert!(!content.contains("annalo-mail") && !content.contains("vertraulich"), "{content}");
     assert!(content.ends_with("## Notizen\n\n- [ ] Zahlen senden\n"), "{content}");

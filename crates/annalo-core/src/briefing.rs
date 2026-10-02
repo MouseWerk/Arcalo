@@ -401,8 +401,9 @@ pub fn prep(db: &Database, e: &CalendarEvent) -> Result<Option<Prep>> {
     let base = format!("{} ", crate::notes::clean_title(title).to_lowercase());
     let sql = "SELECT id, title, created_at FROM pages
                WHERE deleted_at IS NULL AND substr(lower(title), 1, length(?1)) = ?1
-                 AND parent_id IN (SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL
-                                   AND title IN (?2 COLLATE NOCASE, ?3 COLLATE NOCASE))
+                 AND (file_type = 'meeting'
+                      OR parent_id IN (SELECT id FROM pages WHERE parent_id IS NULL AND deleted_at IS NULL
+                                       AND title IN (?2 COLLATE NOCASE, ?3 COLLATE NOCASE)))
                ORDER BY created_at DESC LIMIT 1";
     let found = row(sql, &[&base, &crate::calsync::MEETINGS_TITLE, &crate::calsync::MEETINGS_TITLE_EN])?;
     found.map(|r| make(r, "subject")).transpose()

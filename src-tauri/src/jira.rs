@@ -523,9 +523,19 @@ pub fn jira_issue_note(state: State<AppState>, key: String) -> Result<IssueNote>
     }
     let summary = db.issue_get(&key)?.map(|i| i.summary).unwrap_or_default();
     let title = format!("{key} {summary}");
-    let page = db.create_page(None, &crate::unique_title(&db, title.trim())?, Some("ticket"))?;
-    db.save_page_content(page.id, &format!("---\njira: {key}\n---\n\n"))?;
-    Ok(IssueNote { page: db.page(page.id)?, created: true })
+    let page = db.atomic(|| {
+        let page = db.create_page(None, &crate::unique_title(&db, title.trim())?, Some("ticket"))?;
+        db.save_page_content(page.id, &format!("---\njira: {key}\n---\n\n"))?;
+        // Jira/ABC Projekt/ABC-12 Titel (Settings → Ordner & Ablage).
+        let info = annalo_core::filing::FileInfo {
+            kind: annalo_core::filing::FileType::Jira,
+            date: chrono::Local::now().date_naive(),
+            group: Some(db.jira_group(&key)?),
+        };
+        db.file_page(page.id, &info)?;
+        db.page(page.id)
+    })?;
+    Ok(IssueNote { page, created: true })
 }
 
 #[derive(Serialize)]

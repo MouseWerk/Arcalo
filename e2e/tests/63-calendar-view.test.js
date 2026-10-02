@@ -173,7 +173,9 @@ test("a meeting note is created from the appointment and opened", async () => {
   assert.match(doc.content, /\[Besprechung beitreten\]\(https:\/\/teams\.microsoft\.com\/l\/meetup-join\/19%3akunde\)/);
   assert.match(doc.content, /## Teilnehmer\n\n- Müller, Anna\n- Weiß, Jörg\n/, "the demo template's attendee list is filled");
   const parent = (await app.invoke("workspace_tree")).find((n) => n.title === "Besprechungen");
-  assert.ok(parent?.children.some((c) => c.id === page.id), "below „Besprechungen“");
+  // In its year/month folder (Ordner & Ablage, 1.9).
+  const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
+  assert.ok(below(parent?.children ?? []).some((c) => c.id === page.id), "below „Besprechungen“");
   // Back in the Kalender the appointment opens its note.
   await app.click(".ribbon-calendar-view");
   await clickEvent("Kundentermin Müller");

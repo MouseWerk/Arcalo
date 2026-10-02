@@ -57,8 +57,11 @@ test("palette → recording → English transcript → automatic summary with ta
   const pages = flat(await app.invoke("workspace_tree"));
   const note = pages.find((p) => /^Voice note \d\d\.\d\d\.\d{4} \d\d:\d\d$/.test(p.title));
   assert.ok(note, "voice-note page");
+  // Voice notes/<year>/<MM – Month> (Folders & filing, 1.9).
   const parent = pages.find((p) => p.id === note.parent_id);
-  assert.equal(parent?.title, "Voice notes");
+  assert.match(parent?.title ?? "", /^\d\d – [A-Z][a-z]+$/);
+  const year = pages.find((p) => p.id === parent.parent_id);
+  assert.equal(pages.find((p) => p.id === year?.parent_id)?.title, "Voice notes");
   const content = (await app.invoke("page_get", { id: note.id })).content;
   assert.match(content, /## Voice note \d\d:\d\d\n\n!\[\[Voice note \d\d\.\d\d\.\d{4} \d\d-\d\d\.flac\]\]/);
   assert.match(content, /> \[!note\]- Transcript · 00:0\d · English\n> \*\*00:00\*\* Good morning/);

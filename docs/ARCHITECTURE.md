@@ -54,6 +54,10 @@ the binary is refused rather than modified.
 Migration v2 converts the old block model: blocks are concatenated into
 `pages.content`, then every page is re-indexed (chunks, links, tags).
 Migration v9 adds the calendar tables above (no data changes); v10 adds `wbs_memory`; v11 adds `mail_links`; v12 adds the chat history; v14 adds the Jira tables.
+Migration v19 adds the filing (`filing.rs`): `pages.file_type`/`file_date`/`file_group` (kind, date and series or Jira
+project of a page the app created; daily and meeting notes are marked by the migration), `pages.system_folder`/`system_key`
+(folders the filing created or adopted and their place: `root`, `y2026`, `m2026-10`, `w2026-40`, `g:<group>`),
+`folder_prefs` (sort and color per folder, `0` = top level) and `move_undo` (the last tidy-up or bulk move). No page is moved.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`.
 

@@ -14,6 +14,7 @@ import { Button, Dialog, Input, Segmented, Spinner } from "./ui";
 import { PageIcon } from "./icons";
 import { t as tr, useT, type TKey } from "../lib/i18n";
 import { fmtDate } from "../lib/format";
+import { filingApi } from "../lib/filing";
 import { colorHex, isGroup, normalizeLinks } from "../lib/quicklinks";
 import {
   MAX_GROUP,
@@ -202,29 +203,25 @@ function BookmarkImportDialog({ onClose }: { onClose: () => void }) {
 /** Creates the pages, saves the ribbon and offers „Rückgängig“. */
 async function runImport(plan: Plan, before: QuickLink[], label: string) {
   const created: number[] = [];
-  const parentTitle = tr("bm.pageParent");
-  let parentId: number | null = null;
-  let parentCreated = false;
+  // Folders the filing created for the pages (Settings → Ordner & Ablage), removed by the undo.
+  const folders: number[] = [];
+  let parentTitle = tr("bm.pageParent");
   const undoPages = async () => {
     for (const id of [...created].reverse()) await api.deletePage(id).catch(() => {});
-    if (parentCreated && parentId !== null) await api.deletePage(parentId).catch(() => {});
-    if (created.length || parentCreated) await s().refreshTree();
+    for (const id of [...folders].reverse()) await api.deletePage(id).catch(() => {});
+    if (created.length || folders.length) await s().refreshTree();
   };
   try {
     if (plan.pages.length) {
-      let parent = await api.resolvePage(parentTitle, false);
-      if (!parent) {
-        parent = await api.resolvePage(parentTitle, true);
-        parentCreated = true;
-        if (parent) await api.setIcon(parent.id, "link");
-      }
-      parentId = parent?.id ?? null;
       const intro = tr("bm.pageIntro", { source: label, date: fmtDate(new Date()) });
       for (const p of plan.pages) {
-        const page = await api.createPage(p.title, parentId, "link", pageMarkdown(p.items, intro));
-        created.push(page.id);
+        const made = await filingApi.createFiled("bookmarks", p.title, "link", pageMarkdown(p.items, intro));
+        created.push(made.page.id);
+        folders.push(...made.folders);
       }
       await s().refreshTree();
+      const first = s().pages.get(created[0]);
+      parentTitle = first?.parent_id != null ? (s().pages.get(first.parent_id)?.title ?? parentTitle) : tr("fl.topLevel");
     }
     if (plan.newLinks > 0) s().set({ settings: await api.saveQuickLinks(plan.links) });
   } catch (e) {

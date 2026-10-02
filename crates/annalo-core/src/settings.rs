@@ -118,6 +118,8 @@ pub struct Settings {
     pub jira: crate::issues::IssueSettings,
     /// Morgen-Briefing: when it shows up and its sections.
     pub briefing: crate::briefing::BriefingSettings,
+    /// Ordner & Ablage: folder and granularity per page type, rules.
+    pub filing: crate::filing::FilingSettings,
 }
 
 /// A link in the ribbon: a web address, `mailto:`, a local folder or file, a program, or a
@@ -530,6 +532,7 @@ impl Default for Settings {
             onboarding: crate::onboarding::OnboardingState::default(),
             jira: crate::issues::IssueSettings::default(),
             briefing: crate::briefing::BriefingSettings::default(),
+            filing: crate::filing::FilingSettings::default(),
             network: NetworkSettings::default(),
             appearance: AppearancePrefs::default(),
             editor: EditorPrefs::default(),
@@ -711,6 +714,7 @@ impl Settings {
             .collect();
         self.calendar = std::mem::take(&mut self.calendar).normalized();
         self.jira = std::mem::take(&mut self.jira).normalized();
+        self.filing = std::mem::take(&mut self.filing).normalized();
         self.briefing = std::mem::take(&mut self.briefing).normalized();
         self.mail = std::mem::take(&mut self.mail).normalized();
         self.time.balance = std::mem::take(&mut self.time.balance).normalized();
