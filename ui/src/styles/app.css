@@ -3007,3 +3007,60 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .ribbon-sep { margin: 2px 0; }
   .quick-links { gap: 1px; min-height: 32px; }
 }
+
+/* ---- Morgen-Briefing (views/BriefingView.tsx) ---- */
+.bf-view { --k-ai: var(--accent); --k-jira: var(--warning); --k-time: var(--violet); }
+.bf-view .tone-ai { --k: var(--k-ai); }
+.bf-view .tone-jira { --k: var(--k-jira); }
+.bf-view .tone-time { --k: var(--k-time); }
+.bf-noworkday { color: var(--text-3); }
+.bf-gear.active { background: var(--bg-active); }
+.bf-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.rv-view .bf-overview .rv-stat { grid-column: auto; }
+.bf-card .rv-group > .rv-row, .bf-issue > .rv-row { width: 100%; }
+.bf-grid > .bf-ai { grid-column: 1 / -1; }
+.bf-ai .card-head { gap: 8px; }
+.bf-ai-meta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.bf-ai-body { min-height: 44px; }
+.bf-ai-text ul { margin: 0; padding-left: 1.2em; }
+.bf-ai-text li + li { margin-top: 3px; }
+.bf-ai-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-md); color: var(--text-2); }
+
+.bf-meeting { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 44px; padding: 7px 10px; border-radius: var(--r-md); }
+.bf-meeting:hover { background: var(--bg-hover); }
+.bf-meeting.past .rv-title, .bf-meeting.past .rv-when { color: var(--text-3); }
+.bf-meeting.past .rv-main::before { background: color-mix(in srgb, var(--ev, var(--accent)) 40%, var(--bg-raised)); }
+.bf-meeting.next { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.bf-link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 550; text-align: left; cursor: pointer; }
+.bf-link:hover > .ellipsis { text-decoration: underline; text-decoration-color: var(--text-3); text-underline-offset: 2px; }
+.bf-link:focus-visible, .bf-prep:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; border-radius: var(--r-xs); }
+.bf-prep { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--accent-text); font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer; }
+.bf-prep > svg { flex: none; }
+.bf-prep:hover .ellipsis { text-decoration: underline; text-underline-offset: 2px; }
+.bf-actions { display: flex; align-items: center; gap: 4px; }
+.bf-issue { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.bf-issue .rv-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.bf-overdue { color: var(--danger); }
+.bf-task.overdue .rv-check { border-color: var(--danger); }
+
+.bf-time-body { display: grid; gap: 10px; padding: 12px 16px 14px; }
+.bf-time-body .progress { height: 5px; }
+.bf-time-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-md); }
+.bf-time-state > svg { color: var(--success); }
+.bf-time-state.missing > svg { color: var(--warning); }
+.bf-time-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.bf-customize .card-head { gap: 10px; }
+.bf-customize-hint { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bf-customize-body { padding: 6px 10px 10px; }
+.bf-sections { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.bf-section-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; min-height: 36px; padding: 2px 6px 2px 8px; border-radius: var(--r-md); }
+.bf-section-item:hover { background: var(--bg-hover); }
+.bf-section-icon { color: var(--text-2); }
+.bf-section-item.off .bf-section-name, .bf-section-item.off .bf-section-icon { color: var(--text-3); }
+.bf-section-name { min-width: 0; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container pane (max-width: 560px) {
+  .bf-meeting { grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding: 7px 8px; }
+  .bf-meeting .bf-actions { grid-column: 2; }
+  .bf-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

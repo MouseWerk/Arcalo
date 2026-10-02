@@ -53,6 +53,7 @@ pub mod attachments;
 pub mod backup;
 pub mod backupdest;
 pub mod bookmarks;
+pub mod briefing;
 pub mod calendar;
 pub mod calsync;
 pub mod capture;

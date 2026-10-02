@@ -223,7 +223,7 @@ test("Tagesrückblick without the Zeit section and booking states", async () => 
 
 test("the tray menu has no timer entries", async () => {
   const info = await app.invoke("desktop_info");
-  if (info.tray_menu) assert.deepEqual(info.tray_menu, ["open", "search", "-", "capture", "-", "quit"]);
+  if (info.tray_menu) assert.deepEqual(info.tray_menu, ["open", "search", "briefing", "-", "capture", "-", "quit"]);
 });
 
 test("switched on again, everything is back and the entries are intact", async () => {

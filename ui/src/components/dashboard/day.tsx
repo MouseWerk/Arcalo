@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
+import { CalendarDays, CalendarPlus, Check, CheckCircle2, ChevronLeft, ChevronRight, Coffee, NotebookPen, PenLine, Play, Sun, Sunset, Target, Timer, Video, WandSparkles } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { addDays, dateLocale, isoDay, isoWeek, weekStart } from "../../lib/format";
@@ -14,6 +14,7 @@ import { addMonths, dayTone, hoursLabel, monthGrid } from "../../lib/calendar";
 import { openCalendarView, openSettingsSection } from "../../lib/calnav";
 import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openDayReview } from "../../lib/reviewnav";
+import { openBriefing } from "../../lib/briefing";
 import { requestWeekProposal } from "../../lib/weekplan";
 import { TODAY_TIME_BLOCKS, configOf, type TodayBlock } from "../../lib/dashboard";
 import { useTimeTracking } from "../../lib/timetracking";
@@ -312,6 +313,9 @@ export function TodayWidget({ widget }: WidgetProps) {
                     {t("dash.act.week")}
                   </Button>
                 )}
+                <Button size="sm" variant="ghost" icon={Sun} className="dw-briefing" onClick={() => openBriefing()}>
+                  {t("dash.act.briefing")}
+                </Button>
                 <Button size="sm" variant="ghost" icon={Sunset} onClick={() => openDayReview()}>
                   {t("dash.act.review")}
                 </Button>

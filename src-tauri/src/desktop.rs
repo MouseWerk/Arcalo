@@ -115,7 +115,7 @@ pub fn show_main(app: &AppHandle) {
 /// The tray menu's entries in order (`-` is a separator): the timer entries only while time
 /// tracking is on.
 pub fn tray_entries(time: bool) -> Vec<&'static str> {
-    let mut ids = vec!["open", "search", "-"];
+    let mut ids = vec!["open", "search", "briefing", "-"];
     if time {
         ids.extend(["stop", "resume"]);
     }
@@ -149,6 +149,7 @@ fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItem
             }
             "open" => tr!("Öffnen", "Open"),
             "search" => tr!("Suchen…", "Search…"),
+            "briefing" => tr!("Morgen-Briefing", "Morning briefing"),
             "stop" => tr!("Timer stoppen", "Stop timer"),
             "resume" => tr!("Zuletzt verwendet starten", "Start last used"),
             "capture" => tr!("Schnellerfassung", "Quick capture"),
@@ -244,6 +245,10 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "capture" => open_capture(app, false),
         "voice-stop" => crate::voice::on_shortcut(app),
         "search" => open_search(app, false),
+        "briefing" => {
+            show_main(app);
+            let _ = app.emit_to(MAIN, "nav://briefing", ());
+        }
         "quit" => request_quit(app),
         _ => {}
     }
@@ -349,6 +354,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
             }
             crate::weekplan::on_focus(app);
             crate::dayreview::on_focus(app);
+            crate::briefing::on_focus(app);
         }
         // Leaving the app: the taskbar jump list shows the latest pages on the next right-click.
         (MAIN, WindowEvent::Focused(false)) => crate::jumplist::refresh(app),
@@ -1177,6 +1183,7 @@ pub fn periodic(app: &AppHandle) {
     }
     crate::weekplan::periodic(app);
     crate::dayreview::periodic(app);
+    crate::briefing::periodic(app);
 }
 
 // ---------------------------------------------------------------- autostart
@@ -1251,9 +1258,9 @@ mod tests {
     #[test]
     fn tray_has_timer_entries_only_with_time_tracking() {
         let on = tray_entries(true);
-        assert_eq!(on, ["open", "search", "-", "stop", "resume", "capture", "-", "quit"]);
+        assert_eq!(on, ["open", "search", "briefing", "-", "stop", "resume", "capture", "-", "quit"]);
         let off = tray_entries(false);
-        assert_eq!(off, ["open", "search", "-", "capture", "-", "quit"]);
+        assert_eq!(off, ["open", "search", "briefing", "-", "capture", "-", "quit"]);
     }
 
     #[test]
