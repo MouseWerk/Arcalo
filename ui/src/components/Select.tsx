@@ -182,7 +182,9 @@ export function Select({ value, onChange, options, children, disabled, className
     if (!open) return;
     const inside = (t: EventTarget | null) => t instanceof Node && (pop.current?.contains(t) || trigger.current?.contains(t));
     const onDown = (e: MouseEvent) => !inside(e.target) && setOpen(false);
-    const onScroll = (e: Event) => !(e.target instanceof Node && pop.current?.contains(e.target)) && setOpen(false);
+    // Only a scroll that moves the trigger closes the list (not the list itself, nor another
+    // area such as the assistant panel scrolling to its newest message).
+    const onScroll = (e: Event) => e.target instanceof Node && !pop.current?.contains(e.target) && trigger.current && e.target.contains(trigger.current) && setOpen(false);
     const close = () => setOpen(false);
     const onKey = (e: KeyboardEvent) => {
       const stop = () => (e.preventDefault(), e.stopPropagation());

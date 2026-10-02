@@ -304,14 +304,22 @@
 .tp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .tp-input { width: 100%; }
 
+/* Medium windows (around 900 px high): the menu tightens a little so all sections fit without
+   scrolling. */
+@media (max-height: 980px) {
+  .settings-nav-group + .settings-nav-group { margin-top: 8px; }
+  .settings-nav-group-label { padding: 5px 10px 3px; }
+  .settings-nav-item { height: 28px; }
+}
+
 /* Short windows: the menu drops its title (the search moves up to the row of back and forward)
    and tightens, so all sections fit or the list scrolls with every item reachable. */
 @media (max-height: 820px) {
   .settings-nav { padding-top: 3px; }
   .settings-nav-title { display: none; }
-  .settings-nav-group + .settings-nav-group { margin-top: 6px; }
-  .settings-nav-group-label { padding: 4px 10px 3px; }
-  .settings-nav-item { height: 26px; }
+  .settings-nav-group + .settings-nav-group { margin-top: 4px; }
+  .settings-nav-group-label { padding: 3px 10px 2px; }
+  .settings-nav-item { height: 24px; }
 }
 
 /* ---- window backdrop: opacity slider ---- */

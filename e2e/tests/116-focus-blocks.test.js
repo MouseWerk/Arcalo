@@ -223,12 +223,13 @@ test("Outlook: no duplicate after the sync, a closed Outlook makes the write wai
 });
 
 test("„Woche vorschlagen“ proposes a past block with the Vorgang of its task's page", async () => {
-  // Last week's Sunday: no demo bookings, no daily target.
-  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 1);
+  // A Sunday three weeks back: no daily target, and older than the demo bookings (up to nine
+  // days back, so last week's Sunday holds one when today is a Friday).
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 15);
   const start = at(sunday, 10);
   await app.invoke("block_create", { block: { title: "", start: start.toISOString(), end: new Date(start.getTime() + 90 * 60e3).toISOString(), link: { kind: "task", page_id: pageId, ordinal: 1, text: "Folien bauen" } } });
-  const lastMonday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 7);
-  const w = await app.invoke("week_proposal", { weekStart: iso(lastMonday), restOfToday: false });
+  const earlierMonday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 21);
+  const w = await app.invoke("week_proposal", { weekStart: iso(earlierMonday), restOfToday: false });
   const p = w.proposals.find((x) => x.kind === "block");
   assert.ok(p, JSON.stringify(w.proposals.map((x) => [x.kind, x.text])));
   assert.deepEqual([p.text, p.minutes, p.confidence, p.wbs?.reference], ["Folien bauen", 90, "high", "NP-8801/1020"]);

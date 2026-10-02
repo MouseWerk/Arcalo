@@ -89,7 +89,7 @@ test("„Symbol ändern“: German names, the list scrolls inside the window and
     item.scrollIntoView({ block: "nearest" });
     item.click();
   });
-  await app.browser.waitUntil(async () => (await app.invoke("page_get", { id: page.id })).icon === "kanban", { timeoutMsg: "icon not set" });
+  await app.browser.waitUntil(async () => (await app.invoke("page_get", { id: page.id })).icon === "canvas", { timeoutMsg: "icon not set" });
   await app.browser.setWindowSize(1480, 920);
 });
 
