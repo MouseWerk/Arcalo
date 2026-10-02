@@ -18,7 +18,7 @@ use annalo_core::{Database, Error, tr};
 use chrono::{Local, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::desktop::{MAIN, notify};
+use crate::desktop::MAIN;
 use crate::{AppState, Result, prefs};
 
 /// The notification was shown while the app was in the background: the next focus of the
@@ -150,7 +150,7 @@ fn start_check(app: &AppHandle, state: &AppState, today: NaiveDate) -> Result<St
         }
         build(state, &db, &[]).map(|b| core::notify_body(&b)).unwrap_or_default()
     };
-    notify(app, tr!("Morgen-Briefing", "Morning briefing"), &body);
+    crate::notifyact::show(app, crate::notifyact::Note::briefing(&body));
     Ok(StartAction::Notify)
 }
 
@@ -200,11 +200,23 @@ pub fn periodic(app: &AppHandle) {
         let _ = db.meta_set(core::DAY_KEY, &now.date().to_string());
         build(&state, &db, &[]).map(|b| core::notify_body(&b)).unwrap_or_default()
     };
-    notify(app, tr!("Morgen-Briefing", "Morning briefing"), &body);
+    crate::notifyact::show(app, crate::notifyact::Note::briefing(&body));
     let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
     if focused {
         // In the app already: it offers the briefing itself.
         let _ = app.emit_to(MAIN, "briefing://notified", ());
+    } else {
+        PENDING.store(true, Ordering::Relaxed);
+    }
+}
+
+/// „Öffnen“ on (or a click on) the briefing notification. During a first start the briefing
+/// opens once the window gets the focus.
+pub fn open(app: &AppHandle, ready: bool) {
+    crate::desktop::show_main(app);
+    if ready {
+        PENDING.store(false, Ordering::Relaxed);
+        let _ = app.emit_to(MAIN, "nav://briefing", ());
     } else {
         PENDING.store(true, Ordering::Relaxed);
     }

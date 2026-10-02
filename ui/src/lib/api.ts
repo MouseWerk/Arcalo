@@ -284,6 +284,8 @@ export const api = {
   devlogStats: () => call<T.DevLogStats>("devlog_stats"),
   devlogClear: () => call<void>("devlog_clear"),
   devlogOpenFolder: () => call<void>("devlog_open_folder"),
+  diagnosticsBundle: (path: string) => call<string>("diagnostics_bundle", { path }),
+  secretsStatus: () => call<T.SecretStoreStatus>("secrets_status"),
 
   // network
   networkStatus: () => call<T.NetworkStatus>("network_status"),

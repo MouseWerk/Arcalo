@@ -545,6 +545,7 @@ fn busy_error() -> Error {
 }
 
 /// Reads one source and replaces its events; records the outcome.
+#[tracing::instrument(name = "calendar_sync", skip(app), fields(source = "calendar"))]
 async fn sync_source(app: &AppHandle, id: &str) -> Result<usize> {
     if calendars::is_outlook(id) {
         let mut out = sync_outlook(app, &[id.to_owned()]).await;
@@ -560,6 +561,7 @@ async fn sync_source(app: &AppHandle, id: &str) -> Result<usize> {
 
 /// Reads the Outlook calendars `ids` in one run of the script; each gets its own outcome (a
 /// calendar that cannot be read does not fail the others).
+#[tracing::instrument(name = "calendar_sync_outlook", skip_all, fields(source = "calendar", calendars = ids.len()))]
 async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<usize>)> {
     // Focus blocks waiting for Outlook first: their appointments then come back as the blocks.
     let _ = crate::timeblocks::flush(app, false).await;

@@ -682,6 +682,8 @@ pub struct NotificationPrefs {
     pub day_review: bool,
     /// `HH:MM` (local time) of the day review reminder.
     pub day_review_time: String,
+    /// Tasks due today, from 09:00 on a day (with „Erledigt“, „Schlummern“ and „Öffnen“).
+    pub task_due: bool,
     /// No desktop notifications between `quiet_from` and `quiet_to`.
     pub quiet_hours: bool,
     pub quiet_from: String,
@@ -700,6 +702,7 @@ impl Default for NotificationPrefs {
             week_proposal: true,
             day_review: false,
             day_review_time: "17:30".into(),
+            task_due: true,
             quiet_hours: false,
             quiet_from: "22:00".into(),
             quiet_to: "07:00".into(),

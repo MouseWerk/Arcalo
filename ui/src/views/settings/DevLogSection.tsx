@@ -3,10 +3,11 @@
 // shows a short summary row (errors of the last 7 days).
 
 import { useEffect, useState } from "react";
-import { Copy, FolderOpen, RefreshCw, ScrollText, Trash2 } from "lucide-react";
-import { Badge, Button, Segmented, Switch } from "../../components/ui";
+import { Copy, FolderOpen, PackageOpen, RefreshCw, ScrollText, Trash2 } from "lucide-react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { Badge, Button, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
-import { entriesText, entryTime, filterEntries, levelTone, type DevLogFilter } from "../../lib/devlog";
+import { BUNDLE_EVENT, LEVELS, bundleName, entriesText, entryTime, filterEntries, levelTone, settingLevel, type DevLogFilter } from "../../lib/devlog";
 import { t as tr, useT } from "../../lib/i18n";
 import type { DevLogEntry, DevLogStats } from "../../lib/types";
 import { useApp } from "../../store/app";
@@ -29,10 +30,40 @@ export function DevLogSection({ draft, update }: SectionProps) {
   const [filter, setFilter] = useState<DevLogFilter>("all");
   const [loading, setLoading] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [stats, setStats] = useState<DevLogStats | null>(null);
+  const [bundling, setBundling] = useState(false);
+  const levelEnv = stats?.level_env ?? null;
+
+  const createBundle = async (given?: string) => {
+    const path = given ?? (await saveDialog({ defaultPath: bundleName(new Date()), filters: [{ name: "Zip", extensions: ["zip"] }] }).catch(() => null));
+    if (!path) return;
+    setBundling(true);
+    try {
+      const written = await api.diagnosticsBundle(path);
+      s().toast({ tone: "success", title: t("devlog.bundleSaved"), detail: written });
+    } catch (e) {
+      s().error(t("devlog.bundleFailed"), e);
+    } finally {
+      setBundling(false);
+    }
+  };
+  // Tests hand in the path the save dialog would return.
+  useEffect(() => {
+    const onSave = (e: Event) => void createBundle((e as CustomEvent<{ path: string }>).detail.path);
+    window.addEventListener(BUNDLE_EVENT, onSave);
+    return () => window.removeEventListener(BUNDLE_EVENT, onSave);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = async () => {
     setLoading(true);
-    void api.devlogStats().then((st) => setWriteError(st.write_error ?? null), () => {});
+    void api.devlogStats().then(
+      (st) => {
+        setStats(st);
+        setWriteError(st.write_error ?? null);
+      },
+      () => {},
+    );
     try {
       setEntries(await api.devlogRead(LIMIT));
     } catch (e) {
@@ -71,12 +102,32 @@ export function DevLogSection({ draft, update }: SectionProps) {
     <div className="devlog-section">
       <SectionHead title={t("nav.devlog")} intro={t("devlog.intro")} />
       <Group title={t("devlog.settings")}>
-        <Row label={t("devlog.verbose")} description={t("devlog.verboseDesc")}>
-          <Switch label={t("devlog.verbose")} checked={draft.dev_log_verbose} onChange={(v) => update({ dev_log_verbose: v })} />
+        <Row label={t("devlog.level")} description={levelEnv ? t("devlog.levelEnv", { spec: levelEnv }) : t("devlog.levelDesc")}>
+          <Select
+            className="devlog-level"
+            value={levelEnv ? (stats?.level ?? "INFO").toLowerCase() : settingLevel(draft)}
+            disabled={!!levelEnv}
+            aria-label={t("devlog.level")}
+            onChange={(e) => update({ dev_log_level: e.target.value, dev_log_verbose: e.target.value === "debug" || e.target.value === "trace" })}
+          >
+            {LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {t(`devlog.level.${l}`)}
+              </option>
+            ))}
+          </Select>
+        </Row>
+        <Row label={t("devlog.json")} description={t("devlog.jsonDesc")}>
+          <Switch label={t("devlog.json")} checked={!!draft.dev_log_json} onChange={(v) => update({ dev_log_json: v })} />
         </Row>
         <Row label={t("devlog.folder")} description={writeError ? <span className="mirror-error">{t("devlog.writeError", { msg: writeError })}</span> : t("devlog.folderDesc")}>
           <Button icon={FolderOpen} onClick={() => void openFolder()}>
             {t("devlog.openFolder")}
+          </Button>
+        </Row>
+        <Row label={t("devlog.bundle")} description={t("devlog.bundleDesc")}>
+          <Button icon={PackageOpen} loading={bundling} onClick={() => void createBundle()}>
+            {t("devlog.bundleCreate")}
           </Button>
         </Row>
       </Group>

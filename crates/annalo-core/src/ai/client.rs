@@ -185,6 +185,7 @@ impl AiClient {
     /// Streams a chat completion, calling `on_event` for every delta. When
     /// `cancel` becomes true the stream is dropped and the partial answer is
     /// returned with `finish_reason = "cancelled"`.
+    #[tracing::instrument(name = "ai_request", skip_all, fields(source = "ai", provider = %self.provider().id, model = %req.model))]
     pub async fn chat_stream(
         &self,
         req: &ChatRequest,

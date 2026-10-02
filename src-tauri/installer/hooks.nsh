@@ -150,6 +150,10 @@ Var AnnaloFound
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; The address the notification buttons start Arcalo with (registered by the app itself).
+  ${If} $UpdateMode <> 1
+    DeleteRegKey HKCU "Software\Classes\arcalo-notify"
+  ${EndIf}
   ; An autostart entry of Annalo that the app never renamed (not when updating).
   ${If} $UpdateMode <> 1
     DeleteRegValue HKCU "${ANNALO_RUNKEY}" "Annalo"

@@ -384,6 +384,7 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
 /// downloading in the background; nothing is installed here. `manual`: the user clicked
 /// „Jetzt nach Updates suchen“ (that also ends a running „Später erinnern“).
 #[tauri::command(async)]
+#[tracing::instrument(name = "update_check", skip_all, fields(source = "update"))]
 pub async fn update_check(
     app: AppHandle,
     updates: State<'_, Updates>,
@@ -474,7 +475,10 @@ fn start_download(app: &AppHandle) {
         let updates = app.state::<Updates>();
         updates.downloading.store(false, Ordering::SeqCst);
         match res {
-            Ok(Some(s)) => crate::devlog::info("update", format!("{} downloaded and verified", s.version)),
+            Ok(Some(s)) => {
+                crate::devlog::info("update", format!("{} downloaded and verified", s.version));
+                crate::notifyact::update_ready(&app, &s.version);
+            }
             Ok(None) => crate::devlog::debug("update", "download paused"),
             Err(e) => {
                 crate::devlog::warn("update", format!("background download: {e}"));
@@ -506,6 +510,7 @@ pub fn update_pause(updates: State<Updates>) {
 }
 
 /// Downloads (resuming a part) and verifies the offered update; `None` when paused.
+#[tracing::instrument(name = "update_download", skip_all, fields(source = "update"))]
 async fn ensure_staged(app: &AppHandle) -> Result<Option<Staged>> {
     let updates = app.state::<Updates>();
     let offer = lock(&updates.offer)
@@ -726,6 +731,7 @@ pub fn on_exit(app: &AppHandle) {
 
 /// Backs up the database, keeps the running version, notes the restart, then hands the
 /// verified file to the updater plugin. `restart`: the Windows installer starts the new version.
+#[tracing::instrument(name = "update_install", skip_all, fields(source = "update", version = %staged.version, restart))]
 async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> {
     let key = pubkey().ok_or_else(not_configured)?;
     let bytes = std::fs::read(&staged.path)?;

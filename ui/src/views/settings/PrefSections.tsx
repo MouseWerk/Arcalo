@@ -12,6 +12,7 @@ import { dateLocale, fmtHours } from "../../lib/format";
 import type { NotesPrefs, NotificationPrefs, PrivacyPrefs, ProjectTree, StartPrefs, TimePrefs } from "../../lib/types";
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 import { ChatHistoryGroup } from "./ChatHistoryPrefs";
+import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
 
 // ------------------------------------------------------------------ notes
@@ -329,6 +330,9 @@ export function NotificationsSection({ draft, update }: SectionProps) {
         {time && toggle("end_of_day", t("set.notify.endOfDay"), draft.reminder_time ? t("set.notify.endOfDayAt", { time: draft.reminder_time }) : t("set.notify.endOfDayOff"))}
         {time && toggle("late_timer", t("set.notify.lateTimer"), t("set.notify.lateTimerDesc"))}
         {time && toggle("week_proposal", t("set.notify.weekProposal"), t("set.notify.weekProposalDesc"))}
+        <Row label={t("set.notify.taskDue")} description={t("set.notify.taskDueDesc")}>
+          <Switch label={t("set.notify.taskDue")} checked={n.task_due ?? true} onChange={(v) => set({ task_due: v })} />
+        </Row>
         <Row label={t("set.notify.dayReview")} description={t("set.notify.dayReviewDesc")}>
           <div className="unit-input">
             {n.day_review && <Input className="time-input num notify-review-time" value={n.day_review_time} maxLength={5} placeholder="17:30" onChange={(e) => set({ day_review_time: e.target.value })} aria-label={t("set.notify.dayReviewTime")} />}
@@ -398,6 +402,7 @@ export function PrivacySection({ draft, update }: SectionProps) {
         </Row>
       </Group>
       <ChatHistoryGroup draft={draft} update={update} />
+      <SecretStoreGroup />
     </>
   );
 }

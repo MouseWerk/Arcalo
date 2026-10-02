@@ -8,7 +8,6 @@ use annalo_core::{Error, desktop as core};
 use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::{AppState, lock};
 
@@ -72,9 +71,32 @@ fn pause_notification(app: &AppHandle, o: &FocusOutcome) {
     } else {
         annalo_core::trf!("{worked} Fokus{what} geschafft.", "{worked} of focus{what} done.")
     };
-    if let Err(e) = app.notification().builder().title(annalo_core::tr!("Pause", "Break")).body(body).silent().show() {
-        crate::devlog::warn("focus", format!("notification failed: {e}"));
-    }
+    crate::notifyact::show(app, crate::notifyact::Note::focus_end(body));
+}
+
+/// „+5 Min“ on the „Pause“ notification: a new session of `minutes` on the same Vorgang and
+/// goal (the completed one stays booked).
+pub fn extend(app: &AppHandle, minutes: f64) -> Result<()> {
+    let state = app.state::<AppState>();
+    let last = focus::last_done(&state.db())?
+        .ok_or_else(|| Error::State(annalo_core::tr!("Keine Fokussitzung", "No focus session").into()))?;
+    let reference = if state.settings().time_tracking() { last.reference } else { String::new() };
+    let start = FocusStart { reference, goal: last.goal, minutes, break_minutes: last.break_minutes, block_id: None };
+    focus::start(&state.db(), &start, Utc::now())?;
+    lock(&HELD).clear();
+    let _ = app.emit("focus://changed", ());
+    Ok(())
+}
+
+/// „Pause“ on the notification: the break runs (its own length, else 5 minutes).
+pub fn take_break(app: &AppHandle) -> Result<()> {
+    let state = app.state::<AppState>();
+    let db = state.db();
+    let minutes = focus::last_done(&db)?.map_or(5, |s| if s.break_minutes > 0 { s.break_minutes } else { 5 });
+    focus::take_break(&db, Utc::now(), minutes)?;
+    drop(db);
+    let _ = app.emit("focus://changed", ());
+    Ok(())
 }
 
 #[derive(Serialize)]

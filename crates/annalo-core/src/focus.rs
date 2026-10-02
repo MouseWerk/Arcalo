@@ -399,6 +399,24 @@ pub fn end_break(db: &Database, now: DateTime<Utc>) -> Result<()> {
     Ok(())
 }
 
+/// The latest completed session (the one the „Pause“ notification and its buttons refer to).
+pub fn last_done(db: &Database) -> Result<Option<FocusSession>> {
+    let sql = format!("SELECT {COLS} FROM focus_sessions WHERE status = 'done' ORDER BY id DESC LIMIT 1");
+    Ok(db.conn().query_row(&sql, [], map).optional()?)
+}
+
+/// „Pause“ on the notification: the break of the latest completed session runs for at least
+/// `minutes` from now (its own length when it had one, else a short one).
+pub fn take_break(db: &Database, now: DateTime<Utc>, minutes: i64) -> Result<()> {
+    let Some(s) = last_done(db)? else { return Ok(()) };
+    let until = ts(now + chrono::Duration::minutes(minutes.clamp(1, MAX_BREAK)));
+    db.conn().execute(
+        "UPDATE focus_sessions SET break_until = ?2 WHERE id = ?1 AND (break_until IS NULL OR break_until < ?2)",
+        params![s.id, until],
+    )?;
+    Ok(())
+}
+
 /// Whether notifications are held back now: a session is in its work phase.
 pub fn holds_notifications(db: &Database, now: DateTime<Utc>) -> bool {
     matches!(running(db), Ok(Some(s)) if now < s.ends_at())

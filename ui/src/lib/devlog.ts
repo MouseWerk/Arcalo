@@ -3,7 +3,7 @@
 // cannot flood the file: the same message at most once per 10 s, at most 50 lines a minute.
 
 import { api } from "./api";
-import type { DevLogEntry, DevLogLevel } from "./types";
+import type { DevLogEntry, DevLogLevel, Settings } from "./types";
 
 const REPEAT_MS = 10_000;
 const PER_MINUTE = 50;
@@ -66,6 +66,26 @@ export function filterEntries(entries: DevLogEntry[], filter: DevLogFilter): Dev
 
 /** Badge tone of a level. */
 export const levelTone = (level: string) => (level === "ERROR" ? "danger" : level === "WARN" ? "warning" : "neutral");
+
+/** The levels of Settings → Protokoll, most important first. */
+export const LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
+export type SettingLevel = (typeof LEVELS)[number];
+
+/** The level the settings choose: `dev_log_level`, else „Ausführliches Protokoll“ of earlier versions. */
+export function settingLevel(s: Pick<Settings, "dev_log_level" | "dev_log_verbose">): SettingLevel {
+  const l = (s.dev_log_level ?? "").trim().toLowerCase();
+  if ((LEVELS as readonly string[]).includes(l)) return l as SettingLevel;
+  return s.dev_log_verbose ? "debug" : "info";
+}
+
+/** Tests hand the diagnostics bundle the path the save dialog would return. */
+export const BUNDLE_EVENT = "annalo:diagnostics-bundle";
+
+/** `arcalo-diagnose-2026-10-02-1405.zip` */
+export function bundleName(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `arcalo-diagnose-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.zip`;
+}
 
 /** `24.09.2026 14:05:03` in local time; the raw text when it is no timestamp. */
 export function entryTime(time: string): string {

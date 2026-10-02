@@ -14,6 +14,7 @@ mod dashboard;
 mod dayreview;
 mod desktop;
 mod devlog;
+mod diagnostics;
 mod feed;
 mod files;
 mod filing;
@@ -23,6 +24,7 @@ mod jira;
 mod jumplist;
 mod mail;
 mod network;
+mod notifyact;
 mod policy;
 mod portable;
 mod prefs;
@@ -1276,6 +1278,7 @@ fn run_backup(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     res
 }
 
+#[tracing::instrument(name = "backup", skip_all, fields(source = "backup"))]
 fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     let state = app.state::<AppState>();
     let dir = state.backup_dir();
@@ -1335,6 +1338,7 @@ impl AppState {
 /// Refreshes the source (unless the mirror was just written), syncs, records the outcome
 /// and emits `gitsync://done` or `gitsync://failed`. Never holds the database lock while git runs.
 /// `allow_deletions`: the user confirmed a commit that deletes many notes.
+#[tracing::instrument(name = "git_sync", skip(app), fields(source = "git"))]
 pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions: bool) -> Result<SyncOutcome> {
     let state = app.state::<AppState>();
     let _running = lock(&state.git_lock);
@@ -1869,7 +1873,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         return Err(e);
     }
     lock(&state.idle).set_threshold(Duration::from_secs(settings.idle_threshold_minutes * 60));
-    devlog::set_verbose(settings.dev_log_verbose);
+    devlog::apply_settings(&settings);
     // Keys of removed providers are deleted with them.
     for gone in previous.providers.iter().filter(|p| !settings.providers.iter().any(|n| n.id == p.id)) {
         if let Err(e) = state.provider_secret(&gone.id).set(None) {
@@ -3782,7 +3786,7 @@ pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
 pub(crate) fn restart(app: &AppHandle) -> Result<()> {
     let exe = tauri::process::current_binary(&app.env())?;
     prepare_exit(app);
-    let args = std::env::args_os().skip(1).filter(|a| a != desktop::MINIMIZED_ARG);
+    let args = std::env::args_os().skip(1).filter(|a| a != desktop::MINIMIZED_ARG && !notifyact::is_activation(a));
     if let Err(e) = std::process::Command::new(exe).args(args).spawn() {
         resume_after_failed_exit(app);
         return Err(e.into());
@@ -3814,10 +3818,16 @@ pub fn run() {
         return;
     }
     if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match jumplist::parse(&args) {
-            // A taskbar jump-list entry while the app runs.
-            Some(action) => jumplist::run(app, action, true),
-            None => desktop::show_main(app),
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A notification button (Windows starts Arcalo with its `arcalo-notify:` address).
+            if let Some((subject, act)) = notifyact::from_args(&args) {
+                return notifyact::activate(app, subject, act, true);
+            }
+            match jumplist::parse(&args) {
+                // A taskbar jump-list entry while the app runs.
+                Some(action) => jumplist::run(app, action, true),
+                None => desktop::show_main(app),
+            }
         }));
     }
     // Only in release builds with an update key; others never contact the update server.
@@ -3887,7 +3897,7 @@ pub fn run() {
             // Until the settings are read (and on the recovery screens): the system's language.
             annalo_core::i18n::set_lang(annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default()));
             let folder_error = std::fs::create_dir_all(&dir).err();
-            devlog::init(&dir, false);
+            devlog::init(&dir);
             if let Some(e) = folder_error {
                 recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
@@ -4017,7 +4027,7 @@ pub fn run() {
                      Settings → Network."
                 )));
             }
-            devlog::set_verbose(settings.dev_log_verbose);
+            devlog::apply_settings(&settings);
             if let Err(e) = db.chat_prune(settings.ai.chat_history, Utc::now()) {
                 devlog::warn("ai", format!("chat history cleanup failed: {e}"));
             }
@@ -4029,6 +4039,7 @@ pub fn run() {
                 settings.mail.shortcut.clone(),
                 settings.voice.shortcut.clone(),
             ];
+            secrets::init(&dir);
             let secrets = SecretStore::new(&dir);
             let proxy_secret = SecretStore::proxy(&dir);
             let idle_threshold = Duration::from_secs(settings.idle_threshold_minutes * 60);
@@ -4108,6 +4119,11 @@ pub fn run() {
             // Started from a taskbar jump-list entry: runs once the UI listens (`jump_take`).
             if let Some(action) = jumplist::parse(&std::env::args().collect::<Vec<_>>()) {
                 jumplist::run(app.handle(), action, false);
+            }
+            // Started by a notification button while Arcalo was not running.
+            notifyact::register(app.handle());
+            if let Some((subject, act)) = notifyact::from_args(&std::env::args().collect::<Vec<_>>()) {
+                notifyact::activate(app.handle(), subject, act, false);
             }
             jumplist::refresh(app.handle());
             if wants_minimized && !tray {
@@ -4362,6 +4378,9 @@ pub fn run() {
             devlog::devlog_stats,
             devlog::devlog_clear,
             devlog::devlog_open_folder,
+            diagnostics::diagnostics_bundle,
+            secrets::secrets_status,
+            notifyact::notify_test,
             jira::jira_status,
             jira::jira_site_save,
             jira::jira_site_remove,
@@ -4469,6 +4488,7 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
             // A downloaded update is installed (macOS, Linux; Windows at the next quit).
             updates::on_exit(app);
             checkpoint_on_exit(app);
+            devlog::shutdown();
         }
         _ => {}
     }

@@ -38,6 +38,12 @@ sys-locale = "0.3.2"
 whisper-rs = "0.16"
 cpal = "0.16"
 reqwest = { version = "0.13.5", default-features = false }
+# Structured developer log (devlog.rs): levels, spans with timings, the JSON-lines file.
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["std", "registry"] }
+tracing-appender = "0.2"
+# Settings → Protokoll „Diagnosepaket erstellen“.
+zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).
@@ -54,6 +60,10 @@ windows = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_Shell_Common",
   "Win32_UI_Shell_PropertiesSystem",
+  # Notification toasts with buttons (notifyact.rs).
+  "Data_Xml_Dom",
+  "Foundation",
+  "UI_Notifications",
 ] }
 
 # Quick capture/search over full-screen apps on every Space (NSWindow collection behaviour).
@@ -62,6 +72,12 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
+
+# Linux: secrets in the Secret Service (GNOME Keyring, KWallet) over D-Bus (libdbus), the
+# file only when none answers. Notifications with buttons (freedesktop actions).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+notify-rust = "4.18"
 
 [features]
 # Used by `cargo tauri build`/`dev`; debug builds without it load the Vite dev server.

@@ -86,6 +86,10 @@ pub struct Settings {
     pub updates: crate::update_policy::UpdatePrefs,
     /// Developer log (Settings → Protokoll): also write debug lines (AI requests, syncs, backups).
     pub dev_log_verbose: bool,
+    /// Developer log level (`error` … `trace`); empty: `dev_log_verbose` decides (debug or info).
+    pub dev_log_level: String,
+    /// Developer log: also write the events as JSON lines (`logs/annalo.jsonl`).
+    pub dev_log_json: bool,
     /// Push the Markdown mirror to a Git remote (the access token lives in the credential store).
     pub git_sync: GitSyncSettings,
     /// Proxy, extra root CA and timeouts (the proxy password lives in the credential store).
@@ -525,6 +529,8 @@ impl Default for Settings {
             auto_update_check: true,
             updates: Default::default(),
             dev_log_verbose: false,
+            dev_log_level: String::new(),
+            dev_log_json: false,
             git_sync: GitSyncSettings::default(),
             search_shortcut: DEFAULT_SEARCH_SHORTCUT.into(),
             dashboard: Dashboard::default(),

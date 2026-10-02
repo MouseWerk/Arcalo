@@ -205,6 +205,10 @@ impl Database {
     fn migrate(&mut self) -> Result<()> {
         let current = self.schema_version()?;
         check_not_newer(current)?;
+        // The desktop log times the upgrade of an older workspace.
+        let _span = (current < MIGRATIONS.len()).then(|| {
+            tracing::info_span!("db_migration", source = "db", from = current, to = MIGRATIONS.len()).entered()
+        });
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
             // v2 turned blocks into a derived chunk index (and created the settings table);
             // build it (and later derived indexes) from page content.

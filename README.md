@@ -556,7 +556,8 @@ secrets; apps installed with the old key must be updated once by hand.
 - **Trash** keeps deleted pages for 30 days. **Version history** keeps earlier states of every page, with a diff
 - **Git sync** pushes the Markdown copy to your own private repository (see below)
 - **Secrets** (AI provider keys, Git token, proxy password, calendar subscription addresses) are stored in the Windows Credential Manager or the macOS
-  Keychain (on Linux in `secrets.json` in the data folder, readable only by your user). They are never written to the
+  Keychain, on Linux in the Secret Service (GNOME Keyring, KWallet; without one in `secrets.json` in the data folder,
+  readable only by your user, as Settings → Privacy shows). They are never written to the
   database, settings exports, backups or logs
 - **Chats** with the assistant stay in the local database and follow Settings → Privacy → “Keep chats”
 - **Export** everything back to plain Markdown files at any time

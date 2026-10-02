@@ -3646,3 +3646,10 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .cv-conflict:empty { display: none; }
 .cv-conflict { flex: none; padding: 8px 16px 0; }
 .cv-conflict .cf-banner { margin: 0; }
+
+/* ---- credentials store (Settings → Datenschutz) and log level (Settings → Protokoll) ---- */
+.secret-store { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.secret-store-label { font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.secret-store-desc { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.secret-store-reason { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.devlog-level { min-width: 190px; max-width: 100%; }

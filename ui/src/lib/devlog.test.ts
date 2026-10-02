@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createThrottle, entriesText, filterEntries, levelTone } from "./devlog";
+import { bundleName, createThrottle, entriesText, filterEntries, levelTone, settingLevel } from "./devlog";
 import type { DevLogEntry } from "./types";
 
 describe("developer log", () => {
@@ -31,5 +31,18 @@ describe("developer log", () => {
       "INFO fremde Zeile\n2026-09-24T14:05:01.000+02:00 ERROR [git] push fehlgeschlagen\n2026-09-24T14:05:03.123+02:00 WARN [ai] langsam",
     );
     expect([levelTone("ERROR"), levelTone("WARN"), levelTone("INFO")]).toEqual(["danger", "warning", "neutral"]);
+  });
+
+  it("reads the level from the setting or the verbose switch of earlier versions", () => {
+    expect(settingLevel({ dev_log_level: "trace", dev_log_verbose: false })).toBe("trace");
+    expect(settingLevel({ dev_log_level: " WARN ", dev_log_verbose: true })).toBe("warn");
+    expect(settingLevel({ dev_log_level: "", dev_log_verbose: true })).toBe("debug");
+    expect(settingLevel({ dev_log_verbose: false })).toBe("info");
+    expect(settingLevel({ dev_log_level: "loud", dev_log_verbose: false })).toBe("info");
+    expect([levelTone("DEBUG"), levelTone("TRACE")]).toEqual(["neutral", "neutral"]);
+  });
+
+  it("names the diagnostics bundle by date and time", () => {
+    expect(bundleName(new Date(2026, 9, 2, 14, 5))).toBe("arcalo-diagnose-2026-10-02-1405.zip");
   });
 });

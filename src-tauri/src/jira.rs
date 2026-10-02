@@ -314,6 +314,7 @@ async fn sync_site(app: &AppHandle, id: &str, wait: bool) -> Result<usize> {
     outcome.map(|(n, _)| n)
 }
 
+#[tracing::instrument(name = "jira_sync", skip(app), fields(source = "jira"))]
 async fn sync_inner(app: &AppHandle, id: &str) -> Result<(usize, String)> {
     let state = app.state::<AppState>();
     let settings = state.settings().jira;

@@ -316,6 +316,10 @@ export interface Settings {
   updates?: UpdatePrefs;
   /** Developer log: also write debug lines (AI requests, syncs, backups). */
   dev_log_verbose: boolean;
+  /** Developer log level (`error` … `trace`); "": `dev_log_verbose` decides. */
+  dev_log_level?: string;
+  /** Developer log: also JSON lines in `logs/annalo.jsonl`. */
+  dev_log_json?: boolean;
   /** Push the Markdown mirror to a Git remote; the token lives in the credential store. */
   git_sync: GitSyncSettings;
   /** Proxy, extra root CA, timeouts; the proxy password lives in the credential store. */
@@ -476,6 +480,8 @@ export interface NotificationPrefs {
   /** „Tagesrückblick ansehen“ once a workday at `day_review_time`. */
   day_review: boolean;
   day_review_time: string;
+  /** Tasks due today, from 09:00 (with „Erledigt“, „Schlummern“, „Öffnen“). */
+  task_due?: boolean;
   quiet_hours: boolean;
   quiet_from: string;
   quiet_to: string;
@@ -678,7 +684,7 @@ export interface BackupInfo {
   created_at: string;
   size_bytes: number;
 }
-export type DevLogLevel = "ERROR" | "WARN" | "INFO" | "DEBUG";
+export type DevLogLevel = "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE";
 /** One line of the developer log (`logs/annalo.log`). */
 export interface DevLogEntry {
   /** RFC 3339 with offset; "" for lines the app did not write itself. */
@@ -694,6 +700,22 @@ export interface DevLogStats {
   dir: string;
   /** Why the log file cannot be written, if it cannot (full or read-only disk). */
   write_error?: string | null;
+  /** The level lines are written at now. */
+  level?: DevLogLevel;
+  /** `ANNALO_LOG`, when it overrides the setting. */
+  level_env?: string | null;
+}
+/** Where the secrets are kept (Settings → Datenschutz). */
+export interface SecretStoreStatus {
+  /** `native`: Windows Credential Manager / macOS keychain; `secret_service`: Linux keyring; `file`: secrets.json. */
+  kind: "native" | "secret_service" | "file";
+  label: string;
+  /** Why the file is used (the system's words), when it is. */
+  reason?: string | null;
+  /** secrets.json still exists next to a credential store. */
+  file_left: boolean;
+  migration?: { moved: number; kept: string[]; error?: string | null } | null;
+  portable: boolean;
 }
 export interface MirrorStatus {
   enabled: boolean;
