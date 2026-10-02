@@ -95,8 +95,10 @@ test("the Markdown export writes mail links as text", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-mail-export-"));
   try {
     await app.invoke("vault_export", { path: dir });
-    const files = fs.readdirSync(path.join(dir, "E-Mails"));
-    const md = fs.readFileSync(path.join(dir, "E-Mails", files.find((f) => f.startsWith("Rückfrage"))), "utf8");
+    // Mail notes are filed by month (Ordner & Ablage, 1.9).
+    const month = path.join(dir, "E-Mails", "2026", "09 – September");
+    const files = fs.readdirSync(month);
+    const md = fs.readFileSync(path.join(month, files.find((f) => f.startsWith("Rückfrage"))), "utf8");
     assert.match(md, /^E-Mail: Rückfrage Liefertermin \(Jörg Weiß, 22\.09\.2026\)$/m);
     assert.doesNotMatch(md, /\]\(annalo-mail:/);
   } finally {

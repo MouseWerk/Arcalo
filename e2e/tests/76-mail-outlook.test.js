@@ -115,7 +115,9 @@ test("the second mail becomes a note with its attachment", async () => {
 });
 
 test("the link chip opens the mail again in Outlook", async () => {
-  const note = (await app.invoke("workspace_tree")).find((n) => n.title === "E-Mails").children[0];
+  // In its month folder below „E-Mails“ (Ordner & Ablage, 1.9).
+  const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
+  const note = below((await app.invoke("workspace_tree")).find((n) => n.title === "E-Mails").children).find((n) => n.title === "Protokoll Lenkungskreis");
   await app.invoke("search_open", { target: { kind: "page", page_id: note.id, new_tab: false } });
   const chip = await app.waitFor('.pane.active .ProseMirror a[href^="annalo-mail:"]');
   assert.match(await app.textOf(chip), /E-Mail: Protokoll Lenkungskreis \(Weiß, Jörg, 23\.09\.2026\)/);
