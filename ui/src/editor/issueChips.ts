@@ -1,5 +1,5 @@
 // Issue keys in notes: `PROJ-123` of a project with synced issues becomes a live chip (type
-// icon, key, status pill and title) by decorations only; the Markdown keeps the plain key, so
+// icon, key, status dot and title) by decorations only; the Markdown keeps the plain key, so
 // search, backlinks and exports see it as written. A click opens the issue's note,
 // Ctrl/Cmd+click the issue in the browser; hovering shows the card of IssuePreview.
 
@@ -14,35 +14,52 @@ import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 
 export const issueChipsKey = new PluginKey("issueChips");
 
-function head(key: string, issue: ChipIssue | undefined) {
+// One pill out of three decorations: the head widget (type icon), the key's own text and the tail
+// widget (status dot and title). A word joiner at the seams keeps the line from breaking between
+// them, so the pill moves to the next line as a whole. Nothing in it is an atomic box (an image or
+// inline-block is a break opportunity): the icon and the dot are backgrounds of empty inline boxes
+// and the title is cut to a length here instead of by CSS. The head is drawn
+// after a caret at the key's start and the tail before a caret at its end, so the caret sits
+// outside the pill.
+const WJ = "\u2060";
+const TITLE_MAX = 36;
+/** Type colors of the icon, mid tones that read on light and dark backgrounds alike. */
+const TYPE_COLOR: Record<ReturnType<typeof typeOf>, string> = { bug: "#e5484d", story: "#2f9e5b", epic: "#8b5cf6", task: "#2f8fd8", subtask: "#2f8fd8", other: "#8a8f98" };
+
+/** The title as the chip shows it: cut at a word near TITLE_MAX characters, with an ellipsis. */
+export function chipTitle(summary: string): string {
+  const chars = [...summary.trim()];
+  if (chars.length <= TITLE_MAX) return chars.join("");
+  const cut = chars.slice(0, TITLE_MAX - 1).join("");
+  const space = cut.lastIndexOf(" ");
+  return `${(space > TITLE_MAX * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.\-–]+$/, "")}…`;
+}
+
+export function chipHead(key: string, issue: ChipIssue) {
   const el = document.createElement("span");
-  const kind = typeOf(issue?.issue_type ?? "");
+  const kind = typeOf(issue.issue_type);
   el.className = `issue-chip-head issue-type-${kind}`;
   el.dataset.issue = key;
   el.contentEditable = "false";
-  el.innerHTML = TYPE_SVG[kind];
+  // As an image the SVG needs its namespace.
+  const icon = TYPE_SVG[kind].replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" `).replaceAll("currentColor", TYPE_COLOR[kind]);
+  el.style.setProperty("--issue-icon", `url("data:image/svg+xml,${encodeURIComponent(icon)}")`);
+  el.textContent = WJ;
   return el;
 }
 
-function tail(key: string, issue: ChipIssue | undefined) {
+export function chipTail(key: string, issue: ChipIssue) {
   const el = document.createElement("span");
   el.className = "issue-chip-tail";
   el.dataset.issue = key;
   el.contentEditable = "false";
-  if (issue) {
-    const pill = document.createElement("span");
-    pill.className = `issue-status cat-${issue.status_category}`;
-    pill.textContent = issue.status;
-    const title = document.createElement("span");
-    title.className = "issue-chip-title";
-    title.textContent = issue.summary;
-    el.append(pill, title);
-  } else {
-    const pill = document.createElement("span");
-    pill.className = "issue-status cat-unknown";
-    pill.textContent = "?";
-    el.append(pill);
-  }
+  const dot = document.createElement("span");
+  dot.className = `issue-chip-dot cat-${issue.status_category}`;
+  dot.setAttribute("aria-label", issue.status);
+  const title = document.createElement("span");
+  title.className = "issue-chip-title";
+  title.textContent = chipTitle(issue.summary);
+  el.append(WJ, dot, title);
   return el;
 }
 
@@ -57,9 +74,9 @@ function build(block: PMNode, at: number): Decoration[] {
     for (const k of findKeys(node.text ?? "", projects)) {
       const issue = byKey.get(k.key);
       const sig = `${k.key}|${issue?.status ?? ""}|${issue?.summary ?? ""}|${issue?.issue_type ?? ""}`;
-      decos.push(Decoration.widget(pos + k.from, () => head(k.key, issue), { side: -1, key: `h:${sig}`, ignoreSelection: true }));
+      if (issue) decos.push(Decoration.widget(pos + k.from, () => chipHead(k.key, issue), { side: 1, key: `h:${sig}`, ignoreSelection: true }));
       decos.push(Decoration.inline(pos + k.from, pos + k.to, { class: `issue-chip ${issue ? `cat-${issue.status_category}` : "unknown"}`, "data-issue": k.key, nodeName: "span" }));
-      decos.push(Decoration.widget(pos + k.to, () => tail(k.key, issue), { side: 1, key: `t:${sig}`, ignoreSelection: true }));
+      if (issue) decos.push(Decoration.widget(pos + k.to, () => chipTail(k.key, issue), { side: -1, key: `t:${sig}`, ignoreSelection: true }));
     }
   });
   return decos;

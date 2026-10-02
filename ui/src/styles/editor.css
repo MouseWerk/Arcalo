@@ -1118,19 +1118,39 @@
 :root[data-time-off] .time-chip.ProseMirror-selectednode { outline-color: var(--accent); }
 
 /* ---- jira: issue chips (decorations; the Markdown keeps the plain key) ---- */
+/* Head, key and tail are plain inline boxes of one font size, so they join into one pill on the
+   text baseline without raising the line; only the tiny dot and the truncated title are boxes. */
 .ProseMirror .issue-chip, .ProseMirror .issue-chip-head, .ProseMirror .issue-chip-tail {
+  font-size: 0.88em; font-weight: 500; white-space: nowrap; cursor: pointer;
+  padding-top: 0.1em; padding-bottom: 0.1em;
   background: var(--bg-hover); border: 1px solid var(--border); border-left: 0; border-right: 0;
-  padding: 1px 0; line-height: 1.5; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone;
 }
-.ProseMirror .issue-chip-head { border-left: 1px solid var(--border); border-radius: 6px 0 0 6px; padding-left: 5px; padding-right: 3px; }
-.ProseMirror .issue-chip-head svg { vertical-align: -1px; }
-.ProseMirror .issue-chip { font-family: var(--font-mono); font-size: 0.86em; font-weight: 600; color: var(--accent-text); padding-right: 4px; }
-.ProseMirror .issue-chip.cat-done { color: var(--text-3); text-decoration: line-through; }
-.ProseMirror .issue-chip-tail { border-right: 1px solid var(--border); border-radius: 0 6px 6px 0; padding-right: 6px; user-select: none; }
-.ProseMirror .issue-chip-tail .issue-status { vertical-align: 0.12em; font-size: 0.66em; line-height: 1.6; }
-.ProseMirror .issue-chip-title { display: inline-block; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; line-height: inherit; margin-left: 5px; color: var(--text-2); }
-.ProseMirror .issue-chip.unknown { color: var(--text-2); }
-.ProseMirror .issue-chip-head:hover, .ProseMirror .issue-chip:hover, .ProseMirror .issue-chip-tail:hover { background: var(--bg-active); }
+/* (ProseMirror sets `white-space: normal` on every non-editable element.) */
+.ProseMirror .issue-chip-head[contenteditable], .ProseMirror .issue-chip-tail[contenteditable] { white-space: nowrap; }
+.ProseMirror .issue-chip-head { border-left: 1px solid var(--border); border-radius: 6px 0 0 6px; padding-left: 5px; padding-right: 4px; }
+.ProseMirror .issue-chip-head::before { content: ""; padding-left: 1em; background: var(--issue-icon) 50% 55% / 0.95em no-repeat; }
+.ProseMirror .issue-chip { color: var(--accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ProseMirror .issue-chip.cat-done { color: var(--text-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 70%, transparent); }
+.ProseMirror .issue-chip-tail { border-right: 1px solid var(--border); border-radius: 0 6px 6px 0; padding-right: 7px; color: var(--text-2); }
+/* The dot is an empty inline box too (no break opportunity), its circle drawn as a gradient. */
+.ProseMirror .issue-chip-dot { --dot: var(--text-3); padding-left: 6px; margin: 0 6px 0 7px; background: radial-gradient(circle at 50% 54%, var(--dot) 2.6px, transparent 3.2px); }
+.ProseMirror .issue-chip-dot.cat-indeterminate { --dot: var(--info); }
+.ProseMirror .issue-chip-dot.cat-done { --dot: var(--success); }
+/* A narrow pane keeps the pill short: icon, key and status. */
+@container pane (max-width: 520px) {
+  .ProseMirror .issue-chip-title { display: none; }
+}
+.ProseMirror .issue-chip.cat-done + .issue-chip-tail .issue-chip-title { color: var(--text-3); }
+/* A key of a synced project without a synced issue: the key alone, dashed. */
+.ProseMirror .issue-chip.unknown {
+  color: var(--text-2); font-weight: 500; background: transparent;
+  border: 1px dashed var(--border-strong); border-radius: 6px; padding-left: 5px; padding-right: 5px;
+}
+/* The whole pill lights up, whichever part is hovered. */
+.ProseMirror .issue-chip-head:hover, .ProseMirror .issue-chip-head:has(+ .issue-chip:hover), .ProseMirror .issue-chip-head:has(+ .issue-chip + .issue-chip-tail:hover),
+.ProseMirror .issue-chip:hover, .ProseMirror .issue-chip-head:hover + .issue-chip, .ProseMirror .issue-chip:has(+ .issue-chip-tail:hover),
+.ProseMirror .issue-chip-tail:hover, .ProseMirror .issue-chip:hover + .issue-chip-tail, .ProseMirror .issue-chip-head:hover + .issue-chip + .issue-chip-tail { background: var(--bg-active); }
+.ProseMirror .issue-chip.unknown:hover { background: var(--bg-hover); }
 
 /* ---- voice notes: audio player of `![[….flac]]` ---- */
 .file-embed.audio-embed {
