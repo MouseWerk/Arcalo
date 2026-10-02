@@ -8,7 +8,7 @@ import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
 import {
-  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic,
+  type LucideIcon, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic, Workflow, ListFilter, FileInput,
 } from "lucide-react";
 import { decimal, fmtDate, isoDay } from "../lib/format";
 
@@ -29,6 +29,7 @@ import { keys } from "../lib/shortcut";
 import { insertColumns, insertFootnote } from "./blocks";
 import { blockDecorations, updateBlockDecorations } from "./incremental";
 import { baseName, fileIcon, fileKind, isFileLinkTarget, isPdfName } from "./fileEmbed";
+import { splitTarget } from "./embedSyntax";
 import { inOtherLanguage, t, type TKey } from "../lib/i18n";
 import { jiraReady, requestCreateIssue } from "./taskIssue";
 import { useApp } from "../store/app";
@@ -161,16 +162,21 @@ export const WikiLinkSuggest = Extension.create<{ search: (q: string) => Promise
         char: "[[",
         allowSpaces: true,
         startOfLine: false,
+        // `![[` (page embed) completes like a link.
+        allowedPrefixes: [" ", "!"],
         items: ({ query }) => this.options.search(query),
         command: ({ editor, range, props }) => {
           // Swallow an auto-closed "]]" right after the caret.
           const after = editor.state.doc.textBetween(range.to, Math.min(range.to + 2, editor.state.doc.content.size), "");
           const to = after === "]]" ? range.to + 2 : range.to;
+          // `![[`: a page embed; `Seite#Überschrift` from the heading list keeps its anchor.
+          const embed = range.from > 1 && editor.state.doc.textBetween(range.from - 1, range.from, "") === "!";
+          const { target, anchor } = props.create ? { target: props.target, anchor: null } : splitTarget(props.target);
           editor
             .chain()
             .focus()
-            .insertContentAt({ from: range.from, to }, [
-              { type: "wikiLink", attrs: { target: props.target } },
+            .insertContentAt({ from: embed ? range.from - 1 : range.from, to }, [
+              { type: embed ? "pageEmbed" : "wikiLink", attrs: { target, anchor: anchor || null } },
               { type: "text", text: " " },
             ])
             .run();
@@ -241,6 +247,9 @@ function allSlashItems(o: SlashOptions): SlashItem[] {
     { id: "columns3", title: t("slash.columns3"), subtitle: t("slash.columns.sub"), icon: ic(Columns3), Icon: Columns3, section: blocks, keywords: "spalten columns layout nebeneinander drei three", run: (e, r) => (e.chain().focus().deleteRange(r).run(), insertColumns(e, 3)) },
     { id: "toc", title: t("slash.toc"), subtitle: t("slash.toc.sub"), icon: ic(ListTree), Icon: ListTree, section: blocks, keywords: "inhaltsverzeichnis toc inhalt gliederung überschriften contents outline", run: (e, r) => e.chain().focus().deleteRange(r).insertContent({ type: "tableOfContents" }).run() },
     { id: "code", title: t("slash.code"), icon: ic(Code2), Icon: Code2, hint: "```", section: blocks, keywords: "code snippet codeblock", run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
+    { id: "mermaid", title: t("slash.mermaid"), subtitle: t("slash.mermaid.sub"), icon: ic(Workflow), Icon: Workflow, hint: "```mermaid", section: blocks, keywords: "mermaid diagramm diagram flowchart flussdiagramm sequenz sequence gantt mindmap klassen class state er", run: (e, r) => e.chain().focus().deleteRange(r).setNode("codeBlock", { language: "mermaid" }).insertContent(t("slash.mermaid.starter")).run() },
+    { id: "query", title: t("slash.query"), subtitle: t("slash.query.sub"), icon: ic(ListFilter), Icon: ListFilter, hint: "```query", section: blocks, keywords: "abfrage query filter aufgaben tasks seiten pages liste tabelle table dataview", run: (e, r) => e.chain().focus().deleteRange(r).setNode("codeBlock", { language: "query" }).insertContent(t("slash.query.starter")).run() },
+    { id: "embed", title: t("slash.embed"), subtitle: t("slash.embed.sub"), icon: ic(FileInput), Icon: FileInput, hint: "![[", section: insert, keywords: "einbetten embed transclude seite page abschnitt section block", run: (e, r) => e.chain().focus().deleteRange(r).insertContent("![[").run() },
     { id: "table", title: t("slash.table"), icon: ic(Table2), Icon: Table2, section: blocks, keywords: "table tabelle", run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
     { id: "hr", title: t("slash.hr"), icon: ic(Minus), Icon: Minus, hint: "---", section: blocks, keywords: "divider linie trennlinie hr line", run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
     { id: "mark", title: t("slash.mark"), icon: ic(Highlighter), Icon: Highlighter, hint: "==", section: blocks, keywords: "highlight markieren hervorheben", run: (e, r) => e.chain().focus().deleteRange(r).toggleHighlight().run() },

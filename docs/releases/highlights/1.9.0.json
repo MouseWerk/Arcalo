@@ -4,7 +4,10 @@
     {
       "id": "filing",
       "image": "1.9.0-filing.png",
-      "action": { "type": "settings", "section": "filing" },
+      "action": {
+        "type": "settings",
+        "section": "filing"
+      },
       "en": {
         "title": "Every page in its folder",
         "text": "Daily notes, meeting notes, voice and mail notes and Jira issues now file themselves into folders by date or series. Your own rules decide first, and existing pages are never moved.",
@@ -19,7 +22,10 @@
     {
       "id": "smart-folders",
       "image": "1.9.0-smart-folders.png",
-      "action": { "type": "command", "command": "toggle_sidebar" },
+      "action": {
+        "type": "command",
+        "command": "toggle_sidebar"
+      },
       "en": {
         "title": "Smart folders and a faster page tree",
         "text": "Recently edited, favorites, orphaned pages and pages by tag or Jira project sit above the tree. Filter the tree by title, select several pages and move them at once.",
@@ -32,19 +38,23 @@
       }
     },
     {
-      "id": "tidy-up",
+      "id": "embeds",
+      "image": "1.9.0-embeds.png",
       "en": {
-        "title": "Tidy up with a preview",
-        "text": "„Tidy up…“ shows every move before it happens, from where to where and by which rule. One click puts everything back."
+        "title": "Embeds, live queries and diagrams in notes",
+        "text": "![[Page]] shows another page or one of its sections right in the note, a query block lists tasks or pages live, and a mermaid block draws flowcharts, sequences and Gantt charts."
       },
       "de": {
-        "title": "Aufräumen mit Vorschau",
-        "text": "„Aufräumen…“ zeigt jede Verschiebung vorher, von wo nach wo und nach welcher Regel. Ein Klick stellt alles wieder her."
+        "title": "Einbettungen, Live-Abfragen und Diagramme in Notizen",
+        "text": "![[Seite]] zeigt eine andere Seite oder einen ihrer Abschnitte direkt in der Notiz, ein query-Block listet Aufgaben oder Seiten live, und ein mermaid-Block zeichnet Ablauf-, Sequenz- und Gantt-Diagramme."
       }
     },
     {
       "id": "updates",
-      "action": { "type": "settings", "section": "about" },
+      "action": {
+        "type": "settings",
+        "section": "about"
+      },
       "en": {
         "title": "Updates in the background",
         "text": "New versions download quietly and install when you quit Arcalo, with a database backup first. If a new version does not start, Arcalo offers the way back.",

@@ -17,7 +17,8 @@ import { isDrawingName } from "../editor/drawing";
 import { drawPdfPreview } from "../lib/pdf";
 import { flushAllEditors } from "../editor/NoteEditor";
 import { useMenu } from "./ui";
-import { useT } from "../lib/i18n";
+import { t as tr, useT } from "../lib/i18n";
+import { embedLabel, embedProblem, splitTarget } from "../editor/embedSyntax";
 import { time } from "../lib/format";
 
 /** Design size of a slide; it is scaled to the screen (and to the previews). */
@@ -60,8 +61,52 @@ export function PresentationHost() {
 
 // ------------------------------------------------------------------ slides
 
+/** `![[Notiz#Abschnitt]]`: the embedded page part as slide content, nested up to the limit. */
+async function fillPageEmbed(el: HTMLElement, name: string, stack: string[], depth: number, refit: () => void) {
+  const { target, anchor } = splitTarget(name);
+  const box = document.createElement("div");
+  box.className = "slide-page-embed";
+  const head = document.createElement("div");
+  head.className = "slide-page-embed-title";
+  head.textContent = embedLabel({ target, anchor });
+  const body = document.createElement("div");
+  body.className = "slide-page-embed-body";
+  box.append(head, body);
+  const p = el.parentElement;
+  (p?.tagName === "P" && p.childNodes.length === 1 ? p : el).replaceWith(box);
+  const notice = (text: string) => {
+    body.className = "slide-page-embed-body slide-page-embed-missing";
+    body.textContent = text;
+    refit();
+  };
+  const problem = embedProblem(stack, depth, target);
+  if (problem) return notice(problem === "cycle" ? tr("embed.cycle", { title: target }) : tr("embed.tooDeep"));
+  const v = await api.pageEmbed(target, anchor).catch(() => null);
+  if (!v || v.content == null) return notice(v?.missing === "section" ? tr("embed.noSection", { anchor: anchor ?? "", title: v.title }) : tr("embed.noPage", { title: target }));
+  head.textContent = embedLabel({ target: v.title, anchor });
+  body.innerHTML = renderMarkdown(prepareSlideMarkdown(v.content));
+  hydrate(body, refit, [...stack, v.title.toLowerCase()], depth + 1);
+  refit();
+}
+
 /** Replaces the embed placeholders and marks callouts (after each render). */
-function hydrate(root: HTMLElement, refit: () => void) {
+function hydrate(root: HTMLElement, refit: () => void, stack: string[] = [], depth = 1) {
+  // Mermaid diagrams as SVG (the library loads with the first one).
+  for (const code of root.querySelectorAll<HTMLElement>("pre > code.language-mermaid")) {
+    const pre = code.parentElement!;
+    const fig = document.createElement("figure");
+    fig.className = "slide-diagram";
+    pre.replaceWith(fig);
+    void import("../editor/mermaid").then(async (m) => {
+      const res = await m.renderDiagram(code.textContent ?? "");
+      if ("svg" in res) fig.innerHTML = res.svg;
+      else {
+        fig.classList.add("slide-diagram-error");
+        fig.textContent = `${tr("mmd.failed")}: ${res.error}`;
+      }
+      refit();
+    });
+  }
   // Code in the editor's colors (grammars load on demand); the slide is fitted again after.
   void highlightCodeBlocks(root).then((n) => n && refit());
   for (const bq of root.querySelectorAll<HTMLElement>("blockquote")) {
@@ -111,11 +156,8 @@ function hydrate(root: HTMLElement, refit: () => void) {
       chip.append(fileIcon(fileKind(name), 20), document.createTextNode(label));
       el.replaceChildren(chip);
     } else {
-      // `![[Notiz]]`: an embedded note is shown by name.
-      const chip = document.createElement("span");
-      chip.className = "slide-file slide-note-embed";
-      chip.textContent = label;
-      el.replaceChildren(chip);
+      // `![[Notiz]]`: the embedded note (or its section) on the slide.
+      void fillPageEmbed(el, name, stack, depth, refit);
     }
   }
   // Task boxes are for reading only.

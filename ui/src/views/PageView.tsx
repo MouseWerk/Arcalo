@@ -639,7 +639,27 @@ function Backlinks({ doc }: { doc: PageDoc }) {
 export function printActivePane() {
   flushAllEditors()
     .catch(() => {})
+    // Embeds, diagrams (light) and queries not yet scrolled into view render first.
+    .then(() => preparePrint())
+    .catch(() => {})
     .finally(() => setTimeout(() => window.print(), 50));
+}
+
+/** Renders the lazy blocks of the open pages for printing; diagrams light until it is over. */
+async function preparePrint() {
+  const pane = document.querySelector(".pane.active") ?? document;
+  if (!pane.querySelector(".page-embed, .rich-preview")) return;
+  const [{ renderAllNow }, { setPrintTheme }] = await Promise.all([import("../editor/lazyRender"), import("../editor/mermaid")]);
+  setPrintTheme(true);
+  // Back to the app's theme after printing (or with the next click where `afterprint` is missing).
+  const reset = () => {
+    window.removeEventListener("afterprint", reset);
+    window.removeEventListener("pointerdown", reset, true);
+    setPrintTheme(false);
+  };
+  window.addEventListener("afterprint", reset);
+  window.addEventListener("pointerdown", reset, true);
+  await renderAllNow();
 }
 
 /** Parent of a new top-level „Neue Seite“ per Settings → Editor (top level, current folder, inbox). */

@@ -23,6 +23,8 @@ import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfCon
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
 import { CHUNK_LINES, chunkedLex } from "./chunkedLex";
 import { LazyHighlight, lowlight } from "./languages";
+import { PageEmbed, type PageEmbedOptions } from "./pageEmbed";
+import { RichBlocks, type RichBlocksOptions } from "./richBlocks";
 import type { Lexer } from "marked";
 
 export { lowlight };
@@ -261,6 +263,10 @@ export interface SchemaOptions {
   fetchTitle?: (url: string) => Promise<string | null>;
   /** Typing aids (Settings → Editor), read on every keystroke. */
   typing?: () => TypingPrefs;
+  /** Live view of a page embed `![[Seite#Abschnitt]]` (none: a placeholder). */
+  embedPage?: PageEmbedOptions["mount"];
+  /** Live preview of ```mermaid and ```query blocks (none: the code only). */
+  richBlock?: RichBlocksOptions["mount"];
 }
 
 /**
@@ -323,6 +329,8 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       audioUrl: o.attachmentUrl ?? null,
       renderPdfPreview: o.renderPdfPreview ?? null,
     }),
+    PageEmbed.configure({ mount: o.embedPage ?? null }),
+    RichBlocks.configure({ mount: o.richBlock ?? null }),
     AttachmentDrop.configure({ uploadImage: o.uploadImage ?? null, uploadFile: o.uploadFile ?? null }),
     SmartPaste.configure({ fetchTitle: o.fetchTitle ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),

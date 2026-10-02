@@ -12,6 +12,8 @@ export const api = {
   // pages
   tree: () => call<T.PageNode[]>("workspace_tree"),
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
+  /** What `![[target#anchor]]` shows (page, heading section or block). */
+  pageEmbed: (target: string, anchor: string | null) => call<T.EmbedView>("page_embed", { target, anchor }),
   /** Saves the Markdown; returns what the save derived (tags, unresolved links, time), not the content. */
   savePage: (id: number, content: string) => call<T.SavedPage>("page_save", { id, content }),
   /** The child pages of a page with their typed properties (table and board views). */
@@ -329,6 +331,8 @@ export const api = {
   linkTitle: (url: string) => call<string>("link_title", { url }),
   /** Writes a page shared as a single HTML file to `path` (from the save dialog). */
   writeHtmlFile: (path: string, html: string) => call<void>("html_file_write", { path, html }),
+  /** Saves an exported diagram (`.svg` or `.png`). */
+  writeDiagramFile: (path: string, data: Uint8Array) => call<void>("diagram_file_write", { path, data: Array.from(data) }),
 
   // focus sessions
   /** The current phase; completes a session that ran out meanwhile. */

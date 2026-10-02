@@ -143,6 +143,9 @@ const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
     text: /^(geändert|fällig|priorität|überfällig|später|läuft|enthält|enthält nicht|ist nicht leer)$/,
     why: "stored query field names, words and operators (German machine format; English aliases map onto them)",
   },
+  { file: "lib/noteQuery.ts", text: /^(fällig|geändert|priorität|zeiteinträge)$/, why: "option words of ```query blocks (syntax the user types, German and English)" },
+  { file: "editor/extensions.tsx", text: /^```(mermaid|query)$/, why: "the Markdown fence a slash command inserts (syntax)" },
+  { file: "editor/diagramView.ts", text: /^Mermaid\{\}$/, why: "the diagram library's name and the diagram type keyword" },
 ];
 
 interface Hit {

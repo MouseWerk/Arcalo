@@ -3265,6 +3265,14 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .filing-test > input { width: 220px; }
 .filing-result { padding: 4px 0 2px; }
 
+/* ---- page embeds and Mermaid diagrams on slides (1.9) ---- */
+.slide-content .slide-page-embed { margin: 0.6em 0; padding: 0.3em 0.9em 0.5em; border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: 12px; }
+.slide-content .slide-page-embed-title { font-size: 0.5em; font-weight: 600; color: var(--text-3); margin: 0.3em 0 0.1em; }
+.slide-content .slide-page-embed-body > :first-child { margin-top: 0.2em; }
+.slide-content .slide-page-embed-missing { font-size: 0.6em; color: var(--text-3); }
+.slide-content .slide-diagram { margin: 0.5em 0; display: flex; justify-content: center; }
+.slide-content .slide-diagram svg { max-width: 100%; height: auto; }
+.slide-content .slide-diagram-error { font-size: 0.55em; color: var(--danger); }
 /* ---- updates 2.0: status-bar hint, „Neu in Arcalo“, managed settings ---- */
 
 .sb-update { gap: 6px; min-width: 0; max-width: min(640px, 60vw); }

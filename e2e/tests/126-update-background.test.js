@@ -141,8 +141,8 @@ test("the next start says „aktualisiert auf 1.9.0“ and shows „Neu in Arcal
   await app.waitFor(".whatsnew");
   await app.waitText(".dialog-title", /Neu in Arcalo 1\.9\.0/);
   const items = await app.browser.execute(() => [...document.querySelectorAll(".whatsnew-item")].map((i) => i.dataset.id));
-  assert.deepEqual(items, ["filing", "smart-folders", "tidy-up", "updates"]);
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".whatsnew-image").length), 2);
+  assert.deepEqual(items, ["filing", "smart-folders", "embeds", "updates"]);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".whatsnew-image").length), 3);
   await app.shot("126-whats-new");
   // The action of a highlight opens its place: Settings → Ordner & Ablage.
   assert.ok(await clickIn(".whatsnew-action", "Ordner einrichten"));
