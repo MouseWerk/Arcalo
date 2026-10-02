@@ -91,7 +91,7 @@ export function VoiceSection({ draft, update }: SectionProps) {
                   ) : m.partial > 0 && !active ? (
                     <Badge tone="warning">{t("voice.set.partial", { n: downloadPercent({ received: m.partial, total: m.size }) })}</Badge>
                   ) : null}
-                  {m.id === voice.model && (m.installed ? <Badge tone="accent">{t("voice.set.selected")}</Badge> : <Badge tone="warning">{t("voice.set.selectedMissing")}</Badge>)}
+                  {m.id === voice.model && (m.installed ? <Badge tone="accent">{t("voice.set.selected")}</Badge> : <Badge tone="warning" title={t("voice.set.selectedMissingHint")}>{t("voice.set.selectedMissing")}</Badge>)}
                   <span className="grow" />
                   {active ? (
                     <Button size="sm" variant="ghost" icon={X} className="voice-model-cancel" onClick={() => void voiceApi.cancelDownload()}>
