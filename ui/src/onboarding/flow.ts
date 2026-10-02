@@ -6,7 +6,7 @@ import { PRESETS, autoAssignTiers, findProvider, fromPreset, OLLAMA_URL, provide
 import type { AiProvider, OllamaDetect, Settings } from "../lib/types";
 import { timeTrackingOn } from "../lib/timetracking";
 
-export const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "desktop", "done"] as const;
+export const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "security", "desktop", "done"] as const;
 export type StepId = (typeof STEPS)[number];
 
 /** Label in the stepper. */
@@ -19,6 +19,7 @@ export const STEP_LABELS: Record<StepId, TKey> = {
   calendar: "fr.step.calendar",
   sync: "fr.step.sync",
   backup: "fr.step.backup",
+  security: "fr.step.security",
   desktop: "fr.step.desktop",
   done: "fr.step.done",
 };
@@ -32,6 +33,7 @@ export const STEP_SECTIONS: Partial<Record<StepId, string>> = {
   calendar: "calendar",
   sync: "backup",
   backup: "backup",
+  security: "security",
   desktop: "desktop",
   workspace: "about",
 };
@@ -164,6 +166,8 @@ export interface SummaryContext {
   /** The workspace choice made in this run, if any. */
   workspace: "samples" | "import" | "empty" | null;
   gitTokenSet: boolean;
+  /** Step „Sicherheit“: encryption chosen (runs when the setup ends) and the app lock. */
+  security?: { encrypt: boolean; encrypted: boolean; lock: boolean };
 }
 
 /** Hours with a decimal comma in German („7,5 h“). */
@@ -207,6 +211,13 @@ export function summaryRows(s: Settings, c: SummaryContext): SummaryRow[] {
     step: "backup",
     label: "fr.sum.backup",
     value: [s.backup_dir ? s.backup_dir : t("fr.sum.defaultFolder"), t("fr.sum.keep", { n: s.backup_keep }), s.markdown_mirror ? t("fr.sum.mirror") : null].filter(Boolean).join(" · "),
+  });
+  const sec = c.security;
+  rows.push({
+    step: "security",
+    label: "fr.sum.security",
+    value:
+      [sec?.encrypted ? t("fr.sum.encrypted") : sec?.encrypt ? t("fr.sum.encrypt") : null, sec?.lock ? t("fr.sum.lock") : null].filter(Boolean).join(" · ") || t("fr.sum.off"),
   });
   const desk = [
     c.autostart ? t("fr.sum.autostart") : null,

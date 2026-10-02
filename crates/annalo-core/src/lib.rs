@@ -49,6 +49,7 @@
 
 pub mod activity;
 pub mod ai;
+pub mod applock;
 pub mod attachment_manager;
 pub mod attachments;
 pub mod backup;
@@ -60,6 +61,7 @@ pub mod calsync;
 pub mod canvas;
 pub mod capture;
 pub mod chats;
+pub mod cipher;
 pub mod dashboard;
 pub mod datadir;
 pub mod dayreview;

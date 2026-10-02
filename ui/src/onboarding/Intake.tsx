@@ -10,6 +10,7 @@ import { STEPS, STEP_LABELS, nextStep, prevStep, progressOf, stepIndex, type Ste
 import { finishFirstRun, useFirstRun } from "./state";
 import { AiStep, BackupStep, CalendarStep, DesktopStep, DoneStep, LanguageStep, SyncStep, ThemeStep, WorkStep, WorkspaceStep } from "./steps";
 import { writeSettings } from "./write";
+import { SecurityStep } from "./SecurityStep";
 
 export function Intake() {
   const t = useT();
@@ -53,6 +54,8 @@ export function Intake() {
         return <SyncStep {...p} />;
       case "backup":
         return <BackupStep {...p} />;
+      case "security":
+        return <SecurityStep />;
       case "desktop":
         return <DesktopStep {...p} />;
       case "done":

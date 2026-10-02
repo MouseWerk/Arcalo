@@ -87,7 +87,7 @@ export function App() {
       .then((d) => {
         // A move at startup, or a chosen folder that is not reachable (fallback to the default).
         const n = d.notice;
-        if (n?.kind === "info") s.toast({ tone: "success", title: t("app.dirMoved"), detail: n.message });
+        if (n?.kind === "info") s.toast({ tone: "success", title: n.title ?? t("app.dirMoved"), detail: n.message });
         else if (n?.kind === "warning") s.toast({ tone: "warning", persistent: true, title: n.title ?? t("app.dirUnavailable"), detail: n.message });
         else if (n?.kind === "error") s.toast({ tone: "danger", persistent: true, title: n.title ?? t("app.dirNotMoved"), detail: n.message });
         if (d.synced) s.toast({ tone: "warning", persistent: true, title: t("app.syncedDb"), detail: t("app.syncedDbDetail", { dir: d.data_dir }) });

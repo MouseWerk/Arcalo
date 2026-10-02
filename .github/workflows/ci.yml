@@ -42,6 +42,11 @@ jobs:
   windows:
     name: Windows installer
     runs-on: windows-latest
+    env:
+      # SQLCipher's vendored OpenSSL (rusqlite `bundled-sqlcipher-vendored-openssl`) is configured
+      # with Perl: Strawberry Perl of the runner (Git's perl lacks modules OpenSSL needs). No NASM
+      # needed: without it OpenSSL builds without assembly.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.94.1

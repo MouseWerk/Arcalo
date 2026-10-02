@@ -58,7 +58,7 @@ describe("first-run steps", () => {
       expect(translate("de", STEP_LABELS[s])).not.toBe(STEP_LABELS[s]);
       expect(translate("en", STEP_LABELS[s])).not.toBe(STEP_LABELS[s]);
     }
-    expect(Object.values(STEP_SECTIONS).every((x) => ["locale", "appearance", "time", "ai", "calendar", "backup", "desktop", "about"].includes(x!))).toBe(true);
+    expect(Object.values(STEP_SECTIONS).every((x) => ["locale", "appearance", "time", "ai", "calendar", "backup", "security", "desktop", "about"].includes(x!))).toBe(true);
   });
 
   it("guesses the language from the OS locales", () => {

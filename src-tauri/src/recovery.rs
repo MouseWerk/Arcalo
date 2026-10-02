@@ -213,6 +213,25 @@ fn answer(app: &AppHandle, dir: &Path, pressed: Choice) {
     }
 }
 
+/// Backups the recovery would choose from (the key screen of an encrypted database offers them).
+pub fn backup_count(dir: &Path) -> usize {
+    candidates(dir).0.len()
+}
+
+/// The key screen's „Letzte Sicherung wiederherstellen“ (a damaged encrypted file, or a key that
+/// fits only older backups): restores the newest backup and restarts. Returns its name.
+pub fn restore_and_restart(app: &AppHandle, dir: &Path) -> annalo_core::Result<String> {
+    let b = backupdest::restore_newest(&dir.join(datadir::DB_FILE), &candidates(dir).0, Utc::now())?;
+    devlog::warn("core", format!("database restored from backup {}", b.file_name));
+    crate::portable::unlock_instance();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        app.restart();
+    });
+    Ok(b.file_name)
+}
+
 /// Ends Arcalo with exit code 1 (`AppHandle::exit` ends `App::run` with code 0).
 fn quit(app: &AppHandle) {
     app.cleanup_before_exit();

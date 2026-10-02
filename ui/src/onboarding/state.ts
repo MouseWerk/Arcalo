@@ -1,6 +1,7 @@
 // State of the first-run flow (intro, then the setup) and how it starts, pauses and ends.
 // Only the main window hosts it; the capture, search and presenter windows never do.
 
+import { security } from "../lib/security";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { create } from "zustand";
 import { api } from "../lib/api";
@@ -21,6 +22,8 @@ export interface FirstRunState {
   paused: boolean;
   /** Choice of the workspace step in this run (for the summary). */
   workspace: "samples" | "import" | "empty" | null;
+  /** Step „Sicherheit“: encrypt the database when the setup ends (recovery key confirmed). */
+  encrypt?: boolean;
 }
 
 export const useFirstRun = create<FirstRunState>(() => ({ phase: "off", mode: "fresh", step: "language", paused: false, workspace: null }));
@@ -28,7 +31,7 @@ export const useFirstRun = create<FirstRunState>(() => ({ phase: "off", mode: "f
 /** Plays the intro (or opens the setup directly) with the current settings prefilled. */
 export function startFirstRun(mode: FirstRunMode, opts: { intake?: boolean; step?: StepId } = {}) {
   useApp.getState().set({ paletteOpen: false });
-  useFirstRun.setState({ phase: opts.intake ? "intake" : "intro", mode, step: opts.step ?? "language", paused: false, workspace: null });
+  useFirstRun.setState({ phase: opts.intake ? "intake" : "intro", mode, step: opts.step ?? "language", paused: false, workspace: null, encrypt: false });
 }
 
 export const startIntake = () => useFirstRun.setState({ phase: "intake", paused: false });
@@ -42,7 +45,12 @@ export async function finishFirstRun() {
   } catch (e) {
     useApp.getState().error(t("fr.saveFailed"), e);
   }
-  useFirstRun.setState({ phase: "off", paused: false });
+  const encrypt = useFirstRun.getState().encrypt;
+  useFirstRun.setState({ phase: "off", paused: false, encrypt: false });
+  // Encrypting closes the workspace: Arcalo starts once more and encrypts before it opens it.
+  if (encrypt) {
+    await security.switchCipher(true).catch((e) => useApp.getState().error(t("sec.key.switchFailed"), e));
+  }
 }
 
 /** „Mehr in den Einstellungen“: the flow steps aside, a toast brings it back on the same step. */

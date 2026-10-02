@@ -393,6 +393,92 @@
 .voice-model-error > span:last-child { white-space: pre-line; overflow-wrap: anywhere; }
 .set-row.stack .voice-source-input { width: 100%; }
 
+/* ---- security (encryption at rest, app lock) ---- */
+.sec-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.sec-note { margin: 2px 0 8px; }
+.sec-mirror { display: flex; align-items: center; gap: 12px; }
+.sec-store { color: var(--text-2); text-align: right; max-width: 280px; }
+.sec-list { margin: 10px 0 12px; padding-left: 18px; display: grid; gap: 6px; color: var(--text-2); font-size: var(--fs-md); }
+.sec-intro p { margin: 0; }
+.sec-key p { margin: 0 0 12px; color: var(--text-2); }
+.sec-code {
+  display: grid; grid-template-columns: repeat(7, auto); justify-content: center; gap: 8px 12px;
+  padding: 16px 14px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); background: var(--bg-input);
+  font-family: var(--font-mono); font-size: 15px; letter-spacing: 0.06em; color: var(--text); user-select: text;
+}
+.sec-key-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.sec-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); color: var(--text); cursor: pointer; }
+.sec-confirm input { margin-top: 3px; accent-color: var(--accent); }
+.sec-pin-form { display: grid; gap: 10px; }
+.sec-pin-form p { margin: 0; min-height: 1.4em; }
+@container (max-width: 560px) { .sec-code { grid-template-columns: repeat(4, auto); } }
+.recovery-print { display: none; }
+@media print {
+  body.print-recovery * { visibility: hidden !important; }
+  body.print-recovery .recovery-print, body.print-recovery .recovery-print * { visibility: visible !important; }
+  body.print-recovery .recovery-print { display: block; position: fixed; inset: 0; padding: 40px; background: var(--bg-app); color: var(--text); }
+  .recovery-print-code { font-family: var(--font-mono); font-size: 18px; letter-spacing: 0.08em; word-spacing: 0.4em; margin: 24px 0; }
+}
+
+/* lock screen (main window) and notice (quick capture, quick search) */
+.lock-screen {
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--accent) 9%, var(--bg-app)) 0%, var(--bg-app) 60%);
+  color: var(--text);
+}
+.lock-drag { position: absolute; inset: 0 0 auto 0; height: 40px; }
+.lock-card {
+  width: min(360px, 100%); display: grid; justify-items: center; gap: 12px; padding: 32px 28px 22px;
+  border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--bg-raised); box-shadow: var(--shadow-lg);
+}
+.lock-logo { margin-bottom: 2px; }
+.lock-title { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+.lock-sub { margin: -4px 0 6px; color: var(--text-2); font-size: var(--fs-md); text-align: center; }
+.lock-field { width: 100%; }
+.lock-pin { width: 100%; height: 40px; text-align: center; font-size: 18px; letter-spacing: 0.3em; }
+.lock-go, .lock-os { width: 100%; justify-content: center; }
+.lock-msg { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--text-2); text-align: center; }
+.lock-msg.tone-danger { color: var(--danger); }
+.lock-link { border: 0; background: none; padding: 2px 4px; color: var(--accent-text); font: inherit; font-size: var(--fs-sm); cursor: pointer; border-radius: var(--r-xs); }
+.lock-link:hover { text-decoration: underline; }
+.lock-link:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.lock-quit { display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); margin-top: 4px; }
+.lock-forgot { width: 100%; display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.lock-forgot p { margin: 0; color: var(--text-2); }
+.lock-recovery { display: grid; gap: 8px; }
+.lock-code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.lock-popup {
+  height: 100vh; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 18px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--bg-raised); color: var(--text); font-size: var(--fs-md);
+}
+
+/* recovery screen at the start (encrypted database without its key) */
+.keygate { min-height: 100vh; display: grid; place-items: center; padding: 28px 20px; background: var(--bg-app); color: var(--text); }
+.keygate-card {
+  width: min(520px, 100%); display: grid; gap: 14px; padding: 28px; border-radius: var(--r-lg);
+  border: 1px solid var(--border); background: var(--bg-raised); box-shadow: var(--shadow-md);
+}
+.keygate-head { display: flex; align-items: center; gap: 10px; }
+.keygate-badge { color: var(--warning); }
+.keygate-card h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; }
+.keygate-text { margin: 0; color: var(--text-2); font-size: var(--fs-md); line-height: 1.5; }
+.keygate-field { display: grid; gap: 6px; font-size: var(--fs-md); font-weight: 500; }
+.keygate-code { resize: none; font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.05em; line-height: 1.6; padding: 8px 10px; }
+.keygate-remember { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); cursor: pointer; }
+.keygate-remember input { margin-top: 3px; accent-color: var(--accent); }
+.keygate-msg { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--text-2); }
+.keygate-msg.tone-danger { color: var(--danger); }
+.keygate-lost { margin: 0; }
+.keygate-restore { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--warning-soft); }
+.keygate-foot { display: flex; align-items: center; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
+.keygate-dir { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* first-run step „Sicherheit“ */
+.fr-sec-key, .fr-sec-lock { display: grid; gap: 10px; padding: 0 4px; }
+.fr-sec-key p { margin: 0; }
+.fr-sec-lock { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+.fr-sec-lock > :first-child { grid-column: 1 / -1; }
+.fr-sec-done { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--success); grid-column: 1 / -1; }
 /* ---- settings foundation (1.10): grouped menu, section tools, inline field errors ---- */
 .settings-nav-group-label {
   display: flex;

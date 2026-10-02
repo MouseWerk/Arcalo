@@ -162,6 +162,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # SQLCipher's vendored OpenSSL is configured with Strawberry Perl (Git's perl lacks modules);
+      # Linux uses the system perl, macOS needs none (CommonCrypto).
+      - name: Perl for OpenSSL
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe' >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

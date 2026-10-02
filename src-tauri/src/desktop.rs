@@ -67,6 +67,8 @@ struct TrayHandles {
     time: bool,
     /// The menu has „Aufnahme beenden“ (a voice note is being recorded).
     recording: bool,
+    /// The menu was built for the app lock: only „Entsperren“ and „Beenden“.
+    locked: bool,
 }
 
 #[derive(Default)]
@@ -129,6 +131,13 @@ type TimerItems = Option<(MenuItem<Wry>, MenuItem<Wry>)>;
 /// (disabled until `refresh_tray`).
 fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItems)> {
     let menu = Menu::new(app)?;
+    // App-Sperre: nothing that shows or changes notes.
+    if crate::security::is_locked() {
+        menu.append(&MenuItem::with_id(app, "unlock", tr!("Entsperren", "Unlock"), true, None::<&str>)?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&MenuItem::with_id(app, "quit", tr!("Beenden", "Quit"), true, None::<&str>)?)?;
+        return Ok((menu, None));
+    }
     let (mut stop, mut resume) = (None, None);
     // Recording a voice note: the first entry stops it (never recording unnoticed).
     if crate::voice::is_recording(app) {
@@ -181,7 +190,8 @@ pub fn relocalize(app: &AppHandle) {
             Ok((menu, timer)) => {
                 let _ = t.tray.set_menu(Some(menu));
                 let recording = crate::voice::is_recording(app);
-                *lock(&desktop(app).tray) = Some(TrayHandles { tray: t.tray, timer, time, recording });
+                *lock(&desktop(app).tray) =
+                    Some(TrayHandles { tray: t.tray, timer, time, recording, locked: crate::security::is_locked() });
             }
             Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
         }
@@ -222,14 +232,17 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     }
     let tray = builder.build(app)?;
     let recording = crate::voice::is_recording(app);
-    *lock(&desktop(app).tray) = Some(TrayHandles { tray, timer, time, recording });
+    *lock(&desktop(app).tray) =
+        Some(TrayHandles { tray, timer, time, recording, locked: crate::security::is_locked() });
     refresh_tray(app);
     Ok(())
 }
 
 fn on_menu(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
-        "open" => show_main(app),
+        "open" | "unlock" => show_main(app),
+        // A menu of before the lock (the tray is rebuilt right after locking).
+        _ if crate::security::is_locked() && event.id().as_ref() != "quit" => show_main(app),
         // Left over from a menu built before time tracking was switched off.
         "stop" | "resume" if !time_tracking(app) => {}
         // The UI stops the timer so it can ask about idle time first.
@@ -284,6 +297,13 @@ pub fn refresh_tray(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else { return };
     let time = state.settings().time_tracking();
     rebuild_tray_menu(app, time);
+    // Locked: the tooltip names no timer, task or recording.
+    if crate::security::is_locked() {
+        if let Some(t) = lock(&desktop(app).tray).clone() {
+            let _ = t.tray.set_tooltip(Some(tr!("Arcalo – gesperrt", "Arcalo – locked")));
+        }
+        return;
+    }
     if !time {
         // Nothing about a timer, also not one left running from before.
         if let Some(t) = lock(&desktop(app).tray).clone() {
@@ -315,7 +335,7 @@ pub fn refresh_tray(app: &AppHandle) {
 fn rebuild_tray_menu(app: &AppHandle, time: bool) {
     let Some(t) = lock(&desktop(app).tray).clone() else { return };
     let recording = crate::voice::is_recording(app);
-    if t.time == time && t.recording == recording {
+    if t.time == time && t.recording == recording && t.locked == crate::security::is_locked() {
         return;
     }
     match tray_menu(app, time) {
@@ -328,6 +348,7 @@ fn rebuild_tray_menu(app: &AppHandle, time: bool) {
                 h.timer = timer;
                 h.time = time;
                 h.recording = recording;
+                h.locked = crate::security::is_locked();
             }
         }
         Err(e) => crate::devlog::warn("desktop", format!("tray menu not rebuilt: {e}")),
@@ -415,6 +436,11 @@ pub fn app_quit(app: AppHandle) {
 /// Shows the quick-capture window (created hidden at start, see [`precreate_capture`]).
 /// `selection`: „Auswahl übernehmen“ – the window starts with the selection or clipboard text.
 pub fn open_capture(app: &AppHandle, selection: bool) {
+    // App-Sperre: the lock screen of the main window instead.
+    if crate::security::is_locked() {
+        show_main(app);
+        return;
+    }
     *lock(&desktop(app).capture_requested) = Some(Instant::now());
     // Creating a webview from an event handler can deadlock on Windows; build it elsewhere.
     let app = app.clone();
@@ -498,6 +524,13 @@ fn app_focused(app: &AppHandle) -> bool {
 
 /// Hides a popup. `dismissed` (Esc, stored, its shortcut again): on macOS a popup called up from
 /// another program then hides Arcalo too, so that program gets the focus back.
+/// Hides quick capture and quick search (the app locks).
+pub fn hide_popups(app: &AppHandle) {
+    for label in [CAPTURE, SEARCH] {
+        hide_popup(app, label, false);
+    }
+}
+
 fn hide_popup(app: &AppHandle, label: &str, dismissed: bool) {
     let Some(w) = app.get_webview_window(label) else { return };
     let focused = dismissed && w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false);
@@ -622,6 +655,10 @@ pub fn capture_ready(app: AppHandle) {
 /// Shows the quick-search window; with `toggle` (the global shortcut) a search window that is
 /// already in front is hidden instead.
 pub fn open_search(app: &AppHandle, toggle: bool) {
+    if crate::security::is_locked() {
+        show_main(app);
+        return;
+    }
     // Creating a webview from an event handler can deadlock on Windows; build it elsewhere.
     let app = app.clone();
     std::thread::spawn(move || {
@@ -1103,6 +1140,9 @@ mod macos {
 // ---------------------------------------------------------------- reminders
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    // Locked: nothing about the content (timer, task, page) on the screen.
+    let (title, body) =
+        if crate::security::is_locked() { crate::security::locked_notification() } else { (title, body) };
     // Held back during a focus session and shown in its summary.
     if crate::focus::hold(app, title, body) {
         return;

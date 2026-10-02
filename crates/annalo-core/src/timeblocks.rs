@@ -195,7 +195,9 @@ const COLS: &str =
      b.netzplan_id, b.vorgang_nr, n.netzplan_nr, b.outlook_entry_id, b.entry_id, b.created_at, b.updated_at,
      p.title, p.content,
      (SELECT t.done FROM tasks t WHERE t.page_id = b.page_id AND t.text = b.task_text
-       ORDER BY ABS(t.ordinal - b.task_ordinal) LIMIT 1),
+       AND ABS(t.ordinal - b.task_ordinal) = (SELECT MIN(ABS(t2.ordinal - b.task_ordinal)) FROM tasks t2
+         WHERE t2.page_id = b.page_id AND t2.text = b.task_text)
+       ORDER BY t.ordinal LIMIT 1),
      i.summary, i.status, i.url,
      o.id IS NOT NULL, o.error,
      (SELECT IFNULL(SUM(f.worked_minutes), 0) FROM focus_sessions f WHERE f.block_id = b.id)";

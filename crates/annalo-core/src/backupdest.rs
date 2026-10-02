@@ -969,8 +969,9 @@ pub fn fetch_verified(backup: &Path, to: &Path, act: &Activity) -> std::result::
 
 /// Whether `path` is an intact SQLite database (`PRAGMA quick_check`).
 pub fn check_sqlite(path: &Path) -> Result<()> {
-    use rusqlite::{Connection, OpenFlags};
-    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    use rusqlite::OpenFlags;
+    // An encrypted backup is read with the key of this process (the recovery screen asks for it).
+    let conn = crate::cipher::open_conn(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     let res: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
     if res != "ok" {
         return Err(Error::State(trf!(

@@ -64,11 +64,19 @@ windows = { version = "0.61", features = [
   "Data_Xml_Dom",
   "Foundation",
   "UI_Notifications",
+  # App lock: Windows Hello (UserConsentVerifier, for a window).
+  "Security_Credentials_UI",
+  "Win32_System_WinRT",
 ] }
+windows-future = "0.2"
 
 # Quick capture/search over full-screen apps on every Space (NSWindow collection behaviour).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSWindow"] }
+# App lock: Touch ID (LocalAuthentication's LAContext).
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError"] }
+objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
