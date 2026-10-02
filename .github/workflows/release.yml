@@ -16,6 +16,9 @@ name: Release
 # APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY the app is signed with the Developer ID;
 # with APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID it is notarized as well (README → „macOS“).
 
+# winget (docs/release/winget.md): with the secret WINGET_TOKEN every release opens a pull request
+# for MouseWerk.Arcalo in microsoft/winget-pkgs. Without it the job does nothing.
+
 # Alternatively „Run workflow“ (Actions → Release) with a version: the workflow creates the
 # annotated tag v<version> on the selected branch itself, with docs/releases/v<version>.md as
 # its message, and builds that. If the tag exists already, it is built again (to re-run a
@@ -323,3 +326,25 @@ jobs:
           name: Arcalo ${{ needs.tag.outputs.tag }}
           body_path: notes.md
           files: dist/*
+
+  # winget: updates MouseWerk.Arcalo in microsoft/winget-pkgs (a pull request from the owner's fork).
+  # The first version is submitted by hand (docs/release/winget.md); from then on this job does it.
+  winget:
+    name: winget
+    needs: [tag, publish]
+    runs-on: windows-latest
+    env:
+      # Secrets are not available in `if:`; this variable is.
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Check token
+        if: env.WINGET_TOKEN == ''
+        run: echo "::notice::WINGET_TOKEN not set, winget is not updated."
+      - uses: vedantmgoyal9/winget-releaser@v2
+        if: env.WINGET_TOKEN != ''
+        with:
+          identifier: MouseWerk.Arcalo
+          release-tag: ${{ needs.tag.outputs.tag }}
+          installers-regex: '_x64-setup\.exe$'
+          fork-user: ${{ vars.WINGET_FORK_USER || github.repository_owner }}
+          token: ${{ secrets.WINGET_TOKEN }}
