@@ -16,7 +16,7 @@ use annalo_core::issues::{
     self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, JiraSite,
     NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
 };
-use annalo_core::model::Page;
+use annalo_core::model::{Page, TimeEntry};
 use annalo_core::{Error, tr, trf};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -321,7 +321,13 @@ async fn sync_inner(app: &AppHandle, id: &str) -> Result<(usize, String)> {
     let c = client(&state, &site)?;
     let account = c.whoami().await?;
     let stale = state.reader().issues_open_keys(id)?;
-    let fetched = issues::fetch_site(&c, &settings.searches(id), &stale).await?;
+    let mut fetched = issues::fetch_site(&c, &settings.searches(id), &stale).await?;
+    // Custom priorities (no known name, icon or default id): their place in the site's order.
+    if issues::needs_priority_order(&fetched)
+        && let Ok(order) = c.priority_order().await
+    {
+        issues::apply_priority_order(&mut fetched, &issues::levels_by_order(&order));
+    }
     for (q, e) in &fetched.failed {
         devlog::warn("jira", format!("{id}: query {q}: {}", devlog::redact(e)));
     }
@@ -557,7 +563,11 @@ pub fn jira_add_task(app: AppHandle, state: State<AppState>, key: String) -> Res
 /// The issue keys and worklog states of time entries.
 #[tauri::command(async)]
 pub fn jira_entry_issues(state: State<AppState>, entry_ids: Vec<i64>) -> Result<Vec<EntryIssue>> {
-    state.reader().issue_entries(&entry_ids)
+    let mut list = state.reader().issue_entries(&entry_ids)?;
+    for e in &mut list {
+        e.syncs = logs_work(&state, &e.site);
+    }
+    Ok(list)
 }
 
 // ------------------------------------------------------------------ create
@@ -760,6 +770,11 @@ async fn post_worklogs(app: &AppHandle) {
             changed = true;
             let outcome: Result<String> = async {
                 let c = client(&state, &site)?;
+                // Posted before: the entry changed, its worklog follows.
+                if let Some(id) = &p.worklog_id {
+                    c.update_work(id, &p.work).await?;
+                    return Ok(id.clone());
+                }
                 if p.retry {
                     let account = match accounts.get(&site.id) {
                         Some(a) => a.clone(),
@@ -789,10 +804,67 @@ async fn post_worklogs(app: &AppHandle) {
                 }
             }
         }
+        // Worklogs of deleted entries.
+        let deletes = state.reader().worklog_deletes_due(Utc::now()).unwrap_or_default();
+        for d in deletes {
+            changed = true;
+            let Some(site) = settings.jira.site(&d.site).filter(|s| s.enabled && s.log_work).cloned() else {
+                // The site stopped logging work (or is gone): Jira keeps the worklog.
+                let _ = state.db().worklog_deleted(d.id);
+                continue;
+            };
+            let outcome = match client(&state, &site) {
+                Ok(c) => c.delete_work(&d.issue_key, &d.worklog_id).await,
+                Err(e) => Err(e),
+            };
+            match outcome {
+                Ok(()) => {
+                    let _ = state.db().worklog_deleted(d.id);
+                    devlog::debug("jira", format!("{}: worklog {} deleted", d.issue_key, d.worklog_id));
+                }
+                Err(e) => {
+                    let msg = devlog::redact(&e.to_string());
+                    devlog::warn("jira", format!("{}: deleting worklog {} failed: {msg}", d.issue_key, d.worklog_id));
+                    let _ = state.db().worklog_delete_failed(d.id, &msg, Utc::now());
+                }
+            }
+        }
     }
     if changed {
         let _ = app.emit("jira://worklog", ());
     }
+}
+
+/// Whether changes of entries reach Jira on `site`: time tracking on, the site enabled and
+/// logging work (Settings → Jira).
+pub fn logs_work(state: &AppState, site: &str) -> bool {
+    let settings = state.settings();
+    settings.time_tracking() && settings.jira.site(site).is_some_and(|s| s.enabled && s.log_work)
+}
+
+/// An entry was edited: its posted worklog is updated when duration, start or comment changed.
+pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) {
+    if !issues::worklog_differs(before, after) {
+        return;
+    }
+    let state = app.state::<AppState>();
+    let Ok(Some((site, _, _))) = state.reader().entry_worklog(after.id) else { return };
+    if logs_work(&state, &site) && state.db().worklog_changed(after.id).unwrap_or(false) {
+        kick_worklogs(app.clone());
+    }
+}
+
+/// Deletes an entry; its posted worklog is queued for deletion in Jira in the same
+/// transaction (a failed deletion is retried). Returns whether one was queued.
+pub fn delete_entry(state: &AppState, entry_id: i64) -> Result<bool> {
+    let db = state.db();
+    let site = db.entry_worklog(entry_id)?.map(|(site, _, _)| site);
+    let queue = site.is_some_and(|s| logs_work(state, &s));
+    db.atomic(|| {
+        let queued = queue && db.worklog_queue_delete(entry_id)?;
+        db.delete_time_entry(entry_id)?;
+        Ok(queued)
+    })
 }
 
 /// „Erneut versuchen“ on a failed worklog.

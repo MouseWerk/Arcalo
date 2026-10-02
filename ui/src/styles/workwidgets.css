@@ -213,3 +213,22 @@
 .bp-day { display: grid; gap: 2px; justify-items: center; }
 .bp-day input { width: 100%; text-align: center; }
 .dws-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+/* ---- next meeting: the title stays, place and time give way ---- */
+.wn > * { flex-shrink: 0; min-width: 0; }
+.wn-title { min-height: 1.25em; overflow-wrap: anywhere; }
+.wn-when { min-width: 0; white-space: nowrap; }
+.wn-when > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wn-when > .dw-next-dot { flex-shrink: 0; }
+.wn-when > span:not(.dw-next-dot) { flex: 0 1 auto; }
+.wn-when > .num { flex: 0 10 auto; }
+.wn-then > .num { flex-shrink: 10; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wn-then > .ellipsis { min-width: 3em; }
+@container dw (max-width: 260px) {
+  .wn-title { font-size: var(--fs-md); -webkit-line-clamp: 3; }
+  .wn-clock { font-size: 20px; }
+}
+@container dw (max-width: 180px) {
+  .wn-when > .num, .wn-loc { display: none; }
+  .wn-count .faint { display: none; }
+}

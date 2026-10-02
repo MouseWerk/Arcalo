@@ -164,6 +164,20 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
       }
       if (sub === "worklog" && req.method === "GET") return json(res, 200, { worklogs: issue.worklogs });
     }
+    // One worklog: changed (PUT) or removed (DELETE) after the entry was edited or deleted.
+    if ((m = /^issue\/([A-Z0-9_]+-\d+)\/worklog\/(\w+)$/.exec(rest))) {
+      const issue = byKey(m[1]);
+      const w = issue?.worklogs.find((x) => x.id === m[2]);
+      if (!w) return json(res, 404, { errorMessages: ["Cannot find worklog with id: " + m[2]] });
+      if (req.method === "PUT") {
+        Object.assign(w, { started: data.started ?? w.started, timeSpentSeconds: data.timeSpentSeconds ?? w.timeSpentSeconds, comment: adfText(data.comment ?? "") });
+        return json(res, 200, w);
+      }
+      if (req.method === "DELETE") {
+        issue.worklogs.splice(issue.worklogs.indexOf(w), 1);
+        return json(res, 204);
+      }
+    }
     return json(res, 404, { errorMessages: ["not found"] });
   };
 

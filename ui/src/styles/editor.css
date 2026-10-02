@@ -1153,3 +1153,8 @@
 .audio-embed-hint { display: none; font-size: var(--fs-xs); color: var(--text-3); }
 .file-embed.audio-embed.is-unplayable .audio-embed-player { display: none; }
 .file-embed.audio-embed.is-unplayable:not(.is-missing) .audio-embed-hint { display: block; }
+
+/* ---- voice notes: transcribe again ---- */
+.audio-embed .audio-embed-again { margin-left: auto; flex-shrink: 0; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-input); color: var(--text-2); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
+.audio-embed .audio-embed-again:hover { color: var(--text); border-color: var(--border-strong); }
+.audio-embed .audio-embed-again:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

@@ -23,6 +23,7 @@ sha2 = "0.10.9"
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["time", "macros", "rt"] }
 flacenc = "0.5"
+claxon = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

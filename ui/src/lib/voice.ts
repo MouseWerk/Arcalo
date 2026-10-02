@@ -31,6 +31,8 @@ export interface VoiceJob {
   title: string;
   stage: JobStage;
   progress: number;
+  /** The audio file the job reads. */
+  file: string;
 }
 
 export interface VoiceStatus {
@@ -46,6 +48,16 @@ export interface VoiceDone {
   auto_summary: boolean;
   error: string | null;
   cancelled: boolean;
+  /** „Neu transkribieren“ of a stored voice note (no summary offered). */
+  again: boolean;
+}
+
+/** A recording a crash or a forced quit left behind (voice.rs `Unfinished`). */
+export interface UnfinishedRecording {
+  name: string;
+  duration_ms: number;
+  /** RFC 3339: when it was last written. */
+  modified: string;
 }
 
 export interface VoiceModel {
@@ -97,7 +109,22 @@ export const voiceApi = {
   cancelDownload: () => call<void>("voice_model_cancel"),
   importModel: (id: string, path: string) => call<ModelsView>("voice_model_import", { id, path }),
   deleteModel: (id: string) => call<ModelsView>("voice_model_delete", { id }),
+  transcribeAgain: (pageId: number, audio: string, model: string, language: string) => call<string>("voice_transcribe_again", { pageId, audio, model, language }),
+  unfinished: () => call<UnfinishedRecording[]>("voice_unfinished"),
+  saveUnfinished: (name: string) => call<{ page_id: number; title: string; job_id: string }>("voice_unfinished_save", { name }),
+  discardUnfinished: (name: string) => call<void>("voice_unfinished_discard", { name }),
 };
+
+/** Audio of a voice note that can be transcribed again (stored as FLAC, or a WAV). */
+export const isVoiceAudio = (name: string): boolean => /\.(flac|wav)$/i.test(name.trim());
+
+/** The model offered when transcribing again: the one in the settings when it is there, else the
+ *  largest one downloaded, else the setting (the command then says it is missing). */
+export function againModel(models: Pick<VoiceModel, "id" | "installed" | "size">[], setting: string): string {
+  if (models.some((m) => m.id === setting && m.installed)) return setting;
+  const best = models.filter((m) => m.installed).sort((a, b) => b.size - a.size)[0];
+  return best?.id ?? setting;
+}
 
 /** Labels of the models (sizes from the registry). */
 export const MODEL_LABELS: Record<string, string> = { base: "Base", small: "Small", "large-v3-turbo-q5": "Large v3 Turbo (q5)" };
@@ -145,6 +172,10 @@ interface VoiceState {
   results: VoiceDone[];
   /** Pages whose summary is being written. */
   summarizing: number[];
+  /** „Neu transkribieren“ asked for (the dialog shows). */
+  again: { pageId: number; audio: string } | null;
+  /** Recordings left from a crash, offered in the voice bar. */
+  unfinished: UnfinishedRecording[];
   set: (p: Partial<Omit<VoiceState, "set">>) => void;
 }
 
@@ -152,6 +183,8 @@ export const useVoice = create<VoiceState>((set) => ({
   status: { recording: null, jobs: [] },
   results: [],
   summarizing: [],
+  again: null,
+  unfinished: [],
   set: (p) => set(p),
 }));
 
@@ -180,6 +213,8 @@ export function listenVoice(): () => void {
     .status()
     .then((status) => v().set({ status }))
     .catch(() => {});
+  // After a crash: recordings left in the voice folder are offered.
+  void loadUnfinished();
   return () => subs.forEach((p) => p.then((f) => f()));
 }
 
@@ -190,11 +225,59 @@ function onDone(d: VoiceDone) {
     return;
   }
   if (d.error) {
-    s.toast({ tone: "warning", title: t("voice.failed"), detail: d.error, persistent: true });
+    s.toast({ tone: "warning", title: d.again ? t("voice.again.failed") : t("voice.failed"), detail: d.error, persistent: true });
+    return;
+  }
+  if (d.again) {
+    s.toast({ tone: "success", title: t("voice.again.done"), detail: d.title });
     return;
   }
   v().set({ results: [...v().results.filter((r) => r.page_id !== d.page_id), d] });
   if (d.auto_summary && aiReady()) void summarizeVoice(d);
+}
+
+// ------------------------------------------------------------ transcribe again, unfinished
+
+/** „Neu transkribieren“ on the voice note with the audio `audio` on `pageId`: the dialog asks for
+ *  model and language. */
+export function openTranscribeAgain(pageId: number, audio: string) {
+  v().set({ again: { pageId, audio } });
+}
+
+export async function transcribeAgain(pageId: number, audio: string, model: string, language: string): Promise<boolean> {
+  try {
+    await voiceApi.transcribeAgain(pageId, audio, model, language);
+    return true;
+  } catch (e) {
+    useApp.getState().error(t("voice.again.failed"), e);
+    return false;
+  }
+}
+
+export async function loadUnfinished() {
+  const list = await voiceApi.unfinished().catch(() => [] as UnfinishedRecording[]);
+  v().set({ unfinished: list });
+}
+
+/** „Als Sprachnotiz speichern“: stored and transcribed like a recording that just stopped. */
+export async function saveUnfinished(name: string) {
+  try {
+    await voiceApi.saveUnfinished(name);
+  } catch (e) {
+    useApp.getState().error(t("voice.unfinished.saveFailed"), e);
+  }
+  await loadUnfinished();
+}
+
+export async function discardUnfinished(name: string) {
+  const ok = await useApp.getState().confirm({ title: t("voice.unfinished.discardAsk"), message: t("voice.unfinished.discardText"), confirmLabel: t("common.discard"), danger: true });
+  if (!ok) return;
+  try {
+    await voiceApi.discardUnfinished(name);
+  } catch (e) {
+    useApp.getState().error(t("voice.unfinished.discardFailed"), e);
+  }
+  await loadUnfinished();
 }
 
 export function dismissResult(pageId: number) {

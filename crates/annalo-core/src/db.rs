@@ -37,6 +37,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0013_absences.sql"),
     include_str!("../migrations/0014_issues.sql"),
     include_str!("../migrations/0015_focus_blocks.sql"),
+    include_str!("../migrations/0017_jira_worklog_sync.sql"),
     include_str!("../migrations/0018_focus_block_writes.sql"),
 ];
 

@@ -147,6 +147,16 @@ pub fn parse_time(s: &str) -> Option<String> {
     Some(parsed.with_timezone(&Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
+/// An id Jira sends as text or as a number.
+fn id_text(v: &Value) -> String {
+    v.as_str().map(str::to_owned).or_else(|| v.as_i64().map(|n| n.to_string())).unwrap_or_default()
+}
+
+/// The ids of `GET priority` in the instance's order (highest first).
+pub fn parse_priorities(v: &Value) -> Vec<String> {
+    v.as_array().map(|a| a.iter().map(|p| id_text(&p["id"])).filter(|id| !id.is_empty()).collect()).unwrap_or_default()
+}
+
 /// The worklog `started` Jira wants: `2026-10-01T08:00:00.000+0000`.
 pub fn worklog_started(t: DateTime<Utc>) -> String {
     t.format("%Y-%m-%dT%H:%M:%S%.3f+0000").to_string()
@@ -411,6 +421,12 @@ pub fn parse_issue(v: &Value, site: &str, base: &str, sprint_field: Option<&str>
         status: f["status"]["name"].as_str().unwrap_or("").to_owned(),
         status_category: category.to_owned(),
         priority: f["priority"]["name"].as_str().unwrap_or("").to_owned(),
+        priority_level: super::priority_level(
+            f["priority"]["name"].as_str().unwrap_or(""),
+            &id_text(&f["priority"]["id"]),
+            f["priority"]["iconUrl"].as_str().unwrap_or(""),
+        ),
+        priority_id: id_text(&f["priority"]["id"]),
         assignee: name(&f["assignee"]),
         reporter: name(&f["reporter"]),
         issue_type: f["issuetype"]["name"].as_str().unwrap_or("").to_owned(),
@@ -706,6 +722,12 @@ impl JiraClient {
     pub async fn project_types(&self, project: &str) -> Result<Vec<String>> {
         self.issue_types(project).await
     }
+
+    /// The priority ids of the instance, highest first (custom priorities get their level by
+    /// this order).
+    pub async fn priority_order(&self) -> Result<Vec<String>> {
+        Ok(parse_priorities(&self.get_json(&api_url(&self.base, self.kind, "priority")).await?))
+    }
 }
 
 impl IssueProvider for JiraClient {
@@ -838,6 +860,23 @@ impl IssueProvider for JiraClient {
     async fn worklogs(&self, key: &str) -> Result<Vec<RemoteWorklog>> {
         let v = self.get_json(&api_url(&self.base, self.kind, &format!("issue/{key}/worklog"))).await?;
         Ok(parse_worklogs(&v))
+    }
+
+    async fn update_work(&self, id: &str, work: &WorkLog) -> Result<()> {
+        let url = api_url(&self.base, self.kind, &format!("issue/{}/worklog/{id}", work.key));
+        let mut body =
+            json!({ "started": worklog_started(work.started), "timeSpentSeconds": worklog_seconds(work.minutes) });
+        body["comment"] = body_value(self.kind, work.comment.trim());
+        self.send(Method::PUT, &url, Some(&body)).await?;
+        Ok(())
+    }
+
+    async fn delete_work(&self, key: &str, id: &str) -> Result<()> {
+        let url = api_url(&self.base, self.kind, &format!("issue/{key}/worklog/{id}"));
+        match self.send(Method::DELETE, &url, None).await {
+            Err(Error::Provider { status: 404, .. }) => Ok(()),
+            other => other.map(|_| ()),
+        }
     }
 
     async fn sprint(&self, project: &str) -> Result<Option<Sprint>> {

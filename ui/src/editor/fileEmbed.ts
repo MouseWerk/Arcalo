@@ -121,6 +121,9 @@ export interface FileEmbedOptions {
   audioUrl: ((name: string) => string) | null;
 }
 
+/** Sent (bubbling) by the „Neu transkribieren“ button of a voice note's audio; detail: the name. */
+export const TRANSCRIBE_AGAIN_EVENT = "annalo:transcribe-again";
+
 // `![[name.ext#sub|alt]]`: the name is checked with `isFileEmbedName` after matching.
 const FILE_RE = /^!\[\[([^\]|#\n]+?)(#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/;
 
@@ -271,6 +274,20 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
         player.addEventListener("error", () => {
           if (alive) dom.classList.add("is-unplayable");
         });
+        // A voice note's audio: „Neu transkribieren“ (the editor opens the dialog).
+        if (/\.(flac|wav)$/i.test(base)) {
+          const again = document.createElement("button");
+          again.type = "button";
+          again.className = "audio-embed-again";
+          again.textContent = t("voice.again.button");
+          again.title = t("voice.again.title");
+          again.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dom.dispatchEvent(new CustomEvent(TRANSCRIBE_AGAIN_EVENT, { bubbles: true, detail: name }));
+          });
+          bar.append(again);
+        }
         dom.append(bar, player, hint);
       } else {
         dom.append(bar);
@@ -279,7 +296,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
       dom.addEventListener("click", (e) => {
         if (e.button !== 0) return;
         // Clicks on the player play, pause and seek; they do not open the file.
-        if ((e.target as HTMLElement).closest?.("audio")) return;
+        if ((e.target as HTMLElement).closest?.("audio, .audio-embed-again")) return;
         e.preventDefault();
         if (pdf) onOpenPdf(base, anchorPage(node.attrs.anchor));
         else onOpen(base);

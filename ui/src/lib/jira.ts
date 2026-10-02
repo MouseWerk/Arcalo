@@ -48,6 +48,8 @@ export interface Issue {
   status: string;
   status_category: Category;
   priority: string;
+  /** 5 highest to 1 lowest, 0 unknown (by Jira's id, icon or order; issues.rs `priority_level`). */
+  priority_level?: number;
   assignee: string;
   reporter: string;
   issue_type: string;
@@ -148,6 +150,8 @@ export interface EntryIssue {
   worklog_state: "none" | "pending" | "posting" | "posted" | "failed";
   worklog_id: string | null;
   error: string | null;
+  /** Changes reach Jira (time tracking on, the site logs work). */
+  syncs: boolean;
 }
 export interface IssueFilterArgs {
   site?: string;
@@ -157,6 +161,60 @@ export interface IssueFilterArgs {
 }
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
+
+// ------------------------------------------------------------------ priority colors
+
+/** Names Jira ships (English, German, the classic Server scheme) with their level. */
+const PRIORITY_NAMES: Record<string, number> = {
+  highest: 5,
+  blocker: 5,
+  "höchste": 5,
+  high: 4,
+  critical: 4,
+  hoch: 4,
+  kritisch: 4,
+  medium: 3,
+  major: 3,
+  mittel: 3,
+  normal: 3,
+  low: 2,
+  minor: 2,
+  niedrig: 2,
+  gering: 2,
+  lowest: 1,
+  trivial: 1,
+  niedrigste: 1,
+};
+
+/** The level of an issue's priority: the synced one, else by its name (rows cached before). */
+export function priorityLevel(i: Pick<Issue, "priority" | "priority_level">): number {
+  return i.priority_level || PRIORITY_NAMES[i.priority.trim().toLowerCase()] || 0;
+}
+
+/** Color class of the priority label: raised for the top two levels, muted for the bottom two. */
+export function priorityClass(i: Pick<Issue, "priority" | "priority_level">): string {
+  const l = priorityLevel(i);
+  return l >= 4 ? "prio-up" : l > 0 && l <= 2 ? "prio-down" : "";
+}
+
+// ------------------------------------------------------------------ worklogs of entries
+
+export type WorklogShown = "posted" | "pending" | "failed" | "none";
+
+/** What the timesheet shows for an entry's Jira worklog. One that does not go out (the site
+ *  does not log work, time tracking off) shows as the key only. */
+export function worklogShown(e: Pick<EntryIssue, "worklog_state" | "worklog_id" | "syncs">): WorklogShown {
+  if (e.worklog_state === "posted") return "posted";
+  if (!e.syncs) return e.worklog_id ? "posted" : "none";
+  if (e.worklog_state === "failed") return "failed";
+  if (e.worklog_state === "pending" || e.worklog_state === "posting") return "pending";
+  return "none";
+}
+
+/** Issue keys whose worklog a deletion of these entries also deletes in Jira. */
+export function worklogDeleteKeys(list: Pick<EntryIssue, "issue_key" | "worklog_id" | "syncs">[]): string[] {
+  return [...new Set(list.filter((e) => e.worklog_id && e.syncs).map((e) => e.issue_key))];
+}
 
 export const jiraApi = {
   status: () => call<JiraStatus>("jira_status"),
@@ -286,8 +344,8 @@ export function valuesOf(list: Issue[], field: "project_key" | "status" | "sprin
   return [...set].sort((a, b) => (field === "priority" ? priorityRank(a) - priorityRank(b) : a.localeCompare(b)));
 }
 
-const PRIORITY_ORDER = ["highest", "blocker", "critical", "high", "major", "medium", "normal", "low", "minor", "lowest", "trivial"];
-/** Order of a priority name (Jira's default names; unknown ones after them). */
+const PRIORITY_ORDER = ["highest", "blocker", "höchste", "critical", "high", "hoch", "kritisch", "major", "medium", "mittel", "normal", "low", "niedrig", "minor", "gering", "lowest", "niedrigste", "trivial"];
+/** Order of a priority name (Jira's default names in English and German; unknown ones after them). */
 export function priorityRank(p: string): number {
   const i = PRIORITY_ORDER.indexOf(p.trim().toLowerCase());
   return i < 0 ? PRIORITY_ORDER.length : i;
@@ -326,7 +384,11 @@ export function groupIssues(list: Issue[], by: GroupBy, names: { site: (id: stri
   const rank = (id: string, sample: Issue) => {
     if (!id) return [9, 0, ""] as const;
     if (by === "status") return [0, CATEGORY_ORDER[sample.status_category] ?? 1, id] as const;
-    if (by === "priority") return [0, priorityRank(id), id] as const;
+    if (by === "priority") {
+      // By the synced level (localized and custom names too), else by the name.
+      const level = priorityLevel(sample);
+      return [0, level ? 5 - level : 5 + priorityRank(id), id] as const;
+    }
     if (by === "sprint") return [0, sample.sprint_state === "active" ? 0 : sample.sprint_state === "future" ? 1 : 2, id] as const;
     return [0, 0, id] as const;
   };

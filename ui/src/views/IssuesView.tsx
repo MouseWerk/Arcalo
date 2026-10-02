@@ -12,7 +12,7 @@ import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner, useMenu,
 import { PageIcon } from "../components/icons";
 import { fmtDate, fmtMinutes, isoDay, relative } from "../lib/format";
 import { t, useT, type TKey } from "../lib/i18n";
-import { emptyIssueQuery, filterIssues, GROUP_BYS, groupIssues, jiraApi, overdue, valuesOf, type GroupBy, type Issue, type IssueQuery, type IssueView, type JiraStatus } from "../lib/jira";
+import { emptyIssueQuery, filterIssues, GROUP_BYS, groupIssues, jiraApi, overdue, priorityClass, valuesOf, type GroupBy, type Issue, type IssueQuery, type IssueView, type JiraStatus } from "../lib/jira";
 import { addIssueTask, copyIssueKey, openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
 import { openSettingsSection } from "../lib/calnav";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
@@ -231,7 +231,7 @@ export function IssuesView() {
                       <span className="issue-summary ellipsis">{i.summary}</span>
                       <span className="issue-meta">
                         {i.sprint && pref.group !== "sprint" && <span className="issue-sprint faint ellipsis">{i.sprint}</span>}
-                        {i.priority && <span className={`issue-prio prio-${i.priority.toLowerCase()}`}>{i.priority}</span>}
+                        {i.priority && <span className={`issue-prio ${priorityClass(i)}`}>{i.priority}</span>}
                         {i.due_date && <span className={`issue-due ${overdue(i, today) ? "overdue" : ""}`}>{fmtDate(i.due_date)}</span>}
                         {i.assignee && <span className="issue-assignee ellipsis" title={i.assignee}>{i.assignee}</span>}
                         <StatusPill issue={i} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { downloadPercent, elapsedLabel, meterSegments, stageLabel } from "./voice";
+import { againModel, downloadPercent, elapsedLabel, isVoiceAudio, meterSegments, stageLabel } from "./voice";
 import { slashItems } from "../editor/extensions";
 import { isPlayableAudio } from "../editor/fileEmbed";
 
@@ -46,5 +46,24 @@ describe("voice notes", () => {
     expect(isPlayableAudio("Sprachnotiz 2026-10-01 14-30.flac")).toBe(true);
     expect(isPlayableAudio("Aufnahme.WAV")).toBe(true);
     expect(isPlayableAudio("Angebot.pdf")).toBe(false);
+  });
+});
+
+describe("transcribe again", () => {
+  it("is offered on a voice note's audio", () => {
+    expect(isVoiceAudio("Sprachnotiz 2026-10-01 14-30.flac")).toBe(true);
+    expect(isVoiceAudio("rec.WAV")).toBe(true);
+    expect(isVoiceAudio("Musik.mp3")).toBe(false);
+    expect(isVoiceAudio("Angebot.pdf")).toBe(false);
+  });
+  it("suggests the model of the settings, else the largest one downloaded", () => {
+    const models = [
+      { id: "base", installed: true, size: 100 },
+      { id: "small", installed: false, size: 400 },
+      { id: "large-v3-turbo-q5", installed: true, size: 500 },
+    ];
+    expect(againModel(models, "base")).toBe("base");
+    expect(againModel(models, "small")).toBe("large-v3-turbo-q5");
+    expect(againModel(models.map((m) => ({ ...m, installed: false })), "small")).toBe("small");
   });
 });

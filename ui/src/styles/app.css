@@ -2872,8 +2872,8 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issue-type-epic { color: var(--violet); }
 .issue-type-task, .issue-type-subtask { color: var(--info); }
 .issue-prio { font-size: var(--fs-xs); color: var(--text-2); }
-.issue-prio.prio-highest, .issue-prio.prio-blocker, .issue-prio.prio-critical, .issue-prio.prio-high, .issue-prio.prio-major { color: var(--danger); }
-.issue-prio.prio-low, .issue-prio.prio-lowest, .issue-prio.prio-minor, .issue-prio.prio-trivial { color: var(--text-3); }
+.issue-prio.prio-up { color: var(--danger); }
+.issue-prio.prio-down { color: var(--text-3); }
 .issue-due { font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .issue-due.overdue { color: var(--danger); font-weight: 600; }
 
@@ -3169,6 +3169,26 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .bf-meeting .bf-actions { grid-column: 2; }
   .bf-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- timesheet: Jira worklogs of entries ---- */
+.entry-jira { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 0 6px; height: 18px; border-radius: 9px; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-2xs); font-weight: 600; vertical-align: 1px; white-space: nowrap; }
+.entry-jira-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+.entry-jira.wl-posted .entry-jira-dot { background: var(--success); }
+.entry-jira.wl-pending .entry-jira-dot { background: var(--warning-fill); }
+.entry-jira.wl-failed { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--danger); }
+.entry-jira.wl-failed .entry-jira-dot { background: var(--danger); }
+.entry-jira-state { font-weight: 500; color: var(--text-3); }
+.entry-jira.wl-failed .entry-jira-state { color: inherit; }
+.entry-jira-retry { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: -4px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.entry-jira-retry:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.entry-jira-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.entry-jira-note { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; }
+@container pane (max-width: 700px) {
+  .entry-jira-state { display: none; }
+}
+
+/* ---- voice notes: unfinished recordings ---- */
+.voice-icon.warn { color: var(--warning); }
 
 /* ---- briefing overview: four cards ---- */
 /* Four cards go 2 x 2 in a narrow pane, never 3 + 1. */

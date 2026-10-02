@@ -99,6 +99,9 @@ pub struct JobInfo {
     /// `waiting`, `audio`, `model` (waits for the download), `transcribe`.
     stage: &'static str,
     progress: u8,
+    /// The audio file the job reads (a recording's WAV, or the stored FLAC when transcribing
+    /// again).
+    file: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,6 +139,8 @@ struct Done {
     auto_summary: bool,
     error: Option<String>,
     cancelled: bool,
+    /// „Neu transkribieren“ (no summary offered).
+    again: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -548,41 +553,179 @@ pub fn stop(app: &AppHandle) -> Result<Stopped> {
             None => tr!("Die Aufnahme ist leer", "The recording is empty").into(),
         }));
     }
+    let stopped = store_recording(app, &rec.id, rec.page_id, rec.started, &rec.wav, samples)?;
+    let _ = app.emit("voice://stopped", &stopped);
+    if let Some(e) = device_error {
+        crate::devlog::warn("voice", format!("recording ended by the device: {e}"));
+    }
+    Ok(stopped)
+}
+
+/// A recorded WAV becomes a voice note: the block goes onto its page (`page_id`, or a new
+/// voice-note page) and the job stores the audio as FLAC and transcribes it.
+fn store_recording(
+    app: &AppHandle,
+    id: &str,
+    page_id: Option<i64>,
+    started: chrono::DateTime<Local>,
+    wav: &Path,
+    samples: u32,
+) -> Result<Stopped> {
     let state = app.state::<AppState>();
     let settings = state.settings().voice;
-    let name = audio_name(&state.attachments_dir(), rec.started);
-    let page = state.db().voice_begin(rec.page_id, rec.started.naive_local(), Some(&name), &rec.id)?;
+    let name = audio_name(&state.attachments_dir(), started);
+    let page = state.db().voice_begin(page_id, started.naive_local(), Some(&name), id)?;
     let _ = app.emit("data://pages", [page.id]);
-    let job =
-        JobInfo { id: rec.id.clone(), page_id: page.id, title: page.title.clone(), stage: "waiting", progress: 0 };
-    let cancel = Arc::new(AtomicBool::new(false));
-    lock(&voice(app).jobs).push(job.clone());
-    lock(&voice(app).job_cancels).insert(rec.id.clone(), cancel.clone());
-    let spec = JobSpec {
-        id: rec.id.clone(),
-        page_id: page.id,
-        title: page.title.clone(),
-        wav: rec.wav.clone(),
-        audio: name,
-        samples,
-        keep_audio: settings.keep_audio,
-        auto_summary: settings.auto_summary,
-        language: settings.whisper_language(),
-        model: models::get(&settings.model),
-        cancel,
+    spawn_job(
+        app,
+        JobSpec {
+            id: id.to_owned(),
+            page_id: page.id,
+            title: page.title.clone(),
+            wav: wav.to_owned(),
+            audio: name,
+            samples,
+            encode: true,
+            again: false,
+            previous: String::new(),
+            keep_audio: settings.keep_audio,
+            auto_summary: settings.auto_summary,
+            language: settings.whisper_language(),
+            model: models::get(&settings.model),
+            cancel: Arc::new(AtomicBool::new(false)),
+        },
+    )?;
+    Ok(Stopped { page_id: page.id, title: page.title, job_id: id.to_owned() })
+}
+
+fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
+    let job = JobInfo {
+        id: spec.id.clone(),
+        page_id: spec.page_id,
+        title: spec.title.clone(),
+        stage: "waiting",
+        progress: 0,
+        file: spec.wav.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
     };
+    lock(&voice(app).jobs).push(job);
+    lock(&voice(app).job_cancels).insert(spec.id.clone(), spec.cancel.clone());
     let handle = app.clone();
     std::thread::Builder::new()
         .name("annalo-voice-job".into())
         .spawn(move || run_job(&handle, spec))
         .map_err(Error::Io)?;
     emit_status(app);
-    let stopped = Stopped { page_id: page.id, title: page.title, job_id: rec.id };
-    let _ = app.emit("voice://stopped", &stopped);
-    if let Some(e) = device_error {
-        crate::devlog::warn("voice", format!("recording ended by the device: {e}"));
+    Ok(())
+}
+
+// ------------------------------------------------------------------ transcribe again
+
+/// „Neu transkribieren“: the stored audio `audio` of a voice note on `page_id` is transcribed
+/// again with `model` and `language` (`auto`, `de`, `en`); the new transcript replaces the old.
+#[tauri::command(async)]
+pub fn voice_transcribe_again(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    page_id: i64,
+    audio: String,
+    model: String,
+    language: String,
+) -> Result<String> {
+    let info = self::model(&model)?;
+    let path = state.attachments_dir().join(&audio);
+    if audio.contains(['/', '\\']) || !path.is_file() {
+        return Err(Error::State(
+            tr!("Die Aufnahme ist nicht mehr gespeichert", "The recording is no longer stored").into(),
+        ));
     }
+    let installed = std::fs::metadata(models_dir(&state).join(info.file)).is_ok_and(|m| m.len() == info.size);
+    if !installed && test_var("ANNALO_TEST_TRANSCRIPT").is_none() {
+        return Err(Error::State(trf!(
+            "Das Whisper-Modell „{}“ ist nicht geladen (Einstellungen → Sprachnotizen).",
+            "The Whisper model “{}” is not downloaded (Settings → Voice notes).",
+            info.id
+        )));
+    }
+    let busy = lock(&voice(&app).jobs).iter().any(|j| j.page_id == page_id && j.file == audio);
+    if busy {
+        return Err(Error::State(
+            tr!("Diese Aufnahme wird gerade transkribiert", "This recording is being transcribed right now").into(),
+        ));
+    }
+    let id = format!("{:x}", Local::now().timestamp_millis());
+    let (page, previous) = state.db().voice_again(page_id, &audio, &id)?;
+    let _ = app.emit("data://pages", [page.id]);
+    let language = annalo_core::voice::VoiceSettings { language, ..Default::default() }.whisper_language();
+    spawn_job(
+        &app,
+        JobSpec {
+            id: id.clone(),
+            page_id,
+            title: page.title,
+            wav: path,
+            audio,
+            samples: 0,
+            encode: false,
+            again: true,
+            previous,
+            keep_audio: true,
+            auto_summary: false,
+            language,
+            model: info,
+            cancel: Arc::new(AtomicBool::new(false)),
+        },
+    )?;
+    Ok(id)
+}
+
+// ------------------------------------------------------------------ unfinished recordings
+
+/// WAV files in use: the running recording and those transcription jobs read.
+fn busy_files(app: &AppHandle) -> Vec<String> {
+    let v = voice(app);
+    let mut out: Vec<String> = lock(&v.jobs).iter().map(|j| j.file.clone()).collect();
+    if let Some(r) = lock(&v.rec).as_ref()
+        && let Some(n) = r.wav.file_name()
+    {
+        out.push(n.to_string_lossy().into_owned());
+    }
+    out
+}
+
+/// Recordings a crash or a forced quit left in `<data>/voice/` (offered after the start).
+#[tauri::command(async)]
+pub fn voice_unfinished(app: AppHandle, state: State<'_, AppState>) -> Vec<annalo_core::voice::Unfinished> {
+    annalo_core::voice::unfinished(&voice_dir(&state), &busy_files(&app))
+}
+
+fn unfinished_path(app: &AppHandle, state: &AppState, name: &str) -> Result<PathBuf> {
+    let path = voice_dir(state).join(name);
+    if !annalo_core::voice::is_recording_name(name) || !path.is_file() || busy_files(app).iter().any(|b| b == name) {
+        return Err(Error::State(tr!("Die Aufnahme gibt es nicht mehr", "The recording is gone").into()));
+    }
+    Ok(path)
+}
+
+/// „Als Sprachnotiz speichern“: an unfinished recording becomes a voice note (FLAC, then the
+/// transcript), dated when it was last written.
+#[tauri::command(async)]
+pub fn voice_unfinished_save(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Stopped> {
+    let path = unfinished_path(&app, &state, &name)?;
+    let samples = audio::repair_wav(&path)?;
+    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).map(chrono::DateTime::<Local>::from);
+    let ended = modified.unwrap_or_else(|_| Local::now());
+    let started = ended - chrono::Duration::milliseconds(i64::from(samples) * 1000 / i64::from(audio::RATE));
+    let id = format!("{:x}", Local::now().timestamp_millis());
+    let stopped = store_recording(&app, &id, None, started, &path, samples)?;
+    let _ = app.emit("voice://stopped", &stopped);
     Ok(stopped)
+}
+
+/// „Verwerfen“: an unfinished recording is deleted.
+#[tauri::command(async)]
+pub fn voice_unfinished_discard(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<()> {
+    let path = unfinished_path(&app, &state, &name)?;
+    std::fs::remove_file(&path).map_err(Error::Io)
 }
 
 /// Global shortcut and tray: starts a voice note (the window comes to the front, so the
@@ -615,9 +758,17 @@ struct JobSpec {
     id: String,
     page_id: i64,
     title: String,
+    /// What is transcribed: the recording's WAV, or the stored audio when transcribing again.
     wav: PathBuf,
     audio: String,
+    /// Samples of the WAV; 0 when not known yet (read from the file).
     samples: u32,
+    /// A new recording: stored as FLAC first, the WAV removed after.
+    encode: bool,
+    /// „Neu transkribieren“ of a stored voice note.
+    again: bool,
+    /// The transcript it replaces (put back when the new one fails or is cancelled).
+    previous: String,
     keep_audio: bool,
     auto_summary: bool,
     language: Option<&'static str>,
@@ -652,6 +803,9 @@ fn run_job(app: &AppHandle, job: JobSpec) {
     let cancelled = job.cancel.load(Ordering::Relaxed);
     let (markdown, text, error) = match &result {
         Ok(t) => (transcript::to_markdown(t), transcript::plain_text(t), None),
+        Err(e) if job.again && !job.previous.trim().is_empty() => {
+            (job.previous.trim_end().to_owned(), String::new(), Some(e.to_string()))
+        }
         Err(e) => {
             let line = if cancelled {
                 format!("*{}*", tr!("Transkription abgebrochen.", "Transcription cancelled."))
@@ -670,7 +824,7 @@ fn run_job(app: &AppHandle, job: JobSpec) {
         crate::devlog::warn("voice", format!("transcript not written: {e}"));
     }
     let audio_stored = state.attachments_dir().join(&job.audio).exists() || drop_audio.is_some();
-    if audio_stored {
+    if audio_stored && job.encode {
         let _ = std::fs::remove_file(&job.wav);
     }
     let _ = app.emit("data://pages", [job.page_id]);
@@ -687,6 +841,7 @@ fn run_job(app: &AppHandle, job: JobSpec) {
             auto_summary: job.auto_summary && result.is_ok(),
             error: if cancelled { None } else { error },
             cancelled,
+            again: job.again,
         },
     );
 }
@@ -694,8 +849,13 @@ fn run_job(app: &AppHandle, job: JobSpec) {
 fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcript> {
     let state = app.state::<AppState>();
     set_job(app, &job.id, "audio", 0);
-    audio::encode_flac(&job.wav, &state.attachments_dir().join(&job.audio))?;
-    let duration_ms = i64::from(job.samples) * 1000 / i64::from(audio::RATE);
+    if job.encode {
+        audio::encode_flac(&job.wav, &state.attachments_dir().join(&job.audio))?;
+    }
+    // Transcribing again: the stored audio is read now (its length is not known before).
+    let mut decoded = if job.samples == 0 { Some(audio::read_16k_any(&job.wav)?) } else { None };
+    let count = decoded.as_ref().map_or(job.samples as usize, Vec::len);
+    let duration_ms = count as i64 * 1000 / i64::from(audio::RATE);
     if let Some(fake) = test_var("ANNALO_TEST_TRANSCRIPT") {
         let text = std::fs::read_to_string(&fake).unwrap_or(fake);
         for p in [10u8, 35, 60, 85, 100] {
@@ -738,7 +898,10 @@ fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcri
         return Err(cancelled_error());
     }
     set_job(app, &job.id, "transcribe", 0);
-    let mut samples = audio::read_16k(&job.wav)?;
+    let mut samples = match decoded.take() {
+        Some(s) => s,
+        None => audio::read_16k_any(&job.wav)?,
+    };
     // whisper.cpp needs at least a second.
     if samples.len() < audio::RATE as usize * 11 / 10 {
         samples.resize(audio::RATE as usize * 11 / 10, 0.0);

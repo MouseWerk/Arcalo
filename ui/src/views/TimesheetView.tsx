@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
+  AlertTriangle, CalendarDays, Check, CloudUpload, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRange, unbooked } from "../lib/agenda";
@@ -22,6 +22,7 @@ import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { useT, type TKey } from "../lib/i18n";
+import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   running: { label: "time.status.running", tone: "info" },
@@ -78,6 +79,7 @@ export function TimesheetView() {
     setSelected(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week, version]);
+  const issues = useEntryIssues(rows);
 
   const done = rows.filter((r) => r.status_flag !== "running");
   const total = done.reduce((a, r) => a + (r.duration_minutes ?? 0), 0);
@@ -168,7 +170,9 @@ export function TimesheetView() {
                       return;
                     }
                     const note = kept.length ? ` ${t("time.keptOnDelete", { n: kept.length })}` : "";
-                    if (!(await s().confirm({ title: t("time.deleteEntriesAsk"), message: t("time.deleteEntriesText", { n: ids.length }) + note, confirmLabel: t("common.delete"), danger: true }))) return;
+                    const keys = worklogDeleteKeys(ids.map((id) => issues.get(id)).filter((e): e is EntryIssue => !!e));
+                    const jira = keys.length ? ` ${t("time.deleteJira", { keys: keys.join(", ") })}` : "";
+                    if (!(await s().confirm({ title: t("time.deleteEntriesAsk"), message: t("time.deleteEntriesText", { n: ids.length }) + jira + note, confirmLabel: t("common.delete"), danger: true }))) return;
                     act(() => Promise.all(ids.map((id) => api.deleteEntry(id))), t("time.entriesDeleted"));
                   }}
                 >
@@ -185,11 +189,11 @@ export function TimesheetView() {
               {t("time.emptyHint")} <span className="mono">{t("time.emptyExample")}</span> {t("time.emptyHintEnd")}
             </EmptyState>
           ) : (
-            <EntryList rows={rows} selected={selected} setSelected={setSelected} onEdit={setEditing} week={week} />
+            <EntryList rows={rows} issues={issues} selected={selected} setSelected={setSelected} onEdit={setEditing} week={week} />
           )}
         </section>
       </div>
-      {editing && <EntryDialog entry={editing === "new" ? null : editing} wbs={wbs} las={las} onClose={() => setEditing(null)} defaultDay={week} />}
+      {editing && <EntryDialog entry={editing === "new" ? null : editing} wbs={wbs} las={las} onClose={() => setEditing(null)} defaultDay={week} note={editing !== "new" && <WorklogEditNote issue={issues.get(editing.id)} />} />}
       {exporting && <ExportDialog week={week} onClose={() => setExporting(false)} />}
       {proposing && <WeekProposalDialog week={week} entries={rows} wbs={wbs} onClose={() => setProposing(false)} />}
     </div>
@@ -453,9 +457,79 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
   );
 }
 
+// ------------------------------------------------------------- Jira worklogs
+
+/** The issue keys and Jira worklog states of the entries, kept current while worklogs go out. */
+function useEntryIssues(rows: TimeEntryRow[]): Map<number, EntryIssue> {
+  const [map, setMap] = useState<Map<number, EntryIssue>>(new Map());
+  useEffect(() => {
+    const ids = rows.map((r) => r.id);
+    let alive = true;
+    const load = () => {
+      if (!ids.length) return setMap(new Map());
+      jiraApi.entryIssues(ids).then((list) => alive && setMap(new Map(list.map((e) => [e.entry_id, e]))), () => {});
+    };
+    load();
+    const off = on("jira://worklog", load);
+    return () => {
+      alive = false;
+      void off.then((f) => f());
+    };
+  }, [rows]);
+  return map;
+}
+
+const WORKLOG_LABEL: Record<"posted" | "pending" | "failed" | "none", TKey> = {
+  posted: "time.wl.posted",
+  pending: "time.wl.pending",
+  failed: "time.wl.failed",
+  none: "time.wl.none",
+};
+
+/** The issue key of an entry with the state of its Jira worklog; a failed one can be sent again. */
+function WorklogChip({ issue }: { issue: EntryIssue }) {
+  const t = useT();
+  const shown = worklogShown(issue);
+  const [busy, setBusy] = useState(false);
+  const retry = async () => {
+    setBusy(true);
+    try {
+      await jiraApi.retryWorklog(issue.entry_id);
+    } catch (e) {
+      useApp.getState().error(t("time.wl.failed"), e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const title = t(WORKLOG_LABEL[shown]) + (shown === "failed" && issue.error ? `: ${issue.error}` : "");
+  return (
+    <span className={`entry-jira wl-${shown}`} data-key={issue.issue_key} data-state={shown} title={title}>
+      <span className="entry-jira-dot" aria-hidden />
+      <span className="mono">{issue.issue_key}</span>
+      {shown !== "none" && <span className="entry-jira-state">{t(`time.wl.short.${shown}` as TKey)}</span>}
+      {shown === "failed" && (
+        <button type="button" className="entry-jira-retry" onClick={retry} disabled={busy} aria-label={t("time.wl.retry")} title={t("time.wl.retry")}>
+          <RotateCcw size={11} aria-hidden />
+        </button>
+      )}
+    </span>
+  );
+}
+
+/** In the edit dialog: changes of duration, start or comment go to the posted worklog. */
+function WorklogEditNote({ issue }: { issue: EntryIssue | undefined }) {
+  const t = useT();
+  if (!issue?.worklog_id || !issue.syncs) return null;
+  return (
+    <p className="entry-jira-note small faint">
+      <CloudUpload size={13} aria-hidden /> {t("time.wl.editNote", { key: issue.issue_key })}
+    </p>
+  );
+}
+
 // ------------------------------------------------------------- entry list
 
-function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEntryRow[]; selected: Set<number>; setSelected: (s: Set<number>) => void; onEdit: (r: TimeEntryRow) => void; week: Date }) {
+function EntryList({ rows, issues, selected, setSelected, onEdit, week }: { rows: TimeEntryRow[]; issues: Map<number, EntryIssue>; selected: Set<number>; setSelected: (s: Set<number>) => void; onEdit: (r: TimeEntryRow) => void; week: Date }) {
   const t = useT();
   const [menu, , openMenuAt] = useMenu();
   const s = useApp.getState;
@@ -528,6 +602,7 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                       <Target size={11} aria-hidden /> {t("time.focus")}
                     </span>
                   )}
+                  {issues.has(r.id) && <WorklogChip issue={issues.get(r.id)!} />}
                 </span>
                 <Badge tone={STATUS[r.status_flag].tone}>{t(STATUS[r.status_flag].label)}</Badge>
                 <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : t("time.runningLower")}</span>
@@ -547,6 +622,9 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                         icon: Target,
                         onSelect: () => openFocusDialog({ reference: `${r.netzplan_nr}${r.vorgang_nr ? `/${r.vorgang_nr}` : ""}`, goal: r.description }),
                       },
+                      ...(issues.get(r.id) && worklogShown(issues.get(r.id)!) === "failed"
+                        ? [{ label: t("time.wl.retry"), icon: CloudUpload, onSelect: () => void jiraApi.retryWorklog(r.id).catch((e) => s().error(t("time.wl.failed"), e)) }]
+                        : []),
                       "separator",
                       {
                         label: undeletableReason(r.status_flag) ? t("time.cannotDelete", { reason: undeletableReason(r.status_flag)! }) : t("common.delete"),
@@ -554,7 +632,9 @@ function EntryList({ rows, selected, setSelected, onEdit, week }: { rows: TimeEn
                         danger: true,
                         disabled: undeletableReason(r.status_flag) != null,
                         onSelect: async () => {
-                          if (!(await s().confirm({ title: t("time.deleteEntryAsk"), message: t("time.deleteEntryText", { what: r.description || r.netzplan_nr, h: fmtMinutes(r.duration_minutes) }), confirmLabel: t("common.delete"), danger: true }))) return;
+                          const keys = worklogDeleteKeys(issues.has(r.id) ? [issues.get(r.id)!] : []);
+                          const jira = keys.length ? ` ${t("time.deleteJira", { keys: keys.join(", ") })}` : "";
+                          if (!(await s().confirm({ title: t("time.deleteEntryAsk"), message: t("time.deleteEntryText", { what: r.description || r.netzplan_nr, h: fmtMinutes(r.duration_minutes) }) + jira, confirmLabel: t("common.delete"), danger: true }))) return;
                           try {
                             await api.deleteEntry(r.id);
                             s().bumpEntries();

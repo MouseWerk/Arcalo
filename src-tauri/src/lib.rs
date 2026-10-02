@@ -1099,7 +1099,9 @@ fn time_entry_create(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 fn time_entry_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     vorgang_nr: Option<String>,
@@ -1108,14 +1110,18 @@ fn time_entry_update(
     duration_minutes: i64,
     description: String,
 ) -> Result<TimeEntry> {
-    state.db().update_time_entry(
+    let before = state.reader().time_entry(id)?;
+    let after = state.db().update_time_entry(
         id,
         vorgang_nr.as_deref().filter(|v| !v.is_empty()),
         leistungsart.as_deref().filter(|v| !v.is_empty()),
         start_time,
         duration_minutes,
         &description,
-    )
+    )?;
+    // Posted to Jira: the worklog follows a new duration, start or comment.
+    jira::after_entry_edit(&app, &before, &after);
+    Ok(after)
 }
 
 #[tauri::command(async)]
@@ -1124,8 +1130,12 @@ fn set_entry_status(state: State<AppState>, ids: Vec<i64>, status: StatusFlag) -
 }
 
 #[tauri::command(async)]
-fn delete_time_entry(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_time_entry(id)
+fn delete_time_entry(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    // Posted to Jira: the worklog goes too.
+    if jira::delete_entry(&state, id)? {
+        jira::kick_worklogs(app);
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -3328,6 +3338,10 @@ fn spawn_activity_sampler(app: AppHandle) {
             let window = probe.foreground_window();
             let threshold = Duration::from_secs(state.settings().idle_threshold_minutes * 60);
             let is_idle = idle.is_some_and(|d| d >= threshold);
+            // Input within the last minute: the user is there (Morgen-Briefing on a new day).
+            if idle.is_some_and(|d| d < Duration::from_secs(60)) {
+                briefing::on_activity(&app);
+            }
             // Time tracking off: no idle detection for a timer (one left running is not tracked).
             let running = state.settings().time_tracking() && state.db().running_timer().ok().flatten().is_some();
             let timer_idle_minutes = if running {
@@ -4364,6 +4378,10 @@ pub fn run() {
             voice::voice_model_cancel,
             voice::voice_model_import,
             voice::voice_model_delete,
+            voice::voice_transcribe_again,
+            voice::voice_unfinished,
+            voice::voice_unfinished_save,
+            voice::voice_unfinished_discard,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Arcalo")
