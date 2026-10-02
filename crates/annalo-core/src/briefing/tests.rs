@@ -63,11 +63,14 @@ fn sections_keep_their_order_and_unknown_ones_go() {
             BriefingSection { id: "meetings".into(), on: false },
             BriefingSection { id: "time".into(), on: false },
         ],
+        prep_auto: true,
+        prep_minutes: 1000,
     }
     .normalized();
     let ids: Vec<&str> = s.sections.iter().map(|x| x.id.as_str()).collect();
     assert_eq!(ids, ["time", "meetings", "ai", "tasks", "jira"]);
     assert_eq!(s.notify_time, "08:30");
+    assert_eq!(s.prep_minutes, 240, "clamped");
     assert_eq!(s.enabled(), ["time", "ai", "tasks", "jira"]);
     let bad = BriefingSettings { notify_time: "25:00".into(), ..Default::default() }.normalized();
     assert_eq!(bad.notify_time, "");
@@ -342,6 +345,7 @@ fn the_prompt_has_titles_times_and_counts_only() {
             past: false,
             note_page_id: None,
             prep: None,
+            prep_page: None,
         }],
         next_meeting: Some("k".into()),
         jira: Some(BriefingJira {

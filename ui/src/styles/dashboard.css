@@ -641,3 +641,10 @@
 .dw-bf-next-label { flex: none; font-size: var(--fs-2xs); font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent-text); }
 .dw-bf-next-title { min-width: 0; }
 .dw-bf-ai > svg { flex: none; color: var(--accent); }
+
+/* ---- status report widget ---- */
+.dw-sr { display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%; }
+.dw-sr-title { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 600; text-align: left; cursor: pointer; }
+.dw-sr-title:hover { background: var(--bg-hover); }
+.dw-sr-meta { display: flex; justify-content: space-between; gap: 8px; padding: 0 6px; min-width: 0; }
+.dw-sr-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding: 0 6px 2px; }

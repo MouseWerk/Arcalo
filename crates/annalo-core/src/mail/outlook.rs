@@ -7,7 +7,8 @@
 //!
 //! For development and tests `ANNALO_OUTLOOK_MAIL_FIXTURE` names a JSON file with the output
 //! of `read` (only with `ANNALO_TEST_FIXTURES=1`): `save` then writes the attachments'
-//! `data` (base64) and `open` appends `EntryID<TAB>StoreID` to `<fixture>.opened`.
+//! `data` (base64), `open` appends `EntryID<TAB>StoreID` to `<fixture>.opened` and `draft`
+//! appends the draft (JSON: `to`, `subject`, `html`) as one line to `<fixture>.drafts`.
 
 use crate::{tr, trf};
 use std::ffi::OsString;
@@ -259,4 +260,28 @@ pub fn open(script_dir: &Path, entry_id: &str, store_id: &str) -> Result<()> {
         TIMEOUT,
         tr!("Dann erneut versuchen.", "Then try again."),
     )?)?)
+}
+
+/// File name of a draft request in the data folder (removed after the script ran).
+const DRAFT_FILE: &str = "outlook-draft.json";
+
+/// A new mail in Outlook with `to` (names or addresses, resolved by Outlook), `subject` and
+/// `html`, shown in its own window and never sent (blocking).
+pub fn draft(script_dir: &Path, to: &[String], subject: &str, html: &str) -> Result<()> {
+    let req = serde_json::json!({ "to": to, "subject": subject, "html": html });
+    if let Some(fixture) = fixture_path() {
+        use std::io::Write;
+        let mut log = fixture.into_os_string();
+        log.push(".drafts");
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(PathBuf::from(log))?;
+        writeln!(f, "{req}")?;
+        return Ok(());
+    }
+    std::fs::create_dir_all(script_dir)?;
+    let file = script_dir.join(DRAFT_FILE);
+    std::fs::write(&file, req.to_string())?;
+    let args: Vec<OsString> = vec!["-Mode".into(), "draft".into(), "-Request".into(), file.as_os_str().to_owned()];
+    let out = outlookcom::run(script_dir, SCRIPT_REF, &args, TIMEOUT, tr!("Dann erneut versuchen.", "Then try again."));
+    let _ = std::fs::remove_file(&file);
+    check(&outlookcom::json(&out?)?)
 }

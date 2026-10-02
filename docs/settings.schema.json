@@ -426,6 +426,18 @@
           "description": "`HH:MM` of the notification; empty = at the first start of the day.",
           "type": "string"
         },
+        "prep_auto": {
+          "default": false,
+          "description": "„Besprechung vorbereiten“ by itself before meetings with at least two attendees.",
+          "type": "boolean"
+        },
+        "prep_minutes": {
+          "default": 30,
+          "description": "Minutes before the start the preparation is written (5 to 240).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "sections": {
           "default": [
             {
@@ -2439,6 +2451,8 @@
       "default": {
         "mode": "off",
         "notify_time": "",
+        "prep_auto": false,
+        "prep_minutes": 30,
         "sections": [
           {
             "id": "ai",
@@ -3070,7 +3084,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 6,
+      "default": 7,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

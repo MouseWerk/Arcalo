@@ -4,8 +4,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
-  LayoutDashboard,
+  LayoutDashboard, ClipboardList, FileBarChart, Reply,
 } from "lucide-react";
+import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
@@ -257,6 +258,9 @@ export function CommandPalette() {
       { id: "local-graph", title: t("cmd.localGraph"), subtitle: t("cmd.localGraphSub"), icon: ic(Network), run: () => s().set({ panelOpen: true, panelTab: "graph" }) },
       { id: "activity", title: t("cmd.activity"), subtitle: t("cmd.activitySub"), icon: ic(Activity), run: () => s().openTab({ kind: "activity" }) },
       { id: "briefing", title: t("cmd.briefing"), subtitle: t("cmd.briefingSub"), icon: ic(Sun), run: () => openBriefing() },
+      { id: "meeting-prep", title: t("mw.cmd.prep"), subtitle: t("mw.cmd.prepSub"), icon: ic(ClipboardList), run: () => setTimeout(() => void prepareFromPalette(), 0) },
+      { id: "status-report", title: t("mw.cmd.report"), subtitle: t("mw.cmd.reportSub"), icon: ic(FileBarChart), run: () => setTimeout(() => openStatusReport(), 0) },
+      { id: "follow-up", title: t("mw.cmd.followUp"), subtitle: t("mw.cmd.followUpSub"), icon: ic(Reply), run: () => setTimeout(followUpFromPalette, 0) },
       { id: "day-review", title: t("cmd.review"), subtitle: t("cmd.reviewSub"), icon: ic(Sunset), run: () => openDayReview() },
       { id: "activity-day", title: t("cmd.activityDay"), icon: ic(CalendarSearch), run: () => setTimeout(() => s().set({ calendar: { onPick: openActivityDay } }), 0) },
       s().focus?.phase === "work"

@@ -76,7 +76,14 @@ pub struct BriefingSettings {
     /// `HH:MM` of the notification; empty = at the first start of the day.
     pub notify_time: String,
     pub sections: Vec<BriefingSection>,
+    /// „Besprechung vorbereiten“ by itself before meetings with at least two attendees.
+    pub prep_auto: bool,
+    /// Minutes before the start the preparation is written (5 to 240).
+    pub prep_minutes: u32,
 }
+
+/// Default of [`BriefingSettings::prep_minutes`].
+pub const PREP_MINUTES: u32 = 30;
 
 impl Default for BriefingSettings {
     fn default() -> Self {
@@ -84,6 +91,8 @@ impl Default for BriefingSettings {
             mode: BriefingMode::Off,
             notify_time: String::new(),
             sections: SECTIONS.iter().map(|id| BriefingSection { id: (*id).into(), on: true }).collect(),
+            prep_auto: false,
+            prep_minutes: PREP_MINUTES,
         }
     }
 }
@@ -104,6 +113,7 @@ impl BriefingSettings {
             }
         }
         self.sections = out;
+        self.prep_minutes = if self.prep_minutes == 0 { PREP_MINUTES } else { self.prep_minutes.clamp(5, 240) };
         self.notify_time = match crate::desktop::parse_hhmm(self.notify_time.trim()) {
             Some(t) => t.format("%H:%M").to_string(),
             None => String::new(),
@@ -162,6 +172,9 @@ pub struct BriefingMeeting {
     /// The meeting's own note (opened or created with „Notiz“).
     pub note_page_id: Option<i64>,
     pub prep: Option<Prep>,
+    /// The page of „Besprechung vorbereiten“ (see [`crate::meetwork::prep`]).
+    #[serde(default)]
+    pub prep_page: Option<i64>,
 }
 
 /// What to read before a meeting.
@@ -468,6 +481,7 @@ pub fn briefing<Tz: TimeZone>(
                 past: !ev.all_day && ev.end <= now,
                 note_page_id: e.note_page_id,
                 prep: p,
+                prep_page: db.meeting_prep_page_id(&e.key)?,
             });
         }
         if !markers.is_empty() && !prep_pages.is_empty() {

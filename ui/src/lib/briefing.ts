@@ -14,6 +14,8 @@ export const DEFAULT_BRIEFING: BriefingSettings = {
   mode: "off",
   notify_time: "",
   sections: SECTION_IDS.map((id) => ({ id, on: true })),
+  prep_auto: false,
+  prep_minutes: 30,
 };
 
 /** Opens the briefing (a tab of its own). */

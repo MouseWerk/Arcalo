@@ -38,6 +38,7 @@ import { FocusDialogHost, useFocusEngine } from "./components/Focus";
 import { PlanPickerHost } from "./components/PlanPicker";
 import { PresentationHost, startPresentation } from "./components/Presentation";
 import { MailImportHost } from "./components/MailImport";
+import { MeetingWorkHost } from "./components/MeetingWork";
 import { BookmarkImportHost } from "./components/BookmarkImport";
 import { FilingHost } from "./components/FilingDialogs";
 import { openDayReview } from "./lib/reviewnav";
@@ -393,6 +394,7 @@ export function App() {
       <PlanPickerHost />
       <PresentationHost />
       <MailImportHost />
+      <MeetingWorkHost />
       <BookmarkImportHost />
       <FilingHost />
       <ConfirmHost />

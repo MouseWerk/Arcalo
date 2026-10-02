@@ -5,6 +5,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BarChart3, CalendarClock, CalendarOff, Clock3, Flag, Grid3x3, Hourglass, KanbanSquare, Mail as MailIcon, NotebookPen, Palmtree, Plus, Users, Video, type LucideIcon } from "lucide-react";
+import { PrepActions } from "../MeetingWork";
 import type { ComponentType } from "react";
 import { api, on } from "../../lib/api";
 import { useApp } from "../../store/app";
@@ -556,6 +557,7 @@ export function NextMeetingWidget({ widget }: WidgetProps) {
               <Button size="sm" variant="ghost" icon={NotebookPen} onClick={() => void openNote(e)}>
                 {e.note_page_id ? t("work.meet.openNote") : t("work.meet.newNote")}
               </Button>
+              {!e.private && !e.all_day && <PrepActions eventKey={e.key} size="sm" compact />}
             </div>
             {second && (
               <button type="button" className="wn-then dw-row" onClick={() => openCalendarView({ date: isoDay(new Date(second.start)), key: second.key })} title={sourceName(second.source, cal)}>

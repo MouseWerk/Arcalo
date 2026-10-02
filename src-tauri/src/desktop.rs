@@ -1228,6 +1228,7 @@ pub fn periodic(app: &AppHandle) {
     crate::weekplan::periodic(app);
     crate::dayreview::periodic(app);
     crate::briefing::periodic(app);
+    crate::meetwork::periodic(app);
     crate::notifyact::periodic(app);
 }
 

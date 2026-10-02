@@ -81,6 +81,7 @@ pub mod i18n;
 pub mod issues;
 pub mod linktitle;
 pub mod mail;
+pub mod meetwork;
 pub mod merge;
 pub mod mirror;
 pub mod model;

@@ -2,7 +2,8 @@
 // facts (critical path, float) as tables. Create, edit and delete everything here.
 
 import { useEffect, useState } from "react";
-import { Briefcase, MoreHorizontal, Pencil, Play, Plus, Trash2, Target } from "lucide-react";
+import { Briefcase, MoreHorizontal, Pencil, Play, Plus, Trash2, Target, FileBarChart } from "lucide-react";
+import { openStatusReport } from "../components/MeetingWork";
 import { openFocusDialog } from "../components/Focus";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -52,6 +53,9 @@ export function ProjectsView() {
             <div className="view-sub">{t("proj.sub")}</div>
           </div>
           <div className="view-actions">
+            <Button icon={FileBarChart} className="projects-report" onClick={() => openStatusReport("netzplan")}>
+              {t("mw.cmd.report")}
+            </Button>
             <Button variant="primary" icon={Plus} onClick={() => setDialog({ kind: "project" })}>
               {t("err.kind.project")}
             </Button>

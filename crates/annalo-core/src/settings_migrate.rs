@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 6;
+pub const SETTINGS_VERSION: u32 = 7;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -41,6 +41,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 3, name: "calendar-list", run: calendar_list },
     Step { from: 4, name: "dashboard-clean", run: dashboard_clean },
     Step { from: 5, name: "log-level-and-due-tasks", run: log_level_and_due_tasks },
+    Step { from: 6, name: "meeting-prep", run: meeting_prep },
 ];
 
 /// What [`migrate`] did.
@@ -177,6 +178,21 @@ fn log_level_and_due_tasks(s: &mut Map<String, Value>) -> Option<String> {
     {
         n.insert("task_due".into(), Value::Bool(true));
         notes.push("notifications.task_due = true");
+    }
+    (!notes.is_empty()).then(|| notes.join(", "))
+}
+
+/// 6 → 7: „Besprechung vorbereiten“ by itself (1.10) starts off, 30 minutes before.
+fn meeting_prep(s: &mut Map<String, Value>) -> Option<String> {
+    let b = s.get_mut("briefing").and_then(Value::as_object_mut)?;
+    let mut notes = vec![];
+    if !b.contains_key("prep_auto") {
+        b.insert("prep_auto".into(), Value::Bool(false));
+        notes.push("briefing.prep_auto = false");
+    }
+    if !b.contains_key("prep_minutes") {
+        b.insert("prep_minutes".into(), Value::from(crate::briefing::PREP_MINUTES));
+        notes.push("briefing.prep_minutes = 30");
     }
     (!notes.is_empty()).then(|| notes.join(", "))
 }

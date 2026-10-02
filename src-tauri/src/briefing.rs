@@ -47,7 +47,7 @@ fn test_seen_day() -> Option<NaiveDate> {
 }
 
 /// Whether any AI provider can be asked (one with a key, or one that needs none).
-fn ai_ready(state: &AppState) -> bool {
+pub(crate) fn ai_ready(state: &AppState) -> bool {
     state.clients().iter().any(|(_, c)| c.has_key() || !c.provider().needs_key())
 }
 

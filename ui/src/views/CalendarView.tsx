@@ -30,6 +30,7 @@ import { blockFit } from "../lib/eventlook";
 import { BlockDetail, BlockItem, DropGhost, deleteBlock, saveBlock, useBlocks } from "./CalendarBlocks";
 import { blockIdOf, blockKey, blockMinutes, canPlan, dropRange, linkOf, minuteAt, plannedMinutes, readPlanData, type PlanItem } from "../lib/blocks";
 import type { BlockPatch, FocusBlock } from "../lib/types";
+import { PrepActions } from "../components/MeetingWork";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -1083,6 +1084,7 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
           <Button variant="secondary" icon={Mic} className="calv-record-btn" disabled={recording} onClick={onRecord}>
             {t("calv.record")}
           </Button>
+          {!e.private && !e.all_day && <PrepActions eventKey={e.key} />}
           {timeOn && !booked && (
             <Button variant="ghost" icon={e.skip ? Eye : EyeOff} onClick={onSkip}>
               {e.skip ? t("calv.unskip") : t("calv.skip")}

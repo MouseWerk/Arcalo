@@ -9,6 +9,8 @@
 #                names and sizes of the attachments (nothing is saved).
 #   -Mode save   saves the attachments -Indexes (1-based, "1,3") of one mail into -Dir\<index>\.
 #   -Mode open   shows one mail (Namespace.GetItemFromID) in its own Outlook window.
+#   -Mode draft  a new mail from -Request (a UTF-8 JSON file: to (names or addresses), subject,
+#                html) shown in its own window (MailItem.Display), never sent.
 #   -Mode flagged  the flagged mails of the To-Do list (all folders; the inbox when the To-Do
 #                folder cannot be read), the earliest due first, at most -MaxItems: what "read"
 #                returns per mail (text cut at -MaxBody) plus flagDue (yyyy-MM-dd) and flagRequest.
@@ -17,11 +19,12 @@
 # Errors are reported as {"ok":false,"error":"<code>","message":"..."}; Arcalo shows its own text.
 
 param(
-    [ValidateSet('read', 'save', 'open', 'flagged')][string]$Mode = 'read',
+    [ValidateSet('read', 'save', 'open', 'flagged', 'draft')][string]$Mode = 'read',
     [string]$EntryId = '',
     [string]$StoreId = '',
     [string]$Indexes = '',
     [string]$Dir = '',
+    [string]$Request = '',
     [int]$MaxItems = 20,
     [int]$MaxBody = 20000
 )
@@ -196,6 +199,25 @@ if ($Mode -eq 'flagged') {
     } catch { Fail 'com' $_.Exception.Message }
     $sorted = @($found | Sort-Object @{ Expression = { if ($_.flagDue) { $_.flagDue } else { '9999' } } }, @{ Expression = { $_.received }; Descending = $true })
     Write-Json ([ordered]@{ ok = $true; version = [string]$outlook.Version; items = @($sorted | Select-Object -First $MaxItems) })
+    exit 0
+}
+
+if ($Mode -eq 'draft') {
+    $req = $null
+    try {
+        $req = [IO.File]::ReadAllText($Request, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    } catch { Fail 'request' $_.Exception.Message }
+    try {
+        $m = $outlook.CreateItem(0)
+        foreach ($r in @($req.to)) {
+            if ([string]$r) { [void]$m.Recipients.Add([string]$r) }
+        }
+        try { [void]$m.Recipients.ResolveAll() } catch { }
+        $m.Subject = [string]$req.subject
+        $m.HTMLBody = [string]$req.html
+        $m.Display($false)
+    } catch { Fail 'com' $_.Exception.Message }
+    Write-Json ([ordered]@{ ok = $true })
     exit 0
 }
 

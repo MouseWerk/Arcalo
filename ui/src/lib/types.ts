@@ -1642,6 +1642,10 @@ export interface BriefingSettings {
   /** HH:MM; empty: at the first start of the day. */
   notify_time: string;
   sections: BriefingSection[];
+  /** „Besprechung vorbereiten“ by itself before meetings with two or more attendees. */
+  prep_auto?: boolean;
+  /** Minutes before the start (5 to 240). */
+  prep_minutes?: number;
 }
 export interface BriefingPrep {
   page_id: number;
@@ -1662,6 +1666,8 @@ export interface BriefingMeeting {
   past: boolean;
   note_page_id: number | null;
   prep: BriefingPrep | null;
+  /** The page of „Besprechung vorbereiten“. */
+  prep_page?: number | null;
 }
 export interface BriefingIssue {
   site: string;

@@ -91,6 +91,23 @@ export function BriefingSection({ draft, update }: SectionProps) {
       <Group title={t("brief.sections")} description={t("brief.sectionsDesc")}>
         <SectionsEditor value={b.sections} onChange={(sections) => set({ sections })} unavailable={unavailableSections(draft)} />
       </Group>
+      <Group title={t("mw.set.title")} description={t("mw.set.desc")}>
+        <Row label={t("mw.set.auto")} description={t("mw.set.autoDesc")}>
+          <Switch label={t("mw.set.auto")} checked={!!b.prep_auto} onChange={(prep_auto) => set({ prep_auto })} />
+        </Row>
+        {b.prep_auto && (
+          <Row label={t("mw.set.minutes")} description={t("mw.set.minutesDesc")}>
+            <CommitInput
+              className="time-input num bf-prep-minutes"
+              value={String(b.prep_minutes ?? 30)}
+              maxLength={3}
+              onCommit={(v) => set({ prep_minutes: Number(v) })}
+              validate={(v) => (/^\d{1,3}$/.test(v.trim()) && Number(v) >= 5 && Number(v) <= 240 ? null : t("mw.set.minutesErr"))}
+              aria-label={t("mw.set.minutes")}
+            />
+          </Row>
+        )}
+      </Group>
     </>
   );
 }

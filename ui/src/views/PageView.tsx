@@ -1,7 +1,8 @@
 // A note: title, icon, properties, editor and backlinks.
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Sunset, Table2, Trash2 } from "lucide-react";
+import { Eye, FileCode2, Minimize2, MoveHorizontal, CalendarDays, ChevronLeft, ChevronRight, Columns2, History, Printer, CornerDownRight, FileText, Hash, KanbanSquare, Link2, List, MoreHorizontal, NotebookPen, Plus, PencilLine, Presentation, Share2, SmilePlus, Star, Sunset, Table2, Trash2, Reply, FileDown } from "lucide-react";
+import { openFollowUp, reportMarkdown } from "../components/MeetingWork";
 import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
@@ -461,6 +462,8 @@ function PageHeader({
             { label: tr("pv.copyLink"), icon: Link2, onSelect: () => navigator.clipboard.writeText(`[[${doc.title}]]`) },
             { label: tr("cmd.present"), icon: Presentation, shortcut: hint("present"), onSelect: () => void startPresentation(doc.id) },
             { label: tr("pv.print"), icon: Printer, onSelect: () => printActivePane() },
+            { label: tr("mw.pv.markdown"), icon: FileDown, onSelect: () => void reportMarkdown(doc) },
+            { label: tr("mw.pv.followUp"), icon: Reply, onSelect: () => openFollowUp(doc.id) },
             { label: tr("pv.shareHtml"), icon: Share2, onSelect: () => sharePageAsHtml(doc.id, false) },
             ...(s().pages.get(doc.id)?.children.length
               ? [{ label: tr("pv.shareHtmlTree"), icon: Share2, onSelect: () => sharePageAsHtml(doc.id, true) }]

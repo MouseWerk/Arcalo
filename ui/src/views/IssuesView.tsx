@@ -3,7 +3,8 @@
 // searchable. A row opens the issue: description, last comments, the pages that name it, its WBS.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff } from "lucide-react";
+import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
+import { openStatusReport } from "../components/MeetingWork";
 import { on } from "../lib/api";
 import { useApp } from "../store/app";
 
@@ -161,6 +162,9 @@ export function IssuesView() {
               options={[{ value: "mine", label: t("jira.mine") }, ...queries.map((x) => ({ value: x.id, label: x.name })), { value: "all", label: t("jira.allSearches") }]}
             />
             <Select aria-label={t("jira.groupBy")} value={pref.group} onChange={(e) => setPref({ group: e.target.value as GroupBy })} options={GROUP_BYS.map((g) => ({ value: g, label: t(`jira.group.${g}` as TKey) }))} />
+            <Button icon={FileBarChart} className="issues-report" onClick={() => openStatusReport("jira")}>
+              {t("mw.cmd.report")}
+            </Button>
             <Button icon={RefreshCw} loading={anySyncing} onClick={() => void sync()}>
               {t("jira.refresh")}
             </Button>

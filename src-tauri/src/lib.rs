@@ -23,6 +23,7 @@ mod graph;
 mod jira;
 mod jumplist;
 mod mail;
+mod meetwork;
 mod network;
 mod notifyact;
 mod policy;
@@ -4605,6 +4606,21 @@ pub fn run() {
             dayreview::day_review_summary,
             briefing::briefing,
             briefing::briefing_summary,
+            meetwork::meeting_prep,
+            meetwork::meeting_prep_page,
+            meetwork::meeting_prep_key,
+            meetwork::status_scopes,
+            meetwork::status_templates,
+            meetwork::status_template_save,
+            meetwork::status_template_delete,
+            meetwork::status_last,
+            meetwork::status_report,
+            meetwork::page_markdown_write,
+            meetwork::page_markdown_text,
+            meetwork::mail_draft_available,
+            meetwork::mail_draft,
+            meetwork::followup_build,
+            meetwork::followup_polish,
             briefing::briefing_start,
             voice::voice_devices,
             voice::voice_start,

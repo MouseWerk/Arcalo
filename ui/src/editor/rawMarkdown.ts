@@ -28,6 +28,9 @@ export const HtmlInline = Node.create({
   renderMarkdown: (node) => String(node.attrs?.raw ?? ""),
 });
 
+/** The marker lines of a generated part (meetwork/block.rs `BEGIN`, `END`). */
+const MANAGED_MARK = /^<!-- (\/)?arcalo:auto -->$/;
+
 /** A raw HTML block (e.g. `<div>…</div>`, `<details>`, a comment on its own lines). */
 export const HtmlBlock = Node.create({
   name: "htmlBlock",
@@ -41,6 +44,10 @@ export const HtmlBlock = Node.create({
     return [{ tag: "pre[data-html-block]", preserveWhitespace: "full", getAttrs: (el) => ({ raw: (el as HTMLElement).textContent ?? "" }) }];
   },
   renderHTML({ node }) {
+    // The markers of a generated part (prep page, status report): a thin labelled line.
+    const managed = MANAGED_MARK.exec(String(node.attrs.raw).trim());
+    if (managed)
+      return ["pre", { "data-html-block": "", class: `md-html-block md-managed ${managed[1] ? "end" : "begin"}`, "data-label": managed[1] ? t("mw.block.end") : t("mw.block.begin"), title: t("mw.block.hint"), contenteditable: "false" }, node.attrs.raw];
     return ["pre", { "data-html-block": "", class: "md-html-block", title: t("editor.htmlSource"), contenteditable: "false" }, node.attrs.raw];
   },
   renderText: ({ node }) => node.attrs.raw,

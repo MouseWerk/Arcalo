@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, Clock, ExternalLink, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ClipboardList, Clock, ExternalLink, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, EmptyState, IconButton, Progress, Spinner } from "../components/ui";
@@ -26,6 +26,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { useT, type TKey } from "../lib/i18n";
 import type { Briefing, BriefingIssue, BriefingMeeting, BriefingSection, BriefingSectionId, BriefingSummary, BriefingTask } from "../lib/types";
 import { SECTION_ICON, SECTION_LABEL, SectionsEditor, unavailableSections } from "./settings/BriefingSection";
+import { prepareMeeting } from "../components/MeetingWork";
 
 const s = useApp.getState;
 
@@ -329,12 +330,21 @@ function MeetingsCard({ b, colorOf }: { b: Briefing; colorOf: (source: string) =
                 ) : (
                   !m.free && !m.past && <span className="rv-sub">{t("brief.noPrep")}</span>
                 )}
+                {m.prep_page != null && (
+                  <button type="button" className="bf-prep bf-prep-page" onClick={(e) => void openPrep(m.prep_page!, e)}>
+                    <ClipboardList size={12} aria-hidden />
+                    <span className="faint">{t("mw.prep.page")}</span>
+                  </button>
+                )}
               </span>
               <span className="bf-actions">
                 {m.link && !m.past && (
                   <Button size="sm" variant={next ? "primary" : "secondary"} icon={Video} className="bf-join" onClick={() => openUrl(m.link!).catch((e) => s().error(t("dash.joinFailed"), e))}>
                     {t("dash.join")}
                   </Button>
+                )}
+                {!m.free && !m.past && !m.all_day && (
+                  <IconButton icon={ClipboardList} size="sm" className="bf-prepare" label={t(m.prep_page != null ? "mw.prep.refresh" : "mw.prep.button")} onClick={() => void prepareMeeting(m.key)} />
                 )}
                 {!m.free && (
                   <IconButton icon={NotebookPen} size="sm" className="bf-note" label={t(m.note_page_id != null ? "brief.openNote" : "brief.createNote")} disabled={busy === m.key} onClick={() => void note(m)} />
