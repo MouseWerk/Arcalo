@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::network::{NetworkSettings, ProxyMode};
+use crate::network::Service;
 
 /// The provider created from the settings of versions before providers existed
 /// (`litellm_base_url`). Its key is the credential that held the LiteLLM token.
@@ -205,9 +205,10 @@ impl AiProvider {
         }
     }
 
-    /// The network settings for this provider: without proxy when it bypasses it.
-    pub fn network(&self, net: &NetworkSettings) -> NetworkSettings {
-        if self.bypass_proxy { NetworkSettings { mode: ProxyMode::None, ..net.clone() } } else { net.clone() }
+    /// The network service of this provider (a provider that bypasses the proxy goes direct
+    /// on the default profile).
+    pub fn service(&self) -> Service {
+        Service::Ai { id: self.id.clone(), local: self.bypass_proxy }
     }
 
     /// Display name: the name, or the kind's label.
@@ -405,11 +406,13 @@ mod tests {
 
     #[test]
     fn local_providers_bypass_the_proxy() {
-        let net = NetworkSettings { mode: ProxyMode::Manual, http_proxy: "proxy:8080".into(), ..Default::default() };
+        use crate::network::{NetworkSettings, ProxyMode, ProxyProfile};
+        let profile = ProxyProfile { mode: ProxyMode::Manual, http_proxy: "proxy:8080".into(), ..Default::default() };
+        let net = NetworkSettings { profiles: vec![profile], ..Default::default() };
         let ollama = AiProvider::ollama("ollama", OLLAMA_URL);
-        assert_eq!(ollama.network(&net).mode, ProxyMode::None);
-        assert_eq!(ollama.network(&net).http_proxy, "proxy:8080", "only the mode changes");
-        assert_eq!(AiProvider::litellm("http://127.0.0.1:4000").network(&net).mode, ProxyMode::Manual);
+        assert_eq!(net.profile_for(&ollama.service()).mode, ProxyMode::None);
+        assert_eq!(net.profile_for(&ollama.service()).http_proxy, "proxy:8080", "only the mode changes");
+        assert_eq!(net.profile_for(&AiProvider::litellm("http://127.0.0.1:4000").service()).mode, ProxyMode::Manual);
     }
 
     #[test]

@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 6;
+pub const SETTINGS_VERSION: u32 = 7;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -41,6 +41,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 3, name: "calendar-list", run: calendar_list },
     Step { from: 4, name: "dashboard-clean", run: dashboard_clean },
     Step { from: 5, name: "log-level-and-due-tasks", run: log_level_and_due_tasks },
+    Step { from: 6, name: "network-profiles", run: network_profiles },
 ];
 
 /// What [`migrate`] did.
@@ -181,6 +182,78 @@ fn log_level_and_due_tasks(s: &mut Map<String, Value>) -> Option<String> {
     (!notes.is_empty()).then(|| notes.join(", "))
 }
 
+/// The network fields of 1.9 that move into the default profile unchanged.
+const PROFILE_FIELDS: [&str; 9] = [
+    "mode",
+    "http_proxy",
+    "https_proxy",
+    "socks_proxy",
+    "no_proxy",
+    "pac_url",
+    "pac_results",
+    "proxy_user",
+    "extra_ca_path",
+];
+
+/// 6 → 7: the single network setting becomes the profile „Standard“ with the same behavior.
+/// The global „accept invalid certificates“ stays on that profile as a legacy flag (shown as
+/// „unsicher“) instead of being dropped; connections that did not use the settings
+/// (`apply_to` off: the program's default, i.e. the system proxy) are routed to a copy of it
+/// in mode `system`.
+fn network_profiles(s: &mut Map<String, Value>) -> Option<String> {
+    let net = s.get_mut("network")?.as_object_mut()?;
+    if net.contains_key("profiles") {
+        return None;
+    }
+    let mut profile = Map::new();
+    profile.insert("id".into(), Value::from(crate::network::DEFAULT_PROFILE));
+    profile.insert("name".into(), Value::from("Standard"));
+    for k in PROFILE_FIELDS {
+        if let Some(v) = net.remove(k) {
+            profile.insert(k.into(), v);
+        }
+    }
+    if let Some(t) = net.remove("timeout_secs") {
+        profile.insert("connect_timeout_secs".into(), t);
+    }
+    let mut notes = vec!["network → profile Standard".to_owned()];
+    if net.remove("accept_invalid_certs").and_then(|v| v.as_bool()) == Some(true) {
+        profile.insert("legacy_accept_invalid_certs".into(), Value::Bool(true));
+        notes.push("accept_invalid_certs kept as legacy flag (unsicher)".into());
+    }
+    let apply_to = net.remove("apply_to");
+    let off: Vec<&str> = ["ai", "git", "updates", "tools"]
+        .into_iter()
+        .filter(|k| apply_to.as_ref().and_then(|a| a.get(*k)).and_then(Value::as_bool) == Some(false))
+        .collect();
+    let mut profiles = vec![Value::Object(profile.clone())];
+    let mut routes = Map::new();
+    if !off.is_empty() {
+        let mut sys = profile;
+        sys.insert("id".into(), Value::from("standard-system"));
+        sys.insert("name".into(), Value::from("Standard (System)"));
+        sys.insert("mode".into(), Value::from("system"));
+        profiles.push(Value::Object(sys));
+        for k in &off {
+            let groups: &[&str] = match *k {
+                "ai" => &["ai"],
+                "git" => &["git_sync"],
+                "updates" => &["updates", "release_notes", "voice_models"],
+                _ => &["http_tool", "link_preview", "jira", "ics"],
+            };
+            for g in groups {
+                routes.insert((*g).into(), Value::from("standard-system"));
+            }
+        }
+        notes.push(format!("apply_to off for {} → profile Standard (System)", off.join(", ")));
+    }
+    net.insert("profiles".into(), Value::Array(profiles));
+    if !routes.is_empty() {
+        net.insert("routes".into(), Value::Object(routes));
+    }
+    Some(notes.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,13 +311,19 @@ mod tests {
         let s = Database::parse_settings(FIXTURES[2].1).unwrap();
         assert_eq!(s.jira.sites.len(), 1);
         assert_eq!(s.filing, d.filing);
-        // 1.9: only the 1.10 step has something to do (and the version is added).
+        // 1.9: only the 1.10 steps have something to do (and the version is added).
         let mut v: Value = serde_json::from_str(FIXTURES[3].1).unwrap();
         let mut before = v.clone();
         let m = migrate(&mut v);
-        assert_eq!(m.notes, ["log-level-and-due-tasks: notifications.task_due = true"]);
+        assert_eq!(
+            m.notes,
+            ["log-level-and-due-tasks: notifications.task_due = true", "network-profiles: network → profile Standard"]
+        );
         v.as_object_mut().unwrap().remove("version");
         before["notifications"]["task_due"] = Value::Bool(true);
+        assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
+        v.as_object_mut().unwrap().remove("network");
+        before.as_object_mut().unwrap().remove("network");
         assert_eq!(v, before);
         // The verbose log of 1.9 becomes the level „debug“; off keeps the default.
         let mut v = serde_json::json!({"version": 5, "dev_log_verbose": true, "notifications": {"task_due": false}});
@@ -281,6 +360,71 @@ mod tests {
         // A set start preference is not overwritten by the old flag.
         let s = Database::parse_settings(r#"{"open_daily_on_start": true, "start": {"open": "tabs"}}"#).unwrap();
         assert_eq!(s.start.open, StartOpen::Tabs);
+    }
+
+    #[test]
+    fn the_network_setting_becomes_the_default_profile() {
+        use crate::network::{DEFAULT_PROFILE, ProxyMode, ProxyProfile, Service};
+        // 1.9 fixture: a manual proxy.
+        let s = Database::parse_settings(FIXTURES[3].1).unwrap();
+        assert_eq!(s.network.profiles.len(), 1);
+        let p = s.network.standard();
+        assert_eq!((p.id.as_str(), p.name.as_str()), (DEFAULT_PROFILE, "Standard"));
+        assert_eq!((p.mode, p.http_proxy.as_str()), (ProxyMode::Manual, "http://proxy.firma.de:8080"));
+        assert_eq!((p.connect_timeout_secs, p.read_timeout_secs, p.legacy_accept_invalid_certs), (30, 0, false));
+        assert!(s.network.routes.is_empty() && s.network.trusted_hosts.is_empty());
+
+        // Every field of the old shape, the global certificate switch and `apply_to`.
+        let mut old = serde_json::json!({"network": {
+            "mode": "pac", "http_proxy": "", "https_proxy": "", "socks_proxy": "", "no_proxy": "*.intra",
+            "pac_url": "http://wpad/proxy.pac", "pac_results": {"*": "PROXY p:3128"}, "proxy_user": "max",
+            "extra_ca_path": "C:\\ca.pem", "accept_invalid_certs": true, "timeout_secs": 12,
+            "apply_to": {"ai": true, "git": false, "updates": true, "tools": false}}});
+        let m = migrate(&mut old);
+        assert!(m.notes.iter().any(|n| n.contains("legacy flag")), "{m:?}");
+        let net = &old["network"];
+        assert!(
+            net.get("mode").is_none() && net.get("accept_invalid_certs").is_none() && net.get("apply_to").is_none()
+        );
+        let s = Database::parse_settings(&old.to_string()).unwrap();
+        let std = s.network.standard();
+        let expected = ProxyProfile {
+            mode: ProxyMode::Pac,
+            no_proxy: "*.intra".into(),
+            pac_url: "http://wpad/proxy.pac".into(),
+            pac_results: [("*".to_owned(), "PROXY p:3128".to_owned())].into(),
+            proxy_user: "max".into(),
+            extra_ca_path: Some("C:\\ca.pem".into()),
+            connect_timeout_secs: 12,
+            legacy_accept_invalid_certs: true,
+            ..Default::default()
+        };
+        assert_eq!(std, &expected);
+        // Connections that did not use the settings go through a copy in mode `system`.
+        let sys = s.network.profile("standard-system").unwrap();
+        assert_eq!(
+            sys,
+            &ProxyProfile { id: sys.id.clone(), name: sys.name.clone(), mode: ProxyMode::System, ..expected }
+        );
+        for (service, profile) in [
+            (Service::GitSync, "standard-system"),
+            (Service::Jira("j".into()), "standard-system"),
+            (Service::Ics("c".into()), "standard-system"),
+            (Service::LinkPreview, "standard-system"),
+            (Service::HttpTool, "standard-system"),
+            (Service::Updates, DEFAULT_PROFILE),
+            (Service::Ai { id: "litellm".into(), local: false }, DEFAULT_PROFILE),
+        ] {
+            assert_eq!(s.network.route_of(&service).unwrap_or(DEFAULT_PROFILE), profile, "{service:?}");
+        }
+        // Idempotent: the new shape is left alone.
+        let mut again = old.clone();
+        assert!(network_profiles(again.as_object_mut().unwrap()).is_none());
+        assert_eq!(again, old);
+        // Settings without a network section keep the defaults.
+        let mut none = serde_json::json!({"theme": "dark"});
+        migrate(&mut none);
+        assert!(none.get("network").is_none());
     }
 
     #[test]

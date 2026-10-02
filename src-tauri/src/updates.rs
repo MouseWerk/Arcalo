@@ -22,6 +22,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use annalo_core::Error;
+use annalo_core::network::Service;
 use annalo_core::update::{self as core, AfterUpdate};
 use annalo_core::update_feed::{self as feed, FeedError, Location, Source};
 use annalo_core::update_policy::{Effective, UpdateMode};
@@ -36,7 +37,7 @@ use crate::{Result, lock, rollback};
 use annalo_core::{tr, trf};
 
 /// A download that receives nothing for this long is given up (a stalled proxy or connection).
-const READ_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Stage file of a verified download (`updates/` in the data folder).
 const STAGED_FILE: &str = "staged.json";
 
@@ -285,17 +286,23 @@ fn install_window_open(eff: &Effective) -> bool {
     eff.install_window.is_none_or(|w| w.contains(chrono::Local::now().time()))
 }
 
-/// A client with the proxy and CA of Settings → Netzwerk.
-fn http_client(app: &AppHandle) -> Result<reqwest::Client> {
-    let state = app.state::<crate::AppState>();
-    let settings = state.settings();
-    let password = state.proxy_secret.get();
-    let network = annalo_core::network::Prepared::new(
-        &settings.network,
-        password.as_deref(),
-        annalo_core::network::Purpose::Updates,
-    )?;
-    Ok(network.apply(reqwest::Client::builder()).read_timeout(READ_TIMEOUT).build()?)
+/// The client of `service` (the feed and downloads, or release notes) with its profile of
+/// Settings → Netzwerk.
+fn http_client(app: &AppHandle, service: Service) -> Result<reqwest::Client> {
+    crate::network::client_for(&app.state::<crate::AppState>(), &service)
+}
+
+/// The first feed address on the network (the per-service test of Settings → Netzwerk).
+pub fn feed_url(app: &AppHandle) -> Option<String> {
+    sources(&effective(app)).into_iter().find_map(|s| match s {
+        Source::Url(u) => Some(u),
+        Source::Folder(_) => None,
+    })
+}
+
+/// Where the release notes of `version` are read from.
+pub fn release_notes_url(version: &str) -> String {
+    format!("https://raw.githubusercontent.com/{}/main/docs/releases/v{version}.md", core::REPOSITORY)
 }
 
 fn sources(eff: &Effective) -> Vec<Source> {
@@ -411,7 +418,7 @@ pub async fn update_check(
             tr!("Keine Update-Quelle eingerichtet", "No update source is set up")
         )));
     }
-    let client = http_client(&app)?;
+    let client = http_client(&app, Service::Updates)?;
     let found = match feed::fetch(&client, &list).await {
         Ok(found) => found,
         Err(errors) => {
@@ -526,7 +533,7 @@ async fn ensure_staged(app: &AppHandle) -> Result<Option<Staged>> {
     let what = tr!("Download fehlgeschlagen", "Download failed");
     *lock(&updates.download) = DownloadState { phase: Phase::Downloading, ..Default::default() };
     state_changed(app);
-    let client = http_client(app)?;
+    let client = http_client(app, Service::Updates)?;
     let (mut last, mut reported, mut tray) = (None, 0u64, None::<u8>);
     let step = feed::download(&client, &offer.location, &part, &updates.pause, |downloaded, total| {
         let percent = core::progress_percent(downloaded, total);
@@ -898,8 +905,8 @@ pub async fn update_release_notes(app: AppHandle, version: String) -> Result<Str
     if semver::Version::parse(v).is_err() {
         return Err(Error::State(format!("version {version}")));
     }
-    let url = format!("https://raw.githubusercontent.com/{}/main/docs/releases/v{v}.md", core::REPOSITORY);
-    let res = http_client(&app)?.get(&url).send().await?;
+    let url = release_notes_url(v);
+    let res = http_client(&app, Service::ReleaseNotes)?.get(&url).send().await?;
     if !res.status().is_success() {
         return Err(Error::State(trf!("Keine Versionshinweise für {} gefunden", "No release notes found for {}", v)));
     }

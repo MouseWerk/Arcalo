@@ -1472,8 +1472,8 @@ mod tests {
         let s = db.load_settings().unwrap();
         assert_eq!(s.start.open, StartOpen::Daily, "the old start flag carries over");
         assert_eq!(s.network, NetworkSettings::default());
-        assert_eq!(s.network.mode, crate::network::ProxyMode::System);
-        assert!(s.network.apply_to.ai && s.network.apply_to.git && !s.network.accept_invalid_certs);
+        assert_eq!(s.network.standard().mode, crate::network::ProxyMode::System);
+        assert!(s.network.routes.is_empty() && !s.network.insecure());
         assert_eq!((s.editor.autosave_ms, s.editor.smart_quotes, s.editor.tab_size), (450, false, 4));
         assert_eq!(
             (s.notes.trash_retention_days, s.notes.version_interval_minutes, s.notes.max_versions),
@@ -1505,7 +1505,8 @@ mod tests {
             .unwrap();
         let s = db.load_settings().unwrap();
         assert_eq!((s.time.rounding.step_minutes, s.time.hours_display), (15, crate::prefs::HoursDisplay::Decimal));
-        assert_eq!((s.network.mode, s.network.timeout_secs), (crate::network::ProxyMode::Manual, 30));
+        let p = s.network.standard();
+        assert_eq!((p.mode, p.connect_timeout_secs), (crate::network::ProxyMode::Manual, 30));
     }
 
     #[test]
