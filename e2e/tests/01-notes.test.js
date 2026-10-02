@@ -150,19 +150,32 @@ test("daily note opens from the sidebar with the template", async () => {
   await app.shot("daily-note");
 });
 
-test("tabs: Ctrl+click opens a new tab, Ctrl+W closes it", async () => {
+test("tabs: „In neuem Tab öffnen“ opens a new tab, Ctrl+W closes it; Ctrl+click selects", async () => {
   const before = (await app.$$(".tab")).length;
-  const rows = await app.$$(".sidebar .tree-row");
-  for (const r of rows)
-    if ((await app.textOf(r)) === "Architektur") {
-      await app.browser.performActions([{ type: "key", id: "k", actions: [{ type: "keyDown", value: "" }] }]);
-      await r.click();
-      await app.browser.releaseActions();
-      break;
-    }
-  await app.browser.waitUntil(async () => (await app.$$(".tab")).length === before + 1);
+  const row = async (title) => {
+    for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === title) return r;
+    throw new Error(`no row ${title}`);
+  };
+  await app.browser.performActions([{ type: "key", id: "k", actions: [{ type: "keyDown", value: "\uE009" }] }]);
+  await (await row("Architektur")).click();
+  await app.browser.releaseActions();
+  await app.browser.waitUntil(async () => (await app.$$(".sidebar .tree-row.selected")).length >= 1, { timeoutMsg: "Ctrl+click did not select" });
+  assert.equal((await app.$$(".tab")).length, before, "Ctrl+click opens no tab");
+  // Escape on the tree ends the selection.
+  await app.browser.execute(() => document.querySelector(".sidebar .tree-row.selected")?.focus());
+  await app.keys(["Escape"]);
+  await app.browser.waitUntil(async () => (await app.$$(".sidebar .tree-row.selected")).length === 0, { timeoutMsg: "selection kept" });
+  // A page that is not open yet (an open page is focused, not opened twice).
+  const open = await app.browser.execute(() => [...document.querySelectorAll(".tab")].map((t) => t.textContent.trim()));
+  const target = (await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row .tree-label")].map((e) => e.textContent))).find((t) => t && !open.includes(t) && t !== "Journal");
+  await (await row(target)).click({ button: "right" });
+  await app.waitFor(".menu");
+  await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.textContent.includes("In neuem Tab öffnen"))?.click());
+  const tabTitles = () => app.browser.execute(() => [...document.querySelectorAll(".tab")].map((t) => t.textContent.trim()));
+  await app.browser.waitUntil(async () => (await tabTitles()).includes(target), { timeoutMsg: "not opened in a tab" });
+  const n = (await tabTitles()).length;
   await app.keys(["Control", "w"]);
-  await app.browser.waitUntil(async () => (await app.$$(".tab")).length === before);
+  await app.browser.waitUntil(async () => (await tabTitles()).length === n - 1 || !(await tabTitles()).includes(target), { timeoutMsg: "Ctrl+W did not close" });
 });
 
 test("Ctrl+F finds and steps through matches", async () => {

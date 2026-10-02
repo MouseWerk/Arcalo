@@ -3689,6 +3689,7 @@ export const en = {
   "sb.openNewTab": "Open in a new tab",
   "sb.openRight": "Open on the right",
   "sb.click": "Click",
+  "sb.middleClick": "Middle-click",
   "sb.subpage": "Subpage",
   "sb.sibling": "Page next to it",
   "sb.createFailed": "The page could not be created",
