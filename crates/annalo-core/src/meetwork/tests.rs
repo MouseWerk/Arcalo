@@ -615,3 +615,22 @@ fn settings_step_adds_the_prep_keys() {
     assert_eq!(w["briefing"]["prep_auto"], true);
     assert_eq!(w["briefing"]["prep_minutes"], 10);
 }
+
+#[test]
+fn followup_mail_leaves_out_the_users_own_addresses() {
+    let to: Vec<String> = [
+        "Müller, Anna",
+        "Ich Selbst <ich@firma.de>",
+        "ICH@firma.de",
+        "Weiß, Jörg",
+        "Kleindienst, Maurice",
+        "kunde@extern.de",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let own = vec!["ich@firma.de".to_owned(), "Maurice Kleindienst".to_owned()];
+    assert_eq!(followup::without_own(to.clone(), &own), ["Müller, Anna", "Weiß, Jörg", "kunde@extern.de"]);
+    // Nothing configured: everyone stays.
+    assert_eq!(followup::without_own(to.clone(), &[]), to);
+}

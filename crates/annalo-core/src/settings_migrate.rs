@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 9;
+pub const SETTINGS_VERSION: u32 = 10;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -44,6 +44,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 6, name: "network-profiles", run: network_profiles },
     Step { from: 7, name: "meeting-prep", run: meeting_prep },
     Step { from: 8, name: "link-suggestions", run: link_suggestions },
+    Step { from: 9, name: "own-addresses", run: own_addresses },
 ];
 
 /// What [`migrate`] did.
@@ -287,6 +288,17 @@ fn link_suggestions(s: &mut Map<String, Value>) -> Option<String> {
     (!added.is_empty()).then(|| format!("editor: {} added", added.join(", ")))
 }
 
+/// 9 → 10: the user's own addresses (left out of follow-up mails) start empty, so the settings
+/// file shows the key.
+fn own_addresses(s: &mut Map<String, Value>) -> Option<String> {
+    let mail = s.get_mut("mail")?.as_object_mut()?;
+    if mail.contains_key("own_addresses") {
+        return None;
+    }
+    mail.insert("own_addresses".into(), Value::Array(vec![]));
+    Some("mail.own_addresses added".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,7 +366,8 @@ mod tests {
                 "log-level-and-due-tasks: notifications.task_due = true",
                 "network-profiles: network → profile Standard",
                 "meeting-prep: briefing.prep_auto = false, briefing.prep_minutes = 30",
-                "link-suggestions: editor: link_suggestions, mention_hints, tag_suggestions, duplicate_hints added"
+                "link-suggestions: editor: link_suggestions, mention_hints, tag_suggestions, duplicate_hints added",
+                "own-addresses: mail.own_addresses added"
             ]
         );
         v.as_object_mut().unwrap().remove("version");
@@ -366,6 +379,7 @@ mod tests {
         {
             before["editor"][k] = Value::Bool(on);
         }
+        before["mail"]["own_addresses"] = Value::Array(vec![]);
         assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
         v.as_object_mut().unwrap().remove("network");
         before.as_object_mut().unwrap().remove("network");
@@ -638,6 +652,17 @@ mod tests {
         // And wrong values are found.
         let bad = serde_json::json!({"theme": 3, "editor": {"tab_size": "vier"}, "workdays": ["Mo"]});
         assert_eq!(check(&bad).len(), 3, "{:?}", check(&bad));
+    }
+
+    #[test]
+    fn own_addresses_are_added_once_and_kept() {
+        let mut v = serde_json::json!({"version": 9, "mail": {"default_action": "note"}});
+        let m = migrate(&mut v);
+        assert_eq!(m.notes, vec!["own-addresses: mail.own_addresses added".to_owned()]);
+        assert_eq!(v["mail"]["own_addresses"], serde_json::json!([]));
+        let mut mine = serde_json::json!({"version": 9, "mail": {"own_addresses": ["ich@firma.de"]}});
+        assert!(migrate(&mut mine).notes.is_empty());
+        assert_eq!(mine["mail"]["own_addresses"], serde_json::json!(["ich@firma.de"]));
     }
 
     #[test]

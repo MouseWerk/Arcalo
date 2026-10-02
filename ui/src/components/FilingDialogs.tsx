@@ -51,9 +51,9 @@ export function toastMoved(out: MoveOutcome) {
 }
 
 /** Moves pages (the sidebar's multi-select, drag and „Verschieben nach …“). */
-export async function movePages(ids: number[], parentId: number | null) {
+export async function movePages(ids: number[], parentId: number | null, position: number | null = null) {
   try {
-    const out = await filingApi.movePages(ids, parentId);
+    const out = await filingApi.movePages(ids, parentId, position);
     await s().refreshTree();
     toastMoved(out);
     return out;

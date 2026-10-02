@@ -67,6 +67,7 @@ export const security = {
   unlockOs: () => invoke<boolean>("applock_unlock_os"),
   resetLock: (recovery: string | null) => invoke<void>("applock_reset", { recovery }),
   lockNow: () => invoke<void>("applock_lock_now"),
+  lockFlushed: () => invoke<void>("applock_flushed"),
   showMain: () => invoke<void>("applock_show_main"),
   cipherStatus: () => invoke<CipherStatus>("cipher_status"),
   recoveryKey: (create: boolean) => invoke<string>("cipher_recovery_key", { create }),

@@ -2144,6 +2144,9 @@ export const de: Catalog = {
   "mailset.preselect": "Anhänge vorauswählen",
   "mailset.preselectDesc": "Anhänge sind im Dialog schon angehakt (eingebettete Bilder wie Logos nie).",
   "mailset.private": "E-Mail-Notizen vertraulich",
+  "mailset.own": "Eigene Adressen",
+  "mailset.ownDesc": "Ihre E-Mail-Adressen und Namen, durch Komma getrennt. Nachfass-Mails gehen nicht an sie (das angemeldete Outlook-Konto ist immer ausgenommen).",
+  "mailset.ownPlaceholder": "name@firma.de, Vorname Nachname",
   "mailset.privateDesc": "Notizen aus E-Mails bekommen den Tag {marker}: der KI-Assistent verarbeitet sie dann nur mit dem lokalen Modell. E-Mails gehen nie von selbst an eine KI.",
   "mailset.dialogDesc": "Öffnet den Dialog (auch über die Befehlspalette).",
   // ---- att

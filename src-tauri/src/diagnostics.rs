@@ -18,6 +18,8 @@ fn secret_key(key: &str) -> bool {
     ["token", "password", "passwd", "secret", "api_key", "apikey", "credential", "authorization", "header"]
         .iter()
         .any(|s| k.contains(s))
+        // The settings sync's wider list (`*_key`, `pin`, cookies, private keys) as well.
+        || annalo_core::settings_sync::is_secret_name(key)
 }
 
 /// Redacts a settings value: secret-looking keys become `***`, every string goes through the
@@ -42,7 +44,11 @@ pub fn redact_settings(v: &mut Value) {
 /// The home folder in paths becomes `~` (the user name is not needed for a bug report).
 fn without_home(text: &str) -> String {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
-    if home.len() > 1 { text.replace(&home, "~") } else { text.to_owned() }
+    if home.len() <= 1 {
+        return text.to_owned();
+    }
+    // Also as written in JSON (Windows paths with escaped backslashes).
+    text.replace(&home, "~").replace(&home.replace('\\', "\\\\"), "~")
 }
 
 /// The operating system's name and version as far as it tells.
@@ -83,7 +89,8 @@ pub fn contents(
     let pretty = |v: &Value| serde_json::to_vec_pretty(v).unwrap_or_default();
     let mut out = vec![
         ("info.json".to_owned(), pretty(&info)),
-        ("settings.json".to_owned(), pretty(&settings)),
+        // Folders in the settings name the user, too.
+        ("settings.json".to_owned(), without_home(&String::from_utf8_lossy(&pretty(&settings))).into_bytes()),
         (
             "README.txt".to_owned(),
             b"Arcalo diagnostics bundle: version and system (info.json), the effective settings without \

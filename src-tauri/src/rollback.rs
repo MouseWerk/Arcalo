@@ -146,9 +146,24 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
             tr!("Die Sicherung von vor dem Update fehlt", "The backup from before the update is missing").into(),
         )
     })?;
-    // The program first: if that fails, the database stays as it is.
-    let restart = reinstall(record)?;
-    annalo_core::backup::restore_from(&dir.join(annalo_core::datadir::DB_FILE), backup, "before-rollback", Utc::now())?;
+    // The database first, then the program: the previous version must never start on the
+    // database the new one migrated. When the program cannot be put back, the database goes
+    // back too (the new version keeps running on its own database).
+    let aside = annalo_core::backup::restore_from(
+        &dir.join(annalo_core::datadir::DB_FILE),
+        backup,
+        "before-rollback",
+        Utc::now(),
+    )?;
+    let restart = match reinstall(record) {
+        Ok(r) => r,
+        Err(e) => {
+            if let Err(undo) = aside.undo() {
+                crate::devlog::error("update", format!("database of the new version not put back: {undo}"));
+            }
+            return Err(e);
+        }
+    };
     let mut state = UpdateState::load(dir);
     state.mark_bad(&record.to);
     if state.skipped.as_deref() == Some(record.to.as_str()) {
@@ -358,5 +373,37 @@ pub fn return_now(app: &tauri::AppHandle, dir: &Path, current: &str) -> Result<(
             crate::resume_after_failed_exit(app);
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_program_swap_leaves_the_new_database_in_place() {
+        let dir = std::env::temp_dir().join(format!("arcalo-rollback-order-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join(annalo_core::datadir::DB_FILE);
+        std::fs::write(&db, b"migrated by the new version").unwrap();
+        let backup = dir.join("pre-update.db");
+        std::fs::write(&backup, b"before the update").unwrap();
+        // The copy of the previous program is gone: the swap fails.
+        let record = RollbackRecord {
+            from: "1.9.0".into(),
+            to: "1.10.0".into(),
+            backup: Some(backup.clone()),
+            copy: None,
+            kind: CopyKind::AppImage,
+            created: Utc::now(),
+        };
+        assert!(restore(&dir, &record).is_err());
+        assert_eq!(std::fs::read(&db).unwrap(), b"migrated by the new version");
+        // Nothing to swap (a .deb, test runs): the database returns.
+        let record = RollbackRecord { kind: CopyKind::None, ..record };
+        assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
+        assert_eq!(std::fs::read(&db).unwrap(), b"before the update");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

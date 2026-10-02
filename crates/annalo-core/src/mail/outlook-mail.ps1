@@ -209,8 +209,33 @@ if ($Mode -eq 'draft') {
     } catch { Fail 'request' $_.Exception.Message }
     try {
         $m = $outlook.CreateItem(0)
+        # The signed-in account is the sender: never one of the recipients.
+        $me = @()
+        try {
+            $cu = $outlook.Session.CurrentUser
+            $me += [string]$cu.Name
+            $me += [string]$cu.Address
+            try { $me += [string]$cu.AddressEntry.GetExchangeUser().PrimarySmtpAddress } catch { }
+        } catch { }
+        $me = @($me | Where-Object { $_ } | ForEach-Object { $_.Trim().ToLowerInvariant() })
         foreach ($r in @($req.to)) {
-            if ([string]$r) { [void]$m.Recipients.Add([string]$r) }
+            $name = ([string]$r).Trim()
+            if (-not $name) { continue }
+            $plain = $name.ToLowerInvariant()
+            $addr = ''
+            if ($plain -match '<([^>]+)>') { $addr = $Matches[1].Trim() }
+            if (($me -contains $plain) -or ($addr -and ($me -contains $addr))) { continue }
+            $added = $m.Recipients.Add($name)
+            try {
+                if ($added.Resolve()) {
+                    $entry = $added.AddressEntry
+                    $smtp = ''
+                    try { $smtp = [string]$entry.GetExchangeUser().PrimarySmtpAddress } catch { }
+                    if (($me -contains ([string]$entry.Name).ToLowerInvariant()) -or ($me -contains ([string]$entry.Address).ToLowerInvariant()) -or ($smtp -and ($me -contains $smtp.ToLowerInvariant()))) {
+                        $added.Delete()
+                    }
+                }
+            } catch { }
         }
         try { [void]$m.Recipients.ResolveAll() } catch { }
         $m.Subject = [string]$req.subject

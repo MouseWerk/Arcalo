@@ -400,10 +400,12 @@ fn normalize_term(s: &str) -> String {
 }
 
 impl TitleIndex {
-    /// Adds `term` for the page `title` unless it is too short or too common.
+    /// Adds `term` for the page `title` unless it is too short or too common. A title that a
+    /// `[[link]]` cannot hold (`[`, `]`, `|`, `#`, `^`: a page from before titles were cleaned)
+    /// is left out: its link would point elsewhere.
     pub fn add(&mut self, page_id: i64, title: &str, term: &str) {
         let lower = normalize_term(term);
-        if is_common(&lower) {
+        if is_common(&lower) || title.contains(['[', ']', '|', '#', '^']) {
             return;
         }
         let first: String = lower.chars().take_while(|c| is_word(*c)).collect();
@@ -867,6 +869,12 @@ mod tests {
         // Stale mentions (the text changed) are left alone.
         let (same, n) = apply_links("ganz anderer Text", &found);
         assert_eq!((same.as_str(), n), ("ganz anderer Text", 0));
+    }
+
+    #[test]
+    fn titles_a_link_cannot_hold_are_not_suggested() {
+        let index = idx(&[(1, "C# Grundlagen"), (2, "Plan [alt]"), (3, "Projekt")]);
+        assert_eq!(texts("C# Grundlagen und Plan [alt] im Projekt", &index), ["Projekt"]);
     }
 
     #[test]

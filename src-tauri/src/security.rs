@@ -416,9 +416,10 @@ pub fn is_locked() -> bool {
 /// A clock jump this large between two checks (every 5 s) means the computer slept.
 const SLEEP_GAP: Duration = Duration::from_secs(90);
 
-/// Commands the lock screens use; everything else waits for the unlock.
+/// Commands the lock screens use; everything else waits for the unlock. Changing the lock
+/// itself (a new PIN, switching it off) needs the unlocked app.
 fn allowed(cmd: &str) -> bool {
-    cmd.starts_with("applock_")
+    (cmd.starts_with("applock_") && cmd != "applock_configure")
         || cmd.starts_with("keygate_")
         || matches!(
             cmd,
@@ -463,17 +464,63 @@ pub fn init_lock(app: &AppHandle) {
 }
 
 fn set_locked(app: &AppHandle, locked: bool) {
+    if !locked {
+        PENDING.store(false, Ordering::SeqCst);
+    }
     if LOCKED.swap(locked, Ordering::SeqCst) == locked {
         return;
     }
     devlog::info("applock", if locked { "locked" } else { "unlocked" });
     if locked {
         crate::desktop::hide_popups(app);
+        // The taskbar and the window switcher show the title: no page name while locked (the
+        // app sets it again once it is back).
+        if let Some(w) = app.get_webview_window(crate::desktop::MAIN) {
+            let _ = w.set_title("Arcalo");
+        }
     }
     let _ = app.emit("applock://changed", locked);
     crate::desktop::refresh_tray(app);
     if !locked {
         crate::desktop::show_main(app);
+    }
+}
+
+/// A lock is asked for and waits for the main window to save what is being edited.
+static PENDING: AtomicBool = AtomicBool::new(false);
+/// How long the main window gets to save before the lock comes anyway.
+const FLUSH_WAIT: Duration = Duration::from_secs(3);
+
+/// Every lock (idle time, sleep, „Jetzt sperren“): the main window first saves its open editors
+/// (`applock://locking`, answered by [`applock_flushed`]), because the lock screen unmounts
+/// them and their saves would be refused once locked. Without an answer the lock comes after
+/// [`FLUSH_WAIT`] anyway.
+fn request_lock(app: &AppHandle) {
+    if is_locked() || PENDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let asked = app.get_webview_window(crate::desktop::MAIN).is_some()
+        && app.emit_to(crate::desktop::MAIN, "applock://locking", ()).is_ok();
+    if !asked {
+        PENDING.store(false, Ordering::SeqCst);
+        set_locked(app, true);
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(FLUSH_WAIT);
+        if PENDING.swap(false, Ordering::SeqCst) {
+            devlog::warn("applock", "the main window did not confirm its saves, locking anyway");
+            set_locked(&app, true);
+        }
+    });
+}
+
+/// The main window saved its editors: the requested lock comes now.
+#[tauri::command]
+pub fn applock_flushed(app: AppHandle) {
+    if PENDING.swap(false, Ordering::SeqCst) {
+        set_locked(&app, true);
     }
 }
 
@@ -499,7 +546,7 @@ pub fn tick(app: &AppHandle, idle: Option<Duration>) {
     let by_sleep = config.on_sleep && slept;
     if by_idle || by_sleep {
         devlog::info("applock", if by_idle { "idle time reached" } else { "the computer slept" });
-        set_locked(app, true);
+        request_lock(app);
     }
 }
 
@@ -660,7 +707,7 @@ pub fn applock_lock_now(app: AppHandle, state: State<AppState>) -> Result<()> {
     if !state.db().applock_config().enabled() || !lock(&LOCK).has_pin {
         return Err(Error::State(tr!("Die App-Sperre ist aus", "The app lock is off").into()));
     }
-    set_locked(&app, true);
+    request_lock(&app);
     Ok(())
 }
 
@@ -778,9 +825,17 @@ mod tests {
         {
             assert!(allowed(ok), "{ok}");
         }
-        for no in
-            ["page_get", "workspace_tree", "search", "cipher_status", "backup_restore", "chat_send", "settings_save"]
-        {
+        for no in [
+            "page_get",
+            "workspace_tree",
+            "search",
+            "cipher_status",
+            "backup_restore",
+            "chat_send",
+            "settings_save",
+            // A new PIN or switching the lock off from behind the lock screen.
+            "applock_configure",
+        ] {
             assert!(!allowed(no), "{no}");
         }
     }

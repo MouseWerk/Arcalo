@@ -13,7 +13,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use super::{DECISION_HEADINGS, RESULT_HEADINGS, clip, display_name, items_under, list_sections};
+use super::{DECISION_HEADINGS, RESULT_HEADINGS, clip, display_name, items_under, list_sections, same_person};
 use crate::ai::client::ChatMessage;
 
 /// Characters of meeting content in the request of „Mit KI formulieren“ (about 500 tokens).
@@ -345,6 +345,35 @@ pub fn extract(
 }
 
 // ------------------------------------------------------------------ bodies
+
+/// The addresses in a recipient entry (`Anna Müller <anna@firma.de>`, `anna@firma.de`), lower case.
+fn addresses_in(entry: &str) -> Vec<String> {
+    entry
+        .split(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | ',' | ';' | '(' | ')' | '"'))
+        .filter(|w| w.contains('@'))
+        .map(|w| w.trim_start_matches("mailto:").to_lowercase())
+        .collect()
+}
+
+/// `to` without the user's own entries: `own` holds addresses and names (the settings' own
+/// addresses, the Jira accounts, Outlook's signed-in account). An entry is the user's when one
+/// of its addresses is an own address, or its name is an own name in any form
+/// („Müller, Anna“ = „Anna Müller“).
+pub fn without_own(to: Vec<String>, own: &[String]) -> Vec<String> {
+    let own_addresses: Vec<String> = own.iter().flat_map(|o| addresses_in(o)).collect();
+    let own_names: Vec<&str> = own.iter().map(|o| o.trim()).filter(|o| !o.is_empty() && !o.contains('@')).collect();
+    to.into_iter()
+        .filter(|entry| {
+            let addresses = addresses_in(entry);
+            if addresses.iter().any(|a| own_addresses.contains(a)) {
+                return false;
+            }
+            // The name part of `Name <address>`.
+            let name = entry.split('<').next().unwrap_or("").trim().trim_matches('"');
+            name.is_empty() || name.contains('@') || !own_names.iter().any(|o| same_person(name, o))
+        })
+        .collect()
+}
 
 /// Escapes text for HTML (element content and attribute values).
 pub fn escape_html(s: &str) -> String {

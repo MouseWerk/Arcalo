@@ -33,6 +33,39 @@ pub const TITLE_THRESHOLD: f64 = 0.9;
 /// Meta key of the last merge (for „Rückgängig“).
 const MERGE_UNDO: &str = "merge_undo";
 
+/// The dates in a title (runs of digits and `.-/` with at least one separator between digits:
+/// 2026-10-02, 02.10.2026, 2.10., 10/2026), as written.
+pub fn title_dates(title: &str) -> Vec<String> {
+    let chars: Vec<char> = title.chars().collect();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let mut j = i;
+            while j < chars.len() && (chars[j].is_ascii_digit() || matches!(chars[j], '.' | '-' | '/')) {
+                j += 1;
+            }
+            let run: String = chars[i..j].iter().collect();
+            let run = run.trim_end_matches(['.', '-', '/']);
+            if run.contains(['.', '-', '/']) && run.split(['.', '-', '/']).filter(|p| !p.is_empty()).count() >= 2 {
+                out.push(run.to_owned());
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Two notes of a series (`Jour fixe 22.09.`, `Jour fixe 01.10.2026`): both titles carry a date
+/// and the dates differ. Their equal titles say nothing; only their text can make them
+/// duplicates.
+pub fn series_pair(a: &str, b: &str) -> bool {
+    let (da, db) = (title_dates(a), title_dates(b));
+    !da.is_empty() && !db.is_empty() && da != db
+}
+
 /// Lower case, umlauts spelled out, without dates, punctuation and copy markers.
 pub fn normalize_title(title: &str) -> String {
     let mut s = String::with_capacity(title.len());
@@ -336,7 +369,7 @@ impl Database {
                 continue;
             }
             let s = title_similarity(&norm, &other);
-            if s >= TITLE_THRESHOLD {
+            if s >= TITLE_THRESHOLD && !series_pair(&page.title, title) {
                 titles.insert(*id, s);
                 candidates.entry(*id).or_insert(0.0);
             }
@@ -406,7 +439,12 @@ impl Database {
         for ids in by_title.values().filter(|v| v.len() > 1) {
             for (k, a) in ids.iter().enumerate() {
                 for b in &ids[k + 1..] {
-                    pairs.insert(pair(*a, *b), 1.0);
+                    let series = info.get(a).zip(info.get(b)).is_some_and(|(x, y)| series_pair(x, y));
+                    if series {
+                        pairs.entry(pair(*a, *b)).or_insert(0.0);
+                    } else {
+                        pairs.insert(pair(*a, *b), 1.0);
+                    }
                 }
             }
         }
@@ -618,6 +656,11 @@ mod tests {
         assert_eq!(title_similarity("uebersicht", "uebersicht"), 1.0);
         assert!(title_similarity("kundenserver migration", "kundenserver migrationen") > 0.9);
         assert!(title_similarity("projekt alpha", "budget beta") < 0.3);
+        // Notes of a series differ by their dates; a copy keeps the date.
+        assert!(series_pair("Jour fixe 22.09.", "Jour fixe 01.10.2026"));
+        assert!(series_pair("Weekly sync 2026-10-01", "Weekly sync 22.09."));
+        assert!(!series_pair("Meeting 02.10.2026", "Meeting 02.10.2026 (Kopie)"));
+        assert!(!series_pair("Serverumzug Plan", "Serverumzug Plan 02.10."));
     }
 
     #[test]

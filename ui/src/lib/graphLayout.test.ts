@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLayoutWorker, ForceSim, seedPositions, type LayoutOut } from "./graphLayout";
+import { createLayoutWorker, ForceSim, seedPositions, startLayout, type LayoutIn, type LayoutOut } from "./graphLayout";
 
 const params = { center: 0.5, repel: 0.5, linkDistance: 0.5 };
 
@@ -133,5 +133,44 @@ describe("layout worker messages", () => {
     h.handle({ type: "params", params: { center: 1, repel: 0, linkDistance: 0 } });
     h.flush();
     expect(h.out.at(-1)!.done).toBe(true);
+  });
+});
+
+describe("layout fallback", () => {
+  const init = (n: number): LayoutIn => ({
+    type: "init",
+    count: n,
+    edges: new Uint32Array([0, 1, 1, 2]),
+    positions: new Float32Array(n * 2),
+    known: new Uint8Array(n),
+    params,
+    animate: false,
+  });
+  const settled = (ticks: LayoutOut[]) => new Promise<void>((resolve) => {
+    const check = () => (ticks.some((m) => m.done) ? resolve() : setTimeout(check, 5));
+    check();
+  });
+
+  it("computes on the main thread when no worker starts", async () => {
+    const ticks: LayoutOut[] = [];
+    const fell: unknown[] = [];
+    const port = startLayout((m) => ticks.push(m), () => { throw new Error("blocked"); }, (e) => fell.push(e));
+    port.postMessage(init(3));
+    await settled(ticks);
+    expect(fell).toHaveLength(1);
+    expect(ticks.at(-1)!.positions).toHaveLength(6);
+    port.terminate();
+  });
+
+  it("continues on the main thread with the last init when the worker fails", async () => {
+    const ticks: LayoutOut[] = [];
+    const fake = { onmessage: null, onerror: null as ((e: Event) => void) | null, onmessageerror: null, posted: [] as unknown[], postMessage(m: unknown) { this.posted.push(m); }, terminate() {} };
+    const port = startLayout((m) => ticks.push(m), () => fake as unknown as Worker);
+    port.postMessage(init(4));
+    expect(fake.posted).toHaveLength(1);
+    fake.onerror!(new Event("error"));
+    await settled(ticks);
+    expect(ticks.at(-1)!.positions).toHaveLength(8);
+    port.terminate();
   });
 });

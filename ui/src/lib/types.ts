@@ -1293,6 +1293,8 @@ export interface MailSettings {
   private_notes: boolean;
   /** What the dialog offers first. */
   default_action: "task" | "note" | "both";
+  /** The user's own addresses and names: left out of follow-up mails. */
+  own_addresses?: string[];
 }
 /** Where an Outlook calendar lives. */
 export type OutlookKind = "own" | "file" | "mailbox" | "shared" | "room" | "group";

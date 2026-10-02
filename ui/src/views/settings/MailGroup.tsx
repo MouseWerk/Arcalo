@@ -15,7 +15,25 @@ import { t, useT } from "../../lib/i18n";
 import { formatShortcut } from "../../lib/shortcut";
 import { IS_MAC } from "../../lib/platform";
 
-const defaults = (): MailSettings => ({ notes_parent: t("mail.parentDefault"), shortcut: "", save_attachments: false, private_notes: true, default_action: "task" });
+const defaults = (): MailSettings => ({ notes_parent: t("mail.parentDefault"), shortcut: "", save_attachments: false, private_notes: true, default_action: "task", own_addresses: [] });
+
+/** „a@b.de, Anna Müller; c@d.de“ → the entries; a name „Müller, Anna“ stays together. */
+export function splitOwn(text: string): string[] {
+  const out: string[] = [];
+  for (const part of text.split(/[;\n]/)) {
+    const pieces = part.split(",").map((x) => x.trim()).filter(Boolean);
+    // Two plain words around a comma are one name („Müller, Anna“), unless one is an address.
+    for (let i = 0; i < pieces.length; i++) {
+      const a = pieces[i];
+      const b = pieces[i + 1];
+      if (b && !a.includes("@") && !b.includes("@") && !a.includes(" ") && !b.includes(" ")) {
+        out.push(`${a}, ${b}`);
+        i++;
+      } else out.push(a);
+    }
+  }
+  return [...new Set(out)];
+}
 
 export function MailGroup({ draft, update }: SectionProps) {
   const t = useT();
@@ -53,6 +71,15 @@ export function MailGroup({ draft, update }: SectionProps) {
             { value: "note", label: t("mail.note") },
             { value: "both", label: t("mail.both") },
           ]}
+        />
+      </Row>
+      <Row label={t("mailset.own")} description={t("mailset.ownDesc")}>
+        <CommitInput
+          value={(mail.own_addresses ?? []).join(", ")}
+          onCommit={(v) => set({ own_addresses: splitOwn(v) })}
+          aria-label={t("mailset.own")}
+          placeholder={t("mailset.ownPlaceholder")}
+          className="mailset-own"
         />
       </Row>
       <Row label={t("mailset.preselect")} description={t("mailset.preselectDesc")}>

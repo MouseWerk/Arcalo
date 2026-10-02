@@ -445,3 +445,66 @@ export function createLayoutWorker(post: (m: LayoutOut, transfer?: Transferable[
     }
   };
 }
+
+/** A running layout: in a worker, or on the main thread when no worker starts or it fails. */
+export interface LayoutPort {
+  postMessage(m: LayoutIn): void;
+  terminate(): void;
+}
+
+/**
+ * Starts the layout in the worker `makeWorker` creates. When it cannot be created (blocked by
+ * the platform) or fails later (an error in the worker), the same state machine continues on
+ * the main thread with the last `init` and `params`, so the graph never stays without a layout.
+ */
+export function startLayout(onTick: (m: LayoutOut) => void, makeWorker: () => Worker, onFallback?: (e: unknown) => void): LayoutPort {
+  let stopped = false;
+  let replay: LayoutIn[] = [];
+  const inline = (): LayoutPort => {
+    const handle = createLayoutWorker(
+      (m) => {
+        if (!stopped) onTick(m);
+      },
+      (f) => setTimeout(f, 0),
+    );
+    return { postMessage: (m) => handle(m), terminate: () => handle({ type: "stop" }) };
+  };
+  let port: LayoutPort;
+  try {
+    const w = makeWorker();
+    w.onmessage = (ev: MessageEvent<LayoutOut>) => {
+      if (!stopped) onTick(ev.data);
+    };
+    const fail = (ev: Event) => {
+      ev.preventDefault();
+      w.terminate();
+      if (stopped) return;
+      onFallback?.(ev);
+      port = inline();
+      for (const m of replay) port.postMessage(m);
+    };
+    w.onerror = fail;
+    w.onmessageerror = fail;
+    port = {
+      postMessage: (m) => w.postMessage(m),
+      terminate: () => {
+        w.postMessage({ type: "stop" } satisfies LayoutIn);
+        w.terminate();
+      },
+    };
+  } catch (e) {
+    onFallback?.(e);
+    port = inline();
+  }
+  return {
+    postMessage(m) {
+      if (m.type === "init") replay = [m];
+      else if (m.type === "params") replay = [...replay.filter((x) => x.type !== "params"), m];
+      port.postMessage(m);
+    },
+    terminate() {
+      stopped = true;
+      port.terminate();
+    },
+  };
+}

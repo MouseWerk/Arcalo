@@ -254,3 +254,34 @@ fn secure_delete_overwrites_then_removes() {
     secure_delete(&f).unwrap();
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// SQLCipher bundles an older SQLite (3.51) than the plain build had (3.53): SQL that needs a
+/// newer one fails at run time only. The functions added after 3.51 are not used anywhere.
+#[test]
+fn no_sql_newer_than_the_bundled_sqlite() {
+    let version: String =
+        Database::open_in_memory().unwrap().conn().query_row("SELECT sqlite_version()", [], |r| r.get(0)).unwrap();
+    assert!(version.starts_with("3.51."), "bundled SQLite {version}: check the list below against its release notes");
+    const NEWER: [&str; 2] = ["json_array_insert", "jsonb_array_insert"];
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in fs::read_dir(dir).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs" || x == "sql") {
+                out.push(p);
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![];
+    walk(&root.join("src"), &mut files);
+    walk(&root.join("migrations"), &mut files);
+    walk(&root.join("../../src-tauri/src"), &mut files);
+    for f in &files {
+        let text = fs::read_to_string(f).unwrap_or_default().to_lowercase();
+        for name in NEWER {
+            assert!(!text.contains(&format!("{name}(")), "{} uses {name}, which SQLite 3.51 lacks", f.display());
+        }
+    }
+}

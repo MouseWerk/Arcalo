@@ -135,19 +135,53 @@ pub fn backup_named(
     Ok(path)
 }
 
+/// What [`restore_from`] set aside: [`SetAside::undo`] puts the previous database back.
+#[derive(Debug)]
+pub struct SetAside {
+    db_file: std::path::PathBuf,
+    /// `(original name, kept name)` of the database and its WAL files.
+    moved: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+}
+
+impl SetAside {
+    /// Removes the restored file and renames the kept files back (a later step failed).
+    pub fn undo(&self) -> Result<()> {
+        for ext in ["-wal", "-shm"] {
+            let _ = fs::remove_file(format!("{}{ext}", self.db_file.display()));
+        }
+        if self.db_file.exists() {
+            fs::remove_file(&self.db_file).at(&self.db_file)?;
+        }
+        for (from, kept) in &self.moved {
+            fs::rename(kept, from).at(kept)?;
+        }
+        Ok(())
+    }
+}
+
 /// Puts the backup file `backup` in place of the database `db_file`. The current file and its
-/// WAL files are kept as `<name>.<keep_as>-<stamp>`.
-pub fn restore_from(db_file: &Path, backup: &Path, keep_as: &str, now: DateTime<Utc>) -> Result<()> {
+/// WAL files are kept as `<name>.<keep_as>-<stamp>`; when the copy fails they are put back.
+pub fn restore_from(db_file: &Path, backup: &Path, keep_as: &str, now: DateTime<Utc>) -> Result<SetAside> {
     let stamp = now.format(STAMP);
+    let mut aside = SetAside { db_file: db_file.to_path_buf(), moved: vec![] };
     for ext in ["", "-wal", "-shm"] {
         let from = std::path::PathBuf::from(format!("{}{ext}", db_file.display()));
         if from.exists() {
-            fs::rename(&from, format!("{}{ext}.{keep_as}-{stamp}", db_file.display())).at(&from)?;
+            let kept = std::path::PathBuf::from(format!("{}{ext}.{keep_as}-{stamp}", db_file.display()));
+            if let Err(e) = fs::rename(&from, &kept).at(&from) {
+                let _ = aside.undo();
+                return Err(e);
+            }
+            aside.moved.push((from, kept));
         }
     }
     let tmp = db_file.with_extension("restore-part");
-    fs::copy(backup, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file)?;
-    Ok(())
+    if let Err(e) = fs::copy(backup, &tmp).and_then(|_| fs::rename(&tmp, db_file)).at(db_file) {
+        let _ = fs::remove_file(&tmp);
+        let _ = aside.undo();
+        return Err(e);
+    }
+    Ok(aside)
 }
 
 /// Puts the newest backup of `backups` in place of the database `db_file` (start-up recovery
@@ -285,8 +319,10 @@ mod tests {
         // Restoring keeps the current file aside.
         let db_file = dir.join("workspace.db");
         fs::write(&db_file, b"now").unwrap();
-        restore_from(&db_file, &c, "before-rollback", Utc::now()).unwrap();
+        fs::write(dir.join("workspace.db-wal"), b"wal").unwrap();
+        let aside = restore_from(&db_file, &c, "before-rollback", Utc::now()).unwrap();
         assert_eq!(fs::read(&db_file).unwrap(), fs::read(&c).unwrap());
+        assert!(!dir.join("workspace.db-wal").exists());
         assert!(
             fs::read_dir(&dir).unwrap().any(|e| e
                 .unwrap()
@@ -294,6 +330,14 @@ mod tests {
                 .to_string_lossy()
                 .starts_with("workspace.db.before-rollback-"))
         );
+        // A later step failed: the previous file and its WAL come back.
+        aside.undo().unwrap();
+        assert_eq!(fs::read(&db_file).unwrap(), b"now");
+        assert_eq!(fs::read(dir.join("workspace.db-wal")).unwrap(), b"wal");
+        // A backup that cannot be read leaves the database as it was.
+        assert!(restore_from(&db_file, &dir.join("missing.db"), "x", Utc::now()).is_err());
+        assert_eq!(fs::read(&db_file).unwrap(), b"now");
+        assert_eq!(fs::read(dir.join("workspace.db-wal")).unwrap(), b"wal");
         let _ = fs::remove_dir_all(&dir);
     }
 }

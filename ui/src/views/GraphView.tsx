@@ -407,9 +407,11 @@ function FilterControls({
           ]}
           onChange={(e) => setFilter({ date_field: e.target.value === "created" ? "created" : "modified" })}
         />
+        {/* One row each: side by side, the date placeholder does not fit the panel. */}
         <div className="graph-dates">
+          <span aria-hidden>{t("graph.from")}</span>
           <DateInput aria-label={t("graph.from")} placeholder={t("graph.from")} value={f.from ?? ""} onChange={(v) => setFilter({ from: v || null })} />
-          <span aria-hidden>–</span>
+          <span aria-hidden>{t("graph.to")}</span>
           <DateInput aria-label={t("graph.to")} placeholder={t("graph.to")} value={f.to ?? ""} onChange={(v) => setFilter({ to: v || null })} />
         </div>
       </div>

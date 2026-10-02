@@ -456,7 +456,14 @@ function PageTree({
     if (many) {
       const ids = selection().filter((x) => x !== target.id);
       setSelected(new Set());
-      const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id);
+      // Before or after a page: there, among the pages that stay (not at the folder's end).
+      let position: number | null = null;
+      if (pos !== "inside") {
+        const siblings = target.parent_id == null ? s().tree : (s().pages.get(target.parent_id)?.children ?? []);
+        const staying = siblings.filter((x) => !ids.includes(x.id));
+        position = staying.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
+      }
+      const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id, position);
       if (out && pos === "inside") {
         const next = new Set(collapsed);
         next.delete(target.id);

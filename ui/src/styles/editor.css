@@ -1292,7 +1292,7 @@
 }
 
 /* ---- meeting work: prep, status report, follow-up mail ---- */
-.prose pre.md-managed { position: relative; margin: 1.6em 0 1.5em; padding: 0; height: 0; border: 0; border-top: 1px dashed var(--border-strong); font-size: 0; color: transparent; overflow: visible; }
+.prose pre.md-managed { position: relative; /* rem: em is 0 here (font-size 0) */ margin: 1.5rem 0 1.4rem; padding: 0; height: 0; border: 0; border-top: 1px dashed var(--border-strong); font-size: 0; color: transparent; overflow: visible; }
 .prose pre.md-managed::before { content: attr(data-label); position: absolute; top: -0.75em; left: 0; padding-right: 8px; background: var(--bg-canvas); color: var(--text-3); font-family: var(--font-ui, inherit); font-size: var(--fs-2xs); letter-spacing: 0.02em; white-space: nowrap; }
 .prose pre.md-managed.end::before { top: auto; bottom: -0.8em; }
 

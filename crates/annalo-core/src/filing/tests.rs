@@ -453,3 +453,39 @@ fn five_thousand_pages_stay_fast() {
     assert!(out.moved >= 2500);
     assert!(t.elapsed() < std::time::Duration::from_secs(12), "{:?}", t.elapsed());
 }
+
+#[test]
+fn undo_leaves_pages_moved_by_hand_since() {
+    let db = Database::open_in_memory().unwrap();
+    let a = db.create_page(None, "Alpha", None).unwrap();
+    let b = db.create_page(None, "Beta", None).unwrap();
+    let target = db.create_page(None, "Ziel", None).unwrap();
+    let elsewhere = db.create_page(None, "Woanders", None).unwrap();
+    assert_eq!(db.move_pages(&[a.id, b.id], Some(target.id)).unwrap().moved, 2);
+    // Beta is put elsewhere by hand after the bulk move: the undo leaves it there.
+    db.move_page(b.id, Some(elsewhere.id), 0).unwrap();
+    assert_eq!(db.undo_last_move().unwrap(), 1);
+    assert_eq!(db.page(a.id).unwrap().parent_id, None);
+    assert_eq!(db.page(b.id).unwrap().parent_id, Some(elsewhere.id));
+}
+
+#[test]
+fn moving_many_to_a_position_keeps_their_order_there() {
+    let db = Database::open_in_memory().unwrap();
+    let folder = db.create_page(None, "Ordner", None).unwrap();
+    let kids: Vec<i64> =
+        ["Eins", "Zwei", "Drei"].iter().map(|n| db.create_page(Some(folder.id), n, None).unwrap().id).collect();
+    let x = db.create_page(None, "X", None).unwrap();
+    let y = db.create_page(None, "Y", None).unwrap();
+    let order = |db: &Database| -> Vec<String> {
+        let mut c: Vec<_> = db.list_pages().unwrap().into_iter().filter(|p| p.parent_id == Some(folder.id)).collect();
+        c.sort_by_key(|p| p.position);
+        c.into_iter().map(|p| p.title).collect()
+    };
+    // Dropped after „Eins“ (position 1 among the pages that stay).
+    db.move_pages_at(&[y.id, x.id], Some(folder.id), Some(1)).unwrap();
+    assert_eq!(order(&db), ["Eins", "Y", "X", "Zwei", "Drei"]);
+    // Pages of the same folder are reordered by a drop at a position.
+    db.move_pages_at(&[kids[2], kids[0]], Some(folder.id), Some(0)).unwrap();
+    assert_eq!(order(&db), ["Drei", "Eins", "Y", "X", "Zwei"]);
+}

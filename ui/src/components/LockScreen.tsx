@@ -14,6 +14,7 @@ import { setLang, useT } from "../lib/i18n";
 import { formatRecoveryInput, formatWait, recoveryComplete, security, type LockStatus } from "../lib/security";
 import { applyPrefs } from "../lib/prefs";
 import { api } from "../lib/api";
+import { flushAllEditors } from "../editor/saves";
 
 /** Lock state of this window: `null` until asked. Follows `applock://changed`. */
 function useLocked(): [boolean | null, LockStatus | null, () => void] {
@@ -40,6 +41,17 @@ function useLocked(): [boolean | null, LockStatus | null, () => void] {
 /** The main window: the app, or the lock screen while locked. */
 export function LockGate({ children }: { children: ReactNode }) {
   const [locked, status, refresh] = useLocked();
+  // Every lock (idle time, sleep, „Jetzt sperren“) waits for the open editors to save: the lock
+  // screen unmounts them, and once locked their saves would be refused.
+  useEffect(() => {
+    const off = listen("applock://locking", () => {
+      void flushAllEditors()
+        .catch(() => {})
+        .then(() => security.lockFlushed())
+        .catch(() => {});
+    });
+    return () => void off.then((f) => f());
+  }, []);
   if (locked === null) return null;
   if (locked && status) return <LockScreen status={status} refresh={refresh} />;
   return <>{children}</>;

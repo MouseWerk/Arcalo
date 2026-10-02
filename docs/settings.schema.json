@@ -1242,6 +1242,14 @@
           "description": "Top-level page below which mail notes are created.",
           "type": "string"
         },
+        "own_addresses": {
+          "default": [],
+          "description": "The user's own e-mail addresses and names: left out of the recipients of a follow-up mail (besides Outlook's signed-in account).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "private_notes": {
           "default": true,
           "description": "Mail notes get the first privacy marker as tag, so the assistant keeps them on the local model.",
@@ -2804,6 +2812,7 @@
       "default": {
         "default_action": "task",
         "notes_parent": "E-Mails",
+        "own_addresses": [],
         "private_notes": true,
         "save_attachments": false,
         "shortcut": ""
@@ -3176,7 +3185,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 9,
+      "default": 10,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

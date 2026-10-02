@@ -324,7 +324,7 @@ impl Database {
                         params![old.id, i.kind.as_str(), i.date.format("%Y-%m-%d").to_string(), i.group],
                     )?;
                 }
-                self.remember_move(&old, "tidy")?;
+                self.remember_move(&old, parent, "tidy")?;
                 self.append_child(old.id, parent)?;
                 kids.moved(old.id, &old.title, old.parent_id, parent);
                 if p.info.as_ref().is_some_and(|i| i.kind == FileType::Journal) && p.target.rule.is_none() {
@@ -345,10 +345,12 @@ impl Database {
         })
     }
 
-    fn remember_move(&self, page: &crate::model::Page, label: &str) -> Result<()> {
+    /// Notes where `page` was and where the move puts it (`to`).
+    fn remember_move(&self, page: &crate::model::Page, to: Option<i64>, label: &str) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO move_undo (page_id, old_parent, old_position, label) VALUES (?1, ?2, ?3, ?4)",
-            params![page.id, page.parent_id, page.position, label],
+            "INSERT INTO move_undo (page_id, old_parent, old_position, label, new_parent, placed)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+            params![page.id, page.parent_id, page.position, label, to],
         )?;
         Ok(())
     }
@@ -381,6 +383,13 @@ impl Database {
     /// „Verschieben nach …“: moves the pages below `parent` (last), in one transaction. Pages
     /// whose parent is moved too go along with it; a page is never moved into itself.
     pub fn move_pages(&self, page_ids: &[i64], parent: Option<i64>) -> Result<MoveOutcome> {
+        self.move_pages_at(page_ids, parent, None)
+    }
+
+    /// [`Database::move_pages`] to `position` among the other children of `parent` (a drop in
+    /// the sidebar between two pages; `None`: last). The pages keep their order; pages already
+    /// below `parent` are put there too.
+    pub fn move_pages_at(&self, page_ids: &[i64], parent: Option<i64>, position: Option<i64>) -> Result<MoveOutcome> {
         if let Some(p) = parent
             && self.page(p)?.deleted_at.is_some()
         {
@@ -401,20 +410,44 @@ impl Database {
             self.conn().execute("DELETE FROM move_undo", [])?;
             let mut out = MoveOutcome::default();
             let mut done = HashSet::new();
+            let mut placed: Vec<i64> = vec![];
             for &id in page_ids {
                 if !done.insert(id) {
                     continue;
                 }
                 let page = self.page(id)?;
-                if page.deleted_at.is_some() || page.parent_id == parent || target_line.contains(&id) {
+                if page.deleted_at.is_some() || target_line.contains(&id) {
                     continue;
                 }
                 if self.ancestors(id)?.iter().any(|a| set.contains(a)) {
                     continue;
                 }
-                self.remember_move(&page, "move")?;
+                if page.parent_id == parent {
+                    // Already there: only a drop at a position reorders it.
+                    if position.is_some() {
+                        placed.push(id);
+                    }
+                    continue;
+                }
+                self.remember_move(&page, parent, "move")?;
                 self.append_child(id, parent)?;
+                placed.push(id);
                 out.moved += 1;
+            }
+            if let Some(pos) = position.filter(|_| !placed.is_empty()) {
+                let others: Vec<i64> = self
+                    .conn()
+                    .prepare("SELECT id FROM pages WHERE parent_id IS ?1 AND deleted_at IS NULL ORDER BY position, id")?
+                    .query_map(params![parent], |r| r.get(0))?
+                    .collect::<rusqlite::Result<Vec<i64>>>()?
+                    .into_iter()
+                    .filter(|id| !placed.contains(id))
+                    .collect();
+                let at = pos.clamp(0, others.len() as i64) as usize;
+                let order = others[..at].iter().chain(placed.iter()).chain(others[at..].iter());
+                for (i, id) in order.enumerate() {
+                    self.conn().execute("UPDATE pages SET position = ?2 WHERE id = ?1", params![id, i as i64])?;
+                }
             }
             Ok(out)
         })
@@ -430,12 +463,18 @@ impl Database {
     }
 
     /// Puts the pages of the last bulk move back where they were and removes the folders it
-    /// created (when they are empty again). Returns the number of pages moved back.
+    /// created (when they are empty again). Pages moved elsewhere by hand since stay where the
+    /// user put them. Returns the number of pages moved back.
     pub fn undo_last_move(&self) -> Result<usize> {
         self.atomic(|| {
             let rows: Vec<(i64, Option<i64>, i64, bool)> = self
                 .conn()
-                .prepare("SELECT page_id, old_parent, old_position, created FROM move_undo ORDER BY seq DESC")?
+                .prepare(
+                    "SELECT u.page_id, u.old_parent, u.old_position, u.created FROM move_undo u
+                     WHERE u.created = 1 OR u.placed = 0
+                        OR EXISTS (SELECT 1 FROM pages p WHERE p.id = u.page_id AND p.parent_id IS u.new_parent)
+                     ORDER BY u.seq DESC",
+                )?
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
                 .collect::<rusqlite::Result<_>>()?;
             let alive = |id: i64| -> Result<bool> {

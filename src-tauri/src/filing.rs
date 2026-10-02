@@ -24,8 +24,13 @@ pub fn filing_tidy_apply(state: State<AppState>, scope: Option<i64>, page_ids: V
 
 /// „Verschieben nach …“ for one or many pages.
 #[tauri::command(async)]
-pub fn pages_move(state: State<AppState>, page_ids: Vec<i64>, parent_id: Option<i64>) -> Result<MoveOutcome> {
-    state.db().move_pages(&page_ids, parent_id)
+pub fn pages_move(
+    state: State<AppState>,
+    page_ids: Vec<i64>,
+    parent_id: Option<i64>,
+    position: Option<i64>,
+) -> Result<MoveOutcome> {
+    state.db().move_pages_at(&page_ids, parent_id, position)
 }
 
 #[tauri::command(async)]

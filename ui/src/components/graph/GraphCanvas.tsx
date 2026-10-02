@@ -10,7 +10,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { GraphDisplay, GraphModel, GroupColor, VNode } from "../../lib/graph";
 import { nearestInDirection, nodeRadius } from "../../lib/graph";
-import type { ForceParams, LayoutIn, LayoutOut } from "../../lib/graphLayout";
+import type { ForceParams, LayoutIn, LayoutOut, LayoutPort } from "../../lib/graphLayout";
+import { startLayout } from "../../lib/graphLayout";
 import { t } from "../../lib/i18n";
 
 export interface GraphCanvasHandle {
@@ -96,7 +97,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     dirty: true,
     raf: 0,
     palette: null as Palette | null,
-    worker: null as Worker | null,
+    worker: null as LayoutPort | null,
     radius: new Float32Array(0),
     neighbors: [] as number[][],
     tween: null as null | { from: { x: number; y: number; k: number }; to: { x: number; y: number; k: number }; t0: number },
@@ -424,11 +425,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     // All known: no motion at all (instant reopen); a few new: a gentle settle.
     const alpha = !fresh ? 0.001 : knownCount > n * 0.6 ? 0.3 : 1;
     if (!prev.size && !knownCount) s.autoFit = true;
-    const w = new Worker(new URL("../../lib/graphLayout.worker.ts", import.meta.url), { type: "module" });
-    s.worker = w;
     let first = true;
-    w.onmessage = (ev: MessageEvent<LayoutOut>) => {
-      const m = ev.data;
+    const onTick = (m: LayoutOut) => {
       if (m.positions.length !== n * 2) return;
       // A node being dragged keeps the pointer's position.
       const drag = dragRef.current;
@@ -453,11 +451,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         cb.current.onSettled?.(out);
       }
     };
+    const w = startLayout(
+      onTick,
+      () => new Worker(new URL("../../lib/graphLayout.worker.ts", import.meta.url), { type: "module" }),
+      (e) => console.warn("graph layout worker failed, computing on the main thread", e),
+    );
+    s.worker = w;
     const init: LayoutIn = { type: "init", count: n, edges: model.edges, positions, known, params: forceParams(display), animate, alpha };
     w.postMessage(init);
     request();
     return () => {
-      w.postMessage({ type: "stop" } satisfies LayoutIn);
       w.terminate();
       if (s.worker === w) s.worker = null;
     };

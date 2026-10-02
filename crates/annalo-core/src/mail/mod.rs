@@ -179,6 +179,9 @@ pub struct MailSettings {
     pub private_notes: bool,
     /// What the dialog offers first: `task`, `note` or `both`.
     pub default_action: String,
+    /// The user's own e-mail addresses and names: left out of the recipients of a follow-up
+    /// mail (besides Outlook's signed-in account).
+    pub own_addresses: Vec<String>,
 }
 
 impl Default for MailSettings {
@@ -189,6 +192,7 @@ impl Default for MailSettings {
             save_attachments: false,
             private_notes: true,
             default_action: "task".into(),
+            own_addresses: vec![],
         }
     }
 }
@@ -203,6 +207,14 @@ impl MailSettings {
         if !matches!(self.default_action.as_str(), "task" | "note" | "both") {
             self.default_action = "task".into();
         }
+        let mut own: Vec<String> = vec![];
+        for a in std::mem::take(&mut self.own_addresses) {
+            let a = one_line(&a);
+            if !a.is_empty() && !own.iter().any(|x| x.eq_ignore_ascii_case(&a)) && own.len() < 20 {
+                own.push(a);
+            }
+        }
+        self.own_addresses = own;
         self
     }
 }

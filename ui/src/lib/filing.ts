@@ -91,7 +91,7 @@ export const typeFiling = (f: FilingSettings | undefined, kind: FileType): TypeF
 export const filingApi = {
   tidyPlan: (scope: number | null = null) => invoke<TidyMove[]>("filing_tidy_plan", { scope }),
   tidyApply: (scope: number | null, pageIds: number[]) => invoke<MoveOutcome>("filing_tidy_apply", { scope, pageIds }),
-  movePages: (pageIds: number[], parentId: number | null) => invoke<MoveOutcome>("pages_move", { pageIds, parentId }),
+  movePages: (pageIds: number[], parentId: number | null, position: number | null = null) => invoke<MoveOutcome>("pages_move", { pageIds, parentId, position }),
   lastMove: () => invoke<LastMove | null>("move_last"),
   undoMove: () => invoke<number>("move_undo"),
   preview: (pageId: number, filing: FilingSettings) => invoke<FilingPreview>("filing_preview", { pageId, filing }),

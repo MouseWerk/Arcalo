@@ -360,10 +360,23 @@ pub fn followup_build(state: State<AppState>, page_id: i64) -> Result<FollowUpVi
     Ok(followup::view(build_followup(&state, page_id)?, mail_outlook::available()))
 }
 
+/// The user's own addresses and names, left out of a follow-up mail's recipients: Settings →
+/// E-Mail „Eigene Adressen“, the Jira accounts and the Git sync's author (Outlook's signed-in
+/// account is left out by the draft itself).
+fn own_identities(state: &AppState) -> Vec<String> {
+    let settings = state.settings();
+    let mut own = settings.mail.own_addresses.clone();
+    own.extend(me(state));
+    own.push(settings.git_sync.author_email.clone());
+    own.retain(|o| !o.trim().is_empty());
+    own
+}
+
 fn build_followup(state: &AppState, page_id: i64) -> Result<FollowUp> {
     let (meeting, date, to, private_event) = note_meeting(state, page_id)?;
     let doc = state.reader().page_doc(page_id)?;
     let ui = if annalo_core::i18n::is_en() { "en" } else { "de" };
+    let to = followup::without_own(to, &own_identities(state));
     let mut f = followup::extract(page_id, &doc.content, &meeting, date, to, ui, Local::now().date_naive());
     let markers = annalo_core::ai::privacy::normalize(&state.settings().router.private_markers);
     let tags = annalo_core::ai::privacy::tag_text(&doc.tags);

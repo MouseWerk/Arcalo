@@ -87,7 +87,10 @@ createRoot(document.getElementById("root")!).render(
         <SearchApp />
       </PopupLockGate>
     ) : presenterMode ? (
-      <PresenterApp />
+      // The presenter view shows the slides and their notes: covered while locked too.
+      <PopupLockGate>
+        <PresenterApp />
+      </PopupLockGate>
     ) : (
       // App-Sperre: the lock screen instead of the app while locked.
       <LockGate>

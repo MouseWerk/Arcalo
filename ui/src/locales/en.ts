@@ -2147,6 +2147,9 @@ export const en = {
   "mailset.preselect": "Preselect attachments",
   "mailset.preselectDesc": "Attachments start ticked in the dialog (embedded images like logos never do).",
   "mailset.private": "Mark e-mail notes confidential",
+  "mailset.own": "Own addresses",
+  "mailset.ownDesc": "Your e-mail addresses and names, separated by commas. Follow-up mails do not go to them (the signed-in Outlook account is always left out).",
+  "mailset.ownPlaceholder": "name@company.com, First Last",
   "mailset.privateDesc": "Notes from e-mails get the tag {marker}: the AI assistant then only processes them with the local model. E-mails never go to an AI on their own.",
   "mailset.dialogDesc": "Opens the dialog (also from the command palette).",
   // ---- att

@@ -149,10 +149,25 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     const l = nav.current?.querySelector<HTMLElement>(".settings-nav-list");
     if (!l) return;
     measureNav();
-    const watch = new ResizeObserver(measureNav);
+    // After the layout of a resize or a group opening (the media queries change the item
+    // heights, so the list's own size alone does not tell).
+    let frame = 0;
+    const later = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measureNav);
+    };
+    const watch = new ResizeObserver(later);
     watch.observe(l);
     for (const c of l.children) watch.observe(c);
-    return () => watch.disconnect();
+    const items = new MutationObserver(later);
+    items.observe(l, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    window.addEventListener("resize", later);
+    return () => {
+      cancelAnimationFrame(frame);
+      watch.disconnect();
+      items.disconnect();
+      window.removeEventListener("resize", later);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!view]);
   const [draft, setDraft] = useState<Settings | null>(null);

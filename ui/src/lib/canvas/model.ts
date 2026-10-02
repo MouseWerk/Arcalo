@@ -95,6 +95,19 @@ export function isReadableCanvas(text: string): boolean {
   }
 }
 
+/**
+ * Entries of the file the board cannot show (an edge whose card is missing, a node without an
+ * id): kept on the document under this key and written back by `serializeCanvas`, so a save
+ * never drops them silently (another app or a merge may bring the missing card back).
+ */
+export const KEPT = "\u0000kept";
+
+/** The entries `parseCanvas` set aside (see `KEPT`). */
+export function keptItems(doc: CanvasDoc): { nodes: unknown[]; edges: unknown[] } {
+  const k = doc[KEPT] as { nodes: unknown[]; edges: unknown[] } | undefined;
+  return k ?? { nodes: [], edges: [] };
+}
+
 /** Reads a canvas; anything unreadable becomes an empty board (the file stays as it was until saved). */
 export function parseCanvas(text: string): CanvasDoc {
   let raw: unknown = null;
@@ -104,18 +117,27 @@ export function parseCanvas(text: string): CanvasDoc {
     raw = {};
   }
   const obj = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const nodes = (Array.isArray(obj.nodes) ? obj.nodes : [])
-    .filter((n): n is Record<string, unknown> => !!n && typeof n === "object" && typeof (n as { id?: unknown }).id === "string")
-    .map((n) => ({ ...n, x: num(n.x, 0), y: num(n.y, 0), width: num(n.width, 250), height: num(n.height, 60) }) as CanvasNode);
+  const isNode = (n: unknown): n is Record<string, unknown> => !!n && typeof n === "object" && typeof (n as { id?: unknown }).id === "string";
+  const rawNodes: unknown[] = Array.isArray(obj.nodes) ? obj.nodes : [];
+  const nodes = rawNodes.filter(isNode).map((n) => ({ ...n, x: num(n.x, 0), y: num(n.y, 0), width: num(n.width, 250), height: num(n.height, 60) }) as CanvasNode);
   const ids = new Set(nodes.map((n) => n.id));
-  const edges = (Array.isArray(obj.edges) ? obj.edges : []).filter(
-    (e): e is CanvasEdge => !!e && typeof e === "object" && typeof (e as CanvasEdge).id === "string" && ids.has((e as CanvasEdge).fromNode) && ids.has((e as CanvasEdge).toNode),
-  );
-  return { ...obj, nodes, edges };
+  const rawEdges: unknown[] = Array.isArray(obj.edges) ? obj.edges : [];
+  const shown = (e: unknown): e is CanvasEdge =>
+    !!e && typeof e === "object" && typeof (e as CanvasEdge).id === "string" && ids.has((e as CanvasEdge).fromNode) && ids.has((e as CanvasEdge).toNode);
+  const edges = rawEdges.filter(shown);
+  const doc: CanvasDoc = { ...obj, nodes, edges };
+  delete doc[KEPT];
+  const kept = { nodes: rawNodes.filter((n) => !isNode(n)), edges: rawEdges.filter((e) => !shown(e)) };
+  if (kept.nodes.length || kept.edges.length) doc[KEPT] = kept;
+  return doc;
 }
 
-/** The file text: tab-indented JSON like Obsidian writes. */
-export const serializeCanvas = (doc: CanvasDoc) => JSON.stringify(doc, null, "\t");
+/** The file text: tab-indented JSON like Obsidian writes, with the entries the board set aside. */
+export function serializeCanvas(doc: CanvasDoc): string {
+  const { [KEPT]: _kept, ...rest } = doc;
+  const kept = keptItems(doc);
+  return JSON.stringify({ ...rest, nodes: [...doc.nodes, ...kept.nodes], edges: [...doc.edges, ...kept.edges] }, null, "\t");
+}
 
 /** A fresh id: 16 hex digits, like Obsidian's. */
 export function newId(): string {

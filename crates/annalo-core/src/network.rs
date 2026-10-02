@@ -691,7 +691,7 @@ pub struct SystemProxy {
 /// `http=host:port;https=host:port;socks=host:port`.
 pub fn parse_wininet(enable: u32, server: &str, overrides: &str, auto_config_url: &str) -> SystemProxy {
     let mut sp = SystemProxy {
-        source: "Windows-Interneteinstellungen".into(),
+        source: tr!("Windows-Interneteinstellungen", "Windows Internet settings").into(),
         pac_url: Some(auto_config_url.trim().to_owned()).filter(|u| !u.is_empty()),
         ..Default::default()
     };
@@ -732,7 +732,11 @@ pub fn parse_env(get: impl Fn(&str) -> Option<String>) -> SystemProxy {
         socks: norm(socks, "socks5"),
         bypass: var(&["no_proxy", "NO_PROXY"]).unwrap_or_default(),
         pac_url: None,
-        source: "Umgebungsvariablen (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)".into(),
+        source: tr!(
+            "Umgebungsvariablen (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)",
+            "environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)"
+        )
+        .into(),
     }
 }
 

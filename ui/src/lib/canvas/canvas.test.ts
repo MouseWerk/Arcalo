@@ -18,10 +18,15 @@ describe("canvas model", () => {
     expect(parseCanvas("kaputt")).toEqual({ nodes: [], edges: [] });
   });
 
-  it("drops edges to missing nodes and removes edges with their nodes", () => {
+  it("hides edges to missing nodes, keeps them in the file, and removes edges with their nodes", () => {
     const doc = parseCanvas(JSON.stringify({ nodes: [node("a", 0, 0), node("b", 0, 0)], edges: [{ id: "e", fromNode: "a", toNode: "b" }, { id: "x", fromNode: "a", toNode: "zz" }] }));
     expect(doc.edges.map((e) => e.id)).toEqual(["e"]);
     expect(removeItems(doc, new Set(["b"])).edges).toEqual([]);
+    // The next save writes the edge it could not show (its card may come back by a merge).
+    const saved = JSON.parse(serializeCanvas(patchNode(doc, "a", { x: 5 })));
+    expect(saved.edges.map((e: { id: string }) => e.id)).toEqual(["e", "x"]);
+    expect(Object.keys(saved)).toEqual(["nodes", "edges"]);
+    expect(parseCanvas(serializeCanvas(doc))).toEqual(doc);
   });
 
   it("tells card kinds and colors apart", () => {

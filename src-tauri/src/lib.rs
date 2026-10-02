@@ -4300,6 +4300,7 @@ pub fn run() {
             security::applock_unlock_os,
             security::applock_reset,
             security::applock_lock_now,
+            security::applock_flushed,
             security::applock_show_main,
             security::applock_test_idle,
             workspace_tree,
