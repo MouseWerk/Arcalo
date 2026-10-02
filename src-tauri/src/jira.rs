@@ -187,6 +187,7 @@ pub fn jira_site_save(app: AppHandle, site: JiraSite, token: Option<String>) -> 
         secret(&state, &id).set(Some(t)).map_err(Error::State)?;
     }
     let enabled = site.enabled;
+    let log_work = site.log_work;
     save_jira(&app, |j| {
         let mut s = site;
         s.id = id.clone();
@@ -199,6 +200,9 @@ pub fn jira_site_save(app: AppHandle, site: JiraSite, token: Option<String>) -> 
         }
         Ok(())
     })?;
+    if !log_work {
+        state.db().worklogs_cancel_site(&id)?;
+    }
     if enabled {
         spawn_sync(app.clone(), vec![id]);
     }

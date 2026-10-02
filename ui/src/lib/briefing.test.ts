@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingCounts, briefingSettings, moveSection, nextMeeting, normalizeSections, shows, summaryLines, toggleSection } from "./briefing";
+import { briefingCounts, briefingSettings, missingLabel, moveSection, nextMeeting, normalizeSections, shows, summaryLines, toggleSection } from "./briefing";
 import type { Briefing, BriefingMeeting, BriefingSection } from "./types";
 
 const meeting = (key: string, extra: Partial<BriefingMeeting> = {}): BriefingMeeting => ({
@@ -66,6 +66,13 @@ describe("briefing numbers", () => {
     expect(shows(b, "jira")).toBe(false);
     expect(shows(b, "time")).toBe(true);
     expect(briefingCounts(briefing({ time: null })).missing).toBe(0);
+  });
+
+  it("names the last workday of the unbooked hours shortly", () => {
+    expect(missingLabel(briefing())).toBe("gestern offen");
+    const monday = briefing({ date: "2026-10-05", time: { date: "2026-10-01", target_minutes: 480, booked_minutes: 0, missing_minutes: 480, holiday: null, absence: null, half: false } });
+    expect(missingLabel(monday)).toBe("am 01.10. offen");
+    expect(missingLabel(briefing({ time: null }))).toBe("");
   });
 
   it("takes the text's lines without list markers", () => {

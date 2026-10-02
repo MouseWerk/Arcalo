@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setLang } from "./i18n";
 import { configOf, galleryKinds, partsOf, partTopics, shownWidgets, widgetShown, WIDGET_KINDS } from "./dashboard";
-import { chartData, chartQueryOf, countdown, daysUntil, deadlineSources, heatRange, mergeDeadlines, nextChange, pointLabel, registerDeadlineSource, sortTeam, workParts, type ChartData, type Deadline, type TeamMember } from "./workwidgets";
+import { chartData, chartQueryOf, countdown, dayWithCountdown, daysUntil, deadlineSources, heatRange, mergeDeadlines, nextChange, pointLabel, registerDeadlineSource, sortTeam, workParts, type ChartData, type Deadline, type TeamMember } from "./workwidgets";
 import type { GridWidget } from "./types";
 
 beforeEach(() => setLang("en"));
@@ -106,6 +106,8 @@ describe("work widget data", () => {
     expect(countdown("2026-10-11", "2026-10-01")).toEqual({ text: "in 10 days", tone: "later" });
     expect(countdown("2026-10-02", "2026-10-01").text).toBe("tomorrow");
     expect(countdown("2026-10-01", "2026-10-01")).toEqual({ text: "today", tone: "today" });
+    expect(dayWithCountdown("2026-10-02", "2026-10-01", "Tomorrow")).toBe("Tomorrow");
+    expect(dayWithCountdown("2026-10-04", "2026-10-01", "Sun, 04.10.")).toBe("Sun, 04.10. · in 3 days");
     expect(countdown("2026-09-29", "2026-10-01")).toEqual({ text: "2 days overdue", tone: "overdue" });
     setLang("de");
     expect(countdown("2026-10-04", "2026-10-01").text).toBe("in 3 Tagen");

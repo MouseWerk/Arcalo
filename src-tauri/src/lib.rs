@@ -1789,6 +1789,9 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     // And for the Jira sites (`jira_site_*`; their tokens are secrets).
     settings.jira.sites = state.settings().jira.sites;
     settings.jira = std::mem::take(&mut settings.jira).normalized();
+    // An inbox title still at the other language's default follows the language.
+    let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
+    annalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.language, page);
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -3874,9 +3877,13 @@ pub fn run() {
             };
             // The language of the settings, as the UI shows it (the first run sets it from the
             // system's language).
-            if let Ok(s) = db.load_settings() {
+            if let Ok(mut s) = db.load_settings() {
                 annalo_core::i18n::set_lang(s.locale.language);
                 annalo_core::i18n::set_number_format(s.locale.number_format);
+                let page = |t: &str| db.page_by_title(t).ok().flatten().is_some();
+                if annalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.language, page) {
+                    let _ = db.save_settings(&s);
+                }
             }
             if let Err(e) = db.localize_default_leistungsarten() {
                 devlog::warn("core", format!("activity types not localized: {e}"));

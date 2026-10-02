@@ -21,7 +21,7 @@ import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
-import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
+import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
@@ -370,7 +370,6 @@ function Stats({ r }: { r: DayReview }) {
   const tm = r.time;
   const fresh = r.tasks.added.filter((x) => !x.done).length;
   const edited = r.pages.reduce((a, p) => a + p.minutes, 0);
-  const open = openMeetings(r).length;
   return (
     <section className={`rv-stats ${r.without_time ? "no-time" : ""}`} aria-label={t("review.overview")}>
       {!r.without_time && <div className="rv-stat tone-time">
@@ -392,7 +391,7 @@ function Stats({ r }: { r: DayReview }) {
           <CalendarRange size={13} aria-hidden /> {t("review.md.meetings")}
         </span>
         <span className="rv-stat-value num">{r.meetings.length}</span>
-        <span className="rv-stat-sub">{open ? t("review.notBooked", { n: open }) : r.meetings.length ? t(r.without_time ? "tt.reviewInCalendar" : "review.allDone") : t("review.none")}</span>
+        <span className="rv-stat-sub">{meetingsSub(r)}</span>
       </div>
       <div className="rv-stat tone-tasks">
         <span className="rv-stat-label">

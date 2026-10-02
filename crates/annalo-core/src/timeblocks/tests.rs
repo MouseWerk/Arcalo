@@ -177,15 +177,31 @@ fn free_slots_of_a_day_avoid_meetings_and_blocks() {
     assert_eq!(s.last(), Some(&t(5, 17, 0)));
 }
 
-/// Answers like Outlook: new EntryIDs, or fails like a closed Outlook.
+/// Answers like Outlook: keeps the appointments (EntryID, marker), finds one by marker before
+/// it adds one, or fails like a closed Outlook.
 struct FakeBridge {
     calls: RefCell<Vec<Vec<WriteOp>>>,
     closed: RefCell<bool>,
+    /// Saves, but the answer is lost (a script timeout).
+    lost: RefCell<bool>,
+    /// The calendar: (EntryID, marker, subject).
+    items: RefCell<Vec<(String, String, String)>>,
+    added: RefCell<i64>,
 }
 
 impl FakeBridge {
     fn new() -> FakeBridge {
-        FakeBridge { calls: RefCell::new(vec![]), closed: RefCell::new(false) }
+        FakeBridge {
+            calls: RefCell::new(vec![]),
+            closed: RefCell::new(false),
+            lost: RefCell::new(false),
+            items: RefCell::new(vec![]),
+            added: RefCell::new(0),
+        }
+    }
+
+    fn subjects(&self) -> Vec<String> {
+        self.items.borrow().iter().map(|i| i.2.clone()).collect()
     }
 }
 
@@ -195,19 +211,36 @@ impl Bridge for FakeBridge {
         if *self.closed.borrow() {
             return Err(Error::State(crate::calsync::outlookwrite::not_running()));
         }
-        Ok(ops
-            .iter()
-            .map(|o| {
-                let e = o.entry_id.clone().unwrap_or_else(|| format!("E{}", o.block_id));
-                WriteResult {
-                    block_id: o.block_id,
-                    ok: true,
-                    global_id: Some(format!("G{}", e)),
-                    entry_id: Some(e),
-                    error: None,
-                }
-            })
-            .collect())
+        let mut out = vec![];
+        for o in ops {
+            let mut items = self.items.borrow_mut();
+            let at = items.iter().position(|i| match &o.entry_id {
+                Some(e) => &i.0 == e,
+                None => i.1 == o.marker,
+            });
+            let entry = if o.op == "delete" {
+                at.map(|at| items.remove(at).0)
+            } else {
+                let at = at.unwrap_or_else(|| {
+                    *self.added.borrow_mut() += 1;
+                    items.push((format!("E{}", self.added.borrow()), o.marker.clone(), String::new()));
+                    items.len() - 1
+                });
+                items[at].2 = o.subject.clone();
+                Some(items[at].0.clone())
+            };
+            out.push(WriteResult {
+                key: o.key,
+                ok: true,
+                global_id: entry.as_ref().map(|e| format!("G{e}")),
+                entry_id: entry,
+                error: None,
+            });
+        }
+        if *self.lost.borrow() {
+            return Err(Error::State("timeout".into()));
+        }
+        Ok(out)
     }
 }
 
@@ -265,7 +298,10 @@ fn outlook_writes_are_queued_retried_and_the_synced_copy_is_not_shown_twice() {
     db.block_update(other.id, &BlockPatch { start: Some(t(5, 16, 30)), ..Default::default() }, now, false).unwrap();
     assert_eq!(flush(&db, &bridge, now + Duration::minutes(3), &z, false).unwrap(), 1);
     let op = bridge.calls.borrow().last().unwrap()[0].clone();
-    assert_eq!((op.block_id, op.op.as_str(), op.entry_id.as_deref()), (b.id, "upsert", Some("E1")));
+    assert_eq!(
+        (op.marker.as_str(), op.op.as_str(), op.entry_id.as_deref()),
+        (ops_marker(&db, b.id).as_str(), "upsert", Some("E1"))
+    );
     assert_eq!(op.end, Some(t(5, 15, 30).naive_utc()));
 
     // A change while a write is under way is not lost.
@@ -288,4 +324,111 @@ fn outlook_writes_are_queued_retried_and_the_synced_copy_is_not_shown_twice() {
     let op = bridge.calls.borrow().last().unwrap()[0].clone();
     assert_eq!((op.op.as_str(), op.entry_id.as_deref()), ("delete", Some("E1")));
     assert_eq!(db.block_outbox_len().unwrap(), 0);
+}
+
+fn ops_marker(db: &Database, id: i64) -> String {
+    db.block_marker(id).unwrap()
+}
+
+#[test]
+fn a_waiting_delete_survives_a_new_block_that_gets_the_same_id() {
+    let db = Database::open_in_memory().unwrap();
+    let z = Zone::Utc;
+    let bridge = FakeBridge::new();
+    let now = t(1, 8, 0);
+    let a = db.block_create(&new("A", t(5, 9, 0), 60, BlockLink::None), now, true).unwrap();
+    flush(&db, &bridge, now, &z, false).unwrap();
+    assert_eq!(bridge.subjects(), ["Fokus: A"]);
+
+    // Outlook closed: A deleted, B created (SQLite hands out A's rowid again).
+    *bridge.closed.borrow_mut() = true;
+    db.block_delete(a.id).unwrap();
+    let b = db.block_create(&new("B", t(5, 11, 0), 60, BlockLink::None), now, true).unwrap();
+    assert_eq!(b.id, a.id, "the rowid is reused");
+    assert_eq!(db.block_outbox_len().unwrap(), 2, "the delete of A stays queued next to B's write");
+    assert!(flush(&db, &bridge, now, &z, true).is_err());
+
+    *bridge.closed.borrow_mut() = false;
+    flush(&db, &bridge, now, &z, true).unwrap();
+    assert_eq!(bridge.subjects(), ["Fokus: B"], "A is gone from Outlook");
+    let b = db.block(b.id).unwrap();
+    assert_eq!((b.outlook, b.outlook_entry_id.as_deref()), (OutlookState::Written, Some("E2")));
+    assert_eq!(db.block_outbox_len().unwrap(), 0);
+}
+
+#[test]
+fn a_block_deleted_while_its_first_write_is_under_way_leaves_no_appointment() {
+    let db = Database::open_in_memory().unwrap();
+    let z = Zone::Utc;
+    let bridge = FakeBridge::new();
+    let now = t(1, 8, 0);
+    let b = db.block_create(&new("Kurz", t(5, 9, 0), 60, BlockLink::None), now, true).unwrap();
+    let ops = db.block_outbox_due(now, &z, false).unwrap();
+    db.block_delete(b.id).unwrap();
+    let results = bridge.write(&ops);
+    db.block_outbox_apply(&ops, &results, now).unwrap();
+    assert_eq!(bridge.subjects(), ["Fokus: Kurz"], "created meanwhile");
+    flush(&db, &bridge, now, &z, false).unwrap();
+    let op = bridge.calls.borrow().last().unwrap()[0].clone();
+    assert_eq!((op.op.as_str(), op.entry_id.as_deref()), ("delete", Some("E1")));
+    assert!(bridge.subjects().is_empty());
+    assert_eq!(db.block_outbox_len().unwrap(), 0);
+
+    // Deleted before the answer of a write that timed out: found by its marker and deleted.
+    let b = db.block_create(&new("Weg", t(5, 9, 0), 60, BlockLink::None), now, true).unwrap();
+    *bridge.lost.borrow_mut() = true;
+    assert!(flush(&db, &bridge, now, &z, false).is_err());
+    *bridge.lost.borrow_mut() = false;
+    db.block_delete(b.id).unwrap();
+    flush(&db, &bridge, now, &z, true).unwrap();
+    assert!(bridge.subjects().is_empty(), "{:?}", bridge.subjects());
+    assert_eq!(db.block_outbox_len().unwrap(), 0);
+}
+
+#[test]
+fn a_write_whose_answer_was_lost_does_not_add_a_second_appointment() {
+    let db = Database::open_in_memory().unwrap();
+    let z = Zone::Utc;
+    let bridge = FakeBridge::new();
+    let now = t(1, 8, 0);
+    let b = db.block_create(&new("Konzept", t(5, 9, 0), 60, BlockLink::None), now, true).unwrap();
+    *bridge.lost.borrow_mut() = true;
+    assert!(flush(&db, &bridge, now, &z, false).is_err());
+    assert_eq!(db.block(b.id).unwrap().outlook, OutlookState::Pending);
+    *bridge.lost.borrow_mut() = false;
+    flush(&db, &bridge, now, &z, true).unwrap();
+    assert_eq!(bridge.subjects(), ["Fokus: Konzept"], "one appointment");
+    assert_eq!(db.block(b.id).unwrap().outlook_entry_id.as_deref(), Some("E1"));
+
+    // An answer without ids keeps the stored ones.
+    db.block_update(b.id, &BlockPatch { title: Some("Konzept 2".into()), ..Default::default() }, now, true).unwrap();
+    let ops = db.block_outbox_due(now, &z, true).unwrap();
+    let r = vec![WriteResult { key: ops[0].key, ok: true, entry_id: None, global_id: None, error: None }];
+    db.block_outbox_apply(&ops, &Ok(r), now).unwrap();
+    assert_eq!(db.block(b.id).unwrap().outlook_entry_id.as_deref(), Some("E1"));
+}
+
+#[test]
+fn the_migration_keeps_waiting_writes_and_gives_deletes_their_own_marker() {
+    let c = rusqlite::Connection::open_in_memory().unwrap();
+    c.execute_batch(
+        "CREATE TABLE focus_blocks (id INTEGER PRIMARY KEY, title TEXT);
+         CREATE TABLE focus_block_outbox (block_id INTEGER PRIMARY KEY, op TEXT NOT NULL, entry_id TEXT, uid TEXT,
+           seq INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_try TEXT, error TEXT);
+         INSERT INTO focus_blocks (id, title) VALUES (1, 'a'), (2, 'b');
+         INSERT INTO focus_block_outbox (block_id, op, entry_id, seq) VALUES (1, 'upsert', NULL, 2), (2, 'delete', 'E9', 1);",
+    )
+    .unwrap();
+    c.execute_batch(include_str!("../../migrations/0018_focus_block_writes.sql")).unwrap();
+    let rows: Vec<(String, Option<String>, bool, i64)> = c
+        .prepare(
+            "SELECT o.op, o.entry_id, EXISTS (SELECT 1 FROM focus_blocks b WHERE b.marker = o.marker), o.seq
+             FROM focus_block_outbox o ORDER BY o.id",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(rows, [("upsert".into(), None, true, 2), ("delete".into(), Some("E9".into()), false, 1)]);
 }

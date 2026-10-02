@@ -510,9 +510,9 @@ pub fn voice_discard(app: AppHandle) -> VoiceStatus {
     status(&app)
 }
 
-/// A free attachment name for the audio („Sprachnotiz 2026-10-01 14-30.flac“, „… 2.flac“).
+/// A free attachment name for the audio („Sprachnotiz 01.10.2026 14-30.flac“, „… 2.flac“).
 fn audio_name(dir: &Path, started: chrono::DateTime<Local>) -> String {
-    let base = trf!("Sprachnotiz {}", "Voice note {}", started.format("%Y-%m-%d %H-%M"));
+    let base = annalo_core::voice::audio_base(started.naive_local());
     let mut name = format!("{base}.flac");
     let mut n = 2;
     while dir.join(&name).exists() {

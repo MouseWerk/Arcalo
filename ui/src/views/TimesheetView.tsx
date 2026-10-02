@@ -6,7 +6,7 @@ import {
   AlertTriangle, CalendarDays, Check, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
-import { bookingPrefill, durationMinutes, sourceColor, timeRange, unbooked } from "../lib/agenda";
+import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRange, unbooked } from "../lib/agenda";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
@@ -710,7 +710,8 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
       off.then((f) => f());
     };
   }, [week, tick]);
-  const list = useMemo(() => unbooked(events, rows), [events, rows]);
+  const cal = useApp((st) => st.settings?.settings.calendar);
+  const list = useMemo(() => unbooked(events, rows, new Date(), nonBookingSources(cal)), [events, rows, cal]);
   if (!list.length) return null;
   const shown = open ? list : list.slice(0, 4);
   const book = async (e: CalendarEvent) => {

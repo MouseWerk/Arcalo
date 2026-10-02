@@ -48,6 +48,16 @@ export function progress(r: DayReview): number {
 /** Meetings that still need a booking. */
 export const openMeetings = (r: DayReview) => r.meetings.filter((m) => m.state === "open");
 
+/** The line under the meeting count: the open and the upcoming ones; „alles erledigt“ only when none is left. */
+export function meetingsSub(r: DayReview): string {
+  const open = openMeetings(r).length;
+  const upcoming = r.meetings.filter((m) => m.state === "upcoming").length;
+  const parts = [open ? t("review.notBooked", { n: open }) : "", upcoming ? t("review.upcoming", { n: upcoming }) : ""].filter(Boolean);
+  if (parts.length) return parts.join(" · ");
+  if (!r.meetings.length) return t("review.none");
+  return t(r.without_time ? "tt.reviewInCalendar" : "review.allDone");
+}
+
 /** Plain text for a Markdown line: no line breaks, no stray `[[`, no leading list/heading marker. */
 function inline(text: string): string {
   return text.replace(/\s+/g, " ").trim();

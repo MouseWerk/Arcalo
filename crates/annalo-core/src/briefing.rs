@@ -241,10 +241,10 @@ pub struct BriefingSummary {
 
 // ------------------------------------------------------------------ days
 
-/// Whether `date` gets a briefing: a workday of the settings that is no public holiday and no
-/// full absence day (a half one still is).
+/// Whether `date` gets a briefing: a day with a target (the weekday hours, else the workdays)
+/// that is no public holiday and no full absence day (a half one still is).
 pub fn briefing_day(settings: &Settings, date: NaiveDate, holidays: &[Holiday], absence: Option<&Absence>) -> bool {
-    settings.workdays.contains(&date.weekday().number_from_monday())
+    crate::worktime::weekday_minutes(settings, date) > 0
         && holidays.iter().all(|h| h.date != date)
         && absence.is_none_or(|a| a.half)
 }
@@ -297,9 +297,17 @@ pub fn notify_due(now: NaiveDateTime, settings: &Settings, last: Option<NaiveDat
         && !settings.notifications.is_quiet(now.time())
 }
 
-/// The workday before `today` (by the weekday targets), at most two weeks back.
-pub fn last_workday(settings: &Settings, today: NaiveDate) -> Option<NaiveDate> {
-    (1..=14).map(|n| today - Duration::days(n)).find(|d| crate::worktime::weekday_minutes(settings, *d) > 0)
+/// The workday before `today` (a [`briefing_day`]: holidays and full absence days are
+/// skipped), at most two weeks back.
+pub fn last_workday(
+    settings: &Settings,
+    today: NaiveDate,
+    holidays: &[Holiday],
+    absences: &[Absence],
+) -> Option<NaiveDate> {
+    (1..=14)
+        .map(|n| today - Duration::days(n))
+        .find(|d| briefing_day(settings, *d, holidays, absences.iter().find(|a| a.date == *d)))
 }
 
 // ------------------------------------------------------------------ build
@@ -495,7 +503,10 @@ pub fn briefing<Tz: TimeZone>(
 
     // ---- the last workday
     let time = if time_on && (wants("time") || ai) {
-        last_workday(settings, date).map(|d| last_day(db, settings, d, tz, now)).transpose()?
+        let from = date - Duration::days(14);
+        let holidays = holidays_between(from, date, &settings.time.balance.state);
+        let absences = db.absences(from, date)?;
+        last_workday(settings, date, &holidays, &absences).map(|d| last_day(db, settings, d, tz, now)).transpose()?
     } else {
         None
     };

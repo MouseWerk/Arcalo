@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bookedEntry, bookingPrefill, hasSources, keyAction, layoutDay, monthCells, rangeTitle, sourceColor, step, timeRange, unbooked, viewRange, weekLabel } from "./agenda";
+import { bookedEntry, bookingPrefill, hasSources, keyAction, layoutDay, monthCells, nonBookingSources, rangeTitle, sourceColor, step, timeRange, unbooked, viewRange, weekLabel } from "./agenda";
 import { isoDay } from "./format";
-import type { CalendarEvent, CalendarSettings, TimeEntryRow } from "./types";
+import type { CalendarEvent, CalendarSettings, OutlookCalendar, TimeEntryRow } from "./types";
 
 const at = (d: number, h: number, m = 0) => new Date(2026, 8, d, h, m).toISOString();
 
@@ -160,6 +160,25 @@ describe("booking", () => {
       ev("allday", 25, 0, 24 * 60, { all_day: true }),
     ];
     expect(unbooked(list, [entry(1, 25, 10, 60, "Review")], now).map((e) => e.key)).toEqual(["done"]);
+  });
+
+  it("leaves out private placeholders in both languages and calendars not for booking", () => {
+    const now = new Date(2026, 8, 25, 12);
+    const list = [
+      ev("de", 25, 8, 30, { private: true, title: "Privater Termin" }),
+      ev("en", 25, 9, 30, { private: true, title: "Private appointment" }),
+      ev("anna", 25, 10, 30, { source: "outlook:anna", title: "Vertriebsrunde" }),
+      ev("mine", 25, 11, 30, { title: "Weekly" }),
+    ];
+    const skip = nonBookingSources({
+      outlook_calendars: [
+        { id: "outlook:anna", booking: false } as OutlookCalendar,
+        { id: "outlook", booking: true } as OutlookCalendar,
+      ],
+    });
+    expect([...skip]).toEqual(["outlook:anna"]);
+    expect(unbooked(list, [], now, skip).map((e) => e.key)).toEqual(["mine"]);
+    expect(nonBookingSources(null).size).toBe(0);
   });
 });
 

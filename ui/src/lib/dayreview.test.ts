@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REVIEW_CLOSE, REVIEW_OPEN, cleanSummary, findReviewBlock, hm, hours, localProviders, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "./dayreview";
+import { REVIEW_CLOSE, REVIEW_OPEN, cleanSummary, findReviewBlock, hm, hours, localProviders, meetingsSub, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "./dayreview";
 import type { AiProvider, DayReview } from "./types";
 
 /** A local time on the review day as ISO (the block shows local times). */
@@ -69,6 +69,14 @@ describe("review block", () => {
     // No checkbox: the review must not add tasks to the daily note.
     expect(md).not.toMatch(/\[[ x]\]/);
     expect(md).not.toContain("Zusammenfassung");
+  });
+
+  it("says „alles erledigt“ only when no meeting is open or still to come", () => {
+    const m = (state: DayReview["meetings"][number]["state"]) => ({ state }) as DayReview["meetings"][number];
+    expect(meetingsSub(review({ meetings: [m("upcoming"), m("upcoming")] }))).toBe("2 steht an");
+    expect(meetingsSub(review({ meetings: [m("open"), m("upcoming")] }))).toBe("1 nicht gebucht · 1 steht an");
+    expect(meetingsSub(review({ meetings: [m("booked"), m("done")] }))).toBe("alles erledigt");
+    expect(meetingsSub(review({ meetings: [] }))).toBe("keine");
   });
 
   it("an empty day and a day off", () => {

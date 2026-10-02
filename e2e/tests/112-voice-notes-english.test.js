@@ -60,7 +60,7 @@ test("palette → recording → English transcript → automatic summary with ta
   const parent = pages.find((p) => p.id === note.parent_id);
   assert.equal(parent?.title, "Voice notes");
   const content = (await app.invoke("page_get", { id: note.id })).content;
-  assert.match(content, /## Voice note \d\d:\d\d\n\n!\[\[Voice note \d{4}-\d\d-\d\d \d\d-\d\d\.flac\]\]/);
+  assert.match(content, /## Voice note \d\d:\d\d\n\n!\[\[Voice note \d\d\.\d\d\.\d{4} \d\d-\d\d\.flac\]\]/);
   assert.match(content, /> \[!note\]- Transcript · 00:0\d · English\n> \*\*00:00\*\* Good morning/);
   assert.match(content, /### Decisions\n- The budget is approved/);
   assert.ok(content.includes(`- [ ] Send the offer @Anna due:${isoIn(4)}`), content);

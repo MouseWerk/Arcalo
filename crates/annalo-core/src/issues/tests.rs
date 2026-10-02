@@ -49,6 +49,48 @@ fn store(db: &Database, list: &[(Issue, &[&str])]) -> StoreOutcome {
     db.issues_store("acme", &f, now()).unwrap()
 }
 
+#[test]
+fn a_failed_saved_search_keeps_the_issues_it_found_last_time() {
+    let db = setup();
+    store(&db, &[(issue("PROJ-1", "indeterminate"), &["mine", "q1"]), (issue("PROJ-2", "new"), &["q1", "q2"])]);
+    // q1 fails now; q2 no longer finds PROJ-2, mine still finds PROJ-1.
+    let mut f = Fetched::default();
+    let mut i = issue("PROJ-1", "indeterminate");
+    i.matches = vec!["mine".into()];
+    f.issues.insert(i.key.clone(), i);
+    f.failed.push(("q1".into(), "400".into()));
+    db.issues_store("acme", &f, now()).unwrap();
+    let matches = |key: &str| -> Vec<String> {
+        let m: String = db.conn().query_row("SELECT matches FROM issues WHERE key = ?1", [key], |r| r.get(0)).unwrap();
+        serde_json::from_str(&m).unwrap()
+    };
+    assert_eq!(matches("PROJ-1"), ["mine", "q1"]);
+    assert_eq!(matches("PROJ-2"), ["q1"], "q2 ran and did not find it");
+    // q1 works again and finds nothing: its issues go.
+    store(&db, &[(issue("PROJ-1", "indeterminate"), &["mine"])]);
+    assert_eq!(matches("PROJ-1"), ["mine"]);
+    assert!(matches("PROJ-2").is_empty());
+}
+
+#[test]
+fn switching_log_work_off_drops_the_waiting_worklogs_of_the_site() {
+    let db = setup();
+    let mut s = db.load_settings().unwrap();
+    s.jira.sites.push(JiraSite { id: "acme".into(), name: "Acme".into(), log_work: true, ..Default::default() });
+    db.save_settings(&s).unwrap();
+    store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
+    let a = log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 a", now(), &cet(), &Thresholds::default()).unwrap();
+    let b = log_slash_command(&db, "/zeit NP-8801/1020 30m PROJ-5 b", now(), &cet(), &Thresholds::default()).unwrap();
+    db.worklog_claim(b.entry.id).unwrap();
+    db.worklog_posted(b.entry.id, "77").unwrap();
+    assert_eq!(db.worklogs_due(now()).unwrap().len(), 1);
+    assert_eq!(db.worklogs_cancel_site("acme").unwrap(), 1);
+    assert!(db.worklogs_due(now() + Duration::days(1)).unwrap().is_empty());
+    let e = db.issue_entries(&[a.entry.id, b.entry.id]).unwrap();
+    let states: Vec<&str> = e.iter().map(|x| x.worklog_state.as_str()).collect();
+    assert!(states.contains(&"none") && states.contains(&"posted"), "{states:?}");
+}
+
 // ------------------------------------------------------------------ JQL and URLs
 
 #[test]

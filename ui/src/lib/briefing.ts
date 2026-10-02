@@ -3,6 +3,7 @@
 
 import { useApp } from "../store/app";
 import { api } from "./api";
+import { addDays, fmtDayMonth, isoDay } from "./format";
 import { t } from "./i18n";
 import type { Briefing, BriefingMeeting, BriefingSection, BriefingSectionId, BriefingSettings } from "./types";
 
@@ -66,6 +67,15 @@ export const workMeetings = (b: Briefing): BriefingMeeting[] => b.meetings.filte
 export const nextMeeting = (b: Briefing): BriefingMeeting | null => b.meetings.find((m) => m.key === b.next_meeting) ?? null;
 
 /** Counts per section for the widget and the overview. */
+/** The line under the unbooked hours, short enough for the card: „gestern offen“, else „am 01.10. offen“. */
+export function missingLabel(b: Briefing): string {
+  const day = b.time?.date;
+  if (!day) return "";
+  const yesterday = isoDay(addDays(new Date(`${b.date}T12:00:00`), -1));
+  if (day === yesterday) return t("brief.ov.missingYesterday");
+  return t("brief.ov.missing", { day: fmtDayMonth(new Date(`${day}T12:00:00`)) });
+}
+
 export function briefingCounts(b: Briefing) {
   const j = b.jira;
   return {

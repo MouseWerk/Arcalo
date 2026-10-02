@@ -2,12 +2,14 @@
 //! (`-Mode write -Ops <file>`) creates, updates and deletes the appointments of the blocks in
 //! the default calendar (busy, category „Arcalo“, no reminder). It only attaches to an Outlook
 //! that is already running and never starts one: with Outlook closed the whole run fails with
-//! `not_running` and the writes wait in the queue ([`crate::timeblocks`]).
+//! `not_running` and the writes wait in the queue ([`crate::timeblocks`]). Every appointment
+//! carries the block's marker (user property `ArcaloBlock`): a write without EntryID looks it up
+//! by that first, so a write whose answer got lost does not add a second appointment.
 //!
 //! For development and tests, `ANNALO_OUTLOOK_WRITE_LOG` (with `ANNALO_TEST_FIXTURES=1`) names a
 //! file the writes are appended to as JSON lines instead; the appointments get the EntryID
-//! `ARC-<block>-<n>` (global id `G-` and the same). While a file `<log>.offline` exists, Outlook
-//! counts as closed.
+//! `ARC-<write>-<n>` (global id `G-` and the same) and are found by marker like in Outlook.
+//! While a file `<log>.offline` exists, Outlook counts as closed.
 
 use crate::{tr, trf};
 use std::ffi::OsString;
@@ -74,7 +76,8 @@ pub fn ops_json(ops: &[WriteOp]) -> Value {
         ops.iter()
             .map(|o| {
                 json!({
-                    "id": o.block_id,
+                    "id": o.key,
+                    "marker": o.marker,
                     "op": o.op,
                     "entryId": o.entry_id.clone().unwrap_or_default(),
                     "subject": o.subject,
@@ -99,7 +102,7 @@ pub fn parse_output(text: &str) -> Result<Vec<WriteResult>> {
             let ok = outlookcom::truthy(&r["ok"]);
             let opt = |k: &str| Some(outlookcom::text(r, k)).filter(|x| !x.is_empty());
             WriteResult {
-                block_id: outlookcom::int(r, "id"),
+                key: outlookcom::int(r, "id"),
                 ok,
                 entry_id: opt("entryId"),
                 global_id: opt("globalId"),
@@ -116,12 +119,21 @@ fn fixture_write(log: &Path, ops: &[WriteOp]) -> Result<Vec<WriteResult>> {
     if Path::new(&offline).exists() {
         return Err(Error::State(not_running()));
     }
-    let lines = std::fs::read_to_string(log).map(|t| t.lines().count()).unwrap_or(0);
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let lines = text.lines().count();
+    // The appointments in the fixture's "Outlook" by marker (the last write of each).
+    let mut by_marker: std::collections::HashMap<String, Option<String>> = Default::default();
+    for v in text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
+        let entry = v["entryId"].as_str().filter(|e| !e.is_empty()).map(str::to_owned);
+        by_marker.insert(v["marker"].as_str().unwrap_or_default().to_owned(), entry.filter(|_| v["op"] == "upsert"));
+    }
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
     let mut out = vec![];
     for (i, o) in ops.iter().enumerate() {
+        let found = by_marker.get(&o.marker).cloned().flatten();
         let entry = match (&o.op[..], &o.entry_id) {
-            ("upsert", None) => Some(format!("ARC-{}-{}", o.block_id, lines + i + 1)),
+            ("upsert", None) => Some(found.unwrap_or_else(|| format!("ARC-{}-{}", o.key, lines + i + 1))),
+            (_, None) => found,
             (_, e) => e.clone(),
         };
         let mut line = ops_json(std::slice::from_ref(o))[0].clone();
@@ -130,7 +142,7 @@ fn fixture_write(log: &Path, ops: &[WriteOp]) -> Result<Vec<WriteResult>> {
         line["reminder"] = json!(false);
         writeln!(f, "{line}")?;
         out.push(WriteResult {
-            block_id: o.block_id,
+            key: o.key,
             ok: true,
             global_id: entry.as_ref().filter(|_| o.op == "upsert").map(|e| format!("G-{e}")),
             entry_id: entry,
@@ -184,10 +196,10 @@ mod tests {
             {"id":"4","ok":false,"error":"save","message":"Kein Zugriff"}]}"#;
         let r = parse_output(out).unwrap();
         assert_eq!(
-            (r[0].block_id, r[0].ok, r[0].entry_id.as_deref(), r[0].global_id.as_deref()),
+            (r[0].key, r[0].ok, r[0].entry_id.as_deref(), r[0].global_id.as_deref()),
             (3, true, Some("00A"), Some("040000"))
         );
-        assert_eq!((r[1].block_id, r[1].ok), (4, false));
+        assert_eq!((r[1].key, r[1].ok), (4, false));
         assert!(r[1].error.as_deref().unwrap().contains("Kein Zugriff"));
         let e = parse_output(r#"{"ok":false,"error":"not_running","message":""}"#).unwrap_err();
         assert!(e.to_string().contains("nicht geöffnet"), "{e}");
@@ -196,7 +208,8 @@ mod tests {
     #[test]
     fn ops_carry_local_times_and_the_category() {
         let op = WriteOp {
-            block_id: 7,
+            key: 7,
+            marker: "arcalo-1".into(),
             op: "upsert".into(),
             entry_id: None,
             subject: "Fokus: Bericht".into(),
@@ -208,6 +221,7 @@ mod tests {
         assert_eq!(v[0]["start"], "2026-10-05T09:00:00");
         assert_eq!(v[0]["category"], "Arcalo");
         assert_eq!(v[0]["entryId"], "");
+        assert_eq!(v[0]["marker"], "arcalo-1");
     }
 
     #[test]
@@ -216,5 +230,7 @@ mod tests {
         assert!(SCRIPT.contains("$Mode -eq 'write'"));
         assert!(SCRIPT.contains("GetActiveObject('Outlook.Application')"));
         assert!(SCRIPT.contains("ReminderSet = $false"));
+        assert!(SCRIPT.contains("Find-Marked"), "a write without EntryID looks the appointment up first");
+        assert!(SCRIPT.contains("$item.Parent.EntryID -ne $calendar.EntryID"), "one in Deleted Items is gone");
     }
 }

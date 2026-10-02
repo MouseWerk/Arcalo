@@ -221,7 +221,7 @@ export function bookingPrefill(e: CalendarEvent, hint: WbsHint | null, targetHou
     day: isoDay(start),
     from: e.all_day ? "09:00" : hhmm(start),
     minutes,
-    description: e.private && (e.title === "Privater Termin" || e.title === "Private appointment") ? t("cal.appointment") : e.title,
+    description: isPrivatePlaceholder(e) ? t("cal.appointment") : e.title,
     netzplanId: hint?.netzplan_id ?? null,
     vorgangNr: hint?.vorgang_nr ?? null,
     leistungsart: hint?.leistungsart ?? null,
@@ -252,18 +252,33 @@ export function bookedEntry(e: CalendarEvent, entries: TimeEntryRow[]): TimeEntr
   );
 }
 
+/** A private appointment whose subject is hidden (the placeholder title in either language). */
+export const isPrivatePlaceholder = (e: Pick<CalendarEvent, "private" | "title">) =>
+  e.private && (e.title === "Privater Termin" || e.title === "Private appointment");
+
+/**
+ * The sources whose meetings are not proposed for booking: Outlook calendars without „Für
+ * Buchungsvorschläge verwenden“ (by default those of colleagues), as the backend's booking
+ * sources leave them out.
+ */
+export function nonBookingSources(cal: Pick<CalendarSettings, "outlook_calendars"> | null | undefined): Set<string> {
+  return new Set((cal?.outlook_calendars ?? []).filter((c) => !c.booking).map((c) => c.id));
+}
+
 /**
  * Appointments to offer for booking: over (or running), not all-day, not free/out of office,
- * not marked „nicht buchen“ and not booked yet.
+ * not private, not from a calendar that is not for booking (`skipSources`), not marked „nicht
+ * buchen“ and not booked yet.
  */
-export function unbooked(events: CalendarEvent[], entries: TimeEntryRow[], now = new Date()): CalendarEvent[] {
+export function unbooked(events: CalendarEvent[], entries: TimeEntryRow[], now = new Date(), skipSources: ReadonlySet<string> = new Set()): CalendarEvent[] {
   return events.filter(
     (e) =>
       !e.all_day &&
       !e.skip &&
       e.busy !== "free" &&
       e.busy !== "oof" &&
-      !(e.private && e.title === "Privater Termin") &&
+      !skipSources.has(e.source) &&
+      !isPrivatePlaceholder(e) &&
       new Date(e.start).getTime() <= now.getTime() &&
       durationMinutes(e) > 0 &&
       !bookedEntry(e, entries),

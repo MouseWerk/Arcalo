@@ -81,11 +81,12 @@ pub fn block_task_done(app: AppHandle, state: State<AppState>, id: i64) -> Resul
     Ok(())
 }
 
-/// Free starts on `date` for a block of `minutes` (meetings of the shown calendars and other
-/// blocks avoided).
+/// Free starts on `date` for a block of `minutes` (the user's own meetings and other blocks
+/// avoided): only the booking calendars count, so a colleague's absence or meetings in a shared
+/// calendar do not take the user's time.
 #[tauri::command(async)]
 pub fn block_free_slots(state: State<AppState>, date: NaiveDate, minutes: i64) -> Result<Vec<DateTime<Utc>>> {
-    let sources = state.settings().calendar.active_sources(outlook::available());
+    let sources = state.settings().calendar.booking_sources(outlook::available());
     state.reader().block_free_slots(date, minutes, Utc::now(), &Zone::Local, &sources)
 }
 
@@ -100,16 +101,25 @@ pub async fn flush(app: &AppHandle, force: bool) -> Result<()> {
     if !outlookwrite::available() || FLUSHING.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
-    let out = flush_inner(app, force).await;
+    // Writes queued while a run was under way (a delete of a block just written) go in the
+    // next round; failed ones wait for their next try, so this ends.
+    let mut out = flush_inner(app, force).await;
+    for _ in 0..3 {
+        if !matches!(out, Ok(true)) {
+            break;
+        }
+        out = flush_inner(app, false).await;
+    }
     FLUSHING.store(false, Ordering::Release);
-    out
+    out.map(|_| ())
 }
 
-async fn flush_inner(app: &AppHandle, force: bool) -> Result<()> {
+/// One run; `Ok(true)` when it wrote something.
+async fn flush_inner(app: &AppHandle, force: bool) -> Result<bool> {
     let state = app.state::<AppState>();
     let ops = state.db().block_outbox_due(Utc::now(), &Zone::Local, force)?;
     if ops.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let bridge = OutlookBridge { script_dir: state.data_dir.join("scripts") };
     let run = ops.clone();
@@ -123,7 +133,7 @@ async fn flush_inner(app: &AppHandle, force: bool) -> Result<()> {
     }
     state.db().block_outbox_apply(&ops, &results, Utc::now())?;
     changed(app);
-    results.map(|_| ())
+    results.map(|_| true)
 }
 
 /// Runs the due writes in the background.

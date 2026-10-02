@@ -43,6 +43,30 @@ pub fn inbox_title() -> &'static str {
     tr!(INBOX_TITLE, "Inbox")
 }
 
+/// The inbox title of a new workspace in `lang`.
+pub fn inbox_title_in(lang: crate::prefs::Language) -> &'static str {
+    match lang {
+        crate::prefs::Language::En => "Inbox",
+        crate::prefs::Language::De => INBOX_TITLE,
+    }
+}
+
+/// The default inbox title of the other language (stored before the language was chosen, e.g.
+/// on the first run) follows `lang` while no page has that title. Returns whether it changed.
+pub fn localize_inbox_title(
+    c: &mut crate::prefs::CapturePrefs,
+    lang: crate::prefs::Language,
+    page_exists: impl Fn(&str) -> bool,
+) -> bool {
+    let own = inbox_title_in(lang);
+    let other = if own == INBOX_TITLE { "Inbox" } else { INBOX_TITLE };
+    if c.inbox_title != other || page_exists(other) {
+        return false;
+    }
+    c.inbox_title = own.into();
+    true
+}
+
 /// A meeting counts as „now“ while it runs and during this many minutes after its start
 /// (short meetings that are already over still get their notes).
 pub const MEETING_GRACE_MINUTES: i64 = 15;
@@ -455,6 +479,22 @@ mod tests {
 
     fn tz() -> FixedOffset {
         FixedOffset::east_opt(2 * 3600).unwrap()
+    }
+
+    #[test]
+    fn a_default_inbox_title_follows_the_language_until_the_page_exists() {
+        use crate::prefs::{CapturePrefs, Language};
+        let mut c = CapturePrefs { inbox_title: "Posteingang".into(), ..Default::default() };
+        assert!(localize_inbox_title(&mut c, Language::En, |_| false));
+        assert_eq!(c.inbox_title, "Inbox");
+        assert!(!localize_inbox_title(&mut c, Language::En, |_| false), "already English");
+        let mut kept = CapturePrefs { inbox_title: "Posteingang".into(), ..Default::default() };
+        assert!(!localize_inbox_title(&mut kept, Language::En, |t| t == "Posteingang"), "the page is in use");
+        let mut own = CapturePrefs { inbox_title: "Eingang".into(), ..Default::default() };
+        assert!(!localize_inbox_title(&mut own, Language::En, |_| false), "a chosen title stays");
+        let mut de = CapturePrefs { inbox_title: "Inbox".into(), ..Default::default() };
+        assert!(localize_inbox_title(&mut de, Language::De, |_| false));
+        assert_eq!(de.inbox_title, "Posteingang");
     }
     fn now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 9, 23, 12, 30, 0).unwrap() // 14:30 local

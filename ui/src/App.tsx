@@ -26,7 +26,7 @@ import type { ActivityTick, GitPulled, SearchTarget } from "./lib/types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
-import { sidebarShown, toggleSidebar, useNarrowWindow } from "./lib/layout";
+import { sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
 import { startUpdateChecks } from "./components/Updates";
 import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
@@ -53,6 +53,7 @@ export function App() {
   const activeId = useApp((s) => s.activeTabId);
   const active = tabs.find((t) => t.id === activeId) ?? null;
   useFocusEngine();
+  useCompactPanel();
 
   useEffect(() => {
     const s = useApp.getState();

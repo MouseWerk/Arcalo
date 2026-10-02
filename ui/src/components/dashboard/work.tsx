@@ -19,6 +19,7 @@ import { useTimeTracking } from "../../lib/timetracking";
 import {
   ABSENCE_KINDS,
   countdown,
+  dayWithCountdown,
   deadlineSources,
   mergeDeadlines,
   nextChange,
@@ -330,7 +331,7 @@ export function VacationWidget({ widget }: WidgetProps) {
                 {d.next_holiday ? (
                   <span className="wv-hol grow">
                     <span className="ellipsis">{holidayName(d.next_holiday)}</span>
-                    <span className="num faint small">{d.next_holiday.date === todayIso ? t("dash.today") : `${dayLabel(d.next_holiday.date, today)} · ${countdown(d.next_holiday.date, todayIso).text}`}</span>
+                    <span className="num faint small">{d.next_holiday.date === todayIso ? t("dash.today") : dayWithCountdown(d.next_holiday.date, todayIso, dayLabel(d.next_holiday.date, today))}</span>
                   </span>
                 ) : (
                   <button type="button" className="dw-link grow" onClick={() => openSettingsSection("time")}>

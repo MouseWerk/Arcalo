@@ -85,6 +85,11 @@ if ($Mode -eq 'write') {
     } catch {
         Fail 'folder' $_.Exception.Message
     }
+    # The appointment of a block by its marker (user property ArcaloBlock), or $null.
+    function Find-Marked($marker) {
+        if (-not $marker) { return $null }
+        try { return $calendar.Items.Find("[ArcaloBlock] = '" + ([string]$marker).Replace("'", "''") + "'") } catch { return $null }
+    }
     $categoryDone = $false
     $results = New-Object System.Collections.ArrayList
     foreach ($o in (Read-JsonFile $Ops)) {
@@ -93,12 +98,22 @@ if ($Mode -eq 'write') {
             $item = $null
             if ($o.entryId) {
                 try { $item = $ns.GetItemFromID([string]$o.entryId) } catch { $item = $null }
+                # Deleted in Outlook (now in Deleted Items): gone from the calendar.
+                try { if ($item -and $item.Parent.EntryID -ne $calendar.EntryID) { $item = $null } } catch { $item = $null }
             }
+            # No EntryID yet (or a stale one): an earlier write may have saved it without its
+            # answer arriving.
+            if (-not $item) { $item = Find-Marked $o.marker }
             if ($o.op -eq 'delete') {
                 if ($item) { $item.Delete() }
             } else {
                 # Gone from Outlook meanwhile (deleted there): written again.
-                if (-not $item) { $item = $calendar.Items.Add(1) }
+                if (-not $item) {
+                    $item = $calendar.Items.Add(1)
+                    if ($o.marker) {
+                        try { $p = $item.UserProperties.Add('ArcaloBlock', 1, $true); $p.Value = [string]$o.marker } catch { }
+                    }
+                }
                 $item.Subject = [string]$o.subject
                 $item.Start = [datetime]::ParseExact([string]$o.start, 'yyyy-MM-ddTHH:mm:ss', $inv)
                 $item.End = [datetime]::ParseExact([string]$o.end, 'yyyy-MM-ddTHH:mm:ss', $inv)

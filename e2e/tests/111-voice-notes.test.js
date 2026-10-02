@@ -78,7 +78,7 @@ test("ribbon → voice bar → note with audio and transcript → summary with t
   const id = await stopAndWait();
   const doc = await app.invoke("page_get", { id });
   assert.match(doc.title, /^Sprachnotiz \d\d\.\d\d\.\d{4} \d\d:\d\d$/);
-  assert.match(doc.content, /!\[\[Sprachnotiz \d{4}-\d\d-\d\d \d\d-\d\d\.flac\]\]/);
+  assert.match(doc.content, /!\[\[Sprachnotiz \d\d\.\d\d\.\d{4} \d\d-\d\d\.flac\]\]/);
   // Short sentences close together form one paragraph with its start time.
   assert.match(doc.content, /> \[!note\]- Transkript · 00:0\d · Deutsch\n> \*\*00:00\*\* Guten Morgen, wir besprechen das Angebot für Kunde X\. Anna schickt das Angebot bis Montag\.\n/);
   assert.ok(!doc.content.includes("läuft"), "status line replaced");

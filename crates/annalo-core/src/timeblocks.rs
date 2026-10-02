@@ -197,14 +197,14 @@ const COLS: &str =
      (SELECT t.done FROM tasks t WHERE t.page_id = b.page_id AND t.text = b.task_text
        ORDER BY ABS(t.ordinal - b.task_ordinal) LIMIT 1),
      i.summary, i.status, i.url,
-     o.block_id IS NOT NULL, o.error,
+     o.id IS NOT NULL, o.error,
      (SELECT IFNULL(SUM(f.worked_minutes), 0) FROM focus_sessions f WHERE f.block_id = b.id)";
 
 const FROM: &str = "focus_blocks b
      LEFT JOIN netzplaene n ON n.id = b.netzplan_id
      LEFT JOIN pages p ON p.id = b.page_id AND p.deleted_at IS NULL
      LEFT JOIN issues i ON i.key = b.issue_key AND i.rowid = (SELECT MIN(rowid) FROM issues WHERE key = b.issue_key)
-     LEFT JOIN focus_block_outbox o ON o.block_id = b.id";
+     LEFT JOIN focus_block_outbox o ON o.marker = b.marker AND o.op = 'upsert'";
 
 /// A row of [`COLS`]; the issue mapping of the suggested reference is filled in afterwards.
 fn map(r: &Row) -> rusqlite::Result<(FocusBlock, Option<String>)> {
@@ -263,7 +263,11 @@ fn map(r: &Row) -> rusqlite::Result<(FocusBlock, Option<String>)> {
 /// One write of the Outlook bridge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WriteOp {
-    pub block_id: i64,
+    /// The queue row (never reused); the result names it.
+    pub key: i64,
+    /// The block's marker, stamped on the appointment: a write whose answer was lost finds it
+    /// again by it (no second appointment), a delete without EntryID too.
+    pub marker: String,
     /// `upsert` (create, or update the appointment `entry_id`) or `delete`.
     pub op: String,
     pub entry_id: Option<String>,
@@ -279,7 +283,8 @@ pub struct WriteOp {
 /// What the bridge reports for one write.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WriteResult {
-    pub block_id: i64,
+    /// [`WriteOp::key`].
+    pub key: i64,
     pub ok: bool,
     /// The appointment's EntryID (upsert; a new one when it was created again).
     pub entry_id: Option<String>,
@@ -373,14 +378,40 @@ impl Database {
         }
     }
 
-    /// Queues the Outlook write of block `id` (`delete` keeps the EntryID: the row goes away).
-    fn block_enqueue(&self, id: i64, op: &str, entry_id: Option<&str>, uid: Option<&str>) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO focus_block_outbox (block_id, op, entry_id, uid, seq) VALUES (?1, ?2, ?3, ?4, 1)
-             ON CONFLICT(block_id) DO UPDATE SET op = excluded.op, entry_id = COALESCE(excluded.entry_id, entry_id),
-               uid = COALESCE(excluded.uid, uid), seq = seq + 1, attempts = 0, next_try = NULL",
-            params![id, op, entry_id, uid],
+    fn block_marker(&self, id: i64) -> Result<String> {
+        Ok(self.conn().query_row("SELECT marker FROM focus_blocks WHERE id = ?1", [id], |r| r.get(0))?)
+    }
+
+    /// Queues the write of block `id`'s appointment: one waiting write per block, a change
+    /// while it waits (or is under way) bumps it.
+    fn block_enqueue_upsert(&self, id: i64) -> Result<()> {
+        let marker = self.block_marker(id)?;
+        let bumped = self.conn().execute(
+            "UPDATE focus_block_outbox SET seq = seq + 1, attempts = 0, next_try = NULL
+             WHERE marker = ?1 AND op = 'upsert'",
+            [&marker],
         )?;
+        if bumped == 0 {
+            self.conn().execute("INSERT INTO focus_block_outbox (marker, op) VALUES (?1, 'upsert')", [&marker])?;
+        }
+        Ok(())
+    }
+
+    /// Queues the delete of the appointment `marker` (a row of its own, nothing merges into
+    /// it). Without `entry_id` the bridge looks the appointment up by its marker.
+    fn block_enqueue_delete(&self, marker: &str, entry_id: Option<&str>, uid: Option<&str>) -> Result<()> {
+        let updated = self.conn().execute(
+            "UPDATE focus_block_outbox SET entry_id = COALESCE(?2, entry_id), uid = COALESCE(?3, uid),
+               seq = seq + 1, attempts = 0, next_try = NULL
+             WHERE marker = ?1 AND op = 'delete'",
+            params![marker, entry_id, uid],
+        )?;
+        if updated == 0 {
+            self.conn().execute(
+                "INSERT INTO focus_block_outbox (marker, op, entry_id, uid) VALUES (?1, 'delete', ?2, ?3)",
+                params![marker, entry_id, uid],
+            )?;
+        }
         Ok(())
     }
 
@@ -414,13 +445,13 @@ impl Database {
         self.atomic(|| {
             self.conn().execute(
                 "INSERT INTO focus_blocks (title, start_at, end_at, link_kind, page_id, task_ordinal, task_text, issue_key,
-                   netzplan_id, vorgang_nr, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+                   netzplan_id, vorgang_nr, created_at, updated_at, marker)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, 'arcalo-' || lower(hex(randomblob(16))))",
                 params![title, ts(start), ts(end), kind, page_id, ordinal, text, key, np, vorgang, ts(now)],
             )?;
             let id = self.conn().last_insert_rowid();
             if outlook {
-                self.block_enqueue(id, "upsert", None, None)?;
+                self.block_enqueue_upsert(id)?;
             }
             self.block(id)
         })
@@ -447,26 +478,27 @@ impl Database {
             )?;
             let changed = start != old.start || end != old.end || title != old.title;
             if changed && (outlook || old.outlook_entry_id.is_some()) {
-                self.block_enqueue(id, "upsert", None, None)?;
+                self.block_enqueue_upsert(id)?;
             }
             self.block(id)
         })
     }
 
-    /// Deletes a block; its Outlook appointment is deleted too (queued).
+    /// Deletes a block; its Outlook appointment is deleted too (queued). A first write that
+    /// is still waiting or under way may have created one: then the delete is queued as well
+    /// (by marker until the write's answer brings the EntryID).
     pub fn block_delete(&self, id: i64) -> Result<()> {
         let old = self.block(id)?;
         self.atomic(|| {
-            match &old.outlook_entry_id {
-                Some(e) => {
-                    let uid: Option<String> =
-                        self.conn()
-                            .query_row("SELECT outlook_uid FROM focus_blocks WHERE id = ?1", [id], |r| r.get(0))?;
-                    self.block_enqueue(id, "delete", Some(e), uid.as_deref())?
-                }
-                None => {
-                    self.conn().execute("DELETE FROM focus_block_outbox WHERE block_id = ?1", [id])?;
-                }
+            let (marker, uid): (String, Option<String>) =
+                self.conn().query_row("SELECT marker, outlook_uid FROM focus_blocks WHERE id = ?1", [id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
+            let waiting =
+                self.conn().execute("DELETE FROM focus_block_outbox WHERE marker = ?1 AND op = 'upsert'", [&marker])?
+                    > 0;
+            if old.outlook_entry_id.is_some() || waiting {
+                self.block_enqueue_delete(&marker, old.outlook_entry_id.as_deref(), uid.as_deref())?;
             }
             self.conn().execute("DELETE FROM focus_blocks WHERE id = ?1", [id])?;
             Ok(())
@@ -508,23 +540,28 @@ impl Database {
 
     /// The Outlook writes due at `now` (all of them with `force`), with what to write.
     pub fn block_outbox_due(&self, now: DateTime<Utc>, zone: &Zone, force: bool) -> Result<Vec<WriteOp>> {
-        let rows: Vec<(i64, String, Option<String>, i64)> = {
+        let rows: Vec<(i64, String, String, Option<String>, i64)> = {
             let mut st = self.conn().prepare_cached(
-                "SELECT block_id, op, entry_id, seq FROM focus_block_outbox
-                 WHERE ?2 OR next_try IS NULL OR next_try <= ?1 ORDER BY block_id",
+                "SELECT id, marker, op, entry_id, seq FROM focus_block_outbox
+                 WHERE ?2 OR next_try IS NULL OR next_try <= ?1 ORDER BY id",
             )?;
-            st.query_map(params![ts(now), force], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            st.query_map(params![ts(now), force], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
                 .collect::<rusqlite::Result<_>>()?
         };
         let mut out = vec![];
-        for (block_id, op, entry_id, seq) in rows {
+        for (key, marker, op, entry_id, seq) in rows {
             if op == "delete" {
-                out.push(WriteOp { block_id, op, entry_id, subject: String::new(), start: None, end: None, seq });
+                out.push(WriteOp { key, marker, op, entry_id, subject: String::new(), start: None, end: None, seq });
                 continue;
             }
-            match self.block(block_id) {
-                Ok(b) => out.push(WriteOp {
-                    block_id,
+            let id: Option<i64> = self
+                .conn()
+                .query_row("SELECT id FROM focus_blocks WHERE marker = ?1", [&marker], |r| r.get(0))
+                .optional()?;
+            match id.map(|id| self.block(id)).transpose()? {
+                Some(b) => out.push(WriteOp {
+                    key,
+                    marker,
                     op,
                     entry_id: b.outlook_entry_id.clone(),
                     subject: outlook_subject(&b.title),
@@ -532,9 +569,9 @@ impl Database {
                     end: Some(zone.to_wall(b.end)),
                     seq,
                 }),
-                // Gone meanwhile without an appointment: nothing to write.
-                Err(_) => {
-                    self.conn().execute("DELETE FROM focus_block_outbox WHERE block_id = ?1", [block_id])?;
+                // Gone meanwhile (its delete, if one is needed, is queued separately).
+                None => {
+                    self.conn().execute("DELETE FROM focus_block_outbox WHERE id = ?1", [key])?;
                 }
             }
         }
@@ -543,7 +580,7 @@ impl Database {
 
     /// Stores what the bridge did with `ops`: the appointment ids of the blocks, done writes
     /// leave the queue (unless the block changed again meanwhile), failed ones wait for their
-    /// next try.
+    /// next try. An appointment written for a block deleted meanwhile is deleted again.
     pub fn block_outbox_apply(
         &self,
         ops: &[WriteOp],
@@ -551,17 +588,17 @@ impl Database {
         now: DateTime<Utc>,
     ) -> Result<()> {
         self.atomic(|| {
-            let fail = |block_id: i64, seq: i64, msg: &str| -> Result<()> {
+            let fail = |op: &WriteOp, msg: &str| -> Result<()> {
                 let attempts: i64 = self
                     .conn()
-                    .query_row("SELECT attempts FROM focus_block_outbox WHERE block_id = ?1", [block_id], |r| r.get(0))
+                    .query_row("SELECT attempts FROM focus_block_outbox WHERE id = ?1", [op.key], |r| r.get(0))
                     .optional()?
                     .unwrap_or(0);
                 let next = now + Duration::minutes(retry_minutes(attempts));
                 self.conn().execute(
                     "UPDATE focus_block_outbox SET attempts = attempts + 1, next_try = ?3, error = ?4
-                     WHERE block_id = ?1 AND seq = ?2",
-                    params![block_id, seq, ts(next), msg],
+                     WHERE id = ?1 AND seq = ?2",
+                    params![op.key, op.seq, ts(next), msg],
                 )?;
                 Ok(())
             };
@@ -569,30 +606,35 @@ impl Database {
                 Err(e) => {
                     let msg = e.to_string();
                     for op in ops {
-                        fail(op.block_id, op.seq, &msg)?;
+                        fail(op, &msg)?;
                     }
                 }
                 Ok(results) => {
                     for op in ops {
-                        let Some(r) = results.iter().find(|r| r.block_id == op.block_id) else {
-                            fail(op.block_id, op.seq, tr!("Outlook hat nicht geantwortet", "Outlook did not answer"))?;
+                        let Some(r) = results.iter().find(|r| r.key == op.key) else {
+                            fail(op, tr!("Outlook hat nicht geantwortet", "Outlook did not answer"))?;
                             continue;
                         };
                         if !r.ok {
-                            fail(op.block_id, op.seq, r.error.as_deref().unwrap_or(""))?;
+                            fail(op, r.error.as_deref().unwrap_or(""))?;
                             continue;
                         }
                         if op.op == "upsert" {
+                            // An answer without ids keeps the stored ones.
                             let entry = r.entry_id.clone().filter(|e| !e.is_empty());
                             let uid = r.global_id.clone().filter(|g| !g.is_empty()).or_else(|| entry.clone());
-                            self.conn().execute(
-                                "UPDATE focus_blocks SET outlook_entry_id = ?2, outlook_uid = ?3 WHERE id = ?1",
-                                params![op.block_id, entry, uid],
+                            let stored = self.conn().execute(
+                                "UPDATE focus_blocks SET outlook_entry_id = COALESCE(?2, outlook_entry_id),
+                                   outlook_uid = COALESCE(?3, outlook_uid) WHERE marker = ?1",
+                                params![op.marker, entry, uid],
                             )?;
+                            if stored == 0 {
+                                self.block_enqueue_delete(&op.marker, entry.as_deref(), uid.as_deref())?;
+                            }
                         }
                         self.conn().execute(
-                            "DELETE FROM focus_block_outbox WHERE block_id = ?1 AND seq = ?2",
-                            params![op.block_id, op.seq],
+                            "DELETE FROM focus_block_outbox WHERE id = ?1 AND seq = ?2",
+                            params![op.key, op.seq],
                         )?;
                     }
                 }

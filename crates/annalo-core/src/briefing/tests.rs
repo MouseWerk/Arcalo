@@ -133,10 +133,32 @@ fn first_start_of_the_day() {
 #[test]
 fn the_last_workday_skips_the_weekend() {
     let s = settings();
-    assert_eq!(last_workday(&s, day(2026, 10, 5)), Some(day(2026, 10, 2)), "Monday → Friday");
-    assert_eq!(last_workday(&s, day(2026, 10, 2)), Some(day(2026, 10, 1)));
+    assert_eq!(last_workday(&s, day(2026, 10, 5), &[], &[]), Some(day(2026, 10, 2)), "Monday → Friday");
+    assert_eq!(last_workday(&s, day(2026, 10, 2), &[], &[]), Some(day(2026, 10, 1)));
     let none = Settings { workdays: vec![], ..settings() };
-    assert_eq!(last_workday(&none, day(2026, 10, 2)), None);
+    assert_eq!(last_workday(&none, day(2026, 10, 2), &[], &[]), None);
+}
+
+#[test]
+fn the_last_workday_skips_holidays_absences_and_days_without_hours() {
+    let s = settings();
+    // Tuesday after Easter: Easter Monday and Good Friday are holidays → Thursday.
+    let holidays = crate::worktime::holidays_between(day(2026, 3, 20), day(2026, 4, 7), "BY");
+    assert_eq!(last_workday(&s, day(2026, 4, 7), &holidays, &[]), Some(day(2026, 4, 2)));
+    // A full vacation day is skipped, a half one is not.
+    let off = |d: NaiveDate, half: bool| crate::worktime::Absence {
+        date: d,
+        kind: crate::worktime::AbsenceKind::Vacation,
+        half,
+        note: String::new(),
+    };
+    assert_eq!(last_workday(&s, day(2026, 10, 2), &[], &[off(day(2026, 10, 1), false)]), Some(day(2026, 9, 30)));
+    assert_eq!(last_workday(&s, day(2026, 10, 2), &[], &[off(day(2026, 10, 1), true)]), Some(day(2026, 10, 1)));
+    // Per-weekday hours decide (Friday without hours), for the briefing day as well.
+    let mut h = settings();
+    h.time.balance.weekday_hours = vec![8.0, 8.0, 8.0, 8.0, 0.0, 0.0, 0.0];
+    assert_eq!(last_workday(&h, day(2026, 10, 5), &[], &[]), Some(day(2026, 10, 1)));
+    assert!(!briefing_day(&h, day(2026, 10, 2), &[], None));
 }
 
 #[test]

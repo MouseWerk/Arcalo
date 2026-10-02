@@ -292,6 +292,14 @@ export function countdown(date: string, today: string): { text: string; tone: "o
   return { text: t("work.dl.inDays", { n }), tone: n <= 3 ? "soon" : "later" };
 }
 
+/**
+ * When a day is, after its label (`dayText`: „Morgen“ or „Fr., 03.10.“): the countdown only
+ * next to a date, so „Morgen“ is not followed by „morgen“.
+ */
+export function dayWithCountdown(date: string, today: string, dayText: string): string {
+  return daysUntil(date, today) <= 1 ? dayText : `${dayText} · ${countdown(date, today).text}`;
+}
+
 export const PRESENCE_LABEL: Record<Presence, TKey> = {
   free: "work.team.free",
   tentative: "work.team.tentative",

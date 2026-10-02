@@ -681,7 +681,8 @@ const KEEP_UNMATCHED_DAYS: i64 = 30;
 impl Database {
     /// Stores a sync of `site`: found issues are written (with their searches), cached issues
     /// that no search found any more keep their row without searches, rows not seen for 30 days
-    /// go, and the projects of the site's issues are kept for key detection.
+    /// go, and the projects of the site's issues are kept for key detection. A saved search
+    /// that failed this time keeps the issues it found last time (its widget does not empty).
     pub fn issues_store(&self, site: &str, fetched: &Fetched, now: DateTime<Utc>) -> Result<StoreOutcome> {
         self.atomic(|| {
             let mut out = StoreOutcome::default();
@@ -689,12 +690,40 @@ impl Database {
                 let mut st = self.conn().prepare("SELECT key, status_category FROM issues WHERE site = ?1")?;
                 st.query_map([site], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
             };
+            let failed: HashSet<&str> = fetched.failed.iter().map(|(id, _)| id.as_str()).collect();
+            let kept: HashMap<String, Vec<String>> = if failed.is_empty() {
+                HashMap::new()
+            } else {
+                let mut st = self.conn().prepare("SELECT key, matches FROM issues WHERE site = ?1")?;
+                let rows: Vec<(String, String)> =
+                    st.query_map([site], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+                rows.into_iter()
+                    .map(|(k, m)| {
+                        let m: Vec<String> = serde_json::from_str(&m).unwrap_or_default();
+                        (k, m.into_iter().filter(|id| failed.contains(id.as_str())).collect::<Vec<_>>())
+                    })
+                    .filter(|(_, m)| !m.is_empty())
+                    .collect()
+            };
             self.conn().execute("UPDATE issues SET matches = '[]' WHERE site = ?1", [site])?;
+            for (key, m) in &kept {
+                self.conn().execute(
+                    "UPDATE issues SET matches = ?3 WHERE site = ?1 AND key = ?2",
+                    params![site, key, serde_json::to_string(m)?],
+                )?;
+            }
             for issue in fetched.issues.values() {
                 if issue.done() && before.get(&issue.key).is_some_and(|c| c != "done") {
                     out.newly_done.push(issue.key.clone());
                 }
-                self.issue_put(site, issue, now)?;
+                match kept.get(&issue.key) {
+                    Some(old) if !issue.matches.is_empty() => {
+                        let mut i = issue.clone();
+                        i.matches.extend(old.iter().filter(|id| !issue.matches.contains(id)).cloned());
+                        self.issue_put(site, &i, now)?;
+                    }
+                    _ => self.issue_put(site, issue, now)?,
+                }
             }
             out.issues = fetched.issues.values().filter(|i| !i.matches.is_empty()).count();
             self.conn().execute(
@@ -811,6 +840,16 @@ impl Database {
             }
             Ok(())
         })
+    }
+
+    /// Worklogs of `site` still waiting are not posted any more (its „Arbeitszeit in Jira
+    /// buchen“ was switched off): switching it on again later does not post old bookings.
+    pub fn worklogs_cancel_site(&self, site: &str) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE time_entry_issues SET worklog_state = 'none', error = NULL, next_try = NULL
+             WHERE site = ?1 AND worklog_id IS NULL AND worklog_state IN ('pending', 'failed')",
+            [site],
+        )?)
     }
 
     /// Records the outcome of a sync of `site` (or only the attempt, with `Err`).

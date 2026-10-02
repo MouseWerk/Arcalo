@@ -19,7 +19,7 @@ import { hiddenCalendars, useHiddenCalendars } from "../lib/calvisibility";
 import { openTimesheetDay } from "../lib/reviewnav";
 import { requestWeekProposal } from "../lib/weekplan";
 import { hm, hours } from "../lib/dayreview";
-import { briefingCounts, briefingSettings, shows } from "../lib/briefing";
+import { briefingCounts, briefingSettings, missingLabel, shows } from "../lib/briefing";
 import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
 import { useTimeTracking } from "../lib/timetracking";
 import { renderMarkdown } from "../lib/markdown";
@@ -214,10 +214,10 @@ function Overview({ b }: { b: Briefing }) {
   if (shows(b, "meetings")) items.push({ id: "meetings", value: String(c.upcoming), label: t("brief.ov.meetings", { n: c.meetings }) });
   if (shows(b, "tasks")) items.push({ id: "tasks", value: String(c.tasks), label: c.overdue ? t("brief.ov.overdue", { n: c.overdue }) : t("brief.ov.tasks") });
   if (shows(b, "jira") && b.jira) items.push({ id: "jira", value: String(c.jira), label: b.jira.blocked_total ? t("brief.ov.blocked", { n: b.jira.blocked_total }) : t("brief.ov.jira") });
-  if (shows(b, "time") && b.time) items.push({ id: "time", value: hours(c.missing), label: t("brief.ov.missing") });
+  if (shows(b, "time") && b.time) items.push({ id: "time", value: hours(c.missing), label: missingLabel(b) });
   if (!items.length) return null;
   return (
-    <section className="bf-overview" aria-label={t("review.overview")}>
+    <section className="bf-overview" data-n={items.length} aria-label={t("review.overview")}>
       {items.map((x) => {
         const Icon = SECTION_ICON[x.id];
         return (

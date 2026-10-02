@@ -77,6 +77,13 @@ pub fn page_title(local: chrono::NaiveDateTime) -> String {
     trf!("Sprachnotiz {when}", "Voice note {when}")
 }
 
+/// Name of the audio file (without extension), the page title's date with file-safe `-` in the
+/// time: „Sprachnotiz 01.10.2026 14-30“.
+pub fn audio_base(local: chrono::NaiveDateTime) -> String {
+    let when = local.format("%d.%m.%Y %H-%M");
+    trf!("Sprachnotiz {when}", "Voice note {when}")
+}
+
 /// The status line of a block whose transcript is still being written; `token` makes it unique
 /// on the page so [`finish_block`] finds exactly this one.
 pub fn pending_line(token: &str) -> String {
@@ -235,6 +242,7 @@ mod tests {
     fn pending_block_is_replaced_by_the_transcript() {
         {
             assert_eq!(page_title(at()), "Sprachnotiz 01.10.2026 14:30");
+            assert_eq!(audio_base(at()), "Sprachnotiz 01.10.2026 14-30", "the title's date, file-safe");
             let block = pending_block(at(), Some("Sprachnotiz.flac"), "a1");
             assert_eq!(block, "## Sprachnotiz 14:30\n\n![[Sprachnotiz.flac]]\n\n*Transkription läuft … (a1)*\n");
             let page = append_block("# Jour fixe\n\nNotizen\n\n", &block);
