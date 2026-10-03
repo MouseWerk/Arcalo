@@ -204,10 +204,24 @@ impl QuickLink {
         let u = self.url.trim();
         let lower = u.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("file://") {
-            let rest = &u[u.len() - rest.len()..];
-            // file:///C:/x → C:/x, file:///home/x → /home/x
-            let path = if rest.starts_with('/') && rest.as_bytes().get(2) == Some(&b':') { &rest[1..] } else { rest };
-            return LinkTarget::Path(path.replace("%20", " "));
+            let raw = &u[u.len() - rest.len()..];
+            // All escapes (`%C3%BC` is „ü“), not only spaces.
+            let rest = crate::attachments::percent_decode(raw).unwrap_or_else(|| raw.replace("%20", " "));
+            let drive = |s: &str| s.as_bytes().get(1) == Some(&b':') && s.as_bytes()[0].is_ascii_alphabetic();
+            let unc = |s: &str| format!("\\\\{}", s.trim_start_matches('/').replace('/', "\\"));
+            let local = rest.strip_prefix("localhost/").map(|p| format!("/{p}")).unwrap_or(rest);
+            let path = match local.strip_prefix('/') {
+                // file:///C:/x → C:/x
+                Some(p) if drive(p) => p.to_owned(),
+                // file:////server/share → \\server\share
+                Some(p) if p.starts_with('/') => unc(p),
+                // file:///home/x → /home/x
+                Some(_) => local.clone(),
+                // file://C:/x, and file://server/share/x → \\server\share\x (a host is a share)
+                None if drive(&local) || !local.contains('/') => local.clone(),
+                None => unc(&local),
+            };
+            return LinkTarget::Path(path);
         }
         let drive = u.len() > 2 && u.as_bytes()[1] == b':' && matches!(u.as_bytes()[2], b'\\' | b'/');
         if drive || u.starts_with("\\\\") || u.starts_with('/') || u.starts_with("~/") {
@@ -1260,6 +1274,12 @@ mod tests {
         // A multibyte character before the colon (used to panic on a byte-offset slice).
         assert_eq!(t("file://é:xy"), LinkTarget::Path("é:xy".into()));
         assert_eq!(t("file://C:/x"), LinkTarget::Path("C:/x".into()));
+        // Shares and escaped umlauts.
+        assert_eq!(t("file://server/share/Pl%C3%A4ne"), LinkTarget::Path("\\\\server\\share\\Pläne".into()));
+        assert_eq!(t("file:////server/share/x"), LinkTarget::Path("\\\\server\\share\\x".into()));
+        assert_eq!(t("file://localhost/C:/Daten"), LinkTarget::Path("C:/Daten".into()));
+        assert_eq!(t("file:///home/anna/M%C3%BCller"), LinkTarget::Path("/home/anna/Müller".into()));
+        assert_eq!(t("file:///C:/a%2"), LinkTarget::Path("C:/a%2".into()), "a broken escape stays");
     }
 
     #[test]

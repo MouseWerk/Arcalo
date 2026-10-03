@@ -708,6 +708,13 @@ impl Git {
             "core.fsmonitor=false",
             "-c",
             "advice.detachedHead=false",
+            // Git for Windows: notes deep in folders pass the 260 characters of a Windows
+            // path; other systems ignore the key.
+            "-c",
+            "core.longpaths=true",
+            // macOS: file names with umlauts as one character (NFC), as the other computers write them.
+            "-c",
+            "core.precomposeunicode=true",
         ]);
         cmd.args(args);
         if let Some(dir) = cwd {
@@ -1502,6 +1509,7 @@ mod tests {
         let cmd = git.command(None, &["ls-remote", "origin"]);
         let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert!(args.iter().all(|a| !a.contains("tok123") && !a.contains("Authorization")), "{args:?}");
+        assert!(args.windows(2).any(|w| w == ["-c", "core.longpaths=true"]), "long Windows paths: {args:?}");
         let envs: Vec<(String, String)> = cmd
             .get_envs()
             .filter_map(|(k, v)| Some((k.to_string_lossy().into_owned(), v?.to_string_lossy().into_owned())))
