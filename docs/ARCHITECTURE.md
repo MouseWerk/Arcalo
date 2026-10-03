@@ -65,7 +65,9 @@ text cards, no tasks. Rewrites (page or attachment renamed, import) replace sing
 (`canvas::rewrite_strings`), so unknown fields, order and formatting stay. Mirror, Git sync and vault import/export use
 `.canvas` files; the explicit vault export points note cards to the pages' current paths.
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
-and by `entry_id`.
+and by `entry_id`. Migration v30 adds `idx_pages_meta` (the page metadata without the content, id
+first) and `idx_tasks_open (done, due, page_id)` for large workspaces (see `docs/performance.md`).
+Read commands use three read-only connections (WAL), each with a 16 MB page cache.
 
 ## Data safety
 

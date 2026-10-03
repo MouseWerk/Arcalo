@@ -199,7 +199,9 @@ const SUFFIXES: &[&str] = &["ern", "ens", "en", "er", "es", "ns", "e", "n", "s"]
 /// Whether `term` (lower case) is too short or too common to be suggested.
 pub fn is_common(term: &str) -> bool {
     let t = term.trim();
-    t.chars().count() < MIN_TERM_CHARS || !t.chars().any(char::is_alphabetic) || STOPWORDS.contains(&t)
+    static SET: std::sync::LazyLock<HashSet<&'static str>> =
+        std::sync::LazyLock::new(|| STOPWORDS.iter().copied().collect());
+    t.chars().count() < MIN_TERM_CHARS || !t.chars().any(char::is_alphabetic) || SET.contains(t)
 }
 
 fn is_word(c: char) -> bool {
@@ -424,6 +426,9 @@ struct Term {
     chars: usize,
 }
 
+/// The full title index of a connection and the database state it was built from.
+pub(crate) type MentionCache = std::cell::RefCell<Option<((i64, u64), std::sync::Arc<TitleIndex>)>>;
+
 /// All terms by their first word (lower case), longest first.
 #[derive(Debug, Default)]
 pub struct TitleIndex {
@@ -432,7 +437,12 @@ pub struct TitleIndex {
 }
 
 fn normalize_term(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    // Most titles have single spaces only: lower-case them directly.
+    let single = !s.starts_with(' ')
+        && !s.ends_with(' ')
+        && !s.contains("  ")
+        && !s.contains(|c: char| c.is_whitespace() && c != ' ');
+    if single { s.to_lowercase() } else { s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase() }
 }
 
 impl TitleIndex {
@@ -707,20 +717,41 @@ impl Database {
     }
 
     /// Titles and aliases of the pages outside the trash (all of them, or one page's).
+    /// The index of every page title, reused while the database is unchanged: `data_version`
+    /// moves with commits of other connections, `total_changes` with this one's writes.
+    fn full_mention_index(&self) -> Result<std::sync::Arc<TitleIndex>> {
+        let version: i64 = self.conn().pragma_query_value(None, "data_version", |r| r.get(0))?;
+        let state = (version, self.conn().total_changes());
+        if let Some((at, index)) = &*self.mention_cache.borrow()
+            && *at == state
+        {
+            return Ok(index.clone());
+        }
+        let index = std::sync::Arc::new(self.mention_index(None)?);
+        *self.mention_cache.borrow_mut() = Some((state, index.clone()));
+        Ok(index)
+    }
+
     fn mention_index(&self, only: Option<i64>) -> Result<TitleIndex> {
         let conn = self.conn();
         let mut aliases: HashMap<i64, Vec<String>> = HashMap::new();
         {
-            let mut st =
-                conn.prepare_cached("SELECT page_id, alias FROM page_aliases WHERE ?1 IS NULL OR page_id = ?1")?;
+            // One page by its key (`?1 IS NULL OR …` would read every row).
+            let mut st = conn.prepare_cached(if only.is_some() {
+                "SELECT page_id, alias FROM page_aliases WHERE page_id = ?1"
+            } else {
+                "SELECT page_id, alias FROM page_aliases WHERE ?1 IS NULL"
+            })?;
             for row in st.query_map([only], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
                 let (id, a) = row?;
                 aliases.entry(id).or_default().push(a);
             }
         }
-        let mut st = conn.prepare_cached(
-            "SELECT id, title FROM pages WHERE deleted_at IS NULL AND (?1 IS NULL OR id = ?1) AND daily_date IS NULL",
-        )?;
+        let mut st = conn.prepare_cached(if only.is_some() {
+            "SELECT id, title FROM pages WHERE id = ?1 AND deleted_at IS NULL AND daily_date IS NULL"
+        } else {
+            "SELECT id, title FROM pages WHERE ?1 IS NULL AND deleted_at IS NULL AND daily_date IS NULL"
+        })?;
         let pages: Vec<(i64, String)> =
             st.query_map([only], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
         Ok(title_index(pages.iter().map(|(id, t)| (*id, t.as_str(), aliases.remove(id).unwrap_or_default()))))
@@ -745,7 +776,7 @@ impl Database {
         let content = self.content_of(page_id)?;
         let linked: HashSet<String> = crate::notes::wiki_links(&content).iter().map(|l| l.to_lowercase()).collect();
         let ignored = self.mention_ignores(page_id)?;
-        let index = self.mention_index(None)?;
+        let index = self.full_mention_index()?;
         let mut groups: Vec<MentionGroup> = vec![];
         for m in find_mentions(&content, &index, Some(page_id)) {
             let title = m.title.to_lowercase();
@@ -797,6 +828,12 @@ impl Database {
         let mut linking = conn.prepare_cached("SELECT target FROM page_links WHERE from_page = ?1")?;
         let mut out = vec![];
         for (id, src_title, icon) in sources {
+            // The full-text hits are by word prefix: most have no exact mention, so the text is
+            // matched first and the links and ignored terms are read only for pages that have one.
+            let found = find_mentions(&self.content_of(id)?, &index, None);
+            if found.is_empty() {
+                continue;
+            }
             let links: HashSet<String> = linking.query_map([id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
             if links.contains(&lower_title) || terms.iter().any(|t| links.contains(t)) {
                 continue;
@@ -805,10 +842,8 @@ impl Database {
             if ignored.contains(&lower_title) {
                 continue;
             }
-            let mentions: Vec<Mention> = find_mentions(&self.content_of(id)?, &index, None)
-                .into_iter()
-                .filter(|m| !ignored.contains(&normalize_term(&m.text)))
-                .collect();
+            let mentions: Vec<Mention> =
+                found.into_iter().filter(|m| !ignored.contains(&normalize_term(&m.text))).collect();
             if !mentions.is_empty() {
                 out.push(MentionGroup { page_id: id, title: src_title, icon, mentions });
             }
@@ -982,6 +1017,21 @@ mod tests {
         assert_eq!(r.incoming[0].mentions[0].text, "ArcDesk");
         db.link_mentions(s.id, p.id, None).unwrap();
         assert_eq!(db.content_of(s.id).unwrap(), "Heute [[Arcalo Desktop|ArcDesk]] gebaut.");
+    }
+
+    #[test]
+    fn reused_title_index_follows_new_and_renamed_pages() {
+        let db = Database::open_in_memory().unwrap();
+        let src = db.create_page(None, "Besprechung", None).unwrap();
+        db.save_page_content(src.id, "Wir reden über Brückenbau und den Kundenserver.").unwrap();
+        let titles = |db: &Database| -> Vec<String> {
+            db.unlinked_mentions(src.id).unwrap().outgoing.into_iter().map(|g| g.title).collect()
+        };
+        assert!(titles(&db).is_empty());
+        let page = db.create_page(None, "Brückenbau", None).unwrap();
+        assert_eq!(titles(&db), ["Brückenbau"]);
+        db.rename_page(page.id, "Kundenserver").unwrap();
+        assert_eq!(titles(&db), ["Kundenserver"]);
     }
 
     #[test]

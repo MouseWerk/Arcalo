@@ -73,6 +73,8 @@ export function App() {
         await s.refreshTree();
         s.openPage(p.id);
       } else if (open === "dashboard") s.openTab({ kind: "home" });
+      // The benchmark (docs/performance.md) reads the time to interactive from this mark.
+      performance.mark("arcalo-ready");
       document.body.classList.add("ready");
       // Settings → Briefing: the first start of a workday opens it (or notifies).
       if (!useApp.getState().onboarding) void startBriefing();

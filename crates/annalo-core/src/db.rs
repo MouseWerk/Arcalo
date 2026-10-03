@@ -44,6 +44,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0026_link_suggestions.sql"),
     include_str!("../migrations/0027_move_undo_target.sql"),
     include_str!("../migrations/0029_table_links.sql"),
+    include_str!("../migrations/0030_perf_indexes.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -93,6 +94,11 @@ fn check_not_newer(version: usize) -> Result<()> {
     Ok(())
 }
 
+/// Page cache per connection (default 2 MiB). An encrypted workspace decrypts every page it
+/// reads from the file again; with the default, large workspaces kept re-reading their indexes.
+/// Pages are cached only as they are read, so a small workspace stays small.
+const CACHE_PRAGMA: &str = "PRAGMA cache_size = -16384;";
+
 pub struct Database {
     conn: Connection,
     /// Nesting depth of [`Database::atomic`] (0: no savepoint of ours is open).
@@ -100,6 +106,9 @@ pub struct Database {
     /// The stored settings JSON and what it parsed to: a save reads the settings (version
     /// policy), and parsing them each time costs more than the save itself for small pages.
     pub(crate) settings_cache: std::cell::RefCell<Option<(String, crate::settings::Parsed)>>,
+    /// The title index of the unlinked mentions and the state of the database it was built
+    /// from (see `mentions.rs`): page switches without a write in between reuse it.
+    pub(crate) mention_cache: crate::mentions::MentionCache,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {
@@ -170,7 +179,13 @@ impl Database {
              PRAGMA foreign_keys = ON;
              PRAGMA temp_store = MEMORY;",
         )?;
-        let mut db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
+        conn.execute_batch(CACHE_PRAGMA)?;
+        let mut db = Database {
+            conn,
+            depth: Default::default(),
+            settings_cache: Default::default(),
+            mention_cache: Default::default(),
+        };
         db.migrate()?;
         Ok(db)
     }
@@ -186,7 +201,13 @@ impl Database {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
-        let db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
+        conn.execute_batch(CACHE_PRAGMA)?;
+        let db = Database {
+            conn,
+            depth: Default::default(),
+            settings_cache: Default::default(),
+            mention_cache: Default::default(),
+        };
         if db.schema_version()? != MIGRATIONS.len() {
             return Err(Error::State(
                 tr!("Die Datenbank ist noch nicht auf dem aktuellen Stand", "The database is not up to date yet")

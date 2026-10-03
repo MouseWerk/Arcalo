@@ -623,7 +623,12 @@ impl Database {
     pub fn tag_counts(&self) -> Result<Vec<(String, i64)>> {
         let mut st = self
             .conn()
-            .prepare_cached("SELECT tag, COUNT(*) FROM page_tags JOIN pages p ON p.id = page_id WHERE p.deleted_at IS NULL GROUP BY tag ORDER BY COUNT(*) DESC, tag")?;
+            // Trashed pages by their (small) index rather than a page row per tag.
+            .prepare_cached(
+                "SELECT tag, COUNT(*) FROM page_tags
+                 WHERE page_id NOT IN (SELECT id FROM pages WHERE deleted_at IS NOT NULL)
+                 GROUP BY tag ORDER BY COUNT(*) DESC, tag",
+            )?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
         Ok(rows)
     }

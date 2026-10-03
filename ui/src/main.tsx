@@ -25,7 +25,7 @@ import { splashShown, startSplash } from "./lib/splash";
 import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
 import { describeError, logUi } from "./lib/devlog";
-import { followLocale } from "./lib/prefs";
+import { applyBootAppearance, followLocale } from "./lib/prefs";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -62,7 +62,10 @@ console.error = (...args: unknown[]) => {
 // Follow the OS theme until settings are loaded.
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 // Windows 11: the window can have a Mica or Acrylic backdrop that the app lets show through.
-if (!captureMode && !searchMode && !presenterMode && !keygateMode) initBackdrop();
+if (!captureMode && !searchMode && !presenterMode && !keygateMode) {
+  initBackdrop();
+  applyBootAppearance();
+}
 // Windows with the app's own title bar: the tab bar is the title bar, window buttons top right.
 import("@tauri-apps/api/core")
   .then(({ invoke }) => invoke<boolean>("window_frame"))

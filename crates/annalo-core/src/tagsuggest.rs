@@ -175,7 +175,7 @@ impl Database {
         // Links in both directions, then pages that link the same pages.
         {
             let mut st = conn.prepare_cached(
-                "SELECT p.id FROM page_links l JOIN pages p ON lower(p.title) = l.target
+                "SELECT p.id FROM page_links l JOIN pages p ON p.title = l.target COLLATE NOCASE
                  WHERE l.from_page = ?1 AND p.deleted_at IS NULL
                  UNION SELECT l.from_page FROM page_links l JOIN pages p ON p.id = l.from_page
                  WHERE l.target = ?2 AND p.deleted_at IS NULL",
@@ -230,7 +230,11 @@ impl Database {
             }
         }
         let df: HashMap<String, i64> = self.tag_counts()?.into_iter().collect();
-        let total: i64 = conn.query_row("SELECT count(*) FROM pages WHERE deleted_at IS NULL", [], |r| r.get(0))?;
+        let total: i64 = conn.query_row(
+            "SELECT (SELECT count(*) FROM pages) - (SELECT count(*) FROM pages WHERE deleted_at IS NOT NULL)",
+            [],
+            |r| r.get(0),
+        )?;
         Ok(rank_tags(&neighbours, &tags_of, &df, total, &exclude))
     }
 

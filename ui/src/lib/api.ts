@@ -439,8 +439,46 @@ export const api = {
   appendToPage: (pageId: number, markdown: string) => call<void>("page_append", { pageId, markdown }),
 };
 
+// One listener in the shell per event name, shared by every `on` of that event: each listen and
+// unlisten is an IPC call through the main thread, and a page switch subscribed and dropped
+// dozens of them. Handlers run in the order they subscribed, as separate listeners did.
+type Hub = { handlers: { h: (payload: unknown) => void }[]; ready: Promise<UnlistenFn> };
+const hubs = new Map<string, Hub>();
+
 export function on<P>(event: string, handler: (payload: P) => void): Promise<UnlistenFn> {
-  return listen<P>(event, (e) => handler(e.payload));
+  let hub = hubs.get(event);
+  if (!hub) {
+    const handlers: Hub["handlers"] = [];
+    const ready = listen<unknown>(event, (e) => {
+      for (const x of [...handlers]) {
+        try {
+          x.h(e.payload);
+        } catch (err) {
+          // Like a listener of its own: the others still run, the error is still reported.
+          setTimeout(() => {
+            throw err;
+          });
+        }
+      }
+    });
+    hub = { handlers, ready };
+    hubs.set(event, hub);
+    ready.catch(() => hubs.get(event) === hub && hubs.delete(event));
+  }
+  const h = hub;
+  const entry = { h: handler as (payload: unknown) => void };
+  h.handlers.push(entry);
+  const drop = () => {
+    const i = h.handlers.indexOf(entry);
+    if (i >= 0) h.handlers.splice(i, 1);
+  };
+  return h.ready.then(
+    () => drop,
+    (err) => {
+      drop();
+      throw err;
+    },
+  );
 }
 
 /** URL of a stored attachment (served by the shell's `annalo-asset:` protocol); folders in `![[a/b.png]]` are ignored. */

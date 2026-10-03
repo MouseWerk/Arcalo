@@ -3,7 +3,7 @@
 //! `!` mittel). The `tasks` table is derived from page content on every save.
 
 use crate::{tr, trf};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use rusqlite::params;
@@ -93,6 +93,11 @@ const TEMPLATE_PAGES: &str = "WITH RECURSIVE tpl(id) AS (
                                  ORDER BY id LIMIT 1)
                  UNION ALL
                  SELECT p.id FROM pages p JOIN tpl ON p.parent_id = tpl.id)";
+
+/// Compares like SQLite's `COLLATE NOCASE`: bytes, ASCII letters folded.
+fn nocase_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    a.bytes().map(|c| c.to_ascii_lowercase()).cmp(b.bytes().map(|c| c.to_ascii_lowercase()))
+}
 
 /// `changed_since` as a UTC timestamp comparable with `pages.updated_at`.
 fn changed_since_ts<Tz: TimeZone>(s: &str, tz: &Tz) -> Result<String> {
@@ -257,12 +262,28 @@ impl Database {
                     COALESCE(SUM(t.due IS NOT NULL AND t.due < ?2), 0),
                     COALESCE(SUM(t.due = ?2), 0),
                     COALESCE(SUM(t.page_id = ?3), 0)
-             FROM tasks t JOIN pages p ON p.id = t.page_id
-             WHERE p.deleted_at IS NULL AND t.page_id NOT IN tpl AND t.done = 0"
+             FROM tasks t
+             WHERE t.page_id NOT IN (SELECT id FROM pages WHERE deleted_at IS NOT NULL)
+               AND t.page_id NOT IN tpl AND t.done = 0"
         ))?;
         Ok(st.query_row(params![self.templates_title()?, today, page_id], |r| {
             Ok(TaskCounts { open: r.get(0)?, overdue: r.get(1)?, due_today: r.get(2)?, on_page: r.get(3)? })
         })?)
+    }
+
+    /// Open tasks outside templates per due day in `from..=to` (`YYYY-MM-DD`), counted in
+    /// SQLite from the index (the Kalender and the week bars only need the numbers).
+    pub fn open_tasks_due_per_day(&self, from: &str, to: &str) -> Result<HashMap<String, i64>> {
+        let mut st = self.conn().prepare_cached(&format!(
+            "{TEMPLATE_PAGES}
+             SELECT t.due, COUNT(*) FROM tasks t
+             WHERE t.done = 0 AND t.due >= ?2 AND t.due <= ?3
+               AND t.page_id NOT IN (SELECT id FROM pages WHERE deleted_at IS NOT NULL)
+               AND t.page_id NOT IN tpl
+             GROUP BY t.due"
+        ))?;
+        let rows = st.query_map(params![self.templates_title()?, from, to], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Tasks of all pages: open first, then by due date (undated last), priority and page.
@@ -299,36 +320,69 @@ impl Database {
             conds.push("t.page_id = ?");
             args.push(page.into());
         }
-        if let Some(since) = since {
-            conds.push("p.updated_at >= ?");
-            args.push(since.into());
-        }
         let extra: String = conds.iter().map(|c| format!(" AND {c}")).collect();
+        // The tasks without their pages: joining each of thousands of tasks to its page row (the
+        // Markdown lives there) cost more than reading the live pages once from their index.
         let mut st = self.conn().prepare_cached(&format!(
             "{TEMPLATE_PAGES}
-             SELECT t.page_id, p.title, p.icon, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags
-             FROM tasks t JOIN pages p ON p.id = t.page_id
-             WHERE p.deleted_at IS NULL AND t.page_id NOT IN tpl{extra}
-             ORDER BY t.done, t.due IS NULL, t.due, t.priority DESC, p.title COLLATE NOCASE, t.page_id, t.ordinal"
+             SELECT t.page_id, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags
+             FROM tasks t WHERE t.page_id NOT IN tpl{extra}"
         ))?;
-        let rows = st
+        let rows: Vec<Task> = st
             .query_map(rusqlite::params_from_iter(args), |r| {
-                let tags: String = r.get(9)?;
+                let tags: String = r.get(7)?;
                 Ok(Task {
                     page_id: r.get(0)?,
-                    page_title: r.get(1)?,
-                    page_icon: r.get(2)?,
-                    ordinal: r.get(3)?,
-                    line: r.get(4)?,
-                    text: r.get(5)?,
-                    done: r.get(6)?,
-                    due: r.get(7)?,
-                    priority: r.get(8)?,
+                    page_title: String::new(),
+                    page_icon: None,
+                    ordinal: r.get(1)?,
+                    line: r.get(2)?,
+                    text: r.get(3)?,
+                    done: r.get(4)?,
+                    due: r.get(5)?,
+                    priority: r.get(6)?,
                     tags: tags.split_whitespace().map(str::to_owned).collect(),
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
-        Ok(rows)
+        // Title, icon and change time of the live pages (only the one page when filtered by it).
+        let mut pages: HashMap<i64, (String, Option<String>, String)> = HashMap::new();
+        {
+            let sql = if f.page_id.is_some() {
+                "SELECT id, title, icon, updated_at FROM pages WHERE deleted_at IS NULL AND id = ?1"
+            } else {
+                "SELECT id, title, icon, updated_at FROM pages WHERE deleted_at IS NULL AND ?1 IS NULL"
+            };
+            let mut st = self.conn().prepare_cached(sql)?;
+            for row in st.query_map([f.page_id], |r| Ok((r.get::<_, i64>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))? {
+                let (id, page) = row?;
+                pages.insert(id, page);
+            }
+        }
+        let mut out: Vec<Task> = rows
+            .into_iter()
+            .filter_map(|mut t| {
+                let (title, icon, updated) = pages.get(&t.page_id)?;
+                if since.as_deref().is_some_and(|s| updated.as_str() < s) {
+                    return None;
+                }
+                t.page_title = title.clone();
+                t.page_icon = icon.clone();
+                Some(t)
+            })
+            .collect();
+        // ORDER BY done, due IS NULL, due, priority DESC, page title COLLATE NOCASE, page, ordinal.
+        out.sort_by(|a, b| {
+            a.done
+                .cmp(&b.done)
+                .then(a.due.is_none().cmp(&b.due.is_none()))
+                .then_with(|| a.due.cmp(&b.due))
+                .then(b.priority.cmp(&a.priority))
+                .then_with(|| nocase_cmp(&a.page_title, &b.page_title))
+                .then(a.page_id.cmp(&b.page_id))
+                .then(a.ordinal.cmp(&b.ordinal))
+        });
+        Ok(out)
     }
 
     /// Checks or unchecks task `ordinal` of a page by rewriting exactly its
@@ -458,6 +512,45 @@ mod tests {
 
         db.delete_page(b.id).unwrap();
         assert_eq!(db.list_tasks(&TaskFilter::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn task_order_matches_the_sql_order() {
+        // The list is sorted in Rust since 1.11; it must keep the order the query had.
+        let db = Database::open_in_memory().unwrap();
+        let notes = [
+            ("beta", "- [ ] b1 due:2026-05-02\n- [x] b2\n- [ ] b3 !!\n- [ ] b4 due:2026-05-02 !"),
+            ("Alpha", "- [ ] a1 due:2026-05-02\n- [ ] a2\n- [x] a3 due:2026-01-01"),
+            ("alpha2", "- [ ] c1 due:2026-05-02 !\n- [ ] c2 due:2026-04-30"),
+            ("Ärger", "- [ ] d1\n- [ ] d2 due:2026-05-02"),
+            ("_Gelöscht", "- [ ] e1"),
+        ];
+        let mut ids = vec![];
+        for (title, md) in notes {
+            let p = db.create_page(None, title, None).unwrap();
+            db.save_page_content(p.id, md).unwrap();
+            ids.push(p.id);
+        }
+        db.trash_page(ids[4]).unwrap();
+        let expected: Vec<(i64, i64)> = db
+            .conn()
+            .prepare(
+                "SELECT t.page_id, t.ordinal FROM tasks t JOIN pages p ON p.id = t.page_id WHERE p.deleted_at IS NULL
+                 ORDER BY t.done, t.due IS NULL, t.due, t.priority DESC, p.title COLLATE NOCASE, t.page_id, t.ordinal",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let got: Vec<(i64, i64)> = db
+            .list_tasks(&TaskFilter { status: TaskStatus::All, ..Default::default() })
+            .unwrap()
+            .iter()
+            .map(|t| (t.page_id, t.ordinal))
+            .collect();
+        assert_eq!(got.len(), 11);
+        assert_eq!(got, expected);
     }
 
     #[test]

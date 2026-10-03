@@ -7,7 +7,7 @@ import { setFormatPrefs } from "./format";
 import { refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
 import { rememberSplash } from "./splash";
-import { applyThemeState } from "./themes";
+import { applyThemeState, STYLE_ID as THEME_STYLE } from "./themes";
 
 /** Applies appearance, language, formats and keymap. Safe to call repeatedly. */
 export function applyPrefs(s: Settings) {
@@ -40,6 +40,68 @@ export function applyPrefs(s: Settings) {
   refreshI18n();
   // Window backdrop (Windows 11): the effect, and the opacity live.
   setBackdropPrefs(a?.window_effect, a?.window_opacity);
+  rememberBootAppearance(s.theme);
+}
+
+// ------------------------------------------------------------------ the next start
+
+const BOOT_KEY = "arcalo.boot-appearance";
+const BOOT_DATA = ["density", "lineWidth", "editorFont", "uiFont", "codeFont", "reduceMotion", "theme", "themeId"] as const;
+let lastBoot = "";
+
+interface BootAppearance {
+  data: Partial<Record<(typeof BOOT_DATA)[number], string>>;
+  timeOff: boolean;
+  css: string;
+  /** The theme mode and whether it showed dark (a „System“ theme is reused only while the system agrees). */
+  mode: string;
+  dark: boolean;
+}
+
+/** What the document shows now, for the next start (written only when it changed). */
+function rememberBootAppearance(mode: string) {
+  const root = document.documentElement;
+  const data: BootAppearance["data"] = {};
+  for (const k of BOOT_DATA) if (root.dataset[k] != null) data[k] = root.dataset[k];
+  const boot: BootAppearance = { data, timeOff: root.hasAttribute("data-time-off"), css: document.getElementById(THEME_STYLE)?.textContent ?? "", mode, dark: root.dataset.theme === "dark" };
+  const text = JSON.stringify(boot);
+  if (text === lastBoot) return;
+  lastBoot = text;
+  try {
+    localStorage.setItem(BOOT_KEY, text);
+  } catch {
+    // Private mode or full storage: the next start applies the settings when they arrive.
+  }
+}
+
+/**
+ * Main window, before the first render: the appearance of the last start (density, fonts, theme
+ * and its colors). When the settings arrive they match, so the document is not restyled as a
+ * whole while the first views render (a full restyle of the app costs a frame of 100 ms and more).
+ */
+export function applyBootAppearance() {
+  try {
+    const text = localStorage.getItem(BOOT_KEY);
+    const boot = text ? (JSON.parse(text) as BootAppearance) : null;
+    if (!boot || typeof boot !== "object" || !boot.data) return;
+    const root = document.documentElement;
+    const themeOk = boot.mode !== "system" || window.matchMedia("(prefers-color-scheme: dark)").matches === boot.dark;
+    for (const k of BOOT_DATA) {
+      const v = boot.data[k];
+      if (typeof v !== "string" || (!themeOk && (k === "theme" || k === "themeId"))) continue;
+      root.dataset[k] = v;
+    }
+    root.toggleAttribute("data-time-off", boot.timeOff === true);
+    if (themeOk && typeof boot.css === "string" && !document.getElementById(THEME_STYLE)) {
+      const style = document.createElement("style");
+      style.id = THEME_STYLE;
+      style.textContent = boot.css;
+      document.head.appendChild(style);
+    }
+    lastBoot = text ?? "";
+  } catch {
+    // Nothing remembered: the settings apply when they arrive.
+  }
 }
 /** Display language and regional formats (also in the small windows). */
 export function applyLocale(s: Settings) {

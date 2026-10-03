@@ -19,8 +19,14 @@ import { openSettingsSection } from "../lib/calnav";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { useTimeTracking } from "../lib/timetracking";
 import { openPlanPicker, setPlanData } from "../lib/blocks";
+import { useGroupWindow } from "../lib/groupWindow";
 
 const PREF = "annalo.issues.view";
+/** From this many issues on, only the rows in view are rendered. */
+const VIRTUAL_ISSUES = 300;
+/** Height of a closed row (with the list's gap) before it was measured. */
+const ROW_ESTIMATE = 39;
+const rowKey = (el: HTMLElement) => el.dataset.issueKey ?? "";
 interface ViewPref {
   group: GroupBy;
   search: string;
@@ -112,6 +118,7 @@ export function IssuesView() {
   const lastSync = sites.map((x) => x.sync?.synced_at).filter(Boolean).sort().pop() ?? null;
   const failing = sites.filter((x) => x.enabled && x.sync?.error);
   const anySyncing = syncing || sites.some((x) => x.syncing);
+  const { scroller, listRef, windowOf } = useGroupWindow(shown.length > VIRTUAL_ISSUES, ".issue-row[data-issue-key]", rowKey, ROW_ESTIMATE);
 
   if (status && sites.length === 0)
     return (
@@ -144,7 +151,7 @@ export function IssuesView() {
     ) : null;
 
   return (
-    <div className="view-scroll">
+    <div className="view-scroll" ref={scroller}>
       <div className="view issues-view">
         <header className="view-header">
           <div>
@@ -217,39 +224,48 @@ export function IssuesView() {
                   <span>{g.label}</span> <span className="faint">{g.issues.length}</span>
                 </h2>
               )}
-              <ul className="issues-list">
-                {g.issues.map((i) => (
-                  <li key={`${i.site}:${i.key}`} className={`issue-row ${open === i.key ? "open" : ""} ${i.status_category === "done" ? "done" : ""}`} data-issue-row={i.key} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })}>
-                    <div
-                      className="issue-row-main"
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={open === i.key}
-                      onClick={() => setOpen(open === i.key ? null : i.key)}
-                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(open === i.key ? null : i.key))}
-                      onContextMenu={(e) => openMenuAt(e, issueMenu(i))}
-                    >
-                      {sites.length > 1 && <span className="issues-site-dot" style={{ background: siteColor(i.site) }} title={siteName(i.site)} aria-hidden />}
-                      <TypeIcon type={i.issue_type} />
-                      <span className="issue-key mono">{i.key}</span>
-                      <span className="issue-summary ellipsis">{i.summary}</span>
-                      <span className="issue-meta">
-                        {i.sprint && pref.group !== "sprint" && <span className="issue-sprint faint ellipsis">{i.sprint}</span>}
-                        {i.priority && <span className={`issue-prio ${priorityClass(i)}`}>{i.priority}</span>}
-                        {i.due_date && <span className={`issue-due ${overdue(i, today) ? "overdue" : ""}`}>{fmtDate(i.due_date)}</span>}
-                        {i.assignee && <span className="issue-assignee ellipsis" title={i.assignee}>{i.assignee}</span>}
-                        <StatusPill issue={i} />
-                      </span>
-                    </div>
-                    <span className="issue-actions">
-                      <IconButton icon={ExternalLink} size="sm" label={t("jira.openBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />
-                      <IconButton icon={FileText} size="sm" label={t("jira.openNote")} onClick={(e) => void openIssueNote(i.key, { newTab: e.ctrlKey || e.metaKey })} />
-                      <IconButton icon={Copy} size="sm" label={t("jira.copyKey")} onClick={() => void copyIssueKey(i.key)} />
-                      <IconButton icon={MoreHorizontal} size="sm" label={t("jira.more", { key: i.key })} onClick={(e) => openMenuAt(e, issueMenu(i))} />
-                    </span>
-                    {open === i.key && <IssueDetail issue={i} />}
-                  </li>
-                ))}
+              <ul className="issues-list" ref={listRef(g.id)}>
+                {(() => {
+                  const w = windowOf(g.id, g.issues.map((i) => `${i.site}:${i.key}`), g === groups[0]);
+                  return (
+                    <>
+                      {w.before > 0 && <li className="issue-spacer" aria-hidden style={{ height: w.before }} />}
+                      {g.issues.slice(w.from, w.to).map((i) => (
+                        <li key={`${i.site}:${i.key}`} className={`issue-row ${open === i.key ? "open" : ""} ${i.status_category === "done" ? "done" : ""}`} data-issue-row={i.key} data-issue-key={`${i.site}:${i.key}`} draggable onDragStart={(e) => setPlanData(e.dataTransfer, { kind: "issue", key: i.key, summary: i.summary })}>
+                          <div
+                            className="issue-row-main"
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={open === i.key}
+                            onClick={() => setOpen(open === i.key ? null : i.key)}
+                            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(open === i.key ? null : i.key))}
+                            onContextMenu={(e) => openMenuAt(e, issueMenu(i))}
+                          >
+                            {sites.length > 1 && <span className="issues-site-dot" style={{ background: siteColor(i.site) }} title={siteName(i.site)} aria-hidden />}
+                            <TypeIcon type={i.issue_type} />
+                            <span className="issue-key mono">{i.key}</span>
+                            <span className="issue-summary ellipsis">{i.summary}</span>
+                            <span className="issue-meta">
+                              {i.sprint && pref.group !== "sprint" && <span className="issue-sprint faint ellipsis">{i.sprint}</span>}
+                              {i.priority && <span className={`issue-prio ${priorityClass(i)}`}>{i.priority}</span>}
+                              {i.due_date && <span className={`issue-due ${overdue(i, today) ? "overdue" : ""}`}>{fmtDate(i.due_date)}</span>}
+                              {i.assignee && <span className="issue-assignee ellipsis" title={i.assignee}>{i.assignee}</span>}
+                              <StatusPill issue={i} />
+                            </span>
+                          </div>
+                          <span className="issue-actions">
+                            <IconButton icon={ExternalLink} size="sm" label={t("jira.openBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />
+                            <IconButton icon={FileText} size="sm" label={t("jira.openNote")} onClick={(e) => void openIssueNote(i.key, { newTab: e.ctrlKey || e.metaKey })} />
+                            <IconButton icon={Copy} size="sm" label={t("jira.copyKey")} onClick={() => void copyIssueKey(i.key)} />
+                            <IconButton icon={MoreHorizontal} size="sm" label={t("jira.more", { key: i.key })} onClick={(e) => openMenuAt(e, issueMenu(i))} />
+                          </span>
+                          {open === i.key && <IssueDetail issue={i} />}
+                        </li>
+                      ))}
+                      {w.after > 0 && <li className="issue-spacer" aria-hidden style={{ height: w.after }} />}
+                    </>
+                  );
+                })()}
               </ul>
             </section>
           ))

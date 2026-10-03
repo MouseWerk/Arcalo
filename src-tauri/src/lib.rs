@@ -45,7 +45,7 @@ mod worktime;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
@@ -190,10 +190,13 @@ type ModelList = (Instant, Option<Vec<String>>);
 
 pub struct AppState {
     db: Mutex<Database>,
-    /// Read-only second connection for commands that only read (WAL: they see the last
-    /// committed state and neither wait for a save nor hold one up). `None` when it could not
-    /// be opened; reads then use `db`. Never held while taking `db`, or the other way round.
-    reader: Option<Mutex<Database>>,
+    /// Read-only connections for commands that only read (WAL: they see the last committed
+    /// state and neither wait for a save nor hold one up); several, so one long read (the task
+    /// list, the graph) does not hold up the small reads of a page switch. Empty when they could
+    /// not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    readers: Vec<Mutex<Database>>,
+    /// The reader to wait for when all are busy (round robin).
+    next_reader: AtomicUsize,
     ai: RwLock<AiRuntime>,
     secrets: SecretStore,
     /// Access token of the Git sync.
@@ -216,6 +219,9 @@ pub struct AppState {
     caps: Mutex<Capabilities>,
 }
 
+/// Read-only connections of [`AppState`].
+const READERS: usize = 3;
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // A panic while holding the lock leaves SQLite consistent (transactions roll back).
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -227,7 +233,17 @@ impl AppState {
     }
     /// The connection for commands that only read (see [`AppState::reader`]).
     fn reader(&self) -> MutexGuard<'_, Database> {
-        self.reader.as_ref().map_or_else(|| lock(&self.db), lock)
+        if self.readers.is_empty() {
+            return lock(&self.db);
+        }
+        for r in &self.readers {
+            match r.try_lock() {
+                Ok(g) => return g,
+                Err(std::sync::TryLockError::Poisoned(e)) => return e.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {}
+            }
+        }
+        lock(&self.readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len()])
     }
     /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
     /// neither connection above is held meanwhile; `None` falls back to the main one.
@@ -3834,10 +3850,10 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
             *db = mem;
         }
         drop(db);
-        if let Some(reader) = &state.reader
-            && let Ok(mem) = Database::open_in_memory()
-        {
-            *lock(reader) = mem;
+        for reader in &state.readers {
+            if let Ok(mem) = Database::open_in_memory() {
+                *lock(reader) = mem;
+            }
         }
     }
     // Otherwise the new process would only focus this one.
@@ -3875,10 +3891,10 @@ pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
             Ok(db) => *state.db() = db,
             Err(e) => devlog::error("core", format!("workspace not reopened after a failed restart: {e}")),
         }
-        if let Some(reader) = &state.reader
-            && let Ok(r) = Database::open_read_only(&file)
-        {
-            *lock(reader) = r;
+        for reader in &state.readers {
+            if let Ok(r) = Database::open_read_only(&file) {
+                *lock(reader) = r;
+            }
         }
         if portable::active() {
             portable::lock_instance(&state.data_dir);
@@ -4186,17 +4202,21 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, &proxy_passwords);
 
-            let reader = match Database::open_read_only(dir.join(datadir::DB_FILE)) {
-                Ok(r) => Some(Mutex::new(r)),
+            let readers = match (0..READERS)
+                .map(|_| Database::open_read_only(dir.join(datadir::DB_FILE)))
+                .collect::<annalo_core::Result<Vec<_>>>()
+            {
+                Ok(list) => list.into_iter().map(Mutex::new).collect(),
                 Err(e) => {
                     devlog::warn("core", format!("no second connection for reading, reads share the main one: {e}"));
-                    None
+                    vec![]
                 }
             };
             let state_dir = dir.clone();
             app.manage(AppState {
                 db: Mutex::new(db),
-                reader,
+                readers,
+                next_reader: AtomicUsize::new(0),
                 ai: RwLock::new(ai),
                 secrets,
                 git_secret: SecretStore::git(&dir),

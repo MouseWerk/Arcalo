@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::db::Database;
 use crate::error::{Error, Result};
 use crate::report;
-use crate::tasks::{TaskFilter, TaskStatus};
 
 /// Longest range an overview may cover (a calendar shows at most six weeks).
 const MAX_DAYS: i64 = 62;
@@ -55,13 +54,7 @@ pub fn daily_overview<Tz: TimeZone>(
         }
     }
 
-    let mut tasks: HashMap<String, i64> = HashMap::new();
-    let open =
-        db.list_tasks(&TaskFilter { status: TaskStatus::Open, due_before: Some(key(to)), ..Default::default() })?;
-    let first = key(from);
-    for due in open.into_iter().filter_map(|t| t.due).filter(|d| *d >= first) {
-        *tasks.entry(due).or_default() += 1;
-    }
+    let tasks = db.open_tasks_due_per_day(&key(from), &key(to))?;
 
     let summary = report::time_summary(db, from, to, offset)?;
     Ok(summary

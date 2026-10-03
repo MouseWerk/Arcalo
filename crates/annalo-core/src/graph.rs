@@ -311,8 +311,9 @@ impl Database {
             }
         }
 
-        // Pages linking to each title (the target index; Rust's lower-casing like the index).
-        {
+        // Pages linking to each title (Rust's lower-casing like the targets): per node for a
+        // patch of a few pages, else from one read of the links instead of one query per node.
+        if let Scope::Only(_) = scope {
             let mut st = conn.prepare_cached(
                 "SELECT COUNT(DISTINCT l.from_page) FROM page_links l JOIN pages s ON s.id = l.from_page AND s.deleted_at IS NULL
                   WHERE l.target = ?1 AND l.from_page <> ?2",
@@ -320,6 +321,21 @@ impl Database {
             for n in &mut nodes {
                 n.links_in =
                     st.query_row(rusqlite::params![n.title.to_lowercase(), n.id], |r| r.get::<_, i64>(0))? as u32;
+            }
+        } else {
+            let mut from: HashMap<String, HashSet<i64>> = HashMap::new();
+            let mut st = conn.prepare_cached(
+                "SELECT l.target, l.from_page FROM page_links l
+                  WHERE l.from_page NOT IN (SELECT id FROM pages WHERE deleted_at IS NOT NULL)",
+            )?;
+            for row in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+                let (target, page) = row?;
+                from.entry(target).or_default().insert(page);
+            }
+            for n in &mut nodes {
+                n.links_in = from
+                    .get(&n.title.to_lowercase())
+                    .map_or(0, |set| set.len() - usize::from(set.contains(&n.id))) as u32;
             }
         }
         for n in &mut nodes {

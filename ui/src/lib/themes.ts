@@ -259,7 +259,7 @@ export function themeCss(def: ThemeDef, accent: string): string {
 
 // ------------------------------------------------------------------ applying
 
-const STYLE_ID = "annalo-theme";
+export const STYLE_ID = "annalo-theme";
 let mode: Settings["theme"] = "system";
 let prefs: AppearancePrefs | null = null;
 let lastKey = "";

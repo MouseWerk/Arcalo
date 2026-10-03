@@ -6,6 +6,7 @@
 // rules.
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { api, on } from "../../lib/api";
 import { isoDay } from "../../lib/format";
 import { partKey, partsOf, partTopics, type DataTopic, type Part } from "../../lib/dashboard";
@@ -97,14 +98,18 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     try {
       const res = await api.dashboardData(isoDay(today), todo.map(([key, part]) => ({ key, part })));
       pending.current = { t0, arrived: performance.now(), backend: res.ms, parts: todo.length };
-      setStore((prev) => {
-        const next = new Map(prev);
-        for (const [k] of todo) {
-          const v = res.parts[k] as { error?: string } | undefined;
-          next.set(k, v && typeof v === "object" && !Array.isArray(v) && typeof v.error === "string" && Object.keys(v).length === 1 ? { error: v.error } : { data: v });
-        }
-        return next;
-      });
+      // Rendered right away, in this task: a scheduled render waits for the next frame, and a
+      // frame while the window still paints a lot (the start, an animation) takes 50–100 ms.
+      flushSync(() =>
+        setStore((prev) => {
+          const next = new Map(prev);
+          for (const [k] of todo) {
+            const v = res.parts[k] as { error?: string } | undefined;
+            next.set(k, v && typeof v === "object" && !Array.isArray(v) && typeof v.error === "string" && Object.keys(v).length === 1 ? { error: v.error } : { data: v });
+          }
+          return next;
+        }),
+      );
     } catch (e) {
       setStore((prev) => {
         const next = new Map(prev);
