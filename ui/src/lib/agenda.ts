@@ -37,7 +37,9 @@ export function viewRange(view: CalView, anchor: Date, startsOn: 0 | 1 = formatP
       days = Array.from({ length: 7 }, (_, i) => addDays(first, i));
       if (view === "workweek") {
         const wd = workdays.length ? workdays : [1, 2, 3, 4, 5];
-        const kept = days.filter((d) => wd.includes(isoWeekday(d)));
+        // Today stays visible on a day off (a weekend meeting, an extra shift).
+        const today = midnight(new Date()).getTime();
+        const kept = days.filter((d) => wd.includes(isoWeekday(d)) || d.getTime() === today);
         days = kept.length ? kept : days;
       }
       break;

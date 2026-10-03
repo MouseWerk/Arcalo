@@ -63,7 +63,9 @@ test("the work week shows meetings of all sources next to the booked time", asyn
   const { monday, at } = week();
   // Work week of the demo settings: Monday to Friday, KW label, today marked.
   const heads = await app.browser.execute(() => [...document.querySelectorAll(".calv-dayhead")].map((h) => h.dataset.date));
-  assert.deepEqual(heads, [0, 1, 2, 3, 4].map((i) => iso(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))));
+  // Today stays in it on a weekend.
+  const days = [0, 1, 2, 3, 4, 5, 6].map((i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
+  assert.deepEqual(heads, days.filter((d, i) => i < 5 || iso(d) === iso(new Date())).map(iso));
   await app.waitText(".calv-kw", /^KW \d+$/);
   for (const t of ["Jour fixe Änderungen", "Sprint Review", "Kundentermin Müller", "Architektur", "Budgetrunde", "Abstimmung 1"]) await app.waitText(".calv-ev .calv-ev-title", new RegExp(`^${t}$`));
   // The declined meeting is left out, the private one keeps only its time.
@@ -145,7 +147,7 @@ test("next week the same series suggests the WBS used last time", async () => {
   await app.waitFor(`.calv-dayhead[data-date="${iso(next.monday)}"]`);
   await clickEvent("Jour fixe Änderungen");
   await app.click(".calv-detail-actions .calv-book-btn");
-  await app.waitText(".dialog .calv-book-note", /WBS wie beim letzten Mal/);
+  await app.waitText(".dialog .calv-book-note", /Netzplan\/Vorgang wie beim letzten Mal/);
   assert.equal(await field("Netzplan"), String(netzplan.id));
   assert.equal(await field("Datum"), de(next.at(0, 0)));
   await app.keys(["Escape"]);
@@ -211,7 +213,8 @@ test("„Nicht buchen“ marks a meeting; the month folds a full day; the list a
   await app.keys(["w"]);
   await app.waitFor(".calv-grid.days-7");
   await app.keys(["a"]);
-  await app.waitFor(".calv-grid.days-5");
+  // The work week (with today on a weekend).
+  await app.waitFor([0, 6].includes(new Date().getDay()) ? ".calv-grid.days-6" : ".calv-grid.days-5");
 });
 
 test("dark theme and a narrow split pane stay readable", async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { attendeeName, bookedEntry, bookingPrefill, dayItems, hasSources, keyAction, layoutDay, monthCells, nonBookingSources, rangeTitle, sourceColor, step, timeRange, unbooked, viewRange, weekLabel } from "./agenda";
 import { isoDay } from "./format";
 import type { CalendarEvent, CalendarSettings, FocusBlock, OutlookCalendar, TimeEntryRow } from "./types";
@@ -65,6 +65,15 @@ describe("visible ranges", () => {
     expect(month.days.length).toBe(42);
     expect(isoDay(month.days[0])).toBe("2026-08-31");
     expect(viewRange("agenda", fri).days.length).toBe(14);
+  });
+  it("the work week keeps today on a day off", () => {
+    vi.useFakeTimers({ now: new Date(2026, 8, 26, 10) });
+    try {
+      expect(viewRange("workweek", fri, 1, [1, 2, 3, 4, 5]).days.map((d) => d.getDate())).toEqual([21, 22, 23, 24, 25, 26]);
+      expect(viewRange("workweek", new Date(2026, 8, 30), 1, [1, 2, 3, 4, 5]).days.map((d) => d.getDate())).toEqual([28, 29, 30, 1, 2]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("steps and titles", () => {
     expect(isoDay(step("week", fri, 1))).toBe("2026-10-02");

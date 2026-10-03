@@ -168,7 +168,7 @@ test("Settings → Über lists „Neu in Arcalo“ with the bundled release note
   // The manual way back exists while the copy of 1.8.5 is kept.
   await app.waitText(".set-row", /Zu Version 1\.8\.5 zurückkehren/);
   await app.click(".update-rollback");
-  await app.waitText(".dialog", /seit dem Update geändert haben, geht in der Datenbank verloren/);
+  await app.waitText(".dialog", /seit dem Update geändert hast, geht in der Datenbank verloren/);
   await app.shot("126-rollback-confirm");
   await clickIn(".dialog button", "Abbrechen");
 });
