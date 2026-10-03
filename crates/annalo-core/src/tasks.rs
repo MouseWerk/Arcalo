@@ -144,17 +144,23 @@ fn checkbox(line: &str) -> Option<(usize, bool, &str)> {
     Some((indent + marker + 1 + 1, b[1] != b' ', rest))
 }
 
-/// All task items outside fenced code blocks.
+/// All task items outside fenced code blocks (```` ``` ```` or `~~~`, each closed by its own marker).
 pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
     let mut out = vec![];
-    let mut in_fence = false;
+    let mut fence: Option<&str> = None;
     for (line_no, line) in markdown.lines().enumerate() {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            continue;
+        match (fence, crate::notes::fence_marker(line)) {
+            (Some(f), m) => {
+                if m == Some(f) {
+                    fence = None;
+                }
+                continue;
+            }
+            (None, Some(m)) => {
+                fence = Some(m);
+                continue;
+            }
+            (None, None) => {}
         }
         let Some((check, done, rest)) = checkbox(line) else { continue };
         let mut due = None;
@@ -367,6 +373,15 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tasks_in_tilde_code_blocks_are_code() {
+        let md = "- [ ] eins\n~~~\n- [ ] Code\n```\n- [ ] auch Code\n~~~\n- [ ] zwei\n```\n- [ ] drei ~~~\n```\n- [ ] vier\n";
+        let texts: Vec<String> = parse_tasks(md).into_iter().map(|t| t.text).collect();
+        assert_eq!(texts, ["eins", "zwei", "vier"]);
+        let done = set_task_state(md, 1, true).unwrap();
+        assert!(done.contains("- [x] zwei") && done.contains("- [ ] Code"), "{done}");
+    }
 
     #[test]
     fn due_in_either_language() {

@@ -51,7 +51,7 @@ pub struct SavedPage {
 // ------------------------------------------------------------------ parsing
 
 /// The fence marker a line opens or closes a code block with (```` ``` ```` or `~~~`).
-fn fence_marker(line: &str) -> Option<&'static str> {
+pub(crate) fn fence_marker(line: &str) -> Option<&'static str> {
     let l = line.trim_start();
     if l.starts_with("```") {
         Some("```")
