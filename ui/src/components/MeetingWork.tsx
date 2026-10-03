@@ -12,6 +12,7 @@ import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, useT } from "../lib/i18n";
 import { fmtDate } from "../lib/format";
+import { attendeeName } from "../lib/agenda";
 import { hiddenCalendars } from "../lib/calvisibility";
 import {
   PERIODS,
@@ -270,7 +271,7 @@ function FollowUpDialog({ pageId, onClose }: { pageId: number; onClose: () => vo
           <div className="mw-fu-head">
             <span className="mw-fu-label">{t("mw.fu.to")}</span>
             <span className="mw-fu-to">
-              {f.to.length ? f.to.map((a) => <span key={a} className="mw-chip">{a}</span>) : <span className="faint">{t("mw.fu.noAttendees")}</span>}
+              {f.to.length ? f.to.map((a) => <span key={a} className="mw-chip" title={a}>{attendeeName(a)}</span>) : <span className="faint">{t("mw.fu.noAttendees")}</span>}
             </span>
             <span className="mw-fu-label">{t("mw.fu.subject")}</span>
             <span className="mw-fu-subject">{f.subject}</span>

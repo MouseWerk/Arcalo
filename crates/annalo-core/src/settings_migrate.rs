@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 10;
+pub const SETTINGS_VERSION: u32 = 11;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -45,6 +45,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 7, name: "meeting-prep", run: meeting_prep },
     Step { from: 8, name: "link-suggestions", run: link_suggestions },
     Step { from: 9, name: "own-addresses", run: own_addresses },
+    Step { from: 10, name: "work-hours", run: work_hours },
 ];
 
 /// What [`migrate`] did.
@@ -299,6 +300,20 @@ fn own_addresses(s: &mut Map<String, Value>) -> Option<String> {
     Some("mail.own_addresses added".into())
 }
 
+/// 10 → 11: the working hours the free slots of „Im Kalender planen…“ lie in (before 1.11
+/// fixed to 08:00–18:00) are written with these values, so nothing changes until they are set.
+fn work_hours(s: &mut Map<String, Value>) -> Option<String> {
+    let time = s.get_mut("time")?.as_object_mut()?;
+    let mut added = vec![];
+    for (k, v) in [("work_start", crate::prefs::DEFAULT_WORK_START), ("work_end", crate::prefs::DEFAULT_WORK_END)] {
+        if !time.contains_key(k) {
+            time.insert(k.into(), Value::String(v.into()));
+            added.push(k);
+        }
+    }
+    (!added.is_empty()).then(|| format!("time: {} added", added.join(", ")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,7 +371,7 @@ mod tests {
         let s = Database::parse_settings(FIXTURES[2].1).unwrap();
         assert_eq!(s.jira.sites.len(), 1);
         assert_eq!(s.filing, d.filing);
-        // 1.9: only the 1.10 steps have something to do (and the version is added).
+        // 1.9: only the 1.10 and 1.11 steps have something to do (and the version is added).
         let mut v: Value = serde_json::from_str(FIXTURES[3].1).unwrap();
         let mut before = v.clone();
         let m = migrate(&mut v);
@@ -367,7 +382,8 @@ mod tests {
                 "network-profiles: network → profile Standard",
                 "meeting-prep: briefing.prep_auto = false, briefing.prep_minutes = 30",
                 "link-suggestions: editor: link_suggestions, mention_hints, tag_suggestions, duplicate_hints added",
-                "own-addresses: mail.own_addresses added"
+                "own-addresses: mail.own_addresses added",
+                "work-hours: time: work_start, work_end added"
             ]
         );
         v.as_object_mut().unwrap().remove("version");
@@ -380,6 +396,8 @@ mod tests {
             before["editor"][k] = Value::Bool(on);
         }
         before["mail"]["own_addresses"] = Value::Array(vec![]);
+        before["time"]["work_start"] = Value::from("08:00");
+        before["time"]["work_end"] = Value::from("18:00");
         assert_eq!(v["network"]["profiles"][0]["http_proxy"], before["network"]["http_proxy"]);
         v.as_object_mut().unwrap().remove("network");
         before.as_object_mut().unwrap().remove("network");
@@ -652,6 +670,17 @@ mod tests {
         // And wrong values are found.
         let bad = serde_json::json!({"theme": 3, "editor": {"tab_size": "vier"}, "workdays": ["Mo"]});
         assert_eq!(check(&bad).len(), 3, "{:?}", check(&bad));
+    }
+
+    #[test]
+    fn work_hours_are_added_once_and_kept() {
+        let mut v = serde_json::json!({"version": 10, "time": {"enabled": true}});
+        let m = migrate(&mut v);
+        assert_eq!(m.notes, vec!["work-hours: time: work_start, work_end added".to_owned()]);
+        assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
+        let mut mine = serde_json::json!({"version": 10, "time": {"work_start": "07:00"}});
+        migrate(&mut mine);
+        assert_eq!((mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()), (Some("07:00"), Some("18:00")));
     }
 
     #[test]

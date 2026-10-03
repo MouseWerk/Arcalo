@@ -467,6 +467,28 @@ export function listRows(model: GraphModel): VNode[] {
   return model.nodes.filter((n) => n.kind === "page").sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label));
 }
 
+/**
+ * Where a node label goes, in screen pixels: centered under the node but kept inside the
+ * canvas (`w` wide, `margin` from each edge), shortened with „…“ when it is wider than the
+ * canvas. `measure` gives the drawn width of a text.
+ */
+export function placeLabel(text: string, sx: number, w: number, measure: (t: string) => number, margin = 4): { text: string; x: number; width: number } {
+  const room = Math.max(0, w - margin * 2);
+  let width = measure(text);
+  if (width > room) {
+    const chars = Array.from(text);
+    let n = chars.length;
+    while (n > 1 && width > room) {
+      n--;
+      text = `${chars.slice(0, n).join("").trimEnd()}…`;
+      width = measure(text);
+    }
+  }
+  const half = width / 2;
+  const x = width >= room ? w / 2 : Math.min(Math.max(sx, margin + half), w - margin - half);
+  return { text, x, width };
+}
+
 /** Radius of a node in graph units. */
 export function nodeRadius(n: VNode, d: Pick<GraphDisplay, "sizeByLinks" | "nodeSize">): number {
   const base = n.kind === "page" ? 4.5 : 3.5;

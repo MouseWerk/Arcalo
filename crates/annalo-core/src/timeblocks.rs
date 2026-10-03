@@ -29,9 +29,6 @@ pub const DEFAULT_MINUTES: u32 = 60;
 pub const MAX_MINUTES: i64 = 12 * 60;
 /// Category of the Outlook appointments.
 pub const CATEGORY: &str = "Arcalo";
-/// Working hours the free slots of „Im Kalender planen…“ are looked for in (local).
-pub const DAY_START: (u32, u32) = (8, 0);
-pub const DAY_END: (u32, u32) = (18, 0);
 /// At most this many free slots are offered.
 pub const MAX_SLOTS: usize = 20;
 
@@ -515,8 +512,8 @@ impl Database {
         }
     }
 
-    /// Free starts on `day` (local working hours, from now on today) for a block of `minutes`:
-    /// busy meetings of `sources` and other blocks are avoided.
+    /// Free starts on `day` inside the working `hours` (local; from now on today) for a block
+    /// of `minutes`: busy meetings of `sources` and other blocks are avoided.
     pub fn block_free_slots(
         &self,
         day: NaiveDate,
@@ -524,10 +521,10 @@ impl Database {
         now: DateTime<Utc>,
         zone: &Zone,
         sources: &[String],
+        hours: (NaiveTime, NaiveTime),
     ) -> Result<Vec<DateTime<Utc>>> {
-        let at = |h: u32, m: u32| zone.to_utc(day.and_time(NaiveTime::from_hms_opt(h, m, 0).unwrap_or_default()));
-        let from = at(DAY_START.0, DAY_START.1).max(now);
-        let to = at(DAY_END.0, DAY_END.1);
+        let from = zone.to_utc(day.and_time(hours.0)).max(now);
+        let to = zone.to_utc(day.and_time(hours.1));
         let midnight = zone.to_utc(day.and_time(NaiveTime::MIN));
         let next = zone.to_utc((day + chrono::Days::new(1)).and_time(NaiveTime::MIN));
         let mut busy: Vec<(DateTime<Utc>, DateTime<Utc>)> = self

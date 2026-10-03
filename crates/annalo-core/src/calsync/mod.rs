@@ -28,6 +28,16 @@ use crate::model::Page;
 
 pub use calendars::{OutlookCalendar, OutlookKind};
 
+/// The name of an attendee entry: `Anna Müller <anna@firma.de>` (calendar files keep the
+/// address for the follow-up mail) is shown as „Anna Müller“; other entries stay as they are.
+pub fn attendee_name(entry: &str) -> &str {
+    let e = entry.trim();
+    match e.strip_suffix('>').and_then(|rest| rest.rsplit_once(" <")) {
+        Some((name, address)) if address.contains('@') && !name.trim().is_empty() => name.trim(),
+        _ => e,
+    }
+}
+
 /// Source id of the default Outlook calendar; the other Outlook calendars are
 /// `outlook:<hash>` ([`calendars::source_id`]), ICS sources are `ics:<id>`.
 pub const OUTLOOK: &str = "outlook";
@@ -875,7 +885,8 @@ impl Database {
         } else {
             format!("{}–{}", start.format("%H:%M"), end.format("%H:%M"))
         };
-        let attendees = e.attendees.join(", ");
+        let names: Vec<&str> = e.attendees.iter().map(|a| attendee_name(a)).collect();
+        let attendees = names.join(", ");
         let yaml = |v: &str| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
         let k = crate::i18n::key;
         let mut front =
@@ -910,7 +921,7 @@ impl Database {
                     .replace("{{hours}}", &time);
                 // An empty attendee list in the template is filled in.
                 if !e.attendees.is_empty() {
-                    let list: String = e.attendees.iter().map(|a| format!("- {a}\n")).collect();
+                    let list: String = names.iter().map(|a| format!("- {a}\n")).collect();
                     for empty in
                         ["## Teilnehmer\n\n- \n", "## Teilnehmer\n- \n", "## Attendees\n\n- \n", "## Attendees\n- \n"]
                     {
@@ -938,7 +949,7 @@ impl Database {
                 }
                 if !e.attendees.is_empty() {
                     b.push_str(tr!("## Teilnehmer\n\n", "## Attendees\n\n"));
-                    for a in &e.attendees {
+                    for a in &names {
                         b.push_str(&format!("- {a}\n"));
                     }
                     b.push('\n');

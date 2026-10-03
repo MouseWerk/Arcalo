@@ -446,6 +446,19 @@ fn person(p: &Prop) -> String {
     }
 }
 
+/// An attendee as `Name <address>` when the entry has both (the follow-up mail needs the address,
+/// everything shown takes the name via [`super::attendee_name`]), else the name or the address.
+fn attendee(p: &Prop) -> String {
+    let name = person(p);
+    let v = p.value.trim();
+    let address = v.strip_prefix("mailto:").or_else(|| v.strip_prefix("MAILTO:")).unwrap_or(v).trim();
+    if address.contains('@') && !name.contains('@') && !address.contains(['<', '>', ' ']) && !name.is_empty() {
+        format!("{name} <{address}>")
+    } else {
+        name
+    }
+}
+
 fn details(c: &Component) -> Details {
     let body = c.text("DESCRIPTION").filter(|b| !b.is_empty());
     let location = c.text("LOCATION").unwrap_or_default();
@@ -467,9 +480,9 @@ fn details(c: &Component) -> Details {
         if kind == "RESOURCE" || kind == "ROOM" {
             continue;
         }
-        let name = person(a);
-        if !name.is_empty() && !attendees.contains(&name) {
-            attendees.push(name);
+        let entry = attendee(a);
+        if !entry.is_empty() && !attendees.iter().any(|x| super::attendee_name(x) == super::attendee_name(&entry)) {
+            attendees.push(entry);
         }
     }
     let url_props: Vec<String> =
@@ -874,7 +887,8 @@ mod tests {
         let first = &evs[0];
         assert_eq!(first.title, "Jour fixe Änderungen");
         assert_eq!((first.location.as_str(), first.organizer.as_str()), ("Raum Zürich", "Anna Müller"));
-        assert_eq!(first.attendees, ["Jörg Weiß"], "rooms are no attendees");
+        assert_eq!(first.attendees, ["Jörg Weiß <j@example.com>"], "rooms are no attendees");
+        assert_eq!(super::super::attendee_name(&first.attendees[0]), "Jörg Weiß");
         assert_eq!(first.link.as_deref(), Some("https://teams.microsoft.com/l/meetup-join/19%3a1"));
         assert!(first.recurring && first.instance == "2026-09-02T08:00:00Z");
         assert_eq!(first.end - first.start, Duration::hours(1));

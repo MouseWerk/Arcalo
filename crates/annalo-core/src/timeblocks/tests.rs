@@ -169,12 +169,36 @@ fn free_slots_of_a_day_avoid_meetings_and_blocks() {
     .unwrap();
     db.block_create(&new("Block", t(5, 10, 0), 60, BlockLink::None), t(1, 0, 0), false).unwrap();
     let day = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
-    let s = db.block_free_slots(day, 60, t(1, 0, 0), &z, &[OUTLOOK.into()]).unwrap();
+    let hours = crate::prefs::TimePrefs::default().work_hours();
+    let s = db.block_free_slots(day, 60, t(1, 0, 0), &z, &[OUTLOOK.into()], hours).unwrap();
     assert_eq!(s[0], t(5, 11, 0), "after the meeting and the block; a free appointment does not count");
     // Today: from now on.
-    let s = db.block_free_slots(day, 60, t(5, 14, 5), &z, &[OUTLOOK.into()]).unwrap();
+    let s = db.block_free_slots(day, 60, t(5, 14, 5), &z, &[OUTLOOK.into()], hours).unwrap();
     assert_eq!(s.first(), Some(&t(5, 14, 15)));
     assert_eq!(s.last(), Some(&t(5, 17, 0)));
+}
+
+#[test]
+fn free_slots_follow_the_working_hours() {
+    let db = Database::open_in_memory().unwrap();
+    let day = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+    let prefs = |a: &str, b: &str| crate::prefs::TimePrefs { work_start: a.into(), work_end: b.into(), ..Default::default() };
+    let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
+    for (start, end, want) in [
+        ("07:00", "15:30", (hm(7, 0), hm(15, 30))),
+        ("6:30", "22:00", (hm(6, 30), hm(22, 0))),
+        ("18:00", "08:00", (hm(8, 0), hm(18, 0))),
+        ("", "16:00", (hm(8, 0), hm(18, 0))),
+        ("9 Uhr", "17:00", (hm(8, 0), hm(18, 0))),
+    ] {
+        assert_eq!(prefs(start, end).work_hours(), want, "{start}–{end}");
+    }
+    let s = db.block_free_slots(day, 60, t(1, 0, 0), &Zone::Utc, &[], prefs("07:00", "15:30").work_hours()).unwrap();
+    assert_eq!((s.first(), s.last()), (Some(&t(5, 7, 0)), Some(&t(5, 14, 30))));
+    // Local hours: 07:00 in Berlin summer time is 05:00 UTC.
+    let berlin = Zone::named("Europe/Berlin").unwrap();
+    let s = db.block_free_slots(day, 60, t(1, 0, 0), &berlin, &[], prefs("07:00", "09:00").work_hours()).unwrap();
+    assert_eq!(s, [t(5, 5, 0), t(5, 5, 30), t(5, 6, 0)]);
 }
 
 /// Answers like Outlook: keeps the appointments (EntryID, marker), finds one by marker before

@@ -3,7 +3,7 @@
 
 import { addDays, dateLocale, dayOfMonth, formatPrefs, isoDay, isoWeek, weekStart } from "./format";
 import { addMonths, monthGrid } from "./calendar";
-import type { CalendarEvent, CalendarSettings, OutlookCalendar, TimeEntryRow, WbsHint } from "./types";
+import type { CalendarEvent, CalendarSettings, FocusBlock, OutlookCalendar, TimeEntryRow, WbsHint } from "./types";
 import { t } from "./i18n";
 
 export type CalView = "day" | "workweek" | "week" | "month" | "agenda";
@@ -173,18 +173,32 @@ export interface DayCell {
   /** Not shown („+3 weitere“). */
   more: number;
   all: CalendarEvent[];
+  /** Appointments and focus blocks shown, in order (`shown` plus the blocks among them). */
+  items: DayItem[];
 }
 
-/** Month cells by day (YYYY-MM-DD): all-day first, then by start; at most `max` lines incl. the „weitere“ line. */
-export function monthCells(events: CalendarEvent[], days: Date[], max = 3): Map<string, DayCell> {
+/** A line of a month cell or of the list: an appointment or a focus block. */
+export type DayItem = { e: CalendarEvent; b?: undefined } | { b: FocusBlock; e?: undefined };
+
+/** Appointments and focus blocks of a day: all-day first, then by start. */
+export function dayItems(events: CalendarEvent[], blocks: FocusBlock[], d: Date): DayItem[] {
+  const items: DayItem[] = [...events.filter((e) => onDay(e, d)).map((e) => ({ e })), ...blocks.filter((b) => onDay(b, d)).map((b) => ({ b }))];
+  const allDay = (x: DayItem) => Number(!!x.e && isAllDayLike(x.e));
+  const start = (x: DayItem) => (x.e ?? x.b)!.start;
+  const title = (x: DayItem) => (x.e ?? x.b)!.title;
+  // Compared as instants: appointments and blocks may carry different offsets.
+  return items.sort((a, b) => allDay(b) - allDay(a) || new Date(start(a)).getTime() - new Date(start(b)).getTime() || title(a).localeCompare(title(b)));
+}
+
+/** Month cells by day (YYYY-MM-DD): all-day first, then by start; at most `max` lines incl. the „weitere“ line. Focus blocks count as lines. */
+export function monthCells(events: CalendarEvent[], days: Date[], max = 3, blocks: FocusBlock[] = []): Map<string, DayCell> {
   const out = new Map<string, DayCell>();
   for (const d of days) {
-    const all = events
-      .filter((e) => onDay(e, d))
-      .sort((a, b) => Number(isAllDayLike(b)) - Number(isAllDayLike(a)) || a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
-    const overflow = all.length > max;
-    const shown = overflow ? all.slice(0, max - 1) : all;
-    out.set(isoDay(d), { shown, more: all.length - shown.length, all });
+    const list = dayItems(events, blocks, d);
+    const items = list.length > max ? list.slice(0, max - 1) : list;
+    const all = list.flatMap((x) => (x.e ? [x.e] : []));
+    const shown = items.flatMap((x) => (x.e ? [x.e] : []));
+    out.set(isoDay(d), { shown, more: list.length - items.length, all, items });
   }
   return out;
 }
@@ -352,4 +366,12 @@ export function keyAction(key: string): { move?: -1 | 1; today?: true; view?: Ca
     default:
       return null;
   }
+}
+
+/** The name of an attendee entry: calendar files keep `Anna Müller <anna@firma.de>` (the
+ * follow-up mail needs the address); shown is „Anna Müller“. Other entries stay as they are. */
+export function attendeeName(entry: string): string {
+  const e = entry.trim();
+  const m = /^(.*\S)\s+<([^<>]*@[^<>]*)>$/.exec(e);
+  return m ? m[1] : e;
 }

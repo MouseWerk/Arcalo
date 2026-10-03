@@ -502,6 +502,9 @@ export interface TimePrefs {
   export_file_pattern: string;
   /** Overtime balance, vacation account and public holidays (1.7). */
   balance?: BalancePrefs;
+  /** Working hours `HH:MM` (1.11): free slots for focus blocks lie inside them. */
+  work_start?: string;
+  work_end?: string;
 }
 export interface BalancePrefs {
   /** Target hours Monday..Sunday; empty: the daily target on the workdays. */

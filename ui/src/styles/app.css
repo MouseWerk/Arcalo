@@ -3730,3 +3730,9 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .dup-pair-score { font-size: var(--fs-xs); }
 .dup-pair-actions { display: inline-flex; gap: 2px; }
 .dup-list-empty { margin: 8px 0; }
+
+/* ---- calendar: focus blocks in month and list ---- */
+.calv-mev.calv-mblock { display: flex; flex: none; align-items: center; gap: 6px; min-width: 0; height: 20px; padding: 0 4px 0 6px; border: 1px dashed color-mix(in srgb, var(--accent) 72%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--accent) 7%, var(--bg-canvas)); color: var(--text); font: inherit; text-align: left; overflow: hidden; cursor: pointer; }
+.calv-mev.calv-mblock:hover { background: color-mix(in srgb, var(--accent) 11%, var(--bg-canvas)); }
+.calv-mev.calv-mblock.selected { border-style: solid; outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.calv-agenda-block .calv-agenda-bar { background: repeating-linear-gradient(180deg, var(--accent) 0 4px, transparent 4px 7px); }

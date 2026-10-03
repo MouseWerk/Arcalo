@@ -11,6 +11,7 @@ import {
   matchesRule,
   nearestInDirection,
   nodeColors,
+  placeLabel,
   normalizePresets,
   normalizeSettings,
   patchScope,
@@ -181,5 +182,29 @@ describe("keyboard navigation", () => {
     expect(nearestInDirection(pos, 5, 0, "left")).toBe(2);
     expect(nearestInDirection(pos, 5, 0, "down")).toBe(3);
     expect(nearestInDirection(pos, 5, 0, "up")).toBe(-1);
+  });
+});
+
+describe("placeLabel", () => {
+  const measure = (t: string) => Array.from(t).length * 6;
+  it("stays centered under a node in the middle", () => {
+    expect(placeLabel("Projekt", 150, 300, measure)).toEqual({ text: "Projekt", x: 150, width: 42 });
+  });
+  it.each([
+    [2, 4 + 60],
+    [-40, 4 + 60],
+    [298, 300 - 4 - 60],
+    [340, 300 - 4 - 60],
+  ])("is kept inside the canvas for a node at %d", (sx, x) => {
+    const p = placeLabel("Zwanzig Zeichen lang", sx, 300, measure);
+    expect(p.x).toBe(x);
+    expect(p.x - p.width / 2).toBeGreaterThanOrEqual(4);
+    expect(p.x + p.width / 2).toBeLessThanOrEqual(296);
+  });
+  it("is shortened when wider than the canvas", () => {
+    const p = placeLabel("x".repeat(80), 10, 200, measure);
+    expect(p.width).toBeLessThanOrEqual(192);
+    expect(p.text.endsWith("…")).toBe(true);
+    expect(p.x).toBeGreaterThanOrEqual(4 + p.width / 2);
   });
 });

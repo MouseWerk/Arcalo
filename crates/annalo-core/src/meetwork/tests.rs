@@ -231,6 +231,48 @@ fn mailto_is_encoded_and_shortened() {
 }
 
 #[test]
+fn mailto_takes_the_address_of_named_attendees() {
+    let f = followup::extract(
+        7,
+        MINUTES,
+        "Jour fixe",
+        Some(day(2026, 10, 2)),
+        vec![
+            "Clara Jones <clara@example.com>".into(),
+            "ben@example.com".into(),
+            "Weiß, Jörg".into(),
+            "\"Müller, Anna\" <Anna.Mueller@example.com>".into(),
+            "Kaputt <kein adresse>".into(),
+        ],
+        "de",
+        day(2026, 10, 2),
+    );
+    let (url, _) = followup::mailto(&f);
+    assert!(
+        url.starts_with("mailto:clara%40example.com,ben%40example.com,Anna.Mueller%40example.com?subject="),
+        "{url}"
+    );
+}
+
+#[test]
+fn attendee_entries_show_their_names() {
+    for (entry, name, display) in [
+        ("Anna Müller <anna@firma.de>", "Anna Müller", "Anna Müller"),
+        ("Müller, Anna <anna@firma.de>", "Müller, Anna", "Anna Müller"),
+        ("anna@firma.de", "anna@firma.de", "anna@firma.de"),
+        ("Jörg Weiß", "Jörg Weiß", "Jörg Weiß"),
+        ("<anna@firma.de>", "<anna@firma.de>", "<anna@firma.de>"),
+        ("Team <intern>", "Team <intern>", "Team <intern>"),
+    ] {
+        assert_eq!(crate::calsync::attendee_name(entry), name, "{entry}");
+        assert_eq!(crate::meetwork::display_name(entry), display, "{entry}");
+    }
+    assert!(crate::meetwork::same_person("Anna Müller <anna@firma.de>", "Müller, Anna"));
+    assert!(crate::meetwork::same_person("Anna Müller <anna@firma.de>", "ANNA@firma.de"));
+    assert!(!crate::meetwork::same_person("Anna Müller <anna@firma.de>", "Jörg Weiß"));
+}
+
+#[test]
 fn the_polish_request_is_compact() {
     let mut f: FollowUp = followup::extract(7, MINUTES, "Jour fixe", None, vec![], "de", day(2026, 10, 2));
     f.results = (0..100).map(|i| format!("Ergebnis {i} {}", "x".repeat(300))).collect();

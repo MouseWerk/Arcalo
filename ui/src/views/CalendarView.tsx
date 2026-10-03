@@ -15,7 +15,7 @@ import { Badge, Button, EmptyState, IconButton, Segmented, Select } from "../com
 import { openDailyNote, pickDate } from "../components/CalendarPopover";
 import { dateLocale, fmtDate, fmtMinutes, formatPrefs, isoDay, isoWeek, relative } from "../lib/format";
 import {
-  bookedEntry, bookingPrefill, durationMinutes, hasSources, isAllDayLike, keyAction, layoutDay, minutesOfDay, monthCells, onDay as coversDay, rangeTitle, sourceColor, sourceName, step, timeRange, viewRange, weekLabel,
+  attendeeName, bookedEntry, bookingPrefill, dayItems, durationMinutes, hasSources, isAllDayLike, keyAction, layoutDay, minutesOfDay, monthCells, onDay as coversDay, rangeTitle, sourceColor, sourceName, step, timeRange, viewRange, weekLabel,
   type BookingPrefill, type CalView, type Range,
 } from "../lib/agenda";
 import { legendSources, setCalendarHidden, useHiddenCalendars, visibleEvents } from "../lib/calvisibility";
@@ -365,9 +365,9 @@ export function CalendarView() {
         <div className="calv-main">
           <div className="calv-body">
             {view === "month" ? (
-              <MonthGrid range={range} anchor={anchor} events={shown} overview={days} cal={cal} booked={booked} selected={selected} onSelect={setSelected} onDay={openDay} />
+              <MonthGrid range={range} anchor={anchor} events={shown} blocks={blocks} overview={days} cal={cal} booked={booked} selected={selected} onSelect={setSelected} onDay={openDay} />
             ) : view === "agenda" ? (
-              <AgendaList range={range} events={shown} cal={cal} booked={booked} selected={selected} onSelect={setSelected} />
+              <AgendaList range={range} events={shown} blocks={blocks} cal={cal} booked={booked} selected={selected} onSelect={setSelected} />
             ) : (
               <TimeGrid
                 range={range}
@@ -650,7 +650,8 @@ function TimeGrid(props: {
                         <EventMarks e={e} booked={booked} />
                       </span>
                     </button>
-                  ))}
+                    ),
+                  )}
                 </div>
               );
             })}
@@ -794,6 +795,7 @@ function MonthGrid(props: {
   range: Range;
   anchor: Date;
   events: CalendarEvent[];
+  blocks: FocusBlock[];
   overview: Map<string, DayOverview>;
   cal: CalendarSettings | undefined;
   booked: Booked;
@@ -802,8 +804,8 @@ function MonthGrid(props: {
   onDay: (d: Date) => void;
 }) {
   const t = useT();
-  const { range, anchor, events, overview, cal, booked, selected, onSelect, onDay } = props;
-  const cells = useMemo(() => monthCells(events, range.days, 4), [events, range]);
+  const { range, anchor, events, blocks, overview, cal, booked, selected, onSelect, onDay } = props;
+  const cells = useMemo(() => monthCells(events, range.days, 4, blocks), [events, blocks, range]);
   const weeks = Array.from({ length: range.days.length / 7 }, (_, w) => range.days.slice(w * 7, w * 7 + 7));
   const l = dateLocale();
   const todayIso = isoDay(new Date());
@@ -835,7 +837,19 @@ function MonthGrid(props: {
                   {!!ov?.booked_minutes && <span className="calv-mhours">{fmtMinutes(ov.booked_minutes)} h</span>}
                 </div>
                 <div className="calv-mlist">
-                  {cell?.shown.map((e) => (
+                  {cell?.items.map(({ e, b }) =>
+                    b ? (
+                      <button
+                        type="button"
+                        key={`b${b.id}`}
+                        className={`calv-mev calv-mblock ${selected === blockKey(b.id) ? "selected" : ""}`}
+                        onClick={() => onSelect(blockKey(b.id))}
+                        aria-label={`${t("blocks.title")}: ${b.title}, ${blockTime(b)}`}
+                      >
+                        <span className="calv-mev-time">{blockTime(b).slice(0, 5)}</span>
+                        <span className="calv-ev-title">{b.title}</span>
+                      </button>
+                    ) : (
                     <button
                       type="button"
                       key={e.key}
@@ -868,10 +882,19 @@ function MonthGrid(props: {
 
 // ---------------------------------------------------------------- list
 
-function AgendaList({ range, events, cal, booked, selected, onSelect }: { range: Range; events: CalendarEvent[]; cal: CalendarSettings | undefined; booked: Booked; selected: string | null; onSelect: (k: string) => void }) {
+/** „09:00–10:30“ of a focus block (local). */
+function blockTime(b: FocusBlock): string {
+  const hm = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  return `${hm(b.start)}–${hm(b.end)}`;
+}
+
+function AgendaList({ range, events, blocks, cal, booked, selected, onSelect }: { range: Range; events: CalendarEvent[]; blocks: FocusBlock[]; cal: CalendarSettings | undefined; booked: Booked; selected: string | null; onSelect: (k: string) => void }) {
   const t = useT();
   const l = dateLocale();
-  const days = range.days.map((d) => ({ d, list: events.filter((e) => coversDay(e, d)) })).filter((x) => x.list.length);
+  const days = range.days.map((d) => ({ d, list: dayItems(events, blocks, d) })).filter((x) => x.list.length);
   if (!days.length)
     return (
       <div className="calv-empty">
@@ -890,7 +913,24 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
             <span>{d.toLocaleDateString(l, { weekday: "long" })}</span>
             <span className="faint">{fmtDate(d)}</span>
           </h2>
-          {list.map((e) => (
+          {list.map(({ e, b }) =>
+            b ? (
+              <button
+                type="button"
+                key={`b${b.id}`}
+                className={`calv-agenda-row calv-agenda-block ${selected === blockKey(b.id) ? "selected" : ""} ${new Date(b.end) <= now ? "past" : ""}`}
+                onClick={() => onSelect(blockKey(b.id))}
+                aria-label={`${t("blocks.title")}: ${b.title}, ${blockTime(b)}`}
+              >
+                <span className="calv-agenda-time">{blockTime(b)}</span>
+                <span className="calv-agenda-bar" aria-hidden />
+                <span className="calv-agenda-text">
+                  <span className="calv-ev-title">{b.title}</span>
+                  {(b.page_title || b.issue_summary) && <span className="calv-ev-meta">{b.page_title ?? b.issue_summary}</span>}
+                </span>
+                <span className="calv-agenda-marks" />
+              </button>
+            ) : (
             <button
               type="button"
               key={e.key}
@@ -917,7 +957,8 @@ function AgendaList({ range, events, cal, booked, selected, onSelect }: { range:
                 {e.link && <Video size={13} className="faint" aria-label={t("calv.online")} />}
               </span>
             </button>
-          ))}
+            ),
+          )}
         </section>
       ))}
     </div>
@@ -941,7 +982,7 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
       ? `${fmtDate(start)} – ${fmtDate(new Date(end.getTime() - 1))} · ${t("cal.allDay")}`
       : `${start.toLocaleDateString(l, { weekday: "short" })}, ${fmtDate(start)} · ${t("cal.allDay")}`
     : `${start.toLocaleDateString(l, { weekday: "short" })}, ${fmtDate(start)} · ${timeRange(e)} (${fmtMinutes(minutes)} h)`;
-  const people = allPeople ? e.attendees : e.attendees.slice(0, 8);
+  const people = (allPeople ? e.attendees : e.attendees.slice(0, 8)).map(attendeeName);
   const entry = booked && "netzplan_nr" in booked ? booked : null;
   const linkKind = e.link?.includes("teams.") ? "Teams" : e.link?.includes("zoom.") ? "Zoom" : e.link?.includes("webex.") ? "Webex" : e.link?.includes("meet.google.") ? "Google Meet" : "Online";
   const calendar = cal?.outlook_calendars?.find((c) => c.id === e.source);

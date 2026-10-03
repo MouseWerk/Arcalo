@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { BURST_GAP, waitsForField, changedKeys, checkProxy, checkTime, checkUrl, continueBurst, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout } from "./settingsApply";
+import { BURST_GAP, waitsForField, changedKeys, checkProxy, checkTime, checkUrl, continueBurst, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, workHoursOrder } from "./settingsApply";
 import type { Settings } from "./types";
 
 const base = {
@@ -104,3 +104,13 @@ describe("states that wait for a field", () => {
   });
 });
 
+
+describe("workHoursOrder", () => {
+  it.each([
+    ["08:00", "18:00", null],
+    ["7:30", "16:00", null],
+    ["18:00", "08:00", "order"],
+    ["09:00", "09:00", "order"],
+    ["9 Uhr", "17:00", null],
+  ])("%s – %s", (a, b, want) => expect(workHoursOrder(a, b)).toBe(want));
+});

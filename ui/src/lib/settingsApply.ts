@@ -78,7 +78,7 @@ export function waitsForField(s: Settings): "network" | "filing" | "prices" | "a
 /** Milliseconds an undo toast stays: longer for destructive changes. */
 export const undoTimeout = (destructive: boolean) => (destructive ? 15000 : 7000);
 
-export type FieldError = "url" | "time" | "number" | null;
+export type FieldError = "url" | "time" | "number" | "order" | null;
 
 /** An address with `http(s)://` (or a host that gets it), or empty when allowed. */
 export function checkUrl(v: string, opts: { empty?: boolean; schemes?: string[] } = {}): FieldError {
@@ -105,6 +105,15 @@ export function checkProxy(v: string, schemes = ["http", "https"]): FieldError {
 /** `HH:MM` (24 hours). */
 export function checkTime(v: string): FieldError {
   return /^([01]?\d|2[0-3]):[0-5]\d$/.test(v.trim()) ? null : "time";
+}
+
+/** Working hours `start`–`end` (both `HH:MM`): an error when the end is not after the start. */
+export function workHoursOrder(start: string, end: string): FieldError {
+  const min = (v: string) => {
+    const [h, m] = v.trim().split(":").map(Number);
+    return h * 60 + m;
+  };
+  return checkTime(start) || checkTime(end) || min(end) > min(start) ? null : "order";
 }
 
 // ------------------------------------------------------------------ menu

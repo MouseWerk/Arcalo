@@ -86,8 +86,9 @@ pub fn block_task_done(app: AppHandle, state: State<AppState>, id: i64) -> Resul
 /// calendar do not take the user's time.
 #[tauri::command(async)]
 pub fn block_free_slots(state: State<AppState>, date: NaiveDate, minutes: i64) -> Result<Vec<DateTime<Utc>>> {
-    let sources = state.settings().calendar.booking_sources(outlook::available());
-    state.reader().block_free_slots(date, minutes, Utc::now(), &Zone::Local, &sources)
+    let settings = state.settings();
+    let sources = settings.calendar.booking_sources(outlook::available());
+    state.reader().block_free_slots(date, minutes, Utc::now(), &Zone::Local, &sources, settings.time.work_hours())
 }
 
 /// Writes what waits for Outlook now (the „Erneut versuchen“ of the block detail).

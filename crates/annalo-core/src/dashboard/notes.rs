@@ -183,7 +183,13 @@ pub fn resurface<Tz: TimeZone>(ctx: &Ctx<Tz>, seed: u64) -> Result<ResurfaceData
         )?;
         let content: String =
             ctx.db.conn().query_row("SELECT content FROM pages WHERE id = ?1", [page.id], |r| r.get(0))?;
-        Some(RandomNote { excerpt: excerpt(&content, 220), page })
+        // A canvas shows the text of its cards, not its JSON.
+        let text = if page.kind.as_deref() == Some(crate::canvas::KIND) {
+            crate::canvas::index_markdown(&content)
+        } else {
+            content
+        };
+        Some(RandomNote { excerpt: excerpt(&text, 220), page })
     } else {
         None
     };
@@ -536,6 +542,29 @@ mod tests {
         );
         let data = super::inbox(&ctx, 10).unwrap();
         assert_eq!((data.page_id, data.total), (Some(ib.id), 0));
+    }
+
+    #[test]
+    fn a_random_canvas_shows_its_cards_not_its_json() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Board", Some(crate::canvas::ICON)).unwrap();
+        db.make_canvas(
+            p.id,
+            r#"{"nodes":[{"id":"a","type":"text","text":"Erste Karte","x":0,"y":0,"width":100,"height":60}],"edges":[]}"#,
+        )
+        .unwrap();
+        db.conn().execute("UPDATE pages SET updated_at = '2020-01-01T00:00:00Z'", []).unwrap();
+        let settings = Settings::default();
+        let ctx = Ctx::new(
+            &db,
+            &Utc,
+            at("2026-10-01T10:00:00Z"),
+            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            &[],
+            &settings,
+        );
+        let r = super::resurface(&ctx, 0).unwrap().random.unwrap();
+        assert!(r.excerpt.contains("Erste Karte") && !r.excerpt.contains("nodes"), "{}", r.excerpt);
     }
 
     #[test]

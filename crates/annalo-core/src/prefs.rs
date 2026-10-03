@@ -522,6 +522,11 @@ pub struct TimePrefs {
     pub export_file_pattern: String,
     /// Overtime balance, vacation account and public holidays.
     pub balance: crate::worktime::BalancePrefs,
+    /// Start of the working hours (local `HH:MM`): the free slots of „Im Kalender planen…“ lie
+    /// inside `work_start..work_end`.
+    pub work_start: String,
+    /// End of the working hours (local `HH:MM`).
+    pub work_end: String,
 }
 
 impl Default for TimePrefs {
@@ -536,13 +541,31 @@ impl Default for TimePrefs {
             cats_columns: CatsColumns::Standard,
             export_file_pattern: DEFAULT_EXPORT_PATTERN.into(),
             balance: crate::worktime::BalancePrefs::default(),
+            work_start: DEFAULT_WORK_START.into(),
+            work_end: DEFAULT_WORK_END.into(),
         }
     }
 }
 
+pub const DEFAULT_WORK_START: &str = "08:00";
+pub const DEFAULT_WORK_END: &str = "18:00";
+
 pub const DEFAULT_EXPORT_PATTERN: &str = "zeiten-{von}-{bis}";
 
 impl TimePrefs {
+    /// The working hours: `work_start..work_end`, or 08:00–18:00 when they are unreadable or
+    /// the end is not after the start.
+    pub fn work_hours(&self) -> (NaiveTime, NaiveTime) {
+        let parse = |s: &str| crate::desktop::parse_hhmm(s);
+        match (parse(&self.work_start), parse(&self.work_end)) {
+            (Some(a), Some(b)) if a < b => (a, b),
+            _ => (
+                NaiveTime::from_hms_opt(8, 0, 0).unwrap_or_default(),
+                NaiveTime::from_hms_opt(18, 0, 0).unwrap_or_default(),
+            ),
+        }
+    }
+
     /// The default Leistungsart of a Netzplan (number compared case-insensitively).
     pub fn default_la_for(&self, netzplan_nr: &str) -> Option<&str> {
         self.default_leistungsart

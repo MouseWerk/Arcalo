@@ -650,12 +650,11 @@ fn events<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Grou
                 "ort" | "location" => text_cell(key, ev.location.clone()),
                 "kalender" | "calendar" => text_cell(key, e.source.clone()),
                 "organisator" => text_cell(key, ev.organizer.clone()),
-                "teilnehmer" => Cell {
-                    key: key.to_owned(),
-                    text: ev.attendees.join(", "),
-                    value: Some(Typed::MultiSelect(ev.attendees.clone())),
-                    error: None,
-                },
+                "teilnehmer" => {
+                    let names: Vec<String> =
+                        ev.attendees.iter().map(|a| crate::calsync::attendee_name(a).to_owned()).collect();
+                    Cell { key: key.to_owned(), text: names.join(", "), value: Some(Typed::MultiSelect(names)), error: None }
+                }
                 "gebucht" => text_cell(key, if e.entry_id.is_some() { "ja" } else { "nein" }),
                 "datum" | "tag" | "date" => date_cell(key, Some(&day)),
                 _ => return None,

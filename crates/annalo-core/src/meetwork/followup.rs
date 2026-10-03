@@ -505,12 +505,23 @@ fn encode(s: &str) -> String {
     out
 }
 
-/// The `mailto:` link: the attendees given as addresses, subject and the plain text,
+/// The address of a recipient entry for a `mailto:` link (RFC 6068 takes bare addresses):
+/// `Anna Müller <anna@firma.de>` → `anna@firma.de`; entries without an address are left out.
+fn mailto_address(entry: &str) -> Option<&str> {
+    let e = entry.trim();
+    let a = match e.strip_suffix('>').and_then(|rest| rest.rsplit_once('<')) {
+        Some((_, address)) => address.trim(),
+        None => e.trim_start_matches("mailto:"),
+    };
+    (a.contains('@') && !a.contains(char::is_whitespace)).then_some(a)
+}
+
+/// The `mailto:` link: the attendees' addresses, subject and the plain text,
 /// shortened line by line to [`MAILTO_MAX`] with a hint. Returns the link and whether the
 /// text was shortened.
 pub fn mailto(f: &FollowUp) -> (String, bool) {
     let w = words(&f.lang);
-    let to: Vec<String> = f.to.iter().filter(|a| a.contains('@')).map(|a| encode(a.trim())).collect();
+    let to: Vec<String> = f.to.iter().filter_map(|a| mailto_address(a)).map(encode).collect();
     let head = format!("mailto:{}?subject={}&body=", to.join(","), encode(&f.subject));
     let text = text_body(f).replace('\n', "\r\n");
     let full = format!("{head}{}", encode(&text));

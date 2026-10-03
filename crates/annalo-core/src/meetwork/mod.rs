@@ -128,8 +128,13 @@ pub fn clip(text: &str, max: usize) -> String {
 
 /// The forms a person's name is written in: „Müller, Anna“ also as „Anna Müller“ and back.
 pub fn name_forms(name: &str) -> Vec<String> {
-    let name = name.trim();
+    let entry = name.trim();
+    let name = crate::calsync::attendee_name(entry);
     let mut out = vec![name.to_owned()];
+    // `Anna Müller <anna@firma.de>`: the address is a form too.
+    if name != entry {
+        out.push(entry[name.len()..].trim().trim_start_matches('<').trim_end_matches('>').to_owned());
+    }
     if let Some((last, first)) = name.split_once(", ") {
         out.push(format!("{} {}", first.trim(), last.trim()));
     } else if !name.contains('@') {
@@ -145,6 +150,7 @@ pub fn name_forms(name: &str) -> Vec<String> {
 
 /// The displayable form of a person's name („Müller, Anna“ → „Anna Müller“).
 pub fn display_name(name: &str) -> String {
+    let name = crate::calsync::attendee_name(name);
     match name.trim().split_once(", ") {
         Some((last, first)) if !name.contains('@') => format!("{} {}", first.trim(), last.trim()),
         _ => name.trim().to_owned(),

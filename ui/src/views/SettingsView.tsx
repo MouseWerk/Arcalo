@@ -15,7 +15,7 @@ import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions
 import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
-import { changedKeys, checkTime, checkUrl, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
+import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
@@ -706,6 +706,32 @@ function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (
                 </button>
               );
             })}
+          </div>
+        </Row>
+        <Row label={t("set.time.hours")} description={t("set.time.hoursDesc")}>
+          <div className="unit-input">
+            <CommitInput
+              inputMode="numeric"
+              placeholder="08:00"
+              maxLength={5}
+              className="time-input num"
+              value={draft.time.work_start ?? "08:00"}
+              onCommit={(v) => update({ time: { ...draft.time, work_start: v } })}
+              validate={(v) => (checkTime(v) ? t("settings.err.time") : workHoursOrder(v, draft.time.work_end ?? "18:00") ? t("set.time.hoursOrder") : null)}
+              aria-label={t("set.time.hoursFrom")}
+            />
+            <span className="faint">–</span>
+            <CommitInput
+              inputMode="numeric"
+              placeholder="18:00"
+              maxLength={5}
+              className="time-input num"
+              value={draft.time.work_end ?? "18:00"}
+              onCommit={(v) => update({ time: { ...draft.time, work_end: v } })}
+              validate={(v) => (checkTime(v) ? t("settings.err.time") : workHoursOrder(draft.time.work_start ?? "08:00", v) ? t("set.time.hoursOrder") : null)}
+              aria-label={t("set.time.hoursTo")}
+            />
+            <span className="faint">{t("unit.oclock")}</span>
           </div>
         </Row>
       </Group>

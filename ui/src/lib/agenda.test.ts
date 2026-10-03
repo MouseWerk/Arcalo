@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bookedEntry, bookingPrefill, hasSources, keyAction, layoutDay, monthCells, nonBookingSources, rangeTitle, sourceColor, step, timeRange, unbooked, viewRange, weekLabel } from "./agenda";
+import { attendeeName, bookedEntry, bookingPrefill, dayItems, hasSources, keyAction, layoutDay, monthCells, nonBookingSources, rangeTitle, sourceColor, step, timeRange, unbooked, viewRange, weekLabel } from "./agenda";
 import { isoDay } from "./format";
-import type { CalendarEvent, CalendarSettings, OutlookCalendar, TimeEntryRow } from "./types";
+import type { CalendarEvent, CalendarSettings, FocusBlock, OutlookCalendar, TimeEntryRow } from "./types";
 
 const at = (d: number, h: number, m = 0) => new Date(2026, 8, d, h, m).toISOString();
 
@@ -128,6 +128,17 @@ describe("month cells", () => {
     const two = monthCells([ev("t", 22, 0, 48 * 60, { all_day: true })], days, 4);
     expect([two.get("2026-09-22")!.shown.length, two.get("2026-09-23")!.shown.length, two.get("2026-09-24")!.shown.length]).toEqual([1, 1, 0]);
   });
+  it("shows focus blocks among the appointments, by start, and counts them as lines", () => {
+    const days = viewRange("month", new Date(2026, 8, 1), 1).days;
+    const a = ev("a", 21, 9, 60);
+    const blk = (id: number, h: number) => ({ id, title: `Block ${id}`, start: new Date(2026, 8, 21, h).toISOString(), end: new Date(2026, 8, 21, h + 1).toISOString() }) as FocusBlock;
+    const cell = monthCells([a, ev("c", 21, 12, 60)], days, 4, [blk(1, 10), blk(2, 8)]).get("2026-09-21")!;
+    expect(cell.items.map((x) => x.e?.key ?? `b${x.b!.id}`)).toEqual(["b2", "a", "b1", "c"]);
+    expect(cell.more).toBe(0);
+    const full = monthCells([a, ev("c", 21, 12, 60)], days, 4, [blk(1, 10), blk(2, 8), blk(3, 14)]).get("2026-09-21")!;
+    expect([full.items.length, full.more, full.shown.map((e) => e.key)]).toEqual([3, 2, ["a"]]);
+    expect(dayItems([], [blk(1, 10)], new Date(2026, 8, 22))).toEqual([]);
+  });
 });
 
 describe("booking", () => {
@@ -194,4 +205,15 @@ describe("helpers", () => {
     expect(timeRange(ev("a", 25, 9, 90))).toBe("09:00–10:30");
     expect(timeRange(ev("a", 25, 0, 1440, { all_day: true }))).toBe("ganztägig");
   });
+});
+
+describe("attendeeName", () => {
+  it.each([
+    ["Anna Müller <anna@firma.de>", "Anna Müller"],
+    ["Müller, Anna <anna@firma.de>", "Müller, Anna"],
+    ["anna@firma.de", "anna@firma.de"],
+    ["<anna@firma.de>", "<anna@firma.de>"],
+    ["Team <intern>", "Team <intern>"],
+    ["  Jörg Weiß ", "Jörg Weiß"],
+  ])("%s", (entry, name) => expect(attendeeName(entry)).toBe(name));
 });

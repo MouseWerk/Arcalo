@@ -274,7 +274,7 @@ test("Nachfass-Mail as an Outlook draft with attendees, subject and escaped body
   assert.equal(drafts.length, 1);
   const d = drafts[0];
   // Mia Meyer is the user (her Jira account): the mail does not go to herself.
-  assert.deepEqual(d.to, ["Anna Müller", "Jörg Weiß"]);
+  assert.deepEqual(d.to, ["Anna Müller <anna@example.com>", "Jörg Weiß <joerg@example.com>"]);
   assert.match(d.subject, /^Zusammenfassung: Jour fixe Portal \(\d{2}\.\d{2}\.\d{4}\)$/);
   assert.match(d.html, /<meta charset="utf-8">/);
   assert.match(d.html, /Hallo zusammen,/);

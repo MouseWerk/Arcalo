@@ -9,7 +9,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { GraphDisplay, GraphModel, GroupColor, VNode } from "../../lib/graph";
-import { nearestInDirection, nodeRadius } from "../../lib/graph";
+import { nearestInDirection, nodeRadius, placeLabel } from "../../lib/graph";
 import type { ForceParams, LayoutIn, LayoutOut, LayoutPort } from "../../lib/graphLayout";
 import { startLayout } from "../../lib/graphLayout";
 import { t } from "../../lib/i18n";
@@ -319,10 +319,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
     const boxes: number[] = [];
     for (const i of labelled.slice(0, max)) {
       const node = model.nodes[i];
-      const sx = pos[i * 2] * k + view.x;
       const sy = (pos[i * 2 + 1] + radius[i]) * k + view.y + 4;
-      const text = node.label.length > 42 ? `${node.label.slice(0, 40)}…` : node.label;
-      const tw = ctx.measureText(text).width;
+      // Kept inside the canvas: a node near the panel's edge keeps its whole label.
+      const placed = placeLabel(node.label.length > 42 ? `${node.label.slice(0, 40)}…` : node.label, pos[i * 2] * k + view.x, w, (x) => ctx.measureText(x).width);
+      const { text, x: sx, width: tw } = placed;
       const bx0 = sx - tw / 2 - 2, bx1 = sx + tw / 2 + 2, by0 = sy - 1, by1 = sy + fs + 1;
       let hit = false;
       for (let b = 0; b < boxes.length && !hit; b += 4) hit = bx0 < boxes[b + 2] && bx1 > boxes[b] && by0 < boxes[b + 3] && by1 > boxes[b + 1];

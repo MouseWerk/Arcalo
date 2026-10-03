@@ -2186,6 +2186,16 @@
             }
           ],
           "default": "monday"
+        },
+        "work_end": {
+          "default": "18:00",
+          "description": "End of the working hours (local `HH:MM`).",
+          "type": "string"
+        },
+        "work_start": {
+          "default": "08:00",
+          "description": "Start of the working hours (local `HH:MM`): the free slots of „Im Kalender planen…“ lie inside `work_start..work_end`.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -3165,7 +3175,9 @@
           "mode": "up",
           "step_minutes": 0
         },
-        "week_start": "monday"
+        "week_start": "monday",
+        "work_end": "18:00",
+        "work_start": "08:00"
       },
       "description": "Zeiterfassung: on/off, rounding, CATS export, balance."
     },
@@ -3185,7 +3197,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 10,
+      "default": 11,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

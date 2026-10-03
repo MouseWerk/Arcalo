@@ -112,7 +112,7 @@ test("Follow-up mail through the mail program, and copy as text", async () => {
   assert.match(await app.text(".dialog .mw-fu-note"), /mail app/);
   assert.equal(await app.browser.execute(() => !!document.querySelector(".dialog .mw-fu-outlook")), false, "no Outlook here");
   const href = await app.browser.execute(() => document.querySelector(".dialog .mw-fu-mailto").dataset.href);
-  assert.match(href, /^mailto:ben%40example\.com\?subject=Summary%3A%20Weekly%20sync%20%28\d{4}-\d{2}-\d{2}%29&body=Hello%20all%2C/);
+  assert.match(href, /^mailto:ben%40example\.com,clara%40example\.com\?subject=Summary%3A%20Weekly%20sync%20%28\d{4}-\d{2}-\d{2}%29&body=Hello%20all%2C/);
   const body = decodeURIComponent(href.split("&body=")[1]);
   assert.match(body, /The pilot is live & stable/);
   assert.match(body, /- Write the release notes \(Owner: Clara Jones\) – Due: \d{4}-\d{2}-\d{2}/);
