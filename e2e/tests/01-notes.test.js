@@ -91,7 +91,7 @@ test("clicking an unresolved link creates the page", async () => {
   await editorEnd();
   await app.keys(["Enter"]);
   await app.type("Neu: [[Lessons Learned");
-  await app.waitText(".sugg-item", /neu verlinken/);
+  await app.waitText(".sugg-item", /als neue Seite verlinken/);
   await app.keys(["Enter"]);
   const link = await app.waitFor(".ProseMirror a.wikilink.unresolved");
   await link.click();

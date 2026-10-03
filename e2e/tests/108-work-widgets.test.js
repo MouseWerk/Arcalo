@@ -11,6 +11,9 @@ import { isoDay, enableTeamCalendars, writeWorkFixtures } from "../lib/work-fixt
 const test = guarded(nodeTest, () => app);
 let app;
 let fx;
+// Whether today is a public holiday in Bavaria (then the run goes on without a state, so
+// today keeps its target and the absence flow works on any date).
+let holidayToday = false;
 
 const W = (id, x, y, w, h, config = {}) => ({ id, kind: id, x, y, w, h, config });
 const today = isoDay(new Date());
@@ -28,7 +31,9 @@ before(async () => {
   await app.invoke("settings_save", {
     settings: {
       ...view.settings,
-      time: { ...view.settings.time, balance: { weekday_hours: [], start: monday(-3), opening_hours: 12.5, vacation_days: 30, carry_over: 2, state: "BY" } },
+      // Every day a workday, so "today" has a target whatever weekday the run falls on.
+      workdays: [1, 2, 3, 4, 5, 6, 7],
+      time: { ...view.settings.time, balance: { weekday_hours: [8, 8, 8, 8, 8, 8, 8], start: monday(-3), opening_hours: 12.5, vacation_days: 30, carry_over: 2, state: "BY" } },
     },
   });
   await enableTeamCalendars(app);
@@ -52,6 +57,15 @@ before(async () => {
   await app.browser.execute(() => location.reload());
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
+  await app.waitText('.pane.active [data-widget="vacation"] .wv-holiday', /\S/, 15000);
+  holidayToday = /Heute/.test(await app.text('.pane.active [data-widget="vacation"] .wv-holiday'));
+  if (holidayToday) {
+    const v = await app.invoke("settings_get");
+    await app.invoke("settings_save", { settings: { ...v.settings, time: { ...v.settings.time, balance: { ...v.settings.time.balance, state: "" } } } });
+    await app.browser.execute(() => location.reload());
+    await app.browser.pause(300);
+    await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready" });
+  }
 });
 after(async () => {
   await app?.close();
@@ -73,7 +87,7 @@ test("balance and vacation: hours and days in German notation", async () => {
   // 30 days plus 2 carried over; the next holiday in Bavaria.
   await app.waitText('.pane.active [data-widget="vacation"] .wv-dl', /Anspruch \d{4}\s*32/);
   assert.match(await app.text('.pane.active [data-widget="vacation"] .wv-holiday'), /\S+/);
-  assert.ok(!(await app.text('.pane.active [data-widget="vacation"] .wv-holiday')).includes("Bundesland"), "a state is chosen");
+  if (!holidayToday) assert.ok(!(await app.text('.pane.active [data-widget="vacation"] .wv-holiday')).includes("Bundesland"), "a state is chosen");
 });
 
 test("the absence dialog enters vacation for today; the Kalender's day header shows and removes it", async () => {
@@ -96,6 +110,8 @@ test("the absence dialog enters vacation for today; the Kalender's day header sh
 
   // The Kalender: today's header carries the absence; it opens the dialog to remove it.
   await app.keys(["Control", "Shift", "e"]);
+  // Today's day view: a seven-day week in a narrow pane hides the header chips.
+  await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .calv-dayhead-date`);
   await app.waitText(`.pane.active .calv-dayhead[data-date="${today}"] .wa-chip.set`, /Urlaub \(halb\)/, 10000);
   await app.shot("108-calendar-absence");
   await app.click(`.pane.active .calv-dayhead[data-date="${today}"] .wa-chip.set`);
