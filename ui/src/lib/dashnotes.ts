@@ -123,7 +123,8 @@ export function writingBars(days: { date: string; words: number; created: number
 }
 
 /** The random note of a day: the same all day, another one with „Mischen“. */
-export const daySeed = (d: Date) => d.getFullYear() * 1000 + Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86_400_000);
+// Counted on the calendar (UTC dates), not in hours: the day after the clock change is a day of its own.
+export const daySeed = (d: Date) => d.getFullYear() * 1000 + Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 1)) / 86_400_000);
 
 // ------------------------------------------------------------------ backup and Git sync
 

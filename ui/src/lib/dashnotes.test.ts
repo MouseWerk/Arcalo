@@ -56,6 +56,10 @@ describe("inbox, writing and status", () => {
   it("keeps the random note for a day", () => {
     expect(daySeed(new Date(2026, 9, 1, 8))).toBe(daySeed(new Date(2026, 9, 1, 22)));
     expect(daySeed(new Date(2026, 9, 2))).not.toBe(daySeed(new Date(2026, 9, 1)));
+    // Every day of a year has its own seed, also around the clock changes.
+    const seeds = new Set(Array.from({ length: 365 }, (_, i) => daySeed(new Date(2026, 0, 1 + i))));
+    expect(seeds.size).toBe(365);
+    expect(daySeed(new Date(2026, 0, 1))).toBe(2026000);
   });
 
   it("rates backups and Git sync", () => {
