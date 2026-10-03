@@ -3440,9 +3440,13 @@ struct ActivityTick {
     is_idle: bool,
 }
 
+/// How often the activity sampler looks at the idle time (also the pace the timer's idle
+/// detection expects: a much longer gap is the computer sleeping).
+const IDLE_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Samples input idleness and the foreground window every 5 seconds.
 fn spawn_activity_sampler(app: AppHandle) {
-    const INTERVAL: Duration = Duration::from_secs(5);
+    const INTERVAL: Duration = IDLE_SAMPLE_INTERVAL;
     std::thread::spawn(move || {
         let probe = activity::system_probe();
         let mut ticks = 0u32;
@@ -4201,7 +4205,7 @@ pub fn run() {
                 data_dir_notice: notice,
                 meter: Mutex::new(SessionMeter::default()),
                 session_id: Utc::now().format("%Y%m%dT%H%M%S").to_string(),
-                idle: Mutex::new(IdleAccumulator::new(idle_threshold)),
+                idle: Mutex::new(IdleAccumulator::new(idle_threshold).sampled_every(IDLE_SAMPLE_INTERVAL)),
                 usage: Mutex::new(WindowUsage::default()),
                 cancels: Mutex::new(HashMap::new()),
                 server_models: Mutex::new(HashMap::new()),

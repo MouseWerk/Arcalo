@@ -155,7 +155,11 @@ export function parseDue(word: string, now = new Date()): string | null {
       return isoDay(addDays(today, ((iso - cur + 7) % 7) || 7));
     }
   }
-  return parseDayInput(w, now);
+  const date = parseDayInput(w, now);
+  // A day without a year that has passed is next year's („bis 5.1.“ in December), as in the
+  // voice notes.
+  if (date && date < isoDay(today) && /^\d{1,2}[./]\d{1,2}\.?$/.test(w)) return parseDayInput(`${w.replace(/\.$/, "")}${w.includes("/") ? "/" : "."}${today.getFullYear() + 1}`, now);
+  return date;
 }
 
 // German and English day words. English ones only after „by“/„on“/„due“ („today“ and „monday“

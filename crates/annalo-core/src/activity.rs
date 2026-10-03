@@ -62,6 +62,10 @@ pub struct IdleAccumulator {
     threshold: chrono::Duration,
     total: chrono::Duration,
     idle_since: Option<DateTime<Utc>>,
+    /// The previous sample: a gap longer than `sleep_gap` is time the computer slept.
+    last_sample: Option<DateTime<Utc>>,
+    /// Set by [`Self::sampled_every`]; `None`: samples come at any pace (no sleep detection).
+    sleep_gap: Option<chrono::Duration>,
 }
 
 impl IdleAccumulator {
@@ -75,13 +79,36 @@ impl IdleAccumulator {
             threshold: chrono::Duration::from_std(threshold).unwrap_or(chrono::Duration::MAX),
             total: chrono::Duration::zero(),
             idle_since: None,
+            last_sample: None,
+            sleep_gap: None,
         }
+    }
+
+    /// Samples come every `interval`: a gap of many intervals (at least a minute) without one
+    /// is the computer sleeping.
+    pub fn sampled_every(mut self, interval: Duration) -> Self {
+        let gap = chrono::Duration::from_std(interval * 12).unwrap_or(chrono::Duration::MAX);
+        self.sleep_gap = Some(gap.max(chrono::Duration::minutes(1)));
+        self
     }
 
     /// Feeds one sample: at `now` the user has been idle for `idle_for`.
     pub fn observe(&mut self, now: DateTime<Utc>, idle_for: Duration) {
         let idle_for = chrono::Duration::from_std(idle_for).unwrap_or(chrono::Duration::zero());
         let last_input = now - idle_for;
+        // No samples while the computer slept: the system's idle time may not have counted the
+        // sleep, so the gap since the previous sample is idle too (not booked as work).
+        if let (Some(prev), Some(gap)) = (self.last_sample.replace(now), self.sleep_gap)
+            && now - prev >= gap.max(self.threshold)
+            && self.idle_since.is_none()
+        {
+            if idle_for >= self.threshold {
+                self.idle_since = Some(last_input.min(prev));
+            } else {
+                self.total += (last_input - prev).max(chrono::Duration::zero());
+            }
+            return;
+        }
         if idle_for >= self.threshold {
             // Keep the earliest start if the idle stretch was already known.
             self.idle_since.get_or_insert(last_input);
@@ -108,6 +135,7 @@ impl IdleAccumulator {
     pub fn reset(&mut self) {
         self.total = chrono::Duration::zero();
         self.idle_since = None;
+        self.last_sample = None;
     }
 }
 
@@ -307,6 +335,34 @@ mod tests {
         acc.observe(at(50), m(2)); // input at 09:48 → idle 09:24..09:48
         assert!(!acc.is_idle());
         assert_eq!(acc.idle_minutes(at(60)), 24);
+    }
+
+    #[test]
+    fn sleep_between_samples_counts_as_idle() {
+        let t0 = Utc.with_ymd_and_hms(2026, 10, 25, 17, 0, 0).unwrap();
+        let at = |min: i64| t0 + chrono::Duration::minutes(min);
+        let m = |min: u64| Duration::from_secs(min * 60);
+        let s = |sec: u64| Duration::from_secs(sec);
+        for (wake_idle, want) in [
+            // After waking the system reports a short idle time (sleep not counted): the gap
+            // up to the first input counts.
+            (s(30), 14 * 60 - 1),
+            // The system counted the sleep: idle since the last input before it.
+            (m(14 * 60), 14 * 60),
+        ] {
+            let mut acc = IdleAccumulator::new(m(5)).sampled_every(s(5));
+            acc.observe(at(0), s(5));
+            acc.observe(at(1), s(10)); // last sample before the lid closes
+            acc.observe(at(1 + 14 * 60), wake_idle);
+            acc.observe(at(2 + 14 * 60), s(5));
+            assert_eq!(acc.idle_minutes(at(3 + 14 * 60)), want, "{wake_idle:?}");
+        }
+        // Samples every few seconds never look like a gap.
+        let mut acc = IdleAccumulator::new(m(5)).sampled_every(s(5));
+        for k in 0..100 {
+            acc.observe(t0 + chrono::Duration::seconds(5 * k), s(2));
+        }
+        assert_eq!(acc.idle_minutes(t0 + chrono::Duration::seconds(500)), 0);
     }
 
     #[test]

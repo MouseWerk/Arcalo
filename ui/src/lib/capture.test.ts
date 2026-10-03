@@ -114,6 +114,17 @@ describe("due dates", () => {
     expect(parseDue("31.2.", now)).toBeNull();
   });
 
+  it("puts a day without a year that has passed into next year", () => {
+    const dec = new Date(2026, 11, 20, 10, 0);
+    expect(parseDue("5.1.", dec)).toBe("2027-01-05");
+    expect(parseDue("20.12.", dec)).toBe("2026-12-20");
+    expect(parseDue("24.12.", dec)).toBe("2026-12-24");
+    expect(parseDue("1.12.2026", dec)).toBe("2026-12-01");
+    expect(parseDue("2026-01-05", dec)).toBe("2026-01-05");
+    expect(parseDue("29.2.", dec)).toBeNull();
+    expect(normalizeLine("todo Steuer bis 5.1.", dec)).toBe("todo Steuer due:2027-01-05");
+  });
+
   it("turns due words and trailing days of tasks into the task format", () => {
     expect(normalizeLine("todo Angebot senden due:fr", now)).toBe("todo Angebot senden due:2026-09-25");
     expect(normalizeLine("- [ ] Angebot due:morgen !!", now)).toBe("- [ ] Angebot due:2026-09-24 !!");

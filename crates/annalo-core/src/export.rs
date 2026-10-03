@@ -123,9 +123,18 @@ fn sap_cats(rows: &[&TimeEntryRow], opts: &ExportOptions) -> (String, Vec<i64>) 
     let mut out = cols.join(&sep);
     out.push_str("\r\n");
     let pernr = opts.pernr.as_deref().unwrap_or("");
+    // Hours with two decimals that add up per day: each row is the rounded running total of
+    // its day minus the rounded total before it (three times 20 minutes are 0,33 + 0,34 + 0,33,
+    // not 0,99 h).
+    let mut day_minutes: HashMap<String, i64> = HashMap::new();
+    let hundredths = |minutes: i64| (minutes * 100 + 30).div_euclid(60);
     for r in rows {
         let date = opts.local(r.entry.start_time).format("%Y%m%d").to_string();
-        let hrs = format!("{:.2}", hours(r)).replace('.', ",");
+        let minutes = r.entry.duration_minutes.unwrap_or(0);
+        let before = day_minutes.entry(date.clone()).or_insert(0);
+        let cents = hundredths(*before + minutes) - hundredths(*before);
+        *before += minutes;
+        let hrs = format!("{},{:02}", cents.div_euclid(100), cents.rem_euclid(100));
         let values: Vec<String> = cols
             .iter()
             .map(|c| match *c {
@@ -247,6 +256,31 @@ mod tests {
         assert_eq!(line, "00012345;20260923;NP-8801-1020;NP-8801;1020;DEV;2,50;H;\"Systemintegration; Phase 1\"");
         assert_eq!(r.exported_ids, vec![1]);
         assert_eq!(r.skipped.len(), 1);
+    }
+
+    #[test]
+    fn cats_hours_add_up_per_day() {
+        let at = |id: i64, day: u32, minutes: i64| {
+            let mut r = row(id, Some("1020"), Some(minutes), "x");
+            r.entry.start_time = Utc.with_ymd_and_hms(2026, 9, day, 9, 0, 0).unwrap();
+            r
+        };
+        let opts = ExportOptions { utc_offset_minutes: Some(120), ..Default::default() };
+        let hours_of = |rows: &[TimeEntryRow]| -> Vec<String> {
+            let r = export(rows, ExportFormat::SapCats, &opts).unwrap();
+            r.content.lines().skip(1).map(|l| l.split(';').nth(6).unwrap().to_owned()).collect()
+        };
+        assert_eq!(hours_of(&[at(1, 22, 20), at(2, 22, 20), at(3, 22, 20)]), ["0,33", "0,34", "0,33"]);
+        // Per day: another day starts its own total.
+        assert_eq!(hours_of(&[at(1, 22, 20), at(2, 23, 20), at(3, 22, 40)]), ["0,33", "0,33", "0,67"]);
+        assert_eq!(hours_of(&[at(1, 22, 150), at(2, 22, 5), at(3, 22, 600)]), ["2,50", "0,08", "10,00"]);
+        // Every day sums to its minutes / 60, rounded once.
+        for minutes in 1..=90 {
+            let rows: Vec<TimeEntryRow> = (0..7).map(|i| at(i, 22, minutes + i)).collect();
+            let total: i64 = hours_of(&rows).iter().map(|h| h.replace(',', "").parse::<i64>().unwrap()).sum();
+            let all: i64 = (0..7).map(|i| minutes + i).sum();
+            assert_eq!(total, (all * 100 + 30) / 60, "{minutes}");
+        }
     }
 
     #[test]
