@@ -44,6 +44,7 @@ import { flushAllEditors, registerFlusher, trackSave } from "./saves";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
+import { scrollMotion } from "../lib/motion";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -577,7 +578,7 @@ export function NoteEditor({
       if (editor.isDestroyed) return;
       editor.chain().focus().setTextSelection(pos + 1).run();
       const dom = editor.view.domAtPos(pos + 1).node as HTMLElement;
-      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (dom.nodeType === 1 ? dom : dom.parentElement)?.scrollIntoView({ behavior: scrollMotion(), block: "center" });
     };
     useApp.getState().set({ scrollToPos });
     // No stale count once this editor is gone or another pane is focused (that one publishes its own),

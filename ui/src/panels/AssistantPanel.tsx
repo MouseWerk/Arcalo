@@ -20,6 +20,7 @@ import { HistoryView } from "./assistant/HistoryView";
 import { TurnView } from "./assistant/TurnView";
 import { SUGGESTION_ICONS } from "./assistant/icons";
 import { answerTitle, copyText } from "./assistant/actions";
+import { scrollMotion } from "../lib/motion";
 
 export { openSource } from "./assistant/TurnView";
 
@@ -146,7 +147,7 @@ function ChatBody() {
     if (!el) return;
     stick.current = true;
     setAway(false);
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? scrollMotion() : "auto" });
   };
   // A new question or an opened chat scrolls to the end; a growing answer only while at the end.
   useLayoutEffect(() => toEnd(), [followTick]);

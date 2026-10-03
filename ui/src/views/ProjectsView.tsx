@@ -7,7 +7,7 @@ import { openStatusReport } from "../components/MeetingWork";
 import { openFocusDialog } from "../components/Focus";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, Spinner, useMenu } from "../components/ui";
+import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, useMenu, Skeleton } from "../components/ui";
 import { compact, h1, parseGermanNumber } from "../lib/format";
 import { LEVEL, useWbs } from "./wbs";
 import type { NetzplanOverview, NetzplanTree, ProjectTree, Vorgang } from "../lib/types";
@@ -62,9 +62,7 @@ export function ProjectsView() {
           </div>
         </header>
         {!loaded ? (
-          <div className="center-fill">
-            <Spinner />
-          </div>
+          <Skeleton rows={3} />
         ) : wbs.length === 0 ? (
           <EmptyState icon={Briefcase} title={t("proj.empty")} action={<Button icon={Plus} onClick={() => setDialog({ kind: "project" })}>{t("proj.create")}</Button>}>
             {t("proj.emptyHint")}

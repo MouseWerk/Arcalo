@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Hash } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { EmptyState, Spinner } from "../components/ui";
+import { EmptyState, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { relative } from "../lib/format";
 import type { Page } from "../lib/types";
@@ -28,9 +28,9 @@ export function TagView({ tag }: { tag: string }) {
           </div>
         </header>
         {!list ? (
-          <Spinner />
+          <Skeleton />
         ) : list.length === 0 ? (
-          <EmptyState icon={Hash} title={t("tag.none")} />
+          <EmptyState icon={Hash} title={t("tag.none")}>{t("tag.noneHint")}</EmptyState>
         ) : (
           <div className="page-list">
             {list.map((p) => (

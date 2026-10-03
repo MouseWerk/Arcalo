@@ -12,7 +12,7 @@ import { OPACITY_DEFAULT, OPACITY_MIN, backdropState, onBackdrop, previewOpacity
 import { ACCENT_PRESETS, accentHex, accentTokens, contrast } from "../../lib/color";
 import { useT, type TKey } from "../../lib/i18n";
 import { decimalSep } from "../../lib/format";
-import { BUILTIN_THEMES, allThemes, effectiveAccent, findTheme, themeName, type ThemeDef } from "../../lib/themes";
+import { BUILTIN_THEMES, accentSurfaces, allThemes, effectiveAccent, findTheme, themeName, type ThemeDef } from "../../lib/themes";
 import type { AppearancePrefs, CustomTheme } from "../../lib/types";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
@@ -356,7 +356,7 @@ function AccentRow({ a, set, light, dark, shown }: { a: AppearancePrefs; set: (p
     const h = accentHex(v);
     if (h && h !== accentHex(a.accent)) set({ accent: h });
   };
-  const tokens = (def: ThemeDef) => accentTokens(effectiveAccent(def, a.accent), def.dark ? "dark" : "light", def.colors.background);
+  const tokens = (def: ThemeDef) => accentTokens(effectiveAccent(def, a.accent), def.dark ? "dark" : "light", def.colors.background, accentSurfaces(def));
   const ratio = (def: ThemeDef) => contrast(tokens(def)["--accent-text"], def.colors.background).toFixed(1).replace(".", decimalSep());
   const now = tokens(shown);
   const fixed = !!shown.fixedAccent;

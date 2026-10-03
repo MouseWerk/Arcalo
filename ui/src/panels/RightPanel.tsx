@@ -60,7 +60,7 @@ function OutlinePanel() {
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const scroll = useApp((s) => s.scrollToPos);
   const reading = useReadingHeading(outline.length, doc?.id);
-  if (tab?.kind !== "page" || !doc) return <EmptyState icon={ListTree} title={tr("panel.noPage")} />;
+  if (tab?.kind !== "page" || !doc) return <EmptyState icon={ListTree} title={tr("panel.noPage")}>{tr("panel.noPageHint")}</EmptyState>;
   if (!outline.length) return <EmptyState icon={ListTree} title={tr("panel.noHeadings")}>{tr("panel.noHeadingsText")}</EmptyState>;
   const min = Math.min(...outline.map((o) => o.level));
   return (
@@ -111,7 +111,7 @@ function LinksPanel() {
   const doc = useApp((s) => s.activeDoc);
   const tab = useApp((s) => s.tabs.find((t) => t.id === s.activeTabId));
   const pages = useApp((s) => s.pages);
-  if (tab?.kind !== "page" || !doc) return <EmptyState icon={Link2} title={tr("panel.noPage")} />;
+  if (tab?.kind !== "page" || !doc) return <EmptyState icon={Link2} title={tr("panel.noPage")}>{tr("panel.noPageHint")}</EmptyState>;
   const titles = titleSet(pages);
   const { pages: unique, files } = outgoingLinks(doc.content, (t) => titles.has(t.toLowerCase()));
   const find = (t: string) => [...pages.values()].find((p) => p.title.toLowerCase() === t.toLowerCase());

@@ -11,7 +11,7 @@ import {
 import { api, attachmentUrl } from "../lib/api";
 import type { AttachmentInfo, AttachmentList } from "../lib/types";
 import { useApp } from "../store/app";
-import { Button, Dialog, EmptyState, IconButton, Segmented, Spinner, useMenu, type MenuEntry } from "../components/ui";
+import { Button, Dialog, EmptyState, IconButton, Segmented, useMenu, type MenuEntry, Skeleton } from "../components/ui";
 import { Select } from "../components/Select";
 import { PageIcon } from "../components/icons";
 import { fmtDate, int } from "../lib/format";
@@ -207,7 +207,7 @@ export function AttachmentsView() {
         </header>
 
         {!list ? (
-          <Spinner />
+          <Skeleton rows={4} variant="cards" />
         ) : empty ? (
           <EmptyState icon={Paperclip} title={t("att.empty")}>
             {t("att.emptyHint")}

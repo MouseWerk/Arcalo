@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Badge, Button, EmptyState, IconButton, Progress, Spinner, type Tone } from "../components/ui";
+import { Badge, Button, EmptyState, IconButton, Progress, type Tone, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { pickDate } from "../components/CalendarPopover";
 import { flushAllEditors } from "../editor/saves";
@@ -212,9 +212,7 @@ export function DayReviewView() {
         </header>
 
         {!r ? (
-          <div className="center-fill">
-            <Spinner />
-          </div>
+          <Skeleton rows={4} variant="cards" />
         ) : (
           <>
             <Stats r={r} />

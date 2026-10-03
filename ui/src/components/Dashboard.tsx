@@ -616,10 +616,10 @@ function WidgetCard({
         <Icon size={14} className="dw-head-icon" aria-hidden />
         {open && !editing ? (
           <button type="button" className="dw-title-btn" onClick={open}>
-            <h2>{title}</h2>
+            <h2 title={title}>{title}</h2>
           </button>
         ) : (
-          <h2>{title}</h2>
+          <h2 title={title}>{title}</h2>
         )}
         {editing ? (
           <div className="dw-tools">

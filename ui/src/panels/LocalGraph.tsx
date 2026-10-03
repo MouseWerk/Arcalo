@@ -44,7 +44,7 @@ export function LocalGraph() {
   const groups = view?.groups;
   const colors = useMemo(() => (model ? nodeColors(model.nodes, groups ?? [], palette) : []), [model, groups, palette]);
 
-  if (pageId == null) return <EmptyState icon={Network} title={t("panel.noPage")} />;
+  if (pageId == null) return <EmptyState icon={Network} title={t("panel.noPage")}>{t("panel.noPageHint")}</EmptyState>;
   if (!data)
     return (
       <div className="graph-loading">
@@ -77,7 +77,7 @@ export function LocalGraph() {
         </span>
       </div>
       {!model ? (
-        <EmptyState icon={Network} title={t("graph.notInGraph")} />
+        <EmptyState icon={Network} title={t("graph.notInGraph")}>{t("graph.notInGraphHint")}</EmptyState>
       ) : (
         <div className="local-graph-stage">
           <GraphCanvas

@@ -21,6 +21,7 @@ import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
 import { currentLang, t } from "../lib/i18n";
+import { scrollMotion } from "../lib/motion";
 
 // ---------------------------------------------------------------- columns
 
@@ -286,7 +287,7 @@ export const TableOfContents = Node.create({
         if (!entry) return;
         editor.chain().focus().setTextSelection(entry.pos + entry.text.length + 1).run();
         const el = editor.view.nodeDOM(entry.pos) as HTMLElement | null;
-        el?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+        el?.scrollIntoView?.({ behavior: scrollMotion(), block: "start" });
       });
       return {
         dom,
@@ -471,7 +472,7 @@ export function insertFootnote(editor: Editor) {
 
 function scrollTo(view: EditorView, pos: number) {
   const el = view.nodeDOM(pos) as HTMLElement | null;
-  el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  el?.scrollIntoView?.({ behavior: scrollMotion(), block: "center" });
 }
 
 /** Jumps from a reference to its definition (caret at its end). */
@@ -491,7 +492,7 @@ function jumpToReference(view: EditorView, label: string) {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, hit.pos + 1)));
   view.focus();
   const dom = view.nodeDOM(hit.pos) as HTMLElement | null;
-  dom?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  dom?.scrollIntoView?.({ behavior: scrollMotion(), block: "center" });
 }
 
 const BACK_ICON =

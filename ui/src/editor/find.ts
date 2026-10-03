@@ -4,6 +4,7 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { scrollMotion } from "../lib/motion";
 
 export const findKey = new PluginKey<FindState>("find");
 interface FindState {
@@ -90,7 +91,7 @@ export const FindInPage = Extension.create({
           const m = st.matches[index];
           if (dispatch) {
             dispatch(tr.setMeta(findKey, { query: st.query, index }).setSelection(TextSelection.create(tr.doc, m.from, m.to)).scrollIntoView());
-            requestAnimationFrame(() => (view.domAtPos(m.from).node as HTMLElement).parentElement?.scrollIntoView({ block: "center", behavior: "smooth" }));
+            requestAnimationFrame(() => (view.domAtPos(m.from).node as HTMLElement).parentElement?.scrollIntoView({ block: "center", behavior: scrollMotion() }));
           }
           return true;
         },

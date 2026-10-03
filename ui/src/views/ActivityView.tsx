@@ -8,7 +8,7 @@ import {
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { useTimeTracking } from "../lib/timetracking";
-import { EmptyState, IconButton, Select, Spinner } from "../components/ui";
+import { EmptyState, IconButton, Select, Skeleton } from "../components/ui";
 import { DateInput, dayLabel } from "../components/DateInput";
 import { pickDate } from "../components/CalendarPopover";
 import { PageIcon } from "../components/icons";
@@ -283,9 +283,7 @@ export function ActivityView() {
         </section>
 
         {items == null ? (
-          <div className="center-fill">
-            <Spinner />
-          </div>
+          <Skeleton rows={6} />
         ) : items.length === 0 ? (
           <EmptyState icon={ActivityIcon} title={t("feed.empty")}>
             {query || kinds.length || wbsFilter || person ? t("feed.emptyFiltered") : t("feed.emptyHint")}

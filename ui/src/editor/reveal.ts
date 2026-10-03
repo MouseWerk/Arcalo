@@ -6,6 +6,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { citeNeedles } from "../lib/citations";
+import { scrollMotion } from "../lib/motion";
 
 // ------------------------------------------------------------ editor registry
 
@@ -108,7 +109,7 @@ export function flashRange(editor: Editor, range: Located) {
   editor.view.dispatch(state.tr.setSelection(sel).setMeta(citeFlashKey, range));
   editor.view.focus();
   const dom = editor.view.nodeDOM(range.from) as HTMLElement | null;
-  (dom?.nodeType === 1 ? dom : dom?.parentElement)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  (dom?.nodeType === 1 ? dom : dom?.parentElement)?.scrollIntoView({ behavior: scrollMotion(), block: "center" });
   window.setTimeout(() => {
     if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(citeFlashKey, null));
   }, FLASH_MS);
@@ -145,7 +146,7 @@ export async function revealText(pageId: number, text: string, open: (pageId: nu
   const range = locateText(editor.state.doc, needles);
   if (!range) {
     editor.commands.focus("start");
-    (editor.view.dom as HTMLElement).closest(".page-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
+    (editor.view.dom as HTMLElement).closest(".page-scroll")?.scrollTo({ top: 0, behavior: scrollMotion() });
     return false;
   }
   flashRange(editor, range);

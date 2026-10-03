@@ -1,6 +1,7 @@
 // Scroll outline at the right edge of long notes: heading marks, the visible part, click to jump.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { scrollMotion } from "../lib/motion";
 
 interface Mark {
   top: number; // 0..1 of the document height
@@ -60,7 +61,7 @@ export function ScrollOutline({ scrollRef }: { scrollRef: RefObject<HTMLElement 
 
   if (!long) return null;
   const sc = scrollRef.current;
-  const jump = (fraction: number) => sc?.scrollTo({ top: fraction * sc.scrollHeight - sc.clientHeight / 2, behavior: "smooth" });
+  const jump = (fraction: number) => sc?.scrollTo({ top: fraction * sc.scrollHeight - sc.clientHeight / 2, behavior: scrollMotion() });
   // The heading the reader is in: the last one above the upper third of the view.
   const reading = marks.filter((m) => m.top <= view.top + view.height / 3).pop();
   return (
@@ -81,9 +82,10 @@ export function ScrollOutline({ scrollRef }: { scrollRef: RefObject<HTMLElement 
           tabIndex={-1}
           className={`so-mark l${m.level} ${m === reading ? "on" : ""}`}
           style={{ top: `${m.top * 100}%` }}
+          aria-label={m.text}
           data-tooltip={m.text}
           data-tooltip-side="left"
-          onClick={() => m.el.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onClick={() => m.el.scrollIntoView({ behavior: scrollMotion(), block: "start" })}
         />
       ))}
     </div>

@@ -9,7 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ClipboardList, Clock, ExternalLink, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Badge, Button, EmptyState, IconButton, Progress, Spinner } from "../components/ui";
+import { Badge, Button, EmptyState, IconButton, Progress, Skeleton } from "../components/ui";
 import { revealText } from "../editor/reveal";
 import { dayTitle } from "../lib/activity";
 import { fmtDate, isoDay, time } from "../lib/format";
@@ -169,7 +169,7 @@ export function BriefingView() {
         )}
 
         {!r ? (
-          <div className="center-fill">{failed ? <EmptyState icon={AlertTriangle} title={t("brief.loadFailed")} /> : <Spinner />}</div>
+          failed ? <div className="center-fill"><EmptyState icon={AlertTriangle} title={t("brief.loadFailed")}>{t("brief.loadFailedHint")}</EmptyState></div> : <Skeleton rows={3} variant="cards" />
         ) : r.sections.length === 0 ? (
           <EmptyState icon={Sun} title={t("brief.allOff")} action={<Button size="sm" icon={Settings2} onClick={() => setGear(true)}>{t("brief.customize")}</Button>}>
             {t("brief.allOffHint")}

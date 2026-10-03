@@ -109,7 +109,7 @@ function TaskBox({ row, onChanged }: { row: QueryRow; onChanged: () => void }) {
   return <button type="button" role="checkbox" aria-checked={done} aria-label={t("dash.taskDone", { text: row.title })} className={`qb-check${done ? " done" : ""}`} disabled={busy} onClick={toggle} />;
 }
 
-const openRow = (r: QueryRow, e: React.MouseEvent) => {
+const openRow = (r: QueryRow, e: React.MouseEvent | React.KeyboardEvent) => {
   if (r.page_id != null) useApp.getState().openPage(r.page_id, { newTab: e.ctrlKey || e.metaKey });
 };
 
@@ -156,7 +156,13 @@ function Result({ nq, res, reload }: { nq: NoteQuery; res: QueryResult; reload: 
                   </td>
                 )}
                 {cells(r).map((c, i) => (
-                  <td key={i} className={i === 0 ? "qb-main" : "faint"} onClick={i === 0 ? (e) => openRow(r, e) : undefined}>
+                  <td
+                    key={i}
+                    className={i === 0 ? "qb-main" : "faint"}
+                    onClick={i === 0 ? (e) => openRow(r, e) : undefined}
+                    tabIndex={i === 0 && r.page_id != null ? 0 : undefined}
+                    onKeyDown={i === 0 ? (e) => e.key === "Enter" && openRow(r, e) : undefined}
+                  >
                     {c}
                   </td>
                 ))}

@@ -3,13 +3,13 @@
 .page { max-width: var(--page-max, 800px); margin: 0 auto; padding: 28px 56px 160px; }
 .page-header { position: relative; }
 .crumb { display: inline-flex; align-items: center; gap: 2px; }
-.crumb button { border: 0; background: none; color: var(--text-3); padding: 2px 4px; border-radius: 4px; }
+.crumb button { border: 0; background: none; color: var(--text-3); padding: 2px 4px; border-radius: var(--r-xs); }
 .crumb button:hover { color: var(--text); background: var(--bg-hover); }
 /* Narrow panes (split view) get tighter margins and a smaller title. */
 .pane-content { container-type: inline-size; container-name: pane; }
 @container pane (max-width: 720px) {
   .page { padding: 20px 28px 120px; }
-  .page-title { font-size: 26px; }
+  .page-title { font-size: var(--fs-display); }
 }
 @container pane (max-width: 460px) {
   .page { padding: 16px 18px 96px; }
@@ -145,7 +145,7 @@
 .prose > :first-child { margin-top: 0; }
 .prose strong { font-weight: 650; }
 .prose a { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent); text-underline-offset: 3px; }
-.prose code { font-family: var(--font-mono); font-size: 0.86em; padding: 0.15em 0.35em; border-radius: 4px; background: var(--bg-active); color: var(--text); }
+.prose code { font-family: var(--font-mono); font-size: 0.86em; padding: 0.15em 0.35em; border-radius: var(--r-xs); background: var(--bg-active); color: var(--text); }
 .prose pre { margin: 0.9em 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--code-bg); border: 1px solid var(--border); overflow-x: auto; }
 .prose pre code { padding: 0; background: none; font-size: 0.84em; line-height: 1.65; }
 .prose pre, .prose pre code { white-space: pre; }
@@ -172,7 +172,7 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   border: 1.5px solid var(--text-3);
   display: grid;
   place-items: center;
@@ -211,8 +211,8 @@
 .wikilink:hover { background: var(--accent-soft); }
 .wikilink.unresolved { color: var(--text-2) !important; background: none; text-decoration: underline dashed !important; text-decoration-color: var(--text-3) !important; text-underline-offset: 3px; }
 .wikilink.ProseMirror-selectednode { outline: 2px solid var(--accent); }
-.tag { color: var(--accent-text); background: var(--accent-soft); border-radius: 4px; padding: 0 3px; cursor: pointer; }
-.due-date { color: var(--text-2); background: var(--bg-hover); border-radius: 4px; padding: 0 3px; font-size: 0.92em; white-space: nowrap; }
+.tag { color: var(--accent-text); background: var(--accent-soft); border-radius: var(--r-xs); padding: 0 3px; cursor: pointer; }
+.due-date { color: var(--text-2); background: var(--bg-hover); border-radius: var(--r-xs); padding: 0 3px; font-size: 0.92em; white-space: nowrap; }
 
 .time-chip {
   display: inline-flex;
@@ -315,7 +315,7 @@
 .prose-chat.streaming > :last-child::after { content: ""; display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--accent); animation: caret 1s steps(2) infinite; }
 @keyframes caret { 50% { opacity: 0; } }
 
-.suggestion { background: var(--accent-soft); border-radius: 4px; padding: 1px 0; box-decoration-break: clone; }
+.suggestion { background: var(--accent-soft); border-radius: var(--r-xs); padding: 1px 0; box-decoration-break: clone; }
 .backlink-context mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; padding: 0 2px; }
 .backlink-context .ctx-link { color: var(--accent-text); }
 
@@ -424,7 +424,7 @@
 .summary-meta { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Scroll-to-text: the cited paragraph flashes briefly. */
-.ProseMirror .cite-flash { border-radius: 4px; animation: cite-flash 2.2s var(--ease-out); }
+.ProseMirror .cite-flash { border-radius: var(--r-xs); animation: cite-flash 2.2s var(--ease-out); }
 @keyframes cite-flash {
   0%, 35% { background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
   100% { background: transparent; box-shadow: 0 0 0 4px transparent; }
@@ -1054,7 +1054,7 @@
 
 /* ---- raw HTML kept verbatim ---- */
 /* Shown as its source (never rendered); edited in the Markdown source mode. */
-.prose .md-html { font-family: var(--font-mono); font-size: 0.84em; padding: 0.1em 0.35em; border-radius: 4px; color: var(--text-3); background: color-mix(in srgb, var(--bg-active) 60%, transparent); border: 1px dashed var(--border); white-space: pre-wrap; cursor: default; }
+.prose .md-html { font-family: var(--font-mono); font-size: 0.84em; padding: 0.1em 0.35em; border-radius: var(--r-xs); color: var(--text-3); background: color-mix(in srgb, var(--bg-active) 60%, transparent); border: 1px dashed var(--border); white-space: pre-wrap; cursor: default; }
 .prose pre.md-html-block { margin: 0.6em 0; padding: 8px 12px; font-family: var(--font-mono); font-size: 0.8em; line-height: 1.55; color: var(--text-3); background: transparent; border: 1px dashed var(--border-strong); white-space: pre-wrap; overflow-wrap: anywhere; cursor: default; }
 .prose .md-html.ProseMirror-selectednode, .prose pre.md-html-block.ProseMirror-selectednode { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
 
@@ -1073,7 +1073,7 @@
 .msg-cut { margin-top: 6px; }
 
 /* ---- Title rule (link characters) ---- */
-.page-title-hint { font-size: 12.5px; }
+.page-title-hint { font-size: var(--fs-sm); }
 
 /* ---- file links ---- */
 /* `[[Angebot.pdf]]`: a link to an attachment, with its type icon; a missing file is greyed with a dashed underline. */
@@ -1144,7 +1144,7 @@
 /* A key of a synced project without a synced issue: the key alone, dashed. */
 .ProseMirror .issue-chip.unknown {
   color: var(--text-2); font-weight: 500; background: transparent;
-  border: 1px dashed var(--border-strong); border-radius: 6px; padding-left: 5px; padding-right: 5px;
+  border: 1px dashed var(--border-strong); border-radius: var(--r-sm); padding-left: 5px; padding-right: 5px;
 }
 /* The whole pill lights up, whichever part is hovered. */
 .ProseMirror .issue-chip-head:hover, .ProseMirror .issue-chip-head:has(+ .issue-chip:hover), .ProseMirror .issue-chip-head:has(+ .issue-chip + .issue-chip-tail:hover),
@@ -1177,7 +1177,7 @@
 /* ---- voice notes: transcribe again ---- */
 .audio-embed .audio-embed-again { margin-left: auto; flex-shrink: 0; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-input); color: var(--text-2); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
 .audio-embed .audio-embed-again:hover { color: var(--text); border-color: var(--border-strong); }
-.audio-embed .audio-embed-again:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.audio-embed .audio-embed-again:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 
 /* ---- page embeds, queries and Mermaid diagrams (1.9) ---- */
 
@@ -1195,7 +1195,7 @@
 .page-embed .pe-icon { display: inline-grid; place-items: center; flex: none; }
 .page-embed .pe-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-weight: 600; text-decoration: none; cursor: pointer; }
 .page-embed .pe-title:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
-.page-embed :is(button, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.page-embed :is(button, a):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 .page-embed .pe-body { padding: 0 16px 10px 32px; }
 .page-embed.is-collapsed .pe-body { display: none; }
 .page-embed.is-collapsed .pe-head { min-height: 30px; }
@@ -1231,7 +1231,7 @@
 .rich-btn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-xs); cursor: pointer; }
 .rich-btn:hover { background: var(--bg-hover); color: var(--text); }
 .rich-btn[aria-pressed="true"] { border-color: var(--border); color: var(--text); background: var(--bg-input); }
-.rich-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rich-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 .mmd .mmd-export { opacity: 0; }
 .mmd:hover .mmd-export, .mmd .mmd-export:focus-visible { opacity: 1; }
 .rich-problem { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warning); }
@@ -1260,10 +1260,10 @@
 .qb-list li.done .qb-row { color: var(--text-3); text-decoration: line-through; }
 .qb-detail { max-width: 40%; }
 .qb-when { flex: none; }
-.qb-check { flex: none; width: 15px; height: 15px; padding: 0; border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--bg-input); cursor: pointer; }
+.qb-check { flex: none; width: 15px; height: 15px; padding: 0; border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-input); cursor: pointer; }
 .qb-check:hover { border-color: var(--accent); }
 .qb-check.done { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 11px no-repeat; border-color: var(--accent); }
-.qb-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.qb-check:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 .qb-table-wrap { overflow-x: auto; padding: 4px 8px 8px !important; }
 .prose .qb-table { width: 100%; margin: 0; border-collapse: collapse; font-size: var(--fs-sm); }
 .prose .qb-table th, .prose .qb-table td { padding: 5px 8px; border: 0; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
@@ -1353,3 +1353,7 @@
 .pdf-hl-pop-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 body:has(.pdf-overlay) .menu { z-index: 81; }
 .dup-hint-pct { white-space: nowrap; }
+
+/* ---- UI polish 1.11 ---- */
+/* A wide table scrolls inside the page instead of pushing it sideways (narrow and split panes). */
+.prose table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }

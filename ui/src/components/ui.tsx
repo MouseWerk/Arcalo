@@ -144,6 +144,17 @@ export function EmptyState({ icon: Icon, title, children, action }: { icon: Luci
   );
 }
 
+/** Loading placeholder in the shape of the coming list or cards, so the view does not jump. */
+export function Skeleton({ rows = 5, variant = "rows" }: { rows?: number; variant?: "rows" | "cards" }) {
+  return (
+    <div className={`skeleton skeleton-${variant}`} aria-busy="true" aria-label={t("common.loading")}>
+      {Array.from({ length: rows }, (_, i) => (
+        <span key={i} />
+      ))}
+    </div>
+  );
+}
+
 export function Spinner({ size = 16 }: { size?: number }) {
   return <Loader2 size={size} className="spin faint" aria-label={t("common.loading")} />;
 }

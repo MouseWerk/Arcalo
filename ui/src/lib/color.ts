@@ -79,23 +79,27 @@ const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`
 
 /**
  * Accent tokens for one mode. Guarantees: `--accent-text` has ≥ 4.5:1 against the canvas,
- * `--accent` (icons, borders, focus) ≥ 3:1, and white text on `--accent-strong` (primary
- * buttons, switches) ≥ 4.5:1.
+ * the other `surfaces` (sidebar, menus, the current row) and the accent's own soft tint on
+ * them, `--accent` (icons, borders, focus) ≥ 3:1, and white text on `--accent-strong`
+ * (primary buttons, switches) ≥ 4.5:1.
  */
-export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: string = CANVAS[mode]): AccentTokens {
+export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: string = CANVAS[mode], surfaces: string[] = []): AccentTokens {
   const base = parseHex(hex) ?? parseHex("#6366f1")!;
   const white: Rgb = [255, 255, 255];
   const canvas = parseHex(canvasHex) ?? parseHex(CANVAS[mode])!;
   const light = mode === "light";
   const accent = ensureContrast(light ? base : mix(base, white, 0.18), canvas, 3, !light);
-  const text = ensureContrast(light ? mix(base, [0, 0, 0], 0.08) : mix(base, white, 0.35), canvas, 4.5, !light);
+  const soft = light ? 0.1 : 0.14;
+  const under = [canvas, ...surfaces.map((h) => parseHex(h)).filter((c): c is Rgb => !!c)];
+  let text = light ? mix(base, [0, 0, 0], 0.08) : mix(base, white, 0.35);
+  for (const bg of [...under, ...under.map((u) => mix(u, accent, soft))]) text = ensureContrast(text, bg, 4.5, !light);
   const strong = ensureContrast(light ? mix(base, [0, 0, 0], 0.08) : base, white, 4.5, false);
   return {
     "--accent": toHex(accent),
     "--accent-strong": toHex(strong),
-    "--accent-soft": rgba(accent, light ? 0.1 : 0.14),
+    "--accent-soft": rgba(accent, soft),
     "--accent-text": toHex(text),
     "--border-focus": toHex(accent),
-    "--bg-selected": rgba(accent, light ? 0.1 : 0.14),
+    "--bg-selected": rgba(accent, soft),
   };
 }

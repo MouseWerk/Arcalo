@@ -9,7 +9,7 @@ import { on } from "../lib/api";
 import { useApp } from "../store/app";
 
 const NO_QUERIES: never[] = [];
-import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner, useMenu, type MenuEntry } from "../components/ui";
+import { Badge, Button, EmptyState, IconButton, Input, Select, Spinner, useMenu, type MenuEntry, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { fmtDate, fmtMinutes, isoDay, relative } from "../lib/format";
 import { t, useT, type TKey } from "../lib/i18n";
@@ -203,7 +203,7 @@ export function IssuesView() {
         </div>
 
         {!list ? (
-          <Spinner />
+          <Skeleton />
         ) : shown.length === 0 ? (
           <EmptyState icon={CheckSquare} title={list.length ? t("jira.noMatch") : t("jira.none")}>
             {list.length ? t("jira.noMatchText") : t("jira.noneText")}

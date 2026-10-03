@@ -1,0 +1,86 @@
+/* Accessibility layer, loaded last: Windows contrast themes (forced colors). The system replaces
+   colors and drops backgrounds and shadows, so what told states apart by a tint or a shadow
+   gets a border or an outline in a system color here. */
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 1px;
+  }
+
+  /* Surfaces that only had a shadow or a tint keep a visible edge. */
+  .dialog,
+  .menu,
+  .select-pop,
+  .palette,
+  .toast,
+  .tooltip,
+  .link-preview,
+  .card,
+  .dw,
+  .btn,
+  .icon-btn.active,
+  .segmented,
+  .input,
+  .textarea,
+  .select,
+  .badge,
+  .switch,
+  .check {
+    border: 1px solid CanvasText;
+  }
+
+  /* Current and selected items: a tint before, a highlight frame now. */
+  .tree-row.active,
+  .tree-row.selected,
+  .tab.active,
+  .settings-nav-item.active,
+  .menu-item.sel,
+  .menu-item.open,
+  .pal-item.sel,
+  .select-option.active,
+  .segmented button.on,
+  .versions-item.on,
+  .dash-tab[aria-selected="true"],
+  [role="tab"][aria-selected="true"],
+  [role="option"][aria-selected="true"],
+  [aria-current="page"],
+  [aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .tree-row.active *,
+  .tab.active *,
+  .settings-nav-item.active *,
+  .menu-item.sel *,
+  .pal-item.sel *,
+  .segmented button.on * {
+    color: HighlightText;
+  }
+
+  /* Toggles: the state stays visible without the accent fill. */
+  .switch.on {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .switch-knob {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .switch.on .switch-knob {
+    background: HighlightText;
+  }
+  .progress-fill {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  :disabled,
+  [aria-disabled="true"] {
+    color: GrayText;
+    border-color: GrayText;
+  }
+}

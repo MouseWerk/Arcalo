@@ -115,6 +115,30 @@ function readable(color: Rgb, bgs: Rgb[], min: number, lighten: boolean): Rgb {
   return out;
 }
 
+/**
+ * The surfaces text sits on: the page, the sidebar, cards, menus, inputs, and the current row
+ * (text tint) or a selected one (accent tint) laid over each of them.
+ */
+function surfaces(def: ThemeDef): { plain: Rgb[]; tinted: Rgb[] } {
+  const k = def.colors;
+  const dark = def.dark;
+  const bg = rgb(k.background);
+  const text0 = rgb(k.text);
+  const raised = def.raised ? rgb(def.raised) : dark ? mix(bg, text0, 0.035) : mix(bg, WHITE, 0.6);
+  const overlay = def.overlay ? rgb(def.overlay) : dark ? mix(bg, text0, 0.06) : mix(bg, WHITE, 0.8);
+  const input = dark ? mix(bg, text0, 0.015) : mix(bg, WHITE, 0.7);
+  const plain = [bg, rgb(k.surface), raised, overlay, input];
+  const accent = rgb(k.accent);
+  const tinted = plain.flatMap((on) => [mix(on, text0, dark ? 0.12 : 0.1), mix(on, accent, dark ? 0.14 : 0.1)]);
+  return { plain, tinted };
+}
+
+/** The surfaces besides the canvas that accent text sits on (see accentTokens). */
+export function accentSurfaces(def: ThemeDef): string[] {
+  const { plain, tinted } = surfaces(def);
+  return [...plain, ...tinted.filter((_, i) => i % 2 === 0)].map(toHex);
+}
+
 /** The full token set of tokens.css for one theme. */
 export function themeTokens(def: ThemeDef): Record<string, string> {
   const k = def.colors;
@@ -126,24 +150,32 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
   const overlay = def.overlay ? rgb(def.overlay) : dark ? mix(bg, text0, 0.06) : mix(bg, WHITE, 0.8);
   const app = def.app ? rgb(def.app) : dark ? mix(surface, BLACK, 0.25) : mix(surface, BLACK, 0.025);
   const input = dark ? mix(bg, text0, 0.015) : mix(bg, WHITE, 0.7);
-  const bgs = [bg, surface, raised];
-  // Text stays readable even for a custom theme with too little contrast.
-  const text = readable(text0, bgs, 4.5, dark);
-  const muted = readable(rgb(k.muted), bgs, 3, dark);
-  const text2 = readable(def.text2 ? rgb(def.text2) : mix(text, muted, 0.5), bgs, 4.5, dark);
+  const { plain, tinted } = surfaces(def);
+  const bgs = [...plain, ...tinted];
+  // Text stays readable even for a custom theme with too little contrast. Muted text too: it is
+  // still text (dates, counts, hints), 4.5:1 on the surfaces and 4:1 on a highlighted row.
+  // 4.6 and 4.1: headroom for the hex rounding and the tints, which use the final colors.
+  const text = readable(text0, bgs, 4.6, dark);
+  const muted = readable(readable(rgb(k.muted), plain, 4.6, dark), tinted, 4.1, dark);
+  const text2 = readable(def.text2 ? rgb(def.text2) : mix(text, muted, 0.5), bgs, 4.6, dark);
   const border = rgb(k.border);
-  const status = (hex: string) => readable(rgb(hex), [bg, raised], 4.5, dark);
+  const soft = dark ? 0.14 : 0.1;
+  // Status text also sits on its own soft tint (badges, banners).
+  const status = (hex: string) => {
+    const first = readable(rgb(hex), [...bgs, ...plain.map((on) => mix(on, rgb(hex), soft))], 4.6, dark);
+    // The soft tint is made from the final color (info: from the moved one).
+    return readable(first, plain.map((on) => mix(on, first, soft)), 4.6, dark);
+  };
   const success = status(k.success);
   const warning = status(k.warning);
   const danger = status(k.danger);
   const info = status(def.info ?? k.accent);
-  const soft = dark ? 0.14 : 0.1;
   // Code blocks: a quiet background of their own, syntax colors moved until readable on it.
   const codeBg = dark ? (contrast(app, bg) >= 1.04 ? app : mix(bg, text0, 0.07)) : mix(bg, text0, 0.035);
   // 4.6: a little headroom, the hex rounding may cost a few hundredths.
   const code = (light: string, darkHex: string) => toHex(readable(rgb(dark ? darkHex : light), [codeBg], 4.6, dark));
   const violet = readable(rgb(dark ? "#a78bfa" : "#7c3aed"), [bg, raised], 4.5, dark);
-  const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background);
+  const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background, accentSurfaces(def));
   // Meetings: the calendar color's share in their fill and their secondary text (lib/eventlook.ts).
   const ev = eventTokens({ canvas: toHex(bg), raised: toHex(raised), text: toHex(text), text2: toHex(text2), accent: accent["--accent"], dark });
   return {
@@ -196,7 +228,7 @@ export function withAccent(def: ThemeDef, accent: string): Record<string, string
   const tokens = themeTokens(def);
   const hex = accentHex(accent);
   if (def.fixedAccent || accent === "theme" || !hex) return tokens;
-  return { ...tokens, ...accentTokens(hex, def.dark ? "dark" : "light", def.colors.background) };
+  return { ...tokens, ...accentTokens(hex, def.dark ? "dark" : "light", def.colors.background, accentSurfaces(def)) };
 }
 
 const block = (tokens: Record<string, string>) =>
@@ -221,7 +253,7 @@ export function themeCss(def: ThemeDef, accent: string): string {
   if (!annalo) parts.push(`:root:root { ${block(themeTokens(def))} }`);
   const own = def.fixedAccent || accent === "theme" || (annalo && accent === "indigo");
   const hex = accentHex(accent);
-  if (!own && hex) parts.push(`:root:root { ${block({ ...accentTokens(hex, def.dark ? "dark" : "light", def.colors.background) })} }`);
+  if (!own && hex) parts.push(`:root:root { ${block({ ...accentTokens(hex, def.dark ? "dark" : "light", def.colors.background, accentSurfaces(def)) })} }`);
   return parts.join("\n");
 }
 

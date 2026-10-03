@@ -6,7 +6,7 @@ import { CalendarClock, CalendarPlus, ChevronUp, ChevronsUp, ListChecks, Mail } 
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
 import { useApp } from "../store/app";
-import { Badge, EmptyState, IconButton, Segmented, Select, Spinner } from "../components/ui";
+import { Badge, EmptyState, IconButton, Segmented, Select, Skeleton } from "../components/ui";
 import { openPlanPicker, setPlanData, type PlanItem } from "../lib/blocks";
 import { PageIcon } from "../components/icons";
 import { flushAllEditors } from "../editor/NoteEditor";
@@ -203,7 +203,7 @@ export function TasksView() {
           </div>
         </header>
         {!list ? (
-          <Spinner />
+          <Skeleton />
         ) : list.length === 0 ? (
           <EmptyState icon={ListChecks} title={status === "done" ? tr("tasks.noneDone") : tr("tasks.noneOpen")}>
             {tr("tasks.help1")} <code>{tr("tasks.helpExample")}</code> {tr("tasks.help2")} <code>!!</code> = {tr("tasks.prioHigh")}, <code>!</code> = {tr("tasks.prioMedium")}.

@@ -19,7 +19,7 @@
 .dash-tab:hover { background: var(--bg-hover); color: var(--text); }
 .dash-tab[aria-selected="true"] { background: var(--bg-active); color: var(--text); font-weight: 600; }
 .dash-tab:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
-.dash-tab-more { display: inline-flex; margin-right: -4px; padding: 2px; border-radius: 4px; color: var(--text-3); }
+.dash-tab-more { display: inline-flex; margin-right: -4px; padding: 2px; border-radius: var(--r-xs); color: var(--text-3); }
 .dash-tab-more:hover { background: var(--bg-hover); color: var(--text); }
 .dash-tab-input { height: 28px; width: 160px; border-radius: 999px; padding: 0 12px; font-size: var(--fs-md); }
 .dash-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; margin-left: auto; }
@@ -94,7 +94,7 @@
 .dw-task.done .dw-task-text span:first-child { text-decoration: line-through; }
 .dw-task-page { max-width: 40%; font-size: var(--fs-xs); flex: 0 1 auto; }
 .dw-check {
-  position: relative; flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--bg-input); padding: 0; cursor: pointer;
+  position: relative; flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-input); padding: 0; cursor: pointer;
   transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .dw-check:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -102,7 +102,7 @@
 .dw-add { height: 30px; font-size: var(--fs-sm); margin-top: 6px; flex: none; }
 /* All-day meetings on the timeline: compact bars like the Kalender's (fill and bar, lib/eventlook.ts). */
 .dw-chip {
-  position: relative; display: inline-flex; align-items: center; max-width: 100%; height: 20px; padding: 0 8px 0 9px; border: 0; border-radius: 4px;
+  position: relative; display: inline-flex; align-items: center; max-width: 100%; height: 20px; padding: 0 8px 0 9px; border: 0; border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--ev, var(--accent)) var(--ev-tint), var(--bg-raised)); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -155,7 +155,7 @@
   --ev-fill: color-mix(in srgb, var(--ev, var(--accent)) var(--ev-tint), var(--bg-raised));
   --ev-bar: var(--ev, var(--accent));
   position: absolute; height: calc(var(--lane-h) - 3px); margin-top: 3px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 8px; border: 0;
-  border-radius: 4px; background: var(--ev-fill); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; overflow: hidden; cursor: pointer; z-index: 1;
+  border-radius: var(--r-xs); background: var(--ev-fill); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 600; overflow: hidden; cursor: pointer; z-index: 1;
   transition: box-shadow var(--dur-fast);
 }
 .dw-tl-ev::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ev-bar); }
@@ -206,7 +206,7 @@
 .dw-week-sum .badge { align-self: center; }
 .dw-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; flex: 1; min-height: 70px; }
 .dw-bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-.dw-bar-track { position: relative; flex: 1; width: 100%; max-width: 30px; min-height: 36px; border-radius: 4px; background: var(--bg-active); overflow: hidden; }
+.dw-bar-track { position: relative; flex: 1; width: 100%; max-width: 30px; min-height: 36px; border-radius: var(--r-xs); background: var(--bg-active); overflow: hidden; }
 .dw-bar-col:hover .dw-bar-track { box-shadow: inset 0 0 0 1px var(--border-strong); }
 .dw-bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 4px 4px 0 0; transition: height var(--dur) var(--ease-out); }
 .dw-bar-target { position: absolute; left: 0; right: 0; bottom: calc(var(--target) * 100%); height: 0; border-top: 1px dashed var(--text-3); z-index: 1; opacity: 0.8; }
@@ -316,7 +316,7 @@
 
 /* Aktivität */
 .dw-feed-row { min-height: 32px; }
-.dw-feed-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; flex: none; background: var(--bg-active); color: var(--text-2); }
+.dw-feed-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-sm); flex: none; background: var(--bg-active); color: var(--text-2); }
 .dw-feed-icon.k-pages { background: var(--accent-soft); color: var(--accent-text); }
 .dw-feed-icon.k-tasks { background: var(--success-soft); color: var(--success); }
 .dw-feed-icon.k-time { background: var(--warning-soft); color: var(--warning); }
@@ -333,11 +333,12 @@
 .dw-table th { position: sticky; top: 0; background: var(--bg-raised); text-align: left; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .dw-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-table tbody tr { cursor: pointer; }
-.dw-table tbody tr:hover, .dw-table tbody tr:focus-visible { background: var(--bg-hover); outline: none; }
+.dw-table tbody tr:hover, .dw-table tbody tr:focus-visible { background: var(--bg-hover); }
+.dw-table tbody tr:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 .dw-chart { margin: 0; }
 .dw-chart svg { display: block; overflow: visible; }
-.dw-chart-label { font-size: 12px; fill: var(--text-2); }
-.dw-chart-value { font-size: 12px; fill: var(--text); }
+.dw-chart-label { font-size: var(--fs-sm); fill: var(--text-2); }
+.dw-chart-value { font-size: var(--fs-sm); fill: var(--text); }
 .dw-chart-track { fill: var(--bg-hover); }
 .dw-chart-bar { fill: var(--accent); }
 .dw-chart-hit { fill: transparent; }
@@ -411,11 +412,11 @@
 .gp-bars { display: flex; align-items: flex-end; gap: 6px; }
 .gp-bars span { flex: 1; border-radius: 3px 3px 0 0; background: var(--accent); opacity: 0.8; }
 .gp-hbars { display: grid; align-content: center; gap: 8px; }
-.gp-hbars span { height: 7px; border-radius: 4px; background: var(--bg-active); overflow: hidden; }
-.gp-hbars i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.gp-hbars span { height: 7px; border-radius: var(--r-xs); background: var(--bg-active); overflow: hidden; }
+.gp-hbars i { display: block; height: 100%; border-radius: var(--r-xs); background: var(--accent); }
 .gp-ring { display: flex; align-items: center; gap: 12px; }
 .gp-ring span { width: 40px; height: 40px; border-radius: 50%; border: 5px solid var(--bg-active); border-top-color: var(--accent); border-right-color: var(--accent); }
-.gp-ring b { flex: 1; height: 8px; border-radius: 4px; background: var(--bg-active); }
+.gp-ring b { flex: 1; height: 8px; border-radius: var(--r-xs); background: var(--bg-active); }
 .gp-timeline .gp-line { position: absolute; left: 10px; right: 10px; top: 20px; border-top: 1px solid var(--border-strong); }
 .gp-timeline .gp-ev { position: absolute; top: 14px; height: 12px; border-radius: 3px; background: var(--accent-soft); border-left: 3px solid var(--accent); }
 .gp-timeline .gp-now { position: absolute; top: 9px; left: 38%; width: 2px; height: 22px; background: var(--danger); border-radius: 1px; }

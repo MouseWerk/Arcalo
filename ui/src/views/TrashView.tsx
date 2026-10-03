@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Paperclip, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
-import { Button, EmptyState, IconButton, Spinner } from "../components/ui";
+import { Button, EmptyState, IconButton, Skeleton } from "../components/ui";
 import { PageIcon } from "../components/icons";
 import { relative } from "../lib/format";
 import type { TrashEntry, TrashedFile } from "../lib/types";
@@ -71,7 +71,7 @@ export function TrashView() {
           )}
         </header>
         {!list ? (
-          <Spinner />
+          <Skeleton />
         ) : list.length === 0 ? (
           <EmptyState icon={Trash2} title={t("trash.isEmpty")}>
             {t("trash.isEmptyText")}

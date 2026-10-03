@@ -59,7 +59,7 @@ a {
 }
 kbd {
   font: 500 var(--fs-xs) / 1 var(--font-ui);
-  color: var(--text-3);
+  color: var(--text-2);
   padding: 3px 5px;
   border-radius: var(--r-xs);
   background: var(--bg-hover);
@@ -85,14 +85,20 @@ kbd {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

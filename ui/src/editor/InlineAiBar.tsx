@@ -16,6 +16,7 @@ import { int, usd } from "../lib/format";
 import { insertMarkdownBelow, rangeMarkdown, replaceWithMarkdown, type AiRange } from "./ai-insert";
 import { keys } from "../lib/shortcut";
 import { useT } from "../lib/i18n";
+import { scrollMotion } from "../lib/motion";
 
 const BAR_WIDTH = 560;
 
@@ -97,7 +98,7 @@ export function InlineAiBar({
       const up = below < h + 16 && above > below;
       const top = up ? Math.max(0, start.top - box.top - h - 8) : end.bottom - box.top + 8;
       setPos((cur) => (cur && cur.top === top && cur.width === width ? cur : { top, left: Math.max(0, Math.min(start.left - box.left, box.width - width)), width }));
-      requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+      requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: scrollMotion() }));
     };
     place();
     let frame = 0;

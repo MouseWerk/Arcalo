@@ -13,6 +13,7 @@ import { nearestInDirection, nodeRadius, placeLabel } from "../../lib/graph";
 import type { ForceParams, LayoutIn, LayoutOut, LayoutPort } from "../../lib/graphLayout";
 import { startLayout } from "../../lib/graphLayout";
 import { t } from "../../lib/i18n";
+import { reducedMotion } from "../../lib/motion";
 
 export interface GraphCanvasHandle {
   fit(animate?: boolean): void;
@@ -75,7 +76,6 @@ function readPalette(el: Element): Palette {
   };
 }
 
-const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const forceParams = (d: GraphDisplay): ForceParams => ({ center: d.center, repel: d.repel, linkDistance: d.linkDistance });
 
