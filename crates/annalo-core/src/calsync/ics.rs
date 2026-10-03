@@ -300,14 +300,16 @@ pub fn parse_duration(v: &str) -> Option<Duration> {
             _ => {
                 let n: i64 = num.parse().ok()?;
                 num.clear();
-                total += match (c, in_time) {
-                    ('W', _) => Duration::weeks(n),
-                    ('D', _) => Duration::days(n),
-                    ('H', true) => Duration::hours(n),
-                    ('M', true) => Duration::minutes(n),
-                    ('S', true) => Duration::seconds(n),
+                // Out of range (a broken file): no duration rather than a panic.
+                let part = match (c, in_time) {
+                    ('W', _) => Duration::try_weeks(n),
+                    ('D', _) => Duration::try_days(n),
+                    ('H', true) => Duration::try_hours(n),
+                    ('M', true) => Duration::try_minutes(n),
+                    ('S', true) => Duration::try_seconds(n),
                     _ => return None,
-                };
+                }?;
+                total = total.checked_add(&part)?;
             }
         }
     }
@@ -519,15 +521,19 @@ enum Length {
     Span(Duration),
 }
 
+/// Longest appointment taken from a file (a longer one is cut): placing it stays in range.
+const MAX_LENGTH_DAYS: i64 = 3660;
+
 fn length(c: &Component, start: &When, zones: &Zones) -> Length {
     let dur = c.prop("DURATION").and_then(|p| parse_duration(&p.value));
+    let max = Duration::days(MAX_LENGTH_DAYS);
     match (start, when(c, "DTEND", zones)) {
-        (When::Date(d), Some(When::Date(e))) => Length::Days((e - *d).num_days().max(1)),
-        (When::Date(_), _) => Length::Days(dur.map_or(1, |d| d.num_days().max(1))),
+        (When::Date(d), Some(When::Date(e))) => Length::Days((e - *d).num_days().clamp(1, MAX_LENGTH_DAYS)),
+        (When::Date(_), _) => Length::Days(dur.map_or(1, |d| d.num_days().clamp(1, MAX_LENGTH_DAYS))),
         (When::Time(..), Some(end)) => {
-            Length::Span((end.utc(&zones.default) - start.utc(&zones.default)).max(Duration::zero()))
+            Length::Span((end.utc(&zones.default) - start.utc(&zones.default)).clamp(Duration::zero(), max))
         }
-        (When::Time(..), None) => Length::Span(dur.unwrap_or_else(Duration::zero).max(Duration::zero())),
+        (When::Time(..), None) => Length::Span(dur.unwrap_or_else(Duration::zero).clamp(Duration::zero(), max)),
     }
 }
 
@@ -847,6 +853,10 @@ mod tests {
         assert_eq!(parse_duration("-PT15M"), Some(Duration::minutes(-15)));
         assert_eq!(parse_duration("P2W"), Some(Duration::days(14)));
         assert_eq!(parse_duration("1H"), None);
+        // Out of range: none, no panic.
+        for v in ["P999999999999999D", "P99999999999999W", "PT9223372036854775807S", "P9223372036854775807D"] {
+            assert_eq!(parse_duration(v), None, "{v}");
+        }
         assert_eq!(parse_offset("+0530"), Some(19800));
         assert_eq!(parse_offset("-0100"), Some(-3600));
     }
@@ -956,6 +966,17 @@ mod tests {
         let bday: Vec<_> = evs.iter().filter(|e| e.uid == "bd").collect();
         assert_eq!(bday.len(), 1, "2027 excluded");
         assert_eq!((bday[0].instance.as_str(), bday[0].all_day), ("2026-09-30", true));
+    }
+
+    #[test]
+    fn broken_lengths_do_not_panic() {
+        let body = "BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Lang\r\nDTSTART;VALUE=DATE:20260924\r\nDURATION:P999999999999D\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:Ewig\r\nDTSTART;VALUE=DATE:20260924\r\nDTEND;VALUE=DATE:99991231\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:c\r\nSUMMARY:Zeit\r\nDTSTART:20260924T100000Z\r\nDURATION:PT9999999999999H\r\nEND:VEVENT\r\n";
+        let evs = parse(&cal(body), window(), &Zone::Utc, ALL).unwrap();
+        let ewig = evs.iter().find(|e| e.uid == "b").unwrap();
+        assert_eq!((ewig.end - ewig.start).num_days(), MAX_LENGTH_DAYS);
+        assert!(evs.iter().any(|e| e.uid == "a") && evs.iter().any(|e| e.uid == "c"));
     }
 
     #[test]
