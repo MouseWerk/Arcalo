@@ -1355,5 +1355,5 @@ body:has(.pdf-overlay) .menu { z-index: 81; }
 .dup-hint-pct { white-space: nowrap; }
 
 /* ---- UI polish 1.11 ---- */
-/* A wide table scrolls inside the page instead of pushing it sideways (narrow and split panes). */
-.prose table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+/* A wide table in the editor scrolls inside the page instead of pushing it sideways (narrow and split panes). */
+.ProseMirror table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
