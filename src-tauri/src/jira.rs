@@ -777,10 +777,10 @@ async fn post_worklogs(app: &AppHandle) {
             changed = true;
             let outcome: Result<String> = async {
                 let c = client(&state, &site)?;
-                // Posted before: the entry changed, its worklog follows.
+                // Posted before: the entry changed, its worklog follows (posted anew when it
+                // was deleted in Jira).
                 if let Some(id) = &p.worklog_id {
-                    c.update_work(id, &p.work).await?;
-                    return Ok(id.clone());
+                    return issues::update_or_post(&c, id, &p.work).await;
                 }
                 if p.retry {
                     let account = match accounts.get(&site.id) {

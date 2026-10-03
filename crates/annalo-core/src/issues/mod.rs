@@ -662,6 +662,17 @@ pub struct Fetched {
     pub failed: Vec<(String, String)>,
 }
 
+/// Brings the posted worklog `id` up to date with its entry; returns the worklog's id. One that
+/// was deleted in Jira meanwhile (404) is posted anew, so the entry's hours reach Jira again
+/// instead of failing every hour.
+pub async fn update_or_post<P: IssueProvider>(p: &P, id: &str, work: &WorkLog) -> Result<String> {
+    match p.update_work(id, work).await {
+        Ok(()) => Ok(id.to_owned()),
+        Err(Error::Provider { status: 404, .. }) => p.log_work(work).await,
+        Err(e) => Err(e),
+    }
+}
+
 /// Runs the searches of a site (`(id, jql)`), then asks again for the cached open issues
 /// `stale` no search found (to learn that they are done). Network only: no database lock.
 pub async fn fetch_site<P: IssueProvider>(p: &P, searches: &[(String, String)], stale: &[String]) -> Result<Fetched> {

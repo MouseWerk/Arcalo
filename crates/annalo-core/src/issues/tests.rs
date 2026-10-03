@@ -483,8 +483,12 @@ impl IssueProvider for Fake {
     async fn worklogs(&self, _key: &str) -> Result<Vec<RemoteWorklog>> {
         Ok(vec![])
     }
-    async fn update_work(&self, _id: &str, _work: &WorkLog) -> Result<()> {
-        Ok(())
+    async fn update_work(&self, id: &str, _work: &WorkLog) -> Result<()> {
+        match id {
+            "gone" => Err(Error::Provider { status: 404, body: String::new() }),
+            "down" => Err(Error::Provider { status: 503, body: String::new() }),
+            _ => Ok(()),
+        }
     }
     async fn delete_work(&self, _key: &str, _id: &str) -> Result<()> {
         Ok(())
@@ -538,6 +542,15 @@ async fn fetching_a_site_merges_searches_and_refreshes_stale_issues() {
     let failing = Fake { results: HashMap::new() };
     assert!(fetch_site(&failing, &searches, &[]).await.is_err(), "the default search failing fails the site");
     assert_eq!(fake.whoami().await.unwrap().display_name, "Mia");
+}
+
+#[tokio::test]
+async fn a_worklog_deleted_in_jira_is_posted_again() {
+    let fake = Fake { results: HashMap::new() };
+    let work = WorkLog { key: "PROJ-5".into(), started: now(), minutes: 45, comment: "review".into() };
+    assert_eq!(update_or_post(&fake, "7", &work).await.unwrap(), "7");
+    assert_eq!(update_or_post(&fake, "gone", &work).await.unwrap(), "1", "a new worklog");
+    assert!(update_or_post(&fake, "down", &work).await.is_err(), "other errors stay errors (retried later)");
 }
 
 // ------------------------------------------------------------------ settings and burndown
