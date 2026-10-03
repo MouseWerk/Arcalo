@@ -72,7 +72,7 @@ pub fn briefing(state: State<AppState>, hidden: Option<Vec<String>>) -> Result<B
     build(&state, &state.reader(), &hidden.unwrap_or_default())
 }
 
-/// „Was ist heute wichtig“: the cached text of today, or (with `refresh`, or none yet) a new
+/// „Was heute wichtig ist“: the cached text of today, or (with `refresh`, or none yet) a new
 /// one written from titles, times and counts. Streams `ai://stream` events for `request_id`.
 #[tauri::command]
 pub async fn briefing_summary(
@@ -90,7 +90,8 @@ pub async fn briefing_summary(
     }
     if !b.ai_ready {
         return Err(Error::State(
-            tr!("Keine KI verbunden (Einstellungen → KI).", "No AI connected (Settings → AI).").into(),
+            tr!("Keine KI verbunden (Einstellungen → KI & Modelle).", "No AI connected (Settings → AI & models).")
+                .into(),
         ));
     }
     prefs::check_cost_limit(&state, false)?;

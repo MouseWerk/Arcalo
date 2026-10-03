@@ -323,13 +323,13 @@ pub fn cipher_recovery_key(state: State<AppState>, create: bool) -> Result<Strin
     Ok(key.recovery_code())
 }
 
-/// „Speichern als Datei“: the recovery key as a text file with a short explanation.
+/// „Als Datei speichern“: the recovery key as a text file with a short explanation.
 #[tauri::command]
 pub fn cipher_recovery_save(path: String, code: String) -> Result<()> {
     DbKey::from_recovery_code(&code)?;
     let text = trf!(
         "Arcalo – Wiederherstellungsschlüssel\n\n{code}\n\nDamit öffnet Arcalo die verschlüsselte Datenbank und ihre Sicherungen, \
-         wenn der Schlüssel auf einem Rechner fehlt. Bewahren Sie diese Datei getrennt vom Rechner auf \
+         wenn der Schlüssel auf einem Rechner fehlt. Bewahre diese Datei getrennt vom Rechner auf \
          (Passwortmanager, Ausdruck im Schrank). Wer ihn hat, kann die Datenbank lesen.\n",
         "Arcalo – recovery key\n\n{code}\n\nWith it, Arcalo opens the encrypted database and its backups when the key \
          is missing on a computer. Keep this file away from the computer (password manager, a printout in a drawer). \

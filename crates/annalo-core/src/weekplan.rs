@@ -1036,7 +1036,7 @@ impl WbsContext {
     ) -> Result<Option<WbsGuess>> {
         if let Some(np) = np {
             return Ok(self.guess(np, vorgang.map(str::to_owned), None, Confidence::High, Basis::Link, |r| {
-                trf!("Fokus-Sitzung auf {r}", "Focus session on {r}")
+                trf!("Fokussitzung auf {r}", "Focus session on {r}")
             }));
         }
         if let Some(g) = self.text_memory(db, goal)? {

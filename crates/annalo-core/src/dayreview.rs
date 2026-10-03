@@ -687,9 +687,9 @@ pub fn no_local_reason(catalog: &Catalog) -> Option<String> {
     Some(
         tr!(
             "Der Tagesrückblick enthält alle Seiten des Tages, auch vertrauliche. Die Zusammenfassung schreibt deshalb \
-             nur ein lokales Modell (z. B. Ollama): markiere unter Einstellungen → KI einen Anbieter als lokal.",
-            "The day review contains every page of the day, confidential ones too. So only a local model (e.g. \
-             Ollama) writes the summary: mark a provider as local under Settings → AI."
+             nur ein lokales Modell (z. B. Ollama): Markiere unter Einstellungen → KI & Modelle einen Anbieter als lokal.",
+            "The daily review contains every page of the day, confidential ones too. So only a local model (e.g. \
+             Ollama) writes the summary: mark a provider as local under Settings → AI & models."
         )
         .into(),
     )
@@ -818,7 +818,7 @@ where
         Stichpunkte (- …) mit dem, was offen ist: fehlende Buchungen, nicht gebuchte Termine, fällige und \
         überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. Antworte nur mit dem Text in \
         Markdown, ohne Überschrift und ohne Einleitung.",
-        "You write the user's day review in Arcalo, a notes and time tracking app. Summarize the day in English \
+        "You write the user's daily review in Arcalo, a notes and time tracking app. Summarize the day in English \
         in 3 to 6 sentences: what was worked on, how much time is booked, which meetings and tasks mattered. \
         Address the user as “you”, stay factual and invent nothing that is not in the data. Then write a line \
         “**Open for tomorrow:**” and below it 1 to 5 bullet points (- …) with what is open: missing time \
@@ -833,7 +833,7 @@ where
         steht. Schreibe danach eine Zeile „**Offen für morgen:**“ und darunter 1 bis 5 Stichpunkte (- …) mit dem, \
         was offen ist: fällige und überfällige Aufgaben. Ist nichts offen, schreibe „- Nichts Dringendes.“. \
         Antworte nur mit dem Text in Markdown, ohne Überschrift und ohne Einleitung.",
-        "You write the user's day review in Arcalo, a notes app with a calendar. Summarize the day in English \
+        "You write the user's daily review in Arcalo, a notes app with a calendar. Summarize the day in English \
         in 3 to 6 sentences: what was worked on, which meetings and tasks mattered. Address the user as “you”, \
         stay factual and invent nothing that is not in the data. Then write a line “**Open for tomorrow:**” and \
         below it 1 to 5 bullet points (- …) with what is open: tasks due and overdue. If nothing is open, write \

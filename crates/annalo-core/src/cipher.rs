@@ -577,7 +577,7 @@ pub fn run_pending_with(dir: &Path, key: Option<&DbKey>, kill: KillHook) -> Resu
             m.step = Step::Requested;
             write_marker(dir, &m)?;
             return Err(Error::State(
-                tr!("Umstellung unterbrochen, sie wird wiederholt", "Switch interrupted, it is repeated").into(),
+                tr!("Umstellung unterbrochen, sie wird wiederholt", "Switch interrupted; it will be repeated").into(),
             ));
         }
         m.step = Step::Swapped;

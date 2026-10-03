@@ -140,8 +140,8 @@ pub fn resolve(
 ) -> std::result::Result<RouteDecision, String> {
     if catalog.first_enabled().is_none() {
         return Err(tr!(
-            "Kein KI-Anbieter eingerichtet: füge unter Einstellungen → KI einen Anbieter hinzu.",
-            "No AI provider set up: add a provider under Settings → AI."
+            "Kein KI-Anbieter eingerichtet: Füge unter Einstellungen → KI & Modelle einen Anbieter hinzu.",
+            "No AI provider set up: add a provider under Settings → AI & models."
         )
         .into());
     }
@@ -167,9 +167,9 @@ pub fn resolve(
         }
         None if private => Err(trf!(
             "Das lokale Modell „{}“ gibt es auf dem {name}-Server nicht. Vertrauliche Inhalte bleiben lokal: \
-             wähle unter Einstellungen → KI ein Modell für die Stufe Lokal oder markiere einen Anbieter als lokal.",
+             wähle unter Einstellungen → KI & Modelle ein Modell für die Stufe Lokal oder markiere einen Anbieter als lokal.",
             "The local model “{}” does not exist on the {name} server. Confidential content stays local: \
-             choose a model for the Local tier under Settings → AI or mark a provider as local.",
+             choose a model for the Local tier under Settings → AI & models or mark a provider as local.",
             wanted.model
         )),
         None => Err(trf!(
@@ -288,7 +288,7 @@ pub fn weaker_fallback_note(
     let small = |r: &ModelRef| *r == local_tier || catalog.provider(&r.provider).is_some_and(|p| p.local);
     (small(to) && !small(from)).then(|| {
         trf!(
-            "Ausweichmodell „{}“ ist ein kleineres lokales Modell: die Antwort kann schwächer sein als mit „{}“",
+            "Ausweichmodell „{}“ ist ein kleineres lokales Modell: Die Antwort kann schwächer sein als mit „{}“",
             "Fallback model “{}” is a smaller local model: the answer may be weaker than with “{}”",
             catalog.label(to),
             from.model
@@ -302,10 +302,10 @@ pub fn unavailable_message(model: &str, body: &str) -> String {
     trf!(
         "Der KI-Server hat für das Modell „{model}“ gerade keine erreichbare Instanz. Entweder fehlt es in der \
          Konfiguration des Anbieters, oder alle Instanzen pausieren nach Fehlern (Cooldown, z. B. falscher Anbieter-Schlüssel \
-         oder Ratenlimit). Wähle unter Einstellungen → KI ein anderes Modell oder prüfe den Server.\n\nServer: {detail}",
+         oder Ratenlimit). Wähle unter Einstellungen → KI & Modelle ein anderes Modell oder prüfe den Server.\n\nServer: {detail}",
         "The AI server has no reachable instance for the model “{model}” right now. Either it is missing from the \
          provider's configuration, or all instances are paused after errors (cooldown, e.g. a wrong provider key \
-         or a rate limit). Choose another model under Settings → AI or check the server.\n\nServer: {detail}"
+         or a rate limit). Choose another model under Settings → AI & models or check the server.\n\nServer: {detail}"
     )
 }
 

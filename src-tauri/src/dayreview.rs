@@ -61,9 +61,9 @@ pub async fn day_review_summary(
     if candidates.is_empty() {
         return Err(Error::State(
             annalo_core::tr!(
-                "Der lokale KI-Anbieter bietet kein Chat-Modell an: lade unter Einstellungen → KI ein Modell herunter \
+                "Der lokale KI-Anbieter bietet kein Chat-Modell an: Lade unter Einstellungen → KI & Modelle ein Modell herunter \
                  oder wähle es für die Stufe Lokal.",
-                "The local AI provider offers no chat model: download a model under Settings → AI or choose one \
+                "The local AI provider offers no chat model: download a model under Settings → AI & models or choose one \
                  for the Local tier."
             )
             .into(),
@@ -91,7 +91,8 @@ pub async fn day_review_summary(
             Ok((mut completion, meter)) => {
                 completion.content = transform::clean_output(&completion.content);
                 let mut reasons = vec![
-                    annalo_core::tr!("Tagesrückblick: nur lokale Modelle", "Day review: local models only").to_owned(),
+                    annalo_core::tr!("Tagesrückblick: nur lokale Modelle", "Daily review: local models only")
+                        .to_owned(),
                 ];
                 if i > 0 {
                     reasons.push(format!("{} statt {}", m.model, candidates[0].model));
@@ -130,8 +131,8 @@ pub async fn day_review_summary(
         )),
         None => Error::State(
             annalo_core::tr!(
-                "Kein lokales Modell verfügbar (Einstellungen → KI).",
-                "No local model available (Settings → AI)."
+                "Kein lokales Modell verfügbar (Einstellungen → KI & Modelle).",
+                "No local model available (Settings → AI & models)."
             )
             .into(),
         ),
@@ -156,7 +157,7 @@ pub fn periodic(app: &AppHandle) {
         let _ = db.meta_set(REMINDED, &now.date().to_string());
         review(&state, &db, now.date()).map(|r| core::reminder_body(&r)).unwrap_or_default()
     };
-    notify(app, annalo_core::tr!("Tagesrückblick ansehen", "See the day review"), &body);
+    notify(app, annalo_core::tr!("Tagesrückblick ansehen", "See the daily review"), &body);
     let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
     if !focused {
         PENDING.store(true, Ordering::Relaxed);

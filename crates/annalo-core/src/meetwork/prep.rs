@@ -494,13 +494,13 @@ pub fn markdown(d: &PrepData, ai: Option<&str>, zone: &Zone, now: NaiveDateTime)
     if let Some(issues) = &d.issues {
         m.push_str(tr!("## Jira\n\n", "## Jira\n\n"));
         if issues.is_empty() {
-            m.push_str(tr!("Keine passenden Vorgänge.\n\n", "No matching issues.\n\n"));
+            m.push_str(tr!("Keine passenden Issues.\n\n", "No matching issues.\n\n"));
         } else {
             for i in issues {
                 let why = match i.reason.as_str() {
                     "mentioned" => tr!("in den Notizen genannt", "named in the notes"),
                     "project" => tr!("Projekt im Betreff", "project in the subject"),
-                    _ => tr!("Teilnehmer zugewiesen", "assigned to an attendee"),
+                    _ => tr!("einem Teilnehmer zugewiesen", "assigned to an attendee"),
                 };
                 let who = if i.assignee.is_empty() { String::new() } else { format!(" · {}", i.assignee) };
                 let blocked = if i.blocked { tr!(" · **blockiert**", " · **blocked**") } else { "" };
@@ -541,7 +541,7 @@ pub fn ai_messages(d: &PrepData, zone: &Zone) -> Vec<ChatMessage> {
     let system = tr!(
         "Du bereitest eine Person auf eine Besprechung vor: „Worauf achten“. Antworte auf Deutsch mit 2 bis 4 kurzen \
          Stichpunkten (Markdown-Liste, je höchstens 20 Wörter): offene Punkte und Aufgaben aus dem letzten Mal, \
-         blockierte oder fällige Vorgänge, was mit den Teilnehmern zu klären ist. Nenne nur, was in den Daten steht; \
+         blockierte oder fällige Issues, was mit den Teilnehmern zu klären ist. Nenne nur, was in den Daten steht; \
          keine Begrüßung, keine Überschrift.",
         "You prepare a person for a meeting: “What to watch for”. Answer in English with 2 to 4 short bullet points \
          (a Markdown list, at most 20 words each): open points and tasks from last time, blocked or due issues, what \

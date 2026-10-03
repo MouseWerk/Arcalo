@@ -97,7 +97,7 @@ test("toolbar: formatting, block type, insert menu", async () => {
 test("tools: sort lines, move a block, find and replace, statistics", async () => {
   // Sort the list items A–Z.
   await selectBlocks("li", 0, 2);
-  await menu("Werkzeuge", "Zeilen sortieren A–Z");
+  await menu("Werkzeuge", "Zeilen A–Z sortieren");
   await saved((c) => c.includes("- Apfel\n- Banane\n- Zitrone"), "not sorted");
 
   // Alt+↓ moves the item with the cursor down.

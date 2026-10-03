@@ -157,7 +157,7 @@ test("a dialog keeps the focus while typing (template search in insert mode)", a
   await app.type("/vorlage");
   await app.waitText(".sugg-item.sel", /Vorlage einfügen/);
   await app.keys(["Enter"]);
-  const input = await app.waitFor('input[aria-label="Vorlage suchen"]');
+  const input = await app.waitFor('input[aria-label="Vorlagen suchen"]');
   await sleep(400);
   await app.browser.execute(() => {
     window.__focusMoves = [];

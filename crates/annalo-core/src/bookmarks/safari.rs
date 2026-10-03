@@ -10,7 +10,7 @@ use crate::{Error, Result};
 /// Shown when macOS refuses access to Safari's file.
 pub fn no_access() -> &'static str {
     crate::tr!(
-        "Kein Zugriff auf Safaris Lesezeichen. Arcalo in den Systemeinstellungen unter „Datenschutz & Sicherheit → Festplattenvollzugriff“ erlauben, oder in Safari „Ablage → Exportieren → Lesezeichen …“ wählen und die HTML-Datei importieren.",
+        "Kein Zugriff auf Safaris Lesezeichen. Arcalo in den Systemeinstellungen unter „Datenschutz & Sicherheit → Festplattenvollzugriff“ erlauben oder in Safari „Ablage → Exportieren → Lesezeichen …“ wählen und die HTML-Datei importieren.",
         "No access to Safari's bookmarks. Allow Arcalo under System Settings → “Privacy & Security → Full Disk Access”, or choose “File → Export → Bookmarks …” in Safari and import the HTML file."
     )
 }

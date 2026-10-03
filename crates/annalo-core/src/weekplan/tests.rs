@@ -362,7 +362,7 @@ fn a_week_from_meetings_focus_and_pages() {
         [SourceRef { kind: SourceKind::Page, id: portal.to_string(), label: "Konzept Portal".into() }]
     );
     assert_eq!(w.proposals[2].sources[0].id, f.to_string());
-    assert_eq!(w.proposals[2].reason, "Fokus-Sitzung auf NP-8801/1020");
+    assert_eq!(w.proposals[2].reason, "Fokussitzung auf NP-8801/1020");
     assert_eq!(w.step_minutes, 15);
     assert_eq!(w.days[1].booked_minutes, 90);
     assert_eq!((w.days[4].started, w.days[4].gap_minutes), (false, 0));

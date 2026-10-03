@@ -199,7 +199,7 @@ pub fn proxy_password_set(app: AppHandle, password: Option<String>, profile: Opt
     if crate::policy::get().lock_network_profiles == Some(true) {
         return Err(Error::State(
             tr!(
-                "Die Proxy-Profile werden von der Organisation verwaltet",
+                "Die Proxy-Profile werden von deiner Organisation verwaltet",
                 "The proxy profiles are managed by your organization"
             )
             .into(),

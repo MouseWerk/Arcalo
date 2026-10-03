@@ -231,9 +231,9 @@ pub async fn mail_suggest(app: AppHandle, request_id: String, mail: Mail) -> Res
     let (provider, _, model) = local_model(&state).ok_or_else(|| {
         Error::State(
             tr!(
-                "Kein lokales KI-Modell eingerichtet. Unter Einstellungen → KI einen Anbieter als „lokal“ markieren und ihn für \
+                "Kein lokales KI-Modell eingerichtet. Unter Einstellungen → KI & Modelle einen Anbieter als „lokal“ markieren und ihn für \
                  die Stufe „Lokal“ wählen; E-Mails gehen nie an andere Anbieter.",
-                "No local AI model set up. Under Settings → AI, mark a provider as “local” and choose it for the \
+                "No local AI model set up. Under Settings → AI & models, mark a provider as “local” and choose it for the \
                  “Local” tier; e-mails never go to other providers."
             )
             .into(),

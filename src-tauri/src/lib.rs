@@ -247,8 +247,8 @@ impl AppState {
         ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
             Some(e) => Error::State(e.clone()),
             None => Error::State(trf!(
-                "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI)",
-                "The AI provider “{id}” is not set up or is switched off (Settings → AI)"
+                "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI & Modelle)",
+                "The AI provider “{id}” is not set up or is switched off (Settings → AI & models)"
             )),
         })
     }
@@ -2539,7 +2539,7 @@ fn system_prompt(settings: &Settings) -> String {
             "Du bist der Assistent von Arcalo, einem lokalen Arbeitsbereich für Notizen, Projekte und \
              Zeiterfassung. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
              schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Zeit wird mit der /zeit-Syntax \
-             gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Tools nur, wenn nötig.",
+             gebucht, z. B. /zeit NP-8801/1020 2.5h #DEV 'Beschreibung'. Nutze Werkzeuge nur, wenn nötig.",
             "You are the assistant of Arcalo, a local workspace for notes, projects and time tracking. \
              Today is {}. Answer precisely and in English, unless the user writes in another language. \
              Use Markdown. Refer to pages with [[Page name]]. Time is booked with the /time syntax, e.g. \
@@ -2550,7 +2550,7 @@ fn system_prompt(settings: &Settings) -> String {
         trf!(
             "Du bist der Assistent von Arcalo, einem lokalen Arbeitsbereich für Notizen, Aufgaben und \
              Termine. Heute ist {}. Antworte präzise und auf Deutsch, sofern der Nutzer nicht anders \
-             schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Nutze Tools nur, wenn nötig.",
+             schreibt. Nutze Markdown. Verweise auf Seiten mit [[Seitenname]]. Nutze Werkzeuge nur, wenn nötig.",
             "You are the assistant of Arcalo, a local workspace for notes, tasks and meetings. \
              Today is {}. Answer precisely and in English, unless the user writes in another language. \
              Use Markdown. Refer to pages with [[Page name]]. Use tools only when needed.",
@@ -3051,7 +3051,7 @@ async fn complete_routed(
                             format!("“{}” not reachable, private content not sent elsewhere: {err}", failed.provider),
                         );
                         return Err(Error::State(trf!(
-                            "{} ist nicht erreichbar. Vertrauliche Inhalte bleiben lokal: sie gehen nicht an Anbieter, \
+                            "{} ist nicht erreichbar. Vertrauliche Inhalte bleiben lokal: Sie gehen nicht an Anbieter, \
                              die nicht als lokal markiert sind.",
                             "{} is not reachable. Confidential content stays local: it does not go to providers \
                              that are not marked as local.",
@@ -3370,10 +3370,10 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     learn_modes(&state, &client).await;
     if let Some(mode) = lock(&state.caps).mode(&r).filter(|m| !capability::embedding_capable(&r.model, Some(m))) {
         return Err(Error::State(trf!(
-            "„{}“ ist laut KI-Server kein Embedding-Modell (Typ „{mode}“). Wähle unter Einstellungen → KI ein \
+            "„{}“ ist laut KI-Server kein Embedding-Modell (Typ „{mode}“). Wähle unter Einstellungen → KI & Modelle ein \
              Embedding-Modell oder „Keine (nur Stichwortsuche)“.",
             "According to the AI server “{}” is not an embedding model (type “{mode}”). Choose an embedding \
-             model or “None (keyword search only)” under Settings → AI.",
+             model or “None (keyword search only)” under Settings → AI & models.",
             r.model
         )));
     }
@@ -3382,7 +3382,7 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     if !local && settings.privacy.local_only {
         return Err(Error::State(
             tr!(
-                "Datenschutz „Nur lokal“: das Embedding-Modell liegt bei einem Anbieter, der nicht als lokal markiert ist",
+                "Datenschutz „Nur lokal“: Das Embedding-Modell liegt bei einem Anbieter, der nicht als lokal markiert ist",
                 "Privacy “Local only”: the embedding model is at a provider that is not marked as local"
             )
             .into(),
@@ -3411,10 +3411,10 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
             Err(e) if lock(&state.caps).embed_failed(&r, &e) => {
                 devlog::warn("ai", format!("indexing with “{model}” failed: {e}"));
                 return Err(Error::State(trf!(
-                    "„{model}“ liefert keine Embeddings ({}). Wähle unter Einstellungen → KI ein Embedding-Modell \
+                    "„{model}“ liefert keine Embeddings ({}). Wähle unter Einstellungen → KI & Modelle ein Embedding-Modell \
                      oder „Keine (nur Stichwortsuche)“.",
                     "“{model}” returns no embeddings ({}). Choose an embedding model or “None (keyword search \
-                     only)” under Settings → AI.",
+                     only)” under Settings → AI & models.",
                     capability::embedding_failure_text(&e)
                 )));
             }

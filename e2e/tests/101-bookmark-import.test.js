@@ -266,7 +266,7 @@ test("an HTML export dropped onto the dialog (opened from the ribbon menu)", asy
     dt.items.add(new File(["x"], "notiz.txt", { type: "text/plain" }));
     document.querySelector(".bm-drop").dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
   });
-  await app.waitText(".bm-error", /keine Lesezeichen-Datei/);
+  await app.waitText(".bm-error", /keine Lesezeichendatei/);
   await app.browser.execute((html) => {
     const dt = new DataTransfer();
     dt.items.add(new File([html], "favoriten_01.10.26.html", { type: "text/html" }));
@@ -300,14 +300,14 @@ test("settings and Firefox; dark theme and 900 px", async () => {
   await app.browser.execute(() => (document.documentElement.dataset.theme = "dark"));
   await app.browser.setWindowSize(900, 760);
   await chooseSource("firefox", "default-release");
-  assert.deepEqual(await rowsText(), ["Lesezeichenleiste", "GitLab", "Lesezeichen-Menü", "Webmail"]);
+  assert.deepEqual(await rowsText(), ["Lesezeichenleiste", "GitLab", "Lesezeichenmenü", "Webmail"]);
   await app.shot("bookmarks-5-firefox-dark-900");
-  await clickRow("Lesezeichen-Menü");
+  await clickRow("Lesezeichenmenü");
   await app.click(".dialog .bm-next");
   await app.waitFor(".bm-unit");
   // Send the menu's group to a page instead.
-  await app.browser.execute(() => [...document.querySelectorAll(".bm-unit")].find((u) => u.textContent.includes("Lesezeichen-Menü")).querySelector('[role="radio"]:last-child').click());
-  await app.browser.waitUntil(async () => (await units()).some((u) => /Lesezeichen-Menü \| Seite mit 1 Link$/.test(u)));
+  await app.browser.execute(() => [...document.querySelectorAll(".bm-unit")].find((u) => u.textContent.includes("Lesezeichenmenü")).querySelector('[role="radio"]:last-child').click());
+  await app.browser.waitUntil(async () => (await units()).some((u) => /Lesezeichenmenü \| Seite mit 1 Link$/.test(u)));
   const box = await app.browser.execute(() => {
     const d = document.querySelector(".dialog").getBoundingClientRect();
     return { right: d.right, w: innerWidth, overflow: document.querySelector(".bm-target").scrollWidth > document.querySelector(".bm-target").clientWidth };

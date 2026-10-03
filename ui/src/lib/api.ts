@@ -193,7 +193,7 @@ export const api = {
   // Morgen-Briefing
   /** Today's briefing in one call; `hidden`: calendars the views hide. */
   briefing: (hidden: string[]) => call<T.Briefing>("briefing", { hidden }),
-  /** „Was ist heute wichtig“: cached for the day unless `refresh`. */
+  /** „Was heute wichtig ist“: cached for the day unless `refresh`. */
   briefingSummary: (requestId: string, hidden: string[], refresh: boolean) => call<T.BriefingSummary>("briefing_summary", { requestId, hidden, refresh }),
   /** The first start of the day: open the briefing, notify, or nothing (stored per day). */
   briefingStart: () => call<T.BriefingStart>("briefing_start"),

@@ -652,8 +652,8 @@ where
     let mut items = list(db, &FeedFilter { from: Some(start), to: Some(end), limit: Some(400), ..Default::default() })?;
     items.reverse();
     let mut out = trf!(
-        "Zeitraum {from} bis {to}: {} Seiten bearbeitet, {} Aufgaben erledigt, {} Aufgaben neu, {} gebucht, {} Fokussitzungen.\n",
-        "Period {from} to {to}: {} pages edited, {} tasks done, {} tasks new, {} booked, {} focus sessions.\n",
+        "Zeitraum {from} bis {to}: {} Seiten bearbeitet, {} Aufgaben erledigt, {} neue Aufgaben, {} gebucht, {} Fokussitzungen.\n",
+        "Period {from} to {to}: {} pages edited, {} tasks done, {} new tasks, {} booked, {} focus sessions.\n",
         s.pages_edited,
         s.tasks_done,
         s.tasks_added,
@@ -672,7 +672,7 @@ where
                 a.count,
                 a.amount
             ),
-            "task_added" => trf!("Aufgabe neu: {} (Seite {})", "Task new: {} (page {})", a.title, a.detail),
+            "task_added" => trf!("Neue Aufgabe: {} (Seite {})", "New task: {} (page {})", a.title, a.detail),
             "task_done" => trf!("Aufgabe erledigt: {} (Seite {})", "Task done: {} (page {})", a.title, a.detail),
             "entry_created" => trf!(
                 "Zeit gebucht: {} {} {}",

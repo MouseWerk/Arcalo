@@ -53,7 +53,7 @@ fn role_name(i: usize) -> &'static str {
         1 => tr!("Befehlspalette", "Command palette"),
         2 => tr!("Schnellsuche", "Quick search"),
         3 => tr!("Auswahl übernehmen", "Capture selection"),
-        4 => tr!("E-Mail übernehmen", "Capture e-mail"),
+        4 => tr!("E-Mail übernehmen", "Take over e-mail"),
         _ => tr!("Sprachnotiz", "Voice note"),
     }
 }

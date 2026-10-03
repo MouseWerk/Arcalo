@@ -56,7 +56,7 @@ test("Desktop settings section shows the switches", async () => {
   await app.waitText(".settings-head h1", /Desktop/);
   assert.ok(await (await app.$('[role="switch"][aria-label="In den Infobereich schließen"]')).isExisting());
   assert.ok(await (await app.$('[role="switch"][aria-label="Mit Windows starten"]')).isExisting());
-  const sc = await app.$('input[aria-label="Tastenkürzel Schnellerfassung"]');
+  const sc = await app.$('input[aria-label="Tastenkürzel für die Schnellerfassung"]');
   assert.equal(await sc.getValue(), "Ctrl+Shift+Space");
   // The field records the pressed keys.
   await sc.click();

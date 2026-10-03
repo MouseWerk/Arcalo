@@ -204,7 +204,7 @@ pub struct Devices {
 #[tauri::command(async)]
 pub fn voice_devices() -> Devices {
     if test_var("ANNALO_TEST_AUDIO_FILE").is_some() {
-        let name = tr!("Test-Eingang", "Test input").to_owned();
+        let name = tr!("Testeingang", "Test input").to_owned();
         return Devices { inputs: vec![name.clone()], default: Some(name), system_audio: cfg!(windows) };
     }
     use cpal::traits::{DeviceTrait, HostTrait};
@@ -323,7 +323,7 @@ fn record(
     let opened: Result<String> = (|| {
         if let Some(file) = test_var("ANNALO_TEST_AUDIO_FILE") {
             feed_file(PathBuf::from(file), tx.clone(), ctl.clone())?;
-            return Ok(tr!("Test-Eingang", "Test input").to_owned());
+            return Ok(tr!("Testeingang", "Test input").to_owned());
         }
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let host = cpal::default_host();
@@ -810,7 +810,7 @@ fn run_job(app: &AppHandle, job: JobSpec) {
             let line = if cancelled {
                 format!("*{}*", tr!("Transkription abgebrochen.", "Transcription cancelled."))
             } else {
-                format!("*{}: {e}*", tr!("Keine Transkription", "No transcript"))
+                format!("*{}: {e}*", tr!("Kein Transkript", "No transcript"))
             };
             (line, String::new(), Some(e.to_string()))
         }

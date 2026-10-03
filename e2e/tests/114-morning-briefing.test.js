@@ -1,6 +1,6 @@
 // Morgen-Briefing (1.8): today's meetings with their preparation (the note of the last meeting of
 // the series), join link and „Notiz anlegen“, Jira issues overdue, due or blocked (fake Jira),
-// overdue and due tasks, the last workday against its target, and „Was ist heute wichtig“
+// overdue and due tasks, the last workday against its target, and „Was heute wichtig ist“
 // written by the assistant (fake provider): titles and counts only, cached for the day, a
 // `#privat` task keeps it on the local model. Sections switched and moved with the gear; the
 // first start of a workday opens it (not on a non-workday, an absence day or a second time); the
@@ -165,7 +165,7 @@ test("the briefing: meetings with preparation, Jira, tasks, the last workday", a
   assert.deepEqual(await app.consoleErrors(), []);
 });
 
-test("„Was ist heute wichtig“: titles and counts only, cached, private content stays local", async () => {
+test("„Was heute wichtig ist“: titles and counts only, cached, private content stays local", async () => {
   await app.waitText(".pane.active .bf-ai-text", /Angebot an Kunde X heute verschicken/, 15000);
   assert.equal(cloud.chats().length, 1);
   assert.equal(ollama.chats().length, 0);

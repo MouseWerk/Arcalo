@@ -567,7 +567,7 @@ fn failure_message(args: &[&str], stdout: &str, stderr: &str, token: Option<&str
     let any = |ps: &[&str]| ps.iter().any(|p| lower.contains(p));
     if any(&["index.lock", ".lock': file exists"]) {
         trf!(
-            "Git ist gesperrt: eine frühere Synchronisierung wurde unterbrochen. Die Sperre wird bei der nächsten \
+            "Git ist gesperrt: Eine frühere Synchronisierung wurde unterbrochen. Die Sperre wird bei der nächsten \
              Synchronisierung entfernt ({detail})",
             "Git is locked: an earlier sync was interrupted. The lock is removed with the next sync ({detail})"
         )
@@ -888,10 +888,10 @@ fn count_notes<'a>(paths: impl Iterator<Item = &'a str>) -> usize {
 /// The error for a refused mass deletion.
 fn guard_error(deleted: usize, tracked: usize) -> Error {
     Error::State(trf!(
-        "{GUARD_PREFIX}: die Synchronisierung würde {deleted} von {tracked} Notizen auf dem Server löschen. \
+        "{GUARD_PREFIX}: Die Synchronisierung würde {deleted} von {tracked} Notizen auf dem Server löschen. \
          Wenn das gewollt ist, unter Einstellungen → Sicherung „Löschungen übertragen“ wählen.",
         "{GUARD_PREFIX_EN}: the sync would delete {deleted} of {tracked} notes on the server. \
-         If that is intended, choose “Transfer deletions” under Settings → Backup."
+         If that is intended, choose “Push deletions” under Settings → Backup."
     ))
 }
 

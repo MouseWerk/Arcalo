@@ -1,5 +1,5 @@
 // Start page widget „Briefing“: the Morgen-Briefing in short – counts per section, the meeting
-// under way or next, and the first line of „Was ist heute wichtig“ (only the cached text: the
+// under way or next, and the first line of „Was heute wichtig ist“ (only the cached text: the
 // widget never asks the assistant). Its data is the briefing's one call, loaded once the widget
 // scrolls into view.
 

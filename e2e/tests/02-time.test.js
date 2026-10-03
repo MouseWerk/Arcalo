@@ -79,7 +79,7 @@ test("manual entry dialog", async () => {
   await app.waitFor(".dialog");
   const dur = await app.$('.dialog input[value="1,00"]');
   await dur.setValue("2:15");
-  const d = await app.$('.dialog input[placeholder="Was wurde gemacht?"]');
+  const d = await app.$('.dialog input[placeholder="Was hast du gemacht?"]');
   await d.setValue("Nachbereitung Workshop");
   await app.shot("entry-dialog");
   await app.click(".dialog .btn-primary");

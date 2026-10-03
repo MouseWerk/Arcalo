@@ -156,10 +156,10 @@ test("time entry dialog: Enter twice in a row books once", async () => {
   await app.click('.ribbon [aria-label="Zeiterfassung"]');
   await app.waitText(".view-header h1", /Zeiterfassung/);
   await app.browser.execute(() => [...document.querySelectorAll(".view-header button")].find((b) => b.textContent.trim() === "Eintrag")?.click());
-  const desc = await app.waitFor('.dialog input[placeholder="Was wurde gemacht?"]');
+  const desc = await app.waitFor('.dialog input[placeholder="Was hast du gemacht?"]');
   await desc.setValue("Doppelt gedrückt");
   await app.browser.execute(() => {
-    const el = document.querySelector('.dialog input[placeholder="Was wurde gemacht?"]');
+    const el = document.querySelector('.dialog input[placeholder="Was hast du gemacht?"]');
     for (let i = 0; i < 2; i++) el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
   });
   await app.browser.waitUntil(async () => (await app.$$(".dialog")).length === 0, { timeoutMsg: "dialog stays open" });

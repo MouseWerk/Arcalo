@@ -72,7 +72,7 @@ test("the search filters rows across all sections", async () => {
   assert.ok((await app.browser.execute(() => document.querySelectorAll('.settings-hit-section[data-section="network"] .set-row').length)) > 5);
   // Nothing found.
   await search("xyzzy-nichts");
-  await app.waitText(".settings-search-head", /Nichts weiter gefunden für „xyzzy-nichts“/);
+  await app.waitText(".settings-search-head", /Keine weiteren Treffer für „xyzzy-nichts“/);
   assert.deepEqual(await visibleSections(), []);
   // Enter opens the first section with a hit; the search is cleared.
   await search("zeilenbreite");

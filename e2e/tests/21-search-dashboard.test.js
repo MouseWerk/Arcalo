@@ -141,7 +141,7 @@ test("the quick-search shortcut is a setting with its own slot", async () => {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => b.textContent.includes("Desktop"))?.click());
-  const field = await app.waitFor('input[aria-label="Tastenkürzel Schnellsuche"]');
+  const field = await app.waitFor('input[aria-label="Tastenkürzel für die Schnellsuche"]');
   assert.equal(await field.getValue(), "Ctrl+Shift+O");
 });
 

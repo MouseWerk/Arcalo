@@ -99,10 +99,10 @@ impl Act {
         match self {
             Act::Open => tr!("Öffnen", "Open"),
             Act::Done => tr!("Erledigt", "Done"),
-            Act::Snooze10 => tr!("10 Min", "10 min"),
-            Act::Snooze60 => tr!("1 Std", "1 hr"),
+            Act::Snooze10 => tr!("10 Min.", "10 min"),
+            Act::Snooze60 => tr!("1 Std.", "1 hr"),
             Act::SnoozeTomorrow => tr!("Morgen", "Tomorrow"),
-            Act::Extend => tr!("+5 Min", "+5 min"),
+            Act::Extend => tr!("+5 Min.", "+5 min"),
             Act::Pause => tr!("Pause", "Break"),
             Act::Restart => tr!("Jetzt neu starten", "Restart now"),
             Act::Later => tr!("Später", "Later"),
@@ -703,7 +703,7 @@ pub fn notify_test(app: AppHandle, op: String, arg: Option<String>) -> Result<se
         "snoozes" => serde_json::to_value(snoozes(&app.state::<AppState>().reader()))?,
         "show" => {
             match arg.as_deref() {
-                Some("briefing") => show(&app, Note::briefing(tr!("3 Termine, 2 Aufgaben", "3 events, 2 tasks"))),
+                Some("briefing") => show(&app, Note::briefing(tr!("3 Termine, 2 Aufgaben", "3 meetings, 2 tasks"))),
                 Some("update") => show(&app, Note::update_ready("9.9.9")),
                 _ => return Err(Error::State("unknown sample".into())),
             }

@@ -126,12 +126,12 @@ test("the proposal lists last week's meetings, focus and page work around the bo
   assert.equal(by["Jour fixe Änderungen"].time, "10:00–11:00");
   assert.equal(by["Jour fixe Änderungen"].conf, "Kein Vorgang");
   assert.equal(by["Jour fixe Änderungen"].checked, false, "nothing to book on without a WBS");
-  // Similar to the Vorgang „Schnittstellen-Design“, but unsure.
+  // Similar to the Vorgang „Schnittstellendesign“, but unsure.
   assert.equal(by["Schnittstellen-Review"].vorgang, "1030");
   assert.equal(by["Schnittstellen-Review"].conf, "Unsicher");
   assert.equal(by["Mapping Materialstamm"].conf, "Sicher");
   assert.equal(by["Mapping Materialstamm"].dur, "1,00", "50 minutes in quarter hours");
-  assert.match(by["Mapping Materialstamm"].reason, /Fokus-Sitzung auf NP-8801\/1020/);
+  assert.match(by["Mapping Materialstamm"].reason, /Fokussitzung auf NP-8801\/1020/);
   // Monday: 0,5 h booked, 0,5 h selected (the Jour fixe has no WBS yet) of 8 h.
   await app.waitText(".dialog .wp-day-head", /Montag.*7,00 h ohne Vorschlag/s);
   await app.shot("65-week-proposal");

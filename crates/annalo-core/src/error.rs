@@ -121,7 +121,7 @@ pub fn io_text(e: &std::io::Error) -> String {
         K::StorageFull | K::QuotaExceeded => tr!("Der Datenträger ist voll", "The disk is full"),
         K::ReadOnlyFilesystem => tr!("Der Datenträger ist schreibgeschützt", "The disk is read-only"),
         K::IsADirectory => {
-            tr!("Ein Ordner wurde erwartet, eine Datei gefunden", "A file was expected, a folder was found")
+            tr!("Eine Datei wurde erwartet, aber es ist ein Ordner", "A file was expected, a folder was found")
         }
         K::NotADirectory => {
             tr!("Ein Ordner wurde erwartet, aber es ist eine Datei", "A folder was expected, but it is a file")

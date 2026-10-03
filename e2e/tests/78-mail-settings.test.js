@@ -31,7 +31,7 @@ test("the mail settings live in Settings → Kalender", async () => {
   await app.waitFor(".settings-body");
   await app.click('.settings-nav-item[data-section="calendar"]');
   await app.waitText(".set-group-head h2", /E-Mail \(Outlook\)/);
-  await app.waitFor('input[aria-label="Tastenkürzel E-Mail übernehmen"]');
+  await app.waitFor('input[aria-label="Tastenkürzel für „E-Mail übernehmen“"]');
   const group = await app.browser.execute(() => [...document.querySelectorAll(".set-group")].find((g) => /E-Mail \(Outlook\)/.test(g.textContent))?.innerText ?? "");
   assert.match(group, /Tastenkürzel \(global\)/);
   assert.match(group, /Notizen ablegen unter/);

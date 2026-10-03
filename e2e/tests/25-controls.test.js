@@ -188,7 +188,7 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
   await app.browser.execute(() => {
     const d = document.querySelector(".dialog");
     const setIn = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    const desc = [...d.querySelectorAll("input")].find((i) => /Was wurde gemacht/.test(i.placeholder));
+    const desc = [...d.querySelectorAll("input")].find((i) => /Was hast du gemacht/.test(i.placeholder));
     setIn.call(desc, "Kontrolltest Buchung");
     desc.dispatchEvent(new Event("input", { bubbles: true }));
   });

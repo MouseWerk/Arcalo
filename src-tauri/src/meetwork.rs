@@ -411,7 +411,8 @@ pub async fn followup_polish(
         }
         None => {
             return Err(Error::State(o.error.unwrap_or_else(|| {
-                tr!("Keine KI verbunden (Einstellungen → KI).", "No AI connected (Settings → AI).").into()
+                tr!("Keine KI verbunden (Einstellungen → KI & Modelle).", "No AI connected (Settings → AI & models).")
+                    .into()
             })));
         }
     }

@@ -169,7 +169,7 @@ pub fn write(script_dir: &Path, ops: &[WriteOp]) -> Result<Vec<WriteResult>> {
         Script { file: SCRIPT_FILE, source: SCRIPT },
         &args,
         TIMEOUT,
-        tr!("Der Termin wird später erneut eingetragen.", "The appointment is written again later."),
+        tr!("Der Termin wird später erneut eingetragen.", "The appointment is added again later."),
     );
     let _ = std::fs::remove_file(&file);
     parse_output(&out?)

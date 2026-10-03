@@ -603,7 +603,7 @@ pub fn notify_body(b: &Briefing) -> String {
     if let Some(j) = &b.jira {
         let n = j.overdue_total + j.due_total + j.blocked_total;
         if n > 0 {
-            let n = plural(n, tr!("Vorgang", "issue"), tr!("Vorgänge", "issues"));
+            let n = plural(n, tr!("Issue", "issue"), tr!("Issues", "issues"));
             parts.push(trf!("{n} in Jira", "{n} in Jira"));
         }
     }
@@ -708,13 +708,13 @@ where
     out
 }
 
-/// The request for „Was ist heute wichtig“: a few lines from [`describe`].
+/// The request for „Was heute wichtig ist“: a few lines from [`describe`].
 pub fn summary_messages<Tz: TimeZone>(b: &Briefing, tz: &Tz) -> Vec<ChatMessage>
 where
     Tz::Offset: std::fmt::Display,
 {
     let system = tr!(
-        "Du schreibst das Morgen-Briefing einer Person: „Was ist heute wichtig“. Antworte auf Deutsch mit 2 bis 4 \
+        "Du schreibst das Morgen-Briefing einer Person: „Was heute wichtig ist“. Antworte auf Deutsch mit 2 bis 4 \
          kurzen Stichpunkten (Markdown-Liste, je höchstens 15 Wörter): zuerst Fälliges und Blockiertes, dann Termine, \
          die Vorbereitung brauchen, dann offene Stunden. Nenne nur, was in den Daten steht; keine Begrüßung, keine \
          Überschrift. Ist nichts dringend, schreibe „- Nichts Dringendes heute.“.",

@@ -73,8 +73,8 @@ describe("review block", () => {
 
   it("says „alles erledigt“ only when no meeting is open or still to come", () => {
     const m = (state: DayReview["meetings"][number]["state"]) => ({ state }) as DayReview["meetings"][number];
-    expect(meetingsSub(review({ meetings: [m("upcoming"), m("upcoming")] }))).toBe("2 steht an");
-    expect(meetingsSub(review({ meetings: [m("open"), m("upcoming")] }))).toBe("1 nicht gebucht · 1 steht an");
+    expect(meetingsSub(review({ meetings: [m("upcoming"), m("upcoming")] }))).toBe("2 anstehend");
+    expect(meetingsSub(review({ meetings: [m("open"), m("upcoming")] }))).toBe("1 nicht gebucht · 1 anstehend");
     expect(meetingsSub(review({ meetings: [m("booked"), m("done")] }))).toBe("alles erledigt");
     expect(meetingsSub(review({ meetings: [] }))).toBe("keine");
   });

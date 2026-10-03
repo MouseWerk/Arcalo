@@ -1,6 +1,6 @@
 // „Morgen-Briefing“: today on one page – the meetings with their preparation, join link and
 // note, Jira issues due, overdue or blocked, tasks overdue and due today, the hours the last
-// workday still misses, and „Was ist heute wichtig“ written by the assistant (cached per day,
+// workday still misses, and „Was heute wichtig ist“ written by the assistant (cached per day,
 // written again on demand). Sections and their order come from Settings → Briefing; the gear
 // changes them here too. Everything is read with one call (`briefing`).
 

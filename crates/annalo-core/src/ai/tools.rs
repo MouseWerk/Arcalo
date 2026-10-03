@@ -126,8 +126,8 @@ pub fn definitions() -> Vec<Value> {
         f(
             "jira_transition",
             tr!(
-                "Setzt den Status eines Jira-Issues (z. B. \"In Progress\", \"Done\"). Der Nutzer muss jede Änderung bestätigen.",
-                "Changes the status of a Jira issue (e.g. \"In Progress\", \"Done\"). The user must confirm every change."
+                "Setzt den Status eines Jira-Issues (z. B. „In Progress“, „Done“). Der Nutzer muss jede Änderung bestätigen.",
+                "Changes the status of a Jira issue (e.g. “In Progress”, “Done”). The user must confirm every change."
             ),
             json!({ "type": "object", "properties": { "key": { "type": "string" }, "status": { "type": "string" } }, "required": ["key", "status"] }),
         ),

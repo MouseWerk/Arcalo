@@ -198,7 +198,7 @@ test("a calendar that fails does not fail the others", async () => {
   assert.equal(of(ids.proj).error, null);
   // Its stored meetings stay until it syncs again.
   assert.ok((await eventsOf(ids.anna)).length > 0);
-  await app.click('.calv-actions [aria-label="Kalender-Einstellungen"]');
+  await app.click('.calv-actions [aria-label="Kalendereinstellungen"]');
   await app.waitFor('.settings-nav-item.active[data-section="calendar"]');
   await app.waitText(`${row(ids.anna)} .olcal-status`, /Kein Zugriff/);
   await app.waitText(".calset-status .set-status", /1 von \d Kalendern mit Fehler/);

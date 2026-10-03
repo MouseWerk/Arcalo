@@ -100,7 +100,7 @@ impl Failure {
                 tr!("Datenbank beschädigt", "Database damaged"),
                 trf!(
                     "Die Datenbank im Datenordner lässt sich nicht öffnen:\n{m}\n\nEs gibt keine Sicherung im Ordner \
-                     „backups“. Die Datei workspace.db bitte nicht löschen: sie lässt sich eventuell noch retten.",
+                     „backups“. Die Datei workspace.db bitte nicht löschen: Sie lässt sich eventuell noch retten.",
                     "The database in the data folder cannot be opened:\n{m}\n\nThere is no backup in the \
                      “backups” folder. Please do not delete workspace.db: it may still be rescued."
                 ),

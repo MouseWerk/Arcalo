@@ -15,7 +15,7 @@
       },
       "de": {
         "title": "Jede Seite in ihrem Ordner",
-        "text": "Tagesnotizen, Besprechungen, Sprach- und Mail-Notizen und Jira-Vorgänge legen sich jetzt selbst in Ordner nach Datum oder Serie ab. Eigene Regeln entscheiden zuerst, bestehende Seiten werden nie verschoben.",
+        "text": "Tagesnotizen, Besprechungsnotizen, Sprach- und E-Mail-Notizen und Jira-Issues legen sich jetzt selbst in Ordner nach Datum oder Serie ab. Eigene Regeln entscheiden zuerst, bestehende Seiten werden nie verschoben.",
         "action": "Ordner einrichten",
         "image": "1.9.0-filing-de.png"
       }
@@ -65,7 +65,7 @@
       },
       "de": {
         "title": "Updates im Hintergrund",
-        "text": "Neue Versionen laden still im Hintergrund und werden beim Beenden installiert, vorher wird die Datenbank gesichert. Startet eine neue Version nicht, bietet Arcalo den Weg zurück an.",
+        "text": "Neue Versionen werden still im Hintergrund geladen und beim Beenden installiert, vorher wird die Datenbank gesichert. Startet eine neue Version nicht, bietet Arcalo den Weg zurück an.",
         "action": "Update-Einstellungen"
       }
     }

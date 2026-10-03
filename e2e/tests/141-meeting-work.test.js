@@ -162,7 +162,7 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
     /Angebot an Kunde schicken/,
     /PROJ-125 Audit log export.*in den Notizen genannt/,
     /PROJ-123 Login fails on SSO.*Projekt im Betreff/,
-    /OPS-9 Firewall-Freigabe für das Portal – To Do · Jörg Weiß \(Teilnehmer zugewiesen\)/,
+    /OPS-9 Firewall-Freigabe für das Portal – To Do · Jörg Weiß \(einem Teilnehmer zugewiesen\)/,
     /Anna Müller/,
     /Erwähnt in: Kunde Nordwind/,
     /Jörg Weiß/,

@@ -139,7 +139,7 @@ test("the Vorgang picker rewrites the reference and the card follows", async () 
   await app.waitFor(".pane.active .prop-picker");
   await app.select('.pane.active .prop-picker [role="combobox"][aria-label="Vorgang"]', "1030");
   await saved(/^---\nvorgang: NP-8801\/1030\n/, "picked Vorgang not saved");
-  await app.waitText(".pane.active .work-card .work-title", /NP-8801\/1030 · Schnittstellen-Design/);
+  await app.waitText(".pane.active .work-card .work-title", /NP-8801\/1030 · Schnittstellendesign/);
 });
 
 test("the work card starts a timer on the Vorgang", async () => {

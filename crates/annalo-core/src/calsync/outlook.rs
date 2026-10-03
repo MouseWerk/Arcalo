@@ -451,7 +451,7 @@ fn busy_title(b: Busy) -> &'static str {
         Busy::Free => tr!("Frei", "Free"),
         Busy::Tentative => tr!("Mit Vorbehalt", "Tentative"),
         Busy::Busy => tr!("Beschäftigt", "Busy"),
-        Busy::Oof => tr!("Abwesend", "Away"),
+        Busy::Oof => tr!("Abwesend", "Out of office"),
         Busy::Elsewhere => tr!("An anderem Ort tätig", "Working elsewhere"),
     }
 }

@@ -39,7 +39,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     let spec = [
         ("1010", tr!("Anforderungsanalyse", "Requirements analysis"), 3.0, 16.0, &[][..]),
         ("1020", tr!("Systemintegration", "System integration"), 5.0, 40.0, &["1010"][..]),
-        ("1030", tr!("Schnittstellen-Design", "Interface design"), 4.0, 24.0, &["1010"][..]),
+        ("1030", tr!("Schnittstellendesign", "Interface design"), 4.0, 24.0, &["1010"][..]),
         ("1040", tr!("Integrationstest", "Integration test"), 3.0, 24.0, &["1020", "1030"][..]),
         ("1050", tr!("Dokumentation", "Documentation"), 2.0, 8.0, &["1030"][..]),
         ("1060", tr!("Abnahme", "Acceptance"), 1.0, 8.0, &["1040", "1050"][..]),
@@ -71,7 +71,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
         (np.id, "1020", "DEV", 5, 6, 450, tr!("IDoc-Mapping Materialstamm", "IDoc mapping material master")),
         (np.id, "1030", "DEV", 4, 6, 300, tr!("REST-Schnittstelle Auftragsdaten", "REST interface order data")),
         (np.id, "1020", "DEV", 3, 6, 480, tr!("Fehleranalyse Queue-Verarbeitung", "Error analysis queue processing")),
-        (np.id, "1030", "DEV", 2, 6, 360, tr!("OpenAPI Spezifikation", "OpenAPI specification")),
+        (np.id, "1030", "DEV", 2, 6, 360, tr!("OpenAPI-Spezifikation", "OpenAPI specification")),
         (np.id, "1020", "DEV", 1, 6, 390, tr!("Systemintegration Delta-Load", "System integration delta load")),
         (np2.id, "2010", "CONSULTING", 1, 2, 90, tr!("Schulungsunterlagen Entwurf", "Training material draft")),
     ];
@@ -97,7 +97,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
              - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
              - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler, `Alt Space` funktioniert global.\n\
-             - Der Assistent rechts kennt deine Notizen und Zeitlogs. Server und Token stellst du in den Einstellungen ein.\n\n\
+             - Der Assistent rechts kennt deine Notizen und Zeitbuchungen. Server und Token stellst du in den Einstellungen ein.\n\n\
              ## Einstieg\n\n\
              - [ ] LiteLLM-Server in den Einstellungen verbinden\n\
              - [ ] Obsidian-Vault importieren\n\
@@ -209,7 +209,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
             "{{wochentag}}, {{datum}} · {{zeit}} Uhr #meeting\n\n\
              ## Teilnehmer\n\n- \n\n\
              ## Agenda\n\n1. \n\n\
-             ## Beschlüsse\n\n- \n\n\
+             ## Entscheidungen\n\n- \n\n\
              ## Aufgaben\n\n- [ ] \n\n\
              > [!tip] Zeit buchen\n> Tippe `/zeit NP-8801/1020 1h Besprechung` und drücke Enter.\n",
             "{{weekday}}, {{date}} · {{time}} #meeting\n\n\

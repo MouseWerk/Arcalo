@@ -57,7 +57,7 @@ describe("Zusammenfassung nach der Sitzung", () => {
     expect(s.detail).toBe("0:25 h gebucht auf NP-8801/1020 (Entwurf). 2 Hinweise zurückgehalten: Budget-Warnung: NP-8801 · Timer läuft noch");
   });
   it("verlängert, abgebrochen, ohne Vorgang", () => {
-    expect(sessionSummary(done({}, true, true), []).detail).toContain("zur Buchung addiert");
+    expect(sessionSummary(done({}, true, true), []).detail).toContain("zur Buchung hinzugefügt");
     expect(sessionSummary(done({ status: "aborted" }, false), [])).toEqual({ title: "Fokussitzung beendet", detail: "Nicht gebucht" });
     expect(sessionSummary(done({ reference: "", break_minutes: 0 }, false), []).title).toBe("Fokussitzung geschafft");
   });

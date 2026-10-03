@@ -189,7 +189,8 @@ impl Database {
         let db = Database { conn, depth: Default::default(), settings_cache: Default::default() };
         if db.schema_version()? != MIGRATIONS.len() {
             return Err(Error::State(
-                tr!("Datenbank noch nicht auf dem aktuellen Stand", "The database is not up to date yet").into(),
+                tr!("Die Datenbank ist noch nicht auf dem aktuellen Stand", "The database is not up to date yet")
+                    .into(),
             ));
         }
         Ok(db)

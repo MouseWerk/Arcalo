@@ -59,7 +59,7 @@ fn error_text(code: &str, detail: &str) -> String {
     match code {
         "not_running" => tr!(
             "Outlook läuft nicht. Outlook öffnen, die E-Mail markieren und erneut „Aktuelle E-Mail übernehmen“ wählen.",
-            "Outlook is not running. Open Outlook, select the e-mail and choose “Capture current e-mail” again."
+            "Outlook is not running. Open Outlook, select the e-mail and choose “Take over current e-mail” again."
         )
         .into(),
         "no_selection" => tr!(

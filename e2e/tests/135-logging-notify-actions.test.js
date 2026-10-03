@@ -112,7 +112,7 @@ test("a task due today: Schlummern, Erledigt and Öffnen from the notification",
   assert.equal(mine.length, 2, JSON.stringify(shown));
   assert.equal(mine[0].title, "Aufgabe heute fällig");
   assert.match(mine[0].body, /Angebot 135 senden – auf „Benachrichtigung 135“/);
-  assert.deepEqual(mine[0].actions.map((a) => a.label), ["Erledigt", "10 Min", "1 Std", "Morgen", "Öffnen"]);
+  assert.deepEqual(mine[0].actions.map((a) => a.label), ["Erledigt", "10 Min.", "1 Std.", "Morgen", "Öffnen"]);
   // Once a day only.
   await notify("due_check");
   assert.equal((await notify("shown")).filter((n) => n.subject.page_id === page.id).length, 2);
@@ -149,7 +149,7 @@ test("focus end, briefing and update offer their buttons", async () => {
   await app.invoke("focus_state");
   const focus = (await notify("shown")).filter((n) => n.subject.kind === "focus").at(-1);
   assert.ok(focus, "the break notification");
-  assert.deepEqual(focus.actions.map((a) => a.label), ["+5 Min", "Pause", "Öffnen"]);
+  assert.deepEqual(focus.actions.map((a) => a.label), ["+5 Min.", "Pause", "Öffnen"]);
   await notify("activate", focus.actions.find((a) => a.id === "extend").url);
   const st = await app.invoke("focus_state");
   assert.equal(st.phase, "work");

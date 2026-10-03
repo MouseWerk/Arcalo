@@ -128,7 +128,7 @@ test("palette shortcut is validated and saved; the data folder is not flagged", 
 
   await app.keys(["Control", ","]);
   await clickText(".settings-nav-item", /Desktop/);
-  await app.waitFor('input[aria-label="Tastenkürzel Befehlspalette"]');
+  await app.waitFor('input[aria-label="Tastenkürzel für die Befehlspalette"]');
 
   const status = await app.invoke("data_dir_status");
   assert.equal(status.synced, false);

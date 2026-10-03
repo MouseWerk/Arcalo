@@ -124,7 +124,7 @@ test("dark theme and the settings of quick capture", async () => {
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => b.textContent.includes("Desktop"))?.click());
   await app.waitText(".settings-head h1", /Desktop/);
   await app.waitFor('[aria-label="Standardziel der Schnellerfassung"]');
-  await app.waitFor('[aria-label="Tastenkürzel Auswahl übernehmen"]');
+  await app.waitFor('[aria-label="Tastenkürzel für „Auswahl übernehmen“"]');
   await app.browser.execute(() => [...document.querySelectorAll(".set-group-head h2")].find((h) => /Schnellerfassung/.test(h.textContent))?.scrollIntoView({ block: "start" }));
   await app.shot("68-settings-capture");
 

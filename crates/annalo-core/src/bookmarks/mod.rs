@@ -158,7 +158,7 @@ pub fn parse_export(text: &str) -> crate::Result<Tree> {
     }
     Err(crate::Error::Parse(
         crate::tr!(
-            "Keine Lesezeichen-Datei (erwartet: HTML-Export eines Browsers)",
+            "Keine Lesezeichendatei (erwartet: HTML-Export eines Browsers)",
             "Not a bookmarks file (expected: a browser's HTML export)"
         )
         .into(),
@@ -174,7 +174,7 @@ pub fn read_export_file(path: &std::path::Path) -> crate::Result<Tree> {
     if meta.len() > MAX_FILE_BYTES {
         return Err(crate::Error::State(
             crate::tr!(
-                "Die Datei ist zu groß für einen Lesezeichen-Export.",
+                "Die Datei ist zu groß für einen Lesezeichenexport.",
                 "The file is too large for a bookmarks export."
             )
             .into(),

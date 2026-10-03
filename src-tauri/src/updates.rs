@@ -401,8 +401,7 @@ pub async fn update_check(
     let eff = effective(&app);
     if eff.disabled {
         return Err(Error::State(
-            tr!("Updates sind von Ihrer Organisation abgeschaltet", "Updates are turned off by your organization")
-                .into(),
+            tr!("Deine Organisation hat Updates abgeschaltet", "Updates are turned off by your organization").into(),
         ));
     }
     if updates.installing.load(Ordering::SeqCst) {
@@ -648,7 +647,7 @@ pub async fn update_install(app: AppHandle, updates: State<'_, Updates>) -> Resu
 
 fn outside_window(eff: &Effective) -> String {
     let w = eff.install_window.map(|w| w.label()).unwrap_or_default();
-    trf!("Ihre Organisation erlaubt Updates nur zwischen {}", "Your organization allows updates only between {}", w)
+    trf!("Deine Organisation erlaubt Updates nur zwischen {}", "Your organization allows updates only between {}", w)
 }
 
 /// „Jetzt neu starten“ on the hint of a downloaded update.

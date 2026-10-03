@@ -1,5 +1,5 @@
 // Updates 2.0 for organizations and the way back: a policy.json next to the executable
-// (ANNALO_EXE_DIR stands in for its folder) locks the update settings („Von Ihrer Organisation
+// (ANNALO_EXE_DIR stands in for its folder) locks the update settings („Von deiner Organisation
 // verwaltet“) and makes a network folder the only source (GitHub, here the local feed, is never
 // asked); the update from the share is checked against the built-in key, downloaded and
 // installed on quit (test stand-in). Then the new version fails to start twice (test hook
@@ -72,7 +72,7 @@ test("the policy locks the update settings and names its origin", async () => {
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await clickIn(".settings-nav-item", "Über");
-  await app.waitText(".update-managed", /Von Ihrer Organisation verwaltet/);
+  await app.waitText(".update-managed", /Von deiner Organisation verwaltet/);
   await app.waitText(".update-managed", /policy\.json/);
   const locked = await app.browser.execute(() => ({
     mode: document.querySelector(".update-mode-select")?.disabled ?? document.querySelector(".update-mode-select [aria-disabled='true'], .update-mode-select:disabled") != null,
@@ -83,7 +83,7 @@ test("the policy locks the update settings and names its origin", async () => {
   assert.equal(locked.source, true);
   assert.equal(locked.sourceValue, share);
   assert.ok(locked.badges >= 5, `managed badges: ${locked.badges}`);
-  await app.waitText(".set-row", /Ihre Organisation erlaubt Versionen bis 1\.9\.5/);
+  await app.waitText(".set-row", /Deine Organisation erlaubt Versionen bis 1\.9\.5/);
   await app.browser.execute(() => document.querySelector(".update-managed").scrollIntoView({ block: "start" }));
   await app.shot("127-policy-managed");
 });
