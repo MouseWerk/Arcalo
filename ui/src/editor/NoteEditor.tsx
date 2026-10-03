@@ -24,7 +24,7 @@ import { findKey } from "./find";
 import { TableToolbar } from "./TableToolbar";
 import { EditorToolbar } from "./EditorToolbar";
 import { createPortal } from "react-dom";
-import { NodeSelection } from "@tiptap/pm/state";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { moveBlock } from "./tools";
 import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
@@ -506,7 +506,14 @@ export function NoteEditor({
         saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
         if (activeRef.current) scheduleOutline(editor);
       },
-      onCreate: ({ editor }) => activeRef.current && publishOutline(editor),
+      onCreate: ({ editor }) => {
+        // A note that starts with a generated part (meeting prep, status report) opens with the
+        // cursor after its start marker, not with the marker selected.
+        const sel = editor.state.selection;
+        if (sel instanceof NodeSelection && sel.node.type.name === "htmlBlock")
+          editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(sel.to))).setMeta("addToHistory", false));
+        if (activeRef.current) publishOutline(editor);
+      },
       // Other panes with this page store their edits first, so we continue from them.
       onFocus: () => window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } })),
     },

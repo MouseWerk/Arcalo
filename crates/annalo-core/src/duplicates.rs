@@ -638,7 +638,9 @@ impl Database {
                     // edits stay where they do not collide (else the text from before, the
                     // current one stays as a version).
                     let merged_text = undo.after.iter().find(|(id, _)| id == pid).and_then(|(_, after)| {
-                        (after != &current).then(|| crate::merge::merge3(Some(after), &current, content).merged()).flatten()
+                        (after != &current)
+                            .then(|| crate::merge::merge3(Some(after), &current, content).merged())
+                            .flatten()
                     });
                     let text = merged_text.as_deref().unwrap_or(content);
                     self.store_version(*pid, &current, now)?;

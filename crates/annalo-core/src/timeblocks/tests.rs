@@ -182,7 +182,8 @@ fn free_slots_of_a_day_avoid_meetings_and_blocks() {
 fn free_slots_follow_the_working_hours() {
     let db = Database::open_in_memory().unwrap();
     let day = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
-    let prefs = |a: &str, b: &str| crate::prefs::TimePrefs { work_start: a.into(), work_end: b.into(), ..Default::default() };
+    let prefs =
+        |a: &str, b: &str| crate::prefs::TimePrefs { work_start: a.into(), work_end: b.into(), ..Default::default() };
     let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
     for (start, end, want) in [
         ("07:00", "15:30", (hm(7, 0), hm(15, 30))),

@@ -680,7 +680,10 @@ mod tests {
         assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
         let mut mine = serde_json::json!({"version": 10, "time": {"work_start": "07:00"}});
         migrate(&mut mine);
-        assert_eq!((mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()), (Some("07:00"), Some("18:00")));
+        assert_eq!(
+            (mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()),
+            (Some("07:00"), Some("18:00"))
+        );
     }
 
     #[test]

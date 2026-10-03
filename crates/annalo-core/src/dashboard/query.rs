@@ -248,12 +248,9 @@ fn number_cell(key: &str, n: f64) -> Cell {
 
 fn date_cell(key: &str, date: Option<&str>) -> Cell {
     match date.and_then(|d| d.get(..10)) {
-        Some(d) => Cell {
-            key: key.to_owned(),
-            text: d.to_owned(),
-            value: Some(Typed::Date(d.to_owned())),
-            error: None,
-        },
+        Some(d) => {
+            Cell { key: key.to_owned(), text: d.to_owned(), value: Some(Typed::Date(d.to_owned())), error: None }
+        }
         None => text_cell(key, ""),
     }
 }
@@ -653,7 +650,12 @@ fn events<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Grou
                 "teilnehmer" => {
                     let names: Vec<String> =
                         ev.attendees.iter().map(|a| crate::calsync::attendee_name(a).to_owned()).collect();
-                    Cell { key: key.to_owned(), text: names.join(", "), value: Some(Typed::MultiSelect(names)), error: None }
+                    Cell {
+                        key: key.to_owned(),
+                        text: names.join(", "),
+                        value: Some(Typed::MultiSelect(names)),
+                        error: None,
+                    }
                 }
                 "gebucht" => text_cell(key, if e.entry_id.is_some() { "ja" } else { "nein" }),
                 "datum" | "tag" | "date" => date_cell(key, Some(&day)),
