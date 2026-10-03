@@ -405,7 +405,8 @@ pub fn embeds(markdown: &str) -> Vec<String> {
     while let Some(start) = rest.find("![[") {
         let after = &rest[start + 3..];
         let Some(end) = after.find("]]") else { break };
-        let target = after[..end].split(['|', '#']).next().unwrap_or("").trim();
+        let inner = &after[..end];
+        let target = inner[..crate::notes::link_target_len(inner)].trim();
         let base = target.rsplit(['/', '\\']).next().unwrap_or(target);
         if embeddable(base) && !out.iter().any(|n| n == base) {
             out.push(base.to_owned());

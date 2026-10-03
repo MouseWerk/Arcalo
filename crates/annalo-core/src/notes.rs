@@ -50,16 +50,41 @@ pub struct SavedPage {
 
 // ------------------------------------------------------------------ parsing
 
-/// Lines outside fenced code blocks, with their fence state resolved.
+/// The fence marker a line opens or closes a code block with (```` ``` ```` or `~~~`).
+fn fence_marker(line: &str) -> Option<&'static str> {
+    let l = line.trim_start();
+    if l.starts_with("```") {
+        Some("```")
+    } else if l.starts_with("~~~") {
+        Some("~~~")
+    } else {
+        None
+    }
+}
+
+/// Lines outside fenced code blocks (```` ``` ```` or `~~~`; a block ends at its own marker).
 fn prose_lines(markdown: &str) -> impl Iterator<Item = &str> {
-    let mut in_fence = false;
-    markdown.lines().filter(move |l| {
-        if l.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            return false;
+    let mut fence: Option<&str> = None;
+    markdown.lines().filter(move |l| match (fence, fence_marker(l)) {
+        (Some(f), m) => {
+            if m == Some(f) {
+                fence = None;
+            }
+            false
         }
-        !in_fence
+        (None, Some(m)) => {
+            fence = Some(m);
+            false
+        }
+        (None, None) => true,
     })
+}
+
+/// Length of the target in a `[[link]]`'s inner text: up to `|` or `#`. In a table cell the
+/// alias pipe is written `\|` (the editor does so); its backslash is no part of the target.
+pub fn link_target_len(inner: &str) -> usize {
+    let split = inner.find(['|', '#']).unwrap_or(inner.len());
+    if inner[split..].starts_with('|') && inner[..split].ends_with('\\') { split - 1 } else { split }
 }
 
 /// Removes `inline code` spans so links/tags inside them are ignored.
@@ -91,7 +116,7 @@ pub fn wiki_links(markdown: &str) -> Vec<String> {
             let after = &rest[start + 2..];
             let Some(end) = after.find("]]") else { break };
             let inner = &after[..end];
-            let target = inner.split(['|', '#']).next().unwrap_or("").trim();
+            let target = inner[..link_target_len(inner)].trim();
             // `![[bild.png]]`, `![[x.excalidraw]]`, `![[doc.pdf]]` embed an attachment, they do not link a page.
             let embed = rest[..start].ends_with('!') && crate::attachments::embeddable(target);
             if !embed && !target.is_empty() && seen.insert(target.to_lowercase()) {
@@ -661,16 +686,22 @@ impl Database {
 /// Code (fenced blocks and inline spans) stays as written, as it is no link ([`wiki_links`]).
 pub fn replace_link_target(content: &str, old: &str, new: &str) -> String {
     let mut out = String::with_capacity(content.len());
-    let mut in_fence = false;
+    let mut fence: Option<&str> = None;
     for line in content.split_inclusive('\n') {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            out.push_str(line);
-            continue;
-        }
-        if in_fence {
-            out.push_str(line);
-            continue;
+        match (fence, fence_marker(line)) {
+            (Some(f), m) => {
+                if m == Some(f) {
+                    fence = None;
+                }
+                out.push_str(line);
+                continue;
+            }
+            (None, Some(m)) => {
+                fence = Some(m);
+                out.push_str(line);
+                continue;
+            }
+            (None, None) => {}
         }
         // Between backticks is inline code (an unclosed one runs to the end of the line).
         for (i, part) in line.split('`').enumerate() {
@@ -693,8 +724,7 @@ fn replace_in_prose(text: &str, old: &str, new: &str, out: &mut String) {
             return;
         };
         let inner = &after[..end];
-        let split = inner.find(['|', '#']).unwrap_or(inner.len());
-        let (target, suffix) = inner.split_at(split);
+        let (target, suffix) = inner.split_at(link_target_len(inner));
         if target.trim().to_lowercase() == old.to_lowercase() {
             out.push_str("[[");
             out.push_str(new);
@@ -731,6 +761,20 @@ pub fn clean_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn links_in_table_cells_and_tilde_fences() {
+        let md = "| Wer | Seite |\n|---|---|\n| Anna | [[Server\\|den Server]] |\n| Bild | ![[plan.png\\|200]] |\n\n~~~\n[[Code]] ```\n~~~\n[[Danach]]\n";
+        assert_eq!(wiki_links(md), ["Server", "Danach"]);
+        assert_eq!(crate::attachments::embeds(md), ["plan.png"]);
+        let renamed = replace_link_target(md, "Server", "Host");
+        assert!(renamed.contains("[[Host\\|den Server]]"), "{renamed}");
+        let renamed = replace_link_target(md, "Code", "Neu");
+        assert!(renamed.contains("[[Code]]"), "code in a ~~~ block stays: {renamed}");
+        assert_eq!(link_target_len("Server\\|x"), 6);
+        assert_eq!(link_target_len("C\\#x"), 2, "only an escaped pipe drops the backslash");
+        assert_eq!(link_target_len("Server"), 6);
+    }
 
     #[test]
     fn decomposed_titles_are_composed() {

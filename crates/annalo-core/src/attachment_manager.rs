@@ -128,7 +128,7 @@ fn embed_refs(markdown: &str) -> Vec<EmbedRef<'_>> {
         let start = from + i + 2;
         let Some(len) = markdown[start..].find("]]") else { break };
         let inner = &markdown[start..start + len];
-        let target_len = inner.find(['|', '#']).unwrap_or(inner.len());
+        let target_len = crate::notes::link_target_len(inner);
         let raw = &inner[..target_len];
         let lead = raw.len() - raw.trim_start().len();
         let target = raw.trim();
