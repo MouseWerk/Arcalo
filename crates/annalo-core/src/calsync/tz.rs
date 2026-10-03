@@ -97,7 +97,7 @@ fn fixed_offset(id: &str) -> Option<FixedOffset> {
     let digits = &rest[first.len_utf8()..];
     let (h, m) = match digits.split_once(':') {
         Some((h, m)) => (h.parse::<i32>().ok()?, m.parse::<i32>().ok()?),
-        None if digits.len() == 4 => (digits[..2].parse().ok()?, digits[2..].parse().ok()?),
+        None if digits.len() == 4 && digits.is_ascii() => (digits[..2].parse().ok()?, digits[2..].parse().ok()?),
         None => (digits.parse().ok()?, 0),
     };
     if h > 14 || m >= 60 {
@@ -340,6 +340,10 @@ mod tests {
         assert_eq!(fixed.to_utc(wall(2026, 1, 1, 12, 0)).naive_utc(), wall(2026, 1, 1, 6, 30));
         assert!(Zone::named("(UTC+01:00) Amsterdam, Berlin, Bern, Rom, Stockholm, Wien").is_none());
         assert!(Zone::named("").is_none());
+        // Broken offsets are no zone (and no panic on a character across the cut).
+        for id in ["UTC+\u{20AC}1", "UTC+1\u{E4}", "GMT-\u{E4}\u{E4}"] {
+            assert!(Zone::named(id).is_none(), "{id}");
+        }
     }
 
     #[test]

@@ -247,11 +247,11 @@ fn number_cell(key: &str, n: f64) -> Cell {
 }
 
 fn date_cell(key: &str, date: Option<&str>) -> Cell {
-    match date.filter(|d| d.len() >= 10) {
+    match date.and_then(|d| d.get(..10)) {
         Some(d) => Cell {
             key: key.to_owned(),
-            text: d[..10].to_owned(),
-            value: Some(Typed::Date(d[..10].to_owned())),
+            text: d.to_owned(),
+            value: Some(Typed::Date(d.to_owned())),
             error: None,
         },
         None => text_cell(key, ""),
