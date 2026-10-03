@@ -88,6 +88,7 @@ pub mod merge;
 pub mod mirror;
 pub mod model;
 pub mod network;
+pub mod nfc;
 pub mod netzplan;
 pub mod notes;
 pub mod onboarding;

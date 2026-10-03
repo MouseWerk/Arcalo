@@ -279,6 +279,10 @@ struct MergeUndo {
     contents: Vec<(i64, String)>,
     /// Subpages of the other page moved to the kept one: id and former position.
     children: Vec<(i64, i64)>,
+    /// Contents the merge wrote (missing in undo records of 1.10): edits made after the merge
+    /// are kept on undo when they merge with the text from before.
+    #[serde(default)]
+    after: Vec<(i64, String)>,
 }
 
 fn pair(a: i64, b: i64) -> (i64, i64) {
@@ -558,6 +562,7 @@ impl Database {
                     .collect::<rusqlite::Result<_>>()?
             };
             let mut changed = vec![keep];
+            let mut after: Vec<(i64, String)> = vec![(keep, merged.clone())];
             for (pid, content) in sources {
                 let updated = if self.is_canvas(pid)? {
                     crate::canvas::rename_page(&content, &o.title, &k.title)
@@ -568,6 +573,7 @@ impl Database {
                     self.store_version(pid, &content, now)?;
                     self.save_page_content_at(pid, &updated, now)?;
                     contents.push((pid, content));
+                    after.push((pid, updated));
                     changed.push(pid);
                 }
             }
@@ -593,7 +599,7 @@ impl Database {
                 )?;
             }
             self.trash_page(other)?;
-            let undo = MergeUndo { keep, other, contents, children };
+            let undo = MergeUndo { keep, other, contents, children, after };
             self.meta_set(MERGE_UNDO, &serde_json::to_string(&undo)?)?;
             Ok(MergeOutcome { keep, other, relinked, changed })
         })
@@ -628,8 +634,15 @@ impl Database {
                     continue;
                 };
                 if &current != content {
+                    // Edited since the merge: the merge's changes are taken back, the later
+                    // edits stay where they do not collide (else the text from before, the
+                    // current one stays as a version).
+                    let merged_text = undo.after.iter().find(|(id, _)| id == pid).and_then(|(_, after)| {
+                        (after != &current).then(|| crate::merge::merge3(Some(after), &current, content).merged()).flatten()
+                    });
+                    let text = merged_text.as_deref().unwrap_or(content);
                     self.store_version(*pid, &current, now)?;
-                    self.save_page_content_at(*pid, content, now)?;
+                    self.save_page_content_at(*pid, text, now)?;
                     changed.push(*pid);
                 }
             }
@@ -738,5 +751,29 @@ mod tests {
         assert_eq!(db.page_doc(other.id).unwrap().backlinks.len(), 1);
         assert!(db.undo_merge().is_err(), "undo works once");
         assert!(db.merge_pages(keep.id, keep.id).is_err());
+    }
+
+    #[test]
+    fn undoing_a_merge_keeps_later_edits() {
+        let db = Database::open_in_memory().unwrap();
+        let keep = db.create_page(None, "Server", None).unwrap();
+        let other = db.create_page(None, "Server alt", None).unwrap();
+        db.save_page_content(keep.id, "# Server\n\nNeuer Stand.\n").unwrap();
+        db.save_page_content(other.id, "Alter Stand.").unwrap();
+        db.merge_pages(keep.id, other.id).unwrap();
+        // A paragraph written after the merge, away from the merged part.
+        let merged = db.page_doc(keep.id).unwrap().content;
+        let edited = merged.replace("# Server\n", "# Server\n\nNachtrag nach dem Merge.\n");
+        db.save_page_content(keep.id, &edited).unwrap();
+        db.undo_merge().unwrap();
+        let back = db.page_doc(keep.id).unwrap().content;
+        assert!(back.contains("Nachtrag nach dem Merge."), "{back}");
+        assert!(!back.contains("Alter Stand") && !back.contains("## Server alt"), "{back}");
+        // The text as it was before the undo is a version.
+        assert!(db.list_versions(keep.id).unwrap().len() >= 2);
+
+        // Records written by 1.10 (no `after`) still undo to the text from before.
+        let undo: MergeUndo = serde_json::from_str(r#"{"keep":1,"other":2,"contents":[],"children":[]}"#).unwrap();
+        assert!(undo.after.is_empty());
     }
 }

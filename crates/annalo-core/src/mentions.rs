@@ -224,6 +224,7 @@ pub fn mask(md: &str) -> String {
     blank(&mut out, 0, body_start);
     let mut at = body_start;
     let mut fence: Option<&str> = None;
+    let mut in_comment = false;
     for line in md[body_start..].split_inclusive('\n') {
         let start = at;
         at += line.len();
@@ -242,12 +243,47 @@ pub fn mask(md: &str) -> String {
             }
             continue;
         }
-        if let Some(m) = marker {
-            fence = Some(m);
-            blank(&mut out, start, at);
-            continue;
+        // Inside an HTML comment that started on an earlier line: blank up to its end.
+        let mut from = 0;
+        if in_comment {
+            match line.find("-->") {
+                Some(e) => {
+                    blank(&mut out, start, start + e + 3);
+                    from = e + 3;
+                    in_comment = false;
+                }
+                None => {
+                    blank(&mut out, start, at);
+                    continue;
+                }
+            }
         }
-        mask_line(line, start, &mut out);
+        if from == 0 {
+            if let Some(m) = marker {
+                fence = Some(m);
+                blank(&mut out, start, at);
+                continue;
+            }
+        }
+        // A comment opened here and not closed on this line runs on to a later one.
+        let mut to = line.len();
+        let mut search = from;
+        while let Some(o) = line[search..].find("<!--").map(|o| search + o) {
+            // `<!--` in inline code is text.
+            if line[from..o].matches('`').count() % 2 == 1 {
+                break;
+            }
+            match line[o + 4..].find("-->") {
+                Some(c) => search = o + 4 + c + 3,
+                None => {
+                    to = o;
+                    in_comment = true;
+                    break;
+                }
+            }
+        }
+        blank(&mut out, start + to, at);
+        mask_line(&line[from..to], start + from, &mut out);
     }
     // Only spaces were written over whole characters: still valid UTF-8.
     String::from_utf8(out).unwrap_or_default()
@@ -831,6 +867,26 @@ mod tests {
         let index = idx(&[(1, "Arcalo"), (2, "Rust")]);
         assert_eq!(texts("Wir bauen arcalo in Rust, nicht Rusty oder Trust.", &index), ["arcalo", "Rust"]);
         assert!(texts("ArcaloX und xArcalo", &index).is_empty());
+    }
+
+    #[test]
+    fn html_comments_over_several_lines_are_not_prose() {
+        let index = idx(&[(1, "Server")]);
+        for md in [
+            "<!-- Notiz\nder Server\nbleibt -->",
+            "Vorher <!-- der\nServer --> danach",
+            "<!--\nServer\n\nServer\n-->",
+            "<!-- a --> x <!-- b\nServer -->",
+        ] {
+            assert!(texts(md, &index).is_empty(), "{md:?}: {:?}", texts(md, &index));
+            assert_eq!(mask(md).len(), md.len());
+        }
+        // After the comment the text counts again, also on the closing line.
+        assert_eq!(texts("<!-- x\ny --> der Server\nServer", &index), ["Server", "Server"]);
+        // `<!--` in inline code opens nothing.
+        assert_eq!(texts("`<!--` und\nder Server", &index), ["Server"]);
+        // An unclosed comment hides the rest, as in Markdown.
+        assert!(texts("<!-- offen\nServer", &index).is_empty());
     }
 
     #[test]

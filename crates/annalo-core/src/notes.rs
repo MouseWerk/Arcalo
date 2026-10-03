@@ -713,10 +713,10 @@ fn replace_in_prose(text: &str, old: &str, new: &str, out: &mut String) {
 pub const TITLE_REPLACEMENTS: [(char, char); 5] =
     [('[', '('), (']', ')'), ('|', '\u{FF5C}'), ('#', '\u{FF03}'), ('^', '\u{FF3E}')];
 
-/// A title safe to link: trimmed, line breaks as spaces, [`TITLE_REPLACEMENTS`] applied.
+/// A title safe to link: trimmed, line breaks as spaces, [`TITLE_REPLACEMENTS`] applied,
+/// letters with diacritics composed (a decomposed „ü“ from a macOS file name is the „ü“ of a link).
 pub fn clean_title(title: &str) -> String {
-    title
-        .trim()
+    crate::nfc::nfc(title.trim())
         .chars()
         .map(|c| {
             if c == '\n' || c == '\r' {
@@ -731,6 +731,15 @@ pub fn clean_title(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decomposed_titles_are_composed() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Mu\u{308}ller", None).unwrap();
+        assert_eq!(p.title, "Müller");
+        db.save_page_content(db.create_page(None, "Log", None).unwrap().id, "Siehe [[Müller]].").unwrap();
+        assert_eq!(db.page_doc(p.id).unwrap().backlinks.len(), 1);
+    }
 
     #[test]
     fn titles_with_link_characters_stay_linkable() {

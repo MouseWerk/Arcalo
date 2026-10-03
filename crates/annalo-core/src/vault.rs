@@ -381,18 +381,36 @@ pub(crate) fn file_name(title: &str) -> String {
                 }
             })
             .collect();
-    let mut cleaned: String = cleaned.trim().trim_end_matches('.').chars().take(120).collect();
-    cleaned = cleaned.trim_end_matches(['.', ' ']).to_owned();
-    // CON, NUL, COM1 … are reserved device names on Windows, also with an extension.
-    const RESERVED: &[&str] = &[
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
-        "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-    ];
-    let stem = cleaned.split('.').next().unwrap_or("").trim().to_ascii_uppercase();
-    if RESERVED.contains(&stem.as_str()) {
-        cleaned.push('_');
+    // At most 120 characters and 200 bytes: Linux and macOS allow 255 bytes per name (a title
+    // in Chinese or with emoji reaches that long before 120 characters), and the extension and
+    // a „ (2)“ must still fit.
+    let mut cut = String::new();
+    for c in cleaned.trim().chars().take(120) {
+        if cut.len() + c.len_utf8() > 200 {
+            break;
+        }
+        cut.push(c);
+    }
+    let mut cleaned = cut.trim_end_matches(['.', ' ']).to_owned();
+    // CON, NUL, COM1 … are reserved device names on Windows, also with any extension
+    // („NUL.txt.md“ is NUL too): the `_` goes before the first dot.
+    let dot = cleaned.find('.').unwrap_or(cleaned.len());
+    if is_device_name(cleaned[..dot].trim_end()) {
+        cleaned.insert(dot, '_');
     }
     if cleaned.is_empty() { tr!("Ohne Titel", "Untitled").into() } else { cleaned }
+}
+
+/// Windows device names (`CON`, `com1`, `LPT¹`, `CONIN$`, …), which no file may be named.
+fn is_device_name(stem: &str) -> bool {
+    let upper = stem.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
+        return true;
+    }
+    let mut chars = upper.chars();
+    let head: String = chars.by_ref().take(3).collect();
+    let digit: Vec<char> = chars.collect();
+    (head == "COM" || head == "LPT") && matches!(digit.as_slice(), ['1'..='9' | '¹' | '²' | '³'])
 }
 
 /// Where the export puts one page, relative to the export folder (`/` separated).
@@ -844,9 +862,29 @@ mod tests {
 
     #[test]
     fn reserved_and_long_names_are_safe() {
-        assert_eq!(file_name("CON"), "CON_");
-        assert_eq!(file_name("nul.txt"), "nul.txt_");
+        for (title, name) in [
+            ("CON", "CON_"),
+            ("nul.txt", "nul_.txt"),
+            ("Aux.Notizen.2026", "Aux_.Notizen.2026"),
+            ("com1", "com1_"),
+            ("LPT¹", "LPT¹_"),
+            ("CONOUT$", "CONOUT$_"),
+            ("CON .txt", "CON _.txt"),
+            ("COM10", "COM10"),
+            ("CONTROL", "CONTROL"),
+            ("Console.md", "Console.md"),
+            ("Prn-Liste", "Prn-Liste"),
+            ("Notiz...", "Notiz"),
+            ("Ende. ", "Ende"),
+        ] {
+            assert_eq!(file_name(title), name, "{title}");
+        }
         assert_eq!(file_name(&"x".repeat(300)).len(), 120);
+        // Bytes, not only characters: 120 CJK characters are 360 bytes.
+        let cjk = file_name(&"会议记录".repeat(40));
+        assert!(cjk.len() <= 200 && cjk.chars().all(|c| "会议记录".contains(c)), "{}", cjk.len());
+        let emoji = file_name(&"\u{1F680}".repeat(100));
+        assert!(emoji.len() <= 200 && emoji.len() % 4 == 0);
     }
 
     #[cfg(unix)]
