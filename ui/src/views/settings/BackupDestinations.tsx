@@ -92,7 +92,7 @@ export function BackupDestinationsGroup({ draft, update }: { draft: Settings; up
             mirrorOn={draft.markdown_mirror}
             onChange={(p) => setDest(i, p)}
             onRemove={() => void remove(i)}
-            onRetry={() => void api.retryBackupDestinations().then(() => window.setTimeout(reload, 400))}
+            onRetry={() => void api.retryBackupDestinations().then(() => window.setTimeout(reload, 400), (e) => useApp.getState().error(t("common.actionFailed"), e))}
           />
         ))}
       </div>

@@ -651,7 +651,7 @@ function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (
   const [mapKey, setMapKey] = useState("");
   const [mapVal, setMapVal] = useState("");
   const s = useApp.getState;
-  const reload = () => api.leistungsarten().then(setLas);
+  const reload = () => api.leistungsarten().then(setLas, (e) => useApp.getState().error(t("common.actionFailed"), e));
   useEffect(() => {
     reload();
   }, []);

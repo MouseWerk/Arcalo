@@ -206,7 +206,7 @@ function InboxWidget({ widget }: WidgetProps) {
         const d = data!;
         if (!d.items.length)
           return (
-            <Empty icon={Inbox} action={<Button size="sm" variant="ghost" onClick={() => void api.captureShow()}>{t("dash.n.capture")}</Button>}>
+            <Empty icon={Inbox} action={<Button size="sm" variant="ghost" onClick={() => void api.captureShow().catch((e) => useApp.getState().error(t("common.actionFailed"), e))}>{t("dash.n.capture")}</Button>}>
               {t("dash.n.inboxEmpty", { title: d.title })}
             </Empty>
           );

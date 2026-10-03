@@ -341,7 +341,7 @@ export function UpdateStatusItem() {
         <span className="sb-update-bar" aria-hidden>
           <span style={{ width: `${percent ?? 0}%` }} />
         </span>
-        <button type="button" className="sb-update-btn" aria-label={t("upd.pause")} title={t("upd.pause")} onClick={() => void api.updatePause()}>
+        <button type="button" className="sb-update-btn" aria-label={t("upd.pause")} title={t("upd.pause")} onClick={() => void api.updatePause().catch((e) => useApp.getState().error(t("common.actionFailed"), e))}>
           <Pause size={12} />
         </button>
       </span>

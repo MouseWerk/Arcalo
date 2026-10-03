@@ -235,7 +235,7 @@ function DuplicatesDialog({ onClose }: { onClose: () => void }) {
                 >
                   {t("dup.merge")}
                 </Button>
-                <Button size="sm" variant="ghost" icon={EyeOff} onClick={() => void api.ignoreDuplicate(p.a, p.b).then(load)}>
+                <Button size="sm" variant="ghost" icon={EyeOff} onClick={() => void api.ignoreDuplicate(p.a, p.b).then(load, (e) => useApp.getState().error(t("common.actionFailed"), e))}>
                   {t("dup.ignore")}
                 </Button>
               </span>
