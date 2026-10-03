@@ -37,10 +37,21 @@ async function reload() {
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }
-const rowIndex = (title) => app.browser.execute((t) => [...document.querySelectorAll(".sidebar .tree-row")].findIndex((r) => r.querySelector(".tree-label")?.textContent === t), title);
+// The row itself, found and scrolled into view in one step: an index taken in one call and used
+// in the next can name another row once the tree re-renders (a large tree renders only the rows
+// in view, and moving into view re-renders it).
+const findRow = (title) =>
+  app.browser.execute((t) => {
+    const r = [...document.querySelectorAll(".sidebar .tree-row")].find((x) => x.querySelector(".tree-label")?.textContent === t);
+    r?.scrollIntoView({ block: "nearest" });
+    return r ?? null;
+  }, title);
 async function row(title) {
-  await app.browser.waitUntil(async () => (await rowIndex(title)) >= 0, { timeout: 8000, timeoutMsg: `no tree row ${title}` });
-  return (await app.$$(".sidebar .tree-row"))[await rowIndex(title)];
+  let el = null;
+  await app.browser.waitUntil(async () => (el = await findRow(title)) != null, { timeout: 8000, timeoutMsg: `no tree row ${title}` });
+  // After the scroll the rows in view may render anew: the element of this title now.
+  await app.browser.pause(50);
+  return app.browser.$(await findRow(title));
 }
 async function expand(title) {
   const r = await row(title);
@@ -124,7 +135,7 @@ test("new meeting, voice and Jira notes land in year/month and project folders",
   await expand("Besprechungen");
   await expand(year);
   assert.ok((await childrenOf("Besprechungen")).includes(year));
-  assert.ok((await rowIndex(month)) >= 0, "month folder shown");
+  assert.ok((await findRow(month)) != null, "month folder shown");
   await app.shot("121-filing-tree-light");
 });
 

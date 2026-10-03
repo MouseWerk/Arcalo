@@ -61,7 +61,15 @@ export function installTooltips() {
   document.addEventListener("pointerover", (e) => enter((e.target as Element | null)?.closest?.("[data-tooltip]") as HTMLElement | null), true);
   document.addEventListener("pointerdown", hide, true);
   document.addEventListener("keydown", hide, true);
-  document.addEventListener("scroll", hide, true);
+  // Only a scroll that moves the target hides it (not the editor loading next to the sidebar).
+  document.addEventListener(
+    "scroll",
+    (e) => {
+      const from = e.target;
+      if (target && (from === document || (from instanceof Node && from.contains(target)))) hide();
+    },
+    true,
+  );
   window.addEventListener("blur", hide);
   document.documentElement.addEventListener("pointerleave", hide);
   // Keyboard users: focus shows the tooltip too.
@@ -69,5 +77,9 @@ export function installTooltips() {
     const el = (e.target as Element).closest?.("[data-tooltip]") as HTMLElement | null;
     if (el && el.matches(":focus-visible")) enter(el);
   });
-  document.addEventListener("focusout", hide);
+  // Only when the target loses focus: a field elsewhere (the editor of a page that is still
+  // opening) taking or dropping focus leaves the tooltip of the hovered button alone.
+  document.addEventListener("focusout", (e) => {
+    if (target && e.target instanceof Node && e.target.contains(target)) hide();
+  });
 }

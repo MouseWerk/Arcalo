@@ -181,6 +181,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef(0);
   const [busy, setBusy] = useState(false);
+  /** The scope just chosen for a section, shown at once while it is applied (it waits for pending saves). */
+  const [scopeChoice, setScopeChoice] = useState<{ layer: string; scope: SettingsScope } | null>(null);
   // The latest settings (ahead of the store while saves are pending), the change being typed,
   // and the save waiting for the typing to pause.
   const latest = useRef<Settings | null>(null);
@@ -251,8 +253,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       return false;
     }
   };
-  /** Queues a save of the latest settings; the undo toast of `b` follows once it is stored. */
-  const persist = (b: Burst | null, opts: { silent?: boolean; destructive?: boolean; title?: string } = {}) => {
+  /** Queues a save of the latest settings; the undo toast of `b` (or the note that an undo is done) follows once it is stored. */
+  const persist = (b: Burst | null, opts: { silent?: boolean; destructive?: boolean; title?: string; undo?: boolean } = {}) => {
     const draftNow = latest.current;
     if (!draftNow) return;
     const stored = useApp.getState().settings?.settings;
@@ -263,7 +265,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     queue.current = queue.current
       .then(() => save(next))
       .then((ok) => {
-        if (ok && b && !opts.silent) offerUndo(b, opts);
+        if (ok && opts.undo) s().toast({ tone: "success", title: t("settings.undone") });
+        else if (ok && b && !opts.silent) offerUndo(b, opts);
       })
       .finally(() => {
         // The last one done: the form follows what is stored now.
@@ -322,7 +325,6 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       burst.current = null;
       const b = opts.undo ? null : continueBurst(null, patch, base, Date.now(), ++burstSeq.current);
       persist(b, opts);
-      if (opts.undo) s().toast({ tone: "success", title: t("settings.undone") });
       return;
     }
     // Not storable yet (a field it needs is empty): the form shows it, its save waits (other
@@ -369,6 +371,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   };
   /** „Für alle Arbeitsbereiche“ / „Nur dieser Arbeitsbereich“ of a shareable section. */
   const setScope = async (layer: string, scope: SettingsScope) => {
+    const choice = { layer, scope };
+    setScopeChoice(choice);
     flush();
     await queue.current;
     try {
@@ -378,6 +382,9 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       s().toast({ tone: "success", title: scope === "global" ? t("settings.scope.nowGlobal") : t("settings.scope.nowWorkspace") });
     } catch (e) {
       s().error(t("settings.saveFailed"), e);
+    } finally {
+      // A later choice (clicked meanwhile) stays shown until it is applied itself.
+      setScopeChoice((c) => (c === choice ? null : c));
     }
   };
   /** Admin: an import or a reset of everything, applied at once with undo. */
@@ -484,7 +491,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     </div>
   );
   const layer = SCOPED[section];
-  const scope = layer ? view.scopes?.[layer] : undefined;
+  const scope = layer ? (scopeChoice?.layer === layer ? scopeChoice.scope : view.scopes?.[layer]) : undefined;
   const tools = !searching && (RESET.has(section) || (layer && scope && view.shared)) && (
     <div className="settings-section-tools">
       {layer && scope && view.shared && (
@@ -1544,7 +1551,7 @@ async function moveDataDir(onChanged: () => void) {
 
 function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
   const t = useT();
-  const { status, available, phase, checkedAt } = useUpdates();
+  const { status, available, phase, manualCheck, checkedAt } = useUpdates();
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
   const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
@@ -1612,7 +1619,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
             variant={available ? "ghost" : "secondary"}
             icon={RefreshCw}
             disabled={!status.enabled || busy || !!policy?.disabled}
-            loading={phase === "checking"}
+            loading={phase === "checking" && manualCheck}
             title={status.enabled ? undefined : t(NOT_CONFIGURED)}
             onClick={() => void checkForUpdates(true)}
           >

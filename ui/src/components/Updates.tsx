@@ -28,6 +28,8 @@ interface UpdateState {
   status: UpdateStatus | null;
   available: UpdateInfo | null;
   phase: Phase;
+  /** The running check was asked for (the button shows it); an automatic one keeps the button clickable. */
+  manualCheck: boolean;
   progress: UpdateProgress | null;
   /** When the last check finished (successfully). */
   checkedAt: Date | null;
@@ -46,6 +48,7 @@ export const useUpdates = create<UpdateState>(() => ({
   status: null,
   available: null,
   phase: "idle",
+  manualCheck: false,
   progress: null,
   checkedAt: null,
   dismissed: null,
@@ -92,8 +95,24 @@ export async function loadUpdateStatus(): Promise<UpdateStatus | null> {
   return status;
 }
 
+/** The check in progress (automatic or manual). */
+let running: Promise<void> | null = null;
+
 /** Looks for a newer release. `manual` reports every outcome; automatic checks stay quiet. */
-export async function checkForUpdates(manual: boolean) {
+export function checkForUpdates(manual: boolean): Promise<void> {
+  // A click while an automatic check runs (shortly after start, or every few hours): it would
+  // stay quiet, so the click waits for it and then checks itself, with a report.
+  if (manual && running && useUpdates.getState().phase === "checking") {
+    if (!useUpdates.getState().manualCheck) useUpdates.setState({ manualCheck: true });
+    return running.then(() => checkForUpdates(true));
+  }
+  const p = runCheck(manual);
+  running = p;
+  void p.finally(() => running === p && (running = null));
+  return p;
+}
+
+async function runCheck(manual: boolean) {
   const status = useUpdates.getState().status ?? (await loadUpdateStatus());
   const toast = useApp.getState().toast;
   if (!status?.enabled) {
@@ -101,7 +120,7 @@ export async function checkForUpdates(manual: boolean) {
     return;
   }
   if (useUpdates.getState().phase !== "idle") return;
-  useUpdates.setState({ phase: "checking" });
+  useUpdates.setState({ phase: "checking", manualCheck: manual });
   try {
     const found = await api.updateCheck(manual);
     useUpdates.setState((s) => ({ available: found, checkedAt: new Date(), dismissed: manual ? null : s.dismissed, hintHidden: manual ? null : s.hintHidden }));
@@ -115,7 +134,7 @@ export async function checkForUpdates(manual: boolean) {
     if (manual) useApp.getState().error(t("upd.checkFailed"), e);
     else console.warn("update check failed", e);
   } finally {
-    useUpdates.setState({ phase: "idle" });
+    useUpdates.setState({ phase: "idle", manualCheck: false });
   }
 }
 

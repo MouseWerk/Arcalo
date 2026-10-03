@@ -167,14 +167,22 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   assert.equal(await caret(mid.from), -1, "caret before the chip");
   assert.equal(await caret(mid.to), 1, "caret after the chip");
   await caret(mid.from - 1);
+  // The browser moves the caret; the editor reads it from the selectionchange event that follows,
+  // a moment later on a slow machine: wait for each step to arrive (a key that moves nothing
+  // keeps the old position and fails below).
+  const selFrom = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.state.selection.from);
+  const press = async (key) => {
+    const was = await selFrom();
+    await app.browser.keys([key]);
+    let now = was;
+    await app.browser.waitUntil(async () => (now = await selFrom()) !== was, { timeout: 2000, interval: 25 }).catch(() => {});
+    return now;
+  };
   const steps = [];
-  for (let i = 0; i < 10; i++) {
-    await app.browser.keys(["ArrowRight"]);
-    steps.push(await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.state.selection.from));
-  }
+  for (let i = 0; i < 10; i++) steps.push(await press("ArrowRight"));
   assert.deepEqual(steps, Array.from({ length: 10 }, (_, i) => mid.from + i), "ArrowRight over the chip");
-  for (let i = 0; i < 10; i++) await app.browser.keys(["ArrowLeft"]);
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.state.selection.from), mid.from - 1, "ArrowLeft back");
+  for (let i = 0; i < 10; i++) await press("ArrowLeft");
+  assert.equal(await selFrom(), mid.from - 1, "ArrowLeft back");
 
   // Copying a selection over a chip gives the plain text.
   const copied = await app.browser.execute(

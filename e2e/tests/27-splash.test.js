@@ -15,13 +15,17 @@ const splash = () => app.browser.execute(() => !!document.getElementById("splash
 test("the logo animates while the app starts, then gets out of the way", async () => {
   await app.browser.execute(() => localStorage.setItem("annalo.splash-test", "1"));
   await app.browser.refresh();
-  assert.ok(await splash(), "shown at start");
+  // Shown at start, and never blocks clicks, even while visible. (Read at once: it plays for
+  // 1.3 s from the window showing, and the screenshots below can take that long on a slow machine.)
+  const pointer = await app.browser.execute(() => {
+    const el = document.getElementById("splash");
+    return el && getComputedStyle(el).pointerEvents;
+  });
+  assert.equal(pointer, "none", "shown at start, not in the way of clicks");
   await sleep(150);
   await app.shot("splash-1-draw");
   await sleep(250);
   await app.shot("splash-2-fill");
-  // Never blocks clicks, even while visible.
-  assert.equal(await app.browser.execute(() => getComputedStyle(document.getElementById("splash")).pointerEvents), "none");
   await sleep(150);
   await app.shot("splash-3-name");
   await app.browser.waitUntil(async () => !(await splash()), { timeout: 5000, timeoutMsg: "splash stays" });
