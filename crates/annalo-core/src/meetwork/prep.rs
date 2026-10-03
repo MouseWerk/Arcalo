@@ -347,7 +347,8 @@ pub fn prep_data(
     let mut people = vec![];
     let mut person_pages: Vec<i64> = vec![];
     for a in attendees.iter().take(MAX_PEOPLE) {
-        let forms = if a.contains('@') { vec![a.trim().to_owned()] } else { name_forms(a) };
+        // The name in its forms and, for `Name <address>`, the address.
+        let forms = name_forms(a);
         let mut found: Vec<PageRef> = vec![];
         let mut st = db.conn().prepare_cached(
             "SELECT id, title FROM pages
