@@ -258,12 +258,12 @@ pub fn mask(md: &str) -> String {
                 }
             }
         }
-        if from == 0 {
-            if let Some(m) = marker {
-                fence = Some(m);
-                blank(&mut out, start, at);
-                continue;
-            }
+        if from == 0
+            && let Some(m) = marker
+        {
+            fence = Some(m);
+            blank(&mut out, start, at);
+            continue;
         }
         // A comment opened here and not closed on this line runs on to a later one.
         let mut to = line.len();

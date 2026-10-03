@@ -225,11 +225,11 @@ pub fn nfc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut last: Option<char> = None;
     for c in s.chars() {
-        if let (Some(base), true) = (last, is_mark(c)) {
-            if let Some(composed) = compose(base, c) {
-                last = Some(composed);
-                continue;
-            }
+        if let (Some(base), true) = (last, is_mark(c))
+            && let Some(composed) = compose(base, c)
+        {
+            last = Some(composed);
+            continue;
         }
         if let Some(l) = last.replace(c) {
             out.push(l);

@@ -884,7 +884,7 @@ mod tests {
         let cjk = file_name(&"会议记录".repeat(40));
         assert!(cjk.len() <= 200 && cjk.chars().all(|c| "会议记录".contains(c)), "{}", cjk.len());
         let emoji = file_name(&"\u{1F680}".repeat(100));
-        assert!(emoji.len() <= 200 && emoji.len() % 4 == 0);
+        assert!(emoji.len() <= 200 && emoji.len().is_multiple_of(4));
     }
 
     #[cfg(unix)]
