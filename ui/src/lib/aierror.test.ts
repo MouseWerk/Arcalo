@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aiErrorSummary, routeNotes, waitText } from "./aierror";
-import { errorText, shortenPaths } from "./api";
+import { errorParts, errorText, shortenPaths } from "./api";
 
 describe("route notes", () => {
   it("shows fallbacks and waits, not the router's scoring", () => {
@@ -89,5 +89,13 @@ describe("errorText", () => {
   it("drops repeated technical prefixes", () => {
     expect(errorText("invalid state: invalid state: Kein Netz")).toBe("Kein Netz");
     expect(errorText("Dateifehler: Der Datenträger ist voll")).toBe("Dateifehler: Der Datenträger ist voll");
+  });
+
+  it("keeps SQLite's English text out of the message, for „Details“", () => {
+    const raw = "Datenbankfehler: Der Datenträger ist voll – die Änderung wurde nicht gespeichert.\n\nDetails: Error code 13: Insertion failed because database is full";
+    expect(errorText(raw)).toBe("Datenbankfehler: Der Datenträger ist voll – die Änderung wurde nicht gespeichert.");
+    expect(errorParts(raw).details).toBe("Error code 13: Insertion failed because database is full");
+    expect(errorParts(new Error(raw)).text).not.toContain("Error code");
+    expect(errorParts("Kein Netz")).toEqual({ text: "Kein Netz" });
   });
 });

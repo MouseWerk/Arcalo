@@ -1,7 +1,7 @@
 // Global UI state: tabs, panels, cached workspace data, timer and toasts.
 
 import { create } from "zustand";
-import { api, errorText } from "../lib/api";
+import { api, errorParts } from "../lib/api";
 import { logUi } from "../lib/devlog";
 import type { BudgetStatus, FocusState, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
@@ -36,6 +36,8 @@ export interface Toast {
   tone: "info" | "success" | "warning" | "danger";
   title: string;
   detail?: string;
+  /** Technical text (SQLite's, the operating system's), shown only after „Details“. */
+  tech?: string;
   action?: { label: string; run: () => void };
   /** Stays until closed. */
   persistent?: boolean;
@@ -514,9 +516,9 @@ export const useApp = create<State>((set, get) => ({
     }
   },
   error: (title, e) => {
-    const detail = errorText(e);
-    logUi("ERROR", `${title}: ${detail}`);
-    get().toast({ tone: "danger", title, detail });
+    const { text: detail, details: tech } = errorParts(e);
+    logUi("ERROR", `${title}: ${detail}${tech ? ` (${tech})` : ""}`);
+    get().toast({ tone: "danger", title, detail, tech });
   },
   alerts: (alerts) => {
     // Settings → Benachrichtigungen.

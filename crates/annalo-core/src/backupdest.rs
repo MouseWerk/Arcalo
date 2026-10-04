@@ -1025,7 +1025,17 @@ pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Opti
     }
     fs::rename(&pending, &db_file).at(&db_file)?;
     let _ = fs::remove_file(&from_file);
+    restored_for_sync(data_dir, &from, now);
     Ok(Some(Restored { from, encrypt: keep_encrypted(data_dir, was_encrypted, now) }))
+}
+
+/// The Git sync compares with the server before it uploads anything after a restore
+/// ([`crate::gitsync::RESTORED_FILE`]).
+fn restored_for_sync(data_dir: &Path, from: &str, now: DateTime<Utc>) {
+    let name = Path::new(from).file_name().and_then(|n| n.to_str()).unwrap_or(from);
+    if let Err(e) = crate::gitsync::mark_restored(data_dir, name, now) {
+        eprintln!("annalo: restore not noted for the Git sync: {e}");
+    }
 }
 
 /// A backup from before the encryption replaced an encrypted database: asks for the encryption
@@ -1096,6 +1106,7 @@ pub fn restore_newest(db_file: &Path, backups: &[BackupInfo], now: DateTime<Utc>
                 fs::rename(&part, db_file).at(db_file)?;
                 if let Some(dir) = db_file.parent() {
                     keep_encrypted(dir, was_encrypted, now);
+                    restored_for_sync(dir, &b.file_name, now);
                 }
                 return Ok(b.clone());
             }

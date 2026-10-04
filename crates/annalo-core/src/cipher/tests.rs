@@ -266,6 +266,97 @@ fn a_backup_from_before_the_encryption_is_encrypted_when_restored() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// A page's text read with `key` (not the process key: tests share that one).
+fn content_with(db: &Path, key: &DbKey, title: &str) -> String {
+    let conn = open_with(db, OpenFlags::default(), Some(key)).unwrap();
+    conn.query_row("SELECT content FROM pages WHERE title = ?1", [title], |r| r.get(0)).unwrap()
+}
+
+/// Changes the key with a crash at `point` (if any), starts again, and checks the outcome.
+fn rekey_with_crash(point: Option<&str>) {
+    let dir = tmp(&format!("rekey-{}", point.unwrap_or("none")));
+    sample(&dir);
+    let (old, new) = (test_key(), DbKey::from_bytes(&[9u8; KEY_LEN]).unwrap());
+    request(&dir, Direction::Encrypt, Utc::now()).unwrap();
+    run_pending(&dir, Some(&old)).unwrap();
+    drop_old(&dir).unwrap();
+    let db = dir.join(DB_FILE);
+
+    request(&dir, Direction::Rekey, Utc::now()).unwrap();
+    // Asked for, not yet run: the new key is kept for the start that runs it.
+    assert_eq!(next_key_fate(&dir, &new), NextKey::Keep);
+    if let Some(p) = point {
+        let hook = |at: &str| at == p;
+        assert!(run_pending_keys(&dir, Some(&old), Some(&new), &hook).is_err(), "crash at {p}");
+        // Whatever the crash left, one of the two keys opens a complete database.
+        let usable = [(&db, &old), (&db, &new), (&dir.join(NEW_FILE), &new)]
+            .iter()
+            .any(|(f, k)| f.exists() && access(f, Some(k)) == Access::Unlocked);
+        assert!(usable, "{p}: no usable database left");
+    }
+    let done = run_pending_keys(&dir, Some(&old), Some(&new), &|_| false).unwrap();
+    assert_eq!(done, Some(Outcome { direction: Direction::Rekey }), "{point:?}");
+    // Never written unencrypted; the new key opens it, the old one no longer does.
+    assert_eq!(file_state(&db), FileState::Encrypted);
+    assert_eq!(access(&db, Some(&new)), Access::Unlocked);
+    assert_eq!(access(&db, Some(&old)), Access::WrongKey);
+    assert_eq!(next_key_fate(&dir, &new), NextKey::Promote);
+    assert_eq!(content_with(&db, &new, "Seite 3"), "Inhalt 3 mit #tag und [[Seite 4]]");
+    // The previous file (old key) goes like after any switch.
+    assert_eq!(access(&dir.join(OLD_FILE), Some(&old)), Access::Unlocked);
+    assert!(!confirm_open(&dir).unwrap());
+    assert!(confirm_open(&dir).unwrap());
+    assert!(!old_left(&dir));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn changing_the_key_survives_a_crash_at_every_step() {
+    for p in [None, Some("exported"), Some("verified"), Some("old-moved"), Some("new-moved")] {
+        rekey_with_crash(p);
+    }
+}
+
+#[test]
+fn a_key_change_without_the_new_key_rolls_back_and_backups_use_the_new_key() {
+    let dir = tmp("rekey-rollback");
+    sample(&dir);
+    let (old, new) = (test_key(), DbKey::from_bytes(&[11u8; KEY_LEN]).unwrap());
+    let db = dir.join(DB_FILE);
+    // Only an encrypted database can change its key.
+    assert!(request(&dir, Direction::Rekey, Utc::now()).is_err());
+    request(&dir, Direction::Encrypt, Utc::now()).unwrap();
+    run_pending(&dir, Some(&old)).unwrap();
+    drop_old(&dir).unwrap();
+
+    request(&dir, Direction::Rekey, Utc::now()).unwrap();
+    assert!(run_pending_keys(&dir, Some(&old), None, &|_| false).is_err());
+    assert!(read_marker(&dir).is_none());
+    assert_eq!(access(&db, Some(&old)), Access::Unlocked, "unchanged");
+    assert_eq!(next_key_fate(&dir, &new), NextKey::Drop);
+
+    request(&dir, Direction::Rekey, Utc::now()).unwrap();
+    run_pending_keys(&dir, Some(&old), Some(&new), &|_| false).unwrap();
+    // A backup made afterwards (VACUUM INTO, as `backup::backup_to`) has the new key.
+    let backup = dir.join("arcalo-nach-dem-wechsel.db");
+    let conn = open_with(&db, OpenFlags::default(), Some(&new)).unwrap();
+    conn.execute("VACUUM INTO ?1", [backup.to_str().unwrap()]).unwrap();
+    drop(conn);
+    assert_eq!(access(&backup, Some(&new)), Access::Unlocked);
+    assert_eq!(access(&backup, Some(&old)), Access::WrongKey);
+    // The recovery key of the new key opens it; the old recovery key does not.
+    let code = new.recovery_code();
+    assert_eq!(access(&db, Some(&DbKey::from_recovery_code(&code).unwrap())), Access::Unlocked);
+    assert_eq!(access(&db, Some(&DbKey::from_recovery_code(&old.recovery_code()).unwrap())), Access::WrongKey);
+    // The password file follows the change.
+    WrappedKey::wrap(&old, "ein langes Passwort", (8, 1, 1)).unwrap().write(&dir).unwrap();
+    WrappedKey::wrap(&new, "ein langes Passwort", (8, 1, 1)).unwrap().write_next(&dir).unwrap();
+    WrappedKey::promote_next(&dir).unwrap();
+    assert_eq!(WrappedKey::read(&dir).unwrap().unwrap_key("ein langes Passwort").unwrap(), new);
+    assert!(!dir.join(WRAPPED_NEXT_FILE).exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_password_wraps_the_key() {
     let dir = tmp("wrap");

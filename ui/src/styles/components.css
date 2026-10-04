@@ -457,3 +457,32 @@
 
 /* ---- dialogs (1.12): room between stacked fields, so a hint does not run into the next label ---- */
 .dialog-body > .field + .field { margin-top: 12px; }
+
+/* ---- error details (1.12): SQLite's or the system's text behind „Details“ ---- */
+.toast-tech-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.toast-tech-toggle:hover { color: var(--text-2); }
+.toast-tech-toggle:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; border-radius: 2px; }
+.toast-tech-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.toast-tech {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  max-height: 120px;
+  overflow-y: auto;
+}

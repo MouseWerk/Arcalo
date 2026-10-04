@@ -28,7 +28,7 @@ export interface UnlockReply {
 }
 export type FileState = "missing" | "plain" | "encrypted";
 export interface CipherMigration {
-  direction: "encrypt" | "decrypt";
+  direction: "encrypt" | "decrypt" | "rekey";
   step: "requested" | "verified" | "swapped";
   requested: string;
   opens: number;
@@ -74,6 +74,10 @@ export const security = {
   saveRecovery: (path: string, code: string) => invoke<void>("cipher_recovery_save", { path, code }),
   switchCipher: (encrypt: boolean) => invoke<void>("cipher_switch", { encrypt }),
   setPassword: (password: string | null) => invoke<void>("cipher_password", { password }),
+  /** „Schlüssel wechseln“: a new key (its recovery key), then the change with a restart. */
+  rekeyPrepare: () => invoke<string>("cipher_rekey_prepare"),
+  rekey: (password: string | null) => invoke<void>("cipher_rekey", { password }),
+  rekeyCancel: () => invoke<void>("cipher_rekey_cancel"),
   dropOld: () => invoke<void>("cipher_drop_old"),
   dropPlainBackups: () => invoke<number>("cipher_drop_plain_backups"),
   gateStatus: () => invoke<GateStatus>("keygate_status"),

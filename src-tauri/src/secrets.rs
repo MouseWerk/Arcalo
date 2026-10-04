@@ -270,6 +270,12 @@ impl SecretStore {
         Self::named(data_dir, "db-key", "db_key")
     }
 
+    /// The new key of a key change (Settings → Sicherheit → „Schlüssel wechseln“) until the
+    /// database is switched to it; then it becomes [`SecretStore::db_key`].
+    pub fn db_key_next(data_dir: &Path) -> Self {
+        Self::named(data_dir, "db-key-next", "db_key_next")
+    }
+
     /// The Argon2id hash of the app lock's PIN (never the PIN itself).
     pub fn app_lock_pin(data_dir: &Path) -> Self {
         Self::named(data_dir, "app-lock-pin", "app_lock_pin")

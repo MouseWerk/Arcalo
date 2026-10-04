@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use annalo_core::applock::{self, LockConfig};
-use annalo_core::cipher::{self, Access, DbKey, Direction, FileState, Migration, WrappedKey};
+use annalo_core::cipher::{self, Access, DbKey, Direction, FileState, Migration, NextKey, WrappedKey};
 use annalo_core::{Error, Result, datadir};
 use annalo_core::{tr, trf};
 use chrono::Utc;
@@ -38,6 +38,47 @@ const HANDOFF: &str = "db-key.handoff";
 
 fn stored_key(dir: &Path) -> Option<DbKey> {
     SecretStore::db_key(dir).get().and_then(|h| DbKey::from_hex(&h))
+}
+
+/// The new key of a key change that has not become the key yet.
+fn next_key(dir: &Path) -> Option<DbKey> {
+    SecretStore::db_key_next(dir).get().and_then(|h| DbKey::from_hex(&h))
+}
+
+fn drop_next_key(dir: &Path) {
+    if let Err(e) = SecretStore::db_key_next(dir).set(None) {
+        devlog::warn("cipher", format!("new key of a key change not removed: {e}"));
+    }
+    WrappedKey::remove_next(dir);
+}
+
+/// After the switch: the new key of a key change becomes the key (stored, password file
+/// replaced) once it opens the database; dropped when the change was rolled back. Returns the
+/// key the database needs now.
+fn settle_next_key(dir: &Path, key: Option<DbKey>) -> Option<DbKey> {
+    let Some(next) = next_key(dir) else { return key };
+    match cipher::next_key_fate(dir, &next) {
+        NextKey::Promote => {
+            // Stored first; the next entry goes only then (a failure here repeats at the next start).
+            match store_key(dir, &next) {
+                Ok(()) => {
+                    if let Err(e) = WrappedKey::promote_next(dir) {
+                        devlog::error("cipher", format!("password file of the new key not put in place: {e}"));
+                    }
+                    drop_next_key(dir);
+                    devlog::info("cipher", "new database key stored");
+                }
+                Err(e) => devlog::error("cipher", format!("new database key not stored, kept for the next start: {e}")),
+            }
+            cipher::set_key(Some(next.clone()));
+            Some(next)
+        }
+        NextKey::Keep => key,
+        NextKey::Drop => {
+            drop_next_key(dir);
+            key
+        }
+    }
 }
 
 /// The key handed over by the recovery screen for this start only (read once, then deleted).
@@ -94,7 +135,21 @@ pub fn prepare(dir: &Path) -> Prepared {
     let key = take_handoff(dir).or_else(|| stored_key(dir));
     cipher::set_key(key.clone());
     let mut notice = None;
-    match cipher::run_pending(dir, key.as_ref()) {
+    match cipher::run_pending_keys(dir, key.as_ref(), next_key(dir).as_ref(), &|_| false) {
+        Ok(Some(o)) if o.direction == Direction::Rekey => {
+            devlog::info("cipher", "database key changed");
+            notice = Some(datadir::Notice::titled(
+                "info",
+                tr!("Schlüssel gewechselt", "Key changed"),
+                tr!(
+                    "Die Datenbank ist jetzt mit dem neuen Schlüssel verschlüsselt. Der alte Wiederherstellungsschlüssel \
+                     öffnet sie nicht mehr; Sicherungen von vor dem Wechsel brauchen weiterhin den alten.",
+                    "The database is now encrypted with the new key. The old recovery key no longer opens it; backups \
+                     from before the change still need the old one."
+                )
+                .into(),
+            ));
+        }
         Ok(Some(o)) => {
             let encrypted = o.direction == Direction::Encrypt;
             devlog::info("cipher", format!("database {}", if encrypted { "encrypted" } else { "decrypted" }));
@@ -133,6 +188,7 @@ pub fn prepare(dir: &Path) -> Prepared {
             ));
         }
     }
+    let key = settle_next_key(dir, key);
     let access = cipher::access(&dir.join(datadir::DB_FILE), key.as_ref());
     if access == Access::Unlocked {
         devlog::debug("cipher", "encrypted database, key found");
@@ -213,9 +269,20 @@ pub fn keygate_status(app: AppHandle) -> Result<GateStatus> {
 /// The key from the recovery key or the password; it must open the database.
 fn key_from(dir: &Path, method: &str, secret: &str) -> Result<DbKey> {
     let key = match method {
-        "password" => WrappedKey::read(dir)
-            .ok_or_else(|| Error::State(tr!("Kein Passwort eingerichtet", "No password set up").into()))?
-            .unwrap_key(secret)?,
+        "password" => {
+            let key = WrappedKey::read(dir)
+                .ok_or_else(|| Error::State(tr!("Kein Passwort eingerichtet", "No password set up").into()))?
+                .unwrap_key(secret)?;
+            // A key change cut off between the switch and replacing the password file.
+            let next = std::fs::read(dir.join(cipher::WRAPPED_NEXT_FILE))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<WrappedKey>(&b).ok())
+                .and_then(|w| w.unwrap_key(secret).ok());
+            match next {
+                Some(n) if !cipher::key_opens(&dir.join(datadir::DB_FILE), &key) => n,
+                _ => key,
+            }
+        }
         _ => DbKey::from_recovery_code(secret)?,
     };
     if !cipher::key_opens(&dir.join(datadir::DB_FILE), &key) {
@@ -355,6 +422,71 @@ pub fn cipher_switch(app: AppHandle, state: State<AppState>, encrypt: bool) -> R
         return Err(e);
     }
     Ok(())
+}
+
+/// „Schlüssel wechseln“, first step: a new key, kept next to the current one in the credential
+/// store until the switch. Returns its recovery key (the same one when asked again before the
+/// restart, so a printed copy stays valid).
+#[tauri::command(async)]
+pub fn cipher_rekey_prepare(state: State<'_, AppState>) -> Result<String> {
+    let dir = &state.data_dir;
+    if cipher::file_state(&dir.join(datadir::DB_FILE)) != FileState::Encrypted {
+        return Err(Error::State(tr!("Die Datenbank ist nicht verschlüsselt", "The database is not encrypted").into()));
+    }
+    let current = cipher::key().ok_or_else(|| Error::State(cipher::missing_key_text()))?;
+    if let Some(next) = next_key(dir).filter(|k| *k != current) {
+        return Ok(next.recovery_code());
+    }
+    let next = DbKey::generate()?;
+    let store = SecretStore::db_key_next(dir);
+    store.set(Some(next.to_hex().as_str())).map_err(Error::State)?;
+    if next_key(dir).as_ref() != Some(&next) {
+        return Err(Error::State(
+            tr!(
+                "Der neue Schlüssel konnte nicht im Schlüsselspeicher abgelegt werden",
+                "The new key could not be saved in the credential store"
+            )
+            .into(),
+        ));
+    }
+    devlog::info("cipher", "new database key created for a key change");
+    Ok(next.recovery_code())
+}
+
+/// „Schlüssel wechseln“: asks for the change and restarts; the next start re-encrypts the database
+/// with the new key before opening it. With a password file, `password` re-wraps the new key.
+#[tauri::command(async)]
+pub fn cipher_rekey(app: AppHandle, state: State<'_, AppState>, password: Option<String>) -> Result<()> {
+    let dir = state.data_dir.clone();
+    let current = cipher::key().ok_or_else(|| Error::State(cipher::missing_key_text()))?;
+    let next = next_key(&dir)
+        .filter(|k| *k != current)
+        .ok_or_else(|| Error::State(tr!("Kein neuer Schlüssel vorbereitet", "No new key prepared").into()))?;
+    if let Some(wrapped) = WrappedKey::read(&dir) {
+        let password = password.filter(|p| !p.is_empty()).ok_or_else(|| {
+            Error::Parse(tr!("Gib das Passwort des Schlüssels ein", "Enter the password of the key").into())
+        })?;
+        if wrapped.unwrap_key(&password)? != current {
+            return Err(Error::State(tr!("Das Passwort ist falsch", "The password is wrong").into()));
+        }
+        WrappedKey::wrap(&next, &password, cipher::WRAP_COST)?.write_next(&dir)?;
+    }
+    cipher::request(&dir, Direction::Rekey, Utc::now())?;
+    devlog::info("cipher", "key change requested, restarting");
+    if let Err(e) = crate::restart(&app) {
+        cipher::cancel_request(&dir);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// The key change dialog closed without changing: the prepared key is dropped.
+#[tauri::command]
+pub fn cipher_rekey_cancel(state: State<AppState>) {
+    let dir = &state.data_dir;
+    if !cipher::read_marker(dir).is_some_and(|m| m.direction == Direction::Rekey && m.step != cipher::Step::Swapped) {
+        drop_next_key(dir);
+    }
 }
 
 /// „Schlüssel mit Passwort schützen“: stores the key wrapped with `password` in the data folder

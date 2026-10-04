@@ -109,6 +109,7 @@ dependencies = [
  "block2",
  "chrono",
  "cpal",
+ "dbus",
  "keyring",
  "notify-rust",
  "objc2",

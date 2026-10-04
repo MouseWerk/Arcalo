@@ -291,7 +291,8 @@ export function longTimerHours(start: string, now: Date, limit = 12): number | n
 }
 
 /** „120 von 480 Dateien gelesen“ while a vault is imported. */
-export function importProgress(p: { done: number; total: number }) {
+export function importProgress(p: { done: number; total: number; writing?: boolean }) {
+  if (p.writing) return t("import.writing", { done: Math.min(p.done, p.total), n: p.total });
   return p.total > 0 ? t("import.progress", { done: Math.min(p.done, p.total), n: p.total }) : t("import.reading");
 }
 

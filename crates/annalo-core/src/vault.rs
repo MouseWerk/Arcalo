@@ -35,12 +35,20 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
-/// Progress of [`plan_import`]: files read so far of all files in the vault.
+/// Progress of an import: files read so far of all files in the vault ([`plan_import`]), then
+/// pages written of all pages (`writing`, [`apply_import_batched`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ImportProgress {
     pub done: usize,
     pub total: usize,
+    pub writing: bool,
 }
+
+/// Pages written per transaction: the database is free for the app between two batches.
+pub const WRITE_BATCH: usize = 200;
+/// Meta key holding the top page of an import still being written; an import cut off by a
+/// crash is removed at the next start ([`discard_unfinished_import`]).
+pub const PENDING_IMPORT: &str = "vault.import_root";
 
 /// A note larger than this is imported up to here (the editor cannot work with tens of
 /// megabytes); the file in the vault stays as it is.
@@ -148,7 +156,7 @@ pub fn plan_import(
         attachments_dir,
         report: ImportReport::default(),
         renamed: vec![],
-        progress: ImportProgress { done: 0, total: count_files(dir) },
+        progress: ImportProgress { done: 0, total: count_files(dir), writing: false },
         on_progress: progress,
         cancel,
     };
@@ -157,40 +165,123 @@ pub fn plan_import(
     Ok(ImportPlan { name, pages, report: walk.report, renamed: walk.renamed })
 }
 
-/// Creates the pages of `plan` (one transaction: all or nothing).
+/// Creates the pages of `plan`; all or nothing (see [`apply_import_batched`]).
 pub fn apply_import(db: &Database, plan: ImportPlan) -> Result<ImportReport> {
-    let ImportPlan { name, pages, mut report, renamed } = plan;
-    db.atomic(|| {
-        let root = db.create_page(None, &name, Some("library"))?;
-        report.root_page_id = root.id;
-        create_pages(db, root.id, pages, &renamed)?;
-        Ok(report)
-    })
+    apply_import_batched(|| db, plan, &mut |_| {}, &AtomicBool::new(false))
 }
 
-fn create_pages(db: &Database, parent: i64, pages: Vec<Planned>, renamed: &[(String, String, PathBuf)]) -> Result<()> {
-    for p in pages {
-        let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
-        if let Some(mut content) = p.content {
-            // The notes refer to renamed files by their old names.
-            for (old, new, scope) in renamed {
-                if p.dir.starts_with(scope) {
-                    content = if p.canvas {
-                        crate::canvas::rename_file(&content, old, new)
-                    } else {
-                        crate::attachment_manager::replace_file_refs(&content, old, new)
-                    };
+/// A planned page in write order (parents before their children), `parent` an index into the list.
+struct Flat {
+    parent: Option<usize>,
+    page: Planned,
+}
+
+fn flatten(pages: Vec<Planned>, parent: Option<usize>, out: &mut Vec<Flat>) {
+    for mut p in pages {
+        let children = std::mem::take(&mut p.children);
+        out.push(Flat { parent, page: p });
+        let me = out.len() - 1;
+        flatten(children, Some(me), out);
+    }
+}
+
+/// Creates the pages of `plan` in transactions of [`WRITE_BATCH`] pages, taking the database
+/// from `lock` for each batch only, so a vault of thousands of notes neither holds one long write
+/// transaction nor blocks the app meanwhile. `cancel` stops it between two batches. Cancelled or
+/// failed, the pages written so far are removed again; cut off by a crash, at the next start
+/// ([`PENDING_IMPORT`]).
+pub fn apply_import_batched<G: std::ops::Deref<Target = Database>>(
+    lock: impl Fn() -> G,
+    plan: ImportPlan,
+    progress: &mut dyn FnMut(ImportProgress),
+    cancel: &AtomicBool,
+) -> Result<ImportReport> {
+    let ImportPlan { name, pages, mut report, renamed } = plan;
+    let mut items = Vec::new();
+    flatten(pages, None, &mut items);
+    let total = items.len();
+    let root = {
+        let db = lock();
+        db.atomic(|| {
+            let root = db.create_page(None, &name, Some("library"))?;
+            db.meta_set(PENDING_IMPORT, &root.id.to_string())?;
+            Ok(root.id)
+        })?
+    };
+    report.root_page_id = root;
+    let mut ids: Vec<i64> = Vec::with_capacity(total);
+    progress(ImportProgress { done: 0, total, writing: true });
+    let mut rest = items.into_iter().peekable();
+    while rest.peek().is_some() {
+        if cancel.load(Ordering::Relaxed) {
+            discard(&lock(), root);
+            return Err(crate::Error::State(tr!("Import abgebrochen", "Import cancelled").into()));
+        }
+        let batch: Vec<Flat> = rest.by_ref().take(WRITE_BATCH).collect();
+        let written = {
+            let db = lock();
+            db.atomic(|| {
+                let mut out = Vec::with_capacity(batch.len());
+                for f in batch {
+                    // A parent is written before its children (earlier batch or this one).
+                    let parent = f.parent.map_or(root, |i| if i < ids.len() { ids[i] } else { out[i - ids.len()] });
+                    out.push(create_planned(&db, parent, f.page, &renamed)?);
                 }
-            }
-            if p.canvas {
-                db.make_canvas(page.id, &content)?;
-            } else {
-                db.save_page_content(page.id, &content)?;
+                Ok(out)
+            })
+        };
+        match written {
+            Ok(new) => ids.extend(new),
+            Err(e) => {
+                discard(&lock(), root);
+                return Err(e);
             }
         }
-        create_pages(db, page.id, p.children, renamed)?;
+        progress(ImportProgress { done: ids.len(), total, writing: true });
     }
-    Ok(())
+    lock().meta_set(PENDING_IMPORT, "")?;
+    Ok(report)
+}
+
+fn create_planned(db: &Database, parent: i64, p: Planned, renamed: &[(String, String, PathBuf)]) -> Result<i64> {
+    let page = db.create_page(Some(parent), &p.title, Some(p.icon))?;
+    if let Some(mut content) = p.content {
+        // The notes refer to renamed files by their old names.
+        for (old, new, scope) in renamed {
+            if p.dir.starts_with(scope) {
+                content = if p.canvas {
+                    crate::canvas::rename_file(&content, old, new)
+                } else {
+                    crate::attachment_manager::replace_file_refs(&content, old, new)
+                };
+            }
+        }
+        if p.canvas {
+            db.make_canvas(page.id, &content)?;
+        } else {
+            db.save_page_content(page.id, &content)?;
+        }
+    }
+    Ok(page.id)
+}
+
+/// Removes the pages of an import that did not finish (trashed and purged at once: they were
+/// never complete) and forgets it. Returns the number of pages removed.
+fn discard(db: &Database, root: i64) -> usize {
+    let removed = db.trash_page(root).and_then(|_| db.purge_page(root)).unwrap_or(0);
+    let _ = db.meta_set(PENDING_IMPORT, "");
+    removed
+}
+
+/// At the start: removes the pages of an import a crash or a kill cut off. Returns the number of
+/// pages removed (`None`: there was none).
+pub fn discard_unfinished_import(db: &Database) -> Result<Option<usize>> {
+    let Some(root) = db.meta_get(PENDING_IMPORT)?.and_then(|v| v.parse::<i64>().ok()) else { return Ok(None) };
+    if db.page(root).is_err() {
+        db.meta_set(PENDING_IMPORT, "")?;
+        return Ok(Some(0));
+    }
+    Ok(Some(discard(db, root)))
 }
 
 fn count_files(dir: &Path) -> usize {
@@ -796,12 +887,87 @@ mod tests {
         let att = tmp("att5");
         let mut seen = vec![];
         let plan = plan_import(&vault, &att, &mut |p| seen.push(p), &AtomicBool::new(false)).unwrap();
-        assert_eq!(seen.last(), Some(&ImportProgress { done: 60, total: 60 }));
+        assert_eq!(seen.last(), Some(&ImportProgress { done: 60, total: 60, writing: false }));
         assert!(seen.len() >= 3);
         let db = Database::open_in_memory().unwrap();
         assert_eq!(apply_import(&db, plan).unwrap().pages, 60);
         let err = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(true)).err().unwrap();
         assert_eq!(err.to_string(), "Import abgebrochen");
+    }
+
+    #[test]
+    fn a_large_import_is_written_in_batches_and_can_be_stopped() {
+        let vault = tmp("in-big");
+        let n = WRITE_BATCH * 2 + 37;
+        for i in 0..n {
+            let dir = vault.join(format!("Ordner {}", i % 7));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(format!("Notiz {i}.md")), format!("Text {i}")).unwrap();
+        }
+        let att = tmp("att-big");
+        let path = std::env::temp_dir().join(format!("annalo-vault-big-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let db = std::sync::Mutex::new(Database::open(&path).unwrap());
+        let pages =
+            |db: &Database| db.conn().query_row("SELECT COUNT(*) FROM pages", [], |r| r.get::<_, i64>(0)).unwrap();
+
+        // Each batch is a transaction of its own: the database is free between batches.
+        let mut seen = vec![];
+        let plan = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+        let report = apply_import_batched(
+            || {
+                let g = db.lock().unwrap();
+                assert!(g.conn().is_autocommit(), "no transaction left open between batches");
+                g
+            },
+            plan,
+            &mut |p| seen.push(p),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(report.pages, n);
+        // The seven folders are pages too.
+        assert_eq!(seen.last(), Some(&ImportProgress { done: n + 7, total: n + 7, writing: true }));
+        assert!(seen.len() >= 4, "{seen:?}");
+        let before = pages(&db.lock().unwrap());
+        assert_eq!(before, (n + 7 + 1) as i64);
+        let folder = db.lock().unwrap().page_by_title("Ordner 3").unwrap().unwrap();
+        assert_eq!(folder.parent_id, Some(report.root_page_id));
+        assert_eq!(discard_unfinished_import(&db.lock().unwrap()).unwrap(), None);
+
+        // Cancelled after the first batch: the pages written so far are removed again.
+        let cancel = AtomicBool::new(false);
+        let plan = plan_import(&vault, &att, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+        let err = apply_import_batched(
+            || db.lock().unwrap(),
+            plan,
+            &mut |p| {
+                if p.done > 0 {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            },
+            &cancel,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(err.to_string(), "Import abgebrochen");
+        assert_eq!(pages(&db.lock().unwrap()), before);
+
+        // Killed in the middle (a batch written, the marker still set): removed at the next start.
+        {
+            let g = db.lock().unwrap();
+            let root = g.create_page(None, "Halb", None).unwrap();
+            g.create_page(Some(root.id), "Kind", None).unwrap();
+            g.meta_set(PENDING_IMPORT, &root.id.to_string()).unwrap();
+        }
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(discard_unfinished_import(&db).unwrap(), Some(2));
+        assert_eq!(pages(&db), before);
+        assert!(db.page_by_title("Halb").unwrap().is_none());
+        assert_eq!(discard_unfinished_import(&db).unwrap(), None);
+        drop(db);
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

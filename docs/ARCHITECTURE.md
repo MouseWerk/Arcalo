@@ -103,7 +103,20 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it. When the replaced database
   was encrypted and the backup is plain (from before the encryption), the encryption is requested again
   (`backupdest::keep_encrypted`), so the same start encrypts it before opening; the start-up recovery does the same
-  when this computer has a database key.
+  when this computer has a database key. Both write `sync-after-restore.json`: the next Git sync compares the
+  restored mirror with the server's newest state (`gitsync::check_restore`, nothing committed) and, when notes
+  differ, stops with a question (Settings → Sicherung): `pull_restored` returns the differences as remote changes
+  (a restored text found in the file's server history is taken over, the page keeps it as a version; one never on the
+  server becomes a conflict; notes only here stay), `advance_to_server` + a sync with deletions allowed commits the
+  restored state on top of the newest one.
+- **Changing the key** (Settings → Sicherheit): the new key waits in the credential store as `db-key-next` (and,
+  with a password, as `db-key.wrapped.next.json`) next to the current one; the start runs the same switch as
+  encrypting (`cipher::Direction::Rekey`: export with the new key, verify, two renames) and `cipher::next_key_fate`
+  decides afterwards, also after a crash, whether the new key becomes the key (it opens the database) or is dropped.
+- **Vault import**: the files are read without the database, then the pages are written in transactions of 200
+  (`vault::apply_import_batched`), the lock taken per batch; the meta key `vault.import_root` names the top page
+  until the import is complete, so a cancelled import removes its pages at once and one cut off by a crash at the
+  next start (`vault::discard_unfinished_import`).
 - **Markdown mirror** (`mirror.rs`): after each successful backup (with `markdown_mirror`, default on) the shell
   writes the vault export plus `Zeiterfassung/YYYY-MM.csv` (BOM, `;`, decimal comma) and a `README.txt` marker into
   `markdown_mirror_dir` or `<backup dir>/markdown`. It is built in `.markdown.staging` and swapped in by renaming the old

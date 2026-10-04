@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api, on } from "./lib/api";
+import { api, errorParts, on } from "./lib/api";
+import { openSettingsSection } from "./lib/calnav";
 import { requestWeekProposal } from "./lib/weekplan";
 import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { useApp, savePref, activeTab } from "./store/app";
@@ -109,7 +110,20 @@ export function App() {
       on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: t("app.backupFailed"), detail: msg })),
       on<Parameters<typeof warnDestination>[0]>("backup://destination-failed", (w) => notify("backup_failed") && warnDestination(w)),
       // Git sync: only failures are shown (successes appear in the settings' status line).
-      on<string>("gitsync://failed", (msg) => notify("git_failed") && useApp.getState().toast({ tone: "warning", title: t("app.gitFailed"), detail: msg })),
+      on<string>("gitsync://failed", (msg) => {
+        if (!notify("git_failed")) return;
+        const { text, details } = errorParts(msg);
+        // After a restored backup the sync waits for a decision under Settings → Sicherung.
+        const decide = /^(Nach der Wiederherstellung angehalten|Stopped after the restore)/.test(text);
+        useApp.getState().toast({
+          tone: "warning",
+          title: decide ? t("app.gitRestoreWaits") : t("app.gitFailed"),
+          detail: text,
+          tech: details,
+          persistent: decide,
+          action: decide ? { label: t("app.gitDecide"), run: showRestoreDecision } : undefined,
+        });
+      }),
       // Git sync took over notes from the server; notes changed on both sides are conflicts.
       on<GitPulled>("gitsync://pulled", (p) => void onPulled(p)),
       on("gitsync://conflicts", () => void useApp.getState().refreshConflicts()),
@@ -435,6 +449,18 @@ async function onPulled(p: GitPulled) {
 }
 
 /** Whether a notification kind is switched on (Settings → Benachrichtigungen). */
+/** Settings → Sicherung, scrolled to the decision after a restored backup (further down the section). */
+function showRestoreDecision() {
+  openSettingsSection("backup");
+  const started = Date.now();
+  const find = () => {
+    const row = document.querySelector(".git-restored-actions")?.closest(".set-row");
+    if (row) row.scrollIntoView({ block: "center" });
+    else if (Date.now() - started < 3000) window.setTimeout(find, 100);
+  };
+  find();
+}
+
 export function notify(kind: "budget" | "backup_failed" | "git_failed" | "updates"): boolean {
   return useApp.getState().settings?.settings.notifications?.[kind] !== false;
 }

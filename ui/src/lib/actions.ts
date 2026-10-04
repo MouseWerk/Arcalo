@@ -33,13 +33,26 @@ export async function importVault(path?: string) {
   const s = useApp.getState();
   let progressId: number | undefined;
   let stop: Promise<() => void> | undefined;
+  let cancelled = false;
   try {
     const dir = path ?? (await pickFolder(t("vault.pick")));
     if (!dir) return;
     // Large vaults take a while: a progress toast that can stop the import.
-    s.toast({ tone: "info", persistent: true, title: t("vault.importing"), detail: importProgress({ done: 0, total: 0 }), action: { label: t("common.cancel"), run: () => void api.cancelVaultImport() } });
+    s.toast({
+      tone: "info",
+      persistent: true,
+      title: t("vault.importing"),
+      detail: importProgress({ done: 0, total: 0 }),
+      action: {
+        label: t("common.cancel"),
+        run: () => {
+          cancelled = true;
+          void api.cancelVaultImport();
+        },
+      },
+    });
     progressId = useApp.getState().toasts.at(-1)?.id;
-    stop = on<{ done: number; total: number }>("vault://progress", (p) =>
+    stop = on<{ done: number; total: number; writing?: boolean }>("vault://progress", (p) =>
       useApp.setState({ toasts: useApp.getState().toasts.map((x) => (x.id === progressId ? { ...x, detail: importProgress(p) } : x)) }),
     );
     const r = await api.importVault(dir);
@@ -51,7 +64,9 @@ export async function importVault(path?: string) {
     if (r.warnings?.length)
       s.toast({ tone: "warning", persistent: true, title: t("vault.notes"), detail: r.warnings.slice(0, 5).join("\n") + (r.warnings.length > 5 ? `\n${t("vault.more", { n: r.warnings.length - 5 })}` : "") });
   } catch (e) {
-    s.error(t("vault.importFailed"), e);
+    // Stopped on request: nothing was taken over, which is no error.
+    if (cancelled) s.toast({ tone: "info", title: t("vault.cancelled"), detail: t("vault.cancelledDesc") });
+    else s.error(t("vault.importFailed"), e);
   } finally {
     void stop?.then((f) => f());
     if (progressId != null) s.dismissToast(progressId);

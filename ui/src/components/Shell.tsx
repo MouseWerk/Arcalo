@@ -2,9 +2,9 @@
 
 import {
   Activity, AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
-  FileText, GitMerge, Paperclip, CalendarRange, Sunset, Sun, Ticket, Waypoints,
+  FileText, GitMerge, Paperclip, CalendarRange, Sunset, Sun, Ticket, Waypoints, ChevronDown,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
@@ -189,6 +189,20 @@ function ToastDetail({ text }: { text: string }) {
   );
 }
 
+/** The technical text of an error (SQLite's, the operating system's), opened with „Details“. */
+function ToastTech({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="toast-tech-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {tr("toast.details")}
+        <ChevronDown size={12} aria-hidden />
+      </button>
+      {open && <div className="toast-tech selectable">{text}</div>}
+    </>
+  );
+}
+
 export function Toasts() {
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
@@ -221,6 +235,7 @@ export function Toasts() {
             <div className="toast-body">
               <div className="toast-title">{t.title}</div>
               {t.detail && <ToastDetail text={t.detail} />}
+              {t.tech && <ToastTech text={t.tech} />}
             </div>
             {t.action && (
               <Button

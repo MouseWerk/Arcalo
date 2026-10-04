@@ -19,7 +19,7 @@ import { fileKind, formatSize, type FileKind } from "../editor/fileEmbed";
 import { drawPdfPreview, forgetPdfPreview } from "../lib/pdf";
 import { openDrawing } from "../editor/drawings";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
-import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, renameProblem, stemLength, totalSize, type KindFilter, type ListFilter, type SortKey } from "../lib/attachments";
+import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, onlyInVersions, renameProblem, stemLength, totalSize, type KindFilter, type ListFilter, type SortKey } from "../lib/attachments";
 import { t, useT, withLabel, type TKey } from "../lib/i18n";
 
 const KINDS: { value: KindFilter; readonly label: string }[] = [
@@ -120,6 +120,7 @@ export function AttachmentsView() {
     s().openPage(id, { newTab });
   };
   const unused = useMemo(() => list?.files.filter(isUnused) ?? [], [list]);
+  const versionsOnly = useMemo(() => list?.files.filter(onlyInVersions).length ?? 0, [list]);
   const set = (patch: Partial<ListFilter>) => setFilter((f) => ({ ...f, ...patch }));
 
   const remove = async (f: AttachmentInfo) => {
@@ -128,7 +129,11 @@ export function AttachmentsView() {
       ? ` ${t("att.deleteUsed", { n: live.length, pages: live.slice(0, 3).map((u) => t("common.quoted", { text: u.title })).join(", ") + (live.length > 3 ? ", …" : "") })}`
       : f.used_in.length
         ? ` ${t("att.deleteTrashOnly")}`
-        : "";
+        : f.mail
+          ? ` ${t("att.deleteMail")}`
+          : onlyInVersions(f)
+            ? ` ${t("att.deleteVersionsOnly")}`
+            : "";
     const ok = await s().confirm({
       title: t("att.deleteAsk"),
       message: t("att.deleteText", { name: f.name }) + where,
@@ -194,7 +199,7 @@ export function AttachmentsView() {
             <h1>{t("mail.attachments")}</h1>
             <div className="view-sub att-summary">
               {list
-                ? `${t("att.files", { n: list.files.length, count: int(list.files.length) })} · ${t("att.total", { size: formatSize(list.total_size) })}${unused.length ? ` · ${t("att.unusedCount", { n: unused.length, size: formatSize(totalSize(unused)) })}` : ""}`
+                ? `${t("att.files", { n: list.files.length, count: int(list.files.length) })} · ${t("att.total", { size: formatSize(list.total_size) })}${unused.length ? ` · ${t("att.unusedCount", { n: unused.length, size: formatSize(totalSize(unused)) })}` : ""}${versionsOnly ? ` · ${t("att.versionsCount", { n: versionsOnly })}` : ""}`
                 : ""}
             </div>
           </div>
@@ -285,7 +290,7 @@ export function AttachmentsView() {
                       </span>
                       <span role="cell" className="att-c-used">
                         {live.length === 0 ? (
-                          <span className={`att-unused ${f.used_in.length ? "is-trash" : ""}`}>{f.used_in.length ? t("att.onlyTrash") : t("att.notUsed")}</span>
+                          <UnusedLabel file={f} />
                         ) : (
                           <span className="att-uses">
                             {live.slice(0, 3).map((u) => (
@@ -387,6 +392,22 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
       </div>
     </Dialog>
   );
+}
+
+/** Why a file no page shows is still kept: trashed pages, a stored e-mail, old versions. */
+function UnusedLabel({ file: f }: { file: AttachmentInfo }) {
+  const t = useT();
+  if (f.used_in.length) return <span className="att-unused is-trash">{t("att.onlyTrash")}</span>;
+  if (f.mail) return <span className="att-unused is-kept">{t("att.storedMail")}</span>;
+  if (onlyInVersions(f)) {
+    const pages = (f.in_versions ?? []).map((u) => t("common.quoted", { text: u.title }));
+    return (
+      <span className="att-unused is-kept" title={t("att.versionsOnlyHint", { pages: pages.slice(0, 3).join(", ") + (pages.length > 3 ? ", …" : "") })}>
+        {t("att.versionsOnly")}
+      </span>
+    );
+  }
+  return <span className="att-unused">{t("att.notUsed")}</span>;
 }
 
 function CleanupDialog({ files, onClose, onDelete }: { files: AttachmentInfo[]; onClose: () => void; onDelete: (names: string[]) => Promise<void> }) {

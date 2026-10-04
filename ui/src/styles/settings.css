@@ -545,3 +545,11 @@
 /* ---- app lock: forgotten PIN by hand ---- */
 .lock-cmd { display: block; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--code-bg); font-size: var(--fs-xs); line-height: 1.5; color: var(--text); overflow-wrap: anywhere; user-select: text; }
 .sec-pin-noreset { margin-top: 4px; }
+
+/* ---- git sync after a restore (1.12) ---- */
+.git-restored-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- encryption: change the key (1.12) ---- */
+.sec-rekey-pw { display: grid; gap: 4px; margin-top: 12px; }
+.sec-rekey-pw .input { max-width: 320px; }
+.sec-rekey-pw p { margin: 0; }

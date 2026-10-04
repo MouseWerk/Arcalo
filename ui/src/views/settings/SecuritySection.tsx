@@ -5,7 +5,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { Copy, Download, KeyRound, Lock, LockOpen, Printer, ShieldCheck, Trash2 } from "lucide-react";
+import { Copy, Download, KeyRound, Lock, LockOpen, Printer, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { errorText } from "../../lib/api";
 import { Badge, Button, Dialog, Switch } from "../../components/ui";
 import { Select } from "../../components/Select";
 import { useT } from "../../lib/i18n";
@@ -50,7 +51,7 @@ function EncryptionGroup({
   const t = useT();
   const toast = useApp((s) => s.toast);
   const fail = useApp((s) => s.error);
-  const [wizard, setWizard] = useState<"encrypt" | "decrypt" | "show" | null>(null);
+  const [wizard, setWizard] = useState<WizardMode | null>(null);
   const [pwOpen, setPwOpen] = useState(false);
   const encrypted = status.state === "encrypted";
   const pending = status.pending && status.pending.step !== "swapped";
@@ -112,6 +113,13 @@ function EncryptionGroup({
           </Button>
         </Row>
       )}
+      {encrypted && status.key_stored && (
+        <Row label={t("sec.db.rekey")} description={t("sec.db.rekeyDesc")}>
+          <Button icon={RefreshCw} className="sec-rekey" disabled={!!pending} onClick={() => setWizard("rekey")}>
+            {t("sec.db.rekeyButton")}
+          </Button>
+        </Row>
+      )}
       {encrypted && (
         <Row label={t("sec.db.password")} description={status.password ? t("sec.db.passwordOn") : t("sec.db.passwordDesc")}>
           {status.password ? (
@@ -130,18 +138,32 @@ function EncryptionGroup({
   );
 }
 
-/** Encrypting: what it means, then the recovery key (printed or saved, confirmed), then the restart. */
-function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" | "show"; status: CipherStatus; onClose: () => void }) {
+type WizardMode = "encrypt" | "decrypt" | "show" | "rekey";
+
+/**
+ * Encrypting and changing the key: what it means, then the (new) recovery key (printed or saved,
+ * confirmed), then the restart.
+ */
+function CipherWizard({ mode, status, onClose: close }: { mode: WizardMode; status: CipherStatus; onClose: () => void }) {
   const t = useT();
   const fail = useApp((s) => s.error);
   const [step, setStep] = useState<"intro" | "key">(mode === "show" ? "key" : "intro");
   const [code, setCode] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const rekey = mode === "rekey";
+  // Closed without changing the key: the prepared new key is dropped.
+  const onClose = () => {
+    if (rekey && !busy) void security.rekeyCancel().catch(() => {});
+    close();
+  };
 
   useEffect(() => {
     if (step !== "key" || code) return;
-    security.recoveryKey(mode === "encrypt").then(setCode, (e) => (fail(t("sec.key.failed"), e), onClose()));
+    const load = rekey ? security.rekeyPrepare() : security.recoveryKey(mode === "encrypt");
+    load.then(setCode, (e) => (fail(t("sec.key.failed"), e), onClose()));
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const print = () => {
@@ -169,6 +191,17 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
     await flushAllEditors().catch(() => {});
     await security.switchCipher(encrypt).catch((e) => (fail(t("sec.key.switchFailed"), e), setBusy(false)));
   };
+  const goRekey = async () => {
+    setBusy(true);
+    setPwError(null);
+    await flushAllEditors().catch(() => {});
+    await security.rekey(status.password ? password : null).catch((e) => {
+      setBusy(false);
+      // A wrong password is answered next to the field; anything else as a toast.
+      if (status.password) setPwError(errorText(e));
+      else fail(t("sec.key.switchFailed"), e);
+    });
+  };
 
   if (mode === "decrypt") {
     return (
@@ -195,7 +228,7 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
     <Dialog
       open
       onClose={onClose}
-      title={mode === "show" ? t("sec.key.title") : t("sec.enc.title")}
+      title={mode === "show" ? t("sec.key.title") : rekey ? t("sec.rk.title") : t("sec.enc.title")}
       width={600}
       footer={
         step === "intro" ? (
@@ -207,6 +240,15 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
           </>
         ) : mode === "show" ? (
           <Button onClick={onClose}>{t("common.close")}</Button>
+        ) : rekey ? (
+          <>
+            <Button onClick={onClose} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" icon={RefreshCw} className="sec-go" disabled={!saved || !code || (status.password && !password)} loading={busy} onClick={() => void goRekey()}>
+              {t("sec.rk.go")}
+            </Button>
+          </>
         ) : (
           <>
             <Button onClick={onClose}>{t("common.cancel")}</Button>
@@ -217,7 +259,17 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
         )
       }
     >
-      {step === "intro" ? (
+      {step === "intro" && rekey ? (
+        <div className="sec-intro">
+          <p>{t("sec.rk.text")}</p>
+          <ul className="sec-list">
+            <li>{t("sec.rk.oldInvalid")}</li>
+            <li>{t("sec.rk.backups")}</li>
+            <li>{t("sec.rk.safe")}</li>
+            <li>{t("sec.rk.restart")}</li>
+          </ul>
+        </div>
+      ) : step === "intro" ? (
         <div className="sec-intro">
           <p>{t("sec.enc.text")}</p>
           <ul className="sec-list">
@@ -232,7 +284,7 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
         </div>
       ) : (
         <div className="sec-key">
-          <p>{mode === "show" ? t("sec.key.showText") : t("sec.key.text")}</p>
+          <p>{mode === "show" ? t("sec.key.showText") : rekey ? t("sec.rk.keyText") : t("sec.key.text")}</p>
           <div className="sec-code mono selectable" aria-label={t("sec.key.label")} data-code={code ?? ""}>
             {code ? code.split("-").map((g, i) => <span key={i}>{g}</span>) : "…"}
           </div>
@@ -247,11 +299,28 @@ function CipherWizard({ mode, status, onClose }: { mode: "encrypt" | "decrypt" |
               {t("sec.key.copy")}
             </Button>
           </div>
-          {mode === "encrypt" && (
+          {(mode === "encrypt" || rekey) && (
             <label className="sec-confirm">
               <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
-              <span>{t("sec.key.confirm")}</span>
+              <span>{rekey ? t("sec.rk.confirm") : t("sec.key.confirm")}</span>
             </label>
+          )}
+          {rekey && status.password && (
+            <div className="sec-rekey-pw">
+              <input
+                type="password"
+                className="input"
+                autoComplete="current-password"
+                aria-label={t("sec.rk.password")}
+                placeholder={t("sec.rk.password")}
+                aria-invalid={!!pwError}
+                value={password}
+                onChange={(e) => (setPassword(e.target.value), setPwError(null))}
+              />
+              <p className={`small ${pwError ? "mirror-error" : "faint"}`} role={pwError ? "alert" : undefined}>
+                {pwError ?? t("sec.rk.passwordHint")}
+              </p>
+            </div>
           )}
           <div className="recovery-print" aria-hidden>
             <h1>{t("sec.key.printTitle")}</h1>

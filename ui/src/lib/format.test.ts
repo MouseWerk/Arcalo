@@ -47,6 +47,8 @@ describe("importProgress", () => {
   it("counts the files read", () => {
     expect(importProgress({ done: 120, total: 480 })).toBe("120 von 480 Dateien gelesen");
     expect(importProgress({ done: 0, total: 0 })).toBe("Dateien werden gelesen …");
+    // Then the pages are written in batches.
+    expect(importProgress({ done: 400, total: 20000, writing: true })).toBe("400 von 20000 Seiten angelegt");
   });
 });
 
