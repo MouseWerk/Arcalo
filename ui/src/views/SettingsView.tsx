@@ -691,7 +691,7 @@ function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (
         </Row>
       </Group>
       <Group title={t("set.time.workTime")} description={t("set.time.workTimeDesc")}>
-        <Row label={t("set.time.target")}>
+        <Row label={t("set.time.target")} description={draft.time.balance?.weekday_hours?.length === 7 ? t("set.time.targetOwn") : undefined}>
           <div className="unit-input">
             <NumberInput min={0.5} max={16} step={0.25} value={draft.daily_target_hours} onCommit={(v) => update({ daily_target_hours: v })} aria-label={t("unit.hoursLong")} />
             <span className="faint">{t("unit.hoursLong")}</span>

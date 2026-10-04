@@ -205,6 +205,7 @@ export const de: Catalog = {
   "set.time.idle": "Leerlauf ab",
   "set.time.workTime": "Arbeitszeit",
   "set.time.target": "Soll pro Arbeitstag",
+  "set.time.targetOwn": "Gerade gilt das Soll je Wochentag (unten bei „Saldo und Urlaub“).",
   "set.time.hours": "Arbeitszeit von – bis",
   "set.time.hoursDesc": "Freie Zeiten für Fokusblöcke („Im Kalender planen…“) werden in diesem Rahmen gesucht.",
   "set.time.hoursFrom": "Arbeitsbeginn",

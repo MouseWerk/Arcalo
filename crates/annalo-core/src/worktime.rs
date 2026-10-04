@@ -243,10 +243,12 @@ pub fn day_target(base: i64, holiday: bool, absence: Option<&Absence>, for_balan
 /// given the target `base` they computed: none on a holiday or a full absence day, half on a
 /// half one (so those days are no gaps).
 pub fn gap_target(db: &Database, date: NaiveDate, base: i64) -> Result<i64> {
+    let settings = db.load_settings().unwrap_or_default();
+    // Own targets per weekday (Saldo und Urlaub, e.g. Friday 5 h) replace the daily target.
+    let base = if settings.time.balance.weekday_hours.len() == 7 { weekday_minutes(&settings, date) } else { base };
     if base <= 0 {
         return Ok(base);
     }
-    let settings = db.load_settings().unwrap_or_default();
     let holiday = !holidays_between(date, date, &settings.time.balance.state).is_empty();
     let absence = db.absences(date, date)?.into_iter().next();
     Ok(day_target(base, holiday, absence.as_ref(), false))

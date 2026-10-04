@@ -114,7 +114,27 @@ pub fn log_slash_command_in<Tz: TimeZone>(
             clamped = now - duration < midnight;
             (now - duration).max(midnight)
         }
-        (d, None) => local_to_utc(offset, d.resolve(today).and_time(DEFAULT_START))?,
+        // An earlier day without a start time: after that day's last booking (from 08:00), so
+        // the entries follow each other instead of all starting at 08:00.
+        (d, None) => {
+            let day = d.resolve(today);
+            let from = local_to_utc(offset, day.and_time(DEFAULT_START))?;
+            let midnight = local_to_utc(offset, (day + chrono::Days::new(1)).and_time(NaiveTime::MIN))?;
+            let filter = crate::db::EntryFilter {
+                from: Some(local_to_utc(offset, day.and_time(NaiveTime::MIN))?),
+                to: Some(midnight),
+                ..Default::default()
+            };
+            let last_end = db
+                .list_time_entries(&filter)?
+                .iter()
+                .filter_map(|r| r.entry.duration_minutes.map(|m| r.entry.start_time + chrono::Duration::minutes(m)))
+                .max();
+            match last_end {
+                Some(end) if end > from && end + duration <= midnight => end,
+                _ => from,
+            }
+        }
     };
     if !clamped && start + duration > now + chrono::Duration::minutes(1) {
         return Err(Error::State(
@@ -467,6 +487,25 @@ mod tests {
         .unwrap();
         assert_eq!(out.entry.start_time, Utc.with_ymd_and_hms(2026, 9, 22, 6, 30, 0).unwrap());
         assert_eq!(out.entry.leistungsart.as_deref(), Some("DEV"));
+    }
+
+    #[test]
+    fn earlier_days_follow_the_last_booking_and_spans_book_their_hours() {
+        let (db, _) = setup();
+        let t = Thresholds::default();
+        let book = |line: &str| log_slash_command(&db, line, now(), &cet(), &t).unwrap().entry;
+        let at = |h, m| Utc.with_ymd_and_hms(2026, 9, 22, h, m, 0).unwrap();
+        // Yesterday: 08:00 local (06:00 UTC), then right after it.
+        assert_eq!(book("/zeit NP-8801/1010 2h a @gestern").start_time, at(6, 0));
+        assert_eq!(book("/zeit NP-8801/1010 30m b @gestern").start_time, at(8, 0));
+        // A time span: its start, its length; the next entry follows it.
+        let e = book("/zeit NP-8801/1020 13:00-14:30 c @gestern");
+        assert_eq!((e.start_time, e.duration_minutes), (at(11, 0), Some(90)));
+        assert_eq!(book("/zeit NP-8801/1010 1h d @gestern").start_time, at(12, 30));
+        // Nothing left before midnight: back to 08:00.
+        let late = book("/zeit NP-8801/1020 21:00-23:30 f @gestern");
+        assert_eq!(late.start_time, at(19, 0));
+        assert_eq!(book("/zeit NP-8801/1010 1h g @gestern").start_time, at(6, 0));
     }
 
     #[test]

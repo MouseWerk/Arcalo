@@ -149,7 +149,7 @@ pub fn unreferenced(line: &str) -> Option<Unreferenced<'_>> {
     }
     let rest = rest.trim_start();
     let (duration, rest) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-    zeit::parse_duration(duration).ok()?;
+    zeit::is_duration_token(duration).then_some(())?;
     Some(Unreferenced { command, duration, rest: rest.trim() })
 }
 

@@ -37,10 +37,13 @@ export function dropRange(day: Date, minute: number, length: number): { start: D
   return { start, end: new Date(start.getTime() + len * 60_000) };
 }
 
-/** The block moved by `minutes` (and `days`), its length kept. */
+/** The block moved by `minutes` (and `days`, keeping the time of day across a clock change), its length kept. */
 export function moved(b: Pick<FocusBlock, "start" | "end">, minutes: number, days = 0): { start: string; end: string } {
-  const d = (snapMinutes(minutes) + days * 24 * 60) * 60_000;
-  return { start: new Date(new Date(b.start).getTime() + d).toISOString(), end: new Date(new Date(b.end).getTime() + d).toISOString() };
+  const start = new Date(b.start);
+  const length = new Date(b.end).getTime() - start.getTime();
+  start.setDate(start.getDate() + days);
+  const s = start.getTime() + snapMinutes(minutes) * 60_000;
+  return { start: new Date(s).toISOString(), end: new Date(s + length).toISOString() };
 }
 
 /** The block with its end moved by `minutes`; at least one step long. */

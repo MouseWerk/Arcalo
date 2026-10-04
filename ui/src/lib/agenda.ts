@@ -127,8 +127,12 @@ export function layoutDay<T extends Timed>(items: T[], day: Date, minMinutes = 2
     .map((r) => {
       const from = Math.max(r.s, dayStart);
       const to = Math.min(r.e, dayEnd);
-      const top = (from - dayStart) / 60000;
-      const height = Math.max((to - from) / 60000, minMinutes);
+      // Wall-clock minutes like the hour labels: on the days the clocks change (23 or 25 hours)
+      // 10:00 is at 10:00, not an hour off. Inside the repeated hour the end may read earlier
+      // than the start; then the real length counts.
+      const top = from === dayStart ? 0 : minutesOfDay(new Date(from));
+      const bottom = to === dayEnd ? 24 * 60 : minutesOfDay(new Date(to));
+      const height = Math.max(bottom > top ? bottom - top : (to - from) / 60000, minMinutes);
       return { item: r.item, top: Math.min(top, 24 * 60 - minMinutes), height, clippedStart: r.s < dayStart, clippedEnd: r.e > dayEnd };
     })
     .sort((a, b) => a.top - b.top || b.height - a.height);

@@ -13,7 +13,7 @@ describe("zeitToken", () => {
     expect(zeitToken("/zeit NP-8801/1020 1h #de")).toEqual({ kind: "la", query: "de", from: 22 });
   });
   it("does not complete a duration typed as first argument", () => {
-    for (const t of ["/zeit 1:30", "/zeit 2h", "/zeit 1,5h", "/zeit 90min", "/zeit 1.5std"]) expect(zeitToken(t), t).toBeNull();
+    for (const t of ["/zeit 1:30", "/zeit 2h", "/zeit 1,5h", "/zeit 90min", "/zeit 1.5std", "/zeit 1h30m", "/time 2hrs", "/zeit 1,5stunden", "/zeit 9:00-10:30", "/zeit 9.15–10.00"]) expect(zeitToken(t), t).toBeNull();
     expect(zeitToken("/zeit 1:30 text")).toBeNull();
     expect(zeitToken("/zeit 1")).toEqual({ kind: "ref", query: "1", from: 6 });
     expect(zeitToken("/zeit 1:30 #de")).toEqual({ kind: "la", query: "de", from: 11 });
@@ -106,6 +106,9 @@ describe("smart /zeit helpers", () => {
     expect(lacksReference("/zeit 2h habe am Interface-Mapping gearbeitet")).toBe(true);
     expect(lacksReference("  /time 1:30 Review")).toBe(true);
     expect(lacksReference("/zeit 90min")).toBe(true);
+    // Every duration the core understands, and a time span.
+    for (const l of ["/zeit 1h30m Abstimmung", "/time 90mins review", "/zeit 2std. Doku", "/zeit 08:00-09:15 Daily"]) expect(lacksReference(l), l).toBe(true);
+    expect(lacksReference("/zeit NP-8801-1020 1h x")).toBe(false);
     expect(lacksReference("/zeit NP-8801/1020 2h x")).toBe(false);
     expect(lacksReference("/zeit Mapping 2h")).toBe(false);
     expect(lacksReference("zeit 2h x")).toBe(false);

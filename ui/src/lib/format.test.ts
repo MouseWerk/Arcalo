@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileSize, importProgress, longTimerHours, importSummary, parseDayInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
+import { fileSize, importProgress, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
   const ok: [string, number][] = [
@@ -84,5 +84,16 @@ describe("parseTimeInput", () => {
     expect(parseTimeInput("24:00")).toBeNull();
     expect(parseTimeInput("9:75")).toBeNull();
     expect(parseTimeInput("9 Uhr")).toBeNull();
+  });
+});
+
+describe("durations", () => {
+  it("reads /zeit durations like the core", () => {
+    for (const [s, m] of [["2,5h", 150], ["2.5std", 150], ["45min", 45], ["1:05", 65], ["1h30m", 90], ["1hr30mins", 90], ["2stunden", 120], ["20minuten", 20], ["90min.", 90], ["1,5Std.", 90]] as const) expect(parseDuration(s), s).toBe(m);
+    for (const s of ["", "h", "2x", "1:75", "25h", "0m", "-1h", "2.5", "1h3", "2."]) expect(parseDuration(s), s).toBeNull();
+  });
+  it("reads typed durations: hours, clock and /zeit units with spaces", () => {
+    for (const [s, m] of [["1,5", 90], ["1.5", 90], ["2", 120], ["1:30", 90], ["90m", 90], ["90 min", 90], ["1h 30m", 90], ["1,5 Std.", 90], ["2 hours", 120]] as const) expect(parseDurationInput(s), s).toBe(m);
+    for (const s of ["", "abc", "1,5 Tage"]) expect(parseDurationInput(s), s).toBeNull();
   });
 });

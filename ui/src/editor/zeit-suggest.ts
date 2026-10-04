@@ -3,6 +3,7 @@
 
 import type { ProjectTree, TimeEntryRow } from "../lib/types";
 import { currentLang, t } from "../lib/i18n";
+import { parseDuration } from "../lib/format";
 
 /** The booking command in the display language (`/zeit` and `/time` both work everywhere). */
 export const zeitCommand = () => (currentLang() === "en" ? "/time" : "/zeit");
@@ -17,8 +18,11 @@ export interface ZeitToken {
 }
 
 const ZEIT_PREFIX = /^\s*\/(?:zeit|time)\s+/i;
-/** A duration as first argument (`1.5h`, `90min`, `1:30`): the page's own Vorgang is booked. */
-export const DURATION_RE = /^\d+([.,]\d+)?(h|std|m|min)$|^\d{1,2}:\d{2}$/i;
+/** A time span `9:00-10:30` (also `9.00–10.30`), as `annalo_core::zeit::parse_span` reads it. */
+const SPAN_RE = /^([01]?\d|2[0-3])[:.][0-5]\d[-–]([01]?\d|2[0-3])[:.][0-5]\d$/;
+
+/** A duration (`1.5h`, `1h30m`, `90min`, `1:30`) or time span as first argument: the page's own Vorgang is booked. */
+export const isDurationToken = (w: string) => parseDuration(w) != null || SPAN_RE.test(w);
 
 /** Finds the token at the caret, given the paragraph text before it; null when nothing is to complete. */
 export function zeitToken(before: string): ZeitToken | null {
@@ -26,7 +30,7 @@ export function zeitToken(before: string): ZeitToken | null {
   if (!m) return null;
   const rest = before.slice(m[0].length);
   // No reference to complete when the command starts with the duration (linked pages).
-  if (!/\s/.test(rest)) return DURATION_RE.test(rest) ? null : { kind: "ref", query: rest, from: m[0].length };
+  if (!/\s/.test(rest)) return isDurationToken(rest) ? null : { kind: "ref", query: rest, from: m[0].length };
   const word = /\S*$/.exec(rest)![0];
   if (word.startsWith("#")) return { kind: "la", query: word.slice(1), from: before.length - word.length };
   return null;
@@ -132,7 +136,7 @@ export function lacksReference(line: string): boolean {
   const m = ZEIT_PREFIX.exec(line);
   if (!m) return false;
   const first = line.slice(m[0].length).trim().split(/\s+/)[0] ?? "";
-  return DURATION_RE.test(first);
+  return isDurationToken(first);
 }
 
 /** Offset in `text` right after `/zeit ` (where a reference goes), or -1. */

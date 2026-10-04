@@ -23,7 +23,7 @@ import { openSettingsSection, takeCalendarFocus } from "../lib/calnav";
 import { useWbs } from "./wbs";
 import { EntryDialog } from "./TimesheetView";
 import type { CalendarEvent, CalendarSettings, CalendarSourceInfo, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
-import { openDayReview } from "../lib/reviewnav";
+import { openDayReview, openTimesheetDay } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
 import { useT, t as tr, type TKey } from "../lib/i18n";
 import { blockFit } from "../lib/eventlook";
@@ -770,7 +770,7 @@ function TimeGrid(props: {
                           style={{ top: (p.top / 60) * HOUR, height: Math.max((p.height / 60) * HOUR - 1, 6), left: `${(p.col / p.cols) * 100}%`, width: `${100 / p.cols}%` }}
                           data-tooltip={label}
                           aria-label={t("calv.bookedLabel", { label })}
-                          onClick={() => useApp.getState().openTab({ kind: "timesheet" })}
+                          onClick={() => openTimesheetDay(isoDay(new Date(x.start_time)))}
                         >
                           <span>{entryRef(x)}</span>
                         </button>
