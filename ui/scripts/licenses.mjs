@@ -87,7 +87,7 @@ function appLibraries() {
 /** "name version" → license of every crate in the lock file, all platforms (`cargo metadata`). */
 function metadataLicenses() {
   try {
-    const out = execFileSync("cargo", ["metadata", "--format-version", "1", "--locked"], {
+    const out = execFileSync("cargo", ["metadata", "--format-version", "1"], {
       cwd: root,
       encoding: "utf8",
       maxBuffer: 256 * 1024 * 1024,
