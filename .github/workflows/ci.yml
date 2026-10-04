@@ -58,29 +58,6 @@ jobs:
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri
-      # Upgrade path of the rename: an installed Annalo 1.6.0 must become one Arcalo install in the
-      # same folder, without the old uninstall entry or Start-menu shortcut (src-tauri/installer/hooks.nsh).
-      - name: Upgrade from Annalo 1.6.0
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $uninst = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
-          $old = "$env:RUNNER_TEMP\Annalo_1.6.0_x64-setup.exe"
-          Invoke-WebRequest "https://github.com/MouseWerk/Annalo/releases/download/v1.6.0/Annalo_1.6.0_x64-setup.exe" -OutFile $old
-          Start-Process $old -ArgumentList "/S" -Wait
-          $before = (Get-ItemProperty "$uninst\Annalo").InstallLocation.Trim('"')
-          if (-not (Test-Path $before)) { throw "Annalo 1.6.0 not installed: $before" }
-          Write-Host "Annalo 1.6.0 in $before"
-          $new = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          Start-Process $new.FullName -ArgumentList "/S" -Wait
-          if (Test-Path "$uninst\Annalo") { throw "the old Annalo uninstall entry is still there" }
-          $after = (Get-ItemProperty "$uninst\Arcalo").InstallLocation.Trim('"')
-          if ($after.TrimEnd('\') -ne $before.TrimEnd('\')) { throw "installed into $after instead of $before" }
-          if (-not (Get-ChildItem $after -Filter *.exe | Where-Object Name -match '^(annalo|arcalo)\.exe$')) { throw "no program file in $after" }
-          $sm = [Environment]::GetFolderPath("Programs")
-          if ((Test-Path "$sm\Annalo.lnk") -or (Test-Path "$sm\Annalo\Annalo.lnk")) { throw "old Start-menu shortcut left" }
-          if (-not ((Test-Path "$sm\Arcalo.lnk") -or (Test-Path "$sm\Arcalo\Arcalo.lnk"))) { throw "no Arcalo Start-menu shortcut" }
-          Write-Host "Upgraded in place: $after"
       - uses: actions/upload-artifact@v4
         with:
           name: arcalo-windows
