@@ -13,3 +13,4 @@ node_modules/
 /.claude/worktrees/
 /ui/public/excalidraw-assets/
 /ui/public/pdfjs/
+/ui/src/generated/

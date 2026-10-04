@@ -21,8 +21,12 @@ export const RESETTABLE: { id: string; label: TKey }[] = [
   { id: "keyboard", label: "nav.keyboard" },
   { id: "editor", label: "nav.editor" },
   { id: "notes", label: "nav.notes" },
+  { id: "filing", label: "nav.filing" },
   { id: "time", label: "nav.time" },
+  { id: "jira", label: "nav.jira" },
+  { id: "briefing", label: "nav.briefing" },
   { id: "ai", label: "nav.ai" },
+  { id: "voice", label: "nav.voice" },
   { id: "privacy", label: "nav.privacy" },
   { id: "network", label: "nav.network" },
   { id: "notifications", label: "nav.notifications" },
@@ -36,7 +40,7 @@ export function AdminSection({ save }: { save: (next: Settings) => Promise<boole
   const [preview, setPreview] = useState<{ settings: Settings; changes: Change[]; warnings: string[]; title: string } | null>(null);
 
   const doExport = async () => {
-    const path = await saveDialog({ defaultPath: `annalo-einstellungen-${isoDay(new Date())}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+    const path = await saveDialog({ defaultPath: t("admin.exportFile", { date: isoDay(new Date()) }), filters: [{ name: "JSON", extensions: ["json"] }] });
     if (!path) return;
     try {
       await api.exportSettings(path);

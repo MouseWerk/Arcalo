@@ -5,6 +5,7 @@
 // Benachrichtigungen, Datenschutz, Start, Sprache, Tastatur) plus Verwaltung, Protokoll and Über.
 
 import { BalancePrefGroup } from "./settings/BalancePrefs";
+import { LicensesGroup } from "./settings/LicensesGroup";
 import { AnnaloLogo } from "../components/Logo";
 import { useEffect, useRef, useState, useLayoutEffect } from "react";
 import { Bell, CalendarRange, CheckCircle2, Compass, ChevronDown, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, RotateCcw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
@@ -465,6 +466,17 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   };
 
   const all = NAV.flatMap((g) => g.items);
+  // The menu is one stop for Tab (the open section); the arrow keys, Home and End move inside it.
+  const tabStop: Section = searching ? all[0].id : section;
+  const navKeys = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>(".settings-nav-group-label, .settings-nav-items:not([hidden]) .settings-nav-item")];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : Math.min(items.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)));
+    items[next]?.focus();
+  };
   const open = (id: Section) => {
     setQuery("");
     setSection(id);
@@ -526,7 +538,9 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         // Mod+F inside the settings goes to their search.
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
           e.preventDefault();
-          e.currentTarget.querySelector<HTMLInputElement>(".settings-search input")?.focus();
+          // The visible one: the menu's, or the top bar's in a narrow pane (the menu is hidden there).
+          const fields = [...e.currentTarget.querySelectorAll<HTMLInputElement>(".settings-search input")];
+          (fields.find((f) => f.offsetParent !== null) ?? fields[0])?.focus();
         }
         if (e.key === "Enter" && (e.target instanceof HTMLInputElement)) flush();
       }}
@@ -534,12 +548,12 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       <nav className="settings-nav" ref={nav} aria-label={t("settings.title")}>
         <div className="settings-nav-title">{t("settings.title")}</div>
         {search}
-        <div className={`settings-nav-list ${navEdges}`} ref={setNavList} onScroll={measureNav}>
+        <div className={`settings-nav-list ${navEdges}`} ref={setNavList} onScroll={measureNav} onKeyDown={navKeys}>
           {NAV.map((g) => {
             const shut = collapsed.has(g.id) && !(!searching && g.items.some((x) => x.id === section));
             return (
               <div key={g.id} className={`settings-nav-group ${shut ? "collapsed" : ""}`} role="group" aria-label={t(g.label)} data-group={g.id}>
-                <button type="button" className="settings-nav-group-label" aria-expanded={!shut} onClick={() => toggleGroup(g.id)}>
+                <button type="button" className="settings-nav-group-label" tabIndex={-1} aria-expanded={!shut} onClick={() => toggleGroup(g.id)}>
                   <ChevronDown size={12} strokeWidth={2} aria-hidden className="settings-nav-chevron" />
                   <span>{t(g.label)}</span>
                 </button>
@@ -549,6 +563,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
                       key={x.id}
                       type="button"
                       data-section={x.id}
+                      tabIndex={x.id === tabStop ? 0 : -1}
                       aria-current={!searching && section === x.id ? "page" : undefined}
                       className={`settings-nav-item ${!searching && section === x.id ? "active" : ""}`}
                       onClick={() => open(x.id)}
@@ -1891,6 +1906,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
           </Button>
         </Row>
       </Group>
+      <LicensesGroup />
       <Group title={t("set.about.shortcuts")}>
         <div className="shortcut-list">
           {shortcuts.map(([k, d]) => (

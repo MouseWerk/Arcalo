@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/excalidraw-assets.mjs && node scripts/pdfjs-assets.mjs",
+    "predev": "node scripts/excalidraw-assets.mjs && node scripts/pdfjs-assets.mjs && node scripts/licenses.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/excalidraw-assets.mjs && node scripts/pdfjs-assets.mjs",
+    "prebuild": "node scripts/excalidraw-assets.mjs && node scripts/pdfjs-assets.mjs && node scripts/licenses.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

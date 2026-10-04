@@ -16,6 +16,9 @@ import { applyPrefs } from "../lib/prefs";
 import { api } from "../lib/api";
 import { flushAllEditors } from "../editor/saves";
 
+/** Removes the lock by hand where nothing else can (docs/security/encryption.md, „Forgotten PIN“). */
+const RESET_COMMAND = `sqlite3 workspace.db "DELETE FROM settings WHERE key LIKE 'meta.applock%'"`;
+
 /** Lock state of this window: `null` until asked. Follows `applock://changed`. */
 function useLocked(): [boolean | null, LockStatus | null, () => void] {
   const [status, setStatus] = useState<LockStatus | null>(null);
@@ -152,6 +155,9 @@ function LockScreen({ status, refresh }: { status: LockStatus; refresh: () => vo
     try {
       if (await security.unlockOs()) refresh();
       else setError(t("lock.osFailed", { name: osName ?? "" }));
+    } catch {
+      // The system's sign-in could not be started: the same note as a cancelled one.
+      setError(t("lock.osFailed", { name: osName ?? "" }));
     } finally {
       setBusy(false);
     }
@@ -216,6 +222,7 @@ function LockScreen({ status, refresh }: { status: LockStatus; refresh: () => vo
         ) : (
           <div className="lock-forgot">
             <p className="small">{status.encrypted ? t("lock.forgotEncrypted") : osName ? t("lock.forgotOs", { name: osName }) : t("lock.forgotNone")}</p>
+            {!status.encrypted && !osName && <code className="lock-cmd mono selectable">{RESET_COMMAND}</code>}
             {status.encrypted && (
               <div className="lock-recovery">
                 <Input

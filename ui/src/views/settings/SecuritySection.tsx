@@ -291,13 +291,14 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <div className="sec-pin-form">
+      <form className="sec-pin-form" onSubmit={(e) => (e.preventDefault(), !problem && !busy && void submit())}>
         <input type="password" className="input" autoComplete="new-password" aria-label={t("sec.pw.new")} placeholder={t("sec.pw.new")} value={pw} onChange={(e) => setPw(e.target.value)} />
         <input type="password" className="input" autoComplete="new-password" aria-label={t("sec.pin.again")} placeholder={t("sec.pin.again")} value={again} onChange={(e) => setAgain(e.target.value)} />
         <p className={`small ${error ? "mirror-error" : "faint"}`} role="status">
           {error ?? (pw ? (problem ?? "") : "")}
         </p>
-      </div>
+        <button type="submit" hidden />
+      </form>
     </Dialog>
   );
 }
@@ -310,8 +311,12 @@ function LockGroup({ status, setStatus }: { status: LockStatus; setStatus: (s: L
   // A change that needs a PIN first (switching the lock on).
   const [pinFor, setPinFor] = useState<LockConfig | null>(null);
   const c = status.config;
-  const apply = (next: LockConfig, pin: string | null = null) =>
-    security.configureLock(next, pin).then(setStatus, (e) => fail(t("sec.lock.failed"), e));
+  /** Stores `next` (with a new PIN); false when it was refused (the error is shown). */
+  const apply = (next: LockConfig, pin: string | null = null): Promise<boolean> =>
+    security.configureLock(next, pin).then(
+      (s) => (setStatus(s), true),
+      (e) => (fail(t("sec.lock.failed"), e), false),
+    );
   const change = (patch: Partial<LockConfig>) => {
     const next = { ...c, ...patch };
     if (next.mode !== "off" && !status.has_pin) setPinFor(next);
@@ -361,9 +366,12 @@ function LockGroup({ status, setStatus }: { status: LockStatus; setStatus: (s: L
       )}
       {pinFor && (
         <PinDialog
+          noReset={!status.encrypted && !osName}
           onClose={() => setPinFor(null)}
           onSave={(pin) =>
-            void apply(pinFor, pin).then(() => {
+            void apply(pinFor, pin).then((ok) => {
+              // Refused: the dialog stays open with what was typed.
+              if (!ok) return;
               setPinFor(null);
               useApp.getState().toast({ tone: "success", title: t("sec.pin.saved") });
             })
@@ -374,7 +382,8 @@ function LockGroup({ status, setStatus }: { status: LockStatus; setStatus: (s: L
   );
 }
 
-function PinDialog({ onClose, onSave }: { onClose: () => void; onSave: (pin: string) => void }) {
+/** `noReset`: a forgotten PIN cannot be reset in the app here (said before it is set). */
+function PinDialog({ noReset, onClose, onSave }: { noReset: boolean; onClose: () => void; onSave: (pin: string) => void }) {
   const t = useT();
   const [pin, setPin] = useState("");
   const [again, setAgain] = useState("");
@@ -401,6 +410,7 @@ function PinDialog({ onClose, onSave }: { onClose: () => void; onSave: (pin: str
         <p className="small faint" role="status">
           {pin ? text : ""}
         </p>
+        {noReset && <StatusNote tone="warning" className="sec-pin-noreset">{t("sec.pin.noReset")}</StatusNote>}
         <button type="submit" hidden />
       </form>
     </Dialog>
