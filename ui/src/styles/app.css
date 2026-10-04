@@ -3785,3 +3785,17 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 /* ---- attachments (1.12): files kept for old versions or a stored e-mail ---- */
 .att-unused.is-kept { background: var(--info-soft); color: var(--info); }
 .att-unused.is-kept[title] { cursor: help; }
+
+/* ---- timer pause (1.12) ---- */
+.pause-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--warning) 0 35%, transparent 35% 65%, var(--warning) 65%);
+}
+.pause-dot.big { width: 10px; height: 10px; }
+.timer-dock.paused .timer-dock-time,
+.sb-timer.paused .num,
+.dw-timer.paused .dw-big,
+.timer-card.paused .timer-clock { color: var(--text-2); }

@@ -603,6 +603,14 @@
       ],
       "type": "string"
     },
+    "CatsDecimal": {
+      "enum": [
+        "comma",
+        "point",
+        "number"
+      ],
+      "type": "string"
+    },
     "CatsDelimiter": {
       "enum": [
         "semicolon",
@@ -2133,6 +2141,15 @@
           ],
           "default": "standard"
         },
+        "cats_decimal": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CatsDecimal"
+            }
+          ],
+          "default": "comma",
+          "description": "Decimal separator of the hours in the CATS file and „Für CATS kopieren“."
+        },
         "cats_delimiter": {
           "allOf": [
             {
@@ -3165,6 +3182,7 @@
           "weekday_hours": []
         },
         "cats_columns": "standard",
+        "cats_decimal": "comma",
         "cats_delimiter": "semicolon",
         "default_leistungsart": {},
         "enabled": true,

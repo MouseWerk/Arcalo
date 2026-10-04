@@ -1387,3 +1387,38 @@ body:has(.pdf-overlay) .menu { z-index: 81; }
   white-space: nowrap;
   pointer-events: auto;
 }
+
+/* ---- /zeit chips: values and link to the booking (1.12) ---- */
+:root:not([data-time-off]) .time-chip { cursor: pointer; }
+/* One line: the description gives way (ellipsis), the values never wrap. */
+.time-chip { max-width: 100%; white-space: nowrap; }
+.time-chip > * { flex: none; }
+.time-chip > .time-chip-text { flex: 0 1 auto; min-width: 0; }
+.time-chip-la {
+  padding: 0 5px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  line-height: 16px;
+}
+.time-chip-date { font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.time-chip-state { font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+:root:not([data-time-off]) .time-chip:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+/* Without booking: neutral, the values struck out when it was deleted, dashed for a copy. */
+.time-chip--deleted,
+.time-chip--missing,
+.time-chip--copy { background: var(--bg-hover); color: var(--text-2); }
+.time-chip--deleted .time-chip-la,
+.time-chip--missing .time-chip-la,
+.time-chip--copy .time-chip-la { background: var(--bg-active); }
+.time-chip--deleted :is(.time-chip-hours, .time-chip-target, .time-chip-la, .time-chip-date, .time-chip-text) {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 60%, transparent);
+}
+.time-chip--deleted .time-chip-state { color: var(--danger); }
+.time-chip--copy { background: transparent; outline: 1px dashed var(--border-strong); outline-offset: -1px; }
+.time-chip--copy .time-chip-state,
+.time-chip--missing .time-chip-state { color: var(--warning); }
+.time-chip:is(.time-chip--deleted, .time-chip--missing, .time-chip--copy).ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 0; }

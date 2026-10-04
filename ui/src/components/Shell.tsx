@@ -114,9 +114,10 @@ export function StatusBar() {
   return (
     <footer className="statusbar">
       {!timeOn ? null : timer ? (
-        <button type="button" className="sb-item sb-timer" onClick={() => stopTimer()} title={t("status.stopTimer")}>
-          <span className="rec-dot" aria-hidden />
+        <button type="button" className={`sb-item sb-timer${timer.paused_since ? " paused" : ""}`} onClick={() => stopTimer()} title={t("status.stopTimer")}>
+          <span className={timer.paused_since ? "pause-dot" : "rec-dot"} aria-hidden />
           <span className="num">{clock(seconds)}</span>
+          {timer.paused_since && <span className="faint">{t("timer.paused")}</span>}
           <span className="faint">{timer.entry.vorgang_nr ? `${timer.entry.vorgang_nr}` : ""}</span>
           {timer.idle_minutes > 0 && <span className="sb-warn">{t("status.idle", { n: timer.idle_minutes })}</span>}
         </button>

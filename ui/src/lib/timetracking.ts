@@ -19,13 +19,13 @@ export const timeTrackingEnabled = () => timeTrackingOn(useApp.getState().settin
 export const TIME_TABS = new Set(["timesheet", "projects"]);
 
 /** Command palette entries about booking time (the weekly report is written from bookings). */
-export const TIME_COMMANDS = ["timer", "timesheet", "week-proposal", "projects", "weekly-report", "focus-note"];
+export const TIME_COMMANDS = ["timer", "timer-pause", "timesheet", "week-proposal", "projects", "weekly-report", "focus-note"];
 
 /** The assistant's tools about booking time (annalo_core::ai::tools::TIME_TOOLS). */
 export const TIME_TOOLS = ["log_time", "budget_status", "time_summary"];
 
 /** Shortcuts (`keymap` ids) that do nothing while time tracking is off. */
-export const TIME_SHORTCUTS = new Set(["timer"]);
+export const TIME_SHORTCUTS = new Set(["timer", "timer_pause"]);
 
 /** A `/zeit …` (or `/time …`) line. */
 export const isZeitLine = (line: string) => /^\s*\/(zeit|time)(\s|$)/i.test(line);

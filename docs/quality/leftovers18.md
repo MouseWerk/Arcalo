@@ -1,0 +1,5 @@
+1.8 leftovers from 1.7 (one agent, worktree, e2e numbers 118-119, migration 0017 if needed, DISPLAY :399):
+1. Timesheet: show which entries went to Jira (issue key + worklog state: posted / pending / failed, with retry). Editing an entry's duration/comment updates the posted Jira worklog; deleting the entry deletes it (with confirmation text naming Jira). Respect per-site "log work in Jira" setting and time-tracking-off. Code: crates/annalo-core/src/issues/, time_entry_issues table, jira_entry_issues.
+2. Voice notes: "Transcribe again" on a voice note (pick model/language), and crash recovery: on start, WAV files left in <data>/voice/ are offered as "unfinished recording" (save as voice note / discard).
+3. Jira priority colors also for localized priority names (German "Höchste/Hoch/Mittel/Niedrig/Niedrigste" and Server custom names): map by Jira priority id/iconUrl/order where available, not only English names.
+4. Next-meeting widget at narrow widths (phone-like crop / small size): the meeting title must stay visible (truncate place/time instead).

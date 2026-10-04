@@ -1,0 +1,1 @@
+- Briefing at ~900 px: the 'Next' badge overlaps the Join button (reported by the website agent, 1.8.0).

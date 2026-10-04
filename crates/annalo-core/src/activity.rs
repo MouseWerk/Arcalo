@@ -60,7 +60,8 @@ pub fn system_probe() -> Box<dyn ActivityProbe> {
 #[derive(Debug, Clone)]
 pub struct IdleAccumulator {
     threshold: chrono::Duration,
-    total: chrono::Duration,
+    /// The idle stretches that are over (their sum is the idle total so far).
+    periods: Vec<(DateTime<Utc>, DateTime<Utc>)>,
     idle_since: Option<DateTime<Utc>>,
     /// The previous sample: a gap longer than `sleep_gap` is time the computer slept.
     last_sample: Option<DateTime<Utc>>,
@@ -77,7 +78,7 @@ impl IdleAccumulator {
     pub fn new(threshold: Duration) -> Self {
         IdleAccumulator {
             threshold: chrono::Duration::from_std(threshold).unwrap_or(chrono::Duration::MAX),
-            total: chrono::Duration::zero(),
+            periods: Vec::new(),
             idle_since: None,
             last_sample: None,
             sleep_gap: None,
@@ -105,7 +106,7 @@ impl IdleAccumulator {
             if idle_for >= self.threshold {
                 self.idle_since = Some(last_input.min(prev));
             } else {
-                self.total += (last_input - prev).max(chrono::Duration::zero());
+                self.close(prev, last_input);
             }
             return;
         }
@@ -114,8 +115,33 @@ impl IdleAccumulator {
             self.idle_since.get_or_insert(last_input);
         } else if let Some(start) = self.idle_since.take() {
             // Input resumed; the idle stretch ended at the last input.
-            self.total += (last_input - start).max(chrono::Duration::zero());
+            self.close(start, last_input);
         }
+    }
+
+    fn close(&mut self, start: DateTime<Utc>, end: DateTime<Utc>) {
+        if end > start {
+            self.periods.push((start, end));
+        }
+    }
+
+    /// The timer is paused or resumed at `now`: an ongoing idle stretch ends here (the pause is
+    /// not booked anyway), and no samples come in between (no sleep detection over the pause).
+    pub fn suspend(&mut self, now: DateTime<Utc>) {
+        if let Some(start) = self.idle_since.take() {
+            self.close(start, now);
+        }
+        self.last_sample = None;
+    }
+
+    /// The idle stretches so far, including an ongoing one up to `now` (left out of a booking
+    /// when the user chooses so; a run over midnight is split with them per day).
+    pub fn idle_periods(&self, now: DateTime<Utc>) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
+        let mut out = self.periods.clone();
+        if let Some(s) = self.idle_since.filter(|s| *s < now) {
+            out.push((s, now));
+        }
+        out
     }
 
     /// True while the user is currently away.
@@ -125,7 +151,7 @@ impl IdleAccumulator {
 
     /// Idle time so far, including an ongoing idle stretch up to `now`.
     pub fn idle_total(&self, now: DateTime<Utc>) -> chrono::Duration {
-        self.total + self.idle_since.map_or(chrono::Duration::zero(), |s| (now - s).max(chrono::Duration::zero()))
+        self.idle_periods(now).iter().fold(chrono::Duration::zero(), |acc, (a, b)| acc + (*b - *a))
     }
 
     pub fn idle_minutes(&self, now: DateTime<Utc>) -> i64 {
@@ -133,7 +159,7 @@ impl IdleAccumulator {
     }
 
     pub fn reset(&mut self) {
-        self.total = chrono::Duration::zero();
+        self.periods.clear();
         self.idle_since = None;
         self.last_sample = None;
     }
@@ -316,6 +342,31 @@ mod macos {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn idle_periods_are_kept_and_a_pause_ends_an_idle_stretch() {
+        let t0 = Utc.with_ymd_and_hms(2026, 9, 23, 9, 0, 0).unwrap();
+        let at = |min: i64| t0 + chrono::Duration::minutes(min);
+        let m = |min: u64| Duration::from_secs(min * 60);
+        let mut acc = IdleAccumulator::new(m(5)).sampled_every(Duration::from_secs(5));
+        acc.observe(at(30), m(10)); // away since 09:20
+        acc.observe(at(31), m(0)); // back at 09:31
+        assert_eq!(acc.idle_periods(at(31)), vec![(at(20), at(31))]);
+        acc.observe(at(31) + chrono::Duration::seconds(5), m(0));
+        acc.observe(at(40), m(8)); // no samples since 09:31:05: idle from then
+        assert_eq!(
+            acc.idle_periods(at(45)),
+            vec![(at(20), at(31)), (at(31) + chrono::Duration::seconds(5), at(45))],
+            "ongoing up to now"
+        );
+        // Paused at 09:45: the idle stretch ends there; resumed at 11:00 without samples
+        // in between, which is not taken for sleep.
+        acc.suspend(at(45));
+        assert!(!acc.is_idle());
+        acc.suspend(at(120));
+        acc.observe(at(120) + chrono::Duration::seconds(5), m(0));
+        assert_eq!(acc.idle_minutes(at(121)), 24);
+    }
 
     #[test]
     fn short_pauses_count_as_work_long_ones_are_subtracted() {

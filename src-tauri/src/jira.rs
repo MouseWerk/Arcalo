@@ -878,13 +878,19 @@ pub fn after_entry_edit(app: &AppHandle, before: &TimeEntry, after: &TimeEntry) 
 
 /// Deletes an entry; its posted worklog is queued for deletion in Jira in the same
 /// transaction (a failed deletion is retried). Returns whether one was queued.
-pub fn delete_entry(state: &AppState, entry_id: i64) -> Result<bool> {
+/// `with_chip`: the user removed the entry's chip from its note (the note stays as it is);
+/// otherwise the chip is marked „Buchung gelöscht“.
+pub fn delete_entry(state: &AppState, entry_id: i64, with_chip: bool) -> Result<bool> {
     let db = state.db();
     let site = db.entry_worklog(entry_id)?.map(|(site, _, _)| site);
     let queue = site.is_some_and(|s| logs_work(state, &s));
     db.atomic(|| {
         let queued = queue && db.worklog_queue_delete(entry_id)?;
-        db.delete_time_entry(entry_id)?;
+        if with_chip {
+            db.delete_time_entry_with_chip(entry_id)?
+        } else {
+            db.delete_time_entry(entry_id)?
+        };
         Ok(queued)
     })
 }

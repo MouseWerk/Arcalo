@@ -44,6 +44,12 @@ export function setLang(l: Lang) {
   refreshI18n();
 }
 
+/** Calls `f` after the language (or the shortcut hints) changed; returns the unsubscribe. */
+export function onI18nChange(f: () => void): () => void {
+  listeners.add(f);
+  return () => void listeners.delete(f);
+}
+
 /** Re-renders `useT` components (language or shortcut hints changed). */
 export function refreshI18n() {
   version++;

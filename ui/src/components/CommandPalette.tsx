@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply,
-  Copy,
+  Copy, Pause,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
@@ -20,7 +20,7 @@ import { createSubpage } from "../views/PageView";
 import { createCanvas } from "../views/canvas/create";
 import { requestAddProperty } from "../views/PageProperties";
 import { requestPageCommand } from "../lib/pageModes";
-import { stopTimer } from "./Sidebar";
+import { stopTimer, toggleTimerPause } from "./Sidebar";
 import { hoursFromMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
 import type { SearchHit } from "../lib/types";
 import { importVault, exportVault, toggleTheme } from "../lib/actions";
@@ -227,6 +227,9 @@ export function CommandPalette() {
       timer
         ? { id: "timer", title: t("cmd.stopTimer"), icon: ic(Square), hint: hint("timer"), run: () => stopTimer() }
         : { id: "timer", title: t("cmd.startTimer"), icon: ic(Play), hint: hint("timer"), run: () => s().openTab({ kind: "timesheet" }) },
+      ...(timer
+        ? [{ id: "timer-pause", title: timer.paused_since ? t("cmd.resumeTimer") : t("cmd.pauseTimer"), icon: ic(timer.paused_since ? Play : Pause), hint: hint("timer_pause"), run: () => void toggleTimerPause() }]
+        : []),
       { id: "timesheet", title: t("cmd.timesheet"), icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) },
       {
         id: "week-proposal",

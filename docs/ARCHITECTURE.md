@@ -28,6 +28,7 @@ events and OS integration. The UI never talks to the network or the filesystem d
 | `vorgaenge` + `vorgang_links` | Level 3: activities with duration, plan hours, optional manual remaining estimate, and precedence links for CPM |
 | `leistungsarten` | Level 4: activity types (`DEV`, `CONSULTING`, `PM`, `TEST`) |
 | `time_entries` | `netzplan_id`, `vorgang_nr`, `leistungsart`, `start_time`, `end_time`, `duration_minutes`, `description`, `status_flag` (`running`/`draft`/`released`/`exported`), `source`, `page_id` (the note a `/zeit` line was typed in, v5; cleared when the page is purged). A partial unique index allows only one running timer |
+| `timer_pauses` | Pauses of the running timer (`entry_id`, `start_time`, `end_time` NULL while paused; v31). Not booked; deleted when the timer stops or is discarded. A stop splits the run per local day (`timer::split_run`) |
 | `pages` | Page tree; `content` holds the page as one Markdown document (v2). `daily_date` marks daily notes, `favorite` pins pages, `deleted_at` marks pages in the trash (v3) |
 | `notes_blocks` | Derived chunk index (split at headings, ~1200 chars) rebuilt on every save; `vector_embedding` is a little-endian `f32` BLOB. Unchanged chunks keep their embedding |
 | `page_links`, `page_tags` | Outgoing `[[links]]` (lower-cased targets, so links to not-yet-existing pages resolve later) and `#tags`, for backlinks and the tag view |
@@ -259,7 +260,12 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
 
 ## Desktop integration (`desktop.rs` in core and shell)
 
-- Tray menu (Öffnen, Timer stoppen / Zuletzt verwendet starten, Schnellerfassung, Beenden); the
+- `/zeit` chips (`chips.rs`, `ui/src/editor/timeChip.ts`): `<time-entry id hours target la date state>` in the
+  Markdown. Editing or deleting an entry rewrites the first chip of it on its page (`state="deleted"`), the editor
+  reloads it (`data://pages`). The editor asks `time_chip_states` which chips are linked (the first of an entry on
+  the entry's page; a chip moved by cut and paste takes its entry along), shows copies as not booked, and deletes
+  the booking of a removed chip after an undo toast (`time_chip_delete`, put back by `time_chip_restore`).
+- Tray menu (Öffnen, Timer stoppen / Timer pausieren / Zuletzt verwendet starten, Schnellerfassung, Beenden); the
   activity sampler refreshes the tooltip and checks reminders every 30 s.
 - Quick capture: a second, undecorated, transparent always-on-top window (label `capture`, `index.html#capture`),
   created hidden 1.5 s after the main window's first frame (`precreate_capture`) so the global shortcut

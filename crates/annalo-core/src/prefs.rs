@@ -438,6 +438,24 @@ choice!(CatsColumns {
     DateFirst = "date_first",
 } default Standard);
 
+// Decimal separator of the CATS hours: comma (SAP default in German), point, or as the number
+// format (Settings → Sprache und Region) writes numbers.
+choice!(CatsDecimal { #[default] Comma = "comma", Point = "point", Number = "number" } default Comma);
+
+impl CatsDecimal {
+    /// Whether CATS hours are written with a decimal point.
+    pub fn point(self, locale: &LocalePrefs) -> bool {
+        match self {
+            CatsDecimal::Comma => false,
+            CatsDecimal::Point => true,
+            CatsDecimal::Number => match locale.number_format {
+                Some(f) => f == NumberFormat::Point,
+                None => locale.language == Language::En,
+            },
+        }
+    }
+}
+
 impl CatsDelimiter {
     pub fn char(self) -> char {
         match self {
@@ -518,6 +536,8 @@ pub struct TimePrefs {
     pub default_leistungsart: BTreeMap<String, String>,
     pub cats_delimiter: CatsDelimiter,
     pub cats_columns: CatsColumns,
+    /// Decimal separator of the hours in the CATS file and „Für CATS kopieren“.
+    pub cats_decimal: CatsDecimal,
     /// Default file name of exports without extension; `{von}`, `{bis}`, `{format}`, `{kw}`, `{pernr}`.
     pub export_file_pattern: String,
     /// Overtime balance, vacation account and public holidays.
@@ -539,6 +559,7 @@ impl Default for TimePrefs {
             default_leistungsart: BTreeMap::new(),
             cats_delimiter: CatsDelimiter::Semicolon,
             cats_columns: CatsColumns::Standard,
+            cats_decimal: CatsDecimal::Comma,
             export_file_pattern: DEFAULT_EXPORT_PATTERN.into(),
             balance: crate::worktime::BalancePrefs::default(),
             work_start: DEFAULT_WORK_START.into(),
@@ -849,6 +870,18 @@ pub struct LocalePrefs {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+
+    #[test]
+    fn cats_decimal_defaults_to_comma_and_can_follow_the_number_format() {
+        let t: TimePrefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(t.cats_decimal, CatsDecimal::Comma, "settings of 1.11 keep the comma");
+        let de = LocalePrefs::default();
+        let en = LocalePrefs { language: Language::En, ..Default::default() };
+        let point = LocalePrefs { number_format: Some(NumberFormat::Point), ..Default::default() };
+        assert!(!CatsDecimal::Comma.point(&en) && CatsDecimal::Point.point(&de));
+        assert_eq!([de, en, point].map(|l| CatsDecimal::Number.point(&l)), [false, true, true]);
+        assert_eq!(serde_json::from_str::<CatsDecimal>("\"unknown\"").unwrap(), CatsDecimal::Comma);
+    }
 
     #[test]
     fn number_format_is_kept_and_unset_by_default() {

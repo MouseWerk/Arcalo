@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  AlertTriangle, CalendarDays, Check, CloudUpload, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
+  AlertTriangle, CalendarDays, Check, CloudUpload, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pause, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRange, unbooked } from "../lib/agenda";
@@ -12,12 +12,13 @@ import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented,
 import { DateInput, TimeInput } from "../components/DateInput";
 import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
-import { useTimerSeconds, stopTimer } from "../components/Sidebar";
+import { useTimerSeconds, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
-import { catsGrid, dayTargets, undeletableReason, weekGaps } from "../lib/cats";
+import { catsDecimalSep, catsGrid, dayTargets, undeletableReason, weekGaps } from "../lib/cats";
 import { workApi, type Absence, type Holiday } from "../lib/workwidgets";
 import type { CalendarEvent, ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow, WbsHint } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
+import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "../components/Focus";
 import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
@@ -276,10 +277,11 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
   if (timer) {
     const e = timer.entry;
     const n = all.find((x) => x.id === e.netzplan_id);
+    const paused = !!timer.paused_since;
     return (
-      <section className="card timer-card running">
+      <section className={`card timer-card running${paused ? " paused" : ""}`}>
         <div className="timer-live">
-          <span className="rec-dot big" aria-hidden />
+          <span className={paused ? "pause-dot big" : "rec-dot big"} aria-hidden />
           <div>
             <div className="timer-clock num">{clock(seconds)}</div>
             <div className="timer-what">
@@ -289,6 +291,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
               </span>
               {e.leistungsart && <Badge>{e.leistungsart}</Badge>}
               <span>{e.description || <span className="faint">{t("time.noDescription")}</span>}</span>
+              {paused && <Badge>{t("timer.paused")}</Badge>}
               {timer.idle_minutes > 0 && <Badge tone="warning">{t("time.idleMinutes", { n: timer.idle_minutes })}</Badge>}
             </div>
           </div>
@@ -307,6 +310,9 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
             }}
           >
             {t("common.discard")}
+          </Button>
+          <Button icon={paused ? Play : Pause} onClick={() => void toggleTimerPause()} title={withHint(paused ? t("timer.resume") : t("timer.pause"), "timer_pause")}>
+            {paused ? t("timer.resume") : t("timer.pause")}
           </Button>
           <Button variant="primary" icon={Square} onClick={() => stopTimer()}>
             {t("time.stop")}
@@ -418,7 +424,7 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
   const gapKeys = new Set(gaps.map((g) => isoDay(g.day)));
   const s = useApp.getState;
   const copyCats = async () => {
-    const { text, ids } = catsGrid(rows, week);
+    const { text, ids } = catsGrid(rows, week, catsDecimalSep(s().settings?.settings.time?.cats_decimal));
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
