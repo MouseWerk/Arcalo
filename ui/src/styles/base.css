@@ -37,8 +37,12 @@ a {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 :focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: var(--focus-ring);
   outline-offset: 1px;
+}
+/* One stroke for every Lucide icon at its default weight; icons drawn bolder on purpose keep theirs. */
+svg.lucide[stroke-width="2"] {
+  stroke-width: var(--icon-stroke);
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -46,7 +50,7 @@ a {
 }
 ::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   border: 3px solid transparent;
   background-clip: padding-box;
 }

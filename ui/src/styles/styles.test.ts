@@ -56,3 +56,27 @@ describe("literal colors", () => {
     });
   }
 });
+
+// Non-color design tokens (tokens.css): weights, layers, focus ring, eyebrow labels and pill radii come
+// from one place, so a view cannot drift to its own values again.
+describe("design tokens", () => {
+  const dir = resolve(__dirname);
+  const sheets = readdirSync(dir).filter((f) => f.endsWith(".css") && f !== "tokens.css");
+  const code = (name: string) => readFileSync(resolve(dir, name), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const name of sheets) {
+    it(`${name} takes weights, layers, focus ring and pill radii from the tokens`, () => {
+      const css = code(name);
+      expect(css.match(/font-weight:\s*\d{3}\b[^;}]*/g) ?? []).toEqual([]);
+      expect(css.match(/z-index:\s*\d{2,}[^;}]*/g) ?? []).toEqual([]);
+      expect(css.match(/outline:\s*2px solid var\(--border-focus\)/g) ?? []).toEqual([]);
+      expect(css.match(/border-radius:[^;}]*\b999px/g) ?? []).toEqual([]);
+    });
+    it(`${name} styles uppercase section labels one way`, () => {
+      const odd: string[] = [];
+      for (const m of code(name).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (/text-transform:\s*uppercase/.test(m[2]) && /letter-spacing:\s*0\.04em/.test(m[2])) odd.push(m[1].trim());
+      }
+      expect(odd, "use var(--ls-eyebrow)").toEqual([]);
+    });
+  }
+});

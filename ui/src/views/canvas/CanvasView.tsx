@@ -1064,7 +1064,9 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
         )}
         {page && !doc.nodes.length && (
           <div className="cv-empty">
-            <LayoutDashboard size={28} aria-hidden />
+            <span className="empty-icon" aria-hidden>
+              <LayoutDashboard size={20} strokeWidth={1.5} />
+            </span>
             <div className="cv-empty-title">{t("canvas.empty.title")}</div>
             <div className="cv-empty-text">{t("canvas.empty.text")}</div>
           </div>

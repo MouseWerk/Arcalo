@@ -646,6 +646,13 @@ defineWidget({
   buttons, ≥ 3 for UI accents), the webview zoom, the language (`i18n.ts`, typed German/English dictionary) and the
   keymap (`keymap.ts`: commands, defaults, recording from key events with AltGr protection, conflicts with other
   commands, editor keys and global shortcuts). The App's keydown handler looks commands up in the keymap.
+- Design tokens beyond color (`styles/tokens.css`, 1.12): type scale (`--fs-*`, one heading weight `--fw-heading`,
+  `--ls-heading`, `--ls-eyebrow` for uppercase section labels), radii `--r-2xs`…`--r-xl` and `--r-pill`, spacing on the
+  4 px grid (`--sp-*`), control heights (`--ctl-xs` 22, `--ctl-sm` 26, `--ctl-md` 30, `--ctl-lg` 36), the tool-view
+  header height (`--toolhead-h`, Kalender and Graph), one Lucide stroke (`--icon-stroke`, applied in `base.css` to
+  icons at their default weight), the focus ring and halo, durations (`--dur-fast`/`--dur`/`--dur-slow`, loops
+  `--dur-spin`/`--dur-pulse`) and the z-index layers (`--z-inline` … `--z-top`). Data tables follow the density
+  setting through `--entry-row-h`. e2e 240 checks titles, tool headers, stat tiles in a narrow split pane and focus.
 - Color themes (`ui/src/lib/themes.ts`): `settings.theme` picks the mode (system/light/dark), `appearance.theme_light` /
   `theme_dark` the theme per mode (built-in id or `custom-…`, unknown ids show Arcalo). A theme is nine main colors
   (`ThemeColors`: background, surface, text, muted, border, accent, success, warning, danger) plus optional tuning;
