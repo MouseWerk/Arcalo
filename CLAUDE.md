@@ -52,6 +52,10 @@ cd e2e && ANNALO_APP="$PWD/../target/debug/annalo" node --test --test-concurrenc
 Pass the app only via `ANNALO_APP`. Never kill processes by name or pattern (other runs may share the
 machine); kill only PIDs you started. Prefer root-cause fixes; never skip or weaken a test.
 
+## Development on macOS
+
+See `docs/dev-setup-macos.md`. e2e tests do not run natively on macOS; use `e2e/docker/run.sh` or CI.
+
 ## Release
 
 Push to `main` first, then run the Release workflow (`release.yml`, input `version`, e.g. `1.12.0`). Then
