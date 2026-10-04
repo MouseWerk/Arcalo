@@ -36,6 +36,7 @@ mod recovery;
 mod rollback;
 mod secrets;
 mod security;
+mod store;
 mod syncmerge;
 mod timeblocks;
 mod updates;
@@ -4035,7 +4036,13 @@ pub fn run() {
                     std::env::consts::OS,
                     std::env::consts::ARCH,
                     dir.display(),
-                    if portable::active() { " (portable)" } else { "" }
+                    if portable::active() {
+                        " (portable)"
+                    } else if store::active() {
+                        " (Microsoft Store)"
+                    } else {
+                        ""
+                    }
                 ),
             );
             if let Some(n) = &startup.notice {
@@ -4044,8 +4051,13 @@ pub fn run() {
             // Before the database is opened: failed starts of a fresh update offer the way back.
             let version = updates::current_version(app.handle());
             rollback::early_check(app.handle(), &dir, &version);
-            // Started by the update (or after an installer that did not finish).
-            let after_update = annalo_core::update::take_restart_marker(&dir, &version);
+            // Started by the update (or after an installer that did not finish). The Store build
+            // never writes the marker; one in a shared data folder belongs to the installed copy.
+            let after_update = if store::active() {
+                None
+            } else {
+                annalo_core::update::take_restart_marker(&dir, &version)
+            };
             if let Some(a) = &after_update {
                 let how = if a.installed { "installed" } else { "not installed, still the old version" };
                 devlog::info("update", format!("first start after the update to {}: {how}", a.version));
@@ -4240,7 +4252,8 @@ pub fn run() {
             app.manage(jira::JiraSync::default());
             // The window after an update always shows: the user clicked „Installieren“ and waits for it.
             let updated = after_update.is_some();
-            app.manage(updates::Updates::after(after_update, rollback::take_notice(&state_dir)));
+            let rolled_back = if store::active() { None } else { rollback::take_notice(&state_dir) };
+            app.manage(updates::Updates::after(after_update, rolled_back));
             updates::load_staged(app.handle());
             app.manage(backupdest::Destinations::default());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
@@ -4254,12 +4267,16 @@ pub fn run() {
                 let _ = app.set_menu(menu);
             }
             let tray = app.state::<desktop::Desktop>().has_tray();
-            // Autostart, or Settings → Start „Minimiert starten“: hidden in the tray, or minimized without one.
-            let wants_minimized =
-                !updated && (start.minimized || std::env::args().any(|a| a == desktop::MINIMIZED_ARG));
+            // Autostart (the Store package's startup task passes no argument), or Settings → Start
+            // „Minimiert starten“: hidden in the tray, or minimized without one.
+            let wants_minimized = !updated
+                && (start.minimized
+                    || std::env::args().any(|a| a == desktop::MINIMIZED_ARG)
+                    || store::started_at_login());
             let minimized = tray && wants_minimized;
-            // A portable copy leaves the taskbar alone (the jump list lives in the user profile).
-            if !portable::active() {
+            // A portable copy leaves the taskbar alone (the jump list lives in the user profile);
+            // a packaged one has its package's app id already (Start, taskbar and toasts use it).
+            if !portable::active() && !store::packaged() {
                 jumplist::set_app_id(&app.config().identifier);
             }
             // Hidden until the UI has painted its first frame (`window_ready`): shown right away,
@@ -4557,6 +4574,7 @@ pub fn run() {
             updates::update_whats_new_seen,
             updates::update_rollback,
             updates::update_release_notes,
+            store::store_open_updates,
             devlog::devlog_write,
             devlog::devlog_read,
             devlog::devlog_stats,

@@ -63,6 +63,100 @@ jobs:
           name: arcalo-windows
           path: target/release/bundle/nsis/*.exe
 
+      # Microsoft Store build (packaging/msix, docs/release/microsoft-store.md): the binary with the
+      # `store` feature, packed with a placeholder identity and signed with a throw-away certificate
+      # (the Store signs real submissions itself), installed, started and checked, then removed.
+      - name: Store build
+        run: cargo build --release -p annalo --features custom-protocol,store
+      - name: Pack the MSIX (test identity, self-signed)
+        id: msix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          $subject = "CN=Arcalo CI Test"
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $subject -KeyUsage DigitalSignature `
+            -FriendlyName "Arcalo MSIX test" -CertStoreLocation Cert:\CurrentUser\My `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = [guid]::NewGuid().ToString()
+          $pfx = "$env:RUNNER_TEMP\arcalo-test.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          # Trusted for the installation on this runner only.
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\arcalo-test.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\arcalo-test.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          ./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version $version -OutDir msix `
+            -IdentityName "MouseWerk.Arcalo.CITest" -Publisher $subject -PublisherDisplayName "MouseWerk (CI test)" `
+            -CertificatePfx $pfx -CertificatePassword $password
+      - name: Install, start and remove the MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msix = "${{ steps.msix.outputs.msix }}"
+          $data = "$env:APPDATA\app.annalo.desktop"
+          if (Test-Path $data) { Remove-Item -Recurse -Force $data }
+          Add-AppxPackage -Path $msix
+          $pkg = Get-AppxPackage -Name "MouseWerk.Arcalo.CITest"
+          if (-not $pkg) { throw "package not installed" }
+          Write-Host "Installed $($pkg.PackageFullName) in $($pkg.InstallLocation)"
+          if (-not (Test-Path (Join-Path $pkg.InstallLocation "Arcalo.exe"))) { throw "Arcalo.exe missing in the package" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\Arcalo.exe")) { throw "execution alias Arcalo.exe missing" }
+          # Started like from Start (with the package identity).
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!Arcalo"
+          # The start line in the log: Store mode recognized, and written to the real AppData
+          # folder (write virtualization off for app.annalo.desktop, see AppxManifest.xml).
+          $log = "$data\logs\annalo.log"
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline -and -not ((Test-Path $log) -and (Select-String -Path $log -Pattern "\(Microsoft Store\)" -Quiet))) {
+            Start-Sleep -Seconds 2
+          }
+          if (-not (Get-Process -Name Arcalo -ErrorAction SilentlyContinue)) { throw "Arcalo is not running" }
+          if (-not (Test-Path $log)) {
+            Get-ChildItem -Recurse "$env:LOCALAPPDATA\Packages\$($pkg.PackageFamilyName)" -ErrorAction SilentlyContinue | Select-Object -First 30 FullName | Out-Host
+            throw "no log in $data (data folder virtualized?)"
+          }
+          Get-Content $log | Select-Object -First 5 | Out-Host
+          if (-not (Select-String -Path $log -Pattern "\(Microsoft Store\)" -Quiet)) { throw "the start line does not report the Store build" }
+          # Runs for a while (the window, the database, the tray), then quits.
+          Start-Sleep -Seconds 10
+          if (-not (Get-Process -Name Arcalo -ErrorAction SilentlyContinue)) { throw "Arcalo ended after the start" }
+          if (Select-String -Path $log -Pattern "\bERROR\b" -Quiet) { Select-String -Path $log -Pattern "\bERROR\b" | Out-Host }
+          Stop-Process -Name Arcalo -Force
+          Start-Sleep -Seconds 2
+          Remove-AppxPackage -Package $pkg.PackageFullName
+          # The data stays when the package goes (it is not inside the package's private folders).
+          if (-not (Test-Path "$data\logs")) { throw "the data folder went with the package" }
+          Write-Host "MSIX installed, started, quit and removed; data kept in $data"
+      # Windows App Certification Kit: part of the Windows SDK, not on every runner image. The
+      # report is uploaded; failures are listed but do not fail the build (a self-signed test
+      # package differs from what the Store certifies). Locally: docs/release/microsoft-store.md.
+      - name: Windows App Certification Kit
+        continue-on-error: true
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          $appcert = "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe"
+          if (-not (Test-Path $appcert)) {
+            Write-Host "::notice::Windows App Certification Kit not on this runner; run it locally (docs/release/microsoft-store.md)."
+            exit 0
+          }
+          $report = "$PWD\msix\wack-report.xml"
+          & $appcert reset | Out-Host
+          & $appcert test -appxpackagepath "${{ steps.msix.outputs.msix }}" -reportoutputpath $report | Out-Host
+          if (-not (Test-Path $report)) { throw "WACK wrote no report" }
+          [xml]$x = Get-Content -Raw $report
+          $overall = $x.REPORT.OVERALL_RESULT
+          Write-Host "WACK overall result: $overall"
+          $x.SelectNodes("//TEST[RESULT='FAIL']") | ForEach-Object { Write-Host "::warning::WACK: $($_.NAME) failed" }
+          if ($overall -ne "PASS") { exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arcalo-msix-test
+          path: |
+            msix/*.msix
+            msix/wack-report.xml
+          if-no-files-found: ignore
+
   macos:
     name: macOS app (Apple Silicon)
     runs-on: macos-14

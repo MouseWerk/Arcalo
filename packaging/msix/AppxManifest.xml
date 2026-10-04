@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest of the Microsoft Store build (docs/release/microsoft-store.md). pack.ps1 fills in
+  the placeholders: the package identity from Partner Center (Product identity: Package/Identity/Name,
+  Package/Identity/Publisher, Package/Properties/PublisherDisplayName) and the version x.y.z.0.
+
+  - Windows.FullTrustApplication with runFullTrust: Arcalo is a Win32 desktop app (Tauri, WebView2).
+  - unvirtualizedResources with the write virtualization of AppData switched off for Arcalo's own
+    folders: the data stays in %APPDATA%\app.annalo.desktop as with the installer (shared with an
+    installed copy, kept when the package is removed, reachable for backups). Windows 11 honors the
+    list of folders; Windows 10 the switch for all of AppData.
+  - The startup task replaces the Run key of the autostart; the protocol arcalo-notify replaces the
+    registry entry of the notification buttons; the execution alias Arcalo.exe starts the app with
+    its package identity (taskbar jump list).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10"
+  IgnorableNamespaces="uap uap3 desktop desktop6 rescap virtualization">
+
+  <Identity
+    Name="{{IDENTITY_NAME}}"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Arcalo</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Local-first notes, tasks and time tracking with SAP and Jira booking, calendar and optional AI.</Description>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <virtualization:FileSystemWriteVirtualization>
+      <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>$(KnownFolder:RoamingAppData)\app.annalo.desktop</virtualization:ExcludedDirectory>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\app.annalo.desktop</virtualization:ExcludedDirectory>
+      </virtualization:ExcludedDirectories>
+    </virtualization:FileSystemWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1903: the first version with unvirtualizedResources. WebView2 is part of Windows 10 and 11. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18362.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource Language="de-DE" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Arcalo" Executable="Arcalo.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Arcalo"
+        Description="Local-first notes, tasks and time tracking with SAP and Jira booking, calendar and optional AI."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          ShortName="Arcalo"
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square71x71Logo="Assets\SmallTile.png"
+          Square310x310Logo="Assets\LargeTile.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+            <uap:ShowOn Tile="square310x310Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#16171c" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="Arcalo.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="Arcalo.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+        <!-- The buttons of Arcalo's notifications (src-tauri/src/notifyact.rs). -->
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="arcalo-notify" Parameters="&quot;%1&quot;" />
+        </uap3:Extension>
+        <!-- Settings → Desktop „Mit Windows starten“ switches it (src-tauri/src/store.rs); off at first. -->
+        <desktop:Extension Category="windows.startupTask" Executable="Arcalo.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="ArcaloStartup" Enabled="false" DisplayName="Arcalo" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+    <!-- Voice notes record from the microphone (Windows privacy settings list Arcalo then). -->
+    <DeviceCapability Name="microphone" />
+  </Capabilities>
+</Package>

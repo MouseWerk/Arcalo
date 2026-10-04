@@ -160,6 +160,12 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   again on another computer (an encrypted file on the stick would need a password prompt at every start). The release
   workflow publishes `Arcalo_<version>_x64-portable.zip` (Arcalo.exe, marker, LIESMICH.txt) next to the installer; it is
   not part of `latest.json`.
+- **Microsoft Store build** (shell `store.rs`, `packaging/msix/`, docs/release/microsoft-store.md): the cargo feature
+  `store`, or a package identity at run time (`GetCurrentPackageFullName`; `ANNALO_STORE=1` in debug builds). No
+  update key, check, download, install on quit or rollback (`update_status.store`, Settings → Über points to the
+  Store), no portable mode, autostart through the package's startup task, toasts under the package's app id, the
+  `arcalo-notify:` protocol and the `Arcalo.exe` execution alias declared in the manifest. The manifest switches
+  AppData write virtualization off for `app.annalo.desktop`, so the data folder is the installer's.
 - **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
   (`wal_checkpoint(TRUNCATE)`) while holding the database lock, copies `workspace.db` (+ `-wal`/`-shm`),

@@ -116,7 +116,7 @@ async function runCheck(manual: boolean) {
   const status = useUpdates.getState().status ?? (await loadUpdateStatus());
   const toast = useApp.getState().toast;
   if (!status?.enabled) {
-    if (manual) toast({ tone: "info", title: t(NOT_CONFIGURED) });
+    if (manual) toast({ tone: "info", title: t(status?.store ? "upd.store" : NOT_CONFIGURED) });
     return;
   }
   if (useUpdates.getState().phase !== "idle") return;

@@ -5,7 +5,8 @@
 //! taskbar jump list, the webview's profile in `data/webview`, and updates are downloaded
 //! by hand instead of installed. Secrets stay in the OS credential store under names of
 //! their own per data folder (they do not travel with the stick; see `secrets.rs`).
-//! `ANNALO_EXE_DIR` stands in for the executable's folder (tests).
+//! `ANNALO_EXE_DIR` stands in for the executable's folder (tests). The Microsoft Store build
+//! never runs portable (its program folder is the read-only package, see `store.rs`).
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -18,6 +19,9 @@ static PORTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
 pub fn detect() -> Option<PathBuf> {
     PORTABLE
         .get_or_init(|| {
+            if crate::store::active() {
+                return None;
+            }
             let exe = datadir::exe_dir(std::env::var_os("ANNALO_EXE_DIR").map(PathBuf::from))?;
             datadir::portable_data_dir(&exe)
         })

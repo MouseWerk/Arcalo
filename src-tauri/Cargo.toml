@@ -49,7 +49,13 @@ zip = { version = "4", default-features = false, features = ["deflate-flate2-zli
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).
 auto-launch = "0.5"
 winreg = "0.10"
-windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_System_SystemInformation"] }
+windows-sys = { version = "0.61", features = [
+  "Wdk_System_SystemServices",
+  "Win32_System_SystemInformation",
+  # The Microsoft Store build: does this process run from an MSIX package (store.rs)?
+  "Win32_Foundation",
+  "Win32_Storage_Packaging_Appx",
+] }
 # Taskbar jump list (COM).
 windows = { version = "0.61", features = [
   "Win32_Foundation",
@@ -67,6 +73,9 @@ windows = { version = "0.61", features = [
   # App lock: Windows Hello (UserConsentVerifier, for a window).
   "Security_Credentials_UI",
   "Win32_System_WinRT",
+  # The Microsoft Store build: the package's startup task and how it was started (store.rs).
+  "ApplicationModel",
+  "ApplicationModel_Activation",
 ] }
 windows-future = "0.2"
 
@@ -91,3 +100,7 @@ notify-rust = "4.18"
 [features]
 # Used by `cargo tauri build`/`dev`; debug builds without it load the Vite dev server.
 custom-protocol = ["tauri/custom-protocol"]
+# The Microsoft Store build (packaging/msix/): no self-update or rollback, no portable mode; the
+# package's startup task and manifest declarations instead of registry entries (store.rs). A
+# binary without it behaves the same way when it runs from a package.
+store = []
