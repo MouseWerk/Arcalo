@@ -58,10 +58,38 @@ impl Component {
     }
 }
 
+/// The bytes of a calendar file as UTF-8: UTF-16 (with its byte order mark, as Windows'
+/// „Unicode“ saves it) is converted; other files are taken as they are.
+fn utf8_bytes(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let utf16 = |b: &[u8], le: bool| -> Vec<u8> {
+        let units: Vec<u16> = b
+            .chunks_exact(2)
+            .map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
+            .collect();
+        String::from_utf16_lossy(&units).into_bytes()
+    };
+    match bytes {
+        [0xFF, 0xFE, rest @ ..] => utf16(rest, true).into(),
+        [0xFE, 0xFF, rest @ ..] => utf16(rest, false).into(),
+        _ => bytes.into(),
+    }
+}
+
+/// Text of a file that is not UTF-8: Windows-1252 (older Outlook and Exchange exports), whose
+/// 0x80–0x9F hold € and typographic quotes; the rest is Latin-1.
+fn windows_1252(bytes: &[u8]) -> String {
+    const HIGH: [char; 32] = [
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž', '\u{8F}', '\u{90}', '‘',
+        '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}', 'ž', 'Ÿ',
+    ];
+    bytes.iter().map(|&b| if (0x80..0xA0).contains(&b) { HIGH[(b - 0x80) as usize] } else { b as char }).collect()
+}
+
 /// Undoes the line folding (CRLF or LF followed by a space or tab) on the bytes, so a fold
 /// inside a multi-byte character (allowed by the RFC: lines are folded at 75 octets) heals.
 fn unfold(bytes: &[u8]) -> String {
-    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    let bytes = utf8_bytes(bytes);
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
@@ -78,7 +106,10 @@ fn unfold(bytes: &[u8]) -> String {
         out.push(b);
         i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    match String::from_utf8(out) {
+        Ok(s) => s,
+        Err(e) => windows_1252(e.as_bytes()),
+    }
 }
 
 /// One content line; `None` for lines without a `:`.
@@ -580,9 +611,7 @@ pub fn parse(
     let top = parse_components(bytes);
     let cals: Vec<&Component> = top.iter().filter(|c| c.name == "VCALENDAR").collect();
     if cals.is_empty() {
-        return Err(Error::Parse(
-            tr!("keine iCalendar-Daten (BEGIN:VCALENDAR fehlt)", "no iCalendar data (BEGIN:VCALENDAR missing)").into(),
-        ));
+        return Err(not_a_calendar(bytes));
     }
     let mut defined = HashMap::new();
     for tz in cals.iter().flat_map(|c| c.children.iter()).filter(|c| c.name == "VTIMEZONE") {
@@ -765,6 +794,26 @@ pub fn display_url(url: &str) -> String {
     }
 }
 
+/// The error for data without a `VCALENDAR`: a web page (a login or sharing page instead of the
+/// calendar's ICS link) or any other file.
+fn not_a_calendar(bytes: &[u8]) -> Error {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).trim_start().to_ascii_lowercase();
+    let page = head.starts_with('<') && (head.contains("<html") || head.contains("<!doctype html"));
+    Error::State(if page {
+        tr!(
+            "Hier kommt eine Webseite statt eines Kalenders an (z. B. eine Anmelde- oder Freigabeseite). Den ICS-Link des Kalenders kopieren – er endet meist auf .ics – und unter „Name oder Adresse ändern“ eintragen.",
+            "This returns a web page instead of a calendar (e.g. a login or sharing page). Copy the calendar's ICS link – it usually ends in .ics – and enter it under “Change name or address”."
+        )
+        .into()
+    } else {
+        tr!(
+            "Das ist kein Kalender im iCalendar-Format (BEGIN:VCALENDAR fehlt). Den Kalender erneut als .ics-Datei exportieren oder den ICS-Link prüfen.",
+            "This is no calendar in iCalendar format (BEGIN:VCALENDAR is missing). Export the calendar as an .ics file again or check the ICS link."
+        )
+        .into()
+    })
+}
+
 /// Largest ICS file read (bytes).
 pub const MAX_BYTES: usize = 30 * 1024 * 1024;
 
@@ -782,10 +831,21 @@ pub async fn fetch(http: &reqwest::Client, url: &str, timeout: std::time::Durati
     if !status.is_success() {
         let hint = match status.as_u16() {
             401 | 403 => tr!(
-                " – die Adresse ist nicht (mehr) freigegeben oder der Zugriffsschlüssel ist ungültig",
-                " – the address is not shared (any more) or the access key is invalid"
+                " – die Adresse ist nicht (mehr) freigegeben oder der Zugriffsschlüssel ist ungültig. Die Adresse in den Freigabe-Einstellungen des Kalenders neu kopieren und unter „Name oder Adresse ändern“ eintragen.",
+                " – the address is not shared (any more) or the access key is invalid. Copy the address again from the calendar's sharing settings and enter it under “Change name or address”."
             ),
-            404 => tr!(" – die Adresse gibt es nicht (mehr)", " – the address does not exist (any more)"),
+            404 => tr!(
+                " – die Adresse gibt es nicht (mehr). Die Adresse in den Freigabe-Einstellungen des Kalenders neu kopieren und unter „Name oder Adresse ändern“ eintragen.",
+                " – the address does not exist (any more). Copy the address again from the calendar's sharing settings and enter it under “Change name or address”."
+            ),
+            407 => tr!(
+                " – der Proxy verlangt eine Anmeldung. Benutzer und Passwort des Proxy-Profils unter Einstellungen → Netzwerk eintragen.",
+                " – the proxy asks for a login. Enter the user and password of the proxy profile under Settings → Network."
+            ),
+            500..=599 => tr!(
+                " – ein Problem auf dem Server. Die Synchronisierung versucht es später von selbst erneut.",
+                " – a problem on the server. The sync tries again later by itself."
+            ),
             _ => "",
         };
         return Err(Error::State(trf!(
@@ -1036,5 +1096,86 @@ mod tests {
         assert!(err.contains("403") && !err.contains("GEHEIM"), "{err}");
         let ok = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap();
         assert!(ok.starts_with(b"BEGIN:VCALENDAR"));
+    }
+
+    #[test]
+    fn windows_encodings_keep_umlauts() {
+        // Windows-1252 (older Outlook exports): ä = E4, € = 80, „ = 84, “ = 93.
+        let mut bytes =
+            cal("BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:Abstimmung Kosten \r\nDTSTART:20260915T080000Z\r\nEND:VEVENT\r\n");
+        let at = bytes.windows(7).position(|w| w == b"Kosten ").unwrap() + 7;
+        bytes.splice(at..at, [0x84, b'M', 0xFC, b'l', b'l', 0x93, b' ', b'K', 0xE4, b's', b'e', b' ', 0x80]);
+        let evs = parse(&bytes, window(), &berlin(), ALL).unwrap();
+        assert_eq!(evs[0].title, "Abstimmung Kosten „Müll“ Käse €");
+        // UTF-16 with its byte order mark (Windows „Unicode“).
+        let text = String::from_utf8(cal(
+            "BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:Übergabe Größe\r\nDTSTART:20260915T080000Z\r\nEND:VEVENT\r\n",
+        ))
+        .unwrap();
+        let mut le = vec![0xFF, 0xFE];
+        le.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(parse(&le, window(), &berlin(), ALL).unwrap()[0].title, "Übergabe Größe");
+        let mut be = vec![0xFE, 0xFF];
+        be.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
+        assert_eq!(parse(&be, window(), &berlin(), ALL).unwrap()[0].title, "Übergabe Größe");
+    }
+
+    #[test]
+    fn a_web_page_or_other_file_says_how_to_fix_it() {
+        let page = parse(b"\n<!DOCTYPE html><html><head><title>Sign in</title>", window(), &berlin(), ALL);
+        let msg = page.unwrap_err().to_string();
+        assert!(msg.contains("Webseite statt eines Kalenders") && msg.contains(".ics"), "{msg}");
+        let other =
+            parse(b"Subject,Start Date\nJour fixe,15.09.2026", window(), &berlin(), ALL).unwrap_err().to_string();
+        assert!(other.contains("kein Kalender") && other.contains("exportieren"), "{other}");
+        assert!(!other.starts_with("Eingabe nicht verstanden"), "{other}");
+    }
+
+    #[test]
+    fn series_with_duration_moved_and_cancelled_instances() {
+        // Weekly at 09:00 Berlin, DURATION 45 min; the EXDATE is given in UTC, one instance moved
+        // (RECURRENCE-ID in UTC) and one cancelled through an override with STATUS:CANCELLED.
+        let body = "BEGIN:VEVENT\r\nUID:s\r\nSUMMARY:Weekly\r\nDTSTART;TZID=Europe/Berlin:20260907T090000\r\nDURATION:PT45M\r\n\
+                    RRULE:FREQ=WEEKLY;COUNT=5\r\nEXDATE:20260914T070000Z\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:s\r\nRECURRENCE-ID:20260921T070000Z\r\nSUMMARY:Weekly (verschoben)\r\n\
+                    DTSTART;TZID=Europe/Berlin:20260922T140000\r\nDURATION:PT1H\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:s\r\nRECURRENCE-ID;TZID=Europe/Berlin:20260928T090000\r\nSTATUS:CANCELLED\r\n\
+                    DTSTART;TZID=Europe/Berlin:20260928T090000\r\nEND:VEVENT\r\n\
+                    BEGIN:VEVENT\r\nUID:allday\r\nSUMMARY:Messe\r\nDTSTART;VALUE=DATE:20260915\r\nDURATION:P2D\r\nEND:VEVENT\r\n";
+        let evs = parse(&cal(body), window(), &berlin(), ALL).unwrap();
+        let weekly: Vec<_> = evs.iter().filter(|e| e.uid == "s").map(|e| (e.start, e.end, e.title.as_str())).collect();
+        assert_eq!(
+            weekly,
+            [
+                (utc(2026, 9, 7, 7, 0), utc(2026, 9, 7, 7, 45), "Weekly"),
+                (utc(2026, 9, 22, 12, 0), utc(2026, 9, 22, 13, 0), "Weekly (verschoben)"),
+                (utc(2026, 10, 5, 7, 0), utc(2026, 10, 5, 7, 45), "Weekly"),
+            ]
+        );
+        let fair = evs.iter().find(|e| e.uid == "allday").unwrap();
+        assert!(fair.all_day);
+        assert_eq!((fair.start, fair.end), (utc(2026, 9, 14, 22, 0), utc(2026, 9, 16, 22, 0)));
+    }
+
+    #[tokio::test]
+    async fn fetch_hints_for_server_and_proxy_errors() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            for status in ["503 Service Unavailable", "404 Not Found"] {
+                let (mut s, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf).await;
+                let resp = format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                s.write_all(resp.as_bytes()).await.unwrap();
+            }
+        });
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{port}/cal.ics");
+        let busy = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap_err().to_string();
+        assert!(busy.contains("503") && busy.contains("später von selbst"), "{busy}");
+        let gone = fetch(&http, &url, std::time::Duration::from_secs(5)).await.unwrap_err().to_string();
+        assert!(gone.contains("404") && gone.contains("neu kopieren"), "{gone}");
     }
 }

@@ -87,7 +87,11 @@ fn error_text(code: &str, detail: &str) -> String {
         )
         .into(),
         "save" => trf!("Ein Anhang ließ sich nicht speichern: {detail}", "An attachment could not be saved: {detail}"),
-        _ => trf!("Outlook hat die E-Mail nicht geliefert: {}", "Outlook did not return the e-mail: {}", if detail.is_empty() { code } else { detail }),
+        _ => trf!(
+            "Outlook hat die E-Mail nicht geliefert: {}. Outlook neu starten und erneut versuchen.",
+            "Outlook did not return the e-mail: {}. Restart Outlook and try again.",
+            if detail.is_empty() { code } else { detail.trim_end_matches('.') }
+        ),
     }
 }
 

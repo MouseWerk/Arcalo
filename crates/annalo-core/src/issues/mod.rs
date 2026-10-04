@@ -145,10 +145,46 @@ pub const DEFAULT_JQL: &str = "assignee = currentUser() AND statusCategory != Do
 /// The id of the default search in `matches`.
 pub const MINE: &str = "mine";
 
+/// Paths of Jira pages: an address copied from the browser is cut before them, so the site's
+/// base (with a Server's context path such as `/jira`) stays.
+const PAGE_PATHS: [&str; 11] = [
+    "/browse/",
+    "/secure/",
+    "/projects/",
+    "/jira/software/",
+    "/jira/your-work",
+    "/jira/servicedesk/",
+    "/jira/core/",
+    "/servicedesk/",
+    "/plugins/",
+    "/login.jsp",
+    "/rest/",
+];
+
 /// `https://x` without a trailing slash; `x.atlassian.net` becomes `https://x.atlassian.net`.
+/// An address copied from the browser loses the page part (`…/browse/PROJ-1`,
+/// `…/jira/software/projects/…`, query and fragment); a Cloud site keeps only its host.
 pub fn normalize_url(url: &str) -> String {
-    let u = url.trim().trim_end_matches('/');
-    if u.is_empty() || u.contains("://") { u.to_owned() } else { format!("https://{u}") }
+    let mut u = url.trim().split(['?', '#']).next().unwrap_or("").to_owned();
+    if !u.is_empty() && !u.contains("://") {
+        u = format!("https://{u}");
+    }
+    if let Some(start) = u.find("://").map(|i| i + 3) {
+        let path_at = u[start..].find('/').map(|i| start + i);
+        if let Some(p) = path_at {
+            let host = u[start..p].to_ascii_lowercase();
+            let cut = if host.ends_with(".atlassian.net") || host.ends_with(".jira.com") {
+                Some(p)
+            } else {
+                let lower = u[p..].to_ascii_lowercase();
+                PAGE_PATHS.iter().filter_map(|m| lower.find(m)).min().map(|i| p + i)
+            };
+            if let Some(c) = cut {
+                u.truncate(c);
+            }
+        }
+    }
+    u.trim_end_matches('/').to_owned()
 }
 
 fn slug(s: &str) -> String {
@@ -668,7 +704,7 @@ pub struct Fetched {
 pub async fn update_or_post<P: IssueProvider>(p: &P, id: &str, work: &WorkLog) -> Result<String> {
     match p.update_work(id, work).await {
         Ok(()) => Ok(id.to_owned()),
-        Err(Error::Provider { status: 404, .. }) => p.log_work(work).await,
+        Err(Error::Remote { status: 404, .. }) => p.log_work(work).await,
         Err(e) => Err(e),
     }
 }

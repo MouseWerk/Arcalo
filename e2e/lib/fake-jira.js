@@ -8,7 +8,8 @@
 //
 // Options: `rateLimitOnce` answers the first search with 429 (Retry-After: 1); `captcha` makes
 // every login fail as a Server account locked behind a CAPTCHA; `failWorklogs: n` refuses the
-// first n worklog posts with 500 after storing nothing.
+// first n worklog posts with 500 after storing nothing. `state.fail = { status, times }` answers the
+// next `times` authorized requests with `status` (a gateway error, a proxy asking for a login).
 
 import http from "node:http";
 
@@ -93,6 +94,10 @@ export function startFakeJira({ flavor = "cloud", email = "mia@firma.de", token 
     if (path === "/rest/api/2/serverInfo") return json(res, 200, { deploymentType: cloud ? "Cloud" : "DataCenter", version: cloud ? "1001.0.0" : "9.12.0" });
     if (state.captcha) return json(res, 403, { errorMessages: ["CAPTCHA_CHALLENGE"] }, { "X-Authentication-Denied-Reason": "CAPTCHA_CHALLENGE; login-url=http://x/login.jsp" });
     if (!authorized(req)) return json(res, 401, { errorMessages: ["You are not authenticated."] });
+    if (state.fail?.times > 0) {
+      state.fail.times--;
+      return json(res, state.fail.status, { errorMessages: [`Failure ${state.fail.status}`] });
+    }
     const api = `/rest/api/${v}/`;
     if (path.startsWith("/rest/agile/1.0/")) {
       if (!cloud) return json(res, 404, { errorMessages: ["Agile is not installed"] });
