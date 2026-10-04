@@ -29,7 +29,9 @@ Icons: Lucide default stroke 2 (bare icons, Button icons) vs 1.75 (IconButton) m
 ## Findings (severity, view, root cause, fix, test)
 1. MEDIUM narrow split pane: stat tiles (Zeiterfassung) wrapped „41,50 / h“, two columns at ~200 px.
    Root: 2-column rule down to 0 px, value could wrap. Fix: nowrap + tabular numbers, one column under
-   440 px for .stat-row, .rv-stats, .activity-stats. Test: e2e 240 (split pane at 1100 px).
+   440 px for .rv-stats, .activity-stats. Integration: the four short Zeiterfassung tiles (.stat-row) stay
+   two by two there (half the height), with tighter tiles and a value size that follows the pane width
+   (clamp to --fs-lg). Tests: e2e 240 (split pane at 1100 px), e2e 51 (2x2, one line, inside the tile).
 2. MEDIUM three stat-tile type systems (Zeiterfassung 22 px/label 12 px text-3, Briefing/Rückblick 20 px/
    11 px medium text-2, Aktivität 20 px). Fix: one value size (--fs-stat), one label style.
 3. MEDIUM tool views diverged: Kalender header 14/20 padding, title 20 px; Graph toolbar 48 px min,

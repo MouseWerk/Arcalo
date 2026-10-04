@@ -3799,10 +3799,15 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .timer-card.paused .timer-clock { color: var(--text-2); }
 
 /* ---- design pass 1.12 ---- */
-/* Stat tiles (Zeiterfassung, Briefing, Rückblick, Aktivität): one column in very narrow panes, so the
-   numbers never wrap or push the tiles out of the pane. */
+/* Stat tiles (Briefing, Rückblick, Aktivität): one column in very narrow panes, so the numbers never
+   wrap or push the tiles out of the pane. The four short Zeiterfassung figures stay two by two (half
+   the height): tighter tiles, and the number shrinks with the pane (about 18 px at the 280 px
+   minimum) so it stays on one line. */
 @container pane (max-width: 440px) {
-  .stat-row, .rv-stats, .rv-stats.no-time, .activity-stats, .activity-stats.no-time { grid-template-columns: minmax(0, 1fr); }
+  .rv-stats, .rv-stats.no-time, .activity-stats, .activity-stats.no-time { grid-template-columns: minmax(0, 1fr); }
+  .stat-row { gap: var(--sp-2); }
+  .stat-row > .stat { padding: 10px var(--sp-3); }
+  .stat-row .stat-value { font-size: clamp(var(--fs-lg), 6.4cqi, var(--fs-stat)); }
 }
 /* Tool views (Kalender, Graph): the same compact header in narrow panes. */
 @container pane (max-width: 600px) {

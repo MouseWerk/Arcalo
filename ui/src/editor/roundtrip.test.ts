@@ -100,6 +100,11 @@ const CASES: Record<string, string> = {
   bulletsThenTasks: "- Punkt\n  - unter\n- [ ] Aufgabe\n- [x] erledigt\n- wieder Punkt\n",
   bulletsThenTasksNested: "- oben\n  - a\n  - [ ] b\n",
   bulletsThenTasksCallout: "> [!todo] Liste\n>\n> - a\n> - [ ] b\n",
+  // The author's blank line between a bullet and a task list stays (an unedited page must not change).
+  bulletsBlankTasks: "- eins\n- zwei\n  - tiefer\n\n- [ ] offen\n- [x] erledigt\n",
+  tasksBlankBullets: "- [ ] offen\n\n- Punkt\n",
+  bulletsBlankTasksMixed: "- a\n- [ ] b\n\n- c\n\n- [x] d\n- e\n",
+  bulletsBlankTasksCallout: "> [!todo] Liste\n>\n> - a\n>\n> - [ ] b\n",
   entityNbsp:"Firma&nbsp;GmbH und 100&nbsp;€\n",
 };
 

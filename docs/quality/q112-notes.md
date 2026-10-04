@@ -38,7 +38,8 @@ NoteEditor save/merge path, schema serializer, wiki links, reveal; app driven vi
    the caret, Ctrl+Alt+Enter in a new tab (Obsidian's binding). Tests: reveal.test linkAtCaret, e2e 151.
 11. MED  A task list right after a bullet list was saved with a blank line between (one loose list for every other
    reader; file changed on first edit). Fix: TIGHT_MARK between adjacent bullet/task lists (also nested/in callouts).
-   Tests: bulletsThenTasks (3).
+   Tests: bulletsThenTasks (3). Integration: a blank line the author wrote there is kept (spacedBefore on the
+   second list, from the source), so an unedited page saves unchanged. Tests: bulletsBlankTasks (4), e2e 57.
 12. LOW  Find in page: typing a query highlighted matches off screen without scrolling there. Fix: first match
    scrolled into view (block: nearest). Test: e2e 151.
 13. LOW  UI: toolbar paragraph style cut to "Übersch…" in panes under 1040 px (fixed 100/104 px width). Fix: width

@@ -153,6 +153,21 @@ export function setChunkedLexing(lines: number) {
   chunkLines = lines;
 }
 
+interface ListToken {
+  type: string;
+  raw?: string;
+  text?: string;
+  items?: ListToken[];
+  spacedBefore?: boolean;
+}
+const LIST_TOKENS = new Set(["list", "taskList"]);
+/** A token's source ends with a blank line. */
+const BLANK_END = /\n[ \t>]*\n[ \t>]*$/;
+const isTask = (item: ListToken) => /^\s*[-+*]\s+\[[ xX]\]\s+/.test(item.raw ?? item.text ?? "");
+const setSpaced = (node: JsonNode | null | undefined) => {
+  if (node && (node.type === "bulletList" || node.type === "taskList")) node.attrs = { ...node.attrs, spacedBefore: true };
+};
+
 // Parsing: every manager (the editor's initial content is parsed before extensions can
 // adjust their own manager). Raw HTML and comments are kept verbatim instead of being
 // converted or dropped; `- [ ]` without text is an empty task.
@@ -176,6 +191,44 @@ export function setChunkedLexing(lines: number) {
   const fallback = entityProto.parseFallbackToken;
   entityProto.parseFallbackToken = function (this: unknown, token, ...rest) {
     return fallback.call(this, decodeTextToken(token), ...rest);
+  };
+  // A bullet list and a task list next to each other: whether the author left a blank line between
+  // them is kept on the second list (`spacedBefore`), so an unedited page is saved unchanged.
+  const listProto = MarkdownManager.prototype as unknown as {
+    parseTokens: (tokens: ListToken[], ...rest: unknown[]) => unknown;
+    parseToken: (token: ListToken, ...rest: unknown[]) => JsonNode | JsonNode[] | null;
+    parseListToken: (token: ListToken) => JsonNode | JsonNode[] | null;
+  };
+  const parseTokens = listProto.parseTokens;
+  listProto.parseTokens = function (this: unknown, tokens, ...rest) {
+    // A list after a blank line: a `space` token before it, or one the previous list swallowed.
+    const flagged = tokens.map((t, i) => {
+      const prev = tokens[i - 1];
+      const blank = prev && LIST_TOKENS.has(t.type) && (prev.type === "space" || (LIST_TOKENS.has(prev.type) && BLANK_END.test(prev.raw ?? "")));
+      return blank ? { ...t, spacedBefore: true } : t;
+    });
+    return parseTokens.call(this, flagged, ...rest);
+  };
+  const parseToken = listProto.parseToken;
+  listProto.parseToken = function (this: unknown, token, ...rest) {
+    const out = parseToken.call(this, token, ...rest);
+    if (token.spacedBefore) setSpaced(Array.isArray(out) ? out[0] : out);
+    return out;
+  };
+  const parseListToken = listProto.parseListToken;
+  listProto.parseListToken = function (this: unknown, token) {
+    // The parts of a split list are parsed from copies of the token: the flag is for the first only.
+    const { spacedBefore: _, ...plain } = token;
+    const out = parseListToken.call(this, plain);
+    if (!Array.isArray(out) || out.length < 2 || !token.items) return out;
+    // Tiptap splits a list with bullet and task items into one list per run (same grouping here).
+    const blankBefore: boolean[] = [];
+    token.items.forEach((item, i) => {
+      const prev = token.items![i - 1];
+      if (prev && isTask(item) !== isTask(prev)) blankBefore.push(BLANK_END.test(prev.raw ?? ""));
+    });
+    if (blankBefore.length === out.length - 1) blankBefore.forEach((b, i) => b && setSpaced(out[i + 1]));
+    return out;
   };
   // Long notes are lexed in pieces (see chunkedLex.ts); the tokens are the same.
   const managerProto = MarkdownManager.prototype as unknown as { createLexer: () => Lexer };
@@ -215,7 +268,11 @@ const MarkdownFidelity = Extension.create({
   name: "markdownFidelity",
   addGlobalAttributes() {
     // A `<br>` written in the file stays `<br>` (instead of becoming two trailing spaces).
-    return [{ types: ["hardBreak"], attributes: { raw: { default: null, rendered: false } } }];
+    // A list after a bullet/task list of the other kind that had a blank line before it in the file.
+    return [
+      { types: ["hardBreak"], attributes: { raw: { default: null, rendered: false } } },
+      { types: ["bulletList", "taskList"], attributes: { spacedBefore: { default: false, rendered: false, keepOnSplit: false } } },
+    ];
   },
   onBeforeCreate() {
     const manager = (this.editor as unknown as { markdown?: SerializerInternals }).markdown;
@@ -244,7 +301,8 @@ const MarkdownFidelity = Extension.create({
       };
     }
     // A task list right after a bullet list (or the other way round) is one list in Markdown: written
-    // without the blank line between, which would make it a loose list in other readers.
+    // without the blank line between, which would make it a loose list in other readers. A blank
+    // line the author wrote there is kept.
     for (const type of ["bulletList", "taskList"]) {
       for (const spec of manager.nodeTypeRegistry.get(type) ?? []) {
         const render = spec.renderMarkdown;
@@ -252,7 +310,7 @@ const MarkdownFidelity = Extension.create({
         spec.renderMarkdown = (node, ...rest) => {
           const out = render(node, ...rest);
           const prev = (rest[1] as { previousNode?: { type?: string } } | undefined)?.previousNode?.type;
-          const adjacent = (type === "taskList" && prev === "bulletList") || (type === "bulletList" && prev === "taskList");
+          const adjacent = !node.attrs?.spacedBefore && ((type === "taskList" && prev === "bulletList") || (type === "bulletList" && prev === "taskList"));
           return adjacent && typeof out === "string" ? TIGHT_MARK + out : out;
         };
       }

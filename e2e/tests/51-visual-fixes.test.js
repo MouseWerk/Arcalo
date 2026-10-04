@@ -230,11 +230,22 @@ test("tabs: titles are whole while there is room; short tabs stay whole when it 
     await sleep(500);
   }
   const measure = () =>
-    app.browser.execute(() => [...document.querySelectorAll(".pane.active .tab")].map((t) => ({ title: t.querySelector(".tab-title").textContent, cut: t.querySelector(".tab-title").scrollWidth > t.querySelector(".tab-title").clientWidth, w: t.getBoundingClientRect().width })));
+    app.browser.execute(() =>
+      [...document.querySelectorAll(".pane.active .tab")].map((t) => {
+        const title = t.querySelector(".tab-title");
+        // tw: the width of the title's text.
+        return { title: title.textContent, cut: title.scrollWidth > title.clientWidth, w: t.getBoundingClientRect().width, tw: title.scrollWidth };
+      }),
+    );
   const wide = await measure();
   // With room to spare a title is only shortened at the tab's maximum width (360 px since 1.4.1).
   assert.ok(wide.every((t) => !t.cut || t.w >= 359), `nothing cut below the maximum width: ${JSON.stringify(wide)}`);
-  assert.ok(wide.some((t) => t.title === "Protokoll Lenkungskreis" && t.w > 200 && !t.cut), `a longer title gets the room it needs: ${JSON.stringify(wide)}`);
+  // Since 1.12 an inactive tab no longer reserves room for its (hidden) close button, which lies over
+  // the title's end on hover: the tab is as wide as icon and whole title, beyond the 104 px minimum.
+  assert.ok(
+    wide.some((t) => t.title === "Protokoll Lenkungskreis" && !t.cut && t.tw > 120 && t.w > 104 && t.w < 359),
+    `a longer title gets the room it needs: ${JSON.stringify(wide)}`,
+  );
   // Narrow: only long titles are shortened.
   await app.browser.setWindowSize(900, 700);
   await app.browser.execute(() => {
@@ -266,6 +277,14 @@ test("time tracking: the four KPI cards are two by two in a narrow pane", async 
   assert.equal(new Set(rows).size, 2, `two rows: ${rows}`);
   assert.equal(rows[0], rows[1]);
   assert.equal(rows[2], rows[3]);
+  // The figures stay on one line and inside their tiles.
+  const values = await app.browser.execute(() =>
+    [...document.querySelectorAll(".workspace > .pane:first-child .stat-row .stat-value")].map((v) => ({
+      lines: Math.round(v.getBoundingClientRect().height / parseFloat(getComputedStyle(v).lineHeight)),
+      fits: v.scrollWidth <= v.clientWidth && v.getBoundingClientRect().right <= v.parentElement.getBoundingClientRect().right,
+    })),
+  );
+  assert.deepEqual(values.filter((v) => v.lines !== 1 || !v.fits), [], `figures on one line: ${JSON.stringify(values)}`);
   await app.shot("vis-kpi-narrow");
   await app.browser.execute(() => document.querySelector(".workspace > .pane:last-child .tab.active .tab-close").click());
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane")).length === 1);
