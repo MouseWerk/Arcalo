@@ -21,8 +21,14 @@ export interface ListFilter {
 
 export const DEFAULT_FILTER: ListFilter = { query: "", kind: "all", unused: false, large: false, sort: "name" };
 
-/** Not embedded in any page, trashed pages included (deleting it could break a restore). */
-export const isUnused = (f: AttachmentInfo) => f.used_in.length === 0;
+/**
+ * Not embedded in any page (trashed pages included, deleting it could break a restore), in no
+ * older version of a page and not a stored e-mail.
+ */
+export const isUnused = (f: AttachmentInfo) => f.used_in.length === 0 && !f.mail && !f.in_versions?.length;
+
+/** Embedded only by older versions of pages: deleting it leaves a hole when such a version comes back. */
+export const onlyInVersions = (f: AttachmentInfo) => f.used_in.length === 0 && !f.mail && !!f.in_versions?.length;
 
 const collator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
 

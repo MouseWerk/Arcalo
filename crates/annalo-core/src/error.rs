@@ -151,7 +151,7 @@ pub fn io_text(e: &std::io::Error) -> String {
         K::CrossesDevices => tr!("Verschieben zwischen Laufwerken nicht möglich", "Cannot move between drives"),
         _ => return e.to_string(),
     };
-    format!("{what} ({e})")
+    with_details(what, e)
 }
 
 /// An I/O error of one file or folder, short and with its path: „Datei nicht gefunden: C:\…\a.pdf“.
@@ -259,10 +259,20 @@ fn db_text(e: &rusqlite::Error) -> String {
             _ => None,
         };
         if let Some(what) = what {
-            return format!("{what} ({e})");
+            return with_details(what, e);
         }
     }
     e.to_string()
+}
+
+/// Separates a message from its technical text (SQLite's or the operating system's English
+/// words): the UI shows the message and keeps the rest behind „Details“ (see `errorParts` in
+/// the UI), the log and the command line show both.
+pub const DETAILS: &str = "\n\nDetails: ";
+
+/// `what` with the technical text `tech` after [`DETAILS`].
+pub fn with_details(what: &str, tech: impl std::fmt::Display) -> String {
+    format!("{what}{DETAILS}{tech}")
 }
 
 /// Why a request failed, read from reqwest's error and its cause chain.
@@ -348,7 +358,7 @@ pub fn http_text(e: &reqwest::Error) -> String {
         HttpCause::Connect => tr!("Keine Verbindung zum Server", "No connection to the server"),
         HttpCause::Other => return chain,
     };
-    format!("{cause} ({chain})")
+    with_details(cause, chain)
 }
 
 /// Called for every error serialized for the UI (the desktop shell writes it to its log).
@@ -404,6 +414,9 @@ mod tests {
             // Database errors say what to do as well.
             let full = Error::disk_full().to_string();
             assert!(full.contains("The disk is full – the change was not saved. Free some space"), "{full}");
+            // SQLite's English text only after the separator the UI hides behind „Details“.
+            let (text, tech) = full.split_once(DETAILS).unwrap();
+            assert!(!text.contains("Error code") && tech.starts_with("Error code 13"), "{full}");
             assert!(Error::disk_full().is_storage());
             let p = std::path::Path::new("/nowhere/a.pdf");
             let e = Error::File { path: p.to_path_buf(), dir: false, source: std::io::Error::from(K::NotFound) };

@@ -96,6 +96,8 @@ keyring = { version = "3", features = ["windows-native", "apple-native"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 notify-rust = "4.18"
+# Asks the desktop portal before the quick-capture window is created (desktop.rs).
+dbus = "0.9"
 
 [features]
 # Used by `cargo tauri build`/`dev`; debug builds without it load the Vite dev server.

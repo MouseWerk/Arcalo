@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, renameProblem, stemLength, totalSize } from "./attachments";
+import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, onlyInVersions, renameProblem, stemLength, totalSize } from "./attachments";
 import type { AttachmentInfo } from "./types";
 
 const file = (name: string, kind: AttachmentInfo["kind"], size: number, modified: string, uses: string[] = []): AttachmentInfo => ({
@@ -19,6 +19,17 @@ const FILES = [
   file("daten.xlsx", "other", 100, "2026-07-01T10:00:00Z"),
 ];
 const names = (list: AttachmentInfo[]) => list.map((f) => f.name);
+
+describe("unused files", () => {
+  it("does not count files of old versions or stored e-mails as unused", () => {
+    const old = { ...file("alt.png", "image", 10, "2026-01-01T00:00:00Z"), in_versions: [{ id: 3, title: "Plan", trashed: false }] };
+    const mail = { ...file("Angebot.eml", "other", 10, "2026-01-01T00:00:00Z"), mail: true };
+    const free = file("frei.png", "image", 10, "2026-01-01T00:00:00Z");
+    expect([old, mail, free].filter(isUnused).map((f) => f.name)).toEqual(["frei.png"]);
+    expect([old, mail, free].filter(onlyInVersions).map((f) => f.name)).toEqual(["alt.png"]);
+    expect(names(filterAttachments([old, mail, free], { ...DEFAULT_FILTER, unused: true }))).toEqual(["frei.png"]);
+  });
+});
 
 describe("filterAttachments", () => {
   it("sorts names naturally and case-insensitively", () => {

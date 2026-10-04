@@ -240,7 +240,7 @@ export const api = {
   restoreBackup: (path: string) => call<B.RestoreStaged>("backup_restore", { path }),
   mirrorStatus: () => call<T.MirrorStatus>("mirror_status"),
   openMirror: () => call<void>("mirror_open"),
-  gitSyncNow: (allowDeletions = false) => call<T.GitSyncOutcome>("git_sync_now", { allowDeletions }),
+  gitSyncNow: (allowDeletions = false, afterRestore: T.AfterRestore | null = null) => call<T.GitSyncOutcome>("git_sync_now", { allowDeletions, afterRestore }),
   gitSyncStatus: () => call<T.GitSyncStatus>("git_sync_status"),
   /** Stores (or with null removes) the Git access token; it is never sent back. */
   setGitToken: (token: string | null) => call<T.GitSyncStatus>("git_token_set", { token }),
@@ -562,8 +562,25 @@ export function shortenPaths(text: string, max = 56): string {
  * a bare `netzplan 'NP-1' not found` becomes „Netzplan „NP-1“ nicht gefunden“ / “Network “NP-1”
  * not found”.
  */
-export const errorText = (e: unknown) => {
+export const errorText = (e: unknown) => errorParts(e).text;
+
+/** Separator of a backend message and its technical text (`error::DETAILS` in the core). */
+const DETAILS = "\n\nDetails: ";
+
+/**
+ * A backend error split into the message for the user and the technical text behind it
+ * (SQLite's or the operating system's English words), which the toast keeps behind „Details“.
+ */
+export function errorParts(e: unknown): { text: string; details?: string } {
   const raw = typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+  const at = raw.indexOf(DETAILS);
+  if (at < 0) return { text: messageText(raw) };
+  // Messages that wrap an error put their own words before it, so the rest is all technical.
+  const details = raw.slice(at + DETAILS.length).trim();
+  return { text: messageText(raw.slice(0, at)), details: details || undefined };
+}
+
+function messageText(raw: string) {
   const nf = /^(\w+) '(.+)' not found$/.exec(raw);
   if (nf) return t("err.notFound", { kind: KINDS[nf[1]] ? t(KINDS[nf[1]]) : nf[1], key: nf[2] });
   // Older texts (and re-wrapped ones) may still carry English prefixes.
@@ -574,4 +591,4 @@ export const errorText = (e: unknown) => {
     .replace(/^database error: /, `${t("err.db")}: `)
     .replace(/^http error: /, `${t("err.http")}: `)
     .replace(/^AI provider error \((\d+)\): /, (_all, code: string) => `${t("err.provider", { code })}: `);
-};
+}

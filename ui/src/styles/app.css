@@ -3781,3 +3781,7 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .tab.active { padding-right: 28px; }
 .tab-close { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
 .tab:not(.active):hover .tab-title { mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent calc(100% - 18px)); }
+
+/* ---- attachments (1.12): files kept for old versions or a stored e-mail ---- */
+.att-unused.is-kept { background: var(--info-soft); color: var(--info); }
+.att-unused.is-kept[title] { cursor: help; }

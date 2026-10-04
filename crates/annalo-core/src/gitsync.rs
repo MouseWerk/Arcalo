@@ -952,6 +952,10 @@ pub struct GitSyncStatus {
     /// The last sync stopped before deleting this many notes on the server (see [`GUARD_PREFIX`]).
     #[serde(default)]
     pub blocked_deletions: Option<usize>,
+    /// A backup was restored and the sync waits for (or has not yet compared before) the
+    /// decision how to go on (see [`RESTORED_FILE`]).
+    #[serde(default)]
+    pub after_restore: Option<Restored>,
 }
 
 fn has_head(git: &Git, repo: &Path) -> Result<bool> {
@@ -1349,6 +1353,252 @@ fn merge_remote(
     );
     git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
     Ok(changes)
+}
+
+// ------------------------------------------------------------ after a restore
+
+/// Written to the data folder when a backup replaced the database: the next sync must not push
+/// the restored (older) state over the newer one on the server as if it were new work. It
+/// compares first ([`check_restore`]) and asks when they differ.
+pub const RESTORED_FILE: &str = "sync-after-restore.json";
+/// Start of the error a sync returns when it waits for the decision after a restore.
+pub const RESTORE_PREFIX: &str = "Nach der Wiederherstellung angehalten";
+/// The same in English.
+pub const RESTORE_PREFIX_EN: &str = "Stopped after the restore";
+
+/// A restore the sync has not dealt with yet ([`RESTORED_FILE`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Restored {
+    /// The backup that was restored (its file name).
+    pub from: String,
+    pub at: DateTime<chrono::Utc>,
+    /// Set once a sync compared with the server and stopped: notes that differ, notes only the
+    /// server has (the restore lost them), notes only this computer has.
+    #[serde(default)]
+    pub checked: bool,
+    #[serde(default)]
+    pub changed: usize,
+    #[serde(default)]
+    pub server_only: usize,
+}
+
+/// Notes a restore that the sync has to deal with first (see [`RESTORED_FILE`]).
+pub fn mark_restored(data_dir: &Path, from: &str, now: DateTime<chrono::Utc>) -> Result<()> {
+    write_restored(data_dir, &Restored { from: from.to_owned(), at: now, checked: false, changed: 0, server_only: 0 })
+}
+
+pub fn write_restored(data_dir: &Path, r: &Restored) -> Result<()> {
+    let path = data_dir.join(RESTORED_FILE);
+    fs::write(&path, serde_json::to_vec_pretty(r)?).map_err(|e| Error::file(&path, e))
+}
+
+pub fn read_restored(data_dir: &Path) -> Option<Restored> {
+    serde_json::from_slice(&fs::read(data_dir.join(RESTORED_FILE)).ok()?).ok()
+}
+
+pub fn clear_restored(data_dir: &Path) {
+    let _ = fs::remove_file(data_dir.join(RESTORED_FILE));
+}
+
+/// How the next sync goes on after a restore.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AfterRestore {
+    /// Compare; stop with the question when the restored notes differ from the server's.
+    Ask,
+    /// „Neueren Stand vom Server holen“ ([`pull_restored`]).
+    Pull,
+    /// „Wiederhergestellten Stand hochladen“ ([`advance_to_server`], then a normal sync).
+    Upload,
+}
+
+/// „1 Notiz“, „3 Notizen“ in the display language.
+fn notes(n: usize) -> String {
+    let noun = match (n == 1, crate::i18n::is_en()) {
+        (true, false) => "Notiz",
+        (false, false) => "Notizen",
+        (true, true) => "note",
+        (false, true) => "notes",
+    };
+    format!("{n} {noun}")
+}
+
+/// The error of a sync that waits for the decision after a restore.
+pub fn restore_question(r: &Restored) -> Error {
+    let (changed, only) = (notes(r.changed), notes(r.server_only));
+    let prefix = if crate::i18n::is_en() { RESTORE_PREFIX_EN } else { RESTORE_PREFIX };
+    Error::State(trf!(
+        "{prefix}: Seit der wiederhergestellten Sicherung hat sich auf dem Server etwas geändert \
+         ({changed} anders, {only} nur dort). Wiederhergestellten Stand hochladen oder neueren Stand vom Server \
+         holen? Entscheide unter Einstellungen → Sicherung.",
+        "{prefix}: the server changed since the restored backup ({changed} different, {only} only \
+         there). Upload the restored state or get the newer state from the server? Decide under Settings → Backup."
+    ))
+}
+
+/// The restored mirror compared with the newest state of the server.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RestoreCompare {
+    /// Notes that differ or that only the server has, as changes to take over: `mine` is the
+    /// restored text. A note whose restored text is in the server's history of that file is
+    /// simply older (taken over); one whose text never was on the server is a conflict.
+    pub changes: Vec<RemoteChange>,
+    /// Notes only the restored state has (they stay and are uploaded later).
+    pub only_here: usize,
+}
+
+impl RestoreCompare {
+    pub fn changed(&self) -> usize {
+        self.changes.iter().filter(|c| c.mine.is_some()).count()
+    }
+
+    pub fn server_only(&self) -> usize {
+        self.changes.iter().filter(|c| c.mine.is_none()).count()
+    }
+}
+
+/// Brings the working tree's branch to the server's newest state when it only lags behind
+/// (fetch, fast-forward); a branch with commits of its own stays (the sync merges it).
+fn catch_up(git: &Git, repo: &Path, branch: &str) -> Result<()> {
+    if remote_tip(git, repo, branch)?.is_none() {
+        return Ok(());
+    }
+    fetch(git, repo, branch)?;
+    let remote = format!("refs/remotes/origin/{branch}");
+    if git.run(Some(repo), &["merge-base", "--is-ancestor", "HEAD", &remote])?.ok {
+        git.check(Some(repo), &["reset", "-q", "--hard", &remote])?;
+    }
+    Ok(())
+}
+
+/// Blob ids each path ever had in the history of `rev` (`git log --raw`).
+fn history_blobs(git: &Git, repo: &Path, rev: &str) -> Result<std::collections::HashMap<String, BTreeSet<String>>> {
+    let out = git.check(Some(repo), &["log", "--format=", "--raw", "--no-abbrev", "--no-renames", "-z", rev, "--"])?;
+    let mut map: std::collections::HashMap<String, BTreeSet<String>> = std::collections::HashMap::new();
+    let mut parts = out.split('\0').filter(|p| !p.trim().is_empty());
+    while let Some(meta) = parts.next() {
+        let Some(path) = parts.next() else { break };
+        // `:100644 100644 <old> <new> M`
+        let fields: Vec<&str> = meta.trim_start_matches(['\n', ':']).split_whitespace().collect();
+        if fields.len() >= 4 {
+            map.entry(path.to_owned()).or_default().extend([fields[2].to_owned(), fields[3].to_owned()]);
+        }
+    }
+    Ok(map)
+}
+
+/// Compares the restored mirror (`req.source`) with the newest state of the server, without
+/// committing anything (the working tree is put back). `None`: nothing to compare with (no
+/// synced history yet). Notes with an open conflict ([`SyncRequest::hold`]) are left out.
+pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompare>> {
+    let s = normalize(req.settings)?;
+    let repo = req.repo;
+    git.version()?;
+    ensure_repo(git, repo, &s.remote_url, &s.branch)?;
+    if !has_head(git, repo)? {
+        return Ok(None);
+    }
+    catch_up(git, repo, &s.branch)?;
+    {
+        let _swap = crate::mirror::hold_swaps();
+        if !crate::mirror::is_mirror(req.source) {
+            return Err(Error::State(trf!(
+                "Die Markdown-Kopie unter {} fehlt",
+                "The Markdown copy at {} is missing",
+                req.source.display()
+            )));
+        }
+        prepare_tree(req.source, repo, None)?;
+    }
+    let res = (|| {
+        git.check(Some(repo), &["add", "-A"])?;
+        let diff = git.check(Some(repo), &["diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"])?;
+        let mut parts = diff.split('\0').filter(|p| !p.is_empty());
+        let mut out = RestoreCompare::default();
+        let mut history = None;
+        while let (Some(status), Some(path)) = (parts.next(), parts.next()) {
+            if !is_note(path) || path == README_FILE || req.hold.iter().any(|h| h == path) {
+                continue;
+            }
+            match status {
+                "A" => out.only_here += 1,
+                "D" => out.changes.push(RemoteChange {
+                    path: path.to_owned(),
+                    base: None,
+                    mine: None,
+                    theirs: blob_text(git, repo, "HEAD", path)?,
+                    conflict: false,
+                }),
+                _ => {
+                    let history = match &mut history {
+                        Some(h) => h,
+                        None => history.insert(history_blobs(git, repo, "HEAD")?),
+                    };
+                    let restored = blob_id(git, repo, "", path)?;
+                    let older = restored.is_some_and(|id| history.get(path).is_some_and(|ids| ids.contains(&id)));
+                    let mine = blob_text(git, repo, "", path)?;
+                    out.changes.push(RemoteChange {
+                        path: path.to_owned(),
+                        base: if older { mine.clone() } else { None },
+                        mine,
+                        theirs: blob_text(git, repo, "HEAD", path)?,
+                        conflict: !older,
+                    });
+                }
+            }
+        }
+        Ok(out)
+    })();
+    // Nothing is committed: index and working tree go back to the server's state.
+    git.check(Some(repo), &["reset", "-q", "--hard", "HEAD"])?;
+    res.map(Some)
+}
+
+/// „Neueren Stand vom Server holen“ after a restore: the working tree takes the server's newest
+/// state and the notes that differ come back as changes to take over (see [`RestoreCompare`]);
+/// nothing is pushed. Notes only the restored state has stay and go up with the next sync.
+pub fn pull_restored(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
+    let s = normalize(req.settings)?;
+    let cmp = check_restore(git, req)?.unwrap_or_default();
+    let conflicts = cmp.changes.iter().filter(|c| c.conflict).count();
+    let taken = cmp.changes.len() - conflicts;
+    let taken = notes(taken);
+    let message = if conflicts > 0 {
+        let conflicts = notes(conflicts);
+        trf!(
+            "Neuerer Stand vom Server: {taken} übernommen, {conflicts} hier und dort verschieden – bitte zusammenführen",
+            "Newer state from the server: {taken} taken over, {conflicts} different here and there – please merge"
+        )
+    } else {
+        trf!(
+            "Neuerer Stand vom Server: {taken} übernommen, der wiederhergestellte Text liegt in den Versionen",
+            "Newer state from the server: {taken} taken over, the restored text is kept in the versions"
+        )
+    };
+    let commit = rev(git, req.repo, "HEAD")?.map(|h| h.chars().take(7).collect());
+    Ok(SyncOutcome {
+        commit,
+        committed: false,
+        changed_files: 0,
+        branch: s.branch.clone(),
+        fallback: false,
+        message,
+        remote_changes: cmp.changes,
+        settings_file: None,
+    })
+}
+
+/// „Wiederhergestellten Stand hochladen“: the working tree first takes the server's newest state,
+/// so the sync that follows commits the restored notes on top of it (the server's history keeps
+/// the newer state) instead of merging them as edits made beside it.
+pub fn advance_to_server(git: &Git, req: &SyncRequest) -> Result<()> {
+    let s = normalize(req.settings)?;
+    git.version()?;
+    ensure_repo(git, req.repo, &s.remote_url, &s.branch)?;
+    if has_head(git, req.repo)? {
+        catch_up(git, req.repo, &s.branch)?;
+    }
+    Ok(())
 }
 
 /// Files that would change with the next sync (mirror vs. working tree), without git.
@@ -2177,6 +2427,100 @@ mod safety_tests {
         assert_eq!(fa_now.settings["editor.spellcheck"].value, "en");
         let on_server = fs::read_to_string(base.join(format!("a/git-sync/{FILE}"))).unwrap();
         assert!(!on_server.contains("token"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_restored_backup_is_compared_with_the_server_first() {
+        if !git_available() {
+            eprintln!("git not available, skipped");
+            return;
+        }
+        let base = tmp("restored");
+        let bare = base.join("remote.git");
+        sh(&base, &["init", "-q", "--bare", bare.to_str().unwrap()]);
+        let settings =
+            GitSyncSettings { enabled: true, remote_url: bare.to_str().unwrap().to_owned(), ..Default::default() };
+        let git = Git::new(None, &settings.remote_url);
+        let req = |pc: &str, allow_deletions: bool| SyncRequest {
+            repo: Box::leak(base.join(format!("{pc}/git-sync")).into_boxed_path()),
+            source: Box::leak(base.join(format!("{pc}/mirror")).into_boxed_path()),
+            database: None,
+            settings: &settings,
+            host: "pc",
+            now: Local::now(),
+            hold: &[],
+            allow_deletions,
+            settings_file: None,
+        };
+        let note = |pc: &str, file: &str, text: &str| put(&base.join(format!("{pc}/mirror/{file}")), text);
+        let mark = |dir: &Path| put(&dir.join(crate::mirror::README_NAME), crate::mirror::MARKER);
+        let server = |file: &str| sh(&bare, &["show", &format!("main:{file}")]);
+        mark(&base.join("a/mirror"));
+        note("a", "Notiz.md", "Stand der Sicherung\n");
+        note("a", "Alt.md", "alt\n");
+        sync(&git, &req("a", false)).unwrap();
+        // Work after the backup, synced.
+        note("a", "Notiz.md", "neuer Stand\n");
+        note("a", "Neu.md", "nach der Sicherung angelegt\n");
+        sync(&git, &req("a", false)).unwrap();
+        // Another computer goes on meanwhile.
+        mark(&base.join("b/mirror"));
+        for (f, t) in [("Notiz.md", "neuer Stand\n"), ("Alt.md", "alt\n"), ("Neu.md", "nach der Sicherung angelegt\n")]
+        {
+            note("b", f, t);
+        }
+        sync(&git, &req("b", false)).unwrap();
+        note("b", "Notiz.md", "neuester Stand von B\n");
+        assert!(sync(&git, &req("b", false)).unwrap().committed);
+        let commits = sh(&bare, &["rev-list", "--count", "main"]);
+
+        // The backup is restored on a: the mirror is the old state, one note edited since then
+        // was never synced in that form, one is new here.
+        fs::remove_file(base.join("a/mirror/Neu.md")).unwrap();
+        note("a", "Notiz.md", "Stand der Sicherung\n");
+        note("a", "Alt.md", "alt, hier geändert\n");
+        note("a", "Lokal.md", "nur hier\n");
+        let cmp = check_restore(&git, &req("a", false)).unwrap().unwrap();
+        assert_eq!((cmp.changed(), cmp.server_only(), cmp.only_here), (2, 1, 1), "{cmp:?}");
+        let get = |p: &str| cmp.changes.iter().find(|c| c.path == p).unwrap().clone();
+        let notiz = get("Notiz.md");
+        assert!(!notiz.conflict, "the restored text is an older state of the server's: taken over");
+        assert_eq!(notiz.mine.as_deref(), Some("Stand der Sicherung\n"));
+        assert_eq!(notiz.theirs.as_deref(), Some("neuester Stand von B\n"));
+        assert!(get("Alt.md").conflict, "never on the server: the user decides");
+        let neu = get("Neu.md");
+        assert_eq!((neu.mine, neu.theirs.as_deref()), (None, Some("nach der Sicherung angelegt\n")));
+        // Comparing pushed nothing.
+        assert_eq!(sh(&bare, &["rev-list", "--count", "main"]), commits);
+
+        // „Neueren Stand holen“: the changes come back, nothing is pushed.
+        let pulled = pull_restored(&git, &req("a", false)).unwrap();
+        assert_eq!(pulled.remote_changes.len(), 3);
+        assert!(pulled.message.contains("1 Notiz hier und dort verschieden"), "{}", pulled.message);
+        assert_eq!(sh(&bare, &["rev-list", "--count", "main"]), commits);
+        assert_eq!(server("Notiz.md"), "neuester Stand von B\n");
+
+        // „Wiederhergestellten Stand hochladen“: committed on top, the server keeps the history.
+        advance_to_server(&git, &req("a", true)).unwrap();
+        let out = sync(&git, &req("a", true)).unwrap();
+        assert!(out.committed && !out.fallback && out.remote_changes.is_empty(), "{out:?}");
+        assert_eq!(server("Notiz.md"), "Stand der Sicherung\n");
+        assert_eq!(server("Lokal.md"), "nur hier\n");
+        assert_eq!(sh(&bare, &["show", "main~1:Notiz.md"]), "neuester Stand von B\n");
+        assert_eq!(
+            sh(&bare, &["rev-list", "--count", "--merges", "main"]).trim(),
+            "0",
+            "no merge: on top of the newest"
+        );
+
+        // The marker round-trips; a fresh working tree has nothing to compare with.
+        mark_restored(&base, "arcalo-2026.db", chrono::Utc::now()).unwrap();
+        assert_eq!(read_restored(&base).unwrap().from, "arcalo-2026.db");
+        clear_restored(&base);
+        assert!(read_restored(&base).is_none());
+        mark(&base.join("c/mirror"));
+        assert!(check_restore(&git, &req("c", false)).unwrap().is_none());
         let _ = fs::remove_dir_all(&base);
     }
 }

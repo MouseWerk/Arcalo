@@ -389,7 +389,17 @@ fn page_snapshot(state: State<AppState>, page_id: i64) -> Result<Option<i64>> {
 fn page_version_restore(state: State<AppState>, page_id: i64, version_id: i64) -> Result<PageDoc> {
     let db = state.db();
     db.restore_version(page_id, version_id)?;
-    db.page_doc(page_id)
+    let doc = db.page_doc(page_id)?;
+    // Files the version embeds that were deleted since (they were only in old versions) come
+    // back from the file trash.
+    match attachment_manager::bring_back_missing(&state.data_dir, &doc.content) {
+        Ok(back) if !back.is_empty() => {
+            devlog::info("files", format!("{} files restored for a page version", back.len()))
+        }
+        Ok(_) => {}
+        Err(e) => devlog::warn("files", format!("files of a restored version not brought back: {e}")),
+    }
+    Ok(doc)
 }
 
 #[tauri::command(async)]
@@ -540,7 +550,8 @@ fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>)
 static VAULT_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Imports a vault off the main thread: the files are read (and attachments copied) without
-/// the database lock, with `vault://progress` events; only creating the pages takes the lock.
+/// the database lock, with `vault://progress` events; the pages are then written in batches,
+/// each taking the lock only for itself, so the app stays usable during a large import.
 #[tauri::command]
 async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     let dir = PathBuf::from(&path);
@@ -554,7 +565,7 @@ async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
             let _ = app.emit("vault://progress", p);
         };
         let plan = vault::plan_import(&dir, &state.attachments_dir(), &mut progress, &VAULT_CANCEL)?;
-        let report = vault::apply_import(&state.db(), plan)?;
+        let report = vault::apply_import_batched(|| state.db(), plan, &mut progress, &VAULT_CANCEL)?;
         for w in &report.warnings {
             devlog::warn("import", w);
         }
@@ -1372,8 +1383,20 @@ impl AppState {
 /// Refreshes the source (unless the mirror was just written), syncs, records the outcome
 /// and emits `gitsync://done` or `gitsync://failed`. Never holds the database lock while git runs.
 /// `allow_deletions`: the user confirmed a commit that deletes many notes.
-#[tracing::instrument(name = "git_sync", skip(app), fields(source = "git"))]
 pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions: bool) -> Result<SyncOutcome> {
+    run_git_sync_with(app, mirror_fresh, allow_deletions, None)
+}
+
+/// [`run_git_sync`] with the decision after a restored backup (`None`: compare and ask, see
+/// [`gitsync::RESTORED_FILE`]).
+#[tracing::instrument(name = "git_sync", skip(app), fields(source = "git"))]
+pub(crate) fn run_git_sync_with(
+    app: &AppHandle,
+    mirror_fresh: bool,
+    allow_deletions: bool,
+    after_restore: Option<gitsync::AfterRestore>,
+) -> Result<SyncOutcome> {
+    use gitsync::AfterRestore;
     let state = app.state::<AppState>();
     let _running = lock(&state.git_lock);
     let settings = state.settings();
@@ -1393,6 +1416,9 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
     } else {
         None
     };
+    // A restore the user was already asked about: the automatic syncs wait without a new toast.
+    let restored = gitsync::read_restored(&state.data_dir);
+    let asked_before = restored.as_ref().is_some_and(|r| r.checked) && after_restore.is_none();
     let res = (|| {
         let source = state.git_source_dir();
         if settings.markdown_mirror {
@@ -1412,25 +1438,58 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
         for lock in gitsync::remove_stale_locks(&state.git_repo_dir(), gitsync::DEFAULT_TIMEOUT) {
             devlog::warn("git", format!("removed a stale git lock: {}", lock.display()));
         }
-        gitsync::sync(
-            &git,
-            &SyncRequest {
-                repo: &state.git_repo_dir(),
-                source: &source,
-                database: database.as_deref(),
-                settings: &settings.git_sync,
-                host: &gitsync::hostname(),
-                now: Local::now(),
-                hold: &hold,
-                allow_deletions,
-                settings_file: settings_file.clone(),
+        let repo = state.git_repo_dir();
+        let host = gitsync::hostname();
+        let req = SyncRequest {
+            repo: &repo,
+            source: &source,
+            database: database.as_deref(),
+            settings: &settings.git_sync,
+            host: &host,
+            now: Local::now(),
+            hold: &hold,
+            allow_deletions,
+            settings_file: settings_file.clone(),
+        };
+        // After a restored backup nothing is uploaded before the restored notes were compared
+        // with the server's newer state; when they differ, the user decides.
+        let Some(r) = &restored else { return gitsync::sync(&git, &req) };
+        match after_restore.unwrap_or(AfterRestore::Ask) {
+            AfterRestore::Ask => match gitsync::check_restore(&git, &req)? {
+                Some(cmp) if !cmp.changes.is_empty() => {
+                    let r = gitsync::Restored {
+                        checked: true,
+                        changed: cmp.changed(),
+                        server_only: cmp.server_only(),
+                        ..r.clone()
+                    };
+                    gitsync::write_restored(&state.data_dir, &r)?;
+                    Err(gitsync::restore_question(&r))
+                }
+                _ => {
+                    devlog::info("git", "restored backup matches the server, sync goes on");
+                    gitsync::clear_restored(&state.data_dir);
+                    gitsync::sync(&git, &req)
+                }
             },
-        )
+            AfterRestore::Pull => gitsync::pull_restored(&git, &req),
+            AfterRestore::Upload => {
+                gitsync::advance_to_server(&git, &req)?;
+                // The restored state replaces notes made after the backup on purpose.
+                gitsync::sync(&git, &SyncRequest { allow_deletions: true, ..req })
+            }
+        }
     })();
+    let mut taken_over = true;
     if let Ok(out) = &res
         && !out.remote_changes.is_empty()
     {
-        take_over_pulled(app, &state, out);
+        taken_over = take_over_pulled(app, &state, out);
+    }
+    // Decided after a restore: done once the server's notes are in (else the next sync asks again).
+    if res.is_ok() && taken_over && restored.is_some() && after_restore.is_some_and(|c| c != AfterRestore::Ask) {
+        devlog::info("git", format!("after the restore: {after_restore:?} done"));
+        gitsync::clear_restored(&state.data_dir);
     }
     if let Ok(SyncOutcome { settings_file: Some(text), .. }) = &res {
         take_over_settings(app, text);
@@ -1455,7 +1514,10 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
             // Errors from git are redacted already; this is the last line of defence.
             let msg = gitsync::redact(&e.to_string(), token.as_deref());
             db.meta_set(GIT_ERROR, &msg)?;
-            let _ = app.emit("gitsync://failed", &msg);
+            let question = msg.starts_with(gitsync::RESTORE_PREFIX) || msg.starts_with(gitsync::RESTORE_PREFIX_EN);
+            if !(asked_before && question) {
+                let _ = app.emit("gitsync://failed", &msg);
+            }
             let err = Error::State(msg);
             // Same text as the error the UI gets, so the log keeps only this line.
             devlog::error("git", err.to_string());
@@ -1466,8 +1528,9 @@ pub(crate) fn run_git_sync(app: &AppHandle, mirror_fresh: bool, allow_deletions:
 }
 
 /// Takes over the notes a sync pulled from the server (and the attachments they embed) and
-/// tells the UI (`gitsync://pulled`: pages to reload, conflicts to show).
-fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
+/// tells the UI (`gitsync://pulled`: pages to reload, conflicts to show). Returns whether the
+/// notes were taken over.
+fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> bool {
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
         Ok(p) => {
@@ -1510,22 +1573,31 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) {
                 );
             }
             let _ = app.emit("gitsync://pulled", &p);
+            true
         }
-        Err(e) => devlog::error("git", format!("taking over the server's notes failed: {e}")),
+        Err(e) => {
+            devlog::error("git", format!("taking over the server's notes failed: {e}"));
+            false
+        }
     }
 }
 
 /// Syncs now (also when the automatic sync is off, as long as a remote is set).
 /// `allow_deletions`: „Löschungen übertragen“ after a sync stopped before deleting many notes.
+/// `after_restore`: the decision after a restored backup („pull“ or „upload“).
 #[tauri::command]
-async fn git_sync_now(app: AppHandle, allow_deletions: Option<bool>) -> Result<SyncOutcome> {
+async fn git_sync_now(
+    app: AppHandle,
+    allow_deletions: Option<bool>,
+    after_restore: Option<gitsync::AfterRestore>,
+) -> Result<SyncOutcome> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
         return Err(Error::State(
             tr!("Bitte zuerst die Remote-URL eintragen und speichern", "Enter and save the remote URL first").into(),
         ));
     }
     let allow = allow_deletions.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || run_git_sync(&app, false, allow))
+    tauri::async_runtime::spawn_blocking(move || run_git_sync_with(&app, false, allow, after_restore))
         .await
         .map_err(|e| Error::State(e.to_string()))?
 }
@@ -1549,6 +1621,7 @@ fn git_status_of(state: &AppState) -> Result<GitSyncStatus> {
         last_commit,
         last_branch,
         blocked_deletions: last_error.as_deref().and_then(gitsync::guard_count),
+        after_restore: gitsync::read_restored(&state.data_dir),
         last_error,
         pending_changes: gitsync::pending_changes(&state.git_source_dir(), &state.git_repo_dir()),
         token_set: state.git_secret.get().is_some(),
@@ -3548,6 +3621,7 @@ fn spawn_activity_sampler(app: AppHandle) {
             let state = app.state::<AppState>();
             let idle = probe.idle_duration();
             security::tick(&app, idle);
+            desktop::precreate_capture_when_idle(&app, idle);
             let window = probe.foreground_window();
             let threshold = Duration::from_secs(state.settings().idle_threshold_minutes * 60);
             let is_idle = idle.is_some_and(|d| d >= threshold);
@@ -4230,6 +4304,12 @@ pub fn run() {
             if let Err(e) = db.onboarding_classify() {
                 devlog::warn("core", format!("first-run check failed: {e}"));
             }
+            // A vault import cut off by a crash: its pages were never complete.
+            match vault::discard_unfinished_import(&db) {
+                Ok(Some(n)) => devlog::warn("import", format!("unfinished vault import removed ({n} pages)")),
+                Ok(None) => {}
+                Err(e) => devlog::warn("import", format!("unfinished vault import not removed: {e}")),
+            }
             if let Err(e) = db.purge_expired_trash(Utc::now()) {
                 devlog::warn("core", format!("trash cleanup failed: {e}"));
             }
@@ -4427,6 +4507,9 @@ pub fn run() {
             security::cipher_recovery_save,
             security::cipher_switch,
             security::cipher_password,
+            security::cipher_rekey_prepare,
+            security::cipher_rekey,
+            security::cipher_rekey_cancel,
             security::cipher_drop_old,
             security::cipher_drop_plain_backups,
             security::applock_status,

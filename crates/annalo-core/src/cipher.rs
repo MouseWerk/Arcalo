@@ -24,6 +24,11 @@
 //! the swap, the original is untouched) or finished at the next start. The previous file stays as
 //! `workspace.db.cipher-old` until the start after that, then it is overwritten and deleted
 //! ([`secure_delete`]; on SSDs and copy-on-write file systems overwriting is best effort).
+//!
+//! Changing the key ([`Direction::Rekey`]) is the same switch from encrypted to encrypted: the new
+//! key waits in the credential store next to the old one until the swap ([`run_pending_keys`]),
+//! the database is never written unencrypted, and a crash leaves the old file with the old key
+//! or the new file with the new key ([`next_key_fate`] tells the start which one).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -51,6 +56,8 @@ pub const NEW_FILE: &str = "workspace.db.cipher-new";
 pub const OLD_FILE: &str = "workspace.db.cipher-old";
 /// The key wrapped with a password (optional, see [`WrappedKey`]).
 pub const WRAPPED_FILE: &str = "db-key.wrapped.json";
+/// The new key of a key change wrapped with the same password, until the swap.
+pub const WRAPPED_NEXT_FILE: &str = "db-key.wrapped.next.json";
 /// The first bytes of every plain SQLite file.
 const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 /// Bytes of the checksum at the end of a recovery code.
@@ -405,6 +412,8 @@ pub fn secure_delete(path: &Path) -> Result<()> {
 pub enum Direction {
     Encrypt,
     Decrypt,
+    /// From the current key to a new one (encrypted to encrypted).
+    Rekey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -465,14 +474,16 @@ pub fn request(dir: &Path, direction: Direction, now: DateTime<Utc>) -> Result<(
     let state = file_state(&dir.join(DB_FILE));
     let already = match direction {
         Direction::Encrypt => state == FileState::Encrypted,
-        Direction::Decrypt => state != FileState::Encrypted,
+        Direction::Decrypt | Direction::Rekey => state != FileState::Encrypted,
     };
     if already {
         return Err(Error::State(match direction {
             Direction::Encrypt => {
                 tr!("Die Datenbank ist schon verschlüsselt", "The database is already encrypted").into()
             }
-            Direction::Decrypt => tr!("Die Datenbank ist nicht verschlüsselt", "The database is not encrypted").into(),
+            Direction::Decrypt | Direction::Rekey => {
+                tr!("Die Datenbank ist nicht verschlüsselt", "The database is not encrypted").into()
+            }
         }));
     }
     // The previous file of an earlier switch goes now (it is replaced by this one's).
@@ -505,10 +516,20 @@ pub type KillHook<'a> = &'a dyn Fn(&str) -> bool;
 /// database key (needed in both directions). `Ok(Some)` when the switch finished now;
 /// `Err` when it was rolled back (the database is unchanged; the reason is logged and shown).
 pub fn run_pending(dir: &Path, key: Option<&DbKey>) -> Result<Option<Outcome>> {
-    run_pending_with(dir, key, &|_| false)
+    run_pending_keys(dir, key, None, &|_| false)
 }
 
 pub fn run_pending_with(dir: &Path, key: Option<&DbKey>, kill: KillHook) -> Result<Option<Outcome>> {
+    run_pending_keys(dir, key, None, kill)
+}
+
+/// [`run_pending_with`] with the new key of a key change (`next`, needed for [`Direction::Rekey`]).
+pub fn run_pending_keys(
+    dir: &Path,
+    key: Option<&DbKey>,
+    next: Option<&DbKey>,
+    kill: KillHook,
+) -> Result<Option<Outcome>> {
     let Some(mut m) = read_marker(dir) else { return Ok(None) };
     let (db, new, old) = (dir.join(DB_FILE), dir.join(NEW_FILE), dir.join(OLD_FILE));
     let crashed = || Err(Error::State("killed (test)".into()));
@@ -524,13 +545,19 @@ pub fn run_pending_with(dir: &Path, key: Option<&DbKey>, kill: KillHook) -> Resu
         let (src_key, dst_key) = match m.direction {
             Direction::Encrypt => (None, Some(key)),
             Direction::Decrypt => (Some(key), None),
+            Direction::Rekey => match next {
+                Some(next) if next != key => (Some(key), Some(next)),
+                _ => return rollback(Error::State(missing_key_text())),
+            },
         };
         let wanted = match m.direction {
             Direction::Encrypt => FileState::Plain,
-            Direction::Decrypt => FileState::Encrypted,
+            Direction::Decrypt | Direction::Rekey => FileState::Encrypted,
         };
-        if file_state(&db) != wanted {
-            // Already switched (a restored backup, a second request): nothing to do.
+        // Already switched (a restored backup, a second request, a key change that finished).
+        let done = file_state(&db) != wanted
+            || (m.direction == Direction::Rekey && dst_key.is_some_and(|k| key_opens(&db, k)));
+        if done {
             remove_marker(dir);
             return Ok(None);
         }
@@ -585,6 +612,30 @@ pub fn run_pending_with(dir: &Path, key: Option<&DbKey>, kill: KillHook) -> Resu
         return Ok(Some(Outcome { direction: m.direction }));
     }
     Ok(None)
+}
+
+/// What the start does with the new key of a key change found in the credential store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NextKey {
+    /// It opens the database: the change is done, it becomes the key.
+    Promote,
+    /// The change is still to run (or to repeat): kept.
+    Keep,
+    /// The change was rolled back or never asked for: dropped.
+    Drop,
+}
+
+/// Decides about the new key of a key change after [`run_pending_keys`] (also after a crash
+/// between the swap and storing the new key as the key).
+pub fn next_key_fate(dir: &Path, next: &DbKey) -> NextKey {
+    let db = dir.join(DB_FILE);
+    if file_state(&db) == FileState::Encrypted && key_opens(&db, next) {
+        return NextKey::Promote;
+    }
+    match read_marker(dir) {
+        Some(m) if m.direction == Direction::Rekey && m.step != Step::Swapped => NextKey::Keep,
+        _ => NextKey::Drop,
+    }
 }
 
 /// The database opened after a switch: the first time this is noted, the second time (the next
@@ -706,6 +757,26 @@ impl WrappedKey {
             fs::remove_file(&path).at(&path)?;
         }
         Ok(())
+    }
+
+    /// Keeps the new key of a key change wrapped with the same password until the swap.
+    pub fn write_next(&self, dir: &Path) -> Result<()> {
+        let path = dir.join(WRAPPED_NEXT_FILE);
+        fs::write(&path, serde_json::to_vec_pretty(self)?).at(&path)
+    }
+
+    /// The key change finished: the wrapped new key replaces the old one (if there is one).
+    pub fn promote_next(dir: &Path) -> Result<()> {
+        let next = dir.join(WRAPPED_NEXT_FILE);
+        if next.exists() {
+            fs::rename(&next, dir.join(WRAPPED_FILE)).at(&next)?;
+            fsync_dir(dir);
+        }
+        Ok(())
+    }
+
+    pub fn remove_next(dir: &Path) {
+        let _ = fs::remove_file(dir.join(WRAPPED_NEXT_FILE));
     }
 }
 

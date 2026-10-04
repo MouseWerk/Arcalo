@@ -25,7 +25,7 @@ import { checkForUpdates, loadUpdateStatus, showReleaseNotes, undoSkip, UpdateAc
 import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
 import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
-import type { BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, SettingsScope, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
+import type { AfterRestore, BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, SettingsScope, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
 import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
@@ -1159,6 +1159,29 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       setTesting(false);
     }
   };
+  const afterRestore = async (choice: AfterRestore) => {
+    if (choice === "upload") {
+      const r = status?.after_restore;
+      const ok = await s().confirm({
+        title: t("set.git.restoredUploadAsk"),
+        message: t("set.git.restoredUploadText", { n: r?.server_only ?? 0 }),
+        confirmLabel: t("set.git.restoredUpload"),
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setSyncing(true);
+    try {
+      const r = await api.gitSyncNow(false, choice);
+      s().toast({ tone: "success", title: choice === "pull" ? t("set.git.restoredPulled") : t("set.git.synced"), detail: r.message });
+      onSynced();
+    } catch {
+      // The shell emits gitsync://failed, which shows the toast; the status line shows the error.
+    } finally {
+      setSyncing(false);
+      reload();
+    }
+  };
   const syncNow = async (allowDeletions = false) => {
     if (allowDeletions) {
       const n = status?.blocked_deletions ?? 0;
@@ -1293,7 +1316,9 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
         label={t("set.git.last")}
         description={
           <span className="git-status">
-            {status?.last_error ? (
+            {status?.after_restore?.checked ? (
+              <span className="mirror-error">{t("app.gitRestoreWaits")}</span>
+            ) : status?.last_error ? (
               <span className="mirror-error">{t("common.failedWith", { msg: status.last_error })}</span>
             ) : status?.last_at ? (
               <span>
@@ -1312,6 +1337,22 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
           {t("set.git.syncNow")}
         </Button>
       </Row>
+      {status?.after_restore?.checked ? (
+        <Row
+          stack
+          label={t("set.git.restored")}
+          description={t("set.git.restoredDesc", { from: status.after_restore.from, changed: status.after_restore.changed, only: status.after_restore.server_only })}
+        >
+          <div className="git-restored-actions">
+            <Button variant="primary" icon={Download} onClick={() => void afterRestore("pull")} loading={syncing}>
+              {t("set.git.restoredPull")}
+            </Button>
+            <Button icon={Upload} onClick={() => void afterRestore("upload")} disabled={syncing}>
+              {t("set.git.restoredUpload")}
+            </Button>
+          </div>
+        </Row>
+      ) : null}
       {status?.blocked_deletions ? (
         <Row label={t("set.git.deletionsHeld")} description={t("set.git.deletionsHeldDesc", { n: status.blocked_deletions })}>
           <Button variant="danger" icon={Trash2} onClick={() => syncNow(true)} disabled={syncing}>

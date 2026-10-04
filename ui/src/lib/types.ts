@@ -633,7 +633,19 @@ export interface GitSyncStatus {
   token_set: boolean;
   /** The last sync stopped before deleting this many notes on the server ("Löschungen übertragen"). */
   blocked_deletions?: number | null;
+  /** A backup was restored: the sync compares with the server first and asks when they differ. */
+  after_restore?: GitRestored | null;
 }
+export interface GitRestored {
+  /** File name of the restored backup. */
+  from: string;
+  at: string;
+  /** A sync compared and waits for the decision. */
+  checked: boolean;
+  changed: number;
+  server_only: number;
+}
+export type AfterRestore = "pull" | "upload";
 export interface GitSyncOutcome {
   commit: string | null;
   committed: boolean;
@@ -1212,6 +1224,10 @@ export interface AttachmentInfo {
   /** SVG preview of a drawing. */
   preview: string | null;
   used_in: PageUse[];
+  /** Pages whose older versions embed the file while their current text does not. */
+  in_versions?: PageUse[];
+  /** The file of a stored e-mail („E-Mail als Aufgabe / Notiz“). */
+  mail?: boolean;
 }
 export interface AttachmentList {
   files: AttachmentInfo[];

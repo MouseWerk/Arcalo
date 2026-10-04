@@ -64,6 +64,13 @@ pub struct AttachmentInfo {
     pub preview: Option<String>,
     /// Pages that embed the file (trashed pages included, marked).
     pub used_in: Vec<PageUse>,
+    /// Pages whose saved versions embed the file while their current text does not: deleting
+    /// it would leave a hole when such a version is restored.
+    #[serde(default)]
+    pub in_versions: Vec<PageUse>,
+    /// The file of an e-mail stored with „E-Mail als Aufgabe / Notiz“ (its link opens it).
+    #[serde(default)]
+    pub mail: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -278,6 +285,50 @@ impl Database {
         Ok(out)
     }
 
+    /// Pages per file name (lower-case) that only older versions of the page refer to; pages
+    /// whose current text refers to the file are left out.
+    pub fn version_usage(&self) -> Result<HashMap<String, Vec<PageUse>>> {
+        let current = self.attachment_usage()?;
+        let mut st = self.conn().prepare(
+            "SELECT p.id, p.title, v.content, p.deleted_at IS NOT NULL, p.kind = 'canvas' FROM page_versions v
+             JOIN pages p ON p.id = v.page_id
+             WHERE instr(v.content, '[[') > 0 OR instr(v.content, '](') > 0 OR p.kind = 'canvas'
+             ORDER BY p.deleted_at IS NOT NULL, p.title COLLATE NOCASE, p.id",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, Option<bool>>(4)?.unwrap_or(false),
+            ))
+        })?;
+        let mut out: HashMap<String, Vec<PageUse>> = HashMap::new();
+        for row in rows {
+            let (id, title, content, trashed, canvas) = row?;
+            let names = if canvas { crate::canvas::files(&content) } else { referenced_files(&content) };
+            for name in names {
+                let lower = name.to_lowercase();
+                if current.get(&lower).is_some_and(|u| u.iter().any(|u| u.id == id)) {
+                    continue;
+                }
+                let uses = out.entry(lower).or_default();
+                if !uses.iter().any(|u| u.id == id) {
+                    uses.push(PageUse { id, title: title.clone(), trashed });
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Files (lower-case) of e-mails stored with „E-Mail als Aufgabe / Notiz“.
+    pub fn mail_files(&self) -> Result<std::collections::HashSet<String>> {
+        let mut st = self.conn().prepare("SELECT file FROM mail_links WHERE file <> ''")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.filter_map(|r| r.ok()).map(|f| f.to_lowercase()).collect())
+    }
+
     /// Pages (trashed ones too) that refer to `name`.
     pub fn pages_using(&self, name: &str) -> Result<Vec<PageUse>> {
         Ok(self.attachment_usage()?.remove(&name.to_lowercase()).unwrap_or_default())
@@ -308,6 +359,8 @@ fn visible_files(dir: &Path) -> Result<Vec<(String, fs::Metadata)>> {
 pub fn list(db: &Database, attachments_dir: &Path) -> Result<AttachmentList> {
     let files = visible_files(attachments_dir)?;
     let usage = db.attachment_usage()?;
+    let versions = db.version_usage()?;
+    let mails = db.mail_files()?;
     let names: std::collections::HashSet<String> = files.iter().map(|(n, _)| n.to_lowercase()).collect();
     let mut out = Vec::new();
     let mut total = 0;
@@ -337,6 +390,8 @@ pub fn list(db: &Database, attachments_dir: &Path) -> Result<AttachmentList> {
             modified: modified(meta),
             preview,
             used_in: usage.get(&lower).cloned().unwrap_or_default(),
+            in_versions: versions.get(&lower).cloned().unwrap_or_default(),
+            mail: mails.contains(&lower),
         });
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.name.cmp(&b.name)));
@@ -555,6 +610,33 @@ pub fn restore_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Files `content` (a note or a canvas) refers to that are missing from the attachments but lie
+/// in the file trash come back (the newest deletion of each); for a restored page version that
+/// embeds a file deleted since. Returns the names restored.
+pub fn bring_back_missing(data_dir: &Path, content: &str) -> Result<Vec<String>> {
+    let dir = attachments::dir(data_dir);
+    let mut names = referenced_files(content);
+    names.extend(crate::canvas::files(content));
+    let missing: Vec<String> = names.into_iter().filter(|n| !dir.join(n).exists()).collect();
+    if missing.is_empty() {
+        return Ok(vec![]);
+    }
+    // Newest first: the last state of a file deleted twice.
+    let mut trashed = trashed_files(data_dir)?;
+    trashed.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+    let mut back = Vec::new();
+    for name in missing {
+        if back.iter().any(|b: &String| b.eq_ignore_ascii_case(&name)) {
+            continue;
+        }
+        if let Some(t) = trashed.iter().find(|t| t.name.eq_ignore_ascii_case(&name)) {
+            restore_file(data_dir, &t.id, &t.name)?;
+            back.push(t.name.clone());
+        }
+    }
+    Ok(back)
+}
+
 /// Deletes a file from the trash for good.
 pub fn purge_file(data_dir: &Path, id: &str, name: &str) -> Result<()> {
     let folder = trashed_path(data_dir, id, name)?;
@@ -668,6 +750,49 @@ mod tests {
         let x = get("daten.xlsx");
         assert_eq!((x.kind, x.used_in.len(), x.used_in[0].trashed), (FileKind::Other, 1, true));
         assert!(x.modified.is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn files_of_old_versions_and_stored_mails_are_not_unused() {
+        let dir = tmp("versions");
+        let att = dir.join("attachments");
+        for f in ["alt.png", "neu.png", "Mail.eml", "frei.png"] {
+            fs::write(att.join(f), b"x").unwrap();
+        }
+        let db = Database::open_in_memory().unwrap();
+        let a = page(&db, "Alpha", "![[alt.png]]");
+        db.snapshot_page(a).unwrap();
+        db.save_page_content(a, "![[neu.png]]").unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO mail_links (id, source, file, created_at) VALUES ('m1', 'eml', 'Mail.eml', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        let l = list(&db, &att).unwrap();
+        let get = |n: &str| l.files.iter().find(|f| f.name == n).unwrap();
+        let old = get("alt.png");
+        assert!(old.used_in.is_empty());
+        assert_eq!(old.in_versions.iter().map(|u| u.id).collect::<Vec<_>>(), [a]);
+        // In the current text: not listed again under the versions.
+        assert!(get("neu.png").in_versions.is_empty() && get("neu.png").used_in.len() == 1);
+        assert!(get("Mail.eml").mail && !get("frei.png").mail);
+        assert!(get("frei.png").used_in.is_empty() && get("frei.png").in_versions.is_empty());
+
+        // Deleted anyway: restoring the version brings the file back from the file trash.
+        trash_files(&dir, &["alt.png".into()]).unwrap();
+        let v: i64 = db
+            .conn()
+            .query_row("SELECT id FROM page_versions WHERE page_id = ?1 AND content LIKE '%alt.png%'", [a], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        db.restore_version(a, v).unwrap();
+        let content = db.page_doc(a).unwrap().content;
+        assert_eq!(bring_back_missing(&dir, &content).unwrap(), ["alt.png"]);
+        assert!(att.join("alt.png").is_file());
+        assert!(bring_back_missing(&dir, &content).unwrap().is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -89,6 +89,9 @@ pub struct Desktop {
     /// The open popup (capture, search) was called up while another program had the focus: on
     /// macOS dismissing it hides Arcalo again, so that program gets the focus back.
     popup_from_other_app: AtomicBool,
+    /// The capture window is created once the user is idle, not right after the start (the
+    /// desktop portal hangs, see [`precreate_capture`]).
+    capture_deferred: AtomicBool,
 }
 
 impl Desktop {
@@ -454,17 +457,86 @@ pub fn open_capture(app: &AppHandle, selection: bool) {
 const CAPTURE_POPUP: Popup =
     Popup { label: CAPTURE, title: "Schnellerfassung – Arcalo", size: (640.0, 148.0), transparent: true };
 
-/// Creates the capture window hidden a moment after start, so the shortcut only has to show it.
+/// Creates the capture window hidden a moment after start, so the shortcut only has to show it
+/// (created on first use it takes about half a second more).
+///
+/// Linux: creating a window reads the color scheme from the desktop portal on the main thread
+/// (tao, up to 5 s). On a desktop whose portal hangs that froze the app right after it got ready,
+/// so the portal is asked first, off the main thread: when it does not answer in time the window
+/// is created once the user has been idle for a while ([`precreate_capture_when_idle`]), or on
+/// first use, whichever comes first.
 pub fn precreate_capture(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(1500));
-        if app.get_webview_window(CAPTURE).is_none()
-            && let Err(e) = popup_window(&app, &CAPTURE_POPUP)
-        {
-            crate::devlog::warn("desktop", format!("quick capture window not prepared: {e}"));
+        if !portal_answers() {
+            crate::devlog::warn(
+                "desktop",
+                "the desktop portal does not answer: quick capture window prepared when idle",
+            );
+            desktop(&app).capture_deferred.store(true, Ordering::Relaxed);
+            return;
         }
+        prepare_capture(&app);
     });
+}
+
+fn prepare_capture(app: &AppHandle) {
+    if app.get_webview_window(CAPTURE).is_none()
+        && let Err(e) = popup_window(app, &CAPTURE_POPUP)
+    {
+        crate::devlog::warn("desktop", format!("quick capture window not prepared: {e}"));
+    }
+}
+
+/// Idle this long before a deferred capture window is created (its main-thread pause then
+/// meets nobody).
+pub const CAPTURE_IDLE: Duration = Duration::from_secs(20);
+
+/// Whether a deferred capture window is due: deferred, and no input for [`CAPTURE_IDLE`].
+fn capture_due(deferred: bool, idle: Option<Duration>) -> bool {
+    deferred && idle.is_some_and(|d| d >= CAPTURE_IDLE)
+}
+
+/// Called with the input idle time every few seconds (activity sampler).
+pub fn precreate_capture_when_idle(app: &AppHandle, idle: Option<Duration>) {
+    let d = desktop(app);
+    if capture_due(d.capture_deferred.load(Ordering::Relaxed), idle) {
+        d.capture_deferred.store(false, Ordering::Relaxed);
+        let app = app.clone();
+        // Not from the sampler's thread: building a webview there could deadlock on Windows.
+        std::thread::spawn(move || prepare_capture(&app));
+    }
+}
+
+/// How long the portal may take to refuse before it counts as hanging (tao waits 5 s).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const PORTAL_PATIENCE: Duration = Duration::from_millis(1000);
+
+/// Whether the desktop portal answers the color-scheme read at once (an answer or a quick
+/// refusal, such as no portal at all). Only a slow one blocks window creation.
+#[cfg(target_os = "linux")]
+fn portal_answers() -> bool {
+    use dbus::arg::{RefArg, Variant};
+    use dbus::blocking::Connection;
+    let Ok(conn) = Connection::new_session() else { return true };
+    let proxy =
+        conn.with_proxy("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", Duration::from_secs(5));
+    let started = Instant::now();
+    let res: std::result::Result<(Variant<Box<dyn RefArg>>,), dbus::Error> =
+        proxy.method_call("org.freedesktop.portal.Settings", "Read", ("org.freedesktop.appearance", "color-scheme"));
+    portal_fast(res.is_ok(), started.elapsed())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn portal_answers() -> bool {
+    true
+}
+
+/// An answer counts however long it took (the portal runs now); an error only when it came quickly.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn portal_fast(answered: bool, took: Duration) -> bool {
+    answered || took < PORTAL_PATIENCE
 }
 
 /// A small undecorated window above all others (quick capture, quick search), loading the
@@ -1319,6 +1391,20 @@ pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<DesktopInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_capture_window_waits_for_a_hanging_portal_and_idle_time() {
+        // An answer, or a quick refusal (no portal on the bus): created right after the start.
+        assert!(portal_fast(true, Duration::from_millis(4000)));
+        assert!(portal_fast(false, Duration::from_millis(20)));
+        // A refusal after a long wait: the portal hangs, window creation would block.
+        assert!(!portal_fast(false, Duration::from_millis(1500)));
+        // Deferred: only once nobody has used the computer for a while.
+        assert!(!capture_due(true, None));
+        assert!(!capture_due(true, Some(Duration::from_secs(5))));
+        assert!(capture_due(true, Some(CAPTURE_IDLE)));
+        assert!(!capture_due(false, Some(Duration::from_secs(600))));
+    }
 
     #[test]
     fn tray_has_timer_entries_only_with_time_tracking() {
