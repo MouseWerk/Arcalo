@@ -89,6 +89,31 @@ describe("smart paste", () => {
     e2.destroy();
   });
 
+  it("shows Markdown copied as plain text formatted, undoable to the text", () => {
+    const editor = setup("Vorher\n\n");
+    const md = "## Plan\n\n- [ ] Angebot an [[Kunde X]]\n- **wichtig**\n\n| A   | B   |\n| --- | --- |\n| 1   | 2   |\n";
+    expect(paste(editor, md)).toBe(true);
+    expect(toMarkdown(editor)).toBe("Vorher\n\n" + md);
+    document.querySelector<HTMLElement>(".paste-hint")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(editor.state.doc.textContent).toContain("## Plan");
+    editor.destroy();
+  });
+
+  it("inserts inline Markdown into the line, also from a code editor's HTML", () => {
+    const editor = setup("Start \n");
+    expect(paste(editor, "mit **fett** und [[Seite]]", '<div style="white-space: pre;"><span>mit **fett** und [[Seite]]</span></div>')).toBe(true);
+    expect(toMarkdown(editor)).toBe("Start mit **fett** und [[Seite]]\n");
+    editor.destroy();
+  });
+
+  it("leaves web pages, lone list-like lines and prose with stars to the normal paste", () => {
+    const editor = setup("\n");
+    expect(paste(editor, "## Titel\n- a\n- b", "<h2>Titel</h2><ul><li>a</li><li>b</li></ul>")).toBe(false);
+    expect(paste(editor, "- nur eine Zeile")).toBe(false);
+    expect(paste(editor, "2*3*4 ergibt 24\nund a_b_c bleibt")).toBe(false);
+    editor.destroy();
+  });
+
   it("cleans titles", () => {
     expect(cleanTitle("  a \n b ", "u")).toBe("a b");
     expect(cleanTitle("u", "u")).toBeNull();

@@ -12,7 +12,8 @@ export type PasteKind =
   | { kind: "table"; rows: string[][] }
   | { kind: "chat"; messages: ChatMessage[] }
   | { kind: "url"; url: string }
-  | { kind: "code"; code: string; language: string | null };
+  | { kind: "code"; code: string; language: string | null }
+  | { kind: "markdown"; markdown: string };
 
 const lines = (text: string) => text.replace(/\r\n?/g, "\n").split("\n");
 
@@ -255,5 +256,26 @@ export function classifyPaste(text: string, html = ""): PasteKind | null {
   if (table) return { kind: "table", rows: table };
   const chat = text.includes("\n") ? parseTeamsChat(text) : null;
   if (chat) return { kind: "chat", messages: chat };
+  if (isMarkdownText(text, html)) return { kind: "markdown", markdown: text.replace(/\r\n?/g, "\n") };
   return null;
+}
+
+// ------------------------------------------------------------- markdown
+
+// Lines that make text Markdown: headings, list items and tasks, quotes and callouts, fences, table rows.
+const MD_BLOCK = /^ {0,3}(?:#{1,6}[ \t]+\S|[-*+][ \t]+\S|\d{1,3}[.)][ \t]+\S|>[ \t]?\S|```|~~~|\|.*\|[ \t]*$)/;
+// Inline syntax that plain prose does not contain by accident: bold, wiki links, links, code spans.
+const MD_INLINE = /\*\*[^*\n]+\*\*|\[\[[^\]\n]+\]\]|\[[^\]\n]+\]\((?:https?:|mailto:|<)[^)\n]*\)|(?:^|\s)`[^`\n]+`/;
+
+/**
+ * Markdown copied as plain text (a `.md` file, a code editor, an AI chat): shown formatted instead of
+ * as literal `#`, `-` and `**`. Only plain text or a code editor's HTML (monospace lines) counts, so
+ * web pages and Office keep their own formatting, and a lone list-like line stays as typed text.
+ */
+export function isMarkdownText(text: string, html = ""): boolean {
+  if (html && !/white-space:\s*pre|<pre[\s>]/i.test(html)) return false;
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const blocks = lines.filter((l) => MD_BLOCK.test(l)).length;
+  if (blocks >= 2 || (blocks === 1 && /^ {0,3}(?:#{1,6}[ \t]|```|~~~)/m.test(text))) return true;
+  return MD_INLINE.test(text);
 }

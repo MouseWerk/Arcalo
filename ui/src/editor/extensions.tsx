@@ -3,7 +3,7 @@
 
 import { Extension, InputRule, Node, mergeAttributes, type Editor, type Range } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { Decoration, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import Image from "@tiptap/extension-image";
@@ -37,12 +37,37 @@ import { useApp } from "../store/app";
 // ------------------------------------------------------------- wiki links
 
 export interface WikiLinkOptions {
-  onOpen: (target: string, newTab: boolean) => void;
+  /** `anchor`: the heading or `^block` after `#` to show (`target` "" is the same page). */
+  onOpen: (target: string, newTab: boolean, anchor: string | null) => void;
   isKnown: (target: string) => boolean;
   /** Size in bytes of an attachment (`null`: missing), for `[[Angebot.pdf]]` file links. */
   fileSize: (name: string) => Promise<number | null>;
   /** Opens the file of a file link (`anchor`: `page=3` of `[[a.pdf#page=3]]`). */
   onOpenFile: (name: string, anchor: string | null) => void;
+}
+
+/**
+ * The link at the caret, for Alt+Enter: a selected wiki link or one right before/after the caret,
+ * else a web link the caret is in.
+ */
+export function linkAtCaret(state: EditorState): { wiki: { target: string; anchor: string | null } } | { href: string } | null {
+  const sel = state.selection as EditorState["selection"] & { node?: PMNode };
+  const wikiOf = (n: PMNode | null | undefined) => (n?.type.name === "wikiLink" ? { wiki: { target: n.attrs.target as string, anchor: (n.attrs.anchor as string | null) ?? null } } : null);
+  const selected = wikiOf(sel.node);
+  if (selected) return selected;
+  const { $from } = sel;
+  const near = wikiOf($from.nodeAfter) ?? wikiOf($from.nodeBefore);
+  if (near) return near;
+  const link = [...$from.marks(), ...($from.nodeAfter?.marks ?? [])].find((m) => m.type.name === "link");
+  return link?.attrs.href ? { href: link.attrs.href as string } : null;
+}
+
+/** What a wiki link shows: its alias, `Seite › Abschnitt`, or only the section on the same page. */
+export function wikiLabel(node: { attrs: Record<string, unknown> }): string {
+  const { target, anchor, alias } = node.attrs as { target: string; anchor: string | null; alias: string | null };
+  if (alias) return alias;
+  if (!anchor) return target;
+  return target ? `${target} › ${anchor}` : anchor;
 }
 
 export const WikiLink = Node.create<WikiLinkOptions>({
@@ -69,7 +94,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const label = node.attrs.alias || (node.attrs.anchor ? `${node.attrs.target} › ${node.attrs.anchor}` : node.attrs.target);
+    const label = wikiLabel(node);
     return ["a", mergeAttributes(HTMLAttributes, { "data-wikilink": "", "data-target": node.attrs.target, class: "wikilink" }), label];
   },
 
@@ -80,13 +105,14 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       dom.dataset.target = node.attrs.target;
       // `[[Angebot.pdf]]` with no page of that title: a link to the attachment, never a page to create.
       if (!this.options.isKnown(node.attrs.target) && isFileLinkTarget(node.attrs.target)) return fileLinkView(dom, node, this.options);
-      dom.className = `wikilink${this.options.isKnown(node.attrs.target) ? "" : " unresolved"}`;
-      dom.textContent = node.attrs.alias || (node.attrs.anchor ? `${node.attrs.target} › ${node.attrs.anchor}` : node.attrs.target);
-      dom.title = this.options.isKnown(node.attrs.target) ? node.attrs.target : t("ed.unresolved", { target: node.attrs.target });
+      const known = !node.attrs.target || this.options.isKnown(node.attrs.target);
+      dom.className = `wikilink${known ? "" : " unresolved"}`;
+      dom.textContent = wikiLabel(node);
+      dom.title = known ? (node.attrs.target ? node.attrs.target + (node.attrs.anchor ? ` › ${node.attrs.anchor}` : "") : node.attrs.anchor) : t("ed.unresolved", { target: node.attrs.target });
       dom.addEventListener("mousedown", (e) => {
         if (e.button !== 0 && e.button !== 1) return;
         e.preventDefault();
-        this.options.onOpen(node.attrs.target, e.ctrlKey || e.metaKey || e.button === 1);
+        this.options.onOpen(node.attrs.target, e.ctrlKey || e.metaKey || e.button === 1, node.attrs.anchor ?? null);
       });
       return { dom };
     };
@@ -101,8 +127,9 @@ export const WikiLink = Node.create<WikiLinkOptions>({
     level: "inline",
     start: (src: string) => src.indexOf("[["),
     tokenize(src: string) {
-      const m = /^\[\[([^\]|#\n]+)(?:#([^\]|\n]+))?(?:\|([^\]\n]+))?\]\]/.exec(src);
-      if (!m) return undefined;
+      // `[[#Abschnitt]]`: a heading (or `#^id` block) of the same page.
+      const m = /^\[\[([^\]|#\n]*)(?:#([^\]|\n]+))?(?:\|([^\]\n]+))?\]\]/.exec(src);
+      if (!m || (!m[1].trim() && !m[2]?.trim())) return undefined;
       return { type: "wikiLink", raw: m[0], target: m[1].trim(), anchor: m[2]?.trim() ?? null, alias: m[3]?.trim() ?? null };
     },
   },
@@ -739,11 +766,19 @@ export const TagHighlight = Extension.create<{ onOpen: (tag: string) => void }>(
 // ---------------------------------------------------------- frontmatter
 
 /** Splits YAML frontmatter off so the editor never mangles it. */
-export function splitFrontmatter(md: string): { frontmatter: string; body: string } {
+export function splitFrontmatter(md: string): { frontmatter: string; body: string; gap: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(md);
   // A leading horizontal rule is not frontmatter: the first line must be a `key:`.
-  if (!m || !FIRST_LINE_RE.test(m[1].split(/\r?\n/)[0])) return { frontmatter: "", body: md };
-  return { frontmatter: m[0].endsWith("\n") ? m[0] : m[0] + "\n", body: md.slice(m[0].length).replace(/^\r?\n/, "") };
+  if (!m || !FIRST_LINE_RE.test(m[1].split(/\r?\n/)[0])) return { frontmatter: "", body: md, gap: "" };
+  const rest = md.slice(m[0].length);
+  // The blank line between block and text (as written): put back on save, so a save does not change it.
+  const gap = /^\r?\n/.exec(rest)?.[0] ?? "";
+  return { frontmatter: m[0].endsWith("\n") ? m[0] : m[0] + "\n", body: rest.slice(gap.length), gap };
+}
+
+/** Frontmatter, the blank line under it (only with a block) and the text: the inverse of `splitFrontmatter`. */
+export function joinFrontmatter(frontmatter: string, gap: string, body: string): string {
+  return frontmatter ? frontmatter + gap + body : body;
 }
 
 // ------------------------------------------------------------- callouts

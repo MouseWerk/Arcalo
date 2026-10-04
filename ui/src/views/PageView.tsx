@@ -6,6 +6,7 @@ import { openFollowUp, reportMarkdown } from "../components/MeetingWork";
 import { startPresentation } from "../components/Presentation";
 import { api } from "../lib/api";
 import { openIfFileLink } from "../editor/files";
+import { openAtAnchor } from "../editor/reveal";
 import { ConflictBanner } from "./ConflictView";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
@@ -217,14 +218,16 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   const hintsOn = useApp((st) => !!st.settings?.settings.editor?.mention_hints);
   useMentionHints(doc?.id, doc?.updated_at, hintsOn && !source);
 
-  const openLink = useCallback(async (target: string, newTab: boolean) => {
+  const openLink = useCallback(async (target: string, newTab: boolean, anchor?: string | null) => {
     if (openIfFileLink(target)) return;
     try {
       await handle.current?.flush();
       const page = await api.resolvePage(target, true);
       if (!page) return;
       if (!useApp.getState().pages.has(page.id)) await useApp.getState().refreshTree();
-      useApp.getState().openPage(page.id, { newTab: newTab && !altKey.current, split: altKey.current });
+      const opts = { newTab: newTab && !altKey.current, split: altKey.current };
+      // `[[Seite#Abschnitt]]` / `[[Seite#^id]]`: scrolled to that heading or block.
+      await openAtAnchor(page.id, anchor ?? null, (id) => useApp.getState().openPage(id, opts));
     } catch (e) {
       useApp.getState().error(tr("pv.linkFailed"), e);
     }

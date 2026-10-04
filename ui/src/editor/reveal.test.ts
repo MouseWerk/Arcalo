@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildExtensions } from "./schema";
-import { citeFlashKey, editorForPage, FLASH_MS, locateText, registerEditor, revealText } from "./reveal";
+import { citeFlashKey, editorForPage, FLASH_MS, locateAnchor, locateText, registerEditor, revealText } from "./reveal";
 import { citeNeedles } from "../lib/citations";
+import { linkAtCaret } from "./extensions";
 
 let editor: Editor | null = null;
 let host: HTMLElement | null = null;
@@ -88,5 +89,46 @@ describe("revealText", () => {
     e.view.dispatch(e.state.tr.setMeta(citeFlashKey, null));
     expect(citeFlashKey.getState(e.state)!.find()).toHaveLength(0);
     expect(FLASH_MS).toBeGreaterThan(500);
+  });
+});
+
+describe("locateAnchor", () => {
+  const doc = "# Plan\n\n## Ablauf und Größe\n\nText.\n\nEin Absatz mit Kennung ^abc-1\n\n- Punkt ^p2\n\n### Ablauf und Größe\n";
+  const textAt = (e: Editor, r: { from: number; to: number } | null) => (r ? e.state.doc.nodeAt(r.from)?.textContent : null);
+  it("finds a heading by its text, case-insensitive, the first of equal ones", () => {
+    const e = make(doc);
+    const r = locateAnchor(e.state.doc, "ablauf und größe");
+    expect(e.state.doc.nodeAt(r!.from)?.attrs.level).toBe(2);
+    expect(textAt(e, locateAnchor(e.state.doc, "Plan#Ablauf und Größe"))).toBe("Ablauf und Größe");
+  });
+  it("finds a block by its ^id, in paragraphs and list items", () => {
+    const e = make(doc);
+    expect(textAt(e, locateAnchor(e.state.doc, "^abc-1"))).toBe("Ein Absatz mit Kennung ^abc-1");
+    expect(textAt(e, locateAnchor(e.state.doc, "^p2"))).toBe("Punkt ^p2");
+  });
+  it("is null for what the page does not have", () => {
+    const e = make(doc);
+    expect(locateAnchor(e.state.doc, "Fehlt")).toBeNull();
+    expect(locateAnchor(e.state.doc, "^nein")).toBeNull();
+    expect(locateAnchor(e.state.doc, " ")).toBeNull();
+  });
+});
+
+describe("linkAtCaret (Alt+Enter)", () => {
+  it("finds the wiki link next to the caret, a web link around it, nothing in plain text", () => {
+    const e = make("Vor [[Seite#Kopf|Alias]] und [Web](https://example.com) Ende\n");
+    const at = (needle: string) => {
+      let found = -1;
+      e.state.doc.descendants((n, pos) => {
+        if (found < 0 && n.isText && n.text!.includes(needle)) found = pos + n.text!.indexOf(needle);
+      });
+      return found;
+    };
+    e.commands.setTextSelection(at(" und"));
+    expect(linkAtCaret(e.state)).toEqual({ wiki: { target: "Seite", anchor: "Kopf" } });
+    e.commands.setTextSelection(at("Web") + 1);
+    expect(linkAtCaret(e.state)).toEqual({ href: "https://example.com" });
+    e.commands.setTextSelection(at("Ende") + 2);
+    expect(linkAtCaret(e.state)).toBeNull();
   });
 });

@@ -81,7 +81,19 @@ export function pasteContent(kind: PasteKind): JSONContent | JSONContent[] {
       return { type: "codeBlock", attrs: { language: kind.language }, content: [{ type: "text", text: kind.code }] };
     case "url":
       return { type: "text", text: kind.url, marks: [{ type: "link", attrs: { href: kind.url } }] };
+    case "markdown":
+      return [];
   }
+}
+
+/** Pasted Markdown as editor content; a single paragraph is inserted as inline content into the line. */
+export function markdownContent(editor: Editor, markdown: string): JSONContent | JSONContent[] | null {
+  const manager = (editor as unknown as { markdown?: { parse: (md: string) => JSONContent } }).markdown;
+  const doc = manager?.parse(markdown);
+  const blocks = (doc?.content ?? []).filter((n) => !(n.type === "paragraph" && !n.content?.length));
+  if (!blocks.length) return null;
+  if (blocks.length === 1 && blocks[0].type === "paragraph") return blocks[0].content ?? [];
+  return blocks;
 }
 
 /** Cleans a fetched title: one line, at most 200 characters. */
@@ -130,11 +142,13 @@ function pastePlain(view: EditorView, text: string) {
 function insert(editor: Editor, view: EditorView, kind: PasteKind, text: string, seq: number): Hint | null {
   const { from, to } = view.state.selection;
   const size = view.state.doc.content.size;
+  const content = kind.kind === "markdown" ? markdownContent(editor, kind.markdown) : pasteContent(kind);
+  if (!content) return null;
   // A history step of its own: „Als Text einfügen“ undoes exactly the paste, not the typing before it.
   const ok = editor
     .chain()
     .command(({ tr }) => (closeHistory(tr), true))
-    .insertContent(pasteContent(kind), { updateSelection: true })
+    .insertContent(content, { updateSelection: true })
     .scrollIntoView()
     .run();
   if (!ok) return null;
