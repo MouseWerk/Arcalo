@@ -1763,7 +1763,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
 function WhatsNewGroup() {
   const t = useT();
   const current = useUpdates((s) => s.status?.current_version);
-  const versions = knownVersions();
+  const versions = knownVersions(current);
   const [all, setAll] = useState(false);
   const shown = all ? versions : versions.slice(0, 4);
   if (!versions.length) return null;

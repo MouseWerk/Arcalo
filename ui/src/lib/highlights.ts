@@ -104,8 +104,9 @@ export async function bundledNotes(version: string): Promise<string | null> {
   return entry ? entry[1]() : null;
 }
 
-/** The versions the „Neu in Arcalo“ list shows: with highlights or bundled notes, newest first. */
-export function knownVersions(): string[] {
+/** The versions the „Neu in Arcalo“ list shows: with highlights or bundled notes, newest first, none
+ * newer than `current` (the notes of a release in preparation are bundled before it ships). */
+export function knownVersions(current?: string | null): string[] {
   const all = new Set([...HIGHLIGHTS.map((h) => h.version), ...NOTE_VERSIONS]);
-  return [...all].sort((a, b) => compareVersions(b, a));
+  return [...all].filter((v) => !current || compareVersions(v, current) <= 0).sort((a, b) => compareVersions(b, a));
 }

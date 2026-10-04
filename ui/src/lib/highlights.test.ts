@@ -41,6 +41,10 @@ describe("bundled highlights", () => {
     expect(NOTE_VERSIONS).toContain("1.9.0");
     expect(knownVersions()[0]).toBe(NOTE_VERSIONS[0]);
   });
+  it("lists no version newer than the installed one", () => {
+    expect(knownVersions("1.9.0")[0]).toBe("1.9.0");
+    expect(knownVersions("1.9.0").every((v) => compareVersions(v, "1.9.0") <= 0)).toBe(true);
+  });
   for (const h of HIGHLIGHTS) {
     it(`${h.version}: 3–5 items in English and German, short, with valid images and actions`, () => {
       expect(h.items.length).toBeGreaterThanOrEqual(3);
