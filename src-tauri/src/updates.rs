@@ -12,6 +12,9 @@
 //! `Update` it found in a feed; the file it gets was downloaded and verified here, so its
 //! "feed" is a one-shot answer on the loopback interface naming that file's version.
 //!
+//! The Microsoft Store build (`store.rs`) has none of this: the Store updates the package, so
+//! there is no key, no check, no download, no install on quit and no rollback.
+//!
 //! Debug builds take a test feed, key and version from `ANNALO_UPDATE_ENDPOINT`,
 //! `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_CURRENT` (end-to-end tests with a local server);
 //! release builds ignore them.
@@ -45,6 +48,9 @@ fn test_var(name: &str) -> Option<String> {
 
 /// Public key of the signing keypair, compiled in by the release build.
 pub fn pubkey() -> Option<&'static str> {
+    if crate::store::active() {
+        return None;
+    }
     static KEY: OnceLock<Option<String>> = OnceLock::new();
     KEY.get_or_init(|| {
         test_var("ANNALO_UPDATE_PUBKEY")
@@ -190,6 +196,8 @@ pub struct UpdateStatus {
     portable: bool,
     /// Installed as .deb/.rpm: the new package comes from the release page, not installed.
     package: bool,
+    /// The Microsoft Store build: the Store updates it (`enabled` is false).
+    store: bool,
     /// The first call after a start that followed an update: which version, and whether it runs now.
     restarted: Option<AfterUpdate>,
     /// What applies (the policy's values over the settings), and which fields are managed.
@@ -219,6 +227,9 @@ struct Progress {
 }
 
 fn not_configured() -> Error {
+    if crate::store::active() {
+        return Error::State(crate::store::updates_from_store().into());
+    }
     Error::State(core::not_configured().into())
 }
 
@@ -334,6 +345,10 @@ pub fn tray_tip(app: &AppHandle, base: String) -> String {
 
 /// At start: a verified download of an earlier session is still waiting (unless it is old).
 pub fn load_staged(app: &AppHandle) {
+    // A data folder shared with an installed copy may hold its download: not this copy's.
+    if pubkey().is_none() {
+        return;
+    }
     let dir = updates_dir(app);
     let staged: Option<Staged> =
         std::fs::read_to_string(dir.join(STAGED_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok());
@@ -359,17 +374,16 @@ pub fn update_status(app: AppHandle, updates: State<Updates>) -> UpdateStatus {
     let offer = lock(&updates.offer).clone();
     let ready =
         staged.as_ref().filter(|s| offer.as_ref().is_some_and(|o| o.version == s.version)).map(|s| s.version.clone());
-    let rollback = RollbackRecord::load(&data_dir(&app)).filter(|r| r.can_return(&current)).map(|r| RollbackInfo {
-        from: r.from,
-        to: r.to,
-        created: r.created,
-    });
+    let rollback = RollbackRecord::load(&data_dir(&app))
+        .filter(|r| !crate::store::active() && r.can_return(&current))
+        .map(|r| RollbackInfo { from: r.from, to: r.to, created: r.created });
     UpdateStatus {
         enabled: pubkey().is_some(),
         current_version: current,
         available: offer.as_ref().map(UpdateInfo::of),
         portable: crate::portable::active(),
         package: packaged(),
+        store: crate::store::active(),
         restarted: lock(&updates.after).take(),
         install_now: install_window_open(&eff),
         policy: eff,
@@ -887,6 +901,9 @@ pub fn update_whats_new_seen(app: AppHandle, version: String) -> Result<()> {
 /// „Zur vorherigen Version zurückkehren“ (Settings → Über).
 #[tauri::command]
 pub fn update_rollback(app: AppHandle) -> Result<()> {
+    if crate::store::active() {
+        return Err(not_configured());
+    }
     let current = current_version(&app);
     rollback::return_now(&app, &data_dir(&app), &current)?;
     // Test runs go on in this process with the restored database.
@@ -912,6 +929,9 @@ pub async fn update_release_notes(app: AppHandle, version: String) -> Result<Str
 
 /// The window loaded on an opened and migrated database: this version starts fine.
 pub fn mark_healthy(app: &AppHandle) {
+    if crate::store::active() {
+        return;
+    }
     if let Some(state) = app.try_state::<crate::AppState>() {
         st::mark_healthy(&state.data_dir, &current_version(app));
     }

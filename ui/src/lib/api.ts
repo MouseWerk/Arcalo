@@ -281,6 +281,8 @@ export const api = {
   updateRollback: () => call<void>("update_rollback"),
   /** Release notes (Markdown) of a version the app does not bundle, from the repository. */
   updateReleaseNotes: (version: string) => call<string>("update_release_notes", { version }),
+  /** The Microsoft Store build: opens the Store's page of downloads and updates. */
+  storeOpenUpdates: () => call<void>("store_open_updates"),
 
   // developer log (Settings → Protokoll)
   devlogWrite: (level: T.DevLogLevel, source: string, message: string) => call<void>("devlog_write", { level, source, message }),

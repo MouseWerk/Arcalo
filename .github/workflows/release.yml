@@ -16,6 +16,15 @@ name: Release
 # APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY the app is signed with the Developer ID;
 # with APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID it is notarized as well (README → „macOS“).
 
+# Microsoft Store (docs/release/microsoft-store.md): with the repository variables
+# STORE_IDENTITY_NAME, STORE_PUBLISHER and STORE_PUBLISHER_DISPLAY_NAME (Partner Center → Product
+# identity) the Store build is packed as Arcalo_<version>_x64.msix and attached to the release for
+# the upload to Partner Center (unsigned: the Store signs it). With the secrets
+# PARTNER_CENTER_TENANT_ID, PARTNER_CENTER_SELLER_ID, PARTNER_CENTER_CLIENT_ID,
+# PARTNER_CENTER_CLIENT_SECRET and the variable STORE_PRODUCT_ID the package is also submitted with
+# the Microsoft Store Developer CLI (a draft unless STORE_SUBMIT_COMMIT is "true"). Without the
+# variables the job does nothing.
+
 # winget (docs/release/winget.md): with the secret WINGET_TOKEN every release opens a pull request
 # for MouseWerk.Arcalo in microsoft/winget-pkgs. Without it the job does nothing.
 
@@ -275,9 +284,126 @@ jobs:
           name: release-${{ matrix.name }}
           path: dist/*
 
+  # Microsoft Store: the binary with the `store` feature (no self-update, rollback or portable mode)
+  # as an MSIX package with the identity reserved in Partner Center. Does not hold up the release.
+  store:
+    name: Build (Microsoft Store)
+    needs: tag
+    runs-on: windows-latest
+    continue-on-error: true
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
+      STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - name: Check the package identity
+        id: identity
+        shell: bash
+        run: |
+          if [ -z "$STORE_IDENTITY_NAME" ] || [ -z "$STORE_PUBLISHER" ] || [ -z "$STORE_PUBLISHER_DISPLAY_NAME" ]; then
+            echo "::notice::Microsoft Store package skipped: set the repository variables STORE_IDENTITY_NAME, STORE_PUBLISHER and STORE_PUBLISHER_DISPLAY_NAME (Partner Center → Product identity, docs/release/microsoft-store.md)."
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.identity.outputs.set == 'true'
+        with:
+          ref: refs/tags/${{ needs.tag.outputs.tag }}
+      - name: Version from tag
+        if: steps.identity.outputs.set == 'true'
+        shell: bash
+        run: |
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # The app reads its version from Cargo.toml and tauri.conf.json (as in the build job).
+          VERSION="$VERSION" node -e '
+            const fs = require("fs");
+            const p = "src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+            const t = "Cargo.toml";
+            fs.writeFileSync(t, fs.readFileSync(t, "utf8").replace(/^version = "[^"]*"/m, `version = "${process.env.VERSION}"`));
+          '
+      - uses: dtolnay/rust-toolchain@1.94.1
+        if: steps.identity.outputs.set == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.identity.outputs.set == 'true'
+        with:
+          key: store
+      - uses: actions/setup-node@v4
+        if: steps.identity.outputs.set == 'true'
+        with:
+          node-version: 22
+      # No ANNALO_UPDATER_PUBKEY: the Store build has no updater at all.
+      - name: Build
+        if: steps.identity.outputs.set == 'true'
+        shell: bash
+        run: |
+          npm ci --prefix ui
+          npm --prefix ui run build
+          cargo build --release -p annalo --features custom-protocol,store
+      - name: Pack the MSIX
+        id: msix
+        if: steps.identity.outputs.set == 'true'
+        shell: pwsh
+        run: |
+          ./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version $env:VERSION -OutDir dist `
+            -IdentityName $env:STORE_IDENTITY_NAME -Publisher $env:STORE_PUBLISHER `
+            -PublisherDisplayName $env:STORE_PUBLISHER_DISPLAY_NAME
+      - uses: actions/upload-artifact@v4
+        if: steps.identity.outputs.set == 'true'
+        with:
+          name: release-store
+          path: dist/*.msix
+      # Optional: the submission through the Partner Center API (Microsoft Store Developer CLI).
+      - name: Check the Partner Center credentials
+        id: submit
+        if: steps.identity.outputs.set == 'true'
+        shell: bash
+        env:
+          TENANT: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+          SELLER: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+          CLIENT: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+          SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+          PRODUCT: ${{ vars.STORE_PRODUCT_ID }}
+        run: |
+          if [ -n "$TENANT" ] && [ -n "$SELLER" ] && [ -n "$CLIENT" ] && [ -n "$SECRET" ] && [ -n "$PRODUCT" ]; then
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Not submitted to the Store (no Partner Center credentials): upload dist/Arcalo_${VERSION}_x64.msix in Partner Center."
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: microsoft/microsoft-store-apppublisher@v1.4
+        if: steps.submit.outputs.set == 'true'
+      - name: Submit to the Microsoft Store
+        if: steps.submit.outputs.set == 'true'
+        shell: pwsh
+        env:
+          TENANT: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+          SELLER: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+          CLIENT: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+          SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+          PRODUCT: ${{ vars.STORE_PRODUCT_ID }}
+          COMMIT: ${{ vars.STORE_SUBMIT_COMMIT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          msstore reconfigure --tenantId $env:TENANT --sellerId $env:SELLER --clientId $env:CLIENT --clientSecret $env:SECRET
+          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed" }
+          $cli = @("publish", "${{ steps.msix.outputs.msix }}", "--appId", $env:PRODUCT)
+          # A draft by default: the listing (What's new, screenshots) is finished and submitted in Partner Center.
+          if ($env:COMMIT -ne "true") { $cli += "--noCommit" }
+          & msstore @cli
+          if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
+
   publish:
     name: Publish release
-    needs: [tag, build]
+    needs: [tag, build, store]
+    # A failed Store package does not hold up the release (it is attached when it was built).
+    if: ${{ !cancelled() && needs.tag.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.tag.outputs.tag }}

@@ -162,8 +162,10 @@ static SHOWN: Mutex<Option<Content>> = Mutex::new(None);
 
 /// Brings the jump list up to date (timer, language, recent pages). Cheap when nothing changed.
 pub fn refresh(app: &AppHandle) {
-    // A portable copy writes nothing into the user profile (the jump list lives there).
-    if !cfg!(windows) || crate::portable::active() {
+    // A portable copy writes nothing into the user profile (the jump list lives there). The
+    // Store package's entries start it through its app execution alias (a link to the program
+    // file inside the package would start it without its package identity).
+    if !cfg!(windows) || crate::portable::active() || (crate::store::packaged() && crate::store::alias().is_none()) {
         return;
     }
     let Some(state) = app.try_state::<AppState>() else { return };
@@ -229,12 +231,12 @@ mod win {
     }
 
     /// A shell link that starts this program with the entry's argument.
-    fn link(exe: &HSTRING, e: &Entry) -> Result<IShellLinkW> {
+    fn link((exe, icon): (&HSTRING, &HSTRING), e: &Entry) -> Result<IShellLinkW> {
         unsafe {
             let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
             link.SetPath(exe)?;
             link.SetArguments(&HSTRING::from(e.action.arg()))?;
-            link.SetIconLocation(exe, 0)?;
+            link.SetIconLocation(icon, 0)?;
             link.SetDescription(&HSTRING::from(e.title.as_str()))?;
             // The visible title is a property of the link (VT_LPWSTR).
             let store: IPropertyStore = link.cast()?;
@@ -254,7 +256,7 @@ mod win {
         }
     }
 
-    fn collection(exe: &HSTRING, entries: &[Entry]) -> Result<IObjectArray> {
+    fn collection(exe: (&HSTRING, &HSTRING), entries: &[Entry]) -> Result<IObjectArray> {
         unsafe {
             let items: IObjectCollection = CoCreateInstance(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)?;
             for e in entries {
@@ -267,7 +269,9 @@ mod win {
     pub fn apply(c: &Content) -> Result<()> {
         let exe = std::env::current_exe()
             .map_err(|e| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, e.to_string()))?;
-        let exe = HSTRING::from(exe.as_os_str());
+        let icon = HSTRING::from(exe.as_os_str());
+        let exe = crate::store::alias().map_or_else(|| icon.clone(), |a| HSTRING::from(a.as_os_str()));
+        let exe = (&exe, &icon);
         unsafe {
             let list: ICustomDestinationList = CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER)?;
             let mut slots = 0u32;
@@ -277,9 +281,9 @@ mod win {
             let keep = |e: &&Entry| !removed_args.contains(&e.action.arg());
             let recent: Vec<Entry> = c.recent.iter().filter(keep).cloned().collect();
             if !recent.is_empty() {
-                list.AppendCategory(&HSTRING::from(c.recent_title.as_str()), &collection(&exe, &recent)?)?;
+                list.AppendCategory(&HSTRING::from(c.recent_title.as_str()), &collection(exe, &recent)?)?;
             }
-            list.AddUserTasks(&collection(&exe, &c.tasks)?)?;
+            list.AddUserTasks(&collection(exe, &c.tasks)?)?;
             list.CommitList()
         }
     }

@@ -9,7 +9,9 @@
 //!   hands it to the running app (or the first start picks it up). This also works from the
 //!   Action Center after the toast left the screen, and needs no COM server, which an unpackaged
 //!   per-user NSIS install could not keep registered reliably. Portable copies register nothing
-//!   and show plain notifications.
+//!   and show plain notifications. The Store package declares the scheme in its manifest
+//!   (`uap3:Protocol`) and shows its toasts under the package's app id, plain ones included
+//!   (the plugin's toasts carry the identifier, which is not the package's app id).
 //! - Linux: freedesktop actions (notify-rust); a thread waits for the click.
 //! - macOS: plain notifications through the plugin (clicking brings Arcalo to the front).
 //!
@@ -463,6 +465,9 @@ pub fn show(app: &AppHandle, note: Note) {
 
 /// Title and text only (macOS, portable Windows, or when the richer way failed).
 fn plain(app: &AppHandle, note: &Note) {
+    if packaged_plain(app, &note.title, &note.body, note.silent) {
+        return;
+    }
     let mut b = app.notification().builder().title(&note.title).body(&note.body);
     if note.silent {
         b = b.silent();
@@ -472,12 +477,24 @@ fn plain(app: &AppHandle, note: &Note) {
     }
 }
 
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
+}
+
+/// A Windows toast with text only (clicking it brings Arcalo to the front).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn plain_xml(title: &str, body: &str, silent: bool) -> String {
+    let audio = if silent { r#"<audio silent="true"/>"# } else { "" };
+    format!(
+        r#"<toast><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual>{audio}</toast>"#,
+        esc(title),
+        esc(body)
+    )
+}
+
 /// The Windows toast: text, buttons and the click as protocol activations.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn toast_xml(note: &Note) -> String {
-    fn esc(s: &str) -> String {
-        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
-    }
     let audio = if note.silent { r#"<audio silent="true"/>"# } else { "" };
     let actions: String = note
         .actions()
@@ -555,22 +572,52 @@ mod win {
         Ok(())
     }
 
+    /// The scheme is declared by the Store package's manifest.
+    pub fn declared() {
+        REGISTERED.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     pub fn show(app: &AppHandle, note: &Note) -> windows::core::Result<()> {
         if !REGISTERED.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(windows::core::Error::from(windows::Win32::Foundation::E_FAIL));
         }
-        let doc = XmlDocument::new()?;
-        doc.LoadXml(&HSTRING::from(toast_xml(note)))?;
-        let toast = ToastNotification::CreateToastNotification(&doc)?;
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app.config().identifier.as_str()))?
-            .Show(&toast)
+        show_xml(app, &toast_xml(note))
     }
+
+    pub fn show_xml(app: &AppHandle, xml: &str) -> windows::core::Result<()> {
+        let doc = XmlDocument::new()?;
+        doc.LoadXml(&HSTRING::from(xml))?;
+        let toast = ToastNotification::CreateToastNotification(&doc)?;
+        // A packaged process shows toasts under its package's app id (another id fails there).
+        let notifier = if crate::store::packaged() {
+            ToastNotificationManager::CreateToastNotifier()?
+        } else {
+            ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app.config().identifier.as_str()))?
+        };
+        notifier.Show(&toast)
+    }
+}
+
+/// A notification without buttons from the Store package (Windows): the toast XML under the
+/// package's app id. `false` everywhere else (the notification plugin shows it then).
+pub fn packaged_plain(app: &AppHandle, title: &str, body: &str, silent: bool) -> bool {
+    #[cfg(windows)]
+    if crate::store::packaged() {
+        match win::show_xml(app, &plain_xml(title, body, silent)) {
+            Ok(()) => return true,
+            Err(e) => crate::devlog::warn("notify", format!("toast failed: {e}")),
+        }
+    }
+    let _ = (app, title, body, silent);
+    false
 }
 
 /// At the start (Windows, installed copies): the scheme points at this program.
 pub fn register(app: &AppHandle) {
     #[cfg(windows)]
-    if !crate::portable::active() && std::env::var_os("ANNALO_DATA_DIR").is_none() {
+    if crate::store::packaged() {
+        win::declared();
+    } else if !crate::portable::active() && !crate::store::active() && std::env::var_os("ANNALO_DATA_DIR").is_none() {
         match tauri::process::current_binary(&app.env()) {
             Ok(exe) => {
                 if let Err(e) = win::register(&exe) {
@@ -719,6 +766,15 @@ mod tests {
 
     fn task() -> Subject {
         Subject::Task { page_id: 12, ordinal: 3, text: "Angebot & „Preis“ senden?".into() }
+    }
+
+    #[test]
+    fn plain_toasts_escape_their_text_and_have_no_buttons() {
+        let xml = plain_xml("Timer <läuft>", "A & B \"C\"", true);
+        assert!(xml.contains("<text>Timer &lt;läuft&gt;</text><text>A &amp; B &quot;C&quot;</text>"), "{xml}");
+        assert!(xml.contains(r#"<audio silent="true"/>"#));
+        assert!(!xml.contains("<action") && !xml.contains("launch="), "{xml}");
+        assert!(!plain_xml("a", "b", false).contains("<audio"));
     }
 
     #[test]

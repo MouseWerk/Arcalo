@@ -14,6 +14,9 @@ describe("autoCheckAllowed", () => {
     expect(autoCheckAllowed(status(true), false)).toBe(false);
     expect(autoCheckAllowed(status(true), undefined)).toBe(true);
   });
+  it("never checks in the Microsoft Store build", () => {
+    expect(autoCheckAllowed({ ...status(true), store: true }, true)).toBe(false);
+  });
 });
 
 describe("download progress", () => {

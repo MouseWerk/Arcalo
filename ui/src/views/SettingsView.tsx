@@ -1375,6 +1375,10 @@ function DesktopSection({ draft, update }: { draft: Settings; update: (p: Partia
               <>
                 {desk.autostartHint} <Badge tone="info">{t("set.desktop.portableOff")}</Badge> {t("set.desktop.portableAutostart")}
               </>
+            ) : info?.store ? (
+              <>
+                {desk.autostartHint} {t("set.desktop.storeAutostart")}
+              </>
             ) : (
               desk.autostartHint
             )
@@ -1549,11 +1553,29 @@ async function moveDataDir(onChanged: () => void) {
   }
 }
 
+function StoreUpdatesGroup() {
+  const t = useT();
+  const open = () => api.storeOpenUpdates().catch((e) => useApp.getState().error(t("upd.storeOpenFailed"), e));
+  return (
+    <Group title={t("set.about.updates")} description={t("upd.storeDesc")}>
+      <Row stack label={t("upd.status")} description={<StatusNote tone="info" className="update-state">{t("upd.store")}</StatusNote>}>
+        <div className="set-actions">
+          <Button variant="secondary" icon={ExternalLink} onClick={() => void open()}>
+            {t("upd.storeOpen")}
+          </Button>
+        </div>
+      </Row>
+    </Group>
+  );
+}
+
 function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
   const t = useT();
   const { status, available, phase, manualCheck, checkedAt } = useUpdates();
   useEffect(() => void loadUpdateStatus(), []);
   if (!status) return null;
+  // The Microsoft Store build: the Store installs new versions (no checks, downloads or rollback here).
+  if (status.store) return <StoreUpdatesGroup />;
   const busy = phase === "preparing" || phase === "downloading" || phase === "installing";
   const prefs: UpdatePrefs = { mode: "auto", source_url: "", allow_github_fallback: true, check_interval_hours: 6, restore_session: true, ...draft.updates };
   const setPrefs = (p: Partial<UpdatePrefs>) => update({ updates: { ...prefs, ...p }, ...(p.mode ? { auto_update_check: p.mode !== "off" } : {}) });
@@ -1741,7 +1763,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
 function WhatsNewGroup() {
   const t = useT();
   const current = useUpdates((s) => s.status?.current_version);
-  const versions = knownVersions();
+  const versions = knownVersions(current);
   const [all, setAll] = useState(false);
   const shown = all ? versions : versions.slice(0, 4);
   if (!versions.length) return null;

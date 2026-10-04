@@ -697,6 +697,8 @@ export interface DesktopInfo {
   voice_shortcut_active?: boolean;
   /** Portable mode: no autostart entry. */
   portable?: boolean;
+  /** The Microsoft Store build: autostart is the package's startup task. */
+  store?: boolean;
 }
 export interface CaptureOutcome {
   appended: { page_id: number; tasks: number; notes: number; title: string; created: boolean } | null;
@@ -1035,6 +1037,8 @@ export interface UpdateStatus {
   portable?: boolean;
   /** Installed as .deb/.rpm: the package manager updates it, the release page has the package. */
   package?: boolean;
+  /** The Microsoft Store build: the Store updates it (`enabled` is false, no rollback). */
+  store?: boolean;
   /** Reported once after a start that followed an update: the version, and whether it runs now. */
   restarted?: { version: string; installed: boolean; from?: string } | null;
   /** What applies: the organization's policy over the settings (`managed` lists the locked fields). */

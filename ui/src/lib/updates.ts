@@ -10,8 +10,9 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export const NOT_CONFIGURED: TKey = "upd.notConfigured";
 
-/** Checks run on their own only in builds with an update key and when the user wants them. */
+/** Checks run on their own only in builds with an update key and when the user wants them (never in the Store build). */
 export function autoCheckAllowed(status: UpdateStatus | null, autoCheck: boolean | undefined): boolean {
+  if (status?.store) return false;
   if (status?.policy && (status.policy.disabled || status.policy.mode === "off")) return false;
   return !!status?.enabled && autoCheck !== false;
 }

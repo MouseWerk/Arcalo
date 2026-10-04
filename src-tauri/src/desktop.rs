@@ -1147,6 +1147,9 @@ pub fn notify(app: &AppHandle, title: &str, body: &str) {
     if crate::focus::hold(app, title, body) {
         return;
     }
+    if crate::notifyact::packaged_plain(app, title, body, false) {
+        return;
+    }
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         crate::devlog::warn("desktop", format!("notification failed: {e}"));
     }
@@ -1250,6 +1253,8 @@ pub struct DesktopInfo {
     capture_open_ms: Option<u64>,
     /// Portable mode: no autostart entry (it would point into the user profile).
     portable: bool,
+    /// The Microsoft Store build: autostart is the package's startup task (Task Manager shows it).
+    store: bool,
     /// Entry ids of the tray menu shown now (`None`: no tray).
     tray_menu: Option<Vec<&'static str>>,
 }
@@ -1258,7 +1263,13 @@ pub struct DesktopInfo {
 pub fn desktop_info(app: AppHandle) -> DesktopInfo {
     let d = desktop(&app);
     let portable = crate::portable::active();
-    let autostart = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>().map(|m| m.is_enabled());
+    // The Store package: its startup task, not the Run key (a write there would stay inside the package).
+    let store = crate::store::active();
+    let autostart = if store {
+        crate::store::autostart_enabled().map(|r| r.map_err(|_| ()))
+    } else {
+        app.try_state::<tauri_plugin_autostart::AutoLaunchManager>().map(|m| m.is_enabled().map_err(|_| ()))
+    };
     // Copied out: one lock per statement (temporaries live until its end).
     let slots = *lock(&d.shortcuts);
     let tray_menu = lock(&d.tray).as_ref().map(|t| {
@@ -1273,6 +1284,7 @@ pub fn desktop_info(app: AppHandle) -> DesktopInfo {
         autostart: !portable && matches!(autostart, Some(Ok(true))),
         autostart_available: !portable && matches!(autostart, Some(Ok(_))),
         portable,
+        store,
         tray: d.has_tray(),
         capture_shortcut_active: slots[Role::Capture as usize].is_some(),
         palette_shortcut_active: slots[Role::Palette as usize].is_some(),
@@ -1289,8 +1301,12 @@ pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<DesktopInfo> {
     if crate::portable::active() {
         return Err(Error::State(crate::portable::not_portable().into()));
     }
-    let m = app.autolaunch();
-    let res = if enabled { m.enable() } else { m.disable() };
+    let res = if crate::store::active() {
+        crate::store::set_autostart(enabled)
+    } else {
+        let m = app.autolaunch();
+        if enabled { m.enable() } else { m.disable() }.map_err(|e| e.to_string())
+    };
     res.map_err(|e| {
         Error::State(trf!("Autostart konnte nicht geändert werden: {e}", "Autostart could not be changed: {e}"))
     })?;

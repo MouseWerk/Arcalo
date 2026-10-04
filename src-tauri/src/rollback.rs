@@ -48,6 +48,11 @@ pub fn fake_install() -> bool {
 /// and, after two in a row of a freshly installed one, asks whether to return. Returns only
 /// when this process should go on starting.
 pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
+    // The Store installs and rolls back its packages itself; a record in a data folder shared
+    // with an installed copy is not this copy's to act on.
+    if crate::store::active() {
+        return;
+    }
     let record = RollbackRecord::load(dir);
     let check = st::begin_start(dir, version, record.as_ref());
     if test_var("ANNALO_TEST_FAIL_START").is_some() {
