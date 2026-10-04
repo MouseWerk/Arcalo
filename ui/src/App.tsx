@@ -4,7 +4,7 @@ import { requestWeekProposal } from "./lib/weekplan";
 import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
-import { Sidebar, stopTimer } from "./components/Sidebar";
+import { Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
 import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
 import { TemplateHost } from "./components/Templates";
@@ -41,6 +41,7 @@ import { MailImportHost } from "./components/MailImport";
 import { MeetingWorkHost } from "./components/MeetingWork";
 import { BookmarkImportHost } from "./components/BookmarkImport";
 import { FilingHost } from "./components/FilingDialogs";
+import { ChipHost } from "./editor/ChipHost";
 import { openDayReview } from "./lib/reviewnav";
 import { offerBriefing, openBriefing, startBriefing } from "./lib/briefing";
 import { FirstRun } from "./onboarding/FirstRun";
@@ -400,6 +401,7 @@ export function App() {
       <BookmarkImportHost />
       <FilingHost />
       <ConfirmHost />
+      <ChipHost />
       <TemplateHost />
       <FirstRun />
     </div>
@@ -498,6 +500,7 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   back: () => useApp.getState().goBack(),
   forward: () => useApp.getState().goForward(),
   timer: () => (useApp.getState().timer ? void stopTimer() : useApp.getState().openTab({ kind: "timesheet" })),
+  timer_pause: () => void toggleTimerPause(),
   assistant: () => openAssistant(),
   toggle_sidebar: toggleSidebar,
   toggle_panel: togglePanel,

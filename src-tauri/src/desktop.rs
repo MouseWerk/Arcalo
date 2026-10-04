@@ -61,8 +61,9 @@ fn role_name(i: usize) -> &'static str {
 #[derive(Clone)]
 struct TrayHandles {
     tray: TrayIcon,
-    /// „Timer stoppen“ and „Zuletzt verwendet starten“ (none while time tracking is off).
-    timer: Option<(MenuItem<Wry>, MenuItem<Wry>)>,
+    /// „Timer stoppen“, „Timer pausieren“ and „Zuletzt verwendet starten“ (none while time
+    /// tracking is off).
+    timer: TimerItems,
     /// The menu was built for time tracking on (rebuilt when the setting changes).
     time: bool,
     /// The menu has „Aufnahme beenden“ (a voice note is being recorded).
@@ -119,13 +120,18 @@ pub fn show_main(app: &AppHandle) {
 pub fn tray_entries(time: bool) -> Vec<&'static str> {
     let mut ids = vec!["open", "search", "briefing", "-"];
     if time {
-        ids.extend(["stop", "resume"]);
+        ids.extend(["stop", "pause", "resume"]);
     }
     ids.extend(["capture", "-", "quit"]);
     ids
 }
 
-type TimerItems = Option<(MenuItem<Wry>, MenuItem<Wry>)>;
+/// The tray's timer entries: stop, pause/continue, start last used.
+type TimerItems = Option<(MenuItem<Wry>, MenuItem<Wry>, MenuItem<Wry>)>;
+
+fn pause_label(paused: bool) -> &'static str {
+    if paused { tr!("Timer fortsetzen", "Resume timer") } else { tr!("Timer pausieren", "Pause timer") }
+}
 
 /// The tray menu in the current language for [`tray_entries`], with the timer entries
 /// (disabled until `refresh_tray`).
@@ -138,7 +144,7 @@ fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItem
         menu.append(&MenuItem::with_id(app, "quit", tr!("Beenden", "Quit"), true, None::<&str>)?)?;
         return Ok((menu, None));
     }
-    let (mut stop, mut resume) = (None, None);
+    let (mut stop, mut pause, mut resume) = (None, None, None);
     // Recording a voice note: the first entry stops it (never recording unnoticed).
     if crate::voice::is_recording(app) {
         menu.append(&MenuItem::with_id(
@@ -160,20 +166,22 @@ fn tray_menu(app: &AppHandle, time: bool) -> tauri::Result<(Menu<Wry>, TimerItem
             "search" => tr!("Suchen…", "Search…"),
             "briefing" => tr!("Morgen-Briefing", "Morning briefing"),
             "stop" => tr!("Timer stoppen", "Stop timer"),
+            "pause" => pause_label(false),
             "resume" => tr!("Zuletzt verwendet starten", "Start last used"),
             "capture" => tr!("Schnellerfassung", "Quick capture"),
             _ => tr!("Beenden", "Quit"),
         };
-        let timer = matches!(id, "stop" | "resume");
+        let timer = matches!(id, "stop" | "pause" | "resume");
         let item = MenuItem::with_id(app, id, label, !timer, None::<&str>)?;
         menu.append(&item)?;
         match id {
             "stop" => stop = Some(item),
+            "pause" => pause = Some(item),
             "resume" => resume = Some(item),
             _ => {}
         }
     }
-    Ok((menu, stop.zip(resume)))
+    Ok((menu, stop.zip(pause).zip(resume).map(|((a, b), c)| (a, b, c))))
 }
 
 fn time_tracking(app: &AppHandle) -> bool {
@@ -244,11 +252,23 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         // A menu of before the lock (the tray is rebuilt right after locking).
         _ if crate::security::is_locked() && event.id().as_ref() != "quit" => show_main(app),
         // Left over from a menu built before time tracking was switched off.
-        "stop" | "resume" if !time_tracking(app) => {}
+        "stop" | "pause" | "resume" if !time_tracking(app) => {}
         // The UI stops the timer so it can ask about idle time first.
         "stop" => {
             show_main(app);
             let _ = app.emit_to(MAIN, "tray://timer-stop", ());
+        }
+        "pause" => {
+            let state = app.state::<AppState>();
+            let paused = {
+                let db = state.db();
+                db.running_timer().ok().flatten().and_then(|e| db.pause_state(e.id).ok())
+            };
+            if let Some(p) = paused
+                && let Err(e) = set_timer_paused(app, &state, p.paused_since.is_none())
+            {
+                notify(app, tr!("Timer nicht pausiert", "Timer not paused"), &e.to_string());
+            }
         }
         "resume" => {
             if let Err(e) = resume_last(app) {
@@ -265,6 +285,24 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
         "quit" => request_quit(app),
         _ => {}
     }
+}
+
+/// Pauses (or continues) the running timer: the idle detection stops over the pause, the
+/// tray and the windows learn about it.
+pub fn set_timer_paused(app: &AppHandle, state: &AppState, paused: bool) -> Result<()> {
+    let now = Utc::now();
+    {
+        let db = state.db();
+        if paused {
+            db.pause_timer(now)?
+        } else {
+            db.resume_timer(now)?
+        };
+    }
+    lock(&state.idle).suspend(now);
+    let _ = app.emit("data://entries", ());
+    refresh_tray(app);
+    Ok(())
 }
 
 /// Starts a timer on the Netzplan/Vorgang of the most recent entry.
@@ -316,17 +354,24 @@ pub fn refresh_tray(app: &AppHandle) {
         let db = state.db();
         let running = db.running_timer().ok().flatten().map(|e| {
             let nr = db.netzplan_by_id(e.netzplan_id).map(|n| n.netzplan_nr).unwrap_or_default();
-            (core::timer_label(&nr, e.vorgang_nr.as_deref()), (Utc::now() - e.start_time).num_minutes())
+            let paused = db.pause_state(e.id).is_ok_and(|p| p.paused_since.is_some());
+            let mut label = core::timer_label(&nr, e.vorgang_nr.as_deref());
+            if paused {
+                label = trf!("{label} (pausiert)", "{label} (paused)");
+            }
+            (label, db.timer_worked_minutes(&e, Utc::now()).unwrap_or(0), paused)
         });
         (running, db.last_finished_entry().ok().flatten().is_some())
     };
     // Cloned out of the lock: tray calls wait for the main thread, which may want the lock.
     let handles = lock(&desktop(app).tray).clone();
     let Some(t) = handles else { return };
-    let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m)| (l.as_str(), *m))));
+    let tip = crate::voice::tray_tip(app, core::tray_tooltip(running.as_ref().map(|(l, m, _)| (l.as_str(), *m))));
     let _ = t.tray.set_tooltip(Some(crate::updates::tray_tip(app, tip)));
-    if let Some((stop, resume)) = &t.timer {
+    if let Some((stop, pause, resume)) = &t.timer {
         let _ = stop.set_enabled(running.is_some());
+        let _ = pause.set_enabled(running.is_some());
+        let _ = pause.set_text(pause_label(running.as_ref().is_some_and(|r| r.2)));
         let _ = resume.set_enabled(running.is_none() && has_last);
     }
 }
@@ -1166,7 +1211,10 @@ fn booked_today(db: &Database) -> Result<i64> {
     let from = Local.from_local_datetime(&midnight).earliest().map(|d| d.with_timezone(&Utc));
     let filter = annalo_core::db::EntryFilter { from, to: Some(now + TimeDelta::days(1)), ..Default::default() };
     let booked: i64 = db.list_time_entries(&filter)?.iter().filter_map(|r| r.entry.duration_minutes).sum();
-    let running = db.running_timer()?.map_or(0, |e| (now - e.start_time).num_minutes().max(0));
+    let running = match db.running_timer()? {
+        Some(e) => db.timer_worked_minutes(&e, now)?,
+        None => 0,
+    };
     Ok(booked + running)
 }
 
@@ -1323,7 +1371,7 @@ mod tests {
     #[test]
     fn tray_has_timer_entries_only_with_time_tracking() {
         let on = tray_entries(true);
-        assert_eq!(on, ["open", "search", "briefing", "-", "stop", "resume", "capture", "-", "quit"]);
+        assert_eq!(on, ["open", "search", "briefing", "-", "stop", "pause", "resume", "capture", "-", "quit"]);
         let off = tray_entries(false);
         assert_eq!(off, ["open", "search", "briefing", "-", "capture", "-", "quit"]);
     }

@@ -3781,3 +3781,17 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .tab.active { padding-right: 28px; }
 .tab-close { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
 .tab:not(.active):hover .tab-title { mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent calc(100% - 18px)); }
+
+/* ---- timer pause (1.12) ---- */
+.pause-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--warning) 0 35%, transparent 35% 65%, var(--warning) 65%);
+}
+.pause-dot.big { width: 10px; height: 10px; }
+.timer-dock.paused .timer-dock-time,
+.sb-timer.paused .num,
+.dw-timer.paused .dw-big,
+.timer-card.paused .timer-clock { color: var(--text-2); }

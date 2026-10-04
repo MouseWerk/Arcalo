@@ -194,16 +194,14 @@ fn run(cli: Cli) -> Result<()> {
                 println!("Timer #{} läuft seit {}", e.id, e.start_time.with_timezone(&Local).format("%H:%M"));
             }
             TimerCmd::Stop { idle } => {
-                let e = db.stop_timer(now, idle)?;
-                println!("Timer #{} gestoppt: {} min gebucht", e.id, e.duration_minutes.unwrap_or(0));
+                for e in db.stop_timer(now, idle)? {
+                    println!("Timer #{} gestoppt: {} min gebucht", e.id, e.duration_minutes.unwrap_or(0));
+                }
             }
             TimerCmd::Status => match db.running_timer()? {
-                Some(e) => println!(
-                    "Timer #{} läuft seit {} min – {}",
-                    e.id,
-                    (now - e.start_time).num_minutes(),
-                    e.description
-                ),
+                Some(e) => {
+                    println!("Timer #{} läuft seit {} min – {}", e.id, db.timer_worked_minutes(&e, now)?, e.description)
+                }
                 None => println!("Kein Timer aktiv."),
             },
         },

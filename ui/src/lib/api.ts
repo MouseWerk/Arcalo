@@ -126,6 +126,17 @@ export const api = {
     call<T.TimeEntry>("timer_start", { netzplanId, vorgangNr, leistungsart, description }),
   timerStop: (subtractIdle: boolean) => call<T.StopOutcome>("timer_stop", { subtractIdle }),
   timerDiscard: () => call<void>("timer_discard"),
+  /** Pauses (true) or continues the running timer; the paused time is not booked. */
+  timerPause: (paused: boolean) => call<void>("timer_pause", { paused }),
+  /** `/zeit` chips of a note: linked to their booking, a copy, or without booking. */
+  chipStates: (pageId: number, chips: { id: number; target: string }[]) => call<T.ChipState[]>("time_chip_states", { pageId, chips }),
+  /** The chip was removed from its note: its booking goes too; returns it for an undo. */
+  chipDelete: (id: number) => call<T.TimeEntry>("time_chip_delete", { id }),
+  /** The removed chip came back: its booking is put back (same id when free). */
+  chipRestore: (entry: T.TimeEntry) => call<T.TimeEntry>("time_chip_restore", { entry }),
+  /** Books the values of a chip without booking (deleted, a copy, from another device). */
+  chipBook: (a: { pageId: number; target: string; minutes: number; leistungsart: string | null; date: string | null; text: string }) =>
+    call<T.LogOutcome>("time_chip_book", a),
   entries: (from?: string, to?: string) => call<T.TimeEntryRow[]>("time_entries", { from: from ?? null, to: to ?? null }),
   createEntry: (e: { netzplanId: number; vorgangNr: string | null; leistungsart: string | null; startTime: string; durationMinutes: number; description: string }) =>
     call<T.LogOutcome>("time_entry_create", e),

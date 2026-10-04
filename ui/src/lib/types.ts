@@ -189,10 +189,23 @@ export interface TimerStatus {
   entry: TimeEntry;
   idle_minutes: number;
   is_idle: boolean;
+  /** Since when the timer is paused (1.12); null while it runs. */
+  paused_since?: string | null;
+  /** Seconds of the pauses that are over (not booked). */
+  paused_seconds?: number;
 }
 export interface StopOutcome extends LogOutcome {
+  /** All bookings of the run: one per day when it went over midnight (1.12). */
+  entries?: TimeEntry[];
   idle_minutes: number;
   discarded: boolean;
+}
+/** How a `/zeit` chip in a note relates to its booking (1.12). */
+export type ChipLink = "linked" | "elsewhere" | "missing";
+export interface ChipState {
+  id: number;
+  link: ChipLink;
+  row: TimeEntryRow | null;
 }
 export type ExportFormat = "sap_cats" | "jira_worklog" | "csv" | "json";
 export interface ExportResult {
@@ -499,6 +512,8 @@ export interface TimePrefs {
   default_leistungsart: Record<string, string>;
   cats_delimiter: "semicolon" | "comma" | "tab";
   cats_columns: "standard" | "without_wbs" | "date_first";
+  /** Decimal separator of CATS hours (1.12): comma, point, or as the number format. */
+  cats_decimal?: "comma" | "point" | "number";
   export_file_pattern: string;
   /** Overtime balance, vacation account and public holidays (1.7). */
   balance?: BalancePrefs;

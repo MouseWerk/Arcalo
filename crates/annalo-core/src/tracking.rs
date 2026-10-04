@@ -71,7 +71,21 @@ pub fn log_slash_command_in<Tz: TimeZone>(
     if let (Some(key), true, None) = (&issue.key, bare, default_ref) {
         return Err(crate::issues::unmapped_error(key));
     }
-    let mut cmd = zeit::parse_with_default(line, local_now.date_naive(), default_ref)?;
+    let cmd = zeit::parse_with_default(line, local_now.date_naive(), default_ref)?;
+    book_command(db, cmd, issue, now, offset, thresholds, ctx)
+}
+
+/// Books a parsed `/zeit` command (also „Erneut buchen“ on a chip whose booking is gone).
+pub fn book_command<Tz: TimeZone>(
+    db: &Database,
+    mut cmd: zeit::ZeitCommand,
+    issue: crate::issues::ZeitIssue,
+    now: DateTime<Utc>,
+    offset: &Tz,
+    thresholds: &Thresholds,
+    ctx: SlashContext,
+) -> Result<LogOutcome> {
+    let local_now = now.with_timezone(offset);
     // Settings → Zeiterfassung: rounding, minimum booking and default Leistungsart.
     let settings = db.load_settings().unwrap_or_default();
     let time = settings.time.clone();
@@ -449,10 +463,10 @@ mod tests {
         assert_eq!(b.entry.leistungsart.as_deref(), Some("TEST"), "an explicit Leistungsart wins");
         // Timer: 52 min → 60; nothing recorded stays nothing.
         db.start_timer(np, Some("1020"), None, "Timer", now()).unwrap();
-        let e = db.stop_timer(now() + chrono::Duration::minutes(52), 0).unwrap();
+        let e = db.stop_timer(now() + chrono::Duration::minutes(52), 0).unwrap().remove(0);
         assert_eq!(e.duration_minutes, Some(60));
         db.start_timer(np, Some("1020"), None, "Timer", now()).unwrap();
-        let e = db.stop_timer(now() + chrono::Duration::seconds(20), 0).unwrap();
+        let e = db.stop_timer(now() + chrono::Duration::seconds(20), 0).unwrap().remove(0);
         assert_eq!(e.duration_minutes, Some(0));
     }
 

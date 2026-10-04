@@ -68,6 +68,7 @@ use annalo_core::attachment_manager;
 use annalo_core::attachments::{self, SavedAttachment};
 use annalo_core::backup::{self, BackupInfo};
 use annalo_core::calendar::{self, DayOverview};
+use annalo_core::chips;
 use annalo_core::db::EntryFilter;
 use annalo_core::drawings;
 use annalo_core::error::IoAt;
@@ -1035,13 +1036,18 @@ struct TimerStatus {
     entry: TimeEntry,
     idle_minutes: i64,
     is_idle: bool,
+    /// Since when the timer is paused (`None` while it runs) and the seconds of past pauses.
+    #[serde(flatten)]
+    pause: annalo_core::timer::PauseState,
 }
 
 #[tauri::command(async)]
 fn timer_status(state: State<AppState>) -> Result<Option<TimerStatus>> {
-    let running = state.reader().running_timer()?;
+    let db = state.reader();
+    let Some(entry) = db.running_timer()? else { return Ok(None) };
+    let pause = db.pause_state(entry.id)?;
     let idle = lock(&state.idle);
-    Ok(running.map(|entry| TimerStatus { entry, idle_minutes: idle.idle_minutes(Utc::now()), is_idle: idle.is_idle() }))
+    Ok(Some(TimerStatus { entry, idle_minutes: idle.idle_minutes(Utc::now()), is_idle: idle.is_idle(), pause }))
 }
 
 #[tauri::command(async)]
@@ -1071,34 +1077,49 @@ fn timer_start(
     Ok(e)
 }
 
+/// „Timer pausieren“ / „Fortsetzen“ (`paused` false). The paused time is not booked.
+#[tauri::command(async)]
+fn timer_pause(app: AppHandle, state: State<AppState>, paused: bool) -> Result<()> {
+    state.settings().require_time_tracking()?;
+    desktop::set_timer_paused(&app, &state, paused)
+}
+
 #[derive(Serialize)]
 struct StopOutcome {
+    /// The first booking (the whole run unless it went over midnight).
     entry: TimeEntry,
+    /// All bookings: one per day for a run over midnight.
+    entries: Vec<TimeEntry>,
     idle_minutes: i64,
     alerts: Vec<BudgetStatus>,
     /// True when less than a minute was recorded and nothing was booked.
     discarded: bool,
 }
 
-/// Stops the timer. With `subtract_idle` the detected idle time is not booked.
+/// Stops the timer. With `subtract_idle` the detected idle time is not booked; pauses never
+/// are, and a run over midnight is booked per day.
 #[tauri::command(async)]
 fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Result<StopOutcome> {
     let now = Utc::now();
-    let idle_minutes = lock(&state.idle).idle_minutes(now);
+    let (idle_minutes, idle) = {
+        let acc = lock(&state.idle);
+        (acc.idle_minutes(now), if subtract_idle { acc.idle_periods(now) } else { vec![] })
+    };
     let thresholds = state.settings().thresholds;
     let db = state.db();
-    let entry = db.stop_timer(now, if subtract_idle { idle_minutes } else { 0 })?;
+    let entries = db.stop_timer_in(now, &idle, &Local)?;
     lock(&state.idle).reset();
     let _ = app.emit("data://entries", ());
     drop(db);
     desktop::refresh_tray(&app);
     let db = state.db();
-    if entry.duration_minutes.unwrap_or(0) < 1 {
+    let entry = entries[0].clone();
+    if entries.len() == 1 && entry.duration_minutes.unwrap_or(0) < 1 {
         db.delete_time_entry(entry.id)?;
-        return Ok(StopOutcome { entry, idle_minutes, alerts: vec![], discarded: true });
+        return Ok(StopOutcome { entry, entries: vec![], idle_minutes, alerts: vec![], discarded: true });
     }
     let alerts = tracking::alerts_for(&db, entry.netzplan_id, entry.vorgang_nr.as_deref(), &thresholds)?;
-    Ok(StopOutcome { entry, idle_minutes, alerts, discarded: false })
+    Ok(StopOutcome { entry, entries, idle_minutes, alerts, discarded: false })
 }
 
 #[tauri::command(async)]
@@ -1190,6 +1211,10 @@ fn time_entry_update(
     )?;
     // Posted to Jira: the worklog follows a new duration, start or comment.
     jira::after_entry_edit(&app, &before, &after);
+    // Booked from a note: its chip shows the new values (open editors reload it).
+    if let Some(page) = after.page_id {
+        let _ = app.emit("data://pages", [page]);
+    }
     Ok(after)
 }
 
@@ -1200,11 +1225,87 @@ fn set_entry_status(state: State<AppState>, ids: Vec<i64>, status: StatusFlag) -
 
 #[tauri::command(async)]
 fn delete_time_entry(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    let page = state.reader().time_entry(id).ok().and_then(|e| e.page_id);
     // Posted to Jira: the worklog goes too.
-    if jira::delete_entry(&state, id)? {
+    let queued = jira::delete_entry(&state, id, false)?;
+    // Booked from a note: its chip now says „Buchung gelöscht“ (open editors reload it).
+    if let Some(page) = page {
+        let _ = app.emit("data://pages", [page]);
+    }
+    if queued {
         jira::kick_worklogs(app);
     }
     Ok(())
+}
+
+// ------------------------------------------------------------- /zeit chips
+
+/// How the chips of a note relate to their bookings (see `annalo_core::chips`).
+#[tauri::command(async)]
+fn time_chip_states(
+    state: State<AppState>,
+    page_id: i64,
+    chips: Vec<chips::ChipQuery>,
+) -> Result<Vec<chips::ChipState>> {
+    state.db().chip_states(page_id, &chips)
+}
+
+/// The user removed a booked chip from its note: its booking goes too (after the undo toast).
+/// Returns the deleted booking, to put back when the chip comes back.
+#[tauri::command(async)]
+fn time_chip_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<TimeEntry> {
+    let before = state.reader().time_entry(id)?;
+    let queued = jira::delete_entry(&state, id, true)?;
+    let _ = app.emit("data://entries", ());
+    if queued {
+        jira::kick_worklogs(app);
+    }
+    Ok(before)
+}
+
+/// The chip of a booking deleted with it came back (undo): the booking is booked again.
+#[tauri::command(async)]
+fn time_chip_restore(app: AppHandle, state: State<AppState>, entry: TimeEntry) -> Result<TimeEntry> {
+    state.settings().require_time_tracking()?;
+    let e = state.db().restore_time_entry(&entry)?;
+    let _ = app.emit("data://entries", ());
+    Ok(e)
+}
+
+/// „Erneut buchen“ on a chip without booking (deleted, a copy, from another device): books its
+/// values on its day.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+fn time_chip_book(
+    app: AppHandle,
+    state: State<AppState>,
+    page_id: i64,
+    target: String,
+    minutes: i64,
+    leistungsart: Option<String>,
+    date: Option<NaiveDate>,
+    text: String,
+) -> Result<LogOutcome> {
+    let settings = state.settings();
+    settings.require_time_tracking()?;
+    let (np, vorgang) = match target.trim().split_once('/') {
+        Some((a, b)) => (a.trim().to_owned(), Some(b.trim().to_owned()).filter(|v| !v.is_empty())),
+        None => (target.trim().to_owned(), None),
+    };
+    let cmd = annalo_core::zeit::ZeitCommand {
+        netzplan_ref: np,
+        vorgang_nr: vorgang,
+        duration_minutes: minutes,
+        leistungsart: leistungsart.filter(|l| !l.is_empty()),
+        description: text,
+        date: date.map_or(annalo_core::zeit::DateSpec::Today, annalo_core::zeit::DateSpec::On),
+        start: None,
+    };
+    let ctx = tracking::SlashContext { default_ref: None, page_id: Some(page_id) };
+    let out =
+        tracking::book_command(&state.db(), cmd, Default::default(), Utc::now(), &Local, &settings.thresholds, ctx)?;
+    let _ = app.emit("data://entries", ());
+    Ok(out)
 }
 
 #[tauri::command(async)]
@@ -1288,6 +1389,7 @@ fn export_entries(
         utc_offset_minutes: None,
         cats_delimiter: settings.time.cats_delimiter,
         cats_columns: settings.time.cats_columns,
+        cats_decimal_point: settings.time.cats_decimal.point(&settings.locale),
     };
     let res = export::export(&rows, format, &options)?;
     if let Some(p) = path {
@@ -3556,7 +3658,14 @@ fn spawn_activity_sampler(app: AppHandle) {
                 briefing::on_activity(&app);
             }
             // Time tracking off: no idle detection for a timer (one left running is not tracked).
-            let running = state.settings().time_tracking() && state.db().running_timer().ok().flatten().is_some();
+            // Paused: the pause is not booked anyway, and its idle time is no question at the stop.
+            let running = state.settings().time_tracking() && {
+                let db = state.db();
+                db.running_timer()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|e| db.pause_state(e.id).is_ok_and(|p| p.paused_since.is_none()))
+            };
             let timer_idle_minutes = if running {
                 let mut acc = lock(&state.idle);
                 if let Some(d) = idle {
@@ -4513,12 +4622,17 @@ pub fn run() {
             timer_status,
             timer_start,
             timer_stop,
+            timer_pause,
             timer_discard,
             time_entries,
             time_entry_create,
             time_entry_update,
             set_entry_status,
             delete_time_entry,
+            time_chip_states,
+            time_chip_delete,
+            time_chip_restore,
+            time_chip_book,
             budget,
             schedule,
             export_entries,
