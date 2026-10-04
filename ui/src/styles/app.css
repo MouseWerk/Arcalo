@@ -583,8 +583,6 @@ button.side-section-title:hover { color: var(--text-2); }
 .assistant-empty-icon { width: 44px; height: 44px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); margin-bottom: 4px; }
 .assistant-empty-title { font-size: var(--fs-lg); font-weight: 600; }
 .assistant-empty p { margin: 0 0 8px; max-width: 280px; }
-.setup-hint { display: inline-flex; align-items: center; gap: 8px; text-align: left; border: 1px dashed var(--border-strong); background: transparent; color: var(--text-2); padding: 8px 12px; border-radius: var(--r-md); margin-bottom: 6px; }
-.setup-hint:hover { color: var(--text); border-color: var(--accent); }
 .suggestions { display: grid; gap: 6px; width: 100%; margin-top: 6px; }
 .ai-suggestion { text-align: left; padding: 9px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-2); }
 .ai-suggestion:hover { color: var(--text); border-color: var(--border-strong); }
@@ -3748,6 +3746,20 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 @container pane (max-width: 760px) {
   .ts-actions .week-nav { flex-basis: 100%; margin-right: 0; }
 }
+
+/* ---- AI setup note ---- */
+/* No AI connected yet (inline AI bar, meeting summary): what is missing and the way to Settings. */
+.ai-setup-note { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); background: var(--bg-canvas); }
+.ai-setup-icon { flex: none; color: var(--accent); }
+.ai-setup-text { flex: 1; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.ai-setup-title { font-weight: 500; color: var(--text); }
+.ai-setup-note .btn { flex: none; }
+@container pane (max-width: 520px) {
+  .ai-setup-note { flex-wrap: wrap; }
+}
+/* In the assistant's empty state (a narrow column): stacked and centered. */
+.assistant-empty .ai-setup-note { flex-direction: column; text-align: center; gap: 8px; width: 100%; max-width: 320px; }
+.summary-preview:has(> .ai-setup-note) { min-height: 0; }
 
 /* ---- integrations (1.12): Settings → Jira searches and test result ---- */
 .set-group-body > .jira-queries { padding: 12px 0 14px; border-top: 1px solid var(--border); }

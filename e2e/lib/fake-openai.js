@@ -3,11 +3,18 @@
 // cost header (costs then come from Arcalo's price table). Both stream chat completions, answer
 // tool calls, embed, and record every request. `stop()` closes the port (connection refused),
 // `start()` opens it again.
+//
+// Slow and failing servers: `modelsDelay` holds the model list back (ms), `firstByteDelay` the
+// head of a chat answer, `wordDelay` paces the stream (default 5 ms per word), `chatError`
+// ({ status, body }) answers every chat with that error, `breakAfter` (n words) ends the stream
+// without its end. `set({...})` changes any of them while the server runs.
 
 import http from "node:http";
 
-export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null } = {}) {
+export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null, ...behaviour } = {}) {
   const requests = [];
+  const opts = { modelsDelay: 0, firstByteDelay: 0, wordDelay: 5, chatError: null, breakAfter: null, ...behaviour };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const list = [...models];
   let server = null;
   const handler = async (req, res) => {
@@ -33,6 +40,10 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       if (!list.includes(json.model)) list.push(json.model);
       return res.end();
     }
+    if (path === `/v1/models`) {
+      if (opts.modelsDelay) await wait(opts.modelsDelay);
+      if (res.destroyed) return;
+    }
     if (path === `/v1/models`) return reply(200, { object: "list", data: list.map((id) => ({ id, object: "model" })) });
     if (path === `/v1/embeddings`) {
       const vec = (t) => Array.from({ length: 8 }, (_, i) => ((t.charCodeAt(i % t.length) || 1) % 5) / 5 + (t.length % (i + 3)) / 10);
@@ -44,6 +55,9 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
           ? reply(404, { error: `model "${json.model}" not found, try pulling it first` })
           : reply(404, { error: { message: `The model \`${json.model}\` does not exist`, code: "model_not_found" } });
       }
+      if (opts.firstByteDelay) await wait(opts.firstByteDelay);
+      if (res.destroyed) return;
+      if (opts.chatError) return reply(opts.chatError.status, opts.chatError.body);
       const msgs = json.messages;
       const lastUser = [...msgs].reverse().find((m) => m.role === "user")?.content ?? "";
       // `respond` (optional) writes the answer of one test, e.g. a meeting summary with tasks.
@@ -51,9 +65,11 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
       const words = text.match(/\S+\s*/g) ?? [];
-      for (const w of words) {
+      for (const [i, w] of words.entries()) {
+        if (opts.breakAfter != null && i >= opts.breakAfter) return res.destroy();
+        if (res.destroyed) return;
         send({ choices: [{ delta: { content: w } }] });
-        await new Promise((r) => setTimeout(r, 5));
+        await wait(opts.wordDelay);
       }
       send({ choices: [{ delta: {}, finish_reason: "stop" }] });
       send({ choices: [], usage: { prompt_tokens: 1000, completion_tokens: 500 } });
@@ -76,5 +92,6 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       server = null;
     });
   const chats = () => requests.filter((r) => r.url.startsWith("/v1/chat/completions"));
-  return open().then(() => ({ requests, chats, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close }));
+  const set = (patch) => Object.assign(opts, patch);
+  return open().then(() => ({ requests, chats, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close, set }));
 }

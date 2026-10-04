@@ -15,7 +15,7 @@ import { IS_MAC } from "../../lib/platform";
 import { useT, t as tr } from "../../lib/i18n";
 import { MODEL_LABELS, downloadPercent, voiceApi, type ModelDownload, type ModelsView, type VoiceDevices } from "../../lib/voice";
 import type { DesktopInfo, VoiceSettings } from "../../lib/types";
-import { CommitInput, Group, Row, ShortcutField, StatusNote, type SectionProps } from "./common";
+import { CommitInput, Group, Row, SectionHead, ShortcutField, StatusNote, type SectionProps } from "./common";
 
 export const voiceDefaults = (): VoiceSettings => ({
   model: "small",
@@ -68,6 +68,7 @@ export function VoiceSection({ draft, update }: SectionProps) {
 
   return (
     <>
+      <SectionHead title={t("nav.voice")} intro={t("voice.set.intro")} />
       <Group title={t("voice.set.modelTitle")} description={t("voice.set.modelDesc")}>
         <Row label={t("voice.set.model")} description={t("voice.set.modelHint")}>
           <Select

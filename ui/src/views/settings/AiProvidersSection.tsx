@@ -26,6 +26,7 @@ import {
 import type { AiProvider, ConnectionTest, EmbeddingStatus, OllamaDetect, PriceRule, RouterConfig, Settings, Tier } from "../../lib/types";
 import { FilterContext, Group, NumberInput, Row, Unfiltered, matches, type SectionProps } from "./common";
 import { ProviderDialog } from "./ProviderDialog";
+import { aiErrorKind } from "../../lib/aierror";
 
 type Status = { state: "checking" } | { state: "done"; test: ConnectionTest };
 
@@ -288,7 +289,7 @@ function ProviderRow({
         </div>
         <div className="set-row-desc provider-meta">
           <span className={`conn ${tone === "ok" ? "ok" : tone === "fail" ? "fail" : ""}`} title={test ? (test.error ?? t("aip.ms", { n: test.latency_ms })) : ""}>
-            {!p.enabled ? t("set.ai.off") : !test ? t("common.checking") : test.ok ? t("set.ai.connected", { n: test.models.length }) : t("set.ai.noConnection")}
+            {!p.enabled ? t("set.ai.off") : !test ? t("common.checking") : test.ok ? t("set.ai.connected", { n: test.models.length }) : aiErrorKind(test.error ?? "")[0] === "denied" ? t("set.ai.denied") : t("set.ai.noConnection")}
           </span>
           <span>{KIND_LABELS[p.kind]}</span>
           <span className="mono provider-url" title={p.base_url}>

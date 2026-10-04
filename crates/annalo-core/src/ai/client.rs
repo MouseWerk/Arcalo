@@ -326,8 +326,12 @@ impl AiClient {
     ) -> Result<Completion> {
         let cancelled = acc.finish_reason.as_deref() == Some("cancelled");
         if !cancelled && acc.content.trim().is_empty() && acc.tool_calls.iter().all(|c| c.function.name.is_empty()) {
-            let why = acc.finish_reason.as_deref().map(|r| format!(" (Grund: {r})")).unwrap_or_default();
-            return Err(Error::State(format!("Leere Antwort des KI-Servers{why}")));
+            return Err(Error::State(match acc.finish_reason.as_deref() {
+                Some(r) => {
+                    trf!("Leere Antwort des KI-Servers (Grund: {r})", "Empty answer from the AI server (reason: {r})")
+                }
+                None => tr!("Leere Antwort des KI-Servers", "Empty answer from the AI server").into(),
+            }));
         }
         let mut c = self.finish(acc, req, header_cost);
         c.warnings = warnings;
@@ -626,6 +630,27 @@ impl StreamAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_answer_is_an_error_in_the_ui_language() {
+        let client = AiClient::new("http://127.0.0.1:9", None);
+        let req =
+            ChatRequest { model: "m".into(), messages: vec![], tools: vec![], temperature: None, max_tokens: None };
+        let empty = |reason: Option<&str>| {
+            let mut acc = StreamAccumulator::new(StreamTimer::start_at(Instant::now()));
+            acc.finish_reason = reason.map(Into::into);
+            client.checked(acc, &req, None, vec![]).unwrap_err().to_string()
+        };
+        assert!(empty(Some("length")).contains("Leere Antwort des KI-Servers (Grund: length)"));
+        crate::i18n::with_lang(crate::prefs::Language::En, || {
+            assert!(empty(Some("length")).contains("Empty answer from the AI server (reason: length)"));
+            assert!(empty(None).ends_with("Empty answer from the AI server"));
+        });
+        // A cancelled request may end without text.
+        let mut acc = StreamAccumulator::new(StreamTimer::start_at(Instant::now()));
+        acc.finish_reason = Some("cancelled".into());
+        assert!(client.checked(acc, &req, None, vec![]).is_ok());
+    }
 
     #[test]
     fn sse_decoder_handles_split_chunks_and_comments() {

@@ -24,6 +24,7 @@ import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
+import { AiErrorNote } from "../components/AiNotes";
 import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
 import { useT } from "../lib/i18n";
 
@@ -268,10 +269,7 @@ export function DayReviewView() {
                 </div>
                 <div className="rv-summary-body">
                   {ai.error ? (
-                    <div className="msg-error">
-                      <div>{t("review.summaryFailed")}</div>
-                      <div className="faint small">{ai.error}</div>
-                    </div>
+                    <AiErrorNote message={ai.error} onRetry={summarize} />
                   ) : !ai.text ? (
                     <div className="thinking">
                       <span />

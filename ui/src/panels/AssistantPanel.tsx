@@ -9,6 +9,7 @@ import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { t, useT, type TKey } from "../lib/i18n";
 import { int } from "../lib/format";
 import { modelLabel, usableProvider } from "../lib/providers";
+import { AiSetupNote, openAiSettings } from "../components/AiNotes";
 import type { RouteDecision, Tier } from "../lib/types";
 import type { Turn } from "../lib/chathistory";
 import { IconButton, useMenu, type MenuEntry } from "../components/ui";
@@ -160,8 +161,10 @@ function ChatBody() {
     const el = scroller.current;
     const inner = content.current;
     if (!el || !inner || typeof ResizeObserver === "undefined") return;
+    // An empty chat stays at its top: the suggestions load later and must not push the
+    // heading and the setup note out of view.
     const ro = new ResizeObserver(() => {
-      if (stick.current) el.scrollTop = el.scrollHeight;
+      if (stick.current && useChat.getState().turns.length > 0) el.scrollTop = el.scrollHeight;
     });
     ro.observe(inner);
     return () => ro.disconnect();
@@ -331,7 +334,6 @@ function EmptyChat() {
   // Suggestions are shown in an empty chat of the visible assistant tab only.
   const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
   const suggestions = useSuggestions(page, shown);
-  const s = useApp.getState;
   // Time tracking off: the assistant does not offer to book time.
   const timeOn = useTimeTracking();
   const quick: { label: string; icon: typeof Timer; text: string }[] = [
@@ -348,9 +350,7 @@ function EmptyChat() {
       <div className="assistant-empty-title">{t("chat.emptyTitle")}</div>
       <p className="faint">{t(timeOn ? "chat.emptyText" : "tt.chatEmptyText")}</p>
       {settings && !usableProvider(settings) && (
-        <button type="button" className="setup-hint" onClick={() => s().openTab({ kind: "settings" })}>
-          <Settings2 size={14} /> {t("chat.connectProvider")}
-        </button>
+        <AiSetupNote text={t("ai.setup.chat")} />
       )}
       <div className="suggestions">
         {suggestions.map((q) => {
@@ -399,7 +399,6 @@ function Composer() {
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [menu, , openMenuAt] = useMenu();
-  const s = useApp.getState;
 
   useEffect(() => {
     const update = () => setOffline(navigator.onLine === false);
@@ -505,7 +504,7 @@ function Composer() {
                 })),
                 "separator" as const,
                 { label: useTools ? t("assist.toolsOff") : t("assist.toolsOn"), icon: Wrench, onSelect: () => setUseTools(!useTools) },
-                { label: t("chat.aiSettings"), icon: Settings2, onSelect: () => s().openTab({ kind: "settings" }) },
+                { label: t("chat.aiSettings"), icon: Settings2, onSelect: openAiSettings },
               ])
             }
           >
