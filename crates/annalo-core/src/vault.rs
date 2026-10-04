@@ -215,7 +215,7 @@ impl Walk<'_> {
     /// One file done: progress now and then, and the chance to stop.
     fn tick(&mut self) -> Result<()> {
         if self.cancel.load(Ordering::Relaxed) {
-            return Err(crate::Error::State("Import abgebrochen".into()));
+            return Err(crate::Error::State(tr!("Import abgebrochen", "Import cancelled").into()));
         }
         self.progress.done += 1;
         if self.progress.done.is_multiple_of(25) {

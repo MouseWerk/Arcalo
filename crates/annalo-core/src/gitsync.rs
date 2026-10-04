@@ -1078,7 +1078,9 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     let staged = git.check(Some(repo), &["diff", "--cached", "--name-only", "-z"])?;
     let changed = staged.split('\0').filter(|n| !n.is_empty()).count();
     if changed > 0 && !req.allow_deletions && has_head(git, repo)? {
-        let deleted = git.check(Some(repo), &["diff", "--cached", "--name-only", "--diff-filter=D", "-z"])?;
+        // `-M`: a moved note (Aufräumen, a new parent) is a rename, not a deletion, whatever the
+        // user's git configuration says about rename detection.
+        let deleted = git.check(Some(repo), &["diff", "--cached", "-M", "--name-only", "--diff-filter=D", "-z"])?;
         let deleted = count_notes(deleted.split('\0'));
         let tracked = git.check(Some(repo), &["ls-tree", "-r", "--name-only", "-z", "HEAD"])?;
         let tracked = count_notes(tracked.split('\0'));
@@ -2034,6 +2036,33 @@ mod safety_tests {
         let out = r.sync_from("a", &a, true).unwrap();
         assert!(out.committed);
         assert_eq!(r.tree().iter().filter(|p| p.ends_with(".md") && *p != README_FILE).count(), 1);
+    }
+
+    #[test]
+    fn moving_many_notes_into_folders_is_no_mass_deletion() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("moves");
+        let a = r.mirror("a");
+        mark(&a);
+        for i in 0..14 {
+            put(&a.join(format!("Besprechung {i}.md")), &format!("# Besprechung {i}\n\nProtokoll mit Inhalt {i}"));
+        }
+        r.sync("a").unwrap();
+        // Rename detection switched off in the git configuration of this working tree.
+        sh(&r.base.join("a").join(REPO_DIR), &["config", "diff.renames", "false"]);
+        // „Aufräumen“ files them into year and month folders.
+        for i in 0..14 {
+            let from = a.join(format!("Besprechung {i}.md"));
+            let to = a.join("Besprechungen/2026/09 September").join(format!("Besprechung {i}.md"));
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::rename(from, to).unwrap();
+        }
+        let out = r.sync("a").expect("moves are not deletions");
+        assert!(out.committed);
+        let notes: Vec<_> = r.tree().into_iter().filter(|p| p.starts_with("Besprechungen/2026/")).collect();
+        assert_eq!(notes.len(), 14, "{notes:?}");
     }
 
     #[test]

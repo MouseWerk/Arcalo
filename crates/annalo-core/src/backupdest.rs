@@ -992,10 +992,19 @@ pub fn stage_restore(backup: &Path, data_dir: &Path, act: &Activity) -> std::res
     Ok(verified)
 }
 
+/// What [`apply_pending_restore`] put in place.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Restored {
+    /// Where the backup came from.
+    pub from: String,
+    /// The backup is from before the encryption: it is encrypted at this start (see
+    /// [`keep_encrypted`]).
+    pub encrypt: bool,
+}
+
 /// Puts a staged restore in place (before the database is opened). The previous database and
-/// its WAL files are kept as `workspace.db.before-restore-<stamp>`. Returns where the backup
-/// came from.
-pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Option<String>> {
+/// its WAL files are kept as `workspace.db.before-restore-<stamp>`.
+pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Option<Restored>> {
     let pending = data_dir.join(PENDING_RESTORE);
     if !pending.is_file() {
         return Ok(None);
@@ -1004,6 +1013,9 @@ pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Opti
     let from =
         fs::read_to_string(&from_file).ok().and_then(|t| t.lines().next().map(str::to_owned)).unwrap_or_default();
     let db_file = data_dir.join(crate::datadir::DB_FILE);
+    // The current database opened at the last start, so its state is real (not a guess about
+    // a damaged file).
+    let was_encrypted = crate::cipher::file_state(&db_file) == crate::cipher::FileState::Encrypted;
     let stamp = now.format(STAMP);
     for ext in ["", "-wal", "-shm"] {
         let old = PathBuf::from(format!("{}{ext}", db_file.display()));
@@ -1013,7 +1025,17 @@ pub fn apply_pending_restore(data_dir: &Path, now: DateTime<Utc>) -> Result<Opti
     }
     fs::rename(&pending, &db_file).at(&db_file)?;
     let _ = fs::remove_file(&from_file);
-    Ok(Some(from))
+    Ok(Some(Restored { from, encrypt: keep_encrypted(data_dir, was_encrypted, now) }))
+}
+
+/// A backup from before the encryption replaced an encrypted database: asks for the encryption
+/// again, so the start that opens it encrypts it first (`cipher::run_pending`, with the stored
+/// key) instead of leaving the workspace unencrypted without a word. Returns whether it asked.
+fn keep_encrypted(data_dir: &Path, was_encrypted: bool, now: DateTime<Utc>) -> bool {
+    use crate::cipher::{Direction, FileState, file_state, request};
+    was_encrypted
+        && file_state(&data_dir.join(crate::datadir::DB_FILE)) == FileState::Plain
+        && request(data_dir, Direction::Encrypt, now).is_ok()
 }
 
 /// A place backups may be restored from (start-up recovery).
@@ -1060,6 +1082,10 @@ pub fn restore_newest(db_file: &Path, backups: &[BackupInfo], now: DateTime<Utc>
         let res = run_watched(&src.clone(), STALL, act, move |a| fetch_verified(&src, &to, a));
         match res {
             Ok(_) => {
+                // A damaged file only looks encrypted (random bytes): it counts as encrypted when
+                // this computer has a database key, i.e. the workspace was encrypted.
+                let was_encrypted = crate::cipher::key().is_some()
+                    && crate::cipher::file_state(db_file) == crate::cipher::FileState::Encrypted;
                 let stamp = now.format(STAMP);
                 for ext in ["", "-wal", "-shm"] {
                     let from = PathBuf::from(format!("{}{ext}", db_file.display()));
@@ -1068,6 +1094,9 @@ pub fn restore_newest(db_file: &Path, backups: &[BackupInfo], now: DateTime<Utc>
                     }
                 }
                 fs::rename(&part, db_file).at(db_file)?;
+                if let Some(dir) = db_file.parent() {
+                    keep_encrypted(dir, was_encrypted, now);
+                }
                 return Ok(b.clone());
             }
             Err(f) => last_error = Some(f),
@@ -1691,8 +1720,8 @@ mod tests {
             db.create_page(None, "Später", None).unwrap();
         }
         let now = Utc::now();
-        let from = apply_pending_restore(&data, now).unwrap().unwrap();
-        assert_eq!(from, remote.info.path);
+        let restored = apply_pending_restore(&data, now).unwrap().unwrap();
+        assert_eq!(restored, Restored { from: remote.info.path.clone(), encrypt: false });
         assert!(apply_pending_restore(&data, now).unwrap().is_none(), "once");
         let db = Database::open(&db_file).unwrap();
         assert!(db.page_by_title("Im Netz gesichert").unwrap().is_some());

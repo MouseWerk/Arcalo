@@ -331,7 +331,20 @@ fn page_embed(
 /// content, and a save does not change the page's backlinks.
 #[tauri::command(async)]
 fn page_save(state: State<AppState>, id: i64, content: String) -> Result<SavedPage> {
+    if let Some(e) = simulated_disk_full(&state.data_dir) {
+        return Err(e);
+    }
     state.db().save_page(id, &content)
+}
+
+/// Test builds: while the file `test-disk-full` is in the data folder, page saves fail as on a
+/// full disk (how the editor keeps such edits is tested end to end with it).
+fn simulated_disk_full(_dir: &std::path::Path) -> Option<Error> {
+    #[cfg(debug_assertions)]
+    if _dir.join("test-disk-full").exists() {
+        return Some(Error::disk_full());
+    }
+    None
 }
 
 // ---------------------------------------------------------------- typed properties
@@ -4114,7 +4127,9 @@ pub fn run() {
             }
             // A read-only folder (write-protected stick, permissions) still shows the notes,
             // with a notice that nothing is saved.
-            let mut notice = prepared.notice.or(restored).or(startup.notice.clone());
+            // A restore that was encrypted on the way says so itself; a failed switch still wins.
+            let cipher_notice = prepared.notice.filter(|n| restored.is_none() || n.kind != "info");
+            let mut notice = cipher_notice.or(restored).or(startup.notice.clone());
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(

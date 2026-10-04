@@ -1356,3 +1356,34 @@ body:has(.pdf-overlay) .menu { z-index: 81; }
 /* ---- UI polish 1.11 ---- */
 /* A wide table in the editor scrolls inside the page instead of pushing it sideways (narrow and split panes). */
 .ProseMirror table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+
+/* ---- save failed (data safety) ---- */
+/* Stays at the top of the note while saves fail (full disk, read-only folder); the edits are
+   kept and saved again. */
+.save-failed {
+  position: sticky;
+  top: 8px;
+  z-index: 6;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  pointer-events: none;
+}
+.save-failed-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: var(--bg-overlay);
+  box-shadow: var(--shadow-sm);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: auto;
+}

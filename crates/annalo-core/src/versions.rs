@@ -33,6 +33,19 @@ pub struct VersionInfo {
     pub preview: String,
 }
 
+/// Characters a save must remove (besides more than half of the page) to snapshot regardless of
+/// the interval, see [`removes_most`].
+const BIG_REMOVAL_CHARS: usize = 200;
+
+/// Whether replacing `old` by `new` drops most of the page: more than half of it and at least
+/// [`BIG_REMOVAL_CHARS`] characters (select all and type, a paste over everything, a sync that
+/// emptied it). Such a save keeps the previous text as a version even within the interval, or
+/// whatever was written since the last version would be gone once the editor's undo is.
+fn removes_most(old: &str, new: &str) -> bool {
+    let (old_len, new_len) = (old.chars().count(), new.chars().count());
+    old_len.saturating_sub(new_len) >= BIG_REMOVAL_CHARS && new_len * 2 < old_len
+}
+
 fn preview(content: &str) -> String {
     let flat = content.split_whitespace().collect::<Vec<_>>().join(" ");
     flat.chars().take(PREVIEW_CHARS).collect()
@@ -108,10 +121,11 @@ impl Database {
         if old == new {
             return Ok(());
         }
-        let due = match self.latest_version_at(page_id)? {
-            Some(at) => now - at >= Duration::minutes(self.version_policy().0),
-            None => true,
-        };
+        let due = removes_most(old, new)
+            || match self.latest_version_at(page_id)? {
+                Some(at) => now - at >= Duration::minutes(self.version_policy().0),
+                None => true,
+            };
         if due {
             self.store_version(page_id, old, now)?;
         }
@@ -221,6 +235,29 @@ mod tests {
         assert_eq!(v.len(), 2);
         assert_eq!(db.version_content(v[0].id).unwrap(), "drei", "newest first");
         assert_eq!((v[0].size, v[0].preview.as_str()), (4, "drei"));
+    }
+
+    #[test]
+    fn a_save_that_removes_most_of_the_page_keeps_it_as_a_version() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Bericht", None).unwrap();
+        db.save_page_content_at(p.id, "Anfang", t(0)).unwrap();
+        db.save_page_content_at(p.id, "Anfang und mehr", t(1)).unwrap();
+        assert_eq!(db.list_versions(p.id).unwrap().len(), 1);
+        // Minutes of writing after the version, then select all and type: within the interval.
+        let written = format!("Anfang\n\n{}", "Ein langer Absatz über die Woche, äöü. ".repeat(20));
+        db.save_page_content_at(p.id, &written, t(3)).unwrap();
+        assert_eq!(db.list_versions(p.id).unwrap().len(), 1, "growing text takes no extra version");
+        db.save_page_content_at(p.id, "x", t(4)).unwrap();
+        let v = db.list_versions(p.id).unwrap();
+        assert_eq!(v.len(), 2, "the text before the big removal is kept");
+        assert_eq!(db.version_content(v[0].id).unwrap(), written);
+        // Small deletions and typing afterwards stay within the interval as before.
+        db.save_page_content_at(p.id, "xy", t(5)).unwrap();
+        db.save_page_content_at(p.id, "x", t(6)).unwrap();
+        assert_eq!(db.list_versions(p.id).unwrap().len(), 2);
+        assert!(!removes_most(&"a".repeat(150), "") && removes_most(&"ä".repeat(400), &"ä".repeat(150)));
+        assert!(!removes_most(&"a".repeat(1000), &"a".repeat(600)), "less than half removed");
     }
 
     #[test]
