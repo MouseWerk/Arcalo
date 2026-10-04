@@ -2667,6 +2667,8 @@ async fn ai_chat(
     override_limit: Option<bool>,
     conversation_id: Option<i64>,
 ) -> Result<ChatOutcome> {
+    // Registered first: a Stop during retrieval ends the request before anything is sent.
+    let scope = CancelScope::new(&state, &request_id);
     prefs::check_cost_limit(&state, override_limit.unwrap_or(false))?;
     let prompt = messages
         .iter()
@@ -2691,7 +2693,7 @@ async fn ai_chat(
     // on a LiteLLM proxy each failure counts against the model and can put it into cooldown.
     let (embedder, mut embed_note) = match embedding_client(&state).filter(|(c, _)| !private || c.provider().local) {
         Some((client, r)) => {
-            learn_modes(&state, &client).await;
+            scope.race(learn_modes(&state, &client)).await;
             let mut caps = lock(&state.caps);
             match caps.embedding_usable(&r) {
                 Ok(()) => (Some((client, r)), None),
@@ -2714,12 +2716,15 @@ async fn ai_chat(
         // Bounded: a slow or missing embedding model must not hold up the answer.
         Some((client, r)) => {
             let m = &r.model;
-            match tokio::time::timeout(Duration::from_secs(8), client.embed(m, std::slice::from_ref(&prompt))).await {
-                Ok(Ok(mut v)) => {
+            let embed = tokio::time::timeout(Duration::from_secs(8), client.embed(m, std::slice::from_ref(&prompt)));
+            match scope.race(embed).await {
+                // Stopped: the answer is not written, so no search either.
+                None => None,
+                Some(Ok(Ok(mut v))) => {
                     lock(&state.caps).embed_succeeded(r);
                     v.pop()
                 }
-                Ok(Err(e)) => {
+                Some(Ok(Err(e))) => {
                     let mut caps = lock(&state.caps);
                     if caps.embed_failed(r, &e) {
                         caps.tell_once(r);
@@ -2737,7 +2742,7 @@ async fn ai_chat(
                     }
                     None
                 }
-                Err(_) => {
+                Some(Err(_)) => {
                     devlog::warn("ai", format!("embedding with “{m}” timed out, keyword search only"));
                     None
                 }
@@ -2864,14 +2869,13 @@ async fn stream_completion(
     request_id: &str,
     req: &ChatRequest,
 ) -> Result<(Completion, SessionMeter)> {
-    let cancel = Arc::new(AtomicBool::new(false));
-    lock(&state.cancels).insert(request_id.to_owned(), cancel.clone());
+    let scope = CancelScope::new(state, request_id);
     let result = client
-        .chat_stream(req, Some(&cancel), |event| {
+        .chat_stream(req, Some(&scope.flag), |event| {
             let _ = app.emit("ai://stream", StreamPayload { request_id, event: &event });
         })
         .await;
-    lock(&state.cancels).remove(request_id);
+    drop(scope);
     let completion =
         result.inspect_err(|e| devlog::error("ai", format!("{} ({}): {e}", req.model, client.provider().id)))?;
     for w in &completion.warnings {
@@ -2945,9 +2949,21 @@ async fn complete_routed(
 ) -> Result<(Completion, SessionMeter, RouteDecision)> {
     /// Waits for one model's cooldown per request.
     const MAX_WAITS: u32 = 2;
+    let scope = CancelScope::new(state, request_id);
+    // Nothing to ask (no provider, or every one lacks its key): said plainly, not as a refused
+    // connection to the default server or a 401.
+    if !briefing::ai_ready(state) {
+        return Err(Error::State(
+            tr!("Keine KI verbunden (Einstellungen → KI & Modelle).", "No AI connected (Settings → AI & models).")
+                .into(),
+        ));
+    }
     let settings = state.settings();
     let local_only = settings.privacy.local_only;
-    let mut catalog = catalog(state).await;
+    // Stopped before or while the models are looked up: nothing is sent.
+    let Some(mut catalog) = scope.race(catalog(state)).await else {
+        return Ok((cancelled_completion(&route.model), lock(&state.meter).clone(), route));
+    };
     let requested = format!("{} ({})", route.model, route.provider);
     let mut route = availability::resolve(&settings.router, &route, &catalog, local_only).map_err(Error::State)?;
     if format!("{} ({})", route.model, route.provider) != requested {
@@ -2963,6 +2979,9 @@ async fn complete_routed(
     let mut attempts = 0;
     let mut waits = 0;
     loop {
+        if scope.cancelled() {
+            return Ok((cancelled_completion(&req.model), lock(&state.meter).clone(), route));
+        }
         attempts += 1;
         let current = ModelRef::new(&route.provider, &route.model);
         {
@@ -3104,19 +3123,58 @@ async fn complete_routed(
 
 /// Sleeps for `wait` unless the request is cancelled through `ai_cancel` meanwhile (then `false`).
 async fn wait_cancellable(state: &AppState, request_id: &str, wait: Duration) -> bool {
-    let cancel = Arc::new(AtomicBool::new(false));
-    lock(&state.cancels).insert(request_id.to_owned(), cancel.clone());
-    let end = Instant::now() + wait;
-    let mut done = true;
-    while Instant::now() < end {
-        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-            done = false;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100).min(end - Instant::now())).await;
+    let scope = CancelScope::new(state, request_id);
+    scope.race(tokio::time::sleep(wait)).await.is_some() && !scope.cancelled()
+}
+
+/// The cancel flag of one request, found by `ai_cancel` while the scope lives. Scopes of the same
+/// request share one flag (the outermost removes it), so Stop counts from the start of a command:
+/// also while it looks up the models, embeds the question or waits for a retry, not only while
+/// an answer streams.
+struct CancelScope<'a> {
+    state: &'a AppState,
+    id: String,
+    flag: Arc<AtomicBool>,
+    owner: bool,
+}
+
+impl<'a> CancelScope<'a> {
+    fn new(state: &'a AppState, id: &str) -> Self {
+        let mut cancels = lock(&state.cancels);
+        let (flag, owner) = match cancels.get(id) {
+            Some(flag) => (flag.clone(), false),
+            None => {
+                let flag = Arc::new(AtomicBool::new(false));
+                cancels.insert(id.to_owned(), flag.clone());
+                (flag, true)
+            }
+        };
+        CancelScope { state, id: id.to_owned(), flag, owner }
     }
-    lock(&state.cancels).remove(request_id);
-    done && !cancel.load(std::sync::atomic::Ordering::Relaxed)
+
+    fn cancelled(&self) -> bool {
+        self.flag.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The result of `fut`, or `None` as soon as the request is cancelled (`fut` is dropped).
+    async fn race<T>(&self, fut: impl std::future::Future<Output = T>) -> Option<T> {
+        tokio::pin!(fut);
+        while !self.cancelled() {
+            tokio::select! {
+                v = &mut fut => return Some(v),
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            }
+        }
+        None
+    }
+}
+
+impl Drop for CancelScope<'_> {
+    fn drop(&mut self) {
+        if self.owner {
+            lock(&self.state.cancels).remove(&self.id);
+        }
+    }
 }
 
 /// The answer of a request stopped before anything arrived.

@@ -17,6 +17,7 @@ import { insertMarkdownBelow, rangeMarkdown, replaceWithMarkdown, type AiRange }
 import { keys } from "../lib/shortcut";
 import { useT } from "../lib/i18n";
 import { scrollMotion } from "../lib/motion";
+import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes";
 
 const BAR_WIDTH = 560;
 
@@ -114,9 +115,7 @@ export function InlineAiBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }, []);
+
 
   const close = (refocus = true) => {
     ai.reset();
@@ -134,6 +133,12 @@ export function InlineAiBar({
     return () => document.removeEventListener("mousedown", onDown, true);
   });
 
+  // No provider to ask yet: the way to Settings instead of actions that can only fail.
+  const configured = useAiConfigured();
+  // The instruction field, or „KI einrichten“ when there is no AI yet (Esc still closes).
+  useEffect(() => {
+    setTimeout(() => (inputRef.current?.disabled ? root.current?.querySelector<HTMLElement>(".ai-setup-note button") : inputRef.current)?.focus(), 0);
+  }, [configured]);
   const custom = inlinePresets(useApp((st) => st.settings?.settings.ai?.inline_presets));
   const presets = writing.current ? writePresets() : custom;
   const done = !ai.busy && !!ai.text && !ai.error;
@@ -195,6 +200,7 @@ export function InlineAiBar({
           value={input}
           placeholder={ai.text ? t("aibar.refine") : writing.current ? t("aibar.writePh") : t("aibar.editPh")}
           aria-label={t("aibar.instruction")}
+          disabled={!configured}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !(e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
@@ -209,7 +215,8 @@ export function InlineAiBar({
           <IconButton icon={ArrowUp} label={t("assist.run")} size="md" disabled={!input.trim()} onClick={submitInput} />
         )}
       </div>
-      {!ai.busy && !ai.text && !ai.error && (
+      {!configured && !ai.busy && !ai.text && !ai.error && <AiSetupNote text={t("ai.setup.inline")} />}
+      {configured && !ai.busy && !ai.text && !ai.error && (
         <div className="ai-bar-presets" role="group" aria-label={t("aibar.actions")}>
           {presets.map((p) => (
             <button key={p.id} type="button" className="ai-chip" onClick={() => submit(p.id)}>
@@ -221,10 +228,7 @@ export function InlineAiBar({
       {(ai.busy || ai.text || ai.error) && (
         <div className="ai-bar-preview" aria-live="polite">
           {ai.error ? (
-            <div className="msg-error">
-              <div>{t("summary.requestFailed")}</div>
-              <div className="faint small mono">{ai.error}</div>
-            </div>
+            <AiErrorNote message={ai.error} />
           ) : ai.busy && !ai.text ? (
             <div className="thinking">
               <span />

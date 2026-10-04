@@ -14,6 +14,7 @@ import { useAiTransform } from "../lib/useAiTransform";
 import { appendMarkdown } from "../editor/ai-insert";
 import { toMarkdown } from "../editor/schema";
 import { useT } from "../lib/i18n";
+import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes";
 
 interface Props {
   page: { id: number; title: string };
@@ -35,6 +36,8 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const s = useApp.getState;
+  // Without a provider to ask, the dialog says how to set one up instead of failing.
+  const configured = useAiConfigured();
 
   const start = async () => {
     // The editor holds the newest text; saving first keeps the privacy markers current.
@@ -47,9 +50,10 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
   };
 
   useEffect(() => {
+    if (!configured) return;
     start().catch((e) => s().error(t("summary.failed"), e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [configured]);
 
   const done = !ai.busy && !!ai.text && !ai.error;
   const booking = done && body ? bookingSuggestion(reference, body, page.title) : null;
@@ -98,7 +102,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
             )}
           </span>
           <span className="spacer" style={{ flex: 1 }} />
-          {done ? (
+          {!configured ? null : done ? (
             <>
               <Button
                 icon={copied ? Check : Copy}
@@ -128,13 +132,12 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
       }
     >
       <div className="summary-preview" aria-live="polite">
-        {body !== null && !body.trim() ? (
+        {!configured ? (
+          <AiSetupNote text={t("ai.setup.summary")} />
+        ) : body !== null && !body.trim() ? (
           <div className="faint">{t("summary.empty")}</div>
         ) : ai.error ? (
-          <div className="msg-error">
-            <div>{t("summary.requestFailed")}</div>
-            <div className="faint small mono">{ai.error}</div>
-          </div>
+          <AiErrorNote message={ai.error} />
         ) : !ai.text ? (
           <div className="thinking">
             <span />

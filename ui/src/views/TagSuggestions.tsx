@@ -10,11 +10,12 @@ import { addTagToFrontmatter } from "../lib/linking";
 import { Spinner } from "../components/ui";
 import type { TagSuggestion } from "../lib/types";
 import { t as tr, useT } from "../lib/i18n";
+import { usableProvider } from "../lib/providers";
 
 export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tags: string[]; fm: string; onFm: (next: string) => void }) {
   useT();
   const enabled = useApp((s) => s.settings?.settings.editor?.tag_suggestions !== false);
-  const aiReady = useApp((s) => (s.settings?.settings.providers ?? []).some((p) => p.enabled !== false));
+  const aiReady = useApp((s) => !!s.settings && usableProvider(s.settings));
   const [list, setList] = useState<TagSuggestion[]>([]);
   const [asking, setAsking] = useState(false);
   const s = useApp.getState;

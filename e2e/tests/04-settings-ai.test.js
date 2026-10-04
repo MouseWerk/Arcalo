@@ -34,7 +34,7 @@ test("settings: server URL, token and connection test", async () => {
 
   // Without a token the server refuses.
   await app.click('button[aria-label="Verbindungen prüfen"]');
-  await app.waitText('[data-provider="litellm"] .conn', /Keine Verbindung/);
+  await app.waitText('[data-provider="litellm"] .conn', /Zugang abgelehnt/);
 
   await editLiteLLM();
   const key = await app.$('.dialog input[aria-label="API-Token"]');
@@ -152,7 +152,7 @@ test("removing the token disables access", async () => {
   await app.click('.dialog button[aria-label="Token entfernen"]');
   await app.waitText(".toast-title", /API-Token entfernt/);
   await app.click('.dialog button[aria-label="Schließen"]');
-  await app.waitText('[data-provider="litellm"] .conn', /Keine Verbindung/);
+  await app.waitText('[data-provider="litellm"] .conn', /Zugang abgelehnt/);
 });
 
 test("no console errors", async () => {

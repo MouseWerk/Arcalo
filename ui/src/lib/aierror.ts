@@ -11,18 +11,23 @@ export interface AiErrorSummary {
   settings: boolean;
 }
 
+export type AiErrorKey = "noAi" | "timeout" | "denied" | "cooldown" | "noServer" | "noEmbeddings" | "noTools" | "rateLimit" | "tooLong" | "noModel" | "modelDown" | "certificate" | "proxy" | "network" | "interrupted" | "empty" | "unreachable" | "internal" | "failed";
+
 /**
  * Reads the `errorText` of a failed AI request, in German or English (`KI-Server meldet Fehler
  * 500: {…}` / `AI server reported error 500: {…}`, `Verbindungsfehler: …` / `Connection error: …`).
  */
 export function aiErrorSummary(message: string): AiErrorSummary {
+  const [key, settings] = aiErrorKind(message);
+  return { title: t(`ai.err.${key}` as const), hint: t(`ai.err.${key}Hint` as const), settings };
+}
+
+/** The kind of a failed request and whether the connection settings are the likely fix. */
+export function aiErrorKind(message: string): [AiErrorKey, boolean] {
   const m = message.toLowerCase();
-  const out = (key: "timeout" | "denied" | "cooldown" | "noServer" | "noEmbeddings" | "noTools" | "rateLimit" | "tooLong" | "noModel" | "modelDown" | "certificate" | "proxy" | "network" | "interrupted" | "empty" | "unreachable" | "internal" | "failed", settings: boolean): AiErrorSummary => ({
-    title: t(`ai.err.${key}` as const),
-    hint: t(`ai.err.${key}Hint` as const),
-    settings,
-  });
+  const out = (key: AiErrorKey, settings: boolean): [AiErrorKey, boolean] => [key, settings];
   const status = Number(/(?:Fehler|error) (\d{3})/.exec(message)?.[1] ?? /\b"?code"?\s*:\s*"?(\d{3})/.exec(message)?.[1] ?? 0);
+  if (/keine ki verbunden|no ai connected/.test(m)) return out("noAi", true);
   if (/zeitüberschreitung|timed? ?out|timeout/.test(m)) return out("timeout", false);
   if (status === 401 || status === 403 || /unauthori[sz]ed|invalid api key|authentication/.test(m)) return out("denied", true);
   // LiteLLM pauses a model for a few seconds after failed requests (cooldown).

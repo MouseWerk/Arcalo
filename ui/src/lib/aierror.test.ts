@@ -26,6 +26,11 @@ describe("aiErrorSummary", () => {
     const e = 'KI-Server meldet Fehler 500: {"error":{"message":"litellm.APIConnectionError: OllamaException - [Errno 111] Connection refused","code":"500"}}';
     expect(aiErrorSummary(e)).toMatchObject({ title: "Der KI-Server erreicht das Modell nicht.", settings: false });
   });
+  it("sends a missing provider to the settings, in both languages", () => {
+    expect(aiErrorSummary("Keine KI verbunden (Einstellungen → KI & Modelle).")).toMatchObject({ title: "Keine KI verbunden.", settings: true });
+    expect(aiErrorSummary("No AI connected (Settings → AI & models).").settings).toBe(true);
+    expect(aiErrorSummary("Keine KI verbunden (API-Schlüssel fehlt)").hint).toMatch(/KI & Modelle/);
+  });
   it("sends connection and token problems to the settings", () => {
     expect(aiErrorSummary("Verbindungsfehler: error sending request for url (http://127.0.0.1:4000/)")).toMatchObject({ title: "Der KI-Server ist nicht erreichbar.", settings: true });
     expect(aiErrorSummary('KI-Server meldet Fehler 401: {"error":"Unauthorized"}').settings).toBe(true);

@@ -3,10 +3,11 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Check, ChevronRight, Copy, CornerDownLeft, FileInput, FilePlus2, FileText, Loader2, PencilLine, RefreshCw, Settings2, ShieldAlert, Timer, Wrench, X } from "lucide-react";
+import { Check, ChevronRight, Copy, CornerDownLeft, FileInput, FilePlus2, FileText, Loader2, PencilLine, RefreshCw, ShieldAlert, Timer, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../../components/ui";
 import { previewMarkdown } from "../../components/LinkPreview";
-import { aiErrorSummary, routeNotes, waitText } from "../../lib/aierror";
+import { routeNotes, waitText } from "../../lib/aierror";
+import { AiErrorNote } from "../../components/AiNotes";
 import { citedNumbers, linkCitations } from "../../lib/citations";
 import { renderChatMarkdown, renderChatMarkdownCached, renderMarkdown } from "../../lib/markdown";
 import { h1, int, usd } from "../../lib/format";
@@ -53,37 +54,6 @@ function CiteCard({ src, n, rect, onEnter, onLeave }: { src: ContextChunk; n: nu
       {preview.more && <div className="link-preview-fade" aria-hidden />}
     </div>,
     document.body,
-  );
-}
-
-/** A failed request: the cause in plain words and what to do, „Erneut versuchen“; the server's message under „Details“. */
-function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
-  const e = aiErrorSummary(message);
-  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-  return (
-    <div className="msg-error" role="alert">
-      <div className="msg-error-head">
-        <AlertTriangle size={14} aria-hidden />
-        <span>{e.title}</span>
-      </div>
-      <div className="msg-error-hint">{offline ? t("chat.offlineHint") : e.hint}</div>
-      <details className="msg-error-details">
-        <summary>{t("chat.details")}</summary>
-        <div className="mono">{message}</div>
-      </details>
-      <div className="msg-error-actions">
-        {onRetry && (
-          <Button size="sm" icon={RefreshCw} onClick={onRetry}>
-            {t("chat.retry")}
-          </Button>
-        )}
-        {e.settings && (
-          <Button size="sm" variant="ghost" icon={Settings2} onClick={() => useApp.getState().openTab({ kind: "settings" })}>
-            {t("chat.checkConnection")}
-          </Button>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -267,7 +237,7 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
   return (
     <div className={`msg-ai ${last ? "last" : ""}`} data-turn={turn.id} aria-busy={turn.streaming || undefined}>
       {turn.error ? (
-        <ErrorNote message={turn.error} onRetry={retry} />
+        <AiErrorNote message={turn.error} onRetry={retry} />
       ) : turn.streaming && !turn.text && turn.waiting ? (
         <WaitNote until={turn.waiting.until} />
       ) : turn.streaming && !turn.text ? (
