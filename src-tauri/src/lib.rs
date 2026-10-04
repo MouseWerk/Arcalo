@@ -3834,9 +3834,24 @@ fn show_main_once(app: &AppHandle, why: &str) {
     }
 }
 
+/// When the process started (for the start-up timing below).
+static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// Debug builds with `ANNALO_STARTUP_TIMING=1` (the e2e harness sets it): when each phase of the
+/// start was reached, in the log under `startup`. A slow start (a test machine whose desktop
+/// services hang) shows where the time went.
+fn startup_mark(phase: &str) {
+    if !(cfg!(debug_assertions) && std::env::var("ANNALO_STARTUP_TIMING").is_ok_and(|v| v == "1")) {
+        return;
+    }
+    let since = PROCESS_START.get_or_init(Instant::now).elapsed();
+    devlog::info("startup", format!("{phase} after {} ms", since.as_millis()));
+}
+
 /// The UI painted its first frame (the splash, or the app when the splash is off).
 #[tauri::command]
 fn window_ready(app: AppHandle) {
+    startup_mark("first frame of the UI");
     show_main_once(&app, "ui");
     // The health check of the update rollback: this version started fine.
     updates::mark_healthy(&app);
@@ -4105,6 +4120,7 @@ struct StartupOptions {
 }
 
 pub fn run() {
+    PROCESS_START.get_or_init(Instant::now);
     let mut builder = tauri::Builder::default();
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
@@ -4204,6 +4220,8 @@ pub fn run() {
             annalo_core::i18n::set_lang(annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default()));
             let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir);
+            // The toolkit is up (GTK, and on Linux its session bus).
+            startup_mark("setup");
             if let Some(e) = folder_error {
                 recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
@@ -4261,6 +4279,7 @@ pub fn run() {
                 }
             };
             security::opened(&dir);
+            startup_mark("database open");
             // Settings of an older version are brought up to date once, then the sections
             // shared by every workspace on this computer are taken over.
             match db.migrate_settings() {
@@ -4386,6 +4405,7 @@ pub fn run() {
                 settings.voice.shortcut.clone(),
             ];
             secrets::init(&dir);
+            startup_mark("credential store");
             let secrets = SecretStore::new(&dir);
             let proxy_passwords = network::passwords_of(&dir, &settings.network);
             let idle_threshold = Duration::from_secs(settings.idle_threshold_minutes * 60);
@@ -4465,6 +4485,7 @@ pub fn run() {
             // Windows showed the unstyled page, then the webview's white, then the splash.
             let webview_dir = portable::webview_dir(&app.state::<AppState>().data_dir);
             let window = create_main_window(app, false, geometry, effect, custom_frame, webview_dir)?;
+            startup_mark("main window");
             PENDING_SHOW.store(!minimized, std::sync::atomic::Ordering::Relaxed);
             // Should the UI never report (a script error), the window still appears.
             let handle = app.handle().clone();

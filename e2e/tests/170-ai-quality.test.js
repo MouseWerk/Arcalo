@@ -41,15 +41,8 @@ const selectParagraph = () =>
 const openInlineBar = async () => {
   await openFromTree("Architektur");
   await app.waitFor(".pane.active .ProseMirror p");
-  // The editor may still settle right after opening (and drop the selection): select until it holds.
-  await app.browser.waitUntil(
-    async () => {
-      await selectParagraph();
-      await sleep(300);
-      return app.browser.execute(() => window.getSelection().toString().length > 30);
-    },
-    { timeout: 8000, timeoutMsg: "selection held" },
-  );
+  await selectParagraph();
+  await sleep(250);
   await app.keys(["Control", "j"]);
   await app.waitFor(".ai-bar");
 };

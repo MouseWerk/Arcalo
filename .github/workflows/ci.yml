@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch stops the run it supersedes (main gets pushes in quick succession).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # whisper.cpp (voice notes) for every CPU of its kind, not only the build machine (x86: AVX2 baseline).
   GGML_NATIVE: "OFF"
