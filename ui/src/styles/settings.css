@@ -526,8 +526,9 @@
 
 /* ---- undo toasts keep clear of controls ---- */
 /* Every change shows an undo toast at the bottom; a control scrolled into view (focus, Tab,
-   search) stops above the toast stack instead of under it. */
-.settings-scroll { scroll-padding-bottom: 130px; }
+   search) stops above the toast stack instead of under it, also when several toasts are stacked
+   (--toast-stack: the stack's height, set by the toasts). */
+.settings-scroll { scroll-padding-bottom: max(130px, calc(var(--toast-stack, 0px) + var(--sp-8))); }
 
 /* ---- about: licenses ---- */
 .lic-text { margin: 0; white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.6; color: var(--text-2); user-select: text; }

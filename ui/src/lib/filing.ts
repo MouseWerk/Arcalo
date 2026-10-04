@@ -3,6 +3,7 @@
 // ancestors, the fuzzy folder picker and range selection.
 
 import { invoke } from "@tauri-apps/api/core";
+import { currentLang, type Lang } from "./i18n";
 import type { Page, PageNode } from "./types";
 
 export type FileType = "journal" | "meeting" | "voice" | "jira" | "mail" | "bookmarks" | "inbox" | "canvas";
@@ -106,7 +107,10 @@ export const filingApi = {
 
 export const DEFAULT_STYLE: FolderStyle = { sort: "manual", folders_first: false, color: null };
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+// The app's language, not the system default: under a C/POSIX locale (LANG=C.UTF-8 on many Linux
+// machines) the default collator sorts by code point, every capital before every small letter.
+const collators: Partial<Record<Lang, Intl.Collator>> = {};
+const collator = () => (collators[currentLang()] ??= new Intl.Collator(currentLang(), { numeric: true, sensitivity: "base" }));
 
 /** The children in the order of the folder's style (`manual` keeps the stored order). */
 export function sortNodes(nodes: PageNode[], style: FolderStyle | null | undefined): PageNode[] {
@@ -115,7 +119,7 @@ export function sortNodes(nodes: PageNode[], style: FolderStyle | null | undefin
   const index = new Map(nodes.map((n, i) => [n.id, i]));
   const by: Record<FolderSort, (a: PageNode, b: PageNode) => number> = {
     manual: (a, b) => index.get(a.id)! - index.get(b.id)!,
-    name: (a, b) => collator.compare(a.title, b.title) || index.get(a.id)! - index.get(b.id)!,
+    name: (a, b) => collator().compare(a.title, b.title) || index.get(a.id)! - index.get(b.id)!,
     // Newest first.
     modified: (a, b) => b.updated_at.localeCompare(a.updated_at) || index.get(a.id)! - index.get(b.id)!,
     created: (a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "") || index.get(a.id)! - index.get(b.id)!,

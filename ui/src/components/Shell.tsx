@@ -207,24 +207,52 @@ export function Toasts() {
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
   const icon = { info: Info, success: CheckCircle2, warning: AlertTriangle, danger: XCircle };
-  // A toast pointed at or holding the focus does not close (time to reach „Rückgängig“).
+  // A toast pointed at or holding the focus does not close (time to reach „Rückgängig“). Pointed
+  // at means the pointer was moved onto it: a toast that appears under a resting pointer (after a
+  // click on a button below it) gets hover and enter events without any movement and would
+  // otherwise stay over the controls until the mouse moves.
   const box = useRef<HTMLDivElement>(null);
+  const pointed = useRef(false);
   const sync = () => {
     const el = box.current;
-    useApp.getState().holdToasts(!!el && (el.matches(":hover") || el.contains(document.activeElement)));
+    if (pointed.current && !el?.matches(":hover")) pointed.current = false;
+    useApp.getState().holdToasts(!!el && (pointed.current || el.contains(document.activeElement)));
   };
   // A toast closed under the pointer or with the focus leaves no leave event behind.
   useEffect(sync, [toasts]);
-  useEffect(() => () => useApp.getState().holdToasts(false), []);
+  useEffect(() => {
+    let last: [number, number] | null = null;
+    const move = (e: MouseEvent) => {
+      const moved = !last || last[0] !== e.clientX || last[1] !== e.clientY;
+      last = [e.clientX, e.clientY];
+      if (moved && !pointed.current && box.current?.contains(e.target as Node)) {
+        pointed.current = true;
+        useApp.getState().holdToasts(true);
+      }
+    };
+    window.addEventListener("mousemove", move, true);
+    // The stack's height, so a control scrolled into view stops above it (settings.css).
+    const root = document.documentElement.style;
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => root.setProperty("--toast-stack", `${Math.ceil(box.current?.offsetHeight ?? 0)}px`));
+    if (box.current) resize?.observe(box.current);
+    return () => {
+      window.removeEventListener("mousemove", move, true);
+      resize?.disconnect();
+      root.removeProperty("--toast-stack");
+      useApp.getState().holdToasts(false);
+    };
+  }, []);
   return (
     <div
       className="toasts"
       aria-live="polite"
       ref={box}
-      onMouseEnter={() => useApp.getState().holdToasts(true)}
-      onMouseLeave={() => useApp.getState().holdToasts(box.current?.contains(document.activeElement) ?? false)}
+      onMouseLeave={() => {
+        pointed.current = false;
+        useApp.getState().holdToasts(box.current?.contains(document.activeElement) ?? false);
+      }}
       onFocus={() => useApp.getState().holdToasts(true)}
-      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && useApp.getState().holdToasts(!!box.current?.matches(":hover"))}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && useApp.getState().holdToasts(pointed.current)}
     >
       <UpdateLayer />
       {toasts.map((t) => {

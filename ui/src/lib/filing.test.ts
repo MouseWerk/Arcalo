@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PageNode } from "./types";
 import { filterIds, folderOptions, fuzzyScore, pickFolders, isWithin, rangeIds, sortNodes, topSelected, typeFiling } from "./filing";
 import { examplePath, isoWeek, monthFolder } from "../views/settings/FilingSection";
@@ -25,6 +25,23 @@ describe("folder sort", () => {
   it("sorts by name with numbers, folders first", () => {
     expect(sortNodes(list, { sort: "name", folders_first: false, color: null }).map((n) => n.title)).toEqual(["alpha 9", "alpha 10", "beta", "Gamma"]);
     expect(sortNodes(list, { sort: "name", folders_first: true, color: null }).map((n) => n.title)).toEqual(["Gamma", "alpha 9", "alpha 10", "beta"]);
+  });
+  it("sorts by name in the app's language, whatever the system locale", async () => {
+    // A C/POSIX system locale: the default collator compares code points (capitals first).
+    const Real = Intl.Collator;
+    const spy = vi.spyOn(Intl, "Collator").mockImplementation(function (locales?: string | string[], options?: Intl.CollatorOptions) {
+      return locales ? new Real(locales, options) : { compare: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0) };
+    } as unknown as typeof Intl.Collator);
+    try {
+      vi.resetModules();
+      const fresh = await import("./filing");
+      (await import("./i18n")).setLang("de");
+      const names = [node(1, "b-Seite"), node(2, "C-Seite"), node(3, "Äpfel"), node(4, "a-Seite"), node(5, "Zettel")];
+      expect(fresh.sortNodes(names, { sort: "name", folders_first: false, color: null }).map((n) => n.title)).toEqual(["a-Seite", "Äpfel", "b-Seite", "C-Seite", "Zettel"]);
+    } finally {
+      spy.mockRestore();
+      vi.resetModules();
+    }
   });
   it("sorts by modified and created, newest first", () => {
     expect(sortNodes(list, { sort: "modified", folders_first: false, color: null }).map((n) => n.id)).toEqual([4, 3, 2, 1]);

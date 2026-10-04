@@ -2,9 +2,12 @@
 // and the libraries it ships, with version and license. The interface: the dependencies of
 // package.json (read from node_modules). The app itself: the direct dependencies of the
 // `annalo` and `annalo-core` crates (versions from Cargo.lock, licenses from the crate sources
-// cargo downloaded; a crate whose source is not there yet is listed without one). Runs before
-// `vite` and `vite build`.
+// cargo downloaded). Cargo downloads only the crates of the platform it builds for, so the
+// Windows and macOS crates are missing on Linux (and the other way round); their licenses then
+// come from `cargo metadata`, which fetches the crates of every platform. Runs before `vite`
+// and `vite build`.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -70,7 +73,31 @@ function appLibraries() {
       seen.set(name, { name, version: v, license: crateLicense(dirs, name, v) });
     }
   }
-  return [...seen.values()];
+  const libs = [...seen.values()];
+  const missing = libs.filter((l) => !l.license);
+  if (missing.length) {
+    const known = metadataLicenses();
+    for (const l of missing) l.license = known.get(`${l.name} ${l.version}`) ?? "";
+    const still = libs.filter((l) => !l.license).map((l) => l.name);
+    if (still.length) console.warn(`licenses: no license found for ${still.join(", ")}`);
+  }
+  return libs;
+}
+
+/** "name version" → license of every crate in the lock file, all platforms (`cargo metadata`). */
+function metadataLicenses() {
+  try {
+    const out = execFileSync("cargo", ["metadata", "--format-version", "1", "--locked"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    return new Map(JSON.parse(out).packages.map((p) => [`${p.name} ${p.version}`, p.license ?? ""]));
+  } catch (e) {
+    console.warn(`licenses: cargo metadata failed: ${e.message}`);
+    return new Map();
+  }
 }
 
 const byName = (a, b) => a.name.localeCompare(b.name);

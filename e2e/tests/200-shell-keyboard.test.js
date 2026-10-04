@@ -89,6 +89,26 @@ test("Shift+arrows select a range from the anchor, Entf moves the pages to the t
   await app.browser.$(".pane.active .pane-content").moveTo();
 });
 
+test("a toast that appears under the resting pointer still closes", async () => {
+  // The pointer rests where toasts appear (bottom right), as after a click on a button there.
+  const at = await app.browser.execute(() => {
+    const r = document.querySelector(".toasts").getBoundingClientRect();
+    return { x: Math.round(r.right - 100), y: Math.round(r.bottom - 20) };
+  });
+  await app.browser.action("pointer").move({ x: at.x, y: at.y, origin: "viewport" }).perform();
+  await app.keys(["Control", "k"]);
+  await app.waitFor(".palette input");
+  await app.type("Letztes Aufräumen");
+  await app.browser.pause(250);
+  await app.keys(["Enter"]);
+  await app.waitText(".toast-title", /Nichts rückgängig zu machen/);
+  assert.ok(await app.browser.execute((p) => !!document.elementFromPoint(p.x, p.y)?.closest(".toast"), at), "the toast is under the pointer");
+  await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".toast"))), {
+    timeout: 9000,
+    timeoutMsg: "the toast stayed open under the resting pointer",
+  });
+});
+
 test("Entf on one page moves it to the trash; F2 opens it with the title selected", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Einzeln weg", icon: null, content: "x\n" });
   const other = await app.invoke("page_create", { parentId: null, title: "Umbenennen per F2", icon: null, content: "x\n" });

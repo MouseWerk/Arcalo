@@ -48,8 +48,9 @@ async function openBackupSettings() {
 }
 
 async function addDestination(p) {
-  const input = await app.waitFor(".bdest-input");
-  await input.click();
+  await app.waitFor(".bdest-input");
+  // The undo toast of the destination added before may still sit at the bottom.
+  const input = await app.click(".bdest-input");
   await input.setValue(p);
   await app.click(".bdest-add .btn-primary");
   await app.browser.waitUntil(async () => !!(await view(p)), { timeout: 8000, timeoutMsg: `destination ${p} not saved` });
