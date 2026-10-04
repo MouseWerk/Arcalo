@@ -1186,9 +1186,12 @@ pub fn periodic(app: &AppHandle) {
         (None, None)
     } else {
         let db = state.db();
-        let eod = booked_today(&db)
-            .ok()
-            .and_then(|booked| core::end_of_day_reminder(now, &settings, booked, meta_date(&db, "reminder.day")));
+        // Today's target: the weekday's, none on a public holiday or absence day, half on a half one.
+        let base = (settings.daily_target_hours.max(0.0) * 60.0).round() as i64;
+        let target = annalo_core::worktime::gap_target(&db, now.date(), base).unwrap_or(base);
+        let eod = booked_today(&db).ok().and_then(|booked| {
+            core::end_of_day_reminder(now, &settings, booked, target, meta_date(&db, "reminder.day"))
+        });
         let running = db.running_timer().ok().flatten();
         let since = running.as_ref().map(|e| e.start_time.with_timezone(&Local).naive_local());
         let n = &settings.notifications;

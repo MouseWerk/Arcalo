@@ -222,14 +222,45 @@ export function isoWeek(d: Date) {
   return Math.ceil(((t.getTime() - y.getTime()) / 86400000 + 1) / 7);
 }
 
-/** Parses "1:30", "1,5", "90m", "2h" into minutes. */
+const DURATION_UNITS: Record<string, number> = {
+  h: 60, std: 60, stunde: 60, stunden: 60, hr: 60, hrs: 60, hour: 60, hours: 60,
+  m: 1, min: 1, mins: 1, minute: 1, minuten: 1, minutes: 1,
+};
+
+/**
+ * Minutes of a `/zeit` duration (`2,5h`, `2.5std`, `1h30m`, `90min`, `1:30`, units in German
+ * and English, as `annalo_core::zeit::parse_duration` reads them); null when it is none or not
+ * between 1 minute and 24 hours.
+ */
+export function parseDuration(s: string): number | null {
+  // A unit may end with a dot (`90min.`, `2std.`).
+  const v = s.trim().toLowerCase().replace(/,/g, ".").replace(/([a-z])\.$/, "$1");
+  let minutes = 0;
+  const clock = /^(\d+):(\d{1,2})$/.exec(v);
+  if (clock) {
+    if (+clock[2] >= 60 || +clock[1] > 24) return null;
+    minutes = +clock[1] * 60 + +clock[2];
+  } else {
+    const parts = [...v.matchAll(/(\d+(?:\.\d+)?)([a-z]+)/g)];
+    if (!parts.length || parts.map((p) => p[0]).join("") !== v) return null;
+    for (const [, n, unit] of parts) {
+      const f = DURATION_UNITS[unit];
+      if (!f) return null;
+      minutes += +n * f;
+    }
+  }
+  minutes = Math.round(minutes);
+  return minutes >= 1 && minutes <= 24 * 60 ? minutes : null;
+}
+
+/** Parses a typed duration into minutes: a number of hours ("1,5"), "1:30" or a `/zeit` duration ("90 min", "1h 30m", "1,5 Std."). */
 export function parseDurationInput(s: string): number | null {
-  const v = s.trim().toLowerCase().replace(",", ".");
-  let m: RegExpMatchArray | null;
-  if ((m = v.match(/^(\d+):(\d{1,2})$/))) return +m[1] * 60 + +m[2];
-  if ((m = v.match(/^(\d+(?:\.\d+)?)\s*m(in)?$/))) return Math.round(+m[1]);
-  if ((m = v.match(/^(\d+(?:\.\d+)?)\s*h?$/))) return Math.round(+m[1] * 60);
-  return null;
+  const v = s.trim().toLowerCase().replace(/\s+/g, "");
+  const hours = /^(\d+(?:[.,]\d+)?)$/.exec(v);
+  if (hours) return Math.round(+hours[1].replace(",", ".") * 60);
+  const clock = /^(\d+):(\d{1,2})$/.exec(v);
+  if (clock) return +clock[1] * 60 + +clock[2];
+  return parseDuration(v);
 }
 
 /** Days/hours without a trailing ",0" for whole numbers. */

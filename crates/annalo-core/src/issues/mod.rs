@@ -1356,7 +1356,7 @@ pub fn zeit_issue(db: &Database, line: &str) -> Result<ZeitIssue> {
 
 /// Whether the first argument of a `/zeit` line is a duration (no reference given).
 pub fn zeit_without_reference(line: &str) -> bool {
-    line.split_whitespace().nth(1).is_some_and(|w| crate::zeit::parse_duration(w).is_ok())
+    line.split_whitespace().nth(1).is_some_and(crate::zeit::is_duration_token)
 }
 
 /// The error of a line with an issue key but neither reference nor mapping.

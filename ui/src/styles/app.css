@@ -3741,3 +3741,10 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 /* Settings → About in a narrow pane: the version rows wrap their buttons instead of clipping. */
 .whatsnew-row { flex-wrap: wrap; row-gap: 2px; }
 .whatsnew-row-version { white-space: nowrap; }
+
+/* ---- Zeiterfassung 1.12 ---- */
+/* Narrow pane: the week navigation gets its own row, the actions stay together on the next
+   (instead of „Eintrag“ wrapping alone). */
+@container pane (max-width: 760px) {
+  .ts-actions .week-nav { flex-basis: 100%; margin-right: 0; }
+}

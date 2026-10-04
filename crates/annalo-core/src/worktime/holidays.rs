@@ -101,7 +101,8 @@ pub fn holidays(year: i32, state: &str) -> Vec<Holiday> {
         out.push((fixed(9, 20), "Weltkindertag", "World Children's Day"));
     }
     // Reformationstag: in the north and east (in HB, HH, NI and SH since 2018).
-    if in_(&["BB", "MV", "SN", "ST", "TH"]) || (in_(&["HB", "HH", "NI", "SH"]) && year >= 2018) {
+    // 2017 (500 years of the Reformation) in every state, once.
+    if in_(&["BB", "MV", "SN", "ST", "TH"]) || (in_(&["HB", "HH", "NI", "SH"]) && year >= 2018) || year == 2017 {
         out.push((fixed(10, 31), "Reformationstag", "Reformation Day"));
     }
     if in_(&["BW", "BY", "NW", "RP", "SL"]) {

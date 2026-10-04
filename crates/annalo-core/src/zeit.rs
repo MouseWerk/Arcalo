@@ -10,7 +10,8 @@
 //! * `/zeit NP-8801/ACT-001 1h30m #DEV "API Review" @gestern`
 //! * `/zeit NP-8801-1020 90m Abstimmung mit Kunde @22.09.2026 @08:30`
 //!
-//! Durations accept `2.5h`, `2,5h`, `2.5std`, `90m`, `90min`, `1h30m` and `1:30`.
+//! Durations accept `2.5h`, `2,5h`, `2.5std`, `90m`, `90min`, `1h30m` and `1:30`; a time span
+//! `9:00-10:30` (also `9.00–10.30`, over midnight `22:00-01:00`) gives start and duration.
 //! Unquoted trailing words become the description. `/time` is an alias.
 //! With a default reference (a page linked to a Vorgang) the reference may be left
 //! out: `/zeit 1.5h Abstimmung`. A first token that is a duration means "no reference".
@@ -78,7 +79,18 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
 
     let default_ref = default_ref.map(str::trim).filter(|r| !r.is_empty());
     let target = match (it.peek(), default_ref) {
-        (Some(Token::Word(w)), Some(d)) if parse_duration(w).is_ok() => d.to_owned(),
+        (Some(Token::Word(w)), Some(d)) if is_duration_token(w) => d.to_owned(),
+        // `/zeit 2h Abstimmung` on a page without linked Vorgang: the reference is missing (not
+        // „Ungültige Dauer „Abstimmung““).
+        (Some(Token::Word(w)), None) if is_duration_token(w) => {
+            return Err(Error::Parse(
+                tr!(
+                    "Netzplan fehlt, z. B. /zeit NP-8801/1020 2h (oder die Seite mit einem Vorgang verknüpfen)",
+                    "Network missing, e.g. /time NP-8801/1020 2h (or link the page to an activity)"
+                )
+                .into(),
+            ));
+        }
         (Some(Token::Word(w)), _) => {
             let w = w.clone();
             it.next();
@@ -96,8 +108,17 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
         None => (target, None),
     };
 
+    let mut span_start = None;
     let duration_minutes = match it.next() {
-        Some(Token::Word(w)) => parse_duration(&w)?,
+        Some(Token::Word(w)) => match parse_span(&w) {
+            Some((from, to)) => {
+                span_start = Some(from);
+                span_minutes(from, to).ok_or_else(|| {
+                    Error::Parse(trf!("Die Zeitspanne „{w}“ ist leer", "The time span “{w}” is empty"))
+                })?
+            }
+            None => parse_duration(&w)?,
+        },
         _ => {
             return Err(Error::Parse(
                 tr!("Dauer fehlt, z. B. 2,5h oder 90m", "Duration missing, e.g. 2.5h or 90m").into(),
@@ -107,7 +128,7 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
 
     let mut leistungsart = None;
     let mut date = DateSpec::Today;
-    let mut start = None;
+    let mut start = span_start;
     let mut quoted: Option<String> = None;
     let mut words: Vec<String> = vec![];
 
@@ -136,6 +157,15 @@ pub fn parse_with_default(line: &str, today: NaiveDate, default_ref: Option<&str
             Token::Word(w) if w.len() > 1 && w.starts_with('@') => {
                 let spec = &w[1..];
                 if let Some(t) = parse_time(spec) {
+                    if span_start.is_some() {
+                        return Err(Error::Parse(
+                            tr!(
+                                "Entweder eine Zeitspanne (9:00-10:30) oder @hh:mm angeben, nicht beides",
+                                "Give either a time span (9:00-10:30) or @hh:mm, not both"
+                            )
+                            .into(),
+                        ));
+                    }
                     start = Some(t);
                 } else {
                     date = parse_date(spec, today)?;
@@ -218,6 +248,32 @@ fn tokenize(line: &str) -> Result<Vec<Token>> {
     Ok(out)
 }
 
+/// Whether a token is a duration or a time span (the first argument of `/zeit 2h …` on a
+/// linked page).
+pub fn is_duration_token(s: &str) -> bool {
+    parse_duration(s).is_ok() || parse_span(s).is_some()
+}
+
+/// A time span `9:00-10:30`, `09:00–10:30` or `9.00-10.30`: start and end of day.
+pub fn parse_span(s: &str) -> Option<(NaiveTime, NaiveTime)> {
+    let (a, b) = s.split_once(['-', '–'])?;
+    let clock = |t: &str| {
+        let (h, m) = t.split_once([':', '.'])?;
+        if h.is_empty() || h.len() > 2 || m.len() != 2 || !(h.chars().chain(m.chars())).all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        NaiveTime::from_hms_opt(h.parse().ok()?, m.parse().ok()?, 0)
+    };
+    Some((clock(a)?, clock(b)?))
+}
+
+/// Minutes from `from` to `to`; an end before the start is on the next day (`22:00-01:00`).
+/// `None` for an empty span.
+fn span_minutes(from: NaiveTime, to: NaiveTime) -> Option<i64> {
+    let m = (to - from).num_minutes().rem_euclid(24 * 60);
+    (m > 0).then_some(m)
+}
+
 /// Parses a duration token into whole minutes (rounded).
 pub fn parse_duration(s: &str) -> Result<i64> {
     let err = || {
@@ -227,6 +283,11 @@ pub fn parse_duration(s: &str) -> Result<i64> {
         ))
     };
     let lower = s.trim().to_lowercase().replace(',', ".");
+    // A unit may end with a dot (`90min.`, `2std.`).
+    let lower = match lower.strip_suffix('.') {
+        Some(l) if l.ends_with(|c: char| c.is_alphabetic()) => l.to_owned(),
+        _ => lower,
+    };
 
     let minutes = if let Some((h, m)) = lower.split_once(':') {
         let h: u32 = h.parse().map_err(|_| err())?;
@@ -453,6 +514,39 @@ mod tests {
         assert!(parse("/zeit 1h x", today()).is_err());
         assert!(parse_with_default("/zeit 1h x", today(), Some("  ")).is_err());
         assert!(parse_with_default("/zeit", today(), Some("NP-8801")).is_err());
+    }
+
+    #[test]
+    fn time_spans_give_start_and_duration() {
+        let t = |h, m| NaiveTime::from_hms_opt(h, m, 0);
+        let c = parse("/zeit NP-8801/1020 9:00-10:30 Abstimmung", today()).unwrap();
+        assert_eq!((c.start, c.duration_minutes, c.description.as_str()), (t(9, 0), 90, "Abstimmung"));
+        // German notation and the typographic dash; over midnight the end is on the next day.
+        let c = parse("/zeit NP-8801 9.15–10.00 x @gestern", today()).unwrap();
+        assert_eq!((c.start, c.duration_minutes, c.date), (t(9, 15), 45, DateSpec::Yesterday));
+        let c = parse("/zeit NP-8801 22:00-01:30 Release", today()).unwrap();
+        assert_eq!((c.start, c.duration_minutes), (t(22, 0), 210));
+        // On a linked page the span is the first argument.
+        let c = parse_with_default("/zeit 08:00-08:45 Daily", today(), Some("NP-8801/1020")).unwrap();
+        assert_eq!((c.netzplan_ref.as_str(), c.start, c.duration_minutes), ("NP-8801", t(8, 0), 45));
+        for bad in ["/zeit NP-8801 9:00-9:00 leer", "/zeit NP-8801 9:00-10:00 x @11:00", "/zeit NP-8801 9:00-25:00 x"] {
+            assert!(parse(bad, today()).is_err(), "{bad} should fail");
+        }
+        // A reference with a dash is no span.
+        assert_eq!(parse_span("8801-1020"), None);
+        assert_eq!(parse("/zeit NP-8801-1020 1h x", today()).unwrap().netzplan_ref, "NP-8801-1020");
+    }
+
+    #[test]
+    fn a_leading_duration_without_default_says_the_reference_is_missing() {
+        for line in ["/zeit 1h30m Abstimmung", "/zeit 9:00-10:00 Abstimmung", "/time 90mins review"] {
+            let err = parse(line, today()).unwrap_err().to_string();
+            assert!(err.contains("Netzplan fehlt") || err.contains("Network missing"), "{line}: {err}");
+        }
+        for (s, m) in [("90min.", 90), ("2std.", 120), ("1,5Std.", 90)] {
+            assert_eq!(parse_duration(s).unwrap(), m, "{s}");
+        }
+        assert!(parse_duration("2.").is_err());
     }
 
     #[test]

@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { useApp } from "../store/app";
 import type { Settings, SettingsView } from "./types";
-import { TIME_COMMANDS, TIME_SHORTCUTS, TIME_TABS, TIME_TOOLS, isZeitLine, timeTrackingEnabled, timeTrackingOn, useTimeTracking } from "./timetracking";
+import { TIME_COMMANDS, TIME_SHORTCUTS, TIME_TABS, TIME_TOOLS, defaultLeistungsart, isZeitLine, timeTrackingEnabled, timeTrackingOn, useTimeTracking } from "./timetracking";
 import { COMMANDS } from "./keymap";
 import {
   WIDGET_KINDS,
@@ -150,5 +150,16 @@ describe("dashboard without time tracking", () => {
     expect(partsOf(w("budget"), today)).toEqual([{ kind: "budgets" }]);
     expect(partsOf(w("today"), today).map((p) => p.kind)).toEqual(["today", "timer_refs"]);
     expect(partsOf(w("today"), today, undefined, false).map((p) => p.kind)).toEqual(["today"]);
+  });
+});
+
+describe("defaultLeistungsart", () => {
+  const las: [string, string][] = [["DEV", "Entwicklung"], ["CON", "Beratung"]];
+  it("starts with the Netzplan's default, else DEV while it exists", () => {
+    expect(defaultLeistungsart({ "np-8801": "CON" }, "NP-8801", las)).toBe("CON");
+    expect(defaultLeistungsart({ "NP-8801": "CON" }, "NP-7700", las)).toBe("DEV");
+    expect(defaultLeistungsart({ "NP-8801": "" }, "NP-8801", las)).toBe("DEV");
+    expect(defaultLeistungsart(undefined, undefined, [])).toBe("DEV");
+    expect(defaultLeistungsart({}, "NP-8801", [["CON", "Beratung"]])).toBe("");
   });
 });

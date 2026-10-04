@@ -85,6 +85,9 @@ fn state_specific_holidays() {
     }
     assert_eq!(has(2025, "BE", "Tag der Befreiung"), Some(d(2025, 5, 8)));
     assert_eq!(has(2026, "BE", "Tag der Befreiung"), None);
+    // The Reformation's 500th anniversary was a holiday everywhere.
+    assert_eq!(has(2017, "BY", "Reformationstag"), Some(d(2017, 10, 31)));
+    assert_eq!(has(2018, "BY", "Reformationstag"), None);
     assert_eq!(has(2022, "MV", "Internationaler Frauentag"), None);
     assert_eq!(has(2023, "MV", "Internationaler Frauentag"), Some(d(2023, 3, 8)));
     // Counts: Bavaria has the most, Berlin and the north the fewest regular ones.

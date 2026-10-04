@@ -29,3 +29,14 @@ export const TIME_SHORTCUTS = new Set(["timer"]);
 
 /** A `/zeit …` (or `/time …`) line. */
 export const isZeitLine = (line: string) => /^\s*\/(zeit|time)(\s|$)/i.test(line);
+
+/**
+ * The Leistungsart a new booking on `netzplanNr` starts with: the Netzplan's default (Settings →
+ * Zeiterfassung, number compared case-insensitively), else DEV while it exists (or the list is
+ * not loaded yet), else none.
+ */
+export function defaultLeistungsart(defaults: Record<string, string> | undefined, netzplanNr: string | undefined, las: [string, string][]): string {
+  const own = netzplanNr ? Object.entries(defaults ?? {}).find(([k, v]) => v && k.toLowerCase() === netzplanNr.toLowerCase())?.[1] : undefined;
+  if (own) return own;
+  return !las.length || las.some(([code]) => code === "DEV") ? "DEV" : "";
+}

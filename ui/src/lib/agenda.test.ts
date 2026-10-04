@@ -121,6 +121,20 @@ describe("overlap layout", () => {
     const placed = layoutDay([ev("a", 21, 9, 60), ev("b", 21, 10, 60)], day);
     expect(placed.map((p) => p.cols)).toEqual([1, 1]);
   });
+  it("places items by wall clock on the days the clocks change", () => {
+    // 25 October 2026 has 25 hours, 28 March 2027 has 23 (Europe/Berlin, see vitest.config.ts).
+    const at = (y: number, m: number, d: number, h: number, minutes = 60) => ({ start: new Date(y, m, d, h).toISOString(), end: new Date(new Date(y, m, d, h).getTime() + minutes * 60_000).toISOString() });
+    for (const [y, m, d] of [[2026, 9, 25], [2027, 2, 28]]) {
+      const [p] = layoutDay([at(y, m, d, 10)], new Date(y, m, d));
+      expect([p.top, p.height]).toEqual([600, 60]);
+      // Until midnight: the rest of the grid.
+      const [late] = layoutDay([at(y, m, d, 22, 180)], new Date(y, m, d));
+      expect([late.top, late.height, late.clippedEnd]).toEqual([22 * 60, 120, true]);
+    }
+    // Across the repeated hour (01:30 to 02:30 summer time is 2 real hours later 02:30 winter time).
+    const [over] = layoutDay([{ start: "2026-10-24T23:30:00.000Z", end: "2026-10-25T01:30:00.000Z" }], new Date(2026, 9, 25));
+    expect([over.top, over.height]).toEqual([90, 60]);
+  });
 });
 
 describe("month cells", () => {

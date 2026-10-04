@@ -208,6 +208,7 @@ export const en = {
   "set.time.idle": "Idle after",
   "set.time.workTime": "Working time",
   "set.time.target": "Target per workday",
+  "set.time.targetOwn": "The target per weekday applies now (below under “Balance and vacation”).",
   "set.time.hours": "Working hours",
   "set.time.hoursDesc": "Free slots for focus blocks (“Plan in calendar…”) are looked for within these hours.",
   "set.time.hoursFrom": "Start of work",

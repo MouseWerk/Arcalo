@@ -10,19 +10,21 @@ import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRa
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtHours, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
-import { catsGrid, undeletableReason, weekGaps } from "../lib/cats";
+import { catsGrid, dayTargets, undeletableReason, weekGaps } from "../lib/cats";
+import { workApi, type Absence, type Holiday } from "../lib/workwidgets";
 import type { CalendarEvent, ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow, WbsHint } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
 import { openFocusDialog } from "../components/Focus";
 import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
-import { useT, type TKey } from "../lib/i18n";
+import { currentLang, useT, type TKey } from "../lib/i18n";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
+import { defaultLeistungsart } from "../lib/timetracking";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   running: { label: "time.status.running", tone: "info" },
@@ -86,8 +88,8 @@ export function TimesheetView() {
   const byStatus = (st: StatusFlag) => done.filter((r) => r.status_flag === st).reduce((a, r) => a + (r.duration_minutes ?? 0), 0);
   const todayKey = isoDay(new Date());
   const settings = useApp((st) => st.settings?.settings);
-  const target = settings?.daily_target_hours ?? 8;
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
+  const { targets, off } = useWeekTargets(week);
   const end = addDays(week, 6);
   const range = `${dayMonthName(week)} – ${dayMonthName(end, true)}`;
 
@@ -112,7 +114,7 @@ export function TimesheetView() {
               {t("time.weekNo", { n: isoWeek(week) })} · {range}
             </div>
           </div>
-          <div className="view-actions">
+          <div className="view-actions ts-actions">
             <div className="week-nav">
               <IconButton icon={ChevronLeft} label={t("time.prevWeek")} onClick={() => setWeek(addDays(week, -7))} />
               <Button size="sm" variant="ghost" onClick={() => setWeek(weekStart(new Date()))}>
@@ -134,14 +136,14 @@ export function TimesheetView() {
         <TimerCard wbs={wbs} las={las} />
 
         <div className="stat-row">
-          <Stat label={t("time.weekTotal")} value={`${fmtMinutes(total)} h`} sub={t("time.targetHours", { h: fmtHours(target * workdays.length) })} />
+          <Stat label={t("time.weekTotal")} value={`${fmtMinutes(total)} h`} sub={t("time.targetHours", { h: fmtMinutes(targets.reduce((a, b) => a + b, 0)) })} />
           <Stat label={t("time.status.draft")} value={`${fmtMinutes(byStatus("draft"))} h`} />
           {/* Colored only when there is something: a green „0,00 h“ reads like a result. */}
           <Stat label={t("time.status.released")} value={`${fmtMinutes(byStatus("released"))} h`} tone={byStatus("released") ? "accent" : undefined} />
           <Stat label={t("time.status.exported")} value={`${fmtMinutes(byStatus("exported"))} h`} tone={byStatus("exported") ? "success" : undefined} />
         </div>
 
-        <WeekGrid rows={done} week={week} todayKey={todayKey} target={target} workdays={workdays} onPropose={() => setProposing(true)} />
+        <WeekGrid rows={done} week={week} todayKey={todayKey} targets={targets} off={off} workdays={workdays} onPropose={() => setProposing(true)} />
 
         <MeetingSuggestions week={week} rows={rows} wbs={wbs} las={las} onPropose={() => setProposing(true)} />
 
@@ -224,10 +226,20 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
   const [la, setLa] = useState(() => localStorage.getItem("annalo.timer.la") ?? "DEV");
   const [desc, setDesc] = useState("");
   const [quick, setQuick] = useState("");
+  const booking = useRef(false);
   const s = useApp.getState;
   const all = wbs.flatMap((p) => p.netzplaene);
+  const defaults = useApp((st) => st.settings?.settings.time?.default_leistungsart);
+  // Another Netzplan: its default Leistungsart, when one is set (Settings → Zeiterfassung).
+  const chooseNp = (v: number) => {
+    setNp(v);
+    setVorgang("");
+    const nr = all.find((x) => x.id === v)?.netzplan_nr;
+    if (nr && Object.keys(defaults ?? {}).some((k) => k.toLowerCase() === nr.toLowerCase())) setLa(defaultLeistungsart(defaults, nr, las));
+  };
   useEffect(() => {
-    if (np == null && all.length) setNp(all[0].id);
+    // None yet, or the remembered one was deleted: the first Netzplan.
+    if (all.length && (np == null || !all.some((x) => x.id === np))) setNp(all[0].id);
   }, [all, np]);
 
   const start = async () => {
@@ -244,6 +256,9 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
     }
   };
   const book = async () => {
+    // Enter twice while the booking is on its way books once.
+    if (booking.current) return;
+    booking.current = true;
     const line = /^\/(zeit|time)\b/i.test(quick.trim()) ? quick.trim() : `/zeit ${quick.trim()}`;
     try {
       const out = await api.logTime(line);
@@ -253,6 +268,8 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
       s().bumpEntries();
     } catch (e) {
       s().error(t("time.bookFailed"), e);
+    } finally {
+      booking.current = false;
     }
   };
 
@@ -302,7 +319,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
   return (
     <section className="card timer-card">
       <div className="timer-form">
-        <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} />
+        <NetzplanSelect wbs={wbs} value={np} onChange={chooseNp} />
         <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         <LeistungsartSelect las={las} value={la} onChange={setLa} />
         <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t("time.workingOn")} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && start()} aria-label={t("time.description")} />
@@ -337,7 +354,50 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
 
 // -------------------------------------------------------------- week grid
 
-function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows: TimeEntryRow[]; week: Date; todayKey: string; target: number; workdays: number[]; onPropose: () => void }) {
+/**
+ * Target minutes per day of the week (own weekday targets, holidays of the state, absences, as
+ * the week proposal counts them) and the days off with their reason (holiday name, absence).
+ */
+function useWeekTargets(week: Date): { targets: number[]; off: Map<string, string> } {
+  const t = useT();
+  const settings = useApp((st) => st.settings?.settings);
+  const [data, setData] = useState<{ absences: Absence[]; holidays: Holiday[] } | null>(null);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const un = on("data://absences", () => setVersion((v) => v + 1));
+    return () => void un.then((f) => f());
+  }, []);
+  const state = settings?.time?.balance?.state ?? "";
+  useEffect(() => {
+    let live = true;
+    workApi
+      .absences(isoDay(week), isoDay(addDays(week, 6)))
+      .then((d) => live && setData(d))
+      .catch(() => live && setData(null));
+    return () => {
+      live = false;
+    };
+  }, [week, version, state]);
+  return useMemo(() => {
+    const holidays = new Set(data?.holidays.map((h) => h.date));
+    const targets = dayTargets(week, {
+      daily: settings?.daily_target_hours ?? 8,
+      workdays: settings?.workdays ?? [1, 2, 3, 4, 5],
+      weekdayHours: settings?.time?.balance?.weekday_hours,
+      holidays,
+      absences: data?.absences,
+    });
+    const off = new Map<string, string>();
+    for (const h of data?.holidays ?? []) off.set(h.date, currentLang() === "en" ? h.name_en : h.name);
+    for (const a of data?.absences ?? []) {
+      const kind = t(`work.abs.${a.kind}` as TKey);
+      off.set(a.date, a.half ? `${kind} (${t("work.abs.half")})` : kind);
+    }
+    return { targets, off };
+  }, [data, week, settings, t]);
+}
+
+function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: { rows: TimeEntryRow[]; week: Date; todayKey: string; targets: number[]; off: Map<string, string>; workdays: number[]; onPropose: () => void }) {
   const t = useT();
   const weekend = (i: number) => !workdays.includes(isoWeekday(addDays(week, i)));
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
@@ -354,7 +414,7 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, week]);
-  const gaps = weekGaps(rows, week, new Date(), target, workdays);
+  const gaps = weekGaps(rows, week, new Date(), targets);
   const gapKeys = new Set(gaps.map((g) => isoDay(g.day)));
   const s = useApp.getState;
   const copyCats = async () => {
@@ -402,7 +462,7 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
           <AlertTriangle size={14} />
           <span>{t("time.belowTarget")}</span>
           {gaps.map((g) => (
-            <span key={isoDay(g.day)} className="gap-chip" title={t("time.bookedOf", { booked: fmtMinutes(g.bookedMinutes), target: fmtHours(target) })}>
+            <span key={isoDay(g.day)} className="gap-chip" title={t("time.bookedOf", { booked: fmtMinutes(g.bookedMinutes), target: fmtMinutes(g.bookedMinutes + g.missingMinutes) })}>
               {weekdayShort(g.day)} {dayOfMonth(g.day)} −{fmtMinutes(g.missingMinutes)} h
             </span>
           ))}
@@ -419,8 +479,9 @@ function WeekGrid({ rows, week, todayKey, target, workdays, onPropose }: { rows:
               <th>{t("time.col.wbs")}</th>
               <th>{t("time.col.la")}</th>
               {days.map((d, i) => (
-                <th key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) ? "weekend" : ""}`}>
+                <th key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) || off.has(keys[i]) ? "weekend" : ""}`} data-tooltip={off.get(keys[i])}>
                   {weekdayShort(d)} <span className="faint">{dayOfMonth(d)}</span>
+                  {off.has(keys[i]) && <span className="sr-only">, {off.get(keys[i])}</span>}
                 </th>
               ))}
               <th className="num">{t("time.col.total")}</th>
@@ -680,7 +741,16 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
   const knownNp = (id: number | null | undefined) => (id != null && wbs.some((p) => p.netzplaene.some((n) => n.id === id)) ? id : null);
   const [np, setNp] = useState<number | null>(entry?.netzplan_id ?? knownNp(prefill?.netzplanId) ?? wbs[0]?.netzplaene[0]?.id ?? null);
   const [vorgang, setVorgang] = useState(entry?.vorgang_nr ?? (knownNp(prefill?.netzplanId) != null ? (prefill?.vorgangNr ?? "") : ""));
-  const [la, setLa] = useState(entry?.leistungsart ?? prefill?.leistungsart ?? "DEV");
+  const defaults = useApp((st) => st.settings?.settings.time?.default_leistungsart);
+  const npNr = (id: number | null) => wbs.flatMap((p) => p.netzplaene).find((n) => n.id === id)?.netzplan_nr;
+  // A new entry starts with the Netzplan's default Leistungsart (Settings → Zeiterfassung) and
+  // follows it when the Netzplan changes, until a Leistungsart is chosen.
+  const laChosen = useRef(!!(entry || prefill?.leistungsart));
+  const [la, setLaState] = useState(entry?.leistungsart ?? prefill?.leistungsart ?? defaultLeistungsart(defaults, npNr(np), las));
+  const setLa = (v: string) => {
+    laChosen.current = true;
+    setLaState(v);
+  };
   const [day, setDay] = useState(isoDay(start));
   const [from, setFrom] = useState(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
   const [dur, setDur] = useState(entry?.duration_minutes != null ? fmtMinutes(entry.duration_minutes) : prefill ? fmtMinutes(prefill.minutes) : fmtMinutes(60));
@@ -739,7 +809,16 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
       {note}
       <div className="form-grid">
         <Field label={t("wbs.netzplan")}>
-          <NetzplanSelect wbs={wbs} value={np} onChange={(v) => (setNp(v), setVorgang(""))} disabled={!!entry} />
+          <NetzplanSelect
+            wbs={wbs}
+            value={np}
+            onChange={(v) => {
+              setNp(v);
+              setVorgang("");
+              if (!laChosen.current) setLaState(defaultLeistungsart(defaults, npNr(v), las));
+            }}
+            disabled={!!entry}
+          />
         </Field>
         <Field label={t("wbs.vorgang")}>
           <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />

@@ -149,11 +149,13 @@ pub fn format_hours(minutes: f64) -> String {
 }
 
 /// The end-of-day notification text, when one is due: at or after the reminder time on a
-/// workday, less than the daily target booked and not yet reminded today.
+/// workday, less than the day's target booked and not yet reminded today. `target_minutes` is
+/// the day's target ([`crate::worktime::gap_target`]: none on a holiday or absence day).
 pub fn end_of_day_reminder(
     now: NaiveDateTime,
     settings: &Settings,
     booked_minutes: i64,
+    target_minutes: i64,
     last_notified: Option<NaiveDate>,
 ) -> Option<String> {
     let at = parse_hhmm(settings.reminder_time.as_deref()?)?;
@@ -164,16 +166,15 @@ pub fn end_of_day_reminder(
     }
     let today = now.date();
     let workday = settings.workdays.contains(&today.weekday().number_from_monday());
-    let target = settings.daily_target_hours * 60.0;
-    if !workday || now.time() < at || last_notified == Some(today) || target <= 0.0 {
+    if !workday || now.time() < at || last_notified == Some(today) || target_minutes <= 0 {
         return None;
     }
-    ((booked_minutes as f64) < target).then(|| {
+    (booked_minutes < target_minutes).then(|| {
         trf!(
             "Heute {} von {} h gebucht",
             "{} of {} h booked today",
             format_hours(booked_minutes as f64),
-            format_hours(settings.daily_target_hours * 60.0)
+            format_hours(target_minutes as f64)
         )
     })
 }
@@ -399,28 +400,35 @@ mod tests {
     fn end_of_day_reminder_rules() {
         let s = Settings::default(); // 17:30, 8 h, Mon–Fri
         let wed = day();
-        assert_eq!(end_of_day_reminder(at(wed, 17, 30), &s, 330, None).as_deref(), Some("Heute 5,5 von 8 h gebucht"));
-        assert_eq!(end_of_day_reminder(at(wed, 21, 0), &s, 0, None).as_deref(), Some("Heute 0 von 8 h gebucht"));
+        assert_eq!(
+            end_of_day_reminder(at(wed, 17, 30), &s, 330, 480, None).as_deref(),
+            Some("Heute 5,5 von 8 h gebucht")
+        );
+        assert_eq!(end_of_day_reminder(at(wed, 21, 0), &s, 0, 480, None).as_deref(), Some("Heute 0 von 8 h gebucht"));
         // Too early, target reached, already reminded today.
-        assert_eq!(end_of_day_reminder(at(wed, 17, 29), &s, 0, None), None);
-        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 480, None), None);
-        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 0, Some(wed)), None);
+        assert_eq!(end_of_day_reminder(at(wed, 17, 29), &s, 0, 480, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 480, 480, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 0, 480, Some(wed)), None);
         // Reminded yesterday counts for yesterday only.
-        assert!(end_of_day_reminder(at(wed, 18, 0), &s, 0, wed.pred_opt()).is_some());
+        assert!(end_of_day_reminder(at(wed, 18, 0), &s, 0, 480, wed.pred_opt()).is_some());
         // Weekend and switched off.
         let sat = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
-        assert_eq!(end_of_day_reminder(at(sat, 18, 0), &s, 0, None), None);
+        assert_eq!(end_of_day_reminder(at(sat, 18, 0), &s, 0, 480, None), None);
         let off = Settings { reminder_time: None, ..Settings::default() };
-        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &off, 0, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &off, 0, 480, None), None);
         // Time tracking off: no reminder about unbooked hours.
         let mut no_time = Settings::default();
         no_time.time.enabled = false;
-        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &no_time, 0, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &no_time, 0, 480, None), None);
         let broken = Settings { reminder_time: Some("abends".into()), ..Settings::default() };
-        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &broken, 0, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &broken, 0, 480, None), None);
+        // A public holiday or an absence day has no target; a half day half of it.
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 0, 0, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 240, 240, None), None);
+        assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 60, 240, None).as_deref(), Some("Heute 1 von 4 h gebucht"));
         let custom = Settings { reminder_time: Some("16:00".into()), daily_target_hours: 7.5, ..Settings::default() };
         assert_eq!(
-            end_of_day_reminder(at(wed, 16, 0), &custom, 60, None).as_deref(),
+            end_of_day_reminder(at(wed, 16, 0), &custom, 60, 450, None).as_deref(),
             Some("Heute 1 von 7,5 h gebucht")
         );
     }

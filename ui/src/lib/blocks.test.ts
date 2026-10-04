@@ -23,6 +23,9 @@ describe("focus blocks", () => {
     const b = { start: "2026-10-05T07:00:00.000Z", end: "2026-10-05T08:00:00.000Z" };
     expect(moved(b, 22)).toEqual({ start: "2026-10-05T07:15:00.000Z", end: "2026-10-05T08:15:00.000Z" });
     expect(moved(b, 0, 1).start).toBe("2026-10-06T07:00:00.000Z");
+    // Across the clock change the block keeps its time of day (09:00 → 09:00, one hour later in UTC).
+    const fri = { start: "2026-10-23T07:00:00.000Z", end: "2026-10-23T08:30:00.000Z" };
+    expect(moved(fri, 0, 3)).toEqual({ start: "2026-10-26T08:00:00.000Z", end: "2026-10-26T09:30:00.000Z" });
     expect(resized(b, 30).end).toBe("2026-10-05T08:30:00.000Z");
     expect(resized(b, -120).end).toBe("2026-10-05T07:15:00.000Z");
   });
