@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
+PackageIdentifier: MouseWerk.Arcalo
+PackageVersion: 1.11.0
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+# Tauri's NSIS installer: /S quiet, /P passive (progress only, the mode the in-app updater uses).
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /P
+UpgradeBehavior: install
+MinimumOSVersion: 10.0.0.0
+# The uninstall entry is named after the product (HKCU\...\Uninstall\Arcalo).
+ProductCode: Arcalo
+AppsAndFeaturesEntries:
+  - DisplayName: Arcalo
+    Publisher: MouseWerk
+    DisplayVersion: 1.11.0
+    ProductCode: Arcalo
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/MouseWerk/Arcalo/releases/download/v1.11.0/Arcalo_1.11.0_x64-setup.exe
+    InstallerSha256: E30FE0D4F6727556A0F97EBC5628B012CE203C3E57EA8D2AE14BB4FC1ABB12DF
+ManifestType: installer
+ManifestVersion: 1.12.0

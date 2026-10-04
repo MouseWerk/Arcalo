@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+
+PackageIdentifier: MouseWerk.Arcalo
+PackageVersion: 1.11.0
+PackageLocale: de-DE
+Publisher: MouseWerk
+PrivacyUrl: https://arcalo.mousewerk.de/de/datenschutz-app/
+PackageName: Arcalo
+PackageUrl: https://arcalo.mousewerk.de/de/
+License: MIT
+ShortDescription: Lokale Notizen, Aufgaben und Zeiterfassung mit Buchung auf SAP und Jira, Kalender und optionaler KI.
+Description: |-
+  Arcalo ist eine Desktop-App für verknüpfte Markdown-Notizen, Aufgaben, Tagesnotizen und Zeiterfassung.
+  Mit /zeit in einer beliebigen Notiz buchst du Stunden auf einen SAP-PS-Vorgang oder ein Jira-Issue; den
+  Wochenzettel exportierst du nach SAP CATS, Jira, CSV oder JSON. Arcalo zeigt deine Termine aus Outlook
+  und anderen Kalendern neben der gebuchten Zeit, transkribiert Sprachnotizen auf deinem Rechner und nutzt
+  KI deines eigenen Anbieters oder ein lokales Modell. Alle Daten bleiben in einer Datenbank auf deinem
+  Rechner, ohne Konto und ohne Telemetrie; Git-Sync und Sicherungen sind optional.
+Tags:
+  - notizen
+  - markdown
+  - zeiterfassung
+  - stundenzettel
+  - sap
+  - jira
+  - aufgaben
+  - kalender
+  - produktivitaet
+  - wissensdatenbank
+  - local-first
+  - open-source
+ReleaseNotesUrl: https://github.com/MouseWerk/Arcalo/releases/tag/v1.11.0
+ManifestType: locale
+ManifestVersion: 1.12.0

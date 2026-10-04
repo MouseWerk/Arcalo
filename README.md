@@ -5,13 +5,24 @@
 <h1 align="center">Arcalo</h1>
 
 <p align="center">
-  <b>Notes, time tracking and your own AI in one local-first desktop app.</b><br>
-  Markdown notes with <code>[[links]]</code> like Obsidian · SAP PS time booking with <code>/time</code> · an assistant on <b>your</b> AI providers (LiteLLM, OpenAI-compatible, Azure, Ollama)
+  <b>Take the notes. The timesheet follows.</b><br>
+  Notes, time tracking and your own AI in one local-first desktop app, made for SAP project work.<br>
+  Markdown notes with <code>[[links]]</code> like Obsidian · SAP PS and Jira time booking with <code>/time</code> · an assistant on <b>your</b> AI providers (LiteLLM, OpenAI-compatible, Azure, Ollama)
+</p>
+
+<p align="center">
+  <a href="https://arcalo.mousewerk.de/"><b>Website</b></a> ·
+  <a href="https://github.com/MouseWerk/Arcalo/releases/latest"><b>Download</b></a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#a-quick-tour">Tour</a> ·
+  <a href="https://arcalo.mousewerk.de/de/">Deutsch</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/MouseWerk/Arcalo/actions/workflows/ci.yml"><img src="https://github.com/MouseWerk/Arcalo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://github.com/MouseWerk/Arcalo/releases/latest"><img src="https://img.shields.io/github/v/release/MouseWerk/Arcalo?label=release" alt="Latest release"></a>
+  <a href="https://github.com/MouseWerk/Arcalo/releases"><img src="https://img.shields.io/github/downloads/MouseWerk/Arcalo/total?label=downloads" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MouseWerk/Arcalo" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6b5bd6" alt="Platforms">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20Rust%20%C2%B7%20React-2f2f3a" alt="Tauri 2, Rust, React">
 </p>
@@ -31,7 +42,44 @@ and update checks against this repository's releases.
 The app speaks English and German. It starts in your system's language (English for everything that is not German)
 and switches live under Settings → Language & format.
 
-**Contents:** [Download](#download) · [Tour](#a-quick-tour) · [Features](#what-you-get) · [First steps](#first-steps) ·
+## Why Arcalo
+
+Written for SAP consultants and project people who spend the day in workshops, write everything down and owe a
+timesheet at the end of the week.
+
+- **The timesheet comes from your notes.** `/time NP-8801/1020 2.5h` in the meeting note books on the network
+  and activity, with the remaining plan hours shown while you type. “Propose the week” drafts the rest from your
+  meetings, focus sessions and edited pages; the week exports to SAP CATS, Jira worklogs, CSV or JSON.
+- **SAP PS terms built in.** Networks, activities and activity types, budgets with ETC and EAC, the critical path,
+  and budget warnings when a booking crosses a threshold.
+- **Meetings next to booked time.** Outlook Classic (also shared and sub-calendars, no admin rights or app
+  registration) and ICS calendars, with “Book time” and “Meeting note” on every meeting.
+- **Jira in the same place.** Issues and saved searches offline, issue keys as live chips in notes, worklogs from
+  `/time 1h PROJ-123`.
+- **AI that stays where your company allows it.** Your LiteLLM, Azure OpenAI or OpenAI-compatible endpoint, or a
+  local Ollama; `#privat` notes go only to the local model. Voice notes are transcribed on your computer.
+- **Nothing leaves your machine unasked.** One local database, no account, no telemetry, optional encryption,
+  backups and Git sync. Runs per user without admin rights, or portable from a USB stick.
+
+### How it compares
+
+- **Obsidian:** the same Markdown habits (`[[links]]`, callouts, Excalidraw drawings) and a vault import, plus
+  time booking, timesheet, calendar and Jira in the app itself instead of plugins.
+- **Notion and other cloud workspaces:** no account and no server; your client notes stay on your computer.
+- **A spreadsheet or the CATS screen at 5 pm on Friday:** the hours are proposed from what you did and wrote that
+  week, and you only review them.
+- **Tempo or Jira time tracking alone:** bookings go to SAP networks and to Jira issues from the same note.
+
+## Quick start
+
+1. Download the installer for your system from the [Releases page](https://github.com/MouseWerk/Arcalo/releases/latest)
+   (Windows, macOS, Linux; details under [Download](#download)) and start Arcalo.
+2. The setup asks for language, working time, workspace (sample data, Obsidian import or empty), AI and calendar;
+   every step can be skipped.
+3. Open today's daily note (**Ctrl Shift D**), write down what you did and type `/time` to book it. More under
+   [First steps](#first-steps), and on the [website](https://arcalo.mousewerk.de/).
+
+**Contents:** [Why Arcalo](#why-arcalo) · [Quick start](#quick-start) · [Download](#download) · [Tour](#a-quick-tour) · [Features](#what-you-get) · [First steps](#first-steps) ·
 [AI providers](#connecting-ai-providers) · [Proxy](#network-and-proxy) · [Customizing](#customizing) ·
 [Your data](#your-data-is-safe) · [Git sync](#git-sync) · [Keyboard](#keyboard) · [Building](#building) ·
 [Updates](#setting-up-automatic-updates) · [Tests](#tests)

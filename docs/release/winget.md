@@ -4,42 +4,72 @@ Package identifier: `MouseWerk.Arcalo`. Users install with `winget install Mouse
 `winget upgrade MouseWerk.Arcalo` (the app also updates itself).
 
 The manifests of the current release are in
-[`packaging/winget/manifests/m/MouseWerk/Arcalo/1.8.0/`](../../packaging/winget/manifests/m/MouseWerk/Arcalo/1.8.0)
+[`packaging/winget/manifests/m/MouseWerk/Arcalo/1.11.0/`](../../packaging/winget/manifests/m/MouseWerk/Arcalo/1.11.0)
 (version, installer, default locale en-US and a de-DE locale). The path mirrors the layout of
-[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs).
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). They use manifest schema 1.12.0, the version
+the winget-pkgs pull request template asks for, and validate against its JSON schemas. `ProductCode: Arcalo` is
+the name of the uninstall entry Tauri's NSIS installer writes (`HKCU\...\Uninstall\Arcalo`).
+
+If a newer release is out before the first submission, submit that one instead: copy the folder to the new
+version and change `PackageVersion`, `DisplayVersion`, `InstallerUrl`, `InstallerSha256` and `ReleaseNotesUrl`
+(or run `wingetcreate update MouseWerk.Arcalo` against the local files).
 
 ## First submission (once, by hand)
 
-The automation can only update a package that already exists in winget-pkgs, so 1.8.0 goes in by hand.
+The automation can only update a package that already exists in winget-pkgs, so 1.11.0 goes in by hand.
 
 1. Fork [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) with the account that will open the
    pull requests (MouseWerk or your personal account).
 2. Check the installer hash still matches the release asset (it does unless the asset was replaced):
 
    ```powershell
-   (Get-FileHash .\Arcalo_1.8.0_x64-setup.exe -Algorithm SHA256).Hash
-   # or: winget hash .\Arcalo_1.8.0_x64-setup.exe
+   (Get-FileHash .\Arcalo_1.11.0_x64-setup.exe -Algorithm SHA256).Hash
+   # or: winget hash .\Arcalo_1.11.0_x64-setup.exe
    ```
 
-   Expected: `F52B1DA75688D4C918EBBF6333CA70FD07A43914D71EC8E7C317ED0F3F5A3B20`.
+   Expected: `E30FE0D4F6727556A0F97EBC5628B012CE203C3E57EA8D2AE14BB4FC1ABB12DF`.
 3. Validate and test on Windows (from a clone of this repository):
 
    ```powershell
-   winget validate --manifest packaging\winget\manifests\m\MouseWerk\Arcalo\1.8.0
+   winget validate --manifest packaging\winget\manifests\m\MouseWerk\Arcalo\1.11.0
    winget settings --enable LocalManifestFiles   # once, in an admin shell
-   winget install --manifest packaging\winget\manifests\m\MouseWerk\Arcalo\1.8.0
+   winget install --manifest packaging\winget\manifests\m\MouseWerk\Arcalo\1.11.0
    ```
 
 4. Submit, either way:
    - **wingetcreate** (`winget install Microsoft.WingetCreate`):
 
      ```powershell
-     wingetcreate submit --token <classic PAT with public_repo> packaging\winget\manifests\m\MouseWerk\Arcalo\1.8.0
+     wingetcreate submit --token <classic PAT with public_repo> packaging\winget\manifests\m\MouseWerk\Arcalo\1.11.0
      ```
 
      It opens the pull request from your fork.
-   - **By hand**: copy the four files into `manifests/m/MouseWerk/Arcalo/1.8.0/` of your fork, commit, and
+   - **By hand**: copy the four files into `manifests/m/MouseWerk/Arcalo/1.11.0/` of your fork, commit, and
      open a pull request against `microsoft/winget-pkgs` `master`, filling in the PR template checklist.
+
+   Pull request title: `New package: MouseWerk.Arcalo version 1.11.0`. Body (the template's sections; tick a
+   box only once it is true):
+
+   ```markdown
+   ## Description
+
+   New package: MouseWerk.Arcalo version 1.11.0 (Arcalo, a local-first desktop app for notes, tasks and
+   time tracking; MIT, https://github.com/MouseWerk/Arcalo). Per-user NSIS installer from the GitHub
+   release, no admin rights needed. Submitted by the author.
+
+   ## Checklist
+
+   - [x] Signed the [Contributor License Agreement](https://cla.opensource.microsoft.com)
+   - [ ] Linked to an issue (if applicable)
+
+   ## Manifest Checklist
+
+   - [x] Checked that there aren't other open [pull requests](https://github.com/microsoft/winget-pkgs/pulls) for the same manifest update/change
+   - [x] This PR only modifies one (1) manifest
+   - [x] Validated manifest locally with `winget validate --manifest <path>`
+   - [x] Tested manifest locally with `winget install --manifest <path>`
+   - [x] Manifest conforms to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)
+   ```
 5. Review: the validation pipeline (installs the package in a sandbox, scans it) runs within about an hour and
    labels the pull request. A moderator then merges it, usually within a few days, sometimes one to two
    weeks for a new package. Answer review comments on the pull request; `Needs-Author-Feedback` closes it
@@ -71,8 +101,8 @@ first submission; it does not need to be updated per release.
 ## Owner checklist
 
 - [ ] Fork microsoft/winget-pkgs.
-- [ ] On Windows: `winget validate` and a test install of `packaging/winget/.../1.8.0` (step 3 above).
-- [ ] Submit 1.8.0 with `wingetcreate submit` or a manual pull request; sign the CLA in the PR.
+- [ ] On Windows: `winget validate` and a test install of `packaging/winget/.../1.11.0` (step 3 above).
+- [ ] Submit 1.11.0 with `wingetcreate submit` or a manual pull request; sign the CLA in the PR.
 - [ ] Wait for the merge (days, up to about two weeks); answer review comments.
 - [ ] Then: classic PAT (`public_repo`) as secret `WINGET_TOKEN`; variable `WINGET_FORK_USER` if the fork
       is not under `MouseWerk`.

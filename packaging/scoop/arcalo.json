@@ -1,0 +1,33 @@
+{
+    "version": "1.11.0",
+    "description": "Local-first notes, tasks and time tracking with SAP and Jira booking, calendar and optional AI.",
+    "homepage": "https://arcalo.mousewerk.de/",
+    "license": "MIT",
+    "notes": [
+        "Arcalo runs in portable mode: its data lives in $persist_dir\\data and survives updates.",
+        "API keys and tokens stay in the Windows Credential Manager of this computer."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/MouseWerk/Arcalo/releases/download/v1.11.0/Arcalo_1.11.0_x64-portable.zip",
+            "hash": "5b39fd4d8c5bcae0e6c755105d983b5baa590d3accc605ab9db9569c45af7d9e"
+        }
+    },
+    "shortcuts": [
+        [
+            "Arcalo.exe",
+            "Arcalo"
+        ]
+    ],
+    "persist": "data",
+    "checkver": {
+        "github": "https://github.com/MouseWerk/Arcalo"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/MouseWerk/Arcalo/releases/download/v$version/Arcalo_$version_x64-portable.zip"
+            }
+        }
+    }
+}

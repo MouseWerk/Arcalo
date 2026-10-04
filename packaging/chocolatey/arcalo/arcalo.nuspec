@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>arcalo</id>
+    <version>1.11.0</version>
+    <packageSourceUrl>https://github.com/MouseWerk/Arcalo/tree/main/packaging/chocolatey</packageSourceUrl>
+    <owners>MouseWerk</owners>
+    <title>Arcalo</title>
+    <authors>Maurice Kleindienst</authors>
+    <projectUrl>https://arcalo.mousewerk.de/</projectUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/MouseWerk/Arcalo@v1.11.0/docs/brand/annalo-icon-1024.png</iconUrl>
+    <copyright>Copyright (c) 2026 Mousewerk, Maurice Kleindienst</copyright>
+    <licenseUrl>https://github.com/MouseWerk/Arcalo/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/MouseWerk/Arcalo</projectSourceUrl>
+    <docsUrl>https://github.com/MouseWerk/Arcalo#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/MouseWerk/Arcalo/issues</bugTrackerUrl>
+    <tags>arcalo notes markdown time-tracking timesheet sap jira tasks calendar knowledge-base local-first productivity foss</tags>
+    <summary>Local-first notes, tasks and time tracking with SAP and Jira booking, calendar and optional AI.</summary>
+    <description><![CDATA[Arcalo is a desktop app for Markdown notes that link to each other, tasks, daily notes and time tracking.
+
+## Features
+
+- Markdown notes with `[[wiki links]]`, backlinks, tags, tables, tasks and a page tree; imports an Obsidian vault and exports everything back to Markdown files.
+- Time tracking in the note: type `/time NP-8801/1020 2.5h` to book on an SAP PS activity or `/time 1h PROJ-123` to book on a Jira issue. The weekly timesheet exports to SAP CATS, Jira, CSV or JSON.
+- Jira Cloud and Server / Data Center: your issues and saved searches, offline, with worklogs.
+- Meetings from Outlook and other calendars (ICS) next to the booked time.
+- Voice notes transcribed on your computer with whisper.cpp.
+- An assistant on your own AI provider (LiteLLM, OpenAI-compatible, Azure OpenAI) or a local model (Ollama).
+- All data stays in one database on your computer, with no account and no telemetry. Git sync and backups are optional.
+- English and German interface.
+
+## Package notes
+
+The package runs the official per-user installer (`Arcalo_<version>_x64-setup.exe`) from the GitHub release silently. Arcalo is installed for the account Chocolatey runs as, into `%LOCALAPPDATA%`. The app can also update itself; `choco upgrade arcalo` installs the new version over it.
+]]></description>
+    <releaseNotes>https://github.com/MouseWerk/Arcalo/releases/tag/v1.11.0</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

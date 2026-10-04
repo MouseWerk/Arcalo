@@ -1,0 +1,49 @@
+# Maintainer: Maurice Kleindienst <kleindiema at gmail dot com>
+
+pkgname=arcalo-bin
+_pkgname=arcalo
+pkgver=1.11.0
+pkgrel=1
+pkgdesc='Local-first notes, tasks and time tracking with SAP and Jira booking, calendar and optional AI'
+arch=('x86_64')
+url='https://arcalo.mousewerk.de/'
+license=('MIT')
+depends=(
+  'alsa-lib'
+  'cairo'
+  'dbus'
+  'gcc-libs'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator'
+  'libsoup3'
+  'webkit2gtk-4.1'
+)
+optdepends=(
+  'git: Git sync of the workspace'
+  'gnome-keyring: store API keys and tokens (or another Secret Service provider such as KeePassXC)'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("LICENSE-$pkgver::https://raw.githubusercontent.com/MouseWerk/Arcalo/v$pkgver/LICENSE")
+source_x86_64=("https://github.com/MouseWerk/Arcalo/releases/download/v$pkgver/Arcalo_${pkgver}_amd64.deb")
+sha256sums=('676c8b3dfa0efb780dcab737d8c9f273e2c30b430cc89e32b418fd9197666897')
+sha256sums_x86_64=('3db6b9a078977b1ba7bec029a09c69185b2508de93945f19ebc71195b2ae366f')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+
+  # The .deb leaves Categories empty; place the launcher with the office apps.
+  sed -i -e 's/^Categories=$/Categories=Office;/' \
+    -e 's/^Comment=.*/Comment=Notes, tasks and time tracking/' \
+    "$pkgdir/usr/share/applications/Arcalo.desktop"
+
+  # The program file keeps its old name (annalo); offer the new one too.
+  ln -s annalo "$pkgdir/usr/bin/$_pkgname"
+
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
