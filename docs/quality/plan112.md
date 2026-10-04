@@ -17,5 +17,5 @@ Brief for all agents: quality112-brief.md. At most 2 worktree agents at once. DI
 | A6 | Settings, security (app lock, secrets), updates, network/proxy, onboarding, company policies | merged f6e6809, pushed (12 fixes); + f8caa96 cargo fetch before UI build in release |
 | A7 | Shell and views: sidebar, tabs, panes, search/palette, start page widgets, graph, canvas, tasks, projects, issues; visual and a11y across themes | merged 9d89341, pushed (14 fixes) |
 | A8 | CI reliability: Linux e2e 55 and 14, ~30 s app start on GitHub runners; also: editor loses the text selection right after a note opens (seen in e2e 16 and 170, worked around in 170 only) — find the root cause in the app | merged 8690d08, pushed (selection fix, private D-Bus in e2e, no xdg-open, CI concurrency); confirm on next CI run |
-| A9 | UI design system pass: every view side by side, tokens, type scale, spacing, icons, motion, consistency across views; final visual polish after A1–A8 | running (:440, e2e 240+) |
-| F | Final: full e2e, CI green (Linux, Windows, macOS), release notes, release 1.12.0, website update | |
+| A9 | UI design system pass: every view side by side, tokens, type scale, spacing, icons, motion, consistency across views; final visual polish after A1–A8 | merged (12 fixes, tokens consolidated, e2e 240) |
+| F | Final: full e2e, CI green (Linux, Windows, macOS), release notes, release 1.12.0, website update | in progress: full e2e + CI |
