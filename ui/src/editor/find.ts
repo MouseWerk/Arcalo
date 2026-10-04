@@ -48,8 +48,17 @@ export const FindInPage = Extension.create({
     return {
       setFindQuery:
         (query) =>
-        ({ tr, dispatch }) => {
-          if (dispatch) dispatch(tr.setMeta(findKey, { query, index: 0 }));
+        ({ tr, dispatch, view }) => {
+          if (!dispatch) return true;
+          dispatch(tr.setMeta(findKey, { query, index: 0 }));
+          // The first match is brought into view while typing (the field keeps the focus).
+          requestAnimationFrame(() => {
+            if (view.isDestroyed) return;
+            const m = findKey.getState(view.state)?.matches[0];
+            if (!m) return;
+            const node = view.domAtPos(m.from).node;
+            (node.nodeType === 1 ? (node as HTMLElement) : node.parentElement)?.scrollIntoView({ block: "nearest", behavior: scrollMotion() });
+          });
           return true;
         },
       replaceCurrent:

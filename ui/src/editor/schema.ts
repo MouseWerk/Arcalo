@@ -49,6 +49,8 @@ export function escapeText(t: string, atLineStart = true): string {
     .replace(/~~/g, "\\~\\~")
     .replace(/==/g, "\\=\\=")
     .replace(/&(?=#?\w+;)/g, "&amp;")
+    // A no-break space is invisible in the file: written as the entity Obsidian users type.
+    .replace(/\u00a0/g, "&nbsp;")
     // `<` only where it would start HTML, a comment or an autolink (`a < b`, `Map<K, V>` stay).
     .replace(/<(?=[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>|\/[A-Za-z][A-Za-z0-9-]*\s*>|[!?]|[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|[^\s<>@]+@[^\s<>]+>)/g, "&lt;");
   return s
@@ -92,8 +94,46 @@ export function tableStart(src: string): number {
   return src.slice(0, a).includes("|") ? 0 : -1;
 }
 
+/** Characters of a cell as written in the file (code fences and link sentinels are resolved later). */
+const cellWidth = (s: string) => s.replace(CODE_RE, (_m, code: string) => codeSpan(code)).replace(SENTINELS_RE, "").length;
+
+/**
+ * Tiptap's table serializer with column widths that match the file: sentinels do not count,
+ * and the alignment colons are part of the separator's width instead of adding to it.
+ */
+function renderTable(node: JsonNode, h: Parameters<typeof renderTableToMarkdown>[1]): string {
+  type Cell = { text: string; header: boolean; align: string | null };
+  const rows: Cell[][] = (node.content ?? []).map((row) =>
+    (row.content ?? []).map((cell) => {
+      const content = cell.content ?? [];
+      const raw = content.length > 1 ? content.map((child) => h.renderChildren(child as never)).join("\n") : h.renderChildren(content as never);
+      const text = raw.replace(/[ \t]*\r?\n[ \t]*/g, "<br>").replace(/\s+/g, " ").trim();
+      const align = cell.attrs?.align;
+      return { text, header: cell.type === "tableHeader", align: align === "left" || align === "right" || align === "center" ? align : null };
+    }),
+  );
+  const cols = rows.reduce((max, r) => Math.max(max, r.length), 0);
+  if (!cols) return "";
+  const widths = Array.from({ length: cols }, (_, i) => Math.max(3, ...rows.map((r) => cellWidth(r[i]?.text ?? ""))));
+  const aligns = Array.from({ length: cols }, (_, i) => rows.find((r) => r[i]?.align)?.[i]?.align ?? null);
+  const pad = (s: string, w: number) => s + " ".repeat(Math.max(0, w - cellWidth(s)));
+  const line = (cells: string[]) => `| ${cells.map((c, i) => pad(c, widths[i])).join(" | ")} |\n`;
+  const hasHeader = rows[0].some((c) => c.header);
+  const sep = widths.map((w, i) => {
+    const a = aligns[i];
+    if (a === "left") return `:${"-".repeat(w - 1)}`;
+    if (a === "right") return `${"-".repeat(w - 1)}:`;
+    if (a === "center") return `:${"-".repeat(w - 2)}:`;
+    return "-".repeat(w);
+  });
+  const cellsOf = (r: Cell[]) => Array.from({ length: cols }, (_, i) => r[i]?.text ?? "");
+  let out = "\n" + line(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + `| ${sep.join(" | ")} |\n`;
+  for (const r of hasHeader ? rows.slice(1) : rows) out += line(cellsOf(r));
+  return out;
+}
+
 const MarkdownTable = Table.extend({
-  renderMarkdown: (node, h) => renderTableToMarkdown(markTableCells(node as JsonNode) as typeof node, h),
+  renderMarkdown: (node, h) => renderTable(markTableCells(node as JsonNode), h),
   markdownTokenizer: Table.config.markdownTokenizer && { ...Table.config.markdownTokenizer, start: tableStart },
 });
 
@@ -122,6 +162,20 @@ export function setChunkedLexing(lines: number) {
     return parse.call(this, openEmptyTasks(md));
   };
   proto.parseHTMLToken = rawHtmlNode;
+  // Entities (`&nbsp;`, `&copy;`, `&#124;`) read as their characters like everywhere else; Tiptap
+  // decodes only `&amp; &lt; &gt; &quot;` and would show `&nbsp;` and save it as `&amp;nbsp;`.
+  const entityProto = MarkdownManager.prototype as unknown as {
+    parseInlineTokens: (tokens: { type: string; text?: string }[]) => unknown;
+    parseFallbackToken: (token: { type: string; text?: string }, ...rest: unknown[]) => unknown;
+  };
+  const inline = entityProto.parseInlineTokens;
+  entityProto.parseInlineTokens = function (this: unknown, tokens) {
+    return inline.call(this, tokens.map(decodeTextToken));
+  };
+  const fallback = entityProto.parseFallbackToken;
+  entityProto.parseFallbackToken = function (this: unknown, token, ...rest) {
+    return fallback.call(this, decodeTextToken(token), ...rest);
+  };
   // Long notes are lexed in pieces (see chunkedLex.ts); the tokens are the same.
   const managerProto = MarkdownManager.prototype as unknown as { createLexer: () => Lexer };
   const createLexer = managerProto.createLexer;
@@ -130,6 +184,26 @@ export function setChunkedLexing(lines: number) {
     lexer.lex = (src: string) => (chunkLines > 0 ? chunkedLex(lexer, src, chunkLines) : Object.getPrototypeOf(lexer).lex.call(lexer, src));
     return lexer;
   };
+}
+
+const ENTITY_RE = /&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|[A-Za-z][A-Za-z\d]{1,31});/g;
+let entityBox: HTMLTextAreaElement | null = null;
+
+/** Decodes HTML entities except the four Tiptap decodes itself (those stay for it). */
+export function decodeEntities(text: string): string {
+  if (!text.includes("&")) return text;
+  return text.replace(ENTITY_RE, (m) => {
+    if (/^&(amp|lt|gt|quot);$/.test(m)) return m;
+    entityBox ??= document.createElement("textarea");
+    entityBox.innerHTML = m;
+    const c = entityBox.value;
+    // Unknown names stay as written; a decoded `&` or `<` is encoded again for Tiptap's decoding.
+    return c === m ? m : c.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  });
+}
+
+function decodeTextToken<T extends { type: string; text?: string }>(token: T): T {
+  return token.type === "text" && token.text?.includes("&") ? { ...token, text: decodeEntities(token.text) } : token;
 }
 
 /** The plain text inside a serialized node (code block content). */
@@ -168,6 +242,20 @@ const MarkdownFidelity = Extension.create({
         return typeof out === "string" ? out.replace(/^(- \[[ x]\])(?=\n|$)/, "$1 ") : out;
       };
     }
+    // A task list right after a bullet list (or the other way round) is one list in Markdown: written
+    // without the blank line between, which would make it a loose list in other readers.
+    for (const type of ["bulletList", "taskList"]) {
+      for (const spec of manager.nodeTypeRegistry.get(type) ?? []) {
+        const render = spec.renderMarkdown;
+        if (!render) continue;
+        spec.renderMarkdown = (node, ...rest) => {
+          const out = render(node, ...rest);
+          const prev = (rest[1] as { previousNode?: { type?: string } } | undefined)?.previousNode?.type;
+          const adjacent = (type === "taskList" && prev === "bulletList") || (type === "bulletList" && prev === "taskList");
+          return adjacent && typeof out === "string" ? TIGHT_MARK + out : out;
+        };
+      }
+    }
     // Empty paragraphs at the end of a quote (a fresh foldable callout) would leave bare `>` lines.
     for (const spec of manager.nodeTypeRegistry.get("blockquote") ?? []) {
       const render = spec.renderMarkdown;
@@ -178,9 +266,14 @@ const MarkdownFidelity = Extension.create({
         return render({ ...node, content }, ...rest);
       };
     }
+    // Inline code is bracketed with sentinels; its fence is chosen from the text in `cleanMarkdown`.
+    for (const spec of manager.nodeTypeRegistry.get("code") ?? []) {
+      spec.renderMarkdown = (_node, ...rest) => `${CODE_OPEN}${(rest[0] as { renderChildren: (n: unknown) => string }).renderChildren(_node.content)}${CODE_CLOSE}`;
+    }
     manager.encodeTextForMarkdown = (text, node, parent) => {
       const inCode = (parent?.type != null && manager.codeTypes.has(parent.type)) || (node.marks ?? []).some((m) => manager.codeTypes.has(typeof m === "string" ? m : m.type));
-      if (inCode) return text;
+      // A `|` in inline code still ends a table cell (GFM): escaped there, the code reads the same.
+      if (inCode) return parent?.attrs?.[IN_TABLE_CELL] && !(parent?.type != null && manager.codeTypes.has(parent.type)) ? text.replace(/\|/g, "\\|") : text;
       const siblings = parent?.content ?? [];
       const idx = siblings.indexOf(node);
       // A footnote definition's text follows `[^1]: `, never at the start of a line.
@@ -198,6 +291,25 @@ const unescapeText = (t: string) => t.replace(/\\([\\`*_[\]~=#<>!|().+-])/g, "$1
 // so links are bracketed with sentinels and resolved in `cleanMarkdown`.
 const LINK_OPEN = "\uE000";
 const LINK_CLOSE = "\uE001";
+const CODE_OPEN = "\uE010";
+const CODE_CLOSE = "\uE011";
+// (U+E002 is the footnotes' TIGHT_MARK.)
+const SENTINELS_RE = /[\uE000\uE001\uE010\uE011]/g;
+const CODE_RE = /\uE010([^\uE010\uE011]*)\uE011/g;
+
+/** Inline code with a fence longer than any backtick run inside, padded where a space or backtick would be lost. */
+export function codeSpan(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = "`".repeat(longest + 1);
+  const pad = /^`|`$/.test(text) || (/^ [\s\S]* $/.test(text) && text.trim() !== "") ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** A link destination: in `<…>` when it has spaces, angle brackets or parentheses a bare one cannot hold. */
+export function linkDestination(href: string): string {
+  const bare = /^(?:[^\s()<>]|\([^\s()<>]*\))*$/.test(href);
+  return bare ? href : `<${href.replace(/[<>\n]/g, (c) => encodeURIComponent(c))}>`;
+}
 
 /** Bare URLs and e-mail addresses stay bare instead of becoming `[x](x)`. */
 export function linkMarkdown(text: string, href: string, title?: string | null): string {
@@ -214,14 +326,14 @@ const MarkdownLink = Link.extend({
   renderMarkdown: (node, h) => {
     const href: string = node.attrs?.href ?? "";
     const title: string = node.attrs?.title ?? "";
-    return `${LINK_OPEN}[${h.renderChildren(node)}](${href}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})${LINK_CLOSE}`;
+    return `${LINK_OPEN}[${h.renderChildren(node)}](${linkDestination(href)}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})${LINK_CLOSE}`;
   },
 });
 
-const LINK_RE = new RegExp(`${LINK_OPEN}\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()]|\\([^\\s()]*\\))*)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`, "g");
+const LINK_RE = new RegExp(`${LINK_OPEN}\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()<>]|\\([^\\s()<>]*\\))*|<[^<>\\n]*>)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`, "g");
 
 export interface SchemaOptions {
-  onOpenLink?: (target: string, newTab: boolean) => void;
+  onOpenLink?: (target: string, newTab: boolean, anchor: string | null) => void;
   onOpenTag?: (tag: string) => void;
   isKnown?: (target: string) => boolean;
   searchPages?: (q: string) => Promise<LinkSuggestItem[]>;
@@ -394,15 +506,17 @@ export function collapseBlankLines(md: string): string {
 export function cleanMarkdown(md: string): string {
   return (
     collapseBlankLines(md
+      .replace(CODE_RE, (_m, text: string) => codeSpan(text))
       .replace(LINK_RE, (m, text: string, href: string, title: string | undefined, at: number, all: string) => {
         const out = linkMarkdown(text, href, title);
         // A bare URL would swallow a footnote reference right behind it (`https://x.de[^1]`).
         return out === href && all.startsWith("[^", at + m.length) ? `[${text}](${href})` : out;
       })
-      .replace(new RegExp(`[${LINK_OPEN}${LINK_CLOSE}]`, "g"), "")
+      .replace(SENTINELS_RE, "")
       .replace(/^((?:>\s?)+)\\\[!(\w+)\\\]/gm, "$1[!$2]")
       // Footnote definitions written one per line stay together.
-      .replace(new RegExp(`\n+${TIGHT_MARK}`, "g"), "\n")
+      // (also indented, or quoted in a callout: the blank line before the mark goes, the prefix stays)
+      .replace(new RegExp(`(?:\n[ \t>]*)*\n([ \t>]*)${TIGHT_MARK}`, "g"), "\n$1")
       .replace(new RegExp(TIGHT_MARK, "g"), ""),
     )
       .replace(/^\n+/, "")

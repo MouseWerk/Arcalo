@@ -15,7 +15,7 @@ import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
 import { h1, hoursFromMinutes, isoDay, time } from "../lib/format";
-import { pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
+import { joinFrontmatter, linkAtCaret, pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, toMarkdown } from "./schema";
 import { anchorItems, embedMount, richMount } from "./liveMounts";
 import { zeitLaItems, zeitRefItems } from "./zeit-source";
@@ -29,7 +29,7 @@ import { moveBlock } from "./tools";
 import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
 import { aiRange, type AiRange } from "./ai-insert";
-import { registerEditor } from "./reveal";
+import { registerEditor, revealAnchor } from "./reveal";
 import type { TypingPrefs } from "./typing";
 import { spellcheckAttrs } from "../lib/prefs";
 import { ZeitConfirm, type ZeitChoice } from "./ZeitConfirm";
@@ -147,7 +147,8 @@ export function NoteEditor({
   doc: PageDoc;
   /** After each save: what it derived, with the content that was saved. */
   onSaved: (saved: SavedPage & { content: string }) => void;
-  onOpenLink: (target: string, newTab: boolean) => void;
+  /** `anchor`: heading or `^block` to show there. */
+  onOpenLink: (target: string, newTab: boolean, anchor?: string | null) => void;
   onOpenTag: (tag: string) => void;
   /** The frontmatter changed from outside (another pane, a reload). */
   onFrontmatter?: (fm: string) => void;
@@ -155,6 +156,9 @@ export function NoteEditor({
 }) {
   useT();
   const frontmatter = useRef(splitFrontmatter(doc.content).frontmatter);
+  // The blank line under the frontmatter as the file has it.
+  const fmGap = useRef(splitFrontmatter(doc.content).gap);
+  const compose = (editor: Editor) => joinFrontmatter(frontmatter.current, fmGap.current, toMarkdown(editor));
   const saveTimer = useRef<number | undefined>(undefined);
   const dirty = useRef(false);
   const saving = useRef<Promise<void> | null>(null);
@@ -200,7 +204,8 @@ export function NoteEditor({
   const failed = useRef(false);
 
   const apply = (editor: Editor, content: string) => {
-    const { frontmatter: fm, body } = splitFrontmatter(content);
+    const { frontmatter: fm, body, gap } = splitFrontmatter(content);
+    fmGap.current = gap;
     if (fm !== frontmatter.current) {
       frontmatter.current = fm;
       cb.current.onFrontmatter?.(fm);
@@ -218,7 +223,7 @@ export function NoteEditor({
       apply(editor, theirs);
       return;
     }
-    const mine = frontmatter.current + toMarkdown(editor);
+    const mine = compose(editor);
     const merged = merge3(base.current, mine, theirs);
     base.current = theirs;
     merges.current++;
@@ -243,7 +248,7 @@ export function NoteEditor({
     if (!dirty.current) return;
     dirty.current = false;
     setStatus("saving");
-    const md = frontmatter.current + toMarkdown(editor);
+    const md = compose(editor);
     const mergesBefore = merges.current;
     // Saves run one after another so an older one never lands last.
     const p: Promise<void> = (saving.current ?? Promise.resolve())
@@ -275,6 +280,10 @@ export function NoteEditor({
     await p;
   };
 
+  // `[[#Abschnitt]]`: the section of this page; other links through the view.
+  const openWiki = (target: string, newTab: boolean, anchor: string | null) =>
+    !target.trim() && anchor && editorRef.current ? void revealAnchor(editorRef.current, anchor) : cb.current.onOpenLink(target, newTab, anchor);
+
   /** The page's current title (embeds stop at cycles through it; diagram exports are named by it). */
   const pageTitle = () => useApp.getState().pages.get(doc.id)?.title ?? doc.title;
   const editor = useEditor(
@@ -282,7 +291,7 @@ export function NoteEditor({
       extensions: buildExtensions({
         embedPage: embedMount(pageTitle, (t, newTab) => cb.current.onOpenLink(t, newTab)),
         richBlock: richMount(pageTitle),
-        onOpenLink: (t, newTab) => cb.current.onOpenLink(t, newTab),
+        onOpenLink: (t, newTab, anchor) => openWiki(t, newTab, anchor),
         onOpenTag: (t) => cb.current.onOpenTag(t),
         isKnown: (t) => titleSet(useApp.getState().pages).has(t.toLowerCase()),
         searchPages: async (q) => {
@@ -427,6 +436,16 @@ export function NoteEditor({
         attributes: () => ({ class: "prose", ...spellcheckAttrs(editorPrefs()?.spellcheck), "aria-label": tr("ne.aria"), style: `tab-size: ${editorPrefs()?.tab_size ?? 4}` }),
         // Ctrl+J on a selection: inline AI instead of the assistant panel (App's global Ctrl+J).
         handleKeyDown: (view, event) => {
+          // Alt+Enter: follows the link at the caret (Ctrl+Alt+Enter: in a new tab), for keyboard use.
+          if (event.altKey && !event.shiftKey && !event.metaKey && event.key === "Enter") {
+            const link = linkAtCaret(view.state);
+            if (!link) return false;
+            event.preventDefault();
+            if ("wiki" in link) openWiki(link.wiki.target, event.ctrlKey, link.wiki.anchor);
+            else if (mailLinkId(link.href)) void openMailLink(mailLinkId(link.href)!);
+            else openUrl(link.href).catch(() => {});
+            return true;
+          }
           // Alt+↑/↓: move the block (list item, paragraph, heading) with the cursor.
           if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && editorRef.current) {
             event.preventDefault();

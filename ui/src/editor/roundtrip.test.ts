@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildExtensions, collapseBlankLines, toMarkdown } from "./schema";
-import { splitFrontmatter } from "./extensions";
+import { joinFrontmatter, splitFrontmatter } from "./extensions";
 import { anchorPage, fileExtension, fileKind, formatSize, isFileEmbedName } from "./fileEmbed";
 
 function roundtrip(md: string) {
@@ -91,6 +91,16 @@ const CASES: Record<string, string> = {
   footnoteInTable: "| A     | B   |\n| ----- | --- |\n| x[^1] | 2   |\n\n[^1]: Zelle.\n",
   literalFootnote: "Kein \\[^1] Verweis\n",
   tableFilePdf: "| A             | B   |\n| ------------- | --- |\n| ![[file.pdf]] | 2   |\n",
+  tableLinkWidth: "| A                            | B   |\n| ---------------------------- | --- |\n| [x](https://example.com/a_b) | 2   |\n",
+  tableAlignWidth: "| A   | B   | C   |\n| :-- | --: | :-: |\n| 1   | 2   | 3   |\n",
+  tableCodePipe: "| A      | B   |\n| ------ | --- |\n| `a\\|b` | 2   |\n",
+  wikiSamePage: "Siehe [[#Ablauf]], [[#^abc123]] und [[#Ablauf|oben]] sowie [[Seite#^abc123]]\n",
+  linkAngle: "[Plan](<https://example.com/a b>) und [x](<Ordner/Mein Plan.md>)\n",
+  codeBackticks: "``a ` b`` und `` `x` `` und ```` ``` ````\n",
+  bulletsThenTasks: "- Punkt\n  - unter\n- [ ] Aufgabe\n- [x] erledigt\n- wieder Punkt\n",
+  bulletsThenTasksNested: "- oben\n  - a\n  - [ ] b\n",
+  bulletsThenTasksCallout: "> [!todo] Liste\n>\n> - a\n> - [ ] b\n",
+  entityNbsp:"Firma&nbsp;GmbH und 100&nbsp;€\n",
 };
 
 describe("markdown round-trip", () => {
@@ -251,27 +261,43 @@ describe("file names", () => {
   });
 });
 
+describe("entities", () => {
+  it("reads named and numeric entities as their characters", () => {
+    expect(roundtrip("&copy; 2026 &#124; &#x41;\n")).toBe("© 2026 | A\n");
+  });
+  it("keeps a typed entity name literal", () => {
+    expect(roundtrip("Schreib &amp;nbsp; dafür\n")).toBe("Schreib &amp;nbsp; dafür\n");
+  });
+});
+
 describe("splitFrontmatter", () => {
+  it("keeps the blank line under the block through split and join", () => {
+    for (const md of ["---\na: 1\n---\n\nText\n", "---\na: 1\n---\nText\n"]) {
+      const { frontmatter, gap, body } = splitFrontmatter(md);
+      expect(joinFrontmatter(frontmatter, gap, roundtrip(body))).toBe(md);
+    }
+    expect(joinFrontmatter("", "\n", "Text\n")).toBe("Text\n");
+  });
   it("trennt YAML-Frontmatter ab", () => {
-    expect(splitFrontmatter("---\ntags: [a]\ntitle: X\n---\n\nText\n")).toEqual({ frontmatter: "---\ntags: [a]\ntitle: X\n---\n", body: "Text\n" });
+    expect(splitFrontmatter("---\ntags: [a]\ntitle: X\n---\n\nText\n")).toEqual({ frontmatter: "---\ntags: [a]\ntitle: X\n---\n", body: "Text\n", gap: "\n" });
   });
   it("akzeptiert Frontmatter am Dateiende", () => {
-    expect(splitFrontmatter("---\nalias: y\n---")).toEqual({ frontmatter: "---\nalias: y\n---\n", body: "" });
+    expect(splitFrontmatter("---\nalias: y\n---")).toEqual({ frontmatter: "---\nalias: y\n---\n", body: "", gap: "" });
   });
   it("hält eine führende Trennlinie nicht für Frontmatter", () => {
     const md = "---\n\nText\n\n---\n\nMehr\n";
-    expect(splitFrontmatter(md)).toEqual({ frontmatter: "", body: md });
+    expect(splitFrontmatter(md)).toEqual({ frontmatter: "", body: md, gap: "" });
   });
   it("verlangt key: in der ersten Zeile", () => {
     const md = "---\nNur ein Absatz\n---\nRest\n";
-    expect(splitFrontmatter(md)).toEqual({ frontmatter: "", body: md });
+    expect(splitFrontmatter(md)).toEqual({ frontmatter: "", body: md, gap: "" });
   });
   it("erkennt Schlüssel mit Umlauten und Leerzeichen", () => {
-    expect(splitFrontmatter("---\nPriorität: hoch\n---\nText\n")).toEqual({ frontmatter: "---\nPriorität: hoch\n---\n", body: "Text\n" });
+    expect(splitFrontmatter("---\nPriorität: hoch\n---\nText\n")).toEqual({ frontmatter: "---\nPriorität: hoch\n---\n", body: "Text\n", gap: "" });
     expect(splitFrontmatter("---\ndue date: 2026-10-01\n---\n").frontmatter).toBe("---\ndue date: 2026-10-01\n---\n");
   });
   it("ohne Frontmatter", () => {
-    expect(splitFrontmatter("# Titel\n")).toEqual({ frontmatter: "", body: "# Titel\n" });
+    expect(splitFrontmatter("# Titel\n")).toEqual({ frontmatter: "", body: "# Titel\n", gap: "" });
   });
 });
 

@@ -152,3 +152,50 @@ export async function revealText(pageId: number, text: string, open: (pageId: nu
   flashRange(editor, range);
   return true;
 }
+
+// ---------------------------------------------------------------- anchors
+
+/**
+ * The block an anchor of `[[Seite#Abschnitt]]` names: `^id` a paragraph or list item ending in
+ * that block id, otherwise a heading with that text (the last part of `H1#H2`, case-insensitive).
+ */
+export function locateAnchor(doc: PMNode, anchor: string): Located | null {
+  const a = anchor.trim();
+  if (!a) return null;
+  let found: Located | null = null;
+  if (a.startsWith("^")) {
+    const id = a.slice(1).toLowerCase();
+    doc.descendants((node, pos) => {
+      if (found) return false;
+      if (!node.isTextblock) return true;
+      const m = /(?:^|\s)\^([A-Za-z0-9-]+)\s*$/.exec(node.textContent);
+      if (m && m[1].toLowerCase() === id) found = { from: pos, to: pos + node.nodeSize };
+      return false;
+    });
+    return found;
+  }
+  const want = norm(a.split("#").filter(Boolean).pop() ?? a);
+  doc.descendants((node, pos) => {
+    if (found) return false;
+    if (node.type.name !== "heading") return true;
+    if (norm(blockText(node)) === want) found = { from: pos, to: pos + node.nodeSize };
+    return false;
+  });
+  return found;
+}
+
+/** Scrolls to and flashes the heading or block an anchor names; false when the page has none. */
+export function revealAnchor(editor: Editor, anchor: string): boolean {
+  const range = locateAnchor(editor.state.doc, anchor);
+  if (range) flashRange(editor, range);
+  return range !== null;
+}
+
+/** Opens a page and shows the section of `[[Seite#Abschnitt]]` (the top when it is gone). */
+export async function openAtAnchor(pageId: number, anchor: string | null, open: (pageId: number) => void): Promise<boolean> {
+  open(pageId);
+  if (!anchor) return true;
+  await sleep(30);
+  const editor = await waitForEditor(pageId);
+  return editor ? revealAnchor(editor, anchor) : false;
+}

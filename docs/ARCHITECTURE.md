@@ -666,6 +666,9 @@ defineWidget({
 
 - The editor (TipTap/ProseMirror) loads and saves Markdown via `@tiptap/markdown`. Custom nodes serialize to portable syntax:
   `[[Target#Heading|Alias]]` for links and `<time-entry id=… hours=… target=…>text</time-entry>` for booked time.
+  `[[#Heading]]` / `[[#^id]]` link the same page; a link's anchor is opened by `reveal.ts` (`openAtAnchor`: heading by text,
+  block by `^id`, flashed). Alt+Enter follows the link at the caret. Entities are decoded on load (a no-break space is
+  written back as `&nbsp;`); link targets with spaces are written in `<…>`; inline code gets a fence longer than its backticks.
 - Layout blocks (`ui/src/editor/blocks.ts`, round-trip cases in `roundtrip.test.ts`), all plain Markdown that other tools show
   sensibly: foldable callouts are Obsidian's `> [!note]- Titel` (collapsed) / `> [!note]+ Titel` (expanded), the chevron rewrites
   the marker; columns are ordinary Markdown between HTML comments on their own lines (`<!-- spalten -->`, `<!-- spalte -->`
@@ -678,7 +681,8 @@ defineWidget({
   `**Name** (10:32): Text` (the time is shown muted), a stack trace (Java, .NET, Python, JavaScript) or a log with timestamps
   and levels a code block, a lone URL on an empty selection a link whose text becomes the page title (`link_title`:
   `annalo_core::linktitle`, the tools HTTP client with the network settings, http/https only, 4 s, at most 256 KB, `og:title`
-  before `<title>`, the URL when there is none). A hint „Als Text einfügen“ undoes it into a plain paste; Ctrl+Shift+V and
+  before `<title>`, the URL when there is none). Markdown copied as plain text (or from a code editor's monospace HTML) with
+  block syntax on two lines, a heading or fence, or bold/wiki links/links/code spans is parsed and inserted formatted. A hint „Als Text einfügen“ undoes it into a plain paste; Ctrl+Shift+V and
   pastes copied inside the editor are never converted, files stay with `AttachmentDrop`.
 - „Als HTML-Datei teilen…“ (`ui/src/editor/shareHtml.ts`, `ui/src/lib/htmlExport.ts`): the page (optionally with its
   subpages and a table of contents) is rendered by a headless editor with the same schema, then made static: images and

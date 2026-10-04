@@ -483,9 +483,9 @@
 @container pane (max-width: 820px) {
   .tb-menu .tb-label, .tb-menu .tb-caret { display: none; }
   .tb-menu { padding: 0 6px; }
-  .tb-select { width: 104px; }
 }
-.tb-select { height: 28px; width: 118px; padding-top: 0; padding-bottom: 0; font-size: var(--fs-sm); border-color: transparent; background-color: transparent; }
+/* As wide as its longest option (the select's sizer), so „Überschrift 1“ is never cut off. */
+.tb-select { height: 28px; width: auto; padding-top: 0; padding-bottom: 0; font-size: var(--fs-sm); border-color: transparent; background-color: transparent; }
 .tb-select:hover { background-color: var(--bg-hover); }
 .tb-menu { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
 .tb-menu:hover { background: var(--bg-hover); color: var(--text); }
@@ -517,7 +517,6 @@
 @container pane (max-width: 1040px) {
   .vh-toolbar .tb-menu .tb-label, .vh-toolbar .tb-menu .tb-caret { display: none; }
   .vh-toolbar .tb-menu { padding: 0 6px; }
-  .vh-toolbar .tb-select { width: 100px; }
 }
 .pane.multi:not(.active) .vh-toolbar { opacity: 0.6; }
 

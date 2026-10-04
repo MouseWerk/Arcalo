@@ -278,7 +278,7 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
           <span className="tb-label">{t("tb.tools")}</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />
         </button>
-        <button type="button" className="tb-menu tb-ai" onClick={onAi} data-tooltip={t("tb.aiEdit", { keys: keys("Mod J") })}>
+        <button type="button" className="tb-menu tb-ai" onClick={onAi} aria-label={t("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={t("tb.aiEdit", { keys: keys("Mod J") })}>
           <Sparkles size={15} strokeWidth={1.75} aria-hidden />
           <span className="tb-label">{t("slash.sec.ai")}</span>
         </button>
