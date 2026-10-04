@@ -527,8 +527,8 @@ fn jira_message(body: &str) -> Option<String> {
     v["errors"].as_object().and_then(|o| o.iter().next().map(|(k, m)| format!("{k}: {}", m.as_str().unwrap_or(""))))
 }
 
-/// The user's message for a failed request.
-pub fn status_error(status: u16, denied_reason: Option<&str>, body: &str) -> Error {
+/// The user's message for a failed request to a site of `kind`.
+pub fn status_error(kind: SiteKind, status: u16, denied_reason: Option<&str>, body: &str) -> Error {
     let detail = jira_message(body).map(|m| format!(" ({m})")).unwrap_or_default();
     let msg = if denied_reason.is_some_and(|r| r.to_ascii_uppercase().contains("CAPTCHA")) {
         tr!(
@@ -538,9 +538,14 @@ pub fn status_error(status: u16, denied_reason: Option<&str>, body: &str) -> Err
         .to_owned()
     } else {
         match status {
+            401 if kind == SiteKind::Cloud => tr!(
+                "Jira hat die Anmeldung abgelehnt (401). E-Mail-Adresse und API-Token prüfen; ist es abgelaufen, unter id.atlassian.com → Sicherheit → API-Tokens ein neues anlegen.",
+                "Jira refused the login (401). Check the e-mail address and the API token; if it expired, create a new one under id.atlassian.com → Security → API tokens."
+            )
+            .to_owned(),
             401 => tr!(
-                "Jira hat die Anmeldung abgelehnt (401). E-Mail-Adresse und API-Token (Cloud) bzw. das persönliche Zugriffstoken (Server) prüfen.",
-                "Jira refused the login (401). Check the e-mail address and API token (Cloud) or the personal access token (Server)."
+                "Jira hat die Anmeldung abgelehnt (401). Das persönliche Zugriffstoken prüfen; ist es abgelaufen, in Jira unter Profil → Persönliche Zugriffstokens ein neues anlegen.",
+                "Jira refused the login (401). Check the personal access token; if it expired, create a new one in Jira under Profile → Personal access tokens."
             )
             .to_owned(),
             403 => trf!(
@@ -557,33 +562,58 @@ pub fn status_error(status: u16, denied_reason: Option<&str>, body: &str) -> Err
                 "Jira is limiting requests right now (429). Try again later."
             )
             .to_owned(),
+            407 => tr!(
+                "Der Proxy verlangt eine Anmeldung (407). Benutzer und Passwort des Proxy-Profils unter Einstellungen → Netzwerk eintragen.",
+                "The proxy asks for a login (407). Enter the user and password of the proxy profile under Settings → Network."
+            )
+            .to_owned(),
+            500..=599 => trf!(
+                "Jira hat gerade ein Problem auf seiner Seite (Fehler {status}){detail}. In ein paar Minuten erneut versuchen; bleibt der Fehler, die Jira-Administration fragen.",
+                "Jira has a problem on its side right now (error {status}){detail}. Try again in a few minutes; if it stays, ask your Jira administrators."
+            ),
             s => trf!("Jira antwortet mit Fehler {s}{detail}.", "Jira answered with error {s}{detail}."),
         }
     };
-    Error::Provider { status, body: msg }
+    Error::Remote { status, message: msg }
 }
 
-/// The user's message when Jira cannot be reached.
+/// The user's message when Jira cannot be reached: what happened and where to fix it.
 pub fn network_error(e: &reqwest::Error) -> Error {
-    if e.is_timeout() {
-        Error::State(
-            tr!(
-                "Jira antwortet nicht (Zeitüberschreitung). Netzwerk oder Proxy prüfen.",
-                "Jira does not answer (timeout). Check the network or proxy."
-            )
-            .into(),
+    use crate::error::{HttpCause, http_cause};
+    let msg = match http_cause(e) {
+        HttpCause::Timeout => tr!(
+            "Jira antwortet nicht (Zeitüberschreitung). Netzwerk oder Proxy prüfen; bei langsamen Verbindungen die Zeitüberschreitung unter Einstellungen → Netzwerk erhöhen.",
+            "Jira does not answer (timeout). Check the network or proxy; on slow connections raise the timeout under Settings → Network."
         )
-    } else if e.is_connect() || e.is_request() {
-        Error::State(
-            tr!(
-                "Jira ist nicht erreichbar – offline oder falsche Adresse? Die zuletzt geladenen Issues bleiben sichtbar.",
-                "Jira cannot be reached – offline or wrong address? The issues loaded last stay visible."
-            )
-            .into(),
+        .to_owned(),
+        HttpCause::Certificate => tr!(
+            "Das Zertifikat der Jira-Site wird nicht anerkannt (z. B. eine Firmen-Zertifizierungsstelle). Unter Einstellungen → Netzwerk das Stammzertifikat der Firma im Profil hinzufügen oder dort beim Test von Jira dem Server vertrauen.",
+            "The Jira site's certificate is not trusted (e.g. a company certificate authority). Under Settings → Network, add the company's root certificate to the profile, or trust the server there when testing Jira."
         )
-    } else {
-        Error::State(trf!("Verbindung zu Jira fehlgeschlagen: {e}", "Connection to Jira failed: {e}"))
-    }
+        .to_owned(),
+        HttpCause::Proxy => tr!(
+            "Der Proxy ist nicht erreichbar oder lehnt die Verbindung zu Jira ab. Das Proxy-Profil von Jira unter Einstellungen → Netzwerk prüfen.",
+            "The proxy cannot be reached or refuses the connection to Jira. Check Jira's proxy profile under Settings → Network."
+        )
+        .to_owned(),
+        HttpCause::Name => tr!(
+            "Der Name der Jira-Site ist nicht auffindbar. Adresse auf Tippfehler prüfen; Firmen-Jira oft nur im VPN erreichbar. Die zuletzt geladenen Issues bleiben sichtbar.",
+            "The Jira site's name cannot be found. Check the address for typos; a company Jira is often reachable in the VPN only. The issues loaded last stay visible."
+        )
+        .to_owned(),
+        HttpCause::Refused | HttpCause::Connect | HttpCause::Broken => tr!(
+            "Jira ist nicht erreichbar – offline oder falsche Adresse? Die zuletzt geladenen Issues bleiben sichtbar.",
+            "Jira cannot be reached – offline or wrong address? The issues loaded last stay visible."
+        )
+        .to_owned(),
+        HttpCause::Other if e.is_request() => tr!(
+            "Jira ist nicht erreichbar – offline oder falsche Adresse? Die zuletzt geladenen Issues bleiben sichtbar.",
+            "Jira cannot be reached – offline or wrong address? The issues loaded last stay visible."
+        )
+        .to_owned(),
+        HttpCause::Other => trf!("Verbindung zu Jira fehlgeschlagen: {e}", "Connection to Jira failed: {e}"),
+    };
+    Error::State(msg)
 }
 
 /// How long to wait before retry `attempt` (0-based) of a rate-limited request.
@@ -649,7 +679,7 @@ impl JiraClient {
                 resp.headers().get("x-authentication-denied-reason").and_then(|h| h.to_str().ok()).map(str::to_owned);
             let text = resp.text().await.map_err(|e| network_error(&e))?;
             if !status.is_success() {
-                return Err(status_error(status.as_u16(), denied.as_deref(), &text));
+                return Err(status_error(self.kind, status.as_u16(), denied.as_deref(), &text));
             }
             // A login page instead of JSON: a proxy or SSO in between.
             if text.trim_start().starts_with('<') {
@@ -874,7 +904,7 @@ impl IssueProvider for JiraClient {
     async fn delete_work(&self, key: &str, id: &str) -> Result<()> {
         let url = api_url(&self.base, self.kind, &format!("issue/{key}/worklog/{id}"));
         match self.send(Method::DELETE, &url, None).await {
-            Err(Error::Provider { status: 404, .. }) => Ok(()),
+            Err(Error::Remote { status: 404, .. }) => Ok(()),
             other => other.map(|_| ()),
         }
     }
@@ -883,7 +913,7 @@ impl IssueProvider for JiraClient {
         let boards = match self.get_json(&agile_url(&self.base, &format!("board?projectKeyOrId={project}"))).await {
             Ok(v) => v,
             // No Agile here (or no permission for it): no sprint.
-            Err(Error::Provider { status: 404 | 403, .. }) => return Ok(None),
+            Err(Error::Remote { status: 404 | 403, .. }) => return Ok(None),
             Err(e) => return Err(e),
         };
         let (fields, sprint_field) = self.fields().await;
@@ -892,7 +922,7 @@ impl IssueProvider for JiraClient {
             let sprints = match self.get_json(&agile_url(&self.base, &format!("board/{id}/sprint?state=active"))).await
             {
                 Ok(v) => v,
-                Err(Error::Provider { status: 400 | 404, .. }) => continue,
+                Err(Error::Remote { status: 400 | 404, .. }) => continue,
                 Err(e) => return Err(e),
             };
             let Some(s) = sprints["values"].as_array().and_then(|a| a.first()).cloned() else { continue };

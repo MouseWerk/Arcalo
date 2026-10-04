@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   MoreHorizontal,
   Palette,
@@ -32,6 +33,7 @@ import {
 import { useT, type TKey } from "../../lib/i18n";
 import {
   DEFAULT_JQL,
+  isSiteAddress,
   jiraApi,
   type IssueSettings,
   type JiraSite,
@@ -279,7 +281,14 @@ export function JiraSection({ draft, update }: SectionProps) {
         </Unfiltered>
       </Group>
 
-      {sites.length > 0 && <Queries jira={jira} sites={sites} set={set} />}
+      {sites.length > 0 && (
+        <Queries
+          jira={jira}
+          sites={sites}
+          set={set}
+          errors={status?.query_errors ?? {}}
+        />
+      )}
 
       <Group title={t("calset.sync")}>
         <Row
@@ -304,7 +313,7 @@ export function JiraSection({ draft, update }: SectionProps) {
             onChange={(v) => set({ tick_done_tasks: v })}
           />
         </Row>
-        <Row label={t("calset.syncAll")}>
+        <Row label={t("jira.set.syncAll")}>
           <Button
             icon={RefreshCw}
             loading={busy || sites.some((x) => x.syncing)}
@@ -354,10 +363,13 @@ function Queries({
   jira,
   sites,
   set,
+  errors,
 }: {
   jira: IssueSettings;
   sites: SiteInfo[];
   set: (p: Partial<IssueSettings>) => void;
+  /** Searches that failed in the last sync (query id → message). */
+  errors: Record<string, string>;
 }) {
   const t = useT();
   const [site, setSite] = useState(sites[0]?.id ?? "");
@@ -405,6 +417,14 @@ function Queries({
                 <code className="jira-jql ellipsis" title={q.jql}>
                   {q.jql}
                 </code>
+                {errors[q.id] && (
+                  <div className="jira-query-error" role="status">
+                    <AlertCircle size={13} aria-hidden />
+                    <span>
+                      {t("jira.set.queryFailed", { error: errors[q.id] })}
+                    </span>
+                  </div>
+                )}
               </div>
               <IconButton
                 icon={X}
@@ -580,7 +600,7 @@ function SiteDialog({
     setTest(null)
   );
   const valid =
-    /^(https?:\/\/)?[^\s/]+\.[^\s]+/i.test(s.url.trim()) &&
+    isSiteAddress(s.url) &&
     (!cloud || s.email.includes("@")) &&
     (!!token.trim() || !!site?.token_set);
 
@@ -749,7 +769,10 @@ function SiteDialog({
               </span>
             </>
           ) : (
-            <span>{test.error}</span>
+            <>
+              <AlertCircle size={15} aria-hidden />
+              <span>{test.error}</span>
+            </>
           )}
         </div>
       )}

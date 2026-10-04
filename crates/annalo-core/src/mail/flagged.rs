@@ -66,8 +66,9 @@ pub fn parse_output(out: &str) -> Result<Vec<FlaggedMail>> {
                     .into()
             }
             _ => crate::trf!(
-                "Outlook hat die Liste nicht geliefert: {message}",
-                "Outlook did not return the list: {message}"
+                "Outlook hat die Liste nicht geliefert: {}. Outlook neu starten und die Liste neu laden.",
+                "Outlook did not return the list: {}. Restart Outlook and reload the list.",
+                message.trim_end_matches('.')
             ),
         }));
     }

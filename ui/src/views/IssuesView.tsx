@@ -117,6 +117,8 @@ export function IssuesView() {
   const today = isoDay(new Date());
   const lastSync = sites.map((x) => x.sync?.synced_at).filter(Boolean).sort().pop() ?? null;
   const failing = sites.filter((x) => x.enabled && x.sync?.error);
+  // The issues of the failing sites are as old as their last good sync (the oldest of them).
+  const failingSince = failing.map((x) => x.sync?.synced_at).filter(Boolean).sort()[0] ?? null;
   const anySyncing = syncing || sites.some((x) => x.syncing);
   const { scroller, listRef, windowOf } = useGroupWindow(shown.length > VIRTUAL_ISSUES, ".issue-row[data-issue-key]", rowKey, ROW_ESTIMATE);
 
@@ -181,14 +183,17 @@ export function IssuesView() {
         {failing.length > 0 && (
           <div className="issues-banner" role="status">
             <WifiOff size={15} aria-hidden />
-            <div>
+            <div className="grow">
               {failing.map((x) => (
                 <div key={x.id}>
                   <b>{x.name}:</b> {x.sync!.error}
                 </div>
               ))}
-              {lastSync && <div className="faint small">{t("jira.offlineHint", { when: relative(lastSync) })}</div>}
+              {failingSince && <div className="faint small">{t("jira.offlineHint", { when: relative(failingSince) })}</div>}
             </div>
+            <Button variant="ghost" size="sm" icon={Settings2} onClick={() => openSettingsSection("jira")}>
+              {t("jira.openSettings")}
+            </Button>
           </div>
         )}
 

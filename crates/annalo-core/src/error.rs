@@ -35,6 +35,10 @@ pub enum Error {
     State(String),
     #[error("{}", trf!("KI-Server meldet Fehler {status}: {body}", "The AI server reports error {status}: {body}"))]
     Provider { status: u16, body: String },
+    /// Another service (Jira, a calendar server) answered with an error; `message` is complete
+    /// (what happened and how to fix it) and shown as it is.
+    #[error("{message}")]
+    Remote { status: u16, message: String },
 }
 
 impl Error {
@@ -237,9 +241,27 @@ fn db_text(e: &rusqlite::Error) -> String {
     e.to_string()
 }
 
-/// A request error with its whole cause chain (reqwest's own text is only „error sending
-/// request“) and the likely cause in German.
-pub fn http_text(e: &reqwest::Error) -> String {
+/// Why a request failed, read from reqwest's error and its cause chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpCause {
+    Timeout,
+    /// The proxy cannot be reached or refuses the connection.
+    Proxy,
+    /// The server's certificate is not trusted (company CA missing, self-signed, pinned).
+    Certificate,
+    /// The server name cannot be resolved.
+    Name,
+    /// Nothing listens at the address.
+    Refused,
+    /// The connection broke off during the answer.
+    Broken,
+    /// No connection, cause unknown.
+    Connect,
+    Other,
+}
+
+/// reqwest's text with its whole cause chain (its own text is only „error sending request“).
+pub fn http_chain(e: &reqwest::Error) -> String {
     let mut chain = e.to_string();
     let mut source = std::error::Error::source(e);
     while let Some(s) = source {
@@ -250,35 +272,57 @@ pub fn http_text(e: &reqwest::Error) -> String {
         }
         source = s.source();
     }
-    let lower = chain.to_lowercase();
-    let cause = if e.is_timeout() || lower.contains("timed out") || lower.contains("deadline") {
-        tr!(
+    chain
+}
+
+/// The likely cause of a failed request.
+pub fn http_cause(e: &reqwest::Error) -> HttpCause {
+    let lower = http_chain(e).to_lowercase();
+    if e.is_timeout() || lower.contains("timed out") || lower.contains("deadline") {
+        HttpCause::Timeout
+    } else if lower.contains("proxy") || lower.contains("tunnel") {
+        HttpCause::Proxy
+    } else if lower.contains("certificate") || lower.contains("unknownissuer") || lower.contains("tls") {
+        HttpCause::Certificate
+    } else if lower.contains("dns") || lower.contains("lookup") || lower.contains("resolve") {
+        HttpCause::Name
+    } else if lower.contains("connection refused") {
+        HttpCause::Refused
+    } else if e.is_body() || e.is_decode() || lower.contains("connection closed") || lower.contains("eof") {
+        HttpCause::Broken
+    } else if e.is_connect() {
+        HttpCause::Connect
+    } else {
+        HttpCause::Other
+    }
+}
+
+/// A request error with its whole cause chain and the likely cause in the display language.
+pub fn http_text(e: &reqwest::Error) -> String {
+    let chain = http_chain(e);
+    let cause = match http_cause(e) {
+        HttpCause::Timeout => tr!(
             "Zeitüberschreitung – der Server hat nicht rechtzeitig geantwortet",
             "Timed out – the server did not answer in time"
-        )
-    } else if lower.contains("proxy") || lower.contains("tunnel") {
-        tr!(
+        ),
+        HttpCause::Proxy => tr!(
             "Proxy nicht erreichbar oder er lehnt die Verbindung ab",
             "Proxy not reachable, or it refuses the connection"
-        )
-    } else if lower.contains("certificate") || lower.contains("unknownissuer") || lower.contains("tls") {
-        tr!(
+        ),
+        HttpCause::Certificate => tr!(
             "Das Zertifikat des Servers wird nicht anerkannt (Netzwerkeinstellungen: Zertifikate)",
             "The server's certificate is not trusted (network settings: certificates)"
-        )
-    } else if lower.contains("dns") || lower.contains("lookup") || lower.contains("resolve") {
-        tr!("Servername nicht gefunden", "Server name not found")
-    } else if lower.contains("connection refused") {
-        tr!(
+        ),
+        HttpCause::Name => tr!("Servername nicht gefunden", "Server name not found"),
+        HttpCause::Refused => tr!(
             "Verbindung abgelehnt – läuft der Dienst unter dieser Adresse?",
             "Connection refused – is the service running at this address?"
-        )
-    } else if e.is_body() || e.is_decode() || lower.contains("connection closed") || lower.contains("eof") {
-        tr!("Die Verbindung brach während der Antwort ab", "The connection broke off during the answer")
-    } else if e.is_connect() {
-        tr!("Keine Verbindung zum Server", "No connection to the server")
-    } else {
-        return chain;
+        ),
+        HttpCause::Broken => {
+            tr!("Die Verbindung brach während der Antwort ab", "The connection broke off during the answer")
+        }
+        HttpCause::Connect => tr!("Keine Verbindung zum Server", "No connection to the server"),
+        HttpCause::Other => return chain,
     };
     format!("{cause} ({chain})")
 }
@@ -315,6 +359,8 @@ mod tests {
         assert!(full.to_string().contains("Datenträger ist voll"));
         assert_eq!(Error::Parse("x".into()).to_string(), "Eingabe nicht verstanden: x");
         assert_eq!(Error::Provider { status: 500, body: "b".into() }.to_string(), "KI-Server meldet Fehler 500: b");
+        // Jira and calendar servers are not the AI server: their message stands alone.
+        assert_eq!(Error::Remote { status: 401, message: "Jira lehnt ab".into() }.to_string(), "Jira lehnt ab");
     }
 
     #[test]

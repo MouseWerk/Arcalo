@@ -136,6 +136,24 @@ fn auth_headers() {
     assert_eq!(auth_header(SiteKind::Server, "", " pat "), "Bearer pat");
     assert_eq!(SiteKind::guess("acme.atlassian.net"), SiteKind::Cloud);
     assert_eq!(SiteKind::guess("https://jira.firma.de/"), SiteKind::Server);
+    // Addresses copied from the browser keep only the site's base.
+    for (raw, base) in [
+        ("acme.atlassian.net", "https://acme.atlassian.net"),
+        (
+            "https://acme.atlassian.net/jira/software/projects/PROJ/boards/1?selectedIssue=PROJ-2",
+            "https://acme.atlassian.net",
+        ),
+        ("https://acme.atlassian.net/browse/PROJ-123", "https://acme.atlassian.net"),
+        ("https://jira.firma.de/browse/PROJ-123", "https://jira.firma.de"),
+        ("https://jira.firma.de/jira/secure/Dashboard.jspa", "https://jira.firma.de/jira"),
+        ("https://firma.de/jira/", "https://firma.de/jira"),
+        ("http://jira:8080/projects/OPS/issues/OPS-7?filter=x", "http://jira:8080"),
+        ("https://jira.firma.de/login.jsp#top", "https://jira.firma.de"),
+        ("  https://jira  ", "https://jira"),
+        ("", ""),
+    ] {
+        assert_eq!(normalize_url(raw), base, "{raw}");
+    }
 }
 
 // ------------------------------------------------------------------ parsing
@@ -253,17 +271,63 @@ fn bodies_and_accounts() {
 
 #[test]
 fn errors_are_worded_for_the_user() {
-    let captcha = status_error(403, Some("CAPTCHA_CHALLENGE; login-url=https://jira/login.jsp"), "");
+    let captcha = status_error(SiteKind::Server, 403, Some("CAPTCHA_CHALLENGE; login-url=https://jira/login.jsp"), "");
     assert!(captcha.to_string().contains("CAPTCHA"), "{captcha}");
-    assert!(status_error(401, None, "").to_string().contains("401"));
-    let nf = status_error(404, None, r#"{"errorMessages":["Issue does not exist"]}"#).to_string();
+    assert!(status_error(SiteKind::Server, 401, None, "").to_string().contains("401"));
+    let nf = status_error(SiteKind::Server, 404, None, r#"{"errorMessages":["Issue does not exist"]}"#).to_string();
     assert!(nf.contains("Issue does not exist") && nf.contains("404"), "{nf}");
-    let bad = status_error(400, None, r#"{"errorMessages":[],"errors":{"summary":"required"}}"#).to_string();
+    let bad = status_error(SiteKind::Server, 400, None, r#"{"errorMessages":[],"errors":{"summary":"required"}}"#)
+        .to_string();
     assert!(bad.contains("summary: required"), "{bad}");
     let base = std::time::Duration::from_millis(100);
     assert_eq!(retry_after(Some("2"), 0, base), std::time::Duration::from_secs(2));
     assert_eq!(retry_after(Some("999"), 0, base), std::time::Duration::from_secs(60));
     assert_eq!(retry_after(None, 2, base), std::time::Duration::from_millis(400));
+    // Jira is not the AI server: the message stands alone, with what to do.
+    let login = status_error(SiteKind::Server, 401, None, "").to_string();
+    assert!(login.starts_with("Jira hat die Anmeldung abgelehnt (401)"), "{login}");
+    assert!(!login.contains("KI-Server"), "{login}");
+    let down = status_error(SiteKind::Server, 502, None, "<html>Bad Gateway</html>").to_string();
+    assert!(down.contains("Fehler 502") && down.contains("In ein paar Minuten"), "{down}");
+    let proxy = status_error(SiteKind::Server, 407, None, "").to_string();
+    assert!(proxy.contains("Proxy") && proxy.contains("Einstellungen → Netzwerk"), "{proxy}");
+    assert!(login.contains("Zugriffstoken") && !login.contains("API-Token"), "{login}");
+    let cloud = status_error(SiteKind::Cloud, 401, None, "").to_string();
+    assert!(cloud.contains("API-Token") && cloud.contains("id.atlassian.com"), "{cloud}");
+    crate::i18n::with_lang(crate::prefs::Language::En, || {
+        let login = status_error(SiteKind::Server, 401, None, "").to_string();
+        assert!(login.starts_with("Jira refused the login (401)"), "{login}");
+    });
+}
+
+/// A Jira client through a proxy profile, built the way `client_for` builds it.
+fn jira_via(url: &str, profile: crate::network::ProxyProfile) -> JiraClient {
+    let http = crate::network::Prepared::new(&profile, None, &[]).unwrap().client().unwrap();
+    JiraClient::new("s", url, SiteKind::Server, "", "t", http, std::time::Duration::from_secs(5))
+}
+
+fn direct_jira(url: &str) -> JiraClient {
+    jira_via(url, crate::network::ProxyProfile { mode: crate::network::ProxyMode::None, ..Default::default() })
+}
+
+#[tokio::test]
+async fn network_errors_name_the_cause_and_the_fix() {
+    // Nothing listens: offline or a wrong address.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let refused = direct_jira(&format!("http://127.0.0.1:{port}")).whoami().await.unwrap_err().to_string();
+    assert!(refused.contains("nicht erreichbar"), "{refused}");
+    // A server name that does not exist.
+    let name = direct_jira("http://jira.example.invalid").whoami().await.unwrap_err().to_string();
+    assert!(name.contains("nicht auffindbar") || name.contains("Zeitüberschreitung"), "{name}");
+    // A proxy that refuses the connection.
+    let manual = crate::network::ProxyProfile {
+        mode: crate::network::ProxyMode::Manual,
+        http_proxy: format!("http://127.0.0.1:{port}"),
+        https_proxy: format!("http://127.0.0.1:{port}"),
+        ..Default::default()
+    };
+    let proxy = jira_via("https://jira.firma.de", manual).whoami().await.unwrap_err().to_string();
+    assert!(proxy.contains("Proxy"), "{proxy}");
 }
 
 // ------------------------------------------------------------------ keys
@@ -485,8 +549,8 @@ impl IssueProvider for Fake {
     }
     async fn update_work(&self, id: &str, _work: &WorkLog) -> Result<()> {
         match id {
-            "gone" => Err(Error::Provider { status: 404, body: String::new() }),
-            "down" => Err(Error::Provider { status: 503, body: String::new() }),
+            "gone" => Err(Error::Remote { status: 404, message: String::new() }),
+            "down" => Err(Error::Remote { status: 503, message: String::new() }),
             _ => Ok(()),
         }
     }

@@ -2,9 +2,11 @@
 //! worklogs and the assistant's Jira tools. The logic lives in `annalo_core::issues`.
 //!
 //! Tokens live in the credential store (`jira-<site id>`), never in the settings. Requests use the
-//! HTTP client of the assistant's tools, so the proxy, extra CA and timeouts of Settings →
-//! Netzwerk apply. A sync reads Jira without any database lock and then stores the result in one
-//! short transaction; everything shown afterwards reads the cache (offline as well).
+//! site's own client (`client_for(Service::Jira(id))`), so the proxy profile, extra CAs, trusted
+//! servers and timeouts of Settings → Netzwerk apply. A sync reads Jira without any database lock
+//! and then stores the result in one short transaction; everything shown afterwards reads the
+//! cache (offline as well). A saved search that fails keeps its last issues; its error is shown
+//! under the search in Settings → Jira until a sync runs it again.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -34,6 +36,8 @@ pub struct JiraSync {
     again: AtomicBool,
     /// Woken whenever a site sync ends (callers waiting for their turn).
     done: tokio::sync::Notify,
+    /// Saved searches that failed in their site's last sync (query id → message).
+    query_errors: Mutex<HashMap<String, String>>,
 }
 
 fn secret(state: &AppState, id: &str) -> SecretStore {
@@ -122,6 +126,8 @@ pub struct JiraStatus {
     mappings: Vec<WbsMapping>,
     /// Cached projects (`site`, `key`, `name`).
     projects: Vec<(String, String, String)>,
+    /// Saved searches that failed in the last sync (query id → message).
+    query_errors: HashMap<String, String>,
 }
 
 fn status_of(app: &AppHandle) -> Result<JiraStatus> {
@@ -145,6 +151,7 @@ fn status_of(app: &AppHandle) -> Result<JiraStatus> {
         secret_storage: state.secrets.backend(),
         mappings: db.issue_wbs_list()?,
         projects: db.issue_projects()?,
+        query_errors: lock(&app.state::<JiraSync>().query_errors).clone(),
     })
 }
 
@@ -327,6 +334,14 @@ async fn sync_inner(app: &AppHandle, id: &str) -> Result<(usize, String)> {
     }
     for (q, e) in &fetched.failed {
         devlog::warn("jira", format!("{id}: query {q}: {}", devlog::redact(e)));
+    }
+    {
+        let sync = app.state::<JiraSync>();
+        let mut errors = lock(&sync.query_errors);
+        for q in settings.queries.iter().filter(|q| q.site == id) {
+            errors.remove(&q.id);
+        }
+        errors.extend(fetched.failed.iter().map(|(q, e)| (q.clone(), devlog::redact(e))));
     }
     let out = state.db().issues_store(id, &fetched, Utc::now())?;
     if settings.tick_done_tasks && !out.newly_done.is_empty() {

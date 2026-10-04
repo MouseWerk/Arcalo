@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
+import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, isSiteAddress, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
 import { guessKind } from "../views/settings/JiraSection";
 import { typeOf } from "./issueTypes";
 import { quickItems } from "./quicksearch";
@@ -149,5 +149,14 @@ describe("Jira worklogs of time entries", () => {
     const list = [e({ worklog_id: "10", worklog_state: "posted" }), e({ entry_id: 2, worklog_id: "11", worklog_state: "posted" }), e({ entry_id: 3, issue_key: "OPS-7" }), e({ entry_id: 4, issue_key: "OPS-8", worklog_id: "12", syncs: false })];
     expect(worklogDeleteKeys(list)).toEqual(["PROJ-5"]);
     expect(worklogDeleteKeys([])).toEqual([]);
+  });
+});
+
+describe("isSiteAddress", () => {
+  it("takes cloud, company and intranet addresses", () => {
+    for (const ok of ["firma.atlassian.net", "https://firma.atlassian.net/", "https://jira", "http://jira:8080", "jira:8080", "https://jira.firma.local/jira", "http://127.0.0.1:41234", " https://jira.firma.de "]) expect(isSiteAddress(ok), ok).toBe(true);
+  });
+  it("refuses what cannot be an address", () => {
+    for (const bad of ["", "jira", "https://", "http://ji ra", "ftp://jira.firma.de", "jira firma.de", "mia@firma.de", "https://jira:port"]) expect(isSiteAddress(bad), bad).toBe(false);
   });
 });

@@ -3741,3 +3741,15 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 /* Settings → About in a narrow pane: the version rows wrap their buttons instead of clipping. */
 .whatsnew-row { flex-wrap: wrap; row-gap: 2px; }
 .whatsnew-row-version { white-space: nowrap; }
+
+/* ---- integrations (1.12): Settings → Jira searches and test result ---- */
+.set-group-body > .jira-queries { padding: 12px 0 14px; border-top: 1px solid var(--border); }
+.jira-jql, .calset-where.mono { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+.jira-query-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 2px; color: var(--danger); font-size: var(--fs-xs); line-height: 1.45; }
+.jira-query-error svg { flex: none; margin-top: 2px; }
+.jira-test-result { align-items: flex-start; line-height: 1.45; }
+.jira-test-result svg { flex: none; margin-top: 1px; }
+.dialog-body > .field + .jira-switches { margin-top: 14px; }
+.issues-banner { flex-wrap: wrap; }
+.issues-banner > .grow { flex: 1 1 260px; min-width: 0; }
+.issues-banner > .btn { flex: none; margin: -3px 0 -3px auto; }

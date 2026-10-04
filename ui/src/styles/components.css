@@ -453,3 +453,6 @@
 .skeleton-cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .skeleton-cards > span { height: 96px; border-radius: var(--r-md); }
 @keyframes skel-pulse { 50% { opacity: 0.5; } }
+
+/* ---- dialogs (1.12): room between stacked fields, so a hint does not run into the next label ---- */
+.dialog-body > .field + .field { margin-top: 12px; }

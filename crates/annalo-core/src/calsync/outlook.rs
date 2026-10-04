@@ -407,7 +407,11 @@ fn error_text(code: &str, detail: &str) -> String {
             "Der Outlook-Kalender ließ sich nicht öffnen ({detail}). Ist in Outlook ein Konto eingerichtet?",
             "The Outlook calendar could not be opened ({detail}). Is an account set up in Outlook?"
         ),
-        _ => trf!("Outlook hat den Kalender nicht geliefert: {}", "Outlook did not return the calendar: {}", if detail.is_empty() { code } else { detail }),
+        _ => trf!(
+            "Outlook hat den Kalender nicht geliefert: {}. Outlook neu starten und erneut synchronisieren.",
+            "Outlook did not return the calendar: {}. Restart Outlook and sync again.",
+            if detail.is_empty() { code } else { detail.trim_end_matches('.') }
+        ),
     }
 }
 

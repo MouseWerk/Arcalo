@@ -89,6 +89,8 @@ export interface JiraStatus {
   secret_storage: string;
   mappings: WbsMapping[];
   projects: [string, string, string][];
+  /** Saved searches that failed in the last sync (query id → message). */
+  query_errors?: Record<string, string>;
 }
 export interface TestResult {
   display_name: string;
@@ -283,6 +285,17 @@ export function isKey(s: string): boolean {
 }
 
 export const projectOf = (key: string) => key.split("-")[0];
+
+/**
+ * Whether `url` can be the address of a Jira site: with `http(s)://` any host, also an intranet
+ * name without a dot (`https://jira`); without a scheme a host with a dot or a port
+ * (`firma.atlassian.net`, `jira:8080`).
+ */
+export function isSiteAddress(url: string): boolean {
+  const u = url.trim();
+  if (/^https?:\/\//i.test(u)) return /^https?:\/\/[^\s/?#:@]+(:\d{1,5})?([/?#]\S*)?$/i.test(u);
+  return /^[^\s/?#:@]+\.[^\s/?#:@]+(:\d{1,5})?([/?#]\S*)?$/.test(u) || /^[^\s/?#:@.]+:\d{1,5}([/?#]\S*)?$/.test(u);
+}
 
 /**
  * Issue keys in `text` of the projects in `projects`, standing alone (not inside a word, a path or
