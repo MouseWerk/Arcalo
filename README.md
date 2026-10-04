@@ -651,7 +651,10 @@ The end-to-end suite starts the actual app binary under `tauri-driver`, with a f
 and a fake LiteLLM server for the assistant tests. The harness runs the app in German (`ANNALO_LOCALE=de-DE`, which
 stands in for the system language; tests 81–83 check the English UI) and sets `ANNALO_SKIP_ONBOARDING=1` (honored by
 debug builds only) so the first-run intro stays away; `launch({ onboarding: true })` lets it run (tests 88–90). It
-also saves screenshots of every screen (dark and light) to `e2e/screenshots/`.
+also saves screenshots of every screen (dark and light) to `e2e/screenshots/`. The apps of a test file share a D-Bus
+session bus of their own with no services on it (no keyring, desktop portal or notification service, whatever the
+machine runs), and `xdg-open` only records what the app would open (`app.opened()`), so no browser or file manager
+starts. A start that takes more than 10 s prints the app's start-up timing (`ANNALO_STARTUP_TIMING=1`, debug builds).
 
 The README screenshots come from `e2e/readme-shots-16.test.js`: the app in English with English sample content (a
 week of meetings in three Outlook calendars, bookings, focus sessions, chats and browser bookmarks from fixtures),

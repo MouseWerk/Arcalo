@@ -1,7 +1,7 @@
 // Starts the real Arcalo desktop binary under tauri-driver and returns a
 // WebdriverIO session. Each call uses a fresh, isolated data directory.
 
-import { spawn, execSync } from "node:child_process";
+import { spawn, execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -25,6 +25,59 @@ function ensureXvfb() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A session bus of this test run's own, with no services on it. Without one the app reaches
+ * whatever the machine has: on CI a user bus whose desktop portal cannot start held every start
+ * for 30 s (GTK waits 25 s for the portal, the window's theme lookup 5 s more, and again for each
+ * further window, which froze the app for 5 s right after it got ready), elsewhere a bus that
+ * X11 autolaunches. The tests expect a desktop without keyring, portal or notification service,
+ * as on a machine without a session bus. "" when there is no dbus-daemon.
+ */
+let busAddress = null;
+function sessionBus() {
+  if (busAddress !== null) return busAddress;
+  busAddress = "";
+  const conf = path.join(os.tmpdir(), `annalo-e2e-bus-${process.pid}.conf`);
+  try {
+    fs.writeFileSync(
+      conf,
+      `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig><type>session</type><listen>unix:tmpdir=${os.tmpdir()}</listen>
+<policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>`,
+    );
+    const out = execFileSync("dbus-daemon", ["--config-file", conf, "--fork", "--print-address=1", "--print-pid=1"], { encoding: "utf8", timeout: 5000 });
+    const [address, pid] = out.trim().split("\n");
+    process.on("exit", () => {
+      try {
+        process.kill(Number(pid));
+      } catch {
+        /* gone */
+      }
+    });
+    busAddress = address;
+  } catch {
+    /* no dbus-daemon: the machine's bus, if any */
+  } finally {
+    fs.rmSync(conf, { force: true });
+  }
+  return busAddress;
+}
+
+/**
+ * Programs the app would open (a web page, a folder, a file in its default program) are not
+ * started: `xdg-open` is a script that appends its arguments to $ANNALO_E2E_OPENED. On CI a
+ * ribbon link opened Chrome on the test display, which ran until the end of the job.
+ */
+let shimDir = null;
+function openerShim() {
+  if (shimDir) return shimDir;
+  shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-open-"));
+  fs.writeFileSync(path.join(shimDir, "xdg-open"), '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "${ANNALO_E2E_OPENED:-/dev/null}"\n', { mode: 0o755 });
+  process.on("exit", () => fs.rmSync(shimDir, { recursive: true, force: true }));
+  return shimDir;
+}
+let launches = 0;
 
 /** Whether nothing listens on `port` (another test run's driver may share the machine). */
 const portFree = (port) =>
@@ -77,9 +130,16 @@ export function guarded(test, getApp) {
 /** The environment the app runs with on `dataDir` (also for starting it without WebDriver). */
 export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv = {} } = {}) {
   ensureXvfb();
+  const bus = sessionBus();
+  const shim = openerShim();
   return {
     ...process.env,
     DISPLAY,
+    ...(bus ? { DBUS_SESSION_BUS_ADDRESS: bus } : {}),
+    PATH: `${shim}${path.delimiter}${process.env.PATH ?? ""}`,
+    BROWSER: path.join(shim, "xdg-open"),
+    // Debug builds log when each start phase was reached (printed by `launch` when a start is slow).
+    ANNALO_STARTUP_TIMING: "1",
     ANNALO_DATA_DIR: dataDir,
     // Isolate WebView storage (localStorage, caches) per run.
     XDG_DATA_HOME: path.join(dataDir, "xdg-data"),
@@ -106,7 +166,9 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
   fs.mkdirSync(SHOTS, { recursive: true });
   const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
   const port = await driverPort();
-  const env = appEnv(dataDir, { demo, onboarding, env: extraEnv });
+  const opened = path.join(os.tmpdir(), `annalo-e2e-opened-${process.pid}-${++launches}.log`);
+  const env = { ...appEnv(dataDir, { demo, onboarding, env: extraEnv }), ANNALO_E2E_OPENED: opened };
+  const started = Date.now();
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
   driver.stderr.on("data", (d) => (driverErr += d));
@@ -124,6 +186,12 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     timeout: 20000,
     timeoutMsg: "app did not become ready",
   });
+  // A slow start says where the time went (the app's start-up timing in its log).
+  const took = Date.now() - started;
+  if (took > 10000) {
+    const log = fs.readFileSync(path.join(dataDir, "logs", "annalo.log"), "utf8").split("\n");
+    console.log(`[e2e] the app took ${took} ms to start:\n${log.filter((l) => l.includes("[startup]")).join("\n")}`);
+  }
 
   const app = {
     browser,
@@ -231,6 +299,10 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
         return false;
       }, { timeout, timeoutMsg: `no ${sel} matching ${pattern}` });
     },
+    /** What the app handed to `xdg-open` so far (links, files and folders it would open elsewhere). */
+    opened() {
+      return fs.existsSync(opened) ? fs.readFileSync(opened, "utf8").split("\n").filter(Boolean) : [];
+    },
     async consoleErrors() {
       return browser.execute(() => window.__annaloErrors ?? []);
     },
@@ -245,6 +317,9 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
       }
       // Helpers the app started (xdg-open, WebKit caches) may still write for a moment.
       if (!given) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      const handed = app.opened();
+      if (handed.length) console.log(`[e2e] handed to xdg-open, not started: ${handed.join(", ")}`);
+      fs.rmSync(opened, { force: true });
       if (driverErr.includes("panicked")) throw new Error(driverErr);
     },
   };

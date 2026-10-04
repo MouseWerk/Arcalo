@@ -17,6 +17,7 @@ import { DrawingEmbed } from "./drawing";
 import { AttachmentDrop, FileEmbed, anchorPage, isPdfName } from "./fileEmbed";
 import { pdfAnchor } from "../lib/linking";
 import { CiteFlash } from "./reveal";
+import { FocusSelection } from "./focusSelection";
 import { TYPING_DEFAULTS, TypingAids, type TypingPrefs } from "./typing";
 import { SmartPaste } from "./smartPaste";
 import { t } from "../lib/i18n";
@@ -403,6 +404,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       link: false,
       paragraph: false,
     }),
+    FocusSelection,
     ImageParagraph,
     MarkdownLink.configure({
       openOnClick: false,
