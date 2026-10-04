@@ -6,6 +6,7 @@ import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useT } from "../../lib/i18n";
+import { detectLanguage, detectedLanguage } from "../../lib/language";
 import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
 import { dateLocale, fmtHours } from "../../lib/format";
@@ -265,11 +266,16 @@ export function StartSection({ draft, update }: SectionProps) {
 export function LocaleSection({ draft, update }: SectionProps) {
   const t = useT();
   const l = draft.locale;
+  // The language of the operating system (what a first start picks).
+  const [system, setSystem] = useState(detectedLanguage);
+  useEffect(() => {
+    void detectLanguage().then(setSystem, () => {});
+  }, []);
   return (
     <>
       <SectionHead title={t("set.locale.title")} intro={t("set.locale.intro")} />
       <Group title={t("set.locale.language")}>
-        <Row label={t("set.locale.uiLanguage")} description={t("set.locale.uiLanguageDesc")}>
+        <Row label={t("set.locale.uiLanguage")} description={t("set.locale.uiLanguageDesc", { system: system === "de" ? "Deutsch" : "English" })}>
           <Segmented
             label={t("set.locale.uiLanguage")}
             value={l.language}

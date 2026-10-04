@@ -71,6 +71,8 @@ export function KeyboardSection({ draft, update }: SectionProps) {
                   onBlur={() => recording === c.id && setRecording(null)}
                   onKeyDown={(e) => {
                     if (recording !== c.id) return;
+                    // Tab leaves the recorder as anywhere else (no command is bound to it).
+                    if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) return setRecording(null);
                     e.preventDefault();
                     e.stopPropagation();
                     if (e.key === "Escape") return setRecording(null);

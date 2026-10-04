@@ -112,7 +112,7 @@
 .set-row-control > .btn, .set-row-control > .icon-btn, .set-row-control > .switch { flex: none; }
 .set-row-control .grow { flex: 1 1 200px; min-width: 0; }
 /* Consistent widths: dropdowns and text fields share one width, segmented controls size themselves. */
-.set-row-control > .select, .set-row-control > .input:not(.grow):not(.w-120):not(.w-360) { width: 224px; }
+.set-row-control > .select:not(.w-360), .set-row-control > .input:not(.grow):not(.w-120):not(.w-360) { width: 224px; }
 .set-row.stack { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
 .set-row.stack > .set-row-text { flex: none; }
 .set-row.stack > .set-row-control { width: 100%; margin-left: 0; justify-content: flex-start; }
@@ -528,3 +528,20 @@
 /* Every change shows an undo toast at the bottom; a control scrolled into view (focus, Tab,
    search) stops above the toast stack instead of under it. */
 .settings-scroll { scroll-padding-bottom: 130px; }
+
+/* ---- about: licenses ---- */
+.lic-text { margin: 0; white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.6; color: var(--text-2); user-select: text; }
+.lic-search { margin-bottom: 12px; }
+.lic-body { display: flex; flex-direction: column; gap: 16px; max-height: min(52vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.lic-head { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-3); }
+.lic-list { list-style: none; margin: 0; padding: 0; }
+.lic-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 12rem); gap: 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-md); }
+.lic-row:last-child { border-bottom: 0; }
+.lic-name { min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.lic-version { font-size: var(--fs-sm); }
+.lic-license { min-width: 0; text-align: right; overflow-wrap: anywhere; font-size: var(--fs-sm); color: var(--text-2); }
+.lic-none { margin: 8px 0; }
+
+/* ---- app lock: forgotten PIN by hand ---- */
+.lock-cmd { display: block; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--code-bg); font-size: var(--fs-xs); line-height: 1.5; color: var(--text); overflow-wrap: anywhere; user-select: text; }
+.sec-pin-noreset { margin-top: 4px; }
