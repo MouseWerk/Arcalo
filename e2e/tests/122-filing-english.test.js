@@ -57,7 +57,7 @@ const smartClick = (label) =>
 const smartTexts = () => app.browser.execute(() => [...document.querySelectorAll(".smart-folders .tree-label")].map((e) => e.textContent));
 const menuClick = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     item?.click();
     return !!item;
   }, label);

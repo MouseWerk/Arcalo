@@ -5665,6 +5665,14 @@ export const en = {
   "set.editor.tagSuggestionsDesc": "Suggests tags of similar and linked pages below the properties.",
   "set.editor.duplicateHints": "Duplicate pages",
   "set.editor.duplicateHintsDesc": "Shows a very similar page in the page header, with compare and merge.",
+  "sb.deleteMany": { one: "Delete {n} page", other: "Delete {n} pages" },
+  "sb.deleteManyTitle": { one: "Delete {n} page?", other: "Delete {n} pages?" },
+  "sb.deleteManyText": { one: "The page and its subpages are moved to the trash. After {days} days they are deleted for good.", other: "The {n} pages and their subpages are moved to the trash. After {days} days they are deleted for good." },
+  "sb.deletedMany": { one: "{n} page in the trash", other: "{n} pages in the trash" },
+  "sb.keyDelete": "Del",
+  "tasks.doneToast": "Task done",
+  "tasks.statusFilter": "Status",
+  "tabs.openTabs": "Open tabs",
 } satisfies Record<string, Msg>;
 
 export type Catalog = { [K in keyof typeof en]: Msg };

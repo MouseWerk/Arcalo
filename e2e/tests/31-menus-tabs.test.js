@@ -20,14 +20,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGM4YWMDRAwQCgAlPgUBdJmUYAAAAABJRU5ErkJggg==";
 const menuClick = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     if (!item) return false;
     item.click();
     return true;
   }, label);
 const hoverSub = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     item?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     item?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     item?.click();

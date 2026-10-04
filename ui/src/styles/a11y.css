@@ -52,12 +52,23 @@
     background: Highlight;
     color: HighlightText;
   }
+  /* forced-color-adjust is inherited: everything inside a highlighted item keeps its own color
+     unless it gets the highlight text color too (faint labels, counts, icons). */
   .tree-row.active *,
+  .tree-row.selected *,
   .tab.active *,
   .settings-nav-item.active *,
   .menu-item.sel *,
+  .menu-item.open *,
   .pal-item.sel *,
-  .segmented button.on * {
+  .select-option.active *,
+  .segmented button.on *,
+  .versions-item.on *,
+  .dash-tab[aria-selected="true"] *,
+  [role="tab"][aria-selected="true"] *,
+  [role="option"][aria-selected="true"] *,
+  [aria-current="page"] *,
+  [aria-current="true"] * {
     color: HighlightText;
   }
 

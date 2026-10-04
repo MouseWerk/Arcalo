@@ -3772,3 +3772,12 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .issues-banner { flex-wrap: wrap; }
 .issues-banner > .grow { flex: 1 1 260px; min-width: 0; }
 .issues-banner > .btn { flex: none; margin: -3px 0 -3px auto; }
+
+/* ---- tabs in narrow panes (1.12) ---- */
+/* A squeezed tab keeps a readable title: the close button of the other tabs lies over the
+   title's end (shown on hover, the title fading out under it) instead of taking its room. */
+.tabs { grid-auto-columns: minmax(104px, max-content); }
+.tab { padding-right: 6px; }
+.tab.active { padding-right: 28px; }
+.tab-close { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
+.tab:not(.active):hover .tab-title { mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent calc(100% - 18px)); }

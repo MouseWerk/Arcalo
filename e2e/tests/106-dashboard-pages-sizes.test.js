@@ -43,7 +43,7 @@ const clickText = async (sel, text) => {
   );
   await app.browser.pause(80);
 };
-const menuItem = (label) => clickText(".menu [role=menuitem]", label);
+const menuItem = (label) => clickText(".menu [role^=menuitem]", label);
 const saved = async () => (await app.invoke("settings_get")).settings.dashboard;
 const tabs = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .dash-tab")].map((t) => t.textContent.trim()));
 const activeTab = () => app.browser.execute(() => document.querySelector('.pane.active .dash-tab[aria-selected="true"]')?.textContent.trim());

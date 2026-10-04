@@ -85,7 +85,7 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   await app.click('[data-widget="budget"] [aria-label="Entfernen"]');
   // Narrow widgets offer the sizes in a menu.
   await app.click('[data-widget="recent"] [aria-label="Widget-Optionen"]');
-  await clickText(".menu [role=menuitem]", "Größe: Breit und hoch");
+  await clickText(".menu [role^=menuitem]", "Größe: Breit und hoch");
   const before = (await order()).indexOf("note");
   await app.browser.execute(() => document.querySelector('[data-widget="note"]').focus());
   await app.keys(["ArrowUp"]);

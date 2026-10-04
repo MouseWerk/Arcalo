@@ -81,6 +81,18 @@ export function TasksView() {
       // Pending edits first, so the ordinal matches what is stored.
       await flushAllEditors();
       await api.setTaskDone(t.page_id, t.ordinal, !t.done, t.text);
+      // Done under „Offen“: the row leaves the list, the toast brings it back.
+      if (!t.done && status === "open")
+        s().toast({
+          tone: "success",
+          title: tr("tasks.doneToast"),
+          detail: t.text,
+          key: `task-done-${k}`,
+          action: {
+            label: tr("common.undo"),
+            run: () => void api.setTaskDone(t.page_id, t.ordinal, false, t.text).then(load, (e) => s().error(tr("tasks.changeFailed"), e)),
+          },
+        });
     } catch (e) {
       s().error(tr("tasks.changeFailed"), e);
     } finally {
@@ -191,7 +203,7 @@ export function TasksView() {
             <div className="view-sub">{list ? tr("tasks.sub", { open, n: list.length }) : ""}</div>
           </div>
           <div className="view-actions">
-            <Segmented value={status} options={STATUS} onChange={setStatus} />
+            <Segmented value={status} options={STATUS} onChange={setStatus} label={tr("tasks.statusFilter")} />
             <Select value={tag} onChange={(e) => setTag(e.target.value)} aria-label={tr("tasks.tag")}>
               <option value="">{tr("tasks.allTags")}</option>
               {tags.map(([t]) => (

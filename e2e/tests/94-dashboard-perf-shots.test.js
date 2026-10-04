@@ -146,7 +146,7 @@ test("screenshots of the presets and the gallery, light and dark, wide and narro
     ]) {
       await clickText(".pane.active .dash-bar button", "Anpassen");
       await clickText(".pane.active .dash-bar button", "Vorlage");
-      await clickText(".menu [role=menuitem]", preset[1]);
+      await clickText(".menu [role^=menuitem]", preset[1]);
       await clickText(".pane.active .dash-bar button", "Fertig");
       await app.browser.waitUntil(async () => !(await (await app.$(".pane.active .dash.editing")).isExisting()));
       for (const width of [1480, 900]) {

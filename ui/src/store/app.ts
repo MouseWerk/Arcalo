@@ -147,6 +147,8 @@ interface State {
   set: (patch: Partial<State>) => void;
   toast: (t: Omit<Toast, "id">) => void;
   dismissToast: (id: number) => void;
+  /** Stops (true) or restarts (false) the countdown of the toasts, while one is pointed at or focused. */
+  holdToasts: (hold: boolean) => void;
   error: (title: string, e: unknown) => void;
   alerts: (alerts: BudgetStatus[]) => void;
 }
@@ -245,6 +247,9 @@ export function savePref(key: string, v: boolean) {
 const initial = loadLayout();
 const initialPane = initial.panes.find((p) => p.id === initial.activePaneId) ?? initial.panes[0];
 let toastSeq = 0;
+/** Countdown of each closing toast: the running timer, or the time left while held. */
+const toastClocks = new Map<number, { timer: number | null; left: number; since: number }>();
+let toastsHeld = false;
 // `refreshTree` requests: the number of the latest one and when its tree is in place.
 let treeSeq = 0;
 let treeLatest: Promise<void> = Promise.resolve();
@@ -484,9 +489,30 @@ export const useApp = create<State>((set, get) => ({
     const rest = t.key ? get().toasts.filter((x) => x.key !== t.key) : get().toasts;
     set({ toasts: [...rest, { ...t, id }].filter((x, i, all) => x.persistent || i >= all.length - 3) });
     const ms = t.timeout ?? (t.tone === "danger" ? 8000 : t.action ? 7000 : t.tone === "success" ? 3200 : 4500);
-    if (!t.persistent) setTimeout(() => get().dismissToast(id), ms);
+    if (!t.persistent)
+      toastClocks.set(id, { timer: toastsHeld ? null : window.setTimeout(() => get().dismissToast(id), ms), left: ms, since: Date.now() });
   },
-  dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
+  dismissToast: (id) => {
+    const clock = toastClocks.get(id);
+    if (clock?.timer != null) clearTimeout(clock.timer);
+    toastClocks.delete(id);
+    set({ toasts: get().toasts.filter((t) => t.id !== id) });
+  },
+  holdToasts: (hold) => {
+    if (hold === toastsHeld) return;
+    toastsHeld = hold;
+    const now = Date.now();
+    for (const [id, clock] of toastClocks) {
+      if (hold && clock.timer != null) {
+        clearTimeout(clock.timer);
+        toastClocks.set(id, { timer: null, left: Math.max(0, clock.left - (now - clock.since)), since: now });
+      } else if (!hold && clock.timer == null) {
+        // A moment to read after the pointer or the focus leaves.
+        const left = Math.max(clock.left, 1500);
+        toastClocks.set(id, { timer: window.setTimeout(() => get().dismissToast(id), left), left, since: now });
+      }
+    }
+  },
   error: (title, e) => {
     const detail = errorText(e);
     logUi("ERROR", `${title}: ${detail}`);

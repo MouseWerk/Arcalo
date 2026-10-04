@@ -4,6 +4,7 @@ import {
   Activity, AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
   FileText, GitMerge, Paperclip, CalendarRange, Sunset, Sun, Ticket, Waypoints,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
@@ -191,8 +192,25 @@ export function Toasts() {
   const toasts = useApp((s) => s.toasts);
   const dismiss = useApp((s) => s.dismissToast);
   const icon = { info: Info, success: CheckCircle2, warning: AlertTriangle, danger: XCircle };
+  // A toast pointed at or holding the focus does not close (time to reach „Rückgängig“).
+  const box = useRef<HTMLDivElement>(null);
+  const sync = () => {
+    const el = box.current;
+    useApp.getState().holdToasts(!!el && (el.matches(":hover") || el.contains(document.activeElement)));
+  };
+  // A toast closed under the pointer or with the focus leaves no leave event behind.
+  useEffect(sync, [toasts]);
+  useEffect(() => () => useApp.getState().holdToasts(false), []);
   return (
-    <div className="toasts" aria-live="polite">
+    <div
+      className="toasts"
+      aria-live="polite"
+      ref={box}
+      onMouseEnter={() => useApp.getState().holdToasts(true)}
+      onMouseLeave={() => useApp.getState().holdToasts(box.current?.contains(document.activeElement) ?? false)}
+      onFocus={() => useApp.getState().holdToasts(true)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && useApp.getState().holdToasts(!!box.current?.matches(":hover"))}
+    >
       <UpdateLayer />
       {toasts.map((t) => {
         const Icon = icon[t.tone];

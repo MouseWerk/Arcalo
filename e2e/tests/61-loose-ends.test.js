@@ -65,7 +65,7 @@ async function openPage(title, content) {
 
 const menuClick = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     item?.click();
     return !!item;
   }, label);

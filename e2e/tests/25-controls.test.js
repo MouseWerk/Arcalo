@@ -200,7 +200,7 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
   const row = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .entry")].findIndex((e) => /Kontrolltest Buchung/.test(e.textContent)));
   const status = async () => app.browser.execute((i) => document.querySelectorAll(".pane.active .entry")[i].querySelector(".badge:not(.entry-la .badge)")?.textContent, await row());
   await app.browser.execute((i) => document.querySelectorAll(".pane.active .entry")[i].querySelector('[aria-label="Aktionen"]').click(), await row());
-  await app.browser.execute(() => [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => /Freigeben/.test(b.textContent)).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => /Freigeben/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => /Freigegeben/.test((await status()) ?? ""), { timeoutMsg: "released" });
 
   // Bulk: select it, back to draft.

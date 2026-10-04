@@ -43,3 +43,45 @@ describe("refreshTree", () => {
     spy.mockRestore();
   });
 });
+
+describe("toasts", () => {
+  it("wait while held (pointer or focus on them) and close after a moment once released", () => {
+    vi.useFakeTimers();
+    try {
+      const s = useApp.getState();
+      s.toast({ tone: "info", title: "Seite gelöscht", action: { label: "Rückgängig", run: () => {} } });
+      const id = useApp.getState().toasts.at(-1)!.id;
+      vi.advanceTimersByTime(3000);
+      s.holdToasts(true);
+      vi.advanceTimersByTime(60_000);
+      expect(useApp.getState().toasts.some((t) => t.id === id)).toBe(true);
+      // A toast arriving while held waits as well.
+      s.toast({ tone: "success", title: "Kopiert" });
+      vi.advanceTimersByTime(10_000);
+      expect(useApp.getState().toasts.length).toBeGreaterThanOrEqual(2);
+      s.holdToasts(false);
+      vi.advanceTimersByTime(3900);
+      expect(useApp.getState().toasts.some((t) => t.id === id)).toBe(true);
+      vi.advanceTimersByTime(200);
+      expect(useApp.getState().toasts.some((t) => t.id === id)).toBe(false);
+      vi.advanceTimersByTime(4000);
+      expect(useApp.getState().toasts).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closing one by hand stops its countdown", () => {
+    vi.useFakeTimers();
+    try {
+      const s = useApp.getState();
+      s.toast({ tone: "info", title: "Eins" });
+      const id = useApp.getState().toasts.at(-1)!.id;
+      s.dismissToast(id);
+      expect(useApp.getState().toasts.some((t) => t.id === id)).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

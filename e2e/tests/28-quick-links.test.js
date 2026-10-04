@@ -41,7 +41,7 @@ test("add, edit and remove a link in the ribbon", async () => {
 
   const menu = async (i, label) => {
     await (await app.$$(".ribbon .quick-link"))[i].click({ button: "right" });
-    await app.browser.execute((l) => [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.includes(l)).click(), label);
+    await app.browser.execute((l) => [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.includes(l)).click(), label);
   };
   const stale = (await app.invoke("settings_get")).settings;
   await menu(1, "Nach oben");

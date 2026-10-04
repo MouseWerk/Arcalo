@@ -28,7 +28,7 @@ const reload = async () => {
 const splitRight = async () => {
   await app.browser.execute(() => document.querySelector(".pane.active .vh [aria-label='Weitere Aktionen']").click());
   await app.waitFor(".menu");
-  await app.browser.execute(() => [...document.querySelectorAll(".menu [role=menuitem], .menu button")].find((b) => /Rechts daneben/.test(b.textContent))?.click());
+  await app.browser.execute(() => [...document.querySelectorAll(".menu [role^=menuitem], .menu button")].find((b) => /Rechts daneben/.test(b.textContent))?.click());
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane .ProseMirror")).length === 2, { timeoutMsg: "no split" });
 };
 const closeSplit = async () => {

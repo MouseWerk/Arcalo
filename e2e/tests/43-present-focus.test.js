@@ -14,7 +14,7 @@ after(async () => app?.close());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const menuClick = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     if (!item) return false;
     item.click();
     return true;

@@ -14,6 +14,8 @@ import { ConflictView } from "../views/ConflictView";
 import { storeFile } from "../lib/api";
 import { isPdfName } from "../editor/fileEmbed";
 import { lazyView, preloadWhenIdle } from "./lazyView";
+import { t, useT } from "../lib/i18n";
+import { withHint } from "../lib/keymap";
 
 // Views other than pages load when first opened (a smaller script at start), or in the
 // background once the app is idle.
@@ -56,8 +58,6 @@ async function openDroppedFiles(files: File[], paneId: string) {
     }
   }
 }
-import { t, useT } from "../lib/i18n";
-import { withHint } from "../lib/keymap";
 
 const MIN_PANE = 280;
 
@@ -331,7 +331,6 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   return (
     <div
       className="tabbar"
-      role="tablist"
       data-tauri-drag-region
       onDragOver={(e) => onDragOver(e, pane.tabs.length)}
       // Leaving for a child (a tab) is not leaving the bar: no flicker of the marker.
@@ -342,6 +341,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
     >
       <div
         className="tabs"
+        role="tablist"
+        aria-label={tr("tabs.openTabs")}
         data-tauri-drag-region
         ref={tabsRef}
         // The mouse wheel scrolls the tab row sideways.
@@ -383,12 +384,15 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
                 if (e.key === "Enter" || e.key === " ") (e.preventDefault(), s().activateTab(t.id));
                 else if (e.key === "ArrowRight") (e.preventDefault(), sibling(1));
                 else if (e.key === "ArrowLeft") (e.preventDefault(), sibling(-1));
+                else if (e.key === "Home") (e.preventDefault(), (e.currentTarget.parentElement?.querySelector<HTMLElement>(".tab") ?? null)?.focus());
+                else if (e.key === "End") (e.preventDefault(), [...(e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(".tab") ?? [])].at(-1)?.focus());
                 else if (e.key === "Delete") (e.preventDefault(), s().closeTab(t.id));
                 else if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
                   openMenuAt(e, tabMenu(t));
                 }
               }}
               title={title}
+              aria-label={title}
             >
               <span className="tab-icon">
                 <TabIcon t={t} />
@@ -398,6 +402,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
                 type="button"
                 className="tab-close"
                 aria-label={tr("tabs.closeTab")}
+                // Not a Tab stop of its own: Delete closes the focused tab, the menu offers it too.
+                tabIndex={-1}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => s().closeTab(t.id)}
               >
