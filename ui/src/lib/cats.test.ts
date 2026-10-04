@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { catsGrid, dayTargets, undeletableReason, weekGaps } from "./cats";
+import { afterEach, describe, expect, it } from "vitest";
+import { catsDecimalSep, catsGrid, dayTargets, undeletableReason, weekGaps } from "./cats";
+import { formatPrefs, setFormatPrefs } from "./format";
 import type { TimeEntryRow } from "./types";
 
 const week = new Date(2026, 8, 21); // Monday
@@ -33,6 +34,26 @@ describe("catsGrid", () => {
     const cells = text.trim().split("\r\n").map((l) => l.split("\t")[3]);
     expect(cells).toEqual(["0,33", "0,34", "0,33"]);
     expect(text.split("\r\n")[0].split("\t")[4]).toBe("0,83");
+  });
+
+  it("writes the decimal separator set for CATS", () => {
+    const { text } = catsGrid([row(1, 0, 90, "1020", "DEV")], week, ".");
+    expect(text).toBe("NP-1\t1020\tDEV\t1.50\t\t\t\t\t\t\r\n");
+  });
+});
+
+describe("catsDecimalSep", () => {
+  const before = { ...formatPrefs() };
+  afterEach(() => setFormatPrefs(before));
+  it("keeps the comma by default and can follow the number format", () => {
+    expect(catsDecimalSep(undefined)).toBe(",");
+    expect(catsDecimalSep("comma")).toBe(",");
+    expect(catsDecimalSep("point")).toBe(".");
+    setFormatPrefs({ lang: "en", numberFormat: "auto" });
+    expect(catsDecimalSep("number")).toBe(".");
+    expect(catsDecimalSep("comma")).toBe(",");
+    setFormatPrefs({ lang: "en", numberFormat: "comma" });
+    expect(catsDecimalSep("number")).toBe(",");
   });
 });
 

@@ -204,6 +204,18 @@ export function TimePrefGroups({ draft, update }: SectionProps) {
             onChange={(v) => set({ cats_delimiter: v })}
           />
         </Row>
+        <Row label={t("set.time.catsDecimal")} description={t("set.time.catsDecimalDesc")}>
+          <Segmented
+            label={t("set.time.catsDecimal")}
+            value={tp.cats_decimal ?? "comma"}
+            options={[
+              { value: "comma", label: t("set.time.decimalComma") },
+              { value: "point", label: t("set.time.decimalPoint") },
+              { value: "number", label: t("set.time.decimalNumber") },
+            ]}
+            onChange={(v) => set({ cats_decimal: v })}
+          />
+        </Row>
         <Row label={t("set.time.catsColumns")} description={t("set.time.catsColumnsDesc")}>
           <Select value={tp.cats_columns} onChange={(e) => set({ cats_columns: e.target.value as TimePrefs["cats_columns"] })} aria-label={t("set.time.catsColumns")}>
             <option value="standard">PERNR, WORKDATE, RPROJ, RNPLNR, VORNR, LSTAR, CATSHOURS, MEINH, LTXA1</option>

@@ -45,6 +45,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0027_move_undo_target.sql"),
     include_str!("../migrations/0029_table_links.sql"),
     include_str!("../migrations/0030_perf_indexes.sql"),
+    include_str!("../migrations/0031_timer_pauses.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -598,10 +599,11 @@ impl Database {
 
     // ----------------------------------------------------------- time entries
 
-    const ENTRY_COLS: &'static str = "e.id, e.netzplan_id, e.vorgang_nr, e.leistungsart, e.start_time, e.end_time,
+    pub(crate) const ENTRY_COLS: &'static str =
+        "e.id, e.netzplan_id, e.vorgang_nr, e.leistungsart, e.start_time, e.end_time,
          e.duration_minutes, e.description, e.status_flag, e.source, e.page_id";
 
-    fn map_entry(r: &Row) -> rusqlite::Result<TimeEntry> {
+    pub(crate) fn map_entry(r: &Row) -> rusqlite::Result<TimeEntry> {
         let status: String = r.get(8)?;
         let source: String = r.get(9)?;
         Ok(TimeEntry {
@@ -708,31 +710,15 @@ impl Database {
         self.time_entry(self.conn.last_insert_rowid())
     }
 
-    /// Stops the running timer. `idle_minutes` is subtracted from the booked
-    /// duration (idle detection); the wall-clock end time is kept.
-    pub fn stop_timer(&self, at: DateTime<Utc>, idle_minutes: i64) -> Result<TimeEntry> {
-        let running = self
-            .running_timer()?
-            .ok_or_else(|| Error::State(tr!("Es läuft kein Timer", "No timer is running").into()))?;
-        if at < running.start_time {
-            return Err(Error::State(tr!("Das Ende liegt vor dem Beginn", "The end is before the start").into()));
-        }
-        let minutes = ((at - running.start_time).num_seconds() as f64 / 60.0).round() as i64;
-        // Rounding (Settings → Zeiterfassung) applies to what is booked; nothing booked stays nothing.
-        let rounding = self.load_settings().map(|s| s.time.rounding).unwrap_or_default();
-        let booked = rounding.apply((minutes - idle_minutes.max(0)).max(0));
-        self.conn.execute(
-            "UPDATE time_entries SET end_time = ?2, duration_minutes = ?3, status_flag = 'draft' WHERE id = ?1",
-            params![running.id, ts(at), booked],
-        )?;
-        let entry = self.time_entry(running.id)?;
-        if booked > 0 {
-            self.feed_entry("entry_created", &entry, at)?;
-        }
-        Ok(entry)
+    /// Stops the running timer in the local time zone; the last `idle_minutes` before `at`
+    /// are not booked (see [`Database::stop_timer_in`]).
+    pub fn stop_timer(&self, at: DateTime<Utc>, idle_minutes: i64) -> Result<Vec<TimeEntry>> {
+        let idle = [(at - chrono::Duration::minutes(idle_minutes.max(0)), at)];
+        self.stop_timer_in(at, &idle, &chrono::Local)
     }
 
     pub fn discard_timer(&self) -> Result<()> {
+        // Its pauses go with it (ON DELETE CASCADE).
         self.conn.execute("DELETE FROM time_entries WHERE status_flag = 'running'", [])?;
         Ok(())
     }
@@ -786,12 +772,23 @@ impl Database {
         )?;
         let entry = self.time_entry(id)?;
         self.feed_entry("entry_changed", &entry, Utc::now())?;
+        // Booked from a note: its chip shows the new values.
+        self.sync_entry_chip(&entry)?;
         Ok(entry)
     }
 
-    /// Deletes a booking. An exported one is already in the time system and stays; a running
-    /// one is stopped (or discarded) first.
+    /// Deletes a booking; its chip in the note stays, marked „Buchung gelöscht“. An exported
+    /// one is already in the time system and stays; a running one is stopped (or discarded) first.
     pub fn delete_time_entry(&self, id: i64) -> Result<()> {
+        self.delete_entry(id, true)
+    }
+
+    /// Deletes the booking of a chip the user removed from the note (the note is left alone).
+    pub fn delete_time_entry_with_chip(&self, id: i64) -> Result<()> {
+        self.delete_entry(id, false)
+    }
+
+    fn delete_entry(&self, id: i64, mark_chip: bool) -> Result<()> {
         let status: Option<String> =
             self.conn.query_row("SELECT status_flag FROM time_entries WHERE id = ?1", [id], |r| r.get(0)).optional()?;
         match status.as_deref() {
@@ -809,10 +806,16 @@ impl Database {
                 )
                 .into(),
             )),
-            _ => {
+            Some(_) => self.atomic(|| {
+                let page: Option<i64> =
+                    self.conn.query_row("SELECT page_id FROM time_entries WHERE id = ?1", [id], |r| r.get(0))?;
                 self.conn.execute("DELETE FROM time_entries WHERE id = ?1", [id])?;
+                if let (Some(page), true) = (page, mark_chip) {
+                    self.sync_chip(page, id, None)?;
+                }
                 Ok(())
-            }
+            }),
+            None => Ok(()),
         }
     }
 
@@ -1191,7 +1194,7 @@ mod tests {
         let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
         db.start_timer(np.id, Some("1020"), Some("DEV"), "Integration", t0).unwrap();
         assert!(db.start_timer(np.id, None, None, "", t0).is_err(), "only one timer may run");
-        let e = db.stop_timer(t0 + chrono::Duration::minutes(95), 5).unwrap();
+        let e = db.stop_timer(t0 + chrono::Duration::minutes(95), 5).unwrap().remove(0);
         assert_eq!(e.duration_minutes, Some(90));
         assert_eq!(e.status_flag, StatusFlag::Draft);
         assert!(db.running_timer().unwrap().is_none());
@@ -1243,9 +1246,19 @@ mod tests {
     fn an_overnight_timer_entry_can_still_be_edited() {
         let (db, np) = seeded();
         let t0 = Utc.with_ymd_and_hms(2026, 9, 1, 8, 0, 0).unwrap();
-        db.start_timer(np.id, None, None, "vergessen", t0).unwrap();
-        let e = db.stop_timer(t0 + chrono::Duration::hours(50), 0).unwrap();
-        assert_eq!(e.duration_minutes, Some(3000));
+        // Booked before 1.12 (a timer stop now splits the run per day).
+        let e = db
+            .insert_time_entry(&NewTimeEntry {
+                netzplan_id: np.id,
+                vorgang_nr: None,
+                leistungsart: None,
+                start_time: t0,
+                duration_minutes: 3000,
+                description: "vergessen".into(),
+                source: EntrySource::Timer,
+                page_id: None,
+            })
+            .unwrap();
         // Other fields change, the duration stays.
         let e = db.update_time_entry(e.id, None, None, t0, 3000, "über Nacht").unwrap();
         assert_eq!(e.description, "über Nacht");
@@ -1260,7 +1273,7 @@ mod tests {
         let running = db.start_timer(np.id, None, None, "läuft", t0).unwrap();
         let err = db.delete_time_entry(running.id).unwrap_err().to_string();
         assert!(err.contains("zuerst den Timer stoppen"), "{err}");
-        let done = db.stop_timer(t0 + chrono::Duration::minutes(30), 0).unwrap();
+        let done = db.stop_timer(t0 + chrono::Duration::minutes(30), 0).unwrap().remove(0);
         db.set_entry_status(&[done.id], StatusFlag::Exported).unwrap();
         let err = db.delete_time_entry(done.id).unwrap_err().to_string();
         assert!(err.contains("Exportierte Einträge"), "{err}");

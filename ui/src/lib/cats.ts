@@ -1,7 +1,7 @@
 // Week helpers for the timesheet: gaps against the daily target and a CATS-ready grid.
 
-import { addDays, isoDay, isoWeekday } from "./format";
-import type { StatusFlag, TimeEntryRow } from "./types";
+import { addDays, decimalPoint, isoDay, isoWeekday } from "./format";
+import type { StatusFlag, TimeEntryRow, TimePrefs } from "./types";
 import type { Absence } from "./workwidgets";
 import { t } from "./i18n";
 
@@ -65,14 +65,21 @@ export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: n
 
 /** Hundredths of an hour, rounded half up (as the CATS file export rounds). */
 const hundredths = (minutes: number) => Math.floor((minutes * 100 + 30) / 60);
-const cell = (cents: number) => (cents ? `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}` : "");
+const cell = (cents: number, sep: string) => (cents ? `${Math.floor(cents / 100)}${sep}${String(cents % 100).padStart(2, "0")}` : "");
+
+/** The decimal separator of CATS hours (Settings → Zeiterfassung, like the CATS file). */
+export function catsDecimalSep(setting: TimePrefs["cats_decimal"]): "," | "." {
+  if (setting === "point") return ".";
+  if (setting === "number") return decimalPoint() ? "." : ",";
+  return ",";
+}
 
 /**
  * Tab-separated rows in the layout of the CATS/CAT2 entry grid: one line per
  * Netzplan/Vorgang/Leistungsart, one column per weekday. Pastes straight into
  * SAP GUI or Excel.
  */
-export function catsGrid(rows: TimeEntryRow[], week: Date): { text: string; ids: number[] } {
+export function catsGrid(rows: TimeEntryRow[], week: Date, sep: "," | "." = ","): { text: string; ids: number[] } {
   const keys = Array.from({ length: 7 }, (_, i) => isoDay(addDays(week, i)));
   const lines = new Map<string, { np: string; vg: string; la: string; perDay: number[] }>();
   const ids: number[] = [];
@@ -95,7 +102,7 @@ export function catsGrid(rows: TimeEntryRow[], week: Date): { text: string; ids:
     l.perDay.map((m, d) => {
       const cents = hundredths(before[d] + m) - hundredths(before[d]);
       before[d] += m;
-      return cell(cents);
+      return cell(cents, sep);
     }),
   );
   const text = sorted.map((l, i) => [l.np, l.vg, l.la, ...cells[i]].join("\t")).join("\r\n");

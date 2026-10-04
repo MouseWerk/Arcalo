@@ -10,13 +10,7 @@ import Image from "@tiptap/extension-image";
 import {
   type LucideIcon, LayoutDashboard, ListCollapse, Columns2, Columns3, ListTree, Superscript, AlertTriangle, Info, CheckSquare, Code2, FilePlus2, Heading1, Heading2, Heading3, Link2, List, ListOrdered, Minus, Quote, Table2, Text, Timer, CalendarDays, CalendarClock, Highlighter, ImagePlus, LayoutTemplate, Sparkles, NotebookPen, PenTool, Paperclip, Ticket, Mic, Workflow, ListFilter, FileInput,
 } from "lucide-react";
-import { decimal, fmtDate, isoDay } from "../lib/format";
-
-/** Booked hours as stored in a chip („1,50“ or „1.5“) in the regional number format. */
-const chipHours = (h: unknown) => {
-  const n = Number(String(h ?? "").replace(",", "."));
-  return Number.isFinite(n) && String(h ?? "").trim() ? decimal(n, 2) : String(h ?? "");
-};
+import { fmtDate, isoDay } from "../lib/format";
 import { popupRenderer, type PopupItem } from "./suggestion-popup";
 import { PageIcon } from "../components/icons";
 import { zeitCommand, zeitToken } from "./zeit-suggest";
@@ -496,77 +490,17 @@ export const MarkdownImage = Image.extend<ImageOptions & { inline: boolean; allo
 
 // ------------------------------------------------------------ /zeit + chips
 
-export const TimeEntryChip = Node.create({
-  name: "timeEntry",
-  group: "inline",
-  inline: true,
-  atom: true,
-
-  addAttributes() {
-    return { entryId: { default: null }, hours: { default: "" }, target: { default: "" }, text: { default: "" } };
-  },
-  parseHTML() {
-    return [{ tag: "time-entry" }];
-  },
-  renderHTML({ node }) {
-    return ["time-entry", { id: node.attrs.entryId, class: "time-chip" }, `${node.attrs.hours} h · ${node.attrs.target}${node.attrs.text ? " · " + node.attrs.text : ""}`];
-  },
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement("span");
-      dom.className = "time-chip";
-      dom.contentEditable = "false";
-      dom.innerHTML =
-        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
-      const label = document.createElement("span");
-      label.textContent = `${chipHours(node.attrs.hours)} h`;
-      const target = document.createElement("span");
-      target.className = "time-chip-target";
-      target.textContent = node.attrs.target;
-      dom.append(label, target);
-      if (node.attrs.text) {
-        const t = document.createElement("span");
-        t.className = "time-chip-text";
-        t.textContent = node.attrs.text;
-        dom.append(t);
-      }
-      // Time tracking off: a plain chip (neutral look in CSS), nothing about booking.
-      const title = () => t(timeTrackingEnabled() ? "ed.timeEntry" : "tt.chip");
-      dom.title = title();
-      dom.addEventListener("mouseenter", () => (dom.title = title()));
-      return { dom };
-    };
-  },
-  markdownTokenizer: {
-    name: "timeEntry",
-    level: "inline",
-    start: (src: string) => src.indexOf("<time-entry"),
-    tokenize(src: string) {
-      const m = /^<time-entry\s+([^>]*)>([^<]*)<\/time-entry>/.exec(src);
-      if (!m) return undefined;
-      const attrs: Record<string, string> = {};
-      const entities: Record<string, string> = { quot: '"', amp: "&", lt: "<", gt: ">", "#39": "'" };
-      for (const a of m[1].matchAll(/(\w+)="([^"]*)"/g)) attrs[a[1]] = a[2].replace(/&(quot|amp|lt|gt|#39);/g, (_e, n: string) => entities[n]);
-      return { type: "timeEntry", raw: m[0], attrs, text: m[2] };
-    },
-  },
-  parseMarkdown: (token) => ({
-    type: "timeEntry",
-    attrs: { entryId: token.attrs.id ?? null, hours: token.attrs.hours ?? "", target: token.attrs.target ?? "", text: unescapeHtml(token.text ?? "") },
-  }),
-  renderMarkdown: (node) =>
-    `<time-entry id="${node.attrs?.entryId ?? ""}" hours="${escapeAttr(node.attrs?.hours)}" target="${escapeAttr(node.attrs?.target)}">${escapeHtml(node.attrs?.text ?? "")}</time-entry>`,
-});
-
-const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const escapeAttr = (s: unknown) => escapeHtml(String(s ?? "")).replace(/"/g, "&quot;");
-const unescapeHtml = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+// The chip itself and its link to the booking: timeChip.ts.
+export { TimeEntryChip } from "./timeChip";
 
 export interface ZeitResult {
   entryId: number;
   hours: string;
   target: string;
   text: string;
+  /** Leistungsart and local day (`YYYY-MM-DD`) of the booking (1.12). */
+  la?: string;
+  date?: string;
 }
 
 /** Enter on a paragraph that starts with `/zeit …` books the time and turns the line into a chip. */

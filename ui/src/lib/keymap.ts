@@ -30,6 +30,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "back", label: "cmd.back", combo: "Alt+ArrowLeft" },
   { id: "forward", label: "cmd.forward", combo: "Alt+ArrowRight" },
   { id: "timer", label: "cmd.timer", combo: "Ctrl+Shift+T" },
+  { id: "timer_pause", label: "cmd.timerPause", combo: "Ctrl+Shift+G" },
   { id: "assistant", label: "cmd.assistant", combo: "Ctrl+J" },
   { id: "toggle_sidebar", label: "cmd.toggleSidebar", combo: "Ctrl+\\" },
   { id: "toggle_panel", label: "cmd.togglePanel", combo: "Ctrl+Shift+\\" },

@@ -2,7 +2,7 @@
 // block, a progress ring, hours and dates in the chosen format.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarPlus, Play, Square, type LucideIcon } from "lucide-react";
+import { CalendarPlus, Pause, Play, Square, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { clock, fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
@@ -11,7 +11,7 @@ import type { Page, Task, TimeEntryRow } from "../../lib/types";
 import { Badge, Button, IconButton, Spinner } from "../ui";
 import { openPlanPicker, setPlanData, type PlanItem } from "../../lib/blocks";
 import { PageIcon } from "../icons";
-import { stopTimer, useTimerSeconds } from "../Sidebar";
+import { stopTimer, toggleTimerPause, useTimerSeconds } from "../Sidebar";
 
 export const s = useApp.getState;
 
@@ -170,13 +170,15 @@ export function TimerBlock({ refs, compact }: { refs: TimeEntryRow[] | undefined
   };
   if (timer) {
     const e = timer.entry;
+    const paused = !!timer.paused_since;
     return (
-      <div className="dw-timer running">
-        <span className="rec-dot" aria-hidden />
+      <div className={`dw-timer running${paused ? " paused" : ""}`}>
+        <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
         <div className="grow dw-timer-main">
           <span className="num dw-big">{clock(seconds)}</span>
-          <span className="faint ellipsis">{e.description || e.vorgang_nr || t("dash.w.timer")}</span>
+          <span className="faint ellipsis">{paused ? t("timer.paused") : e.description || e.vorgang_nr || t("dash.w.timer")}</span>
         </div>
+        <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} onClick={() => void toggleTimerPause()} />
         <Button size="sm" icon={Square} onClick={() => stopTimer()}>
           {t("dash.stop")}
         </Button>

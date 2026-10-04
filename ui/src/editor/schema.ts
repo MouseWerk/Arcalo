@@ -338,6 +338,8 @@ export interface SchemaOptions {
   isKnown?: (target: string) => boolean;
   searchPages?: (q: string) => Promise<LinkSuggestItem[]>;
   book?: (line: string) => Promise<ZeitResult | null>;
+  /** The note being edited: its `/zeit` chips stay linked to their bookings (timeChip.ts). */
+  pageId?: number;
   /** Booked, but the `/zeit` line is gone from the document. */
   onZeitLost?: (res: ZeitResult) => void;
   /** URL of an attachment name. */
@@ -448,7 +450,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     SmartPaste.configure({ fetchTitle: o.fetchTitle ?? null }),
     MarkdownImage.configure({ resolve: o.attachmentUrl ?? ((n) => n) }),
     DrawingEmbed.configure({ resolve: o.attachmentUrl ?? ((n) => `attachments/${encodeURIComponent(n)}`), onOpen: o.onOpenDrawing ?? (() => {}) }),
-    TimeEntryChip,
+    TimeEntryChip.configure({ pageId: o.pageId ?? null }),
     ZeitCommand.configure({ book: o.book ?? (async () => null), onLost: o.onZeitLost ?? (() => {}) }),
     ZeitSuggest.configure({ refs: o.zeitRefs ?? (async () => []), leistungsarten: o.zeitLeistungsarten ?? (async () => []) }),
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),

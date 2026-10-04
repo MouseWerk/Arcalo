@@ -16,7 +16,7 @@ use crate::model::{StatusFlag, TimeEntryRow};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
-    /// SAP CATS upload file (semicolon separated, German decimals).
+    /// SAP CATS upload file (semicolon separated, decimal comma unless set otherwise).
     SapCats,
     /// Jira worklog payloads (`POST /rest/api/3/issue/{key}/worklog`).
     JiraWorklog,
@@ -59,6 +59,9 @@ pub struct ExportOptions {
     /// Column order of the CATS file.
     #[serde(default)]
     pub cats_columns: crate::prefs::CatsColumns,
+    /// CATS hours with a decimal point (`1.50`) instead of the comma (`1,50`).
+    #[serde(default)]
+    pub cats_decimal_point: bool,
 }
 
 impl ExportOptions {
@@ -134,7 +137,8 @@ fn sap_cats(rows: &[&TimeEntryRow], opts: &ExportOptions) -> (String, Vec<i64>) 
         let before = day_minutes.entry(date.clone()).or_insert(0);
         let cents = hundredths(*before + minutes) - hundredths(*before);
         *before += minutes;
-        let hrs = format!("{},{:02}", cents.div_euclid(100), cents.rem_euclid(100));
+        let comma = if opts.cats_decimal_point { '.' } else { ',' };
+        let hrs = format!("{}{comma}{:02}", cents.div_euclid(100), cents.rem_euclid(100));
         let values: Vec<String> = cols
             .iter()
             .map(|c| match *c {
@@ -307,6 +311,10 @@ mod tests {
         let r = export(&rows, ExportFormat::SapCats, &opts).unwrap();
         assert!(r.content.starts_with("PERNR,WORKDATE,RNPLNR,VORNR,LSTAR,CATSHOURS,MEINH,LTXA1\r\n"));
         assert!(r.content.contains(",\"1,50\",H,"), "{}", r.content);
+        // Decimal point (Settings → Zeiterfassung): nothing to quote.
+        let opts = ExportOptions { cats_decimal_point: true, ..opts };
+        let r = export(&rows, ExportFormat::SapCats, &opts).unwrap();
+        assert!(r.content.contains(",1.50,H,"), "{}", r.content);
     }
 
     #[test]

@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, CornerDownRight, FilePlus2, FolderTree, Hash, MoreHorizontal, PencilLine, Plus, Search, Square, Star, StarOff, Timer, Trash2, X,
   ArrowDown, ArrowUp, ArrowUpToLine, ClipboardCopy, Copy, CornerLeftUp, FileText, LayoutTemplate, Link2, MoveVertical, Shapes, Type,
   ArrowDownUp, FolderInput, Palette, SlidersHorizontal, Undo2, Wand2, LayoutList,
-  LayoutDashboard,
+  LayoutDashboard, Pause, Play,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -13,11 +13,11 @@ import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
 import type { LucideIcon } from "lucide-react";
 import { useTimeTracking } from "../lib/timetracking";
-import { clock, fmtMinutes, longTimerHours } from "../lib/format";
+import { clock, fmtDayMonth, fmtMinutes, longTimerHours, weekdayShort } from "../lib/format";
 import { createSubpage, deletePage } from "../views/PageView";
 import { createCanvas, isCanvas } from "../views/canvas/create";
 import { COLLAPSED_EVENT, readCollapsed, writeCollapsed } from "../lib/collapsed";
-import type { PageNode, SearchHit } from "../lib/types";
+import type { PageNode, SearchHit, TimerStatus } from "../lib/types";
 import { t as tStatic, useT } from "../lib/i18n";
 import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
@@ -1089,10 +1089,33 @@ export function useTimerSeconds() {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!timer) return;
+    setNow(Date.now());
+    // Paused: the clock stands still.
+    if (timer.paused_since) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [timer]);
-  return timer ? (now - new Date(timer.entry.start_time).getTime()) / 1000 : 0;
+  return timer ? timerSeconds(timer, now) : 0;
+}
+
+/** Worked seconds of a running timer at `now`: the pauses are left out, a paused one stands still. */
+export function timerSeconds(timer: TimerStatus, now: number): number {
+  const until = timer.paused_since ? Math.min(now, new Date(timer.paused_since).getTime()) : now;
+  return Math.max(0, (until - new Date(timer.entry.start_time).getTime()) / 1000 - (timer.paused_seconds ?? 0));
+}
+
+/** „Timer pausieren“ / „Fortsetzen“ (widgets, tray, shortcut). */
+export async function toggleTimerPause() {
+  const s = useApp.getState();
+  const t = s.timer;
+  if (!t) return;
+  try {
+    await api.timerPause(!t.paused_since);
+    await s.refreshTimer();
+    s.bumpEntries();
+  } catch (e) {
+    s.error(tStatic(t.paused_since ? "timer.resumeFailed" : "timer.pauseFailed"), e);
+  }
 }
 
 function TimerDock() {
@@ -1103,13 +1126,15 @@ function TimerDock() {
   const timeOn = useTimeTracking();
   if (!timer || !timeOn) return null;
   const e = timer.entry;
+  const paused = !!timer.paused_since;
   return (
-    <div className="timer-dock" role="status">
-      <span className="rec-dot" aria-hidden />
+    <div className={`timer-dock${paused ? " paused" : ""}`} role="status">
+      <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
       <button type="button" className="timer-dock-main" onClick={() => useApp.getState().openTab({ kind: "timesheet" })}>
         <span className="timer-dock-time num">{clock(seconds)}</span>
-        <span className="timer-dock-label">{e.description || `${e.vorgang_nr ?? "Timer"}`}</span>
+        <span className="timer-dock-label">{paused ? t("timer.paused") : e.description || `${e.vorgang_nr ?? "Timer"}`}</span>
       </button>
+      <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} size="md" onClick={() => void toggleTimerPause()} />
       <IconButton icon={Square} label={t("status.stopTimer")} size="md" onClick={() => stopTimer()} />
     </div>
   );
@@ -1122,7 +1147,8 @@ export async function stopTimer() {
   try {
     let subtract = false;
     // Forgotten over night: ask before booking a whole day or more.
-    const long = longTimerHours(t.entry.start_time, new Date());
+    // (Worked time: the pauses are not booked.)
+    const long = longTimerHours(new Date(Date.now() - timerSeconds(t, Date.now()) * 1000).toISOString(), new Date());
     if (long != null) {
       const ok = await s.confirm({
         title: tStatic("timer.longTitle"),
@@ -1142,7 +1168,15 @@ export async function stopTimer() {
       subtract = choice === "confirm";
     }
     const out = await api.timerStop(subtract);
+    const entries = out.entries?.length ? out.entries : [out.entry];
     if (out.discarded) s.toast({ tone: "info", title: tStatic("focus.notBooked"), detail: tStatic("timer.underMinute") });
+    else if (entries.length > 1)
+      // Over midnight: one booking per day.
+      s.toast({
+        tone: "success",
+        title: tStatic("ne.booked", { h: fmtMinutes(entries.reduce((a, e) => a + (e.duration_minutes ?? 0), 0)) }),
+        detail: tStatic("timer.splitDays", { days: entries.map((e) => `${weekdayShort(new Date(e.start_time))} ${fmtDayMonth(new Date(e.start_time))}: ${fmtMinutes(e.duration_minutes)} h`).join(", ") }),
+      });
     else s.toast({ tone: "success", title: tStatic("ne.booked", { h: fmtMinutes(out.entry.duration_minutes) }), detail: out.entry.description || undefined });
     s.alerts(out.alerts);
     s.bumpEntries();
