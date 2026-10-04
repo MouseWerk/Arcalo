@@ -76,7 +76,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   export) skips trashed pages. Restoring puts a page back under its parent, or at the top level if the
   parent is gone; title and daily-note clashes are resolved. Entries older than 30 days are purged on start.
 - **Backups** (`backup.rs`): `VACUUM INTO` writes a consistent snapshot `arcalo-YYYYMMDD-HHMMSS.db` (`annalo-…` from before 1.7 are listed, restored and pruned alike);
-  older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
+  it is written as `<name>.partial`, synced and renamed, so an interrupted backup never sits under a backup's name
+  (stale partial files go with the next backup). Older files beyond `backup_keep` (default 14) are deleted. The shell backs up on start when the newest
   backup is older than 24 h and re-checks hourly, into `backup_dir` or `<data dir>/backups`. It also copies the
   attachments folder incrementally (new and changed files, e.g. a drawing saved again; nothing is deleted). A backup
   holds the whole database (pages, versions, tasks, bookings, calendar cache, chat history, settings) and the attachments; secrets
@@ -98,7 +99,10 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
 - **Restore** (Settings → Sicherung, list of local and destination backups): `backup_restore` accepts only Arcalo backups in
   the backup folder or a destination, copies the file into the data folder as `restore-pending.db` (checksum and
   `PRAGMA quick_check` verified) and the UI restarts; the next start renames the database to
-  `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it.
+  `workspace.db.before-restore-<stamp>` and puts the backup in place before opening it. When the replaced database
+  was encrypted and the backup is plain (from before the encryption), the encryption is requested again
+  (`backupdest::keep_encrypted`), so the same start encrypts it before opening; the start-up recovery does the same
+  when this computer has a database key.
 - **Markdown mirror** (`mirror.rs`): after each successful backup (with `markdown_mirror`, default on) the shell
   writes the vault export plus `Zeiterfassung/YYYY-MM.csv` (BOM, `;`, decimal comma) and a `README.txt` marker into
   `markdown_mirror_dir` or `<backup dir>/markdown`. It is built in `.markdown.staging` and swapped in by renaming the old
@@ -145,7 +149,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   thread (mode `hourly`, mirror refreshed first); outcomes are kept in `gitsync.*` meta rows and emitted as
   `gitsync://done` / `gitsync://failed`.
 - **Versions** (`versions.rs`): a save stores the page's previous content as a snapshot when the newest
-  snapshot is at least 10 minutes old (one per editing session, not per autosave). Restoring a version and
+  snapshot is at least 10 minutes old (one per editing session, not per autosave), and always when the save
+  removes most of the page (more than half and at least 200 characters: select all and type). Restoring a version and
   rename link rewrites in other pages always snapshot first; „Jetzt Version sichern“ (`page_snapshot`)
   stores the current state. At most 50 per page; older than 30 days are pruned on start. A restore saves
   through `save_page_content`, so search, links, tags and tasks follow. The dialog shows a line diff (LCS).

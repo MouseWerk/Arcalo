@@ -1295,6 +1295,85 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A workspace last opened by any older release (every schema version from 1 on) is
+    /// upgraded with its pages, hierarchy, time entries and settings intact.
+    #[test]
+    fn a_populated_workspace_of_every_older_schema_upgrades_without_loss() {
+        let settings = include_str!("../tests/fixtures/settings/1.6.json");
+        for from in 1..MIGRATIONS.len() {
+            let path = std::env::temp_dir().join(format!("annalo-mig-all-{from}-{}.db", std::process::id()));
+            let _ = std::fs::remove_file(&path);
+            {
+                let c = Connection::open(&path).unwrap();
+                for m in &MIGRATIONS[..from] {
+                    c.execute_batch(m).unwrap();
+                }
+                c.pragma_update(None, "user_version", from as i64).unwrap();
+                c.execute_batch(
+                    "INSERT INTO projects (id, project_code, name) VALUES (1, 'PRJ-1', 'Projekt');
+                     INSERT INTO netzplaene (id, project_id, netzplan_nr, wbs_element) VALUES (1, 1, 'NP-8801', 'NP-8801-1020');
+                     INSERT INTO time_entries (netzplan_id, vorgang_nr, leistungsart, start_time, end_time, duration_minutes, description, status_flag)
+                         VALUES (1, '1020', 'DEV', '2026-03-02T08:00:00Z', '2026-03-02T09:30:00Z', 90, 'Review', 'released');
+                     INSERT INTO pages (id, title) VALUES (1, 'Übersicht');
+                     INSERT INTO pages (id, parent_id, title, position) VALUES (2, 1, 'Protokoll März', 0);",
+                )
+                .unwrap();
+                let has = |table: &str, col: &str| {
+                    c.prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{col}'"))
+                        .unwrap()
+                        .exists([])
+                        .unwrap()
+                };
+                if has("pages", "content") {
+                    c.execute(
+                        "UPDATE pages SET content = '- [ ] Angebot prüfen\n\nSiehe [[Übersicht]]' WHERE id = 2",
+                        [],
+                    )
+                    .unwrap();
+                } else {
+                    c.execute(
+                        "INSERT INTO notes_blocks (page_id, position, content_markdown) VALUES (2, 0, '- [ ] Angebot prüfen'), (2, 1, 'Siehe [[Übersicht]]')",
+                        [],
+                    )
+                    .unwrap();
+                }
+                if has("settings", "key") {
+                    c.execute("INSERT INTO settings (key, value) VALUES ('app', ?1)", [settings]).unwrap();
+                }
+            }
+            let db = Database::open(&path).unwrap_or_else(|e| panic!("schema {from}: {e}"));
+            assert_eq!(db.schema_version().unwrap(), MIGRATIONS.len(), "schema {from}");
+            let tree = db.page_tree().unwrap();
+            assert_eq!(tree.len(), 1, "schema {from}");
+            assert_eq!(tree[0].children[0].page.title, "Protokoll März", "schema {from}");
+            let doc = db.page_doc(2).unwrap();
+            assert_eq!(doc.content, "- [ ] Angebot prüfen\n\nSiehe [[Übersicht]]", "schema {from}");
+            // The rows above were written without the app's indexing: derived indexes exist when
+            // an upgrade from here re-indexes (from schema 1, and before a migration that adds one).
+            if from == 1 || MIGRATIONS[from..].iter().any(|m| m.contains(REINDEX_MARKER)) {
+                assert_eq!(db.page_doc(1).unwrap().backlinks.len(), 1, "links indexed, schema {from}");
+                let tasks = db.list_tasks(&crate::tasks::TaskFilter::default()).unwrap();
+                assert_eq!(tasks.len(), 1, "tasks indexed, schema {from}");
+                assert!(!crate::search::search(&db, "Angebot", 5).unwrap().is_empty(), "schema {from}");
+            }
+            let entries = db.list_time_entries(&EntryFilter::default()).unwrap();
+            assert_eq!(entries.len(), 1, "schema {from}");
+            assert_eq!(entries[0].entry.duration_minutes, Some(90), "schema {from}");
+            if from >= 2 {
+                let s = db.load_settings().unwrap();
+                assert_eq!((s.theme.as_str(), s.backup_keep), ("dark", 14), "settings kept, schema {from}");
+            }
+            let check: String = db.conn().query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+            assert_eq!(check, "ok", "schema {from}");
+            let fk_problems = db.conn().prepare("PRAGMA foreign_key_check").unwrap().exists([]).unwrap();
+            assert!(!fk_problems, "foreign keys, schema {from}");
+            // A save after the upgrade works as on a new workspace.
+            db.save_page_content(2, "nachher").unwrap();
+            drop(db);
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
     #[test]
     fn reindex_migrations_index_existing_pages() {
         let path = std::env::temp_dir().join(format!("annalo-mig-tasks-{}.db", std::process::id()));

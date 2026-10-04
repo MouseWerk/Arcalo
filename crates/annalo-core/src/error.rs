@@ -46,6 +46,12 @@ impl Error {
         Error::NotFound { kind, key: key.into() }
     }
 
+    /// The database error of a write on a full disk (test hooks of the shell simulate it).
+    pub fn disk_full() -> Self {
+        let full = rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL);
+        Error::Db(rusqlite::Error::SqliteFailure(full, None))
+    }
+
     /// An I/O error of `path`. Whether it is a folder is taken from the disk, or, for a path that
     /// does not exist, from the name (no extension: a folder). A file that is missing because its
     /// folder is names the folder.
@@ -218,20 +224,38 @@ fn db_text(e: &rusqlite::Error) -> String {
     if let rusqlite::Error::SqliteFailure(f, _) = e {
         let what = match f.code {
             C::DiskFull => Some(tr!(
-                "Der Datenträger ist voll – die Änderung wurde nicht gespeichert",
-                "The disk is full – the change was not saved"
+                "Der Datenträger ist voll – die Änderung wurde nicht gespeichert. Gib Speicherplatz frei \
+                 (Papierkorb des Systems leeren, große Dateien löschen), dann versuche es noch einmal",
+                "The disk is full – the change was not saved. Free some space (empty the system's trash, delete \
+                 large files), then try again"
             )),
-            C::ReadOnly => Some(tr!("Die Datenbank ist schreibgeschützt", "The database is read-only")),
-            C::DatabaseBusy | C::DatabaseLocked => {
-                Some(tr!("Die Datenbank ist gerade gesperrt", "The database is locked right now"))
-            }
-            C::DatabaseCorrupt | C::NotADatabase => {
-                Some(tr!("Die Datenbank ist beschädigt", "The database is damaged"))
-            }
-            C::CannotOpen => Some(tr!("Die Datenbank lässt sich nicht öffnen", "The database cannot be opened")),
-            C::SystemIoFailure => {
-                Some(tr!("Lese- oder Schreibfehler auf dem Datenträger", "Read or write error on the disk"))
-            }
+            C::ReadOnly => Some(tr!(
+                "Die Datenbank ist schreibgeschützt. Prüfe, ob du im Datenordner schreiben darfst und der \
+                 Datenträger nicht schreibgeschützt ist",
+                "The database is read-only. Check that you may write to the data folder and that the disk \
+                 is not write-protected"
+            )),
+            C::DatabaseBusy | C::DatabaseLocked => Some(tr!(
+                "Die Datenbank ist gerade gesperrt, meist von einem Virenscanner oder einem Sync-Programm. \
+                 Versuche es in einem Moment noch einmal",
+                "The database is locked right now, usually by a virus scanner or a sync program. Try again \
+                 in a moment"
+            )),
+            C::DatabaseCorrupt | C::NotADatabase => Some(tr!(
+                "Die Datenbank ist beschädigt. Stelle unter Einstellungen → Sicherung eine Sicherung wieder her",
+                "The database is damaged. Restore a backup under Settings → Backup"
+            )),
+            C::CannotOpen => Some(tr!(
+                "Die Datenbank lässt sich nicht öffnen. Prüfe, ob der Datenordner erreichbar ist (Laufwerk \
+                 verbunden, Rechte)",
+                "The database cannot be opened. Check that the data folder can be reached (drive connected, \
+                 permissions)"
+            )),
+            C::SystemIoFailure => Some(tr!(
+                "Lese- oder Schreibfehler auf dem Datenträger. Prüfe das Laufwerk (Verbindung, Speicherplatz) \
+                 und versuche es noch einmal",
+                "Read or write error on the disk. Check the drive (connection, free space) and try again"
+            )),
             _ => None,
         };
         if let Some(what) = what {
@@ -377,6 +401,10 @@ mod tests {
             );
             let io = Error::from(std::io::Error::from(K::StorageFull));
             assert!(io.to_string().starts_with("File error: The disk is full"), "{io}");
+            // Database errors say what to do as well.
+            let full = Error::disk_full().to_string();
+            assert!(full.contains("The disk is full – the change was not saved. Free some space"), "{full}");
+            assert!(Error::disk_full().is_storage());
             let p = std::path::Path::new("/nowhere/a.pdf");
             let e = Error::File { path: p.to_path_buf(), dir: false, source: std::io::Error::from(K::NotFound) };
             assert_eq!(e.to_string(), format!("File not found: {}", p.display()));

@@ -228,6 +228,45 @@ fn backups_of_an_encrypted_database_are_encrypted_and_restore_with_the_recovery_
 }
 
 #[test]
+fn a_backup_from_before_the_encryption_is_encrypted_when_restored() {
+    use crate::backupdest::{Activity, PENDING_RESTORE, apply_pending_restore, stage_restore};
+    let dir = tmp("restore-plain");
+    sample(&dir);
+    let backups = dir.join("backups");
+    let plain = {
+        let db = Database::open(dir.join(DB_FILE)).unwrap();
+        let p = db.page_by_title("Seite 2").unwrap().unwrap();
+        db.save_page_content(p.id, "vor der Verschlüsselung").unwrap();
+        backup::backup_to(&db, &backups, 3).unwrap()
+    };
+    assert_eq!(file_state(Path::new(&plain.path)), FileState::Plain);
+    request(&dir, Direction::Encrypt, Utc::now()).unwrap();
+    run_pending(&dir, Some(&test_key())).unwrap();
+    confirm_open(&dir).unwrap();
+    assert_eq!(file_state(&dir.join(DB_FILE)), FileState::Encrypted);
+    // Settings → Sicherung → „Wiederherstellen“ of the plain backup, then the next start.
+    stage_restore(Path::new(&plain.path), &dir, &Activity::new(None)).unwrap();
+    assert!(dir.join(PENDING_RESTORE).is_file());
+    let restored = apply_pending_restore(&dir, Utc::now()).unwrap().unwrap();
+    assert!(restored.encrypt, "the encryption is asked for again");
+    assert_eq!(run_pending(&dir, Some(&test_key())).unwrap(), Some(Outcome { direction: Direction::Encrypt }));
+    assert_eq!(file_state(&dir.join(DB_FILE)), FileState::Encrypted, "the workspace stays encrypted");
+    assert_eq!(access(&dir.join(DB_FILE), Some(&test_key())), Access::Unlocked);
+    let db = open_with(&dir.join(DB_FILE), OpenFlags::default(), Some(&test_key())).unwrap();
+    let text: String = db.query_row("SELECT content FROM pages WHERE title = 'Seite 2'", [], |r| r.get(0)).unwrap();
+    assert_eq!(text, "vor der Verschlüsselung");
+    drop(db);
+    // Restoring a backup of a plain workspace asks for nothing.
+    let again = dir.join("plain-again");
+    fs::create_dir_all(&again).unwrap();
+    sample(&again);
+    stage_restore(Path::new(&plain.path), &again, &Activity::new(None)).unwrap();
+    assert!(!apply_pending_restore(&again, Utc::now()).unwrap().unwrap().encrypt);
+    assert!(read_marker(&again).is_none());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_password_wraps_the_key() {
     let dir = tmp("wrap");
     let key = DbKey::generate().unwrap();

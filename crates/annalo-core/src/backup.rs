@@ -78,18 +78,51 @@ pub fn backup_to(db: &Database, dir: &Path, keep: usize) -> Result<BackupInfo> {
 /// `now` is UTC.
 fn backup_at(db: &Database, dir: &Path, keep: usize, now: NaiveDateTime) -> Result<BackupInfo> {
     fs::create_dir_all(dir).at(dir)?;
+    remove_stale_partials(dir);
     let name = format!("{PREFIX}{}.db", now.format(STAMP));
     let path = dir.join(&name);
-    // VACUUM INTO refuses existing files; a second backup within the same second replaces the first.
-    if path.exists() {
-        fs::remove_file(&path).at(&path)?;
-    }
-    let target =
-        path.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
-    db.conn().execute("VACUUM INTO ?1", [target])?;
+    // A second backup within the same second replaces the first (once it is complete).
+    vacuum_into(db, &path)?;
     let fresh = info(&path, &name).ok_or_else(|| Error::not_found("backup", name.clone()))?;
     prune(dir, keep, &name)?;
     Ok(fresh)
+}
+
+/// Suffix of a backup while it is written.
+const PARTIAL: &str = ".partial";
+
+/// Writes a snapshot of `db` to `path` through `<path>.partial` (synced, then renamed over
+/// `path`), so a backup cut off by a kill, a full disk or a vanished drive never leaves a
+/// truncated file under a backup's name, where it would count as the newest backup (retention,
+/// destinations, the start-up recovery) and push a good one out of the rotation.
+fn vacuum_into(db: &Database, path: &Path) -> Result<()> {
+    let part = std::path::PathBuf::from(format!("{}{PARTIAL}", path.display()));
+    // VACUUM INTO refuses an existing file.
+    let _ = fs::remove_file(&part);
+    let target =
+        part.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
+    if let Err(e) = db.conn().execute("VACUUM INTO ?1", [target]) {
+        let _ = fs::remove_file(&part);
+        return Err(e.into());
+    }
+    let res = fs::File::open(&part).and_then(|f| f.sync_all()).and_then(|()| fs::rename(&part, path));
+    if let Err(e) = res {
+        let _ = fs::remove_file(&part);
+        return Err(Error::file(path, e));
+    }
+    Ok(())
+}
+
+/// Removes backups of an earlier run that never finished (`arcalo-….db.partial`).
+fn remove_stale_partials(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if name.strip_suffix(PARTIAL).is_some_and(has_backup_prefix) {
+            let _ = fs::remove_file(e.path());
+        }
+    }
 }
 
 /// Deletes all but the newest `keep` (at least 1) backups in `dir`; `fresh` always counts as one
@@ -116,12 +149,7 @@ pub fn backup_named(
 ) -> Result<std::path::PathBuf> {
     fs::create_dir_all(dir).at(dir)?;
     let path = dir.join(name);
-    if path.exists() {
-        fs::remove_file(&path).at(&path)?;
-    }
-    let target =
-        path.to_str().ok_or_else(|| Error::State(trf!("Ungültiger Pfad: {}", "Invalid path: {}", path.display())))?;
-    db.conn().execute("VACUUM INTO ?1", [target])?;
+    vacuum_into(db, &path)?;
     let mut tagged: Vec<(std::time::SystemTime, std::path::PathBuf)> = fs::read_dir(dir)
         .at(dir)?
         .filter_map(|e| e.ok())
@@ -263,6 +291,38 @@ mod tests {
         let earlier = backup_at(&db, &dir, 1, at(2)).unwrap();
         assert_eq!(list_backups(&dir).unwrap(), vec![earlier.clone()]);
         assert_eq!(earlier.created_at, at(2).and_utc().with_timezone(&Local), "UTC name, local display");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_backup_leaves_no_file_under_a_backup_name() {
+        let dir = std::env::temp_dir().join(format!("annalo-backup-partial-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Gesichert", None).unwrap();
+        db.save_page_content(p.id, "erste Sicherung").unwrap();
+        let at = chrono::NaiveDate::from_ymd_opt(2026, 9, 23).unwrap().and_hms_opt(1, 0, 0).unwrap();
+        let first = backup_at(&db, &dir, 3, at).unwrap();
+        // A backup killed mid-write left its partial file: never listed, removed by the next run.
+        let stale = dir.join("arcalo-20260923-005900.db.partial");
+        fs::write(&stale, b"abgebrochen").unwrap();
+        assert_eq!(list_backups(&dir).unwrap(), vec![first.clone()]);
+        // The next backup of the same second cannot be written (a folder takes its partial
+        // path): the complete backup under that name stays.
+        let blocked = dir.join(format!("{}.partial", first.file_name));
+        fs::create_dir_all(&blocked).unwrap();
+        assert!(backup_at(&db, &dir, 3, at).is_err());
+        let copy = Database::open(&first.path).unwrap();
+        assert_eq!(copy.page_doc(p.id).unwrap().content, "erste Sicherung");
+        drop(copy);
+        assert!(!stale.exists(), "stale partial removed");
+        fs::remove_dir_all(&blocked).unwrap();
+        let named = backup_named(&db, &dir, "arcalo-pre-update-1.11.0-1.12.0.db", "arcalo-pre-update-", 2).unwrap();
+        assert!(named.is_file());
+        let left =
+            fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".partial"));
+        assert_eq!(left.count(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -8,7 +8,7 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { useApp } from "../store/app";
 import { splitFrontmatter } from "./extensions";
 import { markdownStats } from "../lib/plaintext";
-import { registerFlusher, trackSave } from "./NoteEditor";
+import { keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
 
@@ -51,6 +51,9 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   const base = useRef(doc.content);
   const merges = useRef(0);
   const busy = () => dirty.current || saving.current !== null;
+  // Gone (tab closed, mode switch): failed edits are kept by `keepUnsaved` instead.
+  const unmounted = useRef(false);
+  const failed = useRef(false);
 
   const save = () => {
     window.clearTimeout(timer.current);
@@ -61,13 +64,20 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     const p: Promise<void> = (saving.current ?? Promise.resolve())
       .then(() => api.savePage(doc.id, content))
       .then((saved) => {
+        failed.current = false;
         if (merges.current === mergesBefore) base.current = content;
         cb.current({ ...saved, content });
         window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
       })
       .catch((e) => {
         dirty.current = true;
-        useApp.getState().error(t("editor.saveFailed"), e);
+        // Reported once per failure series, not on every retry.
+        if (!failed.current) useApp.getState().error(t("editor.saveFailed"), e);
+        failed.current = true;
+        if (unmounted.current) return keepUnsaved(doc.id, content, api.savePage);
+        // Try again later; the edits stay in the editor meanwhile.
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(save, 5000);
       })
       .finally(() => {
         if (saving.current === p) saving.current = null;
@@ -109,7 +119,18 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   absorbRef.current = absorb;
 
   useEffect(() => {
-    const unregister = registerFlusher(save);
+    unmounted.current = false;
+    // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
+    const kept = takeUnsaved(doc.id);
+    if (kept !== undefined && kept !== latest.current) {
+      replaceText(kept);
+      dirty.current = true;
+      timer.current = window.setTimeout(save, SAVE_MS);
+    }
+    const unregister = registerFlusher(async () => {
+      await save();
+      if (dirty.current) throw new Error(t("ne.changesNotSaved"));
+    });
     const onSaved = (e: Event) => {
       const d = (e as CustomEvent<{ id: number; content: string; from: string }>).detail;
       if (d.id === doc.id && d.from !== instance.current) absorbRef.current(d.content);
@@ -138,6 +159,8 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       window.removeEventListener("annalo:reload-pages", onReload);
       window.removeEventListener("blur", save);
       save();
+      unmounted.current = true;
+      window.clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);

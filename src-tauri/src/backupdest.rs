@@ -95,18 +95,28 @@ fn test_hook() -> Option<Hook> {
 pub fn apply_pending_restore(dir: &Path) -> Option<datadir::Notice> {
     match dest::apply_pending_restore(dir, Utc::now()) {
         Ok(None) => None,
-        Ok(Some(from)) => {
-            devlog::warn("backup", format!("database restored from {from}"));
-            Some(datadir::Notice::titled(
-                "info",
-                tr!("Sicherung wiederhergestellt", "Backup restored"),
+        Ok(Some(dest::Restored { from, encrypt })) => {
+            devlog::warn(
+                "backup",
+                format!("database restored from {from}{}", if encrypt { ", encryption requested again" } else { "" }),
+            );
+            let message = if encrypt {
+                trf!(
+                    "Die Sicherung {from} wurde wiederhergestellt. Sie stammt von vor der Verschlüsselung und wurde \
+                     beim Einsetzen verschlüsselt. Der vorherige Stand liegt als workspace.db.before-restore-… im \
+                     Datenordner.",
+                    "The backup {from} was restored. It is from before the encryption and was encrypted when it \
+                     was put in place. The previous state is in the data folder as workspace.db.before-restore-…."
+                )
+            } else {
                 trf!(
                     "Die Sicherung {from} wurde wiederhergestellt. Der vorherige Stand liegt als \
                      workspace.db.before-restore-… im Datenordner.",
                     "The backup {from} was restored. The previous state is in the data folder as \
                      workspace.db.before-restore-…."
-                ),
-            ))
+                )
+            };
+            Some(datadir::Notice::titled("info", tr!("Sicherung wiederhergestellt", "Backup restored"), message))
         }
         Err(e) => {
             devlog::error("backup", format!("restore failed: {}", e.detail()));

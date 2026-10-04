@@ -35,12 +35,12 @@ import { spellcheckAttrs } from "../lib/prefs";
 import { ZeitConfirm, type ZeitChoice } from "./ZeitConfirm";
 import { lacksReference, referenceOffset } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
-import { ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
 import type { PageDoc, SavedPage } from "../lib/types";
 import { keys } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
-import { flushAllEditors, registerFlusher, trackSave } from "./saves";
+import { flushAllEditors, keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
@@ -163,7 +163,7 @@ export function NoteEditor({
   const dirty = useRef(false);
   const saving = useRef<Promise<void> | null>(null);
   const editorRef = useRef<Editor | null>(null);
-  const [status, setStatus] = useState<"saved" | "dirty" | "saving">("saved");
+  const [status, setStatus] = useState<"saved" | "dirty" | "saving" | "failed">("saved");
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const cb = useRef({ onSaved, onOpenLink, onOpenTag, onFrontmatter });
   cb.current = { onSaved, onOpenLink, onOpenTag, onFrontmatter };
@@ -266,8 +266,9 @@ export function NoteEditor({
         // Reported once per failure series, not on every retry.
         if (!failed.current) useApp.getState().error(tr("editor.saveFailed"), e);
         failed.current = true;
-        if (unmounted.current) return;
-        setStatus("dirty");
+        // Closed meanwhile: the edits outlive the editor and are saved again from there.
+        if (unmounted.current) return keepUnsaved(doc.id, md, api.savePage);
+        setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(saveTimer.current);
         saveTimer.current = window.setTimeout(() => save(editor), 5000);
@@ -552,6 +553,14 @@ export function NoteEditor({
   useEffect(() => {
     editorRef.current = editor;
     if (!editor) return;
+    // Edits of an earlier editor of this page that could not be saved: shown and saved from here.
+    const kept = takeUnsaved(doc.id);
+    if (kept !== undefined && kept !== doc.content) {
+      apply(editor, kept);
+      dirty.current = true;
+      setStatus("dirty");
+      saveTimer.current = window.setTimeout(() => save(editor), saveDelay());
+    }
     const flushNow = async () => {
       window.clearTimeout(saveTimer.current);
       await save(editor);
@@ -718,6 +727,14 @@ export function NoteEditor({
 
   return (
     <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
+      {status === "failed" && (
+        <div className="save-failed" role="status">
+          <span className="save-failed-pill">
+            <AlertTriangle size={13} aria-hidden />
+            {tr("ne.saveRetry")}
+          </span>
+        </div>
+      )}
       {editor &&
         toolbarOn &&
         (toolbarSlot
