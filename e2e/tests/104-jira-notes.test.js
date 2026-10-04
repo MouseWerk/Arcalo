@@ -259,7 +259,7 @@ test("a task becomes a Jira issue from its context menu", async () => {
   await clickText(".sidebar .tree-row", /^Sprint-Planung/);
   const task = await app.waitFor(".pane.active .ProseMirror li[data-checked]");
   await task.click({ button: "right" });
-  await clickText(".menu [role='menuitem'], .menu button", /Jira-Issue anlegen/);
+  await clickText(".menu [role^='menuitem'], .menu button", /Jira-Issue anlegen/);
   await app.waitFor(".dialog");
   assert.equal(await app.browser.execute(() => document.querySelector('.dialog input[aria-label="Titel"]').value), "Fix SSO für Kunde");
   await app.browser.waitUntil(async () => !(await app.browser.execute(() => document.querySelector('.dialog [aria-label="Typ"]')?.getAttribute("aria-disabled") === "true" || document.querySelector('.dialog [aria-label="Typ"]')?.disabled)), { timeoutMsg: "types not loaded" });

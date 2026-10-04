@@ -82,7 +82,7 @@ test("„Später“ folds the hint; „Diese Version überspringen“ is remembe
   await app.click(".sb-update");
   await waitHint("ready");
   assert.ok(await clickIn(".sb-update button", "Weitere Optionen"));
-  assert.ok(await clickIn(".menu [role='menuitem'], .menu button", "Diese Version überspringen"));
+  assert.ok(await clickIn(".menu [role^='menuitem'], .menu button", "Diese Version überspringen"));
   await app.browser.waitUntil(async () => (await hintState()) === null, { timeout: 5000, timeoutMsg: "hint still shown" });
   const skipped = await app.invoke("update_status");
   assert.equal(skipped.skipped, "1.9.0");
@@ -103,7 +103,7 @@ test("„Später“ folds the hint; „Diese Version überspringen“ is remembe
 
 test("„Später erinnern“ hides the update until then; „Jetzt anzeigen“ brings it back", async () => {
   assert.ok(await clickIn(".sb-update button", "Weitere Optionen"));
-  assert.ok(await clickIn(".menu [role='menuitem'], .menu button", "Morgen erinnern"));
+  assert.ok(await clickIn(".menu [role^='menuitem'], .menu button", "Morgen erinnern"));
   await app.waitText(".toast", /Erinnerung am/);
   await app.browser.waitUntil(async () => (await hintState()) === null, { timeout: 5000, timeoutMsg: "hint still shown" });
   const status = await app.invoke("update_status");

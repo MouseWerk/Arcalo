@@ -24,7 +24,7 @@ import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
 import { stripMarkdown } from "../lib/plaintext";
 import { treeWindow } from "../lib/treeWindow";
-import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, rangeIds, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
+import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWithin, rangeIds, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
 import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import type { TKey } from "../lib/i18n";
@@ -114,9 +114,29 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label={t("sidebar.label")}>
-      <div className="side-tabs" role="tablist" data-tauri-drag-region>
-        {tabs.map((t) => (
-          <IconButton key={t.id} icon={t.icon} label={t.label} active={tab === t.id} size="md" onClick={() => setTab(t.id)} role="tab" aria-selected={tab === t.id} />
+      <div className="side-tabs" role="tablist" aria-label={t("sidebar.label")} data-tauri-drag-region>
+        {tabs.map((st, i) => (
+          <IconButton
+            key={st.id}
+            icon={st.icon}
+            label={st.label}
+            active={tab === st.id}
+            size="md"
+            onClick={() => setTab(st.id)}
+            role="tab"
+            aria-selected={tab === st.id}
+            // One Tab stop for the row; the arrows switch between the panes.
+            tabIndex={tab === st.id ? 0 : -1}
+            onKeyDown={(e) => {
+              const to = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+              if (to == null) return;
+              e.preventDefault();
+              const next = tabs[(to + tabs.length) % tabs.length];
+              setTab(next.id);
+              const row = e.currentTarget.parentElement;
+              requestAnimationFrame(() => row?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+            }}
+          />
         ))}
       </div>
 
@@ -218,7 +238,8 @@ function SearchPane() {
   const input = useRef<HTMLInputElement>(null);
   const s = useApp.getState;
   useEffect(() => {
-    setTimeout(() => input.current?.focus(), 30);
+    // Not while the arrows walk the pane tabs (the focus stays on the tab row then).
+    setTimeout(() => !document.activeElement?.closest(".side-tabs") && input.current?.focus(), 30);
     const onFocus = () => input.current?.select();
     window.addEventListener("annalo:sidebar-search", onFocus);
     return () => window.removeEventListener("annalo:sidebar-search", onFocus);
@@ -264,7 +285,7 @@ function SearchPane() {
       </div>
       <div className="sidebar-scroll">
         {hits && (
-          <div className="side-result-count">
+          <div className="side-result-count" role="status">
             {byPage.size} {byPage.size === 1 ? tr("sidebar.page") : tr("sidebar.pages")}
             {entries.length > 0 && `, ${entries.length} ${tr("sidebar.timeEntries")}`}
           </div>
@@ -288,7 +309,7 @@ function SearchPane() {
             <span className="side-result-snippet" dangerouslySetInnerHTML={{ __html: markHits(h.snippet) }} />
           </button>
         ))}
-        {hits && hits.length === 0 && <div className="side-empty">{tr("sidebar.noHits", { q })}</div>}
+        {hits && byPage.size + entries.length === 0 && <div className="side-empty">{tr("sidebar.noHits", { q })}</div>}
         {!hits && <div className="side-empty faint">{tr("sidebar.searchHint")}</div>}
       </div>
     </div>
@@ -362,6 +383,12 @@ function TodayHours() {
 }
 
 // --------------------------------------------------------------- page tree
+
+/** „Umbenennen“ (F2): opens the page with its title selected. */
+function renamePage(n: PageNode) {
+  useApp.getState().openPage(n.id);
+  setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 150);
+}
 
 type DropPos = "before" | "inside" | "after";
 
@@ -520,6 +547,8 @@ function PageTree({
       return [
         { label: tStatic("fl.moveN", { n: ids.length }), icon: FolderInput, onSelect: () => openMoveTo(ids) },
         { label: tStatic("fl.clearSelection"), icon: X, onSelect: () => setSelected(new Set()) },
+        "separator",
+        { label: tStatic("sb.deleteMany", { n: ids.length }), icon: Trash2, danger: true, shortcut: tStatic("sb.keyDelete"), onSelect: () => void deleteSelection() },
       ];
     }
     const style = n.style ?? DEFAULT_STYLE;
@@ -646,17 +675,44 @@ function PageTree({
         }
       },
     },
-    {
-      label: tStatic("att.renameButton"),
-      icon: PencilLine,
-      onSelect: () => {
-        s().openPage(n.id);
-        setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 150);
-      },
-    },
+    { label: tStatic("att.renameButton"), icon: PencilLine, shortcut: "F2", onSelect: () => renamePage(n) },
     "separator" as const,
-    { label: tStatic("common.delete"), icon: Trash2, danger: true, onSelect: () => deletePage(n) },
+    { label: tStatic("common.delete"), icon: Trash2, danger: true, shortcut: tStatic("sb.keyDelete"), onSelect: () => deletePage(n) },
     ];
+  };
+
+  /** Several pages to the trash at once (their subpages go with them); one toast undoes all. */
+  const deleteSelection = async () => {
+    const ids = selection();
+    const pages = s().pages;
+    const list = ids.map((id) => pages.get(id)).filter((p): p is PageNode => !!p);
+    if (!list.length) return;
+    const days = s().settings?.settings.notes?.trash_retention_days ?? 30;
+    if (!(await s().confirm({ title: tStatic("sb.deleteManyTitle", { n: list.length }), message: tStatic("sb.deleteManyText", { n: list.length, days }), confirmLabel: tStatic("common.delete"), danger: true })))
+      return;
+    const done: PageNode[] = [];
+    for (const p of list) {
+      try {
+        await api.deletePage(p.id);
+        done.push(p);
+      } catch (e) {
+        s().error(tStatic("pv.deleteFailed"), e);
+      }
+    }
+    setSelected(new Set());
+    await s().refreshTree();
+    if (!done.length) return;
+    s().toast({
+      tone: "info",
+      title: tStatic("sb.deletedMany", { n: done.length }),
+      action: {
+        label: tStatic("common.undo"),
+        run: async () => {
+          for (const p of done) await api.restorePage(p.id).catch((e) => s().error(tStatic("trash.restoreFailed"), e));
+          await s().refreshTree();
+        },
+      },
+    });
   };
 
   // Keyboard: arrows move between visible rows, Left/Right collapse/expand, Enter opens.
@@ -692,8 +748,22 @@ function PageTree({
       handled();
       const next = at(i + (key === "ArrowDown" ? 1 : -1));
       if (next == null) return;
-      setSelected(new Set([...(selected.size ? selected : [n.id]), next]));
+      // A range from the anchor, as in the file managers: going back shrinks it again.
+      if (!selected.size || anchor.current == null || !rows.some((r) => r.node.id === anchor.current)) anchor.current = n.id;
+      setSelected(new Set(rangeIds(rows.map((r) => r.node.id), anchor.current, next)));
       focusRow(next);
+      return;
+    }
+    if (key === "a" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+      handled();
+      setSelected(new Set(rows.map((r) => r.node.id)));
+      return;
+    }
+    if (key === "F2" && !selected.size) return (handled(), renamePage(n));
+    if (key === "Delete" || (key === "Backspace" && e.metaKey)) {
+      handled();
+      if (selected.size > 1 && selected.has(n.id)) void deleteSelection();
+      else void deletePage(n);
       return;
     }
     if (key === "Enter" || key === " ") (handled(), s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }));
@@ -763,6 +833,10 @@ function PageTree({
       dragOver: (n, e) => {
         const d = latest.current.drag;
         if (!d || d.id === n.id || (d.many && latest.current.selected.has(n.id))) return;
+        // Not into the dragged page's own subtree (the move would be refused).
+        const parentOf = (id: number) => useApp.getState().pages.get(id)?.parent_id;
+        const moving = d.many ? [...latest.current.selected] : [d.id];
+        if (moving.some((m) => isWithin(n.id, m, parentOf))) return;
         e.preventDefault();
         const r = e.currentTarget.getBoundingClientRect();
         const y = (e.clientY - r.top) / r.height;

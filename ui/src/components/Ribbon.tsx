@@ -110,15 +110,15 @@ export function Ribbon() {
       <DailyButton />
       <IconButton icon={Search} label={withHint(t("ribbon.palette"), "palette")} tooltipSide={side} size="lg" onClick={() => s().set({ paletteOpen: true, paletteMode: "all", paletteQuery: "" })} />
       <span className="ribbon-sep" />
-      <IconButton icon={CalendarRange} label={withHint(t("ribbon.calendarView"), "calendar_view")} active={tab?.kind === "calendar"} tooltipSide={side} size="lg" className="ribbon-calendar-view" onClick={() => s().openTab({ kind: "calendar" })} />
-      {timeOn && <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />}
-      <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
-      {timeOn && <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />}
-      {jiraOn && <IconButton icon={Ticket} label={t("ribbon.issues")} active={tab?.kind === "issues"} tooltipSide={side} size="lg" className="ribbon-issues" onClick={() => s().openTab({ kind: "issues" })} />}
-      <IconButton icon={Waypoints} label={t("ribbon.graph")} active={tab?.kind === "graph"} tooltipSide={side} size="lg" className="ribbon-graph" onClick={() => s().openTab({ kind: "graph" })} />
-      <IconButton icon={Activity} label={t("ribbon.activity")} active={tab?.kind === "activity"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "activity" })} />
-      <IconButton icon={Sun} label={t("ribbon.briefing")} active={tab?.kind === "briefing"} tooltipSide={side} size="lg" className="ribbon-briefing" onClick={() => openBriefing()} />
-      <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
+      <IconButton icon={CalendarRange} label={withHint(t("ribbon.calendarView"), "calendar_view")} active={tab?.kind === "calendar"} aria-current={tab?.kind === "calendar" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-calendar-view" onClick={() => s().openTab({ kind: "calendar" })} />
+      {timeOn && <IconButton icon={Timer} label={t("ribbon.timesheet")} active={tab?.kind === "timesheet"} aria-current={tab?.kind === "timesheet" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "timesheet" })} />}
+      <IconButton icon={ListChecks} label={withHint(t("ribbon.tasks"), "tasks")} active={tab?.kind === "tasks"} aria-current={tab?.kind === "tasks" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "tasks" })} />
+      {timeOn && <IconButton icon={Briefcase} label={t("ribbon.projects")} active={tab?.kind === "projects"} aria-current={tab?.kind === "projects" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "projects" })} />}
+      {jiraOn && <IconButton icon={Ticket} label={t("ribbon.issues")} active={tab?.kind === "issues"} aria-current={tab?.kind === "issues" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-issues" onClick={() => s().openTab({ kind: "issues" })} />}
+      <IconButton icon={Waypoints} label={t("ribbon.graph")} active={tab?.kind === "graph"} aria-current={tab?.kind === "graph" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-graph" onClick={() => s().openTab({ kind: "graph" })} />
+      <IconButton icon={Activity} label={t("ribbon.activity")} active={tab?.kind === "activity"} aria-current={tab?.kind === "activity" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "activity" })} />
+      <IconButton icon={Sun} label={t("ribbon.briefing")} active={tab?.kind === "briefing"} aria-current={tab?.kind === "briefing" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-briefing" onClick={() => openBriefing()} />
+      <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} aria-current={tab?.kind === "review" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
       <IconButton
@@ -133,7 +133,7 @@ export function Ribbon() {
       <span className="ribbon-sep" />
       <QuickLinks />
       <span className="grow" />
-      <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "settings" })} />
+      <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} aria-current={tab?.kind === "settings" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "settings" })} />
     </nav>
   );
 }

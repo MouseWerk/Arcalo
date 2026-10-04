@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PageNode } from "./types";
-import { filterIds, folderOptions, fuzzyScore, pickFolders, rangeIds, sortNodes, topSelected, typeFiling } from "./filing";
+import { filterIds, folderOptions, fuzzyScore, pickFolders, isWithin, rangeIds, sortNodes, topSelected, typeFiling } from "./filing";
 import { examplePath, isoWeek, monthFolder } from "../views/settings/FilingSection";
 
 const node = (id: number, title: string, children: PageNode[] = [], extra: Partial<PageNode> = {}): PageNode => ({
@@ -72,6 +72,13 @@ describe("selection", () => {
   it("moves only the topmost selected pages", () => {
     const parent: Record<number, number | null> = { 1: null, 2: 1, 3: 2, 4: null };
     expect(topSelected([3, 1, 4], (id) => parent[id])).toEqual([1, 4]);
+  });
+  it("knows a page's own subtree (no drop target)", () => {
+    const parent: Record<number, number | null> = { 1: null, 2: 1, 3: 2, 4: null };
+    expect(isWithin(3, 1, (id) => parent[id])).toBe(true);
+    expect(isWithin(1, 1, (id) => parent[id])).toBe(true);
+    expect(isWithin(4, 1, (id) => parent[id])).toBe(false);
+    expect(isWithin(1, 3, (id) => parent[id])).toBe(false);
   });
 });
 

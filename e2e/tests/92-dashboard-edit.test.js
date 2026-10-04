@@ -43,7 +43,7 @@ const clickText = async (sel, text) => {
   );
   await app.browser.pause(80);
 };
-const menuItem = (label) => clickText(".menu [role=menuitem]", label);
+const menuItem = (label) => clickText(".menu [role^=menuitem]", label);
 const heading = (id) => app.browser.execute((i) => document.querySelector(`.pane.active .dw[data-widget="${i}"] .dw-head h2`)?.textContent, id);
 const saved = async () => (await app.invoke("settings_get")).settings.dashboard;
 /** A pointer drag from the centre of `from` by (dx, dy) pixels, as the browser sends it. */

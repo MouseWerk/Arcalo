@@ -27,6 +27,7 @@ import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
 import { insertDrawingInActiveNote } from "../editor/drawings";
 import { snippetHtml } from "../lib/quicksearch";
+import { fuzzy } from "../lib/fuzzy";
 import { keys } from "../lib/shortcut";
 import { inOtherLanguage, t, useT } from "../lib/i18n";
 import { hint } from "../lib/keymap";
@@ -58,22 +59,6 @@ interface Item {
   icon: React.ReactNode;
   hint?: string;
   run: (newTab: boolean) => void;
-}
-
-/** Subsequence match score: prefers prefix and word-start matches. */
-function fuzzy(text: string, q: string): number {
-  if (!q) return 1;
-  const t = text.toLowerCase();
-  const i = t.indexOf(q);
-  if (i === 0) return 100 - t.length / 100;
-  if (i > 0) return (/[\s\-_/.]/.test(t[i - 1]) ? 80 : 60) - t.length / 100;
-  let ti = 0;
-  for (const c of q) {
-    ti = t.indexOf(c, ti);
-    if (ti < 0) return 0;
-    ti++;
-  }
-  return 20 - t.length / 100;
 }
 
 const ic = (C: typeof Search) => <C size={16} strokeWidth={1.75} />;
@@ -398,14 +383,22 @@ export function CommandPalette() {
               } else if (e.key === "Escape") {
                 e.preventDefault();
                 close();
+              } else if (e.key === "Tab") {
+                // The only control of the dialog: the focus stays here instead of reaching the app behind.
+                e.preventDefault();
               }
             }}
             aria-label={t("palette.search")}
+            role="combobox"
+            aria-expanded={items.length > 0}
+            aria-controls="pal-list"
+            aria-autocomplete="list"
+            aria-activedescendant={items[sel] ? `pal-opt-${sel}` : undefined}
             spellCheck={false}
           />
           <kbd>Esc</kbd>
         </div>
-        <div className="pal-list" ref={list} role="listbox">
+        <div className="pal-list" id="pal-list" ref={list} role="listbox" aria-label={t("palette.search")}>
           {items.length === 0 && <div className="pal-empty">{t("palette.noResults")}</div>}
           {/* Only „anlegen“ left: say so, instead of offering it as if it were a match. */}
           {query.trim() !== "" && items.length > 0 && items.every((it) => it.id === "create") && <div className="pal-nohits">{t("sidebar.noHits", { q: query.trim() })}</div>}
@@ -413,9 +406,10 @@ export function CommandPalette() {
             const header = it.section !== lastSection ? it.section : null;
             lastSection = it.section;
             return (
-              <div key={it.id + i}>
-                {header && <div className="pal-section">{header}</div>}
+              <div key={it.id + i} role="presentation">
+                {header && <div className="pal-section" role="presentation">{header}</div>}
                 <div
+                  id={`pal-opt-${i}`}
                   role="option"
                   aria-selected={i === sel}
                   className={`pal-item ${i === sel ? "sel" : ""}`}

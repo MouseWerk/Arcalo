@@ -222,6 +222,12 @@ export function rangeIds(order: number[], anchor: number | null, to: number): nu
   return order.slice(from, end + 1);
 }
 
+/** Whether `id` is `ancestor` itself or lies below it (a page cannot be dropped into its own subtree). */
+export function isWithin(id: number, ancestor: number, parentOf: (id: number) => number | null | undefined): boolean {
+  for (let p: number | null | undefined = id, guard = 0; p != null && guard < 10_000; p = parentOf(p), guard++) if (p === ancestor) return true;
+  return false;
+}
+
 /** Of the selected ids, the ones whose ancestor is not selected (they carry their subtree). */
 export function topSelected(selected: Iterable<number>, parentOf: (id: number) => number | null | undefined): number[] {
   const set = new Set(selected);

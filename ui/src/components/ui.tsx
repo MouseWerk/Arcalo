@@ -103,8 +103,25 @@ export function Field({ label, hint, children, inline }: { label: string; hint?:
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label?: string }) {
   return (
     <div className="segmented" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
+      {options.map((o, i) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          className={value === o.value ? "on" : ""}
+          // A radio group: one Tab stop (the chosen option), the arrows choose the neighbour.
+          tabIndex={value === o.value || (i === 0 && !options.some((x) => x.value === value)) ? 0 : -1}
+          onClick={() => onChange(o.value)}
+          onKeyDown={(e) => {
+            const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+            if (!d) return;
+            e.preventDefault();
+            const n = (i + d + options.length) % options.length;
+            (e.currentTarget.parentElement?.children[n] as HTMLElement | undefined)?.focus();
+            onChange(options[n].value);
+          }}
+        >
           {o.label}
         </button>
       ))}
@@ -292,6 +309,22 @@ export function Menu({
   const [sel, setSel] = useState(onBack || preselect ? firstActionable(items) : -1);
   const [sub, setSub] = useState<{ index: number; x: number; y: number; left: number } | null>(null);
   const actionable = items.map((it, i) => (it !== "separator" && !it.disabled ? i : -1)).filter((i) => i >= 0);
+  // Keyboard use moves the focus onto the highlighted item (screen readers announce it); the
+  // pointer only highlights. The focus goes back to where it was before an action runs.
+  const keyboard = useRef(!!(onBack || preselect));
+  const opener = useRef<Element | null>(null);
+  if (opener.current == null) opener.current = document.activeElement;
+  const restoreFocus = () => {
+    const el = opener.current;
+    if (document.activeElement?.closest(".menu") && el instanceof HTMLElement && el.isConnected) el.focus({ preventScroll: true });
+  };
+  // Before the menu leaves the DOM (afterwards the focus would already have dropped to the page).
+  useLayoutEffect(() => restoreFocus, []);
+  const choose = (it: MenuItem) => {
+    restoreFocus();
+    onClose();
+    it.onSelect?.();
+  };
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -305,8 +338,10 @@ export function Menu({
 
   // Long menus scroll (max-height in CSS); the keyboard selection stays visible.
   useEffect(() => {
-    if (sel >= 0) ref.current?.querySelector<HTMLElement>(`[data-index="${sel}"]`)?.scrollIntoView?.({ block: "nearest" });
-  }, [sel]);
+    const el = sel >= 0 ? ref.current?.querySelector<HTMLElement>(`[data-index="${sel}"]`) : null;
+    el?.scrollIntoView?.({ block: "nearest" });
+    if (el && keyboard.current && !sub) el.focus({ preventScroll: true });
+  }, [sel, sub]);
 
   const openSub = (i: number) => {
     const el = ref.current?.querySelector<HTMLElement>(`[data-index="${i}"]`);
@@ -323,21 +358,27 @@ export function Menu({
       if (e.key === "Escape" || (e.key === "ArrowLeft" && onBack)) {
         e.preventDefault();
         e.stopPropagation();
+        restoreFocus();
         (onBack ?? onClose)();
-      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      } else if (e.key === "Tab") {
+        // Leaving the menu closes it (the focus returns to where it was).
         e.preventDefault();
+        restoreFocus();
+        onClose();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        keyboard.current = true;
         const i = actionable.indexOf(sel);
-        const next = e.key === "ArrowDown" ? actionable[(i + 1) % actionable.length] : actionable[(i - 1 + actionable.length) % actionable.length];
+        const next =
+          e.key === "Home" ? actionable[0] : e.key === "End" ? actionable[actionable.length - 1] : e.key === "ArrowDown" ? actionable[(i + 1) % actionable.length] : actionable[(i - 1 + actionable.length) % actionable.length];
         setSel(next);
       } else if ((e.key === "Enter" || e.key === "ArrowRight") && sel >= 0) {
         const it = items[sel];
         if (it === "separator") return;
         e.preventDefault();
+        keyboard.current = true;
         if (it.submenu) openSub(sel);
-        else if (e.key === "Enter") {
-          onClose();
-          it.onSelect?.();
-        }
+        else if (e.key === "Enter") choose(it);
       }
     };
     window.addEventListener("mousedown", onDown, true);
@@ -355,12 +396,14 @@ export function Menu({
       <div className="menu" role="menu" ref={ref} style={{ left: pos.x, top: pos.y }}>
         {items.map((it, i) =>
           it === "separator" ? (
-            <div key={i} className="menu-sep" />
+            <div key={i} className="menu-sep" role="separator" />
           ) : (
             <button
               key={i}
               type="button"
-              role="menuitem"
+              role={it.checked !== undefined && !it.submenu ? "menuitemcheckbox" : "menuitem"}
+              aria-checked={it.checked !== undefined && !it.submenu ? !!it.checked : undefined}
+              tabIndex={-1}
               data-index={i}
               aria-haspopup={it.submenu ? "menu" : undefined}
               aria-expanded={it.submenu ? sub?.index === i : undefined}
@@ -373,8 +416,7 @@ export function Menu({
               }}
               onClick={() => {
                 if (it.submenu) return openSub(i);
-                onClose();
-                it.onSelect?.();
+                choose(it);
               }}
             >
               <span className="menu-icon">{it.checked ? <Check size={14} /> : it.icon ? <it.icon size={14} strokeWidth={1.75} /> : null}</span>
@@ -385,7 +427,21 @@ export function Menu({
           ),
         )}
       </div>
-      {sub && subItems && <Menu key={sub.index} x={sub.x} y={sub.y} flipX={sub.left} items={subItems} onClose={onClose} onBack={() => setSub(null)} />}
+      {sub && subItems && (
+        <Menu
+          key={sub.index}
+          x={sub.x}
+          y={sub.y}
+          flipX={sub.left}
+          items={subItems}
+          // An action in the submenu hands the focus back to where the whole menu came from.
+          onClose={() => {
+            restoreFocus();
+            onClose();
+          }}
+          onBack={() => setSub(null)}
+        />
+      )}
     </>,
     document.body,
   );

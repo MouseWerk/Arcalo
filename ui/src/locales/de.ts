@@ -5647,4 +5647,12 @@ export const de: Catalog = {
   "set.editor.tagSuggestionsDesc": "Schlägt unter den Eigenschaften Tags ähnlicher und verlinkter Seiten vor.",
   "set.editor.duplicateHints": "Doppelte Seiten",
   "set.editor.duplicateHintsDesc": "Zeigt im Kopf einer Seite eine sehr ähnliche Seite, mit Vergleichen und Zusammenführen.",
+  "sb.deleteMany": { one: "{n} Seite löschen", other: "{n} Seiten löschen" },
+  "sb.deleteManyTitle": { one: "{n} Seite löschen?", other: "{n} Seiten löschen?" },
+  "sb.deleteManyText": { one: "Die Seite und ihre Unterseiten werden in den Papierkorb verschoben. Nach {days} Tagen werden sie endgültig gelöscht.", other: "Die {n} Seiten und ihre Unterseiten werden in den Papierkorb verschoben. Nach {days} Tagen werden sie endgültig gelöscht." },
+  "sb.deletedMany": { one: "{n} Seite im Papierkorb", other: "{n} Seiten im Papierkorb" },
+  "sb.keyDelete": "Entf",
+  "tasks.doneToast": "Aufgabe erledigt",
+  "tasks.statusFilter": "Status",
+  "tabs.openTabs": "Geöffnete Tabs",
 };

@@ -25,7 +25,7 @@ const menu = (button, item) =>
   app.browser.execute(
     (b, i) => {
       [...document.querySelectorAll(".pane.active .editor-toolbar .tb-menu")].find((x) => (x.getAttribute("aria-label") ?? x.textContent).includes(b)).click();
-      return new Promise((r) => setTimeout(() => ([...document.querySelectorAll(".menu-item, [role=menuitem]")].find((x) => x.textContent.includes(i))?.click(), r()), 80));
+      return new Promise((r) => setTimeout(() => ([...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((x) => x.textContent.includes(i))?.click(), r()), 80));
     },
     button,
     item,

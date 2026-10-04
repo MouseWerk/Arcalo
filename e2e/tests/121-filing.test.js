@@ -59,7 +59,7 @@ async function expand(title) {
 }
 const menuClick = (label) =>
   app.browser.execute((l) => {
-    const item = [...document.querySelectorAll(".menu-item, [role=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
+    const item = [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => b.textContent.trim().startsWith(l));
     item?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     item?.click();
     return !!item;
