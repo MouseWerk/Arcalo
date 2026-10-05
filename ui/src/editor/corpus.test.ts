@@ -183,6 +183,13 @@ describe("source style of edited blocks", () => {
     editor.destroy();
   });
 
+  it("text written into an empty page ends with a line end; an empty page stays as it was", () => {
+    for (const [body, end] of [["", "\n"], ["\n", "\n"], ["\r\n\r\n", "\r\n"]]) {
+      expect(save(body, typeInto("", "Neu"))).toBe(`Neu${end}`);
+      expect(save(body)).toBe(body);
+    }
+  });
+
   it("a reference link whose target was changed is written inline", () => {
     const editor = open("Siehe [Doku][d].\n\n[d]: https://example.com/alt\n");
     editor.commands.setTextSelection({ from: 7, to: 11 });

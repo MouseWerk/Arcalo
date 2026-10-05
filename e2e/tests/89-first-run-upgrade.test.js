@@ -53,7 +53,9 @@ test("an existing workspace gets no forced intro, only the hint (once)", async (
 
 test("Über reruns intro and setup with the current settings prefilled", async () => {
   const view = await app.invoke("settings_get");
-  await app.invoke("settings_save", { settings: { ...view.settings, daily_target_hours: 7.5, workdays: [1, 2, 3, 4], theme: "dark" } });
+  // New workspaces follow the system language; a chosen one (German here) is what the step shows.
+  assert.equal(view.settings.locale.language, "system");
+  await app.invoke("settings_save", { settings: { ...view.settings, locale: { ...view.settings.locale, language: "de" }, daily_target_hours: 7.5, workdays: [1, 2, 3, 4], theme: "dark" } });
   const pages = (await app.invoke("workspace_tree")).length;
   await openAbout();
   await app.shot("firstrun-89-about");
@@ -63,6 +65,7 @@ test("Über reruns intro and setup with the current settings prefilled", async (
   await app.waitFor(".fr-intake");
   // Prefilled: German stays chosen, dark mode, the work days and the target.
   assert.equal(await app.browser.execute(() => document.querySelector('[data-choice="de"]').getAttribute("aria-checked")), "true");
+  assert.equal(await app.browser.execute(() => document.querySelector('[data-choice="system"]').getAttribute("aria-checked")), "false");
   await app.click('.fr-rail-item[data-step="theme"]');
   assert.equal(await app.browser.execute(() => document.querySelector('[data-choice="dark"]').getAttribute("aria-checked")), "true");
   await app.click('.fr-rail-item[data-step="work"]');

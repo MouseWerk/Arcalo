@@ -164,7 +164,8 @@ test("settings: every switch, option and dropdown reacts and applies at once; un
 
 test("time tracking: week navigation, new entry, release, bulk actions, export, quick booking", async () => {
   await app.click('.ribbon [aria-label="Zeiterfassung"]');
-  await app.waitFor(".week-grid");
+  // The week overview only shows with bookings or gaps (none on a Monday morning); the navigation always.
+  await app.waitFor(".pane.active .week-nav");
   const week = () => app.browser.execute(() => document.querySelector(".pane.active .view-sub").textContent);
   const kw = await week();
   await app.click('.pane.active [aria-label="Vorherige Woche"]');

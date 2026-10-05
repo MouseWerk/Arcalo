@@ -729,19 +729,22 @@ export interface TextShape {
   crlf: boolean;
   lead: string;
   end: string;
+  /** What a body without text ends with, written while it stays without text. */
+  empty?: string;
 }
 
 /** The shape of a page body as read (Windows line ends, leading blank lines, the line ends at the end). */
 export function textShape(body: string): TextShape {
   const crlf = body.includes("\r\n") && !/(^|[^\r])\n/.test(body);
   const lf = body.replace(/\r\n/g, "\n");
-  if (!lf.trim()) return { crlf, lead: "", end: lf };
+  // An empty page has no ending of its own: text written into it ends like new content.
+  if (!lf.trim()) return { crlf, lead: "", end: "\n", empty: lf };
   return { crlf, lead: /^\n*/.exec(lf)![0], end: /\n*$/.exec(lf)![0] };
 }
 
 /** `toMarkdown`'s text in the shape the page had, so a save changes only what was edited. */
 export function withShape(md: string, shape: TextShape): string {
-  const out = md.trim() ? shape.lead + md.replace(/\n+$/, "") + shape.end : shape.end;
+  const out = md.trim() ? shape.lead + md.replace(/\n+$/, "") + shape.end : (shape.empty ?? shape.end);
   return shape.crlf ? out.replace(/\n/g, "\r\n") : out;
 }
 

@@ -8,7 +8,13 @@ import { auditLayout } from "../lib/layout-audit.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-before(async () => (app = await launch()));
+before(async () => {
+  app = await launch();
+  // The demo bookings end yesterday; one today puts the week overview into the audit on a Monday too.
+  const np = (await app.invoke("wbs_tree"))[0].netzplaene[0];
+  const now = new Date();
+  await app.invoke("time_entry_create", { netzplanId: np.id, vorgangNr: np.vorgaenge[0]?.vorgang_nr ?? null, leistungsart: null, startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0).toISOString(), durationMinutes: 45, description: "Review" });
+});
 after(async () => app?.close());
 
 // Long dropdown values end in "…" on purpose.

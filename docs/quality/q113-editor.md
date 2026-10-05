@@ -46,6 +46,9 @@ and as rendered HTML (marked, GFM). App driven via the e2e harness on :451; scre
    single characters, not runs, and not at the neighbouring inline content. Fix: whole runs are escaped when they
    could open or close emphasis, node edges count as punctuation. Tests: `escaping` (3).
 6. LOW   Trailing spaces on the last line of a list were dropped (marked trims list tokens): taken from the source.
+7. LOW   Text written into an empty page (every new page) was saved without a final line end: the empty file's
+   ending was kept as "none". Fix: an empty page's text ends like new content; an empty page saved empty stays as
+   it was (integration, e2e 29). Test: corpus `text written into an empty page`.
 
 ## Corpus test
 
