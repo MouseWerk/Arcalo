@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
-import { AnnaloLogo } from "../components/Logo";
+import { ArcaloLogo } from "../components/Logo";
 import { useT } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { STEPS, STEP_LABELS, nextStep, prevStep, progressOf, stepIndex, type StepId } from "./flow";
@@ -67,7 +67,7 @@ export function Intake() {
     <div className="fr-intake" role="dialog" aria-modal="true" aria-label={t("fr.intake.label")}>
       <div className="fr-top" data-tauri-drag-region>
         <span className="fr-brand" data-tauri-drag-region>
-          <AnnaloLogo size={18} />
+          <ArcaloLogo size={18} />
           {t("fr.intake.title")}
         </span>
       </div>

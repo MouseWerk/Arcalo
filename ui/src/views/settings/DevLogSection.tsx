@@ -1,4 +1,4 @@
-// Settings → Protokoll: the developer log (`logs/annalo.log` in the data folder) with a level
+// Settings → Protokoll: the developer log (`logs/arcalo.log` in the data folder) with a level
 // filter, copy for bug reports, clearing and the folder in the file manager. The About page
 // shows a short summary row (errors of the last 7 days).
 

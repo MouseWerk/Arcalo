@@ -1,14 +1,14 @@
 //! Developer log (Settings → Protokoll), built on `tracing`: errors of commands, background
 //! jobs and the UI, plus spans with timings around Git sync, AI requests, calendar and Jira
-//! syncs, backups, database migrations and updates. One line per event in `logs/annalo.log`
-//! in the data folder (the viewer reads it), rotated at 1 MB (`annalo.log.1` … `.3`).
-//! Optionally the same events as JSON lines in `annalo.jsonl` (same rotation), written by a
+//! syncs, backups, database migrations and updates. One line per event in `logs/arcalo.log`
+//! in the data folder (the viewer reads it), rotated at 1 MB (`arcalo.log.1` … `.3`).
+//! Optionally the same events as JSON lines in `arcalo.jsonl` (same rotation), written by a
 //! background thread (`tracing-appender`); the text file is written right away, so the viewer
 //! and a panic never miss a line.
 //!
-//! Levels error … trace, set in Settings → Protokoll or by `ANNALO_LOG` (a level such as
+//! Levels error … trace, set in Settings → Protokoll or by `ARCALO_LOG` (a level such as
 //! `debug`, or directives such as `annalo=trace,zbus=debug`; it wins over the setting). Other
-//! crates log warnings and errors only unless `ANNALO_LOG` names them.
+//! crates log warnings and errors only unless `ARCALO_LOG` names them.
 //!
 //! Every message and every field value is redacted before anything is written (known key
 //! formats, `token=`/`password=` values, URLs with credentials, stored secrets); a field whose
@@ -40,19 +40,21 @@ use tracing_subscriber::{Layer, Registry, reload};
 use crate::{AppState, Result, lock};
 
 pub const DIR: &str = "logs";
-pub const FILE: &str = "annalo.log";
+pub const FILE: &str = "arcalo.log";
 /// The optional JSON-lines file next to it.
-pub const JSON_FILE: &str = "annalo.jsonl";
+pub const JSON_FILE: &str = "arcalo.jsonl";
 /// Size at which a file is rotated.
 const MAX_BYTES: u64 = 1024 * 1024;
-/// Rotated files kept (`annalo.log.1` … `.3`).
+/// Rotated files kept (`arcalo.log.1` … `.3`).
 const KEEP: usize = 3;
 /// Longer messages are cut.
 const MAX_MESSAGE: usize = 4000;
 const DEDUPE: Duration = Duration::from_secs(10);
 const UI_PER_MINUTE: u32 = 50;
 /// Overrides the level of Settings → Protokoll.
-pub const ENV: &str = "ANNALO_LOG";
+pub const ENV: &str = "ARCALO_LOG";
+/// [`ENV`] under the name of 1.12 and earlier (still read when [`ENV`] is not set).
+pub const LEGACY_ENV: &str = "ANNALO_LOG";
 /// Targets of Arcalo's own code; everything else logs warnings and errors only.
 const OWN: [&str; 3] = ["annalo", "annalo_lib", "annalo_core"];
 
@@ -124,7 +126,7 @@ pub fn level_of(settings: &annalo_core::settings::Settings) -> Level {
     Level::parse(&settings.dev_log_level).unwrap_or(if settings.dev_log_verbose { Level::Debug } else { Level::Info })
 }
 
-/// The filter of `ANNALO_LOG`: a bare level applies to Arcalo's own code, directives
+/// The filter of `ARCALO_LOG`: a bare level applies to Arcalo's own code, directives
 /// (`annalo=trace,zbus=debug`) are taken as they are. `None`: not set or not understood.
 pub fn env_filter(spec: &str) -> Option<(Targets, Level)> {
     let spec = spec.trim();
@@ -171,10 +173,10 @@ struct Inner {
 }
 
 static LOG: OnceLock<Arc<DevLog>> = OnceLock::new();
-/// The level of Arcalo's own lines (the setting, or `ANNALO_LOG`).
+/// The level of Arcalo's own lines (the setting, or `ARCALO_LOG`).
 static LEVEL: AtomicU8 = AtomicU8::new(Level::Info as u8);
 static RELOAD: OnceLock<reload::Handle<Targets, Registry>> = OnceLock::new();
-/// `ANNALO_LOG` as given at the start (it wins over the setting).
+/// `ARCALO_LOG` as given at the start (it wins over the setting).
 static ENV_SPEC: OnceLock<Option<String>> = OnceLock::new();
 static SECRETS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -501,14 +503,28 @@ fn rotated(dir: &Path, name: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// `annalo.log`, `annalo.log.1` … (newest first; only existing ones).
+/// `arcalo.log`, `arcalo.log.1` … (newest first; only existing ones).
 fn files(dir: &Path) -> Vec<PathBuf> {
     rotated(dir, FILE)
 }
 
-/// `annalo.jsonl`, `annalo.jsonl.1` …
+/// `arcalo.jsonl`, `arcalo.jsonl.1` …
 fn json_files(dir: &Path) -> Vec<PathBuf> {
     rotated(dir, JSON_FILE)
+}
+
+/// Log files of 1.12 and earlier (`annalo.log`, `annalo.jsonl` and their rotations) take the
+/// current names, so the viewer and the diagnostics keep the history. A name already in use
+/// stays as it is (nothing is overwritten).
+fn adopt_legacy(dir: &Path) {
+    for (old, new) in [("annalo.log", FILE), ("annalo.jsonl", JSON_FILE)] {
+        for suffix in std::iter::once(String::new()).chain((1..=KEEP).map(|i| format!(".{i}"))) {
+            let (from, to) = (dir.join(format!("{old}{suffix}")), dir.join(format!("{new}{suffix}")));
+            if from.is_file() && !to.exists() {
+                let _ = fs::rename(&from, &to);
+            }
+        }
+    }
 }
 
 /// Moves `name` to `.1` (and `.1` to `.2` …) once it has reached `max` bytes.
@@ -696,14 +712,16 @@ fn parse_line(line: &str) -> Entry {
 
 // ------------------------------------------------------------------ global log
 
-/// Opens the log in `data_dir`, installs the `tracing` subscriber (level: `ANNALO_LOG`, else
+/// Opens the log in `data_dir`, installs the `tracing` subscriber (level: `ARCALO_LOG`, else
 /// info until the settings are read) and the hooks (command errors, panics).
 pub fn init(data_dir: &Path) {
+    adopt_legacy(&data_dir.join(DIR));
     let log = Arc::new(DevLog::new(data_dir));
     if LOG.set(log.clone()).is_err() {
         return;
     }
-    let spec = std::env::var(ENV).ok().filter(|s| !s.trim().is_empty());
+    let var = |name: &str| std::env::var(name).ok().filter(|s| !s.trim().is_empty());
+    let spec = var(ENV).or_else(|| var(LEGACY_ENV));
     let env = spec.as_deref().and_then(env_filter);
     if let (Some(s), None) = (&spec, &env) {
         eprintln!("{ENV}={s} not understood: use a level (error, warn, info, debug, trace) or directives");
@@ -732,12 +750,12 @@ pub fn init(data_dir: &Path) {
     }));
 }
 
-/// `ANNALO_LOG` as given at the start, when it overrides the setting.
+/// `ARCALO_LOG` as given at the start, when it overrides the setting.
 pub fn env_override() -> Option<&'static str> {
     ENV_SPEC.get().and_then(|s| s.as_deref())
 }
 
-/// The level and the JSON output of the settings (the level unless `ANNALO_LOG` is set).
+/// The level and the JSON output of the settings (the level unless `ARCALO_LOG` is set).
 pub fn apply_settings(settings: &annalo_core::settings::Settings) {
     if let Some(log) = LOG.get() {
         log.set_json(settings.dev_log_json);
@@ -863,7 +881,7 @@ pub struct Stats {
     write_error: Option<String>,
     /// The level lines are written at now (`ERROR` … `TRACE`).
     level: &'static str,
-    /// `ANNALO_LOG`, when it overrides the setting.
+    /// `ARCALO_LOG`, when it overrides the setting.
     level_env: Option<&'static str>,
 }
 
@@ -931,6 +949,30 @@ mod tests {
         assert_eq!(log.read(1).len(), 1);
         log.clear().unwrap();
         assert!(log.read(10).is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_files_of_annalo_take_the_new_names() {
+        let dir = temp("legacy");
+        let logs = dir.join(DIR);
+        fs::create_dir_all(&logs).unwrap();
+        for (name, text) in
+            [("annalo.log", "neu"), ("annalo.log.2", "alt"), ("annalo.jsonl", "{}"), ("annalo.jsonl.1", "{\"a\":1}")]
+        {
+            fs::write(logs.join(name), text).unwrap();
+        }
+        // A file that already has the new name is not overwritten.
+        fs::write(logs.join("arcalo.jsonl.1"), "behalten").unwrap();
+        adopt_legacy(&logs);
+        assert_eq!(fs::read_to_string(logs.join(FILE)).unwrap(), "neu");
+        assert_eq!(fs::read_to_string(logs.join(format!("{FILE}.2"))).unwrap(), "alt");
+        assert_eq!(fs::read_to_string(logs.join(JSON_FILE)).unwrap(), "{}");
+        assert_eq!(fs::read_to_string(logs.join(format!("{JSON_FILE}.1"))).unwrap(), "behalten");
+        assert!(!logs.join("annalo.log").exists() && !logs.join("annalo.log.2").exists());
+        assert!(logs.join("annalo.jsonl.1").exists(), "kept rather than overwriting");
+        // The viewer reads the history.
+        assert_eq!(DevLog::new(&dir).read(10).len(), 2);
         let _ = fs::remove_dir_all(&dir);
     }
 

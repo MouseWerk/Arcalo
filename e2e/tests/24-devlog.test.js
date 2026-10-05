@@ -1,4 +1,4 @@
-// Developer log: command and UI errors land in logs/annalo.log; Settings → Protokoll lists,
+// Developer log: command and UI errors land in logs/arcalo.log; Settings → Protokoll lists,
 // filters and clears them; the About page links to it.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ test("errors from commands and the UI are written to the log, credentials redact
   // The same text again within 10 s is not repeated.
   await app.invoke("devlog_write", { level: "WARN", source: "ui", message: "E2E Warnung 4712" });
   assert.equal((await app.invoke("devlog_read", { limit: 50 })).filter((e) => /4712/.test(e.message)).length, 1);
-  const file = fs.readFileSync(path.join(app.dataDir, "logs", "annalo.log"), "utf8");
+  const file = fs.readFileSync(path.join(app.dataDir, "logs", "arcalo.log"), "utf8");
   assert.ok(!file.includes("geheim123"));
   assert.match(file, /^\S+T\S+ ERROR \[ui\] E2E Testfehler 4711/m);
 });
@@ -111,5 +111,5 @@ test("clearing asks first and leaves an empty state", async () => {
   await app.click(".dialog .btn-danger");
   await app.waitText(".devlog-empty", /Keine Einträge/);
   assert.deepEqual(await app.invoke("devlog_read", { limit: 10 }), []);
-  assert.ok(!fs.existsSync(path.join(app.dataDir, "logs", "annalo.log")));
+  assert.ok(!fs.existsSync(path.join(app.dataDir, "logs", "arcalo.log")));
 });

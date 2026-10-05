@@ -18,7 +18,7 @@ rollback after failed starts, organization policies and „Diese Version übersp
   GitHub release with `latest.json` (or a draft release plus a test feed, see „Test feed“).
 - Settings → Über shows „Automatische Updates“ with the switch „Automatisch nach Updates suchen“. If it says
   „nicht eingerichtet“, the build has no update key: that build cannot be used for these tests.
-- Keep the log open: Settings → Über → „Protokoll“ (or `annalo.log` in the data folder). Every failed check,
+- Keep the log open: Settings → Über → „Protokoll“ (or `arcalo.log` in the data folder). Every failed check,
   download or install is logged with source `update` and the technical detail.
 - Note for each row: pass/fail, version before/after, and anything the user saw that was unclear.
 

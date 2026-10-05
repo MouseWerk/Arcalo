@@ -4,7 +4,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight, Check, CalendarRange, Cpu, DatabaseBackup, FileText, GitBranch, Hash, Link2, Lock, NotebookPen, Server, ShieldCheck, Sparkles, Timer, WandSparkles } from "lucide-react";
-import { AnnaloLogo } from "../components/Logo";
+import { ArcaloLogo } from "../components/Logo";
 import { formatShortcut } from "../lib/shortcut";
 import { t } from "../lib/i18n";
 import { zeitCommand } from "../editor/zeit-suggest";
@@ -287,7 +287,7 @@ export function LocalVisual() {
     <div className="frv-local">
       <div className="frv-db frv-pop" style={d(150)}>
         <span className="frv-db-icon">
-          <AnnaloLogo size={22} />
+          <ArcaloLogo size={22} />
         </span>
         <span className="frv-db-name">workspace.db</span>
         <span className="frv-db-sub">

@@ -103,7 +103,7 @@ test("settings sync between two data folders through a bare repository", async (
   const view = await app.invoke("settings_get");
   assert.equal(view.settings.editor.tab_size, 8, "taken from the other computer");
   assert.ok(view.sync_last.changes.some((c) => c.key === "editor.tab_size"), JSON.stringify(view.sync_last));
-  const log = fs.readFileSync(path.join(dirB, "logs", "annalo.log"), "utf8");
+  const log = fs.readFileSync(path.join(dirB, "logs", "arcalo.log"), "utf8");
   assert.match(log, /settings sync: \d+ taken from the server: .*editor\.tab_size/);
   await app.dismissToasts();
 

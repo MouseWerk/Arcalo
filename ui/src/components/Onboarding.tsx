@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FilePlus2, FolderInput, LayoutDashboard, Server } from "lucide-react";
-import { AnnaloLogo } from "./Logo";
+import { ArcaloLogo } from "./Logo";
 import { api } from "../lib/api";
 import { importVault } from "../lib/actions";
 import { useApp } from "../store/app";
@@ -74,7 +74,7 @@ export function Onboarding() {
     <div className="home">
       <div className="home-inner onboarding">
         <div className="onb-mark" aria-hidden>
-          <AnnaloLogo size={34} />
+          <ArcaloLogo size={34} />
         </div>
         <h1>{t("onb.title")}</h1>
         <p className="muted">{t("onb.lead")}</p>

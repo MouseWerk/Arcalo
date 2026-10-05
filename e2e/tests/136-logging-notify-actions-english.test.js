@@ -45,7 +45,7 @@ test("Settings → Log: the level, JSON lines and the diagnostics bundle in Engl
   assert.equal(view.settings.dev_log_level, "trace");
   assert.equal(view.settings.dev_log_json, true);
   await app.invoke("devlog_write", { level: "INFO", source: "ui", message: "E2E 1361 json token=jsonSecret1361" });
-  const jsonl = path.join(dataDir, "logs", "annalo.jsonl");
+  const jsonl = path.join(dataDir, "logs", "arcalo.jsonl");
   await app.browser.waitUntil(async () => fs.existsSync(jsonl) && fs.readFileSync(jsonl, "utf8").includes("E2E 1361"), { timeoutMsg: "no JSON line" });
   const line = fs.readFileSync(jsonl, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((l) => l.message.includes("1361"));
   assert.equal(line.level, "INFO");
@@ -56,7 +56,7 @@ test("Settings → Log: the level, JSON lines and the diagnostics bundle in Engl
   await app.waitText(".toast-title", /Diagnostics bundle saved/);
   const names = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" });
   assert.match(names, /info\.json/);
-  assert.match(names, /logs\/annalo\.jsonl/);
+  assert.match(names, /logs\/arcalo\.jsonl/);
   assert.equal(JSON.parse(execFileSync("unzip", ["-p", file, "info.json"], { encoding: "utf8" })).language, "en");
   const leftovers = await germanLeftovers(app);
   assert.deepEqual(leftovers, []);

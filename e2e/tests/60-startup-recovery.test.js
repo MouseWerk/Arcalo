@@ -22,7 +22,7 @@ const tmp = (name) => {
 };
 const log = (dir) => {
   try {
-    return fs.readFileSync(path.join(dir, "logs", "annalo.log"), "utf8");
+    return fs.readFileSync(path.join(dir, "logs", "arcalo.log"), "utf8");
   } catch {
     return "";
   }

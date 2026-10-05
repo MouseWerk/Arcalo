@@ -164,10 +164,10 @@ mod tests {
         settings.network.profiles[0].http_proxy = "http://proxyuser:proxy-pass-9@proxy:8080".into();
         settings.litellm_base_url = "https://llm.example.com/v1?api_key=sk-hidden-777".into();
         let info = json!({ "version": "1.10.0", "schema_version": 21 });
-        let logs = vec![("annalo.log".to_owned(), b"2026-10-01T10:00:00.000+02:00 INFO [git] ok\n".to_vec())];
+        let logs = vec![("arcalo.log".to_owned(), b"2026-10-01T10:00:00.000+02:00 INFO [git] ok\n".to_vec())];
         let entries = contents(info, &settings, logs);
         let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["info.json", "settings.json", "README.txt", "logs/annalo.log"]);
+        assert_eq!(names, ["info.json", "settings.json", "README.txt", "logs/arcalo.log"]);
         let all: String = entries.iter().map(|(_, b)| String::from_utf8_lossy(b).into_owned()).collect();
         for secret in ["ghp_supersecret123", "proxy-pass-9", "sk-hidden-777"] {
             assert!(!all.contains(secret), "{secret}");
@@ -183,7 +183,7 @@ mod tests {
         write_zip(&file, &entries).unwrap();
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).unwrap();
         let mut text = String::new();
-        zip.by_name("logs/annalo.log").unwrap().read_to_string(&mut text).unwrap();
+        zip.by_name("logs/arcalo.log").unwrap().read_to_string(&mut text).unwrap();
         assert!(text.contains("[git] ok"));
         assert!(!dir.join("diag.zip.part").exists());
         let _ = std::fs::remove_dir_all(&dir);

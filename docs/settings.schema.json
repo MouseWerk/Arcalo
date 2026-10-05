@@ -945,7 +945,7 @@
       "description": "Settings of the Git sync. The access token is not part of it; the desktop shell keeps it in the OS credential store.",
       "properties": {
         "author_email": {
-          "default": "annalo@localhost",
+          "default": "arcalo@localhost",
           "type": "string"
         },
         "author_name": {
@@ -2765,7 +2765,7 @@
         }
       ],
       "default": {
-        "author_email": "annalo@localhost",
+        "author_email": "arcalo@localhost",
         "author_name": "Arcalo",
         "branch": "main",
         "enabled": false,
@@ -3215,7 +3215,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 11,
+      "default": 12,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

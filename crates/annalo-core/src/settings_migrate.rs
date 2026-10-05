@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 11;
+pub const SETTINGS_VERSION: u32 = 12;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -46,6 +46,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 8, name: "link-suggestions", run: link_suggestions },
     Step { from: 9, name: "own-addresses", run: own_addresses },
     Step { from: 10, name: "work-hours", run: work_hours },
+    Step { from: 11, name: "git-author", run: git_author },
 ];
 
 /// What [`migrate`] did.
@@ -312,6 +313,21 @@ fn work_hours(s: &mut Map<String, Value>) -> Option<String> {
         }
     }
     (!added.is_empty()).then(|| format!("time: {} added", added.join(", ")))
+}
+
+/// 11 → 12: the Git sync's default author of Annalo (`Annalo`, `annalo@localhost`, shown in
+/// Settings → Sicherung and in every commit) becomes Arcalo's; an author entered by hand stays.
+fn git_author(s: &mut Map<String, Value>) -> Option<String> {
+    let git = s.get_mut("git_sync")?.as_object_mut()?;
+    let mut changed = vec![];
+    for (k, old, new) in [("author_name", "Annalo", "Arcalo"), ("author_email", "annalo@localhost", "arcalo@localhost")]
+    {
+        if git.get(k).and_then(Value::as_str) == Some(old) {
+            git.insert(k.into(), Value::String(new.into()));
+            changed.push(k);
+        }
+    }
+    (!changed.is_empty()).then(|| format!("git_sync: {} of Arcalo", changed.join(", ")))
 }
 
 #[cfg(test)]
@@ -684,6 +700,27 @@ mod tests {
             (mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()),
             (Some("07:00"), Some("18:00"))
         );
+    }
+
+    #[test]
+    fn the_git_author_of_annalo_becomes_arcalo() {
+        let mut v = serde_json::json!({"version": 11, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
+        let m = migrate(&mut v);
+        assert_eq!(m.notes, vec!["git-author: git_sync: author_name, author_email of Arcalo".to_owned()]);
+        assert_eq!(
+            (v["git_sync"]["author_name"].as_str(), v["git_sync"]["author_email"].as_str()),
+            (Some("Arcalo"), Some("arcalo@localhost"))
+        );
+        // An author of one's own stays, also when only one part is the old default.
+        let mut mine = serde_json::json!({"version": 11, "git_sync": {"author_name": "Mia Meyer", "author_email": "annalo@localhost"}});
+        migrate(&mut mine);
+        assert_eq!(
+            (mine["git_sync"]["author_name"].as_str(), mine["git_sync"]["author_email"].as_str()),
+            (Some("Mia Meyer"), Some("arcalo@localhost"))
+        );
+        let mut own = serde_json::json!({"version": 11, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
+        assert!(migrate(&mut own).notes.is_empty());
+        assert_eq!(crate::gitsync::GitSyncSettings::default().author_email, "arcalo@localhost");
     }
 
     #[test]

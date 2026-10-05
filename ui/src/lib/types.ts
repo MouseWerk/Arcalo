@@ -335,7 +335,7 @@ export interface Settings {
   dev_log_verbose: boolean;
   /** Developer log level (`error` … `trace`); "": `dev_log_verbose` decides. */
   dev_log_level?: string;
-  /** Developer log: also JSON lines in `logs/annalo.jsonl`. */
+  /** Developer log: also JSON lines in `logs/arcalo.jsonl`. */
   dev_log_json?: boolean;
   /** Push the Markdown mirror to a Git remote; the token lives in the credential store. */
   git_sync: GitSyncSettings;
@@ -803,7 +803,7 @@ export interface BackupInfo {
   size_bytes: number;
 }
 export type DevLogLevel = "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE";
-/** One line of the developer log (`logs/annalo.log`). */
+/** One line of the developer log (`logs/arcalo.log`). */
 export interface DevLogEntry {
   /** RFC 3339 with offset; "" for lines the app did not write itself. */
   time: string;
@@ -820,7 +820,7 @@ export interface DevLogStats {
   write_error?: string | null;
   /** The level lines are written at now. */
   level?: DevLogLevel;
-  /** `ANNALO_LOG`, when it overrides the setting. */
+  /** `ARCALO_LOG`, when it overrides the setting. */
   level_env?: string | null;
 }
 /** Where the secrets are kept (Settings → Datenschutz). */

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
-import { AnnaloLogo } from "../components/Logo";
+import { ArcaloLogo } from "../components/Logo";
 import { useT, type TKey } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { AiVisual, CalendarVisual, CaptureVisual, LocalVisual, NotesVisual, TimeVisual, WelcomeVisual } from "./scenes";
@@ -139,7 +139,7 @@ export function Intro({ onDone }: { onDone: () => void }) {
     >
       <header className="fr-top" data-tauri-drag-region>
         <span className="fr-brand" data-tauri-drag-region>
-          <AnnaloLogo size={18} />
+          <ArcaloLogo size={18} />
           Arcalo
         </span>
         <button type="button" className="fr-skip" onClick={onDone}>
