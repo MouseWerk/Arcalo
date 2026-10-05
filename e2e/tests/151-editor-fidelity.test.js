@@ -38,11 +38,8 @@ ${filler}
 
 Ende.
 `;
-// The table as the editor writes it (columns padded to the cell text).
-const EXPECTED = SOURCE.replace(
-  "| Seite           | Code    |\n| --------------- | ------- |\n| [x](https://example.com/a_b) | `a\\|b` |",
-  "| Seite                        | Code   |\n| ---------------------------- | ------ |\n| [x](https://example.com/a_b) | `a\\|b` |",
-);
+// Blocks that were not edited (the table too) stay exactly as written (1.13).
+const EXPECTED = SOURCE;
 
 let id;
 const openTree = async (title) => {
