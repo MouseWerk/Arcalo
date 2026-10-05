@@ -829,6 +829,10 @@ async fn post_worklogs(app: &AppHandle) {
         // Worklogs of deleted entries.
         let deletes = state.reader().worklog_deletes_due(Utc::now()).unwrap_or_default();
         for d in deletes {
+            // Its booking came back meanwhile (the list was read before): the worklog stays.
+            if !state.reader().worklog_delete_wanted(d.id).unwrap_or(true) {
+                continue;
+            }
             changed = true;
             let Some(site) = settings.jira.site(&d.site).filter(|s| s.enabled && s.log_work).cloned() else {
                 // The site stopped logging work (or is gone): Jira keeps the worklog.
@@ -886,6 +890,8 @@ pub fn delete_entry(state: &AppState, entry_id: i64, with_chip: bool) -> Result<
     let queue = site.is_some_and(|s| logs_work(state, &s));
     db.atomic(|| {
         let queued = queue && db.worklog_queue_delete(entry_id)?;
+        // The booking may come back (undo, „Erneut buchen“): it takes its link back then.
+        db.issue_keep_link(entry_id, Utc::now())?;
         if with_chip {
             db.delete_time_entry_with_chip(entry_id)?
         } else {

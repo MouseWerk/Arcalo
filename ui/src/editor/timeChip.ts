@@ -160,28 +160,42 @@ function touchesChips(tr: Transaction): boolean {
   });
 }
 
+// Removing a booked chip, in the rich editor and in the Markdown source view alike.
 // Bookings whose chip was removed: deleted when the toast closes, unless the chip is back.
 const GRACE_MS = 7000;
 const pendingDeletes = new Map<number, number>();
 // Bookings deleted with their chip in this session: put back when the chip comes back.
 const deletedWithChip = new Map<number, TimeEntry>();
-// Chip ids in the open editors (a chip pasted into another note keeps the booking).
-const presentIn = new Map<EditorView, Set<number>>();
+// Chip ids in the open editors, rich and source (a chip pasted into another note keeps the booking).
+const presentIn = new Map<object, Set<number>>();
 
 const presentAnywhere = (id: number) => [...presentIn.values()].some((s) => s.has(id));
 
-function describe(node: PMNode) {
-  const a = node.attrs as ChipAttrs;
-  return `${chipHours(a.hours)} h · ${a.target}${a.text ? " · " + a.text : ""}`;
+/** The chip ids an editor (`owner`) shows now; `null` when it closes. */
+export function chipsPresent(owner: object, ids: Iterable<number> | null) {
+  if (ids) presentIn.set(owner, new Set(ids));
+  else presentIn.delete(owner);
 }
 
-/** The chip `id` was removed from a note: its booking goes after the undo toast. */
-function scheduleDelete(view: EditorView, id: number, node: PMNode, row: TimeEntryRow | undefined) {
+/** Whether a chip `id` coming back matters: its booking is about to go, or went with it. */
+export const chipAwaited = (id: number) => pendingDeletes.has(id) || deletedWithChip.has(id);
+
+/** „1,5 h · NP-8801/1020 · Text“: a chip in toasts. */
+export function describeChip(a: Partial<ChipAttrs>) {
+  return `${chipHours(a.hours)} h · ${a.target ?? ""}${a.text ? " · " + a.text : ""}`;
+}
+
+/**
+ * The booked chip `id` was removed from a note: its booking goes after the undo toast.
+ * „Rückgängig“ keeps the booking and calls `putBack` to put the chip where it was.
+ */
+export function chipRemoved(id: number, a: Partial<ChipAttrs>, row: TimeEntryRow | undefined, putBack: () => void) {
   const s = useApp.getState();
-  if (pendingDeletes.has(id)) return;
+  // Moved: pasted into another open note already, the booking goes along.
+  if (pendingDeletes.has(id) || presentAnywhere(id)) return;
   if (row && (row.status_flag === "exported" || row.status_flag === "released")) {
     // Already in SAP (or released for it): the booking stays, the user is told.
-    s.toast({ tone: "info", title: t("chip.keptExported"), detail: describe(node), key: `chip-${id}` });
+    s.toast({ tone: "info", title: t("chip.keptExported"), detail: describeChip(a), key: `chip-${id}` });
     return;
   }
   const timer = window.setTimeout(async () => {
@@ -198,7 +212,7 @@ function scheduleDelete(view: EditorView, id: number, node: PMNode, row: TimeEnt
   s.toast({
     tone: "info",
     title: t("chip.bookingDeleted"),
-    detail: describe(node),
+    detail: describeChip(a),
     key: `chip-${id}`,
     urgent: true,
     timeout: GRACE_MS,
@@ -207,15 +221,7 @@ function scheduleDelete(view: EditorView, id: number, node: PMNode, row: TimeEnt
       run: () => {
         cancelDelete(id);
         // The chip back where it was (the booking was not touched yet).
-        const removed = view.isDestroyed ? undefined : chipLinkKey.getState(view.state)?.parked.get(id);
-        if (removed && !presentAnywhere(id)) {
-          const pos = Math.min(removed.pos, view.state.doc.content.size);
-          try {
-            view.dispatch(view.state.tr.insert(pos, removed.node));
-          } catch {
-            /* the place is gone: the booking stays */
-          }
-        }
+        if (!presentAnywhere(id)) putBack();
       },
     },
   });
@@ -229,8 +235,23 @@ function cancelDelete(id: number): boolean {
   return true;
 }
 
-/** The chip `id` is in a note again: a pending deletion stops, a deleted booking comes back. */
-async function chipBack(view: EditorView, id: number) {
+/** The rich editor's „Rückgängig“: the removed chip back where it was. */
+function putBackIn(view: EditorView, id: number) {
+  const removed = view.isDestroyed ? undefined : chipLinkKey.getState(view.state)?.parked.get(id);
+  if (!removed) return;
+  const pos = Math.min(removed.pos, view.state.doc.content.size);
+  try {
+    view.dispatch(view.state.tr.insert(pos, removed.node));
+  } catch {
+    /* the place is gone: the booking stays */
+  }
+}
+
+/**
+ * The chip `id` is in a note again: a pending deletion stops, a deleted booking comes back
+ * (with its Jira worklog). `retarget` points the chip at the booking when it got another id.
+ */
+export async function chipReturned(id: number, retarget: (newId: number) => void) {
   const s = useApp.getState();
   if (cancelDelete(id)) {
     s.toast({ tone: "success", title: t("chip.bookingKept"), key: `chip-${id}`, timeout: 2500 });
@@ -244,10 +265,7 @@ async function chipBack(view: EditorView, id: number) {
     s.bumpEntries();
     s.toast({ tone: "success", title: t("chip.bookingRestored"), key: `chip-${id}`, timeout: 2500 });
     // Its id was taken meanwhile: the chip points at the restored booking.
-    if (back.id !== id && !view.isDestroyed) {
-      const at = chipsIn(view.state.doc).find((c) => c.id === id);
-      if (at) view.dispatch(view.state.tr.setNodeMarkup(at.pos, undefined, { ...at.node.attrs, entryId: back.id }).setMeta("addToHistory", false).setMeta(OWN, true));
-    }
+    if (back.id !== id) retarget(back.id);
   } catch (e) {
     s.error(t("chip.restoreFailed"), e);
   }
@@ -288,7 +306,7 @@ export function chipLinkPlugin(pageId: number) {
               events = [...events, ...removed.map((c): ChipEvent => ({ seq: ++seq, kind: "removed", id: c.id!, node: c.node }))];
             }
           }
-          const appeared = [...after].filter((id): id is number => id != null && (pendingDeletes.has(id) || deletedWithChip.has(id)));
+          const appeared = [...after].filter((id): id is number => id != null && chipAwaited(id));
           if (appeared.length) events = [...events, ...appeared.map((id): ChipEvent => ({ seq: ++seq, kind: "appeared", id }))];
         }
         // A short log is enough: the view handles new events right after each dispatch.
@@ -347,7 +365,7 @@ export function chipLinkPlugin(pageId: number) {
           view.dispatch(tr);
         }, 250);
       };
-      const remember = () => presentIn.set(view, new Set(chipsIn(view.state.doc).flatMap((c) => (c.id != null ? [c.id] : []))));
+      const remember = () => chipsPresent(view, chipsIn(view.state.doc).flatMap((c) => (c.id != null ? [c.id] : [])));
       remember();
       refresh();
       // Entries changed (timesheet, another note, a timer): the link may have changed too.
@@ -367,8 +385,13 @@ export function chipLinkPlugin(pageId: number) {
           if (fresh.length) handled = fresh[fresh.length - 1].seq;
           if (!timeTrackingEnabled()) return;
           for (const e of fresh) {
-            if (e.kind === "removed") scheduleDelete(v, e.id, e.node, st.rows.get(e.id));
-            else void chipBack(v, e.id);
+            if (e.kind === "removed") chipRemoved(e.id, e.node.attrs as ChipAttrs, st.rows.get(e.id), () => putBackIn(v, e.id));
+            else
+              void chipReturned(e.id, (newId) => {
+                if (v.isDestroyed) return;
+                const at = chipsIn(v.state.doc).find((c) => c.id === e.id);
+                if (at) v.dispatch(v.state.tr.setNodeMarkup(at.pos, undefined, { ...at.node.attrs, entryId: newId }).setMeta("addToHistory", false).setMeta(OWN, true));
+              });
           }
           refresh(false, fresh.some((e) => e.kind === "appeared"));
         },
@@ -376,7 +399,7 @@ export function chipLinkPlugin(pageId: number) {
           alive = false;
           clearTimeout(timer);
           unsub();
-          presentIn.delete(view);
+          chipsPresent(view, null);
         },
       };
     },
@@ -609,7 +632,9 @@ async function bookChip(editor: Editor, getPos: () => number | undefined, pageId
   const a = node.attrs as ChipAttrs;
   const s = useApp.getState();
   try {
-    const out = await api.chipBook({ pageId, target: a.target, minutes: chipMinutes(a.hours), leistungsart: a.la || null, date: a.date || null, text: a.text });
+    // The chip's earlier booking: a deleted one gives the new booking its Jira worklog back.
+    const previous = Number(a.entryId) > 0 ? Number(a.entryId) : null;
+    const out = await api.chipBook({ pageId, target: a.target, minutes: chipMinutes(a.hours), leistungsart: a.la || null, date: a.date || null, text: a.text, previous });
     s.bumpEntries();
     s.alerts(out.alerts);
     s.toast({ tone: "success", title: t("ne.booked", { h: chipHours(hoursAttr(out.entry.duration_minutes ?? 0, a.hours)) }), detail: `${out.reference}${out.entry.description ? " · " + out.entry.description : ""}` });

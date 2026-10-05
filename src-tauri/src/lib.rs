@@ -1280,11 +1280,14 @@ fn time_chip_restore(app: AppHandle, state: State<AppState>, entry: TimeEntry) -
     state.settings().require_time_tracking()?;
     let e = state.db().restore_time_entry(&entry)?;
     let _ = app.emit("data://entries", ());
+    // Its Jira worklog: kept (the queued deletion cancelled), updated or posted once more.
+    jira::kick_worklogs(app);
     Ok(e)
 }
 
 /// „Erneut buchen“ on a chip without booking (deleted, a copy, from another device): books its
-/// values on its day.
+/// values on its day. `previous`: the chip's booking id; a booking of it that was deleted gives
+/// the new one its Jira link back (its worklog kept, or posted once more).
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 fn time_chip_book(
@@ -1296,9 +1299,12 @@ fn time_chip_book(
     leistungsart: Option<String>,
     date: Option<NaiveDate>,
     text: String,
+    previous: Option<i64>,
 ) -> Result<LogOutcome> {
     let settings = state.settings();
     settings.require_time_tracking()?;
+    // Only a booking that is gone (a copy's booking still exists and keeps its link).
+    let gone = previous.filter(|id| state.reader().time_entry(*id).is_err());
     let (np, vorgang) = match target.trim().split_once('/') {
         Some((a, b)) => (a.trim().to_owned(), Some(b.trim().to_owned()).filter(|v| !v.is_empty())),
         None => (target.trim().to_owned(), None),
@@ -1313,8 +1319,15 @@ fn time_chip_book(
         start: None,
     };
     let ctx = tracking::SlashContext { default_ref: None, page_id: Some(page_id) };
-    let out =
+    let mut out =
         tracking::book_command(&state.db(), cmd, Default::default(), Utc::now(), &Local, &settings.thresholds, ctx)?;
+    if let Some(old) = gone {
+        let due = state.db().issue_relink(old, &out.entry)?;
+        if due {
+            jira::kick_worklogs(app.clone());
+        }
+        out.issue = state.reader().issue_entries(&[out.entry.id])?.pop().map(|i| i.issue_key);
+    }
     let _ = app.emit("data://entries", ());
     Ok(out)
 }

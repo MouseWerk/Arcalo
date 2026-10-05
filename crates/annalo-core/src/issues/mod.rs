@@ -1270,12 +1270,28 @@ impl Database {
         Ok(n == 1)
     }
 
-    /// Records a posted worklog.
+    /// Records a posted worklog. The entry was deleted while it was being posted: the worklog
+    /// is queued for deletion too (no orphan in Jira), and its booking takes it back when it
+    /// comes back ([`Self::issue_relink`]).
     pub fn worklog_posted(&self, entry_id: i64, worklog_id: &str) -> Result<()> {
-        self.conn().execute(
+        let n = self.conn().execute(
             "UPDATE time_entry_issues SET worklog_state = 'posted', worklog_id = ?2, error = NULL, next_try = NULL WHERE entry_id = ?1",
             params![entry_id, worklog_id],
         )?;
+        if n == 0 {
+            let kept = self.conn().execute(
+                "UPDATE time_entry_issues_deleted SET worklog_state = 'posted', worklog_id = ?2
+                 WHERE entry_id = ?1 AND worklog_id IS NULL",
+                params![entry_id, worklog_id],
+            )?;
+            if kept == 1 {
+                self.conn().execute(
+                    "INSERT INTO jira_worklog_deletes (site, issue_key, worklog_id)
+                     SELECT site, issue_key, ?2 FROM time_entry_issues_deleted WHERE entry_id = ?1",
+                    params![entry_id, worklog_id],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -1335,6 +1351,76 @@ impl Database {
             [entry_id],
         )?;
         Ok(n == 1)
+    }
+
+    /// The entry is being deleted: its issue link is kept (30 days), so the booking takes it
+    /// back when it comes back ([`Self::issue_relink`]). Call before the entry goes.
+    pub fn issue_keep_link(&self, entry_id: i64, now: DateTime<Utc>) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM time_entry_issues_deleted WHERE deleted_at < ?1", [ts(now - Duration::days(30))])?;
+        self.conn().execute(
+            "INSERT OR REPLACE INTO time_entry_issues_deleted
+               (entry_id, issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr, deleted_at)
+             SELECT l.entry_id, l.issue_key, l.site, l.worklog_state, l.worklog_id, l.attempts, e.netzplan_id, e.vorgang_nr, ?2
+             FROM time_entry_issues l JOIN time_entries e ON e.id = l.entry_id WHERE l.entry_id = ?1",
+            params![entry_id, ts(now)],
+        )?;
+        Ok(())
+    }
+
+    /// The deleted booking `old_id` came back as `entry` (its chip back by undo, „Erneut
+    /// buchen“; the id may differ): it takes its issue link back. A queued deletion of its
+    /// worklog that was not done yet is cancelled; the worklog is then brought up to date, or
+    /// posted once more when Jira removed it already ([`update_or_post`]). Only the same
+    /// booking (Netzplan and Vorgang) takes a link back. Returns whether a worklog is due.
+    pub fn issue_relink(&self, old_id: i64, entry: &TimeEntry) -> Result<bool> {
+        type Kept = (String, String, String, Option<String>, i64, i64, Option<String>);
+        let kept: Option<Kept> = self
+            .conn()
+            .query_row(
+                "SELECT issue_key, site, worklog_state, worklog_id, attempts, netzplan_id, vorgang_nr
+                 FROM time_entry_issues_deleted WHERE entry_id = ?1",
+                [old_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            )
+            .optional()?;
+        let Some((key, site, state, worklog_id, attempts, netzplan_id, vorgang)) = kept else { return Ok(false) };
+        let same_vorgang =
+            vorgang.as_deref().map(str::to_lowercase) == entry.vorgang_nr.as_deref().map(str::to_lowercase);
+        if netzplan_id != entry.netzplan_id || !same_vorgang {
+            return Ok(false);
+        }
+        self.conn().execute("DELETE FROM time_entry_issues_deleted WHERE entry_id = ?1", [old_id])?;
+        if let Some(w) = &worklog_id {
+            self.conn().execute(
+                "DELETE FROM jira_worklog_deletes WHERE site = ?1 AND issue_key = ?2 AND worklog_id = ?3",
+                params![site, key, w],
+            )?;
+        }
+        // Posted before: updated (or posted anew); never posted: posted, an interrupted try
+        // first looks for the worklog it may have left (`retry`).
+        let (state, attempts) = match (&worklog_id, state.as_str()) {
+            (Some(_), _) => ("pending", 0),
+            (None, "none") => ("none", 0),
+            (None, "posting") => ("posting", attempts),
+            (None, _) => ("pending", attempts),
+        };
+        self.conn().execute(
+            "INSERT INTO time_entry_issues (entry_id, issue_key, site, worklog_state, worklog_id, attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (entry_id) DO UPDATE SET issue_key = ?2, site = ?3, worklog_state = ?4, worklog_id = ?5, attempts = ?6,
+               next_try = NULL, error = NULL",
+            params![entry.id, key, site, state, worklog_id, attempts],
+        )?;
+        Ok(state != "none")
+    }
+
+    /// Whether the queued worklog deletion `id` is still wanted (its booking did not come back).
+    pub fn worklog_delete_wanted(&self, id: i64) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row("SELECT 1 FROM jira_worklog_deletes WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some())
     }
 
     /// Worklog deletions due now (new, or failed and waiting long enough).

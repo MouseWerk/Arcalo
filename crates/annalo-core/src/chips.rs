@@ -298,7 +298,8 @@ impl Database {
     }
 
     /// Puts a booking deleted with its chip back (the chip came back: undo in the editor, or
-    /// „Rückgängig“). Keeps its id when that is still free, so the chip finds it again.
+    /// „Rückgängig“). Keeps its id when that is still free, so the chip finds it again, and
+    /// takes its Jira issue link and worklog back ([`Database::issue_relink`]).
     pub fn restore_time_entry(&self, e: &TimeEntry) -> Result<TimeEntry> {
         let free =
             self.conn().query_row("SELECT 1 FROM time_entries WHERE id = ?1", [e.id], |_| Ok(())).optional()?.is_none();
@@ -321,6 +322,7 @@ impl Database {
             ],
         )?;
         let entry = self.time_entry(self.conn().last_insert_rowid())?;
+        self.issue_relink(e.id, &entry)?;
         self.feed_entry("entry_created", &entry, Utc::now())?;
         Ok(entry)
     }

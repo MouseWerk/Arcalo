@@ -11,6 +11,7 @@ import { markdownStats } from "../lib/plaintext";
 import { keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
+import { useSourceChips } from "./sourceChips";
 
 const SAVE_MS = 700;
 const INDENT = "  ";
@@ -60,6 +61,8 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     if (!dirty.current) return saving.current ?? Promise.resolve();
     dirty.current = false;
     const content = latest.current;
+    // A booked `/zeit` chip removed (or back): its booking follows, as in the rich editor.
+    chips.checked(content);
     const mergesBefore = merges.current;
     const p: Promise<void> = (saving.current ?? Promise.resolve())
       .then(() => api.savePage(doc.id, content))
@@ -102,6 +105,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   // Content of another pane: taken over as it is, or merged with our unsaved (or still
   // saving) edits, which are then saved again.
   const absorb = (theirs: string) => {
+    chips.absorbed(base.current, theirs);
     if (!busy()) {
       base.current = theirs;
       if (theirs !== latest.current) replaceText(theirs);
@@ -115,6 +119,17 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(save, SAVE_MS);
   };
+  /** `next` as an edit of the user (the chip put back by „Rückgängig“), saved as typed text is. */
+  const edit = (next: string) => {
+    replaceText(next);
+    dirty.current = true;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(save, SAVE_MS);
+  };
+  const chips = useSourceChips(doc.id, () => latest.current, edit, mapCaret);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => chips.shown(value), [value]);
+
   const absorbRef = useRef(absorb);
   absorbRef.current = absorb;
 
@@ -176,6 +191,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   // there are own edits.
   useEffect(() => {
     if (busy() || doc.content === latest.current) return;
+    chips.absorbed(base.current, doc.content);
     base.current = doc.content;
     replaceText(doc.content);
     // eslint-disable-next-line react-hooks/exhaustive-deps
