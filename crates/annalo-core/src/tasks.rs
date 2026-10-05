@@ -4,6 +4,7 @@
 
 use crate::{tr, trf};
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use rusqlite::params;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Database;
 use crate::error::{Error, Result};
+use crate::recurrence::{OBSIDIAN_RECUR, Recurrence};
 
 /// The calendar marker Obsidian Tasks puts before a due date; read for imported notes,
 /// never written (Arcalo writes `due:`).
@@ -24,15 +26,18 @@ pub struct ParsedTask {
     /// 0-based line in the Markdown.
     pub line: usize,
     /// Byte offset of the checkbox character (` ` or `x`) within the line.
-    check: usize,
+    pub(crate) check: usize,
     pub done: bool,
-    /// The text without checkbox, due date and priority markers; `[[links]]` and `#tags` stay.
+    /// The text without checkbox, due date, priority and repeat markers; `[[links]]` and `#tags` stay.
     pub text: String,
     /// `YYYY-MM-DD`.
     pub due: Option<String>,
     /// 0 none, 1 mittel (`!`), 2 hoch (`!!`).
     pub priority: u8,
     pub tags: Vec<String>,
+    /// The repeat rule (`every:weekly`), see [`crate::recurrence`].
+    pub recur: Option<Recurrence>,
+    pub(crate) marks: Marks,
 }
 
 /// A task with its page, as listed in the task view and returned to the assistant.
@@ -49,6 +54,9 @@ pub struct Task {
     pub priority: u8,
     /// Own `#tags` plus the page's tags written outside task lines.
     pub tags: Vec<String>,
+    /// The repeat rule, see [`crate::recurrence`].
+    #[serde(default)]
+    pub recur: Option<Recurrence>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +127,11 @@ fn changed_since_ts<Tz: TimeZone>(s: &str, tz: &Tz) -> Result<String> {
     })
 }
 
+/// A rule as stored in `tasks.recur` (`every:weekly until:2026-12-31`).
+fn stored_rule(s: &str) -> Option<Recurrence> {
+    parse_tasks(&format!("- [ ] x {s}")).pop()?.recur
+}
+
 fn parse_date(s: &str) -> Option<String> {
     (s.len() == 10 && NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()).then(|| s.to_owned())
 }
@@ -149,6 +162,50 @@ fn checkbox(line: &str) -> Option<(usize, bool, &str)> {
     Some((indent + marker + 1 + 1, b[1] != b' ', rest))
 }
 
+/// Byte ranges of a task's markers within its line, for rewriting them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Marks {
+    pub due: Vec<Range<usize>>,
+    pub priority: Vec<Range<usize>>,
+    /// The repeat rule (`every:…` and its words, or the Obsidian marker with its words) and `until:`.
+    pub recur: Vec<Range<usize>>,
+    /// A block id (`^abc123`) at the end of the line.
+    pub block_id: Option<Range<usize>>,
+    /// Where the task's text ends (before trailing whitespace).
+    pub end: usize,
+}
+
+/// Whitespace-separated words of `s` with their byte offsets.
+fn words_at(s: &str) -> Vec<(usize, &str)> {
+    let mut out = vec![];
+    let mut start = None;
+    for (i, c) in s.char_indices() {
+        if c.is_whitespace() {
+            if let Some(st) = start.take() {
+                out.push((st, &s[st..i]));
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(st) = start {
+        out.push((st, &s[st..]));
+    }
+    out
+}
+
+/// A word that can continue a repeat rule written in words (`every:jede Woche`): not another
+/// marker, link, tag or two-letter abbreviation (`so`, `do` are words in the text, too).
+fn rule_word(w: &str) -> bool {
+    w.chars().all(|c| c.is_alphanumeric() || c == '.' || c == ',' || c == '-')
+        && !(w.chars().count() <= 2 && w.chars().all(char::is_alphabetic))
+}
+
+/// Starts of a repeat rule: `every:` (also `Every:`, German `wdh:`).
+fn rule_value(t: &str) -> Option<&str> {
+    ["every:", "Every:", "EVERY:", "wdh:", "Wdh:"].iter().find_map(|p| t.strip_prefix(p))
+}
+
 /// All task items outside fenced code blocks (```` ``` ```` or `~~~`, each closed by its own marker).
 pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
     let mut out = vec![];
@@ -168,36 +225,124 @@ pub fn parse_tasks(markdown: &str) -> Vec<ParsedTask> {
             (None, None) => {}
         }
         let Some((check, done, rest)) = checkbox(line) else { continue };
+        let base = check + 2;
         let mut due = None;
         let mut priority = 0;
+        let mut recur: Option<Recurrence> = None;
+        let mut until: Option<(usize, &str, Range<usize>, String)> = None;
+        let mut marks = Marks::default();
         let mut words: Vec<&str> = vec![];
-        let toks: Vec<&str> = rest.split_whitespace().collect();
+        let toks = words_at(rest);
+        let span = |a: usize, b: usize| base + toks[a].0..base + toks[b].0 + toks[b].1.len();
         let mut i = 0;
         while i < toks.len() {
-            let t = toks[i];
-            if t == OBSIDIAN_DUE && i + 1 < toks.len() && parse_date(toks[i + 1]).is_some() {
-                due = parse_date(toks[i + 1]);
+            let t = toks[i].1;
+            if t == OBSIDIAN_DUE && i + 1 < toks.len() && parse_date(toks[i + 1].1).is_some() {
+                due = parse_date(toks[i + 1].1);
+                marks.due.push(span(i, i + 1));
                 i += 2;
+                continue;
+            }
+            // Obsidian Tasks: the marker, then the rule in words up to the next marker.
+            if t == OBSIDIAN_RECUR && recur.is_none() {
+                let mut j = i + 1;
+                while j < toks.len() && toks[j].1.chars().all(|c| c.is_alphanumeric() || ".,-".contains(c)) {
+                    j += 1;
+                }
+                let phrase: Vec<&str> = toks[i + 1..j].iter().map(|t| t.1).collect();
+                if let Some(r) = (j > i + 1).then(|| Recurrence::parse(&phrase.join(" "))).flatten() {
+                    recur = Some(r);
+                    marks.recur.push(span(i, j - 1));
+                    i = j;
+                    continue;
+                }
+            }
+            if let Some(value) = rule_value(t).filter(|_| recur.is_none()) {
+                // The value alone (`every:weekly`), else the fewest following words that make a
+                // rule, extended while each further word still changes it (`every:jeden Montag
+                // und Mittwoch`).
+                let mut found = (!value.is_empty()).then(|| Recurrence::parse(value)).flatten().map(|r| (r, i));
+                if found.is_none() {
+                    let mut phrase = value.to_owned();
+                    let mut j = i + 1;
+                    while j < toks.len() && j <= i + 6 && rule_word(toks[j].1) {
+                        phrase.push(' ');
+                        phrase.push_str(toks[j].1);
+                        if let Some(r) = Recurrence::parse(&phrase)
+                            && found.as_ref().is_none_or(|(prev, _)| *prev != r)
+                        {
+                            found = Some((r, j));
+                        }
+                        j += 1;
+                    }
+                }
+                if let Some((r, last)) = found {
+                    recur = Some(r);
+                    marks.recur.push(span(i, last));
+                    i = last + 1;
+                    continue;
+                }
+            }
+            if until.is_none()
+                && let Some(d) =
+                    ["until:", "Until:", "bis:", "Bis:"].iter().find_map(|p| t.strip_prefix(p)).and_then(parse_date)
+            {
+                until = Some((words.len(), t, span(i, i), d));
+                i += 1;
                 continue;
             }
             let due_word = ["due:", "Due:", "fällig:", "Fällig:"].iter().find_map(|p| t.strip_prefix(p));
             if let Some(d) = t.strip_prefix(OBSIDIAN_DUE).or(due_word).and_then(parse_date) {
                 due = Some(d);
+                marks.due.push(span(i, i));
             } else if t == "!!" {
                 priority = 2;
+                marks.priority.push(span(i, i));
             } else if t == "!" {
                 priority = priority.max(1);
+                marks.priority.push(span(i, i));
             } else {
                 words.push(t);
             }
             i += 1;
+        }
+        // `until:` belongs to a rule; without one it is text.
+        match (&mut recur, until) {
+            (Some(r), Some((_, _, range, d))) => {
+                r.until = Some(d);
+                marks.recur.push(range);
+            }
+            (None, Some((at, word, _, _))) => words.insert(at, word),
+            _ => {}
+        }
+        if let Some(&(off, last)) = toks.last() {
+            marks.end = base + off + last.len();
+            if last.len() > 1
+                && last.starts_with('^')
+                && last[1..].chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                marks.block_id = Some(base + off..marks.end);
+            }
+        } else {
+            marks.end = base.min(line.len());
         }
         let text = words.join(" ");
         if text.is_empty() {
             continue;
         }
         let tags = crate::notes::tags(&text);
-        out.push(ParsedTask { ordinal: out.len(), line: line_no, check, done, text, due, priority, tags });
+        out.push(ParsedTask {
+            ordinal: out.len(),
+            line: line_no,
+            check,
+            done,
+            text,
+            due,
+            priority,
+            tags,
+            recur,
+            marks,
+        });
     }
     out
 }
@@ -225,8 +370,8 @@ impl Database {
         let conn = self.conn();
         conn.execute("DELETE FROM tasks WHERE page_id = ?1", [id])?;
         let mut ins = conn.prepare_cached(
-            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags, recur)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         let tasks = parse_tasks(content);
         // Tags outside task lines (frontmatter, prose) belong to the page and so to each of its
@@ -246,7 +391,8 @@ impl Database {
                 t.done,
                 t.due,
                 t.priority,
-                tags.join(" ")
+                tags.join(" "),
+                t.recur.as_ref().map(Recurrence::tokens)
             ])?;
         }
         Ok(())
@@ -325,12 +471,13 @@ impl Database {
         // Markdown lives there) cost more than reading the live pages once from their index.
         let mut st = self.conn().prepare_cached(&format!(
             "{TEMPLATE_PAGES}
-             SELECT t.page_id, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags
+             SELECT t.page_id, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags, t.recur
              FROM tasks t WHERE t.page_id NOT IN tpl{extra}"
         ))?;
         let rows: Vec<Task> = st
             .query_map(rusqlite::params_from_iter(args), |r| {
                 let tags: String = r.get(7)?;
+                let recur: Option<String> = r.get(8)?;
                 Ok(Task {
                     page_id: r.get(0)?,
                     page_title: String::new(),
@@ -342,6 +489,7 @@ impl Database {
                     due: r.get(5)?,
                     priority: r.get(6)?,
                     tags: tags.split_whitespace().map(str::to_owned).collect(),
+                    recur: recur.as_deref().and_then(stored_rule),
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -386,7 +534,8 @@ impl Database {
     }
 
     /// Checks or unchecks task `ordinal` of a page by rewriting exactly its
-    /// checkbox, then saves the page so links, tags and the index stay consistent.
+    /// checkbox (a repeating task done gets its next occurrence below it), then saves the page so
+    /// links, tags and the index stay consistent.
     ///
     /// `expected_text` is the task text the caller saw. If the page changed in the meantime
     /// and task `ordinal` has another text, the task with that text is used when it is unique;
@@ -416,7 +565,12 @@ impl Database {
                 }
             }
         }
-        let updated = set_task_state(&content, ordinal, done).ok_or_else(missing)?;
+        if parse_tasks(&content).get(ordinal).is_none() {
+            return Err(missing());
+        }
+        // A repeating task done gets its next occurrence (see `taskedit`).
+        let edit = crate::taskedit::TaskEdit::Done { done };
+        let updated = crate::taskedit::edit_page(&content, &[ordinal], &edit, Local::now().date_naive()).content;
         if updated != content {
             self.save_page_content(page_id, &updated)?;
         }

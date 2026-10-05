@@ -47,6 +47,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0030_perf_indexes.sql"),
     include_str!("../migrations/0031_timer_pauses.sql"),
     include_str!("../migrations/0032_kept_issue_links.sql"),
+    include_str!("../migrations/0033_task_recurrence.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.

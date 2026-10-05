@@ -11,6 +11,7 @@ import { Placeholder } from "@tiptap/extensions";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import Link from "@tiptap/extension-link";
 import { IssueChips } from "./issueChips";
+import { RecurringTasks } from "./recurTasks";
 import { Callouts, DueWords, ImageEmbed, MarkdownImage, SlashCommand, TagHighlight, TimeEntryChip, WikiLink, WikiLinkSuggest, ZeitCommand, ZeitSuggest, type LinkSuggestItem, type ZeitResult, type ZeitSuggestItem } from "./extensions";
 import { FindInPage } from "./find";
 import { DrawingEmbed } from "./drawing";
@@ -595,6 +596,8 @@ export interface SchemaOptions {
   zeitLeistungsarten?: (query: string) => Promise<ZeitSuggestItem[]>;
   /** Smart paste of a lone URL: the page's title (null: keep the URL). */
   fetchTitle?: (url: string) => Promise<string | null>;
+  /** A repeating task ticked off: the due date of its next occurrence (null: none). */
+  taskNextDue?: (text: string) => Promise<string | null>;
   /** Typing aids (Settings → Editor), read on every keystroke. */
   typing?: () => TypingPrefs;
   /** Live view of a page embed `![[Seite#Abschnitt]]` (none: a placeholder). */
@@ -686,6 +689,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     TagHighlight.configure({ onOpen: o.onOpenTag ?? (() => {}) }),
     IssueChips,
     DueWords,
+    RecurringTasks.configure({ nextDue: o.taskNextDue ?? null }),
     FindInPage,
     Callouts,
     HtmlInline,

@@ -996,6 +996,47 @@ export interface Task {
   /** 0 keine, 1 mittel (!), 2 hoch (!!) */
   priority: number;
   tags: string[];
+  /** The repeat rule (`every:weekly`), if any. */
+  recur?: Recurrence | null;
+}
+
+/** A repeat rule of a task (`every:mo,we until:2026-12-31`), as the core reads and writes it. */
+export interface Recurrence {
+  unit: "day" | "week" | "month" | "year";
+  interval: number;
+  /** 0 Monday … 6 Sunday (weekly). */
+  weekdays: number[];
+  /** 1–31 (monthly; a shorter month takes its last day). */
+  month_day: number | null;
+  /** YYYY-MM-DD */
+  until: string | null;
+  /** Count from the day it was done instead of the due date. */
+  when_done: boolean;
+}
+
+/** A task as the list showed it (found again by text when the page changed). */
+export interface TaskRef {
+  page_id: number;
+  ordinal: number;
+  text: string;
+}
+
+export type TaskEdit =
+  | { kind: "done"; done: boolean }
+  | { kind: "due"; due: string | null }
+  | { kind: "priority"; priority: number }
+  | { kind: "recur"; recur: Recurrence | null }
+  | { kind: "delete" }
+  | { kind: "move"; page_id: number };
+
+/** What a task change did; handed back to `tasksUndo` as is. */
+export interface TaskChange {
+  pages: { page_id: number; before: string; after: string }[];
+  entries: { id: number; from: number; to: number }[];
+  changed: number;
+  /** Due dates of the next occurrences of repeating tasks. */
+  created: string[];
+  skipped: number;
 }
 export interface TaskFilter {
   status?: TaskStatus;
