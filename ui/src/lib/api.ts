@@ -135,7 +135,7 @@ export const api = {
   /** The removed chip came back: its booking is put back (same id when free). */
   chipRestore: (entry: T.TimeEntry) => call<T.TimeEntry>("time_chip_restore", { entry }),
   /** Books the values of a chip without booking (deleted, a copy, from another device). */
-  chipBook: (a: { pageId: number; target: string; minutes: number; leistungsart: string | null; date: string | null; text: string }) =>
+  chipBook: (a: { pageId: number; target: string; minutes: number; leistungsart: string | null; date: string | null; text: string; previous: number | null }) =>
     call<T.LogOutcome>("time_chip_book", a),
   entries: (from?: string, to?: string) => call<T.TimeEntryRow[]>("time_entries", { from: from ?? null, to: to ?? null }),
   createEntry: (e: { netzplanId: number; vorgangNr: string | null; leistungsart: string | null; startTime: string; durationMinutes: number; description: string }) =>

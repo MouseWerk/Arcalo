@@ -803,3 +803,76 @@ fn priorities_get_levels_in_any_language() {
     store(&db, &[(hi, &["mine"])]);
     assert_eq!(db.issue_get("PROJ-7").unwrap().unwrap().priority_level, 5);
 }
+
+#[test]
+fn a_booking_that_comes_back_takes_its_worklog_back() {
+    let db = setup();
+    let mut s = db.load_settings().unwrap();
+    s.jira.sites.push(JiraSite { id: "acme".into(), name: "Acme".into(), log_work: true, ..Default::default() });
+    db.save_settings(&s).unwrap();
+    store(&db, &[(issue("PROJ-5", "new"), &["mine"])]);
+    let out =
+        log_slash_command(&db, "/zeit NP-8801/1020 45m PROJ-5 review", now(), &cet(), &Thresholds::default()).unwrap();
+    let id = out.entry.id;
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10042").unwrap();
+    // As `jira::delete_entry` does it (chip removed, the undo toast closed).
+    let delete = |id: i64| {
+        let queued = db.worklog_queue_delete(id).unwrap();
+        db.issue_keep_link(id, now()).unwrap();
+        db.delete_time_entry_with_chip(id).unwrap();
+        queued
+    };
+    let link = |id: i64| db.issue_entries(&[id]).unwrap().pop().map(|e| (e.issue_key, e.worklog_state, e.worklog_id));
+
+    // Back before the deletion reached Jira: the deletion is cancelled, the worklog kept.
+    let before = db.time_entry(id).unwrap();
+    assert!(delete(id));
+    assert_eq!(db.worklog_deletes_due(now()).unwrap().len(), 1);
+    let back = db.restore_time_entry(&before).unwrap();
+    assert_eq!(back.id, id);
+    assert!(db.worklog_deletes_due(now() + Duration::days(1)).unwrap().is_empty(), "deletion cancelled");
+    assert_eq!(link(id), Some(("PROJ-5".into(), "pending".into(), Some("10042".into()))));
+    // Brought up to date (not posted as a second worklog).
+    let due = db.worklogs_due(now()).unwrap();
+    assert_eq!((due[0].worklog_id.as_deref(), due[0].retry), (Some("10042"), false));
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10042").unwrap();
+
+    // Back after Jira removed it: posted once more (`update_or_post`), the new id is stored.
+    assert!(delete(id));
+    let del = db.worklog_deletes_due(now()).unwrap();
+    db.worklog_deleted(del[0].id).unwrap();
+    db.restore_time_entry(&before).unwrap();
+    assert_eq!(db.worklogs_due(now()).unwrap()[0].worklog_id.as_deref(), Some("10042"));
+    assert!(db.worklog_claim(id).unwrap());
+    db.worklog_posted(id, "10043").unwrap();
+    assert_eq!(db.entry_worklog(id).unwrap(), Some(("acme".into(), "PROJ-5".into(), "10043".into())));
+
+    // Deleted while its worklog was being posted: that worklog is queued for deletion (no
+    // orphan in Jira), and taken back when the booking comes back.
+    let other =
+        log_slash_command(&db, "/zeit NP-8801/1020 15m PROJ-5 call", now(), &cet(), &Thresholds::default()).unwrap();
+    let oid = other.entry.id;
+    assert!(db.worklog_claim(oid).unwrap());
+    assert!(!delete(oid), "nothing posted yet");
+    db.worklog_posted(oid, "10050").unwrap();
+    let del = db.worklog_deletes_due(now()).unwrap();
+    assert_eq!(del.iter().map(|d| d.worklog_id.as_str()).collect::<Vec<_>>(), ["10050"]);
+    db.restore_time_entry(&other.entry).unwrap();
+    assert!(db.worklog_deletes_due(now()).unwrap().is_empty());
+    assert!(!db.worklog_delete_wanted(del[0].id).unwrap(), "a runner that read the list leaves it");
+    assert_eq!(link(oid).unwrap().2.as_deref(), Some("10050"));
+
+    // Only the same booking takes the link: another Vorgang (a chip edited meanwhile) does not.
+    let before = db.time_entry(oid).unwrap();
+    assert!(delete(oid));
+    let moved = TimeEntry { vorgang_nr: Some("1010".into()), ..before.clone() };
+    let fresh = db.restore_time_entry(&moved).unwrap();
+    assert_eq!(link(fresh.id), None);
+    assert_eq!(db.worklog_deletes_due(now()).unwrap().len(), 1, "its worklog still goes");
+    // A link kept for long goes.
+    db.issue_keep_link(fresh.id, now() + Duration::days(31)).unwrap();
+    let kept: i64 = db.conn().query_row("SELECT COUNT(*) FROM time_entry_issues_deleted", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 0);
+}
