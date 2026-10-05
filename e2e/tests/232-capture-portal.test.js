@@ -48,7 +48,7 @@ after(async () => {
   fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
-const log = () => fs.readFileSync(path.join(app.dataDir, "logs", "annalo.log"), "utf8");
+const log = () => fs.readFileSync(path.join(app.dataDir, "logs", "arcalo.log"), "utf8");
 
 test("with a hanging portal the app does not freeze after the start; capture opens on first use", async () => {
   app = await launch({ env: { DBUS_SESSION_BUS_ADDRESS: hangingPortalBus() } });

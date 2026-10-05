@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { Fingerprint, KeyRound, Lock, LogOut } from "lucide-react";
-import { AnnaloLogo } from "./Logo";
+import { ArcaloLogo } from "./Logo";
 import { Button, Input } from "./ui";
 import { WindowControls } from "./WindowControls";
 import { setLang, useT } from "../lib/i18n";
@@ -181,7 +181,7 @@ function LockScreen({ status, refresh }: { status: LockStatus; refresh: () => vo
       <div className="lock-drag" data-tauri-drag-region />
       <WindowControls />
       <form className="lock-card" onSubmit={submit}>
-        <AnnaloLogo size={44} className="lock-logo" />
+        <ArcaloLogo size={44} className="lock-logo" />
         <h1 id="lock-title" className="lock-title">
           {t("lock.title")}
         </h1>

@@ -189,7 +189,7 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
   // A slow start says where the time went (the app's start-up timing in its log).
   const took = Date.now() - started;
   if (took > 10000) {
-    const log = fs.readFileSync(path.join(dataDir, "logs", "annalo.log"), "utf8").split("\n");
+    const log = fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8").split("\n");
     console.log(`[e2e] the app took ${took} ms to start:\n${log.filter((l) => l.includes("[startup]")).join("\n")}`);
   }
 

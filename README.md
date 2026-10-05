@@ -383,7 +383,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 **Desktop**
 - Tray icon: open, stop the timer or restart the last booking, quick capture, quit; the tooltip shows the running timer (`NP-8801/1020 · 01:23`)
 - Startup animation: the logo draws itself while the app loads (Settings → Appearance → Startup animation)
-- Developer log: errors of the app, the AI, Git sync, backups and updates are written to `logs/annalo.log` in the data folder (rotated at 1 MB, secrets redacted) and shown under Settings → Logs (filter, copy, clear, open folder); About shows the errors of the last 7 days
+- Developer log: errors of the app, the AI, Git sync, backups and updates are written to `logs/arcalo.log` in the data folder (rotated at 1 MB, secrets redacted) and shown under Settings → Logs (filter, copy, clear, open folder); About shows the errors of the last 7 days
 - Taskbar jump list (Windows, right-click the taskbar button): today's note, new page, quick capture, search, stop the running timer or start the last one, and the recently edited pages
 - Custom title bar on Windows: the tabs sit at the top edge like in Obsidian, with the app's own window buttons (Settings → Appearance switches back to the system title bar)
 - Window backdrop on Windows 11: Mica or Acrylic (off by default) with an opacity slider (40–100 %), applied live and with every theme; Windows 10, macOS and Linux keep a solid window

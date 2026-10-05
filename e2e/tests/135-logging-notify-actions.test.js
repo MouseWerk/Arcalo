@@ -30,7 +30,7 @@ const openSection = async (id) => {
 /** Settings apply at once: waits until the change is stored. */
 const saveIfNeeded = () => settingsSettled(app);
 const notify = (op, arg = null) => app.invoke("notify_test", { op, arg });
-const logText = () => fs.readFileSync(path.join(app.dataDir, "logs", "annalo.log"), "utf8");
+const logText = () => fs.readFileSync(path.join(app.dataDir, "logs", "arcalo.log"), "utf8");
 const zipList = (file) => execFileSync("unzip", ["-Z1", file], { encoding: "utf8" }).split("\n").filter(Boolean);
 const zipCat = (file, name) => execFileSync("unzip", ["-p", file, name], { encoding: "utf8" });
 
@@ -74,7 +74,7 @@ test("Diagnosepaket erstellen writes a zip with version, settings without secret
   await app.waitText(".toast-title", /Diagnosepaket gespeichert/);
   assert.ok(fs.existsSync(file));
   const names = zipList(file);
-  for (const n of ["info.json", "settings.json", "README.txt", "logs/annalo.log"]) assert.ok(names.includes(n), `${n} in ${names}`);
+  for (const n of ["info.json", "settings.json", "README.txt", "logs/arcalo.log"]) assert.ok(names.includes(n), `${n} in ${names}`);
   const info = JSON.parse(zipCat(file, "info.json"));
   assert.equal(info.os, "linux");
   assert.ok(Number.isInteger(info.schema_version) && info.schema_version > 10, `schema ${info.schema_version}`);
@@ -83,7 +83,7 @@ test("Diagnosepaket erstellen writes a zip with version, settings without secret
   const all = names.map((n) => zipCat(file, n)).join("\n");
   for (const secret of ["ghp_e2eSecretToken135", "pw-e2e-135", "zipSecret999"]) assert.ok(!all.includes(secret), `${secret} in the bundle`);
   assert.match(zipCat(file, "settings.json"), /https:\/\/\*\*\*@git\.example\.com/);
-  assert.match(zipCat(file, "logs/annalo.log"), /E2E 1354 token=\*\*\*/);
+  assert.match(zipCat(file, "logs/arcalo.log"), /E2E 1354 token=\*\*\*/);
 });
 
 test("Datenschutz shows the file fallback when no Secret Service runs", async () => {

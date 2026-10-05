@@ -4,7 +4,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { FolderOpen, History, KeyRound, LogOut, ShieldAlert } from "lucide-react";
-import { AnnaloLogo } from "./Logo";
+import { ArcaloLogo } from "./Logo";
 import { Button, Segmented } from "./ui";
 import { setLang, useT } from "../lib/i18n";
 import { formatRecoveryInput, recoveryComplete, security, type GateStatus } from "../lib/security";
@@ -57,7 +57,7 @@ export function KeyGateApp() {
     <main className="keygate" aria-labelledby="keygate-title">
       <form className="keygate-card" onSubmit={submit}>
         <div className="keygate-head">
-          <AnnaloLogo size={36} />
+          <ArcaloLogo size={36} />
           <ShieldAlert size={20} className="keygate-badge" aria-hidden />
         </div>
         <h1 id="keygate-title">{wrong ? t("keygate.wrongTitle") : t("keygate.title")}</h1>

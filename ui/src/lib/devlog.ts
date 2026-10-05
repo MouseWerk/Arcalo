@@ -1,5 +1,5 @@
 // Developer log from the UI side: window errors, rejected promises, `console.error` and
-// error toasts go to `logs/annalo.log` (command `devlog_write`). Throttled so a render loop
+// error toasts go to `logs/arcalo.log` (command `devlog_write`). Throttled so a render loop
 // cannot flood the file: the same message at most once per 10 s, at most 50 lines a minute.
 
 import { api } from "./api";

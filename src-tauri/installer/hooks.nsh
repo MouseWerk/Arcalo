@@ -72,7 +72,7 @@ Var AnnaloFound
   ${If} $AnnaloDir != ""
   ${AndIf} $INSTDIR != $AnnaloDir
   ${AndIf} $R2 = 1
-    DetailPrint "Annalo found in $AnnaloDir: updating it in place"
+    DetailPrint "Earlier version found in $AnnaloDir: updating it in place"
     SetOutPath $AnnaloDir
     ; Created empty by the section before this hook; removed only while it is empty.
     RMDir $INSTDIR
@@ -82,7 +82,7 @@ Var AnnaloFound
 
 !macro NSIS_HOOK_POSTINSTALL
   ${If} $AnnaloFound = 1
-    DetailPrint "Removing the entries of Annalo"
+    DetailPrint "Removing the entries of the earlier version"
 
     ; Annalo stayed in a folder of its own: its program files go (the data is elsewhere), and
     ; the autostart entry follows the program file until the app renames it.

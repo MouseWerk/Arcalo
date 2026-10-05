@@ -6,7 +6,7 @@
 
 import { BalancePrefGroup } from "./settings/BalancePrefs";
 import { LicensesGroup } from "./settings/LicensesGroup";
-import { AnnaloLogo } from "../components/Logo";
+import { ArcaloLogo } from "../components/Logo";
 import { useEffect, useRef, useState, useLayoutEffect } from "react";
 import { Bell, CalendarRange, CheckCircle2, Compass, ChevronDown, ChevronRight, DatabaseBackup, Download, ExternalLink, Globe, Monitor, Eye, EyeOff, FolderInput, FolderOpen, FolderOutput, Keyboard, KeyRound, Languages, Loader2, Mic, Palette, PenLine, PlugZap, Plus, Power, RefreshCw, RotateCcw, ScrollText, Search, Server, Shield, SlidersHorizontal, Sparkles, Sun, Timer, Trash2, NotebookPen, Info, Ticket, Upload, X, XCircle } from "lucide-react";
 import { api, on } from "../lib/api";
@@ -1874,7 +1874,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
     <>
       <header className="settings-head about-head">
         <span className="about-mark">
-          <AnnaloLogo size={34} />
+          <ArcaloLogo size={34} />
         </span>
         <div>
           <h1>Arcalo</h1>

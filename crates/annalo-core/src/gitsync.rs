@@ -131,7 +131,7 @@ impl Default for GitSyncSettings {
             remote_url: String::new(),
             branch: "main".into(),
             author_name: "Arcalo".into(),
-            author_email: "annalo@localhost".into(),
+            author_email: "arcalo@localhost".into(),
             include_database: false,
             mode: SyncMode::WithBackup,
             sync_settings: false,

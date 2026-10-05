@@ -36,7 +36,7 @@
 
 .fr-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 52px; padding: 0 20px; flex: none; }
 .fr-brand { display: inline-flex; align-items: center; gap: 9px; font-size: var(--fs-md); font-weight: var(--fw-semibold); letter-spacing: -0.01em; color: var(--text); }
-.fr-brand .annalo-logo { color: var(--text); }
+.fr-brand .arcalo-logo { color: var(--text); }
 .fr-skip {
   display: inline-flex;
   align-items: center;
@@ -241,7 +241,7 @@
 .frv-local { position: absolute; inset: 0; display: grid; grid-template-rows: auto 120px auto; justify-items: center; align-content: center; }
 .frv-db { display: grid; justify-items: center; gap: 6px; width: 210px; padding: 18px 16px 14px; border-radius: 16px; border: 1px solid var(--border-strong); background: var(--bg-overlay); box-shadow: var(--shadow-lg); }
 .frv-db-icon { width: 46px; height: 46px; display: grid; place-items: center; border-radius: var(--r-lg); background: var(--accent-soft); color: var(--accent-text); }
-.frv-db-icon .annalo-logo { color: var(--accent-text); }
+.frv-db-icon .arcalo-logo { color: var(--accent-text); }
 .frv-db-name { font-family: var(--font-mono); font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .frv-db-sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success); }
 .frv-wires { width: 360px; height: 120px; overflow: visible; }

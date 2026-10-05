@@ -109,7 +109,7 @@ jobs:
           Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!Arcalo"
           # The start line in the log: Store mode recognized, and written to the real AppData
           # folder (write virtualization off for app.annalo.desktop, see AppxManifest.xml).
-          $log = "$data\logs\annalo.log"
+          $log = "$data\logs\arcalo.log"
           $deadline = (Get-Date).AddSeconds(90)
           while ((Get-Date) -lt $deadline -and -not ((Test-Path $log) -and (Select-String -Path $log -Pattern "\(Microsoft Store\)" -Quiet))) {
             Start-Sleep -Seconds 2

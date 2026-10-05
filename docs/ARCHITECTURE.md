@@ -1041,6 +1041,33 @@ quelle: "[[Konzept]]"
 | Function calling: PowerShell, Git, REST | `ai/tools.rs` | Every system call needs explicit user approval and runs off the async runtime with a 120 s timeout. git is limited to read-only subcommands with a neutral configuration (no system/global config, pager, hooks, fsmonitor, external diff or global attributes; `--no-textconv --no-ext-diff`); a repository whose own config names textconv/diff drivers, filters, fsmonitor, aliases or includes is refused |
 | Database views | Timesheet (week grid + entries), Projects (tables with budget, ETC, critical path) | Graphical network diagrams and graph views were dropped in favour of tables |
 
+## Names kept from Annalo
+
+The app was called Annalo until 1.6. Everything a user sees says Arcalo (guarded by
+`ui/src/lib/branding.test.ts` and `e2e/tests/250-branding.test.js`); only the one-time notice
+„Annalo heißt jetzt Arcalo“ names the old product. These internal names stay, because existing
+installs, other computers or tools depend on them:
+
+- App identifier `app.annalo.desktop`: data folder, WebView storage, Windows toasts (AUMID) and the
+  updater's install target are keyed by it. Crate and binary names (`annalo-core`, `annalo`,
+  `annalo_lib`, the CLI `annalo`): the updater and the NSIS hooks replace the program file in place.
+- Credential store service `Annalo` (`secrets.rs`): saved keys and tokens are found only under it.
+- Git sync: the `.gitattributes` marker `# Annalo Git-Synchronisierung`, the database copy
+  `annalo-workspace.db` and the fallback branch `annalo-sync-<host>` (computers on older versions
+  share the repository). Legacy markers of mirrors, portable copies and `annalo-…db` backups are
+  still recognised.
+- Formats and protocols: `annalo-mail://` links in notes, the `annalo-asset:`/`annalo-pac:`
+  schemes, the settings export format `annalo-settings`, DOM event names `annalo:*`,
+  `localStorage` keys `annalo.*`, theme ids `annalo-light`/`annalo-dark`, environment variables
+  `ANNALO_*` (the log level reads `ARCALO_LOG` first; `ANNALO_LOG` still works).
+- The update feed lists the old repository URLs as fallbacks (GitHub redirects them).
+- `docs/brand/annalo-*` file names (packaging scripts and pinned package URLs point at them).
+
+Renamed in 1.13: the word in the start-up animation, the logo component (`ArcaloLogo`, class
+`arcalo-logo`), the developer log (`logs/arcalo.log`, `arcalo.jsonl`; files of older versions are
+renamed at start), the default Git author (`Arcalo <arcalo@localhost>`; stored defaults of older
+versions are migrated) and the installer's detail lines.
+
 ## Verification status
 
 - `annalo-core`: unit and integration tests (including fake LiteLLM, Ollama, OpenAI-compatible and Azure servers); `cargo clippy` clean.

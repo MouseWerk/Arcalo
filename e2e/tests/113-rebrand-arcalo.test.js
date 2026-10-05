@@ -19,7 +19,7 @@ let before16;
 
 const notices = () =>
   app.browser.execute(() => [...document.querySelectorAll(".toast")].filter((t) => /Annalo heißt jetzt Arcalo/.test(t.textContent)).length);
-const log = () => fs.readFileSync(path.join(dataDir, "logs", "annalo.log"), "utf8");
+const log = () => fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8");
 const titles = async () => (await app.invoke("workspace_tree")).map((p) => p.title);
 // The autostart entry of the old name, as auto-launch wrote it for Annalo 1.6.
 const oldAutostart = () => path.join(home, ".config", "autostart", "Annalo.desktop");

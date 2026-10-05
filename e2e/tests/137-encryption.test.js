@@ -34,7 +34,7 @@ const killApp = () => {
 };
 const log = () => {
   try {
-    return fs.readFileSync(path.join(dataDir, "logs", "annalo.log"), "utf8");
+    return fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8");
   } catch {
     return "";
   }

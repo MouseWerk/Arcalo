@@ -117,7 +117,7 @@ export function parseSettingsImport(text: string, current: Settings): ImportResu
   if (kind(raw) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
   let obj = raw as Record<string, unknown>;
   if ("format" in obj || "settings" in obj) {
-    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: t("sio.notAnnalo") };
+    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: t("sio.notSettingsFile") };
     if (typeof obj.version === "number" && obj.version > EXPORT_VERSION) return { settings: null, warnings: [], error: t("sio.newer") };
     if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
     obj = obj.settings as Record<string, unknown>;

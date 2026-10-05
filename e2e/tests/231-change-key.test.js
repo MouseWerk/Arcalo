@@ -22,7 +22,7 @@ const ENV = { ANNALO_BACKUP_DELAY_SECS: "3600", ANNALO_SECRET_STORE: "file" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = () => {
   try {
-    return fs.readFileSync(path.join(dataDir, "logs", "annalo.log"), "utf8");
+    return fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8");
   } catch {
     return "";
   }
