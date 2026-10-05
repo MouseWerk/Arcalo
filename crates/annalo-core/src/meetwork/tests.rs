@@ -518,6 +518,8 @@ fn status_report_per_scope_and_period() {
         .unwrap();
         let b = db.create_page(None, "Anderes", None).unwrap();
         db.save_page_content(b.id, "Nichts zum Projekt.\n").unwrap();
+        // The notes were changed in the report's week, whatever day the test runs.
+        db.conn().execute("UPDATE pages SET updated_at = '2026-10-01T08:00:00Z'", []).unwrap();
         // Hours: two this week (one booked from the note), one last week.
         entry(&db, np.id, Some("1020"), "DEV", berlin(2026, 9, 29, 9, 0), 120, Some(a.id));
         entry(&db, np.id, Some("1020"), "DEV", berlin(2026, 9, 30, 9, 0), 60, None);
