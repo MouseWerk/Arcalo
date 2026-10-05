@@ -542,6 +542,51 @@ fn task_set_done(
     Ok(())
 }
 
+/// Changes tasks of any pages at once (Aufgaben: bulk actions, the task menu); returns what
+/// `tasks_undo` takes back.
+#[tauri::command(async)]
+fn tasks_edit(
+    app: AppHandle,
+    state: State<AppState>,
+    refs: Vec<annalo_core::taskedit::TaskRef>,
+    edit: annalo_core::taskedit::TaskEdit,
+) -> Result<annalo_core::taskedit::TaskChange> {
+    let change = state.db().edit_tasks(&refs, &edit, chrono::Local::now().date_naive())?;
+    for p in &change.pages {
+        let _ = app.emit("data://tasks", p.page_id);
+    }
+    if !change.entries.is_empty() {
+        let _ = app.emit("data://entries", ());
+    }
+    Ok(change)
+}
+
+#[tauri::command(async)]
+fn tasks_undo(app: AppHandle, state: State<AppState>, change: annalo_core::taskedit::TaskChange) -> Result<()> {
+    state.db().undo_task_change(&change)?;
+    for p in &change.pages {
+        let _ = app.emit("data://tasks", p.page_id);
+    }
+    if !change.entries.is_empty() {
+        let _ = app.emit("data://entries", ());
+    }
+    Ok(())
+}
+
+/// The next due date of a repeating task done today (its text after the checkbox); the editor
+/// adds the next occurrence itself.
+#[tauri::command]
+fn task_next_due(text: String) -> Option<String> {
+    annalo_core::taskedit::next_due_of(&text, chrono::Local::now().date_naive())
+}
+
+/// The next due dates of a rule, for the repeat dialog.
+#[tauri::command]
+fn task_recur_preview(recur: annalo_core::recurrence::Recurrence, due: Option<String>) -> Vec<String> {
+    let due = due.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
+    recur.preview(due, chrono::Local::now().date_naive(), 3).iter().map(|d| d.format("%Y-%m-%d").to_string()).collect()
+}
+
 #[tauri::command(async)]
 fn search_workspace(state: State<AppState>, query: String, limit: Option<usize>) -> Result<Vec<SearchHit>> {
     search::search(&state.reader(), &query, limit.unwrap_or(30))
@@ -4695,6 +4740,10 @@ pub fn run() {
             tag_pages,
             tasks_list,
             task_set_done,
+            tasks_edit,
+            tasks_undo,
+            task_next_due,
+            task_recur_preview,
             search_workspace,
             vault_import,
             vault_import_cancel,

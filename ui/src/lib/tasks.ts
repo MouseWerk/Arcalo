@@ -1,7 +1,8 @@
 // Task view helpers: due-date groups and [[link]]/#tag segments of a task text.
 
-import { addDays, isoDay, weekStart } from "./format";
+import { addDays, fmtDate, isoDay, weekdayLabels, weekStart } from "./format";
 import { t, type TKey } from "./i18n";
+import type { Recurrence } from "./types";
 
 export type TaskGroup = "overdue" | "today" | "week" | "later" | "none";
 
@@ -71,4 +72,55 @@ export function taskSegments(text: string): TaskSegment[] {
   }
   push(text.slice(at));
   return out;
+}
+
+// ---- repeating tasks and bulk selection (1.13)
+
+/** A short label of a repeat rule: „Wöchentlich · Mo, Mi“, „Alle 3 Tage · bis 31.12.2026“. */
+export function recurLabel(r: Recurrence): string {
+  const n = Math.max(1, r.interval);
+  const key: Record<Recurrence["unit"], TKey> = { day: "tasks.recur.everyDays", week: "tasks.recur.everyWeeks", month: "tasks.recur.everyMonths", year: "tasks.recur.everyYears" };
+  const parts = [t(key[r.unit], { n })];
+  if (r.unit === "week" && r.weekdays.length) {
+    const names = weekdayLabels(1);
+    parts.push(r.weekdays.length === 5 && r.weekdays.every((d, i) => d === i) ? t("tasks.recur.workdays") : r.weekdays.map((d) => names[d]).join(", "));
+  }
+  if (r.unit === "month" && r.month_day) parts.push(t("tasks.recur.onDay", { d: r.month_day }));
+  if (r.when_done) parts.push(t("tasks.recur.whenDone"));
+  if (r.until) parts.push(t("tasks.recur.until", { date: fmtDate(`${r.until}T12:00:00`) }));
+  return parts.join(" · ");
+}
+
+const WEEKDAY_SPEC = ["mo", "tu", "we", "th", "fr", "sa", "su"];
+
+/** The rule as the note shows it (`every:2w,mo,we until:2026-12-31`), as the core writes it. */
+export function recurTokens(r: Recurrence): string {
+  const n = Math.max(1, r.interval);
+  const parts: string[] = [];
+  if (r.unit === "day") parts.push(n === 1 ? "daily" : `${n}d`);
+  else if (r.unit === "week" && !r.weekdays.length) parts.push(n === 1 ? "weekly" : `${n}w`);
+  else if (r.unit === "week") parts.push(...(n > 1 ? [`${n}w`] : []), ...r.weekdays.map((d) => WEEKDAY_SPEC[d]));
+  else if (r.unit === "month") parts.push(n === 1 ? "monthly" : `${n}m`, ...(r.month_day ? [String(r.month_day)] : []));
+  else parts.push(n === 1 ? "yearly" : `${n}y`);
+  if (r.when_done) parts.push("done");
+  return `every:${parts.join(",")}${r.until ? ` until:${r.until}` : ""}`;
+}
+
+/** Monday after the week of `now` (for „Nächste Woche“). */
+export const nextMonday = (now: Date) => addDays(weekStart(now, 1), 7);
+
+/**
+ * The selection after a click on `key` in the list `order`: plain toggles one, `range` selects
+ * from the anchor to it (adding to the selection), as in file managers.
+ */
+export function selectClick(sel: ReadonlySet<string>, order: readonly string[], key: string, anchor: string | null, range: boolean): Set<string> {
+  const next = new Set(sel);
+  if (range && anchor != null && order.includes(anchor)) {
+    const [a, b] = [order.indexOf(anchor), order.indexOf(key)].sort((x, y) => x - y);
+    for (const k of order.slice(a, b + 1)) next.add(k);
+    return next;
+  }
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
 }

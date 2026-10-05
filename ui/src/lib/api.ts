@@ -69,6 +69,12 @@ export const api = {
   tasks: (filter: T.TaskFilter = {}) => call<T.Task[]>("tasks_list", { filter }),
   setTaskDone: (pageId: number, ordinal: number, done: boolean, expectedText?: string) =>
     call<void>("task_set_done", { pageId, ordinal, done, expectedText: expectedText ?? null }),
+  /** Changes tasks of any pages at once; the result undoes it with `tasksUndo`. */
+  tasksEdit: (refs: T.TaskRef[], edit: T.TaskEdit) => call<T.TaskChange>("tasks_edit", { refs, edit }),
+  tasksUndo: (change: T.TaskChange) => call<void>("tasks_undo", { change }),
+  /** Next due date of a repeating task done today (its Markdown after the checkbox), or null. */
+  taskNextDue: (text: string) => call<string | null>("task_next_due", { text }),
+  taskRecurPreview: (recur: T.Recurrence, due: string | null) => call<string[]>("task_recur_preview", { recur, due }),
   search: (query: string, limit = 30) => call<T.SearchHit[]>("search_workspace", { query, limit }),
   importVault: (path: string) => call<T.ImportReport>("vault_import", { path }),
   cancelVaultImport: () => call<void>("vault_import_cancel"),

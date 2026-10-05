@@ -2,7 +2,7 @@
 // block, a progress ring, hours and dates in the chosen format.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarPlus, Pause, Play, Square, type LucideIcon } from "lucide-react";
+import { CalendarPlus, Pause, Play, Repeat, Square, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
 import { clock, fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
@@ -10,6 +10,7 @@ import { t } from "../../lib/i18n";
 import type { Page, Task, TimeEntryRow } from "../../lib/types";
 import { Badge, Button, IconButton, Spinner } from "../ui";
 import { openPlanPicker, setPlanData, type PlanItem } from "../../lib/blocks";
+import { recurLabel } from "../../lib/tasks";
 import { PageIcon } from "../icons";
 import { stopTimer, toggleTimerPause, useTimerSeconds } from "../Sidebar";
 
@@ -107,7 +108,7 @@ export function PageRows({ pages, when }: { pages: Page[]; when?: boolean }) {
 }
 
 /** A task with its checkbox; `onDone` after it was ticked off. */
-export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task, "page_id" | "page_title" | "ordinal" | "text" | "due" | "priority">; today: string; page?: boolean; onDone: () => void }) {
+export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task, "page_id" | "page_title" | "ordinal" | "text" | "due" | "priority"> & Partial<Pick<Task, "recur">>; today: string; page?: boolean; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [gone, setGone] = useState(false);
   const done = async () => {
@@ -130,6 +131,12 @@ export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task,
       <button type="button" role="checkbox" aria-checked={gone} aria-label={t("dash.taskDone", { text: task.text })} className="dw-check" disabled={busy || gone} onClick={done} />
       <button type="button" className="dw-task-text" onClick={(e) => s().openPage(task.page_id, { newTab: e.ctrlKey || e.metaKey })} title={task.page_title}>
         <span className="grow ellipsis">{text}</span>
+        {task.recur && (
+          <span className="dw-task-recur" title={t("tasks.recur.aria", { label: recurLabel(task.recur) })}>
+            <Repeat size={12} aria-hidden />
+            <span className="sr-only">{t("tasks.recur.aria", { label: recurLabel(task.recur) })}</span>
+          </span>
+        )}
         {page && <span className="faint dw-task-page ellipsis">{task.page_title}</span>}
         {task.priority >= 2 && <Badge tone="warning">{t("dash.prioHigh")}</Badge>}
         {overdue ? <Badge tone="danger">{t("dash.overdue")}</Badge> : task.due && task.due !== today ? <span className="faint num dw-when">{dayLabel(task.due)}</span> : null}
