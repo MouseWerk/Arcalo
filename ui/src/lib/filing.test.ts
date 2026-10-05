@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PageNode } from "./types";
-import { filterIds, folderOptions, fuzzyScore, pickFolders, isWithin, rangeIds, sortNodes, topSelected, typeFiling } from "./filing";
+import { filterIds, folderOptions, fuzzyScore, pickFolders, isWithin, rangeIds, renameProblem, sortNodes, topSelected, typeFiling } from "./filing";
 import { examplePath, isoWeek, monthFolder } from "../views/settings/FilingSection";
 
 const node = (id: number, title: string, children: PageNode[] = [], extra: Partial<PageNode> = {}): PageNode => ({
@@ -113,5 +113,18 @@ describe("settings examples", () => {
     expect(examplePath("Besprechungen", "week", null, d, (n) => `KW ${n}`)).toBe("Besprechungen / 2026 / KW 40");
     expect(typeFiling(undefined, "voice")).toEqual({ folder: "", granularity: "month" });
     expect(typeFiling({ types: { jira: { folder: "J", granularity: "year" } }, rules: [] }, "jira").granularity).toBe("year");
+  });
+});
+
+describe("renameProblem (rename in the tree)", () => {
+  const pages = new Map([
+    [1, { id: 1, title: "Angebot Süd" }],
+    [2, { id: 2, title: "Protokoll" }],
+  ]);
+  it("refuses an empty name and one another page has (any case), allows the page's own", () => {
+    expect(renameProblem(2, "   ", pages)).toMatch(/leer|empty/);
+    expect(renameProblem(2, " angebot süd ", pages)).toContain("Angebot Süd");
+    expect(renameProblem(1, "ANGEBOT SÜD", pages)).toBeNull();
+    expect(renameProblem(2, "Protokoll 2", pages)).toBeNull();
   });
 });

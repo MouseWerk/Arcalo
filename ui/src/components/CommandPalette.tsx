@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply,
-  Copy, Pause,
+  Copy, Pause, Pin, PinOff,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
@@ -16,6 +16,7 @@ import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
 import { PageIcon } from "./icons";
+import { tabTitle } from "./Shell";
 import { createSubpage } from "../views/PageView";
 import { createCanvas } from "../views/canvas/create";
 import { requestAddProperty } from "../views/PageProperties";
@@ -70,6 +71,8 @@ export function CommandPalette() {
   const initial = useApp((s) => s.paletteQuery);
   const pages = useApp((s) => s.pages);
   const timer = useApp((s) => s.timer);
+  // The tab the palette was opened over („Tab anheften“ names it).
+  const activeTabObj = useApp((s) => s.tabs.find((x) => x.id === s.activeTabId) ?? null);
   const timeOn = useTimeTracking();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -221,6 +224,9 @@ export function CommandPalette() {
         : []),
       { id: "newtab", title: t("cmd.newTab"), icon: ic(Plus), hint: hint("new_tab"), run: () => s().openTab({ kind: "home" }, { newTab: true }) },
       { id: "split", title: t("cmd.split"), icon: ic(Columns2), run: () => s().activeTabId && s().splitTab(s().activeTabId) },
+      ...(activeTabObj
+        ? [{ id: "pin-tab", title: activeTabObj.pinned ? t("tabs.unpin") : t("tabs.pin"), subtitle: tabTitle(activeTabObj, pages), icon: ic(activeTabObj.pinned ? PinOff : Pin), hint: hint("pin_tab"), run: () => s().togglePin(activeTabObj.id) }]
+        : []),
       { id: "search", title: t("cmd.search"), icon: ic(Search), hint: hint("search"), run: () => { if (!s().sidebarOpen) { s().set({ sidebarOpen: true }); savePref("annalo.sidebar", true); } setTimeout(() => window.dispatchEvent(new Event("annalo:sidebar-search")), 30); } },
       { id: "back", title: t("cmd.back"), icon: ic(ArrowLeft), hint: hint("back"), run: () => s().goBack() },
       { id: "forward", title: t("cmd.forward"), icon: ic(ArrowRight), hint: hint("forward"), run: () => s().goForward() },
@@ -343,7 +349,7 @@ export function CommandPalette() {
     if (tagHits) out.unshift({ id: "tag", section: t("palette.tags"), title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, pages, hits, mode, timer, lang, timeOn]);
+  }, [query, pages, hits, mode, timer, lang, timeOn, activeTabObj]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {

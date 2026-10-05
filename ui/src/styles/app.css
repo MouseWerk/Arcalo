@@ -267,6 +267,14 @@ button.side-section-title:hover { color: var(--text-2); }
 .tree-count { font-size: var(--fs-xs); color: var(--text-3); }
 .tree-row-actions { display: none; }
 .tree-row:hover .tree-row-actions { display: flex; }
+/* ---- rename in the tree (1.13) ----
+   The title becomes a field in place (its text stays where it was); a message about the name
+   hangs under the row. */
+.tree-rename { flex: 1; min-width: 0; height: calc(var(--tree-row-h, 28px) - 6px); margin: 0 -1px 0 -5px; padding: 0 4px; border: 1px solid var(--border-focus); border-radius: var(--r-xs); background: var(--bg-input); color: var(--text); font: inherit; outline: none; box-shadow: var(--focus-halo); user-select: text; }
+.tree-rename[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.tree-rename-msg { position: absolute; top: calc(100% + 2px); left: 6px; right: 6px; z-index: var(--z-inline); padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-overlay); color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-normal); line-height: 1.4; white-space: normal; box-shadow: var(--shadow-md); }
+.tree-rename-msg.is-error { border-color: var(--danger); color: var(--text); }
+.tree-row.renaming, .tree-row.renaming:hover { background: var(--bg-current); }
 .tree-row.drop-inside { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .tree-row.drop-before::before, .tree-row.drop-after::after {
   content: "";
@@ -802,12 +810,25 @@ button.side-section-title:hover { color: var(--text-2); }
 .netzplan-budget { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .netzplan-actions { display: flex; gap: 2px; }
 
-/* The fixed columns take 616 px: the name keeps at least 220 px, the table scrolls sideways
-   in narrow panes with the name pinned. */
-.vorgaenge { table-layout: fixed; min-width: 836px; }
+/* The fixed columns take 644 px (the last one holds the three row buttons): the name keeps at
+   least 220 px, the table scrolls sideways in narrow panes with the name pinned. */
+.vorgaenge { table-layout: fixed; min-width: 864px; }
 .vorgaenge th:first-child, .vorgaenge td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-raised); }
 .vorgaenge tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
 .vorgaenge td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---- tables in narrow panes (1.13) ----
+   Hidden columns show as a shadow on that edge (on the left behind the pinned name column);
+   on the right a small round button pages there. The box is one Tab stop: arrows scroll it. */
+.side-scroll { position: relative; }
+.side-scroll::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 28px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--scroll-shadow)); opacity: 0; transition: opacity var(--dur-fast); }
+.side-scroll.more-right::after { opacity: 1; }
+.side-scroll.more-left .vorgaenge :is(th, td):first-child { box-shadow: 8px 0 8px -6px var(--scroll-shadow); }
+.side-scroll > .table-wrap:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.side-scroll-more { position: absolute; top: 6px; right: 6px; z-index: 2; width: var(--ctl-xs); height: var(--ctl-xs); display: grid; place-items: center; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--bg-overlay); color: var(--text-2); box-shadow: var(--shadow-sm); cursor: pointer; }
+.side-scroll-more:hover { color: var(--text); border-color: var(--border-focus); }
+/* A very narrow pane: the pinned name column gives up room (120 px instead of 220 px), so the
+   scrolled columns can be seen beside it. */
+@container pane (max-width: 520px) { .vorgaenge { min-width: 764px; } }
 .vg-nr { display: inline-block; min-width: 38px; }
 .crit { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); font-size: var(--fs-xs); font-weight: var(--fw-medium); margin-left: 6px; }
 .crit::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -3779,6 +3800,22 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .tab.active { padding-right: 28px; }
 .tab-close { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
 .tab:not(.active):hover .tab-title { mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent calc(100% - 18px)); }
+
+/* ---- pinned tabs (1.13) ---- */
+/* Compact: the icon and a short title, a small pin where the close button sits; a hairline
+   separates them from the other tabs. In a narrow pane only the icon stays. */
+.tabbar { container: tabbar / inline-size; }
+.tab.pinned, .tab.pinned.active { gap: 5px; padding: 0 4px 0 8px; }
+.tab.pinned .tab-title { flex: 0 1 auto; max-width: 8ch; }
+.tab-pin { width: 18px; height: 18px; display: grid; place-items: center; flex: none; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-3); }
+.tab.pinned.active .tab-pin { color: var(--text-2); }
+.tab-pin:hover { background: var(--bg-active); color: var(--text); }
+.tab.pinned + .tab:not(.pinned) { margin-left: 4px; }
+.tab.pinned + .tab:not(.pinned):not(.drop-before)::before { content: ""; position: absolute; left: -4px; top: 8px; bottom: 8px; width: 1px; background: var(--border); }
+@container tabbar (max-width: 560px) {
+  .tab.pinned .tab-title { display: none; }
+  .tab.pinned, .tab.pinned.active { padding: 0 3px 0 8px; gap: 2px; }
+}
 
 /* ---- attachments (1.12): files kept for old versions or a stored e-mail ---- */
 .att-unused.is-kept { background: var(--info-soft); color: var(--info); }

@@ -25,6 +25,9 @@ export const COMMANDS: CommandDef[] = [
   { id: "search", label: "cmd.search", combo: "Ctrl+Shift+F" },
   { id: "new_tab", label: "cmd.newTab", combo: "Ctrl+T" },
   { id: "close_tab", label: "cmd.closeTab", combo: "Ctrl+W" },
+  // No default: no free combo says „anheften“ (Ctrl+Shift+P presents, Ctrl+Shift+K is the usual
+  // global palette); it can be set in Settings → Tastatur.
+  { id: "pin_tab", label: "cmd.pinTab", combo: "" },
   { id: "next_tab", label: "cmd.nextTab", combo: "Ctrl+Tab" },
   { id: "prev_tab", label: "cmd.prevTab", combo: "Ctrl+Shift+Tab" },
   { id: "back", label: "cmd.back", combo: "Alt+ArrowLeft" },

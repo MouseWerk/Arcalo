@@ -3,7 +3,7 @@
 // ancestors, the fuzzy folder picker and range selection.
 
 import { invoke } from "@tauri-apps/api/core";
-import { currentLang, type Lang } from "./i18n";
+import { currentLang, t, type Lang } from "./i18n";
 import type { Page, PageNode } from "./types";
 
 export type FileType = "journal" | "meeting" | "voice" | "jira" | "mail" | "bookmarks" | "inbox" | "canvas";
@@ -243,4 +243,14 @@ export function topSelected(selected: Iterable<number>, parentOf: (id: number) =
     }
     return true;
   });
+}
+
+/** Why `title` cannot name page `id` (empty, or another page has it, as the core checks it:
+ *  case-insensitive), or null. Renaming in the tree shows it under the field. */
+export function renameProblem(id: number, title: string, pages: Map<number, { id: number; title: string }>): string | null {
+  const name = title.trim();
+  if (!name) return t("sb.renameEmpty");
+  const lower = name.toLowerCase();
+  for (const p of pages.values()) if (p.id !== id && p.title.toLowerCase() === lower) return t("sb.renameTaken", { title: p.title });
+  return null;
 }

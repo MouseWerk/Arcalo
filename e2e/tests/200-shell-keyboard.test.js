@@ -109,7 +109,7 @@ test("a toast that appears under the resting pointer still closes", async () => 
   });
 });
 
-test("Entf on one page moves it to the trash; F2 opens it with the title selected", async () => {
+test("Entf on one page moves it to the trash; F2 renames it in its row with the name selected", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Einzeln weg", icon: null, content: "x\n" });
   const other = await app.invoke("page_create", { parentId: null, title: "Umbenennen per F2", icon: null, content: "x\n" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
@@ -119,13 +119,15 @@ test("Entf on one page moves it to the trash; F2 opens it with the title selecte
   await app.browser.waitUntil(async () => (await app.invoke("trash_list")).some((t) => t.id === page.id), { timeoutMsg: "Entf did not delete the page" });
   await app.browser.execute((sel) => document.querySelector(sel).focus(), treeRow(other.id));
   await app.keys("F2");
+  // 1.13: F2 renames in place in the tree row (e2e 281 covers saving); the name is selected.
   await app.browser.waitUntil(
-    async () => app.browser.execute(() => {
-      const t = document.querySelector(".pane.active .page-title");
+    async () => app.browser.execute((sel) => {
+      const t = document.querySelector(`${sel} .tree-rename`);
       return !!t && document.activeElement === t && t.selectionEnd - t.selectionStart === t.value.length && t.value === "Umbenennen per F2";
-    }),
-    { timeoutMsg: "F2 did not select the title" },
+    }, treeRow(other.id)),
+    { timeoutMsg: "F2 did not select the name" },
   );
+  await app.keys("Escape");
 });
 
 test("the tab bar is one tab list: arrows, Home and End move, the close buttons are no Tab stops", async () => {

@@ -29,15 +29,36 @@ export function RightPanel() {
   ];
   return (
     <aside className="panel" aria-label={tr("panel.label")}>
-      <div className="panel-tabs" role="tablist" data-tauri-drag-region>
-        {tabs.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`panel-tab ${tab === t.id ? "active" : ""}`} title={t.label} onClick={() => s().set({ panelTab: t.id })}>
+      <div className="panel-tabs" role="tablist" aria-label={tr("panel.tabs")} data-tauri-drag-region>
+        {tabs.map((t, i) => (
+          <button
+            key={t.id}
+            id={`panel-tab-${t.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            aria-controls="panel-body"
+            className={`panel-tab ${tab === t.id ? "active" : ""}`}
+            title={t.label}
+            // One Tab stop for the strip; the arrows, Home and End switch the view (as the sidebar's).
+            tabIndex={tab === t.id ? 0 : -1}
+            onClick={() => s().set({ panelTab: t.id })}
+            onKeyDown={(e) => {
+              const to = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+              if (to == null) return;
+              e.preventDefault();
+              const next = tabs[(to + tabs.length) % tabs.length];
+              s().set({ panelTab: next.id });
+              const strip = e.currentTarget.parentElement;
+              requestAnimationFrame(() => strip?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+            }}
+          >
             <t.icon size={14} strokeWidth={1.75} />
             <span>{t.label}</span>
           </button>
         ))}
       </div>
-      <div className="panel-body">
+      <div className="panel-body" id="panel-body" role="tabpanel" aria-labelledby={`panel-tab-${tab}`}>
         <div hidden={tab !== "assistant"} className="panel-fill">
           <AssistantPanel />
         </div>

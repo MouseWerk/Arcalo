@@ -157,6 +157,8 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.07);
+  /* The edge of a sideways-scrolling area that hides more content (tables in narrow panes). */
+  --scroll-shadow: rgb(0 0 0 / 0.4);
   /* Canvas boards: background, cards, edges and the JSON Canvas preset colors 1–6. */
   --cv-bg: #141518;
   --cv-card: #1c1d21;
@@ -220,6 +222,7 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.06);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.16), 0 0 0 1px rgb(0 0 0 / 0.07);
+  --scroll-shadow: rgb(0 0 0 / 0.12);
   --cv-bg: #f7f7f8;
   --cv-card: #ffffff;
   --cv-card-border: rgb(15 15 20 / 0.12);

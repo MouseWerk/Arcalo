@@ -12,6 +12,7 @@ import { compact, h1, parseGermanNumber } from "../lib/format";
 import { LEVEL, useWbs } from "./wbs";
 import type { NetzplanOverview, NetzplanTree, ProjectTree, Vorgang } from "../lib/types";
 import { useT } from "../lib/i18n";
+import { SideScroll } from "../components/SideScroll";
 
 export { LEVEL };
 
@@ -192,7 +193,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
         </div>
       </div>
       {netzplan.vorgaenge.length > 0 && (
-        <div className="table-wrap">
+        <SideScroll label={t("proj.tableScroll")} moreLabel={t("proj.moreColumns")}>
           <table className="table vorgaenge">
             <colgroup>
               <col />
@@ -202,7 +203,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
               <col style={{ width: 72 }} />
               <col style={{ width: 104 }} />
               <col style={{ width: 100 }} />
-              <col style={{ width: 64 }} />
+              <col style={{ width: 92 }} />
             </colgroup>
             <thead>
               <tr>
@@ -258,7 +259,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
               })}
             </tbody>
           </table>
-        </div>
+        </SideScroll>
       )}
       {menu}
     </div>
