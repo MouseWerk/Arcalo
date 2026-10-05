@@ -1,7 +1,7 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
 import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Plus, Timer, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "./ui";
 import { TIME_TABS, useTimeTracking } from "../lib/timetracking";
@@ -15,7 +15,7 @@ import { storeFile } from "../lib/api";
 import { isPdfName } from "../editor/fileEmbed";
 import { lazyView, preloadWhenIdle } from "./lazyView";
 import { t, useT } from "../lib/i18n";
-import { withHint } from "../lib/keymap";
+import { hint, withHint } from "../lib/keymap";
 
 // Views other than pages load when first opened (a smaller script at start), or in the
 // background once the app is idle.
@@ -286,13 +286,17 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
         onSelect: () => s().moveTab(t.id, p.id, p.tabs.length),
       })),
       { label: tr("tabs.duplicate"), icon: Copy, onSelect: () => s().duplicateTab(t.id) },
+      { label: t.pinned ? tr("tabs.unpin") : tr("tabs.pin"), icon: t.pinned ? PinOff : Pin, shortcut: hint("pin_tab") || undefined, onSelect: () => s().togglePin(t.id) },
       "separator",
-      { label: tr("tabs.moveLeft"), icon: ArrowLeft, disabled: i <= 0, onSelect: () => s().moveTab(t.id, pane.id, i - 1) },
-      { label: tr("tabs.moveRight"), icon: ArrowRight, disabled: i >= pane.tabs.length - 1, onSelect: () => s().moveTab(t.id, pane.id, i + 2) },
+      // Moving stays inside the tab's group (pinned or not).
+      { label: tr("tabs.moveLeft"), icon: ArrowLeft, disabled: i <= 0 || !!pane.tabs[i - 1].pinned !== !!t.pinned, onSelect: () => s().moveTab(t.id, pane.id, i - 1) },
+      { label: tr("tabs.moveRight"), icon: ArrowRight, disabled: i >= pane.tabs.length - 1 || !!pane.tabs[i + 1].pinned !== !!t.pinned, onSelect: () => s().moveTab(t.id, pane.id, i + 2) },
       "separator",
       { label: tr("tabs.close"), icon: X, onSelect: () => s().closeTab(t.id) },
-      { label: tr("tabs.closeOthers"), onSelect: () => s().closeOthers(t.id), disabled: pane.tabs.length < 2 },
-      { label: tr("tabs.closeRight"), onSelect: () => pane.tabs.slice(i + 1).forEach((x) => s().closeTab(x.id)), disabled: i >= pane.tabs.length - 1 },
+      // Pinned tabs stay: „Andere“, „rechts“ and „Alle“ close only the unpinned ones.
+      { label: tr("tabs.closeOthers"), onSelect: () => s().closeOthers(t.id), disabled: !pane.tabs.some((x) => x.id !== t.id && !x.pinned) },
+      { label: tr("tabs.closeRight"), onSelect: () => pane.tabs.slice(i + 1).forEach((x) => !x.pinned && s().closeTab(x.id)), disabled: !pane.tabs.slice(i + 1).some((x) => !x.pinned) },
+      { label: tr("tabs.closeAll"), onSelect: () => s().closeAll(pane.id), disabled: !pane.tabs.some((x) => !x.pinned) },
     ];
   };
   // The active tab stays in view when there are more tabs than room.
@@ -325,6 +329,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       el.removeEventListener("scroll", edges);
     };
   }, [pane.activeTabId, pane.tabs.length]);
+  const pinnedCount = pane.tabs.filter((t) => t.pinned).length;
   const allTabs = (): MenuEntry[] =>
     pane.tabs.map((t) => ({ label: tabTitle(t, pages), checked: t.id === pane.activeTabId, onSelect: () => s().activateTab(t.id) }));
 
@@ -345,6 +350,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
         aria-label={tr("tabs.openTabs")}
         data-tauri-drag-region
         ref={tabsRef}
+        // Pinned tabs take only their compact width; the others share the rest as before.
+        style={pinnedCount ? { gridTemplateColumns: `repeat(${pinnedCount}, max-content)` } : undefined}
         // The mouse wheel scrolls the tab row sideways.
         onWheel={(e) => {
           if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
@@ -358,7 +365,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
               key={t.id}
               role="tab"
               aria-selected={selected}
-              className={`tab ${selected ? "active" : ""} ${dropAt === i ? "drop-before" : ""} ${dropAt === pane.tabs.length && i === pane.tabs.length - 1 ? "drop-after" : ""}`}
+              className={`tab ${selected ? "active" : ""} ${t.pinned ? "pinned" : ""} ${dropAt === i ? "drop-before" : ""} ${dropAt === pane.tabs.length && i === pane.tabs.length - 1 ? "drop-after" : ""}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(TAB_MIME, t.id);
@@ -372,7 +379,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
               onDragOver={(e) => onDragOver(e, i, true)}
               onDrop={(e) => onDrop(e, i, true)}
               onMouseDown={(e) => e.button === 0 && s().activateTab(t.id)}
-              onAuxClick={(e) => e.button === 1 && s().closeTab(t.id)}
+              // A pinned tab is not closed by a stray middle click (Delete, Ctrl+W and the menu do).
+              onAuxClick={(e) => e.button === 1 && !t.pinned && s().closeTab(t.id)}
               onContextMenu={(e) => openMenu(e, tabMenu(t))}
               tabIndex={selected ? 0 : -1}
               onKeyDown={(e) => {
@@ -391,24 +399,39 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
                   openMenuAt(e, tabMenu(t));
                 }
               }}
-              title={title}
-              aria-label={title}
+              title={t.pinned ? tr("tabs.pinnedLabel", { title }) : title}
+              aria-label={t.pinned ? tr("tabs.pinnedLabel", { title }) : title}
             >
               <span className="tab-icon">
                 <TabIcon t={t} />
               </span>
               <span className="tab-title">{title}</span>
-              <button
-                type="button"
-                className="tab-close"
-                aria-label={tr("tabs.closeTab")}
-                // Not a Tab stop of its own: Delete closes the focused tab, the menu offers it too.
-                tabIndex={-1}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => s().closeTab(t.id)}
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
+              {t.pinned ? (
+                // The pin instead of the close button; a click unpins (as in Obsidian).
+                <button
+                  type="button"
+                  className="tab-pin"
+                  aria-label={tr("tabs.unpin")}
+                  title={tr("tabs.unpin")}
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => s().togglePin(t.id)}
+                >
+                  <Pin size={11} strokeWidth={2} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="tab-close"
+                  aria-label={tr("tabs.closeTab")}
+                  // Not a Tab stop of its own: Delete closes the focused tab, the menu offers it too.
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => s().closeTab(t.id)}
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              )}
             </div>
           );
         })}

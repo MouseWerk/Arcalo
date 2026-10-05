@@ -22,6 +22,8 @@ export interface Tab extends Loc {
   /** Navigation history of this tab (Obsidian-style back/forward). */
   back: Loc[];
   forward: Loc[];
+  /** Pinned: kept at the left in pin order, compact, skipped by „Andere Tabs schließen“. */
+  pinned?: boolean;
 }
 /** A group of tabs shown side by side with other panes (split view). */
 export interface Pane {
@@ -139,7 +141,12 @@ interface State {
   moveTab: (tabId: string, toPaneId: string, index: number) => void;
   /** A copy of the tab (same place, fresh history) right after it. */
   duplicateTab: (tabId: string) => void;
+  /** Closes the other unpinned tabs of the tab's pane. */
   closeOthers: (tabId: string) => void;
+  /** Closes the unpinned tabs of a pane (the active one by default). */
+  closeAll: (paneId?: string) => void;
+  /** Pins the tab (at the end of the pinned ones) or unpins it (first after them). */
+  togglePin: (tabId: string) => void;
   setPaneSizes: (sizes: number[]) => void;
   refreshTree: () => Promise<void>;
   refreshTimer: () => Promise<void>;
@@ -176,6 +183,10 @@ const MAX_PANES = 3;
 const sameLoc = (a: Loc, b: Loc) => a.kind === b.kind && a.pageId === b.pageId && a.tag === b.tag;
 const locOf = (t: Tab): Loc => ({ kind: t.kind, pageId: t.pageId, tag: t.tag });
 const newTab = (loc: Loc): Tab => ({ ...loc, id: uid(), back: [], forward: [] });
+/** Pinned tabs first, each group in its order (pin order, then the rest). */
+export function pinnedFirst(tabs: Tab[]): Tab[] {
+  return tabs.some((t, i) => t.pinned && i > 0 && !tabs[i - 1].pinned) ? [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)] : tabs;
+}
 
 interface Layout {
   panes: Pane[];
@@ -187,7 +198,7 @@ function loadLayout(): Layout {
   try {
     const raw = JSON.parse(localStorage.getItem("annalo.layout") ?? "null");
     if (raw?.panes?.length) {
-      const panes: Pane[] = raw.panes.map((p: Pane) => ({ ...p, tabs: p.tabs.map((t) => ({ ...t, back: t.back ?? [], forward: t.forward ?? [] })) }));
+      const panes: Pane[] = raw.panes.map((p: Pane) => ({ ...p, tabs: pinnedFirst(p.tabs.map((t) => ({ ...t, back: t.back ?? [], forward: t.forward ?? [] }))) }));
       return { panes, activePaneId: raw.activePaneId ?? panes[0].id, paneSizes: raw.paneSizes?.length === panes.length ? raw.paneSizes : panes.map(() => 1 / panes.length) };
     }
     // Older single-pane format.
@@ -212,8 +223,8 @@ function saveLayout(l: Layout) {
 
 /** Applies a new pane layout and mirrors the focused pane into `tabs`/`activeTabId`. */
 function layoutPatch(panes: Pane[], activePaneId: string, paneSizes: number[]) {
-  // Remove empty panes, but always keep one.
-  const kept = panes.filter((p) => p.tabs.length > 0);
+  // Remove empty panes, but always keep one; pinned tabs stay in front.
+  const kept = panes.filter((p) => p.tabs.length > 0).map((p) => ({ ...p, tabs: pinnedFirst(p.tabs) }));
   let sizes = paneSizes;
   if (kept.length !== panes.length) {
     const keptIdx = panes.map((p, i) => (p.tabs.length > 0 ? i : -1)).filter((i) => i >= 0);
@@ -347,7 +358,8 @@ export const useApp = create<State>((set, get) => ({
     const current = pane.tabs.find((t) => t.id === pane.activeTabId);
     let tabs: Tab[];
     let activeId: string;
-    if (opts?.newTab || !current) {
+    // A pinned tab keeps its place: what it would navigate to opens in a new tab beside the pinned ones.
+    if (opts?.newTab || !current || current.pinned) {
       const tab = newTab(loc);
       const idx = pane.tabs.findIndex((t) => t.id === pane.activeTabId);
       tabs = [...pane.tabs.slice(0, idx + 1), tab, ...pane.tabs.slice(idx + 1)];
@@ -439,8 +451,29 @@ export const useApp = create<State>((set, get) => ({
     const { panes, paneSizes } = get();
     const pane = panes.find((p) => p.tabs.some((t) => t.id === tabId));
     if (!pane) return;
-    const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs: p.tabs.filter((t) => t.id === tabId), activeTabId: tabId } : p));
+    const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs: p.tabs.filter((t) => t.id === tabId || t.pinned), activeTabId: tabId } : p));
     set(layoutPatch(next, pane.id, paneSizes));
+  },
+  closeAll: (paneId) => {
+    const { panes, activePaneId, paneSizes } = get();
+    const pane = panes.find((p) => p.id === (paneId ?? activePaneId));
+    if (!pane) return;
+    const tabs = pane.tabs.filter((t) => t.pinned);
+    const activeTabId = tabs.some((t) => t.id === pane.activeTabId) ? pane.activeTabId : (tabs[tabs.length - 1]?.id ?? "");
+    const next = panes.map((p) => (p.id === pane.id ? { ...p, tabs, activeTabId } : p));
+    set(layoutPatch(next, tabs.length ? pane.id : activePaneId === pane.id ? (panes.find((p) => p.id !== pane.id)?.id ?? pane.id) : activePaneId, paneSizes));
+  },
+  togglePin: (tabId) => {
+    const { panes, activePaneId, paneSizes } = get();
+    const pane = panes.find((p) => p.tabs.some((t) => t.id === tabId));
+    const tab = pane?.tabs.find((t) => t.id === tabId);
+    if (!pane || !tab) return;
+    const moved: Tab = { ...tab, pinned: !tab.pinned };
+    const rest = pane.tabs.filter((t) => t.id !== tabId);
+    const pinnedCount = rest.filter((t) => t.pinned).length;
+    // Pinning appends to the pinned group (pin order); unpinning puts it first among the others.
+    const tabs = [...rest.slice(0, pinnedCount), moved, ...rest.slice(pinnedCount)];
+    set(layoutPatch(panes.map((p) => (p.id === pane.id ? { ...p, tabs } : p)), activePaneId, paneSizes));
   },
   setPaneSizes: (sizes) => {
     const { panes, activePaneId } = get();

@@ -59,7 +59,7 @@ describe("keymap", () => {
     expect(other.back).toBe("Alt+ArrowLeft");
     expect(other.forward).toBe("Alt+ArrowRight");
     expect(findConflicts(mac)).toEqual([]);
-    for (const c of Object.values(mac)) expect(comboProblem(c)).toBeNull();
+    for (const c of Object.values(mac).filter(Boolean)) expect(comboProblem(c)).toBeNull();
     // Cmd+[ by key position (Ü on German keyboards), as the recorder in Settings sees it.
     expect(comboFromEvent(ev("[", "BracketLeft", { meta: true }))).toBe("Ctrl+[");
     expect(comboFromEvent(ev("ü", "BracketLeft", { meta: true }))).toBe("Ctrl+[");
@@ -111,7 +111,10 @@ describe("keymap", () => {
     expect(DEFAULT_KEYMAP.palette).toBe("Ctrl+K");
     expect(DEFAULT_KEYMAP.daily_note).toBe("Ctrl+Shift+D");
     expect(findConflicts(DEFAULT_KEYMAP, { capture: "Ctrl+Shift+Space", palette: null })).toEqual([]);
-    for (const c of Object.values(DEFAULT_KEYMAP)) expect(comboProblem(c)).toBeNull();
+    // Every default is usable; a command without a default is listed unbound („Tab anheften“).
+    for (const c of Object.values(DEFAULT_KEYMAP).filter(Boolean)) expect(comboProblem(c)).toBeNull();
+    expect(DEFAULT_KEYMAP.pin_tab).toBe("");
+    expect(Object.values(DEFAULT_KEYMAP).filter((c) => !c)).toEqual([""]);
   });
 
   it("detects conflicts between commands, with the editor and with global shortcuts", () => {

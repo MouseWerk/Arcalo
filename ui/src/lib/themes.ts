@@ -220,6 +220,7 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
     "--shadow-sm": dark ? "0 1px 2px rgb(0 0 0 / 0.4)" : "0 1px 2px rgb(0 0 0 / 0.06)",
     "--shadow-md": dark ? `0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px ${rgba(text, 0.07)}` : "0 8px 24px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.06)",
     "--shadow-lg": dark ? `0 24px 64px rgb(0 0 0 / 0.55), 0 0 0 1px ${rgba(text, 0.08)}` : "0 24px 64px rgb(0 0 0 / 0.16), 0 0 0 1px rgb(0 0 0 / 0.07)",
+    "--scroll-shadow": dark ? "rgb(0 0 0 / 0.4)" : "rgb(0 0 0 / 0.12)",
   };
 }
 

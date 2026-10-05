@@ -7,7 +7,10 @@ import {
   ArrowDownUp, FolderInput, Palette, SlidersHorizontal, Undo2, Wand2, LayoutList,
   LayoutDashboard, Pause, Play,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, errorParts } from "../lib/api";
+import { cleanTitleChars } from "../lib/links";
+import { flushAllEditors } from "../editor/saves";
+import { reloadEditors } from "../editor/NoteEditor";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
@@ -24,7 +27,7 @@ import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
 import { stripMarkdown } from "../lib/plaintext";
 import { treeWindow } from "../lib/treeWindow";
-import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWithin, rangeIds, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
+import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWithin, rangeIds, renameProblem, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
 import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import type { TKey } from "../lib/i18n";
@@ -384,10 +387,34 @@ function TodayHours() {
 
 // --------------------------------------------------------------- page tree
 
-/** „Umbenennen“ (F2): opens the page with its title selected. */
-function renamePage(n: PageNode) {
-  useApp.getState().openPage(n.id);
-  setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 150);
+/** Renames a page with its links rewritten; the toast undoes it. */
+async function renameInTree(n: PageNode, title: string) {
+  const s = useApp.getState;
+  const old = n.title;
+  // All editors: a pending autosave elsewhere would write the old [[links]] back.
+  await flushAllEditors();
+  const count = await api.renamePage(n.id, title, true);
+  reloadEditors();
+  await s().refreshTree();
+  s().toast({
+    tone: "success",
+    title: tStatic("sb.renamed", { title }),
+    detail: count > 0 ? tStatic("page.linksUpdated", { n: count }) : undefined,
+    action: {
+      label: tStatic("common.undo"),
+      run: async () => {
+        try {
+          await flushAllEditors();
+          await api.renamePage(n.id, old, true);
+          reloadEditors();
+          await s().refreshTree();
+          s().toast({ tone: "info", title: tStatic("sb.renameUndone"), detail: tStatic("common.quoted", { text: old }) });
+        } catch (e) {
+          s().error(tStatic("page.renameFailed"), e);
+        }
+      },
+    },
+  });
 }
 
 type DropPos = "before" | "inside" | "after";
@@ -421,6 +448,10 @@ interface RowActions {
   dragOver: (n: PageNode, e: DragEvent<HTMLDivElement>) => void;
   dragLeave: (n: PageNode) => void;
   drop: (n: PageNode, e: DragEvent<HTMLDivElement>) => void;
+  /** Starts renaming the row in place (F2, double click on the title). */
+  rename: (n: PageNode) => void;
+  /** Ends renaming; `refocus` puts the focus back on the row (Enter, Escape). */
+  renameDone: (n: PageNode, refocus: boolean) => void;
 }
 
 /**
@@ -449,6 +480,8 @@ function PageTree({
   // Multi-select: Shift-click (range), Ctrl-click once a selection exists, Shift+arrows, Ctrl+Space.
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
+  // The row renamed in place (its title is an input until Enter, Escape or leaving it).
+  const [renaming, setRenaming] = useState<number | null>(null);
   const [menu, openMenu, openMenuAt] = useMenu();
   const s = useApp.getState;
 
@@ -675,7 +708,7 @@ function PageTree({
         }
       },
     },
-    { label: tStatic("att.renameButton"), icon: PencilLine, shortcut: "F2", onSelect: () => renamePage(n) },
+    { label: tStatic("att.renameButton"), icon: PencilLine, shortcut: "F2", onSelect: () => setRenaming(n.id) },
     "separator" as const,
     { label: tStatic("common.delete"), icon: Trash2, danger: true, shortcut: tStatic("sb.keyDelete"), onSelect: () => deletePage(n) },
     ];
@@ -759,7 +792,7 @@ function PageTree({
       setSelected(new Set(rows.map((r) => r.node.id)));
       return;
     }
-    if (key === "F2" && !selected.size) return (handled(), renamePage(n));
+    if (key === "F2" && !selected.size) return (handled(), setRenaming(n.id));
     if (key === "Delete" || (key === "Backspace" && e.metaKey)) {
       handled();
       if (selected.size > 1 && selected.has(n.id)) void deleteSelection();
@@ -812,8 +845,8 @@ function PageTree({
   };
 
   // The latest closures, reached through one stable object.
-  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected });
-  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected };
+  const latest = useRef({ toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected, focusRow });
+  latest.current = { toggle, onDrop, onRowKey, menuItems, openMenu, openMenuAt, drag, setDrag, setFocusedId, click, selected, focusRow };
   const actions = useMemo<RowActions>(
     () => ({
       toggle: (id) => latest.current.toggle(id),
@@ -850,6 +883,14 @@ function PageTree({
       drop: (n, e) => {
         e.preventDefault();
         latest.current.onDrop(n, latest.current.drag?.pos ?? "inside");
+      },
+      rename: (n) => {
+        if (latest.current.selected.size > 1) return;
+        setRenaming(n.id);
+      },
+      renameDone: (n, refocus) => {
+        setRenaming((id) => (id === n.id ? null : id));
+        if (refocus) requestAnimationFrame(() => latest.current.focusRow(n.id));
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -936,7 +977,7 @@ function PageTree({
 
   // The dragged, the focused and the tab-reachable row stay rendered when scrolled away.
   const shown = virtual
-    ? treeWindow(rows.length, view, [drag?.id, focusedId, focusable].map((id) => (id == null ? -1 : rows.findIndex((r) => r.node.id === id))))
+    ? treeWindow(rows.length, view, [drag?.id, focusedId, focusable, renaming].map((id) => (id == null ? -1 : rows.findIndex((r) => r.node.id === id))))
     : null;
   const row = (i: number) => {
     const { node, depth } = rows[i];
@@ -953,6 +994,7 @@ function PageTree({
         drop={drag?.over === node.id ? drag.pos : undefined}
         focusable={focusable === node.id}
         conflict={conflictIds.has(node.id)}
+        renaming={renaming === node.id}
         act={actions}
       />
     );
@@ -996,6 +1038,7 @@ const TreeRow = memo(function TreeRow({
   drop,
   focusable,
   conflict,
+  renaming,
   act,
 }: {
   node: PageNode;
@@ -1011,6 +1054,7 @@ const TreeRow = memo(function TreeRow({
   drop?: DropPos;
   focusable: boolean;
   conflict: boolean;
+  renaming: boolean;
   act: RowActions;
 }) {
   // The action buttons exist only while the row is hovered or has the focus.
@@ -1020,7 +1064,7 @@ const TreeRow = memo(function TreeRow({
       role="treeitem"
       aria-level={depth + 1}
       aria-expanded={n.children.length ? open : undefined}
-      className={`tree-row ${active ? "active" : ""} ${selected ? "selected" : ""} ${hit ? "hit" : ""} ${drop ? `drop-${drop}` : ""}`}
+      className={`tree-row ${active ? "active" : ""} ${selected ? "selected" : ""} ${hit ? "hit" : ""} ${drop ? `drop-${drop}` : ""} ${renaming ? "renaming" : ""}`}
       aria-selected={selected}
       style={top == null ? { paddingLeft: 6 + depth * 14 } : { paddingLeft: 6 + depth * 14, position: "absolute", top, left: 0, right: 0 }}
       data-id={n.id}
@@ -1033,7 +1077,7 @@ const TreeRow = memo(function TreeRow({
         if (e.target === e.currentTarget) act.focus(n);
       }}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && !e.currentTarget.matches(":hover") && setHot(false)}
-      draggable
+      draggable={!renaming}
       onDragStart={(e) => act.dragStart(n, e)}
       onDragEnd={act.dragEnd}
       onDragOver={(e) => act.dragOver(n, e)}
@@ -1054,9 +1098,23 @@ const TreeRow = memo(function TreeRow({
         {n.children.length > 0 && <ChevronRight size={12} className={`chev ${open ? "open" : ""}`} />}
       </span>
       <PageIcon name={n.icon} size={15} className={`tree-icon ${n.style?.color ? `tint-${n.style.color}` : ""}`} />
-      <span className="tree-label">{n.title}</span>
+      {renaming ? (
+        <TreeRename node={n} onDone={(refocus) => act.renameDone(n, refocus)} />
+      ) : (
+        <span
+          className="tree-label"
+          onDoubleClick={(e) => {
+            // Renames in place; the first click already opened the page as a single click does.
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            e.stopPropagation();
+            act.rename(n);
+          }}
+        >
+          {n.title}
+        </span>
+      )}
       {conflict && <span className="tree-conflict" title={tStatic("sb.conflictTip")} aria-label={tStatic("cf.conflict")} />}
-      {hot && <span className="tree-row-actions">
+      {hot && !renaming && <span className="tree-row-actions">
         <IconButton
           icon={MoreHorizontal}
           label={tStatic("sidebar.pageActions")}
@@ -1081,6 +1139,86 @@ const TreeRow = memo(function TreeRow({
     </div>
   );
 });
+
+/** The title of a tree row as an input: Enter saves (links rewritten), Escape cancels. */
+function TreeRename({ node, onDone }: { node: PageNode; onDone: (refocus: boolean) => void }) {
+  const [value, setValue] = useState(node.title);
+  // `[ ] | # ^` were typed and replaced (they belong to the link syntax).
+  const [charsHint, setCharsHint] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = useRef(false);
+  const done = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  const finish = (refocus: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(refocus);
+  };
+  const commit = async (fromBlur: boolean) => {
+    if (busy.current || done.current) return;
+    const name = value.trim();
+    if (name === node.title) return finish(!fromBlur);
+    const problem = renameProblem(node.id, name, useApp.getState().pages);
+    if (problem) {
+      // Leaving the field with a name that cannot be used keeps the old one.
+      if (fromBlur) return finish(false);
+      setError(problem);
+      return;
+    }
+    busy.current = true;
+    try {
+      await renameInTree(node, name);
+      finish(!fromBlur);
+    } catch (e) {
+      busy.current = false;
+      if (fromBlur) {
+        finish(false);
+        useApp.getState().error(tStatic("page.renameFailed"), e);
+      } else setError(errorParts(e).text);
+    }
+  };
+  const message = error ?? (charsHint ? tStatic("pv.titleHint") : null);
+  const msgId = `tree-rename-msg-${node.id}`;
+  return (
+    <>
+      <input
+        ref={input}
+        className="tree-rename"
+        value={value}
+        spellCheck={false}
+        aria-label={tStatic("sb.renameAria", { title: node.title })}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={message ? msgId : undefined}
+        onChange={(e) => {
+          const typed = e.target.value;
+          const clean = cleanTitleChars(typed);
+          setValue(clean);
+          if (clean !== typed) setCharsHint(true);
+          setError(null);
+        }}
+        onKeyDown={(e) => {
+          // The row's keys (arrows, Delete, F2, Ctrl+A) stay with the text field.
+          e.stopPropagation();
+          if (e.key === "Enter") (e.preventDefault(), void commit(false));
+          else if (e.key === "Escape") (e.preventDefault(), finish(true));
+        }}
+        onBlur={() => void commit(true)}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      />
+      {message && (
+        <span id={msgId} className={`tree-rename-msg ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>
+          {message}
+        </span>
+      )}
+    </>
+  );
+}
 
 // ------------------------------------------------------------- timer dock
 

@@ -521,6 +521,10 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
     const st = useApp.getState();
     if (st.activeTabId) st.closeTab(st.activeTabId);
   },
+  pin_tab: () => {
+    const st = useApp.getState();
+    if (st.activeTabId) st.togglePin(st.activeTabId);
+  },
   next_tab: () => cycleTab(1),
   prev_tab: () => cycleTab(-1),
   back: () => useApp.getState().goBack(),
