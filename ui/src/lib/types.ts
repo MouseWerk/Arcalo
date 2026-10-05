@@ -577,7 +577,8 @@ export interface StartPrefs {
   minimized: boolean;
 }
 export interface LocalePrefs {
-  language: "de" | "en";
+  /** „Wie das System“ (the default of new installs) or a language. */
+  language: "system" | "de" | "en";
   date_format: "de" | "iso" | "en-gb" | "en-us";
   /** Decimal separator: comma (1.234,5) or point (1,234.5). */
   /** Unset: as the display language writes numbers. */
@@ -780,6 +781,8 @@ export interface SettingsView {
   shared?: boolean;
   /** The last settings sync that changed settings here. */
   sync_last?: SettingsSyncMerge | null;
+  /** The operating system's language as the shell read it at this start. */
+  system_language?: "de" | "en";
 }
 /** „Für alle Arbeitsbereiche“ or „Nur dieser Arbeitsbereich“. */
 export type SettingsScope = "global" | "workspace";

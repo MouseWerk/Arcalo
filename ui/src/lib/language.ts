@@ -3,7 +3,7 @@
 // makes the shell rebuild its tray, menus and jump list in the new language.
 
 import { api } from "./api";
-import { langFromLocale, setLang, type Lang } from "./i18n";
+import { langFromLocale, langOf, setLang, type Lang, type LanguageChoice } from "./i18n";
 import { useApp } from "../store/app";
 
 /** German when the first (preferred) of these locale tags is German, else English. */
@@ -33,7 +33,7 @@ export async function detectLanguage(): Promise<Lang> {
 export const detectedLanguage = (): Lang => detected ?? webviewLanguage();
 
 /** Stores the language in the settings (the other windows and the shell follow). */
-async function saveLanguage(lang: Lang): Promise<void> {
+async function saveLanguage(lang: LanguageChoice): Promise<void> {
   const s = useApp.getState();
   const view = s.settings ?? (await api.settings());
   if (view.settings.locale.language === lang) return;
@@ -45,8 +45,8 @@ async function saveLanguage(lang: Lang): Promise<void> {
  * Switches the display language everywhere and stores it; `save` replaces the plain settings
  * save (the first-run flow queues it behind its other answers).
  */
-export async function setLanguage(lang: Lang, save: (lang: Lang) => Promise<unknown> = saveLanguage): Promise<void> {
+export async function setLanguage(lang: LanguageChoice, save: (lang: LanguageChoice) => Promise<unknown> = saveLanguage): Promise<void> {
   // Instant feedback in this window; the saved settings then reach the other windows and the shell.
-  setLang(lang);
+  setLang(langOf(lang));
   await save(lang);
 }

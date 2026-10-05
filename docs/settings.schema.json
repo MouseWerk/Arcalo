@@ -1143,8 +1143,9 @@
       },
       "type": "object"
     },
-    "Language": {
+    "LanguageChoice": {
       "enum": [
+        "system",
         "de",
         "en"
       ],
@@ -1218,10 +1219,11 @@
         "language": {
           "allOf": [
             {
-              "$ref": "#/definitions/Language"
+              "$ref": "#/definitions/LanguageChoice"
             }
           ],
-          "default": "de"
+          "default": "system",
+          "description": "The chosen display language; [`LocalePrefs::lang`] is the one in effect."
         },
         "number_format": {
           "anyOf": [
@@ -2826,7 +2828,7 @@
       ],
       "default": {
         "date_format": "de",
-        "language": "de"
+        "language": "system"
       },
       "description": "Sprache: language, date and number format."
     },
@@ -3215,7 +3217,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 12,
+      "default": 13,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

@@ -39,8 +39,8 @@ Everything lives in one SQLite database on your computer. There is no cloud acco
 network traffic is what you set up yourself: your AI providers, your calendars, an optional Git remote for backups,
 and update checks against this repository's releases.
 
-The app speaks English and German. It starts in your system's language (English for everything that is not German)
-and switches live under Settings → Language & format.
+The app speaks English and German. By default it follows your system's language at every start (English for
+everything that is not German); Settings → Language & format switches live to a fixed language or back.
 
 ## Why Arcalo
 

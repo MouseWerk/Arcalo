@@ -2,29 +2,15 @@
 // Keys stay inside (the app's shortcuts do not run behind it) and Tab cycles within it.
 
 import { useEffect, useRef } from "react";
-import { useApp } from "../store/app";
 import { Intake } from "./Intake";
 import { Intro } from "./Intro";
-import { applyLanguage, detectLanguage } from "./lang";
 import { startIntake, useFirstRun } from "./state";
 
 export function FirstRun() {
   const phase = useFirstRun((s) => s.phase);
   const paused = useFirstRun((s) => s.paused);
-  const mode = useFirstRun((s) => s.mode);
-  const lang = useApp((s) => s.settings?.settings.locale.language);
   const box = useRef<HTMLDivElement>(null);
-  const langDone = useRef(false);
   const active = phase !== "off" && !paused;
-
-  // First start: the OS language is the first guess (the language step can change it).
-  useEffect(() => {
-    if (phase === "off" || mode !== "fresh" || langDone.current || !lang) return;
-    langDone.current = true;
-    void detectLanguage().then((os) => {
-      if (os !== lang) void applyLanguage(os);
-    });
-  }, [phase, mode, lang]);
 
   // The element that had the focus gets it back afterwards.
   useEffect(() => {

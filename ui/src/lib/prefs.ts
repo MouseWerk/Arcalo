@@ -4,7 +4,7 @@
 import type { Settings } from "./types";
 import { setBackdropPrefs } from "./backdrop";
 import { setFormatPrefs } from "./format";
-import { refreshI18n, setLang } from "./i18n";
+import { langOf, refreshI18n, setLang } from "./i18n";
 import { effectiveKeymap, setCurrentKeymap } from "./keymap";
 import { rememberSplash } from "./splash";
 import { applyThemeState, STYLE_ID as THEME_STYLE } from "./themes";
@@ -106,8 +106,9 @@ export function applyBootAppearance() {
 /** Display language and regional formats (also in the small windows). */
 export function applyLocale(s: Settings) {
   if (s.locale) {
-    setFormatPrefs({ lang: s.locale.language, dateFormat: s.locale.date_format, numberFormat: numberFormatOf(s.locale) });
-    setLang(s.locale.language);
+    const lang = langOf(s.locale.language);
+    setFormatPrefs({ lang, dateFormat: s.locale.date_format, numberFormat: numberFormatOf(s.locale) });
+    setLang(lang);
   }
   if (s.time) setFormatPrefs({ weekStartsOn: s.time.week_start === "sunday" ? 0 : 1, hours: s.time.hours_display });
 }
@@ -176,7 +177,7 @@ export function exportFileName(pattern: string, v: { from: string; to: string; f
 }
 
 /** The decimal notation: as chosen, else as the display language writes numbers (28.00 / 28,00). */
-export const numberFormatOf = (l: { language: string; number_format?: "comma" | "point" | null }): "comma" | "point" => l.number_format ?? (l.language === "en" ? "point" : "comma");
+export const numberFormatOf = (l: { language: string; number_format?: "comma" | "point" | null }): "comma" | "point" => l.number_format ?? (langOf(l.language) === "en" ? "point" : "comma");
 
 /** `l` with the decimal notation `v`: the language's own one stays unset, so it keeps following the language. */
 export function withNumberFormat<L extends { language: string; number_format?: "comma" | "point" | null }>(l: L, v: "comma" | "point"): L {

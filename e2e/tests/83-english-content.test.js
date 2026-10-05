@@ -107,7 +107,8 @@ test("switching to German and back takes effect at once, in the UI and the core"
   await app.dismissToasts();
   await app.click('.ribbon [aria-label^="Settings"]');
   await app.click('.settings-nav-item[data-section="locale"]');
-  await app.click('[role="radiogroup"] [role="radio"]:first-child');
+  // The choices: „Wie das System“, Deutsch, English.
+  await app.click('[role="radiogroup"] [role="radio"]:nth-child(2)');
   await app.browser.waitUntil(async () => (await app.invoke("settings_get")).settings.locale.language === "de", { timeoutMsg: "German not saved" });
   await app.browser.waitUntil(async () => app.browser.execute(() => [...document.querySelectorAll(".ribbon [aria-label]")].some((b) => /^Einstellungen/.test(b.getAttribute("aria-label")))), {
     timeoutMsg: "UI not German",

@@ -1,7 +1,7 @@
 // The setup steps after the intro and what each answer writes: pure functions on the settings,
 // so the steps stay thin and the logic is tested (flow.test.ts).
 
-import type { TKey } from "../lib/i18n";
+import { langOf, type TKey } from "../lib/i18n";
 import { PRESETS, autoAssignTiers, findProvider, fromPreset, OLLAMA_URL, providerName } from "../lib/providers";
 import type { AiProvider, OllamaDetect, Settings } from "../lib/types";
 import { timeTrackingOn } from "../lib/timetracking";
@@ -176,9 +176,11 @@ const hours = (h: number, lang: "de" | "en") => `${lang === "de" ? String(h).rep
 /** One line per step for the „Fertig“ page; each links back to its step. */
 export function summaryRows(s: Settings, c: SummaryContext): SummaryRow[] {
   const { t } = c;
-  const lang = s.locale?.language === "en" ? "en" : "de";
+  const langChoice = s.locale?.language ?? "system";
+  const lang = langOf(langChoice);
   const rows: SummaryRow[] = [];
-  rows.push({ step: "language", label: "fr.sum.language", value: lang === "en" ? "English" : "Deutsch" });
+  const name = lang === "en" ? "English" : "Deutsch";
+  rows.push({ step: "language", label: "fr.sum.language", value: langChoice === "system" ? `${t("set.locale.followSystem")} (${name})` : name });
   const mode = s.theme === "system" ? t("set.appearance.system") : s.theme === "dark" ? t("set.appearance.dark") : t("set.appearance.light");
   rows.push({ step: "theme", label: "fr.sum.theme", value: mode });
   const days = s.workdays.map((d) => c.weekdays[d - 1]).filter(Boolean).join(", ");

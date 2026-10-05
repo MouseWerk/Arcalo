@@ -5,8 +5,7 @@ import { useEffect, useState } from "react";
 import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Segmented, Select, Switch } from "../../components/ui";
 import { api } from "../../lib/api";
-import { useT } from "../../lib/i18n";
-import { detectLanguage, detectedLanguage } from "../../lib/language";
+import { systemLang, useT } from "../../lib/i18n";
 import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
 import { dateLocale, fmtHours } from "../../lib/format";
@@ -16,6 +15,7 @@ import { checkTime } from "../../lib/settingsApply";
 import { ChatHistoryGroup } from "./ChatHistoryPrefs";
 import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
+import { useApp } from "../../store/app";
 
 // ------------------------------------------------------------------ notes
 
@@ -278,11 +278,8 @@ export function StartSection({ draft, update }: SectionProps) {
 export function LocaleSection({ draft, update }: SectionProps) {
   const t = useT();
   const l = draft.locale;
-  // The language of the operating system (what a first start picks).
-  const [system, setSystem] = useState(detectedLanguage);
-  useEffect(() => {
-    void detectLanguage().then(setSystem, () => {});
-  }, []);
+  // The language of the operating system as read at this start (what „Wie das System“ shows).
+  const system = useApp((s) => s.settings?.system_language) ?? systemLang();
   return (
     <>
       <SectionHead title={t("set.locale.title")} intro={t("set.locale.intro")} />
@@ -292,6 +289,7 @@ export function LocaleSection({ draft, update }: SectionProps) {
             label={t("set.locale.uiLanguage")}
             value={l.language}
             options={[
+              { value: "system", label: t("set.locale.followSystem") },
               { value: "de", label: "Deutsch" },
               { value: "en", label: "English" },
             ]}

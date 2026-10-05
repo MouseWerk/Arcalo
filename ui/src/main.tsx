@@ -26,6 +26,7 @@ import { trackModKey } from "./lib/modkey";
 import { installTooltips } from "./lib/tooltip";
 import { describeError, logUi } from "./lib/devlog";
 import { applyBootAppearance, followLocale } from "./lib/prefs";
+import { bootLang, setLang } from "./lib/i18n";
 
 // The quick-capture window loads the same bundle with `#capture` (or `?capture`),
 // the quick-search window with `#search`.
@@ -36,6 +37,9 @@ const presenterMode = location.hash === "#presenter";
 // The recovery screen of an encrypted database whose key is missing (instead of the app).
 const keygateMode = location.hash === "#keygate";
 
+// The language the shell resolved („Wie das System“ included) holds from the first frame on.
+const boot = bootLang();
+if (boot) setLang(boot);
 startSplash(captureMode || searchMode || presenterMode || keygateMode);
 trackModKey();
 installTooltips();

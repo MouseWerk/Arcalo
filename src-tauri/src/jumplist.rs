@@ -170,7 +170,7 @@ pub fn refresh(app: &AppHandle) {
     }
     let Some(state) = app.try_state::<AppState>() else { return };
     let settings = state.settings();
-    let lang = settings.locale.language;
+    let lang = settings.locale.lang();
     // Time tracking off: no timer entries (rebuilt when the setting changes).
     let time = settings.time_tracking();
     let c = {

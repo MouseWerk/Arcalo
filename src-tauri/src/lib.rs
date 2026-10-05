@@ -576,11 +576,24 @@ async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
     .map_err(|e| Error::State(e.to_string()))?
 }
 
-/// The operating system's locale (`de-DE`, `en-US` …): the language the first run suggests.
+/// The operating system's locale (`de-DE`, `en-US` …) that „Wie das System“ goes by: the
+/// first preferred one the app has a language for. Windows: the display languages of the user
+/// (GetUserPreferredUILanguages), macOS: the preferred languages (System Settings → Language &
+/// Region), Linux and other Unix systems: gettext's order of LANGUAGE, LC_ALL, LC_MESSAGES, LANG.
+/// Read once per start (`i18n::set_system_lang`): a running program does not see a changed
+/// system language (Windows applies it after signing in again, macOS when a program starts, and
+/// on Linux the variables of a running process stay as they were).
 #[tauri::command]
 fn os_locale() -> Option<String> {
     // Tests and support: ANNALO_LOCALE stands in for the system's.
-    std::env::var("ANNALO_LOCALE").ok().filter(|l| !l.trim().is_empty()).or_else(sys_locale::get_locale)
+    if let Some(l) = std::env::var("ANNALO_LOCALE").ok().filter(|l| !l.trim().is_empty()) {
+        return Some(l);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let tags = annalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
+    #[cfg(any(windows, target_os = "macos"))]
+    let tags = sys_locale::get_locales();
+    annalo_core::i18n::preferred_locale(tags)
 }
 
 #[tauri::command]
@@ -2005,6 +2018,8 @@ struct SettingsView {
     shared: bool,
     /// The last settings sync that changed settings here (for „Rückgängig“).
     sync_last: Option<annalo_core::settings_sync::LastMerge>,
+    /// The operating system's language as read at this start (what „Wie das System“ shows).
+    system_language: annalo_core::prefs::Language,
 }
 
 #[tauri::command]
@@ -2028,6 +2043,7 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         scopes: annalo_core::settings_layers::scopes(&state.settings()),
         shared: annalo_core::settings_layers::shared_dir().is_some(),
         sync_last: state.db().settings_sync_last().ok().flatten(),
+        system_language: annalo_core::i18n::system_lang(),
     }
 }
 
@@ -2094,7 +2110,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.jira = std::mem::take(&mut settings.jira).normalized();
     // An inbox title still at the other language's default follows the language.
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
-    annalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.language, page);
+    annalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.lang(), page);
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -2142,7 +2158,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
         || (old_cal.past_days, old_cal.future_days) != (new_cal.past_days, new_cal.future_days)
         || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
     let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
-    let relocalize = annalo_core::i18n::set_lang(settings.locale.language);
+    let relocalize = annalo_core::i18n::set_lang(settings.locale.lang());
     annalo_core::i18n::set_number_format(settings.locale.number_format);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     // Another saved Jira search: its issues are read now.
@@ -3854,6 +3870,9 @@ fn create_main_window(
         .visible(visible)
         .title("Arcalo")
         .min_inner_size(900.0, 560.0)
+        // The display language before the UI script runs (index.html cannot carry a script):
+        // the splash and the first frame are in it, a first run on an English system included.
+        .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", annalo_core::i18n::lang().as_str()))
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
     // Portable: the webview's profile stays in the data folder, not in the user profile.
@@ -4304,7 +4323,9 @@ pub fn run() {
             );
             let dir = startup.dir.clone();
             // Until the settings are read (and on the recovery screens): the system's language.
-            annalo_core::i18n::set_lang(annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default()));
+            let system = annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default());
+            annalo_core::i18n::set_system_lang(system);
+            annalo_core::i18n::set_lang(system);
             let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir);
             // The toolkit is up (GTK, and on Linux its session bus).
@@ -4388,10 +4409,10 @@ pub fn run() {
             // The language of the settings, as the UI shows it (the first run sets it from the
             // system's language).
             if let Ok(mut s) = db.load_settings() {
-                annalo_core::i18n::set_lang(s.locale.language);
+                annalo_core::i18n::set_lang(s.locale.lang());
                 annalo_core::i18n::set_number_format(s.locale.number_format);
                 let page = |t: &str| db.page_by_title(t).ok().flatten().is_some();
-                if annalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.language, page) {
+                if annalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.lang(), page) {
                     let _ = db.save_settings(&s);
                 }
             }

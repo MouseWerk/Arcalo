@@ -1506,7 +1506,7 @@ mod tests {
         assert!(s.ai.citations && s.ai.streaming && s.ai.monthly_cost_limit_usd.is_none());
         assert!(s.notifications.end_of_day && !s.notifications.quiet_hours);
         assert!(s.privacy.read_open_page && !s.privacy.local_only);
-        assert_eq!(s.locale.language, crate::prefs::Language::De);
+        assert_eq!(s.locale.language, crate::prefs::LanguageChoice::De, "older settings stay German");
         assert!(s.keymap.is_empty());
         // Once the start preferences exist, the old flag no longer decides.
         db.conn()

@@ -26,14 +26,43 @@ const pairs = (i: 0 | 1) => Object.fromEntries(Object.entries(ENTRIES as Record<
 
 export const DICTS: Record<Lang, Record<TKey, Msg>> = { en: { ...en, ...pairs(1) }, de: { ...de, ...pairs(0) } };
 
-let lang: Lang = "en";
+/** The setting Settings → Sprache & Format stores: a language or „Wie das System“. */
+export type LanguageChoice = "system" | Lang;
+
+/** "de" for a German locale tag („de“, „de-AT“, „de_CH.UTF-8“), else "en" (as the shell reads them). */
+export const langFromLocale = (tag: string | undefined | null): Lang => (/^de(?:$|[-_.@])/i.test(tag?.trim() ?? "") ? "de" : "en");
+
+/**
+ * The display language the shell resolved before the page loaded (an initialization script of
+ * the main window sets it): the splash and the first frame are in it, before the settings arrive.
+ */
+export function bootLang(): Lang | null {
+  const v = typeof window === "undefined" ? undefined : (window as { __ARCALO_LANG__?: unknown }).__ARCALO_LANG__;
+  return v === "de" || v === "en" ? v : null;
+}
+
+let lang: Lang = bootLang() ?? "en";
 let version = 0;
 const listeners = new Set<() => void>();
 
 export const currentLang = () => lang;
 
-/** "de" for a German locale tag („de“, „de-AT“), else "en". */
-export const langFromLocale = (tag: string | undefined | null): Lang => (/^de\b/i.test(tag ?? "") ? "de" : "en");
+let system: Lang | null = null;
+
+/** Notes the system language as the shell read it at start (`system_language` of the settings). */
+export function noteSystemLang(l: string | null | undefined) {
+  if (l === "de" || l === "en") system = l;
+}
+
+/** The language „Wie das System“ stands for: the shell's reading, else the webview's. */
+export function systemLang(): Lang {
+  if (system) return system;
+  const nav = typeof navigator === "undefined" ? undefined : navigator;
+  return langFromLocale(nav?.languages?.[0] ?? nav?.language);
+}
+
+/** The display language a stored choice stands for („Wie das System“ resolved). */
+export const langOf = (choice: string | null | undefined): Lang => (choice === "de" || choice === "en" ? choice : systemLang());
 
 /** Switches the language (and re-renders every component using `useT`). */
 export function setLang(l: Lang) {

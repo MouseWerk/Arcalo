@@ -450,7 +450,7 @@ impl CatsDecimal {
             CatsDecimal::Point => true,
             CatsDecimal::Number => match locale.number_format {
                 Some(f) => f == NumberFormat::Point,
-                None => locale.language == Language::En,
+                None => locale.lang() == Language::En,
             },
         }
     }
@@ -852,18 +852,46 @@ impl Default for StartPrefs {
 // -------------------------------------------------------------------- locale
 
 choice!(Language { #[default] De = "de", En = "en" } default De);
+// The stored choice of Settings → Sprache & Format: a language, or the system's. „Wie das
+// System“ is the default of new installs since 1.13; settings of earlier versions keep the
+// language they had (settings step `language-choice`).
+choice!(LanguageChoice {
+    /// The operating system's language, read at every start (German for German, else English).
+    #[default] System = "system",
+    De = "de",
+    En = "en",
+} default System);
 choice!(DateFormat { #[default] De = "de", Iso = "iso", EnGb = "en-gb", EnUs = "en-us" } default De);
 choice!(NumberFormat { #[default] Comma = "comma", Point = "point" } default Comma);
+
+impl LanguageChoice {
+    /// The language this choice stands for on this computer.
+    pub fn resolve(self) -> Language {
+        match self {
+            LanguageChoice::System => crate::i18n::system_lang(),
+            LanguageChoice::De => Language::De,
+            LanguageChoice::En => Language::En,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct LocalePrefs {
-    pub language: Language,
+    /// The chosen display language; [`LocalePrefs::lang`] is the one in effect.
+    pub language: LanguageChoice,
     pub date_format: DateFormat,
     /// Decimal comma (28,00) or point (28.00); `None`: as the display language writes it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number_format: Option<NumberFormat>,
+}
+
+impl LocalePrefs {
+    /// The display language in effect („Wie das System“ resolved).
+    pub fn lang(&self) -> Language {
+        self.language.resolve()
+    }
 }
 
 #[cfg(test)]
@@ -875,9 +903,9 @@ mod tests {
     fn cats_decimal_defaults_to_comma_and_can_follow_the_number_format() {
         let t: TimePrefs = serde_json::from_str("{}").unwrap();
         assert_eq!(t.cats_decimal, CatsDecimal::Comma, "settings of 1.11 keep the comma");
-        let de = LocalePrefs::default();
-        let en = LocalePrefs { language: Language::En, ..Default::default() };
-        let point = LocalePrefs { number_format: Some(NumberFormat::Point), ..Default::default() };
+        let de = LocalePrefs { language: LanguageChoice::De, ..Default::default() };
+        let en = LocalePrefs { language: LanguageChoice::En, ..Default::default() };
+        let point = LocalePrefs { number_format: Some(NumberFormat::Point), ..de.clone() };
         assert!(!CatsDecimal::Comma.point(&en) && CatsDecimal::Point.point(&de));
         assert_eq!([de, en, point].map(|l| CatsDecimal::Number.point(&l)), [false, true, true]);
         assert_eq!(serde_json::from_str::<CatsDecimal>("\"unknown\"").unwrap(), CatsDecimal::Comma);
@@ -891,6 +919,26 @@ mod tests {
         let l: LocalePrefs = serde_json::from_str(r#"{"language":"en"}"#).unwrap();
         assert_eq!(l.number_format, None);
         assert!(serde_json::to_value(&l).unwrap().get("number_format").is_none());
+    }
+
+    #[test]
+    fn language_choice_defaults_to_the_system_and_resolves_per_computer() {
+        assert_eq!(LocalePrefs::default().language, LanguageChoice::System);
+        let l: LocalePrefs = serde_json::from_str(r#"{"language":"system"}"#).unwrap();
+        assert_eq!(serde_json::to_value(&l).unwrap()["language"], "system");
+        // Stored languages stay; an unknown value counts as the system's.
+        assert_eq!(serde_json::from_str::<LanguageChoice>("\"de\"").unwrap(), LanguageChoice::De);
+        assert_eq!(serde_json::from_str::<LanguageChoice>("\"fr\"").unwrap(), LanguageChoice::System);
+        for system in [Language::De, Language::En] {
+            crate::i18n::with_system_lang(system, || {
+                assert_eq!(LanguageChoice::System.resolve(), system);
+                assert_eq!(LanguageChoice::De.resolve(), Language::De);
+                assert_eq!(LanguageChoice::En.resolve(), Language::En);
+                // The number format „as the language writes it“ follows the resolved language.
+                let sys = LocalePrefs::default();
+                assert_eq!(CatsDecimal::Number.point(&sys), system == Language::En);
+            });
+        }
     }
 
     #[test]

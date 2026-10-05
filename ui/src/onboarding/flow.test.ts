@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { translate, type TKey } from "../lib/i18n";
+import { noteSystemLang, translate, type TKey } from "../lib/i18n";
 import type { AiProvider, Settings } from "../lib/types";
 import {
   STEPS, STEP_LABELS, STEP_SECTIONS, aiChoiceOf, clampTarget, companyProvider, isStep, isUntouchedDefault, nextStep, prevStep, progressOf, summaryRows, timeTrackingOn,
@@ -191,5 +191,13 @@ describe("first-run summary", () => {
     expect(by.workspace).toBe("With sample data");
     expect(by.calendar).toBe("Outlook · 2 ICS");
     expect(by.sync).toBe("https://git.example/notes.git · main");
+  });
+
+  it("names „Wie das System“ with the language it stands for", () => {
+    const s = { ...fresh(), locale: { language: "system", date_format: "de" } } as Settings;
+    noteSystemLang("en");
+    expect(summaryRows(s, ctx("en"))[0].value).toBe("Same as system (English)");
+    noteSystemLang("de");
+    expect(summaryRows(s, ctx("de"))[0].value).toBe("Wie das System (Deutsch)");
   });
 });

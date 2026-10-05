@@ -1,6 +1,7 @@
 //! The language of the texts the backend writes for people: error messages, notifications,
 //! the tray and menus, AI instructions and generated Markdown. Settings → Sprache sets it
-//! ([`set_lang`] at start and on every save); German until then, like the stored default.
+//! ([`set_lang`] at start and on every save; „Wie das System“ stands for [`system_lang`], which
+//! the shell reads once at start); the system's language until the settings are read.
 //!
 //! Texts are written as pairs where they are used: `tr!("Gespeichert", "Saved")` for a fixed
 //! text, `trf!("{n} Termine", "{n} meetings")` for one with values (both are `format!`
@@ -82,6 +83,68 @@ pub fn lang_of_locale(tag: &str) -> Language {
     } else {
         Language::En
     }
+}
+
+fn is_tag_of(tag: &str, lang: &str) -> bool {
+    let t = tag.trim().to_ascii_lowercase();
+    t == lang || t.strip_prefix(lang).is_some_and(|rest| rest.starts_with(['-', '_', '.', '@']))
+}
+
+/// The locale to go by among the system's preferred ones (most preferred first): the first
+/// the app has a language for (German or English), else the first (which then reads as
+/// English). A Swiss user with French before German gets German, not English.
+pub fn preferred_locale<I: IntoIterator<Item = String>>(tags: I) -> Option<String> {
+    let tags: Vec<String> = tags.into_iter().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
+    tags.iter().find(|t| is_tag_of(t, "de") || is_tag_of(t, "en")).or(tags.first()).cloned()
+}
+
+/// The message locales a Linux (or other Unix) session asks for, in gettext's order: the locale
+/// is the first set of `LC_ALL`, `LC_MESSAGES`, `LANG`; when it is a real one (not unset, `C` or
+/// `POSIX`), the colon-separated `LANGUAGE` list comes before it. `get` reads a variable.
+pub fn locales_from_env(get: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let var = |k: &str| get(k).map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+    let Some(locale) = var("LC_ALL").or_else(|| var("LC_MESSAGES")).or_else(|| var("LANG")) else {
+        return vec![];
+    };
+    let base = locale.split(['.', '@']).next().unwrap_or_default();
+    if base == "C" || base == "POSIX" {
+        return vec![locale];
+    }
+    let mut out: Vec<String> = var("LANGUAGE")
+        .map(|l| l.split(':').map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned).collect())
+        .unwrap_or_default();
+    out.push(locale);
+    out
+}
+
+static SYSTEM: AtomicU8 = AtomicU8::new(0);
+#[cfg(test)]
+thread_local! {
+    static TEST_SYSTEM: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// Notes the operating system's language (the shell reads it once at start); „Wie das System“
+/// resolves to it.
+pub fn set_system_lang(lang: Language) {
+    SYSTEM.store(u8::from(lang == Language::En), Ordering::Relaxed);
+}
+
+/// The operating system's language as read at start (German until then).
+pub fn system_lang() -> Language {
+    #[cfg(test)]
+    let v = TEST_SYSTEM.with(|l| l.get());
+    #[cfg(not(test))]
+    let v = SYSTEM.load(Ordering::Relaxed);
+    if v == 1 { Language::En } else { Language::De }
+}
+
+/// Runs `f` with this thread's system language set to `lang` (tests only).
+#[cfg(test)]
+pub(crate) fn with_system_lang<T>(lang: Language, f: impl FnOnce() -> T) -> T {
+    let before = TEST_SYSTEM.with(|l| l.replace(u8::from(lang == Language::En)));
+    let out = f();
+    TEST_SYSTEM.with(|l| l.set(before));
+    out
 }
 
 /// Picks the German or English text: `tr!("Öffnen", "Open")`.
@@ -246,5 +309,53 @@ mod tests {
         for en in ["en-US", "fr-FR", "", "C", "dex"] {
             assert_eq!(lang_of_locale(en), Language::En, "{en}");
         }
+    }
+
+    #[test]
+    fn preferred_locale_takes_the_first_language_the_app_has() {
+        let p = |tags: &[&str]| preferred_locale(tags.iter().map(|t| (*t).to_owned()));
+        assert_eq!(p(&["de-DE", "en-US"]).as_deref(), Some("de-DE"));
+        assert_eq!(p(&["en-GB", "de-DE"]).as_deref(), Some("en-GB"));
+        assert_eq!(p(&["fr-CH", "de-CH"]).as_deref(), Some("de-CH"), "German before the English fallback");
+        assert_eq!(p(&["fr-FR"]).as_deref(), Some("fr-FR"));
+        assert_eq!(p(&["", " "]), None);
+        assert_eq!(p(&["dex", "en"]).as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn linux_locale_follows_gettext_order() {
+        let env = |vars: &[(&str, &str)]| {
+            let vars: Vec<(String, String)> = vars.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect();
+            let found = locales_from_env(|k| vars.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()));
+            lang_of_locale(&preferred_locale(found).unwrap_or_default())
+        };
+        use Language::{De, En};
+        assert_eq!(env(&[("LANG", "de_DE.UTF-8")]), De);
+        assert_eq!(env(&[("LANG", "en_US.UTF-8")]), En);
+        assert_eq!(env(&[]), En, "nothing set");
+        // LC_ALL before LC_MESSAGES before LANG; LC_TIME and the like do not count.
+        assert_eq!(env(&[("LANG", "en_US.UTF-8"), ("LC_MESSAGES", "de_DE.UTF-8")]), De);
+        assert_eq!(env(&[("LANG", "de_DE.UTF-8"), ("LC_MESSAGES", "en_US.UTF-8")]), En);
+        assert_eq!(env(&[("LC_MESSAGES", "de_DE.UTF-8"), ("LC_ALL", "en_US.UTF-8")]), En);
+        assert_eq!(env(&[("LANG", "en_US.UTF-8"), ("LC_TIME", "de_DE.UTF-8")]), En);
+        assert_eq!(env(&[("LANG", "de_DE.UTF-8"), ("LC_ALL", "")]), De, "an empty variable is unset");
+        // LANGUAGE (a priority list) comes first, unless the locale is C/POSIX or unset.
+        assert_eq!(env(&[("LANG", "en_US.UTF-8"), ("LANGUAGE", "de_DE:en")]), De);
+        assert_eq!(env(&[("LANG", "de_DE.UTF-8"), ("LANGUAGE", "en_GB:de")]), En);
+        assert_eq!(env(&[("LANG", "en_US.UTF-8"), ("LANGUAGE", "fr:de")]), De, "French is not there, German is");
+        assert_eq!(env(&[("LANG", "C.UTF-8"), ("LANGUAGE", "de")]), En);
+        assert_eq!(env(&[("LC_ALL", "POSIX"), ("LANG", "de_DE.UTF-8")]), En);
+        assert_eq!(env(&[("LANGUAGE", "de")]), En, "no locale: gettext ignores LANGUAGE");
+        assert_eq!(env(&[("LANG", "de_AT@euro")]), De);
+    }
+
+    #[test]
+    fn system_language_is_per_thread_in_tests() {
+        assert_eq!(system_lang(), Language::De);
+        assert_eq!(with_system_lang(Language::En, system_lang), Language::En);
+        assert_eq!(system_lang(), Language::De);
+        set_system_lang(Language::En);
+        assert_eq!(SYSTEM.load(Ordering::Relaxed), 1);
+        set_system_lang(Language::De);
     }
 }

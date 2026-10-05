@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 12;
+pub const SETTINGS_VERSION: u32 = 13;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -47,6 +47,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 9, name: "own-addresses", run: own_addresses },
     Step { from: 10, name: "work-hours", run: work_hours },
     Step { from: 11, name: "git-author", run: git_author },
+    Step { from: 12, name: "language-choice", run: language_choice },
 ];
 
 /// What [`migrate`] did.
@@ -330,6 +331,20 @@ fn git_author(s: &mut Map<String, Value>) -> Option<String> {
     (!changed.is_empty()).then(|| format!("git_sync: {} of Arcalo", changed.join(", ")))
 }
 
+/// 12 → 13: „Wie das System“ is the language of new installs, and a missing or unknown
+/// `locale.language` now reads as it. Settings of earlier versions read such a value as German,
+/// so they get `de` written; a stored language (picked at the first start or chosen later)
+/// stays as it is: nobody's language changes with the update.
+fn language_choice(s: &mut Map<String, Value>) -> Option<String> {
+    let locale = s.entry("locale").or_insert_with(|| Value::Object(Map::new()));
+    let locale = locale.as_object_mut()?;
+    if matches!(locale.get("language").and_then(Value::as_str), Some("de" | "en" | "system")) {
+        return None;
+    }
+    locale.insert("language".into(), Value::String("de".into()));
+    Some("locale.language: de (as before)".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,7 +453,7 @@ mod tests {
         let mut v: Value = serde_json::from_str(old).unwrap();
         let m = migrate(&mut v);
         let names: Vec<&str> = m.notes.iter().map(|n| n.split(':').next().unwrap()).collect();
-        assert_eq!(names, ["start-open", "ai-providers", "window-effect"]);
+        assert_eq!(names, ["start-open", "ai-providers", "window-effect", "language-choice"]);
         let s = Database::parse_settings(old).unwrap();
         assert_eq!(s.start.open, StartOpen::Daily);
         assert_eq!(s.providers.len(), 1);
@@ -690,7 +705,7 @@ mod tests {
 
     #[test]
     fn work_hours_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 10, "time": {"enabled": true}});
+        let mut v = serde_json::json!({"version": 10, "time": {"enabled": true}, "locale": {"language": "de"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["work-hours: time: work_start, work_end added".to_owned()]);
         assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
@@ -704,7 +719,7 @@ mod tests {
 
     #[test]
     fn the_git_author_of_annalo_becomes_arcalo() {
-        let mut v = serde_json::json!({"version": 11, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
+        let mut v = serde_json::json!({"version": 11, "locale": {"language": "en"}, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["git-author: git_sync: author_name, author_email of Arcalo".to_owned()]);
         assert_eq!(
@@ -718,18 +733,51 @@ mod tests {
             (mine["git_sync"]["author_name"].as_str(), mine["git_sync"]["author_email"].as_str()),
             (Some("Mia Meyer"), Some("arcalo@localhost"))
         );
-        let mut own = serde_json::json!({"version": 11, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
+        let mut own = serde_json::json!({"version": 11, "locale": {"language": "de"}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert_eq!(crate::gitsync::GitSyncSettings::default().author_email, "arcalo@localhost");
     }
 
     #[test]
+    fn a_stored_language_stays_and_only_a_missing_one_becomes_german() {
+        use crate::prefs::LanguageChoice;
+        // A language picked at the first start (or later) is never switched to the system's.
+        for lang in ["de", "en"] {
+            let mut v = serde_json::json!({"version": 12, "locale": {"language": lang, "date_format": "iso"}});
+            assert!(migrate(&mut v).notes.is_empty(), "{lang}");
+            assert_eq!(v["locale"]["language"], lang);
+        }
+        // Missing or unknown read as German before 1.13 and stay German.
+        for mut v in [
+            serde_json::json!({"version": 12}),
+            serde_json::json!({"version": 12, "locale": {"date_format": "iso"}}),
+            serde_json::json!({"version": 12, "locale": {"language": "fr"}}),
+        ] {
+            let m = migrate(&mut v);
+            assert_eq!(m.notes, vec!["language-choice: locale.language: de (as before)".to_owned()], "{v}");
+            assert_eq!(Database::parse_settings(&v.to_string()).unwrap().locale.language, LanguageChoice::De);
+            let mut again = v.clone();
+            again.as_object_mut().unwrap().remove("version");
+            assert!(migrate(&mut again).notes.iter().all(|n| !n.starts_with("language-choice")));
+        }
+        // Settings of every earlier release keep German; new installs follow the system.
+        for (name, json) in FIXTURES {
+            assert_eq!(Database::parse_settings(json).unwrap().locale.language, LanguageChoice::De, "{name}");
+        }
+        assert_eq!(Settings::default().locale.language, LanguageChoice::System);
+        assert_eq!(
+            Database::open_in_memory().unwrap().load_settings().unwrap().locale.language,
+            LanguageChoice::System
+        );
+    }
+
+    #[test]
     fn own_addresses_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 9, "mail": {"default_action": "note"}});
+        let mut v = serde_json::json!({"version": 9, "mail": {"default_action": "note"}, "locale": {"language": "de"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["own-addresses: mail.own_addresses added".to_owned()]);
         assert_eq!(v["mail"]["own_addresses"], serde_json::json!([]));
-        let mut mine = serde_json::json!({"version": 9, "mail": {"own_addresses": ["ich@firma.de"]}});
+        let mut mine = serde_json::json!({"version": 9, "mail": {"own_addresses": ["ich@firma.de"]}, "locale": {"language": "en"}});
         assert!(migrate(&mut mine).notes.is_empty());
         assert_eq!(mine["mail"]["own_addresses"], serde_json::json!(["ich@firma.de"]));
     }

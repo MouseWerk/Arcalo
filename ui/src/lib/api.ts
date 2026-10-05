@@ -3,7 +3,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type * as T from "./types";
-import { t, type TKey } from "./i18n";
+import { noteSystemLang, t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
 import type * as G from "./graph";
 
@@ -11,6 +11,12 @@ import type * as G from "./graph";
 // unmounted; its last requests are simply dropped instead of showing errors).
 const call = <R>(cmd: string, args?: Record<string, unknown>) =>
   invoke<R>(cmd, args).catch((e: unknown) => (e === "app-locked" ? new Promise<R>(() => {}) : Promise.reject(e)));
+
+/** Every window learns the system language („Wie das System“) with the settings. */
+function withSystemLang(v: T.SettingsView): T.SettingsView {
+  noteSystemLang(v.system_language);
+  return v;
+}
 
 export const api = {
   // pages
@@ -210,8 +216,8 @@ export const api = {
   briefingStart: () => call<T.BriefingStart>("briefing_start"),
 
   // settings
-  settings: () => call<T.SettingsView>("settings_get"),
-  saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }),
+  settings: () => call<T.SettingsView>("settings_get").then(withSystemLang),
+  saveSettings: (settings: T.Settings) => call<T.SettingsView>("settings_save", { settings }).then(withSystemLang),
   setSettingsScope: (section: string, scope: T.SettingsScope) => call<T.SettingsView>("settings_scope_set", { section, scope }),
   undoSettingsSync: () => call<T.SettingsView>("settings_sync_undo"),
   /** The operating system's locale tag (e.g. „de-DE“), or null when unknown. */
