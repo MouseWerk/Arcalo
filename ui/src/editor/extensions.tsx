@@ -84,12 +84,12 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   },
 
   parseHTML() {
-    return [{ tag: "a[data-wikilink]", getAttrs: (el) => ({ target: (el as HTMLElement).dataset.target, alias: (el as HTMLElement).dataset.alias ?? null }) }];
+    return [{ tag: "a[data-wikilink]", getAttrs: (el) => ({ target: (el as HTMLElement).dataset.target, anchor: (el as HTMLElement).dataset.anchor ?? null, alias: (el as HTMLElement).dataset.alias ?? null }) }];
   },
 
   renderHTML({ node, HTMLAttributes }) {
     const label = wikiLabel(node);
-    return ["a", mergeAttributes(HTMLAttributes, { "data-wikilink": "", "data-target": node.attrs.target, class: "wikilink" }), label];
+    return ["a", mergeAttributes(HTMLAttributes, { "data-wikilink": "", "data-target": node.attrs.target, ...(node.attrs.anchor ? { "data-anchor": node.attrs.anchor } : {}), class: "wikilink" }), label];
   },
 
   addNodeView() {
@@ -97,6 +97,7 @@ export const WikiLink = Node.create<WikiLinkOptions>({
       const dom = document.createElement("a");
       dom.dataset.wikilink = "";
       dom.dataset.target = node.attrs.target;
+      if (node.attrs.anchor) dom.dataset.anchor = node.attrs.anchor;
       // `[[Angebot.pdf]]` with no page of that title: a link to the attachment, never a page to create.
       if (!this.options.isKnown(node.attrs.target) && isFileLinkTarget(node.attrs.target)) return fileLinkView(dom, node, this.options);
       const known = !node.attrs.target || this.options.isKnown(node.attrs.target);

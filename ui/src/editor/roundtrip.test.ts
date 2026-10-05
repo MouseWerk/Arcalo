@@ -6,6 +6,7 @@ import { Editor } from "@tiptap/core";
 import { buildExtensions, collapseBlankLines, toMarkdown } from "./schema";
 import { joinFrontmatter, splitFrontmatter } from "./extensions";
 import { anchorPage, fileExtension, fileKind, formatSize, isFileEmbedName } from "./fileEmbed";
+import { setSourceBlocks } from "./sourceStyle";
 
 function roundtrip(md: string) {
   const el = document.createElement("div");
@@ -13,6 +14,16 @@ function roundtrip(md: string) {
   const out = toMarkdown(editor);
   editor.destroy();
   return out;
+}
+
+/** Written from the editor's document alone, as if every block had been edited (no source blocks). */
+function rewrite(md: string) {
+  setSourceBlocks(false);
+  try {
+    return roundtrip(md);
+  } finally {
+    setSourceBlocks(true);
+  }
 }
 
 const CASES: Record<string, string> = {
@@ -112,11 +123,12 @@ describe("markdown round-trip", () => {
   for (const [name, md] of Object.entries(CASES)) {
     it(name, () => {
       expect(roundtrip(md)).toBe(md);
+      expect(rewrite(md)).toBe(md);
     });
   }
 
-  it("keeps <autolinks> as bare URLs", () => {
-    expect(roundtrip("Kurz: <https://example.com>\n")).toBe("Kurz: https://example.com\n");
+  it("keeps <autolinks> as written", () => {
+    expect(rewrite("Kurz: <https://example.com> und <mail@example.de>\n")).toBe("Kurz: <https://example.com> und <mail@example.de>\n");
   });
 
   it("does not grow escaped time-entry attributes", () => {
@@ -268,7 +280,12 @@ describe("file names", () => {
 
 describe("entities", () => {
   it("reads named and numeric entities as their characters", () => {
-    expect(roundtrip("&copy; 2026 &#124; &#x41;\n")).toBe("© 2026 | A\n");
+    const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: "&copy; 2026 &#124; &#x41;\n", contentType: "markdown" });
+    expect(editor.state.doc.textContent).toBe("© 2026 | A");
+    editor.destroy();
+    // Written as characters once the paragraph is edited; as written while it is not.
+    expect(rewrite("&copy; 2026 &#124; &#x41;\n")).toBe("© 2026 | A\n");
+    expect(roundtrip("&copy; 2026 &#124; &#x41;\n")).toBe("&copy; 2026 &#124; &#x41;\n");
   });
   it("keeps a typed entity name literal", () => {
     expect(roundtrip("Schreib &amp;nbsp; dafür\n")).toBe("Schreib &amp;nbsp; dafür\n");
@@ -334,8 +351,10 @@ describe("markdown the editor has no block for (kept verbatim)", () => {
     });
   }
 
-  it("code containing ``` in a ~~~ fence gets a longer backtick fence (same code)", () => {
-    const out = roundtrip("~~~\n```\nx\n```\n~~~\n");
+  it("code containing ``` in a backtick fence gets a longer fence (same code)", () => {
+    expect(rewrite("~~~\n```\nx\n```\n~~~\n")).toBe("~~~\n```\nx\n```\n~~~\n");
+    expect(rewrite("~~~~\n~~~\n~~~~\n")).toBe("~~~~\n~~~\n~~~~\n");
+    const out = rewrite("````\n```\nx\n```\n````\n");
     expect(out).toBe("````\n```\nx\n```\n````\n");
     const editor = editorFor(out);
     expect(editor.state.doc.childCount).toBe(1);

@@ -28,6 +28,27 @@ import { LazyHighlight, lowlight } from "./languages";
 import { PageEmbed, type PageEmbedOptions } from "./pageEmbed";
 import { RichBlocks, type RichBlocksOptions } from "./richBlocks";
 import type { Lexer } from "marked";
+import {
+  EM_CLOSE,
+  EM_OPEN,
+  GAP_LINE,
+  RAW_RE,
+  RENDERED,
+  RefDefinition,
+  STRONG_CLOSE,
+  STRONG_OPEN,
+  SourceStyle,
+  endSource,
+  itemIndent,
+  listMarker,
+  normLabel,
+  prepareSource,
+  refFor,
+  renderListItem,
+  resolveUnderscores,
+  tokenizeTaskList,
+  type JNode,
+} from "./sourceStyle";
 
 export { lowlight };
 
@@ -36,17 +57,19 @@ export { lowlight };
  * The default serializer escapes every `[ ] _ * ~`, which litters files
  * (`a\_b`, `\[Entwurf\]`) that Obsidian users read and edit directly.
  */
-export function escapeText(t: string, atLineStart = true): string {
-  const s = t
+export function escapeText(t: string, atLineStart = true, around: { before?: boolean; after?: boolean } = {}): string {
+  let s = t
     .replace(/\\(?=[\\`*_[\]~=#<>!|.)+-])/g, "\\\\")
     .replace(/`/g, "\\`")
     .replace(/\[\[/g, "\\[\\[")
     .replace(/\[\^/g, "\\[^")
-    .replace(/\[([^\]\n]*)\]\(/g, "\\[$1\\](")
-    .replace(/(^|[^\p{L}\p{N}*\\])\*(?=\S)/gu, "$1\\*")
-    .replace(/([^\s\\])\*(?=$|[^\p{L}\p{N}*])/gu, "$1\\*")
-    .replace(/(^|[^\p{L}\p{N}_\\])_(?=\S)/gu, "$1\\_")
-    .replace(/([^\s\\])_(?=$|[^\p{L}\p{N}_])/gu, "$1\\_")
+    .replace(/\[([^\]\n]*)\]\(/g, "\\[$1\\](");
+  // Text next to other inline content (a mark, a link): its edge counts as punctuation there.
+  s = (around.before ? EDGE : "") + s + (around.after ? EDGE : "");
+  s = s
+    .replace(/\*+/g, (run, at: number, all: string) => (flanking(all[at - 1], all[at + run.length]) ? run.replace(/\*/g, "\\*") : run))
+    .replace(/_+/g, (run, at: number, all: string) => (flanking(all[at - 1], all[at + run.length]) ? run.replace(/_/g, "\\_") : run))
+    .replace(EDGE_RE, "")
     .replace(/~~/g, "\\~\\~")
     .replace(/==/g, "\\=\\=")
     .replace(/&(?=#?\w+;)/g, "&amp;")
@@ -58,6 +81,21 @@ export function escapeText(t: string, atLineStart = true): string {
     .split("\n")
     .map((line, i) => (i > 0 || atLineStart ? escapeLineStart(line) : line))
     .join("\n");
+}
+
+/** Stands for inline content next to a text while escaping it. */
+const EDGE = "\uE050";
+const EDGE_RE = /\uE050/g;
+const WORD = /[\p{L}\p{N}]/u;
+
+/**
+ * Whether a run of `*` or `_` between `prev` and `next` could open or close emphasis (it touches
+ * text on one side and is not inside a word); then the whole run is escaped.
+ */
+function flanking(prev: string | undefined, next: string | undefined): boolean {
+  const opens = next != null && !/\s/.test(next) && !(prev != null && WORD.test(prev));
+  const closes = prev != null && !/\s/.test(prev) && !(next != null && WORD.test(next));
+  return opens || closes;
 }
 
 /** Escapes what would turn a line into a block (heading, list, quote, setext underline). */
@@ -128,6 +166,18 @@ function renderTable(node: JsonNode, h: Parameters<typeof renderTableToMarkdown>
     return "-".repeat(w);
   });
   const cellsOf = (r: Cell[]) => Array.from({ length: cols }, (_, i) => r[i]?.text ?? "");
+  // A table written without padding stays that way, with its separator row while the columns match.
+  const style = node.attrs?.style as { compact?: boolean; outer?: boolean; sep?: string } | null | undefined;
+  if (style?.compact) {
+    const row = (cells: string[]) => (style.outer ? `| ${cells.join(" | ")} |\n` : `${cells.join(" | ")}\n`);
+    const seps = (style.sep ?? "").replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+    const sepAlign = (c: string) => (c.startsWith(":") && c.endsWith(":") && c.length > 1 ? "center" : c.startsWith(":") ? "left" : c.endsWith(":") ? "right" : null);
+    const sameSep = seps.length === cols && seps.every((c, i) => /^:?-+:?$/.test(c) && sepAlign(c) === aligns[i]);
+    const own = aligns.map((a) => (a === "left" ? ":--" : a === "right" ? "--:" : a === "center" ? ":-:" : "---"));
+    let out = "\n" + row(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + (sameSep ? `${style.sep}\n` : row(own));
+    for (const r of hasHeader ? rows.slice(1) : rows) out += row(cellsOf(r));
+    return out;
+  }
   let out = "\n" + line(hasHeader ? cellsOf(rows[0]) : cellsOf([])) + `| ${sep.join(" | ")} |\n`;
   for (const r of hasHeader ? rows.slice(1) : rows) out += line(cellsOf(r));
   return out;
@@ -263,6 +313,35 @@ function decodeTextToken<T extends { type: string; text?: string }>(token: T): T
 /** The plain text inside a serialized node (code block content). */
 const textOf = (node: JsonNode): string => (node.content ?? []).map((c) => (c as { text?: string }).text ?? textOf(c)).join("");
 
+type ListHelpers = Parameters<typeof renderListItem>[1];
+type ListContext = Parameters<typeof listMarker>[0];
+
+/**
+ * A code block in the fence it was written with (backticks or tildes, at least as long as
+ * before) and its info string as written; indented code stays indented where it can.
+ */
+export function renderCodeBlock(node: JsonNode, ctx?: { parentType?: string; previousNode?: JsonNode }): string {
+  const language = String(node.attrs?.language ?? "");
+  const text = textOf(node);
+  const style = typeof node.attrs?.fence === "string" ? node.attrs.fence : "";
+  // Indented code needs a block before it that it cannot continue (not a list) and no blank edge lines.
+  const prev = ctx?.previousNode?.type ?? "";
+  if (/^(?: {4}|\t)$/.test(style) && !language && ctx?.parentType === "doc" && prev && !/List$/.test(prev) && text.trim() && !/^\s*\n|\n\s*$/.test(text)) {
+    return text
+      .split("\n")
+      .map((l) => (l ? style + l : l))
+      .join("\n");
+  }
+  const m = /([`~]{3,})$/.exec(style);
+  let fence = codeFence(text);
+  if (m?.[1][0] === "~") {
+    const longest = Math.max(0, ...[...text.matchAll(/^ {0,3}(~{3,})/gm)].map((r) => r[1].length));
+    fence = "~".repeat(Math.max(3, m[1].length, longest + 1));
+  } else if (m && m[1].length > fence.length) fence = m[1];
+  const info = typeof node.attrs?.info === "string" && node.attrs.info.trim() === language ? node.attrs.info : language;
+  return `${fence}${info}\n${text}\n${fence}`;
+}
+
 /** Installs the minimal escaping on the editor's Markdown serializer. */
 const MarkdownFidelity = Extension.create({
   name: "markdownFidelity",
@@ -282,23 +361,61 @@ const MarkdownFidelity = Extension.create({
       if (!render) continue;
       spec.renderMarkdown = (node, ...rest) => (typeof node.attrs?.raw === "string" ? node.attrs.raw : render(node, ...rest));
     }
-    // Code containing ``` gets a longer fence, so the block does not end early.
+    // Code containing ``` gets a longer fence, so the block does not end early. The fence as
+    // written (`~~~`, four backticks, indented code) is kept.
     for (const spec of manager.nodeTypeRegistry.get("codeBlock") ?? []) {
-      spec.renderMarkdown = (node) => {
-        const language = String(node.attrs?.language ?? "");
-        const text = textOf(node);
-        const fence = codeFence(text);
-        return `${fence}${language}\n${text}\n${fence}`;
+      spec.renderMarkdown = (node, ...rest) => renderCodeBlock(node, rest[1] as { parentType?: string; previousNode?: JsonNode } | undefined);
+    }
+    // Lists and items with the markers, numbering, spacing and indentation of the source.
+    for (const type of ["bulletList", "orderedList", "taskList"]) {
+      for (const spec of manager.nodeTypeRegistry.get(type) ?? []) {
+        spec.renderMarkdown = (node, ...rest) => (node.content ? (rest[0] as ListHelpers).renderChildren(node.content, node.attrs?.loose ? "\n\n" : "\n") : "");
+      }
+    }
+    for (const spec of manager.nodeTypeRegistry.get("listItem") ?? []) {
+      spec.renderMarkdown = (node, ...rest) => {
+        const [h, ctx] = rest as [ListHelpers, ListContext];
+        const prefix = listMarker(ctx);
+        return renderListItem(node, h, prefix, itemIndent(node, h, prefix, ctx?.parentType === "orderedList"));
       };
     }
     // An empty task keeps the space after its box, which makes it a task when read again.
     for (const spec of manager.nodeTypeRegistry.get("taskItem") ?? []) {
-      const render = spec.renderMarkdown;
-      if (!render) continue;
       spec.renderMarkdown = (node, ...rest) => {
-        const out = render(node, ...rest);
-        return typeof out === "string" ? out.replace(/^(- \[[ x]\])(?=\n|$)/, "$1 ") : out;
+        const [h, ctx] = rest as [ListHelpers, ListContext];
+        const bullet = ctx?.meta?.parentAttrs?.bullet;
+        const prefix = `${typeof bullet === "string" ? bullet : "-"} [${node.attrs?.checked ? "x" : " "}] `;
+        return renderListItem(node, h, prefix, itemIndent(node, h, prefix, false)).replace(/^([-+*] \[[ x]\])(?=\n|$)/, "$1 ");
       };
+    }
+    // Setext headings (`Titel` over `===`) and closing hashes stay; `***` and `___` rules too.
+    for (const spec of manager.nodeTypeRegistry.get("heading") ?? []) {
+      spec.renderMarkdown = (node, ...rest) => {
+        if (!node.content) return "";
+        const level = Number(node.attrs?.level ?? 1) || 1;
+        const text = (rest[0] as ListHelpers).renderChildren(node.content);
+        const setext = node.attrs?.setext;
+        if (typeof setext === "string" && setext[0] === (level === 1 ? "=" : level === 2 ? "-" : "") && text.trim() && !text.includes("\n")) return `${text}\n${setext}`;
+        return `${"#".repeat(level)} ${text}${typeof node.attrs?.close === "string" ? node.attrs.close : ""}`;
+      };
+    }
+    for (const spec of manager.nodeTypeRegistry.get("horizontalRule") ?? []) {
+      spec.renderMarkdown = (node) => (typeof node.attrs?.markup === "string" ? node.attrs.markup : "---");
+    }
+    // `_x_`, `__x__` and `~x~` as written.
+    const marks: [string, string, string, string][] = [
+      ["italic", "*", EM_OPEN + "_", "_" + EM_CLOSE],
+      ["bold", "**", STRONG_OPEN + "__", "__" + STRONG_CLOSE],
+      ["strike", "~~", "~", "~"],
+    ];
+    for (const [type, plain, open, close] of marks) {
+      for (const spec of manager.nodeTypeRegistry.get(type) ?? []) {
+        spec.renderMarkdown = (node, ...rest) => {
+          const text = (rest[0] as ListHelpers).renderChildren(node);
+          const own = node.attrs?.delim === (type === "strike" ? "~" : "_");
+          return own ? `${open}${text}${close}` : `${plain}${text}${plain}`;
+        };
+      }
     }
     // A task list right after a bullet list (or the other way round) is one list in Markdown: written
     // without the blank line between, which would make it a loose list in other readers. A blank
@@ -333,11 +450,15 @@ const MarkdownFidelity = Extension.create({
       const inCode = (parent?.type != null && manager.codeTypes.has(parent.type)) || (node.marks ?? []).some((m) => manager.codeTypes.has(typeof m === "string" ? m : m.type));
       // A `|` in inline code still ends a table cell (GFM): escaped there, the code reads the same.
       if (inCode) return parent?.attrs?.[IN_TABLE_CELL] && !(parent?.type != null && manager.codeTypes.has(parent.type)) ? text.replace(/\|/g, "\\|") : text;
+      // A link, image or embed with marks, already written (sourceStyle.ts).
+      const rendered = (node as Record<string, unknown>)[RENDERED];
+      if (typeof rendered === "string") return rendered;
       const siblings = parent?.content ?? [];
       const idx = siblings.indexOf(node);
       // A footnote definition's text follows `[^1]: `, never at the start of a line.
       const atLineStart = !node.marks?.length && parent?.type !== "footnoteDefinition" && (idx === 0 || (idx > 0 && siblings[idx - 1].type === "hardBreak"));
-      const out = escapeText(text, atLineStart);
+      const inline = (n: JsonNode | undefined) => n != null && n.type !== "hardBreak";
+      const out = escapeText(text, atLineStart, { before: idx > 0 && inline(siblings[idx - 1]), after: idx >= 0 && inline(siblings[idx + 1]) });
       return parent?.attrs?.[IN_TABLE_CELL] ? out.replace(/\|/g, "\\|") : out;
     };
   },
@@ -353,7 +474,7 @@ const LINK_CLOSE = "\uE001";
 const CODE_OPEN = "\uE010";
 const CODE_CLOSE = "\uE011";
 // (U+E002 is the footnotes' TIGHT_MARK.)
-const SENTINELS_RE = /[\uE000\uE001\uE010\uE011]/g;
+const SENTINELS_RE = /[\uE000\uE001\uE006-\uE009\uE010\uE011]/g;
 const CODE_RE = /\uE010([^\uE010\uE011]*)\uE011/g;
 
 /** Inline code with a fence longer than any backtick run inside, padded where a space or backtick would be lost. */
@@ -370,26 +491,65 @@ export function linkDestination(href: string): string {
   return bare ? href : `<${href.replace(/[<>\n]/g, (c) => encodeURIComponent(c))}>`;
 }
 
-/** Bare URLs and e-mail addresses stay bare instead of becoming `[x](x)`. */
+/** Bare URLs and e-mail addresses stay bare instead of becoming `[x](x)` (where a reader links them bare). */
 export function linkMarkdown(text: string, href: string, title?: string | null): string {
   if (!title) {
     const plain = unescapeText(text);
-    if (plain === href) return href;
-    if (href === `mailto:${plain}`) return plain;
+    if (plain === href && /^(?:https?|ftp):\/\/\S+$/i.test(href)) return href;
+    if (href === `mailto:${plain}` && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(plain)) return plain;
     if (plain.startsWith("www.") && href === `http://${plain}`) return plain;
   }
   return title ? `[${text}](${href} "${title}")` : `[${text}](${href})`;
 }
 
+// How a link was written (sourceStyle.ts `linkForm`), carried inside its sentinels.
+const FORM_INLINE = "";
+const FORM_ANGLE = "";
+const FORM_REF = "";
+const FORM_REF_END = "";
+
 const MarkdownLink = Link.extend({
   renderMarkdown: (node, h) => {
     const href: string = node.attrs?.href ?? "";
     const title: string = node.attrs?.title ?? "";
-    return `${LINK_OPEN}[${h.renderChildren(node)}](${linkDestination(href)}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})${LINK_CLOSE}`;
+    const form = node.attrs?.form as string | null | undefined;
+    const ref = node.attrs?.ref as string | null | undefined;
+    // A reference link stays one while its definition still says the same.
+    const meta =
+      ref != null && refFor(ref, href, title || null)
+        ? `${FORM_REF}${form === "full" ? "f" : form === "collapsed" ? "c" : "s"}${ref}${FORM_REF_END}`
+        : form === "inline"
+          ? FORM_INLINE
+          : form === "angle"
+            ? FORM_ANGLE
+            : "";
+    return `${LINK_OPEN}${meta}[${h.renderChildren(node)}](${linkDestination(href)}${title ? ` "${title.replace(/[\\"]/g, "\\$&")}"` : ""})${LINK_CLOSE}`;
   },
 });
 
-const LINK_RE = new RegExp(`${LINK_OPEN}\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()<>]|\\([^\\s()<>]*\\))*|<[^<>\\n]*>)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`, "g");
+const LINK_RE = new RegExp(
+  `${LINK_OPEN}(${FORM_INLINE}|${FORM_ANGLE}|${FORM_REF}[fcs][^${FORM_REF_END}]*${FORM_REF_END})?\\[([^${LINK_OPEN}${LINK_CLOSE}]*)\\]\\(((?:[^\\s()<>]|\\([^\\s()<>]*\\))*|<[^<>\\n]*>)(?: "((?:[^"\\\\]|\\\\.)*)")?\\)${LINK_CLOSE}`,
+  "g",
+);
+
+/** A link in its written form (see `MarkdownLink`); `null` form: the default. */
+function writeLink(meta: string | undefined, text: string, dest: string, title: string | undefined): string {
+  if (meta?.startsWith(FORM_REF)) {
+    const kind = meta[1];
+    const label = meta.slice(2, -1);
+    const same = normLabel(unescapeText(text)) === normLabel(label);
+    if (kind === "c" && same) return `[${text}][]`;
+    if (kind === "s" && same) return `[${text}]`;
+    return `[${text}][${label}]`;
+  }
+  if (meta === FORM_INLINE) return title ? `[${text}](${dest} "${title}")` : `[${text}](${dest})`;
+  if (meta === FORM_ANGLE && !title) {
+    const plain = unescapeText(text);
+    if (plain === dest) return `<${dest}>`;
+    if (dest === `mailto:${plain}`) return `<${plain}>`;
+  }
+  return linkMarkdown(text, dest, title);
+}
 
 export interface SchemaOptions {
   onOpenLink?: (target: string, newTab: boolean, anchor: string | null) => void;
@@ -456,6 +616,14 @@ const ImageParagraph = Paragraph.extend({
   },
 });
 
+/** Task lists with tab-indented nesting and their items' source (sourceStyle.ts). */
+const SourceTaskList = TaskList.extend({
+  markdownTokenizer: TaskList.config.markdownTokenizer && {
+    ...TaskList.config.markdownTokenizer,
+    tokenize: (src: string, _tokens: unknown, lexer: unknown) => tokenizeTaskList(src, lexer as Parameters<typeof tokenizeTaskList>[1]) as never,
+  },
+});
+
 export function buildExtensions(o: SchemaOptions = {}): Extensions {
   return [
     StarterKit.configure({
@@ -476,7 +644,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     LazyHighlight,
-    TaskList,
+    SourceTaskList,
     TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
     Highlight,
     TableKit.configure({ table: false }),
@@ -486,7 +654,9 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       showOnlyCurrent: true,
     }),
     Markdown,
+    SourceStyle,
     MarkdownFidelity,
+    RefDefinition,
     WikiLink.configure({
       onOpen: o.onOpenLink ?? (() => {}),
       isKnown: o.isKnown ?? (() => true),
@@ -538,7 +708,37 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
  * wiki-link brackets in plain text).
  */
 export function toMarkdown(editor: Editor): string {
-  return cleanMarkdown(editor.getMarkdown());
+  const manager = (editor as unknown as { markdown?: { serialize: (json: unknown) => string } }).markdown;
+  if (!manager) return cleanMarkdown(editor.getMarkdown());
+  const json = editor.getJSON() as JNode;
+  // Unchanged blocks are written as read (sourceStyle.ts).
+  const raws = prepareSource(editor, json);
+  try {
+    return cleanMarkdown(manager.serialize(json), raws);
+  } finally {
+    endSource();
+  }
+}
+
+/** How a page's text breaks its lines and what is before and after its first and last block. */
+export interface TextShape {
+  crlf: boolean;
+  lead: string;
+  end: string;
+}
+
+/** The shape of a page body as read (Windows line ends, leading blank lines, the line ends at the end). */
+export function textShape(body: string): TextShape {
+  const crlf = body.includes("\r\n") && !/(^|[^\r])\n/.test(body);
+  const lf = body.replace(/\r\n/g, "\n");
+  if (!lf.trim()) return { crlf, lead: "", end: lf };
+  return { crlf, lead: /^\n*/.exec(lf)![0], end: /\n*$/.exec(lf)![0] };
+}
+
+/** `toMarkdown`'s text in the shape the page had, so a save changes only what was edited. */
+export function withShape(md: string, shape: TextShape): string {
+  const out = md.trim() ? shape.lead + md.replace(/\n+$/, "") + shape.end : shape.end;
+  return shape.crlf ? out.replace(/\n/g, "\r\n") : out;
 }
 
 /** Runs of blank lines become one, except inside fenced code, which stays as written. */
@@ -565,12 +765,12 @@ export function collapseBlankLines(md: string): string {
   return out.join("\n");
 }
 
-export function cleanMarkdown(md: string): string {
+export function cleanMarkdown(md: string, raws: string[] = []): string {
   return (
-    collapseBlankLines(md
+    resolveUnderscores(collapseBlankLines(md
       .replace(CODE_RE, (_m, text: string) => codeSpan(text))
-      .replace(LINK_RE, (m, text: string, href: string, title: string | undefined, at: number, all: string) => {
-        const out = linkMarkdown(text, href, title);
+      .replace(LINK_RE, (m, meta: string | undefined, text: string, href: string, title: string | undefined, at: number, all: string) => {
+        const out = writeLink(meta, text, href, title);
         // A bare URL would swallow a footnote reference right behind it (`https://x.de[^1]`).
         return out === href && all.startsWith("[^", at + m.length) ? `[${text}](${href})` : out;
       })
@@ -580,10 +780,15 @@ export function cleanMarkdown(md: string): string {
       // (also indented, or quoted in a callout: the blank line before the mark goes, the prefix stays)
       .replace(new RegExp(`(?:\n[ \t>]*)*\n([ \t>]*)${TIGHT_MARK}`, "g"), "\n$1")
       .replace(new RegExp(TIGHT_MARK, "g"), ""),
-    )
+    ))
+      // Extra blank lines as the file had them (sourceStyle.ts `Gap`).
+      .replace(GAP_LINE_RE, "")
       .replace(/^\n+/, "")
       .trimEnd()
       // A final empty task keeps the space after its box.
-      .replace(/(^|\n)(\s*[-+*] \[[ xX]\])$/, "$1$2 ") + "\n"
+      .replace(/(^|\n)(\s*[-+*] \[[ xX]\])$/, "$1$2 ")
+      .replace(RAW_RE, (_m, i: string) => raws[Number(i)] ?? "") + "\n"
   );
 }
+
+const GAP_LINE_RE = new RegExp(GAP_LINE, "g");

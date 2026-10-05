@@ -31,6 +31,12 @@ export function editorForPage(pageId: number): Editor | null {
   return list.find((e) => (e.view.dom as HTMLElement).closest(".pane.active")) ?? list[0] ?? null;
 }
 
+/** The page of the note editor showing `el` (a link in it), if any. */
+export function pageOfElement(el: Element): number | null {
+  for (const [e, id] of editors) if (!e.isDestroyed && (e.view.dom as HTMLElement).contains(el)) return id;
+  return null;
+}
+
 // ---------------------------------------------------------------- locating
 
 const norm = (s: string) =>
@@ -182,6 +188,24 @@ export function locateAnchor(doc: PMNode, anchor: string): Located | null {
     return false;
   });
   return found;
+}
+
+/**
+ * The anchor of a heading in exported HTML: its text as section links compare it (case, quotes and
+ * spaces folded), spaces as `-`, only letters, digits, `-` and `_` (`Über uns` → `über-uns`).
+ */
+export function headingSlug(text: string): string {
+  return norm(text)
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+/** The slug a section link points at: the last part of `H1#H2`, or `block-<id>` for `^id`. */
+export function anchorSlug(anchor: string): string {
+  const a = anchor.trim();
+  if (a.startsWith("^")) return `block-${a.slice(1).toLowerCase()}`;
+  return headingSlug(a.split("#").filter(Boolean).pop() ?? a);
 }
 
 /** Scrolls to and flashes the heading or block an anchor names; false when the page has none. */

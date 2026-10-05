@@ -16,7 +16,7 @@ import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
 import { h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { joinFrontmatter, linkAtCaret, pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
-import { buildExtensions, toMarkdown } from "./schema";
+import { buildExtensions, textShape, toMarkdown, withShape } from "./schema";
 import { anchorItems, embedMount, richMount } from "./liveMounts";
 import { zeitLaItems, zeitRefItems } from "./zeit-source";
 import { IconButton, useMenu } from "../components/ui";
@@ -158,7 +158,10 @@ export function NoteEditor({
   const frontmatter = useRef(splitFrontmatter(doc.content).frontmatter);
   // The blank line under the frontmatter as the file has it.
   const fmGap = useRef(splitFrontmatter(doc.content).gap);
-  const compose = (editor: Editor) => joinFrontmatter(frontmatter.current, fmGap.current, toMarkdown(editor));
+  // Line ends and the blank lines around the text as the file has them.
+  const shape = useRef(textShape(splitFrontmatter(doc.content).body));
+  const bodyOf = (editor: Editor) => withShape(toMarkdown(editor), shape.current);
+  const compose = (editor: Editor) => joinFrontmatter(frontmatter.current, fmGap.current, bodyOf(editor));
   const saveTimer = useRef<number | undefined>(undefined);
   const dirty = useRef(false);
   const saving = useRef<Promise<void> | null>(null);
@@ -206,11 +209,12 @@ export function NoteEditor({
   const apply = (editor: Editor, content: string) => {
     const { frontmatter: fm, body, gap } = splitFrontmatter(content);
     fmGap.current = gap;
+    shape.current = textShape(body);
     if (fm !== frontmatter.current) {
       frontmatter.current = fm;
       cb.current.onFrontmatter?.(fm);
     }
-    if (toMarkdown(editor) === body) return;
+    if (bodyOf(editor) === body) return;
     replaceChanged(editor, body);
     if (activeRef.current) publishOutline(editor);
   };
