@@ -145,7 +145,9 @@ test("deleting many notes stops the sync until it is confirmed in the settings",
   await app.waitText(".dialog", /12 Notizen werden auf dem Server gelöscht/);
   for (const b of await app.$$(".dialog .dialog-foot button")) if ((await app.textOf(b)) === "Löschen und synchronisieren") await b.click();
   await app.browser.waitUntil(async () => !serverFiles().includes("Wegwerf 1.md"), { timeout: 20000, timeoutMsg: "deletions not pushed" });
-  const after = await app.invoke("git_sync_status");
+  // The sync records its result after the push has reached the server.
+  let after;
+  await app.browser.waitUntil(async () => (after = await app.invoke("git_sync_status")).last_error === null, { timeout: 10000, timeoutMsg: "the held-deletions error stays after the push" });
   assert.equal(after.last_error, null);
   assert.ok(!after.blocked_deletions);
   assert.ok(serverFiles().includes("Server-Notiz.md"), "the rest stays");
