@@ -402,6 +402,13 @@
 .link-preview-body > :first-child { margin-top: 0; }
 .link-preview-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, var(--bg-overlay)); pointer-events: none; }
 .link-preview-empty { padding: 14px; color: var(--text-3); font-size: var(--fs-sm); }
+/* `[[Seite#Abschnitt]]`: the section after the page, both cut before the other is pushed out. */
+.link-preview-title { min-width: 0; max-width: 100%; }
+.link-preview-page, .link-preview-section { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-preview-section { max-width: 60%; color: var(--text-2); font-weight: var(--fw-medium); }
+.link-preview-sep { flex: none; color: var(--text-3); font-weight: var(--fw-normal); }
+.link-preview-title:hover .link-preview-section { color: var(--accent-text); }
+.link-preview-note { flex: none; margin: 0 14px 8px; padding: 6px 10px; border-radius: var(--r-sm); background: var(--bg-hover); color: var(--text-3); font-size: var(--fs-xs); }
 
 /* ---- dropdown (components/Select.tsx) ---- */
 /* The trigger looks like an input; it is as wide as its longest option unless a width is set. */

@@ -1,6 +1,7 @@
-// Obsidian-style page preview: hovering a [[link]] shows a card with the start of that page.
+// Obsidian-style page preview: hovering a [[link]] shows a card with the start of that page, or
+// the section of `[[Seite#Abschnitt]]` / the block of `[[Seite#^id]]` (`[[#Abschnitt]]`: this page).
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { api } from "../lib/api";
 import { renderMarkdown } from "../lib/markdown";
 import { splitFrontmatter } from "../editor/extensions";
@@ -8,29 +9,73 @@ import { useApp } from "../store/app";
 import { isFileLinkTarget } from "../editor/fileEmbed";
 import { titleSet } from "../lib/links";
 import { PageIcon } from "./icons";
-import type { PageDoc } from "../lib/types";
+import type { EmbedView, PageDoc } from "../lib/types";
 import { t } from "../lib/i18n";
+import { openAtAnchor, pageOfElement } from "../editor/reveal";
 
 /** Settings → Editor: hover preview on/off and its delay. */
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
 const PREVIEW_CHARS = 900;
 // Pages previewed in the last seconds; expired ones are dropped (they hold whole pages).
-const cache = new Map<string, { at: number; doc: PageDoc | null }>();
+const cache = new Map<string, { at: number; doc: Preview | null }>();
 const CACHE_MS = 10_000;
 const CACHE_MAX = 30;
 
-async function load(target: string): Promise<PageDoc | null> {
-  const hit = cache.get(target.toLowerCase());
+/** What a card shows: the page and the Markdown (the section when the link names one). */
+export interface Preview {
+  id: number;
+  title: string;
+  icon: string | null;
+  content: string;
+  /** The heading or `^block` of the link (null: the page). */
+  anchor: string | null;
+  /** The link's section is not on the page: the card shows the start of the page. */
+  sectionMissing: boolean;
+}
+
+export interface PreviewSource {
+  resolvePage: (title: string) => Promise<{ id: number } | null>;
+  page: (id: number) => Promise<PageDoc>;
+  pageEmbed: (target: string, anchor: string | null) => Promise<EmbedView>;
+}
+
+const appSource: PreviewSource = {
+  resolvePage: (title) => api.resolvePage(title, false),
+  page: (id) => api.page(id),
+  pageEmbed: (target, anchor) => api.pageEmbed(target, anchor),
+};
+
+/** The preview of `[[target#anchor]]`: the section (like `![[target#anchor]]` shows it), else the page. */
+export async function loadPreview(target: string, anchor: string | null, src: PreviewSource = appSource): Promise<Preview | null> {
+  if (anchor) {
+    const view = await src.pageEmbed(target, anchor);
+    if (view.page_id == null) return null;
+    // The heading is in the card title already.
+    if (view.content != null) return { id: view.page_id, title: view.title, icon: view.icon, content: anchor.startsWith("^") ? view.content : view.content.replace(/^#{1,6}[ \t]+[^\n]*\n*/, ""), anchor, sectionMissing: false };
+    const doc = await src.page(view.page_id);
+    return { id: doc.id, title: doc.title, icon: doc.icon, content: doc.content, anchor, sectionMissing: true };
+  }
+  const page = await src.resolvePage(target);
+  if (!page) return null;
+  const doc = await src.page(page.id);
+  return { id: doc.id, title: doc.title, icon: doc.icon, content: doc.content, anchor: null, sectionMissing: false };
+}
+
+async function load(target: string, anchor: string | null): Promise<Preview | null> {
+  const key = `${target.toLowerCase()}#${anchor ?? ""}`;
+  const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.doc;
-  const page = await api.resolvePage(target, false);
-  const doc = page ? await api.page(page.id) : null;
+  const doc = await loadPreview(target, anchor);
   const now = Date.now();
   for (const [k, v] of cache) if (now - v.at >= CACHE_MS) cache.delete(k);
-  cache.delete(target.toLowerCase());
-  cache.set(target.toLowerCase(), { at: now, doc });
+  cache.delete(key);
+  cache.set(key, { at: now, doc });
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return doc;
 }
+
+/** The label of an anchor in the card's title: the last heading of `H1#H2`, or `^id`. */
+export const anchorLabel = (anchor: string) => (anchor.startsWith("^") ? anchor : (anchor.split("#").filter(Boolean).pop() ?? anchor));
 
 /** Shortens Markdown at a paragraph boundary so the preview never ends mid-sentence if avoidable. */
 export function previewMarkdown(md: string, max = PREVIEW_CHARS): { text: string; more: boolean } {
@@ -43,7 +88,7 @@ export function previewMarkdown(md: string, max = PREVIEW_CHARS): { text: string
 interface Shown {
   target: string;
   rect: DOMRect;
-  doc: PageDoc | null;
+  doc: Preview | null;
 }
 
 export function LinkPreview() {
@@ -58,7 +103,10 @@ export function LinkPreview() {
       if (card.current?.contains(e.target as Node)) return void window.clearTimeout(hideTimer.current);
       const a = linkOf(e.target);
       if (!a || editorPrefs()?.hover_preview === false) return;
-      const target = a.dataset.target;
+      const anchor = a.dataset.anchor || null;
+      // `[[#Abschnitt]]`: a section of the page the link is on.
+      const here = !a.dataset.target && anchor ? pageOfElement(a) : null;
+      const target = here != null ? useApp.getState().pages.get(here)?.title : a.dataset.target;
       // `[[Angebot.pdf]]` links a file, not a page: nothing to preview.
       if (!target || a.dataset.fileLink != null || (isFileLinkTarget(target) && !titleSet(useApp.getState().pages).has(target.trim().toLowerCase()))) return;
       window.clearTimeout(hideTimer.current);
@@ -66,7 +114,7 @@ export function LinkPreview() {
       timer.current = window.setTimeout(async () => {
         if (!a.isConnected || !a.matches(":hover")) return;
         try {
-          const doc = await load(target);
+          const doc = await load(target, anchor);
           if (a.matches(":hover")) setShown({ target, rect: a.getBoundingClientRect(), doc });
         } catch {
           /* no preview */
@@ -118,6 +166,13 @@ export function LinkPreview() {
   const top = below ? shown.rect.bottom + 6 : Math.max(8, shown.rect.top - H - 6);
   const doc = shown.doc;
   const preview = doc ? previewMarkdown(doc.content) : null;
+  const open = (e: ReactMouseEvent) => {
+    if (!doc) return;
+    const newTab = e.ctrlKey || e.metaKey;
+    setShown(null);
+    if (doc.anchor && !doc.sectionMissing) void openAtAnchor(doc.id, doc.anchor, (id) => useApp.getState().openPage(id, { newTab }));
+    else useApp.getState().openPage(doc.id, { newTab });
+  };
   return (
     <div
       ref={card}
@@ -128,10 +183,19 @@ export function LinkPreview() {
     >
       {doc ? (
         <>
-          <button type="button" className="link-preview-title" onClick={(e) => (useApp.getState().openPage(doc.id, { newTab: e.ctrlKey || e.metaKey }), setShown(null))}>
+          <button type="button" className="link-preview-title" onClick={open}>
             <PageIcon name={doc.icon} size={15} />
-            {doc.title}
+            <span className="link-preview-page">{doc.title}</span>
+            {doc.anchor && !doc.sectionMissing && (
+              <>
+                <span className="link-preview-sep" aria-hidden>
+                  ›
+                </span>
+                <span className="link-preview-section">{anchorLabel(doc.anchor)}</span>
+              </>
+            )}
           </button>
+          {doc.sectionMissing && <div className="link-preview-note">{t("preview.noSection", { anchor: anchorLabel(doc.anchor!) })}</div>}
           {preview!.text ? (
             <div ref={body} className="prose prose-chat link-preview-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview!.text) }} />
           ) : (

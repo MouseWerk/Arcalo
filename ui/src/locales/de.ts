@@ -978,6 +978,7 @@ export const de: Catalog = {
   "editor.saveFailed": "Speichern fehlgeschlagen",
   "editor.source": "Markdown-Quelltext",
   "editor.htmlSource": "HTML – im Quelltext bearbeiten",
+  "editor.refDefinition": "Linkziel einer Markdown-Referenz – im Quelltext bearbeiten",
   "editor.headingPh": "Überschrift",
   "editor.placeholder": "Schreibe etwas, / für Befehle, [[ für Links",
   // ---- tool
@@ -3384,6 +3385,7 @@ export const de: Catalog = {
   "date.placeholder": "TT.MM.JJJJ",
   // ---- preview
   "preview.empty": "Leere Seite",
+  "preview.noSection": "„{anchor}“ gibt es auf der Seite nicht mehr – hier ihr Anfang.",
   "preview.missing": "„{target}“ existiert noch nicht – ein Klick auf den Link legt die Seite an.",
   // ---- resizer
   "resizer.title": "{label} – zum Ändern ziehen, Doppelklick setzt zurück",

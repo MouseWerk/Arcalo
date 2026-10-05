@@ -2,6 +2,15 @@
 // only the part that differs, so the caret stays where the user is typing.
 
 import type { Editor } from "@tiptap/core";
+import { Fragment, type Node as PMNode } from "@tiptap/pm/model";
+import { rememberSource } from "./sourceStyle";
+
+/** The blocks without their source attributes (`src`, `gap`), which say nothing about the content. */
+const withoutSource = (doc: PMNode) => {
+  const blocks: PMNode[] = [];
+  doc.forEach((n) => blocks.push(n.attrs.src != null || n.attrs.gap != null ? n.type.create({ ...n.attrs, src: null, gap: null }, n.content, n.marks) : n));
+  return Fragment.from(blocks);
+};
 
 /**
  * Replaces the document by the one of the Markdown `body`, but only the part that differs:
@@ -14,10 +23,13 @@ export function replaceChanged(editor: Editor, body: string) {
     const json = manager.parse(body);
     const next = editor.schema.nodeFromJSON({ type: "doc", content: json.content?.length ? json.content : [{ type: "paragraph" }] });
     next.check();
+    // The reloaded blocks are the file's source from now on (sourceStyle.ts).
+    rememberSource(editor, next);
     const cur = editor.state.doc;
-    const start = cur.content.findDiffStart(next.content);
+    const [a, b] = [withoutSource(cur), withoutSource(next)];
+    const start = a.findDiffStart(b);
     if (start == null) return;
-    let { a: endA, b: endB } = cur.content.findDiffEnd(next.content) ?? { a: cur.content.size, b: next.content.size };
+    let { a: endA, b: endB } = a.findDiffEnd(b) ?? { a: cur.content.size, b: next.content.size };
     // Repeated text around the change: both ends must not cross the start.
     const overlap = start - Math.min(endA, endB);
     if (overlap > 0) {
@@ -30,6 +42,7 @@ export function replaceChanged(editor: Editor, body: string) {
   } catch {
     const { from, to } = editor.state.selection;
     editor.commands.setContent(body, { contentType: "markdown", emitUpdate: false });
+    rememberSource(editor);
     const max = editor.state.doc.content.size;
     editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
   }

@@ -24,6 +24,7 @@ import { calloutType } from "../lib/callouts";
 import type { EmbedView } from "../lib/types";
 import { embedLabel, embedProblem, richKind } from "./embedSyntax";
 import type { DiagramResult } from "./mermaid";
+import { anchorSlug, headingSlug } from "./reveal";
 
 /** Reads attachments for the export (the app: IPC; tests: fakes). */
 export interface AttachmentSource {
@@ -109,9 +110,30 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
   const root = doc.body;
   const attachments = new Map<string, string>(); // name → embedded href (or "")
 
-  // Headings get ids; [TOC] lists them.
+  // Headings get stable ids from their text (as section links name them, `page-12-über-uns`); [TOC] lists them.
   const headings = [...root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")].filter((h) => h.textContent?.trim());
-  headings.forEach((h, i) => h.setAttribute("id", `${ctx.id}-h${i + 1}`));
+  const ids = new Set<string>();
+  const unique = (id: string) => {
+    let out = id;
+    for (let n = 2; ids.has(out); n++) out = `${id}-${n}`;
+    ids.add(out);
+    return out;
+  };
+  headings.forEach((h, i) => h.setAttribute("id", unique(`${ctx.id}-${headingSlug(h.textContent!) || `h${i + 1}`}`)));
+  // Blocks marked `^id` (Obsidian block links): the id goes on the block, the marker out of the text.
+  for (const p of root.querySelectorAll<HTMLElement>("p")) {
+    const m = /(?:^|\s)\^([A-Za-z0-9-]+)\s*$/.exec(p.textContent ?? "");
+    if (!m) continue;
+    const walker = doc.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    let last: Text | null = null;
+    while (walker.nextNode()) last = walker.currentNode as Text;
+    if (!last || !/\^[A-Za-z0-9-]+\s*$/.test(last.data)) continue;
+    last.data = last.data.replace(/\s*\^[A-Za-z0-9-]+\s*$/, "");
+    const block = p.parentElement?.tagName === "LI" && p.parentElement.firstElementChild === p ? p.parentElement : p;
+    if (!block.id) block.id = unique(`${ctx.id}-block-${m[1].toLowerCase()}`);
+  }
+  // Reference definitions (`[x]: url`) are source, not content.
+  root.querySelectorAll("pre[data-ref-def]").forEach((d) => d.remove());
   for (const nav of root.querySelectorAll("nav[data-toc]")) {
     const box = el(doc, "nav", { class: "toc", "aria-label": t("slash.toc") });
     box.append(el(doc, "div", { class: "toc-head" }, t("slash.toc")));
@@ -120,7 +142,7 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
       const ul = el(doc, "ul");
       for (const it of items) {
         const li = el(doc, "li");
-        li.append(el(doc, "a", { href: `#${ctx.id}-h${it.entry.pos + 1}` }, it.entry.text));
+        li.append(el(doc, "a", { href: `#${headings[it.entry.pos].id}` }, it.entry.text));
         if (it.children.length) li.append(list(it.children));
         ul.append(li);
       }
@@ -183,13 +205,26 @@ export async function renderPageHtml(markdown: string, ctx: RenderContext): Prom
     span.replaceWith(chip);
   }
 
-  // [[Links]]: an anchor when the page is in the file, else plain text.
+  // [[Links]]: an anchor when the page is in the file, else plain text. `[[#Abschnitt]]` and
+  // `[[Seite#Abschnitt]]` go to the heading (or `^block`); a section of another page in the file is
+  // checked once all pages are rendered (`data-fallback`, see `exportPagesHtml`).
   for (const a of root.querySelectorAll<HTMLElement>("a[data-wikilink]")) {
     if (ctx.live) continue;
-    const target = (a.getAttribute("data-target") ?? "").toLowerCase();
-    const anchor = ctx.anchors.get(target);
+    const target = (a.getAttribute("data-target") ?? "").trim().toLowerCase();
+    const section = a.getAttribute("data-anchor");
+    const page = target ? ctx.anchors.get(target) : ctx.id;
     const label = a.textContent ?? "";
-    a.replaceWith(anchor ? el(doc, "a", { class: "wikilink", href: `#${anchor}` }, label) : el(doc, "span", { class: "wikilink" }, label));
+    if (!page) {
+      a.replaceWith(el(doc, "span", { class: "wikilink" }, label));
+      continue;
+    }
+    if (!section) {
+      a.replaceWith(el(doc, "a", { class: "wikilink", href: `#${page}` }, label));
+      continue;
+    }
+    const id = `${page}-${anchorSlug(section)}`;
+    if (page === ctx.id) a.replaceWith(el(doc, "a", { class: "wikilink", href: `#${ids.has(id) ? id : page}` }, label));
+    else a.replaceWith(el(doc, "a", { class: "wikilink", href: `#${id}`, "data-fallback": `#${page}` }, label));
   }
 
   // Time entry chips, task lists, web links.
@@ -394,6 +429,16 @@ const appFiles: AttachmentSource = {
 const appDiagram = async (src: string) => (await import("./mermaid")).renderDiagram(src, "light");
 const appQuery = async (src: string) => (await import("./QueryBlock")).queryStaticHtml(src);
 
+/** Links to a section of another page in the file: to the section when it is there, else to the page. */
+export function resolveSectionLinks(sections: ExportSection[]): ExportSection[] {
+  const ids = new Set<string>();
+  for (const s of sections) for (const m of s.body.matchAll(/ id="([^"]+)"/g)) ids.add(m[1]);
+  return sections.map((s) => ({
+    ...s,
+    body: s.body.replace(/ href="#([^"]+)" data-fallback="#([^"]+)"/g, (_m, id: string, page: string) => ` href="#${ids.has(id) ? id : page}"`),
+  }));
+}
+
 /** Builds the HTML file of a page (and its subpages). */
 export async function exportPagesHtml(pageId: number, withChildren: boolean, files: AttachmentSource = appFiles): Promise<{ title: string; html: string }> {
   const list = collectPages(pageId, withChildren);
@@ -405,7 +450,7 @@ export async function exportPagesHtml(pageId: number, withChildren: boolean, fil
     const embeds = { load: (target: string, anchor: string | null) => api.pageEmbed(target, anchor), stack: [d.title.toLowerCase()], depth: 1 };
     sections.push({ id, title: d.title, date: fmtDate(d.updated_at), depth: list[i].depth, body: await renderPageHtml(d.content, { id, files, anchors, embeds, diagram: appDiagram, query: appQuery }) });
   }
-  return { title: docs[0].title, html: buildHtmlDocument(sections, { created: fmtDate(new Date()) }) };
+  return { title: docs[0].title, html: buildHtmlDocument(resolveSectionLinks(sections), { created: fmtDate(new Date()) }) };
 }
 
 /** Asks for „Als HTML-Datei teilen“ of a page (`detail: { id, withChildren, path? }`); without a path the save dialog asks. */

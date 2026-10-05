@@ -981,6 +981,7 @@ export const en = {
   "editor.saveFailed": "Saving failed",
   "editor.source": "Markdown source",
   "editor.htmlSource": "HTML – edit in the source",
+  "editor.refDefinition": "Target of a Markdown reference link – edit in the source",
   "editor.headingPh": "Heading",
   "editor.placeholder": "Write something, / for commands, [[ for links",
   // ---- tool
@@ -3387,6 +3388,7 @@ export const en = {
   "date.placeholder": "DD.MM.YYYY",
   // ---- preview
   "preview.empty": "Empty page",
+  "preview.noSection": "“{anchor}” is no longer on the page – showing its start.",
   "preview.missing": "“{target}” does not exist yet – clicking the link creates the page.",
   // ---- resizer
   "resizer.title": "{label} – drag to change, double-click resets",
