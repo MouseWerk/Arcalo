@@ -45,6 +45,8 @@ test("the week overview takes own weekday targets and absences as the target", a
   await app.click('.ribbon [aria-label^="Zeiterfassung"]');
   await app.waitText(".view-header h1", /Zeiterfassung/);
   await app.click('[aria-label="Vorherige Woche"]');
+  // The previous week is shown once its target is (3 × 8 h + 5 h); the chips of this week are gone then.
+  await app.waitText(".stat-note", /^Soll 29,00 h$/);
   await app.waitFor(".week-gaps .gap-chip");
   const chips = await app.browser.execute(() => [...document.querySelectorAll(".week-gaps .gap-chip")].map((c) => c.textContent.trim()));
   // No gap on the vacation Monday; Friday misses its own 5 h, not 8 h.

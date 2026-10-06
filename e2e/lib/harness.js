@@ -288,9 +288,19 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
       });
     },
     async waitFor(sel, timeout = 8000) {
-      const el = await browser.$(sel);
-      await el.waitForDisplayed({ timeout });
-      return el;
+      // A view that re-renders can replace the element between the lookup and the check; look it up again then.
+      await browser.waitUntil(
+        async () => {
+          try {
+            return await (await browser.$(sel)).isDisplayed();
+          } catch (e) {
+            if (/stale element/i.test(String(e?.message ?? e))) return false;
+            throw e;
+          }
+        },
+        { timeout, timeoutMsg: `${sel} not displayed after ${timeout}ms` },
+      );
+      return browser.$(sel);
     },
     async waitText(sel, pattern, timeout = 8000) {
       await browser.waitUntil(async () => {

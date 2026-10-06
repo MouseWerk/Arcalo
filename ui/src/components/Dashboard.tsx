@@ -366,6 +366,10 @@ export function Dashboard() {
 
 type Drag = { id: string; mode: "move" | "resize"; grabX: number; grabY: number; layout: GridWidget[]; px: number; py: number; start: GridWidget[] };
 
+/** Whether two layouts put every widget at the same place and size. */
+const sameLayout = (a: readonly GridWidget[], b: readonly GridWidget[]) =>
+  a.length === b.length && a.every((w, i) => w.id === b[i].id && w.x === b[i].x && w.y === b[i].y && w.w === b[i].w && w.h === b[i].h);
+
 function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSettings, onAdd }: { board: Board; editing: boolean; timeOn: boolean; onLayout: (w: GridWidget[]) => void; onAction: (a: BoardAction) => void; onSettings: (id: string) => void; onAdd: () => void }) {
   // The board as shown: hidden time widgets left out and the gaps closed; edits work on this
   // layout and `onLayout` puts the hidden ones back.
@@ -465,30 +469,35 @@ function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSetti
     }
     setDrag({ id: w.id, mode, grabX: e.clientX - grid.left - r.left, grabY: e.clientY - grid.top - r.top, layout: board.widgets, px: e.clientX - grid.left, py: e.clientY - grid.top, start: board.widgets });
   };
-  const moveDrag = (e: ReactPointerEvent) => {
-    if (!drag) return;
+  /** The layout for the pointer at `e`, computed from the drag's start, so it does not depend on renders. */
+  const layoutAt = (d: Drag, e: ReactPointerEvent) => {
     const grid = ref.current!.getBoundingClientRect();
     const px = e.clientX - grid.left;
     const py = e.clientY - grid.top;
-    const w = drag.start.find((x) => x.id === drag.id)!;
+    const w = d.start.find((x) => x.id === d.id)!;
     let layout: GridWidget[];
-    if (drag.mode === "move") {
-      const cell = cellAt(px - drag.grabX + (width / COLS) / 2, py - drag.grabY + ROW_H / 2, width);
-      layout = moveTo(drag.start, drag.id, cell.col, cell.row);
+    if (d.mode === "move") {
+      const cell = cellAt(px - d.grabX + (width / COLS) / 2, py - d.grabY + ROW_H / 2, width);
+      layout = moveTo(d.start, d.id, cell.col, cell.row);
     } else {
       const r = rectPx(w, width);
       const colW = (width - GAP * (COLS - 1)) / COLS;
       const nw = Math.round((px - r.left + GAP) / (colW + GAP));
       const nh = Math.round((py - r.top + GAP) / (ROW_H + GAP));
-      layout = resizeTo(drag.start, drag.id, nw, nh, COLS, minOf(w));
+      layout = resizeTo(d.start, d.id, nw, nh, COLS, minOf(w));
     }
-    setDrag({ ...drag, layout, px, py });
+    return { ...d, layout, px, py };
   };
-  const endDrag = () => {
+  const moveDrag = (e: ReactPointerEvent) => {
+    if (drag) setDrag(layoutAt(drag, e));
+  };
+  const endDrag = (e: ReactPointerEvent) => {
     if (!drag) return;
-    const moved = drag.layout.find((x) => x.id === drag.id);
-    if (drag.layout !== drag.start) {
-      onLayout(drag.layout);
+    // The release point decides: the last move may not have rendered yet.
+    const { layout } = e.type === "pointerup" ? layoutAt(drag, e) : drag;
+    const moved = layout.find((x) => x.id === drag.id);
+    if (!sameLayout(layout, drag.start)) {
+      onLayout(layout);
       if (moved) setAnnounce(describe(moved));
     }
     setDrag(null);
