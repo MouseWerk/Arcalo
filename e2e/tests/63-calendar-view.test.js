@@ -192,18 +192,20 @@ test("„Nicht buchen“ marks a meeting; the month folds a full day; the list a
   await app.keys(["Escape"]);
   await app.browser.waitUntil(async () => !(await (await app.$(".calv-detail")).isExisting()), { timeoutMsg: "detail still open" });
 
-  // M: month. Tuesday has eight meetings: three lines and „+5 weitere“.
+  // M: month. Tuesday has eight meetings (nine when it is today: Outlook's „Daily Standup“ is always today):
+  // three lines and the rest as „+n weitere“.
+  const meetings = iso(TUESDAY) === iso(new Date()) ? 9 : 8;
   await app.keys(["m"]);
   await app.waitFor(".calv-month");
   const cell = `.calv-mcell[data-date="${iso(TUESDAY)}"]`;
-  await app.waitText(`${cell} .calv-more`, /^\+5 weitere$/);
+  await app.waitText(`${cell} .calv-more`, new RegExp(`^\\+${meetings - 3} weitere$`));
   assert.equal(await app.browser.execute((c) => document.querySelectorAll(`${c} .calv-mev`).length, cell), 3);
   await app.shot("63-calendar-month");
   await app.click(`${cell} .calv-more`);
   // The day view of that Tuesday with all of them.
   await app.waitFor(`.calv-dayhead[data-date="${iso(TUESDAY)}"]`);
   assert.equal(await app.browser.execute(() => document.querySelectorAll(".calv-dayhead").length), 1);
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".calv-meetings .calv-ev").length), 8);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".calv-meetings .calv-ev").length), meetings);
 
   // L: the list of the next 14 days.
   await app.keys(["l"]);
