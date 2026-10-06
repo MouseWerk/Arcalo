@@ -25,7 +25,10 @@ live at https://arcalo.mousewerk.de.
 - Every HTTP client goes through `network::client_for(Service)` (a test checks it).
 - UI texts go through the i18n catalogs (`ui/src/locales/de.ts`, `en.ts`; backend `tr!`/`trf!` pairs); the
   translation check `ui/src/lib/translations.test.ts` must pass.
-- Use the design tokens in `ui/src/styles` (tokens.css); no one-off colors or sizes. Quality bar:
+- Use the design tokens in `ui/src/styles` (tokens.css); no one-off colors or sizes.
+- No accent-colored borders, outlines, left bars, glows or gradient borders for selected, active or current
+  states (the "AI look"); show them with a quiet neutral background tint and text weight or color. Keyboard
+  focus stays visible, but only on `:focus-visible` and in a neutral style. Applies to the app and the website. Quality bar:
   Obsidian/Linear-level polish in light, dark and contrast themes, 900–1920 px and split panes.
 - Migrations in `crates/annalo-core/migrations` are positional: take the next number, never fill a gap.
   Settings changes need a step in `crates/annalo-core/src/settings_migrate.rs` (`SETTINGS_VERSION`).
