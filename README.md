@@ -5,9 +5,9 @@
 <h1 align="center">Arcalo</h1>
 
 <p align="center">
-  <b>Take the notes. The timesheet follows.</b><br>
-  Notes, time tracking and your own AI in one local-first desktop app, made for SAP project work.<br>
-  Markdown notes with <code>[[links]]</code> like Obsidian · SAP PS and Jira time booking with <code>/time</code> · an assistant on <b>your</b> AI providers (LiteLLM, OpenAI-compatible, Azure, Ollama)
+  <b>Your whole workday. In one app.</b><br>
+  Notes, tasks, meetings and time in one local-first desktop app, with AI on the providers you choose.<br>
+  Markdown notes with <code>[[links]]</code> like Obsidian · tasks and projects · Outlook and ICS calendars · time booking with <code>/time</code> to Jira or SAP CATS · an assistant on <b>your</b> AI providers (LiteLLM, OpenAI-compatible, Azure, Ollama)
 </p>
 
 <p align="center">
@@ -44,20 +44,23 @@ everything that is not German); Settings → Language & format switches live to 
 
 ## Why Arcalo
 
-Written for SAP consultants and project people who spend the day in workshops, write everything down and owe a
-timesheet at the end of the week.
+For people whose day is meetings, notes, follow-ups and a timesheet at the end of the week, and who want all of it
+in one place on their own computer.
 
-- **The timesheet comes from your notes.** `/time NP-8801/1020 2.5h` in the meeting note books on the network
-  and activity, with the remaining plan hours shown while you type. “Propose the week” drafts the rest from your
-  meetings, focus sessions and edited pages; the week exports to SAP CATS, Jira worklogs, CSV or JSON.
-- **SAP PS terms built in.** Networks, activities and activity types, budgets with ETC and EAC, the critical path,
-  and budget warnings when a booking crosses a threshold.
-- **Meetings next to booked time.** Outlook Classic (also shared and sub-calendars, no admin rights or app
-  registration) and ICS calendars, with “Book time” and “Meeting note” on every meeting.
-- **Jira in the same place.** Issues and saved searches offline, issue keys as live chips in notes, worklogs from
-  `/time 1h PROJ-123`.
-- **AI that stays where your company allows it.** Your LiteLLM, Azure OpenAI or OpenAI-compatible endpoint, or a
-  local Ollama; `#privat` notes go only to the local model. Voice notes are transcribed on your computer.
+- **Notes and knowledge.** Markdown with `[[links]]`, backlinks, tags, tables, callouts, Mermaid, drawings and
+  PDFs; a graph, a canvas and queries over your pages. An Obsidian vault imports as it is.
+- **Tasks and projects.** Tasks live in your notes and come together in one view, with due dates, repeating tasks
+  (`every:` rules) and bulk edits; a projects view with budget, booked hours, ETC, EAC and the critical path.
+- **Meetings and calendar.** Outlook Classic (also shared and sub-calendars, no admin rights or app registration)
+  and ICS calendars, prep pages, meeting notes, follow-up mails and tasks taken from a mail.
+- **Time, if you book it.** `/time 2.5h` in a note books while you write; a timer, a daily review and “Propose
+  the week” draft the rest. The week exports to Jira worklogs, SAP CATS, CSV or JSON, with SAP PS networks,
+  activities, budgets and ETC built in. Time tracking can be switched off completely.
+- **AI that stays where you allow it.** An assistant that answers from your notes with sources, inline AI and a
+  morning briefing, on your LiteLLM, Azure OpenAI or OpenAI-compatible endpoint, or a local Ollama; `#privat`
+  notes go only to the local model. Voice notes are transcribed on your computer.
+- **A start page for your day.** Boards with widgets for today's meetings, tasks, time and pages, plus link groups
+  in the ribbon for the tools you open every day.
 - **Nothing leaves your machine unasked.** One local database, no account, no telemetry, optional encryption,
   backups and Git sync. Runs per user without admin rights, or portable from a USB stick.
 
@@ -68,7 +71,8 @@ timesheet at the end of the week.
 - **Notion and other cloud workspaces:** no account and no server; your client notes stay on your computer.
 - **A spreadsheet or the CATS screen at 5 pm on Friday:** the hours are proposed from what you did and wrote that
   week, and you only review them.
-- **Tempo or Jira time tracking alone:** bookings go to SAP networks and to Jira issues from the same note.
+- **Tempo or Jira time tracking alone:** bookings go to Jira issues and SAP networks from the same note you
+  took in the meeting.
 
 ## Quick start
 
