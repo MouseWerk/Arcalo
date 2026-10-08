@@ -3143,6 +3143,9 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .calv-block.dragging { z-index: 5; cursor: grabbing; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--accent) 14%, var(--bg-canvas)); }
 .calv-block.past { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: color-mix(in srgb, var(--accent) 4%, var(--bg-canvas)); }
 .calv-block.past .calv-block-title { color: var(--text-2); font-weight: var(--fw-medium); }
+/* A picked block stays picked when it is over: stronger fill and bold title win over „past“. */
+.calv-block.past.selected { background: color-mix(in srgb, var(--accent) 14%, var(--bg-canvas)); }
+.calv-block.past.selected .calv-block-title { color: var(--text); font-weight: var(--fw-heading); }
 .calv-block.done .calv-block-title .ellipsis { text-decoration: line-through; text-decoration-color: var(--text-3); }
 .calv-block-title { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: 16px; letter-spacing: -0.005em; }
 .calv-block-title svg { flex: none; color: var(--accent-text); }
