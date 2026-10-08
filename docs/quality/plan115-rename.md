@@ -82,3 +82,8 @@ CI run 167 (5bf6f52) failed once in e2e 144 „PDF highlight in English“ (`.pd
 clickable) and e2e 270 „a chip cut in the source view …“ (toast „Buchung mit dem Chip gelöscht“ not shown;
 the next test failed as a consequence). Both passed in runs 163 and 166 and 3/3 locally; find the root cause
 (screenshots of the failing run were not reachable from the cloud session).
+
+270 failed again in run 172. Root cause: the source view decided on a removed chip with link
+states that were up to about 300 ms behind (refresh debounce plus IPC); a chip cut right after its booking
+came back still read as missing, so its booking was never deleted. Fixed: while a refresh is due, the chips
+of the text before the edit are asked for first. 144 is still open.

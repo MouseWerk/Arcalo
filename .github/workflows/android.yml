@@ -42,6 +42,22 @@ jobs:
         run: |
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           echo "Using the NDK in $ANDROID_NDK_LATEST_HOME"
+          # Newer NDKs ship only llvm-ar and llvm-ranlib; the OpenSSL build asks for <triple>-ar and
+          # <triple>-ranlib. Point both the cc variables and the prefixed names at the LLVM tools.
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$bin/llvm-ar" && test -x "$bin/llvm-ranlib"
+          shim="$RUNNER_TEMP/ndk-shims"
+          mkdir -p "$shim"
+          for triple in aarch64-linux-android armv7-linux-androideabi armv7a-linux-androideabi arm-linux-androideabi x86_64-linux-android; do
+            ln -sf "$bin/llvm-ar" "$shim/$triple-ar"
+            ln -sf "$bin/llvm-ranlib" "$shim/$triple-ranlib"
+          done
+          echo "$shim" >> "$GITHUB_PATH"
+          echo "$bin" >> "$GITHUB_PATH"
+          for t in aarch64_linux_android armv7_linux_androideabi x86_64_linux_android; do
+            echo "AR_$t=$bin/llvm-ar" >> "$GITHUB_ENV"
+            echo "RANLIB_$t=$bin/llvm-ranlib" >> "$GITHUB_ENV"
+          done
       # The phone has no git program: its sync runs on libgit2. The sync's tests on libgit2, on the
       # runner (the same commands and checks as with the git program).
       - name: Sync on libgit2 (host tests)

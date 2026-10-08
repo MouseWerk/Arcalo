@@ -135,7 +135,7 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
   const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-nav-group-label")].map((g) => g.textContent.trim()));
   assert.deepEqual(groups, ["Allgemein", "Arbeiten", "KI & Sprache", "Daten & Sicherheit", "System"]);
   const count = await app.browser.execute(() => document.querySelectorAll(".pane.active .settings-nav-item").length);
-  assert.equal(count, 22, "21 sections and „Sicherheit“ (1.10)");
+  assert.equal(count, 23, "21 sections, „Sicherheit“ (1.10) and „Suche“ (1.15)");
   // Collapse „Arbeiten“: its items hide, the state survives a reload.
   await app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
   const hidden = () => app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-items').hidden);

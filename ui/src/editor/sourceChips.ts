@@ -86,26 +86,39 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
   const io = useRef({ text, edit, mapPos });
   io.current = { text, edit, mapPos };
 
+  // Set while a refresh is due or asked: `links` may not know the latest bookings yet (a booking
+  // restored a moment ago reads as missing until then).
+  const stale = useRef(false);
+  const generation = useRef(0);
+
+  /** The chips' links and booking rows in `md`. */
+  const statesOf = async (md: string, flush: boolean) => {
+    const seen = new Set<number>();
+    const chips = sourceChips(md)
+      .filter((c) => c.id != null && c.attrs.state !== "deleted" && !seen.has(c.id) && (seen.add(c.id), true))
+      .map((c) => ({ id: c.id!, target: String(c.attrs.target ?? "") }));
+    if (!chips.length) return { links: new Map<number, ChipLink>(), rows: new Map<number, TimeEntryRow>() };
+    // A chip pasted after a cut in another note: that note is saved first (see timeChip.ts).
+    if (flush) await flushAllEditors().catch(() => {});
+    const states = await api.chipStates(pageId, chips);
+    return {
+      links: new Map(states.map((x) => [x.id, x.link] as const)),
+      rows: new Map(states.filter((x) => x.row).map((x) => [x.id, x.row!] as const)),
+    };
+  };
+
   const refresh = (flush = false) => {
     if (!timeTrackingEnabled()) return;
     window.clearTimeout(timer.current);
+    const gen = ++generation.current;
+    stale.current = true;
     timer.current = window.setTimeout(async () => {
-      const seen = new Set<number>();
-      const chips = sourceChips(io.current.text())
-        .filter((c) => c.id != null && c.attrs.state !== "deleted" && !seen.has(c.id) && (seen.add(c.id), true))
-        .map((c) => ({ id: c.id!, target: String(c.attrs.target ?? "") }));
-      if (!chips.length) {
-        links.current = new Map();
-        rows.current = new Map();
-        return;
-      }
       try {
-        // A chip pasted after a cut in another note: that note is saved first (see timeChip.ts).
-        if (flush) await flushAllEditors().catch(() => {});
-        const states = await api.chipStates(pageId, chips);
-        if (!alive.current) return;
-        links.current = new Map(states.map((x) => [x.id, x.link] as const));
-        rows.current = new Map(states.filter((x) => x.row).map((x) => [x.id, x.row!] as const));
+        const next = await statesOf(io.current.text(), flush);
+        if (!alive.current || gen !== generation.current) return;
+        links.current = next.links;
+        rows.current = next.rows;
+        stale.current = false;
       } catch {
         /* asked again at the next change */
       }
@@ -148,19 +161,30 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
       const before = last.current;
       last.current = md;
       if (before === md || !timeTrackingEnabled()) return;
+      const remove = (known: ReadonlyMap<number, ChipLink>, booked: ReadonlyMap<number, TimeEntryRow>) => {
+        for (const c of chipDiff(before, md, known).removed) {
+          const chip = before.slice(c.start, c.end);
+          const at = io.current.mapPos(before, md, c.start);
+          const base = md;
+          chipRemoved(c.id!, c.attrs, booked.get(c.id!), () => {
+            if (!alive.current) return;
+            const cur = io.current.text();
+            if (sourceChipIds(cur).has(c.id!)) return;
+            const pos = Math.min(io.current.mapPos(base, cur, at), cur.length);
+            io.current.edit(cur.slice(0, pos) + chip + cur.slice(pos));
+          });
+        }
+      };
       const { removed, appeared } = chipDiff(before, md, links.current);
-      for (const c of removed) {
-        const chip = before.slice(c.start, c.end);
-        const at = io.current.mapPos(before, md, c.start);
-        const base = md;
-        chipRemoved(c.id!, c.attrs, rows.current.get(c.id!), () => {
-          if (!alive.current) return;
-          const cur = io.current.text();
-          if (sourceChipIds(cur).has(c.id!)) return;
-          const pos = Math.min(io.current.mapPos(base, cur, at), cur.length);
-          io.current.edit(cur.slice(0, pos) + chip + cur.slice(pos));
-        });
-      }
+      // The links may be behind (a refresh is due): the chips of `before` are asked for first,
+      // else a chip cut right after its booking came back would keep a deleted-looking link.
+      const gone = sourceChips(before).some((c) => c.id != null && !sourceChipIds(md).has(c.id));
+      if (stale.current && gone)
+        void statesOf(before, false).then(
+          (s) => alive.current && remove(s.links, s.rows),
+          () => alive.current && remove(links.current, rows.current),
+        );
+      else remove(links.current, rows.current);
       const back = appeared.filter(chipAwaited);
       for (const id of back)
         void chipReturned(id, (to) => {
