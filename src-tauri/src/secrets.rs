@@ -2,10 +2,11 @@
 //! password, the addresses of calendar subscriptions and the Jira tokens.
 //!
 //! Windows: Credential Manager, macOS: Keychain, Linux: the Secret Service (GNOME Keyring,
-//! KWallet, KeePassXC) over D-Bus. Only when no Secret Service answers (a headless machine, a
-//! desktop without a keyring, `ANNALO_SECRET_STORE=file`) and on other systems, the secrets are
-//! written to `secrets.json` in the app data directory with owner-only permissions, one JSON
-//! field per secret; Settings → Datenschutz says which store is used and why.
+//! KWallet, KeePassXC) over D-Bus, Android: the Android Keystore (`mobile/keystore.rs`). Only
+//! when no Secret Service answers (a headless machine, a desktop without a keyring,
+//! `ANNALO_SECRET_STORE=file`) and on other systems, the secrets are written to `secrets.json`
+//! in the app data directory with owner-only permissions, one JSON field per secret;
+//! Settings → Datenschutz says which store is used and why.
 //!
 //! Linux before 1.10 always used the file: on the first start with a Secret Service its entries
 //! are moved over ([`migrate`]): each one is written, read back and compared, and only then
@@ -45,6 +46,9 @@ pub enum Kind {
     SecretService,
     /// `secrets.json` (0600); `reason`: why no Secret Service is used (the system's words).
     File { reason: Option<String> },
+    /// Android: encrypted with a key of the Android Keystore.
+    #[cfg(target_os = "android")]
+    Keystore,
 }
 
 static KIND: OnceLock<Kind> = OnceLock::new();
@@ -67,7 +71,11 @@ fn detect() -> Kind {
     {
         choose(std::env::var(FORCE_ENV).ok().as_deref(), probe)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "android")]
+    {
+        Kind::Keystore
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     Kind::File { reason: None }
 }
 
@@ -293,6 +301,8 @@ impl SecretStore {
             Kind::Native => Keyring.get(&self.account, &self.field).ok().flatten(),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             Kind::SecretService => layered_get(&Keyring, &self.file, &self.account, &self.field),
+            #[cfg(target_os = "android")]
+            Kind::Keystore => crate::mobile::keystore::get(&self.account).ok().flatten(),
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
             _ => None,
         }
@@ -306,6 +316,11 @@ impl SecretStore {
             Kind::Native => put(&Keyring, &self.account, &self.field, key),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             Kind::SecretService => layered_set(&Keyring, &self.file, &self.account, &self.field, key),
+            #[cfg(target_os = "android")]
+            Kind::Keystore => match key {
+                Some(k) => crate::mobile::keystore::set(&self.account, k),
+                None => crate::mobile::keystore::delete(&self.account),
+            },
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
             _ => Err("no credential store".into()),
         }
@@ -358,6 +373,8 @@ fn label(kind: &Kind, portable: bool) -> &'static str {
             "Datei im App-Datenordner (nur für den Benutzer lesbar)",
             "File in the app data folder (readable by the user only)"
         ),
+        #[cfg(target_os = "android")]
+        Kind::Keystore => annalo_core::tr!("Android-Schlüsselspeicher (Keystore)", "Android Keystore"),
     }
 }
 

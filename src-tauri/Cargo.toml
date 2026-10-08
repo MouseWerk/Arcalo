@@ -21,22 +21,12 @@ serde_json = "1.0.151"
 # `macos-private-api`: transparent windows on macOS (the rounded quick-capture and quick-search
 # panels). Fine outside the Mac App Store; must match `app.macOSPrivateApi` in tauri.conf.json.
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
-tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
-# The native question of the update rollback, shown before the window exists.
-rfd = { version = "0.16", default-features = false, features = ["gtk3", "common-controls-v6"] }
-tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
 semver = "1"
 tokio = { version = "1.53.1", features = ["sync", "time"] }
-# Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
-arboard = { version = "3", default-features = false }
 sys-locale = "0.3.2"
-whisper-rs = "0.16"
-cpal = "0.16"
 reqwest = { version = "0.13.5", default-features = false }
 # Structured developer log (devlog.rs): levels, spans with timings, the JSON-lines file.
 tracing = "0.1.44"
@@ -46,6 +36,24 @@ tracing-appender = "0.2"
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # The update installer (installer.rs): the temp folder of the Windows setup and of the swap.
 tempfile = "3"
+
+# Desktop only (tray, global shortcuts, updates, autostart, one instance, clipboard, voice notes);
+# the Android companion app is built without them (see docs/android.md).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+# The native question of the update rollback, shown before the window exists.
+rfd = { version = "0.16", default-features = false, features = ["gtk3", "common-controls-v6"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+# Quick capture „Auswahl übernehmen“: clipboard text (and the X11 selection).
+arboard = { version = "3", default-features = false }
+whisper-rs = "0.16"
+cpal = "0.16"
+
+# Android: the Git sync runs on libgit2 (no `git` program on a phone).
+[target.'cfg(target_os = "android")'.dependencies]
+annalo-core = { path = "../crates/annalo-core", features = ["embedded-git"] }
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).

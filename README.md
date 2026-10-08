@@ -646,6 +646,9 @@ on one side only are merged automatically; for the rest you pick “Mine”, “
 **Restore**: “Restore from Git…” clones the repository and imports it as a new top-level page “Git import <date>”
 (images included); existing pages are left alone.
 
+**On the phone**: the Android companion app (today, quick capture, daily note, tasks, time and notes) syncs with the
+same repository; see [docs/android.md](docs/android.md).
+
 ## Tests
 
 ```sh

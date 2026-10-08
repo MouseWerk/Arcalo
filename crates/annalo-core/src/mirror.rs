@@ -93,6 +93,12 @@ pub struct MirrorSnapshot {
 }
 
 impl MirrorSnapshot {
+    /// The notes only, no `Zeiterfassung/` (a companion device, see
+    /// [`crate::gitsync::SyncRequest::companion`]).
+    pub fn without_time_sheets(self) -> Self {
+        MirrorSnapshot { rows: vec![], ..self }
+    }
+
     pub fn read(db: &Database) -> Result<Self> {
         db.read_snapshot(|db| {
             Ok(MirrorSnapshot {

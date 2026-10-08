@@ -19,6 +19,12 @@
 All logic lives in `annalo-core` and is tested there; the shell only wires state,
 events and OS integration. The UI never talks to the network or the filesystem directly.
 
+The same shell builds the **Android companion app** (docs/android.md): `#[cfg(desktop)]` leaves out the
+desktop-only modules and crates, `src-tauri/src/mobile/` holds the entry point, its commands, stand-ins for
+the desktop modules and the Android Keystore for secrets; the UI is `ui/src/mobile/`; the Git sync runs on
+libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`SyncRequest::companion`,
+`companion.rs`: bookings as chips in the daily note, the WBS and meetings from the desktop's database copy).
+
 ## Data model (`crates/annalo-core/migrations/0001_init.sql`)
 
 | Table | Purpose |

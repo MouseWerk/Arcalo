@@ -82,6 +82,10 @@
   --panel-w: 360px;
   --tabbar-h: 40px;
   --statusbar-h: 28px;
+  /* The Android companion app (mobile.css): the smallest touch target, its header and tab bar. */
+  --touch-min: 44px;
+  --m-head-h: 56px;
+  --m-tabbar-h: 64px;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

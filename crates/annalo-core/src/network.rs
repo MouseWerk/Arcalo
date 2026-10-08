@@ -1272,6 +1272,37 @@ mod tls {
         }
     }
 
+    #[cfg(not(target_os = "android"))]
+    fn verifier(
+        extra_roots: &[Vec<u8>],
+        provider: &Arc<rustls::crypto::CryptoProvider>,
+    ) -> Result<Arc<dyn ServerCertVerifier>, rustls::Error> {
+        Ok(if extra_roots.is_empty() {
+            Arc::new(rustls_platform_verifier::Verifier::new(provider.clone())?)
+        } else {
+            Arc::new(rustls_platform_verifier::Verifier::new_with_extra_roots(
+                extra_roots.iter().map(|d| CertificateDer::from(d.clone())),
+                provider.clone(),
+            )?)
+        })
+    }
+
+    /// Android: the platform verifier needs the app's JVM context and its Kotlin part; the
+    /// companion app checks against Mozilla's root store (compiled in) plus the extra CAs instead.
+    #[cfg(target_os = "android")]
+    fn verifier(
+        extra_roots: &[Vec<u8>],
+        provider: &Arc<rustls::crypto::CryptoProvider>,
+    ) -> Result<Arc<dyn ServerCertVerifier>, rustls::Error> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add_parsable_certificates(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned());
+        roots.add_parsable_certificates(extra_roots.iter().map(|d| CertificateDer::from(d.clone())));
+        let v = rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+            .build()
+            .map_err(|e| rustls::Error::General(e.to_string()))?;
+        Ok(v)
+    }
+
     /// A rustls configuration for reqwest with [`PinVerifier`].
     pub(super) fn config(
         extra_roots: &[Vec<u8>],
@@ -1281,14 +1312,7 @@ mod tls {
         let provider = rustls::crypto::CryptoProvider::get_default()
             .cloned()
             .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
-        let inner: Arc<dyn ServerCertVerifier> = if extra_roots.is_empty() {
-            Arc::new(rustls_platform_verifier::Verifier::new(provider.clone())?)
-        } else {
-            Arc::new(rustls_platform_verifier::Verifier::new_with_extra_roots(
-                extra_roots.iter().map(|d| CertificateDer::from(d.clone())),
-                provider.clone(),
-            )?)
-        };
+        let inner = verifier(extra_roots, &provider)?;
         let mut cfg = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()?
             .dangerous()
