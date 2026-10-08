@@ -1664,6 +1664,8 @@ export interface ReviewMeeting {
   state: MeetingState;
   entry_id: number | null;
   note_page_id: number | null;
+  /** Marked private in the calendar. */
+  private?: boolean;
 }
 export interface ReviewFocusSession {
   id: number;

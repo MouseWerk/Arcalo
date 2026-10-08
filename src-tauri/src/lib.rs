@@ -43,6 +43,7 @@ mod timeblocks;
 mod updates;
 mod voice;
 mod weekplan;
+mod weekreview;
 mod worktime;
 
 use std::collections::HashMap;
@@ -5073,6 +5074,10 @@ pub fn run() {
             mail::mail_suggest,
             dayreview::day_review,
             dayreview::day_review_summary,
+            weekreview::week_review,
+            weekreview::week_review_summary,
+            weekreview::week_report_save,
+            weekreview::week_report_template,
             briefing::briefing,
             briefing::briefing_summary,
             meetwork::meeting_prep,

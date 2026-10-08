@@ -28,12 +28,13 @@ const ActivityView = lazyView(() => import("../views/ActivityView").then((m) => 
 const AttachmentsView = lazyView(() => import("../views/AttachmentsView").then((m) => m.AttachmentsView));
 const CalendarView = lazyView(() => import("../views/CalendarView").then((m) => m.CalendarView));
 const DayReviewView = lazyView(() => import("../views/DayReviewView").then((m) => m.DayReviewView));
+const WeekReviewView = lazyView(() => import("../views/WeekReviewView").then((m) => m.WeekReviewView));
 const IssuesView = lazyView(() => import("../views/IssuesView").then((m) => m.IssuesView));
 const GraphView = lazyView(() => import("../views/GraphView").then((m) => m.GraphView));
 const CanvasView = lazyView<{ pageId: number; tab: Tab; active: boolean }>(() => import("../views/canvas/CanvasView").then((m) => m.CanvasView));
 const BriefingView = lazyView(() => import("../views/BriefingView").then((m) => m.BriefingView));
 const ChatView = lazyView<{ tab: Tab }>(() => import("../views/ChatView").then((m) => m.ChatView));
-const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, BriefingView, ChatView];
+const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, WeekReviewView, BriefingView, ChatView];
 
 // The PDF viewer (with pdf.js) loads when a PDF tab is shown.
 const PdfPane = lazy(() => import("../editor/PdfViewer").then((m) => ({ default: m.PdfPane })));
@@ -231,6 +232,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             {tab.kind === "attachments" && <AttachmentsView />}
             {tab.kind === "calendar" && <CalendarView />}
             {tab.kind === "review" && <DayReviewView />}
+            {tab.kind === "weekreview" && <WeekReviewView />}
             {tab.kind === "briefing" && <BriefingView />}
             {tab.kind === "issues" && <IssuesView />}
             {tab.kind === "graph" && <GraphView />}

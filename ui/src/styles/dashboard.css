@@ -648,3 +648,25 @@
 .dw-sr-title:hover { background: var(--bg-hover); }
 .dw-sr-meta { display: flex; justify-content: space-between; gap: 8px; padding: 0 6px; min-width: 0; }
 .dw-sr-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding: 0 6px 2px; }
+
+/* ---- „Diese Woche“ (widgets/weekreview.tsx) ---- */
+.dw-wr { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.dw-wr-time { display: grid; gap: 4px; min-width: 0; padding: 4px 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.dw-wr-time:hover { background: var(--bg-hover); }
+.dw-wr-value { font-size: var(--fs-lg); font-weight: var(--fw-heading); line-height: 1.2; white-space: nowrap; }
+.dw-wr-of { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-3); }
+.dw-wr-time .progress { height: 4px; }
+.dw-wr-sub { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dw-wr-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; flex: 1; min-height: 44px; }
+.dw-wr-day { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 3px; min-width: 0; padding: 3px 2px 2px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-3); font: inherit; font-size: var(--fs-2xs); cursor: pointer; }
+.dw-wr-day:hover { background: var(--bg-hover); color: var(--text); }
+.dw-wr-day.today { background: var(--bg-current); color: var(--text); font-weight: var(--fw-semibold); }
+.dw-wr-bar { position: relative; display: block; min-height: 18px; border-radius: var(--r-xs); background: var(--bg-active); overflow: hidden; }
+.dw-wr-bar > span { position: absolute; left: 0; right: 0; bottom: 0; border-radius: var(--r-xs); background: var(--accent); }
+.dw-wr-day.short:not(.future) .dw-wr-bar > span { background: color-mix(in srgb, var(--accent) 55%, var(--bg-active)); }
+.dw-wr-day.future .dw-wr-bar > span { background: color-mix(in srgb, var(--accent) 35%, var(--bg-active)); }
+.dw-wr-day-name { text-align: center; white-space: nowrap; overflow: hidden; }
+.dw-wr-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-xs); color: var(--text-2); }
+.dw-wr-count { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.dw-wr-count > svg { color: var(--text-3); }
+.dw-wr-links { display: flex; flex-wrap: wrap; gap: 4px 10px; }

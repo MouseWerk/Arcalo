@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, Check, CheckSquare, ChevronLeft, ChevronRight, Clock, Copy, FileText, Lock, NotebookPen, Paperclip, RefreshCw, Settings2, Sparkles, Square, Sunset, Target, X,
+  AlertTriangle, CalendarCheck, CalendarDays, CalendarRange, Check, CheckSquare, ChevronLeft, ChevronRight, Clock, Copy, FileText, Lock, NotebookPen, Paperclip, RefreshCw, Settings2, Sparkles, Square, Sunset, Target, X,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -20,6 +20,7 @@ import { fmtDayMonth, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
+import { openWeekReview } from "../lib/weekreview";
 import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
@@ -195,6 +196,9 @@ export function DayReviewView() {
               <IconButton icon={ChevronRight} label={t("review.nextDay")} onClick={() => go(1)} />
               <IconButton icon={CalendarDays} label={t("review.pickDay")} onClick={(e) => pickDate(e.currentTarget, date, setDate)} />
             </div>
+            <Button variant="ghost" icon={CalendarCheck} className="rv-week" onClick={(e) => openWeekReview(date, { newTab: e.ctrlKey || e.metaKey })}>
+              {t("week.view")}
+            </Button>
             <Button icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
               {t("review.insert")}
             </Button>
