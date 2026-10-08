@@ -71,8 +71,6 @@ export interface AccentTokens {
   "--accent-strong": string;
   "--accent-soft": string;
   "--accent-text": string;
-  "--border-focus": string;
-  "--bg-selected": string;
 }
 
 const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`;
@@ -80,7 +78,7 @@ const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`
 /**
  * Accent tokens for one mode. Guarantees: `--accent-text` has ≥ 4.5:1 against the canvas,
  * the other `surfaces` (sidebar, menus, the current row) and the accent's own soft tint on
- * them, `--accent` (icons, borders, focus) ≥ 3:1, and white text on `--accent-strong`
+ * them, `--accent` (icons, fills) ≥ 3:1, and white text on `--accent-strong`
  * (primary buttons, switches) ≥ 4.5:1.
  */
 export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: string = CANVAS[mode], surfaces: string[] = []): AccentTokens {
@@ -99,7 +97,5 @@ export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: str
     "--accent-strong": toHex(strong),
     "--accent-soft": rgba(accent, soft),
     "--accent-text": toHex(text),
-    "--border-focus": toHex(accent),
-    "--bg-selected": rgba(accent, soft),
   };
 }

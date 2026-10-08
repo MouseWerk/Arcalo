@@ -116,8 +116,8 @@ function readable(color: Rgb, bgs: Rgb[], min: number, lighten: boolean): Rgb {
 }
 
 /**
- * The surfaces text sits on: the page, the sidebar, cards, menus, inputs, and the current row
- * (text tint) or a selected one (accent tint) laid over each of them.
+ * The surfaces text sits on: the page, the sidebar, cards, menus, inputs, and the current or
+ * selected row (text tint) or an accent-tinted chip laid over each of them.
  */
 function surfaces(def: ThemeDef): { plain: Rgb[]; tinted: Rgb[] } {
   const k = def.colors;
@@ -176,6 +176,9 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
   const code = (light: string, darkHex: string) => toHex(readable(rgb(dark ? darkHex : light), [codeBg], 4.6, dark));
   const violet = readable(rgb(dark ? "#a78bfa" : "#7c3aed"), [bg, raised], 4.5, dark);
   const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background, accentSurfaces(def));
+  // Focus and selection are neutral, never the accent: a gray ring (3:1 on every surface) and a
+  // text tint. High contrast themes add a neutral edge to selected rows, since a tint alone is faint.
+  const focus = readable(def.fixedAccent ? muted : mix(muted, bg, 0.25), plain, 3.1, dark);
   // Meetings: the calendar color's share in their fill and their secondary text (lib/eventlook.ts).
   const ev = eventTokens({ canvas: toHex(bg), raised: toHex(raised), text: toHex(text), text2: toHex(text2), accent: accent["--accent"], dark });
   return {
@@ -189,6 +192,10 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
     "--bg-hover": rgba(text, dark ? 0.05 : 0.045),
     "--bg-active": rgba(text, dark ? 0.085 : 0.075),
     "--bg-current": rgba(text, dark ? 0.12 : 0.1),
+    "--bg-selected": rgba(text, dark ? 0.095 : 0.08),
+    "--border-focus": toHex(focus),
+    "--focus-soft": rgba(text, dark ? 0.07 : 0.06),
+    "--selected-ring": def.fixedAccent ? `inset 0 0 0 1px ${toHex(focus)}` : "0 0 transparent",
     "--border": toHex(border),
     "--border-strong": toHex(mix(border, text, dark ? 0.14 : 0.16)),
     "--text": toHex(text),
