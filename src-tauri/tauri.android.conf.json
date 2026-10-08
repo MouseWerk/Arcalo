@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "de.mousewerk.arcalo",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Arcalo"
+      }
+    ]
+  },
+  "bundle": {
+    "android": {
+      "minSdkVersion": 26
+    }
+  }
+}

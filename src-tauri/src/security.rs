@@ -216,12 +216,13 @@ pub struct KeyGate {
 pub fn show_keygate(app: &AppHandle, dir: &Path, reason: Access) {
     devlog::error("cipher", format!("encrypted database cannot be opened: {reason:?}"));
     app.manage(KeyGate { dir: dir.to_path_buf(), reason });
-    let built = WebviewWindowBuilder::new(app, KEYGATE, WebviewUrl::App("index.html#keygate".into()))
+    let builder = WebviewWindowBuilder::new(app, KEYGATE, WebviewUrl::App("index.html#keygate".into()))
         .title("Arcalo")
         .inner_size(620.0, 680.0)
-        .min_inner_size(460.0, 520.0)
-        .center()
-        .build();
+        .min_inner_size(460.0, 520.0);
+    #[cfg(desktop)]
+    let builder = builder.center();
+    let built = builder.build();
     if let Err(e) = built {
         crate::recovery::show(
             app,

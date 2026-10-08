@@ -1,6 +1,15 @@
 //! Arcalo desktop shell: exposes `annalo-core` to the web UI over Tauri IPC.
+//!
+//! The same crate is the Android companion app (`mobile`): it shares the state and the commands
+//! below, the desktop-only parts (tray, global shortcuts, updates, voice notes, quick-capture and
+//! search windows) are replaced by the small stand-ins in `mobile/` (see docs/android.md).
+
+// The companion app registers only the commands its screens use; the others stay compiled
+// (shared code) but unused there.
+#![cfg_attr(mobile, allow(dead_code, unused_imports, unused_variables, unused_mut))]
 
 // Built on every platform (so Linux/Windows CI type-checks it); installed on macOS only.
+#[cfg(desktop)]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod appmenu;
 mod backdrop;
@@ -12,6 +21,7 @@ mod canvas;
 mod chats;
 mod dashboard;
 mod dayreview;
+#[cfg_attr(mobile, path = "mobile/desktop.rs")]
 mod desktop;
 mod devlog;
 mod diagnostics;
@@ -20,30 +30,41 @@ mod files;
 mod filing;
 mod focus;
 mod graph;
+#[cfg(desktop)]
 mod installer;
 mod jira;
+#[cfg(desktop)]
 mod jumplist;
 mod linking;
 mod mail;
 mod meetwork;
 mod network;
+#[cfg_attr(mobile, path = "mobile/notifyact.rs")]
 mod notifyact;
 mod policy;
 mod portable;
 mod prefs;
+#[cfg(desktop)]
 mod present;
+#[cfg(desktop)]
 mod rebrand;
 mod recovery;
+#[cfg(desktop)]
 mod rollback;
 mod secrets;
 mod security;
 mod store;
 mod syncmerge;
 mod timeblocks;
+#[cfg_attr(mobile, path = "mobile/updates.rs")]
 mod updates;
+#[cfg_attr(mobile, path = "mobile/voice.rs")]
 mod voice;
 mod weekplan;
 mod worktime;
+
+#[cfg(mobile)]
+mod mobile;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -97,6 +118,7 @@ use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::ShortcutState;
 
 use secrets::SecretStore;
@@ -635,9 +657,9 @@ fn os_locale() -> Option<String> {
     if let Some(l) = std::env::var("ANNALO_LOCALE").ok().filter(|l| !l.trim().is_empty()) {
         return Some(l);
     }
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "android")))]
     let tags = annalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(any(windows, target_os = "macos", target_os = "android"))]
     let tags = sys_locale::get_locales();
     annalo_core::i18n::preferred_locale(tags)
 }
@@ -1624,6 +1646,9 @@ pub(crate) fn run_git_sync_with(
             hold: &hold,
             allow_deletions,
             settings_file: settings_file.clone(),
+            // The Android app syncs as a companion: it leaves the desktop's time sheets and
+            // database copy alone.
+            companion: cfg!(mobile),
         };
         // After a restored backup nothing is uploaded before the restored notes were compared
         // with the server's newer state; when they differ, the user decides.
@@ -1797,7 +1822,7 @@ fn git_status_of(state: &AppState) -> Result<GitSyncStatus> {
         blocked_deletions: last_error.as_deref().and_then(gitsync::guard_count),
         after_restore: gitsync::read_restored(&state.data_dir),
         last_error,
-        pending_changes: gitsync::pending_changes(&state.git_source_dir(), &state.git_repo_dir()),
+        pending_changes: gitsync::pending_changes_as(&state.git_source_dir(), &state.git_repo_dir(), cfg!(mobile)),
         token_set: state.git_secret.get().is_some(),
     })
 }
@@ -1903,10 +1928,13 @@ const MIRROR_ERROR: &str = "mirror.error";
 /// What the Markdown mirror holds, read through a connection of its own (saves go on
 /// meanwhile); the main one when that cannot be opened.
 fn mirror_snapshot(state: &AppState) -> Result<mirror::MirrorSnapshot> {
-    match state.snapshot_db() {
+    let snap = match state.snapshot_db() {
         Some(db) => mirror::MirrorSnapshot::read(&db),
         None => mirror::MirrorSnapshot::read(&state.db()),
-    }
+    }?;
+    // The Android app writes no time sheets: the desktop's stay in the repository (its own
+    // bookings travel as chips in the daily note).
+    Ok(if cfg!(mobile) { snap.without_time_sheets() } else { snap })
 }
 
 /// Rebuilds the Markdown mirror and records the outcome (time or error) for the settings.
@@ -3809,6 +3837,7 @@ struct ActivityTick {
 const IDLE_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Samples input idleness and the foreground window every 5 seconds.
+#[cfg(desktop)]
 fn spawn_activity_sampler(app: AppHandle) {
     const INTERVAL: Duration = IDLE_SAMPLE_INTERVAL;
     std::thread::spawn(move || {
@@ -3930,6 +3959,7 @@ fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     Ok(n)
 }
 
+#[cfg(desktop)]
 fn create_main_window(
     app: &tauri::App,
     visible: bool,
@@ -3997,8 +4027,10 @@ fn create_main_window(
 }
 
 /// The main window is waiting to be shown for the first time (not when started minimized).
+#[cfg(desktop)]
 static PENDING_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+#[cfg(desktop)]
 fn show_main_once(app: &AppHandle, why: &str) {
     if !PENDING_SHOW.swap(false, std::sync::atomic::Ordering::Relaxed) {
         return;
@@ -4027,6 +4059,7 @@ fn startup_mark(phase: &str) {
 }
 
 /// The UI painted its first frame (the splash, or the app when the splash is off).
+#[cfg(desktop)]
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     startup_mark("first frame of the UI");
@@ -4237,6 +4270,7 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
     if portable::active() {
         portable::unlock_instance();
     } else {
+        #[cfg(desktop)]
         tauri_plugin_single_instance::destroy(app);
     }
 }
@@ -4300,6 +4334,7 @@ struct StartupOptions {
     demo: Option<bool>,
 }
 
+#[cfg(desktop)]
 pub fn run() {
     PROCESS_START.get_or_init(Instant::now);
     let mut builder = tauri::Builder::default();
@@ -5114,6 +5149,7 @@ pub fn run() {
         .run(on_run_event);
 }
 
+#[cfg(desktop)]
 fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
     match event {
         // macOS: closing hides the window and the app stays in the Dock; clicking the Dock icon

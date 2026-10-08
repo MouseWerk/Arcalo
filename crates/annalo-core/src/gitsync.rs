@@ -12,6 +12,9 @@
 //! `http.extraHeader`, never on the command line and never written to `.git/config`;
 //! every message that leaves this module is redacted. SSH remotes use the user's SSH
 //! agent and keys as they are.
+//!
+//! Without a `git` program (the Android companion app, feature `embedded-git`) the same
+//! commands run on libgit2 ([`gitlib`]).
 
 use crate::{tr, trf};
 use std::collections::BTreeSet;
@@ -27,6 +30,10 @@ use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+
+#[cfg(feature = "embedded-git")]
+#[path = "gitlib.rs"]
+pub mod gitlib;
 
 /// Working tree of the sync, inside the data folder.
 pub const REPO_DIR: &str = "git-sync";
@@ -260,6 +267,10 @@ where
 
 /// Computer name for the fallback branch, reduced to characters valid in a branch name.
 pub fn hostname() -> String {
+    // Apps on Android see no host name: the companion app is „android“ (fallback branch, settings file).
+    if cfg!(target_os = "android") {
+        return "android".to_owned();
+    }
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
@@ -302,12 +313,16 @@ fn is_git_dir(name: &str) -> bool {
 }
 
 /// Root entries of the working tree the tree sync never removes: `.git` and the files
-/// written by the sync itself (`README.md` only while the source has none).
-fn protected(src: &Path) -> Vec<String> {
+/// written by the sync itself (`README.md` only while the source has none). A companion device
+/// (see [`SyncRequest::companion`]) also keeps the desktop's time sheets.
+fn protected(src: &Path, companion: bool) -> Vec<String> {
     let mut p =
         vec![".git".to_owned(), ATTRIBUTES_FILE.to_owned(), DB_FILE.to_owned(), crate::settings_sync::FILE.to_owned()];
     if !src.join(README_FILE).exists() {
         p.push(README_FILE.to_owned());
+    }
+    if companion {
+        p.push(crate::mirror::TIME_DIR.to_owned());
     }
     p
 }
@@ -315,8 +330,12 @@ fn protected(src: &Path) -> Vec<String> {
 /// Makes `dst` a copy of `src` (files added, changed or removed; symlinks and `.git`
 /// folders in `src` are skipped). With `apply = false` only counts what would change.
 pub fn sync_tree(src: &Path, dst: &Path, apply: bool) -> Result<TreeChanges> {
+    sync_tree_as(src, dst, apply, false)
+}
+
+fn sync_tree_as(src: &Path, dst: &Path, apply: bool, companion: bool) -> Result<TreeChanges> {
     let mut ch = TreeChanges::default();
-    let keep = protected(src);
+    let keep = protected(src, companion);
     sync_dir(src, dst, Some(&keep), apply, &mut ch)?;
     Ok(ch)
 }
@@ -428,8 +447,12 @@ fn sync_dir(src: &Path, dst: &Path, keep: Option<&[String]>, apply: bool, ch: &m
 /// Brings the working tree to the state of `source` and writes the sync's own files.
 /// `database`: backup file to include as [`DB_FILE`]; `None` removes an earlier copy.
 pub fn prepare_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<TreeChanges> {
-    let ch = sync_tree(source, repo, true)?;
-    write_own_files(source, repo, database)?;
+    prepare_tree_as(source, repo, database, false)
+}
+
+fn prepare_tree_as(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<TreeChanges> {
+    let ch = sync_tree_as(source, repo, true, companion)?;
+    write_own_files(source, repo, database, companion)?;
     Ok(ch)
 }
 
@@ -439,7 +462,7 @@ pub fn prepare_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Resu
 /// note both sides have with different text keeps the server's version and comes back as
 /// a conflict. Notes only the server has come back with `mine: None`, so the shell creates
 /// them here.
-fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<Vec<RemoteChange>> {
+fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<Vec<RemoteChange>> {
     fn walk(src: &Path, dst: &Path, rel: &str, seen: &mut BTreeSet<String>, out: &mut Vec<RemoteChange>) -> Result<()> {
         for (name, is_dir) in source_entries(src)? {
             let Some(name_s) = name.to_str() else { continue };
@@ -495,7 +518,7 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>) -> Result<Vec
         changes.push(RemoteChange { path, base: None, mine: None, theirs: Some(text), conflict: false });
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
-    write_own_files(source, repo, database)?;
+    write_own_files(source, repo, database, companion)?;
     Ok(changes)
 }
 
@@ -512,10 +535,14 @@ fn write_settings_file(repo: &Path, ours: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>) -> Result<()> {
+/// A companion device leaves the database copy as the server has it.
+fn write_own_files(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<()> {
     fs::write(repo.join(ATTRIBUTES_FILE), ATTRIBUTES)?;
     if !source.join(README_FILE).exists() {
         fs::write(repo.join(README_FILE), tr!(README, README_EN))?;
+    }
+    if companion {
+        return Ok(());
     }
     let db = repo.join(DB_FILE);
     match database {
@@ -653,6 +680,9 @@ pub struct Git {
     timeout: Duration,
     /// Proxy and CA settings (Settings → Netzwerk).
     network: crate::network::GitNetwork,
+    /// The commands run on libgit2 instead of the program ([`gitlib`]).
+    #[cfg(feature = "embedded-git")]
+    embedded: bool,
 }
 
 impl std::fmt::Debug for Git {
@@ -671,6 +701,8 @@ impl Git {
             send_token: is_http(remote_url),
             timeout: DEFAULT_TIMEOUT,
             network: crate::network::GitNetwork::default(),
+            #[cfg(feature = "embedded-git")]
+            embedded: gitlib::default_on(),
         }
     }
 
@@ -687,6 +719,10 @@ impl Git {
 
     pub fn with_program(mut self, program: impl Into<PathBuf>) -> Self {
         self.program = program.into();
+        #[cfg(feature = "embedded-git")]
+        {
+            self.embedded = false;
+        }
         self
     }
 
@@ -757,6 +793,15 @@ impl Git {
 
     /// Runs git; `Err` only when it cannot be started or times out.
     pub fn run(&self, cwd: Option<&Path>, args: &[&str]) -> Result<GitOutput> {
+        #[cfg(feature = "embedded-git")]
+        if self.embedded {
+            let mut out = gitlib::run(self, cwd, args);
+            out.stderr = redact(&out.stderr, self.token());
+            if let Some(p) = &self.network.secret {
+                out.stderr = out.stderr.replace(p.as_str(), "***");
+            }
+            return Ok(out);
+        }
         let mut child = self.command(cwd, args).spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 Error::State(not_installed().into())
@@ -866,6 +911,10 @@ pub struct SyncRequest<'a> {
     /// This computer's settings file ([`crate::settings_sync::FILE`]) when the settings are
     /// synced; merged with the one in the repository per setting.
     pub settings_file: Option<String>,
+    /// A companion device (the Android app): it neither writes nor removes the files only the
+    /// desktop produces, the database copy ([`DB_FILE`]) and the time sheets
+    /// ([`crate::mirror::TIME_DIR`]); its own bookings travel as chips in the notes.
+    pub companion: bool,
 }
 
 /// Start of the error a sync returns when it stopped before deleting many notes; the shell
@@ -1064,9 +1113,9 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             )));
         }
         if adopted {
-            adopt_tree(req.source, repo, req.database)?
+            adopt_tree(req.source, repo, req.database, req.companion)?
         } else {
-            prepare_tree(req.source, repo, req.database)?;
+            prepare_tree_as(req.source, repo, req.database, req.companion)?;
             vec![]
         }
     };
@@ -1508,7 +1557,7 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
                 req.source.display()
             )));
         }
-        prepare_tree(req.source, repo, None)?;
+        prepare_tree_as(req.source, repo, None, req.companion)?;
     }
     let res = (|| {
         git.check(Some(repo), &["add", "-A"])?;
@@ -1603,10 +1652,15 @@ pub fn advance_to_server(git: &Git, req: &SyncRequest) -> Result<()> {
 
 /// Files that would change with the next sync (mirror vs. working tree), without git.
 pub fn pending_changes(source: &Path, repo: &Path) -> usize {
+    pending_changes_as(source, repo, false)
+}
+
+/// [`pending_changes`] of a companion device (see [`SyncRequest::companion`]).
+pub fn pending_changes_as(source: &Path, repo: &Path, companion: bool) -> usize {
     if !source.is_dir() {
         return 0;
     }
-    sync_tree(source, repo, false).map(|c| c.total()).unwrap_or(0)
+    sync_tree_as(source, repo, false, companion).map(|c| c.total()).unwrap_or(0)
 }
 
 /// Removes this sync's own README from a cloned repository before it is imported as a vault.
@@ -1786,7 +1840,8 @@ mod tests {
         #[cfg(unix)]
         if git_available() {
             // A git alias that runs far longer than the timeout.
-            let slow = Git::new(None, "").with_timeout(Duration::from_millis(300));
+            // The program's timeout (libgit2 has its own network timeouts).
+            let slow = Git::new(None, "").with_program("git").with_timeout(Duration::from_millis(300));
             let start = Instant::now();
             let err = slow.run(None, &["-c", "alias.warte=!sleep 5", "warte"]).unwrap_err().to_string();
             assert!(err.contains("abgebrochen"), "{err}");
@@ -1847,6 +1902,7 @@ mod tests {
                         hold: &[],
                         allow_deletions: false,
                         settings_file: None,
+                        companion: false,
                     },
                 )
             }
@@ -1927,6 +1983,7 @@ mod tests {
                     hold,
                     allow_deletions: false,
                     settings_file: None,
+                    companion: false,
                 },
             )
             .unwrap()
@@ -2042,6 +2099,7 @@ mod tests {
                 hold: &[],
                 allow_deletions: false,
                 settings_file: None,
+                companion: false,
             },
         )
         .unwrap();
@@ -2065,6 +2123,7 @@ mod tests {
                 hold: &[],
                 allow_deletions: false,
                 settings_file: None,
+                companion: false,
             },
         )
         .unwrap_err()
@@ -2138,6 +2197,7 @@ mod safety_tests {
                     hold: &[],
                     allow_deletions: allow,
                     settings_file: None,
+                    companion: false,
                 },
             )
         }
@@ -2158,6 +2218,66 @@ mod safety_tests {
 
     fn mark(dir: &Path) {
         put(&dir.join(crate::mirror::README_NAME), crate::mirror::MARKER);
+    }
+
+    /// The Android app syncs as a companion: the desktop's database copy and time sheets stay on
+    /// the server, before and after a merge with the desktop's newer state.
+    #[test]
+    fn a_companion_keeps_the_desktops_database_copy_and_time_sheets() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("companion");
+        let desk = r.mirror("desk");
+        mark(&desk);
+        put(&desk.join("Notiz.md"), "vom Desktop");
+        put(&desk.join("Zeiterfassung/2026-10.csv"), "Datum;Stunden\n");
+        let backup = r.base.join("arcalo-1.db");
+        put(&backup, "SQLite format 3");
+        let desk_req = |source: &Path, database: Option<&Path>, companion: bool, pc: &str| {
+            sync(
+                &Git::new(None, &r.settings.remote_url),
+                &SyncRequest {
+                    repo: &r.base.join(pc).join(REPO_DIR),
+                    source,
+                    database,
+                    settings: &r.settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &[],
+                    allow_deletions: false,
+                    settings_file: None,
+                    companion,
+                },
+            )
+        };
+        desk_req(&desk, Some(&backup), false, "desk").unwrap();
+
+        // The phone: its mirror has no time sheets and no database copy.
+        let phone = r.mirror("phone");
+        mark(&phone);
+        put(&phone.join("Handy.md"), "vom Handy");
+        let first = desk_req(&phone, None, true, "phone").unwrap();
+        assert_eq!(first.remote_changes.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["Notiz.md"]);
+        put(&phone.join("Notiz.md"), "vom Desktop");
+        put(&phone.join("Handy.md"), "vom Handy, geändert");
+        desk_req(&phone, None, true, "phone").unwrap();
+        let tree = r.tree();
+        for f in [DB_FILE, "Zeiterfassung/2026-10.csv", "Handy.md", "Notiz.md"] {
+            assert!(tree.contains(&f.to_owned()), "{f} on the server: {tree:?}");
+        }
+
+        // The desktop moves on (new time sheet), the phone too: merged, both stay.
+        put(&desk.join("Zeiterfassung/2026-10.csv"), "Datum;Stunden\n08.10.2026;1,5\n");
+        desk_req(&desk, Some(&backup), false, "desk").unwrap();
+        put(&phone.join("Handy.md"), "dritte Fassung");
+        desk_req(&phone, None, true, "phone").unwrap();
+        let bare = r.base.join("remote.git");
+        assert!(sh(&bare, &["show", "main:Zeiterfassung/2026-10.csv"]).contains("1,5"));
+        assert_eq!(sh(&bare, &["show", &format!("main:{DB_FILE}")]), "SQLite format 3");
+        assert_eq!(sh(&bare, &["show", "main:Handy.md"]), "dritte Fassung");
+        assert!(r.base.join("phone").join(REPO_DIR).join("Zeiterfassung/2026-10.csv").is_file());
+        assert_eq!(pending_changes_as(&phone, &r.base.join("phone").join(REPO_DIR), true), 0);
     }
 
     #[test]
@@ -2397,6 +2517,7 @@ mod safety_tests {
                     hold: &[],
                     allow_deletions: false,
                     settings_file: Some(file),
+                    companion: false,
                 },
             )
             .unwrap()
@@ -2452,6 +2573,7 @@ mod safety_tests {
             hold: &[],
             allow_deletions,
             settings_file: None,
+            companion: false,
         };
         let note = |pc: &str, file: &str, text: &str| put(&base.join(format!("{pc}/mirror/{file}")), text);
         let mark = |dir: &Path| put(&dir.join(crate::mirror::README_NAME), crate::mirror::MARKER);

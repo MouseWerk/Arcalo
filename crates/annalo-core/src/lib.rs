@@ -63,6 +63,7 @@ pub mod capture;
 pub mod chats;
 pub mod chips;
 pub mod cipher;
+pub mod companion;
 pub mod dashboard;
 pub mod datadir;
 pub mod dayreview;

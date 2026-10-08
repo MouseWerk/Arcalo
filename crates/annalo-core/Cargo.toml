@@ -5,8 +5,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# The Git sync without a system `git` (`gitlib.rs`): libgit2, built from source, with HTTPS through
+# the vendored OpenSSL that the database encryption builds anyway. The Android app turns it on;
+# the desktop keeps using the installed git.
+embedded-git = ["dep:git2"]
+
 [dependencies]
 base64 = "0.22.1"
+git2 = { version = "0.21", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"], optional = true }
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 cfb = "0.15.0"
@@ -43,6 +50,11 @@ claxon = "0.4"
 # Building it needs Perl and make (preinstalled on the CI runners).
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+# Android (the companion app): Mozilla's root certificates, for rustls (the platform verifier needs
+# the app's JVM context there) and for the embedded Git of the sync (libgit2 with OpenSSL).
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-root-certs = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
