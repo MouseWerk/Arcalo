@@ -15,6 +15,7 @@ import { t, type TKey } from "../lib/i18n";
 import type { ChatConversation, ChatMessage, ChatRecord, StreamEvent, Tier, ToolCall } from "../lib/types";
 import { useApp } from "./app";
 import { jiraApi } from "../lib/jira";
+import { aiEnabled } from "../lib/aiswitch";
 
 export type { Turn } from "../lib/chathistory";
 
@@ -756,6 +757,8 @@ const focusComposer = (scope: string) => setTimeout(() => document.querySelector
  * `from` (the panel's „Im Chat-Fenster öffnen“) or as it was.
  */
 export async function openChatView(opts: { id?: number; from?: ChatSession; fresh?: boolean } = {}) {
+  // „KI verwenden“ off: there is no chat view (a shortcut or link does nothing).
+  if (!aiEnabled()) return;
   useApp.getState().openTab({ kind: "chat" });
   try {
     if (opts.fresh) viewChat.newChat();

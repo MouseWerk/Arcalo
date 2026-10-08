@@ -46,6 +46,7 @@ import { Select, type SelectOption } from "./Select";
 import { DateInput } from "./DateInput";
 import { flushAllEditors } from "../editor/saves";
 import { reloadEditors } from "../editor/NoteEditor";
+import { aiEnabled, useAi } from "../lib/aiswitch";
 
 const s = () => useApp.getState();
 
@@ -88,13 +89,14 @@ export async function prepareMeeting(key: string, opts: { open?: boolean } = {})
   try {
     // What the user typed on an open prep page is saved first: the refresh keeps it.
     await flushAllEditors().catch(() => {});
-    const r = await meetApi.prepare(crypto.randomUUID(), key, true);
+    // „KI verwenden“ off: the prep page without „Worauf achten“.
+    const r = await meetApi.prepare(crypto.randomUUID(), key, aiEnabled());
     mw().set({ pages: { ...mw().pages, [key]: r.page.id } });
     if (!r.created) reloadEditors([r.page.id]);
     if (opts.open !== false) await openPageNow(r.page);
     else await s().refreshTree();
     s().toast({ tone: "success", title: t(r.created ? "mw.prep.created" : "mw.prep.updated"), detail: r.page.title });
-    if (r.ai.error) s().toast({ tone: "warning", title: t("mw.prep.noAi"), detail: r.ai.error });
+    if (r.ai.error && aiEnabled()) s().toast({ tone: "warning", title: t("mw.prep.noAi"), detail: r.ai.error });
   } catch (e) {
     s().error(t("mw.prep.failed"), e);
   } finally {
@@ -315,9 +317,11 @@ function FollowUpDialog({ pageId, onClose }: { pageId: number; onClose: () => vo
           </div>
           {route === "mailto" && <p className="mw-fu-note faint small">{view.outlook ? t("mw.fu.fallbackHint") : t("mw.fu.noOutlook")} {view.mailto_truncated && t("mw.fu.truncated")}</p>}
           <div className="mw-fu-actions-row">
-            <Button icon={Sparkles} loading={busy === "ai"} onClick={() => void polish()} className="mw-fu-polish">
-              {t("mw.fu.polish")}
-            </Button>
+            {aiEnabled() && (
+              <Button icon={Sparkles} loading={busy === "ai"} onClick={() => void polish()} className="mw-fu-polish">
+                {t("mw.fu.polish")}
+              </Button>
+            )}
             <span className="grow" />
             <Button variant="ghost" icon={ClipboardCopy} className="mw-fu-copy-text" onClick={() => void copyText(view.text)}>
               {t("mw.fu.copyText")}
@@ -412,7 +416,9 @@ function StatusReportDialog({ initial, kind, onClose }: { initial?: Scope; kind?
   const t = useT();
   const [choices, setChoices] = useState<ScopeChoices | null>(null);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
-  const [req, setReq] = useState<ReportRequest | null>(initial ? newRequest(initial, true) : null);
+  // „KI verwenden“ off: reports without the AI summary, and no switch for it.
+  const ai = useAi();
+  const [req, setReq] = useState<ReportRequest | null>(initial ? newRequest(initial, aiEnabled()) : null);
   const [template, setTemplate] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -422,7 +428,7 @@ function StatusReportDialog({ initial, kind, onClose }: { initial?: Scope; kind?
       setChoices(c);
       const all = scopeList(c);
       const first = all.find((x) => x.kind === kind) ?? all[0];
-      setReq((r) => r ?? (first ? newRequest(first, true) : null));
+      setReq((r) => r ?? (first ? newRequest(first, aiEnabled()) : null));
     }, (e) => s().error(t("mw.sr.failed"), e));
     void meetApi.templates().then(setTemplates).catch(() => {});
   }, [t, kind]);
@@ -439,11 +445,11 @@ function StatusReportDialog({ initial, kind, onClose }: { initial?: Scope; kind?
     setBusy(true);
     try {
       await flushAllEditors().catch(() => {});
-      const r = await meetApi.report(crypto.randomUUID(), req);
+      const r = await meetApi.report(crypto.randomUUID(), { ...req, ai: req.ai && aiEnabled() });
       if (!r.created) reloadEditors([r.page.id]);
       setDone(r);
       await s().refreshTree();
-      if (r.ai.error) s().toast({ tone: "warning", title: t("mw.sr.noAi"), detail: r.ai.error });
+      if (r.ai.error && aiEnabled()) s().toast({ tone: "warning", title: t("mw.sr.noAi"), detail: r.ai.error });
     } catch (e) {
       s().error(t("mw.sr.failed"), e);
     } finally {
@@ -579,13 +585,15 @@ function StatusReportDialog({ initial, kind, onClose }: { initial?: Scope; kind?
               })}
             </div>
           </div>
-          <div className="mw-sr-ai">
-            <Switch checked={req.ai && req.sections.includes("summary")} disabled={!req.sections.includes("summary")} onChange={(ai) => patch({ ai })} label={t("mw.sr.ai")} />
-            <span>
-              {t("mw.sr.ai")}
-              <span className="faint small"> · {t("mw.sr.aiHint")}</span>
-            </span>
-          </div>
+          {ai && (
+            <div className="mw-sr-ai">
+              <Switch checked={req.ai && req.sections.includes("summary")} disabled={!req.sections.includes("summary")} onChange={(on) => patch({ ai: on })} label={t("mw.sr.ai")} />
+              <span>
+                {t("mw.sr.ai")}
+                <span className="faint small"> · {t("mw.sr.aiHint")}</span>
+              </span>
+            </div>
+          )}
           <Field label={t("mw.sr.templateName")}>
             <Input value={name} placeholder={req.scope.label} onChange={(e) => setName(e.target.value)} className="mw-sr-name" />
           </Field>

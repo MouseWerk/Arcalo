@@ -92,26 +92,28 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     db.save_page_content(
         start.id,
         tr!(
-            "Arcalo ist dein lokaler Arbeitsbereich für Notizen, Projekte und Zeiterfassung.\n\n\
+            "Arcalo ist dein ganzer Arbeitstag in einer App: Notizen, Aufgaben, Besprechungen und Zeit, lokal auf deinem Rechner.\n\n\
              ## So arbeitest du hier\n\n\
              - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
-             - Zeit buchst du direkt im Text: tippe `/zeit NP-8801/1020 1.5h Review` und drücke Enter.\n\
-             - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler, `Alt Space` funktioniert global.\n\
-             - Der Assistent rechts kennt deine Notizen und Zeitbuchungen. Server und Token stellst du in den Einstellungen ein.\n\n\
+             - Aufgaben sind Checkboxen in jeder Notiz, zum Beispiel `- [ ] Angebot senden due:2026-10-15`. Alle offenen stehen unter Aufgaben.\n\
+             - Termine aus Outlook oder einem ICS-Link stehen im Kalender und in der Tagesnotiz; ein Klick legt die Besprechungsnotiz an.\n\
+             - Wenn du Zeit buchst: tippe `/zeit NP-8801/1020 1.5h Review` direkt in den Text und drücke Enter.\n\
+             - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler.\n\n\
              ## Einstieg\n\n\
-             - [ ] LiteLLM-Server in den Einstellungen verbinden\n\
-             - [ ] Obsidian-Vault importieren\n\
-             - [ ] Erstes Projekt unter [[PRJ-2026-X Rollout]] ansehen\n",
-            "Arcalo is your local workspace for notes, projects and time tracking.\n\n\
+             - [ ] Die Besprechungsnotiz [[Jour fixe 22.09.]] ansehen\n\
+             - [ ] Das Projekt unter [[PRJ-2026-X Rollout]] ansehen\n\
+             - [ ] Den eigenen Kalender in den Einstellungen verbinden\n",
+            "Arcalo is your whole workday in one app: notes, tasks, meetings and time, on your own computer.\n\n\
              ## How you work here\n\n\
              - Notes are Markdown. Link pages with `[[Page name]]` and tag them with `#tag`.\n\
-             - You book time right in the text: type `/time NP-8801/1020 1.5h Review` and press Enter.\n\
-             - `Ctrl K` opens the command palette, `Ctrl O` the quick switcher, `Alt Space` works everywhere.\n\
-             - The assistant on the right knows your notes and time logs. Set up the server and token in the settings.\n\n\
+             - Tasks are checkboxes in any note, for example `- [ ] Send the offer due:2026-10-15`. All open ones are listed under Tasks.\n\
+             - Meetings from Outlook or an ICS link show in the calendar and in your daily note; one click creates the meeting note.\n\
+             - If you book time: type `/time NP-8801/1020 1.5h Review` right in the text and press Enter.\n\
+             - `Ctrl K` opens the command palette, `Ctrl O` the quick switcher.\n\n\
              ## Getting started\n\n\
-             - [ ] Connect a LiteLLM server in the settings\n\
-             - [ ] Import an Obsidian vault\n\
-             - [ ] Look at the first project under [[PRJ-2026-X Rollout]]\n"
+             - [ ] Look at the meeting note [[Weekly sync 22.09.]]\n\
+             - [ ] Look at the project under [[PRJ-2026-X Rollout]]\n\
+             - [ ] Connect your own calendar in the settings\n"
         ),
     )?;
 

@@ -3,6 +3,7 @@ import { api, errorParts, on } from "./lib/api";
 import { openSettingsSection } from "./lib/calnav";
 import { requestWeekProposal } from "./lib/weekplan";
 import { TIME_SHORTCUTS, timeTrackingEnabled } from "./lib/timetracking";
+import { AI_SHORTCUTS, aiEnabled } from "./lib/aiswitch";
 import { useApp, savePref, activeTab } from "./store/app";
 import { applyTheme } from "./lib/actions";
 import { Sidebar, stopTimer, toggleTimerPause } from "./components/Sidebar";
@@ -263,6 +264,8 @@ export function App() {
       if (!command) return;
       // „Zeiterfassung verwenden“ off: the timer shortcut does nothing (and the key stays free).
       if (TIME_SHORTCUTS.has(id!) && !timeTrackingEnabled()) return;
+      // „KI verwenden“ off: the assistant and chat shortcuts do nothing (Ctrl+J stays free).
+      if (AI_SHORTCUTS.has(id!) && !aiEnabled()) return;
       // Back/forward never while typing: there the keys move the caret (word jumps on macOS).
       if (!commandAllowed(id!, document.activeElement)) return;
       // The editor takes Ctrl+J on a selection (inline AI) and marks the event handled.

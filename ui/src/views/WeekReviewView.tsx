@@ -25,6 +25,7 @@ import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL, hm, hours } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
+import { useAi } from "../lib/aiswitch";
 import {
   WEEK_REVIEW_EVENT, dayOff, dayProgress, dayShort, isEmptyWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, takeWeekReviewDay, weekApi, weekProgress, weekSubtitle,
   type WeekPage, type WeekReview, type WeekTask,
@@ -45,6 +46,8 @@ export function WeekReviewView() {
   const [copied, setCopied] = useState(false);
   const [askSetup, setAskSetup] = useState(false);
   const ai = useAiTransform();
+  // „KI verwenden“ off: no „Zusammenfassen“; saving the report is the main action.
+  const aiOn = useAi();
   const configured = useAiConfigured();
   const root = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
@@ -207,12 +210,14 @@ export function WeekReviewView() {
               <IconButton icon={ExternalLink} className="wr-open-report" label={t("week.openReport")} onClick={(e) => void openPage(r.report_page_id, e.ctrlKey || e.metaKey)} />
             )}
             <IconButton icon={LayoutTemplate} className="wr-template" label={t("week.template")} onClick={() => void editTemplate()} />
-            <Button icon={ClipboardList} className="wr-save" loading={saving} disabled={!r} onClick={() => void save()}>
+            <Button variant={aiOn ? "secondary" : "primary"} icon={ClipboardList} className="wr-save" loading={saving} disabled={!r} onClick={() => void save()}>
               {t("week.save")}
             </Button>
-            <Button variant="primary" icon={Sparkles} className="wr-summarize" loading={ai.busy} disabled={!r} onClick={summarize} title={configured ? t("week.summarizeTitle") : t("ai.setup.action")}>
-              {t("week.summarize")}
-            </Button>
+            {aiOn && (
+              <Button variant="primary" icon={Sparkles} className="wr-summarize" loading={ai.busy} disabled={!r} onClick={summarize} title={configured ? t("week.summarizeTitle") : t("ai.setup.action")}>
+                {t("week.summarize")}
+              </Button>
+            )}
           </div>
         </header>
 
@@ -222,14 +227,14 @@ export function WeekReviewView() {
           <>
             <Stats r={r} />
 
-            {askSetup && !configured && (
+            {aiOn && askSetup && !configured && (
               <div className="wr-setup">
                 <AiSetupNote text={t("ai.setup.week")} />
                 <IconButton icon={X} label={t("common.close")} size="sm" onClick={() => setAskSetup(false)} />
               </div>
             )}
 
-            {(ai.busy || ai.text || ai.error) && (
+            {aiOn && (ai.busy || ai.text || ai.error) && (
               <section className="card rv-summary" aria-label={t("review.md.summary")} aria-live="polite">
                 <div className="card-head">
                   <h2>

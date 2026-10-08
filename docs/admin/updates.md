@@ -115,9 +115,10 @@ Policies are read at every start. Higher sources win per value:
 | `PinnedVersion` | string | e.g. `1.9.4`: never offer a version above it |
 | `InstallWindow` | string | e.g. `18:00-07:00` (local time, may span midnight): install only then; outside it the update waits and „Restart now“ is not offered |
 | `CheckIntervalHours` | DWORD / number | 1–168 |
+| `AllowAi` | DWORD / bool | `0`: AI is switched off for everyone (no assistant, chat, AI buttons or search by meaning, no request to any AI or embedding provider; Settings → AI & models shows „Switched off by your organization“); `1` or unset: users decide with „Use AI“ |
 
 Settings → About shows „Managed by your organization“ with the source of the policy and locks
-the managed fields. Invalid values are ignored and logged (Settings → Log, category „update“).
+the managed fields (`AllowAi = 0` locks „Use AI“ in Settings → AI & models instead). Invalid values are ignored and logged (Settings → Log, category „update“).
 The same sources also carry the network policies (`NetworkRoute.<service>`,
 `LockNetworkProfiles`): see docs/admin/network.md.
 

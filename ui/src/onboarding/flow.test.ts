@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { noteSystemLang, translate, type TKey } from "../lib/i18n";
 import type { AiProvider, Settings } from "../lib/types";
 import {
-  STEPS, STEP_LABELS, STEP_SECTIONS, aiChoiceOf, clampTarget, companyProvider, isStep, isUntouchedDefault, nextStep, prevStep, progressOf, summaryRows, timeTrackingOn,
-  withCompanyProvider, withLocalModel, withRounding, withThemePick, withTimeTracking, withWorkday, withoutAi,
+  LATER, STEPS, STEP_LABELS, STEP_SECTIONS, aiChoiceOf, clampTarget, companyProvider, isStep, isUntouchedDefault, nextStep, prevStep, progressOf, summaryRows, timeTrackingOn,
+  withAi, withCompanyProvider, withLocalModel, withRounding, withThemePick, withTimeTracking, withWorkday,
 } from "./flow";
 import { langFromLocales } from "../lib/language";
 
@@ -48,7 +48,9 @@ describe("first-run steps", () => {
     expect(nextStep("language")).toBe("theme");
     expect(prevStep("language")).toBe("language");
     expect(nextStep("done")).toBe("done");
-    expect(prevStep("done")).toBe("desktop");
+    expect(prevStep("done")).toBe("workspace");
+    // Short: language, theme, AI, time, calendar, start, done.
+    expect(STEPS).toEqual(["language", "theme", "ai", "work", "calendar", "workspace", "done"]);
     expect(progressOf("language")).toBe(0);
     expect(progressOf("done")).toBe(1);
     expect(isStep("ai")).toBe(true);
@@ -58,7 +60,9 @@ describe("first-run steps", () => {
       expect(translate("de", STEP_LABELS[s])).not.toBe(STEP_LABELS[s]);
       expect(translate("en", STEP_LABELS[s])).not.toBe(STEP_LABELS[s]);
     }
-    expect(Object.values(STEP_SECTIONS).every((x) => ["locale", "appearance", "time", "ai", "calendar", "backup", "security", "desktop", "about"].includes(x!))).toBe(true);
+    expect(Object.values(STEP_SECTIONS).every((x) => ["locale", "appearance", "time", "ai", "calendar", "about"].includes(x!))).toBe(true);
+    // „Fertig“ links to what the setup leaves to the settings.
+    expect(LATER.map((l) => l.section)).toEqual(["backup", "backup", "security", "desktop"]);
   });
 
   it("guesses the language from the OS locales", () => {
@@ -101,10 +105,12 @@ describe("first-run steps", () => {
     expect(withRounding(s, 5).time.rounding.mode).toBe("up");
   });
 
-  it("AI: none switches every provider off and is recognized again", () => {
-    const s = withoutAi(fresh());
-    expect(s.providers.every((p) => !p.enabled)).toBe(true);
-    expect(aiChoiceOf(s, [])).toBe("none");
+  it("AI: „Ohne KI“ only switches AI off; the providers stay for „Mit KI“", () => {
+    const s = withAi(fresh(), false);
+    expect(s.ai.enabled).toBe(false);
+    expect(s.providers).toEqual(fresh().providers);
+    expect(withAi(s, true).ai.enabled).toBe(true);
+    expect(withAi(s, true).providers).toEqual(fresh().providers);
     // The untouched default counts as nothing configured.
     expect(isUntouchedDefault(litellm, [])).toBe(true);
     expect(isUntouchedDefault(litellm, ["litellm"])).toBe(false);
@@ -157,40 +163,38 @@ describe("first-run summary", () => {
     t: (k: TKey, v?: Record<string, string | number>) => translate(lang, k, v),
     weekdays: lang === "de" ? ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] : ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
     keys: [],
-    autostart: false,
     icsCount: 0,
     workspace: null,
-    gitTokenSet: false,
   });
 
   it("has one row per step before „Fertig“, in the chosen language", () => {
-    const s = { ...fresh(), backup_dir: "/mnt/nas/annalo", daily_target_hours: 7.5 };
+    const s = { ...fresh(), daily_target_hours: 7.5, ai: { enabled: true } } as Settings;
     const rows = summaryRows(s, ctx("de"));
     expect(rows.map((r) => r.step)).toEqual(STEPS.filter((x) => x !== "done"));
     const by = Object.fromEntries(rows.map((r) => [r.step, r.value]));
     expect(by.language).toBe("Deutsch");
     expect(by.work).toBe("Mo, Di, Mi, Do, Fr · 7,5 h · ohne Rundung");
-    expect(by.ai).toBe("Keine KI");
+    expect(by.ai).toBe("Mit KI · Modell später");
     expect(by.calendar).toBe("Aus");
-    expect(by.sync).toBe("Aus");
-    expect(by.backup).toBe("/mnt/nas/annalo · 14 behalten · mit Markdown-Kopie");
-    expect(by.desktop).toContain("Schnellerfassung Ctrl+Shift+Space");
+    expect(by.workspace).toBe("unverändert");
+    // „Ohne KI“, also when a policy decides it.
+    expect(Object.fromEntries(summaryRows({ ...s, ai: { enabled: false } } as Settings, ctx("de")).map((r) => [r.step, r.value])).ai).toBe("Ohne KI");
+    expect(Object.fromEntries(summaryRows(s, { ...ctx("de"), aiPolicyOff: true }).map((r) => [r.step, r.value])).ai).toBe("Ohne KI");
   });
 
-  it("reflects the answers: English, no time tracking, Outlook, Git with URL", () => {
+  it("reflects the answers: English, no time tracking, Outlook, sample content", () => {
     const s = {
       ...fresh(),
       locale: { language: "en", date_format: "de" },
       time: { enabled: false, rounding: { step_minutes: 15, mode: "up", min_minutes: 0 } },
       calendar: { outlook: true },
-      git_sync: { enabled: true, remote_url: "https://git.example/notes.git", branch: "main" },
     } as unknown as Settings;
-    const by = Object.fromEntries(summaryRows(s, { ...ctx("en"), icsCount: 2, workspace: "samples" as const, gitTokenSet: true }).map((r) => [r.step, r.value]));
+    const by = Object.fromEntries(summaryRows(s, { ...ctx("en"), icsCount: 2, workspace: "samples" as const }).map((r) => [r.step, r.value]));
     expect(by.language).toBe("English");
     expect(by.work).toBe("No time tracking");
-    expect(by.workspace).toBe("With sample data");
+    expect(by.workspace).toBe("With sample content");
     expect(by.calendar).toBe("Outlook · 2 ICS");
-    expect(by.sync).toBe("https://git.example/notes.git · main");
+    expect(by.ai).toBe("With AI · model later");
   });
 
   it("names „Wie das System“ with the language it stands for", () => {

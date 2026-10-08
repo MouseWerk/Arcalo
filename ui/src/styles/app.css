@@ -977,8 +977,6 @@ button.side-section-title:hover { color: var(--text-2); }
 .onb-key { position: absolute; top: 12px; right: 12px; }
 .onb-title { font-weight: var(--fw-semibold); color: var(--text); }
 .onb-text { font-size: var(--fs-sm); line-height: 1.5; }
-.onb-server { display: inline-flex; align-items: center; gap: 6px; margin-top: 22px; padding: 4px 6px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); font-size: var(--fs-sm); }
-.onb-server:hover { color: var(--text); background: var(--bg-hover); }
 
 /* ------------------------------------------------------------------ print */
 

@@ -20,8 +20,8 @@ after(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-const SCENES = ["welcome", "notes", "time", "ai", "calendar", "capture", "local"];
-const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "security", "desktop", "done"];
+const SCENES = ["welcome", "notes", "meetings", "time", "local"];
+const STEPS = ["language", "theme", "ai", "work", "calendar", "workspace", "done"];
 
 /** Every text node and every attribute a user or a screen reader gets that names Annalo. */
 function oldName() {

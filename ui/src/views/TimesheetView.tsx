@@ -26,6 +26,7 @@ import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { currentLang, useT, type TKey } from "../lib/i18n";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
+import { startedOn } from "../onboarding/firststeps";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   running: { label: "time.status.running", tone: "info" },
@@ -420,7 +421,8 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, week]);
-  const gaps = weekGaps(rows, week, new Date(), targets);
+  // A new workspace: the days before its first start were not missed.
+  const gaps = weekGaps(rows, week, new Date(), targets, startedOn());
   const gapKeys = new Set(gaps.map((g) => isoDay(g.day)));
   const s = useApp.getState;
   const copyCats = async () => {

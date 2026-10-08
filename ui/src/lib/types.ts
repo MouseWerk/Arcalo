@@ -541,6 +541,8 @@ export interface AiPresetDef {
   instruction: string;
 }
 export interface AiPrefs {
+  /** „KI verwenden“; settings from before the switch count as on. */
+  enabled?: boolean;
   temperature: number;
   max_tokens: number | null;
   /** null = the built-in presets. */
@@ -791,6 +793,8 @@ export interface SettingsView {
   sync_last?: SettingsSyncMerge | null;
   /** The operating system's language as the shell read it at this start. */
   system_language?: "de" | "en";
+  /** An organization's policy switched the AI off (`AllowAi = 0`). */
+  ai_policy_off?: boolean;
 }
 /** „Für alle Arbeitsbereiche“ or „Nur dieser Arbeitsbereich“. */
 export type SettingsScope = "global" | "workspace";
@@ -875,7 +879,7 @@ export interface SemanticResult {
   hits: SearchHit[];
   meaning: boolean;
 }
-export type SemanticInactive = "no_model" | "provider_off" | "switched_off" | "local_only";
+export type SemanticInactive = "ai_off" | "no_model" | "provider_off" | "switched_off" | "local_only";
 /** Settings → Suche: search by meaning and its index. */
 export interface SemanticStatus {
   switch_on: boolean;

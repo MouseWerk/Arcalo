@@ -10,6 +10,7 @@ import { buildSuggestions, type Suggestion } from "../lib/suggestions";
 import { useApp } from "../store/app";
 import { useTimeTracking } from "../lib/timetracking";
 import type { PageDoc } from "../lib/types";
+import { startedOn } from "../onboarding/firststeps";
 
 const FALLBACK: Suggestion[] = buildSuggestions({ now: new Date(), page: null, overdue: 0, dueToday: 0, openTasks: 0, gapDays: [], budget: null, hasBookings: false });
 
@@ -38,7 +39,7 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
         timeOn ? api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []) : Promise.resolve([]),
         pageId != null && timeOn ? api.pageWork(pageId).catch(() => null) : Promise.resolve(null),
       ]);
-      const week = weekBars(days, monday, settings?.daily_target_hours ?? 8, settings?.workdays ?? [1, 2, 3, 4, 5], now);
+      const week = weekBars(days, monday, settings?.daily_target_hours ?? 8, settings?.workdays ?? [1, 2, 3, 4, 5], now, undefined, startedOn());
       const next = buildSuggestions({
         now,
         page: pageTitle != null ? { title: pageTitle, openTasks: facts?.page_open_tasks ?? 0, reference: work?.reference ?? null } : null,

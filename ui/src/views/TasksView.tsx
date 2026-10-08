@@ -467,7 +467,12 @@ export function TasksView() {
           <Skeleton />
         ) : list.length === 0 ? (
           <EmptyState icon={ListChecks} title={status === "done" ? tr("tasks.noneDone") : tr("tasks.noneOpen")}>
-            {tr("tasks.help1")} <code>{tr("tasks.helpExample")}</code> {tr("tasks.help2")} <code>!!</code> = {tr("tasks.prioHigh")}, <code>!</code> = {tr("tasks.prioMedium")}. {tr("tasks.helpRecur")} <code>{tr("tasks.helpRecurExample")}</code>.
+            <span className="tasks-help">
+              {tr("tasks.help1")} <code>{tr("tasks.helpExample")}</code>
+            </span>
+            <span className="tasks-help-syntax">
+              {tr("tasks.helpDue")} <code>{tr("tasks.helpDueExample")}</code> · {tr("tasks.helpPrio")} <code>!!</code> {tr("tasks.prioHigh")}, <code>!</code> {tr("tasks.prioMedium")} · {tr("tasks.helpRecur")} <code>{tr("tasks.helpRecurExample")}</code>
+            </span>
           </EmptyState>
         ) : (
           groups.map((g) => (

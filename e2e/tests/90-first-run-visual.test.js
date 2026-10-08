@@ -10,8 +10,8 @@ let app;
 before(async () => (app = await launch({ demo: false, onboarding: true })));
 after(async () => app?.close());
 
-const SCENES = ["welcome", "notes", "time", "ai", "calendar", "capture", "local"];
-const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "security", "desktop", "done"];
+const SCENES = ["welcome", "notes", "meetings", "time", "local"];
+const STEPS = ["language", "theme", "ai", "work", "calendar", "workspace", "done"];
 
 async function look(lang, theme, extra = {}) {
   const view = await app.invoke("settings_get");
@@ -114,6 +114,8 @@ test("a 900 px window and a short one: nothing is cut off", async () => {
       await app.browser.pause(300);
       await fits(`${w}x${h} step ${id}`);
       if (["work", "ai", "done"].includes(id)) await app.shot(`firstrun-${w}x${h}-step-${id}`);
+      // The step is named once: the compact line replaces the step's own eyebrow.
+      if (w <= 1000) assert.equal(await app.browser.execute(() => getComputedStyle(document.querySelector(".fr-step-count")).display), "none");
     }
   }
   await app.browser.setWindowSize(1480, 920);

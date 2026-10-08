@@ -1,7 +1,7 @@
 // First start: choose between sample data, an empty workspace and an Obsidian import.
 
 import { useEffect, useRef, useState } from "react";
-import { FilePlus2, FolderInput, LayoutDashboard, Server } from "lucide-react";
+import { FilePlus2, FolderInput, LayoutDashboard } from "lucide-react";
 import { ArcaloLogo } from "./Logo";
 import { api } from "../lib/api";
 import { importVault } from "../lib/actions";
@@ -90,9 +90,6 @@ export function Onboarding() {
             </button>
           ))}
         </div>
-        <button type="button" className="onb-server" onClick={() => s().openTab({ kind: "settings" })}>
-          <Server size={14} strokeWidth={1.75} /> {t("onb.ai")}
-        </button>
       </div>
     </div>
   );

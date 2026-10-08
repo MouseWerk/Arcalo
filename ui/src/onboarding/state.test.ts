@@ -112,8 +112,8 @@ describe("first-run start and end", () => {
   });
 
   it("finishing stores the completion; a rerun can open the setup directly", async () => {
-    startFirstRun("rerun", { intake: true, step: "backup" });
-    expect(useFirstRun.getState()).toMatchObject({ phase: "intake", step: "backup" });
+    startFirstRun("rerun", { intake: true, step: "calendar" });
+    expect(useFirstRun.getState()).toMatchObject({ phase: "intake", step: "calendar" });
     await finishFirstRun();
     expect(stored.completed).toBe(1);
     expect(useFirstRun.getState().phase).toBe("off");

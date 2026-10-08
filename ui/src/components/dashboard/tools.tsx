@@ -20,6 +20,7 @@ import { openQuickLinkAt, useQuickLinks } from "../QuickLinks";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, hhmm, hrs, Loadable, s, TaskRow } from "./common";
 import type { WidgetProps } from "./registry";
+import { startedOn } from "../../onboarding/firststeps";
 
 // ------------------------------------------------------------------ Abfrage
 
@@ -234,6 +235,8 @@ export function SuggestionsWidget({ widget }: WidgetProps) {
           settings?.daily_target_hours ?? 8,
           settings?.workdays ?? [1, 2, 3, 4, 5],
           now,
+          undefined,
+          startedOn(),
         );
         const list = buildSuggestions({
           now,

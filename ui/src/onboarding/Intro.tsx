@@ -1,5 +1,7 @@
-// The intro that plays on first start: a welcome and six feature scenes (about 35 s), each with
-// a headline, one sentence and a visual. Auto-advances with a progress bar per scene; arrow
+// The intro that plays on first start: five short scenes (about 23 s) that tell what Arcalo is,
+// your whole workday in one app (notes and tasks, meetings, time if you book it, local data, AI
+// only if you want it), each with a headline, one sentence and a visual. Auto-advances with a
+// progress bar per scene; arrow
 // keys move, Space pauses, Esc or „Überspringen“ go to the setup. Hovering the scene or keyboard
 // focus on it or its progress pauses the countdown (a scene's own entrance still completes).
 // Reduced motion shows static slides that fade.
@@ -8,8 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import { ArcaloLogo } from "../components/Logo";
 import { useT, type TKey } from "../lib/i18n";
-import { useApp } from "../store/app";
-import { AiVisual, CalendarVisual, CaptureVisual, LocalVisual, NotesVisual, TimeVisual, WelcomeVisual } from "./scenes";
+import { LocalVisual, MeetingsVisual, NotesVisual, TimeVisual, WelcomeVisual } from "./scenes";
 
 interface Scene {
   id: string;
@@ -20,13 +21,11 @@ interface Scene {
 }
 
 export const SCENES: Scene[] = [
-  { id: "welcome", eyebrow: "fr.s.welcome.eyebrow", title: "fr.s.welcome.title", text: "fr.s.welcome.text", ms: 4600 },
-  { id: "notes", eyebrow: "fr.s.notes.eyebrow", title: "fr.s.notes.title", text: "fr.s.notes.text", ms: 5000 },
-  { id: "time", eyebrow: "fr.s.time.eyebrow", title: "fr.s.time.title", text: "fr.s.time.text", ms: 5400 },
-  { id: "ai", eyebrow: "fr.s.ai.eyebrow", title: "fr.s.ai.title", text: "fr.s.ai.text", ms: 5000 },
-  { id: "calendar", eyebrow: "fr.s.calendar.eyebrow", title: "fr.s.calendar.title", text: "fr.s.calendar.text", ms: 5000 },
-  { id: "capture", eyebrow: "fr.s.capture.eyebrow", title: "fr.s.capture.title", text: "fr.s.capture.text", ms: 5000 },
-  { id: "local", eyebrow: "fr.s.local.eyebrow", title: "fr.s.local.title", text: "fr.s.local.text", ms: 5000 },
+  { id: "welcome", eyebrow: "fr.s.welcome.eyebrow", title: "fr.s.welcome.title", text: "fr.s.welcome.text", ms: 5000 },
+  { id: "notes", eyebrow: "fr.s.notes.eyebrow", title: "fr.s.notes.title", text: "fr.s.notes.text", ms: 4500 },
+  { id: "meetings", eyebrow: "fr.s.meetings.eyebrow", title: "fr.s.meetings.title", text: "fr.s.meetings.text", ms: 4500 },
+  { id: "time", eyebrow: "fr.s.time.eyebrow", title: "fr.s.time.title", text: "fr.s.time.text", ms: 4500 },
+  { id: "local", eyebrow: "fr.s.local.eyebrow", title: "fr.s.local.title", text: "fr.s.local.text", ms: 4500 },
 ];
 
 /** Reduced motion: the OS setting or Settings → Darstellung. */
@@ -43,7 +42,6 @@ export function Intro({ onDone }: { onDone: () => void }) {
   const [focusIn, setFocusIn] = useState(false);
   const reduced = useRef(prefersReducedMotion()).current;
   const root = useRef<HTMLDivElement>(null);
-  const shortcut = useApp((s) => s.settings?.settings.capture_shortcut ?? "");
   const paused = userPaused || hover || focusIn;
   const scene = SCENES[index];
   const last = index === SCENES.length - 1;
@@ -118,10 +116,8 @@ export function Intro({ onDone }: { onDone: () => void }) {
   const Visual = {
     welcome: WelcomeVisual,
     notes: NotesVisual,
+    meetings: MeetingsVisual,
     time: TimeVisual,
-    ai: AiVisual,
-    calendar: CalendarVisual,
-    capture: () => <CaptureVisual shortcut={shortcut} />,
     local: LocalVisual,
   }[scene.id]!;
 

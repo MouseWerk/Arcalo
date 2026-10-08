@@ -6,21 +6,19 @@ import { PRESETS, autoAssignTiers, findProvider, fromPreset, OLLAMA_URL, provide
 import type { AiProvider, OllamaDetect, Settings } from "../lib/types";
 import { timeTrackingOn } from "../lib/timetracking";
 
-export const STEPS = ["language", "theme", "work", "workspace", "ai", "calendar", "sync", "backup", "security", "desktop", "done"] as const;
+// Short on purpose: what a new user decides in the first minute. Backups, Git sync, security and
+// the desktop have sensible defaults; „Fertig“ links to their settings.
+export const STEPS = ["language", "theme", "ai", "work", "calendar", "workspace", "done"] as const;
 export type StepId = (typeof STEPS)[number];
 
 /** Label in the stepper. */
 export const STEP_LABELS: Record<StepId, TKey> = {
   language: "fr.step.language",
   theme: "fr.step.theme",
-  work: "fr.step.work",
-  workspace: "fr.step.workspace",
   ai: "fr.step.ai",
+  work: "fr.step.work",
   calendar: "fr.step.calendar",
-  sync: "fr.step.sync",
-  backup: "fr.step.backup",
-  security: "fr.step.security",
-  desktop: "fr.step.desktop",
+  workspace: "fr.step.workspace",
   done: "fr.step.done",
 };
 
@@ -31,12 +29,16 @@ export const STEP_SECTIONS: Partial<Record<StepId, string>> = {
   work: "time",
   ai: "ai",
   calendar: "calendar",
-  sync: "backup",
-  backup: "backup",
-  security: "security",
-  desktop: "desktop",
   workspace: "about",
 };
+
+/** „Fertig“: what can be set up later, each a settings section. */
+export const LATER = [
+  { section: "backup", label: "fr.later.backup", sub: "fr.later.backupSub" },
+  { section: "backup", label: "fr.later.sync", sub: "fr.later.syncSub" },
+  { section: "security", label: "fr.later.security", sub: "fr.later.securitySub" },
+  { section: "desktop", label: "fr.later.desktop", sub: "fr.later.desktopSub" },
+] as const satisfies readonly { section: string; label: TKey; sub: TKey }[];
 
 export const stepIndex = (id: StepId) => STEPS.indexOf(id);
 export const nextStep = (id: StepId): StepId => STEPS[Math.min(STEPS.length - 1, stepIndex(id) + 1)];
@@ -74,7 +76,7 @@ export function withRounding(s: Settings, step: number, mode: "up" | "nearest" =
   return { ...s, time: { ...s.time, rounding: { ...s.time.rounding, step_minutes: step, mode } } };
 }
 
-/** „Zeiterfassung mit SAP verwenden“: off hides the timesheet, projects and their commands. */
+/** „Buchst du Zeit?“: off hides the timesheet, projects and their commands. */
 export const withTimeTracking = (s: Settings, on: boolean): Settings => ({ ...s, time: { ...s.time, enabled: on } });
 
 /** Whether time tracking is on (the shared helper of lib/timetracking.ts). */
@@ -82,6 +84,10 @@ export { timeTrackingOn };
 
 // ------------------------------------------------------------------------- AI
 
+/** „Mit KI“ / „Ohne KI“: only the switch changes; the providers stay as they are. */
+export { withAi } from "../lib/aiswitch";
+
+/** The provider a „Mit KI“ setup uses: nothing configured yet, a local model or the company's server. */
 export type AiChoice = "none" | "local" | "company";
 
 /** The LiteLLM provider of fresh settings: localhost:4000 without a key. It answers nobody. */
@@ -95,9 +101,6 @@ export function aiChoiceOf(s: Settings, keys: string[]): AiChoice {
   if (!on.length) return "none";
   return on.every((p) => p.local) ? "local" : "company";
 }
-
-/** No AI: every provider is switched off (kept, so switching one on later is one click). */
-export const withoutAi = (s: Settings): Settings => ({ ...s, providers: s.providers.map((p) => ({ ...p, enabled: false })) });
 
 /**
  * A local Ollama: added (or switched on) first in the list, the unused default server switched off,
@@ -159,15 +162,12 @@ export interface SummaryContext {
   /** Weekday names Monday first. */
   weekdays: string[];
   keys: string[];
-  /** Autostart state (null: unknown). */
-  autostart: boolean | null;
   /** Number of ICS calendars. */
   icsCount: number;
   /** The workspace choice made in this run, if any. */
   workspace: "samples" | "import" | "empty" | null;
-  gitTokenSet: boolean;
-  /** Step „Sicherheit“: encryption chosen (runs when the setup ends) and the app lock. */
-  security?: { encrypt: boolean; encrypted: boolean; lock: boolean };
+  /** An organization's policy switched the AI off. */
+  aiPolicyOff?: boolean;
 }
 
 /** Hours with a decimal comma in German („7,5 h“). */
@@ -183,6 +183,14 @@ export function summaryRows(s: Settings, c: SummaryContext): SummaryRow[] {
   rows.push({ step: "language", label: "fr.sum.language", value: langChoice === "system" ? `${t("set.locale.followSystem")} (${name})` : name });
   const mode = s.theme === "system" ? t("set.appearance.system") : s.theme === "dark" ? t("set.appearance.dark") : t("set.appearance.light");
   rows.push({ step: "theme", label: "fr.sum.theme", value: mode });
+  const choice = aiChoiceOf(s, c.keys);
+  const on = s.providers.filter((p) => p.enabled && !isUntouchedDefault(p, c.keys));
+  const aiOn = s.ai?.enabled !== false && !c.aiPolicyOff;
+  rows.push({
+    step: "ai",
+    label: "fr.sum.ai",
+    value: !aiOn ? t("fr.ai.without") : choice === "none" ? `${t("fr.ai.with")} · ${t("fr.sum.aiLater")}` : `${t("fr.ai.with")} · ${on.map(providerName).join(", ")}`,
+  });
   const days = s.workdays.map((d) => c.weekdays[d - 1]).filter(Boolean).join(", ");
   rows.push({
     step: "work",
@@ -191,41 +199,14 @@ export function summaryRows(s: Settings, c: SummaryContext): SummaryRow[] {
       ? [days || t("fr.sum.noDays"), hours(s.daily_target_hours, lang), s.time.rounding.step_minutes ? t("fr.sum.rounding", { n: s.time.rounding.step_minutes }) : t("fr.sum.noRounding")].join(" · ")
       : t("fr.sum.noTime"),
   });
+  const cal: string[] = [];
+  if (s.calendar.outlook) cal.push("Outlook");
+  if (c.icsCount) cal.push(t("fr.sum.ics", { n: c.icsCount }));
+  rows.push({ step: "calendar", label: "fr.sum.calendar", value: cal.length ? cal.join(" · ") : t("fr.sum.off") });
   rows.push({
     step: "workspace",
     label: "fr.sum.workspace",
     value: c.workspace === "samples" ? t("fr.ws.samples") : c.workspace === "import" ? t("fr.ws.import") : c.workspace === "empty" ? t("fr.ws.empty") : t("fr.sum.unchanged"),
   });
-  const choice = aiChoiceOf(s, c.keys);
-  const on = s.providers.filter((p) => p.enabled && !isUntouchedDefault(p, c.keys));
-  rows.push({
-    step: "ai",
-    label: "fr.sum.ai",
-    value: choice === "none" ? t("fr.ai.none") : `${t(choice === "local" ? "fr.ai.local" : "fr.ai.company")} · ${on.map(providerName).join(", ")}`,
-  });
-  const cal: string[] = [];
-  if (s.calendar.outlook) cal.push("Outlook");
-  if (c.icsCount) cal.push(t("fr.sum.ics", { n: c.icsCount }));
-  rows.push({ step: "calendar", label: "fr.sum.calendar", value: cal.length ? cal.join(" · ") : t("fr.sum.off") });
-  const g = s.git_sync;
-  rows.push({ step: "sync", label: "fr.sum.sync", value: g.enabled ? `${g.remote_url || "–"} · ${g.branch}${c.gitTokenSet ? "" : ` · ${t("fr.sum.noToken")}`}` : t("fr.sum.off") });
-  rows.push({
-    step: "backup",
-    label: "fr.sum.backup",
-    value: [s.backup_dir ? s.backup_dir : t("fr.sum.defaultFolder"), t("fr.sum.keep", { n: s.backup_keep }), s.markdown_mirror ? t("fr.sum.mirror") : null].filter(Boolean).join(" · "),
-  });
-  const sec = c.security;
-  rows.push({
-    step: "security",
-    label: "fr.sum.security",
-    value:
-      [sec?.encrypted ? t("fr.sum.encrypted") : sec?.encrypt ? t("fr.sum.encrypt") : null, sec?.lock ? t("fr.sum.lock") : null].filter(Boolean).join(" · ") || t("fr.sum.off"),
-  });
-  const desk = [
-    c.autostart ? t("fr.sum.autostart") : null,
-    s.close_to_tray ? t("fr.sum.tray") : null,
-    s.capture_shortcut ? t("fr.sum.capture", { keys: s.capture_shortcut }) : t("fr.sum.noCapture"),
-  ].filter(Boolean);
-  rows.push({ step: "desktop", label: "fr.sum.desktop", value: desk.join(" · ") });
   return rows;
 }

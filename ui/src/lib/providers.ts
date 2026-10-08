@@ -126,7 +126,9 @@ export function needsKey(p: Pick<AiProvider, "kind" | "base_url">): boolean {
 }
 
 /** Whether any switched-on provider can be asked (it needs no key or has one). */
-export function usableProvider(view: Pick<SettingsView, "settings" | "provider_keys">): boolean {
+export function usableProvider(view: Pick<SettingsView, "settings" | "provider_keys"> & { ai_policy_off?: boolean }): boolean {
+  // „KI verwenden“ off (or a policy against it): no provider counts, whatever is configured.
+  if (view.settings.ai?.enabled === false || view.ai_policy_off) return false;
   return view.settings.providers.some((p) => p.enabled && (!needsKey(p) || view.provider_keys.includes(p.id)));
 }
 

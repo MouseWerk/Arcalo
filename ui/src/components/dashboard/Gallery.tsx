@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { t } from "../../lib/i18n";
+import { useAi } from "../../lib/aiswitch";
 import { GROUP_LABELS, WIDGETS, galleryKinds, type WidgetGroup, type WidgetKind } from "../../lib/dashboard";
 import { Dialog, Input } from "../ui";
 import { iconOf } from "./registry";
@@ -131,6 +132,7 @@ function Preview({ look }: { look: Look }) {
 
 export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: WidgetKind) => void; onClose: () => void; timeOn?: boolean }) {
   const [q, setQ] = useState("");
+  const aiOn = useAi();
   const [mailFlags, setMailFlags] = useState(false);
   useEffect(() => {
     workApi.flaggedAvailable().then(setMailFlags, () => {});
@@ -139,13 +141,13 @@ export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: Wid
     const needle = q.trim().toLowerCase();
     const out = new Map<WidgetGroup, WidgetKind[]>();
     // Time tracking off: no time widgets (the „Zeit“ group disappears with them).
-    for (const k of galleryKinds(timeOn, mailFlags)) {
+    for (const k of galleryKinds(timeOn, mailFlags, aiOn)) {
       const d = WIDGETS[k];
       if (needle && !`${t(d.label)} ${t(d.hint)} ${k}`.toLowerCase().includes(needle)) continue;
       out.set(d.group, [...(out.get(d.group) ?? []), k]);
     }
     return out;
-  }, [q, timeOn, mailFlags]);
+  }, [q, timeOn, mailFlags, aiOn]);
   return (
     <Dialog open onClose={onClose} title={t("dash.gallery.title")} description={t("dash.gallery.desc")} width={760}>
       <div className="dash-gallery">

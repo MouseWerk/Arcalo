@@ -16,6 +16,7 @@ import { ChatHistoryGroup } from "./ChatHistoryPrefs";
 import { SecretStoreGroup } from "./SecretStoreGroup";
 import { openBookmarkImport } from "../../components/BookmarkImport";
 import { useApp } from "../../store/app";
+import { useAi } from "../../lib/aiswitch";
 
 // ------------------------------------------------------------------ notes
 
@@ -388,10 +389,12 @@ export function PrivacySection({ draft, update }: SectionProps) {
   const p = draft.privacy;
   const set = (x: Partial<PrivacyPrefs>) => update({ privacy: { ...p, ...x } });
   const router = draft.router;
+  // „KI verwenden“ off: nothing goes to a model, so the assistant's privacy and chat history are moot.
+  const ai = useAi();
   return (
     <>
-      <SectionHead title={t("set.privacy.title")} intro={t("set.privacy.intro")} />
-      <Group title={t("set.privacy.assistant")}>
+      <SectionHead title={t("set.privacy.title")} intro={t(ai ? "set.privacy.intro" : "set.privacy.introNoAi")} />
+      {ai && <Group title={t("set.privacy.assistant")}>
         <Row stack label={t("set.privacy.markers")} description={t("set.privacy.markersDesc")}>
           <CommitInput
             value={router.private_markers.join(", ")}
@@ -417,8 +420,8 @@ export function PrivacySection({ draft, update }: SectionProps) {
         <Row label={t("set.privacy.localOnly")} description={t("set.privacy.localOnlyDesc", { model: router.local_model })}>
           <Switch label={t("set.privacy.localOnly")} checked={p.local_only} onChange={(v) => set({ local_only: v })} />
         </Row>
-      </Group>
-      <ChatHistoryGroup draft={draft} update={update} />
+      </Group>}
+      {ai && <ChatHistoryGroup draft={draft} update={update} />}
       <SecretStoreGroup />
     </>
   );

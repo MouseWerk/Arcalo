@@ -9,6 +9,7 @@ import { QuickLinks } from "./QuickLinks";
 import { HelpButton } from "./Help";
 import { sidebarShown, toggleSidebar, useNarrowWindow } from "../lib/layout";
 import { useTimeTracking } from "../lib/timetracking";
+import { aiEnabled, useAi } from "../lib/aiswitch";
 import { createSubpage } from "../views/PageView";
 import { openCalendar } from "./CalendarPopover";
 import { t as tr, useT } from "../lib/i18n";
@@ -31,6 +32,8 @@ export async function openToday() {
 }
 
 export function openAssistant() {
+  // „KI verwenden“ off: there is no assistant to open (a shortcut or link does nothing).
+  if (!aiEnabled()) return;
   const s = useApp.getState();
   s.set({ panelOpen: true, panelTab: "assistant" });
   savePref("annalo.panel", true);
@@ -90,6 +93,8 @@ export function Ribbon() {
   const focus = useApp((s) => s.focus);
   // „Zeiterfassung verwenden“ off: no timesheet and projects in the ribbon.
   const timeOn = useTimeTracking();
+  // „KI verwenden“ off: no assistant and no chat in the ribbon.
+  const ai = useAi();
   const recording = useVoice((v) => !!v.status.recording);
   const jiraOn = useApp((st) => (st.settings?.settings.jira?.sites.length ?? 0) > 0);
   const s = useApp.getState;
@@ -121,8 +126,8 @@ export function Ribbon() {
       <IconButton icon={Sun} label={t("ribbon.briefing")} active={tab?.kind === "briefing"} aria-current={tab?.kind === "briefing" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-briefing" onClick={() => openBriefing()} />
       <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} aria-current={tab?.kind === "review" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
-      <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
-      <IconButton icon={MessagesSquare} label={withHint(t("ribbon.chat"), "chat_view")} active={tab?.kind === "chat"} aria-current={tab?.kind === "chat" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-chat" onClick={() => void openChatView()} />
+      {ai && <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" className="ribbon-assistant" onClick={openAssistant} />}
+      {ai && <IconButton icon={MessagesSquare} label={withHint(t("ribbon.chat"), "chat_view")} active={tab?.kind === "chat"} aria-current={tab?.kind === "chat" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-chat" onClick={() => void openChatView()} />}
       <IconButton
         icon={Mic}
         label={t(recording ? "voice.stopRecording" : "voice.record")}

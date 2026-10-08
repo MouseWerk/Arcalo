@@ -32,6 +32,11 @@
           "description": "Numbered sources `[1]` in answers.",
           "type": "boolean"
         },
+        "enabled": {
+          "default": true,
+          "description": "„KI verwenden“: off, Arcalo shows no AI anywhere and sends nothing to an AI or embedding provider; the providers and models stay configured for when it is switched on again.",
+          "type": "boolean"
+        },
         "inline_presets": {
           "default": null,
           "description": "Presets of the inline AI bar; `None` = the built-in ones.",
@@ -2501,6 +2506,7 @@
         ],
         "chat_history": "all",
         "citations": true,
+        "enabled": true,
         "inline_presets": null,
         "max_tokens": null,
         "meeting_template": null,
@@ -3241,7 +3247,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 14,
+      "default": 15,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

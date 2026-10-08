@@ -1,13 +1,13 @@
 // State of the first-run flow (intro, then the setup) and how it starts, pauses and ends.
 // Only the main window hosts it; the capture, search and presenter windows never do.
 
-import { security } from "../lib/security";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { showFirstSteps } from "./firststeps";
 import { create } from "zustand";
 import { api } from "../lib/api";
 import { openSettingsSection } from "../lib/calnav";
 import { t } from "../lib/i18n";
-import { useApp } from "../store/app";
+import { savePref, useApp } from "../store/app";
 import { STEP_SECTIONS, type StepId } from "./flow";
 import { settled } from "./write";
 
@@ -22,8 +22,6 @@ export interface FirstRunState {
   paused: boolean;
   /** Choice of the workspace step in this run (for the summary). */
   workspace: "samples" | "import" | "empty" | null;
-  /** Step „Sicherheit“: encrypt the database when the setup ends (recovery key confirmed). */
-  encrypt?: boolean;
 }
 
 export const useFirstRun = create<FirstRunState>(() => ({ phase: "off", mode: "fresh", step: "language", paused: false, workspace: null }));
@@ -31,26 +29,37 @@ export const useFirstRun = create<FirstRunState>(() => ({ phase: "off", mode: "f
 /** Plays the intro (or opens the setup directly) with the current settings prefilled. */
 export function startFirstRun(mode: FirstRunMode, opts: { intake?: boolean; step?: StepId } = {}) {
   useApp.getState().set({ paletteOpen: false });
-  useFirstRun.setState({ phase: opts.intake ? "intake" : "intro", mode, step: opts.step ?? "language", paused: false, workspace: null, encrypt: false });
+  useFirstRun.setState({ phase: opts.intake ? "intake" : "intro", mode, step: opts.step ?? "language", paused: false, workspace: null });
 }
 
 export const startIntake = () => useFirstRun.setState({ phase: "intake", paused: false });
 
-/** Leaves the flow: the answers are saved already; the flags say the intro was seen. */
+/**
+ * Leaves the flow: the answers are saved already; the flags say the intro was seen. A fresh
+ * workspace whose start was not chosen starts empty (the welcome choice is not asked again), and
+ * the start page greets it with „Erste Schritte“.
+ */
 export async function finishFirstRun() {
   await settled();
+  const { mode, workspace } = useFirstRun.getState();
+  const app = useApp.getState();
   try {
+    if (!workspace && app.onboarding && app.tree.length === 0) {
+      await api.finishOnboarding(false);
+      app.set({ onboarding: false });
+    }
     const view = await api.onboardingComplete();
     useApp.getState().set({ settings: view });
   } catch (e) {
     useApp.getState().error(t("fr.saveFailed"), e);
   }
-  const encrypt = useFirstRun.getState().encrypt;
-  useFirstRun.setState({ phase: "off", paused: false, encrypt: false });
-  // Encrypting closes the workspace: Arcalo starts once more and encrypts before it opens it.
-  if (encrypt) {
-    await security.switchCipher(true).catch((e) => useApp.getState().error(t("sec.key.switchFailed"), e));
+  if (mode === "fresh") {
+    showFirstSteps();
+    // The first screen is the start page, calm: no side panel next to it yet.
+    useApp.getState().set({ panelOpen: false });
+    savePref("annalo.panel", false);
   }
+  useFirstRun.setState({ phase: "off", paused: false });
 }
 
 /** „Mehr in den Einstellungen“: the flow steps aside, a toast brings it back on the same step. */

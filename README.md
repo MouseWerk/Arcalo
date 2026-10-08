@@ -58,7 +58,8 @@ in one place on their own computer.
   activities, budgets and ETC built in. Time tracking can be switched off completely.
 - **AI that stays where you allow it.** An assistant that answers from your notes with sources, inline AI and a
   morning briefing, on your LiteLLM, Azure OpenAI or OpenAI-compatible endpoint, or a local Ollama; `#privat`
-  notes go only to the local model. Voice notes are transcribed on your computer.
+  notes go only to the local model. Voice notes are transcribed on your computer. Or no AI at all: “Use AI” off
+  hides every AI feature and nothing is sent to any AI service.
 - **A start page for your day.** Boards with widgets for today's meetings, tasks, time and pages, plus link groups
   in the ribbon for the tools you open every day.
 - **Nothing leaves your machine unasked.** One local database, no account, no telemetry, optional encryption,
@@ -78,8 +79,8 @@ in one place on their own computer.
 
 1. Download the installer for your system from the [Releases page](https://github.com/MouseWerk/Arcalo/releases/latest)
    (Windows, macOS, Linux; details under [Download](#download)) and start Arcalo.
-2. The setup asks for language, working time, workspace (sample data, Obsidian import or empty), AI and calendar;
-   every step can be skipped.
+2. The setup asks for language, theme, with or without AI, whether you book time, calendar and how to start
+   (sample content, Obsidian import or empty); every step can be skipped.
 3. Open today's daily note (**Ctrl Shift D**), write down what you did and type `/time` to book it. More under
    [First steps](#first-steps), in the [documentation](https://arcalo.mousewerk.de/docs/) and on the [website](https://arcalo.mousewerk.de/).
 
@@ -101,10 +102,11 @@ Get the latest version from the [**Releases page**](https://github.com/MouseWerk
 | **Linux** (x64) | `Arcalo_<version>_amd64.AppImage` | Any distribution: `chmod +x Arcalo_*.AppImage && ./Arcalo_*.AppImage`. Updates itself in place, like Windows and macOS |
 | **Linux** (x64) | `Arcalo_<version>_amd64.deb` | Debian/Ubuntu: `sudo apt install ./Arcalo_*.deb`. Shows new versions with “Open release page”; the package manager installs them |
 
-The first start plays a short intro (about half a minute, skippable with Esc) and then walks through a setup that
-writes your answers straight into the settings: language, theme, working time and whether you book time at all,
-workspace (sample data, Obsidian import or empty), AI, calendar, Git sync, backups and desktop. Settings → About →
-“Replay the introduction” plays it again.
+The first start plays a short intro (five scenes, about 20 seconds, skippable with Esc) and then walks through a
+setup that writes your answers straight into the settings: language, theme, with or without AI, whether you book
+time (working days, target, rounding), calendar and how to start (sample content, Obsidian import or empty). Backups,
+Git sync, security and the desktop keep their defaults and are linked from the last step. The start page then shows
+“First steps” until you have tried them. Settings → About → “Replay the introduction” plays it again.
 
 ## A quick tour
 
@@ -190,6 +192,12 @@ Settings → Time tracking): the timesheet, projects, timer, `/time`, budgets, t
 the Calendar, start page and daily review, the assistant's time tools and every reminder about bookings disappear,
 and nothing runs in the background for them. Arcalo is then a notes, calendar and AI app. Booked time stays in the
 workspace and is back as soon as you switch it on again.
+
+AI is optional the same way. With “Use AI” off (in the first-run setup or at the top of Settings → AI & models) the
+assistant, chat, inline AI, summaries, AI widgets and commands, every “Set up AI” hint and search by meaning
+disappear, and Arcalo sends no request to any AI or embedding provider (the backend refuses them too). Your providers
+and models stay configured and come back unchanged when you switch it on. An organization can switch AI off for
+everyone with the policy `AllowAi = 0` (see [docs/admin/updates.md](docs/admin/updates.md#policies)).
 
 <p align="center">
   <img src="docs/screenshots/time-suggest.png" width="49%" alt="/time autocomplete with recently booked activities and the hours left">

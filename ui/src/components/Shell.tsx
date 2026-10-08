@@ -12,7 +12,9 @@ import { clock, h1, int, usd } from "../lib/format";
 import { shortenPaths } from "../lib/api";
 import { useTimerSeconds, stopTimer } from "./Sidebar";
 import { useTimeTracking } from "../lib/timetracking";
+import { useAi } from "../lib/aiswitch";
 import { Onboarding } from "./Onboarding";
+import { FirstSteps } from "../onboarding/FirstStepsCard";
 import { UpdateLayer, UpdateStatusItem } from "./Updates";
 import { Dashboard } from "./Dashboard";
 import { FocusStatus } from "./Focus";
@@ -113,6 +115,7 @@ export function StatusBar() {
   const settings = useApp((s) => s.settings);
   const seconds = useTimerSeconds();
   const timeOn = useTimeTracking();
+  const ai = useAi();
   const s = useApp.getState;
   const configured = !!settings && usableProvider(settings);
   const onPage = useApp((st) => st.tabs.find((t) => t.id === st.activeTabId)?.kind === "page");
@@ -153,7 +156,8 @@ export function StatusBar() {
           {int(stats.words)} {stats.words === 1 ? t("status.word") : t("status.words")}
         </span>
       )}
-      <button type="button" className="sb-item" onClick={() => s().set({ panelOpen: true, panelTab: "assistant" })} title={t("status.aiSession")}>
+      {/* „KI verwenden“ off: no model, meter or „KI einrichten“ down here. */}
+      {ai && <button type="button" className="sb-item sb-ai" onClick={() => s().set({ panelOpen: true, panelTab: "assistant" })} title={t("status.aiSession")}>
         <Cpu size={12} />
         {meter && meter.requests > 0 ? (
           <>
@@ -164,7 +168,7 @@ export function StatusBar() {
         ) : (
           <span className="faint">{configured && settings ? modelLabel(settings.settings.providers, settings.settings.router.standard_provider, settings.settings.router.standard_model) : t("status.setupAi")}</span>
         )}
-      </button>
+      </button>}
     </footer>
   );
 }
@@ -177,10 +181,12 @@ export function Home() {
 }
 
 function StartPage() {
-  // The greeting lives in the „Heute“ widget; the start page is its boards.
+  // The greeting lives in the „Heute“ widget; the start page is its boards. After the first
+  // setup „Erste Schritte“ sits above them until done or dismissed.
   return (
     <div className="home">
       <div className="home-inner home-dash">
+        <FirstSteps />
         <Dashboard />
       </div>
     </div>

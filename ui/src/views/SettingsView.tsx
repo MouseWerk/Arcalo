@@ -31,6 +31,7 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
 import { LocaleSection, NotesPrefGroups, NotificationsSection, PrivacySection, StartSection, TimePrefGroups } from "./settings/PrefSections";
 import { timeTrackingOn } from "../lib/timetracking";
+import { aiEnabled, aiSwitchOn, useAiPolicyOff } from "../lib/aiswitch";
 import { AiPrefGroups } from "./settings/AiPrefGroups";
 import { AiProvidersSection } from "./settings/AiProvidersSection";
 import { KeyboardSection } from "./settings/KeyboardSection";
@@ -120,7 +121,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   // The bar with back and forward gets its hairline once the section scrolls under it.
   const [scrolled, setScrolled] = useState(false);
   const view = useApp((s) => s.settings);
-  const [section, setSection] = useState<Section>(() => (takeSettingsSection() as Section | null) ?? "ai");
+  // Without AI the settings open on Darstellung rather than on an empty „KI & Modelle“.
+  const [section, setSection] = useState<Section>(() => (takeSettingsSection() as Section | null) ?? (aiEnabled() ? "ai" : "appearance"));
   // Opened on a section from elsewhere (the Kalender view, a toast) while already open.
   useEffect(() => {
     const onRequest = () => {
@@ -434,7 +436,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         return (
           <>
             <AiSection draft={draft} update={u} />
-            <AiPrefGroups draft={draft} update={u} />
+            {aiSwitchOn(draft) && !view?.ai_policy_off && <AiPrefGroups draft={draft} update={u} />}
           </>
         );
       case "search":
@@ -650,13 +652,27 @@ function SearchSection({ id, icon: Icon, title, onOpen, children }: { id: Sectio
 
 function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Settings>) => void }) {
   const t = useT();
-  return (
+  const policyOff = useAiPolicyOff();
+  const on = aiSwitchOn(draft) && !policyOff;
+  const head = (
     <>
       <header className="settings-head">
         <h1>{t("set.ai.title")}</h1>
-        <p>{t("set.ai.intro")}</p>
-        <DocLink topic="aiProviders" />
+        <p>{t(on ? "set.ai.intro" : "set.ai.introOff")}</p>
+        {on && <DocLink topic="aiProviders" />}
       </header>
+      {/* „KI verwenden“: off hides every AI surface; the providers below stay stored as they are. */}
+      <Group title={t("set.ai.use")}>
+        <Row label={t("set.ai.useLabel")} description={policyOff ? t("set.ai.policy") : t(on ? "set.ai.useDesc" : "set.ai.useDescOff")}>
+          <Switch label={t("set.ai.useLabel")} checked={on} disabled={policyOff} onChange={(v) => update({ ai: { ...draft.ai, enabled: v } })} />
+        </Row>
+      </Group>
+    </>
+  );
+  if (!on) return head;
+  return (
+    <>
+      {head}
 
       <AiProvidersSection draft={draft} update={update} />
 

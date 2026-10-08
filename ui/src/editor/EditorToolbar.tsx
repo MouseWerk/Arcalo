@@ -17,6 +17,7 @@ import { changeSelectionCase, clearFormatting, dedupeSelectedLines, moveBlock, s
 import { useApp } from "../store/app";
 import { fmtDate, int, time } from "../lib/format";
 import { useT, withLabel } from "../lib/i18n";
+import { useAi } from "../lib/aiswitch";
 
 type Block = "paragraph" | "h1" | "h2" | "h3" | "h4";
 const BLOCKS: { value: Block; readonly label: string }[] = [
@@ -32,6 +33,7 @@ const MORE_W = 38;
 const MAX_LEVEL = 6;
 
 export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind: (replace: boolean) => void; onAi: () => void }) {
+  const ai = useAi();
   const t = useT();
   const [menu, , openMenuAt] = useMenu();
   const [url, setUrl] = useState<string | null>(null);
@@ -278,10 +280,12 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
           <span className="tb-label">{t("tb.tools")}</span>
           <ChevronDown size={13} className="tb-caret" aria-hidden />
         </button>
-        <button type="button" className="tb-menu tb-ai" onClick={onAi} aria-label={t("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={t("tb.aiEdit", { keys: keys("Mod J") })}>
-          <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-          <span className="tb-label">{t("slash.sec.ai")}</span>
-        </button>
+        {ai && (
+          <button type="button" className="tb-menu tb-ai" onClick={onAi} aria-label={t("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={t("tb.aiEdit", { keys: keys("Mod J") })}>
+            <Sparkles size={15} strokeWidth={1.75} aria-hidden />
+            <span className="tb-label">{t("slash.sec.ai")}</span>
+          </button>
+        )}
       </div>
       {menu}
     </div>

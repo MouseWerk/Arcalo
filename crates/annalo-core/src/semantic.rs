@@ -50,6 +50,8 @@ const INDEX_META: &str = "embedding_index";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Inactive {
+    /// „KI verwenden“ is off (or a policy switched the AI off): no embeddings at all.
+    AiOff,
     /// No embedding model in Settings → KI.
     NoModel,
     /// The embedding model's provider is missing or switched off.
@@ -96,7 +98,9 @@ pub fn plan(s: &Settings) -> Plan {
     let provider = s.providers.iter().find(|p| p.id == s.embedding_provider.trim());
     let local = model.is_some() && provider.is_some_and(|p| p.local);
     let switch_on = s.search.semantic.unwrap_or(local);
-    let inactive = if model.is_none() {
+    let inactive = if !s.ai_on() {
+        Some(Inactive::AiOff)
+    } else if model.is_none() {
         Some(Inactive::NoModel)
     } else if !provider.is_some_and(|p| p.enabled) {
         Some(Inactive::ProviderOff)

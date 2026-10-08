@@ -17,6 +17,7 @@ import { zeitCommand, zeitToken } from "./zeit-suggest";
 import { calloutType } from "../lib/callouts";
 import { parseDue } from "../lib/capture";
 import { timeTrackingEnabled } from "../lib/timetracking";
+import { aiEnabled } from "../lib/aiswitch";
 import { FIRST_LINE_RE } from "../lib/frontmatter";
 import { TABLE_ACTIONS, tableActionEnabled } from "./table-actions";
 import { keys } from "../lib/shortcut";
@@ -241,10 +242,14 @@ export interface SlashOptions {
   onVoice?: ((editor: Editor) => void) | null;
 }
 
-/** The slash menu; `/zeit` (`/time`) only while time tracking is on. */
-export function slashItems(o: SlashOptions, time = timeTrackingEnabled()): SlashItem[] {
-  return allSlashItems(o).filter((i) => time || i.id !== "zeit");
+/** The slash menu; `/zeit` (`/time`) only while time tracking is on, the AI commands only while
+ * „KI verwenden“ is on. */
+export function slashItems(o: SlashOptions, time = timeTrackingEnabled(), ai = aiEnabled()): SlashItem[] {
+  return allSlashItems(o).filter((i) => (time || i.id !== "zeit") && (ai || !AI_SLASH.has(i.id)));
 }
+
+/** Slash commands that ask a language model. */
+export const AI_SLASH = new Set(["ki", "summary"]);
 
 function allSlashItems(o: SlashOptions): SlashItem[] {
   const today = fmtDate(new Date());

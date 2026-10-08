@@ -13,16 +13,20 @@ import { outgoingLinks, titleSet } from "../lib/links";
 import { baseName, fileExtension, isImageName, isPdfName } from "../editor/fileEmbed";
 import { openFile, openPdfViewer } from "../editor/files";
 import { t as tr, useT } from "../lib/i18n";
+import { useAi } from "../lib/aiswitch";
 
 // The local graph brings the canvas and the layout along: loaded with its tab.
 const LocalGraph = lazy(() => import("./LocalGraph").then((m) => ({ default: m.LocalGraph })));
 
 export function RightPanel() {
   useT();
-  const tab = useApp((s) => s.panelTab);
+  // „KI verwenden“ off: no assistant tab; the panel opens on the outline instead.
+  const ai = useAi();
+  const stored = useApp((s) => s.panelTab);
+  const tab = !ai && stored === "assistant" ? "outline" : stored;
   const s = useApp.getState;
   const tabs: { id: PanelTab; label: string; icon: typeof Sparkles }[] = [
-    { id: "assistant", label: tr("panel.assistant"), icon: Sparkles },
+    ...(ai ? [{ id: "assistant" as PanelTab, label: tr("panel.assistant"), icon: Sparkles }] : []),
     { id: "outline", label: tr("panel.outline"), icon: ListTree },
     { id: "links", label: tr("panel.links"), icon: Link2 },
     { id: "graph", label: tr("panel.graph"), icon: Network },
@@ -59,9 +63,11 @@ export function RightPanel() {
         ))}
       </div>
       <div className="panel-body" id="panel-body" role="tabpanel" aria-labelledby={`panel-tab-${tab}`}>
-        <div hidden={tab !== "assistant"} className="panel-fill">
-          <AssistantPanel />
-        </div>
+        {ai && (
+          <div hidden={tab !== "assistant"} className="panel-fill">
+            <AssistantPanel />
+          </div>
+        )}
         {tab === "outline" && <OutlinePanel />}
         {tab === "links" && <LinksPanel />}
         {tab === "graph" && (

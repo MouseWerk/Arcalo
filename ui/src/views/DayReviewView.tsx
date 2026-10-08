@@ -25,6 +25,7 @@ import { useTimeTracking } from "../lib/timetracking";
 import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
+import { useAi } from "../lib/aiswitch";
 import { AiErrorNote } from "../components/AiNotes";
 import type { DayReview, ReviewMeeting, ReviewPage, ReviewTask } from "../lib/types";
 import { useT } from "../lib/i18n";
@@ -44,6 +45,8 @@ export function DayReviewView() {
   const [noLocal, setNoLocal] = useState(false);
   const [copied, setCopied] = useState(false);
   const ai = useAiTransform();
+  // „KI verwenden“ off: the review without „Zusammenfassen“; inserting it is the main action.
+  const aiOn = useAi();
   const root = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
   const today = isoDay(new Date());
@@ -199,20 +202,22 @@ export function DayReviewView() {
             <Button variant="ghost" icon={CalendarCheck} className="rv-week" onClick={(e) => openWeekReview(date, { newTab: e.ctrlKey || e.metaKey })}>
               {t("week.view")}
             </Button>
-            <Button icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
+            <Button variant={aiOn ? "secondary" : "primary"} icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
               {t("review.insert")}
             </Button>
-            <Button
-              variant="primary"
-              icon={local.length ? Sparkles : Lock}
-              className="rv-summarize"
-              loading={ai.busy}
-              disabled={!r}
-              onClick={summarize}
-              title={local.length ? t("review.summarizeTitle") : t("review.summarizeNoLocal")}
-            >
-              {t("review.summarize")}
-            </Button>
+            {aiOn && (
+              <Button
+                variant="primary"
+                icon={local.length ? Sparkles : Lock}
+                className="rv-summarize"
+                loading={ai.busy}
+                disabled={!r}
+                onClick={summarize}
+                title={local.length ? t("review.summarizeTitle") : t("review.summarizeNoLocal")}
+              >
+                {t("review.summarize")}
+              </Button>
+            )}
           </div>
         </header>
 
@@ -222,7 +227,7 @@ export function DayReviewView() {
           <>
             <Stats r={r} />
 
-            {noLocal && (
+            {noLocal && aiOn && (
               <div className="rv-callout" role="status">
                 <Lock size={15} aria-hidden />
                 <div>
@@ -237,7 +242,7 @@ export function DayReviewView() {
               </div>
             )}
 
-            {(ai.busy || ai.text || ai.error) && (
+            {aiOn && (ai.busy || ai.text || ai.error) && (
               <section className="card rv-summary" aria-label={t("review.md.summary")} aria-live="polite">
                 <div className="card-head">
                   <h2>
