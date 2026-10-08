@@ -417,7 +417,8 @@ export const api = {
   routePreview: (prompt: string, useTools: boolean, tier: T.Tier | null, conversationId: number | null = null) =>
     call<T.RouteDecision>("ai_route_preview", { prompt, useTools, tier, conversationId }),
   meter: () => call<T.SessionMeter>("ai_meter"),
-  chat: (a: { requestId: string; messages: T.ChatMessage[]; useTools: boolean; tier: T.Tier | null; pageId: number | null; overrideLimit?: boolean; conversationId?: number | null }) =>
+  /** `notes: false`: the plain chatbot of the chat view (no search in the notes, no tools). */
+  chat: (a: { requestId: string; messages: T.ChatMessage[]; useTools: boolean; tier: T.Tier | null; pageId: number | null; overrideLimit?: boolean; conversationId?: number | null; notes?: boolean }) =>
     call<T.ChatOutcome>("ai_chat", { overrideLimit: false, conversationId: null, ...a }),
   // assistant chat history
   chatList: (query = "", archived = false) => call<T.ChatConversation[]>("chat_list", { query, archived }),

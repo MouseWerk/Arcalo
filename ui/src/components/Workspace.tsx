@@ -32,7 +32,8 @@ const IssuesView = lazyView(() => import("../views/IssuesView").then((m) => m.Is
 const GraphView = lazyView(() => import("../views/GraphView").then((m) => m.GraphView));
 const CanvasView = lazyView<{ pageId: number; tab: Tab; active: boolean }>(() => import("../views/canvas/CanvasView").then((m) => m.CanvasView));
 const BriefingView = lazyView(() => import("../views/BriefingView").then((m) => m.BriefingView));
-const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, BriefingView];
+const ChatView = lazyView<{ tab: Tab }>(() => import("../views/ChatView").then((m) => m.ChatView));
+const LAZY_VIEWS = [SettingsView, TasksView, TimesheetView, ProjectsView, ActivityView, TagView, AttachmentsView, CalendarView, DayReviewView, BriefingView, ChatView];
 
 // The PDF viewer (with pdf.js) loads when a PDF tab is shown.
 const PdfPane = lazy(() => import("../editor/PdfViewer").then((m) => ({ default: m.PdfPane })));
@@ -200,6 +201,12 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
             </Suspense>
           </div>
         </>
+      );
+    case "chat":
+      return (
+        <Suspense fallback={<div className="view-loading" aria-busy="true" />}>
+          <ChatView tab={tab} />
+        </Suspense>
       );
     case "pdf":
       return (

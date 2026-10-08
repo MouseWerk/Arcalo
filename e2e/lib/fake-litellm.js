@@ -158,6 +158,21 @@ export function startFakeLiteLLM({
           "```bash\n" + `curl -X POST https://api.example.com/v1/${"segment/".repeat(25)} --data '${"{\\\"k\\\":1}".repeat(10)}'` + "\n```",
           `| ${cols.map((c) => `Spalte ${c}`).join(" | ")} |\n|${" --- |".repeat(12)}\n| ${cols.map((c) => `Wert ${c}`).join(" | ")} |`,
         ].join("\n\n");
+      } else if (/typsicher/i.test(lastUser)) {
+        // A rich answer: heading, list, table and two code blocks (chat view screenshots).
+        text = [
+          "## Typsicherer Abruf der Projekte",
+          "Am einfachsten trennst du **Abfrage** und **Typ**:",
+          "1. Ein Interface beschreibt die Zeile.\n2. Die Funktion gibt `Promise<Projekt[]>` zurück.\n   - Fehler fängt der Aufrufer ab\n   - leere Ergebnisse sind kein Fehler\n3. Die SQL-Abfrage filtert nach Status.",
+          "| Feld | Typ | Pflicht |\n| :-- | :-- | :-: |\n| `id` | `number` | ja |\n| `name` | `string` | ja |\n| `budget` | `number \\| null` | nein |",
+          "```typescript\ninterface Projekt {\n  id: number;\n  name: string;\n  budget: number | null;\n}\n\nexport async function aktiveProjekte(db: Db): Promise<Projekt[]> {\n  const rows = await db.query<Projekt>(SQL_AKTIV);\n  return rows.filter((p) => p.name.trim() !== \"\");\n}\n```",
+          "```sql\nSELECT id, name, budget\nFROM projekte\nWHERE status = 'aktiv'\nORDER BY name;\n```",
+          "> Tipp: Lege die Abfrage als Konstante ab, dann findest du sie leicht wieder.",
+        ].join("\n\n");
+      } else if (/fünf Minuten/i.test(lastUser)) {
+        text = "Fünf Minuten reichen gut, wenn du dich an drei Teile hältst:\n\n1. **Stand in einem Satz** (30 Sekunden): Wo steht das Projekt, liegt es im Plan?\n2. **Was seit dem letzten Termin passiert ist** (2 Minuten): höchstens drei Punkte, jeweils mit Ergebnis.\n3. **Was du vom Publikum brauchst** (2 Minuten): eine Entscheidung, Ressourcen oder Rückmeldung.\n\nZum Schluss eine Folie mit den nächsten Schritten und Terminen. Plane eine Minute Puffer für Fragen ein.";
+      } else if (/als diagramm/i.test(lastUser)) {
+        text = "So läuft die Freigabe:\n\n```mermaid\nflowchart LR\n  A[Antrag] --> B{Budget ok?}\n  B -- ja --> C[Freigabe]\n  B -- nein --> D[Rückfrage]\n```";
       } else if (/langsam/i.test(lastUser)) {
         text = Array.from({ length: 200 }, (_, i) => `Wort${i}`).join(" ");
       } else {

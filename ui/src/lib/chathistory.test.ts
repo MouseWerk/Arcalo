@@ -69,6 +69,15 @@ describe("groupConversations", () => {
     ]);
     expect(groupConversations([], now)).toEqual([]);
   });
+  it("the last 7 days end at the start of the sixth day before today, across a month end", () => {
+    const at = new Date(2026, 10, 2, 8, 0);
+    const list = [conv(1, new Date(2026, 9, 27, 0, 0).toISOString()), conv(2, new Date(2026, 9, 26, 23, 59).toISOString()), conv(3, new Date(2026, 10, 1, 23, 0).toISOString())];
+    expect(groupConversations(list, at).map((g) => [g.key, g.items.map((c) => c.id)])).toEqual([
+      ["yesterday", [3]],
+      ["week", [1]],
+      ["older", [2]],
+    ]);
+  });
   it("dates: time today, weekday this week, day before", () => {
     expect(historyDate(new Date(2026, 9, 1, 9, 5).toISOString(), now)).toBe("09:05");
     expect(historyDate(new Date(2026, 8, 29, 18, 30).toISOString(), now)).toMatch(/^\S+ 18:30$/);

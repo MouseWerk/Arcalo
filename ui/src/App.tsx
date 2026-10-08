@@ -10,6 +10,7 @@ import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
+import { openChatView } from "./store/chat";
 import { openDocs } from "./components/Help";
 import { Workspace } from "./components/Workspace";
 import { Resizer, readSize } from "./components/Resizer";
@@ -533,6 +534,7 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   timer: () => (useApp.getState().timer ? void stopTimer() : useApp.getState().openTab({ kind: "timesheet" })),
   timer_pause: () => void toggleTimerPause(),
   assistant: () => openAssistant(),
+  chat_view: () => void openChatView(),
   toggle_sidebar: toggleSidebar,
   toggle_panel: togglePanel,
   add_property: () => requestAddProperty(),

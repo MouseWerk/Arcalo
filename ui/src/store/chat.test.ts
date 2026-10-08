@@ -12,7 +12,7 @@ const fake = {
   nextId: 1,
   appends: [] as Call[],
   truncates: [] as [number, number][],
-  requests: [] as { messages: ChatMessage[]; conversationId: number | null }[],
+  requests: [] as { messages: ChatMessage[]; conversationId: number | null; notes?: boolean; useTools?: boolean; pageId?: number | null }[],
   seqs: new Map<number, number>(),
   /** Holds the next answer until `release()`. */
   hold: null as null | { release: () => void },
@@ -55,8 +55,8 @@ vi.mock("../lib/api", () => ({
         { id: 2, seq: 1, created_at: "", role: "assistant", content: "Alte Antwort", model: "altes-modell", tier: "standard" },
       ],
     }),
-    chat: async (a: { messages: ChatMessage[]; conversationId: number | null }) => {
-      fake.requests.push({ messages: structuredClone(a.messages), conversationId: a.conversationId });
+    chat: async (a: { messages: ChatMessage[]; conversationId: number | null; notes?: boolean; useTools?: boolean; pageId?: number | null }) => {
+      fake.requests.push({ messages: structuredClone(a.messages), conversationId: a.conversationId, notes: a.notes, useTools: a.useTools, pageId: a.pageId });
       if (fake.hold) await new Promise<void>((r) => (fake.hold!.release = r));
       const last = [...a.messages].reverse().find((m) => m.role === "user")?.content;
       return {
@@ -170,5 +170,87 @@ describe("chat store", () => {
     expect(chat.useChat.getState().turns.length).toBe(2);
     expect(fake.appends).toEqual([]);
     expect(fake.requests.at(-1)!.conversationId).toBeNull();
+  });
+});
+
+describe("chat view session", () => {
+  beforeEach(() => {
+    chat.viewChat.newChat();
+    chat.setNotes(false);
+    chat.viewChat.use.setState({ attachedPage: null });
+  });
+
+  it("what a send uses: the panel always the notes, the view only with „Mit meinen Notizen“", () => {
+    const st = { notes: false, useTools: true, includePage: true, attachedPage: 12 };
+    expect(chat.sendScope("panel", st, 5)).toEqual({ notes: true, tools: true, page: 5 });
+    expect(chat.sendScope("panel", { ...st, includePage: false }, 5)).toEqual({ notes: true, tools: true, page: null });
+    expect(chat.sendScope("view", st, 5)).toEqual({ notes: false, tools: false, page: 12 });
+    expect(chat.sendScope("view", { ...st, notes: true }, 5)).toEqual({ notes: true, tools: true, page: 12 });
+    expect(chat.sendScope("view", { ...st, notes: true, useTools: false }, null)).toEqual({ notes: true, tools: false, page: 12 });
+    // An explicit choice wins (the weekly report asks with tools, a page given or none).
+    expect(chat.sendScope("panel", { ...st, useTools: false }, 5, { tools: true, pageId: null })).toEqual({ notes: true, tools: true, page: null });
+    expect(chat.sendScope("view", st, null, { tools: true })).toEqual({ notes: false, tools: false, page: 12 });
+  });
+
+  it("the chat view asks as a plain chatbot by default and with the notes when switched on", async () => {
+    await chat.viewChat.send("Was ist ein Netzplan?");
+    await settle();
+    expect(fake.requests.at(-1)).toMatchObject({ notes: false, useTools: false, pageId: null });
+    chat.setNotes(true);
+    await chat.viewChat.send("Und in meinen Notizen?");
+    await settle();
+    expect(fake.requests.at(-1)).toMatchObject({ notes: true, useTools: true });
+    expect(chat.viewChat.use.getState().turns.length).toBe(4);
+    // The panel's chat is untouched.
+    expect(chat.useChat.getState().turns).toEqual([]);
+  });
+
+  it("a saved chat open in both shows each answer in both and continues with the whole history", async () => {
+    await chat.openChat(7);
+    await chat.viewChat.open(7);
+    fake.hold = { release: () => {} };
+    const pending = chat.sendChat("Frage im Panel");
+    await new Promise((r) => setTimeout(r, 10));
+    // While the panel answers, the view shows it and does not send into the same chat.
+    expect(chat.busyElsewhere(chat.viewChat)).toBe(chat.panelChat);
+    expect(chat.viewChat.use.getState().turns.at(-2)).toMatchObject({ kind: "user", text: "Frage im Panel" });
+    const before = fake.requests.length;
+    await chat.viewChat.send("Dazwischen");
+    expect(fake.requests.length).toBe(before);
+    fake.hold.release();
+    fake.hold = null;
+    await pending;
+    await settle();
+    expect(chat.busyElsewhere(chat.viewChat)).toBeNull();
+    expect(chat.viewChat.use.getState().turns).toBe(chat.useChat.getState().turns);
+    expect(chat.viewChat.history().map((m) => m.content)).toEqual(["Alte Frage", "Alte Antwort", "Frage im Panel", "Antwort auf Frage im Panel"]);
+    // The view goes on in the same chat; the panel shows that too.
+    await chat.viewChat.send("Weiter in der Ansicht");
+    await settle();
+    expect(fake.requests.at(-1)!.conversationId).toBe(7);
+    expect(fake.requests.at(-1)!.messages.map((m) => m.content)).toEqual(["Alte Frage", "Alte Antwort", "Frage im Panel", "Antwort auf Frage im Panel", "Weiter in der Ansicht"]);
+    expect(chat.useChat.getState().turns.length).toBe(6);
+  });
+
+  it("mirrors only the same saved chat, not while answering itself", () => {
+    const conv = { id: 3 } as never;
+    const turns: never[] = [];
+    expect(chat.shouldMirror({ conversation: conv, turns }, { conversation: conv, turns: [], busy: false })).toBe(true);
+    expect(chat.shouldMirror({ conversation: conv, turns }, { conversation: conv, turns, busy: false })).toBe(false);
+    expect(chat.shouldMirror({ conversation: conv, turns }, { conversation: conv, turns, busy: false }, true)).toBe(true);
+    expect(chat.shouldMirror({ conversation: conv, turns }, { conversation: conv, turns: [], busy: true })).toBe(false);
+    expect(chat.shouldMirror({ conversation: conv, turns }, { conversation: { id: 4 } as never, turns: [], busy: false })).toBe(false);
+    expect(chat.shouldMirror({ conversation: null, turns }, { conversation: null, turns: [], busy: false })).toBe(false);
+  });
+
+  it("an unsaved panel chat moves into the chat view", async () => {
+    fake.saving = false;
+    await chat.sendChat("Nur hier");
+    await settle();
+    await chat.openChatView({ from: chat.panelChat });
+    expect(chat.viewChat.use.getState().turns.map((t) => t.kind)).toEqual(["user", "assistant"]);
+    expect(chat.viewChat.history().map((m) => m.content)).toEqual(["Nur hier", "Antwort auf Nur hier"]);
+    expect(chat.useChat.getState().turns).toEqual([]);
+    expect(useApp.getState().tabs.some((t) => t.kind === "chat")).toBe(true);
   });
 });

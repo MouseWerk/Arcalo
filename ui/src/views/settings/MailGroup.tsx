@@ -48,7 +48,7 @@ export function MailGroup({ draft, update }: SectionProps) {
   return (
     <Group title={t("mailset.title")} description={t("mailset.desc")}>
       {outlook && (
-        <Row label={t("set.desktop.globalShortcut")} description={t("mailset.shortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+J`) })}>
+        <Row label={t("set.desktop.globalShortcut")} description={t("mailset.shortcutDesc", { example: formatShortcut(`${IS_MAC ? "Cmd" : "Ctrl"}+Shift+Y`) })}>
           <ShortcutField
             value={mail.shortcut}
             onChange={(v) => set({ shortcut: v })}

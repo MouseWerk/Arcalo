@@ -35,6 +35,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "timer", label: "cmd.timer", combo: "Ctrl+Shift+T" },
   { id: "timer_pause", label: "cmd.timerPause", combo: "Ctrl+Shift+G" },
   { id: "assistant", label: "cmd.assistant", combo: "Ctrl+J" },
+  { id: "chat_view", label: "cmd.chatView", combo: "Ctrl+Shift+J" },
   { id: "toggle_sidebar", label: "cmd.toggleSidebar", combo: "Ctrl+\\" },
   { id: "toggle_panel", label: "cmd.togglePanel", combo: "Ctrl+Shift+\\" },
   { id: "add_property", label: "cmd.addProperty", combo: "Ctrl+;" },

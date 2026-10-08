@@ -1,33 +1,90 @@
 // One turn of the assistant chat: a question, an answer or a tool step. Turns are memoized:
 // while an answer streams in, only that one renders again.
 
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Check, ChevronRight, Copy, CornerDownLeft, FileInput, FilePlus2, FileText, Loader2, PencilLine, RefreshCw, ShieldAlert, Timer, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../../components/ui";
 import { previewMarkdown } from "../../components/LinkPreview";
 import { routeNotes, waitText } from "../../lib/aierror";
 import { AiErrorNote } from "../../components/AiNotes";
 import { citedNumbers, linkCitations } from "../../lib/citations";
-import { renderChatMarkdown, renderChatMarkdownCached, renderMarkdown } from "../../lib/markdown";
+import { onGrammarLoaded, renderChatMarkdown, renderChatMarkdownCached, renderMarkdown } from "../../lib/markdown";
 import { h1, int, usd } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Turn } from "../../lib/chathistory";
 import type { ContextChunk } from "../../lib/types";
 import { revealText } from "../../editor/reveal";
 import { useApp } from "../../store/app";
-import { editAndResend, regenerate } from "../../store/chat";
 import { TOOL_ICONS } from "./icons";
 import { copyText, insertIntoPage, saveAnswerAsPage } from "./actions";
+import { useSession } from "./session";
 
 /** Characters of an answer rendered at a time; „Mehr anzeigen“ adds as many again. */
 export const MAX_SHOWN = 100_000;
 
-/** Opens a source: the page scrolled to the cited passage (flashed), or the timesheet. */
-export function openSource(src: ContextChunk) {
+/**
+ * Opens a source: the page scrolled to the cited passage (flashed), or the timesheet. From the
+ * chat view in a new tab (the chat stays where it is).
+ */
+export function openSource(src: ContextChunk, newTab = false) {
   const s = useApp.getState();
-  if (src.page_id == null) return s.openTab({ kind: "timesheet" });
-  revealText(src.page_id, src.text, (id) => s.openPage(id)).catch(() => {});
+  if (src.page_id == null) return s.openTab({ kind: "timesheet" }, { newTab });
+  revealText(src.page_id, src.text, (id) => s.openPage(id, { newTab })).catch(() => {});
+}
+
+/** Draws the finished ```mermaid blocks of an answer below `root` (once per block). */
+async function drawDiagrams(root: HTMLElement) {
+  const boxes = [...root.querySelectorAll<HTMLElement>("[data-mermaid]:not([data-drawn])")];
+  if (!boxes.length) return;
+  const { renderDiagram } = await import("../../editor/mermaid");
+  for (const box of boxes) {
+    box.dataset.drawn = "1";
+    const src = box.querySelector("code")?.textContent ?? "";
+    const res = await renderDiagram(src);
+    const view = box.querySelector<HTMLElement>(".mermaid-view");
+    if (!view || !box.isConnected || !("svg" in res)) continue;
+    // Mermaid renders with securityLevel „strict“ (as in the editor).
+    view.innerHTML = res.svg;
+    view.hidden = false;
+    box.classList.add("drawn");
+  }
+}
+
+/** Clicks inside a rendered answer: copy a code block, switch a diagram to its source, open a link. */
+export function answerClick(e: React.MouseEvent<HTMLElement>): boolean {
+  const target = e.target as HTMLElement;
+  const copy = target.closest<HTMLElement>("[data-code-copy]");
+  if (copy) {
+    const code = copy.closest(".code-box")?.querySelector("code")?.textContent ?? "";
+    copyText(code.replace(/\n$/, ""), () => {
+      copy.classList.add("copied");
+      const label = copy.querySelector(".code-copy-text");
+      if (label) label.textContent = t("chat.copiedShort");
+      window.setTimeout(() => {
+        copy.classList.remove("copied");
+        if (label) label.textContent = t("chat.copyShort");
+      }, 1400);
+    });
+    return true;
+  }
+  const toggle = target.closest<HTMLElement>("[data-mermaid-toggle]");
+  if (toggle) {
+    const box = toggle.closest<HTMLElement>("[data-mermaid]");
+    const source = box?.classList.toggle("show-source") ?? false;
+    toggle.setAttribute("aria-pressed", String(source));
+    const label = toggle.querySelector(".code-copy-text");
+    if (label) label.textContent = t(source ? "chat.mermaidDiagramShort" : "chat.mermaidSourceShort");
+    return true;
+  }
+  const link = target.closest<HTMLAnchorElement>("a[data-external]");
+  if (link) {
+    e.preventDefault();
+    openUrl(link.href).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 const sourceLabel = (src: ContextChunk) => {
@@ -85,6 +142,7 @@ function dedupeSources(src: ContextChunk[]) {
 
 /** The question; the last one can be edited and sent again in its place. */
 function UserTurn({ turn, editable }: { turn: Extract<Turn, { kind: "user" }>; editable: boolean }) {
+  const { editAndResend } = useSession();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(turn.text);
   const [copied, setCopied] = useState(false);
@@ -202,6 +260,11 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
 }
 
 function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assistant" }>; last: boolean; busy: boolean }) {
+  const session = useSession();
+  const inView = session.id === "view";
+  const openSrc = (src: ContextChunk) => openSource(src, inView);
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => onGrammarLoaded(redraw), []);
   const [copied, setCopied] = useState(false);
   const [limit, setLimit] = useState(MAX_SHOWN);
   const [cite, setCite] = useState<{ n: number; rect: DOMRect } | null>(null);
@@ -232,7 +295,19 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
   const html = turn.streaming ? renderChatMarkdown(shown, copyLabel) : linkCitations(renderChatMarkdownCached(shown, copyLabel), sources.length);
   const chipSources = dedupeSources([...cited.map((n) => sources[n - 1]), ...sources]);
   const numberOf = (src: ContextChunk) => sources.indexOf(src) + 1;
-  const retry = !busy && last ? () => regenerate(turn.id) : undefined;
+  const retry = !busy && last ? () => session.regenerate(turn.id) : undefined;
+  // Diagrams once the answer is complete (and again in another theme).
+  useEffect(() => {
+    const el = prose.current;
+    if (turn.streaming || !el || !el.querySelector("[data-mermaid]")) return;
+    void drawDiagrams(el);
+    const again = () => {
+      for (const box of el.querySelectorAll<HTMLElement>("[data-mermaid]")) delete box.dataset.drawn;
+      void drawDiagrams(el);
+    };
+    window.addEventListener("annalo:diagram-theme", again);
+    return () => window.removeEventListener("annalo:diagram-theme", again);
+  }, [html, turn.streaming]);
   const pageTitleLabel = turn.pageTitle ? t("chat.insertNewPage") : t("chat.saveAsPage");
   return (
     <div className={`msg-ai ${last ? "last" : ""}`} data-turn={turn.id} aria-busy={turn.streaming || undefined}>
@@ -261,29 +336,21 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
           }}
           onMouseOut={(e) => citeOf(e.target) && hideSoon()}
           onClick={(e) => {
-            const copy = (e.target as HTMLElement).closest<HTMLElement>("[data-code-copy]");
-            if (copy) {
-              const code = copy.closest(".code-box")?.querySelector("code")?.textContent ?? "";
-              copyText(code.replace(/\n$/, ""), () => {
-                copy.classList.add("copied");
-                window.setTimeout(() => copy.classList.remove("copied"), 1200);
-              });
-              return;
-            }
+            if (answerClick(e)) return;
             const el = citeOf(e.target);
             const src = el && sources[Number(el.dataset.cite) - 1];
             if (!src) return;
             e.preventDefault();
             e.stopPropagation();
             setCite(null);
-            openSource(src);
+            openSrc(src);
           }}
           onKeyDown={(e) => {
             const el = citeOf(e.target);
             const src = el && sources[Number(el.dataset.cite) - 1];
             if (src && (e.key === "Enter" || e.key === " ")) {
               e.preventDefault();
-              openSource(src);
+              openSrc(src);
             }
           }}
         />
@@ -302,7 +369,7 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
         <div className="sources">
           <span className="sources-label">{t("chat.sources")}</span>
           {chipSources.slice(0, 3).map((src) => (
-            <button key={numberOf(src)} type="button" className="source" data-source={numberOf(src)} title={`[${numberOf(src)}] ${sourceLabel(src)}\n\n${src.text.slice(0, 300)}`} onClick={() => openSource(src)}>
+            <button key={numberOf(src)} type="button" className="source" data-source={numberOf(src)} title={`[${numberOf(src)}] ${sourceLabel(src)}\n\n${src.text.slice(0, 300)}`} onClick={() => openSrc(src)}>
               {src.page_id != null ? <FileText size={11} aria-hidden /> : <Timer size={11} aria-hidden />}
               <span>{src.source.replace(/^Seite: /, "")}</span>
             </button>
@@ -340,8 +407,8 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
                 tooltipSide="top"
                 onClick={() => copyText(turn.text, () => (setCopied(true), window.setTimeout(() => setCopied(false), 1200)))}
               />
-              <IconButton icon={FileInput} label={t("chat.insertIntoPage")} size="sm" tooltipSide="top" onClick={() => insertIntoPage(turn.text)} />
-              <IconButton icon={FilePlus2} label={pageTitleLabel} size="sm" tooltipSide="top" onClick={() => saveAnswerAsPage(turn.text, turn.pageTitle)} />
+              {!inView && <IconButton icon={FileInput} label={t("chat.insertIntoPage")} size="sm" tooltipSide="top" onClick={() => insertIntoPage(turn.text)} />}
+              <IconButton icon={FilePlus2} label={pageTitleLabel} size="sm" tooltipSide="top" onClick={() => saveAnswerAsPage(turn.text, turn.pageTitle, session.use.getState().private)} />
               {retry && <IconButton icon={RefreshCw} label={t("chat.regenerate")} size="sm" tooltipSide="top" onClick={retry} />}
             </span>
           )}

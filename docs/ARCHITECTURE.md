@@ -934,6 +934,17 @@ quelle: "[[Konzept]]"
   first, then by the last message, and searches the title and the questions and answers (`chat_messages_fts`, the best passage as
   snippet). Deleting sets `deleted_at` (60 s undo); the next delete and the start purge. `settings.ai.chat_history` (`all`, `90`, `30`,
   `off`) is applied on start and when it changes (pinned chats stay); with `off` the shell writes nothing.
+- **Chat view** (`ui/src/views/ChatView.tsx`, tab kind `chat`): the store has two sessions over the one history, `panelChat`
+  (the side panel) and `viewChat` (the tab), each with its own current chat, model history and run. The view's list is the
+  panel's `HistoryView` in a compact form, the messages and the composer are the panel's components with the session from
+  `ChatSessionContext`. A saved chat open in both is mirrored: when one session's turns change (also while streaming) the other,
+  when idle, takes them over with a copy of the model history (`shouldMirror`, again when the answer finishes), and it does not
+  send into a chat the other one is answering in (`busyElsewhere`). Rename, pin and delete patch the conversation wherever it
+  is open. `ai_chat` takes `notes`: `false` (the view without „Mit meinen Notizen“) skips retrieval and embeddings, offers no
+  tools and uses a plain system prompt; an attached page, routing, private markers and private conversations apply unchanged.
+- **Chat Markdown** (`ui/src/lib/markdown.ts`, `renderChatMarkdown`): its own `marked` instance; code blocks are highlighted with
+  the editor's lowlight grammars (lazy ones re-render once loaded), raw HTML of the model is escaped, links open through the
+  opener, tables get a scroll box, ```mermaid blocks are drawn by `editor/mermaid.ts` once the answer is complete; DOMPurify last.
 - **Private chats**: `ai_chat` takes the `conversation_id`; when the conversation is private the request routes like a private
   marker (`ModelRouter::private_route`, so every fallback stays local and no cloud embedding is asked), and a turn whose prompt,
   page, sources or earlier messages contain a marker (`privacy::any_private`) or that runs with „Nur lokal“ marks the conversation

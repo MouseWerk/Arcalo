@@ -2836,11 +2836,30 @@ fn system_prompt(settings: &Settings) -> String {
             now.format(tr!("%A, %d.%m.%Y %H:%M", "%A, %B %-d, %Y %H:%M"))
         )
     };
+    push_instructions(&mut s, settings);
+    s
+}
+
+/// The plain chatbot of the chat view („Mit meinen Notizen“ off): no workspace, no tools, no
+/// page links; only the date, the language and the user's own instructions.
+fn plain_system_prompt(settings: &Settings) -> String {
+    let now = Local::now();
+    let mut s = trf!(
+        "Du bist ein hilfreicher Assistent. Heute ist {}. Antworte präzise und auf Deutsch, sofern der \
+         Nutzer nicht anders schreibt. Nutze Markdown, wo es hilft.",
+        "You are a helpful assistant. Today is {}. Answer precisely and in English, unless the user \
+         writes in another language. Use Markdown where it helps.",
+        now.format(tr!("%A, %d.%m.%Y %H:%M", "%A, %B %-d, %Y %H:%M"))
+    );
+    push_instructions(&mut s, settings);
+    s
+}
+
+fn push_instructions(s: &mut String, settings: &Settings) {
     if !settings.assistant_instructions.trim().is_empty() {
         s.push_str(tr!("\n\nZusätzliche Anweisungen des Nutzers:\n", "\n\nAdditional instructions from the user:\n"));
         s.push_str(settings.assistant_instructions.trim());
     }
-    s
 }
 
 #[derive(Serialize, Clone)]
@@ -2916,6 +2935,9 @@ fn ai_meter(state: State<AppState>) -> SessionMeter {
 
 /// Runs one chat turn with retrieval and streams deltas as `ai://stream` events.
 /// Tool calls in the result are executed by the UI via the `ai_*_tool` commands.
+/// `notes: false` is the plain chatbot of the chat view: no search in the notes, no tools and
+/// the plain system prompt; a page the user attached is still sent. Routing, privacy markers
+/// and private conversations apply the same way.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn ai_chat(
@@ -2928,7 +2950,10 @@ async fn ai_chat(
     page_id: Option<i64>,
     override_limit: Option<bool>,
     conversation_id: Option<i64>,
+    notes: Option<bool>,
 ) -> Result<ChatOutcome> {
+    let notes = notes.unwrap_or(true);
+    let use_tools = use_tools && notes;
     // Registered first: a Stop during retrieval ends the request before anything is sent.
     let scope = CancelScope::new(&state, &request_id);
     prefs::check_cost_limit(&state, override_limit.unwrap_or(false))?;
@@ -2953,7 +2978,8 @@ async fn ai_chat(
         || settings.router.private_markers.iter().any(|m| !m.trim().is_empty() && lower.contains(&m.to_lowercase()));
     // A chat model is never asked for embeddings, and a model that failed is not asked again:
     // on a LiteLLM proxy each failure counts against the model and can put it into cooldown.
-    let (embedder, mut embed_note) = match embedding_client(&state).filter(|(c, _)| !private || c.provider().local) {
+    let embedding = if notes { embedding_client(&state) } else { None };
+    let (embedder, mut embed_note) = match embedding.filter(|(c, _)| !private || c.provider().local) {
         Some((client, r)) => {
             scope.race(learn_modes(&state, &client)).await;
             let mut caps = lock(&state.caps);
@@ -3014,7 +3040,7 @@ async fn ai_chat(
     };
     let (context, active, source_marker) = {
         let db = state.db();
-        let context = rag::retrieve(&db, &prompt, query_embedding.as_deref(), 6)?;
+        let context = if notes { rag::retrieve(&db, &prompt, query_embedding.as_deref(), 6)? } else { Vec::new() };
         // Settings → Datenschutz: the open page is only sent when allowed.
         // Its tags count as well (front matter `tags: [privat]` is not in the text as #privat).
         let active = match page_id.filter(|_| settings.privacy.read_open_page) {
@@ -3055,7 +3081,7 @@ async fn ai_chat(
 
     // One system message, as in the inline AI: chat templates of many models (vLLM, Mistral,
     // Gemma) accept a system message only at the very start.
-    let mut system = system_prompt(&settings);
+    let mut system = if notes { system_prompt(&settings) } else { plain_system_prompt(&settings) };
     if let Some((title, text, _)) = &active {
         let text: String = text.chars().take(12_000).collect();
         system.push_str(&trf!(
@@ -5124,6 +5150,18 @@ mod tests {
         }
         assert!(tools.iter().any(|t| t == "list_tasks"));
         assert!(s.check_tool("list_tasks").is_ok());
+    }
+
+    #[test]
+    fn the_plain_chat_knows_nothing_about_the_workspace() {
+        let mut s = Settings { assistant_instructions: "Sprich kurz.".into(), ..Default::default() };
+        let plain = plain_system_prompt(&s);
+        for word in ["Arcalo", "/zeit", "[[", "Werkzeuge", "Notizen"] {
+            assert!(!plain.contains(word), "{word} in {plain}");
+        }
+        assert!(plain.contains("Sprich kurz."), "the user's instructions apply too");
+        s.assistant_instructions.clear();
+        assert!(!plain_system_prompt(&s).contains("Anweisungen"));
     }
 
     #[test]

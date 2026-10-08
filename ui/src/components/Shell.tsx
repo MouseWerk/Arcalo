@@ -2,7 +2,7 @@
 
 import {
   Activity, AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
-  FileText, GitMerge, Paperclip, CalendarRange, Sunset, Sun, Ticket, Waypoints, ChevronDown,
+  FileText, GitMerge, Paperclip, CalendarRange, Sunset, Sun, Ticket, Waypoints, ChevronDown, MessagesSquare,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useApp, type Tab } from "../store/app";
@@ -49,6 +49,8 @@ export function tabTitle(tab: Tab, pages: Map<number, { title: string }>) {
       return t("tabs.issues");
     case "graph":
       return t("tabs.graph");
+    case "chat":
+      return t("tabs.chat");
     case "attachments":
       return t("tabs.attachments");
     case "pdf":
@@ -89,6 +91,8 @@ export function TabIcon({ t }: { t: Tab }) {
       return <Ticket size={14} strokeWidth={1.75} />;
     case "graph":
       return <Waypoints size={14} strokeWidth={1.75} />;
+    case "chat":
+      return <MessagesSquare size={14} strokeWidth={1.75} />;
     case "attachments":
       return <Paperclip size={14} strokeWidth={1.75} />;
     case "pdf":

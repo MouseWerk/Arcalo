@@ -110,6 +110,7 @@ describe("keymap", () => {
     expect(COMMANDS.length).toBe(Object.keys(DEFAULT_KEYMAP).length);
     expect(DEFAULT_KEYMAP.palette).toBe("Ctrl+K");
     expect(DEFAULT_KEYMAP.daily_note).toBe("Ctrl+Shift+D");
+    expect(DEFAULT_KEYMAP.chat_view).toBe("Ctrl+Shift+J");
     expect(findConflicts(DEFAULT_KEYMAP, { capture: "Ctrl+Shift+Space", palette: null })).toEqual([]);
     // Every default is usable; a command without a default is listed unbound („Tab anheften“).
     for (const c of Object.values(DEFAULT_KEYMAP).filter(Boolean)) expect(comboProblem(c)).toBeNull();
@@ -126,8 +127,8 @@ describe("keymap", () => {
     // „Auswahl übernehmen“ is a global shortcut too.
     const sel = findConflicts({ ...DEFAULT_KEYMAP, timer: "Ctrl+Shift+Y" }, { selection: "ctrl+shift+y" });
     expect(sel).toContainEqual({ combo: "Ctrl+Shift+Y", commands: ["timer"], other: "global.selection" });
-    const mail = findConflicts({ ...DEFAULT_KEYMAP, timer: "Ctrl+Shift+J" }, { mail: "ctrl+shift+j" });
-    expect(mail).toContainEqual({ combo: "Ctrl+Shift+J", commands: ["timer"], other: "global.mail" });
+    const mail = findConflicts({ ...DEFAULT_KEYMAP, timer: "Ctrl+Shift+U" }, { mail: "ctrl+shift+u" });
+    expect(mail).toContainEqual({ combo: "Ctrl+Shift+U", commands: ["timer"], other: "global.mail" });
     // The palette may share its global shortcut with the in-app palette command.
     const same = effectiveKeymap({ palette: "Ctrl+Shift+K" });
     expect(findConflicts(same, { palette: "Ctrl+Shift+K" })).toEqual([]);

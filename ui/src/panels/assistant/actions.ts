@@ -52,9 +52,9 @@ export async function insertIntoPage(text: string) {
 }
 
 /** „Als Seite speichern“ / „In neue Seite einfügen“ (weekly report with its title). */
-export async function saveAnswerAsPage(text: string, pageTitle?: string) {
+export async function saveAnswerAsPage(text: string, pageTitle?: string, priv = useChat.getState().private) {
   const s = useApp.getState();
-  const content = useChat.getState().private ? `${text.trim()}\n\n${privateTag()}\n` : text;
+  const content = priv ? `${text.trim()}\n\n${privateTag()}\n` : text;
   try {
     const p = await api.createPage(pageTitle ?? answerTitle(text), null, pageTitle ? "file-text" : "sparkles", content);
     await s.refreshTree();

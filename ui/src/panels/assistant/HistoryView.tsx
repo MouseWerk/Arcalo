@@ -1,15 +1,17 @@
-// The chat history in the assistant panel: search, groups by day, pin, rename, delete with
-// undo, save as page and duplicate. ↑/↓ choose, Enter opens, F2 renames, Delete deletes.
+// The chat history in the assistant panel and in the chat view's list: search, groups by day,
+// pin, rename, delete with undo, save as page and duplicate. ↑/↓ choose, Enter opens, F2
+// renames, Delete deletes. Both lists show the same saved chats.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, FilePlus2, Lock, MessageSquare, MoreHorizontal, PencilLine, Pin, PinOff, Search, Trash2, X } from "lucide-react";
+import { Copy, FilePlus2, Lock, Maximize2, MessageSquare, MoreHorizontal, PanelRight, PencilLine, Pin, PinOff, Search, Trash2, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { groupConversations, historyDate, snippetParts, type HistoryGroupKey } from "../../lib/chathistory";
 import { t } from "../../lib/i18n";
 import type { ChatConversation } from "../../lib/types";
 import { IconButton, useMenu, type MenuEntry } from "../../components/ui";
 import { useApp } from "../../store/app";
-import { deleteChat, duplicateChat, openChat, saveChatAsPage, useChat } from "../../store/chat";
+import { deleteChat, duplicateChat, openChatView, openInPanel, renameChatById, saveChatAsPage, togglePinChat } from "../../store/chat";
+import { useSession } from "./session";
 
 const GROUP_LABEL: Record<HistoryGroupKey, () => string> = {
   pinned: () => t("chat.group.pinned"),
@@ -21,9 +23,14 @@ const GROUP_LABEL: Record<HistoryGroupKey, () => string> = {
 
 const tierOf = (tier: string) => (["local", "standard", "reasoning"].includes(tier) ? tier : "standard");
 
-export function HistoryView() {
-  const listVersion = useChat((s) => s.listVersion);
-  const currentId = useChat((s) => s.conversation?.id ?? null);
+/**
+ * `compact`: the chat view's list column (titles and dates; the search is not focused on
+ * opening); `onOpened` runs after a chat was opened from the list.
+ */
+export function HistoryView({ compact = false, onOpened }: { compact?: boolean; onOpened?: () => void } = {}) {
+  const session = useSession();
+  const listVersion = session.use((s) => s.listVersion);
+  const currentId = session.use((s) => s.conversation?.id ?? null);
   const saving = useApp((s) => (s.settings?.settings.ai.chat_history ?? "all") !== "off");
   const [query, setQuery] = useState("");
   const [list, setList] = useState<ChatConversation[] | null>(null);
@@ -34,8 +41,8 @@ export function HistoryView() {
   const listEl = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    search.current?.focus();
-  }, []);
+    if (!compact) search.current?.focus();
+  }, [compact]);
   useEffect(() => {
     let alive = true;
     const timer = window.setTimeout(
@@ -61,11 +68,14 @@ export function HistoryView() {
     document.getElementById(`chat-h-${selected.id}`)?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
-  const open = (c: ChatConversation) => openChat(c.id).catch((e) => useApp.getState().error(t("chat.openFailed"), e));
+  const open = (c: ChatConversation) =>
+    session
+      .open(c.id)
+      .then(() => onOpened?.())
+      .catch((e) => useApp.getState().error(t("chat.openFailed"), e));
   const togglePin = async (c: ChatConversation) => {
     try {
-      await api.chatUpdate(c.id, { pinned: !c.pinned });
-      useChat.setState((s) => ({ listVersion: s.listVersion + 1, conversation: s.conversation?.id === c.id ? { ...s.conversation, pinned: !c.pinned } : s.conversation }));
+      await togglePinChat(c);
     } catch (e) {
       useApp.getState().error(t("chat.updateFailed"), e);
     }
@@ -74,8 +84,7 @@ export function HistoryView() {
     setRenaming(null);
     if (!title.trim() || title.trim() === c.title) return;
     try {
-      const updated = await api.chatUpdate(c.id, { title });
-      useChat.setState((s) => ({ listVersion: s.listVersion + 1, conversation: s.conversation?.id === c.id ? updated : s.conversation }));
+      await renameChatById(c, title);
     } catch (e) {
       useApp.getState().error(t("chat.updateFailed"), e);
     }
@@ -86,10 +95,13 @@ export function HistoryView() {
   };
   const items = (c: ChatConversation): MenuEntry[] => [
     { label: t("chat.open"), icon: MessageSquare, onSelect: () => open(c) },
+    session.id === "panel"
+      ? { label: t("chat.openInView"), icon: Maximize2, onSelect: () => void openChatView({ id: c.id }) }
+      : { label: t("chat.openInPanel"), icon: PanelRight, onSelect: () => void openInPanel({ id: c.id }) },
     { label: t("chat.rename"), icon: PencilLine, shortcut: "F2", onSelect: () => setRenaming(c.id) },
     { label: c.pinned ? t("chat.unpin") : t("chat.pin"), icon: c.pinned ? PinOff : Pin, onSelect: () => togglePin(c) },
     { label: t("chat.saveChatAsPage"), icon: FilePlus2, onSelect: () => saveChatAsPage(c) },
-    { label: t("chat.duplicate"), icon: Copy, onSelect: () => duplicateChat(c) },
+    { label: t("chat.duplicate"), icon: Copy, onSelect: () => duplicateChat(c, session) },
     "separator",
     { label: t("chat.delete"), icon: Trash2, shortcut: "Entf", danger: true, onSelect: () => remove(c) },
   ];
@@ -120,12 +132,12 @@ export function HistoryView() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (query) setQuery("");
-      else useChat.setState({ historyOpen: false });
+      else if (session.id === "panel") session.use.setState({ historyOpen: false });
     }
   };
 
   return (
-    <div className="chat-history" onKeyDown={onKeyDown}>
+    <div className={`chat-history ${compact ? "compact" : ""}`} onKeyDown={onKeyDown}>
       <div className="chat-history-search">
         <Search size={14} aria-hidden />
         <input
@@ -204,6 +216,7 @@ export function HistoryView() {
                         {snippetParts(c.snippet).map((p, k) => (p.hit ? <mark key={k}>{p.text}</mark> : <span key={k}>{p.text}</span>))}
                       </span>
                     )}
+                    {!compact && (
                     <span className="chat-history-meta">
                       {c.model && (
                         <span className="chat-chip" title={c.provider ? `${c.model} · ${c.provider}` : c.model}>
@@ -213,6 +226,7 @@ export function HistoryView() {
                       )}
                       <span className="chat-history-date">{historyDate(c.updated_at)}</span>
                     </span>
+                    )}
                   </div>
                   <div className="chat-history-actions">
                     {c.pinned && <Pin size={12} className="chat-pin-mark" aria-label={t("chat.pinned")} />}
@@ -244,7 +258,7 @@ export function HistoryView() {
           </div>
         ))}
       </div>
-      <div className="chat-history-foot faint">{t("chat.historyKeys")}</div>
+      {!compact && <div className="chat-history-foot faint">{t("chat.historyKeys")}</div>}
       {menu}
     </div>
   );

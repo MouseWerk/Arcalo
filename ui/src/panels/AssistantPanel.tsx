@@ -1,9 +1,10 @@
 // The AI assistant: streaming chat over the configured AI providers with workspace context,
 // sources, cost/speed metrics, approval-gated tools and the chat history. The conversation
-// itself lives in `store/chat.ts`, so closing the panel loses nothing.
+// itself lives in `store/chat.ts`, so closing the panel loses nothing. The messages and the
+// composer serve the chat view as well (views/ChatView.tsx), each with its own session.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ClipboardType, Copy, FilePlus2, FileInput, FileText, History, Languages, Lightbulb, ListChecks, Lock, MessageSquarePlus, PencilLine, Plus, Quote, RefreshCw, Settings2, Sparkles, Square, Timer, WifiOff, Wrench, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, BookOpen, ChevronDown, ClipboardType, Copy, FilePlus2, FileInput, FileText, History, Languages, Lightbulb, ListChecks, Lock, Maximize2, MessageSquarePlus, Paperclip, PencilLine, Plus, Quote, RefreshCw, Settings2, Sparkles, Square, Timer, WifiOff, Wrench, X } from "lucide-react";
 import { api } from "../lib/api";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { t, useT, type TKey } from "../lib/i18n";
@@ -15,12 +16,15 @@ import type { Turn } from "../lib/chathistory";
 import { IconButton, useMenu, type MenuEntry } from "../components/ui";
 import { useApp } from "../store/app";
 import { useTimeTracking } from "../lib/timetracking";
-import { currentPage, ensureChatListeners, MAX_INPUT, newChat, regenerate, renameChat, sendChat, setTier, setUseTools, stopChat, useChat } from "../store/chat";
+import { busyElsewhere, currentPage, ensureChatListeners, MAX_INPUT, openChatView, otherSession, privateTag, sendChat, setNotes, setTier, setUseTools, useChat, type ChatSession } from "../store/chat";
+import { useSession } from "./assistant/session";
+import { AttachPage } from "./assistant/AttachPage";
 import { useSuggestions } from "./useSuggestions";
 import { HistoryView } from "./assistant/HistoryView";
 import { TurnView } from "./assistant/TurnView";
 import { SUGGESTION_ICONS } from "./assistant/icons";
 import { answerTitle, copyText } from "./assistant/actions";
+import { withHint } from "../lib/keymap";
 import { scrollMotion } from "../lib/motion";
 
 export { openSource } from "./assistant/TurnView";
@@ -51,7 +55,7 @@ export function AssistantPanel() {
   return (
     <div className="assistant">
       <ChatHeader />
-      {historyOpen ? <HistoryView /> : <ChatBody />}
+      {historyOpen ? <HistoryView /> : <ChatBody empty={<EmptyChat />} />}
       {!historyOpen && <Composer />}
     </div>
   );
@@ -59,6 +63,7 @@ export function AssistantPanel() {
 
 /** Title of the chat (rename by click or F2), the lock of a private chat, history and „Neuer Chat“. */
 function ChatHeader() {
+  const session = useSession();
   const conversation = useChat((s) => s.conversation);
   const priv = useChat((s) => s.private);
   const historyOpen = useChat((s) => s.historyOpen);
@@ -100,7 +105,7 @@ function ChatHeader() {
             if (e.key === "Enter") {
               e.preventDefault();
               setEditing(false);
-              renameChat(e.currentTarget.value);
+              session.rename(e.currentTarget.value);
             } else if (e.key === "Escape") {
               e.preventDefault();
               setEditing(false);
@@ -108,7 +113,7 @@ function ChatHeader() {
           }}
           onBlur={(e) => {
             setEditing(false);
-            renameChat(e.currentTarget.value);
+            session.rename(e.currentTarget.value);
           }}
         />
       ) : (
@@ -125,17 +130,31 @@ function ChatHeader() {
         </button>
       )}
       {!historyOpen && priv && <span className="chat-private-badge" title={t("chat.privateHint")}>{t("chat.private")}</span>}
-      <IconButton icon={Plus} label={t("assist.newChat")} size="md" onClick={() => newChat()} />
+      {!historyOpen && hasTurns && <IconButton icon={Maximize2} label={withHint(t("chat.openInView"), "chat_view")} size="md" className="chat-expand" onClick={() => void openChatView({ from: session })} />}
+      <IconButton icon={Plus} label={t("assist.newChat")} size="md" onClick={() => session.newChat()} />
     </div>
   );
 }
 
-/** The messages, or the empty state with suggestions; follows the answer while you are at the end. */
-function ChatBody() {
-  const turns = useChat((s) => s.turns);
-  const busy = useChat((s) => s.busy);
-  const notice = useChat((s) => s.notice);
-  const followTick = useChat((s) => s.followTick);
+/** The other session answering in this session's saved chat (this one shows it and waits). */
+export function useBusyElsewhere(session: ChatSession) {
+  const other = otherSession(session);
+  const convId = session.use((s) => s.conversation?.id ?? null);
+  return other.use((o) => convId != null && o.busy && o.conversation?.id === convId);
+}
+
+/**
+ * The messages, or `empty` without any; follows the answer while you are at the end. The
+ * panel's and the chat view's (their session from the context).
+ */
+export function ChatBody({ empty }: { empty: ReactNode }) {
+  const session = useSession();
+  const inView = session.id === "view";
+  const turns = session.use((s) => s.turns);
+  const elsewhere = useBusyElsewhere(session);
+  const busy = session.use((s) => s.busy) || elsewhere;
+  const notice = session.use((s) => s.notice);
+  const followTick = session.use((s) => s.followTick);
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -164,7 +183,7 @@ function ChatBody() {
     // An empty chat stays at its top: the suggestions load later and must not push the
     // heading and the setup note out of view.
     const ro = new ResizeObserver(() => {
-      if (stick.current && useChat.getState().turns.length > 0) el.scrollTop = el.scrollHeight;
+      if (stick.current && session.use.getState().turns.length > 0) el.scrollTop = el.scrollHeight;
     });
     ro.observe(inner);
     return () => ro.disconnect();
@@ -185,7 +204,7 @@ function ChatBody() {
           if (away === atEnd) setAway(!atEnd);
         }}
         onContextMenu={(e) => {
-          const items = chatMenu(e.target as HTMLElement, turns, busy);
+          const items = chatMenu(session, e.target as HTMLElement, turns, busy);
           if (!items.length) return;
           e.preventDefault();
           openMenu(e, items);
@@ -194,20 +213,20 @@ function ChatBody() {
           const a = (e.target as HTMLElement).closest<HTMLElement>("a[data-wikilink]");
           if (a) {
             e.preventDefault();
-            api.resolvePage(a.dataset.target!, false).then((p) => p && s().openPage(p.id, { newTab: e.ctrlKey || e.metaKey }));
+            api.resolvePage(a.dataset.target!, false).then((p) => p && s().openPage(p.id, { newTab: inView || e.ctrlKey || e.metaKey }));
           }
         }}
       >
         <div className="assistant-content" ref={content}>
           {turns.length === 0 ? (
-            <EmptyChat />
+            empty
           ) : (
             <>
               {notice && (
                 <div className="chat-notice" role="note">
                   <RefreshCw size={13} aria-hidden />
                   <span>{notice}</span>
-                  <IconButton icon={X} label={t("chat.dismiss")} size="sm" onClick={() => useChat.setState({ notice: null })} />
+                  <IconButton icon={X} label={t("chat.dismiss")} size="sm" onClick={() => session.use.setState({ notice: null })} />
                 </div>
               )}
               <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label={t("chat.messages")}>
@@ -215,7 +234,7 @@ function ChatBody() {
                   <TurnView key={x.id} turn={x} last={i === turns.length - 1} busy={i >= lastUserIdx ? busy : false} editable={i === lastUserIdx && !busy} />
                 ))}
               </div>
-              {!busy && last?.kind === "assistant" && !last.error && (
+              {!inView && !busy && last?.kind === "assistant" && !last.error && (
                 <div className="follow-ups" aria-label={t("chat.followUps")}>
                   {followUps().map((f) => (
                     <button key={f} type="button" className="follow-up" onClick={() => sendChat(t("assist.follow.ask", { f }))}>
@@ -240,13 +259,13 @@ function ChatBody() {
 }
 
 /** Right-click in the chat: the selection, the message under the pointer, the chat. */
-function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[] {
+function chatMenu(session: ChatSession, target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[] {
   const s = useApp.getState;
   const out: MenuEntry[] = [];
   const selected = window.getSelection()?.toString().trim() ?? "";
   const copy = (text: string, what: string) => copyText(text, () => s().toast({ tone: "success", title: t("chat.copiedWhat", { what }) }));
   const setInput = (f: (v: string) => string) => {
-    useChat.setState((st) => ({ input: f(st.input), focusTick: st.focusTick + 1 }));
+    session.use.setState((st) => ({ input: f(st.input), focusTick: st.focusTick + 1 }));
   };
   if (selected) {
     out.push(
@@ -288,7 +307,7 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
         icon: FilePlus2,
         onSelect: async () => {
           try {
-            const p = await api.createPage(turn.pageTitle ?? answerTitle(turn.text), null, "sparkles", turn.text);
+            const p = await api.createPage(turn.pageTitle ?? answerTitle(turn.text), null, "sparkles", session.use.getState().private ? `${turn.text.trim()}\n\n${privateTag()}\n` : turn.text);
             await s().refreshTree();
             s().openPage(p.id, { newTab: true });
           } catch (err) {
@@ -297,19 +316,19 @@ function chatMenu(target: HTMLElement, turns: Turn[], busy: boolean): MenuEntry[
         },
       },
       "separator",
-      { label: t("assist.regenerate"), icon: RefreshCw, disabled: busy || idx !== turns.length - 1, onSelect: () => regenerate(turn.id) },
-      { label: t("assist.followUp"), icon: MessageSquarePlus, disabled: busy, submenu: followUps().map((f) => ({ label: f, onSelect: () => sendChat(t("assist.follow.ask", { f })) })) },
+      { label: t("assist.regenerate"), icon: RefreshCw, disabled: busy || idx !== turns.length - 1, onSelect: () => session.regenerate(turn.id) },
+      { label: t("assist.followUp"), icon: MessageSquarePlus, disabled: busy, submenu: followUps().map((f) => ({ label: f, onSelect: () => session.send(t("assist.follow.ask", { f })) })) },
       "separator",
     );
   } else if (turn?.kind === "user") {
     out.push(
       { label: t("common.copy"), icon: Copy, onSelect: () => copy(turn.text, t("chat.what.message")) },
       { label: t("links.editShort"), icon: PencilLine, onSelect: () => setInput(() => turn.text) },
-      { label: t("assist.resend"), icon: RefreshCw, disabled: busy, onSelect: () => sendChat(turn.prompt, { ...turn.opts }) },
+      { label: t("assist.resend"), icon: RefreshCw, disabled: busy, onSelect: () => session.send(turn.prompt, { ...turn.opts }) },
       "separator",
     );
   }
-  if (turns.length) out.push({ label: t("assist.newChat"), icon: Plus, onSelect: () => newChat() });
+  if (turns.length) out.push({ label: t("assist.newChat"), icon: Plus, onSelect: () => session.newChat() });
   while (out[out.length - 1] === "separator") out.pop();
   return out;
 }
@@ -380,21 +399,34 @@ function EmptyChat() {
   );
 }
 
-/** The question box: grows with the text, Enter sends, Shift+Enter breaks the line; page and model chips. */
-function Composer() {
-  const input = useChat((s) => s.input);
-  const busy = useChat((s) => s.busy);
-  const tier = useChat((s) => s.tier);
-  const useTools = useChat((s) => s.useTools);
-  const includePage = useChat((s) => s.includePage);
-  const focusTick = useChat((s) => s.focusTick);
-  const convId = useChat((s) => s.conversation?.id ?? null);
-  const priv = useChat((s) => s.private);
+/**
+ * The question box: grows with the text, Enter sends, Shift+Enter breaks the line; page and
+ * model chips. In the chat view: „Mit meinen Notizen“ and an attached page instead of the open one.
+ */
+export function Composer({ shown: shownProp, placeholder }: { shown?: boolean; placeholder?: string } = {}) {
+  const session = useSession();
+  const inView = session.id === "view";
+  const use = session.use;
+  const input = use((s) => s.input);
+  const elsewhere = useBusyElsewhere(session);
+  const ownBusy = use((s) => s.busy);
+  const busy = ownBusy || elsewhere;
+  const tier = use((s) => s.tier);
+  const notes = use((s) => s.notes);
+  const useTools = use((s) => s.useTools) && notes;
+  const includePage = use((s) => s.includePage);
+  const attachedPage = use((s) => s.attachedPage);
+  const focusTick = use((s) => s.focusTick);
+  const convId = use((s) => s.conversation?.id ?? null);
+  const priv = use((s) => s.private);
   const settings = useApp((s) => s.settings);
   const activeDoc = useApp((st) => st.activeDoc);
   const activeTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTabId));
-  const page = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
-  const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
+  const page = !inView && activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
+  const attached = useApp((st) => (attachedPage != null ? st.pages.get(attachedPage) : undefined));
+  const panelShown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
+  const shown = shownProp ?? panelShown;
+  const stop = () => (ownBusy ? session.stop() : busyElsewhere(session)?.stop());
   const [preview, setPreview] = useState<RouteDecision | null>(null);
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -421,7 +453,7 @@ function Composer() {
     const el = textarea.current;
     if (!focusTick || !el || !shown) return;
     const active = document.activeElement;
-    if (!active || active === document.body || el.closest(".assistant")?.contains(active)) el.focus();
+    if (!active || active === document.body || el.closest(".assistant, .chat-view")?.contains(active)) el.focus();
   }, [focusTick, shown]);
   useEffect(() => {
     if (!input.trim()) return setPreview(null);
@@ -445,8 +477,8 @@ function Composer() {
   const send = () => {
     if (busy || tooLong || !input.trim()) return;
     const text = input;
-    useChat.setState({ input: "" });
-    sendChat(text);
+    use.setState({ input: "" });
+    void session.send(text);
   };
 
   return (
@@ -462,10 +494,10 @@ function Composer() {
           ref={textarea}
           rows={1}
           value={input}
-          placeholder={t("chat.placeholder")}
+          placeholder={placeholder ?? t("chat.placeholder")}
           aria-label={t("assist.inputLabel")}
           aria-invalid={tooLong || undefined}
-          onChange={(e) => useChat.setState({ input: e.target.value })}
+          onChange={(e) => use.setState({ input: e.target.value })}
           onKeyDown={(e) => {
             // Enter during IME composition picks the candidate, it does not send.
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
@@ -473,7 +505,7 @@ function Composer() {
               send();
             } else if (e.key === "Escape" && busy) {
               e.preventDefault();
-              stopChat();
+              stop();
             }
           }}
         />
@@ -483,7 +515,7 @@ function Composer() {
               type="button"
               className={`context-chip ${includePage ? "" : "off"}`}
               aria-pressed={includePage}
-              onClick={() => useChat.setState({ includePage: !includePage })}
+              onClick={() => use.setState({ includePage: !includePage })}
               title={includePage ? t("chat.pageSent") : t("chat.pageNotSent")}
             >
               <FileText size={12} aria-hidden />
@@ -491,6 +523,26 @@ function Composer() {
               {includePage ? <X size={11} aria-hidden /> : <Plus size={11} aria-hidden />}
             </button>
           )}
+          {inView && (
+            <button
+              type="button"
+              className={`context-chip notes-chip ${notes ? "on" : "off-quiet"}`}
+              aria-pressed={notes}
+              title={notes ? t("chatv.notesOnHint") : t("chatv.notesOffHint")}
+              onClick={() => setNotes(!notes)}
+            >
+              <BookOpen size={12} aria-hidden />
+              <span>{t("chatv.notes")}</span>
+            </button>
+          )}
+          {inView && attached && (
+            <button type="button" className="context-chip attached-chip" title={t("chatv.detach")} aria-label={`${attached.title} – ${t("chatv.detach")}`} onClick={() => use.setState({ attachedPage: null })}>
+              <FileText size={12} aria-hidden />
+              <span>{attached.title}</span>
+              <X size={11} aria-hidden />
+            </button>
+          )}
+          {inView && !attached && <AttachPage onPick={(id) => use.setState((s) => ({ attachedPage: id, focusTick: s.focusTick + 1 }))} icon={Paperclip} />}
           <button
             type="button"
             className="model-pill"
@@ -503,7 +555,7 @@ function Composer() {
                   onSelect: () => setTier(o.value),
                 })),
                 "separator" as const,
-                { label: useTools ? t("assist.toolsOff") : t("assist.toolsOn"), icon: Wrench, onSelect: () => setUseTools(!useTools) },
+                ...(notes ? [{ label: useTools ? t("assist.toolsOff") : t("assist.toolsOn"), icon: Wrench, onSelect: () => setUseTools(!useTools) }] : []),
                 { label: t("chat.aiSettings"), icon: Settings2, onSelect: openAiSettings },
               ])
             }
@@ -525,7 +577,7 @@ function Composer() {
             </span>
           )}
           {busy ? (
-            <button type="button" className="send-btn stop" aria-label={t("assist.stop")} title={t("chat.stopHint")} onClick={stopChat}>
+            <button type="button" className="send-btn stop" aria-label={t("assist.stop")} title={t("chat.stopHint")} onClick={stop}>
               <Square size={11} fill="currentColor" />
             </button>
           ) : (
@@ -536,8 +588,9 @@ function Composer() {
         </div>
       </div>
       <div className="composer-foot faint">
-        <span>{tooLong ? t("chat.tooLong", { max: int(MAX_INPUT) }) : t("chat.keysHint")}</span>
-        {!useTools && <span>{t("chat.toolsOff")}</span>}
+        <span>{tooLong ? t("chat.tooLong", { max: int(MAX_INPUT) }) : elsewhere ? t(inView ? "chatv.busyInPanel" : "chatv.busyInView") : t("chat.keysHint")}</span>
+        {!inView && !useTools && <span>{t("chat.toolsOff")}</span>}
+        {inView && <span>{t(notes ? "chatv.modeNotes" : "chatv.modePlain")}</span>}
       </div>
       {menu}
     </div>

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
+  BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply,
   Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
 } from "lucide-react";
@@ -47,7 +47,7 @@ import { iconOf } from "./LinkDialogs";
 import { openBookmarkImport } from "./BookmarkImport";
 import { startFirstRun } from "../onboarding/state";
 import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help";
-import { newChat, showHistory } from "../store/chat";
+import { newChat, openChatView, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
@@ -310,7 +310,15 @@ export function CommandPalette() {
         },
       },
       { id: "chat-history", title: t("cmd.chatHistory"), icon: ic(History), run: () => showHistory() },
-      { id: "chat-new", title: t("cmd.newChat"), icon: ic(MessageSquarePlus), run: () => (newChat(), openAssistant()) },
+      // Where you are: in the chat view a new chat there, elsewhere in the side panel.
+      {
+        id: "chat-new",
+        title: t("cmd.newChat"),
+        icon: ic(MessageSquarePlus),
+        run: () => (s().tabs.find((x) => x.id === s().activeTabId)?.kind === "chat" ? void openChatView({ fresh: true }) : (newChat(), openAssistant())),
+      },
+      { id: "chat-open", title: t("cmd.chatView"), subtitle: t("cmd.chatViewSub"), icon: ic(MessagesSquare), hint: hint("chat_view"), run: () => void openChatView() },
+      { id: "chat-view-new", title: t("cmd.chatViewNew"), icon: ic(MessagesSquare), run: () => void openChatView({ fresh: true }) },
     ];
     // „Zeiterfassung verwenden“ off: the timesheet and project commands are hidden.
     const timeOff = !timeOn;

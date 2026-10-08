@@ -1,7 +1,7 @@
 // Obsidian-style ribbon: a slim column of global actions left of the sidebar.
 
 import { useRef } from "react";
-import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, Search, ListChecks, Mic, PanelLeft, Settings, Sparkles, Sun, Sunset, Target, Ticket, Timer, Waypoints } from "lucide-react";
+import { Activity, Briefcase, CalendarCheck2, CalendarRange, ChevronDown, FilePlus2, MessagesSquare, Search, ListChecks, Mic, PanelLeft, Settings, Sparkles, Sun, Sunset, Target, Ticket, Timer, Waypoints } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
@@ -16,7 +16,7 @@ import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "./Focus";
 import { openDayReview } from "../lib/reviewnav";
 import { openBriefing } from "../lib/briefing";
-import { useChat } from "../store/chat";
+import { openChatView, useChat } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
 
 export async function openToday() {
@@ -35,7 +35,7 @@ export function openAssistant() {
   s.set({ panelOpen: true, panelTab: "assistant" });
   savePref("annalo.panel", true);
   useChat.setState({ historyOpen: false });
-  setTimeout(() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(), 50);
+  setTimeout(() => document.querySelector<HTMLTextAreaElement>(".assistant .composer textarea")?.focus(), 50);
 }
 
 /** „Heutige Tagesnotiz“; right-click, a long press or the small chevron opens the calendar. */
@@ -122,6 +122,7 @@ export function Ribbon() {
       <IconButton icon={Sunset} label={t("ribbon.review")} active={tab?.kind === "review"} aria-current={tab?.kind === "review" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-review" onClick={() => openDayReview()} />
       <IconButton icon={Target} label={t(focus ? "ribbon.focusRunning" : "ribbon.focus")} active={!!focus} tooltipSide={side} size="lg" onClick={() => (focus ? document.querySelector<HTMLButtonElement>(".sb-focus")?.click() : openFocusDialog())} />
       <IconButton icon={Sparkles} label={withHint(t("ribbon.assistant"), "assistant")} tooltipSide={side} size="lg" onClick={openAssistant} />
+      <IconButton icon={MessagesSquare} label={withHint(t("ribbon.chat"), "chat_view")} active={tab?.kind === "chat"} aria-current={tab?.kind === "chat" ? "page" : undefined} tooltipSide={side} size="lg" className="ribbon-chat" onClick={() => void openChatView()} />
       <IconButton
         icon={Mic}
         label={t(recording ? "voice.stopRecording" : "voice.record")}
