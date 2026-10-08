@@ -124,6 +124,13 @@ test("multi-select with Shift and Ctrl, move to a folder, undo", async () => {
   await clickWith("Gamma", ""); // Shift
   assert.deepEqual(await selectedRows(), ["Alpha", "Beta", "Gamma"]);
   await app.waitText(".tree-selection", /3 selected/);
+  // The bar fits the sidebar: its clear button is not cut off at the edge.
+  const fit = await app.browser.execute(() => {
+    const bar = document.querySelector(".tree-selection").getBoundingClientRect();
+    const x = document.querySelector(".tree-selection > .icon-btn").getBoundingClientRect();
+    return { bar: Math.round(bar.right), x: Math.round(x.right), rows: Math.round(bar.height) };
+  });
+  assert.ok(fit.x <= fit.bar, `clear button at ${fit.x}, bar ends at ${fit.bar}`);
   await clickWith("Beta", ""); // Ctrl: out of the selection
   assert.deepEqual(await selectedRows(), ["Alpha", "Gamma"]);
   await app.shot("122-multiselect-dark");

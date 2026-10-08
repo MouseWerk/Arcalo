@@ -3231,7 +3231,10 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 .tree-row.selected.active { background: var(--bg-current); }
 .tree-row.hit .tree-label { color: var(--text); font-weight: var(--fw-medium); }
 .tree-selection { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 3px 4px 3px 10px; border-radius: var(--r-sm); background: var(--bg-current); color: var(--text-2); font-size: var(--fs-sm); }
-.tree-selection > span { flex: 1; }
+/* In a narrow sidebar the count and the button shorten; the clear button always stays inside. */
+.tree-selection > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-selection > .btn { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tree-selection > .icon-btn { flex: none; }
 .tint-accent { color: var(--accent) !important; }
 .tint-info { color: var(--info) !important; }
 .tint-success { color: var(--success) !important; }
