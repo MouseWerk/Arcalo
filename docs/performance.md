@@ -121,3 +121,15 @@ Excalidraw, PDF.js, the graph and the canvas load on demand.
   software compositing under Xvfb.
 - The tasks view loads all tasks (5 MB as JSON) and filters in the UI; changing that changes how
   the view works.
+
+## Suche nach Bedeutung (1.15)
+
+`ANNALO_BIG_DIR=/tmp/big cargo test -p annalo-core --test bigworkspace semantic_search -- --ignored --nocapture`
+gives every chunk of the large workspace (13,531 chunks) a 768-dimensional vector and times the
+query side (debug build): the assistant's database scan (`rag::vector_top_k`) takes 272 ms; the
+search's in-memory copy (`semantic::VectorIndex`, 8-bit unit vectors, 10.7 MB) loads once in
+629 ms and then answers exact plus meaning hits in 174 ms, of which 83 ms are the exact FTS5
+search; after an edit only the new chunk is read again (188 ms). The scan itself in an optimized
+build: 1.6 ms for 13,531 chunks, 4.3 ms for 30,000, 14 ms for 60,000. The query's embedding
+comes on top (a local Ollama answers a short query in a few tens of milliseconds; repeated
+queries come from a cache).

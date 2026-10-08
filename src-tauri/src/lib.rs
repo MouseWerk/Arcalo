@@ -37,6 +37,7 @@ mod recovery;
 mod rollback;
 mod secrets;
 mod security;
+mod semantic;
 mod store;
 mod syncmerge;
 mod timeblocks;
@@ -3641,10 +3642,7 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
         // Snippets mark hits with STX/ETX; the model does not need them.
         "search_workspace" => {
             let hits = search::search(&db, &arg("query"), 10)?;
-            pages.extend(hits.iter().filter_map(|h| match h {
-                search::SearchHit::Page { page_id, .. } | search::SearchHit::Note { page_id, .. } => Some(*page_id),
-                search::SearchHit::TimeEntry { .. } => None,
-            }));
+            pages.extend(hits.iter().filter_map(search::SearchHit::page_id));
             serde_json::to_string(&hits)?.replace("\\u0002", "").replace("\\u0003", "")
         }
         "budget_status" => {
@@ -3743,6 +3741,8 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     }
     let model = r.model.clone();
     let local = client.provider().local;
+    // The search by meaning shares these vectors: another model's are dropped first.
+    annalo_core::semantic::ensure_index_model(&state.db(), &annalo_core::semantic::index_key(&r.provider, &model))?;
     if !local && settings.privacy.local_only {
         return Err(Error::State(
             tr!(
@@ -4641,6 +4641,7 @@ pub fn run() {
             app.manage(voice::Voice::default());
             app.manage(calsync::CalendarSync::default());
             app.manage(jira::JiraSync::default());
+            app.manage(semantic::Semantic::default());
             // The window after an update always shows: the user clicked „Installieren“ and waits for it.
             let updated = after_update.is_some();
             let rolled_back = if store::active() { None } else { rollback::take_notice(&state_dir) };
@@ -4711,6 +4712,7 @@ pub fn run() {
             calsync::spawn_scheduler(app.handle().clone());
             timeblocks::spawn_scheduler(app.handle().clone());
             jira::spawn_scheduler(app.handle().clone());
+            semantic::spawn_indexer(app.handle().clone());
             mail::clean_temp(app.handle());
             Ok(())
         })
@@ -4872,6 +4874,9 @@ pub fn run() {
             ai_run_workspace_tool,
             ai_run_system_tool,
             ai_index_pending,
+            semantic::search_semantic,
+            semantic::semantic_status,
+            semantic::semantic_rebuild,
             ai_embedding_status,
             network::network_status,
             network::network_test,

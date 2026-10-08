@@ -562,3 +562,12 @@
 .sec-rekey-pw { display: grid; gap: 4px; margin-top: 12px; }
 .sec-rekey-pw .input { max-width: 320px; }
 .sec-rekey-pw p { margin: 0; }
+
+/* Settings → Suche: the model, the index with its progress, notes between the rows. */
+.search-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 0; font-size: var(--fs-sm); }
+.set-group-body > .search-note + .set-row,
+.set-group-body > .set-row + .search-note { border-top: 1px solid var(--border); }
+.search-model { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: var(--fs-sm); text-align: right; min-width: 0; }
+.search-model-name { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.search-index { display: grid; gap: 8px; width: 100%; min-width: 0; }
+.search-index-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; font-size: var(--fs-sm); color: var(--text-2); }

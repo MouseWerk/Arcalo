@@ -25,6 +25,17 @@ pub enum SearchHit {
         snippet: String,
         score: f64,
     },
+    /// A page found by meaning, not by its words (Suche nach Bedeutung, [`crate::semantic`]).
+    Similar {
+        page_id: i64,
+        title: String,
+        icon: Option<String>,
+        /// The passage whose meaning matched (plain text, shortened).
+        passage: String,
+        /// Cosine similarity of the passage to the query.
+        similarity: f64,
+        score: f64,
+    },
     TimeEntry {
         id: i64,
         netzplan_nr: String,
@@ -37,9 +48,20 @@ pub enum SearchHit {
 impl SearchHit {
     pub fn score(&self) -> f64 {
         match self {
-            SearchHit::Page { score, .. } | SearchHit::Note { score, .. } | SearchHit::TimeEntry { score, .. } => {
-                *score
+            SearchHit::Page { score, .. }
+            | SearchHit::Note { score, .. }
+            | SearchHit::Similar { score, .. }
+            | SearchHit::TimeEntry { score, .. } => *score,
+        }
+    }
+
+    /// The page of a page, note or meaning hit.
+    pub fn page_id(&self) -> Option<i64> {
+        match self {
+            SearchHit::Page { page_id, .. } | SearchHit::Note { page_id, .. } | SearchHit::Similar { page_id, .. } => {
+                Some(*page_id)
             }
+            SearchHit::TimeEntry { .. } => None,
         }
     }
 }
@@ -83,6 +105,11 @@ fn property_terms(db: &Database, input: &str) -> Result<(Vec<(String, String)>, 
     Ok((filters, rest.join(" ")))
 }
 
+/// Whether `input` filters by page properties (`status:offen`).
+pub fn has_property_terms(db: &Database, input: &str) -> Result<bool> {
+    Ok(!property_terms(db, input)?.0.is_empty())
+}
+
 pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>> {
     let (filters, text) = property_terms(db, input)?;
     if !filters.is_empty() {
@@ -107,10 +134,7 @@ pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>
         }
         let ids: std::collections::HashSet<i64> = allowed.iter().map(|p| p.id).collect();
         let mut hits = search(db, &text, limit * 4)?;
-        hits.retain(|h| match h {
-            SearchHit::Page { page_id, .. } | SearchHit::Note { page_id, .. } => ids.contains(page_id),
-            SearchHit::TimeEntry { .. } => false,
-        });
+        hits.retain(|h| h.page_id().is_some_and(|p| ids.contains(&p)));
         hits.truncate(limit);
         return Ok(hits);
     }
@@ -254,7 +278,7 @@ mod tests {
                 .into_iter()
                 .filter_map(|h| match h {
                     SearchHit::Page { title, .. } | SearchHit::Note { title, .. } => Some(title),
-                    SearchHit::TimeEntry { .. } => None,
+                    SearchHit::Similar { .. } | SearchHit::TimeEntry { .. } => None,
                 })
                 .collect();
             t.sort();

@@ -923,6 +923,14 @@ quelle: "[[Konzept]]"
 - **RAG** (`ai/rag.rs`): exact cosine scan over stored embeddings fused with FTS5 BM25
   hits (reciprocal rank fusion), so exact identifiers like `NP-8801` are always found.
   Template pages (the „Vorlagen“ subtree) are never retrieved.
+- **Suche nach Bedeutung** (1.15; `semantic.rs`, shell `src-tauri/src/semantic.rs`): the workspace search uses the
+  same chunks and vectors, no second index. A background indexer embeds pending chunks (partial index
+  `idx_notes_blocks_unembedded`, migration 34) in batches of 16 once typing pauses; the marker `meta.embedding_index`
+  names the model the vectors come from (another model clears them, also for the assistant). Queries go through an
+  in-memory copy (8-bit unit vectors, reloaded only for chunks stored since, `rag::stored_since`) and are fused with
+  the FTS5 hits: title hits and the first three exact hits stay on top, the rest by reciprocal rank; meaning-only
+  hits are `SearchHit::Similar` with their passage. Local first: on by itself only with a local embedding model; a
+  cloud model needs the switch, never gets #privat chunks or a query with a privacy marker, and none with „Nur lokal“.
 - **Citations** (`ai/rag.rs`, `ui/src/lib/citations.ts`, `ui/src/editor/reveal.ts`): `format_context` numbers the retrieved chunks `[1]`, `[2]` … with page title and heading path
   (derived from the headings of the page's earlier chunks) and asks the model to cite with `[n]`. `ai_chat` returns the chunks in that order (`page_id`, `block_id`, text, `heading`),
   so `[n]` is `context[n - 1]`. The UI turns `[n]` into chips (outside code and links); a click runs `revealText`: open the page, wait for its registered editor,

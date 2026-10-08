@@ -102,6 +102,7 @@ pub mod rebrand;
 pub mod recurrence;
 pub mod report;
 pub mod search;
+pub mod semantic;
 pub mod settings;
 pub mod settings_layers;
 pub mod settings_migrate;

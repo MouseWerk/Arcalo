@@ -7,6 +7,7 @@ import { ArrowRight, CalendarCheck2, FilePlus2, Play, Search, Square, Ticket, Ti
 import { api, errorText, on } from "../lib/api";
 import { applyTheme } from "../lib/actions";
 import { hoursFromMinutes } from "../lib/format";
+import { exactOnlyPref } from "../lib/meaningSearch";
 import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem } from "../lib/quicksearch";
 import { timeTrackingOn } from "../lib/timetracking";
 import type { Page, SearchHit } from "../lib/types";
@@ -111,6 +112,12 @@ export function SearchApp() {
       if (!alive) return;
       setHits(h);
       setSearching(false);
+      // Then the list with the pages found by meaning (Suche nach Bedeutung), when it is on.
+      if (!exactOnlyPref())
+        api.searchSemantic(query, 16).then(
+          (r) => alive && r.meaning && setHits(r.hits),
+          () => {},
+        );
     };
     const t = setTimeout(() => api.search(query, 16).then(done, () => done([])), 80);
     return () => {
@@ -250,8 +257,14 @@ export function SearchApp() {
                     <span className="pal-title">
                       {it.title}
                       {it.subtitle && <span className="pal-sub">{it.subtitle}</span>}
+                      {it.passage != null && (
+                        <span className="hit-similar" title={t("search.similarHint")}>
+                          {t("search.similar")}
+                        </span>
+                      )}
                     </span>
                     {it.snippet && <span className="pal-snippet" dangerouslySetInnerHTML={{ __html: snippetHtml(it.snippet) }} />}
+                    {it.passage && <span className="pal-snippet">{it.passage}</span>}
                   </span>
                   {i === sel && <ArrowRight size={14} className="faint" />}
                 </div>

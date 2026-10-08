@@ -7,11 +7,12 @@
 // Slow and failing servers: `modelsDelay` holds the model list back (ms), `firstByteDelay` the
 // head of a chat answer, `wordDelay` paces the stream (default 5 ms per word), `chatError`
 // ({ status, body }) answers every chat with that error, `breakAfter` (n words) ends the stream
-// without its end. `set({...})` changes any of them while the server runs.
+// without its end. `set({...})` changes any of them while the server runs. `embed` (text →
+// vector) replaces the built-in embedding, e.g. `meaningVector` of fake-embeddings.js.
 
 import http from "node:http";
 
-export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null, ...behaviour } = {}) {
+export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models = [], name = kind, respond = null, embed = null, ...behaviour } = {}) {
   const requests = [];
   const opts = { modelsDelay: 0, firstByteDelay: 0, wordDelay: 5, chatError: null, breakAfter: null, ...behaviour };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -47,7 +48,7 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
     if (path === `/v1/models`) return reply(200, { object: "list", data: list.map((id) => ({ id, object: "model" })) });
     if (path === `/v1/embeddings`) {
       const vec = (t) => Array.from({ length: 8 }, (_, i) => ((t.charCodeAt(i % t.length) || 1) % 5) / 5 + (t.length % (i + 3)) / 10);
-      return reply(200, { data: json.input.map((t, index) => ({ index, embedding: vec(t) })) });
+      return reply(200, { data: json.input.map((t, index) => ({ index, embedding: (embed ?? vec)(t) })) });
     }
     if (path === `/v1/chat/completions`) {
       if (!list.includes(json.model)) {
@@ -92,6 +93,8 @@ export function startFakeOpenAI({ port, kind = "openai", apiKey = null, models =
       server = null;
     });
   const chats = () => requests.filter((r) => r.url.startsWith("/v1/chat/completions"));
+  /** Every text sent for an embedding. */
+  const embedded = () => requests.filter((r) => r.url.startsWith("/v1/embeddings")).flatMap((r) => r.body.input);
   const set = (patch) => Object.assign(opts, patch);
-  return open().then(() => ({ requests, chats, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close, set }));
+  return open().then(() => ({ requests, chats, embedded, models: list, url: `http://127.0.0.1:${port}`, apiKey, stop: close, start: open, close, set }));
 }

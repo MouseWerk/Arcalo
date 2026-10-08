@@ -61,6 +61,8 @@ export interface PageCollection {
 export type SearchHit =
   | { kind: "page"; page_id: number; title: string; icon: string | null; score: number }
   | { kind: "note"; page_id: number; title: string; icon: string | null; snippet: string; score: number }
+  /** Found by meaning (Suche nach Bedeutung): the passage that matched. */
+  | { kind: "similar"; page_id: number; title: string; icon: string | null; passage: string; similarity: number; score: number }
   | { kind: "time_entry"; id: number; netzplan_nr: string; vorgang_nr: string | null; snippet: string; score: number };
 
 export type StatusFlag = "running" | "draft" | "released" | "exported";
@@ -348,6 +350,8 @@ export interface Settings {
   ai: AiPrefs;
   notifications: NotificationPrefs;
   privacy: PrivacyPrefs;
+  /** Suche: search by meaning. */
+  search: SearchPrefs;
   start: StartPrefs;
   locale: LocalePrefs;
   /** In-app shortcuts that differ from the defaults: command id → "Ctrl+Shift+D" ("" = off). */
@@ -566,6 +570,10 @@ export interface NotificationPrefs {
   quiet_hours: boolean;
   quiet_from: string;
   quiet_to: string;
+}
+export interface SearchPrefs {
+  /** „Suche nach Bedeutung“; null = automatic (on with a local embedding model). */
+  semantic: boolean | null;
 }
 export interface PrivacyPrefs {
   read_open_page: boolean;
@@ -862,6 +870,26 @@ export interface ConnectionTest {
   error: string | null;
 }
 /** Whether the configured embedding model is used by the assistant's search, and why not. */
+/** Search with meaning: `meaning` false = exact hits only (off, offline, private query). */
+export interface SemanticResult {
+  hits: SearchHit[];
+  meaning: boolean;
+}
+export type SemanticInactive = "no_model" | "provider_off" | "switched_off" | "local_only";
+/** Settings → Suche: search by meaning and its index. */
+export interface SemanticStatus {
+  switch_on: boolean;
+  automatic: boolean;
+  provider: string | null;
+  model: string | null;
+  local: boolean;
+  inactive: SemanticInactive | null;
+  running: boolean;
+  offline: boolean;
+  error: string | null;
+  progress: { done: number; total: number; private_skipped: number };
+  memory: number;
+}
 export interface EmbeddingStatus {
   model: string | null;
   provider: string;

@@ -24,6 +24,8 @@ export interface QsItem {
   subtitle?: string;
   /** FTS snippet with STX/ETX around the hits (see `snippetHtml`). */
   snippet?: string;
+  /** Found by meaning (Suche nach Bedeutung): the passage that matched, plain text. */
+  passage?: string;
   /** Page icon name for page results. */
   icon?: string | null;
   action: QsAction;
@@ -104,6 +106,11 @@ export function quickItems(query: string, ctx: QsContext): QsItem[] {
       const it: QsItem = { id: `page-${h.page_id}`, section: h.kind === "page" ? t("qs.pages") : t("qs.content"), title: h.title, icon: h.icon, snippet: h.kind === "note" ? h.snippet : undefined, action: { type: "page", pageId: h.page_id } };
       byPage.set(h.page_id, it);
       (h.kind === "page" ? pages : passages).push(it);
+    } else if (h.kind === "similar") {
+      if (byPage.has(h.page_id)) continue;
+      const it: QsItem = { id: `page-${h.page_id}`, section: t("qs.content"), title: h.title, icon: h.icon, passage: stripMarkdown(h.passage), action: { type: "page", pageId: h.page_id } };
+      byPage.set(h.page_id, it);
+      passages.push(it);
     } else if (time) {
       entries.push({ id: `te-${h.id}`, section: t("qs.entries"), title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, action: { type: "timesheet" } });
     }

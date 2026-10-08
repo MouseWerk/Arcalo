@@ -299,6 +299,7 @@ fn run(cli: Cli) -> Result<()> {
                 match hit {
                     search::SearchHit::Page { title, .. } => println!("[Seite] {title}"),
                     search::SearchHit::Note { title, snippet, .. } => println!("[Notiz] {title}: {snippet}"),
+                    search::SearchHit::Similar { title, passage, .. } => println!("[ähnlich] {title}: {passage}"),
                     search::SearchHit::TimeEntry { netzplan_nr, vorgang_nr, snippet, .. } => println!(
                         "[Zeit]  {netzplan_nr}{}: {snippet}",
                         vorgang_nr.map(|v| format!("/{v}")).unwrap_or_default()

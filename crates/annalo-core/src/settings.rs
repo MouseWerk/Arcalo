@@ -17,7 +17,7 @@ use crate::gitsync::GitSyncSettings;
 use crate::network::NetworkSettings;
 use crate::prefs::{
     AiPrefs, AppearancePrefs, CapturePrefs, EditorPrefs, LocalePrefs, NotesPrefs, NotificationPrefs, PrivacyPrefs,
-    ROUNDING_STEPS, StartOpen, StartPrefs, TimePrefs, WindowEffect,
+    ROUNDING_STEPS, SearchPrefs, StartOpen, StartPrefs, TimePrefs, WindowEffect,
 };
 use crate::tracking::Thresholds;
 
@@ -113,6 +113,8 @@ pub struct Settings {
     pub notifications: NotificationPrefs,
     /// Datenschutz: what the AI may read, local-only mode.
     pub privacy: PrivacyPrefs,
+    /// Suche: search by meaning.
+    pub search: SearchPrefs,
     /// Start: what opens at start, window restore, start minimized.
     pub start: StartPrefs,
     /// Sprache: language, date and number format.
@@ -591,6 +593,7 @@ impl Default for Settings {
             ai: AiPrefs::default(),
             notifications: NotificationPrefs::default(),
             privacy: PrivacyPrefs::default(),
+            search: SearchPrefs::default(),
             start: StartPrefs::default(),
             locale: LocalePrefs::default(),
             keymap: BTreeMap::new(),
@@ -831,6 +834,7 @@ impl Settings {
                 self.jira = crate::issues::IssueSettings { sites, ..d.jira };
             }
             "keyboard" => self.keymap = d.keymap,
+            "search" => self.search = d.search,
             other => {
                 return Err(crate::error::Error::State(trf!(
                     "Unbekannter Abschnitt „{other}“",

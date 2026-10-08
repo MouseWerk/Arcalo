@@ -28,6 +28,8 @@ import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
 import { insertDrawingInActiveNote } from "../editor/drawings";
 import { snippetHtml } from "../lib/quicksearch";
+import { setExactOnly, useExactOnly, useMeaningSearch } from "../lib/meaningSearch";
+import { stripMarkdown } from "../lib/plaintext";
 import { fuzzy } from "../lib/fuzzy";
 import { keys } from "../lib/shortcut";
 import { inOtherLanguage, t, useT } from "../lib/i18n";
@@ -58,6 +60,8 @@ interface Item {
   title: string;
   subtitle?: string;
   snippet?: string;
+  /** Found by meaning: the passage that matched (plain text). */
+  passage?: string;
   icon: React.ReactNode;
   hint?: string;
   run: (newTab: boolean) => void;
@@ -77,7 +81,6 @@ export function CommandPalette() {
   const timeOn = useTimeTracking();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
-  const [hits, setHits] = useState<SearchHit[]>([]);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const s = useApp.getState;
@@ -86,24 +89,15 @@ export function CommandPalette() {
     if (open) {
       setQ(initial);
       setSel(0);
-      setHits([]);
       setTimeout(() => input.current?.focus(), 10);
     }
   }, [open, initial]);
 
   const query = q.trim();
-  useEffect(() => {
-    if (!open || mode === "pages" || query.length < 2 || query.startsWith("/") || query.startsWith("?")) {
-      setHits([]);
-      return;
-    }
-    let alive = true;
-    const timer = setTimeout(() => api.search(query, 12).then((h) => alive && setHits(h)).catch(() => {}), 90);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [query, open, mode]);
+  const exactOnly = useExactOnly();
+  const searching = open && mode !== "pages" && query.length >= 2 && !query.startsWith("/") && !query.startsWith("?");
+  const found = useMeaningSearch(query, 12, { enabled: searching, exact: exactOnly, delay: 90 });
+  const hits: SearchHit[] = useMemo(() => (searching ? (found.hits ?? []) : []), [searching, found.hits]);
 
   const close = () => s().set({ paletteOpen: false });
 
@@ -354,6 +348,8 @@ export function CommandPalette() {
     for (const h of hits) {
       if (h.kind === "note")
         out.push({ id: `note-${h.page_id}`, section: t("qs.content"), title: h.title, snippet: h.snippet, icon: <PageIcon name={h.icon} size={16} />, run: (nt) => s().openPage(h.page_id, { newTab: nt }) });
+      else if (h.kind === "similar")
+        out.push({ id: `note-${h.page_id}`, section: t("qs.content"), title: h.title, passage: stripMarkdown(h.passage), icon: <PageIcon name={h.icon} size={16} />, run: (nt) => s().openPage(h.page_id, { newTab: nt }) });
       else if (h.kind === "time_entry" && timeOn)
         out.push({ id: `te-${h.id}`, section: t("qs.entries"), title: `${h.netzplan_nr}${h.vorgang_nr ? "/" + h.vorgang_nr : ""}`, snippet: h.snippet, icon: ic(Timer), run: () => s().openTab({ kind: "timesheet" }) });
     }
@@ -444,8 +440,14 @@ export function CommandPalette() {
                     <span className="pal-title">
                       {it.title}
                       {it.subtitle && <span className="pal-sub">{it.subtitle}</span>}
+                      {it.passage != null && (
+                        <span className="hit-similar" title={t("search.similarHint")}>
+                          {t("search.similar")}
+                        </span>
+                      )}
                     </span>
                     {it.snippet && <span className="pal-snippet" dangerouslySetInnerHTML={{ __html: snippetHtml(it.snippet) }} />}
+                    {it.passage && <span className="pal-snippet">{it.passage}</span>}
                   </span>
                   {it.hint ? <kbd>{it.hint}</kbd> : i === sel ? <ArrowRight size={14} className="faint" /> : null}
                 </div>
@@ -458,6 +460,19 @@ export function CommandPalette() {
           <span><kbd>Enter</kbd> {t("palette.footOpen")}</span>
           <span><kbd>{keys("Mod Enter")}</kbd> {t("palette.footNewTab")}</span>
           <span className="grow" />
+          {searching && (found.meaning || exactOnly) && (
+            <button
+              type="button"
+              className={`side-filter ${exactOnly ? "on" : ""}`}
+              aria-pressed={exactOnly}
+              title={t("search.exactOnlyHint")}
+              // The focus stays in the search field.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setExactOnly(!exactOnly)}
+            >
+              {t("search.exactOnly")}
+            </button>
+          )}
           <span className="faint">{t(timeOn ? "palette.footHints" : "tt.paletteFoot")}</span>
         </div>
       </div>

@@ -824,6 +824,17 @@ impl Default for PrivacyPrefs {
     }
 }
 
+// -------------------------------------------------------------------- search
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(default)]
+pub struct SearchPrefs {
+    /// „Suche nach Bedeutung“: the search also finds pages by meaning (`crate::semantic`).
+    /// `None` = automatic: on when the embedding model runs on a local provider.
+    pub semantic: Option<bool>,
+}
+
 // --------------------------------------------------------------------- start
 
 choice!(StartOpen {

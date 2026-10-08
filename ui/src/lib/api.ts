@@ -76,6 +76,10 @@ export const api = {
   taskNextDue: (text: string) => call<string | null>("task_next_due", { text }),
   taskRecurPreview: (recur: T.Recurrence, due: string | null) => call<string[]>("task_recur_preview", { recur, due }),
   search: (query: string, limit = 30) => call<T.SearchHit[]>("search_workspace", { query, limit }),
+  /** Exact and meaning hits (Suche nach Bedeutung); exact only when it is off or offline. */
+  searchSemantic: (query: string, limit = 30) => call<T.SemanticResult>("search_semantic", { query, limit }),
+  semanticStatus: () => call<T.SemanticStatus>("semantic_status"),
+  semanticRebuild: () => call<T.SemanticStatus>("semantic_rebuild"),
   importVault: (path: string) => call<T.ImportReport>("vault_import", { path }),
   cancelVaultImport: () => call<void>("vault_import_cancel"),
   exportVault: (path: string) => call<number>("vault_export", { path }),

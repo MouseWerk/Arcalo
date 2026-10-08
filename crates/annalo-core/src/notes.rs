@@ -357,6 +357,9 @@ impl Database {
             let mut ins = conn.prepare_cached(
                 "INSERT INTO notes_blocks (page_id, position, block_type, content_markdown) VALUES (?1, ?2, 'chunk', ?3)",
             )?;
+            if !fresh.is_empty() {
+                crate::ai::rag::chunks_added();
+            }
             for (pos, chunk) in fresh {
                 ins.execute(params![id, pos, chunk])?;
             }

@@ -43,7 +43,46 @@ pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
 pub fn store_embedding(db: &Database, block_id: i64, embedding: &[f32]) -> Result<()> {
     db.conn()
         .execute("UPDATE notes_blocks SET vector_embedding = ?2 WHERE id = ?1", params![block_id, encode(embedding)])?;
+    stored(block_id);
     Ok(())
+}
+
+/// Chunks whose embedding was stored since the vectors were last cleared, in order, with the
+/// number of clears (`epoch`): the in-memory copy of the search ([`crate::semantic::VectorIndex`])
+/// reads only these rows again instead of every vector of the workspace.
+static STORED: std::sync::Mutex<(u64, Vec<i64>)> = std::sync::Mutex::new((0, Vec::new()));
+
+fn stored(block_id: i64) {
+    STORED.lock().unwrap_or_else(|e| e.into_inner()).1.push(block_id);
+}
+
+/// The clear epoch and the chunks stored since position `from` of it.
+pub(crate) fn stored_since(from: usize) -> (u64, Vec<i64>, usize) {
+    let s = STORED.lock().unwrap_or_else(|e| e.into_inner());
+    (s.0, s.1.get(from..).map(<[i64]>::to_vec).unwrap_or_default(), s.1.len())
+}
+
+/// Removes every embedding (another embedding model, „Index neu aufbauen“); the chunks are
+/// embedded again by the next indexing.
+pub fn clear_embeddings(db: &Database) -> Result<()> {
+    db.conn().execute("UPDATE notes_blocks SET vector_embedding = NULL WHERE vector_embedding IS NOT NULL", [])?;
+    let mut s = STORED.lock().unwrap_or_else(|e| e.into_inner());
+    s.0 += 1;
+    s.1.clear();
+    Ok(())
+}
+
+/// Bumped whenever a page gets chunks without an embedding (a save, an import): the background
+/// indexer of the search wakes up on it.
+static CHUNKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn chunks_added() {
+    CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// See [`CHUNKS`].
+pub fn chunk_generation() -> u64 {
+    CHUNKS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Blocks with text but no embedding yet: `(id, text)`.
@@ -61,12 +100,25 @@ pub fn pending_blocks(db: &Database, limit: usize) -> Result<Vec<(i64, String)>>
 /// (`#privat` → tag `privat`) and pages whose text contains one (see [`super::privacy`]). They
 /// stay unembedded (found by keyword search only) when the embedding model is not on a local provider.
 pub fn pending_public_blocks(db: &Database, limit: usize, markers: &[String]) -> Result<Vec<(i64, String)>> {
+    let (filter, args) = public_filter(markers);
+    let sql = format!(
+        "SELECT b.id, b.content_markdown FROM notes_blocks b JOIN pages p ON p.id = b.page_id
+         WHERE b.vector_embedding IS NULL AND trim(b.content_markdown) <> '' AND p.deleted_at IS NULL{filter}
+         ORDER BY b.id LIMIT {}",
+        limit.max(1)
+    );
+    let mut st = db.conn().prepare(&sql)?;
+    let rows = st
+        .query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// The SQL condition (on `b` and `p`) that leaves out the chunks of private pages, with its arguments.
+fn public_filter(markers: &[String]) -> (String, Vec<String>) {
     let markers: Vec<String> =
         markers.iter().map(|m| m.trim().to_lowercase()).filter(|m| !m.is_empty() && m != "#").collect();
-    let mut sql = String::from(
-        "SELECT b.id, b.content_markdown FROM notes_blocks b JOIN pages p ON p.id = b.page_id
-         WHERE b.vector_embedding IS NULL AND trim(b.content_markdown) <> '' AND p.deleted_at IS NULL",
-    );
+    let mut sql = String::new();
     let mut args: Vec<String> = vec![];
     for m in &markers {
         args.push(m.trim_start_matches('#').to_owned());
@@ -78,12 +130,22 @@ pub fn pending_public_blocks(db: &Database, limit: usize, markers: &[String]) ->
               AND instr(lower(p.content), ?{text}) = 0"
         ));
     }
-    sql.push_str(&format!(" ORDER BY b.id LIMIT {}", limit.max(1)));
-    let mut st = db.conn().prepare(&sql)?;
-    let rows = st
-        .query_map(rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+    (sql, args)
+}
+
+/// Number of chunks without an embedding: all of them, and those outside private pages
+/// (`markers`, see [`pending_public_blocks`]).
+pub fn pending_counts(db: &Database, markers: &[String]) -> Result<(u64, u64)> {
+    const BASE: &str = "SELECT count(*) FROM notes_blocks b JOIN pages p ON p.id = b.page_id
+         WHERE b.vector_embedding IS NULL AND trim(b.content_markdown) <> '' AND p.deleted_at IS NULL";
+    let all: i64 = db.conn().query_row(BASE, [], |r| r.get(0))?;
+    let (filter, args) = public_filter(markers);
+    let public: i64 = if filter.is_empty() {
+        all
+    } else {
+        db.conn().query_row(&format!("{BASE}{filter}"), rusqlite::params_from_iter(args.iter()), |r| r.get(0))?
+    };
+    Ok((all.max(0) as u64, public.max(0) as u64))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -224,6 +286,8 @@ pub fn retrieve(
                 None => continue,
             },
             SearchHit::TimeEntry { id, .. } => Key::Entry(id),
+            // Not returned by the keyword search.
+            SearchHit::Similar { .. } => continue,
         };
         *fused.entry(key).or_default() += 1.0 / (RRF_K + rank as f64 + 1.0);
     }

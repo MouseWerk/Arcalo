@@ -26,6 +26,7 @@ import { withHint } from "../lib/keymap";
 import { keys } from "../lib/shortcut";
 import { newPageFromTemplate } from "./Templates";
 import { stripMarkdown } from "../lib/plaintext";
+import { setExactOnly, useExactOnly, useMeaningSearch, type PageHit } from "../lib/meaningSearch";
 import { treeWindow } from "../lib/treeWindow";
 import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWithin, rangeIds, renameProblem, sortNodes, topSelected, type FolderStyle } from "../lib/filing";
 import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
@@ -238,7 +239,8 @@ function SidebarFooter() {
 function SearchPane() {
   const tr = useT();
   const [q, setQ] = useState(() => sessionStorage.getItem("annalo.sidesearch") ?? "");
-  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const exactOnly = useExactOnly();
+  const { hits, meaning } = useMeaningSearch(q, 60, { enabled: q.trim().length >= 2, exact: exactOnly, delay: 120 });
   const input = useRef<HTMLInputElement>(null);
   const s = useApp.getState;
   useEffect(() => {
@@ -250,21 +252,17 @@ function SearchPane() {
   }, []);
   useEffect(() => {
     sessionStorage.setItem("annalo.sidesearch", q);
-    if (q.trim().length < 2) return setHits(null);
-    let alive = true;
-    const t = setTimeout(() => api.search(q, 60).then((h) => alive && setHits(h)).catch(() => {}), 120);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
   }, [q]);
-  const pageHits = (hits ?? []).filter((h) => h.kind !== "time_entry") as Extract<SearchHit, { page_id: number }>[];
-  const byPage = new Map<number, { title: string; icon: string | null; snippets: string[] }>();
+  const pageHits = (hits ?? []).filter((h) => h.kind !== "time_entry") as PageHit[];
+  // Pages in the order of the hits; a page found by meaning carries the passage that matched.
+  const byPage = new Map<number, { title: string; icon: string | null; snippets: string[]; passage?: string }>();
   for (const h of pageHits) {
     const e = byPage.get(h.page_id) ?? { title: h.title, icon: h.icon, snippets: [] };
     if (h.kind === "note") e.snippets.push(h.snippet);
+    if (h.kind === "similar") e.passage = h.passage;
     byPage.set(h.page_id, e);
   }
+  const similar = [...byPage.values()].filter((p) => p.passage != null).length;
   const timeOn = useTimeTracking();
   const entries = (timeOn ? (hits ?? []) : []).filter((h) => h.kind === "time_entry") as Extract<SearchHit, { kind: "time_entry" }>[];
   return (
@@ -289,19 +287,45 @@ function SearchPane() {
       </div>
       <div className="sidebar-scroll">
         {hits && (
-          <div className="side-result-count" role="status">
-            {byPage.size} {byPage.size === 1 ? tr("sidebar.page") : tr("sidebar.pages")}
-            {entries.length > 0 && `, ${entries.length} ${tr("sidebar.timeEntries")}`}
+          <div className="side-result-head">
+            <div className="side-result-count" role="status">
+              {byPage.size} {byPage.size === 1 ? tr("sidebar.page") : tr("sidebar.pages")}
+              {entries.length > 0 && `, ${entries.length} ${tr("sidebar.timeEntries")}`}
+              {similar > 0 && ` · ${tr("search.similarCount", { n: similar })}`}
+            </div>
+            {/* Only where search by meaning took part (or was switched off here). */}
+            {(meaning || exactOnly) && (
+              <button
+                type="button"
+                className={`side-filter ${exactOnly ? "on" : ""}`}
+                aria-pressed={exactOnly}
+                title={tr("search.exactOnlyHint")}
+                onClick={() => setExactOnly(!exactOnly)}
+              >
+                {tr("search.exactOnly")}
+              </button>
+            )}
           </div>
         )}
         {[...byPage.entries()].map(([id, p]) => (
-          <button key={id} type="button" className="side-result" onClick={(e) => s().openPage(id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey })}>
+          <button
+            key={id}
+            type="button"
+            className={`side-result ${p.passage != null ? "similar" : ""}`}
+            onClick={(e) => s().openPage(id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey })}
+          >
             <span className="side-result-title">
-              <PageIcon name={p.icon} size={14} /> {p.title}
+              <PageIcon name={p.icon} size={14} /> <span className="side-result-name">{p.title}</span>
+              {p.passage != null && (
+                <span className="hit-similar" title={tr("search.similarHint")}>
+                  {tr("search.similar")}
+                </span>
+              )}
             </span>
             {p.snippets.slice(0, 2).map((sn, i) => (
               <span key={i} className="side-result-snippet" dangerouslySetInnerHTML={{ __html: markHits(sn) }} />
             ))}
+            {p.passage != null && p.snippets.length === 0 && <span className="side-result-snippet">{stripMarkdown(p.passage)}</span>}
           </button>
         ))}
         {entries.map((h) => (

@@ -144,6 +144,43 @@ body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 .side-search:focus-within { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
 .side-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; }
 .side-result-count { padding: 2px 8px 8px; font-size: var(--fs-xs); color: var(--text-3); }
+.side-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.side-result-head .side-result-count { min-width: 0; }
+/* „Nur exakte Treffer“: a quiet toggle; on = a neutral tint and the full text color. */
+.side-filter {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.side-filter:hover { background: var(--bg-hover); color: var(--text-2); }
+.side-filter.on { background: var(--bg-active); color: var(--text); font-weight: var(--fw-medium); }
+.side-filter:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.side-result-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A hit found by meaning: labelled quietly, its passage in the snippet line. */
+.hit-similar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--r-2xs);
+  background: var(--bg-hover);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
+  vertical-align: 1px;
+}
+.side-result-title .hit-similar { margin-left: 0; }
 .side-result {
   display: grid;
   gap: 3px;
