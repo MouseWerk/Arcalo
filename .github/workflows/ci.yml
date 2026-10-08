@@ -60,6 +60,9 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --prefix ui
+      # File handling differs on Windows (sharing, flush rights): the backup and encryption tests run here too.
+      - name: Core tests on Windows (backups, encryption)
+        run: cargo test -p annalo-core -- backup cipher
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri

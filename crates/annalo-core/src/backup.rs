@@ -105,7 +105,12 @@ fn vacuum_into(db: &Database, path: &Path) -> Result<()> {
         let _ = fs::remove_file(&part);
         return Err(e.into());
     }
-    let res = fs::File::open(&part).and_then(|f| f.sync_all()).and_then(|()| fs::rename(&part, path));
+    // Windows flushes only handles opened for writing (FlushFileBuffers): a read-only handle is denied.
+    let res = fs::OpenOptions::new()
+        .write(true)
+        .open(&part)
+        .and_then(|f| f.sync_all())
+        .and_then(|()| fs::rename(&part, path));
     if let Err(e) = res {
         let _ = fs::remove_file(&part);
         return Err(Error::file(path, e));

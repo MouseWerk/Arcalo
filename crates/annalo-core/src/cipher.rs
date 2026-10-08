@@ -368,7 +368,8 @@ pub fn verify(orig: &Path, orig_key: Option<&DbKey>, copy: &Path, copy_key: Opti
 }
 
 fn fsync(path: &Path) {
-    if let Ok(f) = fs::OpenOptions::new().read(true).open(path) {
+    // Windows flushes only handles opened for writing.
+    if let Ok(f) = fs::OpenOptions::new().write(true).open(path) {
         let _ = f.sync_all();
     }
 }
