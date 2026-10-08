@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { contrast } from "./color";
-import { BUILTIN_THEMES, contrastChecks, customDef, effectiveAccent, findTheme, isDarkColor, themeCss, themeTokens } from "./themes";
+import { BUILTIN_THEMES, contrastChecks, customDef, effectiveAccent, findTheme, isDarkColor, themeCss, themeTokens, withAccent } from "./themes";
 import type { CustomTheme } from "./types";
 
 // Parses "rgb(r g b / a)" or "#rrggbb" over a background into a solid color.
@@ -58,6 +58,27 @@ describe("color themes", () => {
       // Borders are visible, but quieter than text.
       expect(contrast(k["--border-strong"], canvas), `${t.id} border`).toBeGreaterThan(1.15);
       expect(k["color-scheme"]).toBe(t.dark ? "dark" : "light");
+    }
+  });
+
+  it("focus and selection are neutral in every theme, with a visible focus ring", () => {
+    const chroma = (hex: string) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      return Math.max(...c) - Math.min(...c);
+    };
+    for (const t of BUILTIN_THEMES) {
+      for (const k of [themeTokens(t), withAccent(t, "#e11d48"), withAccent(t, "#16a34a")]) {
+        const focus = k["--border-focus"];
+        expect(focus, `${t.id} focus is not the accent`).not.toBe(k["--accent"]);
+        // Gray, or the theme's own muted tone: clearly less colorful than the accent.
+        expect(chroma(focus), `${t.id} focus chroma`).toBeLessThan(Math.max(48, chroma(k["--accent"]) / 2));
+        for (const bg of ["--bg-canvas", "--bg-sidebar", "--bg-raised", "--bg-overlay"]) {
+          expect(contrast(focus, k[bg]), `${t.id} focus ring on ${bg}`).toBeGreaterThanOrEqual(3);
+        }
+        expect(k["--bg-selected"].startsWith(k["--bg-hover"].split(" /")[0]), `${t.id} selection is a text tint`).toBe(true);
+      }
+      // High contrast themes add a neutral edge to selected rows; the others none.
+      expect(themeTokens(t)["--selected-ring"].includes("inset"), t.id).toBe(!!t.fixedAccent);
     }
   });
 
