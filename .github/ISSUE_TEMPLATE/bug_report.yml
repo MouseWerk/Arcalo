@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in Arcalo does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check the [troubleshooting page](https://arcalo.mousewerk.de/docs/help/troubleshooting/) first.
+        Du kannst gern auf Deutsch schreiben.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: A short description of the problem. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Arcalo version
+      description: Settings → About shows it.
+      placeholder: "1.14.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt (optional)
+      description: |
+        From Settings → Logs. Please remove anything private (names, page titles, addresses) before you post it.
+        Bitte entferne vorher alles Private (Namen, Seitentitel, Adressen).
+      render: text

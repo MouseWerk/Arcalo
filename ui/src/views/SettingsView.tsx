@@ -26,7 +26,7 @@ import { compareVersions, HIGHLIGHTS, knownVersions } from "../lib/highlights";
 import { useT, t, type TKey } from "../lib/i18n";
 import { COMMANDS, comboLabel, effectiveKeymap } from "../lib/keymap";
 import type { AfterRestore, BackupInfo, MirrorStatus, DataDirStatus, DesktopInfo, GitSyncMode, GitSyncSettings, GitSyncStatus, GitTest, Page, Settings, SettingsScope, UpdateManagedField, UpdateMode, UpdatePrefs } from "../lib/types";
-import { CommitInput, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
+import { CommitInput, DocLink, FilterContext, Group, NumberInput, PathValue, Row, StatusNote, matches, useNoneBelow } from "./settings/common";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { EditorSection } from "./settings/EditorSection";
 import { LocaleSection, NotesPrefGroups, NotificationsSection, PrivacySection, StartSection, TimePrefGroups } from "./settings/PrefSections";
@@ -41,7 +41,8 @@ import { CalendarSection } from "./settings/CalendarSection";
 import { VoiceSection } from "./settings/VoiceSection";
 import { JiraSection } from "./settings/JiraSection";
 import { FilingSection } from "./settings/FilingSection";
-import { FolderTree, LockKeyhole } from "lucide-react";
+import { BookOpen, Bug, FolderTree, LockKeyhole, MessageSquareText } from "lucide-react";
+import { openDocs, openIssueForm } from "../components/Help";
 import { SecuritySection } from "./settings/SecuritySection";
 import { BriefingSection } from "./settings/BriefingSection";
 import { BackupDestinationsGroup, BackupList } from "./settings/BackupDestinations";
@@ -650,6 +651,7 @@ function AiSection({ draft, update }: { draft: Settings; update: (p: Partial<Set
       <header className="settings-head">
         <h1>{t("set.ai.title")}</h1>
         <p>{t("set.ai.intro")}</p>
+        <DocLink topic="aiProviders" />
       </header>
 
       <AiProvidersSection draft={draft} update={update} />
@@ -996,6 +998,7 @@ function BackupSection({ draft, update }: { draft: Settings; update: (p: Partial
       <header className="settings-head">
         <h1>{t("set.backup.title")}</h1>
         <p>{t("bdest.contents")}</p>
+        <DocLink topic="backups" />
       </header>
       <Group title={t("set.backup.auto")} description={t("set.backup.autoDesc")}>
         <Row
@@ -1224,7 +1227,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
 
   const fallback = status?.last_branch && status.last_branch !== git.branch ? status.last_branch : null;
   return (
-    <Group title={t("set.git.title")} description={t("set.git.desc")}>
+    <Group title={t("set.git.title")} description={t("set.git.desc")} help="gitSync">
       <Row label={t("set.git.title")} description={git.remote_url ? undefined : t("set.git.urlFirst")}>
         <Switch label={t("set.git.title")} checked={git.enabled} onChange={(v) => setGit({ enabled: v })} />
       </Row>
@@ -1613,7 +1616,7 @@ function StoreUpdatesGroup() {
   const t = useT();
   const open = () => api.storeOpenUpdates().catch((e) => useApp.getState().error(t("upd.storeOpenFailed"), e));
   return (
-    <Group title={t("set.about.updates")} description={t("upd.storeDesc")}>
+    <Group title={t("set.about.updates")} description={t("upd.storeDesc")} help="updates">
       <Row stack label={t("upd.status")} description={<StatusNote tone="info" className="update-state">{t("upd.store")}</StatusNote>}>
         <div className="set-actions">
           <Button variant="secondary" icon={ExternalLink} onClick={() => void open()}>
@@ -1675,6 +1678,7 @@ function UpdatesGroup({ draft, update }: { draft: Settings; update: (p: Partial<
     <Group
       title={t("set.about.updates")}
       description={status.package && !status.portable ? t("upd.packageDesc") : status.portable ? t("upd.portableDesc") : mode === "auto" ? t("upd.descAuto") : t("upd.desc")}
+      help="updates"
     >
       {anyManaged && (
         <div className="update-managed" role="note">
@@ -1883,6 +1887,28 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
       </header>
       <UpdatesGroup draft={draft} update={update} />
       <WhatsNewGroup />
+      <Group title={t("help.group")}>
+        <Row label={t("help.docs")} description={t("help.docsDesc")}>
+          <div className="set-actions">
+            <Button icon={BookOpen} className="about-help-docs" onClick={() => void openDocs()}>
+              {t("help.openDocs")}
+            </Button>
+            <Button variant="ghost" className="about-help-trouble" onClick={() => void openDocs("troubleshooting")}>
+              {t("help.troubleshooting")}
+            </Button>
+          </div>
+        </Row>
+        <Row label={t("help.feedbackLabel")} description={t("help.feedbackDesc")}>
+          <div className="set-actions">
+            <Button icon={MessageSquareText} className="about-help-feedback" onClick={() => void openIssueForm("feedback")}>
+              {t("help.feedback")}
+            </Button>
+            <Button variant="ghost" icon={Bug} className="about-help-bug" onClick={() => void openIssueForm("bug")}>
+              {t("help.bug")}
+            </Button>
+          </div>
+        </Row>
+      </Group>
       <Group title={t("set.about.data")}>
         {status?.portable && (
           <Row

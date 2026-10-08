@@ -14,7 +14,7 @@ import type { CalendarSettings, CalendarSourceInfo, CalendarStatus } from "../..
 import { MailGroup } from "./MailGroup";
 import { OutlookCalendars } from "./OutlookCalendars";
 import { outlookSummary } from "../../lib/outlookcal";
-import { Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
+import { DocLink, Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
 
 const COLORS = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#ca8a04"];
 const COLOR_NAMES: TKey[] = ["calset.color.blue", "calset.color.petrol", "calset.color.violet", "calset.color.orange", "calset.color.pink", "calset.color.green", "calset.color.cyan", "calset.color.gold"];
@@ -95,6 +95,7 @@ export function CalendarSection({ draft, update }: SectionProps) {
       <header className="settings-head">
         <h1>{t("nav.calendar")}</h1>
         <p>{t("calset.intro")}</p>
+        <DocLink topic="calendars" />
       </header>
 
       {status?.outlook_available && (

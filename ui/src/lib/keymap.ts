@@ -43,6 +43,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "full_width", label: "cmd.fullWidth", combo: "Ctrl+Shift+L" },
   { id: "present", label: "cmd.present", combo: "Ctrl+Shift+P" },
   { id: "settings", label: "cmd.settings", combo: "Ctrl+," },
+  { id: "help", label: "cmd.help", combo: "F1" },
 ];
 
 /**

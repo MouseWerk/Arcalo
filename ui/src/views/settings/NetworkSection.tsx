@@ -112,7 +112,7 @@ export function NetworkSection({ draft, update }: SectionProps) {
 
   return (
     <>
-      <SectionHead title={t("set.network.title")} intro={t("set.network.intro")} />
+      <SectionHead title={t("set.network.title")} intro={t("set.network.intro")} help="network" />
       {policy && policy.origins.length > 0 && (
         <Unfiltered>
           <p className="net-policy small">

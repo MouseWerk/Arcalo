@@ -1,0 +1,30 @@
+name: Feedback or idea
+description: An idea, a wish or what you think about Arcalo.
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! Du kannst gern auf Deutsch schreiben.
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your idea or feedback
+      description: What would make Arcalo better for you, or what works well?
+    validations:
+      required: true
+  - type: textarea
+    id: usage
+    attributes:
+      label: What do you use Arcalo for?
+      description: Optional. A sentence or two helps to weigh the idea.
+  - type: input
+    id: version
+    attributes:
+      label: Arcalo version
+      placeholder: "1.14.0"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 24H2"

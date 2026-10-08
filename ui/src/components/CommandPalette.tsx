@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
   LayoutDashboard, ClipboardList, FileBarChart, Reply,
-  Copy, Pause, Pin, PinOff,
+  Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
 import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
@@ -46,6 +46,7 @@ import { openLinkGroup, openQuickLinkAt } from "./QuickLinks";
 import { iconOf } from "./LinkDialogs";
 import { openBookmarkImport } from "./BookmarkImport";
 import { startFirstRun } from "../onboarding/state";
+import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help";
 import { newChat, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
 
@@ -284,6 +285,11 @@ export function CommandPalette() {
       { id: "attachments", title: t("cmd.attachments"), subtitle: t("cmd.attachmentsSub"), icon: ic(Paperclip), run: () => s().openTab({ kind: "attachments" }) },
       { id: "settings", title: t("cmd.settings"), icon: ic(Settings), hint: hint("settings"), run: () => s().openTab({ kind: "settings" }) },
       { id: "intro", title: t("cmd.intro"), subtitle: t("cmd.introSub"), icon: ic(Compass), run: () => startFirstRun("rerun") },
+      { id: "help-docs", title: t("cmd.help"), subtitle: t("cmd.helpSub"), icon: ic(BookOpen), hint: hint("help"), run: () => void openDocs() },
+      { id: "help-shortcuts", title: t("cmd.shortcuts"), icon: ic(Keyboard), run: () => showShortcuts() },
+      { id: "help-notes", title: t("cmd.releaseNotes"), icon: ic(ScrollText), run: () => void showVersionNotes() },
+      { id: "help-feedback", title: t("cmd.feedback"), subtitle: t("cmd.feedbackSub"), icon: ic(MessageSquareText), run: () => void openIssueForm("feedback") },
+      { id: "help-bug", title: t("cmd.bugReport"), subtitle: t("cmd.feedbackSub"), icon: ic(Bug), run: () => void openIssueForm("bug") },
       { id: "sidebar", title: t("cmd.toggleSidebar"), icon: ic(PanelLeft), hint: hint("toggle_sidebar"), run: () => { const v = !s().sidebarOpen; s().set({ sidebarOpen: v }); savePref("annalo.sidebar", v); } },
       { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("annalo.panel", v); } },
       { id: "focus", title: t("cmd.focusMode"), icon: ic(Focus), hint: hint("focus_mode"), run: () => s().set({ focusMode: !s().focusMode }) },

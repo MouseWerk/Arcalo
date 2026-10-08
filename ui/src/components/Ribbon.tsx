@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { useApp, savePref } from "../store/app";
 import { IconButton } from "./ui";
 import { QuickLinks } from "./QuickLinks";
+import { HelpButton } from "./Help";
 import { sidebarShown, toggleSidebar, useNarrowWindow } from "../lib/layout";
 import { useTimeTracking } from "../lib/timetracking";
 import { createSubpage } from "../views/PageView";
@@ -133,6 +134,7 @@ export function Ribbon() {
       <span className="ribbon-sep" />
       <QuickLinks />
       <span className="grow" />
+      <HelpButton />
       <IconButton icon={Settings} label={withHint(t("ribbon.settings"), "settings")} active={tab?.kind === "settings"} aria-current={tab?.kind === "settings" ? "page" : undefined} tooltipSide={side} size="lg" onClick={() => s().openTab({ kind: "settings" })} />
     </nav>
   );

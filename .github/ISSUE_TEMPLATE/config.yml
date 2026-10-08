@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://arcalo.mousewerk.de/docs/
+    about: Guides to every feature of Arcalo.
+  - name: Dokumentation (Deutsch)
+    url: https://arcalo.mousewerk.de/de/docs/
+    about: Anleitungen zu allen Funktionen von Arcalo.

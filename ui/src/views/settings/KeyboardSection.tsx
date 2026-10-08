@@ -30,7 +30,7 @@ export function KeyboardSection({ draft, update }: SectionProps) {
 
   return (
     <>
-      <SectionHead title={t("set.keys.title")} intro={t("set.keys.intro")} />
+      <SectionHead title={t("set.keys.title")} intro={t("set.keys.intro")} help="shortcuts" />
       <Group title={t("set.keys.commands")} description={t("set.keys.commandsDesc")}>
         {/* Time tracking off: the timer shortcut is not listed (it does nothing then). */}
         {COMMANDS.filter((c) => timeTrackingOn(draft) || !TIME_SHORTCUTS.has(c.id)).map((c) => {

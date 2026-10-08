@@ -87,6 +87,14 @@
 .set-group-head { display: grid; gap: 3px; padding: 0 2px; }
 .set-group-head h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text); }
 .set-group-head p { margin: 0; max-width: 660px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.5; }
+/* „Mehr in der Doku“ under a section's intro or a group's description: a quiet text link. */
+.doc-link {
+  justify-self: start; display: inline-flex; align-items: center; gap: 5px; margin-left: -6px; padding: 2px 6px;
+  border: 0; border-radius: var(--r-xs); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-sm); line-height: 1.5; cursor: pointer;
+}
+.doc-link svg { flex: none; }
+.doc-link:hover { background: var(--bg-hover); color: var(--text); }
+.doc-link:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .set-group-body {
   container: setcard / inline-size;
   display: grid;

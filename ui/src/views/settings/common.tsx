@@ -2,12 +2,14 @@
 // number and text inputs that commit on blur.
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Copy, Info, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Copy, Info, Loader2, XCircle } from "lucide-react";
 import { Badge, IconButton, Input } from "../../components/ui";
 import { formatShortcut, recordShortcut } from "../../lib/shortcut";
 import { IS_MAC } from "../../lib/platform";
 import { useT } from "../../lib/i18n";
 import type { Settings } from "../../lib/types";
+import type { HelpTopic } from "../../lib/helpLinks";
+import { openDocs } from "../../components/Help";
 
 export type Update = (p: Partial<Settings>) => void;
 export interface SectionProps {
@@ -58,7 +60,18 @@ export function useNoneBelow(ref: React.RefObject<HTMLElement | null>, selector:
   return none;
 }
 
-export function Group({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+/** „Mehr in der Doku“: the documentation page of a settings topic, opened in the browser. */
+export function DocLink({ topic }: { topic: HelpTopic }) {
+  const t = useT();
+  return (
+    <button type="button" className="doc-link" data-topic={topic} onClick={() => void openDocs(topic)}>
+      <BookOpen size={13} strokeWidth={1.75} aria-hidden />
+      {t("help.moreInDocs")}
+    </button>
+  );
+}
+
+export function Group({ title, description, help, children }: { title: string; description?: string; help?: HelpTopic; children: React.ReactNode }) {
   const query = useContext(FilterContext);
   const body = useRef<HTMLDivElement>(null);
   // A matching group title shows the whole group.
@@ -69,6 +82,7 @@ export function Group({ title, description, children }: { title: string; descrip
       <div className="set-group-head">
         <h2>{title}</h2>
         {description && <p>{description}</p>}
+        {help && <DocLink topic={help} />}
       </div>
       <div className="set-group-body" ref={body}>
         <FilterContext.Provider value={titleHit ? "" : query}>{children}</FilterContext.Provider>
@@ -225,11 +239,12 @@ export function StatusNote({ tone = "neutral", children, className = "" }: { ton
   );
 }
 
-export function SectionHead({ title, intro }: { title: string; intro?: string }) {
+export function SectionHead({ title, intro, help }: { title: string; intro?: string; help?: HelpTopic }) {
   return (
     <header className="settings-head">
       <h1>{title}</h1>
       {intro && <p>{intro}</p>}
+      {help && <DocLink topic={help} />}
     </header>
   );
 }

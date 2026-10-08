@@ -10,6 +10,7 @@ import { ConfirmHost, StatusBar, Toasts } from "./components/Shell";
 import { VoiceBar } from "./components/VoiceBar";
 import { TemplateHost } from "./components/Templates";
 import { Ribbon, openAssistant, openToday } from "./components/Ribbon";
+import { openDocs } from "./components/Help";
 import { Workspace } from "./components/Workspace";
 import { Resizer, readSize } from "./components/Resizer";
 import { LinkPreview } from "./components/LinkPreview";
@@ -539,6 +540,7 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
   full_width: () => requestPageCommand("full"),
   focus_mode: () => useApp.getState().set({ focusMode: !useApp.getState().focusMode }),
   settings: () => useApp.getState().openTab({ kind: "settings" }),
+  help: () => void openDocs(),
   present: () => {
     const tab = activeTab();
     if (tab?.kind === "page" && tab.pageId != null) void startPresentation(tab.pageId);

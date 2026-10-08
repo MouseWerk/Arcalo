@@ -4044,6 +4044,8 @@ struct AppInfo {
     platform: &'static str,
     /// Portable mode (data next to the executable, see `portable.rs`).
     portable: bool,
+    /// Short system name for the issue forms („Windows 11 24H2“).
+    os_name: String,
 }
 
 #[tauri::command]
@@ -4053,6 +4055,7 @@ fn app_info(state: State<AppState>) -> AppInfo {
         data_dir: state.data_dir.display().to_string(),
         platform: std::env::consts::OS,
         portable: portable::active(),
+        os_name: diagnostics::os_name(),
     }
 }
 

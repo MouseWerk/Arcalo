@@ -78,6 +78,48 @@ fn os_version() -> String {
     std::env::consts::OS.to_owned()
 }
 
+/// A short name of the system for the issue forms of „Feedback geben“ and „Fehler melden“
+/// ("Windows 11 24H2", "macOS 15.1", "Ubuntu 24.04.1 LTS"): no edition, build or kernel.
+pub fn os_name() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        pretty_name(&std::fs::read_to_string("/etc/os-release").unwrap_or_default()).unwrap_or_else(|| "Linux".into())
+    }
+    #[cfg(windows)]
+    {
+        use winreg::RegKey;
+        use winreg::enums::HKEY_LOCAL_MACHINE;
+        let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+        let get = |name: &str| key.as_ref().ok().and_then(|k| k.get_value::<String, _>(name).ok()).unwrap_or_default();
+        windows_name(&get("CurrentBuild"), &get("DisplayVersion"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("sw_vers").arg("-productVersion").output();
+        let version = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default();
+        format!("macOS {version}").trim_end().to_owned()
+    }
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    std::env::consts::OS.to_owned()
+}
+
+/// `PRETTY_NAME` of an os-release file.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn pretty_name(os_release: &str) -> Option<String> {
+    os_release
+        .lines()
+        .find_map(|l| l.strip_prefix("PRETTY_NAME="))
+        .map(|s| s.trim().trim_matches('"').to_owned())
+        .filter(|s| !s.is_empty())
+}
+
+/// Windows 11 still calls itself „Windows 10“ in `ProductName`; the build tells them apart.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_name(build: &str, display_version: &str) -> String {
+    let major = if build.trim().parse::<u32>().is_ok_and(|b| b >= 22000) { "11" } else { "10" };
+    format!("Windows {major} {}", display_version.trim()).trim_end().to_owned()
+}
+
 /// The entries of the bundle (name, bytes).
 pub fn contents(
     info: Value,
@@ -187,6 +229,16 @@ mod tests {
         assert!(text.contains("[git] ok"));
         assert!(!dir.join("diag.zip.part").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_system_name_is_short() {
+        assert_eq!(windows_name("26100", "24H2"), "Windows 11 24H2");
+        assert_eq!(windows_name("19045", "22H2"), "Windows 10 22H2");
+        assert_eq!(windows_name("", ""), "Windows 10");
+        let release = "NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nID=ubuntu\n";
+        assert_eq!(pretty_name(release).as_deref(), Some("Ubuntu 24.04.1 LTS"));
+        assert_eq!(pretty_name("ID=arch\n"), None);
     }
 
     #[test]

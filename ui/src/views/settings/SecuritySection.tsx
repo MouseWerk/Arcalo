@@ -56,7 +56,7 @@ function EncryptionGroup({
   const encrypted = status.state === "encrypted";
   const pending = status.pending && status.pending.step !== "swapped";
   return (
-    <Group title={t("sec.db.title")} description={t("sec.db.desc")}>
+    <Group title={t("sec.db.title")} description={t("sec.db.desc")} help="encryption">
       <Row label={t("sec.db.state")} description={encrypted ? t("sec.db.onDesc") : t("sec.db.offDesc")}>
         <div className="sec-state" data-state={status.state}>
           <Badge tone={encrypted ? "success" : "neutral"}>{encrypted ? t("sec.db.on") : t("sec.db.off")}</Badge>
