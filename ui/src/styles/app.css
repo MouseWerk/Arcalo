@@ -2381,6 +2381,44 @@ body.presenter-window .presenter { height: 100vh; }
   .rv-callout-actions { grid-column: 1 / -1; }
 }
 
+/* ---- Wochenrückblick (views/WeekReviewView.tsx; the cards are the Tagesrückblick's) ---- */
+.wr-view .rv-nav .wr-this-week { min-width: 86px; }
+.wr-setup { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: start; }
+.wr-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.wr-day { display: grid; gap: 5px; align-content: start; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast); }
+.wr-day:hover { background: var(--bg-hover); }
+.wr-day:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.wr-day.today { background: var(--bg-current); }
+.wr-day.today .wr-day-name { color: var(--text); font-weight: var(--fw-semibold); }
+.wr-day.future { color: var(--text-2); }
+.wr-day.future .wr-day-value { color: var(--text-3); }
+.wr-day-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.wr-day-name { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-2); white-space: nowrap; }
+.wr-day-warn { flex: none; color: var(--warning); }
+.wr-day-value { font-size: var(--fs-md); font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wr-day-of { font-weight: var(--fw-normal); color: var(--text-3); }
+.wr-day-bar { display: block; height: 4px; border-radius: var(--r-2xs); background: var(--bg-active); overflow: hidden; }
+.wr-day-bar > span { display: block; height: 100%; border-radius: var(--r-2xs); background: var(--k-time); }
+.wr-day-bar > span.over { background: var(--success); }
+.wr-day-sub { font-size: var(--fs-xs); color: var(--text-3); }
+.wr-day.off .wr-day-sub { color: var(--text-2); }
+/* Rows inside a group take the full width (the group is a block, a button would shrink to its text). */
+.wr-view .rv-group > .rv-row { width: 100%; }
+.wr-meeting-day + .wr-meeting-day { margin-top: 4px; }
+.wr-page { grid-template-columns: minmax(0, 1fr) auto; }
+.calv-week-review { display: inline-flex; flex: none; align-items: center; gap: 5px; align-self: center; padding: 2px 8px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; cursor: pointer; }
+.calv-week-review:hover { background: var(--bg-hover); color: var(--text); }
+.calv-week-review:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+@container pane (max-width: 1000px) {
+  .wr-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container pane (max-width: 900px) {
+  .calv-week-review-label { display: none; }
+}
+@container pane (max-width: 560px) {
+  .wr-days { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ---- E-Mail als Aufgabe / Notiz (components/MailImport.tsx) ---- */
 .mailx { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .mailx-small { font-size: var(--fs-xs); line-height: 1.5; margin: 0; }

@@ -612,6 +612,28 @@ defineWidget({
   `notifications.day_review_time` (default 17:30) on workdays, once a day (meta `day_review.day`), not in quiet hours; the
   next focus of the main window emits `nav://day-review`.
 
+## Wochenrückblick (`weekreview.rs` in core and shell, `ui/src/views/WeekReviewView.tsx`, `ui/src/lib/weekreview.ts`)
+
+- `week_review(date)` (`weekreview::week_review`): the ISO week (Monday to Sunday) of `date`, built from the seven
+  `dayreview::day_review` calls, so a day means the same in both views (DST days included). Targets per day follow the
+  balance (`worktime::weekday_minutes` and `day_target`: weekday targets, public holidays of the chosen state, absences);
+  days after today have their target but nothing missing. Netzpläne/Vorgänge are merged over the days; meetings are listed
+  once, on their first day; focus blocks come from `blocks_in`; pages are merged per page (days worked on, edits, editing
+  estimate, word delta over the week). Done tasks: the journal's check-offs of the days; a task whose line carries a repeat
+  rule (`tasks.recur`) counts once per check-off (occurrence), any other once per week. Open tasks are those due in the
+  week, overdue those due before it. Time tracking off: `without_time` drops the time part and the booking states.
+- Summary (`week_review_summary`, streamed like `ai_transform`): through the router; `weekreview::is_private` (a private
+  meeting, a page with a privacy marker, or a marker in the data) forces the local route. Private meetings reach the model
+  without their subject. Without any provider the command refuses and the view shows the AI setup note.
+- „Als Wochenbericht speichern“ (`week_report_save`): `report_markdown` (summary, time tables, task lists without
+  checkboxes, meetings by day, focus, page links) goes into the generated part of `meetwork::block`. The page of the week
+  (meta `week_report.page.<Monday>`, else its title „Wochenbericht KW 41 2026“ / „Weekly report week 41 2026“) gets only
+  that part replaced; a new one is made from the template „Wochenbericht“/„Weekly report“ in „Vorlagen“
+  (`{{rückblick}}`/`{{review}}` places the part, `{{zeitraum}}`/`{{range}}` the dates, the usual placeholders work;
+  `week_report_template` creates it with the default) and filed as a journal page of the week's Thursday.
+- Entry points: palette („Wochenrückblick“, „… letzte Woche“), the Kalender's week header, „Woche ansehen“ in the
+  Tagesrückblick, the start page widget `week_review` („Diese Woche“, `widgets/weekreview.tsx`).
+
 ## E-Mail als Aufgabe / Notiz (`mail/` and `outlookcom.rs` in core, `mail.rs` in the shell, `components/MailImport.tsx`)
 
 - Runner (`outlookcom.rs`): shared by the calendar and the mail script. A bundled script is written to `<data>/scripts`

@@ -137,7 +137,7 @@ impl Database {
     }
 }
 
-fn strip_frontmatter(md: &str) -> &str {
+pub(crate) fn strip_frontmatter(md: &str) -> &str {
     let Some(rest) = md.strip_prefix("---\n") else { return md };
     let first_is_key = rest.lines().next().is_some_and(|l| l.split_once(':').is_some_and(|(k, _)| !k.contains(' ')));
     match rest.find("\n---") {

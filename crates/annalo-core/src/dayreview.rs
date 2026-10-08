@@ -228,6 +228,9 @@ pub struct ReviewMeeting {
     pub state: String,
     pub entry_id: Option<i64>,
     pub note_page_id: Option<i64>,
+    /// Marked private in the calendar (its subject stays out of a cloud request).
+    #[serde(default)]
+    pub private: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -542,8 +545,9 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
 /// Words added over the day on page `id`: the content at the start of the day is the first
 /// snapshot taken that day (a save snapshots the content it replaces) or empty for a page
 /// created that day; the content at the end is the first snapshot after the day, or the page
-/// itself when it was not saved since. `None` when either is unknown.
-fn word_delta(db: &Database, id: i64, created: bool, from: &str, to: &str) -> Result<Option<i64>> {
+/// itself when it was not saved since. `None` when either is unknown. Any span works the same
+/// (the week review asks for a week).
+pub(crate) fn word_delta(db: &Database, id: i64, created: bool, from: &str, to: &str) -> Result<Option<i64>> {
     let c = db.conn();
     let first_version = |after: &str, before: Option<&str>| -> Result<Option<String>> {
         let mut st = c.prepare_cached(
@@ -612,6 +616,7 @@ fn meeting(
         state: state.into(),
         entry_id: matched,
         note_page_id: e.note_page_id,
+        private: ev.private,
     }
 }
 

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkPlus, FileCode2, MoveHorizontal, ArrowLeft, ArrowRight, CalendarDays, Columns2, Plus, Briefcase, CalendarCheck2, Download, FilePlus2, FolderInput, Hash, Moon, PanelLeft, PanelRight, RefreshCw, Search, Settings, Sparkles, Paperclip, Square, Timer, Trash2, Play, Focus, ListChecks, LayoutTemplate, Mail, MailPlus, ListPlus, PenTool, Presentation, Activity, CalendarSearch, CalendarRange, Target, NotebookPen, WandSparkles, Sunset, Sun, Compass, History, MessageSquarePlus, MessagesSquare, Ticket, Mic, Wand2, Undo2, Waypoints, Network,
-  LayoutDashboard, ClipboardList, FileBarChart, Reply,
+  LayoutDashboard, ClipboardList, FileBarChart, Reply, CalendarCheck,
   Copy, Pause, Pin, PinOff, BookOpen, Keyboard, ScrollText, MessageSquareText, Bug,
 } from "lucide-react";
 import { followUpFromPalette, openStatusReport, prepareFromPalette } from "./MeetingWork";
@@ -36,6 +36,7 @@ import { startPresentation } from "./Presentation";
 import { abortFocus, openFocusDialog } from "./Focus";
 import { openActivityDay } from "../views/activityDay";
 import { openDayReview } from "../lib/reviewnav";
+import { openWeekReview, shiftWeek } from "../lib/weekreview";
 import { openBriefing } from "../lib/briefing";
 import { openDuplicates } from "../views/DuplicateHint";
 import { reloadEditors } from "../editor/NoteEditor";
@@ -260,6 +261,8 @@ export function CommandPalette() {
       { id: "status-report", title: t("mw.cmd.report"), subtitle: t("mw.cmd.reportSub"), icon: ic(FileBarChart), run: () => setTimeout(() => openStatusReport(), 0) },
       { id: "follow-up", title: t("mw.cmd.followUp"), subtitle: t("mw.cmd.followUpSub"), icon: ic(Reply), run: () => setTimeout(followUpFromPalette, 0) },
       { id: "day-review", title: t("cmd.review"), subtitle: t("cmd.reviewSub"), icon: ic(Sunset), run: () => openDayReview() },
+      { id: "week-review", title: t("cmd.weekReview"), subtitle: t("cmd.weekReviewSub"), icon: ic(CalendarCheck), run: () => openWeekReview() },
+      { id: "week-review-last", title: t("cmd.weekReviewLast"), icon: ic(CalendarCheck), run: () => openWeekReview(shiftWeek(isoDay(new Date()), -1)) },
       { id: "activity-day", title: t("cmd.activityDay"), icon: ic(CalendarSearch), run: () => setTimeout(() => s().set({ calendar: { onPick: openActivityDay } }), 0) },
       s().focus?.phase === "work"
         ? { id: "focus-session", title: t("cmd.focusAbort"), icon: ic(Square), run: () => void abortFocus() }

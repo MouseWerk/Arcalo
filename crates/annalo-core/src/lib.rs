@@ -122,6 +122,7 @@ pub mod vault;
 pub mod versions;
 pub mod voice;
 pub mod weekplan;
+pub mod weekreview;
 pub mod worktime;
 pub mod zeit;
 

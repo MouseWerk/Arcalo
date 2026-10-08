@@ -6,7 +6,7 @@ import { DayOffChip } from "../components/dashboard/work";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  AlertTriangle, CalendarDays, CalendarRange, Check, Target, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
+  AlertTriangle, CalendarCheck, CalendarDays, CalendarRange, Check, Target, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Layers, ListChecks, Lock, MapPin, Mic, NotebookPen, RefreshCw, Repeat, Settings2, Sunset, Timer, User, Users, Video, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
@@ -24,6 +24,7 @@ import { useWbs } from "./wbs";
 import { EntryDialog } from "./TimesheetView";
 import type { CalendarEvent, CalendarSettings, CalendarSourceInfo, CalendarStatus, DayOverview, TimeEntryRow, WbsHint } from "../lib/types";
 import { openDayReview, openTimesheetDay } from "../lib/reviewnav";
+import { openWeekReview } from "../lib/weekreview";
 import { useTimeTracking } from "../lib/timetracking";
 import { useT, t as tr, type TKey } from "../lib/i18n";
 import { blockFit } from "../lib/eventlook";
@@ -285,6 +286,13 @@ export function CalendarView() {
         <div className="calv-heading">
           <h1>{title}</h1>
           {view !== "month" && view !== "agenda" && <span className="calv-kw">{weekLabel(range)}</span>}
+          {view !== "month" && view !== "agenda" && (
+            // The week shown (its last day: a day view opens its own week) as a Wochenrückblick.
+            <button type="button" className="calv-week-review" onClick={(e) => openWeekReview(isoDay(range.days[range.days.length - 1]), { newTab: e.ctrlKey || e.metaKey })} data-tooltip={t("week.openFromCalendar")} aria-label={t("week.openFromCalendar")}>
+              <CalendarCheck size={13} aria-hidden />
+              <span className="calv-week-review-label">{t("week.title")}</span>
+            </button>
+          )}
           {view === "month" && <span className="calv-kw">{t("time.weekNo", { n: `${isoWeek(range.days[0])}–${isoWeek(range.days[range.days.length - 1])}` })}</span>}
         </div>
         <div className="calv-tools">
