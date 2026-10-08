@@ -1,0 +1,89 @@
+name: Android
+
+# The Android companion app (docs/android.md): a universal APK for arm64, armv7 and x86_64.
+# Signed with the release key when the four ANDROID_* secrets exist (docs/release/android.md),
+# else with a debug key (installable for a test, not for an update of a release install).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "crates/**"
+      - "ui/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Android NDK (preinstalled on the runner)
+        run: |
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          echo "Using the NDK in $ANDROID_NDK_LATEST_HOME"
+      # The phone has no git program: its sync runs on libgit2. The sync's tests on libgit2, on the
+      # runner (the same commands and checks as with the git program).
+      - name: Sync on libgit2 (host tests)
+        run: cargo test -p annalo-core --features embedded-git --lib -- gitsync companion
+        env:
+          ANNALO_TEST_EMBEDDED_GIT: "1"
+      - run: npm ci --prefix ui
+      - run: cargo install tauri-cli --version "^2" --locked
+      - name: Signing key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/arcalo-release.jks"
+            {
+              echo "storeFile=$RUNNER_TEMP/arcalo-release.jks"
+              echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+              echo "keyAlias=$ANDROID_KEY_ALIAS"
+              echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            } > src-tauri/gen/android/keystore.properties
+            echo "Signing with the release key."
+          else
+            echo "::notice title=Debug-signed APK::The ANDROID_KEYSTORE, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets are not set: the APK is signed with a debug key (see docs/release/android.md)."
+          fi
+      - name: Build the APK
+        working-directory: src-tauri
+        run: cargo tauri android build --apk --target aarch64 --target armv7 --target x86_64
+      - name: Name the APK
+        run: |
+          mkdir -p dist-android
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          test -n "$apk"
+          cp "$apk" "dist-android/Arcalo_${GITHUB_SHA::8}_android.apk"
+          ls -l dist-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arcalo-android-apk
+          path: dist-android/*.apk
+          if-no-files-found: error
+      - name: Remove the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/arcalo-release.jks" src-tauri/gen/android/keystore.properties
