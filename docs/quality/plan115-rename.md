@@ -53,3 +53,10 @@ docs and privacy pages (also stale `annalo.log`), shot scripts' env names. Owner
 Migration from a real 1.14 layout (data folder, WebView storage, credentials incl. an encrypted workspace,
 custom data dir via `location.json`, portable copy), idempotence, rollback, both-name readers, and the guards
 (`ui/src/lib/branding.test.ts`, e2e 250, 113).
+
+## Also in 1.15: flaky e2e on CI
+
+CI run 167 (5bf6f52) failed once in e2e 144 „PDF highlight in English“ (`.pdf-hl-pop .pdf-hl-delete` not
+clickable) and e2e 270 „a chip cut in the source view …“ (toast „Buchung mit dem Chip gelöscht“ not shown;
+the next test failed as a consequence). Both passed in runs 163 and 166 and 3/3 locally; find the root cause
+(screenshots of the failing run were not reachable from the cloud session).
