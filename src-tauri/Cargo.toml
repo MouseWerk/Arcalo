@@ -44,6 +44,8 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 tracing-appender = "0.2"
 # Settings → Protokoll „Diagnosepaket erstellen“.
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# The update installer (installer.rs): the temp folder of the Windows setup and of the swap.
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).
@@ -55,6 +57,9 @@ windows-sys = { version = "0.61", features = [
   # The Microsoft Store build: does this process run from an MSIX package (store.rs)?
   "Win32_Foundation",
   "Win32_Storage_Packaging_Appx",
+  # The update installer is started with ShellExecute (installer.rs).
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 # Taskbar jump list (COM).
 windows = { version = "0.61", features = [
@@ -87,6 +92,11 @@ block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError"] }
 objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext", "LAError"] }
+
+# The update installer unpacks the macOS `.app.tar.gz` (and a packed AppImage).
+[target.'cfg(unix)'.dependencies]
+flate2 = "1"
+tar = "0.4"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["windows-native", "apple-native"] }

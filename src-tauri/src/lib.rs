@@ -20,6 +20,7 @@ mod files;
 mod filing;
 mod focus;
 mod graph;
+mod installer;
 mod jira;
 mod jumplist;
 mod linking;

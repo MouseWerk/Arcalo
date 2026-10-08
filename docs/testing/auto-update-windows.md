@@ -142,6 +142,13 @@ click was saved. Repeat with the real release:
 
 ## Test feed
 
+Since 1.14.1 the app installs the verified file itself (`src-tauri/src/installer.rs`) instead of handing it to the
+updater plugin, whose release builds refused the internal hand-over with „The configured updater endpoint must
+use a secure protocol like `https`“ (1.12 to 1.14.0). Debug builds never showed it, so the in-app install must be
+checked with a **release** build at least once per release: install the previous release, then update to the new
+one from Settings → Über. The installer's command line is in the log (`update`: „starting …-installer.exe /P
+/UPDATE /R /ARGS“).
+
 To test an update without publishing: a debug build honors `ANNALO_UPDATE_ENDPOINT` (a `latest.json` URL, `http`
 allowed) and `ANNALO_UPDATE_PUBKEY` (base64 public key of a throwaway key from
 `cargo tauri signer generate -w <tmp>/key --ci`). Release builds ignore both and always ask the GitHub feed with
