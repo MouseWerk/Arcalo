@@ -56,7 +56,7 @@
 }
 .icon-picker button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); }
 .icon-picker button:hover { background: var(--bg-hover); color: var(--text); }
-.icon-picker button.on { background: var(--accent-soft); color: var(--accent-text); }
+.icon-picker button.on { background: var(--bg-current); color: var(--text); }
 
 .props { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 22px; font-size: var(--fs-sm); }
 .prop { display: inline-flex; align-items: center; gap: 5px; }
@@ -136,7 +136,7 @@
 .prose p:has(> img.embed-image, > .drawing-embed, > .pdf-embed) { margin-block: 14px; }
 .prose p:has(> .file-embed) { margin-block: 6px; }
 .prose img.embed-image { display: inline-block; max-width: 100%; height: auto; vertical-align: bottom; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-raised); }
-.prose img.embed-image.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prose img.embed-image.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 2px; }
 .prose h1, .prose h2, .prose h3, .prose h4 { letter-spacing: -0.015em; line-height: 1.3; margin: 1.5em 0 0.3em; font-weight: var(--fw-heading); }
 .prose h1 { font-size: 1.75em; }
 .prose h2 { font-size: 1.4em; }
@@ -149,7 +149,7 @@
 .prose pre { margin: 0.9em 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--code-bg); border: 1px solid var(--border); overflow-x: auto; }
 .prose pre code { padding: 0; background: none; font-size: 0.84em; line-height: 1.65; }
 .prose pre, .prose pre code { white-space: pre; }
-.prose blockquote { margin: 0.9em 0; padding: 2px 0 2px 16px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
+.prose blockquote { margin: 0.9em 0; padding: 2px 0 2px 16px; border-left: 2px solid var(--border-strong); color: var(--text-2); }
 .prose ul, .prose ol { padding-left: 1.5em; margin: 0.4em 0; }
 .prose li + li { margin-top: 0.15em; }
 .prose li > p { margin: 0; }
@@ -160,7 +160,7 @@
 .prose th, .prose td { border: 1px solid var(--border-strong); padding: 6px 10px; text-align: left; vertical-align: top; min-width: 6em; }
 .prose th { background: var(--bg-hover); font-weight: var(--fw-semibold); }
 .prose td p, .prose th p { margin: 0; }
-.prose .selectedCell { background: var(--accent-soft); }
+.prose .selectedCell { background: var(--bg-selected); }
 .prose img { max-width: 100%; border-radius: var(--r-md); }
 
 .prose ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
@@ -210,7 +210,7 @@
 }
 .wikilink:hover { background: var(--accent-soft); }
 .wikilink.unresolved { color: var(--text-2) !important; background: none; text-decoration: underline dashed !important; text-decoration-color: var(--text-3) !important; text-underline-offset: 3px; }
-.wikilink.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.wikilink.ProseMirror-selectednode { outline: var(--focus-ring); }
 .tag { color: var(--accent-text); background: var(--accent-soft); border-radius: var(--r-xs); padding: 0 3px; cursor: pointer; }
 .due-date { color: var(--text-2); background: var(--bg-hover); border-radius: var(--r-xs); padding: 0 3px; font-size: 0.92em; white-space: nowrap; }
 
@@ -349,12 +349,15 @@
 .find-hit.current { background: rgb(251 146 60 / 0.55); }
 
 /* Obsidian callouts */
-.prose blockquote.callout { --c: var(--info); border-left: 0; padding: 10px 14px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c-fill, var(--c)) 10%, transparent); color: var(--text); box-shadow: inset 3px 0 0 var(--c-fill, var(--c)); }
-.prose blockquote.callout-tip, .prose blockquote.callout-success, .prose blockquote.callout-check, .prose blockquote.callout-done { --c: var(--success); }
-.prose blockquote.callout-warning, .prose blockquote.callout-caution, .prose blockquote.callout-attention, .prose blockquote.callout-todo { --c: var(--warning); --c-fill: var(--warning-fill); }
-.prose blockquote.callout-danger, .prose blockquote.callout-error, .prose blockquote.callout-bug, .prose blockquote.callout-failure { --c: var(--danger); }
-.prose blockquote.callout-question, .prose blockquote.callout-faq, .prose blockquote.callout-example, .prose blockquote.callout-abstract { --c: var(--violet); }
-.prose blockquote.callout-quote { --c: var(--text-3); }
+/* Callouts: a tint of their color, their icon and title; no colored bar at the side. */
+.prose blockquote.callout { --c: var(--info); --c-icon: var(--icon-info); position: relative; border-left: 0; padding: 10px 14px 10px 38px; border-radius: var(--r-md); background: color-mix(in srgb, var(--c-fill, var(--c)) 10%, transparent); color: var(--text); }
+.prose blockquote.callout::before { content: ""; position: absolute; left: 13px; top: 14px; width: 16px; height: 16px; background: var(--c); mask: var(--c-icon) center / contain no-repeat; pointer-events: none; }
+.prose blockquote.callout-tip, .prose blockquote.callout-success, .prose blockquote.callout-check, .prose blockquote.callout-done { --c: var(--success); --c-icon: var(--icon-check); }
+.prose blockquote.callout-warning, .prose blockquote.callout-caution, .prose blockquote.callout-attention, .prose blockquote.callout-todo { --c: var(--warning); --c-fill: var(--warning-fill); --c-icon: var(--icon-warning); }
+.prose blockquote.callout-danger, .prose blockquote.callout-error, .prose blockquote.callout-bug, .prose blockquote.callout-failure { --c: var(--danger); --c-icon: var(--icon-error); }
+.prose blockquote.callout-question, .prose blockquote.callout-faq { --c: var(--violet); --c-icon: var(--icon-question); }
+.prose blockquote.callout-example, .prose blockquote.callout-abstract { --c: var(--violet); --c-icon: var(--icon-list); }
+.prose blockquote.callout-quote { --c: var(--text-3); --c-icon: var(--icon-quote); }
 .callout-marker { font-size: 0; }
 .callout-marker::before { content: attr(data-label); font-size: var(--fs-xs); font-weight: var(--fw-heading); letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); margin-right: 8px; }
 .callout-marker[data-label=""]::before { content: none; }
@@ -373,7 +376,7 @@
 .so-mark.l1 { width: 12px; }
 .so-mark.l2 { width: 9px; }
 .so-mark.l3 { width: 6px; }
-.so-mark.on { background: var(--accent); }
+.so-mark.on { background: var(--text); }
 .so-mark:hover { background: var(--text); }
 @media print { .scroll-outline { display: none !important; } }
 
@@ -530,7 +533,7 @@
 /* Excalidraw embeds `![[x.excalidraw]]`: the SVG preview, a placeholder when empty, „Bearbeiten“ on hover. */
 .drawing-embed { position: relative; display: inline-block; max-width: 100%; vertical-align: bottom; cursor: pointer; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-raised); }
 .drawing-embed:hover { border-color: var(--border-strong); }
-.drawing-embed.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drawing-embed.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 2px; }
 .drawing-preview { display: block; max-width: 100%; max-height: 520px; height: auto; padding: 8px; }
 /* Previews have a transparent background and dark strokes: inverted in dark mode, as Excalidraw does. */
 :root[data-theme="dark"] .drawing-preview { filter: invert(93%) hue-rotate(180deg); }
@@ -634,7 +637,7 @@
   user-select: none;
 }
 .file-embed:hover { border-color: var(--border-strong); background: var(--bg-hover); }
-.file-embed.ProseMirror-selectednode, .pdf-embed.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.file-embed.ProseMirror-selectednode, .pdf-embed.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 2px; }
 .file-embed-bar { display: contents; }
 .file-embed-icon { flex: none; display: inline-flex; color: var(--accent-text); }
 .file-embed-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
@@ -775,7 +778,7 @@
 .coll-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
 .coll-kind { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm); text-align: left; }
 .coll-kind:hover { background: var(--bg-hover); color: var(--text); }
-.coll-kind.on { background: var(--accent-soft); color: var(--accent-text); }
+.coll-kind.on { background: var(--bg-current); color: var(--text); font-weight: var(--fw-semibold); }
 .coll-form-foot { display: flex; justify-content: flex-end; gap: 6px; }
 .coll-filter-grid { display: grid; gap: 6px; }
 .coll-filter-grid .select, .coll-filter-grid .input { width: 100%; }
@@ -933,7 +936,7 @@
 
 /* [TOC]: the page's headings, live. */
 .prose .toc-block { margin: 1em 0; padding: 10px 14px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); font-size: var(--fs-md); line-height: 1.5; user-select: none; }
-.prose .toc-block.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prose .toc-block.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 2px; }
 .toc-head { margin-bottom: 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--text-3); }
 .prose .toc-block ul { list-style: none; margin: 0; padding: 0; }
 .prose .toc-block ul ul { margin-left: 6px; padding-left: 12px; border-left: 1px solid var(--border); }
@@ -948,7 +951,7 @@
 .prose .footnote-ref::after { content: attr(data-num); }
 .prose .footnote-ref:hover { background: var(--accent-soft); }
 .prose .footnote-ref.is-missing { color: var(--text-3); text-decoration: underline dashed; }
-.prose .footnote-ref.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.prose .footnote-ref.ProseMirror-selectednode { outline: var(--focus-ring); }
 .footnotes-head { margin: 2.2em 0 0.4em; padding-top: 12px; border-top: 1px solid var(--border); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-3); user-select: none; }
 .prose .footnote-def { position: relative; padding-left: 2em; font-size: 0.9em; color: var(--text-2); }
 .prose .footnote-def + .footnote-def { margin-top: 0.2em; }
@@ -1055,7 +1058,7 @@
 /* Shown as its source (never rendered); edited in the Markdown source mode. */
 .prose .md-html { font-family: var(--font-mono); font-size: 0.84em; padding: 0.1em 0.35em; border-radius: var(--r-xs); color: var(--text-3); background: color-mix(in srgb, var(--bg-active) 60%, transparent); border: 1px dashed var(--border); white-space: pre-wrap; cursor: default; }
 .prose pre.md-html-block { margin: 0.6em 0; padding: 8px 12px; font-family: var(--font-mono); font-size: 0.8em; line-height: 1.55; color: var(--text-3); background: transparent; border: 1px dashed var(--border-strong); white-space: pre-wrap; overflow-wrap: anywhere; cursor: default; }
-.prose .md-html.ProseMirror-selectednode, .prose pre.md-html-block.ProseMirror-selectednode { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+.prose .md-html.ProseMirror-selectednode, .prose pre.md-html-block.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 1px; }
 
 /* ---- editor mode switch ---- */
 /* Holds the place of the editor while the page is fetched for the other mode. */
@@ -1114,7 +1117,7 @@
 /* ---- time tracking off ---- */
 /* Time-entry chips stay in the notes as plain, neutral chips (the entry is kept, nothing books). */
 :root[data-time-off] .time-chip { background: var(--bg-hover); color: var(--text-2); }
-:root[data-time-off] .time-chip.ProseMirror-selectednode { outline-color: var(--accent); }
+:root[data-time-off] .time-chip.ProseMirror-selectednode { outline-color: var(--border-focus); }
 
 /* ---- jira: issue chips (decorations; the Markdown keeps the plain key) ---- */
 /* Head, key and tail are plain inline boxes of one font size, so they join into one pill on the
@@ -1181,9 +1184,9 @@
 /* ---- page embeds, queries and Mermaid diagrams (1.9) ---- */
 
 /* `![[Seite]]`: a quiet frame with the source's title; the content reads like the page. */
-.page-embed { display: block; margin: 0.2em 0; border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-canvas); white-space: normal; user-select: text; cursor: auto; }
+.page-embed { display: block; margin: 0.2em 0; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-canvas); white-space: normal; user-select: text; cursor: auto; }
 .page-embed:hover { border-color: var(--border-strong); }
-.page-embed.is-selected, .page-embed.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.page-embed.is-selected, .page-embed.ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 2px; }
 .page-embed .pe-head { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 6px 3px 4px; color: var(--text-3); font-size: var(--fs-xs); user-select: none; }
 .page-embed .pe-toggle, .page-embed .pe-open { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); cursor: pointer; flex: none; }
 .page-embed .pe-toggle svg { transition: transform var(--dur-fast) var(--ease-out); }
@@ -1214,7 +1217,7 @@
 .page-embed .page-embed { margin: 0.5em 0; background: transparent; }
 .page-embed .pe-loading { padding: 4px 0 2px; font-size: var(--fs-sm); }
 .page-embed .pe-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 2px 0 2px; color: var(--text-3); font-size: var(--fs-sm); }
-.page-embed[data-state="missing"], .page-embed[data-state="cycle"], .page-embed[data-state="depth"] { border-style: dashed; border-left-style: solid; }
+.page-embed[data-state="missing"], .page-embed[data-state="cycle"], .page-embed[data-state="depth"] { border-style: dashed; }
 .page-embed-ref { color: var(--text-3); }
 
 /* ```mermaid and ```query: the result under the code; the code shows while the caret is in it. */
@@ -1307,7 +1310,7 @@
 .tag-suggest-accept { display: inline-flex; align-items: center; gap: 2px; height: 100%; padding: 0 6px 0 5px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--fw-medium); }
 .tag-suggest-accept:hover { background: var(--accent-soft); }
 .tag-suggest-new { margin-left: 5px; padding: 0 4px; border-radius: var(--r-xs); background: color-mix(in srgb, var(--violet) 16%, transparent); color: var(--text-2); font-size: var(--fs-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.03em; }
-.tag-suggest-dismiss { display: inline-grid; place-items: center; width: 20px; height: 100%; border: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--border)); background: transparent; color: var(--text-3); }
+.tag-suggest-dismiss { display: inline-grid; place-items: center; width: 20px; height: 100%; border: 0; border-left: 1px dashed var(--border-strong); background: transparent; color: var(--text-3); }
 .tag-suggest-dismiss:hover { background: var(--bg-hover); color: var(--text); }
 .tag-suggest-ai { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-3); font: inherit; }
 .tag-suggest-ai:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
@@ -1421,4 +1424,4 @@ body:has(.pdf-overlay) .menu { z-index: calc(var(--z-toast) + 1); }
 .time-chip--copy { background: transparent; outline: 1px dashed var(--border-strong); outline-offset: -1px; }
 .time-chip--copy .time-chip-state,
 .time-chip--missing .time-chip-state { color: var(--warning); }
-.time-chip:is(.time-chip--deleted, .time-chip--missing, .time-chip--copy).ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 0; }
+.time-chip:is(.time-chip--deleted, .time-chip--missing, .time-chip--copy).ProseMirror-selectednode { outline: var(--focus-ring); outline-offset: 0; }

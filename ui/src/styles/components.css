@@ -272,7 +272,7 @@
   color: var(--text);
   text-align: left;
 }
-.menu-item.sel, .menu-item.open { background: var(--bg-active); }
+.menu-item.sel, .menu-item.open { background: var(--bg-active); box-shadow: var(--selected-ring); }
 .menu-item:disabled { opacity: 0.4; }
 .menu-item.danger { color: var(--danger); }
 .menu-icon { width: 16px; display: grid; place-items: center; color: var(--text-2); }
@@ -441,7 +441,7 @@
 .select-option { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 10px 5px 6px; border-radius: var(--r-sm); color: var(--text); }
 .select-option.active { background: var(--bg-hover); }
 .select-option.selected { color: var(--accent-text); }
-.select-option.selected.active { background: var(--accent-soft); }
+.select-option.selected.active { background: var(--bg-current); }
 .select-option.disabled { opacity: 0.45; }
 .select-check { width: 16px; flex: none; display: grid; place-items: center; color: var(--accent-text); }
 .select-option-icon { flex: none; color: var(--text-2); }
