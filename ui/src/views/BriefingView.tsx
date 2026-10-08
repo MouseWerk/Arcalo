@@ -9,6 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ClipboardList, Clock, ExternalLink, FileText, Lock, NotebookPen, RefreshCw, Settings2, Sparkles, Sun, Timer, Video, WandSparkles, X, type LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
+import { useAi } from "../lib/aiswitch";
 import { Badge, Button, EmptyState, IconButton, Progress, Skeleton } from "../components/ui";
 import { revealText } from "../editor/reveal";
 import { dayTitle } from "../lib/activity";
@@ -35,6 +36,7 @@ export function BriefingView() {
   const pages = useApp((st) => st.pages);
   const entriesVersion = useApp((st) => st.entriesVersion);
   const settings = useApp((st) => st.settings?.settings);
+  const aiOn = useAi();
   const cal = settings?.calendar;
   const sectionsKey = JSON.stringify(settings?.briefing?.sections ?? null);
   const jiraKey = settings?.jira?.sites.length ?? 0;
@@ -124,6 +126,8 @@ export function BriefingView() {
     if (!r) return null;
     switch (id) {
       case "ai":
+        // „KI verwenden“ off: the briefing without its AI summary card.
+        if (!aiOn) return null;
         return <AiCard key={id} b={r} summary={summary} writing={writing} error={aiError} onWrite={() => void write(true)} />;
       case "meetings":
         return <MeetingsCard key={id} b={r} colorOf={(src) => sourceColor(src, cal)} />;

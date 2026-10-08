@@ -22,6 +22,7 @@ import { PageIcon } from "../icons";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, fmt, hhmm, hrs, Loadable, More, s, TaskRow, TimerBlock } from "./common";
 import type { WidgetProps } from "./registry";
+import { startedOn } from "../../onboarding/firststeps";
 
 const weekdayShort = (iso: string) => fmt(new Date(`${iso}T12:00:00`), { weekday: "short" }).replace(/\.$/, "").slice(0, 2);
 
@@ -52,6 +53,7 @@ export function WeekWidget({ widget }: WidgetProps) {
           settings?.workdays ?? [1, 2, 3, 4, 5],
           new Date(),
           labels,
+          startedOn(),
         );
         const gaps = week.bars.filter((b) => b.gap > 0);
         const planned = (iso: string) => plannedMinutes(blocks, new Date(`${iso}T12:00:00`));

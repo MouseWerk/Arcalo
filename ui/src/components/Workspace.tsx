@@ -1,10 +1,12 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
 import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, House, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, House, MinusCircle, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "./ui";
 import { TIME_TABS, useTimeTracking } from "../lib/timetracking";
+import { AI_TABS, useAi } from "../lib/aiswitch";
+import { openSettingsSection } from "../lib/calnav";
 import { Home, TabIcon, tabTitle } from "./Shell";
 import { Resizer } from "./Resizer";
 import { ViewHeader } from "./ViewHeader";
@@ -162,6 +164,29 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
 function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
   const tr = useT();
   const timeOn = useTimeTracking();
+  const ai = useAi();
+  // A chat tab left open when „KI verwenden“ was switched off.
+  if (!ai && AI_TABS.has(tab.kind))
+    return (
+      <>
+        <ViewHeader tab={tab} title="" />
+        <div className="view-body">
+          <EmptyState
+            icon={MinusCircle}
+            title={tr("noai.offTitle")}
+            action={
+              useApp.getState().settings?.ai_policy_off ? undefined : (
+                <Button size="sm" onClick={() => openSettingsSection("ai")}>
+                  {tr("noai.openSettings")}
+                </Button>
+              )
+            }
+          >
+            {tr(useApp.getState().settings?.ai_policy_off ? "noai.policyText" : "noai.offText")}
+          </EmptyState>
+        </div>
+      </>
+    );
   // A timesheet or projects tab left open when time tracking was switched off.
   if (!timeOn && TIME_TABS.has(tab.kind))
     return (

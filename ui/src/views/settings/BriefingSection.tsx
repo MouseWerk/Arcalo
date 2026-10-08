@@ -7,6 +7,8 @@ import { Button, IconButton, Segmented, Switch } from "../../components/ui";
 import { t as tr, useT, type TKey } from "../../lib/i18n";
 import { briefingSettings, moveSection, openBriefing, toggleSection } from "../../lib/briefing";
 import { timeTrackingOn } from "../../lib/timetracking";
+import { aiSwitchOn } from "../../lib/aiswitch";
+import { useApp } from "../../store/app";
 import type { BriefingMode, BriefingSection as Section, BriefingSectionId, BriefingSettings, Settings } from "../../lib/types";
 import { CommitInput, Group, Row, SectionHead, type SectionProps } from "./common";
 import { checkTime } from "../../lib/settingsApply";
@@ -58,6 +60,7 @@ export function unavailableSections(s: Settings | null | undefined): Partial<Rec
   const out: Partial<Record<BriefingSectionId, string>> = {};
   if (!s?.jira?.sites.length) out.jira = tr("brief.noJira");
   if (!timeTrackingOn(s)) out.time = tr("brief.noTime");
+  if (!aiSwitchOn(s) || useApp.getState().settings?.ai_policy_off) out.ai = tr("brief.noAiSwitch");
   return out;
 }
 

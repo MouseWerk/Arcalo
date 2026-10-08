@@ -183,19 +183,24 @@ const GALLERY_TIME: ReadonlySet<WidgetKind> = new Set<WidgetKind>([...TIME_WIDGE
 
 const isTimeKind = (kind: WidgetKind) => TIME_WIDGETS.has(kind) || WIDGETS[kind].time === true;
 
+/** Widgets that ask the assistant („KI verwenden“ off): not offered and not shown, kept on the board. */
+export const AI_WIDGETS: ReadonlySet<WidgetKind> = new Set<WidgetKind>(["suggestions"]);
+
 /**
  * Whether a widget of `kind` (with settings `config`: a chart of the bookings) shows: not a time
  * widget while time tracking is off, and a kind this version knows (widgets of a newer version
  * or a feature not built in stay on the board, hidden, so nothing is lost).
  */
-export const widgetShown = (kind: string, time: boolean, config?: Record<string, unknown>) => isKind(kind) && (time || (!isTimeKind(kind) && !timeConfig(kind, config)));
+export const widgetShown = (kind: string, time: boolean, config?: Record<string, unknown>, ai = true) =>
+  isKind(kind) && (time || (!isTimeKind(kind) && !timeConfig(kind, config))) && (ai || !AI_WIDGETS.has(kind));
 
 /** The kinds the gallery offers (flagged mails only where Outlook can be asked). */
-export const galleryKinds = (time: boolean, mailFlags = false): WidgetKind[] => allKinds().filter((k) => (time || !(GALLERY_TIME.has(k) || isTimeKind(k))) && (mailFlags || k !== "mail_flags"));
+export const galleryKinds = (time: boolean, mailFlags = false, ai = true): WidgetKind[] =>
+  allKinds().filter((k) => (time || !(GALLERY_TIME.has(k) || isTimeKind(k))) && (mailFlags || k !== "mail_flags") && (ai || !AI_WIDGETS.has(k)));
 
 /** The widgets a board shows: without hidden ones (see `widgetShown`), closed up (no holes). */
-export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[] {
-  const shown = widgets.filter((w) => widgetShown(w.kind, time, w.config));
+export function shownWidgets(widgets: GridWidget[], time: boolean, ai = true): GridWidget[] {
+  const shown = widgets.filter((w) => widgetShown(w.kind, time, w.config, ai));
   return shown.length === widgets.length ? widgets : compact(shown);
 }
 
@@ -203,8 +208,8 @@ export function shownWidgets(widgets: GridWidget[], time: boolean): GridWidget[]
  * A layout edited while widgets were hidden, with the hidden ones put back: the edited widgets
  * keep their places, the hidden ones go below whatever they would hit.
  */
-export function withHidden(all: GridWidget[], edited: GridWidget[], time: boolean): GridWidget[] {
-  const hidden = all.filter((w) => !widgetShown(w.kind, time, w.config) && !edited.some((e) => e.id === w.id));
+export function withHidden(all: GridWidget[], edited: GridWidget[], time: boolean, ai = true): GridWidget[] {
+  const hidden = all.filter((w) => !widgetShown(w.kind, time, w.config, ai) && !edited.some((e) => e.id === w.id));
   return hidden.length ? settle([...edited, ...hidden], edited.map((w) => w.id)) : edited;
 }
 
@@ -839,9 +844,10 @@ export interface WeekSummary {
 
 /**
  * Bars for the week starting `monday`: booked minutes per day against the daily target.
- * Gaps count only on past workdays (today is still running, weekends have no target).
+ * Gaps count only on past workdays (today is still running, weekends have no target) from
+ * `since` on (the first start of a new workspace: the days before it were not missed).
  */
-export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targetHours: number, workdays: number[], today: Date, labels = weekdayLabels(1)): WeekSummary {
+export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targetHours: number, workdays: number[], today: Date, labels = weekdayLabels(1), since: string | null = null): WeekSummary {
   const byDate = new Map(days.map((d) => [d.date, d.booked_minutes]));
   const target = Math.max(0, targetHours) * 60;
   const todayIso = isoDay(today);
@@ -850,7 +856,7 @@ export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], m
     const minutes = Math.max(0, byDate.get(date) ?? 0);
     const workday = workdays.includes(i + 1);
     const past = date < todayIso;
-    const gap = workday && past ? Math.max(0, target - minutes) : 0;
+    const gap = workday && past && (!since || date >= since) ? Math.max(0, target - minutes) : 0;
     return { date, label, minutes, workday, today: date === todayIso, future: date > todayIso, gap };
   });
   const scale = Math.max(target, ...raw.map((b) => b.minutes), 1);

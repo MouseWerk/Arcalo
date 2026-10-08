@@ -75,7 +75,7 @@ test("Über reruns intro and setup with the current settings prefilled", async (
   assert.equal(await app.browser.execute(() => document.querySelector('.fr-step-work input[type="number"]').value), "7.5");
   // The workspace step knows the data is there: nothing is replaced.
   await app.click('.fr-rail-item[data-step="workspace"]');
-  await app.waitText(".fr-step-title", /Womit möchtest du beginnen/);
+  await app.waitText(".fr-step-title", /Wie möchtest du starten/);
   assert.equal(await app.browser.execute(() => document.querySelector('[data-choice="samples"]').disabled), true);
   // A change is saved at once; closing keeps it.
   await app.click('.fr-rail-item[data-step="work"]');

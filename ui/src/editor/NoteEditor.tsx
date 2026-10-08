@@ -28,6 +28,7 @@ import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { moveBlock } from "./tools";
 import { ImageViewer, imageMenu } from "./imageMenu";
 import { InlineAiBar } from "./InlineAiBar";
+import { aiEnabled, useAi } from "../lib/aiswitch";
 import { aiRange, type AiRange } from "./ai-insert";
 import { registerEditor, revealAnchor } from "./reveal";
 import type { TypingPrefs } from "./typing";
@@ -185,7 +186,10 @@ export function NoteEditor({
   // Right-click menu and full view of images.
   const [imgMenu, openImgMenu] = useMenu();
   const [viewer, setViewer] = useState<{ src: string; name: string } | null>(null);
+  const aiOn = useAi();
   const openAi = (editor: Editor) => {
+    // „KI verwenden“ off: Ctrl+J, the toolbar and the slash menu offer no inline AI.
+    if (!aiEnabled()) return;
     const range = aiRange(editor);
     if (range) setAi((cur) => ({ range, seq: (cur?.seq ?? 0) + 1 }));
   };
@@ -333,7 +337,8 @@ export function NoteEditor({
             }
             // Smart /zeit: `/zeit 2h text` without reference on a page without linked Vorgang.
             let aiError: unknown = null;
-            if (ed && lacksReference(line)) {
+            // Without AI the line is booked as written (or refused with the usual hint).
+            if (ed && aiEnabled() && lacksReference(line)) {
               const id = ++zeitSeq.current;
               let settle!: (c: ZeitChoice) => void;
               const choice = new Promise<ZeitChoice>((r) => (settle = r));
@@ -460,7 +465,7 @@ export function NoteEditor({
             return true;
           }
           if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== "j") return false;
-          if (view.state.selection.empty || !editorRef.current) return false;
+          if (view.state.selection.empty || !editorRef.current || !aiEnabled()) return false;
           event.preventDefault();
           event.stopPropagation();
           openAi(editorRef.current);
@@ -810,11 +815,15 @@ export function NoteEditor({
           <IconButton icon={Strikethrough} label={tr("tb.strike")} active={ui?.strike} onClick={() => editor.chain().focus().toggleStrike().run()} tooltipSide="top" />
           <IconButton icon={Code} label={tr("tb.code")} active={ui?.code} onClick={() => editor.chain().focus().toggleCode().run()} tooltipSide="top" />
           <IconButton icon={Highlighter} label={tr("slash.mark")} active={ui?.highlight} onClick={() => editor.chain().focus().toggleHighlight().run()} tooltipSide="top" />
-          <span className="bubble-sep" />
-          <button type="button" className="bubble-ai" aria-label={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip-side="top" onClick={() => openAi(editor)}>
-            <Sparkles size={14} strokeWidth={1.75} aria-hidden />
-            {tr("slash.sec.ai")}
-          </button>
+          {aiOn && (
+            <>
+              <span className="bubble-sep" />
+              <button type="button" className="bubble-ai" aria-label={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip={tr("tb.aiEdit", { keys: keys("Mod J") })} data-tooltip-side="top" onClick={() => openAi(editor)}>
+                <Sparkles size={14} strokeWidth={1.75} aria-hidden />
+                {tr("slash.sec.ai")}
+              </button>
+            </>
+          )}
           <span className="bubble-sep" />
           <IconButton
             icon={Link2}

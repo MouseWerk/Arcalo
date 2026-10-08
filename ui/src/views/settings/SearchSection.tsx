@@ -11,6 +11,7 @@ import { openSettingsSection } from "../../lib/calnav";
 import { fileSize } from "../../lib/format";
 import { useT, t as tr } from "../../lib/i18n";
 import { useApp } from "../../store/app";
+import { useAi } from "../../lib/aiswitch";
 import type { SemanticStatus, Settings } from "../../lib/types";
 import { Group, Row, SectionHead, StatusNote, type SectionProps } from "./common";
 
@@ -25,6 +26,7 @@ export function semanticSwitch(s: Settings): { on: boolean; local: boolean; mode
 export function SearchPrefsSection({ draft, update }: SectionProps) {
   const t = useT();
   const [status, setStatus] = useState<SemanticStatus | null>(null);
+  const aiOn = useAi();
   const sw = semanticSwitch(draft);
   const set = (v: boolean) => update({ search: { ...draft.search, semantic: v } });
   // The state after every change of the settings that decide it (they are saved at once).
@@ -55,6 +57,18 @@ export function SearchPrefsSection({ draft, update }: SectionProps) {
   const inactive = status?.inactive ?? (sw.model ? null : "no_model");
   const active = sw.on && !!sw.model && inactive == null;
   const where = sw.local ? t("set.search.whereLocal", { provider: sw.provider ?? "" }) : t("set.search.whereCloud", { provider: sw.provider ?? "" });
+  // „KI verwenden“ off: no embeddings, so no search by meaning; the search finds words as before.
+  if (!aiOn)
+    return (
+      <>
+        <SectionHead title={t("set.search.title")} intro={t("set.search.intro")} />
+        <Group title={t("set.search.meaning")}>
+          <div className="search-note">
+            <StatusNote tone="neutral">{t("set.search.noAi")}</StatusNote>
+          </div>
+        </Group>
+      </>
+    );
   return (
     <>
       <SectionHead title={t("set.search.title")} intro={t("set.search.intro")} />

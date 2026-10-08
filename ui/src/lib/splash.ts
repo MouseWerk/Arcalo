@@ -3,8 +3,9 @@
 // quick-capture/search windows, when switched off (Settings → Darstellung) and under WebDriver.
 
 const KEY = "annalo.splash";
-/** How long the mark needs to draw itself and show the name. */
-const MIN_MS = 1300;
+/** How long the mark needs to draw itself and show the name (kept short: it never holds up a
+ * ready app for long). */
+const MIN_MS = 950;
 const FADE_MS = 450;
 
 interface SplashPrefs {

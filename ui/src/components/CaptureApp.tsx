@@ -57,6 +57,7 @@ import { ZeitConfirm, type ZeitChoice } from "../editor/ZeitConfirm";
 import type { CaptureContext, CapturePrefs, Page, PageNode, ZeitGuess } from "../lib/types";
 import { resetZeitCache, zeitLaItems, zeitRefItems } from "../editor/zeit-source";
 import { timeTrackingOn } from "../lib/timetracking";
+import { aiOn as aiOnOf } from "../lib/aiswitch";
 import type { ZeitSuggestItem } from "../editor/extensions";
 import { PageIcon } from "./icons";
 import { t, useT } from "../lib/i18n";
@@ -132,6 +133,8 @@ export function CaptureApp() {
   const [prefs, setPrefs] = useState<CapturePrefs>(DEFAULT_PREFS);
   // „Zeiterfassung verwenden“: off, `/zeit` lines are text (no suggestions, no booking).
   const [timeOn, setTimeOn] = useState(true);
+  // „KI verwenden“ off: a /zeit line without reference is booked as written (no model asked).
+  const [aiOn, setAiOn] = useState(false);
   const [ctx, setCtx] = useState<CaptureContext | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [recentIds, setRecentIds] = useState<number[]>([]);
@@ -207,6 +210,7 @@ export function CaptureApp() {
         const p = { ...DEFAULT_PREFS, ...(v.settings.capture ?? {}) };
         setPrefs(p);
         setTimeOn(timeTrackingOn(v.settings));
+        setAiOn(aiOnOf(v));
         return p;
       })
       .catch(() => live.current.prefs);
@@ -456,7 +460,7 @@ export function CaptureApp() {
   const submit = async (value = text, confirmed = false): Promise<string | null> => {
     if (!value.trim() || busy) return null;
     const single = value.trim();
-    if (!confirmed && timeOn && !single.includes("\n") && lacksReference(single)) {
+    if (!confirmed && timeOn && aiOn && !single.includes("\n") && lacksReference(single)) {
       await askAi(single);
       return null;
     }

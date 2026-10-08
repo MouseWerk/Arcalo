@@ -30,6 +30,7 @@ const ALLOWED: { rule: string; where: string; text?: string; reason: string }[] 
   { rule: "space-before-punct", where: "crates/annalo-core/src/attachment_manager.rs", text: ": * ?", reason: "A list of the characters not allowed in file names." },
   { rule: "space-before-punct", where: "palette.placeholder", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
   { rule: "space-before-punct", where: "palette.footHints", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
+  { rule: "space-before-punct", where: "palette.placeholderNoTime", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
   { rule: "english", where: "fr.lang.enText", reason: "Describes the English interface in English, whatever the current language." },
   { rule: "german", where: "fr.lang.deText", reason: "Describes the German interface in German, whatever the current language." },
   { rule: "transliteration", where: "sec.key.fileName", reason: "File name without umlauts so it survives every file system and mail program." },

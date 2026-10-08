@@ -616,6 +616,9 @@ pub const WORKSPACE_TOOLS: &[&str] =
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct AiPrefs {
+    /// „KI verwenden“: off, Arcalo shows no AI anywhere and sends nothing to an AI or embedding
+    /// provider; the providers and models stay configured for when it is switched on again.
+    pub enabled: bool,
     /// 0.0–2.0.
     pub temperature: f32,
     /// Limit of answer tokens; `None` = the model's default.
@@ -656,6 +659,7 @@ impl ChatRetention {
 impl Default for AiPrefs {
     fn default() -> Self {
         AiPrefs {
+            enabled: true,
             temperature: 0.3,
             max_tokens: None,
             inline_presets: None,

@@ -56,6 +56,10 @@ pub fn check(net: &NetworkSettings) -> std::result::Result<(), Error> {
 /// The HTTP client of `service` with the current settings (cached until they change).
 pub fn client_for(state: &AppState, service: &Service) -> Result<reqwest::Client> {
     let ai = state.ai.read().unwrap_or_else(|e| e.into_inner());
+    // „KI verwenden“ off: no client for an AI provider or the assistant's web requests.
+    if matches!(service, Service::Ai { .. } | Service::HttpTool) {
+        ai.settings.require_ai()?;
+    }
     if let Some(e) = &ai.network_error {
         return Err(Error::State(e.clone()));
     }

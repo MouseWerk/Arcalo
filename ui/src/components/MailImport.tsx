@@ -30,6 +30,7 @@ import {
   type TaskTarget,
 } from "../lib/mail";
 import { useT } from "../lib/i18n";
+import { aiEnabled } from "../lib/aiswitch";
 
 type Action = "task" | "note" | "both";
 
@@ -403,7 +404,7 @@ function MailForm({ mail, status, onDone }: { mail: Mail; status: MailStatus | n
             <Field label={t("err.kind.task")}>
               <div className="mailx-inline">
                 <Input value={taskText} onChange={(e) => setTaskText(e.target.value)} aria-label={t("mail.taskText")} data-autofocus className="mailx-task-text" />
-                {mail.body.trim() !== "" && (
+                {mail.body.trim() !== "" && aiEnabled() && (
                   <Button
                     icon={Sparkles}
                     variant="ghost"

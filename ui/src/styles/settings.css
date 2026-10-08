@@ -481,12 +481,6 @@
 .keygate-foot { display: flex; align-items: center; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); }
 .keygate-dir { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* first-run step „Sicherheit“ */
-.fr-sec-key, .fr-sec-lock { display: grid; gap: 10px; padding: 0 4px; }
-.fr-sec-key p { margin: 0; }
-.fr-sec-lock { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
-.fr-sec-lock > :first-child { grid-column: 1 / -1; }
-.fr-sec-done { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--success); grid-column: 1 / -1; }
 /* ---- settings foundation (1.10): grouped menu, section tools, inline field errors ---- */
 .settings-nav-group-label {
   display: flex;

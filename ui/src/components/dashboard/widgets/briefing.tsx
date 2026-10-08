@@ -13,6 +13,7 @@ import { defineWidget } from "../define";
 import { useLazyData } from "../data";
 import { Loadable, hhmm } from "../common";
 import type { Briefing } from "../../../lib/types";
+import { aiEnabled } from "../../../lib/aiswitch";
 import type { WidgetProps } from "../registry";
 
 function Count({ icon: Icon, value, label, section }: { icon: LucideIcon; value: string; label: string; section: string }) {
@@ -55,7 +56,7 @@ function BriefingWidget({ widget }: WidgetProps) {
                 </span>
               )}
             </button>
-            {shows(b, "ai") && (
+            {shows(b, "ai") && aiEnabled() && (
               <button type="button" className="dw-bf-ai" onClick={() => openBriefing()}>
                 <Sparkles size={13} aria-hidden />
                 <span className={line ? "ellipsis" : "ellipsis faint"}>{line ?? (b.ai_ready ? t("dash.bf.aiOpen") : t("dash.bf.noAi"))}</span>

@@ -16,6 +16,7 @@ import { useT, t as tr } from "../../lib/i18n";
 import { MODEL_LABELS, downloadPercent, voiceApi, type ModelDownload, type ModelsView, type VoiceDevices } from "../../lib/voice";
 import type { DesktopInfo, VoiceSettings } from "../../lib/types";
 import { CommitInput, Group, Row, SectionHead, ShortcutField, StatusNote, type SectionProps } from "./common";
+import { useAi } from "../../lib/aiswitch";
 
 export const voiceDefaults = (): VoiceSettings => ({
   model: "small",
@@ -32,6 +33,7 @@ export function VoiceSection({ draft, update }: SectionProps) {
   const t = useT();
   const voice = { ...voiceDefaults(), ...draft.voice };
   const saved = useApp((s) => s.settings?.settings.voice);
+  const ai = useAi();
   const set = (p: Partial<VoiceSettings>) => update({ voice: { ...voice, ...p } });
   const [models, setModels] = useState<ModelsView | null>(null);
   const [devices, setDevices] = useState<VoiceDevices | null>(null);
@@ -182,9 +184,12 @@ export function VoiceSection({ draft, update }: SectionProps) {
       </Group>
 
       <Group title={t("voice.set.afterTitle")} description={t("voice.set.afterDesc")}>
-        <Row label={t("voice.set.auto")} description={t("voice.set.autoDesc")}>
-          <Switch label={t("voice.set.auto")} checked={voice.auto_summary} onChange={(v) => set({ auto_summary: v })} />
-        </Row>
+        {/* „KI verwenden“ off: transcripts only (Whisper runs on this computer, no language model). */}
+        {ai && (
+          <Row label={t("voice.set.auto")} description={t("voice.set.autoDesc")}>
+            <Switch label={t("voice.set.auto")} checked={voice.auto_summary} onChange={(v) => set({ auto_summary: v })} />
+          </Row>
+        )}
         <Row label={t("voice.set.keep")} description={t("voice.set.keepDesc")}>
           <Switch label={t("voice.set.keep")} checked={voice.keep_audio} onChange={(v) => set({ keep_audio: v })} />
         </Row>

@@ -93,6 +93,9 @@ pub struct Policy {
     pub network_routes: std::collections::BTreeMap<String, String>,
     /// `LockNetworkProfiles`: the proxy profiles cannot be changed.
     pub lock_network_profiles: Option<bool>,
+    /// `AllowAi`: `false` switches the AI off for everyone („KI verwenden“ is locked off, no
+    /// request goes to an AI or embedding provider); `true` or unset leaves it to the user.
+    pub allow_ai: Option<bool>,
     /// Where the values came from (registry key, file), for the log and Settings.
     pub origins: Vec<String>,
     /// Values that were ignored, with the reason.
@@ -138,6 +141,10 @@ impl Policy {
                 },
                 "locknetworkprofiles" => match as_bool(&value, &text) {
                     Some(b) => p.lock_network_profiles = Some(b),
+                    None => bad(&mut p),
+                },
+                "allowai" => match as_bool(&value, &text) {
+                    Some(b) => p.allow_ai = Some(b),
                     None => bad(&mut p),
                 },
                 "pinnedversion" => {
@@ -216,6 +223,7 @@ impl Policy {
             check_interval_hours: self.check_interval_hours.or(lower.check_interval_hours),
             network_routes: lower.network_routes.into_iter().chain(self.network_routes).collect(),
             lock_network_profiles: self.lock_network_profiles.or(lower.lock_network_profiles),
+            allow_ai: self.allow_ai.or(lower.allow_ai),
             origins: self.origins.into_iter().chain(lower.origins).collect(),
             warnings: self.warnings.into_iter().chain(lower.warnings).collect(),
         }
@@ -232,6 +240,11 @@ impl Policy {
                 })
             })
             .unwrap_or_default()
+    }
+
+    /// Whether the policy switches the AI off (`AllowAi = 0`).
+    pub fn ai_forbidden(&self) -> bool {
+        self.allow_ai == Some(false)
     }
 
     /// What the policy fixes in Settings → Netzwerk.
@@ -443,6 +456,24 @@ mod tests {
         assert_eq!(p.origins.len(), 3);
         assert_eq!(p.managed(), ["mode", "source", "github", "pinned", "window", "interval"]);
         assert_eq!(Policy::merge([]), Policy::default());
+    }
+
+    #[test]
+    fn allow_ai_switches_the_ai_off() {
+        let off = Policy::from_json("policy.json", r#"{"AllowAi": 0}"#).unwrap();
+        assert!(off.ai_forbidden());
+        assert_eq!(off.origins, ["policy.json"]);
+        let reg = Policy::from_values(r"HKLM\X", reg(&[("ALLOWAI", Value::Text("false".into()))]));
+        assert!(reg.ai_forbidden());
+        let on = Policy::from_json("policy.json", r#"{"AllowAi": true}"#).unwrap();
+        assert!(!on.ai_forbidden());
+        assert!(!Policy::default().ai_forbidden());
+        // The higher source wins; an invalid value is warned and ignored.
+        assert!(!Policy::merge([on, off]).ai_forbidden());
+        let bad = Policy::from_json("policy.json", r#"{"AllowAi": "vielleicht"}"#).unwrap();
+        assert_eq!((bad.allow_ai, bad.warnings.len()), (None, 1));
+        // It is not an update setting: Settings → Über locks nothing for it.
+        assert!(Policy::from_json("p", r#"{"AllowAi": 0}"#).unwrap().managed().is_empty());
     }
 
     #[test]

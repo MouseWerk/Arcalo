@@ -12,6 +12,7 @@ import { openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { api } from "../lib/api";
 import { requestWeekProposal } from "../lib/weekplan";
 import { TIME_COMMANDS, useTimeTracking } from "../lib/timetracking";
+import { AI_COMMANDS, useAi } from "../lib/aiswitch";
 import { useApp, savePref } from "../store/app";
 import { openAssistant, openToday } from "./Ribbon";
 import { openCalendar } from "./CalendarPopover";
@@ -80,6 +81,7 @@ export function CommandPalette() {
   // The tab the palette was opened over („Tab anheften“ names it).
   const activeTabObj = useApp((s) => s.tabs.find((x) => x.id === s.activeTabId) ?? null);
   const timeOn = useTimeTracking();
+  const ai = useAi();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -127,7 +129,7 @@ export function CommandPalette() {
       });
       return out;
     }
-    if (mode === "all" && query.startsWith("?")) {
+    if (mode === "all" && ai && query.startsWith("?")) {
       const question = query.slice(1).trim();
       out.push({
         id: "ask",
@@ -318,8 +320,9 @@ export function CommandPalette() {
       { id: "chat-view-new", title: t("cmd.chatViewNew"), icon: ic(MessagesSquare), run: () => void openChatView({ fresh: true }) },
     ];
     // „Zeiterfassung verwenden“ off: the timesheet and project commands are hidden.
+    // „KI verwenden“ off: the assistant, chat and index commands are hidden too.
     const timeOff = !timeOn;
-    const hidden = new Set(timeOff ? TIME_COMMANDS : []);
+    const hidden = new Set([...(timeOff ? TIME_COMMANDS : []), ...(ai ? [] : AI_COMMANDS)]);
     out.push(
       ...commands
         .filter((c) => !hidden.has(c.id))
@@ -362,7 +365,7 @@ export function CommandPalette() {
     if (tagHits) out.unshift({ id: "tag", section: t("palette.tags"), title: `#${tagHits}`, icon: ic(Hash), run: () => s().openTab({ kind: "tag", tag: tagHits }) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, pages, hits, mode, timer, lang, timeOn, activeTabObj]);
+  }, [query, pages, hits, mode, timer, lang, timeOn, ai, activeTabObj]);
 
   useEffect(() => setSel((v) => Math.min(v, Math.max(0, items.length - 1))), [items.length]);
   useEffect(() => {
@@ -387,7 +390,7 @@ export function CommandPalette() {
           <input
             ref={input}
             value={q}
-            placeholder={mode === "pages" ? t("palette.openPage") : t("palette.placeholder")}
+            placeholder={mode === "pages" ? t("palette.openPage") : t(ai ? (timeOn ? "palette.placeholder" : "palette.placeholderNoTime") : timeOn ? "palette.placeholderNoAi" : "palette.placeholderPlain")}
             onChange={(e) => {
               setQ(e.target.value);
               setSel(0);
@@ -476,7 +479,7 @@ export function CommandPalette() {
               {t("search.exactOnly")}
             </button>
           )}
-          <span className="faint">{t(timeOn ? "palette.footHints" : "tt.paletteFoot")}</span>
+          <span className="faint">{t(ai ? (timeOn ? "palette.footHints" : "tt.paletteFoot") : timeOn ? "palette.footHintsNoAi" : "palette.footHintsPlain")}</span>
         </div>
       </div>
     </div>

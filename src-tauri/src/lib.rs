@@ -130,6 +130,8 @@ fn provider_client(
     key: Option<String>,
     passwords: annalo_core::network::Passwords<'_>,
 ) -> Result<AiClient> {
+    // „KI verwenden“ off: no client is built, so nothing can reach a provider.
+    settings.require_ai()?;
     let net = network::effective(&settings.network);
     let service = provider.service();
     let http = annalo_core::network::client_for(&net, passwords, &service)?;
@@ -166,7 +168,8 @@ impl AiRuntime {
         };
         let _ = network::check(&network::effective(&settings.network)).map_err(&mut failed);
         let mut clients = HashMap::new();
-        for p in settings.providers.iter().filter(|p| p.enabled) {
+        // „KI verwenden“ off: no clients at all (the providers stay configured).
+        for p in settings.providers.iter().filter(|p| p.enabled && settings.ai_on()) {
             let key = keys.get(&p.id).cloned();
             match provider_client(&settings, p, key, &passwords) {
                 Ok(client) => {
@@ -266,6 +269,7 @@ impl AppState {
             id => id,
         };
         ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
+            _ if !ai.settings.ai_on() => Error::State(annalo_core::settings::ai_off().into()),
             Some(e) => Error::State(e.clone()),
             None => Error::State(trf!(
                 "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI & Modelle)",
@@ -2068,6 +2072,8 @@ struct SettingsView {
     sync_last: Option<annalo_core::settings_sync::LastMerge>,
     /// The operating system's language as read at this start (what „Wie das System“ shows).
     system_language: annalo_core::prefs::Language,
+    /// An organization's policy switched the AI off (`AllowAi = 0`): „KI verwenden“ is locked off.
+    ai_policy_off: bool,
 }
 
 #[tauri::command]
@@ -2092,6 +2098,7 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         shared: annalo_core::settings_layers::shared_dir().is_some(),
         sync_last: state.db().settings_sync_last().ok().flatten(),
         system_language: annalo_core::i18n::system_lang(),
+        ai_policy_off: annalo_core::settings::ai_forbidden(),
     }
 }
 
@@ -2420,6 +2427,7 @@ async fn ai_test_connection(
     base_url: Option<String>,
     api_key: Option<String>,
 ) -> Result<ConnectionTest> {
+    state.settings().require_ai()?;
     let settings = state.settings();
     let mut provider = settings
         .providers
@@ -2504,6 +2512,7 @@ async fn ai_provider_models(
     provider: AiProvider,
     key: Option<String>,
 ) -> Result<ConnectionTest> {
+    state.settings().require_ai()?;
     provider_models(&state, provider, key).await
 }
 
@@ -2553,6 +2562,7 @@ async fn ai_provider_test(
     key: Option<String>,
     model: Option<String>,
 ) -> Result<ProviderTest> {
+    state.settings().require_ai()?;
     let settings = state.settings();
     let mut provider = provider;
     provider.base_url = provider.base_url.trim().trim_end_matches('/').to_owned();
@@ -2757,6 +2767,7 @@ struct OllamaDetect {
 /// Looks for an Ollama at `base_url` (default `http://localhost:11434`), directly and briefly.
 #[tauri::command]
 async fn ollama_detect(state: State<'_, AppState>, base_url: Option<String>) -> Result<OllamaDetect> {
+    state.settings().require_ai()?;
     let url = base_url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| annalo_core::ai::provider::OLLAMA_URL.into());
     let provider = AiProvider::ollama("ollama", url.trim());
     let url = provider.root();
@@ -2790,6 +2801,7 @@ async fn ollama_pull(
     provider: AiProvider,
     model: String,
 ) -> Result<()> {
+    state.settings().require_ai()?;
     let model = model.trim().to_owned();
     if model.is_empty() {
         return Err(Error::State(tr!("Kein Modellname", "No model name").into()));
@@ -2955,6 +2967,7 @@ async fn ai_chat(
     conversation_id: Option<i64>,
     notes: Option<bool>,
 ) -> Result<ChatOutcome> {
+    state.settings().require_ai()?;
     let notes = notes.unwrap_or(true);
     let use_tools = use_tools && notes;
     // Registered first: a Stop during retrieval ends the request before anything is sent.
@@ -3160,6 +3173,7 @@ async fn stream_completion(
     request_id: &str,
     req: &ChatRequest,
 ) -> Result<(Completion, SessionMeter)> {
+    state.settings().require_ai()?;
     let scope = CancelScope::new(state, request_id);
     let result = client
         .chat_stream(req, Some(&scope.flag), |event| {
@@ -3238,6 +3252,7 @@ async fn complete_routed(
     mut req: ChatRequest,
     route: RouteDecision,
 ) -> Result<(Completion, SessionMeter, RouteDecision)> {
+    state.settings().require_ai()?;
     /// Waits for one model's cooldown per request.
     const MAX_WAITS: u32 = 2;
     let scope = CancelScope::new(state, request_id);
@@ -3502,6 +3517,7 @@ async fn ai_transform(
     tier: Option<Tier>,
     override_limit: Option<bool>,
 ) -> Result<ChatOutcome> {
+    state.settings().require_ai()?;
     if instruction.trim().is_empty() {
         return Err(Error::State(tr!("Keine Anweisung", "No instruction").into()));
     }
@@ -3543,6 +3559,7 @@ async fn zeit_suggest_ai(
     line: String,
     page_id: Option<i64>,
 ) -> Result<Option<ZeitGuess>> {
+    state.settings().require_ai()?;
     if zeitguess::unreferenced(&line).is_none() {
         return Err(Error::Parse(
             tr!(
@@ -3712,6 +3729,7 @@ async fn ai_run_system_tool(app: AppHandle, state: State<'_, AppState>, call: Sy
 /// and nothing at all with Settings → Datenschutz „Nur lokal“.
 #[tauri::command]
 async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
+    state.settings().require_ai()?;
     let settings = state.settings();
     if settings.embedding_model.as_deref().is_none_or(|m| m.trim().is_empty()) {
         return Err(Error::State(
@@ -4303,6 +4321,8 @@ struct StartupOptions {
 
 pub fn run() {
     PROCESS_START.get_or_init(Instant::now);
+    // An organization's policy `AllowAi = 0` switches the AI off before any client exists.
+    annalo_core::settings::forbid_ai(policy::get().ai_forbidden());
     let mut builder = tauri::Builder::default();
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
     // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
@@ -5145,6 +5165,45 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// „KI verwenden“ off: no client exists and none can be built, so a provider (here a plain
+    /// TCP listener standing in for Ollama) is never contacted; switched on, the same settings
+    /// reach it.
+    #[test]
+    fn with_the_ai_off_no_request_reaches_a_provider() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let mut s = Settings {
+            providers: vec![AiProvider::ollama("ollama", &url)],
+            embedding_provider: "ollama".into(),
+            embedding_model: Some("nomic-embed-text".into()),
+            ..Default::default()
+        };
+        s.router.local_provider = "ollama".into();
+        s.ai.enabled = false;
+        let off = |e: Error| {
+            let text = e.to_string();
+            assert!(text.contains("KI ist ausgeschaltet") || text.contains("AI is switched off"), "{text}");
+        };
+
+        let rt = AiRuntime::new(s.clone(), &HashMap::new(), &HashMap::new());
+        assert!(rt.clients.is_empty(), "no client while the AI is off");
+        off(provider_client(&s, &s.providers[0], None, &|_| None).err().expect("refused"));
+        off(s.check_tool("list_tasks").unwrap_err());
+        off(s.require_ai().unwrap_err());
+        assert_eq!(annalo_core::semantic::plan(&s).inactive, Some(annalo_core::semantic::Inactive::AiOff));
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "contacted");
+
+        // Switched on again, with the provider settings unchanged: the client is there and asks.
+        s.ai.enabled = true;
+        let rt = AiRuntime::new(s.clone(), &HashMap::new(), &HashMap::new());
+        let client = rt.clients.get("ollama").cloned().expect("client back");
+        let _ = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_millis(500), client.ollama_version()).await
+        });
+        assert!(listener.accept().is_ok(), "the provider is asked once the AI is on");
+    }
 
     #[test]
     fn without_time_tracking_the_assistant_knows_nothing_about_booking() {

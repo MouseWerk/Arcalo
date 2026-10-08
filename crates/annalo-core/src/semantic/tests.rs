@@ -242,6 +242,11 @@ fn settings_decide_local_first() {
     s.embedding_model = Some("nomic-embed-text".into());
     let p = plan(&s);
     assert!(p.switch_on && p.local && p.active(), "{p:?}");
+    // „KI verwenden“ off: no embeddings at all, also with a local model; on again, as before.
+    s.ai.enabled = false;
+    assert_eq!(plan(&s).inactive, Some(Inactive::AiOff));
+    s.ai.enabled = true;
+    assert!(plan(&s).active());
     s.search.semantic = Some(false);
     assert_eq!(plan(&s).inactive, Some(Inactive::SwitchedOff));
     s.search.semantic = None;

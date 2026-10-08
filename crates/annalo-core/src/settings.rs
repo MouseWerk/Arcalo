@@ -604,6 +604,32 @@ impl Default for Settings {
 /// Address of the LiteLLM proxy in fresh settings.
 pub(crate) const DEFAULT_LITELLM_URL: &str = "http://localhost:4000";
 
+/// An organization's policy (`AllowAi = 0`) switches the AI off whatever the settings say. The
+/// shell sets it once at start; [`Settings::ai_on`] reads it.
+static AI_FORBIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Called by the shell with the policy read at start.
+pub fn forbid_ai(forbidden: bool) {
+    AI_FORBIDDEN.store(forbidden, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether a policy switched the AI off.
+pub fn ai_forbidden() -> bool {
+    AI_FORBIDDEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// What an AI command answers while „KI verwenden“ is off (or a policy switched it off).
+pub fn ai_off() -> &'static str {
+    if ai_forbidden() {
+        crate::tr!("KI ist von deiner Organisation ausgeschaltet.", "AI is switched off by your organization.")
+    } else {
+        crate::tr!(
+            "KI ist ausgeschaltet (Einstellungen → KI & Modelle → KI verwenden).",
+            "AI is switched off (Settings → AI & models → Use AI)."
+        )
+    }
+}
+
 /// What a booking command answers while time tracking is switched off.
 pub fn time_tracking_off() -> &'static str {
     crate::tr!(
@@ -617,6 +643,22 @@ impl Settings {
     /// check runs. The data stays; switching it on brings everything back.
     pub fn time_tracking(&self) -> bool {
         self.time.enabled
+    }
+
+    /// „KI verwenden“ (Settings → KI & Modelle) and no policy against it. Off, no AI command runs
+    /// and no request goes to an AI or embedding provider; the provider settings stay as they are.
+    pub fn ai_on(&self) -> bool {
+        self.ai_on_with(ai_forbidden())
+    }
+
+    /// [`Settings::ai_on`] with the policy given (tests).
+    pub fn ai_on_with(&self, forbidden: bool) -> bool {
+        self.ai.enabled && !forbidden
+    }
+
+    /// AI commands call this first: off, they refuse with [`ai_off`].
+    pub fn require_ai(&self) -> Result<()> {
+        if self.ai_on() { Ok(()) } else { Err(crate::Error::State(ai_off().into())) }
     }
 
     /// Commands that book time call this first: off, they refuse with [`time_tracking_off`].
@@ -648,6 +690,7 @@ impl Settings {
 
     /// Whether the model may run `tool` now (a time tool while time tracking is off says why not).
     pub fn check_tool(&self, tool: &str) -> Result<()> {
+        self.require_ai()?;
         if crate::ai::tools::TIME_TOOLS.contains(&tool) {
             self.require_time_tracking()?;
         }

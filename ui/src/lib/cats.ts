@@ -44,8 +44,9 @@ export function dayTargets(week: Date, p: TargetInputs): number[] {
   });
 }
 
-/** Past (and today's, once over) days of the week below their target (`targets` per day, see {@link dayTargets}). */
-export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: number[]): DayGap[] {
+/** Past (and today's, once over) days of the week below their target (`targets` per day, see {@link dayTargets});
+ * days before `since` (YYYY-MM-DD, the first start of a new workspace) never count. */
+export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: number[], since: string | null = null): DayGap[] {
   const today = isoDay(now);
   const out: DayGap[] = [];
   for (let i = 0; i < 7; i++) {
@@ -54,6 +55,7 @@ export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: n
     const target = targets[i] ?? 0;
     // Today only counts once the working day is over.
     if (key > today || (key === today && now.getHours() < 18)) continue;
+    if (since && key < since) continue;
     if (target <= 0) continue;
     const booked = rows
       .filter((r) => r.status_flag !== "running" && isoDay(new Date(r.start_time)) === key)

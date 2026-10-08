@@ -13,6 +13,7 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { timeTrackingEnabled, useTimeTracking } from "../lib/timetracking";
+import { useAi } from "../lib/aiswitch";
 import { t, useT } from "../lib/i18n";
 import { cellAt, columnsFor, COLS, GAP, grow, moveTo, nudge, readingOrder, rectPx, reflow, resizeTo, ROW_H } from "../lib/dashgrid";
 import {
@@ -70,6 +71,7 @@ export function Dashboard() {
   const stored = useApp((st) => st.settings?.settings.dashboard);
   // „Zeiterfassung verwenden“ off: time widgets stay on the boards, hidden (lib/dashboard.ts).
   const timeOn = useTimeTracking();
+  const aiOn = useAi();
   const loaded = useMemo(() => loadDashboard(stored, timeOn), [stored, timeOn]);
   const [draft, setDraft] = useState<DashboardT | null>(null);
   const [saving, setSaving] = useState(false);
@@ -324,7 +326,7 @@ export function Dashboard() {
             board={board}
             editing={editing}
             timeOn={timeOn}
-            onLayout={(widgets) => dispatch({ type: "layout", widgets: withHidden(board.widgets, widgets, timeOn) })}
+            onLayout={(widgets) => dispatch({ type: "layout", widgets: withHidden(board.widgets, widgets, timeOn, aiOn) })}
             onAction={dispatch}
             onSettings={setSettingsFor}
             onAdd={() => setGallery(true)}
@@ -373,7 +375,8 @@ const sameLayout = (a: readonly GridWidget[], b: readonly GridWidget[]) =>
 function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSettings, onAdd }: { board: Board; editing: boolean; timeOn: boolean; onLayout: (w: GridWidget[]) => void; onAction: (a: BoardAction) => void; onSettings: (id: string) => void; onAdd: () => void }) {
   // The board as shown: hidden time widgets left out and the gaps closed; edits work on this
   // layout and `onLayout` puts the hidden ones back.
-  const board = useMemo(() => ({ ...stored, widgets: shownWidgets(stored.widgets, timeOn) }), [stored, timeOn]);
+  const aiOn = useAi();
+  const board = useMemo(() => ({ ...stored, widgets: shownWidgets(stored.widgets, timeOn, aiOn) }), [stored, timeOn, aiOn]);
   const tr = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

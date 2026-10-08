@@ -8,9 +8,8 @@ import { useT } from "../lib/i18n";
 import { useApp } from "../store/app";
 import { STEPS, STEP_LABELS, nextStep, prevStep, progressOf, stepIndex, type StepId } from "./flow";
 import { finishFirstRun, useFirstRun } from "./state";
-import { AiStep, BackupStep, CalendarStep, DesktopStep, DoneStep, LanguageStep, SyncStep, ThemeStep, WorkStep, WorkspaceStep } from "./steps";
+import { AiStep, CalendarStep, DoneStep, LanguageStep, ThemeStep, WorkStep, WorkspaceStep } from "./steps";
 import { writeSettings } from "./write";
-import { SecurityStep } from "./SecurityStep";
 
 export function Intake() {
   const t = useT();
@@ -50,14 +49,6 @@ export function Intake() {
         return <AiStep {...p} />;
       case "calendar":
         return <CalendarStep {...p} />;
-      case "sync":
-        return <SyncStep {...p} />;
-      case "backup":
-        return <BackupStep {...p} />;
-      case "security":
-        return <SecurityStep />;
-      case "desktop":
-        return <DesktopStep {...p} />;
       case "done":
         return <DoneStep view={view} onEdit={setStep} />;
     }
