@@ -34,6 +34,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test -p annalo-core -p annalo-cli
+      # The update installer (AppImage replacement against a file in a temp folder).
+      - run: cargo test -p annalo --lib installer
       - run: npm ci --prefix ui && npm run --prefix ui typecheck && npm test --prefix ui
       - run: cargo install tauri-driver --locked
       - name: End-to-end tests against the desktop app
@@ -66,6 +68,17 @@ jobs:
       - run: cargo install tauri-cli --version "^2" --locked
       - run: cargo tauri build
         working-directory: src-tauri
+      # The update install compiled like the release (the updater plugin refused it only in
+      # release builds, 1.12 to 1.14.0): writes the setup into a temp folder and builds the
+      # installer's command line, starts nothing. The release exe itself cannot be pointed at a
+      # test feed (release builds ignore the ANNALO_UPDATE_* variables and CI has no update key).
+      # Without fat LTO (tests are built with unwinding, so the release build's crates are not
+      # reused anyway); still a release build without debug assertions.
+      - name: Update installer in release mode (dry)
+        run: cargo test --release -p annalo --features custom-protocol --lib installer
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
       - uses: actions/upload-artifact@v4
         with:
           name: arcalo-windows
@@ -187,6 +200,13 @@ jobs:
       - name: Bundle the app (ad-hoc signed)
         run: cargo tauri build --bundles app --target aarch64-apple-darwin
         working-directory: src-tauri
+      # The update install compiled like the release: unpacks a .app.tar.gz over a bundle in a
+      # temp folder (not the installed app).
+      - name: Update installer in release mode
+        run: cargo test --release -p annalo --features custom-protocol --target aarch64-apple-darwin --lib installer
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
       # ditto keeps the bundle's symlinks and permissions (upload-artifact would not).
       - run: ditto -c -k --keepParent "target/aarch64-apple-darwin/release/bundle/macos/Arcalo.app" Arcalo-macos.zip
       - uses: actions/upload-artifact@v4

@@ -7,10 +7,10 @@
 //! for the rollback (`rollback.rs`). Only switched on when the build compiled in the
 //! updater's public key (`ANNALO_UPDATER_PUBKEY`); other builds never contact a server.
 //!
-//! The installation itself goes through the updater plugin (NSIS in passive update mode on
-//! Windows, replacing the bundle or the AppImage elsewhere). The plugin only installs an
-//! `Update` it found in a feed; the file it gets was downloaded and verified here, so its
-//! "feed" is a one-shot answer on the loopback interface naming that file's version.
+//! The installation itself is `installer.rs`: it does with the verified file what the updater
+//! plugin's install does (NSIS in passive update mode on Windows, replacing the bundle or the
+//! AppImage elsewhere), without the plugin's own feed check. The plugin is still registered
+//! for its configuration and target names; it never fetches anything.
 //!
 //! The Microsoft Store build (`store.rs`) has none of this: the Store updates the package, so
 //! there is no key, no check, no download, no install on quit and no rollback.
@@ -24,20 +24,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use crate::installer::{self, InstallError};
+use crate::{Result, lock, rollback};
 use annalo_core::Error;
 use annalo_core::network::Service;
 use annalo_core::update::{self as core, AfterUpdate};
 use annalo_core::update_feed::{self as feed, FeedError, Location, Source};
 use annalo_core::update_policy::{Effective, UpdateMode};
 use annalo_core::update_state::{self as st, RollbackRecord, UpdateState, Verdict};
+use annalo_core::{tr, trf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
-
-use crate::{Result, lock, rollback};
-use annalo_core::{tr, trf};
 
 /// Stage file of a verified download (`updates/` in the data folder).
 const STAGED_FILE: &str = "staged.json";
@@ -233,43 +232,9 @@ fn not_configured() -> Error {
     Error::State(core::not_configured().into())
 }
 
-/// What went wrong in the updater plugin, in words a user can act on.
-fn reason(e: &UpdaterError) -> String {
-    match e {
-        UpdaterError::Reqwest(r) if r.is_timeout() => FeedError::Timeout.message(),
-        UpdaterError::Reqwest(r) if r.is_connect() => FeedError::Connect.message(),
-        UpdaterError::Reqwest(r) if r.is_body() || r.is_decode() => FeedError::Interrupted.message(),
-        UpdaterError::Reqwest(r) => trf!("Netzwerkfehler ({})", "Network error ({})", r),
-        UpdaterError::ReleaseNotFound => FeedError::Missing.message(),
-        UpdaterError::Serialization(_) | UpdaterError::Semver(_) => FeedError::Invalid(String::new()).message(),
-        UpdaterError::TargetNotFound(_) | UpdaterError::TargetsNotFound(_) => FeedError::NoPlatform.message(),
-        UpdaterError::Network(msg) => trf!(
-            "Der Server hat die Datei nicht geliefert ({})",
-            "The server did not deliver the file ({})",
-            msg.trim_matches('`')
-        ),
-        UpdaterError::Minisign(_)
-        | UpdaterError::Base64(_)
-        | UpdaterError::SignatureUtf8(_)
-        | UpdaterError::SignedVersionMismatch { .. }
-        | UpdaterError::MissingSignedVersion => FeedError::Signature(String::new()).message(),
-        UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::StorageFull => {
-            tr!("Nicht genug freier Speicherplatz", "Not enough free disk space").into()
-        }
-        UpdaterError::Io(io) if io.kind() == std::io::ErrorKind::PermissionDenied => {
-            trf!(
-                "Keine Schreibrechte für den Programmordner ({})",
-                "No write permission for the program folder ({})",
-                io
-            )
-        }
-        other => other.to_string(),
-    }
-}
-
-fn failed(what: &str, e: UpdaterError) -> Error {
-    crate::devlog::error("update", format!("{what}: {e} ({e:?})"));
-    Error::State(format!("{what}: {}", reason(&e)))
+fn install_failed(what: &str, e: &InstallError) -> Error {
+    crate::devlog::error("update", format!("{what}: {e:?}"));
+    Error::State(format!("{what}: {}", e.message()))
 }
 
 fn feed_failed(what: &str, e: &FeedError) -> Error {
@@ -747,15 +712,15 @@ pub fn on_exit(app: &AppHandle) {
     install_on_quit(app);
 }
 
-/// Backs up the database, keeps the running version, notes the restart, then hands the
-/// verified file to the updater plugin. `restart`: the Windows installer starts the new version.
+/// Backs up the database, keeps the running version, notes the restart, then installs the
+/// verified file (`installer.rs`). `restart`: the Windows installer starts the new version.
 #[tracing::instrument(name = "update_install", skip_all, fields(source = "update", version = %staged.version, restart))]
 async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> {
+    let what = tr!("Installation fehlgeschlagen", "Installation failed");
     let key = pubkey().ok_or_else(not_configured)?;
     let bytes = std::fs::read(&staged.path)?;
     // Checked again: the file waited in the data folder since its download.
-    feed::verify(&bytes, &staged.signature, key, &staged.version)
-        .map_err(|e| feed_failed(tr!("Installation fehlgeschlagen", "Installation failed"), &e))?;
+    feed::verify(&bytes, &staged.signature, key, &staged.version).map_err(|e| feed_failed(what, &e))?;
     let dir = data_dir(app);
     let from = current_version(app);
     let backup = pre_update_backup(app, &from, &staged.version);
@@ -769,12 +734,22 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
         std::fs::write(dir.join(st::UPDATES_DIR).join("fake-install.json"), note.to_string())?;
         return Ok(());
     }
-    let update = plugin_update(app, staged, restart).await.inspect_err(|_| core::clear_restart_marker(&dir))?;
-    update.install(bytes).map_err(|e| {
+    let target = installer::Target::current(app, &staged.version, restart).map_err(|e| {
+        core::clear_restart_marker(&dir);
+        install_failed(what, &e)
+    })?;
+    let handle = app.clone();
+    // Windows: once the installer is written, the workspace is closed and the tray icon goes
+    // right before it starts; a started installer ends this process.
+    installer::install(&bytes, &target, move || {
+        crate::prepare_exit(&handle);
+        handle.cleanup_before_exit();
+    })
+    .map_err(|e| {
         core::clear_restart_marker(&dir);
         // Windows: the installer could not be started after the workspace was closed for it.
         crate::resume_after_failed_exit(app);
-        failed(tr!("Installation fehlgeschlagen", "Installation failed"), e)
+        install_failed(what, &e)
     })
 }
 
@@ -792,53 +767,6 @@ fn pre_update_backup(app: &AppHandle, from: &str, to: &str) -> Option<PathBuf> {
             None
         }
     }
-}
-
-/// The plugin's `Update` for the verified file: its check reads a feed served once on the
-/// loopback interface that names exactly this version and signature.
-async fn plugin_update(app: &AppHandle, staged: &Staged, restart: bool) -> Result<Update> {
-    let what = tr!("Installation fehlgeschlagen", "Installation failed");
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    let addr = listener.local_addr()?;
-    let body = serde_json::json!({
-        "version": staged.version,
-        "platforms": { "arcalo": { "url": format!("http://{addr}/update"), "signature": staged.signature } },
-    })
-    .to_string();
-    std::thread::spawn(move || {
-        use std::io::{Read, Write};
-        let _ = listener.set_nonblocking(false);
-        if let Ok((mut sock, _)) = listener.accept() {
-            let _ = sock.set_read_timeout(Some(Duration::from_secs(5)));
-            let mut buf = [0u8; 4096];
-            let _ = sock.read(&mut buf);
-            let head = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-                body.len()
-            );
-            let _ = sock.write_all(head.as_bytes());
-            let _ = sock.write_all(body.as_bytes());
-        }
-    });
-    let handle = app.clone();
-    let url = format!("http://{addr}/latest.json").parse().map_err(|e| Error::State(format!("{e}")))?;
-    let updater = app
-        .updater_builder()
-        .endpoints(vec![url])
-        .map_err(|e| failed(what, e))?
-        .target("arcalo")
-        .no_proxy()
-        .timeout(Duration::from_secs(10))
-        .version_comparator(|_, _| true)
-        .restart_after_install(restart)
-        .on_before_exit(move || {
-            crate::prepare_exit(&handle);
-            // What the plugin does by default: the tray icon goes, the windows hide.
-            handle.cleanup_before_exit();
-        })
-        .build()
-        .map_err(|e| failed(what, e))?;
-    updater.check().await.map_err(|e| failed(what, e))?.ok_or_else(|| Error::State(what.into()))
 }
 
 /// „Diese Version überspringen“: not offered again (the next newer one is); the download goes.
@@ -940,21 +868,6 @@ pub fn mark_healthy(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn failures_are_explained() {
-        assert_eq!(reason(&UpdaterError::ReleaseNotFound), "Der Update-Server hat keine Versionsinformation geliefert");
-        assert!(reason(&UpdaterError::TargetsNotFound(vec!["linux-x86_64".into()])).contains("kein Update-Paket"));
-        assert_eq!(
-            reason(&UpdaterError::Network("`Download request failed with status: 404 Not Found`".into())),
-            "Der Server hat die Datei nicht geliefert (Download request failed with status: 404 Not Found)"
-        );
-        let mismatch = UpdaterError::SignedVersionMismatch { signed: "1.5.0".into(), announced: "1.6.0".into() };
-        assert!(reason(&mismatch).contains("Signatur"));
-        assert!(reason(&mismatch).contains("nichts installiert"));
-        let full = UpdaterError::Io(std::io::Error::from(std::io::ErrorKind::StorageFull));
-        assert_eq!(reason(&full), "Nicht genug freier Speicherplatz");
-    }
 
     #[test]
     fn github_feeds_match_the_config() {

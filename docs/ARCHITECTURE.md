@@ -427,6 +427,15 @@ defineWidget({
 - `tauri-plugin-updater` is registered only when the build compiled in `ANNALO_UPDATER_PUBKEY`
   (`option_env!`; `build.rs` re-runs when it changes). Without it `update_status` reports `enabled: false`,
   `update_check`/`update_install` refuse, and nothing contacts the network (dev, CI and e2e builds).
+- The plugin no longer installs: `installer.rs` installs the downloaded and verified file itself (since
+  1.14.1; the plugin only installs an update it fetched from a feed, and its release builds refuse a non-`https`
+  feed, which broke the in-app install from 1.12 to 1.14.0). Windows: the setup goes to
+  `%TEMP%\Arcalo-<version>-updater-…\Arcalo-<version>-installer.exe` and starts via ShellExecute with the
+  plugin's arguments for `installMode: passive` (`/P /UPDATE`, plus `/R /ARGS <args>` to relaunch); macOS: the
+  `.app.tar.gz` replaces the bundle (`osascript` with administrator rights when the folder is not writable);
+  Linux: the AppImage is replaced in place. No updater endpoint is ever `http` and
+  `dangerousInsecureTransportProtocol` stays off (a test checks both); CI runs the installer tests compiled in
+  release mode on Windows and macOS.
 - Endpoint and Windows `installMode: passive` live in `plugins.updater` of `tauri.conf.json`. The release
   workflow (`.github/workflows/release.yml`, on `v*` tags) sets the version from the tag, turns on
   `createUpdaterArtifacts` and publishes the signed installers with `latest.json` via `tauri-action`.
@@ -439,7 +448,7 @@ defineWidget({
   new process cannot be started, `resume_after_failed_exit` opens the workspace again.
 - `core::update::is_newer` decides (semver precedence; a release build is never offered a pre-release).
   Portable copies and .deb/.rpm installs (`bundle_type`) never install: `manual_update_reason`, and the UI
-  opens the release page. The feed's `linux-x86_64` entry is the AppImage, which the plugin replaces in place.
+  opens the release page. The feed's `linux-x86_64` entry is the AppImage, which `installer.rs` replaces in place.
 - Right before installing, `.annalo-update` (target version) is written into the data folder; the next start
   reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
   version did not change (installer cancelled, UAC denied), that the update was not installed.
