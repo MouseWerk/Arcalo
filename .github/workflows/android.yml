@@ -14,17 +14,48 @@ on:
       - "Cargo.lock"
       - ".github/workflows/android.yml"
   workflow_dispatch:
+  # The release (release.yml) builds the APK of its tag and attaches it to the release.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v1.15.0"
+        required: true
+        type: string
 
+# Per calling workflow: a release does not cancel the APK of a push to main, nor the other way round.
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   apk:
     name: Android APK
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+      # A release: the tag is the version (the APK's versionName and versionCode come from it).
+      - name: Version from tag
+        if: inputs.tag
+        run: |
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          VERSION="$VERSION" node -e '
+            const fs = require("fs");
+            const p = "src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2));
+            const t = "Cargo.toml";
+            fs.writeFileSync(t, fs.readFileSync(t, "utf8").replace(/^version = "[^"]*"/m, `version = "${process.env.VERSION}"`));
+          '
       - uses: dtolnay/rust-toolchain@1.94.1
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
@@ -93,7 +124,7 @@ jobs:
           mkdir -p dist-android
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
           test -n "$apk"
-          cp "$apk" "dist-android/Arcalo_${GITHUB_SHA::8}_android.apk"
+          cp "$apk" "dist-android/Arcalo_${VERSION:-${GITHUB_SHA::8}}_android.apk"
           ls -l dist-android
       - uses: actions/upload-artifact@v4
         with:

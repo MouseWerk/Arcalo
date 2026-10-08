@@ -402,10 +402,19 @@ jobs:
           & msstore @cli
           if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
 
+  # The Android companion app (docs/android.md): its APK is attached to the release.
+  android:
+    name: Android
+    needs: tag
+    uses: ./.github/workflows/android.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
+
   publish:
     name: Publish release
-    needs: [tag, build, store]
-    # A failed Store package does not hold up the release (it is attached when it was built).
+    needs: [tag, build, store, android]
+    # A failed Store package or APK does not hold up the release (each is attached when it was built).
     if: ${{ !cancelled() && needs.tag.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     env:

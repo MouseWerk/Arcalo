@@ -97,8 +97,8 @@ Done, as specified above; details in docs/ARCHITECTURE.md „Names kept from Ann
   pages, settings, encrypted workspace, secret, WebView storage, update marker, location.json).
 
 Open for the owner: the website (repo and worker rename), the Windows/macOS manual checks in the
-release notes (taskbar pin, AUMID, macOS link in the signed bundle), and when to delete the old
-folders and credential entries (not before all installs run 1.15).
+release notes (taskbar pin, AUMID, macOS link in the signed bundle). Owner decision: 1.17 deletes the
+old folders and credential entries.
 
 ## Tests
 

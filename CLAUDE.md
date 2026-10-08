@@ -15,6 +15,10 @@ live at https://arcalo.mousewerk.de.
 - Encryption is off by default; settings apply instantly with undo; Git sign-in is not offered.
 - Ctrl/Cmd+click in the tree selects; pages are filed in year/month folders, existing pages move only via
   "Aufräumen". Whisper models are downloaded from GitHub (release `whisper-models-v1`, keep it).
+- The Android companion APK is attached to each release but not advertised on the website or in the README.
+- The setup does not offer Git sync, backups, encryption or desktop options; its last step links them
+  („Später einrichten“). The old Annalo data folders and credential entries kept by the 1.15 migration are
+  deleted in 1.17.
 - No pull requests unless asked. No force push, branch deletion or history rewrite without an explicit request.
 - Never commit the update-signing private key. Secrets only in the OS credential store.
 
