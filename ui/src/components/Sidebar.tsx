@@ -124,7 +124,8 @@ export function Sidebar() {
             icon={st.icon}
             label={st.label}
             active={tab === st.id}
-            size="md"
+            // The same size as the ribbon's buttons next to them.
+            size="lg"
             onClick={() => setTab(st.id)}
             role="tab"
             aria-selected={tab === st.id}

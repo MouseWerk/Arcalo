@@ -614,6 +614,7 @@ export const de: Catalog = {
   "tabs.closeOthers": "Andere Tabs schließen",
   "tabs.closeTab": "Tab schließen",
   "tabs.newTab": "Neuer Tab",
+  "tabs.goHome": "Startseite",
   "tabs.split": "Rechts teilen",
   "tabs.panel": "Seitenpanel",
   "tabs.pin": "Tab anheften",

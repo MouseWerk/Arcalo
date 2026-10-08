@@ -28,7 +28,9 @@ live at https://arcalo.mousewerk.de.
 - Use the design tokens in `ui/src/styles` (tokens.css); no one-off colors or sizes.
 - No accent-colored borders, outlines, left bars, glows or gradient borders for selected, active or current
   states (the "AI look"); show them with a quiet neutral background tint and text weight or color. Keyboard
-  focus stays visible, but only on `:focus-visible` and in a neutral style. Applies to the app and the website. Quality bar:
+  focus stays visible, but only on `:focus-visible` and in a neutral style. No colored bars on the left side
+  anywhere either (cards, toasts, notices, callouts, nav, outline); use a tinted background and an icon. A plain
+  blockquote may keep a thin neutral gray line. Applies to the app and the website. Quality bar:
   Obsidian/Linear-level polish in light, dark and contrast themes, 900–1920 px and split panes.
 - Migrations in `crates/annalo-core/migrations` are positional: take the next number, never fill a gap.
   Settings changes need a step in `crates/annalo-core/src/settings_migrate.rs` (`SETTINGS_VERSION`).

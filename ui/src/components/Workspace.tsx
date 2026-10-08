@@ -1,7 +1,7 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
 import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, House, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "./ui";
 import { TIME_TABS, useTimeTracking } from "../lib/timetracking";
@@ -344,6 +344,19 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       // Where the tab bar is the title bar (macOS, own title bar on Windows) a double-click maximizes.
       onDoubleClick={(e) => e.target === e.currentTarget && !titleBarInTabs() && s().openTab({ kind: "home" }, { newTab: true })}
     >
+      {/* The start page of this pane: its tab if one is open, otherwise a new one. */}
+      <IconButton
+        className="tabbar-home"
+        icon={House}
+        label={tr("tabs.goHome")}
+        size={26}
+        iconSize={15}
+        active={pane.tabs.find((x) => x.id === pane.activeTabId)?.kind === "home"}
+        onClick={() => {
+          s().focusPane(pane.id);
+          s().openTab({ kind: "home" }, { newTab: true });
+        }}
+      />
       <div
         className="tabs"
         role="tablist"

@@ -617,6 +617,7 @@ export const en = {
   "tabs.closeOthers": "Close other tabs",
   "tabs.closeTab": "Close tab",
   "tabs.newTab": "New tab",
+  "tabs.goHome": "Start page",
   "tabs.split": "Split right",
   "tabs.panel": "Side panel",
   "tabs.pin": "Pin tab",
