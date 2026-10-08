@@ -81,7 +81,7 @@ in one place on their own computer.
 2. The setup asks for language, working time, workspace (sample data, Obsidian import or empty), AI and calendar;
    every step can be skipped.
 3. Open today's daily note (**Ctrl Shift D**), write down what you did and type `/time` to book it. More under
-   [First steps](#first-steps), and on the [website](https://arcalo.mousewerk.de/).
+   [First steps](#first-steps), in the [documentation](https://arcalo.mousewerk.de/docs/) and on the [website](https://arcalo.mousewerk.de/).
 
 **Contents:** [Why Arcalo](#why-arcalo) · [Quick start](#quick-start) · [Download](#download) · [Tour](#a-quick-tour) · [Features](#what-you-get) · [First steps](#first-steps) ·
 [AI providers](#connecting-ai-providers) · [Proxy](#network-and-proxy) · [Customizing](#customizing) ·
@@ -685,7 +685,7 @@ All in-app shortcuts can be changed under Settings → Keyboard (the defaults ar
 
 | Keys | Action |
 |---|---|
-| Ctrl K / Alt Space (global, configurable) | Command palette, search, `/time …`, `? question` |
+| Ctrl K | Command palette, search, `/time …`, `? question`; a global shortcut for it is off by default and can be set under Settings → Desktop |
 | Ctrl Shift Space (global) | Quick capture (Tab: target, `>`: page, Ctrl Z: undo the last capture) |
 | Ctrl Shift O (global, configurable) | Quick search window |
 | Ctrl O | Quick switcher |
@@ -701,6 +701,7 @@ All in-app shortcuts can be changed under Settings → Keyboard (the defaults ar
 | Ctrl \ / Ctrl Shift \ | Toggle sidebar / side panel |
 | Ctrl . | Focus mode |
 | Ctrl , | Settings |
+| F1 | Documentation (the "?" above the settings gear also has the shortcuts, release notes, feedback and bug reports) |
 
 ## Releasing
 
