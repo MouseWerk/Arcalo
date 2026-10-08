@@ -5,9 +5,9 @@
 ```
  ui/ (React + TipTap, WebView2)      ── invoke()/listen() ──▶  src-tauri (IPC commands, state, secrets, sampler)
                                                                     │
- crates/annalo-cli ─────────────────────────────────────────────────┤
+ crates/arcalo-cli ─────────────────────────────────────────────────┤
                                                                     ▼
-                                             crates/annalo-core
+                                             crates/arcalo-core
             ┌─────────┬──────────┬───────────┬──────────┬──────────┬───────────────┐
             │ db      │ zeit     │ tracking  │ netzplan │ export   │ ai::{client,  │
             │ search  │ (parser) │ (budget)  │ (CPM)    │          │ provider,rag, │
@@ -16,7 +16,7 @@
                       SQLite (WAL, FTS5, f32 BLOB embeddings)     AI providers (HTTP/SSE)
 ```
 
-All logic lives in `annalo-core` and is tested there; the shell only wires state,
+All logic lives in `arcalo-core` and is tested there; the shell only wires state,
 events and OS integration. The UI never talks to the network or the filesystem directly.
 
 The same shell builds the **Android companion app** (docs/android.md): `#[cfg(desktop)]` leaves out the
@@ -25,7 +25,7 @@ the desktop modules and the Android Keystore for secrets; the UI is `ui/src/mobi
 libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`SyncRequest::companion`,
 `companion.rs`: bookings as chips in the daily note, the WBS and meetings from the desktop's database copy).
 
-## Data model (`crates/annalo-core/migrations/0001_init.sql`)
+## Data model (`crates/arcalo-core/migrations/0001_init.sql`)
 
 | Table | Purpose |
 |---|---|
@@ -50,7 +50,7 @@ libgit2 there (`gitlib.rs`, feature `embedded-git`) and syncs as a companion (`S
 | `calendar_marks` | What the user decided about an appointment (v9), by key `source\|uid\|instance`: `skip` („nicht buchen“), `note_page_id` (meeting note, set null on purge), `entry_id` (booked entry, set null on delete), subject and series of the booking for the WBS suggestion. Never touched by a sync |
 | `calendar_sync` | Status of the last sync per source (v9): last success, last attempt, error, number of events |
 | `wbs_memory` | The WBS the user chose in „Woche vorschlagen“ (v10), per page (`kind = page`, cascade with the page) or per text (`kind = text`, e.g. a focus goal); `link_ref` is the page's `vorgang:` at that time (the property wins again once it changes) |
-| `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `annalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
+| `mail_links` | Links of tasks and notes to e-mails (v11): short `id` (the `arcalo-mail://<id>` of the Markdown), `source` (`outlook`, `eml`, `msg`), Outlook `entry_id`/`store_id` or the stored `file`, subject, sender, received time, `vorgang` |
 | `chat_conversations`, `chat_messages`, `chat_messages_fts` | The assistant's chat history (v12): per conversation title (`title_custom` once renamed), created/updated, pinned, archived, `private`, provider/model/tier of the last answer, the pages sent as context (JSON) and `deleted_at` (undo, purged on start); per message `seq`, role, content, the shown label (`display`), tool calls and the tool card, citations, route reasons, tokens and cost, error, cancelled and `in_context` (messages of a failed turn are shown but never sent again). FTS5 over the message text |
 | `issues`, `issue_projects`, `issue_sync` | Jira cache (v14), per site and key: summary, status and category, priority, assignee, reporter, type, project, sprint, due date, updated/resolved, URL, description (ADF/wiki markup as text), the last comments (JSON) and `matches` (the searches that found it: `mine` or a saved query id; `[]` = kept for chips, dropped after 30 days). `issue_projects` are the projects of cached issues: only their keys become chips. `issue_sync` holds the last sync per site |
 | `issue_wbs_map`, `time_entry_issues` | Which Netzplan/Vorgang an issue or project books on (`learned` from the first booking) (v14); the issue key of a time entry (cascade with the entry) and its Jira worklog: `worklog_state` (`none`, `pending`, `posting`, `posted`, `failed`), `worklog_id` once posted (never posted twice), attempts and the next try |
@@ -95,7 +95,7 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   due destination, into `<destination>/<computer>/` (so two computers sharing a share never prune each other): written as
   `<name>.partial` (chunked, `fsync`, size checked), then `<name>.sha256` (`sha256sum` format), then renamed. Retention
   deletes only `arcalo-`/`annalo-YYYYMMDD-HHMMSS.db` files that have their checksum file, in this computer's folder. Every copy
-  runs on its own thread under `run_watched`: without progress for 60 s (`ANNALO_BACKUP_STALL_SECS` in debug builds) it is
+  runs on its own thread under `run_watched`: without progress for 60 s (`ARCALO_BACKUP_STALL_SECS` in debug builds) it is
   given up and the thread is abandoned, so a hung share never blocks the app, other destinations or quitting; the next
   copy to it waits until the old thread ended. A destination folder is created only below an existing parent and never
   again once it worked (an unmounted share must not become a local folder). Failures are classified (`Problem`:
@@ -130,7 +130,7 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   never replaced. Failures are recorded (`mirror.error` meta row) and shown in the settings; they do not fail the backup.
 - **Git sync** (`gitsync.rs`): the mirror is swapped atomically, so it cannot hold a repository. The sync keeps its own
   working tree `<data dir>/git-sync`, brings it to the mirror's state like rsync (removals first, `.git`, `.gitattributes`,
-  `README.md` and `annalo-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
+  `README.md` and `arcalo-workspace.db` kept), `git add -A`, commits only staged changes and pushes `HEAD:refs/heads/<branch>`.
   Only a complete mirror is synced: a source that is not a folder with the mirror's `README.txt` marker (drive not
   connected, a foreign folder the mirror refused) is refused before git runs, and a folder vanishing while it is read is an
   error, never an empty listing. `mirror::replace_dir` swaps under `mirror::hold_swaps`, and the sync copies the mirror under
@@ -147,7 +147,7 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   (`Pulled.kept`, a warning toast; the next sync uploads them again). Git lock files older than the 120 s timeout are removed
   before a sync (`remove_stale_locks`, logged). A rejected push
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
-  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `annalo-sync-<host>`. Files only
+  the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
   repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and deletions keep this
   side. The shell (`syncmerge.rs`) maps paths to pages with `vault::page_paths` (the export's naming, case-insensitive) and
@@ -175,8 +175,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   stores the current state. At most 50 per page; older than 30 days are pruned on start. A restore saves
   through `save_page_content`, so search, links, tags and tasks follow. The dialog shows a line diff (LCS).
 - **Portable mode** (`datadir::portable_data_dir`, shell `portable.rs`): a file `arcalo-portable` (or `annalo-portable`) next to the executable
-  (or `data/.arcalo-portable`, `data/.annalo-portable`) puts everything in `<exe dir>/data` (`ANNALO_EXE_DIR` stands in for the executable's folder in
-  tests; `ANNALO_DATA_DIR` still wins); `location.json` is ignored and „Speicherort ändern“ refused. Nothing is written into
+  (or `data/.arcalo-portable`, `data/.annalo-portable`) puts everything in `<exe dir>/data` (`ARCALO_EXE_DIR` stands in for the executable's folder in
+  tests; `ARCALO_DATA_DIR` still wins); `location.json` is ignored and „Speicherort ändern“ refused. Nothing is written into
   the user profile: no autostart entry (`autostart_set` refuses, the switch explains why), no taskbar jump list, the
   webview profile in `data/webview`, and updates are downloaded from the release page instead of installed
   (`update_install` refuses; the UI shows „Neue Version herunterladen“). Secrets stay in the OS credential store, which
@@ -186,12 +186,12 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   workflow publishes `Arcalo_<version>_x64-portable.zip` (Arcalo.exe, marker, LIESMICH.txt) next to the installer; it is
   not part of `latest.json`.
 - **Microsoft Store build** (shell `store.rs`, `packaging/msix/`, docs/release/microsoft-store.md): the cargo feature
-  `store`, or a package identity at run time (`GetCurrentPackageFullName`; `ANNALO_STORE=1` in debug builds). No
+  `store`, or a package identity at run time (`GetCurrentPackageFullName`; `ARCALO_STORE=1` in debug builds). No
   update key, check, download, install on quit or rollback (`update_status.store`, Settings → Über points to the
   Store), no portable mode, autostart through the package's startup task, toasts under the package's app id, the
   `arcalo-notify:` protocol and the `Arcalo.exe` execution alias declared in the manifest. The manifest switches
-  AppData write virtualization off for `app.annalo.desktop`, so the data folder is the installer's.
-- **Data folder** (`datadir.rs`): `ANNALO_DATA_DIR` wins, then `<app config dir>/location.json`
+  AppData write virtualization off for `de.mousewerk.arcalo`, so the data folder is the installer's.
+- **Data folder** (`datadir.rs`): `ARCALO_DATA_DIR` wins, then `<app config dir>/location.json`
   (`{"data_dir": "…"}`), then the app data folder. „Speicherort ändern…“ checkpoints the WAL
   (`wal_checkpoint(TRUNCATE)`) while holding the database lock, copies `workspace.db` (+ `-wal`/`-shm`),
   `attachments/`, `backups/`, the file trash `trash/`, `logs/` and the Git sync's working tree `git-sync/` (never over an
@@ -199,8 +199,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   A data folder on a UNC path or inside OneDrive/Dropbox gets a persistent warning at start
   (`data_dir_status`, queried by the UI once it is ready, so the warning cannot be missed).
 - **Single instance**: a second launch only focuses the running window (tauri-plugin-single-instance),
-  so two processes never write one workspace. Test runs with `ANNALO_DATA_DIR` skip the check. A portable copy locks
-  `data/.annalo.lock` instead (`portable::lock_instance`): the plugin is keyed by the app identifier, which the installed
+  so two processes never write one workspace. Test runs with `ARCALO_DATA_DIR` skip the check. A portable copy locks
+  `data/.arcalo.lock` (and `.annalo.lock` of a 1.14 copy) instead (`portable::lock_instance`): the plugin is keyed by the app identifier, which the installed
   copy shares, so both may run side by side on their own data.
 - **Transactions** (`Database::atomic`): savepoints that nest; when the outermost release (the commit) fails (disk full,
   I/O error, locked file), everything since the savepoint is rolled back and the error returned, so the connection never
@@ -218,11 +218,11 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   network settings that cannot be applied, are start notices (`DataDirStatus.notice` with a `title`).
   The schema version is checked before the journal mode is set, so a newer database is not written at all. The dialog's
   text goes to the developer log; „Beenden“ and „Ordner öffnen“ end with exit code 1. Debug builds skip the dialog when
-  `ANNALO_TEST_RECOVERY_CHOICE` (`restore`, `open`, `quit`) is set and take that answer once the event loop runs
+  `ARCALO_TEST_RECOVERY_CHOICE` (`restore`, `open`, `quit`) is set and take that answer once the event loop runs
   (e2e `60-startup-recovery`: the app is started without WebDriver, then again under it on the restored folder).
 - **History**: activity, AI usage and finished focus sessions older than 400 days are pruned on start
   (`prune_history`); purging a page clears the texts of its activity rows (title, task text, mentions).
-- **Close to tray / quit**: the UI asks `window_close_action` (`annalo_core::desktop::close_action`): on macOS the
+- **Close to tray / quit**: the UI asks `window_close_action` (`arcalo_core::desktop::close_action`): on macOS the
   window is always hidden (the app stays in the Dock, `RunEvent::Reopen` shows it again, ⌘Q quits); elsewhere
   `close_to_tray` hides it (minimized without a tray icon). For hide/minimize the UI flushes its editors and calls
   `window_hide`; „Beenden“ in the tray or the macOS menu (⌘Q) emits `app://quit-requested`, the UI flushes (asking
@@ -281,7 +281,7 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   and the UI focuses the field again until `document.hasFocus()`. The palette's global shortcut is `palette_shortcut`
   (default off); all are re-registered when the settings are saved.
   `capture_submit(text, target)` books `/zeit` lines and puts the rest into a `capture::CaptureTarget` (`daily`,
-  `inbox`, `page`, `new_page`, `meeting`; all or nothing, `annalo_core::capture`): lines become bullets (`todo` a task),
+  `inbox`, `page`, `new_page`, `meeting`; all or nothing, `arcalo_core::capture`): lines become bullets (`todo` a task),
   list items keep their indentation, headings/quotes/tables/embeds/code blocks stay blocks. The daily note and meeting
   notes get it at the end of their „Notizen“ section (else at the end), the inbox page (`settings.capture.inbox_title`,
   created on first use) under a bold `dd.mm.yyyy, HH:MM` line, other pages at the end. The meeting target is
@@ -292,8 +292,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   changed since (a created page goes to the trash). A retryable failure (database busy/locked, storage) writes the capture
   to `<data dir>/capture-queue.json`; it is retried after 5 s and on every 30 s tick (with its original time), a page that
   vanished meanwhile falls back to the inbox, and the main window gets `capture://queued` / `capture://stored` (late) /
-  `capture://failed` (with the text) toasts. `ANNALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
-  The draft (text and target) lives in `localStorage` (`annalo.capture.draft`). The popup windows disable the native
+  `capture://failed` (with the text) toasts. `ARCALO_TEST_CAPTURE_BUSY=n` (debug builds) fails the first n captures.
+  The draft (text and target) lives in `localStorage` (`arcalo.capture.draft`). The popup windows disable the native
   drag-and-drop handler, so dropped files reach the page and are stored via `attachment_store`.
 - macOS popups: transparent through `macOSPrivateApi` (tauri feature `macos-private-api`; fine outside the Mac App
   Store) and without the system shadow (it is computed from the transparent content and can stay rectangular);
@@ -323,28 +323,28 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   „Heute“/„Projekte“. No table or migration: the layout is small and belongs to the settings. (1.7: see below.)
 - Start page UI: `lib/dashgrid.ts` is the layout engine (collisions push down, then everything floats up; keyboard
   `nudge`/`grow`; `reflow` to 6 or 1 columns by the grid's width, measured with a ResizeObserver), `lib/dashboard.ts`
-  the catalogue, presets, board edits, export/import (`annalo-dashboard` JSON), the parts a widget needs and the budget
+  the catalogue, presets, board edits, export/import (`arcalo-dashboard` JSON), the parts a widget needs and the budget
   forecast, `lib/dashquery.ts` the query line of the „Abfrage“ widget. Widgets live in `components/dashboard/`
   (`day`, `time`, `pages`, `tools`), share `common.tsx`, and adapt to their own width (`container: dw`).
-- `dashboard_data(request)` (`annalo_core::dashboard`, async, read connection): `{ today, parts: [{ key, part }] }` →
+- `dashboard_data(request)` (`arcalo_core::dashboard`, async, read connection): `{ today, parts: [{ key, part }] }` →
   `{ parts: { key: data | { error } }, ms }`. A part is one of `today`, `agenda`, `tasks`, `week`, `budgets`,
   `project`, `recent`, `page`, `query`, `feed`, `focus`, `proposal`, `review`, `timer_refs`, `month`, `suggestions`;
   equal parts of several widgets share a key, the budgets with the hours of the last 28 days are loaded once per call.
   The UI (`components/dashboard/data.tsx`) asks only for widgets in view (IntersectionObserver), keeps shown data
   while reloading and reloads the parts whose topics changed (`data://entries`, `data://tasks`, `data://pages`,
   `calendar://synced`, `focus://changed`, saved pages, the WBS), batched into one call. Timing is kept in
-  `window.__annaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
+  `window.__arcaloDashPerf`; ten widgets on 1200 pages and 1500 bookings paint about 110 ms after the answer.
 - Start page 1.7: `version: 3`. `Dashboard::normalized` keeps every well-formed kind (`valid_widget_kind`: a-z, 0-9,
   `-`, `_`, at most 32 characters), so a widget of a newer version or of a feature not built in survives a save; the
   UI keeps it on its board, hidden (`widgetShown`, `withHidden`), like the time widgets while time tracking is off.
   A 1.6 layout opens unchanged (all boards, settings, notes, the board used last); the 1.3–1.5 list still becomes
   the first board. Preset sizes are small 3×4, medium 4×7, wide 8×7, tall 4×14 and wide and tall 8×14
   (`SIZES`, `resizeToPreset`), from the size buttons, the keys 1–5 in edit mode or the widget menu outside it.
-  Board files (`*.dashboard.json`, format `annalo-dashboard` version 2) leave out settings that hold credentials
+  Board files (`*.dashboard.json`, format `arcalo-dashboard` version 2) leave out settings that hold credentials
   (`publicConfig`: keys a widget lists in `secrets`, and any key that looks like a token, password or API key) and
   are checked on import (version, at most 40 widgets, kinds, places, settings size, notes); unknown kinds are left
   out with a notice. New parts: `resurface { seed }`, `writing { days }`, `pulled { limit }` and `inbox { limit }`
-  (`annalo_core::dashboard::notes`). Writing statistics come from the activity journal (characters changed per
+  (`arcalo_core::dashboard::notes`). Writing statistics come from the activity journal (characters changed per
   hourly edit event, 6 characters a word), read by one indexed range query; the pages a Git sync took over are
   recorded by the shell (`record_pulled`, settings meta `gitsync.pulled`, 50 entries); inbox entries are the
   `**dd.mm.yyyy, HH:MM**` blocks quick capture writes into its inbox page, and `dashboard_inbox_move` files one
@@ -388,7 +388,7 @@ defineWidget({
 ```
 
 - Data loads only once the widget scrolls into view: through `parts` (one batched backend call for every widget in
-  view; a new part kind needs a variant of `annalo_core::dashboard::Part`, its topics in `partTopics`) or with
+  view; a new part kind needs a variant of `arcalo_core::dashboard::Part`, its topics in `partTopics`) or with
   `useLazyData` for anything else (an outside service, a status call). Topics (`entries`, `tasks`, `pages`,
   `calendar`, `focus`, `wbs`, `sync`) reload it when that data changes.
 - A widget changes its own settings with `useBoard().setConfig(widget.id, patch)` (saved at once, or into the draft
@@ -412,7 +412,7 @@ defineWidget({
   `completed_at` (closing the setup counts too); `onboarding_reset` („Einrichtung zurücksetzen“, Settings → Über) clears
   them, `meta.onboarded` and the hint and sets `first_seen = reset` (the intro plays again at the next start without
   guessing the language). `settings_save` keeps the stored `onboarding` like the dashboard. The flags live in the
-  workspace database, so a portable copy carries them. Debug builds skip everything with `ANNALO_SKIP_ONBOARDING=1` (the
+  workspace database, so a portable copy carries them. Debug builds skip everything with `ARCALO_SKIP_ONBOARDING=1` (the
   e2e harness sets it unless a test asks for the intro).
 - UI: `FirstRun` (rendered by `App` only, so the capture, search and presenter windows never show it) covers the window
   above the app (z 45: dialogs, menus and toasts stay above), keeps keys inside and traps Tab. `Intro` plays seven scenes
@@ -430,7 +430,7 @@ defineWidget({
 
 ## Auto-update (`updates.rs` in the shell, `update.rs` in core)
 
-- `tauri-plugin-updater` is registered only when the build compiled in `ANNALO_UPDATER_PUBKEY`
+- `tauri-plugin-updater` is registered only when the build compiled in `ARCALO_UPDATER_PUBKEY`
   (`option_env!`; `build.rs` re-runs when it changes). Without it `update_status` reports `enabled: false`,
   `update_check`/`update_install` refuse, and nothing contacts the network (dev, CI and e2e builds).
 - The plugin no longer installs: `installer.rs` installs the downloaded and verified file itself (since
@@ -455,10 +455,10 @@ defineWidget({
 - `core::update::is_newer` decides (semver precedence; a release build is never offered a pre-release).
   Portable copies and .deb/.rpm installs (`bundle_type`) never install: `manual_update_reason`, and the UI
   opens the release page. The feed's `linux-x86_64` entry is the AppImage, which `installer.rs` replaces in place.
-- Right before installing, `.annalo-update` (target version) is written into the data folder; the next start
+- Right before installing, `.arcalo-update` (target version) is written into the data folder; the next start
   reads it once: the window shows even when autostarted minimized, and the UI says „aktualisiert“ or, when the
   version did not change (installer cancelled, UAC denied), that the update was not installed.
-- Debug builds only: `ANNALO_UPDATE_ENDPOINT`, `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_BUNDLE=deb` point the
+- Debug builds only: `ARCALO_UPDATE_ENDPOINT`, `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_BUNDLE=deb` point the
   updater at a local test feed (`e2e/tests/95-update-feed.test.js`, `e2e/lib/update-feed.js`).
 
 ## Network (`network.rs` in core and shell)
@@ -478,7 +478,7 @@ defineWidget({
   not on Windows where Git uses schannel) and `http.sslVerify=false` when invalid certificates are accepted, all via
   `GIT_CONFIG_*`; the proxy password is redacted from git's output.
 - PAC: the UI evaluates the script (`ui/src/lib/pac.ts`, standard helpers without DNS) in an iframe served by the
-  `annalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
+  `arcalo-pac:` scheme with `sandbox="allow-scripts"` and its own CSP that allows `eval`; the app's CSP stays without
   `unsafe-eval`. Answers are stored per host in `network.pac_results` (`*` = LiteLLM host, used for other hosts; every AI provider host has its own) on
   save, test and start.
 - The proxy password lives in the credential store (account `proxy-password`), never in the settings or exports.
@@ -504,8 +504,8 @@ defineWidget({
   for „Termintext übernehmen“ (kept) or „Besprechungslinks“ (only `https://` addresses leave the script, the core keeps
   one meeting link). Declined and cancelled meetings are left out. Errors come back as codes (`not_installed`,
   `new_outlook`, `server_exec`, `constrained`, `folder`, `com`) and become German messages that point to ICS where
-  COM cannot work. For development and tests `ANNALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
-  `ANNALO_TEST_FIXTURES=1`.
+  COM cannot work. For development and tests `ARCALO_OUTLOOK_FIXTURE` (a JSON file) replaces the script, only with
+  `ARCALO_TEST_FIXTURES=1`.
 - Outlook calendars (`calsync/calendars.rs`, 1.6): `-Mode discover` lists calendar folders: the default one, every
   store of `Namespace.Stores` (primary, delegate and additional mailboxes, PSTs; public folders skipped) walked for
   `DefaultItemType = 1` (calendars fully, other folders two levels deep, Deleted Items skipped), the calendar module of
@@ -527,7 +527,7 @@ defineWidget({
   calendars the Kalender and the „Termine“ widget show is a view setting (`lib/calvisibility.ts`, localStorage).
 - Focus blocks (`timeblocks.rs`, `calsync/outlookwrite.rs`, 1.8): `focus_blocks` (migration 15) holds planned
   stretches (UTC, snapped to 15 minutes) with an optional link (task = page id + ordinal + text, issue key, page) and
-  Netzplan/Vorgang; `focus_sessions.block_id` names the block a session started from. The UI drags `application/x-annalo-plan`
+  Netzplan/Vorgang; `focus_sessions.block_id` names the block a session started from. The UI drags `application/x-arcalo-plan`
   (or a sidebar page) onto a day column and moves/resizes blocks with pointer events and the keyboard (`lib/blocks.ts`,
   `views/CalendarBlocks.tsx`); „Im Kalender planen…“ asks `block_free_slots` (08–18 local, busy meetings and blocks
   avoided). Outlook write-back: every change queues one row per block in `focus_block_outbox` (`upsert`/`delete`, a
@@ -535,7 +535,7 @@ defineWidget({
   without the database lock (it attaches with `GetActiveObject`, never starts Outlook: `not_running`), stores EntryID and
   global id and retries failures with 1–30 minutes back-off (scheduler every minute and before each Outlook sync).
   `calendar_events` hides `outlook` events whose uid is a block's appointment (also while its delete waits).
-  `ANNALO_OUTLOOK_WRITE_LOG` (with `ANNALO_TEST_FIXTURES=1`) replaces the script by a JSON-lines log; a file
+  `ARCALO_OUTLOOK_WRITE_LOG` (with `ARCALO_TEST_FIXTURES=1`) replaces the script by a JSON-lines log; a file
   `<log>.offline` stands for a closed Outlook. „Woche vorschlagen“ adds unbooked past blocks as `block` signals
   (priority between meetings and page edits; WBS from the block, the issue mapping or the task's page, high when linked).
   Fixtures may add `discovery` and `folders` (by EntryID or recipient) to the plain output; plain fixtures still
@@ -551,7 +551,7 @@ defineWidget({
   events are stored as local midnights with an exclusive end. Subscriptions are fetched with the tools HTTP client (proxy,
   CA and timeout of Settings → Netzwerk, „Anwenden auf“ tools), `webcal://` becomes `https://`, at most 30 MB, and
   errors never contain the address.
-- Sync (`calsync.rs`): a scheduler task (first run 20 s after start, `ANNALO_CALENDAR_DELAY_SECS` for tests, then every
+- Sync (`calsync.rs`): a scheduler task (first run 20 s after start, `ARCALO_CALENDAR_DELAY_SECS` for tests, then every
   minute) syncs each active source whose last attempt is older than the interval (default 15 min); „Jetzt
   synchronisieren“ runs it at once. One sync per source at a time. The source is read and parsed without any database
   lock; then one transaction replaces the source's events that overlap the window (default 30 days back, 90 ahead)
@@ -654,7 +654,7 @@ defineWidget({
   (index, name, size, inline = content id or hidden). `-Mode save` writes chosen attachments with `SaveAsFile` into
   `<data>/mail-temp/outlook-<ms>/<index>/`, which the shell imports and removes; `-Mode open` shows a mail by
   `Namespace.GetItemFromID(EntryID, StoreID)`. Error codes: `not_running`, `no_selection`, `not_installed`, `new_outlook`,
-  `server_exec`, `constrained`, `not_found`, `save`, `com`. `ANNALO_OUTLOOK_MAIL_FIXTURE` (with `ANNALO_TEST_FIXTURES=1`)
+  `server_exec`, `constrained`, `not_found`, `save`, `com`. `ARCALO_OUTLOOK_MAIL_FIXTURE` (with `ARCALO_TEST_FIXTURES=1`)
   replaces the script: `save` writes the attachments' base64 `data`, `open` appends `EntryID<TAB>StoreID` to `<fixture>.opened`.
 - Files: `.eml` through `mail-parser` (encoded words, charsets, quoted-printable, base64, RFC 2231 names; HTML-only
   mails become text), `.msg` through `cfb` ([MS-OXMSG] property streams: subject, sender, SMTP before X.500, display
@@ -665,11 +665,11 @@ defineWidget({
 - Taking over (`Database::mail_create`, one transaction after the files were copied without the lock): the link row in
   `mail_links` (v11: short id, source, EntryID/StoreID or the stored `.eml`/`.msg`, subject, sender, received, Vorgang;
   an existing row of the same item is reused), the note below `mail.notes_parent` (front matter `von`, `an`, `cc`,
-  `datum`, `betreff`, `e-mail: annalo-mail://id`, `vorgang`, `tags` with `e-mail`, the chosen categories and the first
+  `datum`, `betreff`, `e-mail: arcalo-mail://id`, `vorgang`, `tags` with `e-mail`, the chosen categories and the first
   privacy marker when `mail.private_notes`), the text as a quote, the attachments as embeds, and the task line
-  `- [ ] Text [E-Mail: Betreff (Absender, 24.09.2026)](annalo-mail://id) due:… !!` below an `Aufgaben`/`Tasks` heading or
+  `- [ ] Text [E-Mail: Betreff (Absender, 24.09.2026)](arcalo-mail://id) due:… !!` below an `Aufgaben`/`Tasks` heading or
   at the end. A pasted mail has nothing to open and gets no link. Link texts never contain `[`, `]`, `#` or `|`.
-- Links: the editor's link mark accepts `annalo-mail://<id>`, shows it as a chip and opens it on a plain click
+- Links: the editor's link mark accepts `arcalo-mail://<id>`, shows it as a chip and opens it on a plain click
   (`mail_open`: the Outlook script, or the stored file in its app); the task list renders it as an „E-Mail“ chip. The
   explicit Markdown export (`VaultSnapshot::for_export`) writes the link text only; the mirror keeps the link, because
   Git sync takes its files back.
@@ -708,11 +708,11 @@ defineWidget({
   (`ThemeColors`: background, surface, text, muted, border, accent, success, warning, danger) plus optional tuning;
   `themeTokens` derives the full token set of `tokens.css` (hover/selection tints, strong borders, raised surfaces, soft
   status colors, shadows) and raises text/muted/status colors that miss 4.5:1 / 3:1. The active theme's CSS goes into
-  one `<style id="annalo-theme">` (`:root:root`, empty for the Arcalo themes, which are `tokens.css`), followed by the
+  one `<style id="arcalo-theme">` (`:root:root`, empty for the Arcalo themes, which are `tokens.css`), followed by the
   accent on top (`accent: "theme"` = the theme's own; high contrast keeps its accent). `data-theme` follows the
   theme's kind, `data-theme-id` names it; the splash remembers its background, text and accent. `themes.test.ts` checks
   the contrast of every built-in theme. Custom themes live in `appearance.custom_themes` (normalized in core: valid
-  hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "annalo-theme", version: 1, name, dark,
+  hex colors, unique `custom-N` ids, at most 40); the theme file is `{format: "arcalo-theme", version: 1, name, dark,
   colors}` (`theme_export` / `theme_file_read`, checked by `prefs::parse_theme_file`).
 - Window backdrop (`appearance.window_effect`: `none`/`mica`/`acrylic`, `window_opacity` 40–100, default 80): off by
   default; `migrate_appearance_defaults` switches it off once for settings saved with the old default (and turns the
@@ -722,10 +722,10 @@ defineWidget({
   `window_set_backdrop(effect, dark)` applies it (the Mica variant follows the theme; clearing needs `set_effects(None)`).
   The UI (`lib/backdrop.ts`) sets `<html data-backdrop>` and `--glass`; app.css ("window backdrop") paints one base
   layer on the body (sidebar color at `--glass`) and one on `.main` (canvas at `--glass`), everything between is
-  transparent, so splitters and gaps can never be holes. `ANNALO_TEST_BACKDROP=1` simulates both effects (e2e 91).
+  transparent, so splitters and gaps can never be holes. `ARCALO_TEST_BACKDROP=1` simulates both effects (e2e 91).
 - Dropdowns are `components/Select.tsx` (combobox + listbox in a portal) with the API of a controlled `<select>`; the
   e2e harness `app.select(selector, value)` opens it and clicks the option.
-- Settings export writes `{format: "annalo-settings", version, settings}`; the import is validated against the
+- Settings export writes `{format: "arcalo-settings", version, settings}`; the import is validated against the
   current settings in the UI (`settingsio.ts`: same keys and types, unknown or mistyped fields skipped with a warning),
   previewed as a diff and saved through `settings_save`. `settings://changed` is emitted on every save so the UI
   follows changes made elsewhere.
@@ -748,7 +748,7 @@ defineWidget({
   header), Teams chat copies (`[10:32] Name`, `[Datum Zeit] Name: Text`, `Name 10:32`, name line + time line) a list
   `**Name** (10:32): Text` (the time is shown muted), a stack trace (Java, .NET, Python, JavaScript) or a log with timestamps
   and levels a code block, a lone URL on an empty selection a link whose text becomes the page title (`link_title`:
-  `annalo_core::linktitle`, the tools HTTP client with the network settings, http/https only, 4 s, at most 256 KB, `og:title`
+  `arcalo_core::linktitle`, the tools HTTP client with the network settings, http/https only, 4 s, at most 256 KB, `og:title`
   before `<title>`, the URL when there is none). Markdown copied as plain text (or from a code editor's monospace HTML) with
   block syntax on two lines, a heading or fence, or bold/wiki links/links/code spans is parsed and inserted formatted. A hint „Als Text einfügen“ undoes it into a plain paste; Ctrl+Shift+V and
   pastes copied inside the editor are never converted, files stay with `AttachmentDrop`.
@@ -770,7 +770,7 @@ defineWidget({
   `[` `]` become `(` `)`, `|` `#` `^` their full-width forms `｜` `＃` `＾`, line breaks spaces, so every title can be linked. The
   title field applies the same rule while typing (`cleanTitleChars` in `ui/src/lib/links.ts`) and says so under the title.
 - Images live as files in `<data_dir>/attachments/`, named by the first 16 hex digits of their SHA-256 (same image, same file),
-  and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `annalo-asset:` URI scheme, which
+  and are embedded Obsidian-style as `![[name.png|300]]`. The shell serves them through the `arcalo-asset:` URI scheme, which
   only answers plain file names inside that folder (no separators, `..` or hidden files; canonical path checked). Regular
   `![alt](https://…)` images load directly (CSP `img-src https:`). Vault import copies images by name; export writes every
   referenced file (`attachment_manager::export_files`: embeds, `[[file.ext]]` and `[text](file)` links, drawing previews) to `attachments/`.
@@ -804,7 +804,7 @@ defineWidget({
   - Drop and paste: the main window has Tauri's native file-drop handler disabled (it swallows HTML5 drag and drop on Windows),
     so files dropped from Explorer/Finder arrive as `File` objects without a path. `AttachmentDrop` stores images as before
     (content-hash names) and any other file through `attachment_store`: the raw bytes are the IPC body (no base64), the name
-    comes percent-encoded in the `x-annalo-name` header. „Datei einfügen“ uses the dialog plugin and `attachment_import`, which
+    comes percent-encoded in the `x-arcalo-name` header. „Datei einfügen“ uses the dialog plugin and `attachment_import`, which
     copies by path (streamed, temp file + rename) without loading the file into the webview.
   - A click on a chip opens the file with the default app (`attachment_open`); programs and scripts (`attachments::is_executable`)
     are only shown in the file manager, never started.
@@ -896,7 +896,7 @@ quelle: "[[Konzept]]"
 - Writes: an edit changes only that page's frontmatter (`ui/src/views/collection/write.ts`). A page shown in an editor
   pane is written through that editor (`registerFrontmatterOwner`, the same path as the property editor), so body and
   properties never overwrite each other; otherwise all editors are flushed, the page is read, only the block is replaced
-  and saved, and `annalo:page-saved` updates open panes. The parent's own schema and view settings go through its
+  and saved, and `arcalo:page-saved` updates open panes. The parent's own schema and view settings go through its
   editor. Card order in a board column is the folder's page order (`page_move`), i.e. the sidebar order.
 - Table: its own scroll box (header and title column sticky, sideways scrolling in narrow panes); folders above 80 pages
   render only the visible rows plus a margin. WebKit anchors the scroll position when rows are swapped and ignores
@@ -910,7 +910,7 @@ quelle: "[[Konzept]]"
   under 200 ms in a debug build.
 - The sidebar renders the visible rows flat (`aria-level`), each a memoized component; switching tabs
   re-renders only the old and the new active row. Folders of an imported vault and the „Journal“ start
-  collapsed (`annalo.collapsed` in localStorage).
+  collapsed (`arcalo.collapsed` in localStorage).
 - Database commands are `#[tauri::command(async)]` (or `spawn_blocking`): they run off the main thread,
   which handles the window (`set_title`, drag, focus) and never waits for the database. Pure reads
   (`page_get`, `workspace_tree`, lists, search, budgets) use a second, read-only connection
@@ -920,7 +920,7 @@ quelle: "[[Konzept]]"
   the mirror and the export read the tree, all contents (one `SELECT id, content`) and the time entries
   in one read transaction (`MirrorSnapshot`, `VaultSnapshot`), then write the files without any
   database lock. The scheduler's first backup check runs 3 minutes after the start
-  (`ANNALO_BACKUP_DELAY_SECS` for tests).
+  (`ARCALO_BACKUP_DELAY_SECS` for tests).
 - `page_save` returns `SavedPage` (tags, unresolved links, `updated_at`), not the page: the editor has
   the content and a save does not change backlinks. A save writes only what changed: chunk rows whose
   text is still on the page keep their row, search entry and embedding; links and tags are diffed.
@@ -1081,7 +1081,7 @@ quelle: "[[Konzept]]"
   source (`settings.voice.source_url`: URL or folder), the GitHub release `whisper-models-v1`, then Hugging Face;
   writes `<file>.part`, resumes with HTTP ranges, verifies and renames. The client uses Einstellungen → Netzwerk
   (purpose `Updates`). whisper.cpp builds with `GGML_NATIVE=OFF` in CI (portable binaries, x86 AVX2 baseline).
-- **Test hooks** (debug builds): `ANNALO_TEST_AUDIO_FILE`, `ANNALO_TEST_TRANSCRIPT`, `ANNALO_TEST_MODEL_BASES`
+- **Test hooks** (debug builds): `ARCALO_TEST_AUDIO_FILE`, `ARCALO_TEST_TRANSCRIPT`, `ARCALO_TEST_MODEL_BASES`
   (see docs/testing/voice-notes.md).
 
 ## How the concept spec maps to this implementation
@@ -1099,25 +1099,68 @@ quelle: "[[Konzept]]"
 
 ## Names kept from Annalo
 
-The app was called Annalo until 1.6. Everything a user sees says Arcalo (guarded by
-`ui/src/lib/branding.test.ts` and `e2e/tests/250-branding.test.js`); only the one-time notice
-„Annalo heißt jetzt Arcalo“ names the old product. These internal names stay, because existing
-installs, other computers or tools depend on them:
+The app was called Annalo until 1.6. 1.7 renamed what users see, 1.13 the visible leftovers and
+1.15 the internal names: app identifier, program file, crates, credential service, markers,
+formats, storage keys, DOM events, globals, URI schemes and environment variables. Only the
+one-time notice „Annalo heißt jetzt Arcalo“ names the old product. Guarded by
+`ui/src/lib/branding.test.ts` (any spelling, in UI literals and Rust strings, with an explicit list
+of the files that may read old names) and `e2e/tests/250-branding.test.js`.
 
-- App identifier `app.annalo.desktop`: data folder, WebView storage, Windows toasts (AUMID) and the
-  updater's install target are keyed by it. Crate and binary names (`annalo-core`, `annalo`,
-  `annalo_lib`, the CLI `annalo`): the updater and the NSIS hooks replace the program file in place.
-- Credential store service `Annalo` (`secrets.rs`): saved keys and tokens are found only under it.
-- Git sync: the `.gitattributes` marker `# Annalo Git-Synchronisierung`, the database copy
-  `annalo-workspace.db` and the fallback branch `annalo-sync-<host>` (computers on older versions
-  share the repository). Legacy markers of mirrors, portable copies and `annalo-…db` backups are
-  still recognised.
-- Formats and protocols: `annalo-mail://` links in notes, the `annalo-asset:`/`annalo-pac:`
-  schemes, the settings export format `annalo-settings`, DOM event names `annalo:*`,
-  `localStorage` keys `annalo.*`, theme ids `annalo-light`/`annalo-dark`, environment variables
-  `ANNALO_*` (the log level reads `ARCALO_LOG` first; `ANNALO_LOG` still works).
-- The update feed lists the old repository URLs as fallbacks (GitHub redirects them).
-- `docs/brand/annalo-*` file names (packaging scripts and pinned package URLs point at them).
+The 1.15 migration (`crates/arcalo-core/src/identity.rs`, `src-tauri/src/identity.rs`,
+`secrets.rs`; tested with a 1.14 layout in `e2e/tests/288-rename-migration.test.js`):
+
+- Folders of the identifier `app.annalo.desktop` (data and config, the WebView's storage:
+  `EBWebView` in the local app data on Windows, WebKitGTK's in the data folder on Linux,
+  `~/Library/WebKit/<id>` on macOS) are copied to `de.mousewerk.arcalo` first thing at start, before
+  the WebView exists: into a staging folder, compared with the original, renamed into place, marked
+  with `.arcalo-migrated.json`. WebView caches are skipped, cache folders moved. The old folders are
+  kept (an older version after a rollback finds its data; the update's backups and the rollback
+  record keep their paths). When an older version wrote to the old workspace after the copy, the
+  next start copies again and keeps the newer folder aside (with a notice). A failed copy leaves the
+  app on the old folders for that start. `location.json` (a chosen data folder) moves with the
+  config folder; the chosen folder itself stays. Portable copies and `ARCALO_DATA_DIR` skip it.
+- Credential store: every known account of service `Annalo` (database key and next key, app lock
+  PIN, AI provider keys, Git token, proxy passwords, calendar addresses, Jira tokens, also the
+  namespaced accounts of portable copies) is written under `Arcalo`, read back and compared;
+  `credentials-moved.json` in the data folder notes the accounts done. Until then the old entry is
+  read as a fallback. The old entries are not deleted in 1.15 (a later release may).
+- localStorage keys `annalo.*` are copied to `arcalo.*` once at UI start (`ui/src/lib/legacy.ts`).
+- Settings step 16 „theme-ids“ maps `annalo-light`/`annalo-dark`; the ids are read as the new
+  ones wherever they come from (synced settings, exported files).
+
+Read under the old name, written under the new one:
+
+- Markers `.annalo-update` (1.14 writes it before installing 1.15), `.annalo-health`,
+  `data/.annalo.lock` (a portable 1.14 copy on the same folder), `.annalo-move-tmp`.
+- macOS configuration profiles for the domain `app.annalo.desktop` (after the new one); the MSIX
+  manifest excludes both folders from write virtualization.
+- Git sync: the `.gitattributes` marker `# Annalo Git-Synchronisierung` (a repository carrying it
+  keeps it, so computers on 1.14 do not rewrite the file back and forth) and the database copy
+  `annalo-workspace.db` (never removed as a stray file, used when there is no `arcalo-workspace.db`).
+- Formats, permanently: `annalo-settings`, `annalo-dashboard`, `annalo-theme` files, `annalo-mail://`
+  links in notes (never rewritten), the theme ids above.
+- Environment variables `ANNALO_DATA_DIR`, `ANNALO_SECRET_STORE`, `ANNALO_LOCALE`,
+  `ANNALO_SHARED_SETTINGS_DIR`, `ANNALO_STARTUP`, `ANNALO_LOG`, `ANNALO_DB`, `ANNALO_RECOVERY_KEY`
+  when the `ARCALO_*` name is not set; test-only variables were renamed outright. `ARCALO_LOG`
+  directives naming `annalo`, `annalo_core` or `annalo_lib` mean the new crates.
+- Older markers: mirrors and README titles of 1.6, `annalo-portable` markers, `annalo-…db` backups.
+
+Program file: `arcalo.exe` / `arcalo`. The NSIS hooks (`src-tauri/installer/hooks.nsh`) close a
+running `annalo.exe`, remove it, point the autostart Run value and the Start menu, desktop and
+pinned taskbar shortcuts at `arcalo.exe` and stamp the new AppUserModelID on them; uninstalling with
+„App-Daten löschen“ also removes the old identifier's folders. Linux: the deb links
+`/usr/bin/annalo` to `arcalo` (postinst/postrm scripts), the AUR package too. macOS: the bundle
+carries `Contents/MacOS/annalo` as a link to `arcalo` (`src-tauri/installer/macos`), because 1.14
+restarts the path it ran from after installing the update. The CLI also installs as `annalo`.
+
+Kept on purpose:
+
+- Ids of calendar events without a UID (`annalo-<n>-<hash>`): stored and linked, a new prefix would
+  make them new events.
+- The update feed lists the old repository URLs as fallbacks (GitHub redirects them); the update
+  signing key is unchanged.
+- The pinned Chocolatey icon URL (`@v1.11.0/docs/brand/annalo-icon-1024.png`, valid at that tag).
+- Release notes and quality findings of earlier versions (history); the website's former-name FAQ.
 
 Renamed in 1.13: the word in the start-up animation, the logo component (`ArcaloLogo`, class
 `arcalo-logo`), the developer log (`logs/arcalo.log`, `arcalo.jsonl`; files of older versions are
@@ -1126,7 +1169,7 @@ versions are migrated) and the installer's detail lines.
 
 ## Verification status
 
-- `annalo-core`: unit and integration tests (including fake LiteLLM, Ollama, OpenAI-compatible and Azure servers); `cargo clippy` clean.
+- `arcalo-core`: unit and integration tests (including fake LiteLLM, Ollama, OpenAI-compatible and Azure servers); `cargo clippy` clean.
 - End-to-end: `e2e/run.sh` builds the desktop app with the production frontend embedded and drives it through
   WebDriver (`tauri-driver` + WebKitWebDriver under Xvfb): notes, links, rename, tags, palette, tabs, find,
   daily notes, `/zeit`, timer, timesheet, export, projects, settings (LiteLLM URL, token, models), the assistant

@@ -2,7 +2,7 @@
 // (quick captures not filed yet), Vor einem Jahr (this day in earlier years and a random older
 // note), Per Git-Sync geändert (what others changed) and Schreiben (words and new pages per
 // day). Each registers itself (define.ts); their data comes from `dashboard_data`
-// (annalo_core::dashboard::notes) once they scroll into view.
+// (arcalo_core::dashboard::notes) once they scroll into view.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { ArrowRightToLine, Check, FileText, GitPullRequestArrow, History, Inbox, NotebookPen, PenLine, Eye, Shuffle, StickyNote } from "lucide-react";

@@ -19,7 +19,7 @@ let pendingSection: string | null = null;
 export function openCalendarView(focus?: CalendarFocus) {
   if (focus) pendingFocus = focus;
   useApp.getState().openTab({ kind: "calendar" });
-  if (focus) window.dispatchEvent(new CustomEvent("annalo:calendar-focus"));
+  if (focus) window.dispatchEvent(new CustomEvent("arcalo:calendar-focus"));
 }
 
 /** The requested day/appointment, once. */
@@ -33,7 +33,7 @@ export function takeCalendarFocus(): CalendarFocus | null {
 export function openSettingsSection(section: string) {
   pendingSection = section;
   useApp.getState().openTab({ kind: "settings" });
-  window.dispatchEvent(new CustomEvent("annalo:settings-section"));
+  window.dispatchEvent(new CustomEvent("arcalo:settings-section"));
 }
 
 /** „Kalender jetzt synchronisieren“: every active source; failures per source are reported. */

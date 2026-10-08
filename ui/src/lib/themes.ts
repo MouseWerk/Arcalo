@@ -8,6 +8,7 @@
 // guarantees for text. The Arcalo themes are tokens.css itself (their CSS stays empty).
 
 import type { AppearancePrefs, CustomTheme, Settings, ThemeColors } from "./types";
+import { currentThemeId } from "./legacy";
 import { accentHex, accentTokens, contrast, ensureContrast, mix, parseHex, toHex, type Rgb } from "./color";
 import { setBackdropDark } from "./backdrop";
 import { rememberSplash } from "./splash";
@@ -53,8 +54,8 @@ const c = (background: string, surface: string, text: string, muted: string, bor
 
 /** Built-in themes. Colors follow each theme's published palette; muted text is lifted where the original is too faint to read. */
 export const BUILTIN_THEMES: ThemeDef[] = [
-  { id: "annalo-light", name: "Arcalo Hell", dark: false, colors: c("#ffffff", "#f5f5f6", "#18181b", "#6b6b74", "#e6e6e8", "#6366f1", "#157034", "#a14a08", "#dc2626"), app: "#f4f4f5", text2: "#52525b", info: "#0284c7" },
-  { id: "annalo-dark", name: "Arcalo Dunkel", dark: true, colors: c("#16171a", "#121316", "#ececef", "#8b8e98", "#26272b", "#818cf8", "#4ade80", "#fbbf24", "#f87171"), app: "#0e0f11", raised: "#1c1d21", overlay: "#202126", text2: "#a7a9b1", info: "#38bdf8" },
+  { id: "arcalo-light", name: "Arcalo Hell", dark: false, colors: c("#ffffff", "#f5f5f6", "#18181b", "#6b6b74", "#e6e6e8", "#6366f1", "#157034", "#a14a08", "#dc2626"), app: "#f4f4f5", text2: "#52525b", info: "#0284c7" },
+  { id: "arcalo-dark", name: "Arcalo Dunkel", dark: true, colors: c("#16171a", "#121316", "#ececef", "#8b8e98", "#26272b", "#818cf8", "#4ade80", "#fbbf24", "#f87171"), app: "#0e0f11", raised: "#1c1d21", overlay: "#202126", text2: "#a7a9b1", info: "#38bdf8" },
   { id: "catppuccin-latte", name: "Catppuccin Latte", dark: false, colors: c("#eff1f5", "#e6e9ef", "#4c4f69", "#6c6f85", "#ccd0da", "#8839ef", "#40a02b", "#df8e1d", "#d20f39"), app: "#dce0e8", raised: "#f5f6f9", overlay: "#f8f9fb", text2: "#5c5f77", info: "#1e66f5" },
   { id: "catppuccin-mocha", name: "Catppuccin Mocha", dark: true, colors: c("#1e1e2e", "#181825", "#cdd6f4", "#a6adc8", "#313244", "#cba6f7", "#a6e3a1", "#f9e2af", "#f38ba8"), app: "#11111b", raised: "#24243a", overlay: "#28283d", text2: "#bac2de", info: "#89dceb" },
   { id: "nord", name: "Nord", dark: true, colors: c("#2e3440", "#292e39", "#eceff4", "#a3adc2", "#3b4252", "#88c0d0", "#a3be8c", "#ebcb8b", "#bf616a"), app: "#242933", raised: "#343b48", overlay: "#3b4252", text2: "#d8dee9", info: "#81a1c1" },
@@ -75,9 +76,9 @@ export const BUILTIN_THEMES: ThemeDef[] = [
   { id: "contrast-dark", name: "Hoher Kontrast Dunkel", dark: true, colors: c("#000000", "#0b0b0b", "#ffffff", "#d6d6d6", "#8c8c8c", "#1aebff", "#3ff23f", "#ffd500", "#ff6b6b"), app: "#000000", raised: "#111111", overlay: "#141414", text2: "#f0f0f0", info: "#6cc4ff", fixedAccent: true },
 ];
 
-export const DEFAULT_LIGHT = "annalo-light";
-export const DEFAULT_DARK = "annalo-dark";
-const ANNALO = new Set([DEFAULT_LIGHT, DEFAULT_DARK]);
+export const DEFAULT_LIGHT = "arcalo-light";
+export const DEFAULT_DARK = "arcalo-dark";
+const ARCALO = new Set([DEFAULT_LIGHT, DEFAULT_DARK]);
 
 /** Colors of a new custom theme: the current Arcalo theme. */
 export function starterColors(dark: boolean): ThemeColors {
@@ -93,7 +94,8 @@ export function allThemes(a: Pick<AppearancePrefs, "custom_themes"> | undefined)
 
 /** The theme with this id, else the Arcalo theme of that kind. */
 export function findTheme(id: string, a: Pick<AppearancePrefs, "custom_themes"> | undefined, dark: boolean): ThemeDef {
-  return allThemes(a).find((t) => t.id === id) ?? BUILTIN_THEMES.find((t) => t.id === (dark ? DEFAULT_DARK : DEFAULT_LIGHT))!;
+  const current = currentThemeId(id);
+  return allThemes(a).find((t) => t.id === current) ?? BUILTIN_THEMES.find((t) => t.id === (dark ? DEFAULT_DARK : DEFAULT_LIGHT))!;
 }
 
 /** Whether a background color is dark (for imported or edited themes). */
@@ -256,10 +258,10 @@ export function effectiveAccent(def: ThemeDef, accent: string): string {
  * after the theme, so it wins over the theme's accent.
  */
 export function themeCss(def: ThemeDef, accent: string): string {
-  const annalo = ANNALO.has(def.id) && !def.custom;
+  const arcalo = ARCALO.has(def.id) && !def.custom;
   const parts: string[] = [];
-  if (!annalo) parts.push(`:root:root { ${block(themeTokens(def))} }`);
-  const own = def.fixedAccent || accent === "theme" || (annalo && accent === "indigo");
+  if (!arcalo) parts.push(`:root:root { ${block(themeTokens(def))} }`);
+  const own = def.fixedAccent || accent === "theme" || (arcalo && accent === "indigo");
   const hex = accentHex(accent);
   if (!own && hex) parts.push(`:root:root { ${block({ ...accentTokens(hex, def.dark ? "dark" : "light", def.colors.background, accentSurfaces(def)) })} }`);
   return parts.join("\n");
@@ -267,7 +269,7 @@ export function themeCss(def: ThemeDef, accent: string): string {
 
 // ------------------------------------------------------------------ applying
 
-export const STYLE_ID = "annalo-theme";
+export const STYLE_ID = "arcalo-theme";
 let mode: Settings["theme"] = "system";
 let prefs: AppearancePrefs | null = null;
 let lastKey = "";

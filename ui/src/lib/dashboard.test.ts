@@ -32,7 +32,7 @@ const noOverlaps = (ws: GridWidget[]) => {
 
 describe("catalogue and presets", () => {
   it("knows every widget kind the backend keeps", () => {
-    // Same list as WIDGET_KINDS in crates/annalo-core/src/settings.rs.
+    // Same list as WIDGET_KINDS in crates/arcalo-core/src/settings.rs.
     expect([...WIDGET_KINDS].sort()).toEqual(["activity", "agenda", "balance", "budget", "calendar", "chart", "clock", "deadlines", "embed", "favorites", "focus", "heatmap", "jira", "jira_query", "jira_sprint", "kanban", "links", "mail_flags", "next_meeting", "note", "pinned", "project", "proposal", "query", "recent", "review", "suggestions", "tasks", "team", "timer", "today", "vacation", "week"]);
     expect(new Set(WIDGET_KINDS).size).toBe(33);
     for (const k of WIDGET_KINDS) {
@@ -179,10 +179,10 @@ describe("board edits", () => {
     expect(r.notes).toEqual({ "note-2": "Hallo" });
     expect(importBoard("{", bs)).toEqual({ error: "dash.import.notJson" });
     expect(importBoard('{"format":"x"}', bs)).toEqual({ error: "dash.import.wrongFormat" });
-    expect(importBoard('{"format":"annalo-dashboard","board":{"widgets":[{"kind":"wetter"}]}}', bs)).toEqual({ error: "dash.import.onlyUnknown" });
-    expect(importBoard('{"format":"annalo-dashboard","board":{"widgets":[{"x":1}]}}', bs)).toEqual({ error: "dash.import.noWidgets" });
+    expect(importBoard('{"format":"arcalo-dashboard","board":{"widgets":[{"kind":"wetter"}]}}', bs)).toEqual({ error: "dash.import.onlyUnknown" });
+    expect(importBoard('{"format":"arcalo-dashboard","board":{"widgets":[{"x":1}]}}', bs)).toEqual({ error: "dash.import.noWidgets" });
     // Out-of-grid positions are clamped and overlaps resolved.
-    const odd = importBoard(JSON.stringify({ format: "annalo-dashboard", board: { name: "O", widgets: [{ kind: "clock", x: 99, y: 0, w: 3, h: 4 }, { kind: "clock", x: 9, y: 0, w: 3, h: 4 }] } }), []);
+    const odd = importBoard(JSON.stringify({ format: "arcalo-dashboard", board: { name: "O", widgets: [{ kind: "clock", x: 99, y: 0, w: 3, h: 4 }, { kind: "clock", x: 9, y: 0, w: 3, h: 4 }] } }), []);
     if ("error" in odd) throw new Error(odd.error);
     noOverlaps(odd.board.widgets);
     expect(odd.board.widgets[0]).toMatchObject({ x: 9, y: 0 });

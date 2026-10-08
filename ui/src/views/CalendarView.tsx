@@ -65,7 +65,7 @@ export function CalendarView() {
   const settings = useApp((s) => s.settings?.settings);
   const cal = settings?.calendar;
   const version = useApp((s) => s.entriesVersion);
-  const [view, setViewState] = useState<CalView>(() => stored("annalo.calendar.view", ["day", "workweek", "week", "month", "agenda"] as const, "workweek"));
+  const [view, setViewState] = useState<CalView>(() => stored("arcalo.calendar.view", ["day", "workweek", "week", "month", "agenda"] as const, "workweek"));
   // The day and appointment shown survive switching tabs (this session only).
   const [anchor, setAnchorState] = useState(() => session.anchor ?? new Date());
   const setAnchor = (next: Date | ((d: Date) => Date)) =>
@@ -74,7 +74,7 @@ export function CalendarView() {
       session.anchor = v;
       return v;
     });
-  const [showBookings, setShowBookings] = useState(() => stored("annalo.calendar.bookings", ["1", "0"] as const, "1") === "1");
+  const [showBookings, setShowBookings] = useState(() => stored("arcalo.calendar.bookings", ["1", "0"] as const, "1") === "1");
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [entries, setEntries] = useState<TimeEntryRow[]>([]);
   const [overview, setOverview] = useState<Map<string, DayOverview>>(new Map());
@@ -90,7 +90,7 @@ export function CalendarView() {
   const { wbs, las } = useWbs();
   const root = useRef<HTMLDivElement>(null);
   // Without a calendar the grid can still be used for focus blocks alone (remembered).
-  const [planOnly, setPlanOnly] = useState(() => stored("annalo.calendar.planOnly", ["1", "0"] as const, "0") === "1");
+  const [planOnly, setPlanOnly] = useState(() => stored("arcalo.calendar.planOnly", ["1", "0"] as const, "0") === "1");
   const s = useApp.getState;
 
   const startsOn = formatPrefs().weekStartsOn;
@@ -100,7 +100,7 @@ export function CalendarView() {
 
   const setView = (v: CalView) => {
     setViewState(v);
-    store("annalo.calendar.view", v);
+    store("arcalo.calendar.view", v);
   };
 
   // Only the latest request may fill the view (fast paging).
@@ -159,8 +159,8 @@ export function CalendarView() {
       if (f.key) setSelected(f.key);
     };
     apply();
-    window.addEventListener("annalo:calendar-focus", apply);
-    return () => window.removeEventListener("annalo:calendar-focus", apply);
+    window.addEventListener("arcalo:calendar-focus", apply);
+    return () => window.removeEventListener("arcalo:calendar-focus", apply);
   }, []);
 
   // Calendars hidden in the legend (the view only; they keep syncing).
@@ -316,7 +316,7 @@ export function CalendarView() {
               aria-pressed={showBookings}
               onClick={() => {
                 setShowBookings(!showBookings);
-                store("annalo.calendar.bookings", showBookings ? "0" : "1");
+                store("arcalo.calendar.bookings", showBookings ? "0" : "1");
               }}
             />}
             <IconButton icon={RefreshCw} label={t("calset.syncNow")} className={syncing ? "spinning" : ""} disabled={!configured} onClick={() => void sync()} />
@@ -356,7 +356,7 @@ export function CalendarView() {
                   className="calv-plan-only"
                   onClick={() => {
                     setPlanOnly(true);
-                    store("annalo.calendar.planOnly", "1");
+                    store("arcalo.calendar.planOnly", "1");
                   }}
                 >
                   {t("blocks.planOnly")}

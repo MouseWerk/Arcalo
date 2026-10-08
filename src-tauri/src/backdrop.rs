@@ -3,12 +3,12 @@
 //! never shows the bare desktop: Windows 10, macOS and Linux keep an opaque window and offer
 //! no effect. The UI paints the theme over the effect at the chosen opacity (`lib/backdrop.ts`).
 
-use annalo_core::prefs::WindowEffect;
+use arcalo_core::prefs::WindowEffect;
 use serde::Serialize;
 
 /// Test-only: reports both effects as available and the chosen one as active without touching
 /// the window, so the UI's backdrop styles can be checked where no effect exists (Linux e2e).
-const SIMULATE_ENV: &str = "ANNALO_TEST_BACKDROP";
+const SIMULATE_ENV: &str = "ARCALO_TEST_BACKDROP";
 
 /// What the window offers and shows, for the UI.
 #[derive(Debug, Clone, PartialEq, Serialize)]

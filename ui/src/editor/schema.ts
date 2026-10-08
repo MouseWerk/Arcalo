@@ -28,6 +28,7 @@ import { CHUNK_LINES, chunkedLex } from "./chunkedLex";
 import { LazyHighlight, lowlight } from "./languages";
 import { PageEmbed, type PageEmbedOptions } from "./pageEmbed";
 import { RichBlocks, type RichBlocksOptions } from "./richBlocks";
+import { mailLinkId } from "../lib/legacy";
 import type { Lexer } from "marked";
 import {
   EM_CLOSE,
@@ -642,8 +643,9 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       autolink: true,
       linkOnPaste: true,
       HTMLAttributes: { rel: "noopener noreferrer", target: null },
-      // Links to e-mails taken over (`annalo-mail://<id>`, components/MailImport.tsx) are kept.
-      isAllowedUri: (url, ctx) => /^annalo-mail:\/\/[0-9a-z]+\/?$/i.test(url.trim()) || ctx.defaultValidate(url),
+      // Links to e-mails taken over (`arcalo-mail://<id>`, components/MailImport.tsx; the scheme of
+      // 1.14 and earlier too) are kept.
+      isAllowedUri: (url, ctx) => mailLinkId(url) !== null || ctx.defaultValidate(url),
     }),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     LazyHighlight,

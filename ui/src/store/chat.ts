@@ -213,10 +213,10 @@ function createSession(id: SessionId): ChatSession {
     followTick: 0,
     focusTick: 0,
     input: "",
-    tier: (pref("annalo.tier") as Tier | null) || null,
-    useTools: pref("annalo.tools") !== "0",
+    tier: (pref("arcalo.tier") as Tier | null) || null,
+    useTools: pref("arcalo.tools") !== "0",
     includePage: true,
-    notes: id === "panel" || pref("annalo.chatNotes") === "1",
+    notes: id === "panel" || pref("arcalo.chatNotes") === "1",
     attachedPage: null,
   }));
   const get = use.getState;
@@ -641,16 +641,16 @@ export const modelNotice = (conv: ChatConversation) => noticeFor(conv, panelChat
 /** The model choice and the tools switch hold for the panel and the chat view alike. */
 export function setTier(tier: Tier | null) {
   for (const s of sessions) s.use.setState({ tier });
-  savePref("annalo.tier", tier);
+  savePref("arcalo.tier", tier);
 }
 export function setUseTools(on: boolean) {
   for (const s of sessions) s.use.setState({ useTools: on });
-  savePref("annalo.tools", on ? "1" : "0");
+  savePref("arcalo.tools", on ? "1" : "0");
 }
 /** Chat view: „Mit meinen Notizen“. */
 export function setNotes(on: boolean) {
   viewChat.use.setState({ notes: on });
-  savePref("annalo.chatNotes", on ? "1" : "0");
+  savePref("arcalo.chatNotes", on ? "1" : "0");
 }
 
 let listening = false;

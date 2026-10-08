@@ -60,12 +60,12 @@ export function BriefingView() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setTick((n) => n + 1), 700);
     };
-    window.addEventListener("annalo:page-saved", bump);
+    window.addEventListener("arcalo:page-saved", bump);
     const every = window.setInterval(() => setTick((n) => n + 1), 60_000);
     return () => {
       window.clearTimeout(timer);
       window.clearInterval(every);
-      window.removeEventListener("annalo:page-saved", bump);
+      window.removeEventListener("arcalo:page-saved", bump);
     };
   }, []);
 

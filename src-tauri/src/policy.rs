@@ -1,12 +1,12 @@
-//! Reads the organization's update policy once at start (see `annalo_core::update_policy` and
+//! Reads the organization's update policy once at start (see `arcalo_core::update_policy` and
 //! docs/admin/updates.md): Windows registry (HKLM over HKCU), macOS managed preferences, and
 //! `policy.json` next to the executable or in the system folder. Higher sources win per value.
-//! `ANNALO_EXE_DIR` stands in for the executable's folder (tests), as for portable mode.
+//! `ARCALO_EXE_DIR` stands in for the executable's folder (tests), as for portable mode.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use annalo_core::update_policy::{self as core, Policy};
+use arcalo_core::update_policy::{self as core, Policy};
 
 static POLICY: OnceLock<Policy> = OnceLock::new();
 
@@ -16,9 +16,9 @@ pub fn get() -> &'static Policy {
 }
 
 fn load() -> Policy {
-    let exe = annalo_core::datadir::exe_dir(std::env::var_os("ANNALO_EXE_DIR").map(PathBuf::from));
+    let exe = arcalo_core::datadir::exe_dir(std::env::var_os("ARCALO_EXE_DIR").map(PathBuf::from));
     // Test runs point the executable's folder elsewhere and must not pick up a machine's policy.
-    let system = if std::env::var_os("ANNALO_EXE_DIR").is_some() { None } else { core::system_policy_dir() };
+    let system = if std::env::var_os("ARCALO_EXE_DIR").is_some() { None } else { core::system_policy_dir() };
     let mut layers = registry();
     layers.extend(managed_preferences());
     layers.extend(core::read_files(&core::policy_files(exe.as_deref(), system.as_deref())));
@@ -38,7 +38,7 @@ fn load() -> Policy {
 /// `HKLM\Software\Policies\MouseWerk\Arcalo`, then the same key under HKCU.
 #[cfg(windows)]
 fn registry() -> Vec<Policy> {
-    use annalo_core::update_policy::Value;
+    use arcalo_core::update_policy::Value;
     use winreg::RegKey;
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, RegType};
     const KEY: &str = r"Software\Policies\MouseWerk\Arcalo";
@@ -66,14 +66,20 @@ fn registry() -> Vec<Policy> {
 }
 
 /// Managed preferences of a configuration profile for the app's bundle identifier
-/// (`/Library/Managed Preferences/<user>/…` over the computer-wide file).
+/// (`/Library/Managed Preferences/<user>/…` over the computer-wide file). Profiles for the
+/// identifier of 1.14 and earlier still count, after those for the current one (admins re-issue
+/// them for the new domain).
 #[cfg(target_os = "macos")]
 fn managed_preferences() -> Vec<Policy> {
-    const DOMAIN: &str = "app.annalo.desktop.plist";
+    use arcalo_core::identity::{IDENTIFIER, LEGACY_IDENTIFIER};
     let base = PathBuf::from("/Library/Managed Preferences");
-    let user = std::env::var("USER").ok().map(|u| base.join(u).join(DOMAIN));
-    user.into_iter()
-        .chain([base.join(DOMAIN)])
+    let user = std::env::var("USER").ok();
+    [IDENTIFIER, LEGACY_IDENTIFIER]
+        .into_iter()
+        .flat_map(|id| {
+            let file = format!("{id}.plist");
+            user.iter().map(|u| base.join(u).join(&file)).chain([base.join(&file)]).collect::<Vec<_>>()
+        })
         .filter_map(|p| {
             let bytes = std::fs::read(&p).ok()?;
             let origin = p.display().to_string();

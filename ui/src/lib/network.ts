@@ -1,5 +1,5 @@
 // Settings → Netzwerk: proxy profiles, the profile of each service, trusted servers. The
-// core decides the routes (annalo_core::network); this file edits the settings and words them.
+// core decides the routes (arcalo_core::network); this file edits the settings and words them.
 
 import type { CertDetails, NetworkSettings, ProxyProfile, RouteInfo, Settings } from "./types";
 import { UPDATE_URL } from "./pac";

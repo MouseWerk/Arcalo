@@ -197,7 +197,7 @@ function Dot({ health }: { health: Health }) {
   return <span className={`dw-health h-${health}`} role="img" aria-label={t(HEALTH[health])} />;
 }
 
-/** The last part of a path: `\\server\share\Annalo` → `Annalo`, with the share or drive before it. */
+/** The last part of a path: `\\server\share\Arcalo` → `Arcalo`, with the share or drive before it. */
 const shortPath = (p: string) => {
   const parts = p.split(/[\\/]+/).filter(Boolean);
   return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : p;

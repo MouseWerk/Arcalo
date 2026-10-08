@@ -99,101 +99,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "annalo"
-version = "1.0.0"
-dependencies = [
- "annalo-core",
- "arboard",
- "auto-launch",
- "base64 0.22.1",
- "block2",
- "chrono",
- "cpal",
- "dbus",
- "flate2",
- "keyring",
- "notify-rust",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "objc2-local-authentication",
- "reqwest",
- "rfd",
- "semver",
- "serde",
- "serde_json",
- "sys-locale",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "whisper-rs",
- "windows 0.61.3",
- "windows-future",
- "windows-sys 0.61.2",
- "winreg 0.10.1",
- "zip",
-]
-
-[[package]]
-name = "annalo-cli"
-version = "1.0.0"
-dependencies = [
- "annalo-core",
- "chrono",
- "clap",
- "serde_json",
-]
-
-[[package]]
-name = "annalo-core"
-version = "1.0.0"
-dependencies = [
- "aes-gcm",
- "argon2",
- "base64 0.22.1",
- "cfb 0.15.0",
- "chrono",
- "chrono-tz",
- "claxon",
- "data-encoding",
- "flacenc",
- "futures-util",
- "getrandom 0.3.4",
- "git2",
- "mail-parser",
- "minisign-verify",
- "plist",
- "reqwest",
- "rrule",
- "rusqlite",
- "rustls",
- "rustls-platform-verifier",
- "schemars 0.8.22",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "webpki-root-certs",
- "windows-sys 0.61.2",
- "zeroize",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,6 +178,101 @@ dependencies = [
  "percent-encoding",
  "windows-sys 0.60.2",
  "x11rb",
+]
+
+[[package]]
+name = "arcalo"
+version = "1.0.0"
+dependencies = [
+ "arboard",
+ "arcalo-core",
+ "auto-launch",
+ "base64 0.22.1",
+ "block2",
+ "chrono",
+ "cpal",
+ "dbus",
+ "flate2",
+ "keyring",
+ "notify-rust",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-local-authentication",
+ "reqwest",
+ "rfd",
+ "semver",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "whisper-rs",
+ "windows 0.61.3",
+ "windows-future",
+ "windows-sys 0.61.2",
+ "winreg 0.10.1",
+ "zip",
+]
+
+[[package]]
+name = "arcalo-cli"
+version = "1.0.0"
+dependencies = [
+ "arcalo-core",
+ "chrono",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
+name = "arcalo-core"
+version = "1.0.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "base64 0.22.1",
+ "cfb 0.15.0",
+ "chrono",
+ "chrono-tz",
+ "claxon",
+ "data-encoding",
+ "flacenc",
+ "futures-util",
+ "getrandom 0.3.4",
+ "git2",
+ "mail-parser",
+ "minisign-verify",
+ "plist",
+ "reqwest",
+ "rrule",
+ "rusqlite",
+ "rustls",
+ "rustls-platform-verifier",
+ "schemars 0.8.22",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "webpki-root-certs",
+ "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

@@ -4,8 +4,9 @@
 import type { Settings } from "./types";
 import { t } from "./i18n";
 import { upgradeNetwork } from "./network";
+import { LEGACY_SETTINGS_FORMAT } from "./legacy";
 
-export const EXPORT_FORMAT = "annalo-settings";
+export const EXPORT_FORMAT = "arcalo-settings";
 export const EXPORT_VERSION = 1;
 
 /** Objects whose keys are data (user-chosen), not settings names. */
@@ -117,7 +118,7 @@ export function parseSettingsImport(text: string, current: Settings): ImportResu
   if (kind(raw) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
   let obj = raw as Record<string, unknown>;
   if ("format" in obj || "settings" in obj) {
-    if (obj.format !== EXPORT_FORMAT) return { settings: null, warnings: [], error: t("sio.notSettingsFile") };
+    if (obj.format !== EXPORT_FORMAT && obj.format !== LEGACY_SETTINGS_FORMAT) return { settings: null, warnings: [], error: t("sio.notSettingsFile") };
     if (typeof obj.version === "number" && obj.version > EXPORT_VERSION) return { settings: null, warnings: [], error: t("sio.newer") };
     if (kind(obj.settings) !== "object") return { settings: null, warnings: [], error: t("sio.noSettings") };
     obj = obj.settings as Record<string, unknown>;

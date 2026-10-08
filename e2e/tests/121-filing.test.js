@@ -93,7 +93,7 @@ const toastButton = (label) =>
 
 before(async () => {
   fx = voiceFixtures("[00:00] Kurze Notiz zur Ablage.\n");
-  icsDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-filing-"));
+  icsDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-filing-"));
   const d = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const ics = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//e2e//filing//DE",

@@ -1,6 +1,6 @@
 // UI benchmark on the large workspace (docs/performance.md). From the e2e folder, after
-// `npm --prefix ../ui run build` and a `cargo build -p annalo --features custom-protocol`:
-//   ANNALO_APP=$PWD/../target/debug/annalo node bench/bigworkspace.mjs [label]
+// `npm --prefix ../ui run build` and a `cargo build -p arcalo --features custom-protocol`:
+//   ARCALO_APP=$PWD/../target/debug/arcalo node bench/bigworkspace.mjs [label]
 // Writes <label>.json to BENCH_OUT (default: the system temp folder) and prints a summary.
 // PERF_LOOP_MIN sets the minutes of the usage loop (memory and leaks, default 3).
 import fs from "node:fs";
@@ -25,7 +25,7 @@ const W = (id, kind, x, y, w, h, config = {}) => ({ id, kind, x, y, w, h, config
 function rssKb() {
   // The app process and its WebKit children (by parent PID).
   const rows = execSync("ps -eo pid=,ppid=,rss=,args=").toString().trim().split("\n").map((l) => l.trim().split(/\s+/));
-  const app = rows.find((r) => r.slice(3).join(" ").startsWith(process.env.ANNALO_APP));
+  const app = rows.find((r) => r.slice(3).join(" ").startsWith(process.env.ARCALO_APP));
   if (!app) return -1;
   const ids = new Set([app[0]]);
   let grew = true;
@@ -315,12 +315,12 @@ const boards = [
 await app.invoke("dashboard_save", { dashboard: { version: 2, boards, active: "perf", notes: {} } });
 out.dashboard = [];
 for (let i = 0; i < 3; i++) {
-  await app.browser.execute(() => (window.__annaloDashPerf = []));
+  await app.browser.execute(() => (window.__arcaloDashPerf = []));
   await app.keys(["Control", "t"]);
   await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .dw")), { timeout: 30000 });
   await app.browser.waitUntil(async () => (await app.$$(".pane.active .dw .dw-skel")).length === 0, { timeout: 60000 }).catch(() => {});
   await sleep(800);
-  const perf = await app.browser.execute(() => window.__annaloDashPerf ?? []);
+  const perf = await app.browser.execute(() => window.__arcaloDashPerf ?? []);
   out.dashboard.push(perf.map((p) => ({ backend: r1(p.backendMs), roundTrip: r1(p.roundTripMs), commit: r1(p.commitMs), render: r1(p.renderMs), parts: p.parts })));
   await app.keys(["Control", "w"]);
   await sleep(300);

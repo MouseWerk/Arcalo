@@ -16,7 +16,7 @@ before(async () => {
   fx = voiceFixtures("[00:00] Good morning, let's go through the offer for customer X.\n[00:02] Anna sends the offer by Monday.\n");
   ai = await startFakeOpenAI({ port: 4993, kind: "ollama", name: "Ollama", models: ["llama3.2:latest"], respond: () => summaryAnswer("en") });
   models = await startModelServer();
-  ({ app, dataDir } = await launchEnglish({ env: { ...fx.env, ANNALO_TEST_MODEL_BASES: `${models.url}/gh|${models.url}/hf` } }));
+  ({ app, dataDir } = await launchEnglish({ env: { ...fx.env, ARCALO_TEST_MODEL_BASES: `${models.url}/gh|${models.url}/hf` } }));
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", {
     settings: {

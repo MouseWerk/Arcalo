@@ -100,9 +100,10 @@ Policies are read at every start. Higher sources win per value:
 
 1. Windows registry `HKEY_LOCAL_MACHINE\Software\Policies\MouseWerk\Arcalo`
 2. Windows registry `HKEY_CURRENT_USER\Software\Policies\MouseWerk\Arcalo`
-3. macOS managed preferences (configuration profile) for the domain `app.annalo.desktop`
-   (`/Library/Managed Preferences/<user>/app.annalo.desktop.plist`, then
-   `/Library/Managed Preferences/app.annalo.desktop.plist`)
+3. macOS managed preferences (configuration profile) for the domain `de.mousewerk.arcalo`
+   (`/Library/Managed Preferences/<user>/de.mousewerk.arcalo.plist`, then
+   `/Library/Managed Preferences/de.mousewerk.arcalo.plist`; profiles for the domain of 1.14 and
+   earlier, `app.annalo.desktop`, still apply after these until they are re-issued)
 4. `policy.json` next to the executable (`Arcalo.exe`; on macOS `Arcalo.app/Contents/MacOS`)
 5. `policy.json` in the system folder: `%ProgramData%\MouseWerk\Arcalo` (Windows),
    `/Library/Application Support/MouseWerk/Arcalo` (macOS), `/etc/arcalo` (Linux)
@@ -156,7 +157,7 @@ Settings → Registry.
 
 ```xml
 <dict>
-  <key>PayloadType</key><string>app.annalo.desktop</string>
+  <key>PayloadType</key><string>de.mousewerk.arcalo</string>
   <key>UpdateMode</key><string>auto</string>
   <key>UpdateUrl</key><string>https://intranet.example/arcalo/</string>
   <key>AllowGitHubFallback</key><false/>
@@ -171,6 +172,6 @@ Settings → Registry.
 | `updates/<version>.part` | a download in progress (resumed with an HTTP Range request or from the file's offset) |
 | `updates/<version>.update`, `updates/staged.json` | the verified download waiting for the quit |
 | `updates/state.json` | skipped version, „remind me later“, rolled-back versions |
-| `.annalo-health` | the health marker of the last start |
-| `.annalo-update` | written right before an install; the next start says „Updated to …“ |
+| `.arcalo-health` | the health marker of the last start |
+| `.arcalo-update` | written right before an install; the next start says „Updated to …“ |
 | `rollback/` | the copy of the previous version and its record |

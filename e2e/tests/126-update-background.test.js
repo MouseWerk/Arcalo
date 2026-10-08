@@ -2,9 +2,9 @@
 // status-bar progress (paused and resumed with a Range request), the calm „bereit“ hint with
 // „Jetzt neu starten“ / „Später“, „Diese Version überspringen“ with „Rückgängig“ in Settings,
 // „Später erinnern“, the install when Arcalo quits (a test stand-in replaces the installer:
-// ANNALO_UPDATE_FAKE_INSTALL), and the next start: „aktualisiert auf 1.9.0“ with „Neu in
+// ARCALO_UPDATE_FAKE_INSTALL), and the next start: „aktualisiert auf 1.9.0“ with „Neu in
 // Arcalo“ once, and Settings → Über → „Neu in Arcalo“ with the bundled release notes.
-// ANNALO_UPDATE_CURRENT stands in for the running version (1.8.5, then 1.9.0).
+// ARCALO_UPDATE_CURRENT stands in for the running version (1.8.5, then 1.9.0).
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,8 +17,8 @@ const test = guarded(nodeTest, () => app);
 let app;
 let feed;
 const key = throwawayKey();
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-upd2-"));
-const env = (current) => ({ ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url, ANNALO_UPDATE_CURRENT: current, ANNALO_UPDATE_FAKE_INSTALL: "1" });
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-upd2-"));
+const env = (current) => ({ ARCALO_UPDATE_PUBKEY: key.pubkey, ARCALO_UPDATE_ENDPOINT: feed.url, ARCALO_UPDATE_CURRENT: current, ARCALO_UPDATE_FAKE_INSTALL: "1" });
 
 before(async () => {
   feed = await startFeed({ key, version: "1.9.0" });
@@ -39,7 +39,7 @@ const clickIn = (sel, text) =>
     b?.click();
     return !!b;
   }, sel, text);
-const binaryRequests = () => feed.requests.filter((r) => r.includes("annalo-update.bin")).length;
+const binaryRequests = () => feed.requests.filter((r) => r.includes("arcalo-update.bin")).length;
 
 async function openAbout() {
   await app.browser.execute(() => document.querySelectorAll(".dialog [aria-label='Schließen']").forEach((b) => b.click()));
@@ -72,7 +72,7 @@ test("a new version downloads in the background, can be paused and resumes where
   const buttons = await app.browser.execute(() => [...document.querySelectorAll(".sb-update button")].map((b) => b.textContent.trim() || b.getAttribute("aria-label")));
   assert.deepEqual(buttons, ["Jetzt neu starten", "Später", "Weitere Optionen"]);
   assert.ok(fs.existsSync(path.join(dataDir, "updates", "1.9.0.update")), "verified file kept for the quit");
-  assert.equal(fs.existsSync(path.join(dataDir, ".annalo-update")), false, "nothing installed by itself");
+  assert.equal(fs.existsSync(path.join(dataDir, ".arcalo-update")), false, "nothing installed by itself");
   await app.shot("126-update-ready");
 });
 
@@ -124,7 +124,7 @@ test("quitting installs the ready update after a database backup and keeps the o
   const note = path.join(dataDir, "updates", "fake-install.json");
   for (let i = 0; i < 100 && !fs.existsSync(note); i++) await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(JSON.parse(fs.readFileSync(note, "utf8")), { version: "1.9.0", from: "1.8.5", restart: false });
-  assert.equal(fs.readFileSync(path.join(dataDir, ".annalo-update"), "utf8"), "1.9.0\nfrom=1.8.5");
+  assert.equal(fs.readFileSync(path.join(dataDir, ".arcalo-update"), "utf8"), "1.9.0\nfrom=1.8.5");
   assert.ok(fs.existsSync(path.join(dataDir, "backups", "arcalo-pre-update-1.8.5-1.9.0.db")), "backup tagged pre-update");
   const record = JSON.parse(fs.readFileSync(path.join(dataDir, "rollback", "rollback.json"), "utf8"));
   assert.equal(record.from, "1.8.5");

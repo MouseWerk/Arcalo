@@ -18,7 +18,7 @@ let bare;
 let other;
 before(async () => {
   app = await launch();
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-conflict-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-conflict-"));
   bare = path.join(base, "notizen.git");
   other = path.join(base, "anderer-rechner");
   execFileSync("git", ["init", "-q", "--bare", bare]);
@@ -140,10 +140,10 @@ test("portable mode: data next to the executable, no autostart, no data move, up
   app = null;
   const stick = path.join(base, "USB-Stick");
   fs.mkdirSync(stick, { recursive: true });
-  fs.writeFileSync(path.join(stick, "annalo-portable"), "");
-  // ANNALO_EXE_DIR stands in for the executable's folder; an empty ANNALO_DATA_DIR lets the
+  fs.writeFileSync(path.join(stick, "arcalo-portable"), "");
+  // ARCALO_EXE_DIR stands in for the executable's folder; an empty ARCALO_DATA_DIR lets the
   // marker decide (the harness would otherwise pick a throw-away folder).
-  app = await launch({ env: { ANNALO_EXE_DIR: stick, ANNALO_DATA_DIR: "" } });
+  app = await launch({ env: { ARCALO_EXE_DIR: stick, ARCALO_DATA_DIR: "" } });
   const data = path.join(stick, "data");
   const info = await app.invoke("app_info");
   assert.equal(info.portable, true);

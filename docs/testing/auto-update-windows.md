@@ -124,7 +124,7 @@ an Intel Mac or its feed entry `darwin-x86_64` checked by downloading and runnin
 ### 12. AppImage (updates itself)
 
 Verified for 1.6.0 with two debug AppImages (1.6.0-test.1 to 1.6.0-test.2, throwaway key, local feed via
-`ANNALO_UPDATE_ENDPOINT`): tampered file, cut download and offline check left the AppImage unchanged; the real
+`ARCALO_UPDATE_ENDPOINT`): tampered file, cut download and offline check left the AppImage unchanged; the real
 update replaced it in place, relaunched it past the single-instance lock, and the text typed right before the
 click was saved. Repeat with the real release:
 
@@ -149,8 +149,8 @@ checked with a **release** build at least once per release: install the previous
 one from Settings → Über. The installer's command line is in the log (`update`: „starting …-installer.exe /P
 /UPDATE /R /ARGS“).
 
-To test an update without publishing: a debug build honors `ANNALO_UPDATE_ENDPOINT` (a `latest.json` URL, `http`
-allowed) and `ANNALO_UPDATE_PUBKEY` (base64 public key of a throwaway key from
+To test an update without publishing: a debug build honors `ARCALO_UPDATE_ENDPOINT` (a `latest.json` URL, `http`
+allowed) and `ARCALO_UPDATE_PUBKEY` (base64 public key of a throwaway key from
 `cargo tauri signer generate -w <tmp>/key --ci`). Release builds ignore both and always ask the GitHub feed with
 the key compiled in. Never use the release signing key for tests.
 
@@ -159,8 +159,8 @@ The published feed must contain, per release: `version`, `notes`, `pub_date` (RF
 `linux-x86_64` (`…_amd64.AppImage`), each with the content of its `.sig` file and a URL under
 `https://github.com/MouseWerk/Arcalo/releases/download/v<version>/`.
 
-Debug builds also take `ANNALO_UPDATE_CURRENT` (the version the copy pretends to run, e.g. `1.8.5`),
-`ANNALO_UPDATE_FAKE_INSTALL=1` (an install writes `updates/fake-install.json` instead of running the installer),
-`ANNALO_TEST_FAIL_START=1` (the start ends right after the health marker, like a crash) and
-`ANNALO_TEST_ROLLBACK_ANSWER=yes|no` (answers the rollback question without the native dialog); see
+Debug builds also take `ARCALO_UPDATE_CURRENT` (the version the copy pretends to run, e.g. `1.8.5`),
+`ARCALO_UPDATE_FAKE_INSTALL=1` (an install writes `updates/fake-install.json` instead of running the installer),
+`ARCALO_TEST_FAIL_START=1` (the start ends right after the health marker, like a crash) and
+`ARCALO_TEST_ROLLBACK_ANSWER=yes|no` (answers the rollback question without the native dialog); see
 `e2e/tests/126-update-background.test.js` and `127-update-policy-rollback.test.js`.

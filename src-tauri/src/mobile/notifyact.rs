@@ -2,7 +2,7 @@
 
 use tauri::AppHandle;
 
-use annalo_core::tr;
+use arcalo_core::tr;
 
 /// A notification (the desktop's carries the buttons' subject as well).
 #[derive(Debug, Clone, PartialEq)]

@@ -61,9 +61,9 @@ jobs:
       # The phone has no git program: its sync runs on libgit2. The sync's tests on libgit2, on the
       # runner (the same commands and checks as with the git program).
       - name: Sync on libgit2 (host tests)
-        run: cargo test -p annalo-core --features embedded-git --lib -- gitsync companion
+        run: cargo test -p arcalo-core --features embedded-git --lib -- gitsync companion
         env:
-          ANNALO_TEST_EMBEDDED_GIT: "1"
+          ARCALO_TEST_EMBEDDED_GIT: "1"
       - run: npm ci --prefix ui
       - run: cargo install tauri-cli --version "^2" --locked
       - name: Signing key

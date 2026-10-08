@@ -21,7 +21,7 @@ async function newPage(title, md) {
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title, create: false })) !== null);
   await app.invoke("page_save", { id: await pageId(title), content: md });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
   await app.browser.waitUntil(() => app.browser.execute((t) => document.querySelector(".pane.active .ProseMirror")?.textContent.includes(t), md.split("\n")[0].replace(/^#+ /, "")));
 }
 

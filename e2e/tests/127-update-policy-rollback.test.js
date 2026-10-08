@@ -1,9 +1,9 @@
 // Updates 2.0 for organizations and the way back: a policy.json next to the executable
-// (ANNALO_EXE_DIR stands in for its folder) locks the update settings („Von deiner Organisation
+// (ARCALO_EXE_DIR stands in for its folder) locks the update settings („Von deiner Organisation
 // verwaltet“) and makes a network folder the only source (GitHub, here the local feed, is never
 // asked); the update from the share is checked against the built-in key, downloaded and
 // installed on quit (test stand-in). Then the new version fails to start twice (test hook
-// ANNALO_TEST_FAIL_START) and the third start offers the return (ANNALO_TEST_ROLLBACK_ANSWER
+// ARCALO_TEST_FAIL_START) and the third start offers the return (ARCALO_TEST_ROLLBACK_ANSWER
 // answers the native dialog): the database of before the update comes back and the version is
 // skipped from then on.
 import { test as nodeTest, before, after } from "node:test";
@@ -19,7 +19,7 @@ const test = guarded(nodeTest, () => app);
 let app;
 let feed;
 const key = throwawayKey();
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-policy-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-policy-"));
 const dataDir = path.join(root, "data");
 const exeDir = path.join(root, "exe");
 const share = path.join(root, "share", "arcalo");
@@ -29,11 +29,11 @@ const now = new Date();
 const window = `${pad((now.getHours() + 23) % 24)}:00-${pad((now.getHours() + 2) % 24)}:00`;
 
 const env = (current, extra = {}) => ({
-  ANNALO_UPDATE_PUBKEY: key.pubkey,
-  ANNALO_UPDATE_ENDPOINT: feed.url,
-  ANNALO_UPDATE_CURRENT: current,
-  ANNALO_UPDATE_FAKE_INSTALL: "1",
-  ANNALO_EXE_DIR: exeDir,
+  ARCALO_UPDATE_PUBKEY: key.pubkey,
+  ARCALO_UPDATE_ENDPOINT: feed.url,
+  ARCALO_UPDATE_CURRENT: current,
+  ARCALO_UPDATE_FAKE_INSTALL: "1",
+  ARCALO_EXE_DIR: exeDir,
   ...extra,
 });
 
@@ -130,12 +130,12 @@ test("two failed starts of the new version lead to the rollback, which restores 
   await app.close();
   app = null;
   // Then it crashes early, twice in a row.
-  assert.equal(await startPlain({ ANNALO_TEST_FAIL_START: "1" }), 3);
-  assert.equal(await startPlain({ ANNALO_TEST_FAIL_START: "1" }), 3);
-  const health = JSON.parse(fs.readFileSync(path.join(dataDir, ".annalo-health"), "utf8"));
+  assert.equal(await startPlain({ ARCALO_TEST_FAIL_START: "1" }), 3);
+  assert.equal(await startPlain({ ARCALO_TEST_FAIL_START: "1" }), 3);
+  const health = JSON.parse(fs.readFileSync(path.join(dataDir, ".arcalo-health"), "utf8"));
   assert.deepEqual(health, { version: "1.9.0", healthy: false, failures: 1 });
   // The third start asks (answered „Ja“ by the test hook) before the database is opened.
-  app = await launch({ dataDir, env: env("1.9.0", { ANNALO_TEST_ROLLBACK_ANSWER: "yes" }) });
+  app = await launch({ dataDir, env: env("1.9.0", { ARCALO_TEST_ROLLBACK_ANSWER: "yes" }) });
   await app.waitText(".toast", /Zurück auf Version 1\.8\.5/);
   await app.waitText(".toast", /Version 1\.9\.0 startete nicht/);
   await app.shot("127-rolled-back");

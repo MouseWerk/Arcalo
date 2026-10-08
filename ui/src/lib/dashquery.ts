@@ -1,6 +1,6 @@
 // The „Abfrage“ widget's query builder: a query written as one line
 // (`#projekt status: offen fällig: woche "Angebot"`) and the structured query the backend
-// runs (annalo_core::dashboard::query). Filters use the operators of the table view.
+// runs (arcalo_core::dashboard::query). Filters use the operators of the table view.
 
 import type { Lang, TKey } from "./i18n";
 

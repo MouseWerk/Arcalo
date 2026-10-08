@@ -10,8 +10,8 @@ import { remote } from "webdriverio";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 // Resolved, so `pkill -f APP` also matches an app that restarted itself (it runs as its real path).
-export const APP = path.resolve(process.env.ANNALO_APP ?? path.join(ROOT, "target/debug/annalo"));
-export const SHOTS = process.env.ANNALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
+export const APP = path.resolve(process.env.ARCALO_APP ?? path.join(ROOT, "target/debug/arcalo"));
+export const SHOTS = process.env.ARCALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
 function ensureXvfb() {
@@ -38,7 +38,7 @@ let busAddress = null;
 function sessionBus() {
   if (busAddress !== null) return busAddress;
   busAddress = "";
-  const conf = path.join(os.tmpdir(), `annalo-e2e-bus-${process.pid}.conf`);
+  const conf = path.join(os.tmpdir(), `arcalo-e2e-bus-${process.pid}.conf`);
   try {
     fs.writeFileSync(
       conf,
@@ -66,14 +66,14 @@ function sessionBus() {
 
 /**
  * Programs the app would open (a web page, a folder, a file in its default program) are not
- * started: `xdg-open` is a script that appends its arguments to $ANNALO_E2E_OPENED. On CI a
+ * started: `xdg-open` is a script that appends its arguments to $ARCALO_E2E_OPENED. On CI a
  * ribbon link opened Chrome on the test display, which ran until the end of the job.
  */
 let shimDir = null;
 function openerShim() {
   if (shimDir) return shimDir;
-  shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-open-"));
-  fs.writeFileSync(path.join(shimDir, "xdg-open"), '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "${ANNALO_E2E_OPENED:-/dev/null}"\n', { mode: 0o755 });
+  shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-open-"));
+  fs.writeFileSync(path.join(shimDir, "xdg-open"), '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "${ARCALO_E2E_OPENED:-/dev/null}"\n', { mode: 0o755 });
   process.on("exit", () => fs.rmSync(shimDir, { recursive: true, force: true }));
   return shimDir;
 }
@@ -127,8 +127,16 @@ export function guarded(test, getApp) {
     });
 }
 
-/** The environment the app runs with on `dataDir` (also for starting it without WebDriver). */
-export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv = {} } = {}) {
+/** The folder the app uses as its data folder under `home` (Linux: `$XDG_DATA_HOME/<identifier>`). */
+export const homeDataDir = (home) => path.join(home, ".local", "share", "de.mousewerk.arcalo");
+
+/**
+ * The environment the app runs with on `dataDir` (also for starting it without WebDriver). With
+ * `home`, the app runs as installed for a user whose home folder is `home` (no ARCALO_DATA_DIR:
+ * the data, config and WebView folders are the identifier's below `home`); `dataDir` is then
+ * where the app keeps its data there.
+ */
+export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv = {}, home = null } = {}) {
   ensureXvfb();
   const bus = sessionBus();
   const shim = openerShim();
@@ -139,35 +147,47 @@ export function appEnv(dataDir, { demo = true, onboarding = false, env: extraEnv
     PATH: `${shim}${path.delimiter}${process.env.PATH ?? ""}`,
     BROWSER: path.join(shim, "xdg-open"),
     // Debug builds log when each start phase was reached (printed by `launch` when a start is slow).
-    ANNALO_STARTUP_TIMING: "1",
-    ANNALO_DATA_DIR: dataDir,
-    // Isolate WebView storage (localStorage, caches) per run.
-    XDG_DATA_HOME: path.join(dataDir, "xdg-data"),
-    XDG_CACHE_HOME: path.join(dataDir, "xdg-cache"),
-    ANNALO_STARTUP: JSON.stringify({ demo }),
+    ARCALO_STARTUP_TIMING: "1",
+    ...(home
+      ? {
+          HOME: home,
+          XDG_DATA_HOME: path.join(home, ".local", "share"),
+          XDG_CONFIG_HOME: path.join(home, ".config"),
+          XDG_CACHE_HOME: path.join(home, ".cache"),
+        }
+      : {
+          ARCALO_DATA_DIR: dataDir,
+          // Isolate WebView storage (localStorage, caches) per run.
+          XDG_DATA_HOME: path.join(dataDir, "xdg-data"),
+          XDG_CACHE_HOME: path.join(dataDir, "xdg-cache"),
+        }),
+    ARCALO_STARTUP: JSON.stringify({ demo }),
     WEBKIT_DISABLE_COMPOSITING_MODE: "1",
     GDK_BACKEND: "x11",
     NO_AT_BRIDGE: "1",
-    // The system language the app sees (ANNALO_LOCALE stands in for it): German, as the tests expect,
+    // The system language the app sees (ARCALO_LOCALE stands in for it): German, as the tests expect,
     // whatever the machine running them is set to. English runs pass their own.
-    ANNALO_LOCALE: "de-DE",
+    ARCALO_LOCALE: "de-DE",
     // The first-run intro and the 1.6 hint only where a test asks for them (debug builds honor it).
-    ...(onboarding ? {} : { ANNALO_SKIP_ONBOARDING: "1" }),
-    // Extra variables of one test (e.g. ANNALO_EXE_DIR for portable mode).
+    ...(onboarding ? {} : { ARCALO_SKIP_ONBOARDING: "1" }),
+    // Extra variables of one test (e.g. ARCALO_EXE_DIR for portable mode).
     ...extraEnv,
   };
 }
 
 /**
  * Starts the app under WebDriver. `dataDir`: an existing data folder to use (kept on close),
- * else a fresh one that is removed on close.
+ * else a fresh one that is removed on close. `home`: run as installed for a user with this home
+ * folder (see `appEnv`); kept on close.
  */
-export async function launch({ demo = true, onboarding = false, width = 1480, height = 920, env: extraEnv = {}, dataDir: given = null } = {}) {
+export async function launch({ demo = true, onboarding = false, width = 1480, height = 920, env: extraEnv = {}, dataDir: chosen = null, home = null } = {}) {
+  // A home folder is kept on close like a chosen data folder.
+  const given = chosen ?? (home ? homeDataDir(home) : null);
   fs.mkdirSync(SHOTS, { recursive: true });
-  const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
+  const dataDir = given ?? fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-"));
   const port = await driverPort();
-  const opened = path.join(os.tmpdir(), `annalo-e2e-opened-${process.pid}-${++launches}.log`);
-  const env = { ...appEnv(dataDir, { demo, onboarding, env: extraEnv }), ANNALO_E2E_OPENED: opened };
+  const opened = path.join(os.tmpdir(), `arcalo-e2e-opened-${process.pid}-${++launches}.log`);
+  const env = { ...appEnv(dataDir, { demo, onboarding, env: extraEnv, home }), ARCALO_E2E_OPENED: opened };
   const started = Date.now();
   const driver = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1000)], { env, stdio: ["ignore", "ignore", "pipe"] });
   let driverErr = "";
@@ -189,7 +209,8 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
   // A slow start says where the time went (the app's start-up timing in its log).
   const took = Date.now() - started;
   if (took > 10000) {
-    const log = fs.readFileSync(path.join(dataDir, "logs", "arcalo.log"), "utf8").split("\n");
+    const file = path.join(dataDir, "logs", "arcalo.log");
+    const log = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n") : [];
     console.log(`[e2e] the app took ${took} ms to start:\n${log.filter((l) => l.includes("[startup]")).join("\n")}`);
   }
 
@@ -314,7 +335,7 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
       return fs.existsSync(opened) ? fs.readFileSync(opened, "utf8").split("\n").filter(Boolean) : [];
     },
     async consoleErrors() {
-      return browser.execute(() => window.__annaloErrors ?? []);
+      return browser.execute(() => window.__arcaloErrors ?? []);
     },
     async close() {
       await browser.deleteSession().catch(() => {});

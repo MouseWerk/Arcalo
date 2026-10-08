@@ -68,7 +68,7 @@ describe("search with meaning", () => {
     await act(async () => new Promise((ok) => setTimeout(ok, 20)));
     expect(seen.at(-1)).toMatchObject({ hits: [exactHit], meaning: false, exact: true });
     expect(semanticCalls).toEqual([]);
-    expect(localStorage.getItem("annalo.search.exactOnly")).toBe("1");
+    expect(localStorage.getItem("arcalo.search.exactOnly")).toBe("1");
     // Switched back here: the meaning hits are asked for again.
     await act(async () => setExactOnly(false));
     await vi.waitFor(() => expect(semanticCalls).toEqual(["Angebot"]));

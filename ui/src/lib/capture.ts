@@ -1,4 +1,4 @@
-// Quick capture: what a line becomes (mirrors annalo_core::desktop::classify), targets, the
+// Quick capture: what a line becomes (mirrors arcalo_core::desktop::classify), targets, the
 // page picker, due dates in plain words, pasted links and the draft. Pure where possible, so
 // it can be tested.
 
@@ -261,7 +261,7 @@ export function insertBlock(text: string, caret: number, snippet: string): { tex
 
 // -------------------------------------------------------------------- draft
 
-const DRAFT_KEY = "annalo.capture.draft";
+const DRAFT_KEY = "arcalo.capture.draft";
 
 export interface Draft {
   text: string;

@@ -1,5 +1,5 @@
 // Auto-update against a local feed: a debug build takes a test feed and a throwaway key
-// (ANNALO_UPDATE_ENDPOINT / ANNALO_UPDATE_PUBKEY; release builds ignore both). Covers the toast
+// (ARCALO_UPDATE_ENDPOINT / ARCALO_UPDATE_PUBKEY; release builds ignore both). Covers the toast
 // and its release notes, the failures a user can meet (tampered file, 404, a download cut off,
 // the server offline), a second click while downloading, the .deb route to the release page and
 // the first start after an update. The successful install and relaunch is exercised with real
@@ -23,7 +23,7 @@ const next = (v) => v.replace(/^(\d+)\.(\d+)\.(\d+).*$/, (_, a, b, c) => `${a}.$
 
 before(async () => {
   feed = await startFeed({ key, version: "0.0.0" });
-  app = await launch({ env: { ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url } });
+  app = await launch({ env: { ARCALO_UPDATE_PUBKEY: key.pubkey, ARCALO_UPDATE_ENDPOINT: feed.url } });
   // „Nur benachrichtigen“: the click-to-install flow this file covers (the background download
   // of the mode „automatisch“, the default since 1.9, is 126-update-background.test.js).
   const view = await app.invoke("settings_get");
@@ -65,7 +65,7 @@ test("a newer version shows the toast with release notes; nothing installs by it
   await checkNow();
   await app.waitText(".update-toast .toast-title", new RegExp(`Version ${feed.version.replace(/\./g, "\\.")} verfügbar`));
   await app.waitText(".update-state", /ist verfügbar/);
-  assert.deepEqual(feed.requests.filter((r) => r.includes("annalo-update.bin")), [], "no download without a click");
+  assert.deepEqual(feed.requests.filter((r) => r.includes("arcalo-update.bin")), [], "no download without a click");
   await app.shot("95-update-toast");
   await app.browser.execute(() => [...document.querySelectorAll(".update-toast button")].find((b) => b.textContent.includes("Was ist neu"))?.click());
   await app.waitText(".dialog", /Getestet/);
@@ -80,7 +80,7 @@ test("a tampered file is rejected with a clear message and nothing is installed"
   assert.equal(sha(), binary, "the binary is unchanged");
   // Back to the offer: the user can try again.
   await app.waitText(".update-toast .toast-title", /verfügbar/);
-  assert.equal(fs.existsSync(path.join(app.dataDir, ".annalo-update")), false, "no restart note left behind");
+  assert.equal(fs.existsSync(path.join(app.dataDir, ".arcalo-update")), false, "no restart note left behind");
   await app.shot("95-update-signature");
 });
 
@@ -125,7 +125,7 @@ test("the same version is no update", async () => {
   feed = await startFeed({ key, version: status.current_version });
   // The endpoint is read per check; the new server has another port, so a fresh app is started.
   await app.close();
-  app = await launch({ env: { ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url } });
+  app = await launch({ env: { ARCALO_UPDATE_PUBKEY: key.pubkey, ARCALO_UPDATE_ENDPOINT: feed.url } });
   assert.equal(await app.invoke("update_check"), null);
   await checkNow();
   await app.waitText(".toast", /Arcalo ist aktuell/);
@@ -134,7 +134,7 @@ test("the same version is no update", async () => {
 test("a .deb install offers the release page instead of installing", async () => {
   feed.version = next(feed.version);
   await app.close();
-  app = await launch({ env: { ANNALO_UPDATE_PUBKEY: key.pubkey, ANNALO_UPDATE_ENDPOINT: feed.url, ANNALO_UPDATE_BUNDLE: "deb" } });
+  app = await launch({ env: { ARCALO_UPDATE_PUBKEY: key.pubkey, ARCALO_UPDATE_ENDPOINT: feed.url, ARCALO_UPDATE_BUNDLE: "deb" } });
   const status = await app.invoke("update_status");
   assert.equal(status.package, true);
   await checkNow();
@@ -149,15 +149,15 @@ test("a .deb install offers the release page instead of installing", async () =>
 test("the first start after an update says so, or that the installer did not finish", async () => {
   const current = (await app.invoke("update_status")).current_version;
   await app.close();
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-"));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-"));
   try {
-    fs.writeFileSync(path.join(dataDir, ".annalo-update"), current);
+    fs.writeFileSync(path.join(dataDir, ".arcalo-update"), current);
     app = await launch({ dataDir });
     await app.waitText(".toast", new RegExp(`auf Version ${current.replace(/\./g, "\\.")} aktualisiert`));
-    assert.equal(fs.existsSync(path.join(dataDir, ".annalo-update")), false, "reported once");
+    assert.equal(fs.existsSync(path.join(dataDir, ".arcalo-update")), false, "reported once");
     await app.close();
     // UAC denied or the installer cancelled: the old version starts again.
-    fs.writeFileSync(path.join(dataDir, ".annalo-update"), next(current));
+    fs.writeFileSync(path.join(dataDir, ".arcalo-update"), next(current));
     app = await launch({ dataDir });
     await app.waitText(".toast", /nicht installiert/);
     await app.waitText(".toast", new RegExp(`weiter mit Version ${current.replace(/\./g, "\\.")}`));

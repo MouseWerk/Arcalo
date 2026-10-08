@@ -13,7 +13,7 @@ const test = guarded(nodeTest, () => app);
 let app;
 let dataDir;
 before(async () => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-upgrade-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-upgrade-"));
   // Sample data stands in for a workspace used with an earlier version.
   app = await launch({ demo: true, onboarding: true, dataDir });
 });

@@ -9,11 +9,11 @@
   certificate whose subject is the Publisher); the Store signs submitted packages itself, so
   the package for Partner Center stays unsigned.
 
-  The executable is the Store build: `cargo build --release -p annalo --features custom-protocol,store`
+  The executable is the Store build: `cargo build --release -p arcalo --features custom-protocol,store`
   after `npm --prefix ui run build`.
 
 .EXAMPLE
-  ./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version 1.12.0 `
+  ./packaging/msix/pack.ps1 -Exe target/release/arcalo.exe -Version 1.12.0 `
     -IdentityName 12345MouseWerk.Arcalo -Publisher "CN=00000000-0000-0000-0000-000000000000" `
     -PublisherDisplayName MouseWerk -OutDir dist
 #>

@@ -10,9 +10,9 @@
 // Privacy: a recording is always visible: the voice bar in the window, the tray tooltip and a tray
 // entry „Aufnahme beenden“; the global shortcut brings the window to the front.
 //
-// Test hooks (debug builds only): `ANNALO_TEST_AUDIO_FILE` feeds a WAV file instead of the
-// microphone, `ANNALO_TEST_TRANSCRIPT` stands in for Whisper (text with `[mm:ss]` lines, or a file
-// with them), `ANNALO_TEST_MODEL_BASES` replaces the GitHub and Hugging Face addresses
+// Test hooks (debug builds only): `ARCALO_TEST_AUDIO_FILE` feeds a WAV file instead of the
+// microphone, `ARCALO_TEST_TRANSCRIPT` stands in for Whisper (text with `[mm:ss]` lines, or a file
+// with them), `ARCALO_TEST_MODEL_BASES` replaces the GitHub and Hugging Face addresses
 // (`<github>|<huggingface>`).
 
 use std::collections::HashMap;
@@ -23,10 +23,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use annalo_core::calsync::tz::Zone;
-use annalo_core::error::{Error, Result};
-use annalo_core::voice::{audio, download, models, transcript};
-use annalo_core::{tr, trf};
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::error::{Error, Result};
+use arcalo_core::voice::{audio, download, models, transcript};
+use arcalo_core::{tr, trf};
 use chrono::Local;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -203,7 +203,7 @@ pub struct Devices {
 
 #[tauri::command(async)]
 pub fn voice_devices() -> Devices {
-    if test_var("ANNALO_TEST_AUDIO_FILE").is_some() {
+    if test_var("ARCALO_TEST_AUDIO_FILE").is_some() {
         let name = tr!("Testeingang", "Test input").to_owned();
         return Devices { inputs: vec![name.clone()], default: Some(name), system_audio: cfg!(windows) };
     }
@@ -321,7 +321,7 @@ fn record(
     let (tx, rx) = mpsc::channel::<Chunk>();
     let mut streams: Vec<cpal::Stream> = Vec::new();
     let opened: Result<String> = (|| {
-        if let Some(file) = test_var("ANNALO_TEST_AUDIO_FILE") {
+        if let Some(file) = test_var("ARCALO_TEST_AUDIO_FILE") {
             feed_file(PathBuf::from(file), tx.clone(), ctl.clone())?;
             return Ok(tr!("Testeingang", "Test input").to_owned());
         }
@@ -451,7 +451,7 @@ pub fn voice_start(
         let (app, id, wav, ctl) = (app.clone(), id.clone(), wav.clone(), ctl.clone());
         let (device, system_audio) = (settings.input_device.clone(), settings.system_audio);
         std::thread::Builder::new()
-            .name("annalo-voice-record".into())
+            .name("arcalo-voice-record".into())
             .spawn(move || record(app, id, wav, device, system_audio, ctl, ready_tx))
             .map_err(Error::Io)?
     };
@@ -517,7 +517,7 @@ pub fn voice_discard(app: AppHandle) -> VoiceStatus {
 
 /// A free attachment name for the audio („Sprachnotiz 01.10.2026 14-30.flac“, „… 2.flac“).
 fn audio_name(dir: &Path, started: chrono::DateTime<Local>) -> String {
-    let base = annalo_core::voice::audio_base(started.naive_local());
+    let base = arcalo_core::voice::audio_base(started.naive_local());
     let mut name = format!("{base}.flac");
     let mut n = 2;
     while dir.join(&name).exists() {
@@ -611,7 +611,7 @@ fn spawn_job(app: &AppHandle, spec: JobSpec) -> Result<()> {
     lock(&voice(app).job_cancels).insert(spec.id.clone(), spec.cancel.clone());
     let handle = app.clone();
     std::thread::Builder::new()
-        .name("annalo-voice-job".into())
+        .name("arcalo-voice-job".into())
         .spawn(move || run_job(&handle, spec))
         .map_err(Error::Io)?;
     emit_status(app);
@@ -639,7 +639,7 @@ pub fn voice_transcribe_again(
         ));
     }
     let installed = std::fs::metadata(models_dir(&state).join(info.file)).is_ok_and(|m| m.len() == info.size);
-    if !installed && test_var("ANNALO_TEST_TRANSCRIPT").is_none() {
+    if !installed && test_var("ARCALO_TEST_TRANSCRIPT").is_none() {
         return Err(Error::State(trf!(
             "Das Whisper-Modell „{}“ ist nicht geladen (Einstellungen → Sprachnotizen).",
             "The Whisper model “{}” is not downloaded (Settings → Voice notes).",
@@ -655,7 +655,7 @@ pub fn voice_transcribe_again(
     let id = format!("{:x}", Local::now().timestamp_millis());
     let (page, previous) = state.db().voice_again(page_id, &audio, &id)?;
     let _ = app.emit("data://pages", [page.id]);
-    let language = annalo_core::voice::VoiceSettings { language, ..Default::default() }.whisper_language();
+    let language = arcalo_core::voice::VoiceSettings { language, ..Default::default() }.whisper_language();
     spawn_job(
         &app,
         JobSpec {
@@ -694,13 +694,13 @@ fn busy_files(app: &AppHandle) -> Vec<String> {
 
 /// Recordings a crash or a forced quit left in `<data>/voice/` (offered after the start).
 #[tauri::command(async)]
-pub fn voice_unfinished(app: AppHandle, state: State<'_, AppState>) -> Vec<annalo_core::voice::Unfinished> {
-    annalo_core::voice::unfinished(&voice_dir(&state), &busy_files(&app))
+pub fn voice_unfinished(app: AppHandle, state: State<'_, AppState>) -> Vec<arcalo_core::voice::Unfinished> {
+    arcalo_core::voice::unfinished(&voice_dir(&state), &busy_files(&app))
 }
 
 fn unfinished_path(app: &AppHandle, state: &AppState, name: &str) -> Result<PathBuf> {
     let path = voice_dir(state).join(name);
-    if !annalo_core::voice::is_recording_name(name) || !path.is_file() || busy_files(app).iter().any(|b| b == name) {
+    if !arcalo_core::voice::is_recording_name(name) || !path.is_file() || busy_files(app).iter().any(|b| b == name) {
         return Err(Error::State(tr!("Die Aufnahme gibt es nicht mehr", "The recording is gone").into()));
     }
     Ok(path)
@@ -856,7 +856,7 @@ fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcri
     let mut decoded = if job.samples == 0 { Some(audio::read_16k_any(&job.wav)?) } else { None };
     let count = decoded.as_ref().map_or(job.samples as usize, Vec::len);
     let duration_ms = count as i64 * 1000 / i64::from(audio::RATE);
-    if let Some(fake) = test_var("ANNALO_TEST_TRANSCRIPT") {
+    if let Some(fake) = test_var("ARCALO_TEST_TRANSCRIPT") {
         let text = std::fs::read_to_string(&fake).unwrap_or(fake);
         for p in [10u8, 35, 60, 85, 100] {
             if job.cancel.load(Ordering::Relaxed) {
@@ -865,7 +865,7 @@ fn transcribe_job(app: &AppHandle, job: &JobSpec) -> Result<transcript::Transcri
             set_job(app, &job.id, "transcribe", p);
             std::thread::sleep(Duration::from_millis(150));
         }
-        let language = job.language.unwrap_or(if annalo_core::i18n::is_en() { "en" } else { "de" });
+        let language = job.language.unwrap_or(if arcalo_core::i18n::is_en() { "en" } else { "de" });
         return Ok(transcript::Transcript {
             segments: transcript::parse_text(&text, duration_ms),
             language: Some(language.into()),
@@ -998,7 +998,7 @@ fn models_view(app: &AppHandle) -> ModelsView {
     let models = models::status(&dir);
     let selected = models::get(&state.settings().voice.model).id;
     let ready =
-        test_var("ANNALO_TEST_TRANSCRIPT").is_some() || models.iter().any(|m| m.info.id == selected && m.installed);
+        test_var("ARCALO_TEST_TRANSCRIPT").is_some() || models.iter().any(|m| m.info.id == selected && m.installed);
     ModelsView {
         models,
         dir: dir.display().to_string(),
@@ -1029,7 +1029,7 @@ pub fn model_source_url(custom: &str) -> Option<String> {
 }
 
 fn default_bases() -> (String, String) {
-    match test_var("ANNALO_TEST_MODEL_BASES").as_deref().and_then(|v| v.split_once('|')) {
+    match test_var("ARCALO_TEST_MODEL_BASES").as_deref().and_then(|v| v.split_once('|')) {
         Some((gh, hf)) => (gh.to_owned(), hf.to_owned()),
         None => (models::GITHUB_BASE.to_owned(), models::HUGGINGFACE_BASE.to_owned()),
     }
@@ -1063,13 +1063,13 @@ pub fn voice_model_download(app: AppHandle, state: State<'_, AppState>, id: Stri
     }
     let cancel = lock(&v.download).as_ref().map(|(_, c)| c.clone()).unwrap_or_default();
     let settings = state.settings();
-    let client = crate::network::client_for(&state, &annalo_core::network::Service::VoiceModels)?;
+    let client = crate::network::client_for(&state, &arcalo_core::network::Service::VoiceModels)?;
     let (gh, hf) = default_bases();
     let sources = models::sources(info, &settings.voice.source_url, &gh, &hf);
     let dir = models_dir(&state);
     let handle = app.clone();
     std::thread::Builder::new()
-        .name("annalo-voice-model".into())
+        .name("arcalo-voice-model".into())
         .spawn(move || {
             let app = handle;
             let mut last = Instant::now() - Duration::from_secs(1);
@@ -1127,7 +1127,7 @@ pub async fn voice_model_import(app: AppHandle, id: String, path: String) -> Res
     let dir = models_dir(&app.state::<AppState>());
     let source = models::Source::File(PathBuf::from(&path));
     // A file source: no network, but the client comes from the one place that builds them.
-    let client = crate::network::client_for(&app.state::<AppState>(), &annalo_core::network::Service::VoiceModels)?;
+    let client = crate::network::client_for(&app.state::<AppState>(), &arcalo_core::network::Service::VoiceModels)?;
     download::fetch(&client, &info.into(), &[source], &dir, &AtomicBool::new(false), |_| {}).await.map_err(|e| {
         Error::State(trf!("Die Datei ist nicht das Modell „{}“: {e}", "The file is not the model “{}”: {e}", info.id))
     })?;

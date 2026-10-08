@@ -2,6 +2,7 @@
 // animation, every intro scene and setup step (German and English), the window title, Settings
 // and the developer log. Only the notice „Annalo heißt jetzt Arcalo“ for upgraders may say it
 // (e2e/tests/113-rebrand-arcalo.test.js); the sources are checked by ui/src/lib/branding.test.ts.
+// Since 1.15 the internal names follow (storage keys, globals, the log), in any spelling.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -55,7 +56,7 @@ async function language(lang) {
 }
 
 test("the start-up animation spells Arcalo", async () => {
-  await app.browser.execute(() => localStorage.setItem("annalo.splash-test", "1"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.splash-test", "1"));
   await app.browser.refresh();
   const word = await app.browser.execute(() => document.querySelector("#splash .splash-word")?.textContent ?? null);
   assert.equal(word, "Arcalo");
@@ -65,7 +66,7 @@ test("the start-up animation spells Arcalo", async () => {
   await app.shot("250-splash-2-name");
   assert.deepEqual(await oldName(), []);
   await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.getElementById("splash"))), { timeout: 8000, timeoutMsg: "splash stays" });
-  await app.browser.execute(() => localStorage.removeItem("annalo.splash-test"));
+  await app.browser.execute(() => localStorage.removeItem("arcalo.splash-test"));
 });
 
 for (const lang of ["de", "en"]) {
@@ -129,5 +130,21 @@ test("window title, Settings and the developer log say Arcalo", async () => {
   const logs = path.join(app.dataDir, "logs");
   assert.ok(fs.existsSync(path.join(logs, "arcalo.log")), fs.readdirSync(logs).join());
   assert.ok(!fs.existsSync(path.join(logs, "annalo.log")));
+  assert.doesNotMatch(fs.readFileSync(path.join(logs, "arcalo.log"), "utf8"), /annalo/i);
   assert.deepEqual(await app.consoleErrors(), []);
+});
+
+test("internal names in the page use the new name too (1.15): storage keys, globals, data folder", async () => {
+  const internal = await app.browser.execute(() => ({
+    keys: Object.keys(localStorage).filter((k) => /annalo/i.test(k)),
+    ours: Object.keys(localStorage).filter((k) => /^arcalo\./.test(k)).length,
+    globals: Object.keys(window).filter((k) => /annalo/i.test(k)),
+    html: /annalo/i.test(document.documentElement.outerHTML),
+  }));
+  assert.deepEqual(internal.keys, [], "no storage key of the old name");
+  assert.ok(internal.ours > 0, "the app's own keys are arcalo.*");
+  assert.deepEqual(internal.globals, []);
+  assert.equal(internal.html, false, "no class, id, attribute or link with the old name");
+  const status = await app.invoke("data_dir_status");
+  assert.doesNotMatch(status.data_dir, /annalo/i);
 });

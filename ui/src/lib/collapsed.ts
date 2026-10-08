@@ -1,10 +1,10 @@
-// Collapsed folders of the sidebar tree, kept in localStorage (`annalo.collapsed`).
+// Collapsed folders of the sidebar tree, kept in localStorage (`arcalo.collapsed`).
 
 import type { PageNode } from "./types";
 
-const KEY = "annalo.collapsed";
+const KEY = "arcalo.collapsed";
 /** Fired when folders were collapsed from outside the sidebar (e.g. after an import). */
-export const COLLAPSED_EVENT = "annalo:collapsed";
+export const COLLAPSED_EVENT = "arcalo:collapsed";
 
 export function readCollapsed(): Set<number> {
   try {

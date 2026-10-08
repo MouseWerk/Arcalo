@@ -2,6 +2,7 @@
 
 import { addDays, fmtDate, isoDay, weekdayLabels, weekStart } from "./format";
 import { t, type TKey } from "./i18n";
+import { MAIL_SCHEME_SOURCE } from "./legacy";
 import type { Recurrence } from "./types";
 
 export type TaskGroup = "overdue" | "today" | "week" | "later" | "none";
@@ -35,7 +36,7 @@ export type TaskSegment =
   | { kind: "tag"; text: string; tag: string }
   | { kind: "mail"; text: string; id: string };
 
-/** Splits a task text into plain text, `[[links]]` (alias shown), `#tags` (same rules as the core) and links to e-mails (`[E-Mail: …](annalo-mail://id)`). */
+/** Splits a task text into plain text, `[[links]]` (alias shown), `#tags` (same rules as the core) and links to e-mails (`[E-Mail: …](arcalo-mail://id)`). */
 export function taskSegments(text: string): TaskSegment[] {
   const out: TaskSegment[] = [];
   const push = (t: string) => {
@@ -44,7 +45,7 @@ export function taskSegments(text: string): TaskSegment[] {
     if (last?.kind === "text") last.text += t;
     else out.push({ kind: "text", text: t });
   };
-  const re = /\[\[([^\]]+?)\]\]|\[([^[\]]*)\]\(annalo-mail:\/\/([0-9a-z]+)\/?\)|(^|[\s(])#([\p{L}\p{N}_\-/]+)/giu;
+  const re = new RegExp(String.raw`\[\[([^\]]+?)\]\]|\[([^[\]]*)\]\(${MAIL_SCHEME_SOURCE}:\/\/([0-9a-z]+)\/?\)|(^|[\s(])#([\p{L}\p{N}_\-/]+)`, "giu");
   let at = 0;
   for (let m = re.exec(text); m; m = re.exec(text)) {
     push(text.slice(at, m.index));

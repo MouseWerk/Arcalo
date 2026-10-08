@@ -27,15 +27,15 @@ const ALLOWED: { rule: string; where: string; text?: string; reason: string }[] 
   { rule: "dash", where: "set.editor.smartQuotesDesc", reason: "Shows the hyphen that typing turns into a dash." },
   { rule: "space-before-punct", where: "files.nameReserved", reason: "A list of the characters not allowed in file names." },
   { rule: "space-before-punct", where: "props.keyHint", reason: "A list of the characters a property name must not start with." },
-  { rule: "space-before-punct", where: "crates/annalo-core/src/attachment_manager.rs", text: ": * ?", reason: "A list of the characters not allowed in file names." },
+  { rule: "space-before-punct", where: "crates/arcalo-core/src/attachment_manager.rs", text: ": * ?", reason: "A list of the characters not allowed in file names." },
   { rule: "space-before-punct", where: "palette.placeholder", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
   { rule: "space-before-punct", where: "palette.footHints", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
   { rule: "space-before-punct", where: "palette.placeholderNoTime", reason: "„? fragen“: the question mark is the syntax that asks the assistant." },
   { rule: "english", where: "fr.lang.enText", reason: "Describes the English interface in English, whatever the current language." },
   { rule: "german", where: "fr.lang.deText", reason: "Describes the German interface in German, whatever the current language." },
   { rule: "transliteration", where: "sec.key.fileName", reason: "File name without umlauts so it survives every file system and mail program." },
-  { rule: "quotes", where: "crates/annalo-core/src/ai/zeitguess.rs", text: "“, „", reason: "Joins quoted examples: closes one German quote and opens the next." },
-  { rule: "english", where: "crates/annalo-core/src/ai/tools.rs", text: "In Progress", reason: "Jira status names, which Jira keeps in English." },
+  { rule: "quotes", where: "crates/arcalo-core/src/ai/zeitguess.rs", text: "“, „", reason: "Joins quoted examples: closes one German quote and opens the next." },
+  { rule: "english", where: "crates/arcalo-core/src/ai/tools.rs", text: "In Progress", reason: "Jira status names, which Jira keeps in English." },
   { rule: "space-before-punct", where: "aitext.summaryPrompt", reason: "„!! (hoch) oder ! (mittel)“: the priority syntax of tasks." },
 ];
 

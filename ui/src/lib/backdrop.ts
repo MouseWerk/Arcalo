@@ -50,7 +50,7 @@ export const EFFECT_TINT = { light: "#f3f3f3", dark: "#202020" } as const;
 
 // ------------------------------------------------------------------ applying
 
-const KEY = "annalo.backdrop";
+const KEY = "arcalo.backdrop";
 let enabled = false;
 /** The chosen effect; null until the settings are known. */
 let effect: WindowEffect | null = null;

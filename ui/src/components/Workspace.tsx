@@ -269,7 +269,7 @@ function TabContent({ tab, active }: { tab: Tab; active: boolean }) {
   }
 }
 
-const TAB_MIME = "application/x-annalo-tab";
+const TAB_MIME = "application/x-arcalo-tab";
 /** The tab being dragged (dataTransfer content is not readable during dragover). */
 let draggedTab: string | null = null;
 
@@ -516,7 +516,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
           iconSize={15}
           onClick={() => {
             s().set({ panelOpen: !panelOpen });
-            savePref("annalo.panel", !panelOpen);
+            savePref("arcalo.panel", !panelOpen);
           }}
         />
       )}

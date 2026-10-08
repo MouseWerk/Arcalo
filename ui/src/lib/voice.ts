@@ -369,7 +369,7 @@ export async function summarizeVoice(d: Pick<VoiceDone, "page_id" | "title" | "t
     dismissResult(d.page_id);
     s.toast({ tone: "success", title: t("voice.summaryAdded"), detail: t("voice.summaryTasks", { n }), action: { label: t("voice.open"), run: () => s.openPage(d.page_id) } });
     // „Nachfass-Mail“ right after the summary (MeetingWorkHost offers it).
-    window.dispatchEvent(new CustomEvent("annalo:offer-followup", { detail: d.page_id }));
+    window.dispatchEvent(new CustomEvent("arcalo:offer-followup", { detail: d.page_id }));
   } catch (e) {
     s.error(t("voice.summaryFailed"), e);
   } finally {

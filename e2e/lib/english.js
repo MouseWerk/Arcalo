@@ -10,8 +10,8 @@ import { launch } from "./harness.js";
  * returned so the caller removes it.
  */
 export async function launchEnglish(opts = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-en-"));
-  const env = { ANNALO_LOCALE: "en-US", ...(opts.env ?? {}) };
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-en-"));
+  const env = { ARCALO_LOCALE: "en-US", ...(opts.env ?? {}) };
   // First start without the demo: only to store the language.
   let app = await launch({ demo: false, dataDir, env });
   const view = await app.invoke("settings_get");

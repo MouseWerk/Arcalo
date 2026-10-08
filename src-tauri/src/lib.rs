@@ -1,4 +1,4 @@
-//! Arcalo desktop shell: exposes `annalo-core` to the web UI over Tauri IPC.
+//! Arcalo desktop shell: exposes `arcalo-core` to the web UI over Tauri IPC.
 //!
 //! The same crate is the Android companion app (`mobile`): it shares the state and the commands
 //! below, the desktop-only parts (tray, global shortcuts, updates, voice notes, quick-capture and
@@ -30,6 +30,8 @@ mod files;
 mod filing;
 mod focus;
 mod graph;
+#[cfg(desktop)]
+mod identity;
 #[cfg(desktop)]
 mod installer;
 mod jira;
@@ -74,48 +76,48 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
-use annalo_core::activity::{self, IdleAccumulator, WindowUsage};
-use annalo_core::ai::availability::{Catalog, Exclude};
-use annalo_core::ai::capability::{self, Capabilities};
-use annalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
-use annalo_core::ai::metrics::PriceTable;
-use annalo_core::ai::metrics::SessionMeter;
-use annalo_core::ai::privacy;
-use annalo_core::ai::provider::AiProvider;
-use annalo_core::ai::rag::{self, ContextChunk};
-use annalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
-use annalo_core::ai::tools::{self, Risk, SystemCall};
-use annalo_core::ai::transform;
-use annalo_core::ai::zeitguess::{self, ZeitGuess};
-use annalo_core::ai::{AiClient, availability};
-use annalo_core::attachment_manager;
-use annalo_core::attachments::{self, SavedAttachment};
-use annalo_core::backup::{self, BackupInfo};
-use annalo_core::calendar::{self, DayOverview};
-use annalo_core::chips;
-use annalo_core::db::EntryFilter;
-use annalo_core::drawings;
-use annalo_core::error::IoAt;
-use annalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
-use annalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
-use annalo_core::mirror::{self, MirrorReport};
-use annalo_core::model::*;
-use annalo_core::network::Service;
-use annalo_core::netzplan::{self, Schedule};
-use annalo_core::notes::{PageDoc, SavedPage};
-use annalo_core::pagework::{self, PageWork};
-use annalo_core::properties;
-use annalo_core::report;
-use annalo_core::search::{self, SearchHit};
-use annalo_core::settings::{Dashboard, Settings};
-use annalo_core::tasks::{Task, TaskFilter};
-use annalo_core::templates::TemplateVars;
-use annalo_core::tracking::{self, BudgetStatus, LogOutcome};
-use annalo_core::trash::TrashEntry;
-use annalo_core::vault::{self, ImportReport};
-use annalo_core::versions::VersionInfo;
-use annalo_core::{Database, Error, datadir, demo};
-use annalo_core::{tr, trf};
+use arcalo_core::activity::{self, IdleAccumulator, WindowUsage};
+use arcalo_core::ai::availability::{Catalog, Exclude};
+use arcalo_core::ai::capability::{self, Capabilities};
+use arcalo_core::ai::client::{ChatMessage, ChatRequest, Completion, StreamEvent};
+use arcalo_core::ai::metrics::PriceTable;
+use arcalo_core::ai::metrics::SessionMeter;
+use arcalo_core::ai::privacy;
+use arcalo_core::ai::provider::AiProvider;
+use arcalo_core::ai::rag::{self, ContextChunk};
+use arcalo_core::ai::router::{ModelRef, ModelRouter, RouteDecision, RouteInput, RouterConfig, Tier};
+use arcalo_core::ai::tools::{self, Risk, SystemCall};
+use arcalo_core::ai::transform;
+use arcalo_core::ai::zeitguess::{self, ZeitGuess};
+use arcalo_core::ai::{AiClient, availability};
+use arcalo_core::attachment_manager;
+use arcalo_core::attachments::{self, SavedAttachment};
+use arcalo_core::backup::{self, BackupInfo};
+use arcalo_core::calendar::{self, DayOverview};
+use arcalo_core::chips;
+use arcalo_core::db::EntryFilter;
+use arcalo_core::drawings;
+use arcalo_core::error::IoAt;
+use arcalo_core::export::{self, ExportFormat, ExportOptions, ExportResult};
+use arcalo_core::gitsync::{self, GitSyncStatus, SyncMode, SyncOutcome, SyncRequest};
+use arcalo_core::mirror::{self, MirrorReport};
+use arcalo_core::model::*;
+use arcalo_core::network::Service;
+use arcalo_core::netzplan::{self, Schedule};
+use arcalo_core::notes::{PageDoc, SavedPage};
+use arcalo_core::pagework::{self, PageWork};
+use arcalo_core::properties;
+use arcalo_core::report;
+use arcalo_core::search::{self, SearchHit};
+use arcalo_core::settings::{Dashboard, Settings};
+use arcalo_core::tasks::{Task, TaskFilter};
+use arcalo_core::templates::TemplateVars;
+use arcalo_core::tracking::{self, BudgetStatus, LogOutcome};
+use arcalo_core::trash::TrashEntry;
+use arcalo_core::vault::{self, ImportReport};
+use arcalo_core::versions::VersionInfo;
+use arcalo_core::{Database, Error, datadir, demo};
+use arcalo_core::{tr, trf};
 use base64::Engine;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -150,13 +152,13 @@ fn provider_client(
     settings: &Settings,
     provider: &AiProvider,
     key: Option<String>,
-    passwords: annalo_core::network::Passwords<'_>,
+    passwords: arcalo_core::network::Passwords<'_>,
 ) -> Result<AiClient> {
     // „KI verwenden“ off: no client is built, so nothing can reach a provider.
     settings.require_ai()?;
     let net = network::effective(&settings.network);
     let service = provider.service();
-    let http = annalo_core::network::client_for(&net, passwords, &service)?;
+    let http = arcalo_core::network::client_for(&net, passwords, &service)?;
     let mut client = AiClient::for_provider(provider.clone(), key, http);
     client.prices = PriceTable::from_rules(&settings.prices, &provider.id);
     client.request_timeout = net.timeout_for(&service);
@@ -291,7 +293,7 @@ impl AppState {
             id => id,
         };
         ai.clients.get(id).cloned().ok_or_else(|| match &ai.network_error {
-            _ if !ai.settings.ai_on() => Error::State(annalo_core::settings::ai_off().into()),
+            _ if !ai.settings.ai_on() => Error::State(arcalo_core::settings::ai_off().into()),
             Some(e) => Error::State(e.clone()),
             None => Error::State(trf!(
                 "Der KI-Anbieter „{id}“ ist nicht eingerichtet oder ausgeschaltet (Einstellungen → KI & Modelle)",
@@ -347,13 +349,13 @@ fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
     state.reader().page_doc(id)
 }
 
-/// What `![[target#anchor]]` shows: the page, its section or block (see `annalo_core::embeds`).
+/// What `![[target#anchor]]` shows: the page, its section or block (see `arcalo_core::embeds`).
 #[tauri::command(async)]
 fn page_embed(
     state: State<AppState>,
     target: String,
     anchor: Option<String>,
-) -> Result<annalo_core::embeds::EmbedView> {
+) -> Result<arcalo_core::embeds::EmbedView> {
     state.reader().page_embed(&target, anchor.as_deref())
 }
 
@@ -450,7 +452,7 @@ fn page_create(
 
 /// Avoid duplicate titles so [[links]] stay unambiguous.
 pub(crate) fn unique_title(db: &Database, title: &str) -> Result<String> {
-    let base = annalo_core::notes::clean_title(title);
+    let base = arcalo_core::notes::clean_title(title);
     let mut name = base.clone();
     let mut n = 2;
     while db.page_by_title(&name)?.is_some() {
@@ -464,7 +466,7 @@ pub(crate) fn unique_title(db: &Database, title: &str) -> Result<String> {
 fn page_rename(state: State<AppState>, id: i64, title: String, update_links: bool) -> Result<usize> {
     let db = state.db();
     // `[ ] | # ^` are replaced (see `notes::clean_title`); the UI applies the same rule while typing.
-    let title = annalo_core::notes::clean_title(&title);
+    let title = arcalo_core::notes::clean_title(&title);
     if let Some(other) = db.page_by_title(&title)?
         && other.id != id
     {
@@ -577,9 +579,9 @@ fn task_set_done(
 fn tasks_edit(
     app: AppHandle,
     state: State<AppState>,
-    refs: Vec<annalo_core::taskedit::TaskRef>,
-    edit: annalo_core::taskedit::TaskEdit,
-) -> Result<annalo_core::taskedit::TaskChange> {
+    refs: Vec<arcalo_core::taskedit::TaskRef>,
+    edit: arcalo_core::taskedit::TaskEdit,
+) -> Result<arcalo_core::taskedit::TaskChange> {
     let change = state.db().edit_tasks(&refs, &edit, chrono::Local::now().date_naive())?;
     for p in &change.pages {
         let _ = app.emit("data://tasks", p.page_id);
@@ -591,7 +593,7 @@ fn tasks_edit(
 }
 
 #[tauri::command(async)]
-fn tasks_undo(app: AppHandle, state: State<AppState>, change: annalo_core::taskedit::TaskChange) -> Result<()> {
+fn tasks_undo(app: AppHandle, state: State<AppState>, change: arcalo_core::taskedit::TaskChange) -> Result<()> {
     state.db().undo_task_change(&change)?;
     for p in &change.pages {
         let _ = app.emit("data://tasks", p.page_id);
@@ -606,12 +608,12 @@ fn tasks_undo(app: AppHandle, state: State<AppState>, change: annalo_core::taske
 /// adds the next occurrence itself.
 #[tauri::command]
 fn task_next_due(text: String) -> Option<String> {
-    annalo_core::taskedit::next_due_of(&text, chrono::Local::now().date_naive())
+    arcalo_core::taskedit::next_due_of(&text, chrono::Local::now().date_naive())
 }
 
 /// The next due dates of a rule, for the repeat dialog.
 #[tauri::command]
-fn task_recur_preview(recur: annalo_core::recurrence::Recurrence, due: Option<String>) -> Vec<String> {
+fn task_recur_preview(recur: arcalo_core::recurrence::Recurrence, due: Option<String>) -> Vec<String> {
     let due = due.and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
     recur.preview(due, chrono::Local::now().date_naive(), 3).iter().map(|d| d.format("%Y-%m-%d").to_string()).collect()
 }
@@ -659,15 +661,15 @@ async fn vault_import(app: AppHandle, path: String) -> Result<ImportReport> {
 /// on Linux the variables of a running process stay as they were).
 #[tauri::command]
 fn os_locale() -> Option<String> {
-    // Tests and support: ANNALO_LOCALE stands in for the system's.
-    if let Some(l) = std::env::var("ANNALO_LOCALE").ok().filter(|l| !l.trim().is_empty()) {
+    // Tests and support: ARCALO_LOCALE stands in for the system's.
+    if let Some(l) = arcalo_core::identity::env("ARCALO_LOCALE").filter(|l| !l.trim().is_empty()) {
         return Some(l);
     }
     #[cfg(not(any(windows, target_os = "macos", target_os = "android")))]
-    let tags = annalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
+    let tags = arcalo_core::i18n::locales_from_env(|k| std::env::var(k).ok());
     #[cfg(any(windows, target_os = "macos", target_os = "android"))]
     let tags = sys_locale::get_locales();
-    annalo_core::i18n::preferred_locale(tags)
+    arcalo_core::i18n::preferred_locale(tags)
 }
 
 #[tauri::command]
@@ -746,7 +748,7 @@ fn attachment_save(
 }
 
 /// Header with the percent-encoded file name of [`attachment_store`] (header values are ASCII).
-const NAME_HEADER: &str = "x-annalo-name";
+const NAME_HEADER: &str = "x-arcalo-name";
 
 /// Stores a dropped or pasted file under its own (sanitized) name. The body is the raw file
 /// (no base64 round trip for files up to 100 MB), the name comes in [`NAME_HEADER`].
@@ -805,7 +807,7 @@ async fn link_title(state: State<'_, AppState>, url: String) -> Result<String> {
     let Ok(http) = network::client_for(&state, &Service::LinkPreview) else {
         return Ok(url);
     };
-    match annalo_core::linktitle::fetch_title(&http, &url).await {
+    match arcalo_core::linktitle::fetch_title(&http, &url).await {
         Ok(Some(title)) => Ok(title),
         Ok(None) => Ok(url),
         Err(_) => {
@@ -901,7 +903,7 @@ fn decode_attachment(data: &str) -> Result<Vec<u8>> {
         .map_err(|e| Error::Parse(trf!("Ungültige Bilddaten: {e}", "Invalid image data: {e}")))
 }
 
-/// Serves `annalo-asset://localhost/<name>`: only plain file names inside the attachments folder.
+/// Serves `arcalo-asset://localhost/<name>`: only plain file names inside the attachments folder.
 fn serve_attachment(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     let respond = |status: u16, mime: &str, body: Vec<u8>| {
         tauri::http::Response::builder()
@@ -1136,7 +1138,7 @@ struct TimerStatus {
     is_idle: bool,
     /// Since when the timer is paused (`None` while it runs) and the seconds of past pauses.
     #[serde(flatten)]
-    pause: annalo_core::timer::PauseState,
+    pause: arcalo_core::timer::PauseState,
 }
 
 #[tauri::command(async)]
@@ -1338,7 +1340,7 @@ fn delete_time_entry(app: AppHandle, state: State<AppState>, id: i64) -> Result<
 
 // ------------------------------------------------------------- /zeit chips
 
-/// How the chips of a note relate to their bookings (see `annalo_core::chips`).
+/// How the chips of a note relate to their bookings (see `arcalo_core::chips`).
 #[tauri::command(async)]
 fn time_chip_states(
     state: State<AppState>,
@@ -1396,13 +1398,13 @@ fn time_chip_book(
         Some((a, b)) => (a.trim().to_owned(), Some(b.trim().to_owned()).filter(|v| !v.is_empty())),
         None => (target.trim().to_owned(), None),
     };
-    let cmd = annalo_core::zeit::ZeitCommand {
+    let cmd = arcalo_core::zeit::ZeitCommand {
         netzplan_ref: np,
         vorgang_nr: vorgang,
         duration_minutes: minutes,
         leistungsart: leistungsart.filter(|l| !l.is_empty()),
         description: text,
-        date: date.map_or(annalo_core::zeit::DateSpec::Today, annalo_core::zeit::DateSpec::On),
+        date: date.map_or(arcalo_core::zeit::DateSpec::Today, arcalo_core::zeit::DateSpec::On),
         start: None,
     };
     let ctx = tracking::SlashContext { default_ref: None, page_id: Some(page_id) };
@@ -1540,8 +1542,8 @@ fn backup_once(app: &AppHandle) -> Result<(BackupInfo, bool)> {
     // are copied, nothing is deleted.
     let src = state.attachments_dir();
     if src.is_dir() {
-        let act = annalo_core::backupdest::Activity::new(None);
-        annalo_core::backupdest::sync_files(&src, &dir.join("attachments"), &act)?;
+        let act = arcalo_core::backupdest::Activity::new(None);
+        arcalo_core::backupdest::sync_files(&src, &dir.join("attachments"), &act)?;
     }
     let mut mirror_fresh = false;
     if state.settings().markdown_mirror {
@@ -1740,7 +1742,7 @@ fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> boo
     match pulled {
         Ok(p) => {
             // For the start page's „Per Git-Sync geändert“.
-            use annalo_core::dashboard::notes::{PulledChange, record_pulled};
+            use arcalo_core::dashboard::notes::{PulledChange, record_pulled};
             let changes: Vec<(i64, PulledChange)> = p
                 .conflicts
                 .iter()
@@ -1910,7 +1912,7 @@ async fn git_restore_import(app: AppHandle, url: String) -> Result<ImportReport>
         git.version()?;
         let now = Local::now();
         let tmp = std::env::temp_dir().join(format!(
-            "annalo-git-import-{}-{}",
+            "arcalo-git-import-{}-{}",
             std::process::id(),
             now.format("%Y%m%d%H%M%S%f")
         ));
@@ -2016,7 +2018,7 @@ fn copy_new_attachments(src: &std::path::Path, dst: &std::path::Path) -> Result<
         }
         let tmp = dst.join(format!(".{name_str}.part"));
         let copied =
-            annalo_core::error::copy_file(&entry.path(), &tmp).and_then(|_| std::fs::rename(&tmp, &to).at(&to));
+            arcalo_core::error::copy_file(&entry.path(), &tmp).and_then(|_| std::fs::rename(&tmp, &to).at(&to));
         if let Err(e) = copied {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
@@ -2072,9 +2074,9 @@ fn spawn_backup_scheduler(app: AppHandle) {
 }
 
 /// How long after the start the scheduler first looks for a due backup: 3 minutes, or
-/// `ANNALO_BACKUP_DELAY_SECS` (tests).
+/// `ARCALO_BACKUP_DELAY_SECS` (tests).
 fn startup_backup_delay() -> Duration {
-    let secs = std::env::var("ANNALO_BACKUP_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(180);
+    let secs = std::env::var("ARCALO_BACKUP_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(180);
     Duration::from_secs(secs)
 }
 
@@ -2093,13 +2095,13 @@ struct SettingsView {
     backup_dir: String,
     version: &'static str,
     /// Per shareable section: „Für alle Arbeitsbereiche“ (`global`) or „Nur dieser“ (`workspace`).
-    scopes: std::collections::BTreeMap<String, annalo_core::settings_layers::Scope>,
+    scopes: std::collections::BTreeMap<String, arcalo_core::settings_layers::Scope>,
     /// Whether sections can be shared at all (a shared folder is set).
     shared: bool,
     /// The last settings sync that changed settings here (for „Rückgängig“).
-    sync_last: Option<annalo_core::settings_sync::LastMerge>,
+    sync_last: Option<arcalo_core::settings_sync::LastMerge>,
     /// The operating system's language as read at this start (what „Wie das System“ shows).
-    system_language: annalo_core::prefs::Language,
+    system_language: arcalo_core::prefs::Language,
     /// An organization's policy switched the AI off (`AllowAi = 0`): „KI verwenden“ is locked off.
     ai_policy_off: bool,
 }
@@ -2122,11 +2124,11 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         data_dir: state.data_dir.display().to_string(),
         backup_dir: state.backup_dir().display().to_string(),
         version: env!("CARGO_PKG_VERSION"),
-        scopes: annalo_core::settings_layers::scopes(&state.settings()),
-        shared: annalo_core::settings_layers::shared_dir().is_some(),
+        scopes: arcalo_core::settings_layers::scopes(&state.settings()),
+        shared: arcalo_core::settings_layers::shared_dir().is_some(),
         sync_last: state.db().settings_sync_last().ok().flatten(),
-        system_language: annalo_core::i18n::system_lang(),
-        ai_policy_off: annalo_core::settings::ai_forbidden(),
+        system_language: arcalo_core::i18n::system_lang(),
+        ai_policy_off: arcalo_core::settings::ai_forbidden(),
     }
 }
 
@@ -2157,7 +2159,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     network::forget_removed(&state, &previous.network, &settings.network);
     settings.reminder_time = settings.reminder_time.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     if let Some(t) = &settings.reminder_time {
-        let time = annalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
+        let time = arcalo_core::desktop::parse_hhmm(t).ok_or_else(|| {
             Error::State(trf!(
                 "Erinnerungszeit „{t}“ ungültig, erwartet HH:MM",
                 "Reminder time “{t}” is invalid, expected HH:MM"
@@ -2180,7 +2182,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.calendar.sources = stored.calendar.sources.clone();
     // And for the shared sections' scopes (`settings_scope_set`) and the version of the shape.
     settings.workspace_scopes = stored.workspace_scopes.clone();
-    settings.version = stored.version.max(annalo_core::settings_migrate::SETTINGS_VERSION);
+    settings.version = stored.version.max(arcalo_core::settings_migrate::SETTINGS_VERSION);
     // And for the chosen Outlook calendars (`calendar_outlook_*`); the default one takes the color.
     let stored_cal = stored.calendar.clone();
     settings.calendar.outlook_calendars = stored_cal.outlook_calendars;
@@ -2193,7 +2195,7 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     settings.jira = std::mem::take(&mut settings.jira).normalized();
     // An inbox title still at the other language's default follows the language.
     let page = |t: &str| state.reader().page_by_title(t).ok().flatten().is_some();
-    annalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.lang(), page);
+    arcalo_core::capture::localize_inbox_title(&mut settings.capture, settings.locale.lang(), page);
     let specs = |s: &Settings| {
         [
             s.capture_shortcut.clone(),
@@ -2239,10 +2241,10 @@ fn settings_save(app: AppHandle, state: State<AppState>, settings: serde_json::V
     let (old_cal, new_cal) = (&previous.calendar, &settings.calendar);
     let resync = (!old_cal.outlook && new_cal.outlook)
         || (old_cal.past_days, old_cal.future_days) != (new_cal.past_days, new_cal.future_days)
-        || annalo_core::calsync::Privacy::from(old_cal) != annalo_core::calsync::Privacy::from(new_cal);
-    let active = new_cal.active_sources(annalo_core::calsync::outlook::available());
-    let relocalize = annalo_core::i18n::set_lang(settings.locale.lang());
-    annalo_core::i18n::set_number_format(settings.locale.number_format);
+        || arcalo_core::calsync::Privacy::from(old_cal) != arcalo_core::calsync::Privacy::from(new_cal);
+    let active = new_cal.active_sources(arcalo_core::calsync::outlook::available());
+    let relocalize = arcalo_core::i18n::set_lang(settings.locale.lang());
+    arcalo_core::i18n::set_number_format(settings.locale.number_format);
     let chat_retention = previous.ai.chat_history != settings.ai.chat_history;
     // Another saved Jira search: its issues are read now.
     let jira_resync: Vec<String> = if previous.jira.queries != settings.jira.queries {
@@ -2286,7 +2288,7 @@ fn settings_scope_set(
     app: AppHandle,
     state: State<AppState>,
     section: String,
-    scope: annalo_core::settings_layers::Scope,
+    scope: arcalo_core::settings_layers::Scope,
 ) -> Result<SettingsView> {
     let s = state.db().set_settings_scope(&section, scope)?;
     devlog::info("settings", format!("section {section} now {scope:?}"));
@@ -2343,10 +2345,10 @@ fn dashboard_save(state: State<AppState>, dashboard: Dashboard) -> Result<Settin
 fn quick_links_save(
     app: AppHandle,
     state: State<AppState>,
-    links: Vec<annalo_core::settings::QuickLink>,
+    links: Vec<arcalo_core::settings::QuickLink>,
 ) -> Result<SettingsView> {
     let mut settings = state.settings();
-    settings.quick_links = annalo_core::settings::normalize_quick_links(links);
+    settings.quick_links = arcalo_core::settings::normalize_quick_links(links);
     state.db().save_settings(&settings)?;
     state.ai.write().unwrap_or_else(|e| e.into_inner()).settings = settings;
     let _ = app.emit("settings://changed", ());
@@ -2355,13 +2357,13 @@ fn quick_links_save(
 
 /// Opens the ribbon link at `index` (with `item`: that entry of the group there). Only saved
 /// links can be opened this way; the page cannot hand in arbitrary paths. Programs are started.
-/// Tests set `ANNALO_TEST_OPEN_LOG` to a file: the targets are appended there instead.
+/// Tests set `ARCALO_TEST_OPEN_LOG` to a file: the targets are appended there instead.
 #[tauri::command]
 fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize, item: Option<usize>) -> Result<()> {
-    use annalo_core::settings::{LinkKind, LinkTarget};
+    use arcalo_core::settings::{LinkKind, LinkTarget};
     use tauri_plugin_opener::OpenerExt;
     let links = state.settings().quick_links;
-    let link = annalo_core::settings::quick_link_at(&links, index, item)
+    let link = arcalo_core::settings::quick_link_at(&links, index, item)
         .cloned()
         .ok_or_else(|| Error::not_found("link", index.to_string()))?;
     let home = |p: String| match p.strip_prefix("~/") {
@@ -2373,7 +2375,7 @@ fn quick_link_open(app: AppHandle, state: State<AppState>, index: usize, item: O
         (LinkKind::App, LinkTarget::Path(p)) => ("app", home(p)),
         (_, LinkTarget::Path(p)) => ("path", home(p)),
     };
-    if let Ok(log) = std::env::var("ANNALO_TEST_OPEN_LOG") {
+    if let Ok(log) = std::env::var("ARCALO_TEST_OPEN_LOG") {
         use std::io::Write;
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
         writeln!(f, "{}\t{}", target.0, target.1)?;
@@ -2428,7 +2430,7 @@ fn api_key_set(state: State<AppState>, key: Option<String>) -> Result<SettingsVi
 /// The provider need not be saved yet (the dialog stores the key before the settings).
 #[tauri::command]
 fn provider_key_set(state: State<AppState>, id: String, key: Option<String>) -> Result<SettingsView> {
-    let id = annalo_core::ai::provider::slug(&id);
+    let id = arcalo_core::ai::provider::slug(&id);
     if id.is_empty() {
         return Err(Error::State(tr!("Anbieter ohne Kennung", "Provider without an id").into()));
     }
@@ -2460,7 +2462,7 @@ async fn ai_test_connection(
     let mut provider = settings
         .providers
         .iter()
-        .find(|p| p.id == annalo_core::ai::provider::LEGACY_ID)
+        .find(|p| p.id == arcalo_core::ai::provider::LEGACY_ID)
         .cloned()
         .unwrap_or_else(|| AiProvider::litellm(&settings.litellm_base_url));
     if let Some(url) = base_url {
@@ -2610,7 +2612,7 @@ async fn ai_provider_test(
 
     // 1 + 2: the model list answers (reachable) and accepts the key.
     let start = Instant::now();
-    let listed = if provider.kind == annalo_core::ai::ProviderKind::Ollama {
+    let listed = if provider.kind == arcalo_core::ai::ProviderKind::Ollama {
         client.ollama_version().await.map(|v| format!("Ollama {v}"))
     } else {
         Ok(String::new())
@@ -2796,7 +2798,7 @@ struct OllamaDetect {
 #[tauri::command]
 async fn ollama_detect(state: State<'_, AppState>, base_url: Option<String>) -> Result<OllamaDetect> {
     state.settings().require_ai()?;
-    let url = base_url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| annalo_core::ai::provider::OLLAMA_URL.into());
+    let url = base_url.filter(|u| !u.trim().is_empty()).unwrap_or_else(|| arcalo_core::ai::provider::OLLAMA_URL.into());
     let provider = AiProvider::ollama("ollama", url.trim());
     let url = provider.root();
     let client = provider_client(&state.settings(), &provider, None, &proxy_passwords(&state))?;
@@ -2926,10 +2928,10 @@ struct ChatOutcome {
 /// The cost warning after a request (at least 80 % of the monthly limit).
 fn cost_warning(state: &AppState) -> Option<f64> {
     match prefs::cost_status_of(state).ok()?.level {
-        annalo_core::prefs::CostLevel::Warning { fraction } | annalo_core::prefs::CostLevel::Blocked { fraction } => {
+        arcalo_core::prefs::CostLevel::Warning { fraction } | arcalo_core::prefs::CostLevel::Blocked { fraction } => {
             Some(fraction)
         }
-        annalo_core::prefs::CostLevel::Ok => None,
+        arcalo_core::prefs::CostLevel::Ok => None,
     }
 }
 
@@ -3115,7 +3117,7 @@ async fn ai_chat(
     // What makes the conversation private from now on (the UI saves it with the turn).
     let touched_private = private_chat
         || settings.privacy.local_only
-        || annalo_core::ai::privacy::any_private(
+        || arcalo_core::ai::privacy::any_private(
             std::iter::once(prompt.as_str()).chain(context_texts.iter().map(String::as_str)),
             &settings.router.private_markers,
         );
@@ -3258,7 +3260,7 @@ async fn catalog(state: &AppState) -> Catalog {
         }
     }
     // The client's connect/read timeouts (Settings → Netzwerk) bound the wait, and so does this.
-    for (id, res) in annalo_core::ai::client::list_models(&ask, Duration::from_secs(10)).await {
+    for (id, res) in arcalo_core::ai::client::list_models(&ask, Duration::from_secs(10)).await {
         let list = res.inspect_err(|e| devlog::debug("ai", format!("model list of “{id}”: {e}"))).ok();
         lock(&state.server_models).insert(id.clone(), (Instant::now(), list.clone()));
         models.insert(id, list.unwrap_or_default());
@@ -3517,7 +3519,7 @@ fn cancelled_completion(model: &str) -> Completion {
         content: String::new(),
         tool_calls: vec![],
         finish_reason: Some("cancelled".into()),
-        usage: annalo_core::ai::UsageRecord {
+        usage: arcalo_core::ai::UsageRecord {
             model: model.to_owned(),
             prompt_tokens: 0,
             completion_tokens: 0,
@@ -3678,7 +3680,7 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
     let out = match name.as_str() {
         "log_time" => {
             let mut line = arg("command");
-            if !annalo_core::zeit::is_zeit_command(&line) {
+            if !arcalo_core::zeit::is_zeit_command(&line) {
                 line = format!("/zeit {line}");
             }
             let res = serde_json::to_string(&tracking::log_slash_command(&db, &line, Utc::now(), &Local, &t)?)?;
@@ -3709,8 +3711,8 @@ fn ai_run_workspace_tool(app: AppHandle, state: State<AppState>, name: String, a
             };
             let from = date("from")?;
             let to = if arg("to").trim().is_empty() { from } else { date("to")? };
-            pages = annalo_core::feed::day_pages(&db, from, to, &Local)?;
-            annalo_core::feed::describe_days(&db, from, to, &Local)?
+            pages = arcalo_core::feed::day_pages(&db, from, to, &Local)?;
+            arcalo_core::feed::describe_days(&db, from, to, &Local)?
         }
         "list_tasks" => {
             let filter: TaskFilter = serde_json::from_value(args.clone())?;
@@ -3789,7 +3791,7 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
     let model = r.model.clone();
     let local = client.provider().local;
     // The search by meaning shares these vectors: another model's are dropped first.
-    annalo_core::semantic::ensure_index_model(&state.db(), &annalo_core::semantic::index_key(&r.provider, &model))?;
+    arcalo_core::semantic::ensure_index_model(&state.db(), &arcalo_core::semantic::index_key(&r.provider, &model))?;
     if !local && settings.privacy.local_only {
         return Err(Error::State(
             tr!(
@@ -3831,7 +3833,7 @@ async fn ai_index_pending(state: State<'_, AppState>) -> Result<usize> {
             }
             Err(e) => return Err(e),
         };
-        let usage = annalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
+        let usage = arcalo_core::ai::metrics::embedding_usage(&model, &texts, &client.prices);
         let db = state.db();
         db.record_ai_usage(&state.session_id, &usage)?;
         for ((id, _), v) in batch.iter().zip(&vectors) {
@@ -3924,14 +3926,14 @@ fn onboarding_finish(app: AppHandle, state: State<AppState>, samples: bool) -> R
     Ok(())
 }
 
-/// Test builds only: `ANNALO_SKIP_ONBOARDING=1` keeps the intro and the upgrade hint away (e2e).
+/// Test builds only: `ARCALO_SKIP_ONBOARDING=1` keeps the intro and the upgrade hint away (e2e).
 fn skip_onboarding() -> bool {
-    cfg!(debug_assertions) && std::env::var("ANNALO_SKIP_ONBOARDING").is_ok_and(|v| v == "1")
+    cfg!(debug_assertions) && std::env::var("ARCALO_SKIP_ONBOARDING").is_ok_and(|v| v == "1")
 }
 
 /// Whether to play the intro and setup, or to show the hint for upgraded workspaces.
 #[tauri::command(async)]
-fn onboarding_status(state: State<AppState>) -> Result<annalo_core::onboarding::OnboardingStatus> {
+fn onboarding_status(state: State<AppState>) -> Result<arcalo_core::onboarding::OnboardingStatus> {
     state.db().onboarding_status(skip_onboarding())
 }
 
@@ -3983,7 +3985,7 @@ fn create_main_window(
     app: &tauri::App,
     visible: bool,
     geometry: Option<prefs::WindowState>,
-    effect: annalo_core::prefs::WindowEffect,
+    effect: arcalo_core::prefs::WindowEffect,
     custom_frame: bool,
     webview_dir: Option<PathBuf>,
 ) -> tauri::Result<tauri::WebviewWindow> {
@@ -3993,7 +3995,7 @@ fn create_main_window(
         .min_inner_size(900.0, 560.0)
         // The display language before the UI script runs (index.html cannot carry a script):
         // the splash and the first frame are in it, a first run on an English system included.
-        .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", annalo_core::i18n::lang().as_str()))
+        .initialization_script(format!("window.__ARCALO_LANG__ = {:?};", arcalo_core::i18n::lang().as_str()))
         // The native file-drop handler swallows HTML5 drag & drop on Windows (image drop, tabs, sidebar).
         .disable_drag_drop_handler();
     // Portable: the webview's profile stays in the data folder, not in the user profile.
@@ -4066,11 +4068,11 @@ fn show_main_once(app: &AppHandle, why: &str) {
 /// When the process started (for the start-up timing below).
 static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
-/// Debug builds with `ANNALO_STARTUP_TIMING=1` (the e2e harness sets it): when each phase of the
+/// Debug builds with `ARCALO_STARTUP_TIMING=1` (the e2e harness sets it): when each phase of the
 /// start was reached, in the log under `startup`. A slow start (a test machine whose desktop
 /// services hang) shows where the time went.
 fn startup_mark(phase: &str) {
-    if !(cfg!(debug_assertions) && std::env::var("ANNALO_STARTUP_TIMING").is_ok_and(|v| v == "1")) {
+    if !(cfg!(debug_assertions) && std::env::var("ARCALO_STARTUP_TIMING").is_ok_and(|v| v == "1")) {
         return;
     }
     let since = PROCESS_START.get_or_init(Instant::now).elapsed();
@@ -4109,7 +4111,7 @@ fn window_backdrop(state: State<AppState>) -> backdrop::Backdrop {
 /// the effect, so a change applies before (and whether or not) the settings are saved.
 #[tauri::command]
 fn window_set_backdrop(app: AppHandle, effect: String, dark: bool) -> backdrop::Backdrop {
-    let effect = annalo_core::prefs::WindowEffect::parse(&effect).unwrap_or_default();
+    let effect = arcalo_core::prefs::WindowEffect::parse(&effect).unwrap_or_default();
     match app.get_webview_window(desktop::MAIN) {
         Some(w) => backdrop::apply(&w, effect, dark),
         None => backdrop::state(effect),
@@ -4155,22 +4157,27 @@ struct DataDirStatus {
 
 /// Folder of the settings shared by every workspace on this computer (see `settings_layers`):
 /// the app's config folder; in portable mode the folder next to `data`; with
-/// `ANNALO_DATA_DIR` (tests) `ANNALO_SHARED_SETTINGS_DIR` or the data folder itself.
+/// `ARCALO_DATA_DIR` (tests) `ARCALO_SHARED_SETTINGS_DIR` or the data folder itself.
 fn shared_settings_dir(app: &AppHandle, data_dir: &std::path::Path) -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("ANNALO_SHARED_SETTINGS_DIR") {
+    if let Some(d) = arcalo_core::identity::env_os("ARCALO_SHARED_SETTINGS_DIR") {
         return Some(PathBuf::from(d));
     }
-    if std::env::var_os("ANNALO_DATA_DIR").is_some() {
+    if arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_some() {
         return Some(data_dir.to_path_buf());
     }
     if portable::active() {
         return data_dir.parent().map(std::path::Path::to_path_buf);
     }
-    app.path().app_config_dir().ok()
+    config_dir(app).ok()
 }
 
+/// The app config folder (`location.json`, the window geometry, the shared settings).
 fn config_dir(app: &AppHandle) -> Result<PathBuf> {
-    app.path().app_config_dir().map_err(|e| Error::State(e.to_string()))
+    #[cfg(desktop)]
+    let dir = identity::config_dir(app);
+    #[cfg(mobile)]
+    let dir = app.path().app_config_dir();
+    dir.map_err(|e| Error::State(e.to_string()))
 }
 
 fn data_dir_status_of(app: &AppHandle, state: &AppState) -> DataDirStatus {
@@ -4200,9 +4207,9 @@ fn data_dir_env_guard() -> Result<()> {
             .into(),
         ));
     }
-    if std::env::var_os("ANNALO_DATA_DIR").is_some() {
+    if arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_some() {
         return Err(Error::State(
-            tr!("Der Speicherort ist über ANNALO_DATA_DIR festgelegt", "The location is set by ANNALO_DATA_DIR").into(),
+            tr!("Der Speicherort ist über ARCALO_DATA_DIR festgelegt", "The location is set by ARCALO_DATA_DIR").into(),
         ));
     }
     Ok(())
@@ -4357,21 +4364,21 @@ struct StartupOptions {
 pub fn run() {
     PROCESS_START.get_or_init(Instant::now);
     // An organization's policy `AllowAi = 0` switches the AI off before any client exists.
-    annalo_core::settings::forbid_ai(policy::get().ai_forbidden());
+    arcalo_core::settings::forbid_ai(policy::get().ai_forbidden());
     let mut builder = tauri::Builder::default();
     // Two processes on one SQLite workspace would overwrite each other's edits: a second
-    // launch only brings the running window to the front. Test runs (ANNALO_DATA_DIR)
+    // launch only brings the running window to the front. Test runs (ARCALO_DATA_DIR)
     // use their own workspace each and may overlap.
     // A portable copy checks its own data folder instead (the identifier is shared with the
     // installed copy, which may run at the same time on its own data).
-    let portable = portable::detect().filter(|_| std::env::var_os("ANNALO_DATA_DIR").is_none());
+    let portable = portable::detect().filter(|_| arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none());
     if let Some(dir) = &portable
         && !portable::lock_instance(dir)
     {
         eprintln!("Arcalo already runs on {}", dir.display());
         return;
     }
-    if std::env::var_os("ANNALO_DATA_DIR").is_none() && portable.is_none() {
+    if arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none() && portable.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // A notification button (Windows starts Arcalo with its `arcalo-notify:` address).
             if let Some((subject, act)) = notifyact::from_args(&args) {
@@ -4438,25 +4445,28 @@ pub fn run() {
                 })
                 .build(),
         )
-        .register_uri_scheme_protocol("annalo-asset", |ctx, request| serve_attachment(ctx.app_handle(), &request))
-        .register_uri_scheme_protocol("annalo-pac", |_ctx, _request| network::pac_sandbox())
+        .register_uri_scheme_protocol("arcalo-asset", |ctx, request| serve_attachment(ctx.app_handle(), &request))
+        .register_uri_scheme_protocol("arcalo-pac", |_ctx, _request| network::pac_sandbox())
         .on_window_event(desktop::on_window_event)
         .setup(move |app| {
-            // ANNALO_DATA_DIR lets tests run against a throw-away workspace; otherwise
+            // The folders of the app identifier of 1.14 and earlier, before anything is read
+            // from them and before the WebView exists.
+            identity::migrate(app.handle());
+            // ARCALO_DATA_DIR lets tests run against a throw-away workspace; otherwise
             // `location.json` in the config folder may point to a chosen data folder.
             // A pending move is carried out here, before the database is opened. A portable
             // copy (marker next to the executable) keeps its data in `<exe dir>/data`.
             let startup = datadir::prepare_portable(
-                std::env::var_os("ANNALO_DATA_DIR").map(PathBuf::from),
+                arcalo_core::identity::env_os("ARCALO_DATA_DIR").map(PathBuf::from),
                 portable::detect(),
-                app.path().app_config_dir().ok().as_deref(),
-                app.path().app_data_dir()?,
+                config_dir(app.handle()).ok().as_deref(),
+                identity::data_dir(app.handle())?,
             );
             let dir = startup.dir.clone();
             // Until the settings are read (and on the recovery screens): the system's language.
-            let system = annalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default());
-            annalo_core::i18n::set_system_lang(system);
-            annalo_core::i18n::set_lang(system);
+            let system = arcalo_core::i18n::lang_of_locale(&os_locale().unwrap_or_default());
+            arcalo_core::i18n::set_system_lang(system);
+            arcalo_core::i18n::set_lang(system);
             let folder_error = std::fs::create_dir_all(&dir).err();
             devlog::init(&dir);
             // The toolkit is up (GTK, and on Linux its session bus).
@@ -4482,6 +4492,7 @@ pub fn run() {
                     }
                 ),
             );
+            identity::log();
             if let Some(n) = &startup.notice {
                 devlog::warn("core", format!("data folder: {}", n.message));
             }
@@ -4493,14 +4504,14 @@ pub fn run() {
             let after_update = if store::active() {
                 None
             } else {
-                annalo_core::update::take_restart_marker(&dir, &version)
+                arcalo_core::update::take_restart_marker(&dir, &version)
             };
             if let Some(a) = &after_update {
                 let how = if a.installed { "installed" } else { "not installed, still the old version" };
                 devlog::info("update", format!("first start after the update to {}: {how}", a.version));
             }
             let opts: StartupOptions =
-                std::env::var("ANNALO_STARTUP").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+                arcalo_core::identity::env("ARCALO_STARTUP").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
             // A backup chosen under Settings → Sicherung → „Wiederherstellen“ replaces the database now.
             let restored = backupdest::apply_pending_restore(&dir);
             // Encrypted database: its key, a requested switch (Settings → Sicherheit), and the
@@ -4529,7 +4540,7 @@ pub fn run() {
                 Ok(_) => {}
                 Err(e) => devlog::warn("settings", format!("settings migration failed: {e}")),
             }
-            annalo_core::settings_layers::set_shared_dir(shared_settings_dir(app.handle(), &dir));
+            arcalo_core::settings_layers::set_shared_dir(shared_settings_dir(app.handle(), &dir));
             match db.adopt_shared_settings() {
                 Ok(taken) if !taken.is_empty() => {
                     devlog::info("settings", format!("shared settings taken over: {}", taken.join(", ")))
@@ -4540,10 +4551,10 @@ pub fn run() {
             // The language of the settings, as the UI shows it (the first run sets it from the
             // system's language).
             if let Ok(mut s) = db.load_settings() {
-                annalo_core::i18n::set_lang(s.locale.lang());
-                annalo_core::i18n::set_number_format(s.locale.number_format);
+                arcalo_core::i18n::set_lang(s.locale.lang());
+                arcalo_core::i18n::set_number_format(s.locale.number_format);
                 let page = |t: &str| db.page_by_title(t).ok().flatten().is_some();
-                if annalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.lang(), page) {
+                if arcalo_core::capture::localize_inbox_title(&mut s.capture, s.locale.lang(), page) {
                     let _ = db.save_settings(&s);
                 }
             }
@@ -4554,7 +4565,7 @@ pub fn run() {
             // with a notice that nothing is saved.
             // A restore that was encrypted on the way says so itself; a failed switch still wins.
             let cipher_notice = prepared.notice.filter(|n| restored.is_none() || n.kind != "info");
-            let mut notice = cipher_notice.or(restored).or(startup.notice.clone());
+            let mut notice = cipher_notice.or(restored).or(startup.notice.clone()).or_else(identity::notice);
             if !recovery::writable(&dir) {
                 devlog::error("core", format!("data folder is not writable: {}", dir.display()));
                 notice = Some(datadir::Notice::titled("error", tr!("Datenordner schreibgeschützt", "Data folder is read-only"), trf!(
@@ -4650,6 +4661,7 @@ pub fn run() {
                 settings.voice.shortcut.clone(),
             ];
             secrets::init(&dir);
+            secrets::take_over_all(&dir, Some(&settings));
             startup_mark("credential store");
             let secrets = SecretStore::new(&dir);
             let proxy_passwords = network::passwords_of(&dir, &settings.network);
@@ -4663,7 +4675,7 @@ pub fn run() {
 
             let readers = match (0..READERS)
                 .map(|_| Database::open_read_only(dir.join(datadir::DB_FILE)))
-                .collect::<annalo_core::Result<Vec<_>>>()
+                .collect::<arcalo_core::Result<Vec<_>>>()
             {
                 Ok(list) => list.into_iter().map(Mutex::new).collect(),
                 Err(e) => {
@@ -5228,7 +5240,7 @@ mod tests {
         off(provider_client(&s, &s.providers[0], None, &|_| None).err().expect("refused"));
         off(s.check_tool("list_tasks").unwrap_err());
         off(s.require_ai().unwrap_err());
-        assert_eq!(annalo_core::semantic::plan(&s).inactive, Some(annalo_core::semantic::Inactive::AiOff));
+        assert_eq!(arcalo_core::semantic::plan(&s).inactive, Some(arcalo_core::semantic::Inactive::AiOff));
         assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "contacted");
 
         // Switched on again, with the provider settings unchanged: the client is there and asks.
@@ -5281,7 +5293,7 @@ mod tests {
 
     #[test]
     fn backup_copies_only_plain_visible_files() {
-        let base = std::env::temp_dir().join(format!("annalo-att-copy-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("arcalo-att-copy-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let (src, dst) = (base.join("src"), base.join("dst"));
         std::fs::create_dir_all(src.join("sub")).unwrap();

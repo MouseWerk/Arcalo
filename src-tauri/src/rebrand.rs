@@ -1,9 +1,9 @@
-//! The rename to Arcalo at start (`annalo_core::rebrand`): the autostart entry of the old name
+//! The rename to Arcalo at start (`arcalo_core::rebrand`): the autostart entry of the old name
 //! and old shortcuts the installer left behind. Runs at every start and does nothing once they
 //! are gone. A portable copy never wrote either; the Store package has its own startup task and
 //! Start entry and leaves those of an installed copy alone.
 
-use annalo_core::rebrand;
+use arcalo_core::rebrand;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt as _;
 

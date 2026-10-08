@@ -1,19 +1,19 @@
 [package]
-name = "annalo"
+name = "arcalo"
 description = "Arcalo desktop shell (Tauri v2)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "annalo_lib"
+name = "arcalo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-annalo-core = { path = "../crates/annalo-core" }
+arcalo-core = { path = "../crates/arcalo-core" }
 base64 = "0.22.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -53,7 +53,7 @@ cpal = "0.16"
 
 # Android: the Git sync runs on libgit2 (no `git` program on a phone).
 [target.'cfg(target_os = "android")'.dependencies]
-annalo-core = { path = "../crates/annalo-core", features = ["embedded-git"] }
+arcalo-core = { path = "../crates/arcalo-core", features = ["embedded-git"] }
 
 [target.'cfg(windows)'.dependencies]
 # The rename to Arcalo: the autostart entry of the old name (the same crates the autostart plugin uses).

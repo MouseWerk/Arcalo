@@ -1,7 +1,7 @@
 // Groups of ribbon links: create one with two links and an app in „App / Link hinzufügen“, open
 // its popover and an entry (by click, Ctrl-click and keyboard), move links in by dragging and
 // with „In Gruppe“, edit and remove entries, reorder, open all, and find it in the palette.
-// ANNALO_TEST_OPEN_LOG makes the app write what it would open to a file.
+// ARCALO_TEST_OPEN_LOG makes the app write what it would open to a file.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -11,8 +11,8 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "annalo-open-")), "opened.txt");
-before(async () => (app = await launch({ env: { ANNALO_TEST_OPEN_LOG: log } })));
+const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-open-")), "opened.txt");
+before(async () => (app = await launch({ env: { ARCALO_TEST_OPEN_LOG: log } })));
 after(async () => {
   await app?.close();
   fs.rmSync(path.dirname(log), { recursive: true, force: true });
@@ -269,5 +269,5 @@ test("removing a group with entries asks first", async () => {
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

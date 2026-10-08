@@ -1,8 +1,8 @@
 //! The attachment manager („Anhänge“, `attachment_manager` in the core): the file list with
 //! usage, safe renames through the pages' save path, and the file trash.
 
-use annalo_core::Error;
-use annalo_core::attachment_manager::{self as manager, AttachmentList, RenameOutcome, TrashedFile};
+use arcalo_core::Error;
+use arcalo_core::attachment_manager::{self as manager, AttachmentList, RenameOutcome, TrashedFile};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{AppState, Result};

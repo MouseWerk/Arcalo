@@ -43,12 +43,12 @@ export function UnlinkedMentions({ pageId, title }: { pageId: number; title: str
       window.clearTimeout(timer);
       timer = window.setTimeout(load, 700);
     };
-    window.addEventListener("annalo:page-saved", again);
-    window.addEventListener("annalo:reload-pages", again);
+    window.addEventListener("arcalo:page-saved", again);
+    window.addEventListener("arcalo:reload-pages", again);
     return () => {
       window.clearTimeout(timer);
-      window.removeEventListener("annalo:page-saved", again);
-      window.removeEventListener("annalo:reload-pages", again);
+      window.removeEventListener("arcalo:page-saved", again);
+      window.removeEventListener("arcalo:reload-pages", again);
     };
   }, [enabled, load, title]);
 

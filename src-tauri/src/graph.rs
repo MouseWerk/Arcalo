@@ -1,8 +1,8 @@
 //! Graph view in the shell: the graph of the workspace under the view's filters, the part that
 //! changed after a save or rename, and the view's stored state (layout, presets, display).
-//! The logic lives in `annalo_core::graph`.
+//! The logic lives in `arcalo_core::graph`.
 
-use annalo_core::graph::{GraphData, GraphFilter};
+use arcalo_core::graph::{GraphData, GraphFilter};
 use tauri::State;
 
 use crate::{AppState, Result};

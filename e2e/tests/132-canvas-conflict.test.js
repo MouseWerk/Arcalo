@@ -13,7 +13,7 @@ const test = guarded(nodeTest, () => app);
 let app, base, bare, other;
 before(async () => {
   app = await launch();
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-cvconflict-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-cvconflict-"));
   bare = path.join(base, "notizen.git");
   other = path.join(base, "anderer-rechner");
   execFileSync("git", ["init", "-q", "--bare", bare]);

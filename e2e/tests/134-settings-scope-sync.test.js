@@ -14,14 +14,14 @@ import { clickUndo, settingsSettled, storedSettings } from "../lib/settings.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-134-"));
+const base = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-134-"));
 const shared = path.join(base, "shared");
 const dirA = path.join(base, "a");
 const dirB = path.join(base, "b");
 const bare = path.join(base, "settings.git");
 for (const d of [shared, dirA, dirB]) fs.mkdirSync(d, { recursive: true });
 execFileSync("git", ["init", "-q", "--bare", bare]);
-const env = { ANNALO_SHARED_SETTINGS_DIR: shared };
+const env = { ARCALO_SHARED_SETTINGS_DIR: shared };
 after(async () => {
   await app?.close();
   fs.rmSync(base, { recursive: true, force: true });

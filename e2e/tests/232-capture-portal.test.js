@@ -14,7 +14,7 @@ import { captureVisible, openCapture } from "../lib/capture.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-portal-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-portal-"));
 let busPid = null;
 
 /** A session bus whose desktop portal is activatable but never starts (activation gives up after 1.5 s). */

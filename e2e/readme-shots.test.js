@@ -1,6 +1,6 @@
 // Screenshots for the README (not part of the test suite): realistic sample content, no test
 // leftovers. Run after building the app, with the output folder of your choice:
-//   ANNALO_SHOTS=../docs/screenshots ANNALO_APP=../target/debug/annalo node --test readme-shots.test.js
+//   ARCALO_SHOTS=../docs/screenshots ARCALO_APP=../target/debug/arcalo node --test readme-shots.test.js
 import { test, before, after } from "node:test";
 import { launch } from "./lib/harness.js";
 
@@ -137,7 +137,7 @@ test("README screenshots", async () => {
     });
   }
   // The board uses the whole pane (Volle Breite, next to the star).
-  await app.browser.execute((id) => localStorage.setItem("annalo.page-full", JSON.stringify([id])), sprint.id);
+  await app.browser.execute((id) => localStorage.setItem("arcalo.page-full", JSON.stringify([id])), sprint.id);
   await app.invoke("page_create", { parentId: null, title: "Statusbericht KW 39", icon: "flag", content: DECK });
   await app.invoke("page_create", { parentId: null, title: "Konzept Auftragsportal", icon: "book-open", content: BLOCKS });
   await app.browser.refresh();

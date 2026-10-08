@@ -12,10 +12,10 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-data2-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-data2-"));
 const dataDir = path.join(root, "daten");
 fs.mkdirSync(dataDir, { recursive: true });
-before(async () => (app = await launch({ dataDir, env: { ANNALO_BACKUP_DELAY_SECS: "3600" } })));
+before(async () => (app = await launch({ dataDir, env: { ARCALO_BACKUP_DELAY_SECS: "3600" } })));
 after(async () => {
   await app?.close();
   fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
@@ -179,7 +179,7 @@ test("after a restored backup the Git sync asks instead of pushing the old state
   const staged = await app.invoke("backup_restore", { path: backup.path });
   assert.ok(staged.ok, JSON.stringify(staged));
   await app.close();
-  app = await launch({ dataDir, env: { ANNALO_BACKUP_DELAY_SECS: "3600" } });
+  app = await launch({ dataDir, env: { ARCALO_BACKUP_DELAY_SECS: "3600" } });
   assert.equal(await content("Planung"), "Stand der Sicherung\n");
   assert.ok(fs.existsSync(path.join(dataDir, "sync-after-restore.json")), "the restore is noted for the sync");
 

@@ -77,8 +77,8 @@ const setLook = async (mode, id = null, width = 1440, height = 900) => {
   await app.browser.setWindowSize(width, height);
   const view = await app.invoke("settings_get");
   const ap = { ...view.settings.appearance };
-  if (mode === "light") ap.theme_light = id ?? "annalo-light";
-  else ap.theme_dark = id ?? "annalo-dark";
+  if (mode === "light") ap.theme_light = id ?? "arcalo-light";
+  else ap.theme_dark = id ?? "arcalo-dark";
   await app.invoke("settings_save", { settings: { ...view.settings, theme: mode, appearance: ap } });
   await app.browser.refresh();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
@@ -329,7 +329,7 @@ test("a panel chat opens in the view; a chat open in both shows what either adds
 
 test("screenshots: a short conversation, light and dark at 1440 px, high contrast", async () => {
   // The chat view on its own, the side panel closed.
-  await app.browser.execute(() => localStorage.setItem("annalo.panel", "0"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.panel", "0"));
   await app.click(`${V} .chat-view-new`);
   await ask("Ich muss morgen den Projektstand Atlas vorstellen. Wie baue ich die fünf Minuten auf?");
   await ask("Wie rufe ich die aktiven Projekte typsicher in TypeScript ab, und wie sieht das SQL dazu aus?");

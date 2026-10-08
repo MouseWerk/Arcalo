@@ -1,6 +1,6 @@
 // The pictures of „Neu in Arcalo“ (docs/releases/highlights/img), one per language, from the
 // demo data: run by hand when a release's highlights change (not part of the e2e suite).
-//   ANNALO_APP=… node --test e2e/highlight-shots.test.js
+//   ARCALO_APP=… node --test e2e/highlight-shots.test.js
 // Each picture is a 336 × 210 crop of the window at 125 % UI scale.
 import { test, after } from "node:test";
 import { execFileSync } from "node:child_process";
@@ -34,7 +34,7 @@ const TEXT = {
 
 /** Crops the window at the top left of `rect` (+ offset) to W × H and writes `name`. */
 async function crop(name, rect, dx = -8, dy = -6, box = null) {
-  const tmp = path.join(os.tmpdir(), `annalo-hl-${name}`);
+  const tmp = path.join(os.tmpdir(), `arcalo-hl-${name}`);
   await app.browser.saveScreenshot(tmp);
   // The UI scale zooms the web view: page coordinates times the zoom are screenshot pixels.
   const css = await app.browser.execute(() => innerWidth);

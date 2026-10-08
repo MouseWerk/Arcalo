@@ -1,11 +1,11 @@
 //! „Woche vorschlagen“ in the shell: the proposal and its takeover as IPC commands, and the
-//! reminder on the last workday of the week. The logic lives in `annalo_core::weekplan`.
+//! reminder on the last workday of the week. The logic lives in `arcalo_core::weekplan`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use annalo_core::calsync::outlook;
-use annalo_core::calsync::tz::Zone;
-use annalo_core::weekplan::{self as core, Accepted, Applied, ProposeOptions, WeekProposal};
+use arcalo_core::calsync::outlook;
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::weekplan::{self as core, Accepted, Applied, ProposeOptions, WeekProposal};
 use chrono::{Local, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -73,7 +73,7 @@ pub fn periodic(app: &AppHandle) {
         msg
     };
     if let Some(body) = body {
-        notify(app, annalo_core::tr!("Woche vorschlagen", "Propose the week"), &body);
+        notify(app, arcalo_core::tr!("Woche vorschlagen", "Propose the week"), &body);
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             PENDING.store(true, Ordering::Relaxed);

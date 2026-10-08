@@ -4,7 +4,7 @@
 
 use std::sync::Mutex;
 
-use annalo_core::Error;
+use arcalo_core::Error;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl, WebviewWindowBuilder};
 

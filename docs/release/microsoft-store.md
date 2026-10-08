@@ -10,18 +10,18 @@ how the Store build differs from the installer build.
 
 | | Installer / portable (`release.yml` → `build`) | Microsoft Store (`release.yml` → `store`) |
 |---|---|---|
-| Binary | `cargo tauri build` | `cargo build --release -p annalo --features custom-protocol,store` |
+| Binary | `cargo tauri build` | `cargo build --release -p arcalo --features custom-protocol,store` |
 | Package | NSIS `Arcalo_<v>_x64-setup.exe`, `Arcalo_<v>_x64-portable.zip` | `Arcalo_<v>_x64.msix` (packaging/msix/pack.ps1) |
 | Signature | none (SmartScreen warns) | none on GitHub; the Store signs what it publishes |
 | Updates | own updater (latest.json, rollback, install on quit) | Microsoft Store only |
 | Autostart | Run key (`HKCU\...\Run`) | the package's startup task `ArcaloStartup` |
 | Notification buttons | `arcalo-notify:` written to `HKCU\Software\Classes` | `arcalo-notify:` declared in the manifest |
 | Portable mode | marker file next to the exe | off |
-| Data | `%APPDATA%\app.annalo.desktop` | the same folder (not virtualized, see below) |
+| Data | `%APPDATA%\de.mousewerk.arcalo` | the same folder (not virtualized, see below) |
 
 The Store build is selected twice: at build time by the cargo feature `store`, and at run time by the package
 identity (`GetCurrentPackageFullName` in `src-tauri/src/store.rs`). A regular binary that someone packs into an MSIX
-therefore behaves like the Store build too. Debug builds pretend with `ANNALO_STORE=1` (the e2e test
+therefore behaves like the Store build too. Debug builds pretend with `ARCALO_STORE=1` (the e2e test
 `e2e/tests/150-store-build.test.js`).
 
 In the Store build:
@@ -43,7 +43,9 @@ In the Store build:
   list entries start Arcalo through its execution alias `Arcalo.exe` (a link into the package folder would start
   it without its package identity).
 - **The rename from Annalo** (`rebrand.rs`, the NSIS hooks) does not apply: the package never had the old name, and
-  the entries of an installed copy are left alone.
+  the entries of an installed copy are left alone. The 1.15 copy of the old identifier's folders
+  (`app.annalo.desktop` → `de.mousewerk.arcalo`, `identity.rs`) does run: the manifest excludes both from write
+  virtualization, so the package sees the installer's real folders.
 - **Global shortcuts, tray, quick capture, voice notes** work as in the installer build (full-trust Win32 process;
   the manifest declares the microphone so Windows privacy settings list Arcalo).
 
@@ -53,7 +55,7 @@ A packaged desktop app's new files under `%APPDATA%`/`%LOCALAPPDATA%` normally g
 that other programs cannot see and that Windows deletes with the package. For a notes app that would hide the data
 from backups and lose it on uninstall, and the installer and Store versions would see different workspaces.
 `AppxManifest.xml` therefore declares the restricted capability `unvirtualizedResources` and switches write
-virtualization off: on Windows 11 only for `%APPDATA%\app.annalo.desktop` and `%LOCALAPPDATA%\app.annalo.desktop`
+virtualization off: on Windows 11 only for `%APPDATA%\de.mousewerk.arcalo` and `%LOCALAPPDATA%\de.mousewerk.arcalo`
 (the WebView profile), on Windows 10 (1903 or later, the package's minimum) for AppData as a whole. Consequences:
 
 - The Store version opens the same workspace as an installed copy; both share the single-instance lock, so only
@@ -66,7 +68,7 @@ virtualization off: on Windows 11 only for `%APPDATA%\app.annalo.desktop` and `%
 
 If certification rejects `unvirtualizedResources`, removing it (and the two `FileSystemWriteVirtualization`
 elements) keeps the app working, but its data then lives in
-`%LOCALAPPDATA%\Packages\<package family name>\LocalCache\Roaming\app.annalo.desktop` and is removed with the
+`%LOCALAPPDATA%\Packages\<package family name>\LocalCache\Roaming\de.mousewerk.arcalo` and is removed with the
 package: tell users to choose a data folder in Settings → Daten before uninstalling.
 
 ## Requirements (researched October 2026)
@@ -142,8 +144,8 @@ notice and builds nothing.
 Run the release (tag `v1.12.0`, or Actions → Release → Run workflow). The release then has
 `Arcalo_1.12.0_x64.msix` attached. It is unsigned on purpose: users cannot install it from GitHub, it is only for
 Partner Center. (To build it on a Windows machine instead: `npm --prefix ui run build`,
-`cargo build --release -p annalo --features custom-protocol,store`, then
-`./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version 1.12.0 -IdentityName … -Publisher … -PublisherDisplayName … -OutDir dist`.)
+`cargo build --release -p arcalo --features custom-protocol,store`, then
+`./packaging/msix/pack.ps1 -Exe target/release/arcalo.exe -Version 1.12.0 -IdentityName … -Publisher … -PublisherDisplayName … -OutDir dist`.)
 
 Before the first upload, run the Windows App Certification Kit once on a Windows PC (below).
 
@@ -173,7 +175,7 @@ Partner Center → the product → **Start your submission**:
   each under 50 MB; four or more recommended. Use the light and dark theme, the start page, a note with links,
   the week view with `/time` bookings, the Kalender. The README screenshots (docs/screenshots) are a start but take
   fresh ones at 1920 x 1080 from the Store build. Optional: 1:1 box art 1080 x 1080 or 2160 x 2160 (the icon from
-  docs/brand/annalo-icon-1024.png on the dark background) and a 9:16 poster 720 x 1080.
+  docs/brand/arcalo-icon-1024.png on the dark background) and a 9:16 poster 720 x 1080.
 - **Submission options → Notes for certification:** paste the text below.
 - **Restricted capabilities:** Partner Center asks why the package declares `runFullTrust` and
   `unvirtualizedResources`; paste the justification below.
@@ -189,7 +191,7 @@ is needed: start the app, the first-run setup asks for a language and theme, and
 Optional integrations (Jira, AI providers, calendars, Git sync) need the tester's own servers and can be skipped.
 
 The app does not update itself in this Store version: the in-app updater is compiled out and Settings > About >
-Updates points to the Microsoft Store. Data is stored locally in %APPDATA%\app.annalo.desktop.
+Updates points to the Microsoft Store. Data is stored locally in %APPDATA%\de.mousewerk.arcalo.
 Source code: https://github.com/MouseWerk/Arcalo
 ```
 
@@ -201,9 +203,9 @@ the Desktop Bridge. It needs full trust for its tray icon, system-wide keyboard 
 search, microphone recording for local speech-to-text, the Windows credential store for API keys, and reading and
 writing user-chosen folders (backups, Markdown export, Git sync).
 
-unvirtualizedResources: Arcalo keeps the user's notes database in %APPDATA%\app.annalo.desktop, the same folder its
+unvirtualizedResources: Arcalo keeps the user's notes database in %APPDATA%\de.mousewerk.arcalo, the same folder its
 non-Store version uses. File-system write virtualization is turned off only for that folder (and the WebView2
-profile in %LOCALAPPDATA%\app.annalo.desktop) so that users who move from the downloadable version keep their
+profile in %LOCALAPPDATA%\de.mousewerk.arcalo) so that users who move from the downloadable version keep their
 workspace, backup tools see the database, and the notes are not deleted when the app is uninstalled.
 ```
 
@@ -267,7 +269,7 @@ Windows SDK (the kit is the "Windows App Certification Kit" feature of the SDK i
 
 ```powershell
 # An elevated PowerShell, in the repository after building the Store binary:
-./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version 1.12.0 -OutDir dist `
+./packaging/msix/pack.ps1 -Exe target/release/arcalo.exe -Version 1.12.0 -OutDir dist `
   -IdentityName MouseWerk.Arcalo.Test -Publisher "CN=Arcalo Test" -PublisherDisplayName "MouseWerk"
 & "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe" reset
 & "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe" test `

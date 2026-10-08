@@ -15,7 +15,7 @@ let app;
 let server;
 before(async () => {
   // The first capture fails as if the database were locked (test builds only).
-  app = await launch({ env: { ANNALO_TEST_CAPTURE_BUSY: "1" } });
+  app = await launch({ env: { ARCALO_TEST_CAPTURE_BUSY: "1" } });
   server = http.createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end("<html><head><title>Release-Plan [Q4] | Wiki</title></head><body></body></html>");

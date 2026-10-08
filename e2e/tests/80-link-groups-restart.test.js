@@ -9,9 +9,9 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-groups-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-groups-"));
 const log = path.join(dir, "opened.txt");
-const env = { ANNALO_TEST_OPEN_LOG: log };
+const env = { ARCALO_TEST_OPEN_LOG: log };
 after(async () => {
   await app?.close();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -112,5 +112,5 @@ test("dark theme", async () => {
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

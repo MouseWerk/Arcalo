@@ -165,7 +165,7 @@ export function nextRow(ids: string[], current: string | null, dir: 1 | -1): str
 // ---- opening the panel from anywhere (palette, reminder, card)
 
 let pending = false;
-export const OPEN_EVENT = "annalo:week-proposal";
+export const OPEN_EVENT = "arcalo:week-proposal";
 
 /** Asks the timesheet to open the proposal (it may mount only after this call). */
 export function requestWeekProposal() {

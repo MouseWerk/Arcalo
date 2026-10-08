@@ -1,4 +1,4 @@
-// What `dashboard_data` answers per part (annalo_core::dashboard, serde snake_case).
+// What `dashboard_data` answers per part (arcalo_core::dashboard, serde snake_case).
 
 import type { Activity, BudgetStatus, CalendarEvent, DayOverview, FocusReport, Page, Task, TimeEntryRow } from "./types";
 

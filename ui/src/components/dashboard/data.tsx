@@ -46,7 +46,7 @@ export interface DashPerf {
 
 declare global {
   interface Window {
-    __annaloDashPerf?: DashPerf[];
+    __arcaloDashPerf?: DashPerf[];
   }
 }
 
@@ -136,7 +136,7 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     pending.current = null;
     const committed = performance.now();
     requestAnimationFrame(() => {
-      const list = (window.__annaloDashPerf ??= []);
+      const list = (window.__arcaloDashPerf ??= []);
       list.push({ backendMs: p.backend, roundTripMs: p.arrived - p.t0, commitMs: committed - p.arrived, renderMs: performance.now() - p.arrived, parts: p.parts });
       if (list.length > 50) list.shift();
     });
@@ -198,10 +198,10 @@ export function DashData({ widgets, seen, children }: { widgets: GridWidget[]; s
     ];
     const un = subs.map(([ev, topics]) => on(ev, () => soon(topics)));
     const saved = () => soon(["pages", "tasks"], 600);
-    window.addEventListener("annalo:page-saved", saved);
+    window.addEventListener("arcalo:page-saved", saved);
     return () => {
       un.forEach((u) => u.then((f) => f()));
-      window.removeEventListener("annalo:page-saved", saved);
+      window.removeEventListener("arcalo:page-saved", saved);
       if (timer.current != null) window.clearTimeout(timer.current);
       timer.current = null;
     };

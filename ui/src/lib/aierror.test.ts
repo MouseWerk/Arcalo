@@ -73,8 +73,8 @@ describe("shortenPaths", () => {
     expect(short).toMatch(/^Datei nicht gefunden: C:\\…\\.*\\Angebot\.pdf$/);
     expect(short.length).toBeLessThan(win.length);
     expect(short.length).toBeLessThanOrEqual("Datei nicht gefunden: ".length + 56);
-    expect(shortenPaths("Keine Berechtigung für den Ordner /home/maurice/Dokumente/Annalo/Daten/sehr/tief/verschachtelt/attachments")).toBe(
-      "Keine Berechtigung für den Ordner /home/…/Annalo/Daten/sehr/tief/verschachtelt/attachments",
+    expect(shortenPaths("Keine Berechtigung für den Ordner /home/maurice/Dokumente/Arcalo/Daten/sehr/tief/verschachtelt/attachments")).toBe(
+      "Keine Berechtigung für den Ordner /home/…/Arcalo/Daten/sehr/tief/verschachtelt/attachments",
     );
     // Short paths and text without paths stay as they are.
     expect(shortenPaths("Datei nicht gefunden: C:\\Daten\\a.pdf")).toBe("Datei nicht gefunden: C:\\Daten\\a.pdf");

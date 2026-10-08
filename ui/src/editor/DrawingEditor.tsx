@@ -15,7 +15,7 @@ import { FileWarning } from "lucide-react";
 
 const SAVE_DELAY = 800;
 /** Shapes the user added to Excalidraw's library, kept across drawings. */
-const LIBRARY_KEY = "annalo.excalidraw.library";
+const LIBRARY_KEY = "arcalo.excalidraw.library";
 
 type Status = "saved" | "saving" | "dirty" | "error";
 type Elements = ReturnType<ExcalidrawImperativeAPI["getSceneElements"]>;

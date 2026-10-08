@@ -19,14 +19,15 @@ Settings → Daten & Sicherheit → Sicherheit.
 
 ## Key storage per platform
 
-The key comes from the OS random generator, is stored as hex under the service name `Annalo`,
+The key comes from the OS random generator, is stored as hex under the service name `Arcalo`
+(1.14 and earlier: `Annalo`, taken over at the first start of 1.15 and still read until then),
 account `db-key` (portable copies: `db-key@<folder id>`), and is read back before anything is
 encrypted.
 
 - **Windows**: Credential Manager (per user).
 - **macOS**: login keychain (per user).
 - **Linux**: Secret Service (GNOME Keyring, KWallet, KeePassXC). Without one (headless, no
-  keyring, `ANNALO_SECRET_STORE=file`) the key goes into `secrets.json` in the data folder with
+  keyring, `ARCALO_SECRET_STORE=file`) the key goes into `secrets.json` in the data folder with
   mode 0600, and the settings warn: the encryption then still protects copies and backups of the
   database, but not against anyone who can read your user's files, because the key lies next to
   the database.
@@ -52,7 +53,7 @@ restarts (the close-and-restart path of updates and restores) and, before the da
 Every step is recorded in `cipher-migration.json` (written atomically, synced). A crash before
 step 3 leaves the original untouched (the request is repeated or rolled back); a crash between
 the two renames is finished at the next start. The unit tests stop the switch at every step
-(`crates/annalo-core/src/cipher/tests.rs`). „Entschlüsseln“ works the same way in reverse. The key
+(`crates/arcalo-core/src/cipher/tests.rs`). „Entschlüsseln“ works the same way in reverse. The key
 stays in the credential store afterwards so older encrypted backups stay readable; encrypting
 again reuses it.
 

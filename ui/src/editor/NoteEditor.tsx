@@ -122,14 +122,14 @@ export interface NoteEditorHandle {
 }
 
 /** Asks the page view of `pageId` for „Besprechung zusammenfassen“ (slash command). */
-export const MEETING_SUMMARY_EVENT = "annalo:meeting-summary";
+export const MEETING_SUMMARY_EVENT = "arcalo:meeting-summary";
 
 // Pending saves live in saves.ts (a small module the page modes can import directly).
 export { flushAllEditors, registerFlusher, trackSave };
 
 /** Editors showing one of `ids` (all when omitted) refetch their page, unless they hold unsaved edits. */
 export function reloadEditors(ids?: number[]) {
-  window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids } }));
+  window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: { ids } }));
 }
 
 export function NoteEditor({
@@ -266,7 +266,7 @@ export function NoteEditor({
         if (merges.current === mergesBefore) base.current = md;
         cb.current.onSaved({ ...saved, content: md });
         // Other panes showing the same page pick up the new content.
-        window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content: md, from: instance.current } }));
         if (!unmounted.current) setStatus(dirty.current ? "dirty" : "saved");
       })
       .catch((e) => {
@@ -547,7 +547,7 @@ export function NoteEditor({
         if (activeRef.current) publishOutline(editor);
       },
       // Other panes with this page store their edits first, so we continue from them.
-      onFocus: () => window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } })),
+      onFocus: () => window.dispatchEvent(new CustomEvent("arcalo:flush-page", { detail: { id: doc.id, from: instance.current } })),
     },
     [doc.id],
   );
@@ -581,7 +581,7 @@ export function NoteEditor({
     const setFrontmatter = (fm: string) => {
       if (fm === frontmatter.current) return;
       // Like focusing the editor: other panes with this page store their edits first.
-      window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } }));
+      window.dispatchEvent(new CustomEvent("arcalo:flush-page", { detail: { id: doc.id, from: instance.current } }));
       frontmatter.current = fm;
       dirty.current = true;
       setStatus("dirty");
@@ -647,13 +647,13 @@ export function NoteEditor({
       window.clearTimeout(saveTimer.current);
       save(editor);
     };
-    window.addEventListener("annalo:page-saved", onSaved);
-    window.addEventListener("annalo:reload-pages", onReload);
-    window.addEventListener("annalo:flush-page", onFlushPage);
+    window.addEventListener("arcalo:page-saved", onSaved);
+    window.addEventListener("arcalo:reload-pages", onReload);
+    window.addEventListener("arcalo:flush-page", onFlushPage);
     return () => {
-      window.removeEventListener("annalo:page-saved", onSaved);
-      window.removeEventListener("annalo:reload-pages", onReload);
-      window.removeEventListener("annalo:flush-page", onFlushPage);
+      window.removeEventListener("arcalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:reload-pages", onReload);
+      window.removeEventListener("arcalo:flush-page", onFlushPage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, doc.id]);

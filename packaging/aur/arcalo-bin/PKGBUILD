@@ -42,8 +42,9 @@ package() {
     -e 's/^Comment=.*/Comment=Notes, tasks and time tracking/' \
     "$pkgdir/usr/share/applications/Arcalo.desktop"
 
-  # The program file keeps its old name (annalo); offer the new one too.
-  ln -s annalo "$pkgdir/usr/bin/$_pkgname"
+  # The program file is `arcalo` from 1.15 on (`annalo` before): both names work.
+  [ -e "$pkgdir/usr/bin/annalo" ] || ln -s arcalo "$pkgdir/usr/bin/annalo"
+  [ -e "$pkgdir/usr/bin/$_pkgname" ] || ln -s annalo "$pkgdir/usr/bin/$_pkgname"
 
   install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

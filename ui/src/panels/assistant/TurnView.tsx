@@ -305,8 +305,8 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
       for (const box of el.querySelectorAll<HTMLElement>("[data-mermaid]")) delete box.dataset.drawn;
       void drawDiagrams(el);
     };
-    window.addEventListener("annalo:diagram-theme", again);
-    return () => window.removeEventListener("annalo:diagram-theme", again);
+    window.addEventListener("arcalo:diagram-theme", again);
+    return () => window.removeEventListener("arcalo:diagram-theme", again);
   }, [html, turn.streaming]);
   const pageTitleLabel = turn.pageTitle ? t("chat.insertNewPage") : t("chat.saveAsPage");
   return (

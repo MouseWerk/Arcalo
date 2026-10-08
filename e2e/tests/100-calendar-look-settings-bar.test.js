@@ -230,10 +230,10 @@ test("Kalender: blocks have a fill, no bar or colored border, and readable text 
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.textContent.trim() === "Woche")?.click());
   await app.waitText(".pane.active .calv-ev .calv-ev-title", /^Sprint Review$/);
   for (const [mode, light, dark] of [
-    ["light", "annalo-light", "annalo-dark"],
-    ["dark", "annalo-light", "annalo-dark"],
-    ["dark", "annalo-light", "gruvbox-dark"],
-    ["light", "solarized-light", "annalo-dark"],
+    ["light", "arcalo-light", "arcalo-dark"],
+    ["dark", "arcalo-light", "arcalo-dark"],
+    ["dark", "arcalo-light", "gruvbox-dark"],
+    ["light", "solarized-light", "arcalo-dark"],
   ]) {
     const v = await app.invoke("settings_get");
     await app.invoke("settings_save", { settings: { ...v.settings, theme: mode, appearance: { ...v.settings.appearance, theme_light: light, theme_dark: dark } } });
@@ -276,7 +276,7 @@ test("Kalender: blocks have a fill, no bar or colored border, and readable text 
   assert.ok(picked.weight > plain.weight, `bolder title: ${plain.weight} -> ${picked.weight}`);
   await app.keys(["Escape"]);
   const v = await app.invoke("settings_get");
-  await app.invoke("settings_save", { settings: { ...v.settings, theme: "light", appearance: { ...v.settings.appearance, theme_light: "annalo-light", theme_dark: "annalo-dark" } } });
+  await app.invoke("settings_save", { settings: { ...v.settings, theme: "light", appearance: { ...v.settings.appearance, theme_light: "arcalo-light", theme_dark: "arcalo-dark" } } });
   await panel(true);
 });
 

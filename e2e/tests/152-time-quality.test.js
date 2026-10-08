@@ -100,7 +100,7 @@ test("the Kalender draws the day of a clock change by wall clock", async () => {
   // One in this week too: without calendars the Kalender shows its grid once something is planned.
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
   await app.invoke("block_create", { block: { title: "Heute 152", start: today.toISOString(), end: new Date(today.getTime() + 3600000).toISOString(), link: { kind: "none" } } });
-  await app.browser.execute(() => localStorage.setItem("annalo.calendar.view", "week"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.calendar.view", "week"));
   await app.click(".ribbon-calendar-view");
   await app.waitFor(".calv-grid");
   const weeks = Math.round((monday(change) - monday(now)) / (7 * 86400000));

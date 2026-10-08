@@ -3,7 +3,7 @@
 import { useApp } from "../store/app";
 
 /** Where the activity view keeps its range and filters. */
-export const ACTIVITY_PREF = "annalo.activity";
+export const ACTIVITY_PREF = "arcalo.activity";
 
 /** Opens the feed on `iso` („Was habe ich am … gemacht?“). */
 export function openActivityDay(iso: string) {
@@ -12,6 +12,6 @@ export function openActivityDay(iso: string) {
   } catch {
     /* ignore */
   }
-  window.dispatchEvent(new CustomEvent("annalo:activity-day", { detail: iso }));
+  window.dispatchEvent(new CustomEvent("arcalo:activity-day", { detail: iso }));
   useApp.getState().openTab({ kind: "activity" });
 }

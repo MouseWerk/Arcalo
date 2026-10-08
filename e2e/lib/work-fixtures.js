@@ -1,6 +1,6 @@
 // Fixtures of the work widgets (1.7): Outlook with a meeting ahead (Teams link) and two
 // colleagues' calendars (Anna in a meeting now, Jörg out of office, free/busy only), and the
-// flagged mails of Outlook's To-Do list (ANNALO_OUTLOOK_FLAGGED_FIXTURE).
+// flagged mails of Outlook's To-Do list (ARCALO_OUTLOOK_FLAGGED_FIXTURE).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -100,7 +100,7 @@ export function flaggedJson(en = false) {
 
 /** A folder with the fixtures; `env` for `launch`. */
 export function writeWorkFixtures({ en = false } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-work-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-work-"));
   const outlook = path.join(dir, "outlook.json");
   const flagged = path.join(dir, "flagged.json");
   fs.writeFileSync(outlook, teamOutlookJson());
@@ -109,6 +109,6 @@ export function writeWorkFixtures({ en = false } = {}) {
     dir,
     outlook,
     flagged,
-    env: { ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_FIXTURE: outlook, ANNALO_OUTLOOK_FLAGGED_FIXTURE: flagged, ANNALO_CALENDAR_DELAY_SECS: "3600" },
+    env: { ARCALO_TEST_FIXTURES: "1", ARCALO_OUTLOOK_FIXTURE: outlook, ARCALO_OUTLOOK_FLAGGED_FIXTURE: flagged, ARCALO_CALENDAR_DELAY_SECS: "3600" },
   };
 }

@@ -1,5 +1,5 @@
 //! Return to the previous version when an update does not start (see
-//! `annalo_core::update_state`). Before an update is installed, the database is backed up
+//! `arcalo_core::update_state`). Before an update is installed, the database is backed up
 //! (`arcalo-pre-update-<from>-<to>.db` in the backup folder) and a copy of the running version
 //! is kept where the platform allows: the program folder (Windows, per-user install), the
 //! `.app` as `.tar.gz` (macOS), the AppImage file (Linux). A .deb, a portable copy and test
@@ -9,14 +9,14 @@
 //! (a missing system library, a crash in the runtime before `setup`) never reaches it; then
 //! the previous version has to be installed by hand (docs/admin/updates.md).
 //!
-//! Test hooks (debug builds only): `ANNALO_TEST_FAIL_START=1` ends the start right after the
-//! health marker, like a crash; `ANNALO_TEST_ROLLBACK_ANSWER=yes|no` answers the question
-//! instead of the native dialog; `ANNALO_UPDATE_FAKE_INSTALL=1` keeps a "test" copy.
+//! Test hooks (debug builds only): `ARCALO_TEST_FAIL_START=1` ends the start right after the
+//! health marker, like a crash; `ARCALO_TEST_ROLLBACK_ANSWER=yes|no` answers the question
+//! instead of the native dialog; `ARCALO_UPDATE_FAKE_INSTALL=1` keeps a "test" copy.
 
 use std::path::{Path, PathBuf};
 
-use annalo_core::update_state::{self as st, CopyKind, RollbackRecord, StartCheck, UpdateState};
-use annalo_core::{Error, tr, trf};
+use arcalo_core::update_state::{self as st, CopyKind, RollbackRecord, StartCheck, UpdateState};
+use arcalo_core::{Error, tr, trf};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
@@ -36,12 +36,12 @@ pub struct Notice {
 }
 
 fn test_var(name: &str) -> Option<String> {
-    annalo_core::update::test_override(cfg!(debug_assertions), std::env::var(name).ok().as_deref()).map(str::to_string)
+    arcalo_core::update::test_override(cfg!(debug_assertions), std::env::var(name).ok().as_deref()).map(str::to_string)
 }
 
 /// Updates are installed with a test stand-in instead of the updater (e2e runs).
 pub fn fake_install() -> bool {
-    test_var("ANNALO_UPDATE_FAKE_INSTALL").is_some()
+    test_var("ARCALO_UPDATE_FAKE_INSTALL").is_some()
 }
 
 /// Early in the start, before the database is opened: counts failed starts of this version
@@ -55,7 +55,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
     }
     let record = RollbackRecord::load(dir);
     let check = st::begin_start(dir, version, record.as_ref());
-    if test_var("ANNALO_TEST_FAIL_START").is_some() {
+    if test_var("ARCALO_TEST_FAIL_START").is_some() {
         crate::devlog::warn("update", "test: start fails on purpose");
         std::process::exit(3);
     }
@@ -105,7 +105,7 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
 }
 
 fn ask(from: &str, to: &str) -> bool {
-    if let Some(answer) = test_var("ANNALO_TEST_ROLLBACK_ANSWER") {
+    if let Some(answer) = test_var("ARCALO_TEST_ROLLBACK_ANSWER") {
         return answer.eq_ignore_ascii_case("yes");
     }
     let text = trf!(
@@ -124,7 +124,7 @@ fn ask(from: &str, to: &str) -> bool {
 }
 
 fn message(text: &str) {
-    if test_var("ANNALO_TEST_ROLLBACK_ANSWER").is_some() {
+    if test_var("ARCALO_TEST_ROLLBACK_ANSWER").is_some() {
         return;
     }
     rfd::MessageDialog::new()
@@ -154,8 +154,8 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
     // The database first, then the program: the previous version must never start on the
     // database the new one migrated. When the program cannot be put back, the database goes
     // back too (the new version keeps running on its own database).
-    let aside = annalo_core::backup::restore_from(
-        &dir.join(annalo_core::datadir::DB_FILE),
+    let aside = arcalo_core::backup::restore_from(
+        &dir.join(arcalo_core::datadir::DB_FILE),
         backup,
         "before-rollback",
         Utc::now(),
@@ -390,7 +390,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arcalo-rollback-order-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let db = dir.join(annalo_core::datadir::DB_FILE);
+        let db = dir.join(arcalo_core::datadir::DB_FILE);
         std::fs::write(&db, b"migrated by the new version").unwrap();
         let backup = dir.join("pre-update.db");
         std::fs::write(&backup, b"before the update").unwrap();

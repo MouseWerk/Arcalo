@@ -201,8 +201,8 @@
   },
   "appearance": {
     "accent": "theme",
-    "theme_light": "annalo-light",
-    "theme_dark": "annalo-dark",
+    "theme_light": "arcalo-light",
+    "theme_dark": "arcalo-dark",
     "custom_themes": [],
     "ui_font": "inter",
     "editor_font": "sans",

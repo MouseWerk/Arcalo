@@ -27,10 +27,10 @@ describe("mail helpers", () => {
     expect(isMailFile("Angebot.eml")).toBe(true);
     expect(isMailFile("RE Budget.MSG")).toBe(true);
     expect(isMailFile("mail.pdf")).toBe(false);
-    expect(mailLinkId("annalo-mail://k3v9x2qa")).toBe("k3v9x2qa");
-    expect(mailLinkId("annalo-mail://K3V9/")).toBe("k3v9");
+    expect(mailLinkId("arcalo-mail://k3v9x2qa")).toBe("k3v9x2qa");
+    expect(mailLinkId("arcalo-mail://K3V9/")).toBe("k3v9");
     expect(mailLinkId("https://example.com")).toBeNull();
-    expect(mailLinkId("annalo-mail://../x")).toBeNull();
+    expect(mailLinkId("arcalo-mail://../x")).toBeNull();
   });
 
   it("detects pasted header blocks in German and English", () => {

@@ -18,10 +18,10 @@ after(async () => {
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 });
 
-/** A system set to `lang` through the locale variables (no ANNALO_LOCALE stand-in). */
-const sys = (vars) => ({ ANNALO_LOCALE: "", LC_ALL: "", LC_MESSAGES: "", LANGUAGE: "", LANG: "", ...vars });
+/** A system set to `lang` through the locale variables (no ARCALO_LOCALE stand-in). */
+const sys = (vars) => ({ ARCALO_LOCALE: "", LC_ALL: "", LC_MESSAGES: "", LANGUAGE: "", LANG: "", ...vars });
 const fresh = () => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-lang-"));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-lang-"));
   dirs.push(d);
   return d;
 };

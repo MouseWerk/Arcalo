@@ -511,11 +511,11 @@ export function on<P>(event: string, handler: (payload: P) => void): Promise<Unl
   );
 }
 
-/** URL of a stored attachment (served by the shell's `annalo-asset:` protocol); folders in `![[a/b.png]]` are ignored. */
+/** URL of a stored attachment (served by the shell's `arcalo-asset:` protocol); folders in `![[a/b.png]]` are ignored. */
 export function attachmentUrl(name: string) {
   const base = name.split(/[\\/]/).pop() ?? name;
   try {
-    return convertFileSrc(base, "annalo-asset");
+    return convertFileSrc(base, "arcalo-asset");
   } catch {
     return `attachments/${encodeURIComponent(base)}`;
   }
@@ -539,7 +539,7 @@ export async function storeFile(file: File): Promise<T.SavedAttachment> {
   // Same limit as the core (attachments::MAX_FILE_BYTES), checked before the file is read into memory.
   if (file.size > MAX_FILE_BYTES) throw new Error(t("files.tooBig", { mb: MAX_FILE_BYTES / 1024 / 1024 }));
   const bytes = new Uint8Array(await file.arrayBuffer());
-  return invoke<T.SavedAttachment>("attachment_store", bytes, { headers: { "x-annalo-name": encodeURIComponent(file.name || t("feed.kind.file")) } });
+  return invoke<T.SavedAttachment>("attachment_store", bytes, { headers: { "x-arcalo-name": encodeURIComponent(file.name || t("feed.kind.file")) } });
 }
 
 /** Errors from Rust arrive as plain strings. */

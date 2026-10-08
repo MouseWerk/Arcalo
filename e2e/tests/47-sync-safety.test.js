@@ -15,7 +15,7 @@ let app;
 let base;
 let bare;
 before(async () => {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-safety-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-safety-"));
   bare = path.join(base, "notizen.git");
   execFileSync("git", ["init", "-q", "--bare", bare]);
   // Computer A has synced its notes already (as the sync writes them).

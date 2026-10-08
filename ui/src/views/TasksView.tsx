@@ -100,10 +100,10 @@ export function TasksView() {
       window.clearTimeout(t);
       t = window.setTimeout(load, 300);
     };
-    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("arcalo:page-saved", onSaved);
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener("annalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:page-saved", onSaved);
     };
   }, [load]);
 

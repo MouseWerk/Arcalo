@@ -121,11 +121,11 @@ function changed(ids: number[]) {
 function wire() {
   if (wired || typeof window === "undefined") return;
   wired = true;
-  window.addEventListener("annalo:page-saved", (e) => {
+  window.addEventListener("arcalo:page-saved", (e) => {
     const id = (e as CustomEvent<{ id: number }>).detail?.id;
     if (typeof id === "number") changed([id]);
   });
-  window.addEventListener("annalo:reload-pages", (e) => {
+  window.addEventListener("arcalo:reload-pages", (e) => {
     const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
     if (Array.isArray(ids)) changed(ids);
   });

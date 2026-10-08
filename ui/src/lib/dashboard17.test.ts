@@ -164,18 +164,18 @@ describe("board files", () => {
     const text = exportBoard(board, { note: "Text", other: "nicht dabei" }, new Date(2026, 9, 1));
     expect(text).not.toMatch(/xyz|cred:jira|"p"/);
     const file = JSON.parse(text);
-    expect(file).toMatchObject({ format: "annalo-dashboard", version: 2, app: "annalo", notes: { note: "Text" } });
+    expect(file).toMatchObject({ format: "arcalo-dashboard", version: 2, app: "arcalo", notes: { note: "Text" } });
     expect(file.board.widgets[0].config).toEqual({ project: "ABC", nested: { keep: 1 } });
-    expect(boardFileName(board, new Date(2026, 9, 1))).toBe("annalo-arbeit-buro-2026-10-01.dashboard.json");
+    expect(boardFileName(board, new Date(2026, 9, 1))).toBe("arcalo-arbeit-buro-2026-10-01.dashboard.json");
     expect(publicConfig("note", { mode: "text", sessionId: "s" })).toEqual({ mode: "text" });
   });
 
   it("are checked on import: version, size, kinds, settings and secrets", () => {
     const boards: Board[] = [{ id: "heute", name: "Heute", widgets: [{ id: "note", kind: "note", x: 0, y: 0, w: 4, h: 6 }] }];
-    const file = (widgets: unknown[], extra: Record<string, unknown> = {}) => JSON.stringify({ format: "annalo-dashboard", version: 2, board: { name: "  Import  ", widgets }, notes: { note: "Hallo", x: 5 }, ...extra });
+    const file = (widgets: unknown[], extra: Record<string, unknown> = {}) => JSON.stringify({ format: "arcalo-dashboard", version: 2, board: { name: "  Import  ", widgets }, notes: { note: "Hallo", x: 5 }, ...extra });
     expect(importBoard(file([], { version: 9 }), boards)).toEqual({ error: "dash.import.newer" });
     expect(importBoard(file(Array.from({ length: 41 }, () => ({ kind: "clock" }))), boards)).toEqual({ error: "dash.import.tooMany" });
-    expect(importBoard(JSON.stringify({ format: "annalo-dashboard", board: { widgets: "x" } }), boards)).toEqual({ error: "dash.import.wrongFormat" });
+    expect(importBoard(JSON.stringify({ format: "arcalo-dashboard", board: { widgets: "x" } }), boards)).toEqual({ error: "dash.import.wrongFormat" });
     const r = importBoard(
       file([
         { id: "note", kind: "note", x: 0, y: 0, w: 4, h: 6, title: "  Notiz  " },

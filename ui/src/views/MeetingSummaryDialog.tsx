@@ -64,7 +64,7 @@ function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {
     if (!editor || editor.isDestroyed) return s().toast({ tone: "warning", title: t("summary.notOpen") });
     if (appendMarkdown(editor, result)) {
       s().toast({ tone: "success", title: t("summary.inserted") });
-      window.dispatchEvent(new CustomEvent("annalo:offer-followup", { detail: page.id }));
+      window.dispatchEvent(new CustomEvent("arcalo:offer-followup", { detail: page.id }));
       onClose();
     }
   };

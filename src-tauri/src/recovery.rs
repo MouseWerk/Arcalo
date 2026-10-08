@@ -3,21 +3,21 @@
 //! quit) instead of an app that closes without a window.
 //!
 //! WebDriver cannot press the buttons of a native dialog: in debug builds the end-to-end tests
-//! answer it through `ANNALO_TEST_RECOVERY_CHOICE` (`restore`, `open` or `quit`), which skips the
+//! answer it through `ARCALO_TEST_RECOVERY_CHOICE` (`restore`, `open` or `quit`), which skips the
 //! dialog and takes that way out. Release builds ignore the variable.
 
 use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
-use annalo_core::backup::BackupInfo;
-use annalo_core::{Error, backupdest, datadir};
+use arcalo_core::backup::BackupInfo;
+use arcalo_core::{Error, backupdest, datadir};
 use chrono::Utc;
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
 use crate::devlog;
-use annalo_core::{tr, trf};
+use arcalo_core::{tr, trf};
 
 /// The ways out the dialog offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +56,7 @@ pub enum Failure {
 impl Failure {
     pub fn of_database(e: &Error) -> Failure {
         let msg = e.to_string();
-        if annalo_core::db::is_newer_schema(&msg) {
+        if arcalo_core::db::is_newer_schema(&msg) {
             Failure::Newer(msg)
         } else if e.is_storage() {
             Failure::Folder(msg)
@@ -125,7 +125,7 @@ fn test_choice(restore: bool) -> Option<Choice> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let choice = std::env::var("ANNALO_TEST_RECOVERY_CHOICE").ok()?;
+    let choice = std::env::var("ARCALO_TEST_RECOVERY_CHOICE").ok()?;
     // Only the first dialog: a failed restore shows it again, and that one quits.
     static ANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     let again = ANSWERED.swap(true, std::sync::atomic::Ordering::Relaxed);
@@ -220,7 +220,7 @@ pub fn backup_count(dir: &Path) -> usize {
 
 /// The key screen's „Letzte Sicherung wiederherstellen“ (a damaged encrypted file, or a key that
 /// fits only older backups): restores the newest backup and restarts. Returns its name.
-pub fn restore_and_restart(app: &AppHandle, dir: &Path) -> annalo_core::Result<String> {
+pub fn restore_and_restart(app: &AppHandle, dir: &Path) -> arcalo_core::Result<String> {
     let b = backupdest::restore_newest(&dir.join(datadir::DB_FILE), &candidates(dir).0, Utc::now())?;
     devlog::warn("core", format!("database restored from backup {}", b.file_name));
     crate::portable::unlock_instance();
@@ -240,7 +240,7 @@ fn quit(app: &AppHandle) {
 
 /// Whether Arcalo can write into `dir` (a read-only drive or folder permissions).
 pub fn writable(dir: &Path) -> bool {
-    let probe = dir.join(".annalo-write-test");
+    let probe = dir.join(".arcalo-write-test");
     let ok = std::fs::write(&probe, b"ok").is_ok();
     let _ = std::fs::remove_file(&probe);
     ok
@@ -253,13 +253,13 @@ mod tests {
     #[test]
     fn failures_are_told_apart() {
         let newer =
-            Error::State(format!("Die Datenbank stammt von einer {} (Schema v99)", annalo_core::db::NEWER_SCHEMA));
+            Error::State(format!("Die Datenbank stammt von einer {} (Schema v99)", arcalo_core::db::NEWER_SCHEMA));
         assert!(matches!(Failure::of_database(&newer), Failure::Newer(_)));
-        let dir = std::env::temp_dir().join(format!("annalo-recovery-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-recovery-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(datadir::DB_FILE), b"kein SQLite, nur Text, der lang genug ist").unwrap();
-        let e = annalo_core::Database::open(dir.join(datadir::DB_FILE)).err().unwrap();
+        let e = arcalo_core::Database::open(dir.join(datadir::DB_FILE)).err().unwrap();
         let f = Failure::of_database(&e);
         assert!(matches!(f, Failure::Database(_)), "{f:?}");
         let (_, text, restore) = f.texts(&dir, 0, 0);

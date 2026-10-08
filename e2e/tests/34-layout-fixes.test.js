@@ -115,5 +115,5 @@ test("narrow window: the side panel takes the sidebar's place; the sidebar butto
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

@@ -70,7 +70,7 @@ describe("visible calendars", () => {
     expect(visibleEvents(events, hiddenCalendars())).toHaveLength(3);
     setCalendarHidden("outlook:aaa", true);
     expect(visibleEvents(events, hiddenCalendars()).map((e) => e.source)).toEqual(["outlook", "ics:s1"]);
-    expect(JSON.parse(localStorage.getItem("annalo.calendar.hidden") ?? "[]")).toEqual(["outlook:aaa"]);
+    expect(JSON.parse(localStorage.getItem("arcalo.calendar.hidden") ?? "[]")).toEqual(["outlook:aaa"]);
     setCalendarHidden("outlook:aaa", false);
     expect(hiddenCalendars().size).toBe(0);
   });

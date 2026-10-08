@@ -1,15 +1,15 @@
-//! Link and tag suggestions, duplicate hints and PDF highlights (`annalo_core::mentions`,
+//! Link and tag suggestions, duplicate hints and PDF highlights (`arcalo_core::mentions`,
 //! `tagsuggest`, `duplicates`, `pdfmarks`). The AI tag suggestions go through the router like
 //! every other AI call: a page with a privacy marker (`#privat`) stays on the local model.
 
-use annalo_core::ai::client::ChatRequest;
-use annalo_core::ai::privacy;
-use annalo_core::duplicates::{DuplicateHint, DuplicatePair, MergeOutcome};
-use annalo_core::error::Error;
-use annalo_core::mentions::MentionReport;
-use annalo_core::pdfmarks::{self, NewHighlight, PdfHighlight};
-use annalo_core::tagsuggest::{self, TagSuggestion};
-use annalo_core::tr;
+use arcalo_core::ai::client::ChatRequest;
+use arcalo_core::ai::privacy;
+use arcalo_core::duplicates::{DuplicateHint, DuplicatePair, MergeOutcome};
+use arcalo_core::error::Error;
+use arcalo_core::mentions::MentionReport;
+use arcalo_core::pdfmarks::{self, NewHighlight, PdfHighlight};
+use arcalo_core::tagsuggest::{self, TagSuggestion};
+use arcalo_core::tr;
 use tauri::{AppHandle, State};
 
 use crate::{AppState, Result};

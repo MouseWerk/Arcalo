@@ -30,7 +30,7 @@ export function setPrintTheme(on: boolean) {
 }
 
 /** Sent when diagrams must render again in another theme (theme switch, printing). */
-export const DIAGRAM_THEME_EVENT = "annalo:diagram-theme";
+export const DIAGRAM_THEME_EVENT = "arcalo:diagram-theme";
 
 /** The theme diagrams render in now. */
 export const diagramTheme = (): DiagramTheme => (!printing && document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -66,7 +66,7 @@ export function renderDiagram(src: string, theme: DiagramTheme = diagramTheme())
       flowchart: { htmlLabels: false },
       suppressErrorRendering: true,
     });
-    const id = `annalo-mmd-${++seq}`;
+    const id = `arcalo-mmd-${++seq}`;
     try {
       const { svg } = await m.render(id, src);
       return { svg };
@@ -119,7 +119,7 @@ export async function svgToPng(svg: string, background: string): Promise<Uint8Ar
 }
 
 /** Asks for an export with the path given (`detail: { source, format, path }`), as after the save dialog. */
-export const DIAGRAM_EXPORT_EVENT = "annalo:diagram-export";
+export const DIAGRAM_EXPORT_EVENT = "arcalo:diagram-export";
 
 if (typeof window !== "undefined") {
   window.addEventListener(DIAGRAM_EXPORT_EVENT, (e) => {

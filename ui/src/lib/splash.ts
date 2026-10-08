@@ -2,7 +2,7 @@
 // stays until the animation has played and the app is ready, then fades out. Skipped in the
 // quick-capture/search windows, when switched off (Settings → Darstellung) and under WebDriver.
 
-const KEY = "annalo.splash";
+const KEY = "arcalo.splash";
 /** How long the mark needs to draw itself and show the name (kept short: it never holds up a
  * ready app for long). */
 const MIN_MS = 950;
@@ -54,7 +54,7 @@ export function startSplash(popup: boolean) {
   const el = document.getElementById("splash");
   if (!el) return;
   const p = read();
-  const forced = localStorage.getItem("annalo.splash-test") === "1";
+  const forced = localStorage.getItem("arcalo.splash-test") === "1";
   if (popup || p.off || (navigator.webdriver && !forced)) {
     el.remove();
     return;

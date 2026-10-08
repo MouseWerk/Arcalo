@@ -13,7 +13,7 @@ const test = guarded(nodeTest, () => app);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 before(async () => {
-  app = await launch({ demo: true, env: { ANNALO_SECRET_STORE: "file", ANNALO_LOCALE: "en-US" } });
+  app = await launch({ demo: true, env: { ARCALO_SECRET_STORE: "file", ARCALO_LOCALE: "en-US" } });
   // German interface on an English system.
   const view = await app.invoke("settings_get");
   if (view.settings.locale.language !== "de") await app.invoke("settings_save", { settings: { ...view.settings, locale: { ...view.settings.locale, language: "de" } } });

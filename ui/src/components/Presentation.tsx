@@ -38,7 +38,7 @@ export interface DeckState {
 
 type Nav = { action: "next" | "prev" | "first" | "last" | "end" | "beamer" | "reset" } | { action: "goto"; index: number } | { action: "target"; minutes: number | null };
 
-const BEAMER_KEY = "annalo.present.beamer";
+const BEAMER_KEY = "arcalo.present.beamer";
 const readBeamer = () => {
   try {
     return localStorage.getItem(BEAMER_KEY) === "1";

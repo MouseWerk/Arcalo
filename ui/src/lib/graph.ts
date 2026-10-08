@@ -5,7 +5,7 @@
 
 export type GraphDateField = "created" | "modified";
 
-/** Filters that run in SQL (`annalo_core::graph::GraphFilter`). */
+/** Filters that run in SQL (`arcalo_core::graph::GraphFilter`). */
 export interface GraphFilter {
   tags: string[];
   folder: number | null;

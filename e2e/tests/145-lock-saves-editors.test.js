@@ -10,8 +10,8 @@ import { launch, guarded } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-lock-save-"));
-const ENV = { ANNALO_BACKUP_DELAY_SECS: "3600", ANNALO_SECRET_STORE: "file" };
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-lock-save-"));
+const ENV = { ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_SECRET_STORE: "file" };
 const PIN = "1357";
 const TYPED = "Kurz vor der Sperre getippt";
 

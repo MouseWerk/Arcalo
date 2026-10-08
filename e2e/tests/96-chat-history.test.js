@@ -13,7 +13,7 @@ import { startFakeLiteLLM } from "../lib/fake-litellm.js";
 
 const test = guarded(nodeTest, () => app);
 let app, llm;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-chats-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-chats-"));
 const dataDir = path.join(dir, "data");
 
 const configure = async () => {

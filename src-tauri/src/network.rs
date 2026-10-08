@@ -1,18 +1,18 @@
 //! Settings → Netzwerk: proxy profiles and their passwords, the profile of each service with
 //! its route and a real test per service, trusted servers („Zertifikat anzeigen und
 //! vertrauen“), PAC download, CA file summary, the admin policy, and the client and Git
-//! environment every outgoing connection gets. The decisions live in `annalo_core::network`.
+//! environment every outgoing connection gets. The decisions live in `arcalo_core::network`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
-use annalo_core::Error;
-use annalo_core::gitsync::Git;
-use annalo_core::network::{
+use arcalo_core::Error;
+use arcalo_core::gitsync::Git;
+use arcalo_core::network::{
     self as core, CaInfo, CertDetails, DEFAULT_PROFILE, NetworkSettings, ProxyProfile, RouteInfo, Service, SystemProxy,
 };
-use annalo_core::settings::Settings;
-use annalo_core::{tr, trf};
+use arcalo_core::settings::Settings;
+use arcalo_core::{tr, trf};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -252,7 +252,7 @@ pub struct ServiceRow {
 struct Target {
     url: String,
     /// Bearer or provider key, Jira needs none for `serverInfo`.
-    auth: Option<(annalo_core::ai::provider::AiProvider, Option<String>)>,
+    auth: Option<(arcalo_core::ai::provider::AiProvider, Option<String>)>,
 }
 
 /// The services of `settings` (switched-on providers, sites and calendars included).
@@ -265,7 +265,7 @@ fn services(settings: &Settings) -> Vec<(Service, String)> {
         out.push((Service::Jira(s.id.clone()), s.name.clone()));
     }
     out.push((Service::GitSync, String::new()));
-    for c in settings.calendar.sources.iter().filter(|c| c.enabled && c.kind == annalo_core::calsync::IcsKind::Url) {
+    for c in settings.calendar.sources.iter().filter(|c| c.enabled && c.kind == arcalo_core::calsync::IcsKind::Url) {
         out.push((Service::Ics(c.id.clone()), c.name.clone()));
     }
     out.push((Service::VoiceModels, String::new()));
@@ -491,7 +491,7 @@ async fn git_test(app: AppHandle, net: NetworkSettings, url: String, password: O
         let res = git.version().and_then(|_| git.ls_remote(&url));
         let latency_ms = start.elapsed().as_millis() as u64;
         let shown =
-            if http { core::redacted_target(&url) } else { annalo_core::gitsync::redact(&url, token.as_deref()) };
+            if http { core::redacted_target(&url) } else { arcalo_core::gitsync::redact(&url, token.as_deref()) };
         let mut t = NetworkTest {
             ok: res.is_ok(),
             url: shown,
@@ -503,7 +503,7 @@ async fn git_test(app: AppHandle, net: NetworkSettings, url: String, password: O
             certificate: None,
         };
         if let Err(e) = res {
-            let mut msg = annalo_core::gitsync::redact(&e.to_string(), token.as_deref());
+            let mut msg = arcalo_core::gitsync::redact(&e.to_string(), token.as_deref());
             if let Some(p) = password.as_deref().filter(|p| !p.is_empty()) {
                 msg = msg.replace(p, "***");
             }
@@ -533,10 +533,10 @@ pub async fn network_test(
     let (settings, net) = draft_or_saved(&state, network)?;
     let base = base_url.unwrap_or(settings.litellm_base_url).trim().trim_end_matches('/').to_owned();
     let url = format!("{base}/v1/models");
-    let service = Service::Ai { id: annalo_core::ai::provider::LEGACY_ID.into(), local: false };
+    let service = Service::Ai { id: arcalo_core::ai::provider::LEGACY_ID.into(), local: false };
     let profile = net.profile_for(&service);
     let password = password.filter(|p| !p.is_empty()).or_else(|| secret(&state, &profile.id).get());
-    let provider = annalo_core::ai::provider::AiProvider::litellm(&base);
+    let provider = arcalo_core::ai::provider::AiProvider::litellm(&base);
     let target = Target { url: url.clone(), auth: Some((provider, state.secrets.get())) };
     http_test(&net, &service, target, password, url).await
 }
@@ -640,7 +640,7 @@ pub fn policy_warnings(net: &NetworkSettings) {
     }
 }
 
-/// The page of the `annalo-pac:` scheme: a sandboxed frame (opaque origin, no IPC) in which
+/// The page of the `arcalo-pac:` scheme: a sandboxed frame (opaque origin, no IPC) in which
 /// the UI evaluates PAC scripts. PAC files are JavaScript; the app's own pages forbid
 /// `eval`, this frame allows it and nothing else (no network, no storage).
 pub fn pac_sandbox() -> tauri::http::Response<Vec<u8>> {

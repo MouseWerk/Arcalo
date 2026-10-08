@@ -20,7 +20,7 @@ import { meaningVector } from "../lib/fake-embeddings.js";
 const test = guarded(nodeTest, () => app);
 let app, local, cloud;
 const SHOTS = process.env.SEMANTIC_SHOTS;
-const env = { ANNALO_SEMANTIC_DELAY_SECS: "1" };
+const env = { ARCALO_SEMANTIC_DELAY_SECS: "1" };
 const provider = (id, name, kind, base_url, isLocal) => ({ id, name, kind, base_url, local: isLocal, enabled: true, bypass_proxy: isLocal, api_version: "", models: [] });
 
 before(async () => {

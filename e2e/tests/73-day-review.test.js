@@ -24,7 +24,7 @@ before(async () => {
   // Today's meetings besides the Outlook fixture's early standup.
   const file = path.join(fx.dir, "Heute.ics");
   const ev = (uid, a, b, title) => ["BEGIN:VEVENT", `UID:${uid}`, `DTSTART:${icsTime(a)}`, `DTEND:${icsTime(b)}`, `SUMMARY:${title}`, "END:VEVENT"];
-  fs.writeFileSync(file, ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Annalo e2e//DE", ...ev("kunde@e2e", at(11), at(11, 30), "Kundentermin Rückblick"), ...ev("retro@e2e", at(16), at(17), "Retro Rückblick"), "END:VCALENDAR", ""].join("\r\n"));
+  fs.writeFileSync(file, ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Arcalo e2e//DE", ...ev("kunde@e2e", at(11), at(11, 30), "Kundentermin Rückblick"), ...ev("retro@e2e", at(16), at(17), "Retro Rückblick"), "END:VCALENDAR", ""].join("\r\n"));
   app = await launch({ env: outlookEnv(fx.outlook) });
   await app.invoke("calendar_source_add", { name: "Heute", url: null, path: file });
   const view = await app.invoke("settings_get");

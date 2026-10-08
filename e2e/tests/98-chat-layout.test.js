@@ -39,8 +39,8 @@ const reload = async () => {
 };
 const setPanelWidth = async (w) => {
   await app.browser.execute((px) => {
-    localStorage.setItem("annalo.panel-w", String(px));
-    localStorage.setItem("annalo.panel", "true");
+    localStorage.setItem("arcalo.panel-w", String(px));
+    localStorage.setItem("arcalo.panel", "true");
   }, w);
   await reload();
   await app.keys(["Control", "j"]);

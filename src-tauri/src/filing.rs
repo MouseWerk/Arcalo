@@ -1,12 +1,12 @@
 //! Ordner & Ablage in the shell: the tidy-up (dry run, apply, undo), moving many pages at once,
 //! folder sort and colors, smart folders and filed pages created by the UI (bookmark import).
-//! The logic lives in `annalo_core::filing`.
+//! The logic lives in `arcalo_core::filing`.
 
-use annalo_core::filing::{
+use arcalo_core::filing::{
     FileType, FilingPreview, FilingSettings, FolderStyle, LastMove, MoveOutcome, SmartCounts, SmartGroup, SmartKind,
     SmartPage, TidyMove,
 };
-use annalo_core::model::Page;
+use arcalo_core::model::Page;
 use serde::Serialize;
 use tauri::State;
 

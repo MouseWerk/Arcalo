@@ -31,10 +31,10 @@ const waitContent = (title, re, msg) => app.browser.waitUntil(async () => re.tes
 
 /**
  * The native save dialog cannot be driven here: after checking the menu entries, the export runs
- * through the same code with the path given (`annalo:share-html`, what the menu entry does after the dialog).
+ * through the same code with the path given (`arcalo:share-html`, what the menu entry does after the dialog).
  */
 async function share(title, withChildren, file) {
-  await app.browser.execute((id, w, p) => window.dispatchEvent(new CustomEvent("annalo:share-html", { detail: { id, withChildren: w, path: p } })), await pageId(title), withChildren, file);
+  await app.browser.execute((id, w, p) => window.dispatchEvent(new CustomEvent("arcalo:share-html", { detail: { id, withChildren: w, path: p } })), await pageId(title), withChildren, file);
   await app.browser.waitUntil(() => fs.existsSync(file), { timeout: 10000, timeoutMsg: "HTML file not written" });
 }
 
@@ -45,7 +45,7 @@ async function newPage(title, md) {
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title, create: false })) !== null);
   await app.invoke("page_save", { id: await pageId(title), content: md });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
   await app.browser.waitUntil(() => app.browser.execute((t) => document.querySelector(".pane.active .ProseMirror")?.textContent.includes(t), md.split("\n")[0].replace(/^#+ /, "")));
 }
 
@@ -164,7 +164,7 @@ test("a page is shared as one self-contained HTML file", async () => {
   assert.doesNotMatch(html, /<script|<link |@import|url\(/i);
   // [[Architektur]] is not in the file: plain text.
   assert.match(html, /<span class="wikilink">Architektur<\/span>/);
-  fs.copyFileSync(out, path.join(process.env.ANNALO_SHOTS ?? path.join(import.meta.dirname, "../screenshots"), "share-export.html"));
+  fs.copyFileSync(out, path.join(process.env.ARCALO_SHOTS ?? path.join(import.meta.dirname, "../screenshots"), "share-export.html"));
 });
 
 test("with subpages: one file with a table of contents and links between the pages", async () => {

@@ -170,8 +170,8 @@ export function App() {
       // „Neu in Arcalo“: a highlight's action runs a command of the keymap.
       (() => {
         const run = (e: Event) => COMMAND_RUNNERS[(e as CustomEvent<string>).detail]?.();
-        window.addEventListener("annalo:run-command", run);
-        return Promise.resolve(() => window.removeEventListener("annalo:run-command", run));
+        window.addEventListener("arcalo:run-command", run);
+        return Promise.resolve(() => window.removeEventListener("arcalo:run-command", run));
       })(),
       // Tray „Beenden“: store edits, then quit for real.
       on("app://quit-requested", async () => {
@@ -343,8 +343,8 @@ export function App() {
     getCurrentWindow().setTitle(title).catch(() => {});
   }, [active, pages]);
 
-  const [sideW, setSideW] = useState(() => readSize("annalo.sidebar-w", 264));
-  const [panelW, setPanelW] = useState(() => readSize("annalo.panel-w", 360));
+  const [sideW, setSideW] = useState(() => readSize("arcalo.sidebar-w", 264));
+  const [panelW, setPanelW] = useState(() => readSize("arcalo.panel-w", 360));
   const dragStart = useRef(0);
   const clamp = (v: number, lo: number, hi: number) => Math.round(Math.max(lo, Math.min(hi, v)));
   const persist = (key: string, v: number) => {
@@ -376,9 +376,9 @@ export function App() {
             }}
             onEnd={() => {
               dragStart.current = 0;
-              persist("annalo.sidebar-w", sideW);
+              persist("arcalo.sidebar-w", sideW);
             }}
-            onReset={() => (setSideW(264), persist("annalo.sidebar-w", 264))}
+            onReset={() => (setSideW(264), persist("arcalo.sidebar-w", 264))}
           />
         </>
       )}
@@ -397,9 +397,9 @@ export function App() {
             }}
             onEnd={() => {
               dragStart.current = 0;
-              persist("annalo.panel-w", panelW);
+              persist("arcalo.panel-w", panelW);
             }}
-            onReset={() => (setPanelW(360), persist("annalo.panel-w", 360))}
+            onReset={() => (setPanelW(360), persist("arcalo.panel-w", 360))}
           />
           <RightPanel />
         </>
@@ -488,7 +488,7 @@ async function refreshPac(view: SettingsView) {
 const togglePanel = () => {
   const st = useApp.getState();
   st.set({ panelOpen: !st.panelOpen });
-  savePref("annalo.panel", !st.panelOpen);
+  savePref("arcalo.panel", !st.panelOpen);
 };
 const cycleTab = (d: number) => {
   const st = useApp.getState();
@@ -517,9 +517,9 @@ const COMMAND_RUNNERS: Record<string, () => void> = {
     const st = useApp.getState();
     if (!st.sidebarOpen) {
       st.set({ sidebarOpen: true });
-      savePref("annalo.sidebar", true);
+      savePref("arcalo.sidebar", true);
     }
-    setTimeout(() => window.dispatchEvent(new Event("annalo:sidebar-search")), 0);
+    setTimeout(() => window.dispatchEvent(new Event("arcalo:sidebar-search")), 0);
   },
   new_tab: () => useApp.getState().openTab({ kind: "home" }, { newTab: true }),
   close_tab: () => {

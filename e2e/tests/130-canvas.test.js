@@ -51,7 +51,7 @@ async function dblclick(x, y) {
 const nodeBox = (n) => ({ x: n.x, y: n.y, width: n.width, height: n.height });
 
 before(async () => {
-  out = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-canvas-"));
+  out = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-canvas-"));
   app = await launch({ width: 1480, height: 920 });
 });
 after(async () => {
@@ -230,8 +230,8 @@ test("Markdown-Kopie schreibt die .canvas-Datei; Export als PNG und SVG", async 
 
   const png = path.join(out, "board.png");
   const svg = path.join(out, "board.svg");
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:canvas-export", { detail: { pageId: id, format: "png", path: p } })), canvasId, png);
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:canvas-export", { detail: { pageId: id, format: "svg", path: p } })), canvasId, svg);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:canvas-export", { detail: { pageId: id, format: "png", path: p } })), canvasId, png);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:canvas-export", { detail: { pageId: id, format: "svg", path: p } })), canvasId, svg);
   await app.browser.waitUntil(() => fs.existsSync(png) && fs.existsSync(svg), { timeout: 15000, timeoutMsg: "exports written" });
   await sleep(300);
   assert.deepEqual([...fs.readFileSync(png).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);

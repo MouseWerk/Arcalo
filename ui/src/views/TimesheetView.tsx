@@ -221,11 +221,11 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
   const timer = useApp((s) => s.timer);
   const seconds = useTimerSeconds();
   const [np, setNp] = useState<number | null>(() => {
-    const v = localStorage.getItem("annalo.timer.np");
+    const v = localStorage.getItem("arcalo.timer.np");
     return v ? +v : null;
   });
-  const [vorgang, setVorgang] = useState(() => localStorage.getItem("annalo.timer.vorgang") ?? "");
-  const [la, setLa] = useState(() => localStorage.getItem("annalo.timer.la") ?? "DEV");
+  const [vorgang, setVorgang] = useState(() => localStorage.getItem("arcalo.timer.vorgang") ?? "");
+  const [la, setLa] = useState(() => localStorage.getItem("arcalo.timer.la") ?? "DEV");
   const [desc, setDesc] = useState("");
   const [quick, setQuick] = useState("");
   const booking = useRef(false);
@@ -247,9 +247,9 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
   const start = async () => {
     if (np == null) return;
     try {
-      localStorage.setItem("annalo.timer.np", String(np));
-      localStorage.setItem("annalo.timer.vorgang", vorgang);
-      localStorage.setItem("annalo.timer.la", la);
+      localStorage.setItem("arcalo.timer.np", String(np));
+      localStorage.setItem("arcalo.timer.vorgang", vorgang);
+      localStorage.setItem("arcalo.timer.la", la);
       await api.timerStart(np, vorgang || null, la || null, desc);
       setDesc("");
       s().bumpEntries();

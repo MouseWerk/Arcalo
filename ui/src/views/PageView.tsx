@@ -155,11 +155,11 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     };
     const onSaved = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === parentId && load();
     window.addEventListener(FRONTMATTER_EVENT, onFm);
-    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("arcalo:page-saved", onSaved);
     return () => {
       alive = false;
       window.removeEventListener(FRONTMATTER_EVENT, onFm);
-      window.removeEventListener("annalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:page-saved", onSaved);
     };
   }, [pageId, parentId, parentTitle]);
 
@@ -206,11 +206,11 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
       if (!ids || ids.includes(pageId)) refresh();
     };
-    window.addEventListener("annalo:page-saved", onSaved);
-    window.addEventListener("annalo:reload-pages", onReload);
+    window.addEventListener("arcalo:page-saved", onSaved);
+    window.addEventListener("arcalo:reload-pages", onReload);
     return () => {
-      window.removeEventListener("annalo:page-saved", onSaved);
-      window.removeEventListener("annalo:reload-pages", onReload);
+      window.removeEventListener("arcalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:reload-pages", onReload);
     };
   }, [pageId]);
 

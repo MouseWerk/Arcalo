@@ -189,10 +189,10 @@ export function MeetingWorkHost() {
       const id = (e as CustomEvent<number>).detail;
       s().toast({ tone: "info", title: t("mw.fu.offer"), action: { label: t("mw.fu.title"), run: () => openFollowUp(id) } });
     };
-    window.addEventListener("annalo:offer-followup", offer);
+    window.addEventListener("arcalo:offer-followup", offer);
     return () => {
       void off.then((f) => f());
-      window.removeEventListener("annalo:offer-followup", offer);
+      window.removeEventListener("arcalo:offer-followup", offer);
     };
   }, []);
   return (

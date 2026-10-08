@@ -28,7 +28,7 @@ before(async () => {
   await app.browser.execute(() => (document.documentElement.dataset.theme = "dark"));
   const page = await app.invoke("page_create", { parentId: null, title: "Focus tasks", icon: null, content: `- [ ] Write the report due:${todayIso}\n- [ ] Review the slides\n` });
   pageId = page.id;
-  await app.browser.execute(() => localStorage.setItem("annalo.calendar.view", "week"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.calendar.view", "week"));
 });
 after(async () => {
   await app?.close();
@@ -126,7 +126,7 @@ test("a task of the dashboard is dragged into the week; a deleted block comes ba
     const dt = new DataTransfer();
     li.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
     window.__planDrag = dt;
-    return li.draggable && dt.getData("application/x-annalo-plan");
+    return li.draggable && dt.getData("application/x-arcalo-plan");
   }, task);
   assert.equal(JSON.parse(payload).text, "Write the report");
   await app.click(".ribbon-calendar-view");

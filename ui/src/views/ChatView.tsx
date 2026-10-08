@@ -19,8 +19,8 @@ import { ChatBody, Composer } from "../panels/AssistantPanel";
 
 /** Below this width the chat list is a drawer over the conversation. */
 export const NARROW_CHAT = 760;
-const LAST_KEY = "annalo.chatView.last";
-const LIST_KEY = "annalo.chatView.list";
+const LAST_KEY = "arcalo.chatView.last";
+const LIST_KEY = "arcalo.chatView.list";
 
 const readPref = (key: string) => {
   try {

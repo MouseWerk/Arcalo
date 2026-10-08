@@ -1,6 +1,6 @@
 //! „Morgen-Briefing“ in the shell: the briefing of today in one call, its text „Was ist heute
 //! wichtig“ (cached per day), the first start of the day and the notification at a set time.
-//! The logic lives in `annalo_core::briefing`.
+//! The logic lives in `arcalo_core::briefing`.
 //!
 //! The text goes through the router like every request; a briefing with private content
 //! (`#privat`, a private appointment or page) is routed to the local model.
@@ -8,13 +8,13 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use annalo_core::ai::availability;
-use annalo_core::ai::client::ChatRequest;
-use annalo_core::ai::router::Tier;
-use annalo_core::ai::transform;
-use annalo_core::briefing::{self as core, Briefing, BriefingMode, BriefingSummary, StartAction};
-use annalo_core::calsync::outlook;
-use annalo_core::{Database, Error, tr};
+use arcalo_core::ai::availability;
+use arcalo_core::ai::client::ChatRequest;
+use arcalo_core::ai::router::Tier;
+use arcalo_core::ai::transform;
+use arcalo_core::briefing::{self as core, Briefing, BriefingMode, BriefingSummary, StartAction};
+use arcalo_core::calsync::outlook;
+use arcalo_core::{Database, Error, tr};
 use chrono::{Local, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -37,13 +37,13 @@ fn set_seen(day: NaiveDate) {
     *SEEN.lock().unwrap_or_else(|e| e.into_inner()) = Some(day);
 }
 
-/// Debug builds: `ANNALO_TEST_BRIEFING_DAY=<yyyy-mm-dd>` is taken as the day of the check at
+/// Debug builds: `ARCALO_TEST_BRIEFING_DAY=<yyyy-mm-dd>` is taken as the day of the check at
 /// the start, so the next tick or focus sees a new day.
 fn test_seen_day() -> Option<NaiveDate> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    std::env::var("ANNALO_TEST_BRIEFING_DAY").ok()?.trim().parse().ok()
+    std::env::var("ARCALO_TEST_BRIEFING_DAY").ok()?.trim().parse().ok()
 }
 
 /// Whether any AI provider can be asked (one with a key, or one that needs none).

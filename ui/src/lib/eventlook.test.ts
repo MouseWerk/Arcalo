@@ -71,12 +71,12 @@ describe("meeting colors", () => {
     }
   });
 
-  it("tokens.css carries the values the Annalo themes derive", () => {
+  it("tokens.css carries the values the Arcalo themes derive", () => {
     const css = readFileSync(resolve(__dirname, "../styles/tokens.css"), "utf8");
     const block = (sel: string) => css.slice(css.indexOf(sel)).split("}")[0];
     for (const [sel, id] of [
-      [':root[data-theme="dark"] {', "annalo-dark"],
-      [':root[data-theme="light"] {', "annalo-light"],
+      [':root[data-theme="dark"] {', "arcalo-dark"],
+      [':root[data-theme="light"] {', "arcalo-light"],
     ] as const) {
       const k = themeTokens(BUILTIN_THEMES.find((t) => t.id === id)!);
       const body = block(sel);

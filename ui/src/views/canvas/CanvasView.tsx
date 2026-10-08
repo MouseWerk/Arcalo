@@ -45,7 +45,7 @@ const SAVE_DELAY = 600;
 const SNAP_KEY = "arcalo.canvas-snap";
 const VIEW_KEY = "arcalo.canvas-view";
 /** Ask for an export with a path (no dialog): `detail: { pageId, format, path }` (also used by tests). */
-export const CANVAS_EXPORT_EVENT = "annalo:canvas-export";
+export const CANVAS_EXPORT_EVENT = "arcalo:canvas-export";
 
 interface View {
   zoom: number;
@@ -169,7 +169,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     savedText.current = text;
     try {
       await trackSave(api.savePage(pageId, text));
-      window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: pageId, content: text } }));
+      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content: text } }));
     } catch (e) {
       // Not stored: the next save tries again (the same text included).
       if (savedText.current === text) savedText.current = before;
@@ -229,8 +229,8 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
       const ids = (e as CustomEvent<{ ids?: number[] }>).detail?.ids;
       if (!ids || ids.includes(pageId)) reload();
     };
-    window.addEventListener("annalo:reload-pages", onReload);
-    return () => window.removeEventListener("annalo:reload-pages", onReload);
+    window.addEventListener("arcalo:reload-pages", onReload);
+    return () => window.removeEventListener("arcalo:reload-pages", onReload);
   }, [pageId]);
 
   useEffect(() => {

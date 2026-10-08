@@ -51,7 +51,7 @@ function writeCalendar() {
     "END:VCALENDAR",
     "",
   ].join("\r\n");
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-briefing-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-briefing-"));
   const file = path.join(dir, "Arbeit.ics");
   fs.writeFileSync(file, text);
   return file;
@@ -90,7 +90,7 @@ before(async () => {
   jira = await startFakeJira({ flavor: "cloud", issues });
   cloud = await startFakeOpenAI({ port: 4991, kind: "openai", name: "Cloud", apiKey: "sk-brief-e2e", models: ["gpt-4o-mini"], respond: () => "- Angebot an Kunde X heute verschicken\n- Jour fixe: Notizen vom letzten Mal lesen" });
   ollama = await startFakeOpenAI({ port: 4992, kind: "ollama", name: "Ollama", models: ["llama3.2:latest"], respond: () => "- Lokal geschrieben: Arzt anrufen" });
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "600" } });
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "600" } });
   await app.invoke("provider_key_set", { id: "cloud", key: cloud.apiKey });
   await patchSettings((s) => ({
     ...s,

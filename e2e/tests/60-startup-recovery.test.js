@@ -2,7 +2,7 @@
 // backup and starts with its pages (the broken file is kept as workspace.db.broken-…); a database
 // of a newer Arcalo explains that in German and quits without touching the file. The native
 // dialog cannot be clicked through WebDriver: debug builds take the answer from
-// ANNALO_TEST_RECOVERY_CHOICE, everything else (dialog text, restore, restart, exit code) is real.
+// ARCALO_TEST_RECOVERY_CHOICE, everything else (dialog text, restore, restart, exit code) is real.
 import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execSync } from "node:child_process";
@@ -16,7 +16,7 @@ const test = guarded(nodeTest, () => app);
 const dirs = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tmp = (name) => {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), `annalo-e2e-${name}-`));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), `arcalo-e2e-${name}-`));
   dirs.push(d);
   return d;
 };
@@ -43,7 +43,7 @@ after(async () => {
 
 /** Starts the app without WebDriver; resolves to its exit code (null: still running after `timeout`). */
 function run(dir, choice, timeout = 30000) {
-  const child = spawn(APP, [], { env: appEnv(dir, { demo: false, env: { ANNALO_TEST_RECOVERY_CHOICE: choice } }), stdio: "ignore" });
+  const child = spawn(APP, [], { env: appEnv(dir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: choice } }), stdio: "ignore" });
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), timeout);
     child.on("exit", (code) => {

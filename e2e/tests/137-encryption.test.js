@@ -15,14 +15,14 @@ import { germanLeftovers } from "../lib/english.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-crypt-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-crypt-"));
 const dataDir = path.join(root, "daten");
 fs.mkdirSync(dataDir, { recursive: true });
 const db = path.join(dataDir, "workspace.db");
 const secretsFile = path.join(dataDir, "secrets.json");
 // Linux in CI has no Secret Service: the key lands in secrets.json (the file fallback), which the
 // test can take away like a new computer would not have it.
-const ENV = { ANNALO_BACKUP_DELAY_SECS: "3600", ANNALO_SECRET_STORE: "file" };
+const ENV = { ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_SECRET_STORE: "file" };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const killApp = () => {
@@ -145,7 +145,7 @@ test("without the key the recovery screen opens the workspace with the recovery 
   delete secrets.db_key;
   fs.writeFileSync(secretsFile, JSON.stringify(secrets), { mode: 0o600 });
   const started = count(/Arcalo [\d.]+ started/g);
-  app = await launch({ demo: false, dataDir, env: { ...ENV, ANNALO_LOCALE: "en-US" } });
+  app = await launch({ demo: false, dataDir, env: { ...ENV, ARCALO_LOCALE: "en-US" } });
   await app.waitFor(".keygate-card");
   assert.match(await app.text(".keygate-card h1"), /Key missing/);
   assert.deepEqual(await germanLeftovers(app), []);
@@ -199,7 +199,7 @@ test("an encrypted backup restores from the settings and from the start-up recov
   // A broken database: the recovery restores the newest (encrypted) backup, which opens with the key.
   for (const f of ["workspace.db-wal", "workspace.db-shm"]) fs.rmSync(path.join(dataDir, f), { force: true });
   fs.writeFileSync(db, Buffer.from("kein SQLite\n".repeat(300)));
-  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ...ENV, ANNALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
+  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ...ENV, ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
   const exit = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 40000);
     child.on("exit", (c) => (clearTimeout(timer), resolve(c)));

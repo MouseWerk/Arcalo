@@ -8,9 +8,9 @@ import { time } from "./format";
 export const SNAP = 15;
 export const DEFAULT_MINUTES = 60;
 /** Drag data of a task, issue or page dropped into the Kalender. */
-export const PLAN_MIME = "application/x-annalo-plan";
+export const PLAN_MIME = "application/x-arcalo-plan";
 /** A page dragged from the sidebar. */
-export const PAGE_MIME = "application/x-annalo-page";
+export const PAGE_MIME = "application/x-arcalo-page";
 
 /** Something to plan: a task, a Jira issue or a page. */
 export type PlanItem =

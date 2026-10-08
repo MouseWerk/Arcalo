@@ -1,6 +1,6 @@
 //! „E-Mail als Aufgabe / Notiz“: reads mails (Outlook Classic, dropped `.eml`/`.msg` files,
 //! pasted header blocks), takes them over as task and/or note and opens a linked mail again.
-//! The logic lives in `annalo_core::mail`.
+//! The logic lives in `arcalo_core::mail`.
 //!
 //! Outlook's script and file work run in `spawn_blocking` without the database lock; the
 //! database is taken for the one transaction that creates link, note and task. Mail bodies
@@ -9,12 +9,12 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use annalo_core::ai::client::{ChatMessage, ChatRequest};
-use annalo_core::ai::router::{RouteDecision, Tier};
-use annalo_core::attachments;
-use annalo_core::calsync::tz::Zone;
-use annalo_core::mail::{self, Mail, MailCreated, MailImport, MailLink, MailSource, StoredFiles, Suggestion, outlook};
-use annalo_core::{Error, tr, trf};
+use arcalo_core::ai::client::{ChatMessage, ChatRequest};
+use arcalo_core::ai::router::{RouteDecision, Tier};
+use arcalo_core::attachments;
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::mail::{self, Mail, MailCreated, MailImport, MailLink, MailSource, StoredFiles, Suggestion, outlook};
+use arcalo_core::{Error, tr, trf};
 use chrono::{Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -70,7 +70,7 @@ pub async fn mail_outlook_current(app: AppHandle) -> Result<Vec<Mail>> {
 }
 
 /// Header with the percent-encoded file name of [`mail_parse_file`] (header values are ASCII).
-const NAME_HEADER: &str = "x-annalo-name";
+const NAME_HEADER: &str = "x-arcalo-name";
 
 /// Reads a dropped `.eml`/`.msg` (raw bytes as the body, the name in [`NAME_HEADER`]) and keeps
 /// the file and its attachments in the temp folder until the mail is taken over.
@@ -166,7 +166,7 @@ pub async fn mail_import(app: AppHandle, request: MailImport) -> Result<MailCrea
     };
     let state = app.state::<AppState>();
     let settings = state.settings();
-    let marker = annalo_core::ai::privacy::normalize(&settings.router.private_markers).into_iter().next();
+    let marker = arcalo_core::ai::privacy::normalize(&settings.router.private_markers).into_iter().next();
     let out = state.db().mail_create(&request, &files, &settings.mail, marker.as_deref(), &Zone::Local, Utc::now())?;
     let pages: Vec<i64> = [&out.task_page, &out.note_page].into_iter().flatten().map(|p| p.id).collect();
     let _ = app.emit("data://pages", &pages);

@@ -13,7 +13,7 @@ const litellm: AiProvider = { id: "litellm", name: "", kind: "litellm", base_url
 function fresh(): Settings {
   return {
     theme: "system",
-    appearance: { theme_light: "annalo-light", theme_dark: "annalo-dark" },
+    appearance: { theme_light: "arcalo-light", theme_dark: "arcalo-dark" },
     workdays: [1, 2, 3, 4, 5],
     daily_target_hours: 8,
     time: { enabled: true, rounding: { step_minutes: 0, mode: "up", min_minutes: 0 } },
@@ -81,7 +81,7 @@ describe("first-run steps", () => {
     const a = withThemePick(s, { id: "tokyo-night", dark: true });
     expect(a.theme).toBe("system");
     expect(a.appearance.theme_dark).toBe("tokyo-night");
-    expect(a.appearance.theme_light).toBe("annalo-light");
+    expect(a.appearance.theme_light).toBe("arcalo-light");
     const b = withThemePick({ ...s, theme: "dark" }, { id: "github-light", dark: false });
     expect(b.theme).toBe("light");
     expect(b.appearance.theme_light).toBe("github-light");

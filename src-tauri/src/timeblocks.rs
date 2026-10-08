@@ -1,6 +1,6 @@
 //! Focus blocks („Fokusblöcke“) in the shell: IPC commands for the Kalender and the „Im
 //! Kalender planen…“ picker, and the Outlook writes of the blocks (Settings → Kalender). The
-//! logic lives in `annalo_core::timeblocks`.
+//! logic lives in `arcalo_core::timeblocks`.
 //!
 //! An Outlook write runs the bridge without the database lock: the due writes are read, the
 //! script runs in `spawn_blocking`, then its answer is stored. Writes that found Outlook closed
@@ -9,11 +9,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use annalo_core::calsync::outlook;
-use annalo_core::calsync::outlookwrite::{self, OutlookBridge};
-use annalo_core::calsync::tz::Zone;
-use annalo_core::timeblocks::{BlockPatch, Bridge, FocusBlock, NewBlock};
-use annalo_core::{Error, tr};
+use arcalo_core::calsync::outlook;
+use arcalo_core::calsync::outlookwrite::{self, OutlookBridge};
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::timeblocks::{BlockPatch, Bridge, FocusBlock, NewBlock};
+use arcalo_core::{Error, tr};
 use chrono::{DateTime, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -72,7 +72,7 @@ pub fn block_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<(
 #[tauri::command(async)]
 pub fn block_task_done(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
     let page_id = match state.reader().block(id)?.link {
-        annalo_core::timeblocks::BlockLink::Task { page_id, .. } => page_id,
+        arcalo_core::timeblocks::BlockLink::Task { page_id, .. } => page_id,
         _ => -1,
     };
     state.db().block_task_done(id)?;

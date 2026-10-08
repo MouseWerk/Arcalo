@@ -103,7 +103,7 @@ test("a copied chip does not share the booking and can be booked on its own", as
   const md = await content();
   const chip = /<time-entry[^>]*>[^<]*<\/time-entry>/.exec(md)[0];
   await app.invoke("page_save", { id: pageId, content: `${md.trimEnd()}\n\nKopie: ${chip}\n` });
-  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids: [id] } })), pageId);
+  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: { ids: [id] } })), pageId);
   await until(async () => (await chips()).length === 2, "two chips");
   await until(async () => (await chips())[1].cls.includes("time-chip--copy"), "second is a copy");
   assert.match((await chips())[1].text, /Kopie, nicht gebucht/);

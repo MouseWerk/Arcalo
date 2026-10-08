@@ -79,7 +79,7 @@ export function settingLevel(s: Pick<Settings, "dev_log_level" | "dev_log_verbos
 }
 
 /** Tests hand the diagnostics bundle the path the save dialog would return. */
-export const BUNDLE_EVENT = "annalo:diagnostics-bundle";
+export const BUNDLE_EVENT = "arcalo:diagnostics-bundle";
 
 /** `arcalo-diagnose-2026-10-02-1405.zip` */
 export function bundleName(d: Date): string {

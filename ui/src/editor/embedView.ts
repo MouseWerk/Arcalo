@@ -261,7 +261,7 @@ export function mountPageEmbed(dom: HTMLElement, ref: EmbedRef, host: EmbedHost)
     const d = (e as CustomEvent<{ id?: number }>).detail;
     if (view?.page_id != null && d?.id === view.page_id) reload();
   };
-  window.addEventListener("annalo:page-saved", onSaved);
+  window.addEventListener("arcalo:page-saved", onSaved);
   const unlisten = [on("data://pages", () => reload(400)), on("gitsync://pulled", () => reload(400))];
   const unsub = useApp.subscribe((s, prev) => {
     if (s.pages !== prev.pages && dom.dataset.state === "missing") reload(100);
@@ -277,7 +277,7 @@ export function mountPageEmbed(dom: HTMLElement, ref: EmbedRef, host: EmbedHost)
     cancel();
     window.clearTimeout(timer);
     cleanupBody();
-    window.removeEventListener("annalo:page-saved", onSaved);
+    window.removeEventListener("arcalo:page-saved", onSaved);
     window.removeEventListener(PRINT_PREPARE_EVENT, onPrint);
     unlisten.forEach((u) => u.then((f) => f()));
     unsub();

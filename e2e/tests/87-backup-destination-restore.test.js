@@ -13,9 +13,9 @@ import { APP, appEnv, launch, guarded } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-restore-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-restore-"));
 const dataDir = path.join(root, "daten");
-const share = path.join(root, "NAS Freigabe", "Annalo");
+const share = path.join(root, "NAS Freigabe", "Arcalo");
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(path.dirname(share), { recursive: true });
 
@@ -43,7 +43,7 @@ async function until(what, fn, timeout = 30000) {
   throw new Error(`timed out: ${what}\n${log().slice(-2500)}`);
 }
 const titles = async () => (await app.invoke("workspace_tree")).map((p) => p.title);
-const start = () => launch({ demo: false, dataDir, env: { ANNALO_BACKUP_DELAY_SECS: "3600" } });
+const start = () => launch({ demo: false, dataDir, env: { ARCALO_BACKUP_DELAY_SECS: "3600" } });
 
 after(async () => {
   await app?.close();
@@ -69,17 +69,17 @@ test("a backup in the destination is restored from the settings after a checksum
   await app.invoke("page_create", { parentId: null, title: "Nach der Sicherung", icon: null, content: "später" });
 
   // A damaged copy (same checksum file, other bytes) is refused before anything is replaced.
-  const bad = path.join(share, host, "annalo-20200101-000000.db");
+  const bad = path.join(share, host, "arcalo-20200101-000000.db");
   const bytes = fs.readFileSync(remoteFile);
   bytes[bytes.length - 100] ^= 0xff;
   fs.writeFileSync(bad, bytes);
-  fs.writeFileSync(`${bad}.sha256`, fs.readFileSync(`${remoteFile}.sha256`, "utf8").replace(b.file_name, "annalo-20200101-000000.db"));
+  fs.writeFileSync(`${bad}.sha256`, fs.readFileSync(`${remoteFile}.sha256`, "utf8").replace(b.file_name, "arcalo-20200101-000000.db"));
   const refused = await app.invoke("backup_restore", { path: bad });
   assert.equal(refused.ok, false);
   assert.equal(refused.failure.problem, "checksum");
   assert.ok(!fs.existsSync(path.join(dataDir, "restore-pending.db")), "nothing staged");
   // Paths outside the backup folders are not accepted.
-  const outside = await app.invoke("backup_restore", { path: path.join(root, "annalo-20200101-000000.db") });
+  const outside = await app.invoke("backup_restore", { path: path.join(root, "arcalo-20200101-000000.db") });
   assert.equal(outside.failure.problem, "invalid");
   fs.rmSync(bad);
   fs.rmSync(`${bad}.sha256`);
@@ -125,7 +125,7 @@ test("the start-up recovery restores from the destination when the local backups
   fs.rmSync(path.join(dataDir, "backups"), { recursive: true, force: true });
   for (const f of ["workspace.db-wal", "workspace.db-shm"]) fs.rmSync(path.join(dataDir, f), { force: true });
   fs.writeFileSync(path.join(dataDir, "workspace.db"), Buffer.from("kein SQLite\n".repeat(200)));
-  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ANNALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
+  const child = spawn(APP, [], { env: appEnv(dataDir, { demo: false, env: { ARCALO_TEST_RECOVERY_CHOICE: "restore" } }), stdio: "ignore" });
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 40000);
     child.on("exit", (c) => {

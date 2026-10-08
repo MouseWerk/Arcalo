@@ -204,11 +204,11 @@ export function Dashboard() {
       const b = fresh().boards.find((y) => y.id === id);
       if (b) void api.dashboardFileWrite(path, exportBoard(b, fresh().notes));
     };
-    window.addEventListener("annalo:dashboard-import", f);
-    window.addEventListener("annalo:dashboard-export", x);
+    window.addEventListener("arcalo:dashboard-import", f);
+    window.addEventListener("arcalo:dashboard-export", x);
     return () => {
-      window.removeEventListener("annalo:dashboard-import", f);
-      window.removeEventListener("annalo:dashboard-export", x);
+      window.removeEventListener("arcalo:dashboard-import", f);
+      window.removeEventListener("arcalo:dashboard-export", x);
     };
   });
 

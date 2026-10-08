@@ -31,7 +31,7 @@ export function sceneHasContent(scene: string): boolean {
 }
 
 /** Fired on `window` after a drawing was saved (`detail.name`), so previews reload. */
-export const DRAWING_SAVED_EVENT = "annalo:drawing-saved";
+export const DRAWING_SAVED_EVENT = "arcalo:drawing-saved";
 
 let lastEditor: Editor | null = null;
 

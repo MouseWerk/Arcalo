@@ -142,9 +142,9 @@ jobs:
           echo "UPDATER_SIGN=$UPDATER_SIGN" >> "$GITHUB_ENV"
           if [ "$UPDATER_SIGN" = "1" ]; then
             # Compiled into the app (option_env!): switches the updater on in this build.
-            ANNALO_UPDATER_PUBKEY="$(tr -d '\r\n' < src-tauri/updater.pub)"
-            export ANNALO_UPDATER_PUBKEY
-            echo "ANNALO_UPDATER_PUBKEY=$ANNALO_UPDATER_PUBKEY" >> "$GITHUB_ENV"
+            ARCALO_UPDATER_PUBKEY="$(tr -d '\r\n' < src-tauri/updater.pub)"
+            export ARCALO_UPDATER_PUBKEY
+            echo "ARCALO_UPDATER_PUBKEY=$ARCALO_UPDATER_PUBKEY" >> "$GITHUB_ENV"
           fi
           node -e '
             const fs = require("fs");
@@ -153,7 +153,7 @@ jobs:
             c.version = process.env.VERSION;
             if (process.env.UPDATER_SIGN === "1") {
               c.bundle.createUpdaterArtifacts = true;
-              c.plugins.updater.pubkey = process.env.ANNALO_UPDATER_PUBKEY.trim();
+              c.plugins.updater.pubkey = process.env.ARCALO_UPDATER_PUBKEY.trim();
             }
             fs.writeFileSync(p, JSON.stringify(c, null, 2));
             const t = "Cargo.toml";
@@ -254,7 +254,7 @@ jobs:
             # updated by hand from the release page.
             P="$RUNNER_TEMP/Arcalo-portable"
             rm -rf "$P" && mkdir -p "$P"
-            cp target/release/annalo.exe "$P/Arcalo.exe"
+            cp target/release/arcalo.exe "$P/Arcalo.exe"
             printf 'Arcalo portabel\r\n' > "$P/arcalo-portable"
             {
               printf 'Arcalo %s – portable Version\r\n\r\n' "$VERSION"
@@ -340,7 +340,7 @@ jobs:
         if: steps.identity.outputs.set == 'true'
         with:
           node-version: 22
-      # No ANNALO_UPDATER_PUBKEY: the Store build has no updater at all.
+      # No ARCALO_UPDATER_PUBKEY: the Store build has no updater at all.
       - name: Build
         if: steps.identity.outputs.set == 'true'
         shell: bash
@@ -348,13 +348,13 @@ jobs:
           npm ci --prefix ui
           cargo fetch
           npm --prefix ui run build
-          cargo build --release -p annalo --features custom-protocol,store
+          cargo build --release -p arcalo --features custom-protocol,store
       - name: Pack the MSIX
         id: msix
         if: steps.identity.outputs.set == 'true'
         shell: pwsh
         run: |
-          ./packaging/msix/pack.ps1 -Exe target/release/annalo.exe -Version $env:VERSION -OutDir dist `
+          ./packaging/msix/pack.ps1 -Exe target/release/arcalo.exe -Version $env:VERSION -OutDir dist `
             -IdentityName $env:STORE_IDENTITY_NAME -Publisher $env:STORE_PUBLISHER `
             -PublisherDisplayName $env:STORE_PUBLISHER_DISPLAY_NAME
       - uses: actions/upload-artifact@v4

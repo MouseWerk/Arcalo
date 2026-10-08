@@ -1,4 +1,4 @@
-//! Suche nach Bedeutung in the shell (see `annalo_core::semantic`): the background indexer that
+//! Suche nach Bedeutung in the shell (see `arcalo_core::semantic`): the background indexer that
 //! embeds new and changed chunks with the embedding model of Settings → KI, the query
 //! embedding, and Settings → Suche (switch, progress, „Index neu aufbauen“).
 //!
@@ -14,10 +14,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use annalo_core::ai::capability;
-use annalo_core::search::{self, SearchHit};
-use annalo_core::semantic::{self, Plan, Progress, VectorIndex};
-use annalo_core::{tr, trf};
+use arcalo_core::ai::capability;
+use arcalo_core::search::{self, SearchHit};
+use arcalo_core::semantic::{self, Plan, Progress, VectorIndex};
+use arcalo_core::{tr, trf};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -107,7 +107,7 @@ fn set_status(app: &AppHandle, f: impl FnOnce(&mut Status)) {
 
 fn startup_delay() -> Duration {
     Duration::from_secs(
-        std::env::var("ANNALO_SEMANTIC_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(10),
+        std::env::var("ARCALO_SEMANTIC_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(10),
     )
 }
 
@@ -118,9 +118,9 @@ pub fn spawn_indexer(app: AppHandle) {
         // What the last run saw: model, chunk generation, when the chunks last changed.
         let mut seen: Option<(String, u64)> = None;
         let mut changed_at = Instant::now() - QUIET;
-        let mut last_generation = annalo_core::ai::rag::chunk_generation();
+        let mut last_generation = arcalo_core::ai::rag::chunk_generation();
         loop {
-            let generation = annalo_core::ai::rag::chunk_generation();
+            let generation = arcalo_core::ai::rag::chunk_generation();
             if generation != last_generation {
                 last_generation = generation;
                 changed_at = Instant::now();
@@ -190,7 +190,7 @@ async fn run(app: &AppHandle, plan: &Plan, key: &str) {
         });
         return;
     }
-    let progress = |db: &annalo_core::Database| semantic::progress(db, plan.local, &markers).unwrap_or_default();
+    let progress = |db: &arcalo_core::Database| semantic::progress(db, plan.local, &markers).unwrap_or_default();
     let start = progress(&state.reader());
     if start.done >= start.total && start.total > 0 {
         set_status(app, |s| {
@@ -267,11 +267,11 @@ async fn run(app: &AppHandle, plan: &Plan, key: &str) {
         {
             let db = state.db();
             if !plan.local {
-                let usage = annalo_core::ai::metrics::embedding_usage(&r.model, &texts, &client.prices);
+                let usage = arcalo_core::ai::metrics::embedding_usage(&r.model, &texts, &client.prices);
                 let _ = db.record_ai_usage(&state.session_id, &usage);
             }
             for ((id, _), v) in batch.iter().zip(&vectors) {
-                if let Err(e) = annalo_core::ai::rag::store_embedding(&db, *id, v) {
+                if let Err(e) = arcalo_core::ai::rag::store_embedding(&db, *id, v) {
                     devlog::warn("search", format!("search index: vector not stored: {e}"));
                 }
             }
@@ -332,7 +332,7 @@ pub struct SemanticResult {
     meaning: bool,
 }
 
-/// The search with meaning: exact hits and pages found by meaning (see `annalo_core::semantic`).
+/// The search with meaning: exact hits and pages found by meaning (see `arcalo_core::semantic`).
 /// Exact hits only when search by meaning is off, the model is not reachable, the index is of
 /// another model, or the query names a privacy marker and the model is not local.
 #[tauri::command]
@@ -369,7 +369,7 @@ pub async fn search_semantic(
                 Ok(Ok(mut v)) if !v.is_empty() => {
                     let v = v.swap_remove(0);
                     if !plan.local {
-                        let usage = annalo_core::ai::metrics::embedding_usage(&r.model, &[text], &client.prices);
+                        let usage = arcalo_core::ai::metrics::embedding_usage(&r.model, &[text], &client.prices);
                         let _ = state.db().record_ai_usage(&state.session_id, &usage);
                     }
                     let mut q = lock(&sem.queries);

@@ -1,5 +1,5 @@
 // Fixtures of „E-Mail als Aufgabe / Notiz“: the Outlook script's output for two selected
-// mails (ANNALO_OUTLOOK_MAIL_FIXTURE; attachments carry their bytes as base64 for „save“) and
+// mails (ARCALO_OUTLOOK_MAIL_FIXTURE; attachments carry their bytes as base64 for „save“) and
 // an .eml file with a German subject and a PDF attachment.
 import fs from "node:fs";
 import os from "node:os";
@@ -74,13 +74,13 @@ export const EML = [
 ].join("\r\n");
 
 export function writeMailFixtures() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-mail-fx-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-mail-fx-"));
   const outlook = path.join(dir, "outlook-mail.json");
   fs.writeFileSync(outlook, JSON.stringify(OUTLOOK_MAILS));
   return { dir, outlook, opened: `${outlook}.opened` };
 }
 
-export const mailEnv = (file) => ({ ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_MAIL_FIXTURE: file, ANNALO_CALENDAR_DELAY_SECS: "3600" });
+export const mailEnv = (file) => ({ ARCALO_TEST_FIXTURES: "1", ARCALO_OUTLOOK_MAIL_FIXTURE: file, ARCALO_CALENDAR_DELAY_SECS: "3600" });
 
 /** Drops files onto `selector` the way WebView2 delivers a drop from the file manager. */
 export async function dropFiles(app, selector, files) {

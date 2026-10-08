@@ -63,7 +63,7 @@ async function store(name, bytes) {
     (n, b64, done) => {
       const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       window.__TAURI_INTERNALS__
-        .invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent(n) } })
+        .invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent(n) } })
         .then((ok) => done({ ok }), (err) => done({ err: String(err) }));
     },
     name,
@@ -384,7 +384,7 @@ test("Chinese/Japanese/Korean text in a font that is not embedded renders with t
   ];
   await store("Japanisch.pdf", pdfFrom([stream], font, extra));
   await app.invoke("page_save", { id: await pageId("Zweite Notiz"), content: "CJK: ![[Japanisch.pdf]]\n" });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
   await openByPalette("Zweite Notiz");
   await app.click('.pane.active .pdf-embed[data-file="Japanisch.pdf"]');
   await app.waitFor(".pdf-overlay .pdf-page.is-rendered", 20000);

@@ -46,7 +46,7 @@ function storeSettings(s: GraphSettings) {
   settingsTimer = window.setTimeout(() => void api.graphStateSet("view", s).catch(() => {}), 600);
 }
 
-const GRAPH_EXPORT_EVENT = "annalo:graph-export";
+const GRAPH_EXPORT_EVENT = "arcalo:graph-export";
 
 export function GraphView() {
   useT();

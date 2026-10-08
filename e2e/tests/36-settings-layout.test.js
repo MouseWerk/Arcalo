@@ -13,10 +13,10 @@ import { auditLayout } from "../lib/layout-audit.js";
 const test = guarded(nodeTest, () => app);
 let app, longDir;
 before(async () => {
-  // A data folder as deep as a real one (…\AppData\Roaming\app.annalo.desktop): the harness
+  // A data folder as deep as a real one (…\AppData\Roaming\de.mousewerk.arcalo): the harness
   // creates it below the temporary folder.
   const tmp = process.env.TMPDIR;
-  longDir = path.join(os.tmpdir(), "annalo-e2e-long", "Benutzer", "maurice.kleindienst", "AppData", "Roaming", "app.annalo.desktop");
+  longDir = path.join(os.tmpdir(), "arcalo-e2e-long", "Benutzer", "maurice.kleindienst", "AppData", "Roaming", "de.mousewerk.arcalo");
   fs.mkdirSync(longDir, { recursive: true });
   process.env.TMPDIR = longDir;
   try {
@@ -138,7 +138,7 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
   await app.waitText(".settings-head h1", /Arcalo/);
   // An available update (the test build has no update key, so the state is set directly).
   await app.browser.execute(() =>
-    window.__annaloUpdates.setState({
+    window.__arcaloUpdates.setState({
       status: { enabled: true, current_version: "1.2.0", available: null },
       available: { version: "1.3.0", notes: "Neu", date: null, url: "https://example.invalid" },
       dismissed: "1.3.0",
@@ -179,7 +179,7 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
   // The copy button confirms.
   await app.click(".pane.active .path-text.data-dir + button");
   await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active .path-value button[aria-label="Kopiert"]')), { timeoutMsg: "no copy feedback" });
-  await app.browser.execute(() => window.__annaloUpdates.setState({ available: null, status: null }));
+  await app.browser.execute(() => window.__arcaloUpdates.setState({ available: null, status: null }));
   await app.browser.setWindowSize(1480, 920);
 });
 

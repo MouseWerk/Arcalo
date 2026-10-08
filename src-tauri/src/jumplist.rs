@@ -7,8 +7,8 @@
 
 use std::sync::Mutex;
 
-use annalo_core::desktop as core;
-use annalo_core::prefs::Language;
+use arcalo_core::desktop as core;
+use arcalo_core::prefs::Language;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::desktop::{self, MAIN, SearchTarget};
@@ -72,7 +72,7 @@ pub fn run(app: &AppHandle, action: Action, ready: bool) {
         Action::Timer if !time_tracking(app) => desktop::show_main(app),
         Action::Timer if !timer_running(app) => {
             if let Err(e) = desktop::timer_resume_last(app.clone()) {
-                desktop::notify(app, annalo_core::tr!("Timer nicht gestartet", "Timer not started"), &e.to_string());
+                desktop::notify(app, arcalo_core::tr!("Timer nicht gestartet", "Timer not started"), &e.to_string());
             }
         }
         a if !ready => *lock(&PENDING) = Some(a),
@@ -311,11 +311,11 @@ mod tests {
     #[test]
     fn arguments_round_trip() {
         for a in [Action::Today, Action::NewPage, Action::Capture, Action::Search, Action::Timer, Action::Page(42)] {
-            assert_eq!(parse(&["C:\\annalo.exe".to_string(), a.arg()]), Some(a));
+            assert_eq!(parse(&["C:\\arcalo.exe".to_string(), a.arg()]), Some(a));
         }
-        assert_eq!(parse(&["annalo", "--minimized"]), None);
-        assert_eq!(parse(&["annalo", "--jump=page:x"]), None);
-        assert_eq!(parse(&["annalo", "--jump=unknown"]), None);
+        assert_eq!(parse(&["arcalo", "--minimized"]), None);
+        assert_eq!(parse(&["arcalo", "--jump=page:x"]), None);
+        assert_eq!(parse(&["arcalo", "--jump=unknown"]), None);
     }
 
     #[test]

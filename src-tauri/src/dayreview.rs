@@ -1,5 +1,5 @@
 //! „Tagesrückblick“ in the shell: the review of a day, its summary by a local model and the
-//! reminder at the end of the day. The logic lives in `annalo_core::dayreview`.
+//! reminder at the end of the day. The logic lives in `arcalo_core::dayreview`.
 //!
 //! The summary is written only by providers marked local: the review aggregates every page of
 //! the day (private ones included), so it is treated as private as a whole. It does not go
@@ -8,12 +8,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use annalo_core::ai::client::ChatRequest;
-use annalo_core::ai::router::{RouteDecision, Tier};
-use annalo_core::ai::{availability, transform};
-use annalo_core::calsync::outlook;
-use annalo_core::dayreview::{self as core, DayReview, ReviewOptions};
-use annalo_core::{Database, Error};
+use arcalo_core::ai::client::ChatRequest;
+use arcalo_core::ai::router::{RouteDecision, Tier};
+use arcalo_core::ai::{availability, transform};
+use arcalo_core::calsync::outlook;
+use arcalo_core::dayreview::{self as core, DayReview, ReviewOptions};
+use arcalo_core::{Database, Error};
 use chrono::{Local, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -60,7 +60,7 @@ pub async fn day_review_summary(
     let candidates = core::local_candidates(&settings.router, &catalog);
     if candidates.is_empty() {
         return Err(Error::State(
-            annalo_core::tr!(
+            arcalo_core::tr!(
                 "Der lokale KI-Anbieter bietet kein Chat-Modell an: Lade unter Einstellungen → KI & Modelle ein Modell herunter \
                  oder wähle es für die Stufe Lokal.",
                 "The local AI provider offers no chat model: download a model under Settings → AI & models or choose one \
@@ -91,7 +91,7 @@ pub async fn day_review_summary(
             Ok((mut completion, meter)) => {
                 completion.content = transform::clean_output(&completion.content);
                 let mut reasons = vec![
-                    annalo_core::tr!("Tagesrückblick: nur lokale Modelle", "Daily review: local models only")
+                    arcalo_core::tr!("Tagesrückblick: nur lokale Modelle", "Daily review: local models only")
                         .to_owned(),
                 ];
                 if i > 0 {
@@ -125,12 +125,12 @@ pub async fn day_review_summary(
         }
     }
     Err(match last {
-        Some(e) => Error::State(annalo_core::trf!(
+        Some(e) => Error::State(arcalo_core::trf!(
             "Kein lokales Modell hat geantwortet. Die Zusammenfassung bleibt lokal. ({e})",
             "No local model answered. The summary stays local. ({e})"
         )),
         None => Error::State(
-            annalo_core::tr!(
+            arcalo_core::tr!(
                 "Kein lokales Modell verfügbar (Einstellungen → KI & Modelle).",
                 "No local model available (Settings → AI & models)."
             )
@@ -157,7 +157,7 @@ pub fn periodic(app: &AppHandle) {
         let _ = db.meta_set(REMINDED, &now.date().to_string());
         review(&state, &db, now.date()).map(|r| core::reminder_body(&r)).unwrap_or_default()
     };
-    notify(app, annalo_core::tr!("Tagesrückblick ansehen", "See the daily review"), &body);
+    notify(app, arcalo_core::tr!("Tagesrückblick ansehen", "See the daily review"), &body);
     let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
     if !focused {
         PENDING.store(true, Ordering::Relaxed);

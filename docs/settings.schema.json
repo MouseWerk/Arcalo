@@ -220,13 +220,13 @@
           "type": "boolean"
         },
         "theme_dark": {
-          "default": "annalo-dark",
+          "default": "arcalo-dark",
           "description": "Color theme shown in dark mode.",
           "type": "string"
         },
         "theme_light": {
-          "default": "annalo-light",
-          "description": "Color theme shown in light mode: a built-in id (`annalo-light`, `nord-light`, …) or the id of a custom theme. Unknown ids show the default theme.",
+          "default": "arcalo-light",
+          "description": "Color theme shown in light mode: a built-in id (`arcalo-light`, `nord-light`, …) or the id of a custom theme. Unknown ids show the default theme.",
           "type": "string"
         },
         "ui_font": {
@@ -967,7 +967,7 @@
         },
         "include_database": {
           "default": false,
-          "description": "Also commit the latest database backup as `annalo-workspace.db`.",
+          "description": "Also commit the latest database backup as `arcalo-workspace.db`.",
           "type": "boolean"
         },
         "mode": {
@@ -2532,8 +2532,8 @@
         "line_width": "normal",
         "reduce_motion": false,
         "startup_animation": true,
-        "theme_dark": "annalo-dark",
-        "theme_light": "annalo-light",
+        "theme_dark": "arcalo-dark",
+        "theme_light": "arcalo-light",
         "ui_font": "inter",
         "ui_scale": 100,
         "window_effect": "none",
@@ -2714,7 +2714,7 @@
     },
     "dev_log_json": {
       "default": false,
-      "description": "Developer log: also write the events as JSON lines (`logs/annalo.jsonl`).",
+      "description": "Developer log: also write the events as JSON lines (`logs/arcalo.jsonl`).",
       "type": "boolean"
     },
     "dev_log_level": {
@@ -3247,7 +3247,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 15,
+      "default": 16,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

@@ -21,7 +21,7 @@ import { useTimeTracking } from "../lib/timetracking";
 import { openPlanPicker, setPlanData } from "../lib/blocks";
 import { useGroupWindow } from "../lib/groupWindow";
 
-const PREF = "annalo.issues.view";
+const PREF = "arcalo.issues.view";
 /** From this many issues on, only the rows in view are rendered. */
 const VIRTUAL_ISSUES = 300;
 /** Height of a closed row (with the list's gap) before it was measured. */

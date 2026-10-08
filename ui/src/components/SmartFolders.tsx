@@ -10,10 +10,10 @@ import { useT, type TKey } from "../lib/i18n";
 import { PageIcon } from "./icons";
 import { filingApi, type SmartCounts, type SmartGroup, type SmartKind, type SmartPage } from "../lib/filing";
 
-const OPEN_KEY = "annalo.smart.open";
-const COLLAPSED_KEY = "annalo.smart.collapsed";
-export const SMART_HIDDEN_KEY = "annalo.smart.hidden";
-export const SMART_EVENT = "annalo:smart-folders";
+const OPEN_KEY = "arcalo.smart.open";
+const COLLAPSED_KEY = "arcalo.smart.collapsed";
+export const SMART_HIDDEN_KEY = "arcalo.smart.hidden";
+export const SMART_EVENT = "arcalo:smart-folders";
 
 const KINDS: { kind: SmartKind; icon: typeof Clock; grouped?: boolean }[] = [
   { kind: "recent", icon: Clock },

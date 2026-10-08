@@ -7,7 +7,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 import type { SearchHit } from "./types";
 
-const KEY = "annalo.search.exactOnly";
+const KEY = "arcalo.search.exactOnly";
 const listeners = new Set<() => void>();
 
 function read(): boolean {

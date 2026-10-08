@@ -11,7 +11,7 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-pins-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-pins-"));
 after(async () => {
   await app?.close();
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

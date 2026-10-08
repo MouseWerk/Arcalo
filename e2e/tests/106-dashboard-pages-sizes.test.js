@@ -14,7 +14,7 @@ const test = guarded(nodeTest, () => app);
 let app;
 let tmp;
 before(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-106-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-106-"));
   app = await launch();
 });
 after(async () => {
@@ -186,12 +186,12 @@ test("a board file leaves out secrets; an import checks it and names what it lea
   await app.keys(["Control", "t"]);
   await app.waitFor('.pane.active .dw[data-widget="clock"] .dw-zones');
   const file = path.join(tmp, "projekte.dashboard.json");
-  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("annalo:dashboard-export", { detail: { board: "projekte", path: p } })), file);
+  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("arcalo:dashboard-export", { detail: { board: "projekte", path: p } })), file);
   await app.browser.waitUntil(async () => fs.existsSync(file), { timeoutMsg: "not exported" });
   const text = fs.readFileSync(file, "utf8");
   assert.doesNotMatch(text, /geheim-123|pw-456|apiToken|password/);
   const json = JSON.parse(text);
-  assert.equal(json.format, "annalo-dashboard");
+  assert.equal(json.format, "arcalo-dashboard");
   assert.equal(json.version, 2);
   assert.deepEqual(json.board.widgets.find((w) => w.id === "clock").config.zones, ["Asia/Tokyo"]);
   // Imported again with a widget this version does not know (and a token put back in).
@@ -199,7 +199,7 @@ test("a board file leaves out secrets; an import checks it and names what it lea
   json.board.widgets.push({ id: "jira", kind: "jira-sprint-board", x: 0, y: 30, w: 4, h: 6, config: {} });
   json.board.widgets.find((w) => w.id === "recent").config.token = "nicht-uebernehmen";
   await app.dismissToasts();
-  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("annalo:dashboard-import", { detail: j })), JSON.stringify(json));
+  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("arcalo:dashboard-import", { detail: j })), JSON.stringify(json));
   // The hidden widget of the newer version went into the file too; both are named.
   await app.waitText(".toast", /Projekte \(Kopie\)[\s\S]*2 unbekannte Widgets ausgelassen: aus-der-zukunft, jira-sprint-board/);
   await app.browser.waitUntil(async () => !!(await board("Projekte (Kopie)")), { timeoutMsg: "not imported" });
@@ -209,7 +209,7 @@ test("a board file leaves out secrets; an import checks it and names what it lea
   assert.equal(await activeTab(), "Projekte (Kopie)");
   // A file of a newer version is refused.
   await app.dismissToasts();
-  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("annalo:dashboard-import", { detail: j })), JSON.stringify({ ...json, version: 99 }));
+  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("arcalo:dashboard-import", { detail: j })), JSON.stringify({ ...json, version: 99 }));
   await app.waitText(".toast", /neueren Version/);
   await app.dismissToasts();
 });

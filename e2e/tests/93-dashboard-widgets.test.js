@@ -91,7 +91,7 @@ test("Heute: a task is ticked off inline, the timer starts and stops", async () 
   const daily = await app.invoke("daily_note", { date: null });
   await app.invoke("page_save", { id: daily.id, content: "# Heute\n\n- [ ] Angebot schicken !!\n- [ ] Rückruf Müller" });
   // As the editor does after a save.
-  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id, content: "", from: "test" } })), daily.id);
+  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id, content: "", from: "test" } })), daily.id);
   await app.waitText('.pane.active [data-widget="today"] .dw-task', /Angebot schicken/, 10000);
   await app.click('.pane.active [data-widget="today"] [aria-label^="Erledigt: Angebot schicken"]');
   await app.browser.waitUntil(async () => /- \[x\] Angebot schicken/.test((await app.invoke("page_get", { id: daily.id })).content), { timeoutMsg: "not ticked" });
@@ -199,7 +199,7 @@ test("every widget shows real data on one board", async () => {
   assert.equal((await app.$$(".pane.active .dw-error")).length, 0);
   // The embedded page follows an edit.
   await app.invoke("page_save", { id: page.id, content: "# Plan\n\nNeuer Stand 93" });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: 0 } })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: 0 } })));
   await app.waitText('.pane.active .dw[data-widget="embed"] .dw-md', /Neuer Stand 93/, 10000);
   // Adding a task in the „Aufgaben“ widget puts it into the daily note.
   const add = await app.$('.pane.active .dw[data-widget="tasks"] .dw-add');

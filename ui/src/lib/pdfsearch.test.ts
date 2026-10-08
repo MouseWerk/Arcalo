@@ -3,7 +3,7 @@ import { findHits, matchOffsets } from "./pdfsearch";
 
 describe("PDF search", () => {
   it("finds every match case-insensitively, without overlaps", () => {
-    expect(matchOffsets("Annalo annalo ANNALO", "annalo")).toEqual([0, 7, 14]);
+    expect(matchOffsets("Arcalo arcalo ARCALO", "arcalo")).toEqual([0, 7, 14]);
     expect(matchOffsets("aaaa", "aa")).toEqual([0, 2]);
     expect(matchOffsets("nichts", "x")).toEqual([]);
     expect(matchOffsets("egal", "")).toEqual([]);

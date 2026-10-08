@@ -51,7 +51,7 @@ export function track<T>(p: Promise<T>): Promise<T> {
 }
 
 /** Sent before printing: blocks switch to their print look (light diagrams, expanded embeds). */
-export const PRINT_PREPARE_EVENT = "annalo:print-prepare";
+export const PRINT_PREPARE_EVENT = "arcalo:print-prepare";
 
 /** Renders everything still waiting for the viewport and waits for all renders (max `ms`). */
 export async function renderAllNow(ms = 8000): Promise<void> {

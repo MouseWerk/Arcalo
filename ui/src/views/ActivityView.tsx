@@ -81,8 +81,8 @@ export function ActivityView() {
       const iso = (e as CustomEvent<string>).detail;
       setPrefs({ preset: "day", from: iso, to: iso });
     };
-    window.addEventListener("annalo:activity-day", onDay);
-    return () => window.removeEventListener("annalo:activity-day", onDay);
+    window.addEventListener("arcalo:activity-day", onDay);
+    return () => window.removeEventListener("arcalo:activity-day", onDay);
   }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 200);
@@ -95,12 +95,12 @@ export function ActivityView() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setTick((n) => n + 1), 600);
     };
-    window.addEventListener("annalo:page-saved", bump);
+    window.addEventListener("arcalo:page-saved", bump);
     const every = window.setInterval(() => setTick((n) => n + 1), 60_000);
     return () => {
       window.clearTimeout(timer);
       window.clearInterval(every);
-      window.removeEventListener("annalo:page-saved", bump);
+      window.removeEventListener("arcalo:page-saved", bump);
     };
   }, []);
 

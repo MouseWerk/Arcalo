@@ -178,7 +178,7 @@ test("invalid values are marked, kept and fixed in the property editor", async (
   // Written by hand (or by another tool): not a number, not an option.
   const text = "---\nstatus: Später\naufwand: viel\n---\nCSV und JSON.\n";
   await app.invoke("page_save", { id: kids.export, content: text });
-  await app.browser.execute((id, c) => window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id, content: c, from: "test" } })), kids.export, text);
+  await app.browser.execute((id, c) => window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id, content: c, from: "test" } })), kids.export, text);
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-switch button")].find((b) => b.innerText.includes("Tabelle")).click());
   await app.waitFor(`${cell(kids.export, "aufwand")} .val-invalid`);
   assert.equal(await app.browser.execute((sel) => document.querySelector(sel).dataset.tooltip, `${cell(kids.export, "aufwand")} .val-invalid`), "Keine Zahl");
@@ -204,7 +204,7 @@ test("invalid values are marked, kept and fixed in the property editor", async (
 test("a property of one page can become a property of the folder", async () => {
   const text = await content(kids.export);
   await app.invoke("page_save", { id: kids.export, content: text.replace("---\nstatus", "---\nquelle: https://example.org\nstatus") });
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
   await app.waitFor('.pane.active .properties [data-prop-key="quelle"] .prop-icon-btn');
   await app.click('.pane.active .properties [data-prop-key="quelle"] .prop-icon-btn');
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Für alle Seiten im Ordner")).click());

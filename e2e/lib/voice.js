@@ -1,6 +1,6 @@
 // Voice notes without a microphone or a Whisper model (tests 111–112): a WAV file the app records
-// instead of the microphone (ANNALO_TEST_AUDIO_FILE), a transcript standing in for Whisper
-// (ANNALO_TEST_TRANSCRIPT), a model server that delivers a wrong file, and the AI's summary.
+// instead of the microphone (ARCALO_TEST_AUDIO_FILE), a transcript standing in for Whisper
+// (ARCALO_TEST_TRANSCRIPT), a model server that delivers a wrong file, and the AI's summary.
 
 import fs from "node:fs";
 import http from "node:http";
@@ -30,12 +30,12 @@ export function writeWav(file, seconds = 3, rate = 48_000) {
 
 /** A folder with the WAV and the transcript; the environment for the app. */
 export function voiceFixtures(transcript) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-voice-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-voice-"));
   const wav = path.join(dir, "input.wav");
   writeWav(wav);
   const text = path.join(dir, "transcript.txt");
   fs.writeFileSync(text, transcript);
-  return { dir, env: { ANNALO_TEST_AUDIO_FILE: wav, ANNALO_TEST_TRANSCRIPT: text } };
+  return { dir, env: { ARCALO_TEST_AUDIO_FILE: wav, ARCALO_TEST_TRANSCRIPT: text } };
 }
 
 /**

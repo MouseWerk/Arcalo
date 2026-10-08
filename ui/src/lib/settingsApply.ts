@@ -119,7 +119,7 @@ export function workHoursOrder(start: string, end: string): FieldError {
 // ------------------------------------------------------------------ menu
 
 /** Groups of the settings menu that are collapsed (kept per viewer in this browser storage). */
-const COLLAPSED_KEY = "annalo.settings.navCollapsed";
+const COLLAPSED_KEY = "arcalo.settings.navCollapsed";
 
 export function loadCollapsed(): Set<string> {
   try {
