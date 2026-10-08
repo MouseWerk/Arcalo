@@ -1,4 +1,26 @@
-# 1.15 plan: no "Annalo" left
+# 1.15 plan: weekly review, search by meaning, no "Annalo" left
+
+Order: the two features first (in parallel), then the rename on top of them (it touches almost every file,
+so it goes last to avoid conflicts).
+
+## Feature: Wochenrückblick (weekly review)
+
+Like the daily review, for a week (Mon–Sun, the user's targets per weekday, holidays and absences): booked
+time against target per day and in total, done and open tasks, meetings, pages worked on, focus blocks;
+optional AI summary (respects #privat and the provider routing). „Als Wochenbericht speichern“ writes a page
+(template-able, in the year/month folders) that can be shared or exported. Entry points: start page widget or
+action, palette, Kalender week header, the daily review. Previous/next week, works without time tracking
+(then no time part) and without AI.
+
+## Feature: Suche nach Bedeutung (semantic search)
+
+Search finds notes without the exact words („Angebot Müller“ -> „Kostenvoranschlag für Kunde Müller“), using
+the embeddings the assistant already builds; local by default when an Ollama embedding model is available,
+otherwise the configured provider only if allowed (#privat pages are never sent to a cloud provider). Results
+mix exact and meaning matches with a clear label, in the search sidebar and the quick switcher/palette. Index
+builds in the background, incremental, with progress and a switch in Settings; works offline with exact search
+only.
+
 
 Owner decision: every remaining "Annalo"/"annalo" goes, with a migration helper so existing installs keep
 their data, credentials and settings. New app identifier: `de.mousewerk.arcalo` (was `app.annalo.desktop`).
