@@ -13,14 +13,14 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
-use annalo_core::activity::{IdleAccumulator, WindowUsage};
-use annalo_core::ai::capability::Capabilities;
-use annalo_core::ai::metrics::SessionMeter;
-use annalo_core::companion::{self, RecentTarget, ReferenceImport, Today};
-use annalo_core::gitsync::{self, SyncOutcome};
-use annalo_core::model::Page;
-use annalo_core::tracking::LogOutcome;
-use annalo_core::{Database, Error, datadir};
+use arcalo_core::activity::{IdleAccumulator, WindowUsage};
+use arcalo_core::ai::capability::Capabilities;
+use arcalo_core::ai::metrics::SessionMeter;
+use arcalo_core::companion::{self, RecentTarget, ReferenceImport, Today};
+use arcalo_core::gitsync::{self, SyncOutcome};
+use arcalo_core::model::Page;
+use arcalo_core::tracking::LogOutcome;
+use arcalo_core::{Database, Error, datadir};
 use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -38,7 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(keystore::plugin())
-        .register_uri_scheme_protocol("annalo-asset", |ctx, request| {
+        .register_uri_scheme_protocol("arcalo-asset", |ctx, request| {
             crate::serve_attachment(ctx.app_handle(), &request)
         })
         .setup(|app| {
@@ -95,9 +95,9 @@ pub fn run() {
 /// Opens the workspace in the app's private folder and manages the shared state.
 fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let dir = app.path().app_data_dir()?;
-    let system = annalo_core::i18n::lang_of_locale(&crate::os_locale().unwrap_or_default());
-    annalo_core::i18n::set_system_lang(system);
-    annalo_core::i18n::set_lang(system);
+    let system = arcalo_core::i18n::lang_of_locale(&crate::os_locale().unwrap_or_default());
+    arcalo_core::i18n::set_system_lang(system);
+    arcalo_core::i18n::set_lang(system);
     std::fs::create_dir_all(&dir)?;
     devlog::init(&dir);
     devlog::info(
@@ -109,8 +109,8 @@ fn setup(app: &AppHandle) -> std::result::Result<(), Box<dyn std::error::Error>>
         devlog::warn("settings", format!("settings migration failed: {e}"));
     }
     let settings = db.load_settings().unwrap_or_default();
-    annalo_core::i18n::set_lang(settings.locale.lang());
-    annalo_core::i18n::set_number_format(settings.locale.number_format);
+    arcalo_core::i18n::set_lang(settings.locale.lang());
+    arcalo_core::i18n::set_number_format(settings.locale.number_format);
     if let Err(e) = db.localize_default_leistungsarten() {
         devlog::warn("core", format!("activity types not localized: {e}"));
     }
@@ -186,7 +186,7 @@ fn sync_and_import(
 ) -> Result<MobileSync> {
     let outcome = crate::run_git_sync_with(app, false, allow_deletions, after_restore)?;
     let state = app.state::<AppState>();
-    let copy = state.git_repo_dir().join(gitsync::DB_FILE);
+    let copy = gitsync::db_copy(&state.git_repo_dir());
     let reference = {
         let db = state.db();
         companion::import_reference(&db, &copy, &state.data_dir, Utc::now())
@@ -261,9 +261,9 @@ fn mobile_book(app: AppHandle, state: State<AppState>, line: String) -> Result<L
 fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: bool) -> Result<Page> {
     let settings = state.settings();
     let target =
-        if inbox { annalo_core::capture::CaptureTarget::Inbox } else { annalo_core::capture::CaptureTarget::Daily };
-    let zone = annalo_core::calsync::tz::Zone::Local;
-    let opts = annalo_core::capture::CaptureOptions {
+        if inbox { arcalo_core::capture::CaptureTarget::Inbox } else { arcalo_core::capture::CaptureTarget::Daily };
+    let zone = arcalo_core::calsync::tz::Zone::Local;
+    let opts = arcalo_core::capture::CaptureOptions {
         inbox_title: &settings.capture.inbox_title,
         thresholds: &settings.thresholds,
         zone: &zone,
@@ -274,7 +274,7 @@ fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: b
         // A daily note pulled from the desktop is today's (no second one beside it).
         companion::daily(&db, Local::now().date_naive(), false)?;
     }
-    let (out, _) = annalo_core::capture::capture_to(&db, &text, &target, &opts, Utc::now(), &Local)?;
+    let (out, _) = arcalo_core::capture::capture_to(&db, &text, &target, &opts, Utc::now(), &Local)?;
     let page_id = out.appended.map(|a| a.page_id).ok_or_else(|| Error::State("Nichts zu erfassen".into()))?;
     let page = db.page(page_id)?;
     let _ = app.emit("data://pages", ());
@@ -283,7 +283,7 @@ fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: b
 
 /// Stops the timer; its booking (one per day over midnight) goes into the daily note as a chip.
 #[tauri::command(async)]
-fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<annalo_core::model::TimeEntry>> {
+fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<arcalo_core::model::TimeEntry>> {
     let now = Utc::now();
     let db = state.db();
     let entries = db.stop_timer_in(now, &[], &Local)?;
@@ -316,7 +316,7 @@ async fn mobile_sync(
 ) -> Result<MobileSync> {
     if app.state::<AppState>().settings().git_sync.remote_url.trim().is_empty() {
         return Err(Error::State(
-            annalo_core::tr!(
+            arcalo_core::tr!(
                 "Bitte zuerst die Remote-URL eintragen und speichern",
                 "Enter and save the remote URL first"
             )

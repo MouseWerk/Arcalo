@@ -1,11 +1,11 @@
 //! Auto-update. Checks the feed sources (an organization's server or share first, then the
-//! GitHub release feed, see `annalo_core::update_feed`), downloads the update in the
+//! GitHub release feed, see `arcalo_core::update_feed`), downloads the update in the
 //! background (resumable, pausable) and checks its signature against the compiled-in key,
 //! whatever the source. In the mode „automatisch“ the update is installed when the app quits
 //! (or on „Jetzt neu starten“); „nur benachrichtigen“ installs on the user's click, as before
 //! 1.9. Before installing, the database is backed up and a copy of the running version kept
 //! for the rollback (`rollback.rs`). Only switched on when the build compiled in the
-//! updater's public key (`ANNALO_UPDATER_PUBKEY`); other builds never contact a server.
+//! updater's public key (`ARCALO_UPDATER_PUBKEY`); other builds never contact a server.
 //!
 //! The installation itself is `installer.rs`: it does with the verified file what the updater
 //! plugin's install does (NSIS in passive update mode on Windows, replacing the bundle or the
@@ -15,8 +15,8 @@
 //! The Microsoft Store build (`store.rs`) has none of this: the Store updates the package, so
 //! there is no key, no check, no download, no install on quit and no rollback.
 //!
-//! Debug builds take a test feed, key and version from `ANNALO_UPDATE_ENDPOINT`,
-//! `ANNALO_UPDATE_PUBKEY` and `ANNALO_UPDATE_CURRENT` (end-to-end tests with a local server);
+//! Debug builds take a test feed, key and version from `ARCALO_UPDATE_ENDPOINT`,
+//! `ARCALO_UPDATE_PUBKEY` and `ARCALO_UPDATE_CURRENT` (end-to-end tests with a local server);
 //! release builds ignore them.
 
 use std::path::PathBuf;
@@ -26,13 +26,13 @@ use std::time::Duration;
 
 use crate::installer::{self, InstallError};
 use crate::{Result, lock, rollback};
-use annalo_core::Error;
-use annalo_core::network::Service;
-use annalo_core::update::{self as core, AfterUpdate};
-use annalo_core::update_feed::{self as feed, FeedError, Location, Source};
-use annalo_core::update_policy::{Effective, UpdateMode};
-use annalo_core::update_state::{self as st, RollbackRecord, UpdateState, Verdict};
-use annalo_core::{tr, trf};
+use arcalo_core::Error;
+use arcalo_core::network::Service;
+use arcalo_core::update::{self as core, AfterUpdate};
+use arcalo_core::update_feed::{self as feed, FeedError, Location, Source};
+use arcalo_core::update_policy::{Effective, UpdateMode};
+use arcalo_core::update_state::{self as st, RollbackRecord, UpdateState, Verdict};
+use arcalo_core::{tr, trf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::plugin::TauriPlugin;
@@ -52,8 +52,8 @@ pub fn pubkey() -> Option<&'static str> {
     }
     static KEY: OnceLock<Option<String>> = OnceLock::new();
     KEY.get_or_init(|| {
-        test_var("ANNALO_UPDATE_PUBKEY")
-            .or_else(|| core::configured_pubkey(option_env!("ANNALO_UPDATER_PUBKEY")).map(str::to_string))
+        test_var("ARCALO_UPDATE_PUBKEY")
+            .or_else(|| core::configured_pubkey(option_env!("ARCALO_UPDATER_PUBKEY")).map(str::to_string))
     })
     .as_deref()
 }
@@ -64,16 +64,16 @@ pub fn plugin<R: Runtime>() -> Option<TauriPlugin<R, tauri_plugin_updater::Confi
     pubkey().map(|key| tauri_plugin_updater::Builder::new().pubkey(key).build())
 }
 
-/// The version this copy runs (debug builds: `ANNALO_UPDATE_CURRENT` stands in for it).
+/// The version this copy runs (debug builds: `ARCALO_UPDATE_CURRENT` stands in for it).
 pub fn current_version(app: &AppHandle) -> String {
-    test_var("ANNALO_UPDATE_CURRENT").unwrap_or_else(|| app.package_info().version.to_string())
+    test_var("ARCALO_UPDATE_CURRENT").unwrap_or_else(|| app.package_info().version.to_string())
 }
 
 /// Installed through a package manager (.deb, .rpm): updates come from the release page.
-/// Debug builds pretend with `ANNALO_UPDATE_BUNDLE=deb` (tests).
+/// Debug builds pretend with `ARCALO_UPDATE_BUNDLE=deb` (tests).
 fn packaged() -> bool {
     use tauri::utils::config::BundleType;
-    if let Some(bundle) = test_var("ANNALO_UPDATE_BUNDLE") {
+    if let Some(bundle) = test_var("ARCALO_UPDATE_BUNDLE") {
         return matches!(bundle.as_str(), "deb" | "rpm");
     }
     matches!(tauri::utils::platform::bundle_type(), Some(BundleType::Deb | BundleType::Rpm))
@@ -253,7 +253,7 @@ fn updates_dir(app: &AppHandle) -> PathBuf {
 /// The policy's values over the user's settings.
 fn effective(app: &AppHandle) -> Effective {
     let settings = app.state::<crate::AppState>().settings();
-    annalo_core::update_policy::effective(crate::policy::get(), &settings.updates, settings.auto_update_check)
+    arcalo_core::update_policy::effective(crate::policy::get(), &settings.updates, settings.auto_update_check)
 }
 
 fn install_window_open(eff: &Effective) -> bool {
@@ -280,7 +280,7 @@ pub fn release_notes_url(version: &str) -> String {
 }
 
 fn sources(eff: &Effective) -> Vec<Source> {
-    let github: Vec<String> = match test_var("ANNALO_UPDATE_ENDPOINT") {
+    let github: Vec<String> = match test_var("ARCALO_UPDATE_ENDPOINT") {
         Some(url) => vec![url],
         None => feed::GITHUB_FEEDS.iter().map(|s| s.to_string()).collect(),
     };
@@ -757,10 +757,10 @@ async fn install(app: &AppHandle, staged: &Staged, restart: bool) -> Result<()> 
 fn pre_update_backup(app: &AppHandle, from: &str, to: &str) -> Option<PathBuf> {
     let state = app.state::<crate::AppState>();
     let name = st::pre_update_backup_name(from, to);
-    let tag = format!("{}pre-update-", annalo_core::backup::PREFIX);
+    let tag = format!("{}pre-update-", arcalo_core::backup::PREFIX);
     let dir = state.backup_dir();
     let db = state.db();
-    match annalo_core::backup::backup_named(&db, &dir, &name, &tag, 2) {
+    match arcalo_core::backup::backup_named(&db, &dir, &name, &tag, 2) {
         Ok(p) => Some(p),
         Err(e) => {
             crate::devlog::error("update", format!("backup before the update failed: {e}"));

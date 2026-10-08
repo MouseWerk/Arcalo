@@ -164,7 +164,7 @@ test("the HTML export links sections inside the file", async () => {
   await app.invoke("page_save", { id: ids.target, content: `${TARGET}\nZurück zu [[#Zweiter Abschnitt]] und [[#^b260]].\n` });
   const out = path.join(app.dataDir, "export", "Ziel 260.html");
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:share-html", { detail: { id, withChildren: false, path: p } })), ids.target, out);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:share-html", { detail: { id, withChildren: false, path: p } })), ids.target, out);
   await app.browser.waitUntil(() => fs.existsSync(out), { timeout: 8000, timeoutMsg: "no export" });
   const html = fs.readFileSync(out, "utf8");
   const page = `page-${ids.target}`;

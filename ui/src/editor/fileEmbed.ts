@@ -122,7 +122,7 @@ export interface FileEmbedOptions {
 }
 
 /** Sent (bubbling) by the „Neu transkribieren“ button of a voice note's audio; detail: the name. */
-export const TRANSCRIBE_AGAIN_EVENT = "annalo:transcribe-again";
+export const TRANSCRIBE_AGAIN_EVENT = "arcalo:transcribe-again";
 
 // `![[name.ext#sub|alt]]`: the name is checked with `isFileEmbedName` after matching.
 const FILE_RE = /^!\[\[([^\]|#\n]+?)(#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/;

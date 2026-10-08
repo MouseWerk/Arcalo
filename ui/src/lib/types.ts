@@ -652,7 +652,7 @@ export interface GitSyncStatus {
   repo_path: string;
   last_at: string | null;
   last_commit: string | null;
-  /** Branch of the last push (an `annalo-sync-…` branch after a fallback). */
+  /** Branch of the last push (an `arcalo-sync-…` branch after a fallback). */
   last_branch: string | null;
   last_error: string | null;
   pending_changes: number;
@@ -746,7 +746,7 @@ export interface CaptureOutcome {
   /** The database could not take it now: stored and retried. */
   queued?: boolean;
 }
-/** Where a quick capture goes (`annalo_core::capture::CaptureTarget`). */
+/** Where a quick capture goes (`arcalo_core::capture::CaptureTarget`). */
 export type CaptureTarget =
   | { kind: "daily" }
   | { kind: "inbox" }
@@ -1915,7 +1915,7 @@ export interface Briefing {
 }
 export type BriefingStart = "none" | "open" | "notify";
 
-/** What a page embed `![[Seite#Abschnitt]]` shows (annalo_core::embeds::EmbedView). */
+/** What a page embed `![[Seite#Abschnitt]]` shows (arcalo_core::embeds::EmbedView). */
 export interface EmbedView {
   page_id: number | null;
   title: string;

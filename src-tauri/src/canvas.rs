@@ -1,7 +1,7 @@
-//! Canvas pages (`annalo_core::canvas`): creating one and the mirror path of a note card.
+//! Canvas pages (`arcalo_core::canvas`): creating one and the mirror path of a note card.
 
-use annalo_core::model::Page;
-use annalo_core::vault;
+use arcalo_core::model::Page;
+use arcalo_core::vault;
 use tauri::State;
 
 use crate::{AppState, Result};

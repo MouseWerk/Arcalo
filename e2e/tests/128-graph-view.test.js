@@ -49,14 +49,14 @@ async function selectHub() {
 }
 
 before(async () => {
-  fx = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-graph-"));
-  out = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-graph-out-"));
+  fx = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-graph-"));
+  out = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-graph-out-"));
   const root = realisticVault(fx, "de");
   app = await launch();
   const report = await app.invoke("vault_import", { path: root });
   assert.ok(report.pages >= 250, `imported ${report.pages} pages`);
   // The side panel closed: the graph gets the room (the local graph test opens it again).
-  await app.browser.execute(() => localStorage.setItem("annalo.panel", "0"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.panel", "0"));
   await reload();
 });
 
@@ -194,7 +194,7 @@ test("a save updates the graph in place", async () => {
   const edges = await num(canvasSel, "data-edges");
   const frames = await num(canvasSel, "data-frames");
   await app.invoke("page_save", { id: page.id, content: "Siehe [[Scrum]] und [[Docker]]." });
-  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id } })), page.id);
+  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id } })), page.id);
   await app.browser.waitUntil(async () => (await num(canvasSel, "data-edges")) === edges + 2, { timeout: 8000, timeoutMsg: "edges not updated" });
   // The same canvas kept drawing: no reload of the view.
   assert.ok((await num(canvasSel, "data-frames")) > frames);
@@ -241,7 +241,7 @@ test("PNG export of the current view at 2x", async () => {
   await settled();
   const width = await app.browser.execute((s) => document.querySelector(s).getBoundingClientRect().width, canvasSel);
   const file = path.join(out, "graph.png");
-  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("annalo:graph-export", { detail: { path: p } })), file);
+  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("arcalo:graph-export", { detail: { path: p } })), file);
   await app.browser.waitUntil(() => fs.existsSync(file) && fs.statSync(file).size > 10000, { timeout: 15000, timeoutMsg: "no PNG written" });
   await sleep(300);
   const png = readPng(fs.readFileSync(file));

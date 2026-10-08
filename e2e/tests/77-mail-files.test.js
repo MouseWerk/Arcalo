@@ -46,7 +46,7 @@ test("an .eml dropped onto a note opens the dialog instead of an embed", async (
   const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
   const note = below(parent.children).find((n) => n.title === "Rückfrage Liefertermin");
   const md = await content(note.id);
-  const id = /\(annalo-mail:\/\/([0-9a-z]{8})\)/.exec(md)?.[1];
+  const id = /\(arcalo-mail:\/\/([0-9a-z]{8})\)/.exec(md)?.[1];
   assert.ok(id, md);
   assert.match(md, /vorgang: NP-8801\/1020\n/);
   assert.match(md, /!\[\[Lieferplan\.pdf\]\]/);
@@ -88,11 +88,11 @@ test("a pasted header block becomes a task in the daily note", async () => {
   const daily = await app.invoke("daily_note", { date: null });
   const md = await content(daily.id);
   assert.match(md, /- \[ \] Zugang Testsystem !!\n/);
-  assert.doesNotMatch(md, /annalo-mail/, "a pasted mail has no link");
+  assert.doesNotMatch(md, /arcalo-mail/, "a pasted mail has no link");
 });
 
 test("the Markdown export writes mail links as text", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-mail-export-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-mail-export-"));
   try {
     await app.invoke("vault_export", { path: dir });
     // Mail notes are filed by month (Ordner & Ablage, 1.9).
@@ -100,7 +100,7 @@ test("the Markdown export writes mail links as text", async () => {
     const files = fs.readdirSync(month);
     const md = fs.readFileSync(path.join(month, files.find((f) => f.startsWith("Rückfrage"))), "utf8");
     assert.match(md, /^E-Mail: Rückfrage Liefertermin \(Jörg Weiß, 22\.09\.2026\)$/m);
-    assert.doesNotMatch(md, /\]\(annalo-mail:/);
+    assert.doesNotMatch(md, /\]\(arcalo-mail:/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -18,7 +18,7 @@ let fx;
 let dataDir;
 before(async () => {
   fx = writeFixtures();
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-firstrun-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-firstrun-"));
   app = await launch({ demo: false, onboarding: true, dataDir, env: outlookEnv(fx.outlook) });
 });
 after(async () => {

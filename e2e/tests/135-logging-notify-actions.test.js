@@ -1,7 +1,7 @@
 // Release 1.10: the structured developer log (level from the settings, span timings, redaction),
 // the diagnostics bundle, the credential store state on Linux without a Secret Service and the
 // notification buttons (task due: Erledigt / Schlummern / Öffnen, focus end, briefing, update),
-// clicked through the debug seam `notify_test` (ANNALO_NOTIFY_TEST).
+// clicked through the debug seam `notify_test` (ARCALO_NOTIFY_TEST).
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -12,7 +12,7 @@ import { settingsSettled } from "../lib/settings.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const ENV = { ANNALO_NOTIFY_TEST: "1" };
+const ENV = { ARCALO_NOTIFY_TEST: "1" };
 before(async () => (app = await launch({ env: ENV })));
 after(async () => app?.close());
 
@@ -70,7 +70,7 @@ test("Diagnosepaket erstellen writes a zip with version, settings without secret
   const file = path.join(app.dataDir, "diagnose-135.zip");
   await openSection("logs");
   await app.waitText(".set-row-label", /Diagnosepaket/);
-  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("annalo:diagnostics-bundle", { detail: { path: p } })), file);
+  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("arcalo:diagnostics-bundle", { detail: { path: p } })), file);
   await app.waitText(".toast-title", /Diagnosepaket gespeichert/);
   assert.ok(fs.existsSync(file));
   const names = zipList(file);

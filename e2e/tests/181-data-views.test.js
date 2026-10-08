@@ -10,7 +10,7 @@ import { launchEnglish } from "../lib/english.js";
 const test = guarded(nodeTest, () => app);
 let app;
 let enDir = null;
-const PREFIX = process.env.ANNALO_SHOT_PREFIX ?? "data";
+const PREFIX = process.env.ARCALO_SHOT_PREFIX ?? "data";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 after(async () => {
   await app?.close();
@@ -43,7 +43,7 @@ async function seed(lang) {
       (n, b64, done) => {
         const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         window.__TAURI_INTERNALS__
-          .invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent(n) } })
+          .invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent(n) } })
           .then((ok) => done({ ok }), (err) => done({ err: String(err) }));
       },
       name,

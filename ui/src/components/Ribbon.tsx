@@ -36,7 +36,7 @@ export function openAssistant() {
   if (!aiEnabled()) return;
   const s = useApp.getState();
   s.set({ panelOpen: true, panelTab: "assistant" });
-  savePref("annalo.panel", true);
+  savePref("arcalo.panel", true);
   useChat.setState({ historyOpen: false });
   setTimeout(() => document.querySelector<HTMLTextAreaElement>(".assistant .composer textarea")?.focus(), 50);
 }

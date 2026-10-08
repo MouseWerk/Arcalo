@@ -11,7 +11,7 @@ import { timeTrackingOn } from "../lib/timetracking";
 import { usableProvider } from "../lib/providers";
 import type { Page, SettingsView } from "../lib/types";
 
-const KEY = "annalo.first-steps";
+const KEY = "arcalo.first-steps";
 
 export interface Stored {
   /** When the setup was finished (pages changed after it count as written). */

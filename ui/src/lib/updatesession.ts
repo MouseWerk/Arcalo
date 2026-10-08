@@ -3,7 +3,7 @@
 // start reopens exactly them instead of what Settings → Start would open (today's note, the
 // start page). The cursor is not restored: the editor keeps no stored caret position.
 
-const KEY = "annalo.updateSession";
+const KEY = "arcalo.updateSession";
 /** A mark older than this belongs to a restart that never happened (the update failed). */
 const VALID_MS = 15 * 60 * 1000;
 

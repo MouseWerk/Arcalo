@@ -7,7 +7,7 @@ describe("splash colors", () => {
   it("shows the remembered theme colors and ignores anything that is not a color", () => {
     localStorage.clear();
     // (happy-dom reports itself as automated, which skips the splash.)
-    localStorage.setItem("annalo.splash-test", "1");
+    localStorage.setItem("arcalo.splash-test", "1");
     rememberSplash({ dark: true, bg: "#242933", text: "#eceff4", muted: "#a3adc2", accent: "#88c0d0" });
     rememberSplash({ off: false });
     const el = document.createElement("div");
@@ -20,7 +20,7 @@ describe("splash colors", () => {
     expect(el.style.getPropertyValue("--splash-muted")).toBe("#a3adc2");
     el.remove();
 
-    localStorage.setItem("annalo.splash", JSON.stringify({ bg: "red; background: url(x)", accent: "#12345" }));
+    localStorage.setItem("arcalo.splash", JSON.stringify({ bg: "red; background: url(x)", accent: "#12345" }));
     const el2 = document.createElement("div");
     el2.id = "splash";
     document.body.appendChild(el2);

@@ -56,5 +56,5 @@ test("add, edit and remove a link in the ribbon", async () => {
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

@@ -1,9 +1,9 @@
 // Screenshots for the README of 1.6 (not part of the test suite): the app in English with
 // English sample content, a week of SAP project work (meetings in several Outlook calendars,
 // bookings, focus sessions, page editing, chats), in light and dark. Run after building the app:
-//   ANNALO_SHOTS=../docs/screenshots ANNALO_APP=../target/debug/annalo node --test readme-shots-16.test.js
-// ANNALO_SCENES=split,calendar,… takes only some scenes (names in SCENES below; "firstrun" is the
-// intro and the setup on a fresh workspace). ANNALO_SCALE sets the device scale factor (default
+//   ARCALO_SHOTS=../docs/screenshots ARCALO_APP=../target/debug/arcalo node --test readme-shots-16.test.js
+// ARCALO_SCENES=split,calendar,… takes only some scenes (names in SCENES below; "firstrun" is the
+// intro and the setup on a fresh workspace). ARCALO_SCALE sets the device scale factor (default
 // 1; at 2 the X display must be at least 2960x1840). The week is the current one; the pictures
 // tell their story best from Wednesday to Friday (the daily review shows the day before).
 import { test, before, after } from "node:test";
@@ -18,8 +18,8 @@ import { week, outlookItem } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { readPng } from "./lib/png.js";
 
-const SCALE = process.env.ANNALO_SCALE ?? "1";
-const ONLY = process.env.ANNALO_SCENES?.split(",") ?? null;
+const SCALE = process.env.ARCALO_SCALE ?? "1";
+const ONLY = process.env.ARCALO_SCENES?.split(",") ?? null;
 const want = (name) => !ONLY || ONLY.includes(name);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad = (n) => String(n).padStart(2, "0");
@@ -38,7 +38,7 @@ let app, llm, tmp;
 /** A LiteLLM-compatible server whose answers are short English texts fitting the sample week. */
 function startFakeAI() {
   const MODELS = ["company-fast", "company-standard", "company-reasoning", "company-embed"];
-  const key = "sk-readme-annalo";
+  const key = "sk-readme-arcalo";
   const server = http.createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -563,7 +563,7 @@ async function seed() {
   for (const [title, status, effort, due, owner] of TASKS)
     await app.invoke("page_create", { parentId: sprint.id, title, icon: null, content: `---\nstatus: ${status}\neffort: ${effort}\ndue: ${due}\nowner: ${owner}\n---\n` });
   await app.invoke("page_create", { parentId: null, title: "Status report week 40", icon: "flag", content: DECK });
-  await app.browser.execute((id) => localStorage.setItem("annalo.page-full", JSON.stringify([id])), sprint.id);
+  await app.browser.execute((id) => localStorage.setItem("arcalo.page-full", JSON.stringify([id])), sprint.id);
   ids.concept = concept.id;
   ids.sprint = sprint.id;
 
@@ -574,7 +574,7 @@ async function seed() {
     content: `## Today\n\n- [ ] Send the offer to Miller !!\n- [ ] Prepare the interface review\n- [x] Check the delta load log\n- [ ] Submit travel expenses\n\n## Notes\n\n- Anna sends the test data on Tuesday\n`,
   });
 
-  // Bookings of the week (and two earlier ones Annalo learns from).
+  // Bookings of the week (and two earlier ones Arcalo learns from).
   const book = (np, vorgang, la, start, minutes, description) =>
     app.invoke("time_entry_create", { netzplanId: np, vorgangNr: vorgang, leistungsart: la, startTime: start.toISOString(), durationMinutes: minutes, description });
   const { np8801: a, np8802: b } = ids;
@@ -1218,7 +1218,7 @@ async function gitSync() {
   await closeTabs();
   await panel(false);
   const before = (await settings()).git_sync;
-  await save((s) => ({ git_sync: { ...s.git_sync, enabled: true, remote_url: "https://github.com/example/annalo-notes.git", branch: "main", author_name: "Maurice Kleindienst", author_email: "maurice@example.com" } }));
+  await save((s) => ({ git_sync: { ...s.git_sync, enabled: true, remote_url: "https://github.com/example/arcalo-notes.git", branch: "main", author_name: "Maurice Kleindienst", author_email: "maurice@example.com" } }));
   await openSettings("backup");
   await sleep(500);
   await scrollToGroup("Git sync");
@@ -1293,7 +1293,7 @@ const SCENES = {
 // ---------------------------------------------------------------- run
 
 before(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-readme16-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-readme16-"));
   llm = await startFakeAI();
   const outlook = path.join(tmp, "outlook.json");
   fs.writeFileSync(outlook, outlookFixture());
@@ -1302,14 +1302,14 @@ before(async () => {
   const home = path.join(tmp, "home");
   bookmarkProfiles(home);
   const env = {
-    ANNALO_LOCALE: "en-US",
+    ARCALO_LOCALE: "en-US",
     GDK_SCALE: SCALE,
-    ANNALO_TEST_FIXTURES: "1",
-    ANNALO_OUTLOOK_FIXTURE: outlook,
-    ANNALO_OUTLOOK_MAIL_FIXTURE: mailFile,
-    ANNALO_CALENDAR_DELAY_SECS: "3600",
-    ANNALO_TEST_HOME: home,
-    ANNALO_TEST_BACKDROP: "1",
+    ARCALO_TEST_FIXTURES: "1",
+    ARCALO_OUTLOOK_FIXTURE: outlook,
+    ARCALO_OUTLOOK_MAIL_FIXTURE: mailFile,
+    ARCALO_CALENDAR_DELAY_SECS: "3600",
+    ARCALO_TEST_HOME: home,
+    ARCALO_TEST_BACKDROP: "1",
   };
   // The workspace is set to English before the demo is seeded (as on a first start in English).
   const dataDir = path.join(tmp, "data");
@@ -1348,7 +1348,7 @@ test("1.6 README screenshots", async () => {
 test("first run", { skip: !want("firstrun") }, async () => {
   await app.close();
   app = null;
-  const fresh = await launch({ demo: false, onboarding: true, env: { ANNALO_LOCALE: "en-US", GDK_SCALE: SCALE } });
+  const fresh = await launch({ demo: false, onboarding: true, env: { ARCALO_LOCALE: "en-US", GDK_SCALE: SCALE } });
   app = fresh;
   await app.waitFor(".fr-intro");
   // The scene about time tracking, most of its motion done.

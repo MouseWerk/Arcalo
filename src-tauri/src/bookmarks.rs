@@ -1,18 +1,18 @@
 //! „Lesezeichen importieren“: lists the browsers' bookmarks on this computer and reads them
-//! (read-only, off the main thread). The logic lives in `annalo_core::bookmarks`; what goes into
+//! (read-only, off the main thread). The logic lives in `arcalo_core::bookmarks`; what goes into
 //! the ribbon is decided by the dialog and saved through `quick_links_save`.
 
 use std::path::PathBuf;
 
-use annalo_core::Error;
-use annalo_core::bookmarks::{self, Location, Os, Roots, Source, Tree, discover};
+use arcalo_core::Error;
+use arcalo_core::bookmarks::{self, Location, Os, Roots, Source, Tree, discover};
 use serde::Serialize;
 
 use crate::Result;
 
 fn roots() -> Result<Roots> {
     Roots::from_env().ok_or_else(|| {
-        Error::State(annalo_core::tr!("Der Benutzerordner ist nicht bekannt.", "The user folder is not known.").into())
+        Error::State(arcalo_core::tr!("Der Benutzerordner ist nicht bekannt.", "The user folder is not known.").into())
     })
 }
 

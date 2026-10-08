@@ -71,12 +71,12 @@ export function DayReviewView() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setTick((n) => n + 1), 700);
     };
-    window.addEventListener("annalo:page-saved", bump);
+    window.addEventListener("arcalo:page-saved", bump);
     const every = window.setInterval(() => setTick((n) => n + 1), 60_000);
     return () => {
       window.clearTimeout(timer);
       window.clearInterval(every);
-      window.removeEventListener("annalo:page-saved", bump);
+      window.removeEventListener("arcalo:page-saved", bump);
     };
   }, []);
 
@@ -135,7 +135,7 @@ export function DayReviewView() {
       const next = upsertReviewBlock(doc.content, reviewMarkdown(review, summaryText));
       if (next !== doc.content) {
         await api.savePage(note.id, next);
-        window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: note.id, content: next, from: "review" } }));
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: note.id, content: next, from: "review" } }));
       }
       await s().refreshTree();
       const replaced = !!findReviewBlock(doc.content);

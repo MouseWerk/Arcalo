@@ -1,9 +1,9 @@
 // Screenshots of the 1.5 features for the README and the website (not part of the test suite):
 // a realistic week of SAP project work (meetings, bookings, focus sessions, page editing), taken
 // in the default light and dark themes. Run after building the app:
-//   ANNALO_SHOTS=/tmp/shots ANNALO_APP=../target/debug/annalo node --test readme-shots-15.test.js
-// ANNALO_SCALE (default 2) is the device scale factor (GDK_SCALE); at 2 the X display must be at
-// least 2960x1840. ANNALO_SCENES=week,calendar,… takes only some scenes. The week is the current
+//   ARCALO_SHOTS=/tmp/shots ARCALO_APP=../target/debug/arcalo node --test readme-shots-15.test.js
+// ARCALO_SCALE (default 2) is the device scale factor (GDK_SCALE); at 2 the X display must be at
+// least 2960x1840. ARCALO_SCENES=week,calendar,… takes only some scenes. The week is the current
 // one, so the pictures tell their story best on a Friday (the day review shows Thursday).
 import { test, before, after } from "node:test";
 import fs from "node:fs";
@@ -15,8 +15,8 @@ import { week } from "./lib/calendar-fixtures.js";
 import { openCapture } from "./lib/capture.js";
 import { startFakeLiteLLM } from "./lib/fake-litellm.js";
 
-const SCALE = process.env.ANNALO_SCALE ?? "2";
-const ONLY = process.env.ANNALO_SCENES?.split(",") ?? null;
+const SCALE = process.env.ARCALO_SCALE ?? "2";
+const ONLY = process.env.ARCALO_SCENES?.split(",") ?? null;
 const want = (name) => !ONLY || ONLY.includes(name);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad = (n) => String(n).padStart(2, "0");
@@ -42,7 +42,7 @@ function calendar() {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Annalo readme//DE",
+    "PRODID:-//Arcalo readme//DE",
     ...event("jourfixe@readme", jf, 60, "Jour fixe Änderungen", [
       "RRULE:FREQ=WEEKLY;COUNT=10",
       "ORGANIZER;CN=Anna Müller:mailto:anna.mueller@example.com",
@@ -244,7 +244,7 @@ async function seed() {
   ids.konzept = konzept.id;
   ids.arch = walk(await app.invoke("workspace_tree"), "Architektur").id;
 
-  // Bookings of the week (and two earlier ones Annalo learns from).
+  // Bookings of the week (and two earlier ones Arcalo learns from).
   const book = (np, vorgang, la, start, minutes, description) =>
     app.invoke("time_entry_create", { netzplanId: np, vorgangNr: vorgang, leistungsart: la, startTime: start.toISOString(), durationMinutes: minutes, description });
   const { np8801: a, np8802: b } = ids;
@@ -263,7 +263,7 @@ async function seed() {
   await book(b, "2010", "PM", prev2.at(3, 13), 60, "Kundentermin Müller");
 
   // Calendar.
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-readme-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-readme-"));
   const file = path.join(dir, "Kalender.ics");
   fs.writeFileSync(file, calendar());
   await app.invoke("calendar_source_add", { name: "Kalender", url: null, path: file });
@@ -483,9 +483,9 @@ const SCENES = { week: weekProposal, calendar: calendarWeek, review: dayReview, 
 
 before(async () => {
   llm = await startFakeLiteLLM({ port: 4700 + Math.floor(Math.random() * 200) });
-  const mailFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "annalo-readme-mail-")), "outlook-mail.json");
+  const mailFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-readme-mail-")), "outlook-mail.json");
   fs.writeFileSync(mailFile, JSON.stringify(MAIL));
-  app = await launch({ env: { GDK_SCALE: SCALE, ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_MAIL_FIXTURE: mailFile, ANNALO_CALENDAR_DELAY_SECS: "3600" } });
+  app = await launch({ env: { GDK_SCALE: SCALE, ARCALO_TEST_FIXTURES: "1", ARCALO_OUTLOOK_MAIL_FIXTURE: mailFile, ARCALO_CALENDAR_DELAY_SECS: "3600" } });
   await seed();
 });
 after(async () => {

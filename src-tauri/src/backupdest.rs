@@ -1,5 +1,5 @@
 //! Copies of every backup to further folders (Settings → Sicherung → „Weitere Sicherungsziele“),
-//! see `annalo_core::backupdest`. A worker thread delivers the newest local backup to each
+//! see `arcalo_core::backupdest`. A worker thread delivers the newest local backup to each
 //! switched-on destination: right after a backup, when the settings change, on „Erneut
 //! versuchen“ and every minute for destinations whose pause after a failure is over. Each copy
 //! runs on a thread of its own under a watchdog, never holds the database lock and never
@@ -13,17 +13,17 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use annalo_core::backup::{self, BackupInfo};
-use annalo_core::backupdest::{
+use arcalo_core::backup::{self, BackupInfo};
+use arcalo_core::backupdest::{
     self as dest, Activity, DestState, Destination, Failure, Health, Hook, Job, PathInfo, Probe, Problem, Registry,
 };
-use annalo_core::{Error, Result, datadir};
+use arcalo_core::{Error, Result, datadir};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, devlog, lock};
-use annalo_core::{tr, trf};
+use arcalo_core::{tr, trf};
 
 /// State of the destinations: their status, the copies running now and the worker's inbox.
 #[derive(Default)]
@@ -61,26 +61,26 @@ impl Drop for Busy {
 }
 
 fn host() -> String {
-    annalo_core::gitsync::hostname()
+    arcalo_core::gitsync::hostname()
 }
 
-/// Pause after which a copy without progress is given up; `ANNALO_BACKUP_STALL_SECS` in debug builds (tests).
+/// Pause after which a copy without progress is given up; `ARCALO_BACKUP_STALL_SECS` in debug builds (tests).
 fn stall() -> Duration {
     if cfg!(debug_assertions)
-        && let Some(secs) = std::env::var("ANNALO_BACKUP_STALL_SECS").ok().and_then(|s| s.trim().parse().ok())
+        && let Some(secs) = std::env::var("ARCALO_BACKUP_STALL_SECS").ok().and_then(|s| s.trim().parse().ok())
     {
         return Duration::from_secs(secs);
     }
     dest::STALL
 }
 
-/// Debug builds: `ANNALO_TEST_SLOW_DEST=<text>=<ms>` makes every step of a copy to a path
+/// Debug builds: `ARCALO_TEST_SLOW_DEST=<text>=<ms>` makes every step of a copy to a path
 /// containing `<text>` take that long (a share that stops answering, for the end-to-end tests).
 fn test_hook() -> Option<Hook> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let spec = std::env::var("ANNALO_TEST_SLOW_DEST").ok()?;
+    let spec = std::env::var("ARCALO_TEST_SLOW_DEST").ok()?;
     let (needle, ms) = spec.rsplit_once('=')?;
     let (needle, ms) = (needle.to_owned(), ms.trim().parse::<u64>().ok()?);
     Some(Arc::new(move |p: &Path| {
@@ -141,7 +141,7 @@ pub fn init(app: &AppHandle) {
     let (tx, rx) = std::sync::mpsc::channel();
     *lock(&dests.wake) = Some(tx);
     let handle = app.clone();
-    std::thread::Builder::new().name("annalo-backup-destinations".into()).spawn(move || worker(handle, rx)).ok();
+    std::thread::Builder::new().name("arcalo-backup-destinations".into()).spawn(move || worker(handle, rx)).ok();
 }
 
 /// Writes `backup-destinations.json` with the current settings and status.
@@ -248,7 +248,7 @@ fn start_copy(
     let app = app.clone();
     let _ = app.emit("backup://destinations", ());
     std::thread::Builder::new()
-        .name("annalo-backup-destination".into())
+        .name("arcalo-backup-destination".into())
         .spawn(move || {
             let path = job.dest.clone();
             let res = match dest::validate(&d.path) {
@@ -513,7 +513,7 @@ pub async fn backup_restore(app: AppHandle, path: String) -> Result<Staged> {
         root.is_some_and(|p| dest::id_for(&p.display().to_string()) == dest::id_for(&d.path))
     };
     let known = file.parent() == Some(local.as_path()) || settings.backup_targets.destinations.iter().any(in_dest);
-    if !known || !annalo_core::backup::has_backup_prefix(&name) {
+    if !known || !arcalo_core::backup::has_backup_prefix(&name) {
         let f = Failure::new(
             Problem::Invalid,
             trf!("Keine Sicherung von Arcalo: {}", "Not an Arcalo backup: {}", file.display()),

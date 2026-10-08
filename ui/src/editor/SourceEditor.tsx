@@ -70,7 +70,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         failed.current = false;
         if (merges.current === mergesBefore) base.current = content;
         cb.current({ ...saved, content });
-        window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
+        window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
       })
       .catch((e) => {
         dirty.current = true;
@@ -163,15 +163,15 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         .then((fresh) => absorbRef.current(fresh.content))
         .catch(() => {});
     };
-    window.addEventListener("annalo:page-saved", onSaved);
-    window.addEventListener("annalo:flush-page", onFlushPage);
-    window.addEventListener("annalo:reload-pages", onReload);
+    window.addEventListener("arcalo:page-saved", onSaved);
+    window.addEventListener("arcalo:flush-page", onFlushPage);
+    window.addEventListener("arcalo:reload-pages", onReload);
     window.addEventListener("blur", save);
     return () => {
       unregister();
-      window.removeEventListener("annalo:page-saved", onSaved);
-      window.removeEventListener("annalo:flush-page", onFlushPage);
-      window.removeEventListener("annalo:reload-pages", onReload);
+      window.removeEventListener("arcalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:flush-page", onFlushPage);
+      window.removeEventListener("arcalo:reload-pages", onReload);
       window.removeEventListener("blur", save);
       save();
       unmounted.current = true;
@@ -255,7 +255,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKeyDown}
         // Other editors of this page store their edits first, so we continue from them.
-        onFocus={() => window.dispatchEvent(new CustomEvent("annalo:flush-page", { detail: { id: doc.id, from: instance.current } }))}
+        onFocus={() => window.dispatchEvent(new CustomEvent("arcalo:flush-page", { detail: { id: doc.id, from: instance.current } }))}
       />
     </div>
   );

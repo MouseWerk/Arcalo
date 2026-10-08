@@ -9,10 +9,10 @@
 
 use std::collections::HashMap;
 
-use annalo_core::gitsync::{self, RemoteChange, SyncOutcome};
-use annalo_core::merge::{self, MergeResult};
-use annalo_core::notes::PageDoc;
-use annalo_core::{Database, Error, vault};
+use arcalo_core::gitsync::{self, RemoteChange, SyncOutcome};
+use arcalo_core::merge::{self, MergeResult};
+use arcalo_core::notes::PageDoc;
+use arcalo_core::{Database, Error, vault};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -66,7 +66,7 @@ fn stem(path: &str) -> String {
     let name = path.rsplit('/').next().unwrap_or(path);
     let ext = if is_canvas_path(&name.to_lowercase()) { ".canvas".len() } else { 3 };
     let stem = name.len().checked_sub(ext).and_then(|n| name.get(..n)).unwrap_or(name);
-    if stem.trim().is_empty() { annalo_core::tr!("Ohne Titel", "Untitled").into() } else { stem.to_owned() }
+    if stem.trim().is_empty() { arcalo_core::tr!("Ohne Titel", "Untitled").into() } else { stem.to_owned() }
 }
 
 fn is_canvas_path(lower: &str) -> bool {
@@ -109,7 +109,7 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let unchanged_here = c.mine.as_deref() == Some(current.as_str());
                     match (&c.theirs, c.conflict || !unchanged_here) {
                         // A canvas the server holds as unreadable JSON stays as it is here.
-                        (Some(theirs), false) if is_canvas_path(&lower) && !annalo_core::canvas::is_valid(theirs) => {}
+                        (Some(theirs), false) if is_canvas_path(&lower) && !arcalo_core::canvas::is_valid(theirs) => {}
                         (Some(theirs), false) => {
                             if &current != theirs {
                                 db.snapshot_page(id)?;
@@ -148,10 +148,10 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                     let parent = dir.and_then(|d| by_folder.get(&d).copied());
                     if is_canvas_path(&lower) {
                         // A canvas from another computer (or Obsidian); an unreadable file stays on the server.
-                        if !annalo_core::canvas::is_valid(theirs) {
+                        if !arcalo_core::canvas::is_valid(theirs) {
                             continue;
                         }
-                        let page = db.create_page(parent, &stem(&c.path), Some(annalo_core::canvas::ICON))?;
+                        let page = db.create_page(parent, &stem(&c.path), Some(arcalo_core::canvas::ICON))?;
                         db.make_canvas(page.id, theirs)?;
                         out.created.push(page.id);
                         continue;
@@ -216,7 +216,7 @@ pub struct ConflictView {
 }
 
 fn is_canvas_page(db: &Database, page_id: i64) -> Result<bool> {
-    Ok(db.page_kind(page_id)?.as_deref() == Some(annalo_core::canvas::KIND))
+    Ok(db.page_kind(page_id)?.as_deref() == Some(arcalo_core::canvas::KIND))
 }
 
 /// Both versions of a conflicted page and their block merge.
@@ -253,9 +253,9 @@ pub struct Resolved {
 #[tauri::command]
 pub async fn git_conflict_resolve(app: AppHandle, page_id: i64, content: String) -> Result<Resolved> {
     close_and_sync(app, page_id, move |db| {
-        if is_canvas_page(db, page_id)? && !annalo_core::canvas::is_valid(&content) {
+        if is_canvas_page(db, page_id)? && !arcalo_core::canvas::is_valid(&content) {
             return Err(Error::State(
-                annalo_core::tr!("Keine gültige Canvas-Datei (JSON Canvas)", "Not a valid canvas file (JSON Canvas)")
+                arcalo_core::tr!("Keine gültige Canvas-Datei (JSON Canvas)", "Not a valid canvas file (JSON Canvas)")
                     .into(),
             ));
         }
@@ -280,14 +280,14 @@ pub async fn git_conflict_keep_both(app: AppHandle, page_id: i64) -> Result<Reso
 fn keep_theirs_as_copy(db: &Database, page_id: i64, theirs: &str) -> Result<i64> {
     let page = db.page(page_id)?;
     let title = crate::unique_title(db, &format!("{} (Server)", page.title))?;
-    let copy = db.create_page(page.parent_id, &title, Some(annalo_core::canvas::ICON))?;
+    let copy = db.create_page(page.parent_id, &title, Some(arcalo_core::canvas::ICON))?;
     db.make_canvas(copy.id, theirs)?;
     Ok(copy.id)
 }
 
 fn no_conflict() -> Error {
     Error::State(
-        annalo_core::tr!(
+        arcalo_core::tr!(
             "Für diese Seite gibt es keinen Konflikt (mehr)",
             "There is no conflict (any more) for this page"
         )
@@ -455,13 +455,13 @@ mod tests {
     /// Two computers (two data folders) with one bare remote, end to end: mirror, sync, take over.
     #[test]
     fn two_computers_share_one_remote_without_losing_notes() {
-        use annalo_core::gitsync::{Git, GitSyncSettings, SyncRequest};
+        use arcalo_core::gitsync::{Git, GitSyncSettings, SyncRequest};
         use std::path::Path;
         use std::process::Command;
         if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
             return;
         }
-        let base = std::env::temp_dir().join(format!("annalo-two-pcs-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("arcalo-two-pcs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         let bare = base.join("remote.git");
@@ -472,8 +472,8 @@ mod tests {
             let files = dir.join("attachments");
             std::fs::create_dir_all(&files).unwrap();
             let own = dir.join("mirror");
-            annalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
-            let out = annalo_core::gitsync::sync(
+            arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
+            let out = arcalo_core::gitsync::sync(
                 &Git::new(None, &settings.remote_url),
                 &SyncRequest {
                     repo: &dir.join("git-sync"),

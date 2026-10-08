@@ -39,7 +39,7 @@ function projectCalendar() {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Annalo e2e//DE",
+    "PRODID:-//Arcalo e2e//DE",
     ...ev("review@wp", last.at(1, 14), 60, "Schnittstellen-Review"),
     ...ev("runde@wp", last.at(2, 10), 60, "Architektur-Runde"),
     "END:VCALENDAR",
@@ -64,7 +64,7 @@ function seedPast(dataDir, pageId, np) {
 
 before(async () => {
   team = await serveTeam();
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-wp-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-wp-"));
   fs.writeFileSync(path.join(dir, "Projekt.ics"), projectCalendar());
   app = await launch();
   // Quarter hours, as CATS is usually booked.

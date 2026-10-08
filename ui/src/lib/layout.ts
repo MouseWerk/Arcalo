@@ -70,9 +70,9 @@ export function toggleSidebar() {
   const st = useApp.getState();
   if (isNarrow() && st.panelOpen && st.sidebarOpen) {
     st.set({ panelOpen: false });
-    savePref("annalo.panel", false);
+    savePref("arcalo.panel", false);
     return;
   }
   st.set({ sidebarOpen: !st.sidebarOpen });
-  savePref("annalo.sidebar", !st.sidebarOpen);
+  savePref("arcalo.sidebar", !st.sidebarOpen);
 }

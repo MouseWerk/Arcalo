@@ -45,7 +45,7 @@ async function store(name, bytes) {
     (n, b64, done) => {
       const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       window.__TAURI_INTERNALS__
-        .invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent(n) } })
+        .invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent(n) } })
         .then((ok) => done({ ok }), (err) => done({ err: String(err) }));
     },
     name,
@@ -71,7 +71,7 @@ const menuClick = (label) =>
   }, label);
 
 test("[[file.ext]] links show and open the file; a missing one is a missing file, not a page to create", async () => {
-  await store("Angebot.pdf", makePdf("Angebot Annalo"));
+  await store("Angebot.pdf", makePdf("Angebot Arcalo"));
   await store("Daten.xlsx", Buffer.from("PK fake xlsx"));
   const pagesBefore = (await app.invoke("workspace_tree")).length;
   const page = await openPage("Dateiverweise", "Angebot: [[Angebot.pdf]], Tabelle: [[Ordner/Daten.xlsx|die Daten]], fehlt: [[Fehlt.docx]] und [[Neue Seite E2E]].\n");

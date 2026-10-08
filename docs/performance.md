@@ -5,7 +5,7 @@ benchmark again.
 
 ## The workspace
 
-`crates/annalo-core/tests/bigworkspace.rs` generates it (deterministic, about 30 s in a debug
+`crates/arcalo-core/tests/bigworkspace.rs` generates it (deterministic, about 30 s in a debug
 build): 5,000 pages in 50 folders (about 300 words, 4 links and 6 tasks each, frontmatter on
 every fifth), one page of 10,000 words with tables, embeds and Mermaid diagrams, three years of
 daily notes, two years of bookings (four per workday on 10 Netzpläne), 300 attachments, a canvas
@@ -17,20 +17,20 @@ workday. In total 6,190 pages, about 20,000 links and 32,000 tasks; the database
 ```sh
 # Core: generates the workspace into the folder (once) and times the main queries, plain and
 # encrypted (SQLCipher).
-ANNALO_BIG_DIR=/tmp/big cargo test -p annalo-core --test bigworkspace big_workspace -- --ignored --nocapture
+ARCALO_BIG_DIR=/tmp/big cargo test -p arcalo-core --test bigworkspace big_workspace -- --ignored --nocapture
 
 # EXPLAIN QUERY PLAN and timing of the queries in a file (separated by `;;`, parameters as a
 # first line `--[…]`), with the SQLite build of the app.
-ANNALO_BIG_DIR=/tmp/big ANNALO_BIG_SQL=queries.sql cargo test -p annalo-core --test bigworkspace explain_queries -- --ignored --nocapture
+ARCALO_BIG_DIR=/tmp/big ARCALO_BIG_SQL=queries.sql cargo test -p arcalo-core --test bigworkspace explain_queries -- --ignored --nocapture
 
 # UI: starts the app (WebDriver, like the e2e tests) on a copy of the workspace and measures
 # start, pages, typing, views, IPC and memory. Build the UI and the app first
-# (`npm --prefix ui run build`, `cargo build -p annalo --features custom-protocol`).
-cd e2e && ANNALO_APP=$PWD/../target/debug/annalo node bench/bigworkspace.mjs after
+# (`npm --prefix ui run build`, `cargo build -p arcalo --features custom-protocol`).
+cd e2e && ARCALO_APP=$PWD/../target/debug/arcalo node bench/bigworkspace.mjs after
 ```
 
 `e2e/lib/bigworkspace.js` builds the workspace on first use (cached in the temp folder,
-`ANNALO_BIG_BASE` to choose) and hands each run a fresh copy. The UI benchmark records times in
+`ARCALO_BIG_BASE` to choose) and hands each run a fresh copy. The UI benchmark records times in
 the page (`performance.now()` up to the next painted frame), every IPC call with its duration and
 answer size, and the app's resident memory with its WebKit processes. Its result is a JSON file
 (`BENCH_OUT`, default the temp folder).
@@ -124,7 +124,7 @@ Excalidraw, PDF.js, the graph and the canvas load on demand.
 
 ## Suche nach Bedeutung (1.15)
 
-`ANNALO_BIG_DIR=/tmp/big cargo test -p annalo-core --test bigworkspace semantic_search -- --ignored --nocapture`
+`ARCALO_BIG_DIR=/tmp/big cargo test -p arcalo-core --test bigworkspace semantic_search -- --ignored --nocapture`
 gives every chunk of the large workspace (13,531 chunks) a 768-dimensional vector and times the
 query side (debug build): the assistant's database scan (`rag::vector_top_k`) takes 272 ms; the
 search's in-memory copy (`semantic::VectorIndex`, 8-bit unit vectors, 10.7 MB) loads once in

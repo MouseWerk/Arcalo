@@ -57,7 +57,7 @@ export async function finishFirstRun() {
     showFirstSteps();
     // The first screen is the start page, calm: no side panel next to it yet.
     useApp.getState().set({ panelOpen: false });
-    savePref("annalo.panel", false);
+    savePref("arcalo.panel", false);
   }
   useFirstRun.setState({ phase: "off", paused: false });
 }

@@ -1,6 +1,6 @@
 //! Settings → Kalender and the Kalender view: sources (the selected Outlook calendars, ICS files
 //! and subscriptions), background sync, events and what the user decides about them. The logic
-//! lives in `annalo_core::calsync`.
+//! lives in `arcalo_core::calsync`.
 //!
 //! The selected Outlook calendars are read by one run of the script (Outlook starts once);
 //! each keeps its own events and status. Discovery („Kalender auswählen“) runs on demand and
@@ -15,13 +15,13 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use annalo_core::calsync::calendars::{self, DiscoveredCalendar, OutlookChoice};
-use annalo_core::calsync::tz::Zone;
-use annalo_core::calsync::{
+use arcalo_core::calsync::calendars::{self, DiscoveredCalendar, OutlookChoice};
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::calsync::{
     self as core, CalendarEvent, IcsKind, IcsSource, OutlookCalendar, Privacy, SyncStatus, WbsHint, ics, outlook,
 };
-use annalo_core::model::Page;
-use annalo_core::{Error, tr, trf};
+use arcalo_core::model::Page;
+use arcalo_core::{Error, tr, trf};
 use chrono::{DateTime, Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -646,7 +646,7 @@ async fn read_source(app: &AppHandle, id: &str, (from, to): Window) -> Result<Ve
                         .into(),
                     )
                 })?;
-                let service = annalo_core::network::Service::Ics(src.id.clone());
+                let service = arcalo_core::network::Service::Ics(src.id.clone());
                 let http = crate::network::client_for(&state, &service)?;
                 let timeout = crate::network::timeout_for(&state, &service);
                 ics::fetch(&http, &url, timeout).await?
@@ -689,9 +689,9 @@ pub fn spawn_sync(app: AppHandle, ids: Vec<String>) {
 }
 
 /// How long after the start the first background sync runs: 20 s, or
-/// `ANNALO_CALENDAR_DELAY_SECS` (tests).
+/// `ARCALO_CALENDAR_DELAY_SECS` (tests).
 fn startup_delay() -> Duration {
-    let secs = std::env::var("ANNALO_CALENDAR_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(20);
+    let secs = std::env::var("ARCALO_CALENDAR_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(20);
     Duration::from_secs(secs)
 }
 

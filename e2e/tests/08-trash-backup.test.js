@@ -8,7 +8,7 @@ import { launch, guarded } from "../lib/harness.js";
 const test = guarded(nodeTest, () => app);
 let app;
 // The daily backup waits 3 minutes after the start; shortened here.
-before(async () => (app = await launch({ env: { ANNALO_BACKUP_DELAY_SECS: "2" } })));
+before(async () => (app = await launch({ env: { ARCALO_BACKUP_DELAY_SECS: "2" } })));
 after(async () => app?.close());
 
 const PAGE = "Jour fixe 22.09.";

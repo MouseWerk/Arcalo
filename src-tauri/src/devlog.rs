@@ -7,8 +7,9 @@
 //! and a panic never miss a line.
 //!
 //! Levels error … trace, set in Settings → Protokoll or by `ARCALO_LOG` (a level such as
-//! `debug`, or directives such as `annalo=trace,zbus=debug`; it wins over the setting). Other
-//! crates log warnings and errors only unless `ARCALO_LOG` names them.
+//! `debug`, or directives such as `arcalo=trace,zbus=debug`; it wins over the setting;
+//! `ANNALO_LOG` and the target names `annalo*` of 1.14 and earlier still work). Other crates log warnings and
+//! errors only unless `ARCALO_LOG` names them.
 //!
 //! Every message and every field value is redacted before anything is written (known key
 //! formats, `token=`/`password=` values, URLs with credentials, stored secrets); a field whose
@@ -24,7 +25,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use annalo_core::gitsync;
+use arcalo_core::gitsync;
 use chrono::{DateTime, Local, SecondsFormat};
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -53,10 +54,8 @@ const DEDUPE: Duration = Duration::from_secs(10);
 const UI_PER_MINUTE: u32 = 50;
 /// Overrides the level of Settings → Protokoll.
 pub const ENV: &str = "ARCALO_LOG";
-/// [`ENV`] under the name of 1.12 and earlier (still read when [`ENV`] is not set).
-pub const LEGACY_ENV: &str = "ANNALO_LOG";
 /// Targets of Arcalo's own code; everything else logs warnings and errors only.
-const OWN: [&str; 3] = ["annalo", "annalo_lib", "annalo_core"];
+const OWN: [&str; 3] = ["arcalo", "arcalo_lib", "arcalo_core"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {
@@ -122,14 +121,15 @@ impl Level {
 
 /// The level of the settings: `dev_log_level`, else „Ausführliches Protokoll“ of earlier
 /// versions (debug) or info.
-pub fn level_of(settings: &annalo_core::settings::Settings) -> Level {
+pub fn level_of(settings: &arcalo_core::settings::Settings) -> Level {
     Level::parse(&settings.dev_log_level).unwrap_or(if settings.dev_log_verbose { Level::Debug } else { Level::Info })
 }
 
 /// The filter of `ARCALO_LOG`: a bare level applies to Arcalo's own code, directives
-/// (`annalo=trace,zbus=debug`) are taken as they are. `None`: not set or not understood.
+/// (`arcalo=trace,zbus=debug`) are taken as they are. `None`: not set or not understood.
 pub fn env_filter(spec: &str) -> Option<(Targets, Level)> {
-    let spec = spec.trim();
+    let spec = alias_targets(spec.trim());
+    let spec = spec.as_str();
     if spec.is_empty() {
         return None;
     }
@@ -147,6 +147,22 @@ pub fn env_filter(spec: &str) -> Option<(Targets, Level)> {
         .and_then(|f| f.into_level())
         .map_or(Level::Info, |l| Level::of(&l));
     Some((targets, level))
+}
+
+/// The target names of 1.14 and earlier (`annalo`, `annalo_lib`, `annalo_core`) in directives
+/// stand for the current ones: `annalo_core=debug` means `arcalo_core=debug`.
+fn alias_targets(spec: &str) -> String {
+    let legacy = arcalo_core::identity::legacy("arcalo");
+    spec.split(',')
+        .map(|d| {
+            let d = d.trim();
+            match d.strip_prefix(legacy.as_str()) {
+                Some(rest) if rest.is_empty() || rest.starts_with(['_', ':', '=', '[']) => format!("arcalo{rest}"),
+                _ => d.to_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn own_targets(level: Level) -> Targets {
@@ -212,7 +228,7 @@ impl DevLog {
     /// Writes one line; `false` when it was dropped (dedupe, UI limit, below the level).
     /// `from_ui`: counts against the UI's rate limit.
     pub fn write(&self, level: Level, source: &str, message: &str, from_ui: bool, now: Instant) -> bool {
-        let line = Line { level, source, message: message.to_owned(), fields: vec![], target: "annalo", spans: vec![] };
+        let line = Line { level, source, message: message.to_owned(), fields: vec![], target: "arcalo", spans: vec![] };
         self.write_line(line, from_ui, now)
     }
 
@@ -268,7 +284,7 @@ impl DevLog {
             Ok(()) => inner.write_error = None,
             Err(e) => {
                 eprintln!("developer log not written: {e}");
-                inner.write_error = Some(annalo_core::error::io_text(&e));
+                inner.write_error = Some(arcalo_core::error::io_text(&e));
             }
         }
         drop(inner);
@@ -299,7 +315,7 @@ impl DevLog {
             let writer = Rotating { dir: self.dir.clone(), name: JSON_FILE, max: MAX_BYTES };
             let (nb, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
                 .lossy(false)
-                .thread_name("annalo-log-json")
+                .thread_name("arcalo-log-json")
                 .finish(writer);
             *json = Some(nb);
             *lock(&self.json_guard) = Some(guard);
@@ -488,7 +504,7 @@ where
     }
 }
 
-/// `annalo_core::db` → `db`; other crates by their name.
+/// `arcalo_core::db` → `db`; other crates by their name.
 fn source_of(target: &str) -> String {
     let mut parts = target.split("::");
     let krate = parts.next().unwrap_or_default();
@@ -517,7 +533,9 @@ fn json_files(dir: &Path) -> Vec<PathBuf> {
 /// current names, so the viewer and the diagnostics keep the history. A name already in use
 /// stays as it is (nothing is overwritten).
 fn adopt_legacy(dir: &Path) {
-    for (old, new) in [("annalo.log", FILE), ("annalo.jsonl", JSON_FILE)] {
+    for (old, new) in
+        [(arcalo_core::identity::legacy(FILE), FILE), (arcalo_core::identity::legacy(JSON_FILE), JSON_FILE)]
+    {
         for suffix in std::iter::once(String::new()).chain((1..=KEEP).map(|i| format!(".{i}"))) {
             let (from, to) = (dir.join(format!("{old}{suffix}")), dir.join(format!("{new}{suffix}")));
             if from.is_file() && !to.exists() {
@@ -721,7 +739,7 @@ pub fn init(data_dir: &Path) {
         return;
     }
     let var = |name: &str| std::env::var(name).ok().filter(|s| !s.trim().is_empty());
-    let spec = var(ENV).or_else(|| var(LEGACY_ENV));
+    let spec = var(ENV).or_else(|| arcalo_core::identity::legacy_env(ENV).and_then(|l| var(&l)));
     let env = spec.as_deref().and_then(env_filter);
     if let (Some(s), None) = (&spec, &env) {
         eprintln!("{ENV}={s} not understood: use a level (error, warn, info, debug, trace) or directives");
@@ -732,7 +750,7 @@ pub fn init(data_dir: &Path) {
     let (filter, handle) = reload::Layer::new(targets);
     let _ = RELOAD.set(handle);
     let _ = tracing_subscriber::registry().with(filter).with(DevLogLayer::new(log)).try_init();
-    annalo_core::error::set_ui_hook(log_ui_error);
+    arcalo_core::error::set_ui_hook(log_ui_error);
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let what = info
@@ -756,7 +774,7 @@ pub fn env_override() -> Option<&'static str> {
 }
 
 /// The level and the JSON output of the settings (the level unless `ARCALO_LOG` is set).
-pub fn apply_settings(settings: &annalo_core::settings::Settings) {
+pub fn apply_settings(settings: &arcalo_core::settings::Settings) {
     if let Some(log) = LOG.get() {
         log.set_json(settings.dev_log_json);
     }
@@ -782,11 +800,11 @@ pub fn shutdown() {
 /// One event of Arcalo's own code (`source`: the area, shown in brackets).
 fn emit(level: Level, source: &str, message: &str, echo: bool) {
     match level {
-        Level::Error => tracing::error!(target: "annalo", source, "{message}"),
-        Level::Warn => tracing::warn!(target: "annalo", source, "{message}"),
-        Level::Info => tracing::info!(target: "annalo", source, "{message}"),
-        Level::Debug => tracing::debug!(target: "annalo", source, "{message}"),
-        Level::Trace => tracing::trace!(target: "annalo", source, "{message}"),
+        Level::Error => tracing::error!(target: "arcalo", source, "{message}"),
+        Level::Warn => tracing::warn!(target: "arcalo", source, "{message}"),
+        Level::Info => tracing::info!(target: "arcalo", source, "{message}"),
+        Level::Debug => tracing::debug!(target: "arcalo", source, "{message}"),
+        Level::Trace => tracing::trace!(target: "arcalo", source, "{message}"),
     }
     if echo && level <= Level::Info && level <= self::level() {
         eprintln!("[{source}] {message}");
@@ -811,8 +829,8 @@ pub fn debug(source: &str, message: impl AsRef<str>) {
 
 /// Every error returned to the UI. A failure logged just before with its own source
 /// (git, update, …) is not written a second time (same message).
-fn log_ui_error(e: &annalo_core::Error) {
-    use annalo_core::Error as E;
+fn log_ui_error(e: &arcalo_core::Error) {
+    use arcalo_core::Error as E;
     let (level, source) = match e {
         E::NotFound { .. } | E::Parse(_) => (Level::Warn, "core"),
         E::Provider { .. } => (Level::Error, "ai"),
@@ -918,7 +936,7 @@ pub fn devlog_open_folder(app: AppHandle, state: State<AppState>) -> Result<()> 
     fs::create_dir_all(&dir)?;
     app.opener()
         .open_path(dir.display().to_string(), None::<&str>)
-        .map_err(|e| annalo_core::Error::State(e.to_string()))
+        .map_err(|e| arcalo_core::Error::State(e.to_string()))
 }
 
 #[cfg(test)]
@@ -926,7 +944,7 @@ mod tests {
     use super::*;
 
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("annalo-devlog-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-devlog-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -1082,19 +1100,26 @@ mod tests {
     }
 
     #[test]
-    fn annalo_log_takes_a_level_or_directives() {
+    fn arcalo_log_takes_a_level_or_directives() {
         let (t, l) = env_filter("debug").unwrap();
         assert_eq!(l, Level::Debug);
-        assert!(t.would_enable("annalo_core::db", &tracing::Level::DEBUG));
-        assert!(t.would_enable("annalo_lib::devlog", &tracing::Level::DEBUG));
-        assert!(!t.would_enable("annalo_lib::devlog", &tracing::Level::TRACE));
+        assert!(t.would_enable("arcalo_core::db", &tracing::Level::DEBUG));
+        assert!(t.would_enable("arcalo_lib::devlog", &tracing::Level::DEBUG));
+        assert!(!t.would_enable("arcalo_lib::devlog", &tracing::Level::TRACE));
         // Other crates stay at warnings unless named.
         assert!(!t.would_enable("zbus::connection", &tracing::Level::INFO));
         assert!(t.would_enable("hyper", &tracing::Level::WARN));
-        let (t, l) = env_filter("annalo_core=trace,zbus=debug").unwrap();
+        let (t, l) = env_filter("arcalo_core=trace,zbus=debug").unwrap();
         assert_eq!(l, Level::Trace);
         assert!(t.would_enable("zbus::x", &tracing::Level::DEBUG));
         assert_eq!(env_filter(" TRACE ").unwrap().1, Level::Trace);
+        // The target names of 1.14 and earlier stand for the current ones.
+        let (t, l) = env_filter("annalo_core=trace, annalo_lib::devlog=debug,zbus=info").unwrap();
+        assert_eq!(l, Level::Trace);
+        assert!(t.would_enable("arcalo_core::db", &tracing::Level::TRACE));
+        assert!(t.would_enable("arcalo_lib::devlog", &tracing::Level::DEBUG));
+        assert!(!t.would_enable("arcalo_lib::updates", &tracing::Level::DEBUG));
+        assert_eq!(alias_targets("annalo=debug,annalotte=info"), "arcalo=debug,annalotte=info");
         assert!(env_filter("").is_none());
         assert_eq!(Level::parse("warning"), Some(Level::Warn));
         assert!(Level::Error < Level::Trace);
@@ -1185,9 +1210,9 @@ mod tests {
 
     #[test]
     fn sources_come_from_fields_spans_or_the_module() {
-        assert_eq!(source_of("annalo_core::db"), "db");
-        assert_eq!(source_of("annalo_lib::updates"), "updates");
-        assert_eq!(source_of("annalo"), "core");
+        assert_eq!(source_of("arcalo_core::db"), "db");
+        assert_eq!(source_of("arcalo_lib::updates"), "updates");
+        assert_eq!(source_of("arcalo"), "core");
         assert_eq!(source_of("zbus::conn"), "zbus");
         assert!(secret_name("git_token") && secret_name("Authorization") && !secret_name("site"));
     }

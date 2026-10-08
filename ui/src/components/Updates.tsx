@@ -59,7 +59,7 @@ export const useUpdates = create<UpdateState>(() => ({
 }));
 
 // End-to-end runs (WebDriver) drive the update states: their builds have no update key.
-if (typeof navigator !== "undefined" && navigator.webdriver) (window as unknown as { __annaloUpdates?: typeof useUpdates }).__annaloUpdates = useUpdates;
+if (typeof navigator !== "undefined" && navigator.webdriver) (window as unknown as { __arcaloUpdates?: typeof useUpdates }).__arcaloUpdates = useUpdates;
 
 /** Reads the backend's state (after a check, a download step, a skip). */
 export async function refreshUpdateStatus(): Promise<UpdateStatus | null> {
@@ -451,7 +451,7 @@ function runHighlight(h: Highlight) {
   closeWhatsNew();
   if (a.type === "settings") openSettingsSection(a.section);
   else if (a.type === "view") useApp.getState().openTab({ kind: a.view });
-  else window.dispatchEvent(new CustomEvent("annalo:run-command", { detail: a.command }));
+  else window.dispatchEvent(new CustomEvent("arcalo:run-command", { detail: a.command }));
 }
 
 /** „Neu in Arcalo 1.9“: the highlights of an update, after its first start or from Settings → Über. */

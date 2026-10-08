@@ -6,9 +6,11 @@
 
   - Windows.FullTrustApplication with runFullTrust: Arcalo is a Win32 desktop app (Tauri, WebView2).
   - unvirtualizedResources with the write virtualization of AppData switched off for Arcalo's own
-    folders: the data stays in %APPDATA%\app.annalo.desktop as with the installer (shared with an
-    installed copy, kept when the package is removed, reachable for backups). Windows 11 honors the
-    list of folders; Windows 10 the switch for all of AppData.
+    folders: the data stays in %APPDATA%\de.mousewerk.arcalo as with the installer (shared with an
+    installed copy, kept when the package is removed, reachable for backups). The folders of the
+    identifier of 1.14 and earlier (app.annalo.desktop) are listed too: the app copies them at its
+    first start of 1.15 and must see the real ones. Windows 11 honors the list of folders; Windows 10
+    the switch for all of AppData.
   - The startup task replaces the Run key of the autostart; the protocol arcalo-notify replaces the
     registry entry of the notification buttons; the execution alias Arcalo.exe starts the app with
     its package identity (taskbar jump list).
@@ -37,6 +39,8 @@
     <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
     <virtualization:FileSystemWriteVirtualization>
       <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>$(KnownFolder:RoamingAppData)\de.mousewerk.arcalo</virtualization:ExcludedDirectory>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\de.mousewerk.arcalo</virtualization:ExcludedDirectory>
         <virtualization:ExcludedDirectory>$(KnownFolder:RoamingAppData)\app.annalo.desktop</virtualization:ExcludedDirectory>
         <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\app.annalo.desktop</virtualization:ExcludedDirectory>
       </virtualization:ExcludedDirectories>

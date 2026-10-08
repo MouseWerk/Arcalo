@@ -8,7 +8,7 @@
 //!
 //! Selected at build time by the cargo feature `store`, and at run time by the package identity
 //! (`GetCurrentPackageFullName`): the regular Windows binary behaves the same way when it runs
-//! from a package. Debug builds pretend with `ANNALO_STORE=1` (tests).
+//! from a package. Debug builds pretend with `ARCALO_STORE=1` (tests).
 
 use std::sync::OnceLock;
 
@@ -25,7 +25,7 @@ pub fn active() -> bool {
     *ACTIVE.get_or_init(|| {
         cfg!(feature = "store")
             || packaged()
-            || annalo_core::update::test_override(cfg!(debug_assertions), std::env::var("ANNALO_STORE").ok().as_deref())
+            || arcalo_core::update::test_override(cfg!(debug_assertions), std::env::var("ARCALO_STORE").ok().as_deref())
                 .is_some_and(|v| v != "0")
     })
 }
@@ -72,7 +72,7 @@ pub fn alias() -> Option<std::path::PathBuf> {
 
 /// Why the app's own update functions are off.
 pub fn updates_from_store() -> &'static str {
-    annalo_core::tr!("Updates kommen über den Microsoft Store", "Updates come from the Microsoft Store")
+    arcalo_core::tr!("Updates kommen über den Microsoft Store", "Updates come from the Microsoft Store")
 }
 
 /// Started by the package's startup task at sign-in (it passes no arguments, so the
@@ -111,7 +111,7 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
 
 #[cfg_attr(windows, allow(dead_code))]
 fn no_package() -> &'static str {
-    annalo_core::tr!("Arcalo läuft nicht aus dem Paket", "Arcalo does not run from its package")
+    arcalo_core::tr!("Arcalo läuft nicht aus dem Paket", "Arcalo does not run from its package")
 }
 
 #[cfg(windows)]
@@ -135,12 +135,12 @@ mod win {
         let state = task.RequestEnableAsync().and_then(|op| op.get()).map_err(|e| e.message())?;
         match state {
             s if is_on(s) => Ok(()),
-            StartupTaskState::DisabledByPolicy => Err(annalo_core::tr!(
+            StartupTaskState::DisabledByPolicy => Err(arcalo_core::tr!(
                 "Deine Organisation hat den Autostart abgeschaltet",
                 "Your organization has turned autostart off"
             )
             .into()),
-            _ => Err(annalo_core::tr!(
+            _ => Err(arcalo_core::tr!(
                 "Der Autostart ist in den Windows-Einstellungen ausgeschaltet: dort unter „Apps“ → „Autostart“ für Arcalo wieder einschalten",
                 "Autostart is turned off in Windows Settings: turn it on again for Arcalo under “Apps” → “Startup”"
             )
@@ -153,5 +153,5 @@ mod win {
 #[tauri::command]
 pub fn store_open_updates(app: tauri::AppHandle) -> crate::Result<()> {
     use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url(STORE_UPDATES_URI, None::<&str>).map_err(|e| annalo_core::Error::State(e.to_string()))
+    app.opener().open_url(STORE_UPDATES_URI, None::<&str>).map_err(|e| arcalo_core::Error::State(e.to_string()))
 }

@@ -1,7 +1,7 @@
 // Writes src/generated/licenses.json for Settings → Über → „Lizenzen“: Arcalo's LICENSE text
 // and the libraries it ships, with version and license. The interface: the dependencies of
 // package.json (read from node_modules). The app itself: the direct dependencies of the
-// `annalo` and `annalo-core` crates (versions from Cargo.lock, licenses from the crate sources
+// `arcalo` and `arcalo-core` crates (versions from Cargo.lock, licenses from the crate sources
 // cargo downloaded). Cargo downloads only the crates of the platform it builds for, so the
 // Windows and macOS crates are missing on Linux (and the other way round); their licenses then
 // come from `cargo metadata`, which fetches the crates of every platform. Runs before `vite`
@@ -62,9 +62,9 @@ function crateLicense(dirs, name, version) {
 function appLibraries() {
   const pkgs = lockPackages();
   const dirs = registryDirs();
-  const own = new Set(["annalo", "annalo-core", "annalo-cli"]);
+  const own = new Set(["arcalo", "arcalo-core", "arcalo-cli"]);
   const seen = new Map();
-  for (const p of pkgs.filter((x) => x.name === "annalo" || x.name === "annalo-core")) {
+  for (const p of pkgs.filter((x) => x.name === "arcalo" || x.name === "arcalo-core")) {
     for (const dep of p.deps) {
       // "name" or "name version" when the lock holds several versions.
       const [name, version] = dep.split(" ");

@@ -1,6 +1,6 @@
 # Working on Arcalo
 
-Arcalo (formerly Annalo) is a local-first Tauri v2 desktop app: Rust workspace (`crates/annalo-core`,
+Arcalo (formerly Annalo) is a local-first Tauri v2 desktop app: Rust workspace (`crates/arcalo-core`,
 `src-tauri`), React + TipTap UI in `ui/`, e2e tests with WebdriverIO + tauri-driver in `e2e/`. Read
 `docs/ARCHITECTURE.md` and `README.md` first. Website: separate repo MouseWerk/annaloweb (Astro, Cloudflare),
 live at https://arcalo.mousewerk.de.
@@ -32,8 +32,8 @@ live at https://arcalo.mousewerk.de.
   anywhere either (cards, toasts, notices, callouts, nav, outline); use a tinted background and an icon. A plain
   blockquote may keep a thin neutral gray line. Applies to the app and the website. Quality bar:
   Obsidian/Linear-level polish in light, dark and contrast themes, 900–1920 px and split panes.
-- Migrations in `crates/annalo-core/migrations` are positional: take the next number, never fill a gap.
-  Settings changes need a step in `crates/annalo-core/src/settings_migrate.rs` (`SETTINGS_VERSION`).
+- Migrations in `crates/arcalo-core/migrations` are positional: take the next number, never fill a gap.
+  Settings changes need a step in `crates/arcalo-core/src/settings_migrate.rs` (`SETTINGS_VERSION`).
 - Release notes: `docs/releases/v<version>.md` with "## Improved", "## Fixed" and
   "## Checklist for Windows (manual)"; user-facing lines only.
 
@@ -42,7 +42,7 @@ live at https://arcalo.mousewerk.de.
 ```
 cargo fmt --all --check
 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 cargo clippy --workspace --all-targets -- -D warnings
-CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 cargo test -p annalo-core -p annalo -p annalo-cli
+CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 cargo test -p arcalo-core -p arcalo -p arcalo-cli
 npm --prefix ui run typecheck && npm --prefix ui test
 ```
 
@@ -50,11 +50,11 @@ e2e: the app embeds the UI at compile time, so build first:
 
 ```
 npm --prefix ui run build
-CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 cargo build -p annalo --features custom-protocol
-cd e2e && ANNALO_APP="$PWD/../target/debug/annalo" node --test --test-concurrency=1 tests/<file>.test.js
+CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 cargo build -p arcalo --features custom-protocol
+cd e2e && ARCALO_APP="$PWD/../target/debug/arcalo" node --test --test-concurrency=1 tests/<file>.test.js
 ```
 
-Pass the app only via `ANNALO_APP`. Never kill processes by name or pattern (other runs may share the
+Pass the app only via `ARCALO_APP`. Never kill processes by name or pattern (other runs may share the
 machine); kill only PIDs you started. Prefer root-cause fixes; never skip or weaken a test.
 
 ## Development on macOS

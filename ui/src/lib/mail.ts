@@ -82,7 +82,7 @@ export const mailApi = {
   /** A dropped .eml/.msg: raw bytes as the body, the name as a header (like attachment_store). */
   parseFile: async (file: File) => {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return invoke<Mail>("mail_parse_file", bytes, { headers: { "x-annalo-name": encodeURIComponent(file.name || "E-Mail.eml") } });
+    return invoke<Mail>("mail_parse_file", bytes, { headers: { "x-arcalo-name": encodeURIComponent(file.name || "E-Mail.eml") } });
   },
   parseText: (text: string) => invoke<Mail | null>("mail_parse_text", { text }),
   import: (request: MailImportRequest) => invoke<MailCreated>("mail_import", { request }),
@@ -94,11 +94,8 @@ export const mailApi = {
 /** Files taken as mails: `.eml` and Outlook's `.msg`. */
 export const isMailFile = (name: string) => /\.(eml|msg)$/i.test(name.trim());
 
-/** The id of an `annalo-mail://<id>` link, else null. */
-export function mailLinkId(href: string | null | undefined): string | null {
-  const m = /^annalo-mail:\/\/([0-9a-z]+)\/?$/i.exec((href ?? "").trim());
-  return m ? m[1].toLowerCase() : null;
-}
+/** The id of an `arcalo-mail://<id>` link (also of the scheme of 1.14 and earlier), else null. */
+export { mailLinkId } from "./legacy";
 
 /** Whether pasted text looks like the header block of a mail (Von:/From: plus Betreff:/Subject: or a date). */
 export function looksLikeHeaderBlock(text: string): boolean {
@@ -184,7 +181,7 @@ export function offeredAttachments(m: Mail, withInline: boolean): MailAttachment
   return m.attachments.filter((a) => withInline || !a.inline);
 }
 
-/** Opens a linked mail (`annalo-mail://<id>`): in Outlook, or the stored file in its app. */
+/** Opens a linked mail (`arcalo-mail://<id>`): in Outlook, or the stored file in its app. */
 export async function openMailLink(id: string) {
   const s = useApp.getState();
   try {

@@ -14,7 +14,7 @@ import { launch, guarded } from "../lib/harness.js";
 const test = guarded(nodeTest, () => app);
 let app;
 const ids = {};
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-124-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-124-"));
 
 const fence = (lang, body) => `\`\`\`${lang}\n${body}\n\`\`\``;
 const DIAGRAMS = {
@@ -133,7 +133,7 @@ test("Mermaid: seven diagram types render, errors show the source, the source to
   const err = await app.browser.execute(() => document.querySelector('.pane.active .mmd[data-state="error"] .rich-error').innerText);
   assert.match(err, /Das Diagramm enthält einen Fehler/);
   assert.match(err, /A\[\[\[ --> B/, "the source is shown with the error");
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
   // Source toggle.
   await app.browser.execute(() => document.querySelector(".pane.active .mmd .mmd-edit").click());
   await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active pre.rich-src").classList.contains("is-editing")), { timeoutMsg: "source not shown" });
@@ -158,19 +158,19 @@ test("Mermaid exports SVG and PNG; HTML share has inline SVG and query tables; p
   const svgFile = path.join(tmp, "plan.svg");
   const pngFile = path.join(tmp, "plan.png");
   for (const [format, file] of [["svg", svgFile], ["png", pngFile]])
-    await app.browser.execute((source, f, p) => window.dispatchEvent(new CustomEvent("annalo:diagram-export", { detail: { source, format: f, path: p } })), DIAGRAMS.flowchart, format, file);
+    await app.browser.execute((source, f, p) => window.dispatchEvent(new CustomEvent("arcalo:diagram-export", { detail: { source, format: f, path: p } })), DIAGRAMS.flowchart, format, file);
   await app.browser.waitUntil(() => fs.existsSync(svgFile) && fs.existsSync(pngFile), { timeout: 10000, timeoutMsg: "export files not written" });
   assert.match(fs.readFileSync(svgFile, "utf8"), /^<\?xml[\s\S]*<svg[^>]*xmlns="http:\/\/www.w3.org\/2000\/svg"[\s\S]*Angebot/);
   assert.deepEqual([...fs.readFileSync(pngFile).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
 
   const file = path.join(tmp, "diagramme.html");
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:share-html", { detail: { id, path: p } })), ids.diagrams, file);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:share-html", { detail: { id, path: p } })), ids.diagrams, file);
   await app.browser.waitUntil(() => fs.existsSync(file), { timeout: 20000, timeoutMsg: "HTML file not written" });
   const html = fs.readFileSync(file, "utf8");
   assert.equal(html.match(/<figure class="diagram"><svg/g)?.length, 7, "seven inline SVGs");
   assert.match(html, /figure class="diagram diagram-error"/);
   const qfile = path.join(tmp, "abfragen.html");
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:share-html", { detail: { id, path: p } })), ids.queries, qfile);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:share-html", { detail: { id, path: p } })), ids.queries, qfile);
   await app.browser.waitUntil(() => fs.existsSync(qfile), { timeout: 10000, timeoutMsg: "HTML file not written" });
   const qhtml = fs.readFileSync(qfile, "utf8");
   assert.match(qhtml, /<table class="query"><thead><tr><th>Aufgabe<\/th><th>Seite<\/th><th>Fällig<\/th><\/tr><\/thead><tbody><tr><td>\[ \] Angebot schreiben<\/td>/);

@@ -92,7 +92,7 @@ function rolloutCanvas(paths, url) {
 
 before(async () => {
   jira = await startFakeJira({ flavor: "cloud", issues: ISSUES });
-  ({ app, dataDir } = await launchEnglish({ width: 1600, height: 1000, env: { ANNALO_JIRA_DELAY_SECS: "600" } }));
+  ({ app, dataDir } = await launchEnglish({ width: 1600, height: 1000, env: { ARCALO_JIRA_DELAY_SECS: "600" } }));
   await app.invoke("jira_site_save", {
     site: { id: "", name: "Acme", color: "", kind: "cloud", url: jira.url, email: "mia@firma.de", enabled: true, log_work: false, allow_writes: false },
     token: "secret-token",
@@ -108,7 +108,7 @@ before(async () => {
   board = await app.invoke("canvas_create", { parentId: folder.id, title: "Rollout Roadmap" });
   await app.invoke("page_save", { id: board.id, content: JSON.stringify(rolloutCanvas(paths, jira.url), null, "\t") });
   // The side panel closed: the board gets the room.
-  await app.browser.execute(() => localStorage.setItem("annalo.panel", "0"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.panel", "0"));
   await reload();
 });
 after(async () => {

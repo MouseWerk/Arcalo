@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 import type { CalendarSourceInfo, CalendarStatus } from "./types";
 
-const KEY = "annalo.calendar.hidden";
+const KEY = "arcalo.calendar.hidden";
 
 function load(): Set<string> {
   try {

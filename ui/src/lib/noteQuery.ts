@@ -1,5 +1,5 @@
 // Queries in notes: a fenced ```query block runs a query of the dashboard's „Abfrage“ widget
-// (annalo_core::dashboard::query). Its first lines may set options (`from: tasks`,
+// (arcalo_core::dashboard::query). Its first lines may set options (`from: tasks`,
 // `show: table`, `sort: due`, `limit: 10`, `group:`, `columns:`, in English or German); the other
 // lines are the widget's query line (`#projekt status: offen fällig: woche`).
 

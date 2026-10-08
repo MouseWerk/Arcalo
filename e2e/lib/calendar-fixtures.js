@@ -34,7 +34,7 @@ export function icsFile() {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Annalo e2e//DE",
+    "PRODID:-//Arcalo e2e//DE",
     "BEGIN:VEVENT",
     "UID:review-1@e2e",
     `DTSTART:${ics(w)}`,
@@ -81,7 +81,7 @@ export function icsTeam() {
   const o2 = at(1, 15, 30);
   events.push(["BEGIN:VEVENT", "UID:overlap-a@e2e", `DTSTART:${ics(o1)}`, `DTEND:${ics(new Date(o1.getTime() + 3600e3))}`, "SUMMARY:Architektur", "END:VEVENT"]);
   events.push(["BEGIN:VEVENT", "UID:overlap-b@e2e", `DTSTART:${ics(o2)}`, `DTEND:${ics(new Date(o2.getTime() + 3600e3))}`, "SUMMARY:Budgetrunde", "END:VEVENT"]);
-  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Annalo e2e//DE", ...events.flat(), "END:VCALENDAR", ""].join("\r\n");
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Arcalo e2e//DE", ...events.flat(), "END:VCALENDAR", ""].join("\r\n");
 }
 
 /** What the Outlook script prints: a customer meeting on Friday, a private appointment, a standup early today. */
@@ -136,7 +136,7 @@ export function outlookJson() {
 
 /** Writes the ICS file and the Outlook fixture into a fresh folder. */
 export function writeFixtures() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-cal-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-cal-"));
   const file = path.join(dir, "Projektplan.ics");
   fs.writeFileSync(file, icsFile());
   const outlook = path.join(dir, "outlook.json");
@@ -179,15 +179,15 @@ export function writeMeetingNow(title = "Jour fixe Kunde X") {
     "ATTENDEE;CN=Anna Müller:mailto:anna@example.com",
     "END:VEVENT",
   ];
-  const text = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Annalo e2e//DE", ...ev("now@e2e", title, start, 60), ...ev("old@e2e", "Vorbei", old, 30), "END:VCALENDAR", ""].join("\r\n");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-cal-now-"));
+  const text = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Arcalo e2e//DE", ...ev("now@e2e", title, start, 60), ...ev("old@e2e", "Vorbei", old, 30), "END:VCALENDAR", ""].join("\r\n");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-cal-now-"));
   const file = path.join(dir, "Heute.ics");
   fs.writeFileSync(file, text);
   return { dir, file };
 }
 
 /** Environment for the Outlook fixture (only honored with the test switch). */
-export const outlookEnv = (file) => ({ ANNALO_TEST_FIXTURES: "1", ANNALO_OUTLOOK_FIXTURE: file, ANNALO_CALENDAR_DELAY_SECS: "3600" });
+export const outlookEnv = (file) => ({ ARCALO_TEST_FIXTURES: "1", ARCALO_OUTLOOK_FIXTURE: file, ARCALO_CALENDAR_DELAY_SECS: "3600" });
 
 // ---- Outlook calendar selection (tests 84–85)
 

@@ -236,6 +236,6 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
 });
 
 test("no console errors", async () => {
-  const errors = await app.browser.execute(() => window.__annaloErrors ?? []);
+  const errors = await app.browser.execute(() => window.__arcaloErrors ?? []);
   assert.deepEqual(errors, []);
 });

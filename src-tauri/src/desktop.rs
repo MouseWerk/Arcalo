@@ -1,5 +1,5 @@
 //! Desktop integration: tray icon, close to tray, quick-capture window,
-//! native reminders and autostart. The decisions live in `annalo_core::desktop`;
+//! native reminders and autostart. The decisions live in `arcalo_core::desktop`;
 //! this module only wires them to the window system.
 
 use std::str::FromStr;
@@ -7,10 +7,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use annalo_core::calsync::tz::Zone;
-use annalo_core::capture::{self as cap, CaptureTarget, CaptureUndo, QueuedCapture};
-use annalo_core::desktop::{self as core, CaptureOutcome, CloseAction, Platform};
-use annalo_core::{Database, Error};
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::capture::{self as cap, CaptureTarget, CaptureUndo, QueuedCapture};
+use arcalo_core::desktop::{self as core, CaptureOutcome, CloseAction, Platform};
+use arcalo_core::{Database, Error};
 use chrono::{DateTime, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -21,7 +21,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{AppState, Result, lock};
-use annalo_core::{tr, trf};
+use arcalo_core::{tr, trf};
 
 /// Passed by the autostart entry: start hidden in the tray.
 pub const MINIMIZED_ARG: &str = "--minimized";
@@ -876,7 +876,7 @@ struct Stored {
     late: bool,
 }
 
-fn capture_options<'a>(settings: &'a annalo_core::settings::Settings, zone: &'a Zone) -> cap::CaptureOptions<'a> {
+fn capture_options<'a>(settings: &'a arcalo_core::settings::Settings, zone: &'a Zone) -> cap::CaptureOptions<'a> {
     cap::CaptureOptions {
         inbox_title: &settings.capture.inbox_title,
         thresholds: &settings.thresholds,
@@ -899,7 +899,7 @@ fn announce(app: &AppHandle, out: &CaptureOutcome, late: bool) {
     }
 }
 
-/// Test builds: `ANNALO_TEST_CAPTURE_BUSY=n` makes the first n captures fail as if the database
+/// Test builds: `ARCALO_TEST_CAPTURE_BUSY=n` makes the first n captures fail as if the database
 /// were locked (the queue is tested end to end with it).
 fn simulated_busy() -> Option<Error> {
     #[cfg(debug_assertions)]
@@ -907,7 +907,7 @@ fn simulated_busy() -> Option<Error> {
         static LEFT: std::sync::OnceLock<std::sync::atomic::AtomicI64> = std::sync::OnceLock::new();
         let left = LEFT.get_or_init(|| {
             std::sync::atomic::AtomicI64::new(
-                std::env::var("ANNALO_TEST_CAPTURE_BUSY").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
+                std::env::var("ARCALO_TEST_CAPTURE_BUSY").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
             )
         });
         if left.fetch_sub(1, Ordering::Relaxed) > 0 {
@@ -1055,7 +1055,7 @@ pub fn capture_context(app: AppHandle, state: State<AppState>) -> Result<Capture
     let settings = state.settings();
     let meeting = if settings.capture.meeting_target {
         // Own calendars only by default: a colleague's meeting is not the one running for the user.
-        let active = settings.calendar.booking_sources(annalo_core::calsync::outlook::available());
+        let active = settings.calendar.booking_sources(arcalo_core::calsync::outlook::available());
         cap::current_meeting(&state.reader(), Utc::now(), &active)?.map(|e| MeetingTarget {
             key: e.key,
             title: e.event.title,
@@ -1281,7 +1281,7 @@ fn booked_today(db: &Database) -> Result<i64> {
     let now = Utc::now();
     let midnight = Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap_or_default();
     let from = Local.from_local_datetime(&midnight).earliest().map(|d| d.with_timezone(&Utc));
-    let filter = annalo_core::db::EntryFilter { from, to: Some(now + TimeDelta::days(1)), ..Default::default() };
+    let filter = arcalo_core::db::EntryFilter { from, to: Some(now + TimeDelta::days(1)), ..Default::default() };
     let booked: i64 = db.list_time_entries(&filter)?.iter().filter_map(|r| r.entry.duration_minutes).sum();
     let running = match db.running_timer()? {
         Some(e) => db.timer_worked_minutes(&e, now)?,
@@ -1308,7 +1308,7 @@ pub fn periodic(app: &AppHandle) {
         let db = state.db();
         // Today's target: the weekday's, none on a public holiday or absence day, half on a half one.
         let base = (settings.daily_target_hours.max(0.0) * 60.0).round() as i64;
-        let target = annalo_core::worktime::gap_target(&db, now.date(), base).unwrap_or(base);
+        let target = arcalo_core::worktime::gap_target(&db, now.date(), base).unwrap_or(base);
         let eod = booked_today(&db).ok().and_then(|booked| {
             core::end_of_day_reminder(now, &settings, booked, target, meta_date(&db, "reminder.day"))
         });
@@ -1322,7 +1322,7 @@ pub fn periodic(app: &AppHandle) {
                 let nr = db.netzplan_by_id(e.netzplan_id).map(|n| n.netzplan_nr).unwrap_or_default();
                 let local = e.start_time.with_timezone(&Local);
                 // Left running from an earlier day: the date says so.
-                let start = local.format(match (local.date_naive() < now.date(), annalo_core::i18n::is_en()) {
+                let start = local.format(match (local.date_naive() < now.date(), arcalo_core::i18n::is_en()) {
                     (true, false) => "%d.%m. %H:%M",
                     (true, true) => "%b %-d, %H:%M",
                     (false, _) => "%H:%M",
@@ -1485,7 +1485,7 @@ mod tests {
                 assert_eq!(parse_shortcut_for(spec, mac), Ok(super_k), "{spec} (mac: {mac})");
             }
         }
-        assert!(parse_shortcut(annalo_core::settings::DEFAULT_CAPTURE_SHORTCUT).is_ok());
+        assert!(parse_shortcut(arcalo_core::settings::DEFAULT_CAPTURE_SHORTCUT).is_ok());
     }
 
     #[test]

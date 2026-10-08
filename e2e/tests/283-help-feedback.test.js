@@ -13,7 +13,7 @@ import { launchEnglish } from "../lib/english.js";
 const test = guarded(nodeTest, () => app);
 let app;
 const dirs = [];
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-help-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-help-"));
 dirs.push(dir);
 after(async () => {
   await app?.close();
@@ -63,8 +63,8 @@ async function assertIssueUrl(url, template) {
 
 async function setTheme(mode) {
   const v = await app.invoke("settings_get");
-  const id = `annalo-${mode}`;
-  await app.invoke("settings_save", { settings: { ...v.settings, theme: mode, appearance: { ...v.settings.appearance, theme_light: "annalo-light", theme_dark: "annalo-dark" } } });
+  const id = `arcalo-${mode}`;
+  await app.invoke("settings_save", { settings: { ...v.settings, theme: mode, appearance: { ...v.settings.appearance, theme_light: "arcalo-light", theme_dark: "arcalo-dark" } } });
   await app.browser.waitUntil(async () => (await app.browser.execute(() => `${document.documentElement.dataset.theme}|${document.documentElement.dataset.themeId}`)) === `${mode}|${id}`, {
     timeoutMsg: `theme ${mode} not applied`,
   });

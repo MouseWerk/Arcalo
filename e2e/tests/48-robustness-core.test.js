@@ -14,7 +14,7 @@ let app;
 let base;
 before(async () => {
   app = await launch();
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-robust-"));
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-robust-"));
 });
 after(async () => {
   await app?.close();

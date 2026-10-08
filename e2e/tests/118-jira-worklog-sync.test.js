@@ -48,7 +48,7 @@ async function rowMenu(text) {
 
 /** A meeting in 20 minutes with a long title and a long place. */
 function writeCalendar() {
-  calDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-118-"));
+  calDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-118-"));
   const ics = (d) =>
     d
       .toISOString()
@@ -78,7 +78,7 @@ function writeCalendar() {
 before(async () => {
   jira = await startFakeJira({ flavor: "cloud" });
   // The app „started yesterday“: the next focus or tick sees a new day.
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "600", ANNALO_TEST_BRIEFING_DAY: yesterday } });
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "600", ARCALO_TEST_BRIEFING_DAY: yesterday } });
   await patchSettings((s) => ({ ...s, workdays: [1, 2, 3, 4, 5, 6, 7] }));
   await app.invoke("jira_site_save", { site: site({ id: "" }), token: "secret-token" });
   await app.invoke("jira_sync_now", { site: "acme" });

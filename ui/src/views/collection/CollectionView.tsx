@@ -123,10 +123,10 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
       const d = (e as CustomEvent<{ id: number; fm: string }>).detail;
       take(d.id, d.fm);
     };
-    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("arcalo:page-saved", onSaved);
     window.addEventListener(FRONTMATTER_EVENT, onFm);
     return () => {
-      window.removeEventListener("annalo:page-saved", onSaved);
+      window.removeEventListener("arcalo:page-saved", onSaved);
       window.removeEventListener(FRONTMATTER_EVENT, onFm);
     };
   }, []);

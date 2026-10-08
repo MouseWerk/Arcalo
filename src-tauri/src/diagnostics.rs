@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, State};
 
 use crate::{AppState, Result, devlog, secrets};
-use annalo_core::Error;
+use arcalo_core::Error;
 
 /// Names of setting fields whose value is never put into the bundle (a secret may hide in an
 /// address or a header, too).
@@ -19,7 +19,7 @@ fn secret_key(key: &str) -> bool {
         .iter()
         .any(|s| k.contains(s))
         // The settings sync's wider list (`*_key`, `pin`, cookies, private keys) as well.
-        || annalo_core::settings_sync::is_secret_name(key)
+        || arcalo_core::settings_sync::is_secret_name(key)
 }
 
 /// Redacts a settings value: secret-looking keys become `***`, every string goes through the
@@ -123,7 +123,7 @@ fn windows_name(build: &str, display_version: &str) -> String {
 /// The entries of the bundle (name, bytes).
 pub fn contents(
     info: Value,
-    settings: &annalo_core::settings::Settings,
+    settings: &arcalo_core::settings::Settings,
     logs: Vec<(String, Vec<u8>)>,
 ) -> Vec<(String, Vec<u8>)> {
     let mut settings = serde_json::to_value(settings).unwrap_or(Value::Null);
@@ -177,7 +177,7 @@ pub fn diagnostics_bundle(app: AppHandle, state: State<AppState>, path: PathBuf)
         "arch": std::env::consts::ARCH,
         "os_version": os_version(),
         "portable": crate::portable::active(),
-        "language": if annalo_core::i18n::is_en() { "en" } else { "de" },
+        "language": if arcalo_core::i18n::is_en() { "en" } else { "de" },
         "data_dir": without_home(&state.data_dir.display().to_string()),
         "schema_version": schema,
         "credential_store": secrets::kind(),
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn the_bundle_holds_info_settings_and_logs_but_no_secrets() {
-        let mut settings = annalo_core::settings::Settings::default();
+        let mut settings = arcalo_core::settings::Settings::default();
         settings.git_sync.remote_url = "https://bob:ghp_supersecret123@github.com/x/y.git".into();
         settings.network.profiles[0].http_proxy = "http://proxyuser:proxy-pass-9@proxy:8080".into();
         settings.litellm_base_url = "https://llm.example.com/v1?api_key=sk-hidden-777".into();
@@ -219,7 +219,7 @@ mod tests {
         assert!(all.contains("\"schema_version\": 21"));
 
         // Written as a real zip.
-        let dir = std::env::temp_dir().join(format!("annalo-diag-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-diag-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("diag.zip");
         write_zip(&file, &entries).unwrap();

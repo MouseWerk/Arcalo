@@ -3,8 +3,8 @@
 
 use std::sync::Mutex;
 
-use annalo_core::focus::{self, FocusOutcome, FocusReport, FocusStart, FocusState};
-use annalo_core::{Error, desktop as core};
+use arcalo_core::focus::{self, FocusOutcome, FocusReport, FocusStart, FocusState};
+use arcalo_core::{Error, desktop as core};
 use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -60,16 +60,16 @@ fn pause_notification(app: &AppHandle, o: &FocusOutcome) {
     }
     let reference = &o.session.reference;
     let what =
-        if reference.is_empty() { String::new() } else { annalo_core::trf!(" auf {reference}", " on {reference}") };
+        if reference.is_empty() { String::new() } else { arcalo_core::trf!(" auf {reference}", " on {reference}") };
     let worked = focus::hm(o.session.worked_minutes);
     let body = if o.session.break_minutes > 0 {
         let pause = o.session.break_minutes;
-        annalo_core::trf!(
+        arcalo_core::trf!(
             "{worked} Fokus{what} geschafft. {pause} Min. Pause.",
             "{worked} of focus{what} done. {pause} min break."
         )
     } else {
-        annalo_core::trf!("{worked} Fokus{what} geschafft.", "{worked} of focus{what} done.")
+        arcalo_core::trf!("{worked} Fokus{what} geschafft.", "{worked} of focus{what} done.")
     };
     crate::notifyact::show(app, crate::notifyact::Note::focus_end(body));
 }
@@ -79,7 +79,7 @@ fn pause_notification(app: &AppHandle, o: &FocusOutcome) {
 pub fn extend(app: &AppHandle, minutes: f64) -> Result<()> {
     let state = app.state::<AppState>();
     let last = focus::last_done(&state.db())?
-        .ok_or_else(|| Error::State(annalo_core::tr!("Keine Fokussitzung", "No focus session").into()))?;
+        .ok_or_else(|| Error::State(arcalo_core::tr!("Keine Fokussitzung", "No focus session").into()))?;
     let reference = if state.settings().time_tracking() { last.reference } else { String::new() };
     let start = FocusStart { reference, goal: last.goal, minutes, break_minutes: last.break_minutes, block_id: None };
     focus::start(&state.db(), &start, Utc::now())?;

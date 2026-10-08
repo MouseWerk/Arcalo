@@ -1,4 +1,4 @@
-// A ```query block in a note, rendered live: the dashboard's query engine (annalo_core::dashboard::
+// A ```query block in a note, rendered live: the dashboard's query engine (arcalo_core::dashboard::
 // query) as list, table, count or chart, refreshed on the change events, tasks tickable. Under the
 // result: the number of hits, „Quelltext bearbeiten“ and what could not be read. HTML share and
 // PDF get a static table (`queryStaticHtml`). Loaded on the first query block only.
@@ -231,11 +231,11 @@ export function QueryBlock({ source, onEdit, editing }: QueryBlockProps) {
     const events = nq.query.source === "entries" ? ["data://entries"] : nq.query.source === "events" ? ["calendar://synced", "data://entries"] : ["data://tasks", "data://pages", "gitsync://pulled"];
     const un = events.map((ev) => on(ev, () => soon()));
     const saved = () => soon(700);
-    window.addEventListener("annalo:page-saved", saved);
+    window.addEventListener("arcalo:page-saved", saved);
     return () => {
       window.clearTimeout(timer);
       un.forEach((u) => u.then((f) => f()));
-      window.removeEventListener("annalo:page-saved", saved);
+      window.removeEventListener("arcalo:page-saved", saved);
     };
   }, [load, nq.query.source]);
 

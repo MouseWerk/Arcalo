@@ -53,7 +53,7 @@ async function store(name, bytes) {
     (n, b64, done) => {
       const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       window.__TAURI_INTERNALS__
-        .invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent(n) } })
+        .invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent(n) } })
         .then((ok) => done({ ok }), (err) => done({ err: String(err) }));
     },
     name,
@@ -64,7 +64,7 @@ async function store(name, bytes) {
 }
 
 async function reload() {
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: {} })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
 }
 
 /** Right-clicks `sel` and returns the labels of the menu that opens. */
@@ -136,7 +136,7 @@ test("a dropped file is stored and embedded", async () => {
 });
 
 test("a PDF shows its first page and opens in the viewer", async () => {
-  const pdf = await store("Handbuch.pdf", makePdf(["Erste Seite Annalo", "Zweite Seite Suchwort", "Dritte Seite"]));
+  const pdf = await store("Handbuch.pdf", makePdf(["Erste Seite Arcalo", "Zweite Seite Suchwort", "Dritte Seite"]));
   assert.equal(pdf.name, "Handbuch.pdf");
   await app.invoke("page_save", { id: await pageId("Anhänge"), content: `Handbuch:\n\n${pdf.markdown}\n` });
   await reload();

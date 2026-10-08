@@ -27,8 +27,8 @@ const newAutostart = () => path.join(home, ".config", "autostart", "Arcalo.deskt
 const start = (opts = {}) => launch({ demo: false, onboarding: true, dataDir, env: { HOME: home }, ...opts });
 
 before(async () => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-113-"));
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-113-home-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-113-"));
+  home = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-113-home-"));
   // A workspace as 1.6 left it: notes and settings written, the intro classified.
   app = await launch({ demo: true, onboarding: false, dataDir, env: { HOME: home } });
   const view = await app.invoke("settings_get");
@@ -45,7 +45,7 @@ before(async () => {
   db.exec(`VACUUM INTO '${path.join(dataDir, "backups", "annalo-20260901-080000.db").replaceAll("'", "''")}'`);
   db.close();
   // Credentials of 1.6 (Linux keeps them in secrets.json; Windows and macOS under the service
-  // name „Annalo“, which 1.7 keeps).
+  // name „Annalo“, which 1.15 takes over).
   fs.writeFileSync(path.join(dataDir, "secrets.json"), JSON.stringify({ git_token: "ghp-aus-1-6", litellm_api_key: "sk-aus-1-6" }), { mode: 0o600 });
   fs.mkdirSync(path.dirname(oldAutostart()), { recursive: true });
   fs.writeFileSync(

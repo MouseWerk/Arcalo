@@ -16,10 +16,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-use annalo_core::applock::{self, LockConfig};
-use annalo_core::cipher::{self, Access, DbKey, Direction, FileState, Migration, NextKey, WrappedKey};
-use annalo_core::{Error, Result, datadir};
-use annalo_core::{tr, trf};
+use arcalo_core::applock::{self, LockConfig};
+use arcalo_core::cipher::{self, Access, DbKey, Direction, FileState, Migration, NextKey, WrappedKey};
+use arcalo_core::{Error, Result, datadir};
+use arcalo_core::{tr, trf};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -250,7 +250,7 @@ fn gate(app: &AppHandle) -> Result<State<'_, KeyGate>> {
 }
 
 fn lang_code() -> &'static str {
-    if annalo_core::i18n::is_en() { "en" } else { "de" }
+    if arcalo_core::i18n::is_en() { "en" } else { "de" }
 }
 
 #[tauri::command]
@@ -523,7 +523,7 @@ pub fn cipher_drop_plain_backups(state: State<AppState>) -> Result<usize> {
     let files = cipher::plain_backups(&state.backup_dir());
     for f in &files {
         cipher::secure_delete(f)?;
-        let _ = std::fs::remove_file(annalo_core::backupdest::sum_path(f));
+        let _ = std::fs::remove_file(arcalo_core::backupdest::sum_path(f));
     }
     devlog::info("cipher", format!("{} unencrypted local backups deleted", files.len()));
     Ok(files.len())
@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn the_handoff_key_is_read_once() {
-        let dir = std::env::temp_dir().join(format!("annalo-handoff-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-handoff-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let key = DbKey::generate().unwrap();

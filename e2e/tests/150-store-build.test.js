@@ -1,4 +1,4 @@
-// The Microsoft Store build (src-tauri/src/store.rs; debug builds pretend with ANNALO_STORE=1):
+// The Microsoft Store build (src-tauri/src/store.rs; debug builds pretend with ARCALO_STORE=1):
 // even with an update key, a feed with a newer version, an organization's update policy and a
 // portable marker next to the executable, the app never checks, downloads, installs or rolls
 // back, runs not portable, and Settings → Über → Updates points to the Microsoft Store.
@@ -14,7 +14,7 @@ const test = guarded(nodeTest, () => app);
 let app;
 let feed;
 const key = throwawayKey();
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-store-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-store-"));
 const exeDir = path.join(root, "exe");
 
 before(async () => {
@@ -24,11 +24,11 @@ before(async () => {
   feed = await startFeed({ key, version: "9.9.0" });
   app = await launch({
     env: {
-      ANNALO_STORE: "1",
-      ANNALO_UPDATE_PUBKEY: key.pubkey,
-      ANNALO_UPDATE_ENDPOINT: feed.url,
-      ANNALO_UPDATE_CURRENT: "1.11.0",
-      ANNALO_EXE_DIR: exeDir,
+      ARCALO_STORE: "1",
+      ARCALO_UPDATE_PUBKEY: key.pubkey,
+      ARCALO_UPDATE_ENDPOINT: feed.url,
+      ARCALO_UPDATE_CURRENT: "1.11.0",
+      ARCALO_EXE_DIR: exeDir,
     },
   });
 });

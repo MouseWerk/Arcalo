@@ -114,7 +114,7 @@ export function ConflictView({ pageId }: { pageId: number }) {
     try {
       const out = both ? await api.keepBothGitConflict(pageId) : await api.resolveGitConflict(pageId, content);
       reloadEditors([pageId]);
-      window.dispatchEvent(new CustomEvent("annalo:reload-pages", { detail: { ids: [pageId] } }));
+      window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: { ids: [pageId] } }));
       if (both) await s().refreshTree();
       await s().refreshConflicts();
       if (out.sync_error) s().toast({ tone: "warning", title: t("cf.mergedNotSynced"), detail: out.sync_error });

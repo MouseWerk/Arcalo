@@ -17,10 +17,10 @@ import { meaningVector } from "../lib/fake-embeddings.js";
 
 const test = guarded(nodeTest, () => app);
 let app, chat, ollama;
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-noai-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-noai-"));
 const dataDir = path.join(root, "data");
 const exeDir = path.join(root, "exe");
-const env = { ANNALO_SEMANTIC_DELAY_SECS: "1" };
+const env = { ARCALO_SEMANTIC_DELAY_SECS: "1" };
 const provider = (id, name, kind, base_url, local) => ({ id, name, kind, base_url, local, enabled: true, bypass_proxy: local, api_version: "", models: [] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -226,7 +226,7 @@ test("a policy (AllowAi = 0) forces AI off and locks the switch", async () => {
   await app.close();
   fs.writeFileSync(path.join(exeDir, "policy.json"), JSON.stringify({ AllowAi: 0 }));
   const count = aiRequests();
-  app = await launch({ dataDir, env: { ...env, ANNALO_EXE_DIR: exeDir }, width: 1440, height: 900 });
+  app = await launch({ dataDir, env: { ...env, ARCALO_EXE_DIR: exeDir }, width: 1440, height: 900 });
   const view = await app.invoke("settings_get");
   assert.equal(view.ai_policy_off, true);
   assert.equal(view.settings.ai.enabled, true, "the user's own choice is kept");

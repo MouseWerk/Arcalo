@@ -98,7 +98,7 @@ test("closing without saving keeps the draft and its target", async () => {
     el.select();
   });
   await app.keys(["Backspace"]);
-  assert.equal(await app.browser.execute(() => localStorage.getItem("annalo.capture.draft")), null, "an empty field clears the draft");
+  assert.equal(await app.browser.execute(() => localStorage.getItem("arcalo.capture.draft")), null, "an empty field clears the draft");
   assert.deepEqual(await app.consoleErrors(), []);
 });
 

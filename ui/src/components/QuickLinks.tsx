@@ -54,7 +54,7 @@ export async function openAllInGroup(index: number) {
   for (const i of items) await openQuickLinkAt({ group: index, index: i });
 }
 
-const GROUP_EVENT = "annalo:link-group";
+const GROUP_EVENT = "arcalo:link-group";
 /** Shows the popover of the group at `index` (command palette). */
 export const openLinkGroup = (index: number) => window.dispatchEvent(new CustomEvent(GROUP_EVENT, { detail: index }));
 

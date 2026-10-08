@@ -70,6 +70,36 @@ Website: package name, `annalo-theme` storage key (read-old fallback, privacy pa
 docs and privacy pages (also stale `annalo.log`), shot scripts' env names. Owner: rename the GitHub repo
 `MouseWerk/annaloweb` and the Cloudflare worker `annaloweb` (domains move with it).
 
+## Status of the rename (done in the app repo)
+
+Done, as specified above; details in docs/ARCHITECTURE.md „Names kept from Annalo“:
+
+- Identity: identifier `de.mousewerk.arcalo`; folders copied at start before the WebView exists
+  (`identity.rs` in core and shell: staging, verify, marker `.arcalo-migrated.json`, old folders kept,
+  copied again with the newer folder kept aside when an older version wrote to the old workspace,
+  old folder used for that start when a copy fails). Credentials: every known account copied to
+  `Arcalo`, read back and compared, noted in `credentials-moved.json`; `Annalo` read until then and
+  kept. localStorage copied once on UI boot (`ui/src/lib/legacy.ts`). Settings step 16 „theme-ids“.
+- Binary `arcalo`/`arcalo.exe`: NSIS hooks (old exe closed and removed, Run value, Start menu,
+  desktop and pinned taskbar shortcuts retargeted and stamped with the new AUMID, old folders removed
+  with „App-Daten löschen“), deb link `/usr/bin/annalo`, AUR links, macOS link
+  `Contents/MacOS/annalo` (1.14's updater restarts that path), CLI also as `annalo`.
+- Read both / write new: markers, MDM domain, MSIX excluded folders, Git sync marker and database
+  copy, formats, `ANNALO_*` variables (test-only ones renamed), log filter aliases.
+- Code-level renames: crates, npm packages, DOM events, globals, MIME types, URI schemes and header,
+  thread names, CI artifact, `ARCALO_UPDATER_PUBKEY`, brand files, config example, e2e `ARCALO_APP`.
+- Kept: synthetic ICS UIDs `annalo-…` (stable ids), the update feed fallbacks, the signing key, the
+  pinned Chocolatey icon URL, release notes and findings as history.
+- Tests: core `identity` (1.14 layout, WebView2 storage, location.json, merge, failure, rollback,
+  idempotence), shell `secrets` (take-over, fallback, encrypted workspace, portable namespace),
+  `installer` (1.14 bundle restart path), `portable` (old lock), mail/theme/settings readers, UI
+  `legacy.test.ts`, the guards (`branding.test.ts` any spelling, e2e 250) and e2e 288 (a 1.14 layout:
+  pages, settings, encrypted workspace, secret, WebView storage, update marker, location.json).
+
+Open for the owner: the website (repo and worker rename), the Windows/macOS manual checks in the
+release notes (taskbar pin, AUMID, macOS link in the signed bundle), and when to delete the old
+folders and credential entries (not before all installs run 1.15).
+
 ## Tests
 
 Migration from a real 1.14 layout (data folder, WebView storage, credentials incl. an encrypted workspace,

@@ -15,7 +15,7 @@ let app;
 let jira;
 before(async () => {
   jira = await startFakeJira({ flavor: "cloud", rateLimitOnce: true });
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "1" } });
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "1" } });
 });
 after(async () => {
   await app?.close();

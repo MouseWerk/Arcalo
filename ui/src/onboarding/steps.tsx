@@ -138,7 +138,7 @@ export function LanguageStep({ view }: { view: SettingsView }) {
 
 // ---------------------------------------------------------------------- theme
 
-const THEME_PICKS = ["annalo-light", "github-light", "catppuccin-latte", "rose-pine-dawn", "annalo-dark", "tokyo-night", "nord", "catppuccin-mocha"];
+const THEME_PICKS = ["arcalo-light", "github-light", "catppuccin-latte", "rose-pine-dawn", "arcalo-dark", "tokyo-night", "nord", "catppuccin-mocha"];
 
 export function ThemeStep({ view, write }: { view: SettingsView; write: Write }) {
   const t = useT();

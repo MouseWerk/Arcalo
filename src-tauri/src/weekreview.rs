@@ -1,16 +1,16 @@
 //! „Wochenrückblick“ in the shell: the review of a week, its summary and „Als Wochenbericht
-//! speichern“. The logic lives in `annalo_core::weekreview`.
+//! speichern“. The logic lives in `arcalo_core::weekreview`.
 //!
 //! The summary goes through the router like every request; a week with a private page or a
 //! private appointment (or a privacy marker in its data) goes to the local model only.
 
-use annalo_core::ai::availability;
-use annalo_core::ai::client::ChatRequest;
-use annalo_core::ai::transform;
-use annalo_core::calsync::outlook;
-use annalo_core::model::Page;
-use annalo_core::weekreview::{self as core, WeekReview};
-use annalo_core::{Database, Error, tr};
+use arcalo_core::ai::availability;
+use arcalo_core::ai::client::ChatRequest;
+use arcalo_core::ai::transform;
+use arcalo_core::calsync::outlook;
+use arcalo_core::model::Page;
+use arcalo_core::weekreview::{self as core, WeekReview};
+use arcalo_core::{Database, Error, tr};
 use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, State};

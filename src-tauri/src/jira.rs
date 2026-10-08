@@ -1,5 +1,5 @@
 //! Settings → Jira, the Issues page, issue chips and notes, the Sprint widget, the optional
-//! worklogs and the assistant's Jira tools. The logic lives in `annalo_core::issues`.
+//! worklogs and the assistant's Jira tools. The logic lives in `arcalo_core::issues`.
 //!
 //! Tokens live in the credential store (`jira-<site id>`), never in the settings. Requests use the
 //! site's own client (`client_for(Service::Jira(id))`), so the proxy profile, extra CAs, trusted
@@ -13,13 +13,13 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use annalo_core::issues::jira::{self as core_jira, JiraClient};
-use annalo_core::issues::{
+use arcalo_core::issues::jira::{self as core_jira, JiraClient};
+use arcalo_core::issues::{
     self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, JiraSite,
     NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
 };
-use annalo_core::model::{Page, TimeEntry};
-use annalo_core::{Error, tr, trf};
+use arcalo_core::model::{Page, TimeEntry};
+use arcalo_core::{Error, tr, trf};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -71,7 +71,7 @@ fn client_with(state: &AppState, site: &JiraSite, token: Option<&str>, kind: Sit
             .into(),
         ));
     }
-    let service = annalo_core::network::Service::Jira(site.id.clone());
+    let service = arcalo_core::network::Service::Jira(site.id.clone());
     let http = crate::network::client_for(state, &service)?;
     let timeout = crate::network::timeout_for(state, &service);
     Ok(JiraClient::new(&site.id, &site.url, kind, &site.email, &token, http, timeout))
@@ -385,9 +385,9 @@ pub async fn jira_sync_now(app: AppHandle, site: Option<String>) -> Result<JiraS
     Ok(status)
 }
 
-/// How long after the start the first sync runs: 15 s, or `ANNALO_JIRA_DELAY_SECS` (tests).
+/// How long after the start the first sync runs: 15 s, or `ARCALO_JIRA_DELAY_SECS` (tests).
 fn startup_delay() -> Duration {
-    Duration::from_secs(std::env::var("ANNALO_JIRA_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(15))
+    Duration::from_secs(std::env::var("ARCALO_JIRA_DELAY_SECS").ok().and_then(|s| s.trim().parse().ok()).unwrap_or(15))
 }
 
 /// Background sync (every site whose last attempt is older than the interval) and worklogs.
@@ -539,8 +539,8 @@ pub fn jira_issue_note(state: State<AppState>, key: String) -> Result<IssueNote>
         let page = db.create_page(None, &crate::unique_title(&db, title.trim())?, Some("ticket"))?;
         db.save_page_content(page.id, &format!("---\njira: {key}\n---\n\n"))?;
         // Jira/ABC Projekt/ABC-12 Titel (Settings → Ordner & Ablage).
-        let info = annalo_core::filing::FileInfo {
-            kind: annalo_core::filing::FileType::Jira,
+        let info = arcalo_core::filing::FileInfo {
+            kind: arcalo_core::filing::FileType::Jira,
             date: chrono::Local::now().date_naive(),
             group: Some(db.jira_group(&key)?),
         };
@@ -561,18 +561,18 @@ pub struct AddedTask {
 pub fn jira_add_task(app: AppHandle, state: State<AppState>, key: String) -> Result<AddedTask> {
     let settings = state.settings();
     let summary = state.reader().issue_get(&key)?.map(|i| i.summary).unwrap_or_default();
-    let zone = annalo_core::calsync::tz::Zone::Local;
-    let opts = annalo_core::capture::CaptureOptions {
+    let zone = arcalo_core::calsync::tz::Zone::Local;
+    let opts = arcalo_core::capture::CaptureOptions {
         inbox_title: &settings.capture.inbox_title,
         thresholds: &settings.thresholds,
         zone: &zone,
         book_time: false,
     };
     let text = format!("- [ ] {key} {summary}");
-    let (out, _) = annalo_core::capture::capture_to(
+    let (out, _) = arcalo_core::capture::capture_to(
         &state.db(),
         text.trim_end(),
-        &annalo_core::capture::CaptureTarget::Daily,
+        &arcalo_core::capture::CaptureTarget::Daily,
         &opts,
         Utc::now(),
         &Local,
@@ -1014,8 +1014,8 @@ pub async fn jira_tool(app: AppHandle, name: String, arguments: String) -> Resul
 }
 
 /// A confirmed comment or status change of the assistant.
-pub async fn run_write(app: &AppHandle, call: &annalo_core::ai::tools::SystemCall) -> Result<String> {
-    use annalo_core::ai::tools::SystemCall;
+pub async fn run_write(app: &AppHandle, call: &arcalo_core::ai::tools::SystemCall) -> Result<String> {
+    use arcalo_core::ai::tools::SystemCall;
     let state = app.state::<AppState>();
     let key = match call {
         SystemCall::JiraComment { key, .. } | SystemCall::JiraTransition { key, .. } => key.clone(),

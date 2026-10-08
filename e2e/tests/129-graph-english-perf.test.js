@@ -34,13 +34,13 @@ async function selectHub() {
 }
 
 before(async () => {
-  fx = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-graph-en-"));
-  big = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-graph-big-"));
+  fx = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-graph-en-"));
+  big = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-graph-big-"));
   const root = realisticVault(fx, "en");
   ({ app, dataDir } = await launchEnglish());
   const report = await app.invoke("vault_import", { path: root });
   assert.ok(report.pages >= 250, `imported ${report.pages} pages`);
-  await app.browser.execute(() => localStorage.setItem("annalo.panel", "0"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.panel", "0"));
   await reload();
 });
 

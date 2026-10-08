@@ -96,7 +96,7 @@ describe("color themes", () => {
     }
   });
 
-  it("tokens.css (the Annalo themes) defines every derived token and keeps the same contrast", () => {
+  it("tokens.css (the Arcalo themes) defines every derived token and keeps the same contrast", () => {
     const css = readFileSync(resolve(__dirname, "../styles/tokens.css"), "utf8");
     const block = (sel: string) => {
       const body = css.slice(css.indexOf(sel)).split("}")[0];
@@ -119,11 +119,11 @@ describe("color themes", () => {
     }
   });
 
-  it("CSS: nothing for Annalo with its own accent, the full set for other themes, accents on top", () => {
-    const annalo = findTheme("annalo-dark", undefined, true);
-    expect(themeCss(annalo, "theme")).toBe("");
-    expect(themeCss(annalo, "indigo")).toBe("");
-    expect(themeCss(annalo, "teal")).toMatch(/--accent: #/);
+  it("CSS: nothing for Arcalo with its own accent, the full set for other themes, accents on top", () => {
+    const arcalo = findTheme("arcalo-dark", undefined, true);
+    expect(themeCss(arcalo, "theme")).toBe("");
+    expect(themeCss(arcalo, "indigo")).toBe("");
+    expect(themeCss(arcalo, "teal")).toMatch(/--accent: #/);
     const nord = findTheme("nord", undefined, true);
     const css = themeCss(nord, "theme");
     expect(css).toContain("--bg-canvas: #2e3440;");
@@ -139,13 +139,13 @@ describe("color themes", () => {
     expect(effectiveAccent(nord, "#ff0000")).toBe("#ff0000");
   });
 
-  it("finds custom themes and falls back to Annalo for unknown ids", () => {
+  it("finds custom themes and falls back to Arcalo for unknown ids", () => {
     const mine: CustomTheme = { id: "custom-1", name: "Papier", dark: false, colors: { ...BUILTIN_THEMES[0].colors, background: "#fbf8f1" } };
     const a = { custom_themes: [mine] };
     expect(findTheme("custom-1", a, false).name).toBe("Papier");
-    expect(findTheme("gibt-es-nicht", a, true).id).toBe("annalo-dark");
-    expect(findTheme("gibt-es-nicht", a, false).id).toBe("annalo-light");
-    // A custom theme copied from Annalo still gets its CSS (it is not the built-in).
+    expect(findTheme("gibt-es-nicht", a, true).id).toBe("arcalo-dark");
+    expect(findTheme("gibt-es-nicht", a, false).id).toBe("arcalo-light");
+    // A custom theme copied from Arcalo still gets its CSS (it is not the built-in).
     expect(themeCss(customDef({ ...mine, id: "custom-2" }), "theme")).toContain("--bg-canvas: #fbf8f1;");
   });
 

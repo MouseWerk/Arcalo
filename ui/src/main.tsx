@@ -1,3 +1,4 @@
+import "./lib/storageBoot";
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/inter";
@@ -54,19 +55,19 @@ if (!mobileMode) {
 
 // Collect runtime errors so end-to-end tests can assert a clean console; they also go to
 // the developer log (Settings → Protokoll).
-const w = window as unknown as { __annaloErrors: string[] };
-w.__annaloErrors = [];
+const w = window as unknown as { __arcaloErrors: string[] };
+w.__arcaloErrors = [];
 window.addEventListener("error", (e) => {
-  w.__annaloErrors.push(String(e.message));
+  w.__arcaloErrors.push(String(e.message));
   logUi("ERROR", e.error ? describeError(e.error) : `${e.message} (${e.filename}:${e.lineno})`);
 });
 window.addEventListener("unhandledrejection", (e) => {
-  w.__annaloErrors.push(String(e.reason));
+  w.__arcaloErrors.push(String(e.reason));
   logUi("ERROR", `Unhandled rejection: ${describeError(e.reason)}`);
 });
 const origError = console.error;
 console.error = (...args: unknown[]) => {
-  w.__annaloErrors.push(args.map(String).join(" "));
+  w.__arcaloErrors.push(args.map(String).join(" "));
   logUi("ERROR", args.map((a) => (a instanceof Error ? describeError(a) : typeof a === "string" ? a : describeError(a))).join(" "));
   origError(...args);
 };

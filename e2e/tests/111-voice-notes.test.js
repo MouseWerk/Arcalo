@@ -20,7 +20,7 @@ before(async () => {
   local = await startFakeOpenAI({ port: 4992, kind: "ollama", name: "Ollama", models: ["llama3.2:latest"], respond: () => summaryAnswer("de") });
   models = await startModelServer();
   meeting = writeMeetingNow("Jour fixe Kunde X");
-  app = await launch({ env: { ...fx.env, ANNALO_TEST_MODEL_BASES: `${models.url}/gh|${models.url}/hf` } });
+  app = await launch({ env: { ...fx.env, ARCALO_TEST_MODEL_BASES: `${models.url}/gh|${models.url}/hf` } });
   await app.invoke("provider_key_set", { id: "cloud", key: cloud.apiKey });
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", {
@@ -86,7 +86,7 @@ test("ribbon → voice bar → note with audio and transcript → summary with t
   await app.waitFor(".pane.active .audio-embed", 10000);
   await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .audio-embed .file-embed-size")?.textContent), { timeout: 8000, timeoutMsg: "audio file missing" });
   const src = await app.browser.execute(() => document.querySelector(".pane.active .audio-embed audio").getAttribute("src"));
-  assert.match(src, /annalo-asset/);
+  assert.match(src, /arcalo-asset/);
   assert.match(src, /\.flac$/);
   await app.shot("111-voice-note");
 

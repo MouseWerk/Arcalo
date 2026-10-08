@@ -229,7 +229,7 @@ const DURATION_UNITS: Record<string, number> = {
 
 /**
  * Minutes of a `/zeit` duration (`2,5h`, `2.5std`, `1h30m`, `90min`, `1:30`, units in German
- * and English, as `annalo_core::zeit::parse_duration` reads them); null when it is none or not
+ * and English, as `arcalo_core::zeit::parse_duration` reads them); null when it is none or not
  * between 1 minute and 24 hours.
  */
 export function parseDuration(s: string): number | null {

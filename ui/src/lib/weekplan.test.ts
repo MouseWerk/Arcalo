@@ -132,9 +132,9 @@ describe("week proposal review", () => {
   it("keeps an open request until the timesheet takes it", () => {
     let seen = 0;
     const on = () => seen++;
-    window.addEventListener("annalo:week-proposal", on);
+    window.addEventListener("arcalo:week-proposal", on);
     requestWeekProposal();
-    window.removeEventListener("annalo:week-proposal", on);
+    window.removeEventListener("arcalo:week-proposal", on);
     expect(seen).toBe(1);
     expect(takeWeekProposalRequest()).toBe(true);
     expect(takeWeekProposalRequest()).toBe(false);

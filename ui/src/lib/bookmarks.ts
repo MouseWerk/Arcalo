@@ -49,7 +49,7 @@ export const bookmarksApi = {
   readText: (text: string) => invoke<BmTree>("bookmarks_read_text", { text }),
 };
 
-/** The ribbon's limits (crates/annalo-core/src/settings.rs). */
+/** The ribbon's limits (crates/arcalo-core/src/settings.rs). */
 export const MAX_RIBBON = 40;
 export const MAX_GROUP = 60;
 

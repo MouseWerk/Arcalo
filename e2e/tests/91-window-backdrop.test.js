@@ -1,5 +1,5 @@
 // Window backdrop (Settings → Darstellung „Hintergrundeffekt“, „Deckkraft“). Linux has no Mica,
-// so ANNALO_TEST_BACKDROP=1 makes the shell offer Mica and Acrylic and report the chosen one as
+// so ARCALO_TEST_BACKDROP=1 makes the shell offer Mica and Acrylic and report the chosen one as
 // active without touching the window; the page then paints its translucent layers, and a
 // magenta page background stands in for the desktop. Checked: the effect choice, the slider
 // (live while dragged, saved when let go, off without an effect), one base layer with every
@@ -15,7 +15,7 @@ import { readPng } from "../lib/png.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-before(async () => (app = await launch({ width: 1480, height: 900, env: { ANNALO_TEST_BACKDROP: "1" } })));
+before(async () => (app = await launch({ width: 1480, height: 900, env: { ARCALO_TEST_BACKDROP: "1" } })));
 after(async () => app?.close());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

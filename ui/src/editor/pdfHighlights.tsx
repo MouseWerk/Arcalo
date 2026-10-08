@@ -1,7 +1,7 @@
 // Highlights in the PDF viewer: the colored bars over a page, the bar that appears over a text
 // selection („Markieren“ in a color), the popover of a highlight (color, note, „In Notiz
 // übernehmen“, delete) and taking highlights into a note as quotes that link back
-// (`[[Bericht.pdf#page=12&hl=7|S. 12]]`, see `annalo_core::pdfmarks`).
+// (`[[Bericht.pdf#page=12&hl=7|S. 12]]`, see `arcalo_core::pdfmarks`).
 
 import { useEffect, useRef, useState } from "react";
 import { FileInput, Highlighter, Trash2 } from "lucide-react";

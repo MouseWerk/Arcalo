@@ -12,7 +12,7 @@ const test = guarded(nodeTest, () => app);
 let app, tmp;
 before(async () => {
   app = await launch();
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-themes-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-themes-"));
 });
 after(async () => app?.close());
 
@@ -77,7 +77,7 @@ test("the picker switches themes: tokens change, the mode follows, the choice pe
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await app.browser.waitUntil(async () => (await themeId()) === "solarized-light", { timeoutMsg: "theme not restored" });
   assert.equal(await cssVar("--bg-canvas"), "#fdf6e3");
-  const splash = await app.browser.execute(() => JSON.parse(localStorage.getItem("annalo.splash") ?? "{}"));
+  const splash = await app.browser.execute(() => JSON.parse(localStorage.getItem("arcalo.splash") ?? "{}"));
   assert.equal(splash.dark, false);
   assert.match(splash.bg, /^#[0-9a-f]{6}$/);
   assert.equal(splash.accent, "#268bd2");
@@ -87,10 +87,10 @@ test("the picker switches themes: tokens change, the mode follows, the choice pe
   await app.click('[data-theme-card="contrast-light"]');
   await app.browser.waitUntil(async () => (await themeId()) === "contrast-light");
   assert.equal(await app.browser.execute(() => document.querySelector('.accent-swatch[data-accent="teal"]').disabled), true);
-  await app.click('[data-theme-card="annalo-light"]');
-  await app.browser.waitUntil(async () => (await themeId()) === "annalo-light");
+  await app.click('[data-theme-card="arcalo-light"]');
+  await app.browser.waitUntil(async () => (await themeId()) === "arcalo-light");
   // Arcalo is tokens.css itself: no theme CSS is injected.
-  assert.equal(await app.browser.execute(() => document.getElementById("annalo-theme")?.textContent ?? ""), "");
+  assert.equal(await app.browser.execute(() => document.getElementById("arcalo-theme")?.textContent ?? ""), "");
 });
 
 test("the theme editor previews live, warns about contrast and saves a custom theme", async () => {
@@ -138,7 +138,7 @@ test("custom themes round-trip through a theme file; invalid files are refused",
   await app.invoke("theme_export", { path: file, theme: mine });
   const exported = JSON.parse(fs.readFileSync(file, "utf8"));
   assert.deepEqual(Object.keys(exported).sort(), ["colors", "dark", "format", "name", "version"]);
-  assert.equal(exported.format, "annalo-theme");
+  assert.equal(exported.format, "arcalo-theme");
   assert.deepEqual(exported.colors, mine.colors);
 
   const back = await app.invoke("theme_file_read", { path: file });
@@ -150,7 +150,7 @@ test("custom themes round-trip through a theme file; invalid files are refused",
     fs.writeFileSync(p, typeof content === "string" ? content : JSON.stringify(content));
     return app.invoke("theme_file_read", { path: p });
   };
-  await assert.rejects(bad("settings.json", { format: "annalo-settings", version: 1, settings: {} }), /Keine Arcalo-Theme-Datei/);
+  await assert.rejects(bad("settings.json", { format: "arcalo-settings", version: 1, settings: {} }), /Keine Arcalo-Theme-Datei/);
   await assert.rejects(bad("broken.json", "{ kaputt"), /kein gültiges JSON/);
   await assert.rejects(bad("color.json", { ...exported, colors: { ...exported.colors, accent: "blau" } }), /Ungültige Farbe „accent“/);
   const { danger, ...partial } = exported.colors;

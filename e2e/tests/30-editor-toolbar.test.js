@@ -150,5 +150,5 @@ test("the assistant suggests from the open page and the data; follow-ups after a
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

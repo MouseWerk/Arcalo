@@ -225,7 +225,7 @@ export function CommandPalette() {
       ...(activeTabObj
         ? [{ id: "pin-tab", title: activeTabObj.pinned ? t("tabs.unpin") : t("tabs.pin"), subtitle: tabTitle(activeTabObj, pages), icon: ic(activeTabObj.pinned ? PinOff : Pin), hint: hint("pin_tab"), run: () => s().togglePin(activeTabObj.id) }]
         : []),
-      { id: "search", title: t("cmd.search"), icon: ic(Search), hint: hint("search"), run: () => { if (!s().sidebarOpen) { s().set({ sidebarOpen: true }); savePref("annalo.sidebar", true); } setTimeout(() => window.dispatchEvent(new Event("annalo:sidebar-search")), 30); } },
+      { id: "search", title: t("cmd.search"), icon: ic(Search), hint: hint("search"), run: () => { if (!s().sidebarOpen) { s().set({ sidebarOpen: true }); savePref("arcalo.sidebar", true); } setTimeout(() => window.dispatchEvent(new Event("arcalo:sidebar-search")), 30); } },
       { id: "back", title: t("cmd.back"), icon: ic(ArrowLeft), hint: hint("back"), run: () => s().goBack() },
       { id: "forward", title: t("cmd.forward"), icon: ic(ArrowRight), hint: hint("forward"), run: () => s().goForward() },
       timer
@@ -289,8 +289,8 @@ export function CommandPalette() {
       { id: "help-notes", title: t("cmd.releaseNotes"), icon: ic(ScrollText), run: () => void showVersionNotes() },
       { id: "help-feedback", title: t("cmd.feedback"), subtitle: t("cmd.feedbackSub"), icon: ic(MessageSquareText), run: () => void openIssueForm("feedback") },
       { id: "help-bug", title: t("cmd.bugReport"), subtitle: t("cmd.feedbackSub"), icon: ic(Bug), run: () => void openIssueForm("bug") },
-      { id: "sidebar", title: t("cmd.toggleSidebar"), icon: ic(PanelLeft), hint: hint("toggle_sidebar"), run: () => { const v = !s().sidebarOpen; s().set({ sidebarOpen: v }); savePref("annalo.sidebar", v); } },
-      { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("annalo.panel", v); } },
+      { id: "sidebar", title: t("cmd.toggleSidebar"), icon: ic(PanelLeft), hint: hint("toggle_sidebar"), run: () => { const v = !s().sidebarOpen; s().set({ sidebarOpen: v }); savePref("arcalo.sidebar", v); } },
+      { id: "panel", title: t("cmd.togglePanel"), icon: ic(PanelRight), hint: hint("toggle_panel"), run: () => { const v = !s().panelOpen; s().set({ panelOpen: v }); savePref("arcalo.panel", v); } },
       { id: "focus", title: t("cmd.focusMode"), icon: ic(Focus), hint: hint("focus_mode"), run: () => s().set({ focusMode: !s().focusMode }) },
       { id: "theme", title: t("cmd.theme"), icon: ic(Moon), run: () => toggleTheme() },
       { id: "import", title: t("cmd.importVault"), icon: ic(FolderInput), run: () => importVault() },

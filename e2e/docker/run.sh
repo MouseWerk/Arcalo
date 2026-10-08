@@ -19,7 +19,7 @@ docker run --rm -t \
     npm ci --prefix ui --no-audit --no-fund
     npm ci --prefix e2e --no-audit --no-fund
     npm --prefix ui run build
-    cargo build -p annalo --features custom-protocol
+    cargo build -p arcalo --features custom-protocol
     cd e2e && rm -f screenshots/FAIL-*
-    ANNALO_APP=/repo/target/debug/annalo node --test --test-concurrency=1 --test-reporter=spec ${files[*]}
+    ARCALO_APP=/repo/target/debug/arcalo node --test --test-concurrency=1 --test-reporter=spec ${files[*]}
   "

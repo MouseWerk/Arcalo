@@ -16,12 +16,12 @@
 //! - macOS: plain notifications through the plugin (clicking brings Arcalo to the front).
 //!
 //! A snoozed reminder is stored in the database (meta `notify.snoozes`) and shown again when
-//! its time has come, also after a restart. Debug builds with `ANNALO_NOTIFY_TEST` set show
+//! its time has come, also after a restart. Debug builds with `ARCALO_NOTIFY_TEST` set show
 //! nothing on the desktop and accept simulated clicks ([`notify_test`]) for the tests.
 
 use std::sync::Mutex;
 
-use annalo_core::{Database, Error, tr, trf};
+use arcalo_core::{Database, Error, tr, trf};
 use chrono::{DateTime, Local, NaiveTime, TimeDelta, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -35,7 +35,7 @@ pub const SCHEME: &str = "arcalo-notify";
 const SNOOZES_KEY: &str = "notify.snoozes";
 const DUE_KEY: &str = "notify.task_due";
 const UPDATE_KEY: &str = "notify.update_ready";
-const TEST_ENV: &str = "ANNALO_NOTIFY_TEST";
+const TEST_ENV: &str = "ARCALO_NOTIFY_TEST";
 /// Tasks due today are announced from this time on.
 const DUE_FROM: (u32, u32) = (9, 0);
 /// At most this many task reminders at once (the rest waits for the task view).
@@ -333,7 +333,7 @@ fn task_key(page_id: i64, text: &str) -> String {
 
 /// Open tasks due on `today` not announced yet today (and not snoozed); marks them announced.
 pub fn due_tasks(db: &Database, today: &str) -> Result<Vec<Note>> {
-    let filter = annalo_core::tasks::TaskFilter { due_before: Some(today.into()), ..Default::default() };
+    let filter = arcalo_core::tasks::TaskFilter { due_before: Some(today.into()), ..Default::default() };
     let mut reminded: Reminded = db
         .meta_get(DUE_KEY)?
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -376,7 +376,7 @@ pub fn periodic_at(app: &AppHandle, now: DateTime<Local>, force: bool) {
         // A task done meanwhile is not brought back.
         let open = |subject: &Subject| match subject {
             Subject::Task { page_id, text, .. } => {
-                let f = annalo_core::tasks::TaskFilter { page_id: Some(*page_id), ..Default::default() };
+                let f = arcalo_core::tasks::TaskFilter { page_id: Some(*page_id), ..Default::default() };
                 db.list_tasks(&f).is_ok_and(|ts| ts.iter().any(|t| !t.done && &t.text == text))
             }
             _ => true,
@@ -617,7 +617,10 @@ pub fn register(app: &AppHandle) {
     #[cfg(windows)]
     if crate::store::packaged() {
         win::declared();
-    } else if !crate::portable::active() && !crate::store::active() && std::env::var_os("ANNALO_DATA_DIR").is_none() {
+    } else if !crate::portable::active()
+        && !crate::store::active()
+        && arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none()
+    {
         match tauri::process::current_binary(&app.env()) {
             Ok(exe) => {
                 if let Err(e) = win::register(&exe) {
@@ -714,7 +717,7 @@ pub fn dispatch(app: &AppHandle, subject: &Subject, act: Act, ready: bool) -> Re
 
 // ------------------------------------------------------------------ test seam
 
-/// Debug builds with `ANNALO_NOTIFY_TEST`: `shown` (the notifications so far), `activate`
+/// Debug builds with `ARCALO_NOTIFY_TEST`: `shown` (the notifications so far), `activate`
 /// (`arg`: an address, as if clicked), `due_check` (the task reminders regardless of the
 /// time), `tick` (`arg`: minutes ahead; snoozed reminders due by then come back), `snoozes`,
 /// `show` (`arg`: `briefing` or `update`, a sample notification).
@@ -833,7 +836,7 @@ mod tests {
 
     #[test]
     fn snoozes_persist_replace_and_come_back_when_due() {
-        let path = std::env::temp_dir().join(format!("annalo-snooze-{}.db", std::process::id()));
+        let path = std::env::temp_dir().join(format!("arcalo-snooze-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let t0 = Utc.with_ymd_and_hms(2026, 10, 2, 10, 0, 0).unwrap();
         {

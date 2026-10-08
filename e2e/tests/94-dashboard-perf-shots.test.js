@@ -90,7 +90,7 @@ test("a large workspace: ten widgets, one call, rendered within 150 ms of the an
   await reload();
   await app.waitFor(".pane.active .dw[data-widget='q2'] .dw-table", 30000);
   await app.browser.waitUntil(async () => (await app.$$(".pane.active .dw:not([data-widget='proposal']) .dw-skel")).length === 0, { timeout: 30000, timeoutMsg: "widgets still loading" });
-  const perf = await app.browser.execute(() => window.__annaloDashPerf ?? []);
+  const perf = await app.browser.execute(() => window.__arcaloDashPerf ?? []);
   assert.ok(perf.length >= 1, "no timing recorded");
   const first = perf[0];
   // The ten widgets in view need 11 parts („Heute“ also asks for the timer's references),
@@ -106,14 +106,14 @@ test("a large workspace: ten widgets, one call, rendered within 150 ms of the an
     home.scrollTop += el.getBoundingClientRect().top - home.getBoundingClientRect().top - 100;
   });
   await app.waitFor(".pane.active .dw[data-widget='proposal'] .dw-proposal", 15000);
-  const after = await app.browser.execute(() => window.__annaloDashPerf);
+  const after = await app.browser.execute(() => window.__arcaloDashPerf);
   assert.ok(after.some((p) => p.parts === 1), JSON.stringify(after));
   // A booking elsewhere reloads the widgets showing time entries, in one call.
   const n = after.length;
   await app.invoke("time_entry_create", { netzplanId: made.np, vorgangNr: null, leistungsart: null, startTime: new Date().toISOString(), durationMinutes: 15, description: "Perf live" });
   await app.browser.execute(() => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "data://entries", payload: null }));
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => window.__annaloDashPerf.length)) > n, { timeout: 10000, timeoutMsg: "no reload after data://entries" });
-  const live = (await app.browser.execute(() => window.__annaloDashPerf)).slice(n);
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => window.__arcaloDashPerf.length)) > n, { timeout: 10000, timeoutMsg: "no reload after data://entries" });
+  const live = (await app.browser.execute(() => window.__arcaloDashPerf)).slice(n);
   assert.equal(live.length, 1, JSON.stringify(live));
   console.log(`reload after a booking: ${live[0].parts} parts, backend ${live[0].backendMs.toFixed(1)} ms, painted ${live[0].renderMs.toFixed(1)} ms after the answer`);
   await app.browser.execute(() => document.querySelector(".home").scrollTo(0, 0));

@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use annalo_core::Error;
-use annalo_core::error::IoAt;
-use annalo_core::prefs::{self, CostLevel};
-use annalo_core::settings::Settings;
+use arcalo_core::Error;
+use arcalo_core::error::IoAt;
+use arcalo_core::prefs::{self, CostLevel};
+use arcalo_core::settings::Settings;
 use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -16,7 +16,7 @@ use crate::{AppState, Result};
 /// Largest settings file that is read for an import.
 const MAX_IMPORT_BYTES: u64 = 1024 * 1024;
 /// Marker of an exported settings file.
-pub const EXPORT_FORMAT: &str = "annalo-settings";
+pub const EXPORT_FORMAT: &str = "arcalo-settings";
 
 #[derive(Serialize)]
 struct ExportFile<'a> {
@@ -50,12 +50,12 @@ pub fn settings_file_read(path: String) -> Result<String> {
     let path = PathBuf::from(path.trim());
     if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
         return Err(Error::State(
-            annalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
+            arcalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
         ));
     }
     if std::fs::metadata(&path).at(&path)?.len() > MAX_IMPORT_BYTES {
         return Err(Error::State(
-            annalo_core::tr!(
+            arcalo_core::tr!(
                 "Die Datei ist zu groß für eine Einstellungsdatei",
                 "The file is too large for a settings file"
             )
@@ -69,7 +69,7 @@ pub fn settings_file_read(path: String) -> Result<String> {
 #[tauri::command(async)]
 pub fn theme_export(path: String, theme: prefs::CustomTheme) -> Result<()> {
     let theme = prefs::normalize_custom_themes(vec![theme]).pop().ok_or_else(|| {
-        Error::State(annalo_core::tr!("Das Theme enthält ungültige Farben", "The theme contains invalid colors").into())
+        Error::State(arcalo_core::tr!("Das Theme enthält ungültige Farben", "The theme contains invalid colors").into())
     })?;
     std::fs::write(path.trim(), prefs::theme_file_json(&theme)).at(path.trim())?;
     Ok(())
@@ -98,7 +98,7 @@ pub fn settings_defaults(state: State<'_, AppState>, section: Option<String>) ->
             Ok(Settings {
                 litellm_base_url: cur.litellm_base_url,
                 providers: cur.providers,
-                router: annalo_core::ai::router::RouterConfig {
+                router: arcalo_core::ai::router::RouterConfig {
                     local_model: cur.router.local_model,
                     standard_model: cur.router.standard_model,
                     reasoning_model: cur.router.reasoning_model,
@@ -133,7 +133,7 @@ pub struct WindowState {
 }
 
 fn window_file(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("window.json"))
+    crate::config_dir(app).ok().map(|d| d.join("window.json"))
 }
 
 pub fn load_window_state(path: &Path) -> Option<WindowState> {
@@ -161,7 +161,7 @@ pub fn window_state_save(app: AppHandle) -> Result<()> {
     let pos = w.outer_position().map_err(|e| Error::State(e.to_string()))?.to_logical::<i32>(scale);
     let size = w.inner_size().map_err(|e| Error::State(e.to_string()))?.to_logical::<u32>(scale);
     let path = window_file(&app)
-        .ok_or_else(|| Error::State(annalo_core::tr!("Kein Konfigurationsordner", "No configuration folder").into()))?;
+        .ok_or_else(|| Error::State(arcalo_core::tr!("Kein Konfigurationsordner", "No configuration folder").into()))?;
     let mut state = WindowState { x: pos.x, y: pos.y, width: size.width, height: size.height, maximized };
     // A maximized window keeps the normal geometry saved before.
     if maximized && let Some(old) = load_window_state(&path) {
@@ -213,7 +213,7 @@ pub fn check_cost_limit(state: &AppState, override_limit: bool) -> Result<()> {
     }
     let s = cost_status_of(state)?;
     if let CostLevel::Blocked { .. } = s.level {
-        return Err(Error::State(annalo_core::trf!(
+        return Err(Error::State(arcalo_core::trf!(
             "{COST_LIMIT_PREFIX} {:.2} von {:.2} USD in diesem Monat verbraucht",
             "{COST_LIMIT_PREFIX_EN} {:.2} of {:.2} USD used this month",
             s.spent_usd,

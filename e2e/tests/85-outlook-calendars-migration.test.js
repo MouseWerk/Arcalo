@@ -19,7 +19,7 @@ let dataDir;
 const keys = {};
 
 before(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-olmig-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-olmig-"));
   dataDir = path.join(dir, "data");
   fs.mkdirSync(dataDir);
   fs.writeFileSync(path.join(dir, "old.json"), outlookJson());

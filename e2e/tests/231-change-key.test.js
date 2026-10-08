@@ -11,13 +11,13 @@ import { APP, launch, guarded } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-rekey-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-rekey-"));
 const dataDir = path.join(root, "daten");
 fs.mkdirSync(dataDir, { recursive: true });
 const db = path.join(dataDir, "workspace.db");
 const secretsFile = path.join(dataDir, "secrets.json");
 // No Secret Service on the test machine: the key is in secrets.json (the file fallback).
-const ENV = { ANNALO_BACKUP_DELAY_SECS: "3600", ANNALO_SECRET_STORE: "file" };
+const ENV = { ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_SECRET_STORE: "file" };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = () => {
@@ -41,7 +41,7 @@ function endRestarted() {
   for (const pid of fs.readdirSync("/proc").filter((p) => /^\d+$/.test(p))) {
     try {
       if (fs.readlinkSync(`/proc/${pid}/exe`) !== APP) continue;
-      if (!fs.readFileSync(`/proc/${pid}/environ`, "latin1").split("\0").includes(`ANNALO_DATA_DIR=${dataDir}`)) continue;
+      if (!fs.readFileSync(`/proc/${pid}/environ`, "latin1").split("\0").includes(`ARCALO_DATA_DIR=${dataDir}`)) continue;
       process.kill(Number(pid), "SIGTERM");
     } catch {
       /* gone or not ours */

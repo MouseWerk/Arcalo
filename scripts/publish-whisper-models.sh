@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Publishes the Whisper models of voice notes as assets of the release `whisper-models-v1`
 # (the default download source of Arcalo). Downloads each file from Hugging Face, checks its
-# SHA-256 against crates/annalo-core/src/voice/models.rs and uploads it with the GitHub CLI.
+# SHA-256 against crates/arcalo-core/src/voice/models.rs and uploads it with the GitHub CLI.
 #
 #   scripts/publish-whisper-models.sh            # all models
 #   REPO=owner/name scripts/publish-whisper-models.sh
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 REPO="${REPO:-MouseWerk/Arcalo}"
 TAG="whisper-models-v1"
 SOURCE="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
-REGISTRY="crates/annalo-core/src/voice/models.rs"
+REGISTRY="crates/arcalo-core/src/voice/models.rs"
 WORK="${WORK:-$(mktemp -d)}"
 
 sha256() {

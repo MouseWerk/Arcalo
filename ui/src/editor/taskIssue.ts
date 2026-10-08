@@ -6,7 +6,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useApp } from "../store/app";
 
-export const CREATE_ISSUE_EVENT = "annalo:create-issue";
+export const CREATE_ISSUE_EVENT = "arcalo:create-issue";
 
 export interface CreateIssueRequest {
   summary: string;

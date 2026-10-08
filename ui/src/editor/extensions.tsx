@@ -483,7 +483,7 @@ export const MarkdownImage = Image.extend<ImageOptions & { inline: boolean; allo
   },
   renderHTML({ HTMLAttributes }) {
     const src = String(HTMLAttributes.src ?? "");
-    const local = src && !/^(https?:|data:|blob:|annalo-asset:)/i.test(src);
+    const local = src && !/^(https?:|data:|blob:|arcalo-asset:)/i.test(src);
     let path = src;
     try {
       path = decodeURI(src);

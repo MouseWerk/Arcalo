@@ -13,7 +13,7 @@ import { launch, guarded } from "../lib/harness.js";
 const test = guarded(nodeTest, () => app);
 let app;
 const ids = {};
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-123-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-123-"));
 
 const QUELLE = "# Quelle\nEinleitung Quelle\n\n## Ziele\nSchnell liefern.\n\n### Unterpunkt\nDetail zum Ziel.\n\n## Risiken\nZu spät geliefert. ^risk1\n";
 const HOST = "[[Quelle]]\n\n![[Quelle]]\n\n![[Quelle#Ziele]]\n\n![[Quelle#^risk1]]\n\n![[Kreis A]]\n\n![[Gibt es nicht]]\n\n![[Quelle#Fehlt]]\n";
@@ -152,7 +152,7 @@ test("`![[` completes pages, then headings after #", async () => {
 
 test("HTML share and print contain the embedded content", async () => {
   const file = path.join(tmp, "einbettungen.html");
-  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("annalo:share-html", { detail: { id, path: p } })), ids.host, file);
+  await app.browser.execute((id, p) => window.dispatchEvent(new CustomEvent("arcalo:share-html", { detail: { id, path: p } })), ids.host, file);
   await app.browser.waitUntil(() => fs.existsSync(file), { timeout: 10000, timeoutMsg: "HTML file not written" });
   const html = fs.readFileSync(file, "utf8");
   assert.match(html, /<section class="embed"><div class="embed-title"><span>Quelle › Ziele<\/span><\/div><div class="embed-body">/);

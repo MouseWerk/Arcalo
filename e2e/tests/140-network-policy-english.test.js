@@ -1,5 +1,5 @@
 // Settings → Network in English under an organization's policy (policy.json next to the
-// executable; ANNALO_EXE_DIR stands in for its folder): `NetworkRoute.ai` and
+// executable; ARCALO_EXE_DIR stands in for its folder): `NetworkRoute.ai` and
 // `NetworkRoute.updates` fix those services' profiles, `LockNetworkProfiles` locks the
 // profiles. The UI shows them locked, saving cannot change them, and the AI test goes through
 // the policy's profile.
@@ -52,9 +52,9 @@ before(async () => {
     },
   });
   await app.close();
-  exeDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-netpolicy-"));
+  exeDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-netpolicy-"));
   fs.writeFileSync(path.join(exeDir, "policy.json"), JSON.stringify({ "NetworkRoute.ai": "Firma", "NetworkRoute.updates": "Standard", LockNetworkProfiles: 1 }));
-  app = await launch({ dataDir, env: { ANNALO_LOCALE: "en-US", ANNALO_EXE_DIR: exeDir } });
+  app = await launch({ dataDir, env: { ARCALO_LOCALE: "en-US", ARCALO_EXE_DIR: exeDir } });
 });
 after(async () => {
   await app?.close();

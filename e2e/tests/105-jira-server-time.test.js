@@ -18,7 +18,7 @@ let jira;
 const site = (p = {}) => ({ id: "corp", name: "Corp Jira", color: "", kind: "server", url: "", email: "", enabled: true, log_work: true, allow_writes: false, ...p });
 before(async () => {
   jira = await startFakeJira({ flavor: "server", token: "pat-123", failWorklogs: 1 });
-  ({ app, dataDir } = await launchEnglish({ env: { ANNALO_JIRA_DELAY_SECS: "600" } }));
+  ({ app, dataDir } = await launchEnglish({ env: { ARCALO_JIRA_DELAY_SECS: "600" } }));
 });
 after(async () => {
   await app?.close();

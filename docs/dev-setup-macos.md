@@ -36,11 +36,11 @@ cd Arcalo && npm ci --prefix ui && npm ci --prefix e2e
 | What | Command |
 |---|---|
 | Run the app with hot reload | `cd src-tauri && cargo tauri dev` |
-| Format, lint, Rust tests | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test -p annalo-core -p annalo -p annalo-cli` |
+| Format, lint, Rust tests | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test -p arcalo-core -p arcalo -p arcalo-cli` |
 | UI typecheck and unit tests | `npm --prefix ui run typecheck && npm --prefix ui test` |
 | Build a Mac app and DMG | `cd src-tauri && cargo tauri build --bundles app,dmg` |
 
-Note: the macOS CI job runs `cargo clippy -p annalo` on a Mac. Mac-only code (Touch ID, Keychain, menu) is
+Note: the macOS CI job runs `cargo clippy -p arcalo` on a Mac. Mac-only code (Touch ID, Keychain, menu) is
 only compiled there, so run clippy locally before pushing changes to it.
 
 ## 4. End-to-end tests

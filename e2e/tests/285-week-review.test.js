@@ -79,12 +79,12 @@ async function folders(id) {
 }
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "annalo-e2e-week-"));
+  dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "arcalo-e2e-week-"));
   const file = path.join(dir, "Woche.ics");
   const ev = (uid, a, b, title) => ["BEGIN:VEVENT", `UID:${uid}`, `DTSTART:${icsTime(a)}`, `DTEND:${icsTime(b)}`, `SUMMARY:${title}`, "END:VEVENT"];
   fs.writeFileSync(
     file,
-    ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Annalo e2e//DE", ...ev("start@e2e", at(0, 10), at(0, 10, 30), "Wochenstart Rückblick"), ...ev("kunde@e2e", at(2, 14), at(2, 15), "Kundentermin Woche"), ...ev("retro@e2e", at(4, 11), at(4, 12), "Retro Woche"), "END:VCALENDAR", ""].join("\r\n"),
+    ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Arcalo e2e//DE", ...ev("start@e2e", at(0, 10), at(0, 10, 30), "Wochenstart Rückblick"), ...ev("kunde@e2e", at(2, 14), at(2, 15), "Kundentermin Woche"), ...ev("retro@e2e", at(4, 11), at(4, 12), "Retro Woche"), "END:VCALENDAR", ""].join("\r\n"),
   );
   app = await launch();
   await app.invoke("calendar_source_add", { name: "Woche", url: null, path: file });

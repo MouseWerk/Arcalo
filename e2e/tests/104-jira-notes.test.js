@@ -15,7 +15,7 @@ let jira;
 let pageId;
 before(async () => {
   jira = await startFakeJira({ flavor: "cloud" });
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "600" } });
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "600" } });
   await app.invoke("jira_site_save", {
     site: { id: "", name: "Acme", color: "", kind: "cloud", url: jira.url, email: "mia@firma.de", enabled: true, log_work: false, allow_writes: false },
     token: "secret-token",

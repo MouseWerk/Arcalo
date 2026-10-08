@@ -32,7 +32,7 @@ before(async () => {
   fs.mkdirSync(voice, { recursive: true });
   crashedWav(path.join(voice, "rec-crash1.wav"), 2);
   crashedWav(path.join(voice, "rec-crash2.wav"), 1);
-  app = await launch({ dataDir, env: { ANNALO_LOCALE: "en-US", ...fx.env } });
+  app = await launch({ dataDir, env: { ARCALO_LOCALE: "en-US", ...fx.env } });
 });
 after(async () => {
   await app?.close();
@@ -71,7 +71,7 @@ test("transcribe again with another language replaces the transcript", async () 
   await app.browser.execute(() => document.querySelectorAll(".voice-bar .voice-done [aria-label='Close']").forEach((b) => b.click()));
   // The voice note is open; its audio has „Transcribe again“.
   await app.waitFor(".pane.active .audio-embed .audio-embed-again", 10000);
-  fs.writeFileSync(fx.env.ANNALO_TEST_TRANSCRIPT, "[00:00] Second run, better words.\n");
+  fs.writeFileSync(fx.env.ARCALO_TEST_TRANSCRIPT, "[00:00] Second run, better words.\n");
   await app.click(".pane.active .audio-embed .audio-embed-again");
   await app.waitText(".dialog", /Transcribe again[\s\S]*replaces the current one/);
   await app.select(".dialog .voice-again-language", "de");

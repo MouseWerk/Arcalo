@@ -23,7 +23,7 @@ const state = (p: Partial<DestState> = {}): DestState => ({
 
 const view = (p: Partial<DestView>): DestView => ({
   id: "d1",
-  path: "\\\\nas\\team\\Annalo",
+  path: "\\\\nas\\team\\Arcalo",
   enabled: true,
   info: { kind: "unc", server: "nas", share: "team", cloud: null },
   state: state(),
@@ -35,10 +35,10 @@ const view = (p: Partial<DestView>): DestView => ({
 
 describe("backup destinations", () => {
   it("adds only new, non-empty folders (separators and case do not matter)", () => {
-    const list = [newDestination("\\\\NAS\\Team\\Annalo\\")];
+    const list = [newDestination("\\\\NAS\\Team\\Arcalo\\")];
     expect(list[0]).toMatchObject({ id: "", enabled: true, keep: 14, keep_days: 0, attachments: true, markdown: false });
-    expect(samePath("//nas/team/annalo", "\\\\NAS\\Team\\Annalo\\")).toBe(true);
-    expect(canAdd("//nas/team/annalo", list)).toBe(false);
+    expect(samePath("//nas/team/arcalo", "\\\\NAS\\Team\\Arcalo\\")).toBe(true);
+    expect(canAdd("//nas/team/arcalo", list)).toBe(false);
     expect(canAdd("   ", list)).toBe(false);
     expect(canAdd("Z:\\Sicherung", list)).toBe(true);
   });
@@ -75,10 +75,10 @@ describe("backup destinations", () => {
   });
 
   it("merges local and destination backups newest first", () => {
-    const local = [{ path: "/l/a2", file_name: "annalo-2.db", created_at: "2026-09-25T10:00:00+02:00", size_bytes: 1 }];
+    const local = [{ path: "/l/a2", file_name: "arcalo-2.db", created_at: "2026-09-25T10:00:00+02:00", size_bytes: 1 }];
     const remote = [
-      { path: "/r/pc/a3", file_name: "annalo-3.db", created_at: "2026-09-25T11:00:00+02:00", size_bytes: 1, source: "d1", source_path: "/r", host: "pc", has_sum: true },
-      { path: "/r/pc/a2", file_name: "annalo-2.db", created_at: "2026-09-25T10:00:00+02:00", size_bytes: 1, source: "d1", source_path: "/r", host: "pc", has_sum: true },
+      { path: "/r/pc/a3", file_name: "arcalo-3.db", created_at: "2026-09-25T11:00:00+02:00", size_bytes: 1, source: "d1", source_path: "/r", host: "pc", has_sum: true },
+      { path: "/r/pc/a2", file_name: "arcalo-2.db", created_at: "2026-09-25T10:00:00+02:00", size_bytes: 1, source: "d1", source_path: "/r", host: "pc", has_sum: true },
     ];
     const rows = mergeBackups(local, remote);
     expect(rows.map((r) => r.path)).toEqual(["/r/pc/a3", "/l/a2", "/r/pc/a2"]);

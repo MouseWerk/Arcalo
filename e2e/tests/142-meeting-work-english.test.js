@@ -47,7 +47,7 @@ async function palette(text) {
 
 before(async () => {
   ({ app, dataDir } = await launchEnglish());
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-142-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-142-"));
   await patchSettings((s) => ({ ...s, workdays: [1, 2, 3, 4, 5, 6, 7] }));
   const jf = slot(40);
   const first = new Date(jf.getTime() - 86_400_000);

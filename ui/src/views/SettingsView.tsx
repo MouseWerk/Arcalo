@@ -132,8 +132,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         setSection(want);
       }
     };
-    window.addEventListener("annalo:settings-section", onRequest);
-    return () => window.removeEventListener("annalo:settings-section", onRequest);
+    window.addEventListener("arcalo:settings-section", onRequest);
+    return () => window.removeEventListener("arcalo:settings-section", onRequest);
   }, []);
   const nav = useRef<HTMLElement>(null);
   // Collapsed groups of the menu (remembered); the group of the open section always shows.

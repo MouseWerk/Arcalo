@@ -12,7 +12,7 @@ import { launchEnglish, germanLeftovers } from "../lib/english.js";
 const test = guarded(nodeTest, () => app);
 let app;
 let dataDir;
-const ENV = { ANNALO_NOTIFY_TEST: "1" };
+const ENV = { ARCALO_NOTIFY_TEST: "1" };
 before(async () => ({ app, dataDir } = await launchEnglish({ env: ENV })));
 after(async () => {
   await app?.close();
@@ -52,7 +52,7 @@ test("Settings → Log: the level, JSON lines and the diagnostics bundle in Engl
   assert.ok(!JSON.stringify(line).includes("jsonSecret1361"));
 
   const file = path.join(dataDir, "diagnostics-136.zip");
-  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("annalo:diagnostics-bundle", { detail: { path: p } })), file);
+  await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("arcalo:diagnostics-bundle", { detail: { path: p } })), file);
   await app.waitText(".toast-title", /Diagnostics bundle saved/);
   const names = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" });
   assert.match(names, /info\.json/);
@@ -81,7 +81,7 @@ test("notification buttons in English; a snooze survives a restart", async () =>
 
   // Restart on the same data folder: the snooze is still there and comes back after an hour.
   await app.close();
-  app = await launch({ dataDir, env: { ANNALO_LOCALE: "en-US", ...ENV } });
+  app = await launch({ dataDir, env: { ARCALO_LOCALE: "en-US", ...ENV } });
   const snoozes = await notify("snoozes");
   assert.equal(snoozes.length, 1);
   assert.equal(snoozes[0].note.subject.text, "Call back 136");

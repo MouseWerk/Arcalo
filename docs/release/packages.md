@@ -90,7 +90,7 @@ Steps:
 ## AUR (`arcalo-bin`)
 
 `packaging/aur/arcalo-bin/` holds `PKGBUILD` and `.SRCINFO`. The package unpacks `data.tar` of the `.deb` into
-`/usr` (program `/usr/bin/annalo` plus a symlink `/usr/bin/arcalo`, desktop file, icons), sets the empty
+`/usr` (program `/usr/bin/arcalo` plus a symlink `/usr/bin/arcalo`, desktop file, icons), sets the empty
 `Categories=` of the desktop file to `Office;`, and installs the MIT license from the tagged source. The
 dependencies come from the libraries the binary links (`readelf -d`) and the `.deb`'s `Depends`
 (`libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libayatana-appindicator3-1`), mapped to Arch names; `git` (Git sync) and a

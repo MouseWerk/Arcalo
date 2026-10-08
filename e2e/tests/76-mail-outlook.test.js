@@ -74,7 +74,7 @@ test("the first mail becomes a task on the open page with due date and link", as
   // The next mail of the selection follows.
   await app.waitText(".dialog .dialog-title", /E-Mail übernehmen \(2 von 2\)/);
   const md = await content(page.id);
-  const m = /- \[ \] Kickoff vorbereiten\n- \[ \] Angebot für das Portal \[E-Mail: AW: Angebot für das Portal \(Müller, Anna, 24\.09\.2026\)\]\(annalo-mail:\/\/([0-9a-z]{8})\) due:(\S+) !!\n/.exec(md);
+  const m = /- \[ \] Kickoff vorbereiten\n- \[ \] Angebot für das Portal \[E-Mail: AW: Angebot für das Portal \(Müller, Anna, 24\.09\.2026\)\]\(arcalo-mail:\/\/([0-9a-z]{8})\) due:(\S+) !!\n/.exec(md);
   assert.ok(m, md);
   assert.equal(m[2], tomorrow);
   const link = await app.invoke("mail_link_info", { id: m[1] });
@@ -106,7 +106,7 @@ test("the second mail becomes a note with its attachment", async () => {
   const note = month?.children.find((n) => n.title === "Protokoll Lenkungskreis");
   assert.ok(note, JSON.stringify(parent.children.map((c) => c.title)));
   const md = await content(note.id);
-  assert.match(md, /^---\nvon: "Weiß, Jörg"\nan: "Kleindienst, Maurice"\ndatum: 2026-09-23 \d\d:05\nbetreff: "Protokoll Lenkungskreis"\ne-mail: annalo-mail:\/\/[0-9a-z]{8}\ntags: \[e-mail, privat\]\n---\n/);
+  assert.match(md, /^---\nvon: "Weiß, Jörg"\nan: "Kleindienst, Maurice"\ndatum: 2026-09-23 \d\d:05\nbetreff: "Protokoll Lenkungskreis"\ne-mail: arcalo-mail:\/\/[0-9a-z]{8}\ntags: \[e-mail, privat\]\n---\n/);
   assert.match(md, /> Anbei das Protokoll\.\n>\n> - Entscheidung: Go-Live im November\n/);
   assert.match(md, /## Anhänge\n\n!\[\[Protokoll\.pdf\]\]/);
   assert.equal(fs.readFileSync(path.join(app.dataDir, "attachments", "Protokoll.pdf"), "utf8"), "%PDF-1.4 protokoll\n");
@@ -119,7 +119,7 @@ test("the link chip opens the mail again in Outlook", async () => {
   const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
   const note = below((await app.invoke("workspace_tree")).find((n) => n.title === "E-Mails").children).find((n) => n.title === "Protokoll Lenkungskreis");
   await app.invoke("search_open", { target: { kind: "page", page_id: note.id, new_tab: false } });
-  const chip = await app.waitFor('.pane.active .ProseMirror a[href^="annalo-mail:"]');
+  const chip = await app.waitFor('.pane.active .ProseMirror a[href^="arcalo-mail:"]');
   assert.match(await app.textOf(chip), /E-Mail: Protokoll Lenkungskreis \(Weiß, Jörg, 23\.09\.2026\)/);
   await app.shot("76-mail-note");
   await app.dismissToasts();
@@ -135,7 +135,7 @@ test("the link chip opens the mail again in Outlook", async () => {
   await app.waitText(row, /Angebot für das Portal/);
   const taskChip = await app.$(`${row} .mail-chip`);
   assert.ok(await taskChip.isExisting(), "mail chip in the task list");
-  assert.doesNotMatch(await app.text(row + " .task-text"), /annalo-mail/);
+  assert.doesNotMatch(await app.text(row + " .task-text"), /arcalo-mail/);
   await app.shot("76-mail-tasks");
   await app.dismissToasts();
   await taskChip.click();

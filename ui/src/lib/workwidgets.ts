@@ -1,5 +1,5 @@
-// The work and chart widgets of the start page (1.7): their data types (annalo_core::dashboard::
-// work, annalo_core::worktime, annalo_core::mail::flagged), the parts they load, the IPC calls
+// The work and chart widgets of the start page (1.7): their data types (arcalo_core::dashboard::
+// work, arcalo_core::worktime, arcalo_core::mail::flagged), the parts they load, the IPC calls
 // of absences and flagged mails, and the mapping of their data to what the widgets draw.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -141,7 +141,7 @@ export interface ChartQuery {
   weeks: number;
 }
 
-/** The parts of `annalo_core::dashboard::work::WorkPart`. */
+/** The parts of `arcalo_core::dashboard::work::WorkPart`. */
 export type WorkPart =
   | { kind: "balance"; weeks: number }
   | { kind: "vacation" }
@@ -327,7 +327,7 @@ export const heatValues = (d: HeatmapData) => new Map(d.days.map(([day, v]) => [
 
 /**
  * Due dates from sources the UI knows (the backend's providers come with the `deadlines`
- * part, see `DEADLINE_PROVIDERS` in annalo_core::dashboard::work). A source registers a
+ * part, see `DEADLINE_PROVIDERS` in arcalo_core::dashboard::work). A source registers a
  * function returning its items for the days `from..until`; the widget merges them by date.
  */
 export type DeadlineSource = (window: { today: string; until: string }) => Promise<Deadline[]>;

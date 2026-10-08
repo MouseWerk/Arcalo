@@ -12,17 +12,17 @@ export function throwawayKey() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
   const raw = Buffer.from(publicKey.export({ format: "jwk" }).x, "base64url");
   const id = crypto.randomBytes(8);
-  const pub = `untrusted comment: minisign public key (annalo e2e)\n${Buffer.concat([Buffer.from("Ed"), id, raw]).toString("base64")}\n`;
+  const pub = `untrusted comment: minisign public key (arcalo e2e)\n${Buffer.concat([Buffer.from("Ed"), id, raw]).toString("base64")}\n`;
   return {
-    /** `ANNALO_UPDATE_PUBKEY`: base64 of the public key file (like src-tauri/updater.pub). */
+    /** `ARCALO_UPDATE_PUBKEY`: base64 of the public key file (like src-tauri/updater.pub). */
     pubkey: Buffer.from(pub).toString("base64"),
     /** The `.sig` content for `data`: base64 of a minisign signature file. */
     sign(data, version) {
       const sig = crypto.sign(null, data, privateKey);
-      const trusted = `timestamp:${Math.floor(Date.now() / 1000)}\tfile:annalo-update.bin\tversion:${version}`;
+      const trusted = `timestamp:${Math.floor(Date.now() / 1000)}\tfile:arcalo-update.bin\tversion:${version}`;
       const global = crypto.sign(null, Buffer.concat([sig, Buffer.from(trusted)]), privateKey);
       const file = [
-        "untrusted comment: signature from annalo e2e key",
+        "untrusted comment: signature from arcalo e2e key",
         Buffer.concat([Buffer.from("Ed"), id, sig]).toString("base64"),
         `trusted comment: ${trusted}`,
         global.toString("base64"),
@@ -34,7 +34,7 @@ export function throwawayKey() {
 }
 
 /**
- * Serves `/latest.json` and `/annalo-update.bin`. `feed.mode`: "ok", "tampered" (one byte of the
+ * Serves `/latest.json` and `/arcalo-update.bin`. `feed.mode`: "ok", "tampered" (one byte of the
  * file changed after signing), "missing" (latest.json 404), "cut" (the connection drops at a
  * third of the file), "slow" (the file trickles in over a few seconds, then fails its signature),
  * "throttle" (the valid file trickles in over a few seconds). "ok" and "throttle" answer a
@@ -52,12 +52,12 @@ export async function startFeed({ key, version, size = 3 * 1024 * 1024, notes = 
         version: feed.version,
         notes,
         pub_date: "2026-09-25T12:00:00Z",
-        platforms: { "linux-x86_64": { signature: key.sign(file, feed.version), url: `${base}/annalo-update.bin` } },
+        platforms: { "linux-x86_64": { signature: key.sign(file, feed.version), url: `${base}/arcalo-update.bin` } },
       };
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(body));
     }
-    if (req.url === "/annalo-update.bin") {
+    if (req.url === "/arcalo-update.bin") {
       let bytes = Buffer.from(file);
       if (feed.mode === "tampered" || feed.mode === "slow") bytes[bytes.length >> 1] ^= 0xff;
       const range = /^bytes=(\d+)-$/.exec(req.headers.range ?? "");

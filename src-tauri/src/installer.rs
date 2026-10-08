@@ -15,7 +15,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use annalo_core::{tr, trf};
+use arcalo_core::{tr, trf};
 
 /// Why an update could not be installed.
 #[derive(Debug)]
@@ -496,7 +496,7 @@ fn unpack_appimage(bytes: &[u8], appimage: &Path) -> Result<()> {
     Err(InstallError::NotInArchive)
 }
 
-// These tests also run compiled in release mode (`cargo test --release -p annalo installer`
+// These tests also run compiled in release mode (`cargo test --release -p arcalo installer`
 // in CI): the plugin's install path failed only in release builds.
 #[cfg(test)]
 mod tests {
@@ -605,10 +605,10 @@ mod tests {
     #[test]
     fn the_bundle_is_found_from_its_binary() {
         assert_eq!(
-            bundle_of(Path::new("/Applications/Arcalo.app/Contents/MacOS/annalo")),
+            bundle_of(Path::new("/Applications/Arcalo.app/Contents/MacOS/arcalo")),
             Some(PathBuf::from("/Applications/Arcalo.app"))
         );
-        assert_eq!(bundle_of(Path::new("/usr/bin/annalo")), None);
+        assert_eq!(bundle_of(Path::new("/usr/bin/arcalo")), None);
     }
 
     #[test]
@@ -644,15 +644,15 @@ mod tests {
         let root = scratch("bundle");
         let bundle = root.join("Arcalo.app");
         std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
-        std::fs::write(bundle.join("Contents/MacOS/annalo"), "old").unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/arcalo"), "old").unwrap();
         std::fs::write(bundle.join("Contents/old-only"), "gone after the update").unwrap();
         let archive = tar_gz(&[
             ("Arcalo.app/", b"", 0o755),
-            ("Arcalo.app/Contents/MacOS/annalo", b"new", 0o755),
+            ("Arcalo.app/Contents/MacOS/arcalo", b"new", 0o755),
             ("Arcalo.app/Contents/Info.plist", b"<plist/>", 0o644),
         ]);
         replace_bundle(&archive, &bundle).unwrap();
-        let exe = bundle.join("Contents/MacOS/annalo");
+        let exe = bundle.join("Contents/MacOS/arcalo");
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new");
         assert_eq!(std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777, 0o755);
         assert_eq!(std::fs::metadata(&bundle).unwrap().permissions().mode() & 0o777, 0o755);
@@ -663,6 +663,44 @@ mod tests {
         assert!(replace_bundle(b"\x1f\x8bnot really", &bundle).is_err());
         assert!(replace_bundle(&tar_gz(&[]), &bundle).is_err());
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 1.14 runs `Contents/MacOS/annalo` and restarts that path after the update; the bundle of
+    /// 1.15 has `arcalo` and the link `annalo` to it (`installer/macos`, bundle.macOS.files).
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_of_1_14_takes_the_renamed_program_and_its_old_path_still_starts_it() {
+        let root = scratch("bundle-114");
+        let bundle = root.join("Arcalo.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/annalo"), "1.14").unwrap();
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+        let mut dir = tar::Header::new_gnu();
+        dir.set_entry_type(tar::EntryType::Directory);
+        dir.set_mode(0o755);
+        dir.set_size(0);
+        dir.set_cksum();
+        builder.append_data(&mut dir, "Arcalo.app/", &b""[..]).unwrap();
+        let mut exe = tar::Header::new_gnu();
+        exe.set_mode(0o755);
+        exe.set_size(4);
+        exe.set_cksum();
+        builder.append_data(&mut exe, "Arcalo.app/Contents/MacOS/arcalo", &b"1.15"[..]).unwrap();
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Symlink);
+        link.set_size(0);
+        builder.append_link(&mut link, "Arcalo.app/Contents/MacOS/annalo", "arcalo").unwrap();
+        let archive = builder.into_inner().unwrap().finish().unwrap();
+        replace_bundle(&archive, &bundle).unwrap();
+        let old_path = bundle.join("Contents/MacOS/annalo");
+        assert_eq!(std::fs::read_to_string(&old_path).unwrap(), "1.15", "the path 1.14 restarts runs 1.15");
+        assert_eq!(std::fs::read_link(&old_path).unwrap(), Path::new("arcalo"));
+        // The link is part of the bundle the build makes.
+        let repo_link = Path::new(env!("CARGO_MANIFEST_DIR")).join("installer/macos/annalo");
+        assert_eq!(std::fs::read_link(&repo_link).unwrap(), Path::new("arcalo"));
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["bundle"]["macOS"]["files"]["MacOS"], "installer/macos");
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -710,7 +748,7 @@ mod tests {
         for e in updater["endpoints"].as_array().unwrap() {
             assert!(e.as_str().unwrap().starts_with("https://"), "{e}");
         }
-        for url in annalo_core::update_feed::GITHUB_FEEDS {
+        for url in arcalo_core::update_feed::GITHUB_FEEDS {
             assert!(url.starts_with("https://"), "{url}");
         }
         let insecure = ["dangerous", "InsecureTransportProtocol"].concat();

@@ -12,7 +12,7 @@ import { openGraphNode, useGraphData, useGraphSettings } from "../components/gra
 import { buildModel, defaultDisplay, defaultFilter, folderPalette, nodeColors, pageKey } from "../lib/graph";
 
 const FILTER = defaultFilter();
-const DEPTH_KEY = "annalo.localGraphDepth";
+const DEPTH_KEY = "arcalo.localGraphDepth";
 
 function storedDepth(): 1 | 2 | 3 {
   try {

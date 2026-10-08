@@ -131,13 +131,13 @@ test("setup: a note with code and a PDF", async () => {
   page = await app.invoke("page_create", { parentId: null, title: "Themen-Check", icon: null, content: NOTE });
   const r = await app.browser.executeAsync((b64, done) => {
     const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    window.__TAURI_INTERNALS__.invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent("Themen.pdf") } }).then((ok) => done({ ok }), (err) => done({ err: String(err) }));
+    window.__TAURI_INTERNALS__.invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent("Themen.pdf") } }).then((ok) => done({ ok }), (err) => done({ err: String(err) }));
   }, makePdf("Themen PDF").toString("base64"));
   assert.ok(r.ok, r.err);
   pdfOk = true;
 });
 
-for (const [mode, id] of [["dark", "annalo-dark"], ["dark", "nord"], ["light", "solarized-light"], ["dark", "contrast-dark"]]) {
+for (const [mode, id] of [["dark", "arcalo-dark"], ["dark", "nord"], ["light", "solarized-light"], ["dark", "contrast-dark"]]) {
   test(`${id}: code, callouts, slash menu, bubble, AI bar and PDF tab are readable`, async () => {
     await theme(mode, id);
     await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
@@ -217,7 +217,7 @@ for (const [mode, id] of [["dark", "annalo-dark"], ["dark", "nord"], ["light", "
 }
 
 test("„Beamer“ slides are dark on white in a dark theme too", async () => {
-  await theme("dark", "annalo-dark");
+  await theme("dark", "arcalo-dark");
   const p = await app.invoke("page_create", {
     parentId: null,
     title: "Beamer-Check",

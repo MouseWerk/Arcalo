@@ -80,7 +80,7 @@ export const DEFAULT_JIRA: IssueSettings = {
   tick_done_tasks: true,
 };
 
-/** The kind a site address suggests (same rule as annalo_core::issues::SiteKind::guess). */
+/** The kind a site address suggests (same rule as arcalo_core::issues::SiteKind::guess). */
 export function guessKind(url: string): SiteKind {
   const host = url
     .trim()

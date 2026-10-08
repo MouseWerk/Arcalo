@@ -12,7 +12,7 @@ pack.ps1 builds with MakePri. Written here:
 - Square150x150Logo, SmallTile (71x71), LargeTile (310x310), Wide310x150Logo, SplashScreen
   (620x300): the icon centered on a transparent background, scale-100 … 400.
 
-Source: docs/brand/annalo-icon-1024.png (the rounded dark square with the white mark, the same
+Source: docs/brand/arcalo-icon-1024.png (the rounded dark square with the white mark, the same
 art as src-tauri/icons). Run from the repository root after changing the icon:
 
     python3 packaging/msix/make-assets.py
@@ -23,7 +23,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "docs/brand/annalo-icon-1024.png"
+SOURCE = ROOT / "docs/brand/arcalo-icon-1024.png"
 OUT = Path(__file__).resolve().parent / "Assets"
 
 SCALES = (100, 125, 150, 200, 400)

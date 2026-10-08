@@ -18,7 +18,7 @@ describe("share as HTML", () => {
     expect(html).toContain("[Bild fehlt: fehlt.png]");
     expect(html).toContain('<a href="https://example.com/logo.png"');
     expect(html).not.toMatch(/src="https?:/);
-    expect(html).not.toContain("annalo-attachment:");
+    expect(html).not.toContain("arcalo-attachment:");
   });
 
   it("embeds small files, lists them at the end", async () => {

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { flushAllEditors } from "../editor/saves";
 
 type Mode = "full" | "source";
-const KEY: Record<Mode, string> = { full: "annalo.page-full", source: "annalo.page-source" };
+const KEY: Record<Mode, string> = { full: "arcalo.page-full", source: "arcalo.page-source" };
 const listeners = new Set<() => void>();
 
 function read(mode: Mode): number[] {
@@ -45,7 +45,7 @@ export function usePageMode(mode: Mode, id: number): boolean {
 
 /** Shortcut and palette commands for the focused pane's page. */
 export type PageCommand = "source" | "full";
-export const PAGE_COMMAND_EVENT = "annalo:page-command";
+export const PAGE_COMMAND_EVENT = "arcalo:page-command";
 export const requestPageCommand = (cmd: PageCommand) => window.dispatchEvent(new CustomEvent(PAGE_COMMAND_EVENT, { detail: cmd }));
 
 /** Visual editor or Markdown source: every editor saves first, so neither shows an old state. */

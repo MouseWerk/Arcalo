@@ -31,8 +31,8 @@ before(async () => {
     res.end("<!DOCTYPE html><html><head><title>Anmelden</title></head><body>Bitte anmelden</body></html>");
   });
   await new Promise((r) => page.listen(0, "127.0.0.1", r));
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-ics-"));
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "600", ANNALO_CALENDAR_DELAY_SECS: "600" } });
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-ics-"));
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "600", ARCALO_CALENDAR_DELAY_SECS: "600" } });
 });
 after(async () => {
   await app?.close();

@@ -8,7 +8,7 @@ import { jiraApi, type RemoteProject } from "../lib/jira";
 import { CREATE_ISSUE_EVENT, type CreateIssueRequest } from "../editor/taskIssue";
 import { Button, Dialog, Field, Input, Select } from "./ui";
 
-const LAST = "annalo.jira.lastCreate";
+const LAST = "arcalo.jira.lastCreate";
 function last(): { site?: string; project?: string; type?: string } {
   try {
     return JSON.parse(localStorage.getItem(LAST) ?? "{}");

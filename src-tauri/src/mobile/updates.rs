@@ -13,5 +13,5 @@ pub fn feed_url(_app: &AppHandle) -> Option<String> {
 
 /// Where the release notes of `version` are read from (the desktop's address).
 pub fn release_notes_url(version: &str) -> String {
-    format!("https://raw.githubusercontent.com/{}/main/docs/releases/v{version}.md", annalo_core::update::REPOSITORY)
+    format!("https://raw.githubusercontent.com/{}/main/docs/releases/v{version}.md", arcalo_core::update::REPOSITORY)
 }

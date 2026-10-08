@@ -135,7 +135,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
 
   const startTimer = async (v: Vorgang | null) => {
     try {
-      await api.timerStart(netzplan.id, v?.vorgang_nr ?? null, localStorage.getItem("annalo.timer.la") || "DEV", "");
+      await api.timerStart(netzplan.id, v?.vorgang_nr ?? null, localStorage.getItem("arcalo.timer.la") || "DEV", "");
       s().bumpEntries();
       s().toast({ tone: "info", title: t("proj.timerStarted"), detail: `${netzplan.netzplan_nr}${v ? "/" + v.vorgang_nr : ""}` });
     } catch (e) {

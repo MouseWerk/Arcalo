@@ -50,7 +50,7 @@ export interface FocusChoice {
   focusMode: boolean;
 }
 
-const KEY = "annalo.focus.last";
+const KEY = "arcalo.focus.last";
 export const DEFAULT_CHOICE: FocusChoice = { reference: "", minutes: 25, breakMinutes: 5, goal: "", focusMode: false };
 
 /** The choices of the last session (the dialog starts with them). */

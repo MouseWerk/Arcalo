@@ -7,6 +7,7 @@ import { addDays, isoDay, weekStart, weekdayLabels } from "./format";
 import { t, type TKey } from "./i18n";
 import { COLS, clampRect, compact, findFree, resizeTo, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
+import { LEGACY_BOARD_FORMAT } from "./legacy";
 import type { Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
 import { timeConfig, WORK_TIME_KINDS, workParts, workTopics, type WorkKind, type WorkPart } from "./workwidgets";
 
@@ -148,7 +149,7 @@ export const WIDGETS: Record<WidgetKind, WidgetDef> = {
   jira_sprint: { label: "dash.w.jiraSprint", hint: "dash.w.jiraSprintHint", group: "tools", size: { w: 5, h: 10 }, min: { w: 3, h: 6 }, config: () => ({ site: "", project: "" }) },
 };
 
-/** The built-in kinds (the same list as `WIDGET_KINDS` in crates/annalo-core/src/settings.rs). */
+/** The built-in kinds (the same list as `WIDGET_KINDS` in crates/arcalo-core/src/settings.rs). */
 export const WIDGET_KINDS = Object.keys(WIDGETS) as WidgetKind[];
 
 /** Kinds added by `registerWidgetDef`, in the order they registered. */
@@ -535,7 +536,7 @@ export function moveBoard(boards: Board[], id: string, delta: -1 | 1): Board[] {
 
 // ------------------------------------------------------------------ export / import
 
-export const BOARD_FORMAT = "annalo-dashboard";
+export const BOARD_FORMAT = "arcalo-dashboard";
 /** Version of the board file: 1 (1.6), 2 adds `app` and `exported` and leaves out secrets. */
 export const BOARD_FILE_VERSION = 2;
 /** Extension of a board file (plain JSON; any `.json` file imports too). */
@@ -567,13 +568,13 @@ export function publicConfig(kind: string, config: Record<string, unknown> | und
 export function exportBoard(board: Board, notes: Record<string, string>, now = new Date()): string {
   const own = Object.fromEntries(board.widgets.filter((w) => notes[w.id] != null).map((w) => [w.id, notes[w.id]]));
   const widgets = board.widgets.map((w) => ({ ...w, config: publicConfig(w.kind, w.config) }));
-  return JSON.stringify({ format: BOARD_FORMAT, version: BOARD_FILE_VERSION, app: "annalo", exported: now.toISOString(), board: { name: board.name, widgets }, notes: own }, null, 2) + "\n";
+  return JSON.stringify({ format: BOARD_FORMAT, version: BOARD_FILE_VERSION, app: "arcalo", exported: now.toISOString(), board: { name: board.name, widgets }, notes: own }, null, 2) + "\n";
 }
 
-/** File name of an exported board: `annalo-arbeit-2026-10-01.dashboard.json`. */
+/** File name of an exported board: `arcalo-arbeit-2026-10-01.dashboard.json`. */
 export function boardFileName(board: Board, now = new Date()): string {
   const slug = board.name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "board";
-  return `annalo-${slug}-${isoDay(now)}.${BOARD_EXT}`;
+  return `arcalo-${slug}-${isoDay(now)}.${BOARD_EXT}`;
 }
 
 /** An imported board, the notes of its widgets and the kinds this version does not know (left out). */
@@ -593,7 +594,7 @@ export function importBoard(text: string, boards: Board[]): ImportResult {
     return { error: "dash.import.notJson" };
   }
   const r = raw as { format?: unknown; version?: unknown; board?: { name?: unknown; widgets?: unknown }; notes?: unknown };
-  if (!r || typeof r !== "object" || r.format !== BOARD_FORMAT || !r.board || typeof r.board !== "object" || !Array.isArray(r.board.widgets)) return { error: "dash.import.wrongFormat" };
+  if (!r || typeof r !== "object" || (r.format !== BOARD_FORMAT && r.format !== LEGACY_BOARD_FORMAT) || !r.board || typeof r.board !== "object" || !Array.isArray(r.board.widgets)) return { error: "dash.import.wrongFormat" };
   if (r.version != null && (typeof r.version !== "number" || r.version > BOARD_FILE_VERSION)) return { error: "dash.import.newer" };
   if (r.board.widgets.length > MAX_BOARD_WIDGETS) return { error: "dash.import.tooMany" };
   const used = new Set(allWidgetIds(boards));
@@ -627,7 +628,7 @@ export function importBoard(text: string, boards: Board[]): ImportResult {
 
 // ------------------------------------------------------------------ data parts
 
-/** One part of a `dashboard_data` request (see annalo_core::dashboard::Part). */
+/** One part of a `dashboard_data` request (see arcalo_core::dashboard::Part). */
 export type Part =
   | { kind: "today" }
   | { kind: "agenda"; days: number }

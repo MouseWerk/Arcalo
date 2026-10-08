@@ -34,7 +34,7 @@ describe("taskSegments", () => {
     expect(taskSegments("C#Sharp")).toEqual([{ kind: "text", text: "C#Sharp" }]);
   });
   it("erkennt Links auf E-Mails", () => {
-    expect(taskSegments("Angebot prüfen [E-Mail: Angebot (Anna, 24.09.2026)](annalo-mail://k3v9x2qa) [[Angebot]] #kunde")).toEqual([
+    expect(taskSegments("Angebot prüfen [E-Mail: Angebot (Anna, 24.09.2026)](arcalo-mail://k3v9x2qa) [[Angebot]] #kunde")).toEqual([
       { kind: "text", text: "Angebot prüfen " },
       { kind: "mail", text: "E-Mail: Angebot (Anna, 24.09.2026)", id: "k3v9x2qa" },
       { kind: "text", text: " " },

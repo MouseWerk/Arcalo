@@ -5,11 +5,11 @@ The e2e tests `e2e/tests/111-voice-notes.test.js` (German) and `112-voice-notes-
 
 | Variable | Replaces |
 |---|---|
-| `ANNALO_TEST_AUDIO_FILE` | The microphone: this WAV file (any rate, mono or stereo, 8–32 bit or float) is fed in real time, then silence. |
-| `ANNALO_TEST_TRANSCRIPT` | Whisper: lines `[00:12] Text` (inline or as a file path); the progress runs in five steps. |
-| `ANNALO_TEST_MODEL_BASES` | The GitHub and Hugging Face addresses, as `<github base>|<huggingface base>`, so a download never leaves the test machine. |
+| `ARCALO_TEST_AUDIO_FILE` | The microphone: this WAV file (any rate, mono or stereo, 8–32 bit or float) is fed in real time, then silence. |
+| `ARCALO_TEST_TRANSCRIPT` | Whisper: lines `[00:12] Text` (inline or as a file path); the progress runs in five steps. |
+| `ARCALO_TEST_MODEL_BASES` | The GitHub and Hugging Face addresses, as `<github base>|<huggingface base>`, so a download never leaves the test machine. |
 
-Release builds ignore them. The unit tests in `crates/annalo-core/src/voice/` cover the model registry and
+Release builds ignore them. The unit tests in `crates/arcalo-core/src/voice/` cover the model registry and
 its checksums, the source order with a local HTTP server, resuming (HTTP range and a file share), the
 transcript as Markdown, FLAC encoding and the parsing of action items.
 
@@ -49,6 +49,6 @@ no sound output there. Check playback on Windows and macOS.
 The default source is the release `whisper-models-v1` of `MouseWerk/Arcalo`. Run the workflow
 „Whisper models“ (Actions → Whisper models → Run workflow) or, with the GitHub CLI logged in,
 `scripts/publish-whisper-models.sh`. Both download the three files from Hugging Face, check them against
-the SHA-256 in `crates/annalo-core/src/voice/models.rs` and upload them as release assets (the release is
+the SHA-256 in `crates/arcalo-core/src/voice/models.rs` and upload them as release assets (the release is
 created when missing; existing assets are replaced). A new model means a new entry in `MODELS` with its
 size and SHA-256 and, for changed files, a new tag (`whisper-models-v2`).

@@ -2,7 +2,7 @@
 // Settings → Sicherung, „Jetzt testen“ writes and deletes a probe, and every backup is copied
 // there in the background with its SHA-256 checksum. An unreachable destination stays pending
 // without holding anything up, a hanging one is given up after the stall timeout (shortened here
-// with ANNALO_BACKUP_STALL_SECS; ANNALO_TEST_SLOW_DEST makes every step to it take 20 s), and the
+// with ARCALO_BACKUP_STALL_SECS; ARCALO_TEST_SLOW_DEST makes every step to it take 20 s), and the
 // retention of a destination only touches the app's own files of this computer.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -14,11 +14,11 @@ import { launch, guarded } from "../lib/harness.js";
 
 let app;
 const test = guarded(nodeTest, () => app);
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-dest-"));
-// A folder name with a space and umlauts, like „\\nas\Team Büro\Annalo“.
-const share = path.join(root, "Netzlaufwerk Büro", "Annalo");
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-dest-"));
+// A folder name with a space and umlauts, like „\\nas\Team Büro\Arcalo“.
+const share = path.join(root, "Netzlaufwerk Büro", "Arcalo");
 const offlineParent = path.join(root, "nicht verbunden");
-const offline = path.join(offlineParent, "Annalo");
+const offline = path.join(offlineParent, "Arcalo");
 const hanging = path.join(root, "haengt");
 fs.mkdirSync(path.dirname(share), { recursive: true });
 fs.mkdirSync(hanging, { recursive: true });
@@ -26,7 +26,7 @@ fs.mkdirSync(hanging, { recursive: true });
 before(async () => {
   app = await launch({
     dataDir: fs.mkdtempSync(path.join(root, "data-")),
-    env: { ANNALO_BACKUP_DELAY_SECS: "3600", ANNALO_BACKUP_STALL_SECS: "3", ANNALO_TEST_SLOW_DEST: "haengt=20000" },
+    env: { ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_BACKUP_STALL_SECS: "3", ARCALO_TEST_SLOW_DEST: "haengt=20000" },
   });
 });
 after(async () => {
@@ -78,7 +78,7 @@ test("a destination is added in the settings and „Jetzt testen“ writes and d
   await app.waitText(".bdest-empty", /Noch kein weiteres Ziel/);
   await addDestination(share);
   const sel = await card(share);
-  await app.waitText(`${sel} .bdest-path`, /Annalo/);
+  await app.waitText(`${sel} .bdest-path`, /Arcalo/);
   await app.waitText(`${sel} .bdest-kind`, /Ordner/);
   await app.waitText(`${sel} .bdest-state`, /Wartet auf die nächste Sicherung|Zuletzt kopiert/);
   host = (await view(share)).folder;
@@ -92,7 +92,7 @@ test("a destination is added in the settings and „Jetzt testen“ writes and d
 
   await clickIn(sel, "Jetzt testen");
   await app.waitText(`${sel} .bdest-test`, /Schreiben, Lesen und Löschen: \d+ ms/, 15000);
-  assert.deepEqual(fs.readdirSync(share).filter((f) => f.startsWith(".annalo-probe")), [], "probe file deleted");
+  assert.deepEqual(fs.readdirSync(share).filter((f) => f.startsWith(".arcalo-probe")), [], "probe file deleted");
   // A test of a folder whose share is missing names the reason.
   const res = await app.invoke("backup_destination_test", { path: offline });
   assert.equal(res.ok, false);
@@ -175,10 +175,10 @@ test("retention keeps the newest backups of this computer and never touches othe
   const dir = path.join(share, host);
   // Files that are not the app's own backups of this computer.
   fs.writeFileSync(path.join(dir, "Notizen.txt"), "fremd");
-  fs.writeFileSync(path.join(dir, "annalo-20200101-000000.db"), "ohne Prüfsumme");
+  fs.writeFileSync(path.join(dir, "arcalo-20200101-000000.db"), "ohne Prüfsumme");
   const other = path.join(share, "anderer-pc");
   fs.mkdirSync(other, { recursive: true });
-  for (const n of ["annalo-20200101-000000.db", "annalo-20200102-000000.db", "annalo-20200103-000000.db"]) {
+  for (const n of ["arcalo-20200101-000000.db", "arcalo-20200102-000000.db", "arcalo-20200103-000000.db"]) {
     fs.writeFileSync(path.join(other, n), "x");
     fs.writeFileSync(path.join(other, `${n}.sha256`), `${"0".repeat(64)}  ${n}\n`);
   }
@@ -188,12 +188,12 @@ test("retention keeps the newest backups of this computer and never touches othe
     last = await app.invoke("backup_now");
     await app.browser.waitUntil(async () => backupsIn(dir).includes(last.file_name), { timeout: 15000, timeoutMsg: "copy missing" });
   }
-  await app.browser.waitUntil(async () => backupsIn(dir).filter((f) => f !== "annalo-20200101-000000.db").length === 2, { timeout: 10000, timeoutMsg: `not pruned: ${backupsIn(dir)}` });
-  const own = backupsIn(dir).filter((f) => f !== "annalo-20200101-000000.db");
+  await app.browser.waitUntil(async () => backupsIn(dir).filter((f) => f !== "arcalo-20200101-000000.db").length === 2, { timeout: 10000, timeoutMsg: `not pruned: ${backupsIn(dir)}` });
+  const own = backupsIn(dir).filter((f) => f !== "arcalo-20200101-000000.db");
   assert.equal(own[1], last.file_name, "the newest is kept");
   for (const f of own) assert.ok(fs.existsSync(path.join(dir, `${f}.sha256`)));
   assert.ok(fs.existsSync(path.join(dir, "Notizen.txt")), "foreign file kept");
-  assert.ok(fs.existsSync(path.join(dir, "annalo-20200101-000000.db")), "a backup without checksum is not ours");
+  assert.ok(fs.existsSync(path.join(dir, "arcalo-20200101-000000.db")), "a backup without checksum is not ours");
   assert.equal(backupsIn(other).length, 3, "the other computer's backups are left alone");
 });
 

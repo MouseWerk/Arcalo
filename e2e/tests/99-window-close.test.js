@@ -1,5 +1,5 @@
 // Closing the main window outside macOS follows „close to tray“ (macOS always hides; that part is
-// unit-tested in annalo_core::desktop and checked by hand, docs/testing/macos.md): without it the
+// unit-tested in arcalo_core::desktop and checked by hand, docs/testing/macos.md): without it the
 // shell reports „quit“, with it the window is hidden (or minimized without a tray icon) and the
 // app keeps running with the edits. Key presses that belong to an input method composition
 // (WebKit sends the committing Enter with keyCode 229) do not store a quick capture.
@@ -80,5 +80,5 @@ test("Enter while an input method composes does not store the capture", async ()
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors), []);
 });

@@ -36,7 +36,7 @@ desktop wrote them.
 
 The WBS (projects, Netzpläne, Vorgänge, Leistungsarten) and the calendar live in the desktop's database.
 When the desktop has „Datenbank mitsichern“ switched on (Einstellungen → Sicherung → Git), the repository
-holds `annalo-workspace.db`, a copy of the latest backup. After every sync the phone reads the WBS and the
+holds `arcalo-workspace.db`, a copy of the latest backup. After every sync the phone reads the WBS and the
 meetings of the last week and the next 60 days from that copy (`companion::import_reference`); WBS entries
 are matched by their numbers, so bookings made on the phone keep pointing at them. Without the copy the
 „Zeit“ screen says where the Netzpläne come from, and „Heute“ shows no meetings. An encrypted database copy
@@ -70,7 +70,7 @@ desktop.
 ## How it is built
 
 - **Same core, same shell.** The Android app is the Tauri shell (`src-tauri`) built for Android with
-  `annalo-core`. Desktop-only parts are not compiled for mobile: `appmenu`, `installer`, `jumplist`,
+  `arcalo-core`. Desktop-only parts are not compiled for mobile: `appmenu`, `installer`, `jumplist`,
   `present`, `rebrand`, `rollback` (`#[cfg(desktop)]`), and `desktop`, `notifyact`, `updates`, `voice` are
   replaced by small stand-ins in `src-tauri/src/mobile/` (`#[cfg_attr(mobile, path = …)]`). The desktop-only
   crates (tray-dependent plugins, global shortcuts, updater, autostart, single instance, clipboard, Whisper,
@@ -83,9 +83,9 @@ desktop.
   Editing a page is plain Markdown text in v1: the TipTap editor's menus, popovers and drag handles are
   built for a pointer and a keyboard.
 - **Git without a git program.** The desktop runs the system `git`. A phone has none, so with the feature
-  `embedded-git` (on for Android) the same git commands run on libgit2 (`crates/annalo-core/src/gitlib.rs`):
+  `embedded-git` (on for Android) the same git commands run on libgit2 (`crates/arcalo-core/src/gitlib.rs`):
   the sync code, its conflict handling and its guards are unchanged, and the sync's tests run on both
-  (`ANNALO_TEST_EMBEDDED_GIT=1`). HTTPS uses OpenSSL, built from source like the SQLCipher encryption needs
+  (`ARCALO_TEST_EMBEDDED_GIT=1`). HTTPS uses OpenSSL, built from source like the SQLCipher encryption needs
   anyway; the certificates are the Android system's (`/system/etc/security/cacerts`, the updatable store of
   Android 14), else Mozilla's root store compiled in. The token is given to the server when it asks for
   credentials (HTTP Basic, `x-access-token`), never written to `.git/config`.

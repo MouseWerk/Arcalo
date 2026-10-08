@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use annalo_core::feed::{self, Activity, FeedFilter, FeedSummary, NewActivity};
-use annalo_core::{Database, Error};
+use arcalo_core::feed::{self, Activity, FeedFilter, FeedSummary, NewActivity};
+use arcalo_core::{Database, Error};
 use chrono::{DateTime, Utc};
 use tauri::State;
 

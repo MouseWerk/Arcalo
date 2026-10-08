@@ -5,7 +5,7 @@
 //! `paste:` …), without which ⌘C/⌘V/⌘Z would not work in the webview. Custom items emit
 //! `menu://action` with the action name; the UI handles it like its own shortcuts.
 
-use annalo_core::tr;
+use arcalo_core::tr;
 use tauri::menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Wry};
 

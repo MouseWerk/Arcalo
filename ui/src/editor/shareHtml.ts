@@ -56,7 +56,7 @@ export interface RenderContext {
   live?: { imageUrl: (name: string) => string };
 }
 
-const ATT = "annalo-attachment:";
+const ATT = "arcalo-attachment:";
 const CALLOUT_RE = /^\[!(\w+)\]([+-]?)[ \t]*/;
 /** The label of a callout type in the display language (aliases share their main type's). */
 const CALLOUT_LABELS: Record<string, TKey> = {
@@ -80,7 +80,7 @@ const CALLOUT_LABELS: Record<string, TKey> = {
   failure: "callout.failure",
 };
 
-/** The editor's HTML of a page body (Markdown), attachments as `annalo-attachment:` URLs. */
+/** The editor's HTML of a page body (Markdown), attachments as `arcalo-attachment:` URLs. */
 function editorHtml(markdown: string): string {
   const editor = new Editor({
     element: document.createElement("div"),
@@ -454,7 +454,7 @@ export async function exportPagesHtml(pageId: number, withChildren: boolean, fil
 }
 
 /** Asks for „Als HTML-Datei teilen“ of a page (`detail: { id, withChildren, path? }`); without a path the save dialog asks. */
-export const SHARE_HTML_EVENT = "annalo:share-html";
+export const SHARE_HTML_EVENT = "arcalo:share-html";
 
 /** Page menu „Als HTML-Datei teilen…“: save dialog (unless `path` is given), then one self-contained file. */
 export async function sharePageAsHtml(pageId: number, withChildren: boolean, path?: string) {

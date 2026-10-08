@@ -418,9 +418,9 @@ export interface ChipMenuRequest {
   book: () => void;
   remove: () => void;
 }
-export const CHIP_MENU_EVENT = "annalo:chip-menu";
+export const CHIP_MENU_EVENT = "arcalo:chip-menu";
 /** Opens the entry dialog for the booking of a chip (`detail`: entry id and the chip's page). */
-export const EDIT_ENTRY_EVENT = "annalo:edit-entry";
+export const EDIT_ENTRY_EVENT = "arcalo:edit-entry";
 
 const STATUS_LABEL: Partial<Record<ChipStatus, TKey>> = { deleted: "chip.stateDeleted", copy: "chip.stateCopy", missing: "chip.stateMissing" };
 

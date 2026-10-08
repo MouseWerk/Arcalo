@@ -10,7 +10,7 @@ import { launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-dash-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-dash-"));
 after(async () => {
   await app?.close();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -244,15 +244,15 @@ test("presets and reset replace the widgets of a board", async () => {
 test("a board exported as JSON comes back as a new tab", async () => {
   const d = await saved();
   const heute = d.boards.find((b) => b.id === "heute");
-  const json = JSON.stringify({ format: "annalo-dashboard", version: 1, board: { name: "Kopie", widgets: heute.widgets }, notes: {} });
-  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("annalo:dashboard-import", { detail: j })), json);
+  const json = JSON.stringify({ format: "arcalo-dashboard", version: 1, board: { name: "Kopie", widgets: heute.widgets }, notes: {} });
+  await app.browser.execute((j) => window.dispatchEvent(new CustomEvent("arcalo:dashboard-import", { detail: j })), json);
   await app.browser.waitUntil(async () => (await tabs()).includes("Kopie"), { timeoutMsg: "import did not add a board" });
   await app.browser.waitUntil(async () => (await saved()).boards.length === 3);
   const copy = (await saved()).boards.find((b) => b.name === "Kopie");
   assert.equal(copy.widgets.length, heute.widgets.length);
   assert.ok(copy.widgets.every((w) => !heute.widgets.some((h) => h.id === w.id)), "imported widgets get new ids");
   // A file of another kind is refused with a message.
-  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("annalo:dashboard-import", { detail: '{"format":"anders"}' })));
+  await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:dashboard-import", { detail: '{"format":"anders"}' })));
   await app.waitText(".toast-title", /Board nicht importiert/);
   await app.dismissToasts();
 });

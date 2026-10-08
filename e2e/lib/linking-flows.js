@@ -65,7 +65,7 @@ export function helpers(app) {
     const r = await b().executeAsync(
       (n, b64, done) => {
         const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        window.__TAURI_INTERNALS__.invoke("attachment_store", data, { headers: { "x-annalo-name": encodeURIComponent(n) } }).then((ok) => done({ ok }), (err) => done({ err: String(err) }));
+        window.__TAURI_INTERNALS__.invoke("attachment_store", data, { headers: { "x-arcalo-name": encodeURIComponent(n) } }).then((ok) => done({ ok }), (err) => done({ err: String(err) }));
       },
       name,
       Buffer.from(bytes).toString("base64"),

@@ -1,13 +1,13 @@
 //! Start page („Startseite“): the data of its widgets in one call, writing a board to a file
-//! (export) and filing an inbox entry. The logic lives in `annalo_core::dashboard`; the boards
+//! (export) and filing an inbox entry. The logic lives in `arcalo_core::dashboard`; the boards
 //! themselves are saved with the settings (`dashboard_save`).
 
 use std::time::Instant;
 
-use annalo_core::Error;
-use annalo_core::calsync::outlook;
-use annalo_core::dashboard::{self as core, Ctx, Request, Response};
-use annalo_core::error::IoAt;
+use arcalo_core::Error;
+use arcalo_core::calsync::outlook;
+use arcalo_core::dashboard::{self as core, Ctx, Request, Response};
+use arcalo_core::error::IoAt;
 use chrono::{Local, Utc};
 use tauri::{AppHandle, Emitter, State};
 
@@ -54,12 +54,12 @@ pub fn dashboard_file_write(path: String, json: String) -> Result<()> {
     let path = path.trim();
     if !path.to_lowercase().ends_with(".json") {
         return Err(Error::State(
-            annalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
+            arcalo_core::tr!("Bitte eine .json-Datei wählen", "Please choose a .json file").into(),
         ));
     }
     if json.len() > MAX_FILE_BYTES || serde_json::from_str::<serde_json::Value>(&json).is_err() {
         return Err(Error::State(
-            annalo_core::tr!(
+            arcalo_core::tr!(
                 "Die Startseite ließ sich nicht als Datei schreiben",
                 "The start page could not be written as a file"
             )

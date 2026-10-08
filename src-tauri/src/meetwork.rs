@@ -1,6 +1,6 @@
 //! Smart meeting work in the shell: „Besprechung vorbereiten“ (also by itself before a
 //! meeting, Settings → Briefing), „Statusbericht“ and „Nachfass-Mail“ with the Outlook draft.
-//! The logic lives in `annalo_core::meetwork`.
+//! The logic lives in `arcalo_core::meetwork`.
 //!
 //! The AI paragraphs go through the router like every request; content with a privacy marker,
 //! a private appointment or a private page is routed to the local model. A failed AI request
@@ -10,18 +10,18 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use annalo_core::ai::availability;
-use annalo_core::ai::client::{ChatMessage, ChatRequest};
-use annalo_core::ai::router::Tier;
-use annalo_core::ai::transform;
-use annalo_core::calsync::tz::Zone;
-use annalo_core::calsync::{CalendarEvent, outlook as calendar_outlook};
-use annalo_core::mail::outlook as mail_outlook;
-use annalo_core::meetwork::followup::{self, FollowUp, FollowUpView};
-use annalo_core::meetwork::status::{self, LastReport, ReportRequest, ReportTemplate, ScopeChoices};
-use annalo_core::meetwork::{block, prep};
-use annalo_core::model::Page;
-use annalo_core::{Error, tr};
+use arcalo_core::ai::availability;
+use arcalo_core::ai::client::{ChatMessage, ChatRequest};
+use arcalo_core::ai::router::Tier;
+use arcalo_core::ai::transform;
+use arcalo_core::calsync::tz::Zone;
+use arcalo_core::calsync::{CalendarEvent, outlook as calendar_outlook};
+use arcalo_core::mail::outlook as mail_outlook;
+use arcalo_core::meetwork::followup::{self, FollowUp, FollowUpView};
+use arcalo_core::meetwork::status::{self, LastReport, ReportRequest, ReportTemplate, ScopeChoices};
+use arcalo_core::meetwork::{block, prep};
+use arcalo_core::model::Page;
+use arcalo_core::{Error, tr};
 use chrono::{Duration, Local, Utc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -340,7 +340,7 @@ fn note_meeting(state: &AppState, page_id: i64) -> Result<(String, Option<chrono
     // Not linked: the title without its date, the attendees listed in the note.
     let doc = db.page_doc(page_id)?;
     let (_, body) = followup::split_front_matter(&doc.content);
-    let to: Vec<String> = annalo_core::meetwork::items_under(body, &["teilnehmer", "attendees", "participants"])
+    let to: Vec<String> = arcalo_core::meetwork::items_under(body, &["teilnehmer", "attendees", "participants"])
         .into_iter()
         .map(|a| followup::plain(&a))
         .filter(|a| !a.is_empty())
@@ -351,7 +351,7 @@ fn note_meeting(state: &AppState, page_id: i64) -> Result<(String, Option<chrono
         .ok()
         .flatten()
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
-    Ok((annalo_core::filing::series_name(&page.title), day, to, false))
+    Ok((arcalo_core::filing::series_name(&page.title), day, to, false))
 }
 
 /// „Nachfass-Mail“: the mail of a meeting note, built without AI.
@@ -376,12 +376,12 @@ fn own_identities(state: &AppState) -> Vec<String> {
 fn build_followup(state: &AppState, page_id: i64) -> Result<FollowUp> {
     let (meeting, date, to, private_event) = note_meeting(state, page_id)?;
     let doc = state.reader().page_doc(page_id)?;
-    let ui = if annalo_core::i18n::is_en() { "en" } else { "de" };
+    let ui = if arcalo_core::i18n::is_en() { "en" } else { "de" };
     let to = followup::without_own(to, &own_identities(state));
     let mut f = followup::extract(page_id, &doc.content, &meeting, date, to, ui, Local::now().date_naive());
-    let markers = annalo_core::ai::privacy::normalize(&state.settings().router.private_markers);
-    let tags = annalo_core::ai::privacy::tag_text(&doc.tags);
-    f.private = private_event || annalo_core::ai::privacy::any_private([doc.content.as_str(), tags.as_str()], &markers);
+    let markers = arcalo_core::ai::privacy::normalize(&state.settings().router.private_markers);
+    let tags = arcalo_core::ai::privacy::tag_text(&doc.tags);
+    f.private = private_event || arcalo_core::ai::privacy::any_private([doc.content.as_str(), tags.as_str()], &markers);
     Ok(f)
 }
 

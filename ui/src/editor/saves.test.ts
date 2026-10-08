@@ -17,7 +17,7 @@ describe("edits of closed editors whose save failed", () => {
     });
     const seen: unknown[] = [];
     const onSaved = (e: Event) => seen.push((e as CustomEvent).detail);
-    window.addEventListener("annalo:page-saved", onSaved);
+    window.addEventListener("arcalo:page-saved", onSaved);
     keepUnsaved(7, "# Bericht\n\nletzter Absatz", save);
     expect(unsavedPages()).toEqual([7]);
     await vi.advanceTimersByTimeAsync(UNSAVED_RETRY_MS);
@@ -31,7 +31,7 @@ describe("edits of closed editors whose save failed", () => {
     expect(unsavedPages()).toEqual([]);
     expect(seen).toEqual([{ id: 7, content: "# Bericht\n\nletzter Absatz", from: "unsaved" }]);
     await expect(flushAllEditors()).resolves.toBeUndefined();
-    window.removeEventListener("annalo:page-saved", onSaved);
+    window.removeEventListener("arcalo:page-saved", onSaved);
   });
 
   it("go to an editor that opens the page again, newest text first", async () => {

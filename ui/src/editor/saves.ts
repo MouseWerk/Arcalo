@@ -95,7 +95,7 @@ export function retryUnsaved(): Promise<void> {
       if (unsaved.get(pageId) !== content) continue;
       unsaved.delete(pageId);
           // Editors showing the page take the saved text over.
-      window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id: pageId, content, from: "unsaved" } }));
+      window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: pageId, content, from: "unsaved" } }));
     }
   })().finally(() => {
     retrying = null;

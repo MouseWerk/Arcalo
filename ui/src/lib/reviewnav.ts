@@ -4,8 +4,8 @@
 import { useApp } from "../store/app";
 import { isoDay } from "./format";
 
-export const REVIEW_EVENT = "annalo:day-review";
-export const TIMESHEET_DAY_EVENT = "annalo:timesheet-day";
+export const REVIEW_EVENT = "arcalo:day-review";
+export const TIMESHEET_DAY_EVENT = "arcalo:timesheet-day";
 
 let pendingReview: string | null = null;
 let pendingSheet: string | null = null;

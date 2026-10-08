@@ -28,7 +28,7 @@ export function registerFrontmatterOwner(id: number, owner: FrontmatterOwner) {
 }
 
 /** Event other views listen to: `{ id, fm }` right after a change (before the save lands). */
-export const FRONTMATTER_EVENT = "annalo:frontmatter-changed";
+export const FRONTMATTER_EVENT = "arcalo:frontmatter-changed";
 
 /** Changes a page's frontmatter; resolves to the new block, `null` when nothing changed. */
 export async function updateFrontmatter(id: number, change: (fm: string) => string): Promise<string | null> {
@@ -53,7 +53,7 @@ export async function updateFrontmatter(id: number, change: (fm: string) => stri
   await api.savePage(id, content);
   window.dispatchEvent(new CustomEvent(FRONTMATTER_EVENT, { detail: { id, fm: next } }));
   // Open panes of the page take the new content like any other save.
-  window.dispatchEvent(new CustomEvent("annalo:page-saved", { detail: { id, content, from: "collection" } }));
+  window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id, content, from: "collection" } }));
   return next;
 }
 

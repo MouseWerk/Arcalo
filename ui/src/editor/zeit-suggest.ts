@@ -18,7 +18,7 @@ export interface ZeitToken {
 }
 
 const ZEIT_PREFIX = /^\s*\/(?:zeit|time)\s+/i;
-/** A time span `9:00-10:30` (also `9.00–10.30`), as `annalo_core::zeit::parse_span` reads it. */
+/** A time span `9:00-10:30` (also `9.00–10.30`), as `arcalo_core::zeit::parse_span` reads it. */
 const SPAN_RE = /^([01]?\d|2[0-3])[:.][0-5]\d[-–]([01]?\d|2[0-3])[:.][0-5]\d$/;
 
 /** A duration (`1.5h`, `1h30m`, `90min`, `1:30`) or time span as first argument: the page's own Vorgang is booked. */

@@ -38,17 +38,17 @@ const outlookItems = (extra = []) => {
 };
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-blocks-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-blocks-"));
   readFixture = path.join(dir, "outlook.json");
   log = path.join(dir, "writes.log");
   fs.writeFileSync(readFixture, outlookItems());
-  app = await launch({ width: 1600, env: { ...outlookEnv(readFixture), ANNALO_OUTLOOK_WRITE_LOG: log } });
+  app = await launch({ width: 1600, env: { ...outlookEnv(readFixture), ARCALO_OUTLOOK_WRITE_LOG: log } });
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, calendar: { ...view.settings.calendar, outlook: true, blocks_outlook: true, block_minutes: 60 } } });
   await app.invoke("calendar_sync_now", { source: "outlook" });
   const page = await app.invoke("page_create", { parentId: null, title: "Fokus-Aufgaben", icon: null, content: "---\nvorgang: NP-8801/1020\n---\n- [ ] Bericht schreiben\n- [ ] Folien bauen\n" });
   pageId = page.id;
-  await app.browser.execute(() => localStorage.setItem("annalo.calendar.view", "week"));
+  await app.browser.execute(() => localStorage.setItem("arcalo.calendar.view", "week"));
 });
 after(async () => {
   await app?.close();
@@ -93,7 +93,7 @@ test("a task dragged from the Aufgaben list lands in the week as a focus block",
     const dt = new DataTransfer();
     document.querySelector(s).dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
     window.__planDrag = dt;
-    return dt.getData("application/x-annalo-plan");
+    return dt.getData("application/x-arcalo-plan");
   }, row);
   assert.deepEqual(JSON.parse(payload), { kind: "task", page_id: pageId, ordinal: 0, text: "Bericht schreiben", page_title: "Fokus-Aufgaben" });
 

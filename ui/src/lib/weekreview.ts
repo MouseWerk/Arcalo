@@ -120,7 +120,7 @@ export const weekApi = {
 
 // ------------------------------------------------------------- navigation
 
-export const WEEK_REVIEW_EVENT = "annalo:week-review";
+export const WEEK_REVIEW_EVENT = "arcalo:week-review";
 let pending: string | null = null;
 
 /** Opens the Wochenrückblick on the week of `iso` (YYYY-MM-DD, default this week). */

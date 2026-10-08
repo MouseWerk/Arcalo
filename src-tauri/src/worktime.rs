@@ -1,10 +1,10 @@
 //! Absence days and public holidays (the overtime balance and vacation widgets, the absence
 //! dialog in the Kalender) and the flagged Outlook mails of the start page. The logic lives in
-//! `annalo_core::worktime` and `annalo_core::mail::flagged`.
+//! `arcalo_core::worktime` and `arcalo_core::mail::flagged`.
 
-use annalo_core::Error;
-use annalo_core::mail::flagged::{self, FlaggedMail};
-use annalo_core::worktime::{self, Absence, AbsenceKind, Holiday};
+use arcalo_core::Error;
+use arcalo_core::mail::flagged::{self, FlaggedMail};
+use arcalo_core::worktime::{self, Absence, AbsenceKind, Holiday};
 use chrono::NaiveDate;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};

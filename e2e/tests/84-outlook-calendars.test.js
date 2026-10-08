@@ -16,7 +16,7 @@ let app;
 let dir;
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-olcal-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-olcal-"));
   const fixture = path.join(dir, "outlook.json");
   fs.writeFileSync(fixture, outlookCalendarsJson());
   app = await launch({ env: outlookEnv(fixture) });

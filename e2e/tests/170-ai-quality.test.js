@@ -83,7 +83,7 @@ test("without an AI the meeting summary and the assistant say how to set one up"
   await openFromTree("Architektur");
   await app.waitFor(".pane.active .ProseMirror p");
   const id = await pageId("Architektur");
-  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("annalo:meeting-summary", { detail: { id } })), id);
+  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("arcalo:meeting-summary", { detail: { id } })), id);
   await app.waitText(".dialog .ai-setup-note", /Besprechung braucht Arcalo einen KI-Anbieter/);
   assert.equal(await exists(".dialog .thinking"), false, "no request is started");
   await app.shot("170-summary-no-ai");

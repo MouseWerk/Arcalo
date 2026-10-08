@@ -75,7 +75,7 @@ async function clickMenuItem(pattern) {
 }
 
 before(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-141-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-141-"));
   fixture = path.join(dir, "outlook-mail.json");
   fs.writeFileSync(fixture, JSON.stringify(OUTLOOK_MAILS));
   const issues = [
@@ -98,7 +98,7 @@ before(async () => {
     },
   });
   local = await startFakeOpenAI({ port: 4972, kind: "ollama", name: "Ollama", models: ["llama3.2:latest"], respond: () => "- Lokal geschrieben" });
-  app = await launch({ env: { ...mailEnv(fixture), ANNALO_JIRA_DELAY_SECS: "600" } });
+  app = await launch({ env: { ...mailEnv(fixture), ARCALO_JIRA_DELAY_SECS: "600" } });
   await app.invoke("provider_key_set", { id: "cloud", key: cloud.apiKey });
   await patchSettings((s) => ({
     ...s,

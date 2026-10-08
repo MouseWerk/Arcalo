@@ -1,5 +1,5 @@
 // Smart meeting work (1.10): „Besprechung vorbereiten“, „Statusbericht“ and „Nachfass-Mail“.
-// The pages and mails are built by the core (`annalo_core::meetwork`); this module holds the
+// The pages and mails are built by the core (`arcalo_core::meetwork`); this module holds the
 // calls, the types and the small decisions the views share (which period, which fallback).
 
 import { invoke } from "@tauri-apps/api/core";

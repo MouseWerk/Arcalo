@@ -13,7 +13,7 @@ let app, jira;
 
 before(async () => {
   jira = await startFakeJira({ flavor: "cloud" });
-  app = await launch({ env: { ANNALO_JIRA_DELAY_SECS: "600" } });
+  app = await launch({ env: { ARCALO_JIRA_DELAY_SECS: "600" } });
   const site = { id: "", name: "Acme", color: "", kind: "cloud", url: jira.url, email: "mia@firma.de", enabled: true, log_work: true, allow_writes: false };
   await app.invoke("jira_site_save", { site, token: "secret-token" });
   await app.invoke("jira_sync_now", { site: "acme" });

@@ -10,7 +10,7 @@ import { APP, launch, guarded } from "../lib/harness.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-safety-"));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-safety-"));
 before(async () => (app = await launch({ dataDir })));
 after(async () => {
   await app?.close();

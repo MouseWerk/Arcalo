@@ -142,7 +142,7 @@ describe("pinned tabs", () => {
     open("calendar");
     const s = useApp.getState();
     s.togglePin(idOf("calendar"));
-    const stored = JSON.parse(localStorage.getItem("annalo.layout") ?? "null");
+    const stored = JSON.parse(localStorage.getItem("arcalo.layout") ?? "null");
     expect(stored.panes[0].tabs.map((t: { kind: string; pinned?: boolean }) => [t.kind, !!t.pinned])).toEqual([
       ["calendar", true],
       ["tasks", false],

@@ -1,5 +1,5 @@
 // „Lesezeichen importieren“: fake browser profiles (Chrome with two profiles, Firefox) below a
-// temp home folder (ANNALO_TEST_HOME, honored by debug builds). Imports a folder as a group and
+// temp home folder (ARCALO_TEST_HOME, honored by debug builds). Imports a folder as a group and
 // two links, skips duplicates on a second import, puts what does not fit a group into a page,
 // undoes an import, and reads an HTML export dropped onto the dialog.
 import { test as nodeTest, before, after } from "node:test";
@@ -13,7 +13,7 @@ import { setValue } from "../lib/mail-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app;
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-bm-home-"));
+const home = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-bm-home-"));
 const log = path.join(home, "opened.txt");
 
 // WebKit time (microseconds since 1601) of 2024-01-01.
@@ -80,7 +80,7 @@ const EDGE_HTML = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 
 before(async () => {
   fakeProfiles();
-  app = await launch({ env: { ANNALO_TEST_HOME: home, ANNALO_TEST_OPEN_LOG: log } });
+  app = await launch({ env: { ARCALO_TEST_HOME: home, ARCALO_TEST_OPEN_LOG: log } });
 });
 after(async () => {
   await app?.close();

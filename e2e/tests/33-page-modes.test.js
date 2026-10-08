@@ -75,5 +75,5 @@ test("Markdown source: the file as text, edits save, the visual editor shows the
 });
 
 test("no console errors", async () => {
-  assert.deepEqual(await app.browser.execute(() => window.__annaloErrors ?? []), []);
+  assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
 });

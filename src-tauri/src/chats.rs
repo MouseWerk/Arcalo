@@ -1,9 +1,9 @@
-//! The assistant's chat history in the shell: IPC commands over `annalo_core::chats`.
+//! The assistant's chat history in the shell: IPC commands over `arcalo_core::chats`.
 //! With Settings → Datenschutz „Chat-Verlauf: nicht speichern“ nothing is written.
 
-use annalo_core::Error;
-use annalo_core::chats::{Conversation, ConversationDoc, ConversationPatch, NewMessage};
-use annalo_core::prefs::ChatRetention;
+use arcalo_core::Error;
+use arcalo_core::chats::{Conversation, ConversationDoc, ConversationPatch, NewMessage};
+use arcalo_core::prefs::ChatRetention;
 use chrono::Utc;
 use serde::Serialize;
 use tauri::State;

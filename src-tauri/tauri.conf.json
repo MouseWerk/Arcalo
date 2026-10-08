@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Arcalo",
   "version": "1.0.0",
-  "identifier": "app.annalo.desktop",
+  "identifier": "de.mousewerk.arcalo",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: annalo-asset: http://annalo-asset.localhost; font-src 'self' data:; media-src 'self' annalo-asset: http://annalo-asset.localhost; frame-src annalo-pac: http://annalo-pac.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src tauri://localhost/pdfjs/pdf.worker.js http://tauri.localhost/pdfjs/pdf.worker.js tauri://localhost/workers/ http://tauri.localhost/workers/"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: arcalo-asset: http://arcalo-asset.localhost; font-src 'self' data:; media-src 'self' arcalo-asset: http://arcalo-asset.localhost; frame-src arcalo-pac: http://arcalo-pac.localhost; connect-src 'self' ipc: http://ipc.localhost; worker-src tauri://localhost/pdfjs/pdf.worker.js http://tauri.localhost/pdfjs/pdf.worker.js tauri://localhost/workers/ http://tauri.localhost/workers/"
     }
   },
   "bundle": {
@@ -38,14 +38,19 @@
     "linux": {
       "deb": {
         "conflicts": ["annalo"],
-        "replaces": ["annalo"]
+        "replaces": ["annalo"],
+        "postInstallScript": "installer/deb-postinst.sh",
+        "postRemoveScript": "installer/deb-postrm.sh"
       }
     },
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-",
       "infoPlist": "Info.plist",
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "files": {
+        "MacOS": "installer/macos"
+      }
     },
     "windows": {
       "webviewInstallMode": {

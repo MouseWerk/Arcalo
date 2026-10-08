@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/annalo-icon-1024.png" width="112" alt="Arcalo logo">
+  <img src="docs/brand/arcalo-icon-1024.png" width="112" alt="Arcalo logo">
 </p>
 
 <h1 align="center">Arcalo</h1>
@@ -33,7 +33,8 @@
 
 *Arcalo* comes from the Latin *arca*, the chest where the Romans kept their records: your notes and your working
 hours, kept together. Up to version 1.6 the app was called Annalo; 1.7 updates an Annalo installation in place and
-keeps its data, settings and credentials (see `docs/testing/rebrand-windows.md`).
+keeps its data, settings and credentials (see `docs/testing/rebrand-windows.md`); 1.15 renamed the internal names
+(program file, app identifier, credential service) and takes everything over at its first start.
 
 Everything lives in one SQLite database on your computer. There is no cloud account and no telemetry. The only
 network traffic is what you set up yourself: your AI providers, your calendars, an optional Git remote for backups,
@@ -391,7 +392,7 @@ it. The settings also cover proxy and certificates for company networks and Git 
 - “Take over current e-mail”: the mails selected in Outlook Classic (or the open one) through a second bundled PowerShell script; Exchange senders are resolved to their SMTP address
 - `.eml` and `.msg` files dropped anywhere on the window, and pasted Outlook header blocks (From:/Sent:/To:/Subject: or Von:/Gesendet:/An:/Betreff:)
 - Task (current page, daily note, another page or the new note; due date with Today/Tomorrow/Fri/Next week; priority from the importance) and/or note below “Emails” with from/to/date/subject, the text as a quote and the chosen attachments; activity and Outlook categories optional
-- The link is `[E-mail: Subject (Sender, Date)](annalo-mail://id)`, shown as a chip that opens the mail in Outlook (or the stored `.eml`/`.msg`); the Markdown export writes the text only
+- The link is `[E-mail: Subject (Sender, Date)](arcalo-mail://id)`, shown as a chip that opens the mail in Outlook (or the stored `.eml`/`.msg`); the Markdown export writes the text only
 - Mail texts stay local: notes are tagged with the privacy marker, and “Suggest task” only uses a provider marked local
 
 **Desktop**
@@ -490,7 +491,7 @@ sync and the updater (each can be excluded under “Apply to”).
   request went direct or through which proxy, and how long it took
 
 PAC files are JavaScript. The core does not embed a JS engine: the UI evaluates `FindProxyForURL` in a sandboxed frame
-(own `annalo-pac:` scheme, opaque origin, no access to the app) for the AI server, GitHub (updates) and the Git
+(own `arcalo-pac:` scheme, opaque origin, no access to the app) for the AI server, GitHub (updates) and the Git
 remote when the settings are saved or tested and at every start, and stores the answers. Limitations: no DNS
 (`isInNet` only matches IP addresses, `dnsResolve` only returns IP literals, `myIpAddress()` is `127.0.0.1`), and
 other hosts (the assistant's HTTP tool) use the answer for the AI server. Git receives the proxy through
@@ -531,7 +532,7 @@ cargo tauri dev      # run with hot reload
 cargo tauri build    # installer/packages in target/release/bundle (NSIS on Windows, deb/AppImage on Linux)
 ```
 
-Data lives in `%APPDATA%\app.annalo.desktop\` (`workspace.db`); Settings → About → “Change location” moves it
+Data lives in `%APPDATA%\de.mousewerk.arcalo\` (`workspace.db`); Settings → About → “Change location” moves it
 (avoid OneDrive/Dropbox and network folders for the database; backups there are fine). The first start offers a small
 demo workspace. The database is backed up daily into `backups` there (or a folder chosen under Settings → Backup), and
 deleted pages stay in the trash for 30 days. Each backup also refreshes a read-only Markdown copy of all pages (with
@@ -594,12 +595,12 @@ GitHub → the repository → **Settings → Secrets and variables → Actions �
 
 | Secret | Value |
 |---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | the full content of the private key file (`annalo-updater.key`) |
+| `TAURI_SIGNING_PRIVATE_KEY` | the full content of the private key file (`arcalo-updater.key`) |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
 
 Then every tag `vX.Y.Z` produces a signed installer (Windows), signed update archives (macOS), a signed AppImage
 (Linux) and `latest.json` (`windows-x86_64`, `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`). To rotate the key,
-generate a new pair with `cargo tauri signer generate -w annalo-updater.key`, replace `src-tauri/updater.pub` and both
+generate a new pair with `cargo tauri signer generate -w arcalo-updater.key`, replace `src-tauri/updater.pub` and both
 secrets; apps installed with the old key must be updated once by hand.
 
 ## Your data is safe
@@ -639,10 +640,10 @@ repository, for example on GitHub, GitLab or Azure DevOps. It needs Git installe
 4. Choose when to sync: **With every backup** (daily and “Back up now”) or **Hourly**
 
 Every sync commits only when something changed. The working copy lives in `git-sync` in the data folder. Optionally
-the latest database backup is committed as `annalo-workspace.db` (“Include the database”; this grows the repository
+the latest database backup is committed as `arcalo-workspace.db` (“Include the database”; this grows the repository
 quickly, and GitHub rejects files over 100 MB). If the branch on the server contains a different history (for example
 another computer's or an unrelated project), nothing there is overwritten: the commit goes to the branch
-`annalo-sync-<computer name>` and the settings say so. A new computer with the same remote continues the existing
+`arcalo-sync-<computer name>` and the settings say so. A new computer with the same remote continues the existing
 history. Failures appear as a notification and in the status line.
 
 **Several computers**: notes another computer pushed are taken over into your workspace with the next sync (earlier
@@ -660,31 +661,31 @@ same repository; see [docs/android.md](docs/android.md).
 ## Tests
 
 ```sh
-cargo test -p annalo-core      # core: parser, CPM, budgets, exports, FTS, RAG, notes, vault, settings
+cargo test -p arcalo-core      # core: parser, CPM, budgets, exports, FTS, RAG, notes, vault, settings
 e2e/run.sh                     # end-to-end: drives the real desktop app via WebDriver (Linux, Xvfb)
 ```
 
 The end-to-end suite starts the actual app binary under `tauri-driver`, with a fresh data directory per test file,
-and a fake LiteLLM server for the assistant tests. The harness runs the app in German (`ANNALO_LOCALE=de-DE`, which
-stands in for the system language; tests 81–83 check the English UI) and sets `ANNALO_SKIP_ONBOARDING=1` (honored by
+and a fake LiteLLM server for the assistant tests. The harness runs the app in German (`ARCALO_LOCALE=de-DE`, which
+stands in for the system language; tests 81–83 check the English UI) and sets `ARCALO_SKIP_ONBOARDING=1` (honored by
 debug builds only) so the first-run intro stays away; `launch({ onboarding: true })` lets it run (tests 88–90). It
 also saves screenshots of every screen (dark and light) to `e2e/screenshots/`. The apps of a test file share a D-Bus
 session bus of their own with no services on it (no keyring, desktop portal or notification service, whatever the
 machine runs), and `xdg-open` only records what the app would open (`app.opened()`), so no browser or file manager
-starts. A start that takes more than 10 s prints the app's start-up timing (`ANNALO_STARTUP_TIMING=1`, debug builds).
+starts. A start that takes more than 10 s prints the app's start-up timing (`ARCALO_STARTUP_TIMING=1`, debug builds).
 
 The README screenshots come from `e2e/readme-shots-16.test.js`: the app in English with English sample content (a
 week of meetings in three Outlook calendars, bookings, focus sessions, chats and browser bookmarks from fixtures),
-in light and dark. Run it after building the app with `ANNALO_SHOTS=<folder>` and `ANNALO_APP=<binary>`;
-`ANNALO_SCENES=calendar,dashboard,…` takes only some scenes. `e2e/readme-shots.test.js` and
+in light and dark. Run it after building the app with `ARCALO_SHOTS=<folder>` and `ARCALO_APP=<binary>`;
+`ARCALO_SCENES=calendar,dashboard,…` takes only some scenes. `e2e/readme-shots.test.js` and
 `e2e/readme-shots-15.test.js` are the German sets of earlier releases.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `crates/annalo-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/time` parser, time tracking, budgets, CPM, exports, idle detection (Win32), AI clients, router, RAG, tools, calendars, backups, vault import/export |
-| `crates/annalo-cli` | `annalo` command line on the same database |
+| `crates/arcalo-core` | Rust core: SQLite + FTS5 store, documents/links/tags, `/time` parser, time tracking, budgets, CPM, exports, idle detection (Win32), AI clients, router, RAG, tools, calendars, backups, vault import/export |
+| `crates/arcalo-cli` | `arcalo` command line on the same database |
 | `src-tauri` | Tauri v2 desktop shell: IPC commands, credential storage, global shortcuts, tray, quick capture, reminders, activity sampler, updater |
 | `ui` | React + TypeScript + TipTap frontend (Vite), Lucide icons; the English and German texts in `ui/src/locales` |
 | `e2e` | WebdriverIO end-to-end tests against the desktop app |

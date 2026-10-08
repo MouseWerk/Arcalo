@@ -1,4 +1,4 @@
-// Jira (annalo_core::issues, src-tauri/src/jira.rs): types, the IPC calls, the index of cached
+// Jira (arcalo_core::issues, src-tauri/src/jira.rs): types, the IPC calls, the index of cached
 // issues the chips in notes read, and the pure helpers of the Issues page and the widgets
 // (filters, groups, key detection, the burndown path).
 
@@ -8,7 +8,7 @@ import { on } from "./api";
 
 export type SiteKind = "cloud" | "server";
 
-/** The search every site syncs (annalo_core::issues::DEFAULT_JQL without its order). */
+/** The search every site syncs (arcalo_core::issues::DEFAULT_JQL without its order). */
 export const DEFAULT_JQL = "assignee = currentUser() AND statusCategory != Done";
 
 export interface JiraSite {
@@ -279,7 +279,7 @@ export function startIssueIndex() {
 
 const keyChar = (c: string) => /[A-Z0-9_]/.test(c);
 
-/** Whether `s` has the form of an issue key (`PROJ-123`); same rule as annalo_core::issues::is_key. */
+/** Whether `s` has the form of an issue key (`PROJ-123`); same rule as arcalo_core::issues::is_key. */
 export function isKey(s: string): boolean {
   return /^[A-Z][A-Z0-9_]{1,11}-[1-9][0-9]{0,6}$/.test(s);
 }
@@ -299,7 +299,7 @@ export function isSiteAddress(url: string): boolean {
 
 /**
  * Issue keys in `text` of the projects in `projects`, standing alone (not inside a word, a path or
- * an address): offsets and keys. Mirrors annalo_core::issues::find_keys.
+ * an address): offsets and keys. Mirrors arcalo_core::issues::find_keys.
  */
 export function findKeys(text: string, projects: Set<string>): { from: number; to: number; key: string }[] {
   const out: { from: number; to: number; key: string }[] = [];

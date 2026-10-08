@@ -1,4 +1,4 @@
-// The Arcalo mark (vector of docs/brand/annalo-mark.svg); takes the current text color.
+// The Arcalo mark (vector of docs/brand/arcalo-mark.svg); takes the current text color.
 
 export function ArcaloLogo({ size = 24, className = "", title }: { size?: number; className?: string; title?: string }) {
   return (

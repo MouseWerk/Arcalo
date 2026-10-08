@@ -83,7 +83,7 @@ describe("menu groups", () => {
     expect([...loadCollapsed()]).toEqual(["work"]);
     saveCollapsed(toggled(c, "work"));
     expect(loadCollapsed().size).toBe(0);
-    localStorage.setItem("annalo.settings.navCollapsed", "{kaputt");
+    localStorage.setItem("arcalo.settings.navCollapsed", "{kaputt");
     expect(loadCollapsed().size).toBe(0);
   });
 });

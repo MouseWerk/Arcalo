@@ -61,7 +61,7 @@ export async function startService() {
 
 /** An HTTPS server with a fresh self-signed certificate for 127.0.0.1; `sha256` = its fingerprint (lower-case hex). */
 export async function startTls(cn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "annalo-e2e-tls-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-tls-"));
   const key = path.join(dir, "key.pem");
   const cert = path.join(dir, "cert.pem");
   execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "30", "-subj", `/CN=${cn}`, "-addext", "subjectAltName=IP:127.0.0.1"], { stdio: "ignore" });

@@ -4,7 +4,7 @@
 //! Windows: Credential Manager, macOS: Keychain, Linux: the Secret Service (GNOME Keyring,
 //! KWallet, KeePassXC) over D-Bus, Android: the Android Keystore (`mobile/keystore.rs`). Only
 //! when no Secret Service answers (a headless machine, a desktop without a keyring,
-//! `ANNALO_SECRET_STORE=file`) and on other systems, the secrets are written to `secrets.json`
+//! `ARCALO_SECRET_STORE=file`) and on other systems, the secrets are written to `secrets.json`
 //! in the app data directory with owner-only permissions, one JSON field per secret;
 //! Settings → Datenschutz says which store is used and why.
 //!
@@ -12,6 +12,13 @@
 //! are moved over ([`migrate`]): each one is written, read back and compared, and only then
 //! removed from the file; the file goes once it is empty. A crash in between repeats the step
 //! on the next start. A secret not moved yet is still read from the file.
+//!
+//! The service name of the entries is `Arcalo` from 1.15 on; 1.14 and earlier saved them under
+//! `Annalo`. Each entry is taken over once ([`take_over`], [`take_over_all`] at start): written
+//! under the new name, read back and compared; the accounts done are noted in
+//! `credentials-moved.json` in the data folder. Until an account is done, it is still read under
+//! the old name. The old entries are not deleted in 1.15 (an older version started again, after a
+//! rollback, still finds them).
 //!
 //! Portable mode: the credential store belongs to the user of the computer, not to the data
 //! folder on the stick. A portable copy names its entries `<account>@<namespace>`
@@ -24,15 +31,18 @@ use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
 
-/// Service name of every entry in the credential store. It stays "Annalo" after the rename to
-/// Arcalo (1.7): the API keys, tokens and passwords saved by earlier versions live under it, and
-/// a new name would make them look lost. Users never see it outside the system's own credential
-/// manager. Do not change it without a migration of all entries.
-const SERVICE: &str = "Annalo";
+/// Service name of every entry in the credential store (users see it only in the system's own
+/// credential manager).
+const SERVICE: &str = arcalo_core::identity::CREDENTIAL_SERVICE;
+/// [`SERVICE`] of 1.14 and earlier: read until an entry is taken over, never written.
+#[cfg_attr(not(any(windows, target_os = "macos", target_os = "linux")), allow(dead_code))]
+const LEGACY_SERVICE: &str = arcalo_core::identity::LEGACY_CREDENTIAL_SERVICE;
 const FILE: &str = "secrets.json";
-/// `ANNALO_SECRET_STORE=file`: keep the file even when a Secret Service runs.
+/// Accounts taken over from [`LEGACY_SERVICE`] (see [`Moved`]).
+const MOVED_FILE: &str = arcalo_core::datadir::CREDENTIALS_MOVED;
+/// `ARCALO_SECRET_STORE=file`: keep the file even when a Secret Service runs.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-const FORCE_ENV: &str = "ANNALO_SECRET_STORE";
+const FORCE_ENV: &str = "ARCALO_SECRET_STORE";
 
 type Res<T> = std::result::Result<T, String>;
 
@@ -69,7 +79,7 @@ fn detect() -> Kind {
     }
     #[cfg(target_os = "linux")]
     {
-        choose(std::env::var(FORCE_ENV).ok().as_deref(), probe)
+        choose(arcalo_core::identity::env(FORCE_ENV).as_deref(), probe)
     }
     #[cfg(target_os = "android")]
     {
@@ -80,7 +90,7 @@ fn detect() -> Kind {
 }
 
 /// The Linux choice: the Secret Service when `probe` reaches it, else the file. `forced` is
-/// `ANNALO_SECRET_STORE` (`file` keeps the file).
+/// `ARCALO_SECRET_STORE` (`file` keeps the file).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn choose(forced: Option<&str>, probe: impl FnOnce() -> Res<()>) -> Kind {
     if forced.map(str::trim).is_some_and(|f| f.eq_ignore_ascii_case("file")) {
@@ -98,7 +108,7 @@ pub fn choose(forced: Option<&str>, probe: impl FnOnce() -> Res<()>) -> Kind {
 fn probe() -> Res<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let spawned = std::thread::Builder::new().name("secret-probe".into()).spawn(move || {
-        let res = keyring::Entry::new(SERVICE, "annalo-probe").and_then(|e| e.get_password().map(drop));
+        let res = keyring::Entry::new(SERVICE, "arcalo-probe").and_then(|e| e.get_password().map(drop));
         let _ = tx.send(match res {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(e.to_string()),
@@ -119,14 +129,25 @@ pub trait Backend {
     fn delete(&self, account: &str, field: &str) -> Res<()>;
 }
 
-/// The OS credential store (Credential Manager, Keychain, Secret Service).
+/// The OS credential store (Credential Manager, Keychain, Secret Service), entries of one
+/// service name.
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-pub struct Keyring;
+pub struct Keyring {
+    service: &'static str,
+}
+
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+impl Keyring {
+    /// The entries of this version.
+    pub const CURRENT: Keyring = Keyring { service: SERVICE };
+    /// The entries of 1.14 and earlier.
+    pub const LEGACY: Keyring = Keyring { service: LEGACY_SERVICE };
+}
 
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 impl Backend for Keyring {
     fn get(&self, account: &str, _field: &str) -> Res<Option<String>> {
-        let entry = keyring::Entry::new(SERVICE, account).map_err(|e| e.to_string())?;
+        let entry = keyring::Entry::new(self.service, account).map_err(|e| e.to_string())?;
         match entry.get_password() {
             Ok(k) => Ok(Some(k).filter(|k| !k.is_empty())),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -135,12 +156,12 @@ impl Backend for Keyring {
     }
 
     fn set(&self, account: &str, _field: &str, secret: &str) -> Res<()> {
-        let entry = keyring::Entry::new(SERVICE, account).map_err(|e| e.to_string())?;
+        let entry = keyring::Entry::new(self.service, account).map_err(|e| e.to_string())?;
         entry.set_password(secret).map_err(|e| e.to_string())
     }
 
     fn delete(&self, account: &str, _field: &str) -> Res<()> {
-        let entry = keyring::Entry::new(SERVICE, account).map_err(|e| e.to_string())?;
+        let entry = keyring::Entry::new(self.service, account).map_err(|e| e.to_string())?;
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(e.to_string()),
@@ -233,7 +254,7 @@ impl SecretStore {
     /// The API key of the AI provider `id` (`[a-z0-9-]`); the provider `litellm` keeps the
     /// credential of earlier versions.
     pub fn provider(data_dir: &Path, id: &str) -> Self {
-        if id == annalo_core::ai::provider::LEGACY_ID {
+        if id == arcalo_core::ai::provider::LEGACY_ID {
             return Self::new(data_dir);
         }
         Self::named(data_dir, &format!("ai-provider-{id}"), &format!("ai_provider_{}", id.replace('-', "_")))
@@ -246,18 +267,18 @@ impl SecretStore {
 
     /// The password of the proxy (Settings → Netzwerk).
     pub fn proxy(data_dir: &Path) -> Self {
-        Self::named(data_dir, annalo_core::network::PASSWORD_ACCOUNT, "proxy_password")
+        Self::named(data_dir, arcalo_core::network::PASSWORD_ACCOUNT, "proxy_password")
     }
 
     /// The proxy password of the network profile `id` (the default profile keeps the
     /// credential of earlier versions).
     pub fn proxy_profile(data_dir: &Path, id: &str) -> Self {
-        if id == annalo_core::network::DEFAULT_PROFILE {
+        if id == arcalo_core::network::DEFAULT_PROFILE {
             return Self::proxy(data_dir);
         }
         Self::named(
             data_dir,
-            &annalo_core::network::password_account(id),
+            &arcalo_core::network::password_account(id),
             &format!("proxy_password_{}", id.replace('-', "_")),
         )
     }
@@ -294,13 +315,23 @@ impl SecretStore {
         label(kind(), crate::portable::active())
     }
 
+    /// Accounts of this data folder taken over from the old service name.
+    fn moved(&self) -> Moved {
+        Moved { path: self.file.path.with_file_name(MOVED_FILE) }
+    }
+
     pub fn get(&self) -> Option<String> {
         match kind() {
             Kind::File { .. } => self.file.get(&self.account, &self.field).ok().flatten(),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            Kind::Native => Keyring.get(&self.account, &self.field).ok().flatten(),
+            Kind::Native => {
+                read_with_fallback(&Keyring::CURRENT, &Keyring::LEGACY, &self.moved(), &self.account, &self.field)
+            }
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            Kind::SecretService => layered_get(&Keyring, &self.file, &self.account, &self.field),
+            Kind::SecretService => {
+                read_with_fallback(&Keyring::CURRENT, &Keyring::LEGACY, &self.moved(), &self.account, &self.field)
+                    .or_else(|| self.file.get(&self.account, &self.field).ok().flatten())
+            }
             #[cfg(target_os = "android")]
             Kind::Keystore => crate::mobile::keystore::get(&self.account).ok().flatten(),
             #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -312,10 +343,14 @@ impl SecretStore {
         let key = key.filter(|k| !k.is_empty());
         match kind() {
             Kind::File { .. } => put(&self.file, &self.account, &self.field, key),
+            // Saved or removed under the new name: the old entry is not read again.
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            Kind::Native => put(&Keyring, &self.account, &self.field, key),
+            Kind::Native => {
+                put(&Keyring::CURRENT, &self.account, &self.field, key).map(|()| self.moved().add(&self.account))
+            }
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            Kind::SecretService => layered_set(&Keyring, &self.file, &self.account, &self.field, key),
+            Kind::SecretService => layered_set(&Keyring::CURRENT, &self.file, &self.account, &self.field, key)
+                .map(|()| self.moved().add(&self.account)),
             #[cfg(target_os = "android")]
             Kind::Keystore => match key {
                 Some(k) => crate::mobile::keystore::set(&self.account, k),
@@ -334,8 +369,9 @@ fn put(b: &dyn Backend, account: &str, field: &str, key: Option<&str>) -> Res<()
     }
 }
 
-/// The Secret Service first; a secret not moved over yet is still read from the file.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+/// The Secret Service first; a secret not moved yet is still read from the file (the start
+/// reads the same way, with the old service name in between: [`SecretStore::get`]).
+#[cfg(test)]
 fn layered_get(store: &dyn Backend, file: &SecretFile, account: &str, field: &str) -> Option<String> {
     match store.get(account, field) {
         Ok(Some(k)) => Some(k),
@@ -352,30 +388,180 @@ fn layered_set(store: &dyn Backend, file: &SecretFile, account: &str, field: &st
 
 fn label(kind: &Kind, portable: bool) -> &'static str {
     match kind {
-        Kind::Native if cfg!(windows) && portable => annalo_core::tr!(
+        Kind::Native if cfg!(windows) && portable => arcalo_core::tr!(
             "Windows-Anmeldeinformationsverwaltung dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
             "Windows Credential Manager of this computer (portable mode: not on the drive)"
         ),
         Kind::Native if cfg!(windows) => "Windows-Anmeldeinformationsverwaltung",
-        Kind::Native if portable => annalo_core::tr!(
+        Kind::Native if portable => arcalo_core::tr!(
             "macOS-Schlüsselbund dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
             "macOS keychain of this computer (portable mode: not on the drive)"
         ),
-        Kind::Native => annalo_core::tr!("macOS-Schlüsselbund", "macOS keychain"),
-        Kind::SecretService if portable => annalo_core::tr!(
+        Kind::Native => arcalo_core::tr!("macOS-Schlüsselbund", "macOS keychain"),
+        Kind::SecretService if portable => arcalo_core::tr!(
             "Schlüsselbund dieses Rechners (Secret Service; portabler Modus: nicht auf dem Datenträger)",
             "Keyring of this computer (Secret Service; portable mode: not on the drive)"
         ),
         Kind::SecretService => {
-            annalo_core::tr!("Schlüsselbund des Systems (Secret Service)", "System keyring (Secret Service)")
+            arcalo_core::tr!("Schlüsselbund des Systems (Secret Service)", "System keyring (Secret Service)")
         }
-        Kind::File { .. } => annalo_core::tr!(
+        Kind::File { .. } => arcalo_core::tr!(
             "Datei im App-Datenordner (nur für den Benutzer lesbar)",
             "File in the app data folder (readable by the user only)"
         ),
         #[cfg(target_os = "android")]
-        Kind::Keystore => annalo_core::tr!("Android-Schlüsselspeicher (Keystore)", "Android Keystore"),
+        Kind::Keystore => arcalo_core::tr!("Android-Schlüsselspeicher (Keystore)", "Android Keystore"),
     }
+}
+
+// ------------------------------------------------------------------ the old service name
+
+/// The accounts of a data folder taken over from the old service name
+/// (`credentials-moved.json`: a JSON list of account names).
+pub struct Moved {
+    path: PathBuf,
+}
+
+/// One writer at a time (reads and saves come from several threads).
+static MOVED_LOCK: Mutex<()> = Mutex::new(());
+
+impl Moved {
+    fn read(&self) -> std::collections::BTreeSet<String> {
+        std::fs::read(&self.path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    pub fn contains(&self, account: &str) -> bool {
+        let _guard = crate::lock(&MOVED_LOCK);
+        self.read().contains(account)
+    }
+
+    /// Notes `account` as done (best effort: without the note the old entry is only read again).
+    pub fn add(&self, account: &str) {
+        let _guard = crate::lock(&MOVED_LOCK);
+        let mut done = self.read();
+        if done.insert(account.to_owned()) {
+            let json = serde_json::to_vec_pretty(&done).unwrap_or_default();
+            let _ = write_private(&self.path, &json);
+        }
+    }
+}
+
+/// What [`take_over`] found for one account.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TakeOver {
+    /// Copied to the new name and read back the same.
+    Copied,
+    /// Nothing under the old name (or done before).
+    Nothing,
+    /// Not copied (store locked, read back differently): still read under the old name.
+    Failed(String),
+}
+
+/// Copies the old entry of `account` to the new store: written, read back and compared. An entry
+/// the new store has already stays as it is (it is newer). Done accounts are noted in `moved`.
+pub fn take_over(new: &dyn Backend, old: &dyn Backend, moved: &Moved, account: &str, field: &str) -> TakeOver {
+    if moved.contains(account) {
+        return TakeOver::Nothing;
+    }
+    let result = match (new.get(account, field), old.get(account, field)) {
+        (Ok(Some(_)), _) | (_, Ok(None)) => TakeOver::Nothing,
+        (_, Err(e)) => return TakeOver::Failed(e),
+        (_, Ok(Some(secret))) => match new.set(account, field, &secret) {
+            Err(e) => return TakeOver::Failed(e),
+            Ok(()) if new.get(account, field).ok().flatten().as_deref() == Some(secret.as_str()) => TakeOver::Copied,
+            Ok(()) => return TakeOver::Failed("read back differently".into()),
+        },
+    };
+    moved.add(account);
+    result
+}
+
+/// The secret under the new name; else, while the account is not taken over, under the old one
+/// (and taken over right away).
+pub fn read_with_fallback(
+    new: &dyn Backend,
+    old: &dyn Backend,
+    moved: &Moved,
+    account: &str,
+    field: &str,
+) -> Option<String> {
+    if let Ok(Some(k)) = new.get(account, field) {
+        return Some(k);
+    }
+    if moved.contains(account) {
+        return None;
+    }
+    let secret = old.get(account, field).ok().flatten()?;
+    let _ = take_over(new, old, moved, account, field);
+    Some(secret)
+}
+
+/// Every secret this data folder may have (the fixed ones and those of the configured providers,
+/// calendars, proxy profiles and Jira sites).
+pub fn known_stores(data_dir: &Path, settings: Option<&arcalo_core::settings::Settings>) -> Vec<SecretStore> {
+    let mut all = vec![
+        SecretStore::new(data_dir),
+        SecretStore::git(data_dir),
+        SecretStore::proxy(data_dir),
+        SecretStore::db_key(data_dir),
+        SecretStore::db_key_next(data_dir),
+        SecretStore::app_lock_pin(data_dir),
+    ];
+    if let Some(s) = settings {
+        all.extend(s.providers.iter().map(|p| SecretStore::provider(data_dir, &p.id)));
+        all.extend(s.calendar.sources.iter().map(|c| SecretStore::calendar(data_dir, &c.id)));
+        all.extend(s.network.profiles.iter().map(|p| SecretStore::proxy_profile(data_dir, &p.id)));
+        all.extend(s.jira.sites.iter().map(|j| SecretStore::jira(data_dir, &j.id)));
+    }
+    let mut seen = std::collections::HashSet::new();
+    all.retain(|s| seen.insert(s.account.clone()));
+    all
+}
+
+/// What [`take_over_all`] did: accounts copied and failed.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct TakeOverReport {
+    pub copied: Vec<String>,
+    pub failed: Vec<String>,
+}
+
+/// Takes over the entries of `stores` from `old` into `new` (see [`take_over`]).
+pub fn take_over_stores(stores: &[SecretStore], new: &dyn Backend, old: &dyn Backend) -> TakeOverReport {
+    let mut out = TakeOverReport::default();
+    for s in stores {
+        match take_over(new, old, &s.moved(), &s.account, &s.field) {
+            TakeOver::Copied => out.copied.push(s.account.clone()),
+            TakeOver::Nothing => {}
+            TakeOver::Failed(e) => out.failed.push(format!("{} ({e})", s.account)),
+        }
+    }
+    out
+}
+
+/// At the start: takes over every known entry of the old service name (credential stores only;
+/// `secrets.json` moved with the data folder).
+pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::Settings>) {
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    if matches!(kind(), Kind::Native | Kind::SecretService) {
+        let report = take_over_stores(&known_stores(data_dir, settings), &Keyring::CURRENT, &Keyring::LEGACY);
+        if !report.copied.is_empty() {
+            crate::devlog::info(
+                "secrets",
+                format!(
+                    "{} entries taken over from „{LEGACY_SERVICE}“ to „{SERVICE}“: {} (the old entries are kept)",
+                    report.copied.len(),
+                    report.copied.join(", ")
+                ),
+            );
+        }
+        if !report.failed.is_empty() {
+            crate::devlog::warn(
+                "secrets",
+                format!("not taken over (still read under „{LEGACY_SERVICE}“): {}", report.failed.join(", ")),
+            );
+        }
+    }
+    let _ = (data_dir, settings);
 }
 
 // ------------------------------------------------------------------ migration
@@ -399,7 +585,7 @@ fn account_of_field(field: &str) -> Option<String> {
     Some(match field {
         "litellm_api_key" => "litellm-api-key".into(),
         "git_token" => "git-token".into(),
-        "proxy_password" => annalo_core::network::PASSWORD_ACCOUNT.into(),
+        "proxy_password" => arcalo_core::network::PASSWORD_ACCOUNT.into(),
         "db_key" => "db-key".into(),
         "app_lock_pin" => "app-lock-pin".into(),
         f => {
@@ -408,7 +594,7 @@ fn account_of_field(field: &str) -> Option<String> {
             } else if let Some(id) = f.strip_prefix("calendar_ics_") {
                 format!("calendar-ics-{id}")
             } else if let Some(id) = f.strip_prefix("proxy_password_") {
-                annalo_core::network::password_account(&id.replace('_', "-"))
+                arcalo_core::network::password_account(&id.replace('_', "-"))
             } else if let Some(id) = f.strip_prefix("jira_") {
                 format!("jira-{}", id.replace('_', "-"))
             } else {
@@ -463,7 +649,7 @@ pub fn init(data_dir: &Path) {
         #[cfg(target_os = "linux")]
         {
             let file = SecretFile { path: data_dir.join(FILE) };
-            let m = migrate(&file, &Keyring, data_dir, crate::portable::active());
+            let m = migrate(&file, &Keyring::CURRENT, data_dir, crate::portable::active());
             if m.moved > 0 || !m.kept.is_empty() {
                 crate::devlog::info(
                     "secrets",
@@ -532,7 +718,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// The credential's account name: a portable copy adds the namespace of its data folder.
 fn account_name(account: &str, data_dir: &Path, portable: bool) -> String {
     if portable {
-        format!("{account}@{}", annalo_core::datadir::secret_namespace(data_dir))
+        format!("{account}@{}", arcalo_core::datadir::secret_namespace(data_dir))
     } else {
         account.to_owned()
     }
@@ -543,15 +729,14 @@ mod namespace_tests {
     use super::*;
 
     #[test]
-    fn the_service_name_survives_the_rename() {
-        // Entries saved by Annalo 1.6 and earlier are found only under this name.
-        assert_eq!(SERVICE, "Annalo");
+    fn the_service_names() {
+        assert_eq!((SERVICE, LEGACY_SERVICE), ("Arcalo", "Annalo"));
     }
 
     #[test]
     fn portable_copies_use_their_own_credentials() {
-        let a = std::env::temp_dir().join(format!("annalo-ns-a-{}", std::process::id()));
-        let b = std::env::temp_dir().join(format!("annalo-ns-b-{}", std::process::id()));
+        let a = std::env::temp_dir().join(format!("arcalo-ns-a-{}", std::process::id()));
+        let b = std::env::temp_dir().join(format!("arcalo-ns-b-{}", std::process::id()));
         assert_eq!(account_name("git-token", &a, false), "git-token", "installed: as before");
         let pa = account_name("git-token", &a, true);
         assert!(pa.starts_with("git-token@") && pa.len() == "git-token@".len() + 12, "{pa}");
@@ -566,7 +751,7 @@ mod tests {
 
     #[test]
     fn two_secrets_share_the_fallback_file() {
-        let dir = std::env::temp_dir().join(format!("annalo-secrets-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-secrets-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (ai, git) = (SecretStore::new(&dir), SecretStore::git(&dir));
@@ -596,7 +781,7 @@ mod tests {
     #[cfg(unix)]
     fn the_file_is_private_and_a_damaged_one_is_kept() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("annalo-secrets2-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-secrets2-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let git = SecretStore::git(&dir);
@@ -642,7 +827,7 @@ mod tests {
     }
 
     fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("annalo-secrets-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("arcalo-secrets-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -657,7 +842,7 @@ mod tests {
         assert_eq!(no_bus, Kind::File { reason: Some("DBus error: no session bus".into()) });
         // Forced: the probe is not even asked.
         let forced = choose(Some(" FILE "), || panic!("probed"));
-        assert_eq!(forced, Kind::File { reason: Some("ANNALO_SECRET_STORE=file".into()) });
+        assert_eq!(forced, Kind::File { reason: Some("ARCALO_SECRET_STORE=file".into()) });
         // The UI reads the kind and the reason.
         assert_eq!(serde_json::to_value(&no_bus).unwrap()["kind"], "file");
         assert_eq!(serde_json::to_value(Kind::SecretService).unwrap()["kind"], "secret_service");
@@ -687,7 +872,7 @@ mod tests {
             let got = |k: &str| e.get(k).map(String::as_str);
             assert_eq!(got("litellm-api-key"), Some("sk-legacy"));
             assert_eq!(got("git-token"), Some("ghp_abc"));
-            assert_eq!(got(annalo_core::network::PASSWORD_ACCOUNT), Some("pw-123456"));
+            assert_eq!(got(arcalo_core::network::PASSWORD_ACCOUNT), Some("pw-123456"));
             assert_eq!(got("ai-provider-mistral-ai"), Some("mk-1"));
             assert_eq!(got("calendar-ics-s1"), Some("https://x/cal.ics?token=1"));
             assert_eq!(got("jira-site-2"), Some("jt-2"));
@@ -759,6 +944,109 @@ mod tests {
         assert!(!file.path.exists(), "the stale copy is removed");
         layered_set(&store, &file, "git-token", "git_token", None).unwrap();
         assert_eq!(layered_get(&store, &file, "git-token", "git_token"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// A credential store as 1.14 left it (service `Annalo`) and the new one (`Arcalo`).
+    fn stores_114() -> (Mem, Mem) {
+        let old = Mem::default();
+        for (k, v) in [
+            ("git-token", "ghp-114"),
+            ("ai-provider-openai", "sk-114"),
+            ("jira-site-1", "jt-114"),
+            ("app-lock-pin", "$argon2id$114"),
+        ] {
+            old.entries.borrow_mut().insert(k.into(), v.into());
+        }
+        (Mem::default(), old)
+    }
+
+    #[test]
+    fn entries_of_the_old_service_are_taken_over_verified_and_kept() {
+        let dir = temp("takeover");
+        let (new, old) = stores_114();
+        let mut settings = arcalo_core::settings::Settings {
+            providers: vec![arcalo_core::ai::provider::AiProvider { id: "openai".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        settings.jira.sites = vec![arcalo_core::issues::JiraSite { id: "site-1".into(), ..Default::default() }];
+        let stores = known_stores(&dir, Some(&settings));
+        let report = take_over_stores(&stores, &new, &old);
+        let mut copied = report.copied.clone();
+        copied.sort();
+        assert_eq!(copied, ["ai-provider-openai", "app-lock-pin", "git-token", "jira-site-1"]);
+        assert!(report.failed.is_empty());
+        assert_eq!(new.entries.borrow().get("jira-site-1").map(String::as_str), Some("jt-114"));
+        assert_eq!(old.entries.borrow().len(), 4, "the old entries are kept");
+        // Idempotent; and an entry changed later under the new name is not overwritten.
+        new.entries.borrow_mut().insert("git-token".into(), "ghp-115".into());
+        assert_eq!(take_over_stores(&stores, &new, &old), TakeOverReport::default());
+        assert_eq!(new.entries.borrow().get("git-token").map(String::as_str), Some("ghp-115"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_entry_not_taken_over_is_still_read_under_the_old_name() {
+        let dir = temp("fallback");
+        let (_, old) = stores_114();
+        let locked = Mem { broken: true, ..Default::default() };
+        let moved = Moved { path: dir.join(MOVED_FILE) };
+        // The new store refuses writes: the old entry is read, and tried again later.
+        assert!(matches!(take_over(&locked, &old, &moved, "git-token", "git_token"), TakeOver::Failed(_)));
+        assert_eq!(read_with_fallback(&locked, &old, &moved, "git-token", "git_token").as_deref(), Some("ghp-114"));
+        assert!(!moved.contains("git-token"));
+        // A store that reads back something else does not count either.
+        let lossy = Mem { lossy: true, ..Default::default() };
+        assert!(matches!(take_over(&lossy, &old, &moved, "git-token", "git_token"), TakeOver::Failed(_)));
+        // Read through a working store: taken over on the way.
+        let new = Mem::default();
+        assert_eq!(read_with_fallback(&new, &old, &moved, "git-token", "git_token").as_deref(), Some("ghp-114"));
+        assert!(moved.contains("git-token") && new.entries.borrow().contains_key("git-token"));
+        // Removed under the new name (the user deleted it): the old entry does not come back.
+        new.entries.borrow_mut().remove("git-token");
+        assert_eq!(read_with_fallback(&new, &old, &moved, "git-token", "git_token"), None);
+        // The note moves with the data folder.
+        assert!(arcalo_core::datadir::CREDENTIALS_MOVED == MOVED_FILE);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_encrypted_workspace_opens_with_the_key_taken_over() {
+        use arcalo_core::cipher::{self, DbKey};
+        let dir = temp("encrypted");
+        let plain = dir.join("plain.db");
+        let db = arcalo_core::Database::open(&plain).unwrap();
+        db.create_page(None, "Geheim", None).unwrap();
+        drop(db);
+        let key = DbKey::generate().unwrap();
+        let workspace = dir.join(arcalo_core::datadir::DB_FILE);
+        cipher::export(&plain, None, &workspace, Some(&key)).unwrap();
+        // 1.14 kept the key (and a pending key change) under the old service name.
+        let (new, old) = (Mem::default(), Mem::default());
+        old.entries.borrow_mut().insert("db-key".into(), key.to_hex().to_string());
+        let next = DbKey::generate().unwrap();
+        old.entries.borrow_mut().insert("db-key-next".into(), next.to_hex().to_string());
+        let report = take_over_stores(&known_stores(&dir, None), &new, &old);
+        assert_eq!(report.copied, ["db-key", "db-key-next"]);
+        let moved = Moved { path: dir.join(MOVED_FILE) };
+        let hex = read_with_fallback(&new, &Mem::default(), &moved, "db-key", "db_key").unwrap();
+        let taken = DbKey::from_hex(&hex).unwrap();
+        assert!(cipher::key_opens(&workspace, &taken), "the workspace opens with the key read under the new name");
+        assert!(!cipher::key_opens(&workspace, &next));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_portable_copy_takes_over_its_own_accounts() {
+        let dir = temp("portable-takeover");
+        let account = account_name("git-token", &dir, true);
+        let old = Mem::default();
+        old.entries.borrow_mut().insert(account.clone(), "ghp-stick".into());
+        old.entries.borrow_mut().insert("git-token".into(), "ghp-installed".into());
+        let new = Mem::default();
+        let moved = Moved { path: dir.join(MOVED_FILE) };
+        assert_eq!(take_over(&new, &old, &moved, &account, "git_token"), TakeOver::Copied);
+        assert_eq!(new.entries.borrow().get(&account).map(String::as_str), Some("ghp-stick"));
+        assert!(!new.entries.borrow().contains_key("git-token"), "the installed copy's entry is its own");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
