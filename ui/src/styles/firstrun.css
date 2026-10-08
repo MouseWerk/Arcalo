@@ -419,7 +419,7 @@
 .fr-later-item:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .fr-later-text { display: grid; gap: 1px; min-width: 0; }
 .fr-later-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text); }
-.fr-later-sub { overflow: hidden; font-size: var(--fs-xs); color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
+.fr-later-sub { font-size: var(--fs-xs); line-height: 1.4; color: var(--text-3); }
 .fr-later-go { color: var(--text-3); }
 
 /* ------------------------------------------------------------ small windows */

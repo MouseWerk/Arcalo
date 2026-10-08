@@ -44,17 +44,29 @@ assistant panel's empty state uses a dashed accent-tinted box, which goes with f
 
 ## Fixed (after)
 
-See the release notes of 1.15 and the commit for the details; the screenshot set `intro-after/` has
-the same names as `intro-before/`.
+Same screenshot set after the fixes in `intro-after/` (same file names; the scenes are now
+`welcome`, `notes`, `meetings`, `time`, `local`, the steps `language` … `done`).
 
-1. Intro: five scenes (about 22 s): the day in one app; notes and tasks; meetings; time „wenn du sie
-   brauchst“ (SAP CATS and Jira as options); local, AI optional. Skippable (Esc, „Überspringen“),
-   arrows and Space, reduced motion as static slides.
-2. Setup: seven steps: language, theme, „Mit KI / Ohne KI“, „Buchst du Zeit?“ (time tracking, SAP and
-   Jira as detail), calendar (optional), how to start (sample content, empty, Obsidian import), done
-   with the summary and links to Sicherung, Git-Sync, Sicherheit and Desktop in the settings.
-3. First screen: the start page with „Erste Schritte“ (three to four next steps that tick themselves
-   off, dismissible); the old welcome choice is not shown after the setup any more.
-4. „Ohne KI“: no assistant, chat, inline AI, AI buttons, widgets, commands or hints anywhere.
-5. Polished empty states (tasks), no deficit for days before the first start, the splash name in the
-   app's font stack without the glow.
+1. Story (1, 9): the intro has five scenes of 4.5 to 5 s (about 23 s instead of 35): „Dein ganzer
+   Arbeitstag. In einer App.“ with the day on one board (note, tasks, meetings, hours, „KI optional“);
+   notes that turn into tasks; every meeting with its note; time „wenn du sie brauchst“ with SAP CATS
+   and Jira as export targets; local data with AI as an optional switch. The welcome choice, the
+   sample „Willkommen“ page and the README tell the same story. Skippable (Esc, „Überspringen“),
+   arrows and Space, reduced motion as still slides, unchanged.
+2. Setup (2, 8): seven steps instead of eleven: language, theme, „Mit KI / Ohne KI“ (one sentence each;
+   with AI the model can be picked or set up later), „Buchst du deine Zeit?“ (yes: working days,
+   target, rounding; SAP CATS and Jira named as details for the settings), calendar (optional), how
+   to start (sample content, empty, Obsidian import), done. Backups, Git sync, security and the
+   desktop keep their defaults; „Fertig“ links to them („Später einrichten“). Narrow windows name
+   the step once; „Mehr in den Einstellungen“ is a quiet neutral link.
+3. First screen (3, 5): finishing the setup never leads to the welcome choice again (an unanswered
+   start is an empty workspace); the side panel is closed; the start page shows „Erste Schritte“
+   (first note, today's note, a task, then the calendar, the first booking or the assistant), which
+   tick themselves off, hide when done and can be dismissed.
+4. AI (4): „KI verwenden“ (setup, Settings → KI & Modelle, policy `AllowAi`): off, no assistant, chat,
+   inline AI, summaries, AI widgets or commands, no „KI einrichten“ anywhere, no AI request.
+5. Day one (6): days before the first start are not counted as missing time (timesheet, start page,
+   suggestions).
+6. Splash (7): the name in the system UI font, no glow, about 0.35 s shorter; a ready app is never
+   held for more than 0.95 s after the window shows.
+7. Empty states (5): the tasks view says the one line to type, the syntax below in small type.
