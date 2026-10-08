@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 13;
+pub const SETTINGS_VERSION: u32 = 14;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -48,6 +48,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 10, name: "work-hours", run: work_hours },
     Step { from: 11, name: "git-author", run: git_author },
     Step { from: 12, name: "language-choice", run: language_choice },
+    Step { from: 13, name: "search-by-meaning", run: search_by_meaning },
 ];
 
 /// What [`migrate`] did.
@@ -343,6 +344,37 @@ fn language_choice(s: &mut Map<String, Value>) -> Option<String> {
     }
     locale.insert("language".into(), Value::String("de".into()));
     Some("locale.language: de (as before)".into())
+}
+
+/// 13 → 14: „Suche nach Bedeutung“ (1.15) starts automatic (`search.semantic = null`): on when
+/// the embedding model of Settings → KI runs on a local provider, off otherwise, so an
+/// embedding model in the cloud gets no search queries until the switch is turned on. Settings
+/// with an embedding model get the key written (the search uses that model from now on) and
+/// the log says what it means for them; without one nothing changes. A stored choice stays.
+fn search_by_meaning(s: &mut Map<String, Value>) -> Option<String> {
+    if s.get("search").and_then(Value::as_object).is_some_and(|o| o.contains_key("semantic")) {
+        return None;
+    }
+    let model = s.get("embedding_model").and_then(Value::as_str).is_some_and(|m| !m.trim().is_empty());
+    if !model {
+        return None;
+    }
+    let provider = s.get("embedding_provider").and_then(Value::as_str).unwrap_or_default().trim().to_owned();
+    let local = s.get("providers").and_then(Value::as_array).is_some_and(|ps| {
+        ps.iter().any(|p| {
+            p.get("id").and_then(Value::as_str) == Some(provider.as_str())
+                && p.get("local").and_then(Value::as_bool) == Some(true)
+        })
+    });
+    let search = s.entry("search").or_insert_with(|| Value::Object(Map::new()));
+    if !search.is_object() {
+        *search = Value::Object(Map::new());
+    }
+    search.as_object_mut()?.insert("semantic".into(), Value::Null);
+    Some(format!(
+        "search.semantic = automatic ({})",
+        if local { "on, local embedding model" } else { "off, embedding model not local" }
+    ))
 }
 
 #[cfg(test)]
@@ -736,6 +768,37 @@ mod tests {
         let mut own = serde_json::json!({"version": 11, "locale": {"language": "de"}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert_eq!(crate::gitsync::GitSyncSettings::default().author_email, "arcalo@localhost");
+    }
+
+    #[test]
+    fn search_by_meaning_starts_automatic_with_an_embedding_model() {
+        let providers = serde_json::json!([
+            {"id": "litellm", "kind": "litellm", "base_url": "https://llm.firma.de"},
+            {"id": "ollama", "kind": "ollama", "base_url": "http://localhost:11434", "local": true}
+        ]);
+        let mut local = serde_json::json!({"version": 13, "locale": {"language": "de"}, "providers": providers,
+            "embedding_model": "nomic-embed-text", "embedding_provider": "ollama"});
+        let m = migrate(&mut local);
+        assert_eq!(m.notes, ["search-by-meaning: search.semantic = automatic (on, local embedding model)"]);
+        assert_eq!(local["search"], serde_json::json!({"semantic": null}));
+        let s: Settings = serde_json::from_value(local.clone()).unwrap();
+        assert!(crate::semantic::plan(&s).active());
+        let mut cloud = serde_json::json!({"version": 13, "locale": {"language": "de"}, "providers": providers,
+            "embedding_model": "firma-embed", "embedding_provider": "litellm"});
+        assert_eq!(
+            migrate(&mut cloud).notes,
+            ["search-by-meaning: search.semantic = automatic (off, embedding model not local)"]
+        );
+        let s: Settings = serde_json::from_value(cloud).unwrap();
+        assert_eq!(crate::semantic::plan(&s).inactive, Some(crate::semantic::Inactive::SwitchedOff));
+        // A stored choice stays; without an embedding model there is nothing to do.
+        let mut chosen = serde_json::json!({"version": 13, "locale": {"language": "de"}, "embedding_model": "x",
+            "search": {"semantic": true}});
+        assert!(migrate(&mut chosen).notes.is_empty());
+        assert_eq!(chosen["search"]["semantic"], true);
+        let mut none = serde_json::json!({"version": 13, "locale": {"language": "de"}, "embedding_model": null});
+        assert!(migrate(&mut none).notes.is_empty());
+        assert!(none.get("search").is_none());
     }
 
     #[test]

@@ -39,6 +39,7 @@ import { AdminSection } from "./settings/AdminSection";
 import { DevLogAboutRow, DevLogSection } from "./settings/DevLogSection";
 import { CalendarSection } from "./settings/CalendarSection";
 import { VoiceSection } from "./settings/VoiceSection";
+import { SearchPrefsSection } from "./settings/SearchSection";
 import { JiraSection } from "./settings/JiraSection";
 import { FilingSection } from "./settings/FilingSection";
 import { BookOpen, Bug, FolderTree, LockKeyhole, MessageSquareText } from "lucide-react";
@@ -51,7 +52,7 @@ import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
 
-type Section = "appearance" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "security" | "desktop" | "admin" | "logs" | "about";
+type Section = "appearance" | "search" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "security" | "desktop" | "admin" | "logs" | "about";
 const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
   {
     id: "general",
@@ -81,6 +82,7 @@ const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: t
     label: "navgroup.aiLang",
     items: [
       { id: "ai", label: "nav.ai", icon: Sparkles },
+      { id: "search", label: "nav.search", icon: Search },
       { id: "voice", label: "nav.voice", icon: Mic },
       { id: "locale", label: "nav.locale", icon: Languages },
     ],
@@ -107,7 +109,7 @@ const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: t
   },
 ];
 /** Sections with „Abschnitt zurücksetzen“ (ids as in `Settings::reset_section`). */
-const RESET = new Set<Section>(["appearance", "locale", "start", "keyboard", "editor", "notes", "filing", "time", "voice", "jira", "briefing", "ai", "privacy", "network", "notifications"]);
+const RESET = new Set<Section>(["appearance", "search", "locale", "start", "keyboard", "editor", "notes", "filing", "time", "voice", "jira", "briefing", "ai", "privacy", "network", "notifications"]);
 /** Sections that can be shared with the other workspaces (`settings_layers`): menu section → layer. */
 const SCOPED: Partial<Record<Section, string>> = { appearance: "appearance", ai: "ai", filing: "filing", jira: "jira", start: "dashboard" };
 /** Typing is saved once it pauses this long (switches and dropdowns save at once). */
@@ -435,6 +437,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
             <AiPrefGroups draft={draft} update={u} />
           </>
         );
+      case "search":
+        return <SearchPrefsSection draft={draft} update={u} />;
       case "calendar":
         return <CalendarSection draft={draft} update={u} />;
       case "voice":

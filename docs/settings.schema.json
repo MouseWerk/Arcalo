@@ -1986,6 +1986,19 @@
         }
       ]
     },
+    "SearchPrefs": {
+      "properties": {
+        "semantic": {
+          "default": null,
+          "description": "„Suche nach Bedeutung“: the search also finds pages by meaning (`crate::semantic`). `None` = automatic: on when the embedding model runs on a local provider.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "SiteKind": {
       "description": "Cloud (REST v3, e-mail and API token) or Server/Data Center (REST v2, personal access token).",
       "enum": [
@@ -3133,6 +3146,17 @@
       },
       "description": "Provider and model per tier."
     },
+    "search": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/SearchPrefs"
+        }
+      ],
+      "default": {
+        "semantic": null
+      },
+      "description": "Suche: search by meaning."
+    },
     "search_shortcut": {
       "default": "Ctrl+Shift+O",
       "description": "Global shortcut of the quick-search window (Spotlight-like), e.g. `Ctrl+Shift+O`; `\"\"` = off.",
@@ -3217,7 +3241,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 13,
+      "default": 14,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

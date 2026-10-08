@@ -506,3 +506,62 @@ fn explain_queries() {
         });
     }
 }
+
+/// Search by meaning on the large workspace: every chunk gets a deterministic 768-dimensional
+/// vector (the size of `nomic-embed-text`), then the query side is timed.
+#[test]
+#[ignore = "needs ANNALO_BIG_DIR; run explicitly (see the module docs)"]
+fn semantic_search() {
+    const DIMS: usize = 768;
+    let dir = PathBuf::from(std::env::var("ANNALO_BIG_DIR").expect("ANNALO_BIG_DIR"));
+    if !dir.join(annalo_core::datadir::DB_FILE).exists() {
+        generate(&dir);
+    }
+    let db = Database::open(dir.join(annalo_core::datadir::DB_FILE)).unwrap();
+    let vector = |seed: u64| -> Vec<f32> {
+        let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        (0..DIMS).map(|_| (rng.below(2000) as f32 - 1000.0) / 1000.0).collect()
+    };
+    let t = Instant::now();
+    let mut n = 0;
+    loop {
+        let batch = annalo_core::ai::rag::pending_blocks(&db, 512).unwrap();
+        if batch.is_empty() {
+            break;
+        }
+        db.conn().execute_batch("BEGIN").unwrap();
+        for (id, _) in &batch {
+            annalo_core::ai::rag::store_embedding(&db, *id, &vector(*id as u64)).unwrap();
+        }
+        db.conn().execute_batch("COMMIT").unwrap();
+        n += batch.len();
+    }
+    let blocks: i64 = db.conn().query_row("SELECT count(*) FROM notes_blocks", [], |r| r.get(0)).unwrap();
+    println!("core embedded {n} chunks in {:.1?} ({blocks} chunks in all)", t.elapsed());
+    let q = vector(42);
+    time("assistant vector_top_k (database scan)", 3, || annalo_core::ai::rag::vector_top_k(&db, &q, 40).unwrap());
+    let t = Instant::now();
+    let mut index = annalo_core::semantic::VectorIndex::default();
+    index.sync(&db).unwrap();
+    println!(
+        "core semantic index load: {:.1} ms, {} chunks, {:.1} MB",
+        t.elapsed().as_secs_f64() * 1000.0,
+        index.len(),
+        index.bytes() as f64 / 1e6
+    );
+    time("semantic search (exact + meaning, 30 hits)", 5, || {
+        annalo_core::semantic::search(&db, &mut index, "abstimmung", Some(&q), 30).unwrap()
+    });
+    time("exact search (30 hits)", 5, || annalo_core::search::search(&db, "abstimmung", 30).unwrap());
+    // After an edit: only the new chunk is read again.
+    let page: i64 =
+        db.conn().query_row("SELECT id FROM pages WHERE title LIKE 'Seite 0100%'", [], |r| r.get(0)).unwrap();
+    let content: String = db.conn().query_row("SELECT content FROM pages WHERE id = ?1", [page], |r| r.get(0)).unwrap();
+    db.save_page(page, &format!("{content}\n\nNachtrag zur Abstimmung.")).unwrap();
+    for (id, _) in annalo_core::ai::rag::pending_blocks(&db, 10).unwrap() {
+        annalo_core::ai::rag::store_embedding(&db, id, &vector(id as u64)).unwrap();
+    }
+    time("semantic search after an edit", 1, || {
+        annalo_core::semantic::search(&db, &mut index, "abstimmung", Some(&q), 30).unwrap()
+    });
+}
