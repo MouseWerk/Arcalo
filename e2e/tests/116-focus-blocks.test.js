@@ -124,8 +124,13 @@ test("a task dragged from the Aufgaben list lands in the week as a focus block",
   assert.match(await app.text(blockSel()), /Bericht schreiben\s*10:00–11:00/);
   assert.equal(await app.browser.execute(() => document.querySelector(".calv-block-name").value), "Bericht schreiben");
   assert.match(await app.text(".calv-block-detail"), /NP-8801\/1020 \(aus der Verknüpfung\)/);
-  const look = await app.browser.execute((s) => getComputedStyle(document.querySelector(s)).borderTopStyle, blockSel());
-  assert.equal(look, "solid", "selected: solid ring");
+  // Selected: lifted with a stronger fill and a bolder title; the dashed plan border stays, no ring.
+  const look = await app.browser.execute((s) => {
+    const el = document.querySelector(s);
+    const cs = getComputedStyle(el);
+    return { border: cs.borderTopStyle, outline: cs.outlineStyle, lifted: cs.boxShadow !== "none", weight: Number(getComputedStyle(el.querySelector(".calv-block-title")).fontWeight) };
+  }, blockSel());
+  assert.deepEqual(look, { border: "dashed", outline: "none", lifted: true, weight: 650 }, "selected: lifted, not framed");
   assert.match(await app.browser.execute((s) => document.querySelector(s).getAttribute("aria-label"), `.calv-dayhead[data-date="${todayIso}"] .calv-planned-sum`), /h geplant/);
 
   // Written to Outlook: busy, „Fokus: …“, no reminder, the category.

@@ -113,7 +113,7 @@ test("a narrow split pane keeps stat numbers on one line and nothing sticks out"
   await app.browser.setWindowSize(1440, 900);
 });
 
-test("keyboard focus is visible on buttons, fields and segments", async () => {
+test("keyboard focus is visible and neutral on buttons, fields and segments", async () => {
   await open("Aufgaben");
   const rings = [];
   for (const sel of [".pane.active .view-header .segmented button.on", ".pane.active .view-header .select", ".ribbon .icon-btn"]) {
@@ -124,7 +124,16 @@ test("keyboard focus is visible on buttons, fields and segments", async () => {
       await app.browser.execute((s) => {
         const e = document.activeElement;
         const st = getComputedStyle(e);
-        return { sel: s, ok: e.matches(":focus-visible") && ((st.outlineStyle !== "none" && parseFloat(st.outlineWidth) >= 2) || st.boxShadow !== "none") };
+        // The ring is neutral gray, not the accent (CLAUDE.md: no accent frames on focus or selection).
+        const probe = document.body.appendChild(Object.assign(document.createElement("i"), { style: "color: var(--accent)" }));
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        const ring = st.outlineStyle !== "none" && parseFloat(st.outlineWidth) >= 2;
+        // A field without an outline shows focus with its border and halo.
+        const color = ring ? st.outlineColor : st.borderTopColor;
+        const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
+        const gray = Math.max(r, g, b) - Math.min(r, g, b) < 40;
+        return { sel: s, color, ok: e.matches(":focus-visible") && (ring || st.boxShadow !== "none") && color !== accent && gray };
       }, sel),
     );
   }

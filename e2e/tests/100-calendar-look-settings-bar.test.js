@@ -214,7 +214,7 @@ const blocks = () =>
         border: ["Top", "Right", "Bottom", "Left"].map((s) => cs[`border${s}Width`]),
         radius: parseFloat(cs.borderTopLeftRadius),
         shadow: cs.boxShadow,
-        bar: getComputedStyle(el, "::before").width,
+        bar: getComputedStyle(el, "::before").content,
         bg: cs.backgroundColor,
         hatched: cs.backgroundImage !== "none",
         titleRatio: bg && bg[3] === 1 && title ? ratio(parse(getComputedStyle(title).color), bg) : null,
@@ -223,7 +223,7 @@ const blocks = () =>
     });
   });
 
-test("Kalender: blocks have a fill and a bar, no colored border, and readable text in three themes", async () => {
+test("Kalender: blocks have a fill, no bar or colored border, and readable text in three themes", async () => {
   await panel(false);
   await app.click(".ribbon-calendar-view");
   await app.waitFor(".pane.active .calv-grid");
@@ -246,7 +246,7 @@ test("Kalender: blocks have a fill and a bar, no colored border, and readable te
     for (const b of list) {
       const what = `${mode}/${mode === "dark" ? dark : light} ${b.title} (${b.cls})`;
       assert.deepEqual(b.border, ["0px", "0px", "0px", "0px"], `no border around ${what}`);
-      assert.equal(b.bar, "3px", `a 3px bar on the left of ${what}`);
+      assert.equal(b.bar, "none", `no bar on the left of ${what}`);
       assert.ok(b.radius >= 4 && b.radius <= 6, `small radius on ${what}: ${b.radius}`);
       if (!/\bselected\b/.test(b.cls)) assert.equal(b.shadow, "none", `no glow on ${what}`);
       if (b.titleRatio !== null) assert.ok(b.titleRatio >= 4.5, `title of ${what}: ${b.titleRatio.toFixed(2)} on ${b.bg}`);
@@ -256,15 +256,24 @@ test("Kalender: blocks have a fill and a bar, no colored border, and readable te
     assert.ok(list.some((b) => /veiled/.test(b.cls) && b.hatched), "the private meeting is hatched");
   }
   await app.shot("100-calendar-week-solarized");
-  // A meeting opened: a focus ring, no colored border.
+  // A meeting opened: lifted with a stronger fill and a bolder title, no outline or colored border.
+  const look = () =>
+    app.browser.execute(() => {
+      const el = [...document.querySelectorAll(".pane.active .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review");
+      const cs = getComputedStyle(el);
+      return { bg: cs.backgroundColor, shadow: cs.boxShadow, outline: cs.outlineStyle, border: cs.borderLeftWidth, weight: Number(getComputedStyle(el.querySelector(".calv-ev-title")).fontWeight) };
+    });
+  const plain = await look();
   await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-ev")].find((b) => b.querySelector(".calv-ev-title")?.textContent === "Sprint Review").click());
   await app.waitFor(".pane.active .calv-detail");
-  const ring = await app.browser.execute(() => {
-    const el = document.querySelector(".pane.active .calv-ev.selected");
-    const cs = getComputedStyle(el);
-    return { outline: cs.outlineStyle, width: cs.outlineWidth, border: cs.borderLeftWidth };
-  });
-  assert.deepEqual(ring, { outline: "solid", width: "2px", border: "0px" });
+  await app.waitFor(".pane.active .calv-ev.selected");
+  await sleep(250);
+  const picked = await look();
+  assert.equal(picked.outline, "none", "no outline on the selected meeting");
+  assert.equal(picked.border, "0px", "no border on the selected meeting");
+  assert.notEqual(picked.bg, plain.bg, "the selected meeting has a stronger fill");
+  assert.notEqual(picked.shadow, "none", "the selected meeting is lifted");
+  assert.ok(picked.weight > plain.weight, `bolder title: ${plain.weight} -> ${picked.weight}`);
   await app.keys(["Escape"]);
   const v = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...v.settings, theme: "light", appearance: { ...v.settings.appearance, theme_light: "annalo-light", theme_dark: "annalo-dark" } } });
