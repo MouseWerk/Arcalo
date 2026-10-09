@@ -15,35 +15,13 @@ export const LEVEL: Record<AlertLevel, { readonly label: string; tone: Tone }> =
   exceeded: withLabel({ tone: "danger" as Tone }, "wbs.level.exceeded"),
 };
 
-/** The WBS and the Leistungsarten, loaded once per `wbsVersion` for every picker on screen (a page switch mounted
- * several and each asked again, queued behind the slow reads of the switch). A failed load is retried next time. */
-let shared: { version: number; wbs: Promise<ProjectTree[]>; las: Promise<[string, string][]> } | null = null;
-
-export function wbsData(version: number) {
-  if (shared?.version !== version) {
-    const next = { version, wbs: api.wbs(), las: api.leistungsarten() };
-    const drop = () => {
-      if (shared === next) shared = null;
-    };
-    next.wbs.catch(drop);
-    next.las.catch(drop);
-    shared = next;
-  }
-  return shared;
-}
-
 export function useWbs() {
   const version = useApp((s) => s.wbsVersion);
   const [wbs, setWbs] = useState<ProjectTree[]>([]);
   const [las, setLas] = useState<[string, string][]>([]);
   useEffect(() => {
-    let live = true;
-    const d = wbsData(version);
-    d.wbs.then((w) => live && setWbs(w)).catch(() => {});
-    d.las.then((l) => live && setLas(l)).catch(() => {});
-    return () => {
-      live = false;
-    };
+    api.wbs().then(setWbs).catch(() => {});
+    api.leistungsarten().then(setLas).catch(() => {});
   }, [version]);
   return { wbs, las };
 }
