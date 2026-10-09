@@ -212,6 +212,16 @@ fn next_line(line: &str, t: &ParsedTask, today: NaiveDate) -> Option<(String, Na
     if let Some(b) = &t.marks.block_id {
         edits.push((b.clone(), String::new()));
     }
+    // A monthly or yearly rule from the 29th to 31st keeps its day (`every:monthly` from 31
+    // January: `every:monthly,31`, so March is the 31st again). Only the plain `every:` form is
+    // rewritten; an imported Obsidian marker stays as written.
+    if let (Some(base), Some(first)) = (due.filter(|_| !rule.when_done), t.marks.recur.first())
+        && let Some(pinned) = rule.pinned(base)
+        && line.get(first.clone()).is_some_and(|m| m.starts_with("every:"))
+    {
+        edits.push((first.clone(), pinned.tokens()));
+        edits.extend(t.marks.recur.iter().skip(1).map(|r| (r.clone(), String::new())));
+    }
     for c in crate::chips::chips(line) {
         if c.range.start >= min {
             edits.push((c.range, String::new()));
@@ -519,6 +529,36 @@ mod tests {
                 "{out}"
             );
         }
+    }
+
+    #[test]
+    fn a_monthly_or_yearly_series_from_the_29th_to_31st_keeps_its_day() {
+        let at = |md: &str, today: &str| edit_page(md, &[0], &TaskEdit::Done { done: true }, day(today)).content;
+        let next = |out: String| out.lines().nth(1).unwrap().to_owned();
+        // 31 January, monthly: February takes its last day, March is the 31st again.
+        let feb = next(at("- [ ] Miete every:monthly due:2026-01-31\n", "2026-01-31"));
+        assert_eq!(feb, "- [ ] Miete every:monthly,31 due:2026-02-28");
+        assert_eq!(next(at(&format!("{feb}\n"), "2026-02-28")), "- [ ] Miete every:monthly,31 due:2026-03-31");
+        // 29 February, yearly: the 28th in other years, the 29th again in 2028.
+        let mut line = "- [ ] Jahrestag every:yearly due:2024-02-29".to_owned();
+        let mut dues = vec![];
+        for today in ["2024-02-29", "2025-02-28", "2026-02-28", "2027-02-28"] {
+            line = next(at(&format!("{line}\n"), today));
+            dues.push(line.rsplit("due:").next().unwrap().to_owned());
+        }
+        assert_eq!(dues, ["2025-02-28", "2026-02-28", "2027-02-28", "2028-02-29"]);
+        assert!(line.contains("every:yearly,29"), "{line}");
+        // The 28th and earlier, a set day, an end date and Obsidian's marker stay as written.
+        assert_eq!(
+            next(at("- [ ] A every:monthly due:2026-01-28\n", "2026-01-28")),
+            "- [ ] A every:monthly due:2026-02-28"
+        );
+        assert_eq!(
+            next(at("- [ ] B every:monthly until:2026-12-31 due:2026-01-30\n", "2026-01-30")),
+            "- [ ] B every:monthly,30 until:2026-12-31 due:2026-02-28"
+        );
+        let obsidian = "- [ ] C \u{1F501} every month \u{1F4C5} 2026-01-31\n";
+        assert_eq!(next(at(obsidian, "2026-01-31")), "- [ ] C \u{1F501} every month \u{1F4C5} 2026-02-28");
     }
 
     #[test]

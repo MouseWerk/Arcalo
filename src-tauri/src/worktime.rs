@@ -34,6 +34,18 @@ pub fn absence_list(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> R
     })
 }
 
+/// The target of each day of `from..=to` in minutes, by the rule every view counts missing time
+/// with ([`worktime::DayTargets`]: weekday targets, holidays, absences, the day a new workspace
+/// was set up).
+#[tauri::command(async)]
+pub fn day_targets(state: State<AppState>, from: NaiveDate, to: NaiveDate) -> Result<Vec<i64>> {
+    if to < from || (to - from).num_days() > 800 {
+        return Err(Error::State("range".into()));
+    }
+    let settings = state.settings();
+    Ok(worktime::DayTargets::load(&state.reader(), &settings, from, to)?.minutes().to_vec())
+}
+
 /// Enters an absence for `from..=to` (a longer range only on days with a target); the days.
 #[tauri::command(async)]
 pub fn absence_save(

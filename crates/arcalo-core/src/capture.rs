@@ -359,7 +359,7 @@ where
     }
     let (md, tasks, notes) = format_capture(&rest);
     if zeit_lines.is_empty() && md.is_empty() {
-        return Err(Error::State("Nichts zu erfassen".into()));
+        return Err(Error::State(tr!("Nichts zu erfassen", "Nothing to capture").into()));
     }
     db.atomic(|| {
         let bookings = zeit_lines

@@ -17,6 +17,7 @@ fn day(d: u32, workday: bool, booked: i64) -> Day {
         workday,
         booked_minutes: booked,
         target_minutes: None,
+        counts: true,
     }
 }
 

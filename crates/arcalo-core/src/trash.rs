@@ -166,6 +166,7 @@ impl Database {
                 self.conn().execute(crate::feed::SCRUB_ACTIVITY, [pid])?;
             }
             self.conn().execute("DELETE FROM pages WHERE id = ?1", [id])?;
+            crate::ai::rag::pages_purged();
             Ok(ids.len())
         })
     }

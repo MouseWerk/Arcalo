@@ -317,7 +317,7 @@ export function DayReviewView() {
                   </button>
                 )}
               </Section>
-              <Section icon={FileText} tone="pages" title={t("review.md.pages")} count={r.pages.length} empty={t("review.noPages")} className="rv-pages">
+              <Section icon={FileText} tone="pages" title={t("review.md.pages")} count={Math.max(r.pages_total ?? 0, r.pages.length)} empty={t("review.noPages")} className="rv-pages">
                 {r.pages.map((p, i) => (
                   <PageRow key={`${p.page_id ?? "x"}-${i}`} p={p} onOpen={(newTab) => void openPage(p.gone ? null : p.page_id, newTab)} />
                 ))}
@@ -411,7 +411,7 @@ function Stats({ r }: { r: DayReview }) {
         <span className="rv-stat-label">
           <FileText size={13} aria-hidden /> {t("review.md.pages")}
         </span>
-        <span className="rv-stat-value num">{r.pages.length}</span>
+        <span className="rv-stat-value num">{Math.max(r.pages_total ?? 0, r.pages.length)}</span>
         <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: hm(edited) }) : t("review.edited")}</span>
       </div>
       <div className="rv-stat tone-focus">

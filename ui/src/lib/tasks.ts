@@ -3,7 +3,21 @@
 import { addDays, fmtDate, isoDay, weekdayLabels, weekStart } from "./format";
 import { t, type TKey } from "./i18n";
 import { MAIL_SCHEME_SOURCE } from "./legacy";
-import type { Recurrence } from "./types";
+import type { Recurrence, Task } from "./types";
+
+/** What `tasks_compact` answers (`arcalo_core::tasks::TaskTable`): each page once, each task as an array. */
+export interface TaskTable {
+  pages: Record<string, [string, string | null]>;
+  rows: [number, number, number, string, boolean, string | null, number, string, Recurrence | null][];
+}
+
+/** The tasks of a {@link TaskTable} as the task objects of `tasks_list`. */
+export function fromTaskTable(table: TaskTable): Task[] {
+  return table.rows.map(([page_id, ordinal, line, text, done, due, priority, tags, recur]) => {
+    const [page_title, page_icon] = table.pages[page_id] ?? ["", null];
+    return { page_id, page_title, page_icon, ordinal, line, text, done, due, priority, tags: tags ? tags.split(" ") : [], recur };
+  });
+}
 
 export type TaskGroup = "overdue" | "today" | "week" | "later" | "none";
 
@@ -86,7 +100,7 @@ export function recurLabel(r: Recurrence): string {
     const names = weekdayLabels(1);
     parts.push(r.weekdays.length === 5 && r.weekdays.every((d, i) => d === i) ? t("tasks.recur.workdays") : r.weekdays.map((d) => names[d]).join(", "));
   }
-  if (r.unit === "month" && r.month_day) parts.push(t("tasks.recur.onDay", { d: r.month_day }));
+  if ((r.unit === "month" || r.unit === "year") && r.month_day) parts.push(t("tasks.recur.onDay", { d: r.month_day }));
   if (r.when_done) parts.push(t("tasks.recur.whenDone"));
   if (r.until) parts.push(t("tasks.recur.until", { date: fmtDate(`${r.until}T12:00:00`) }));
   return parts.join(" · ");
@@ -102,7 +116,7 @@ export function recurTokens(r: Recurrence): string {
   else if (r.unit === "week" && !r.weekdays.length) parts.push(n === 1 ? "weekly" : `${n}w`);
   else if (r.unit === "week") parts.push(...(n > 1 ? [`${n}w`] : []), ...r.weekdays.map((d) => WEEKDAY_SPEC[d]));
   else if (r.unit === "month") parts.push(n === 1 ? "monthly" : `${n}m`, ...(r.month_day ? [String(r.month_day)] : []));
-  else parts.push(n === 1 ? "yearly" : `${n}y`);
+  else parts.push(n === 1 ? "yearly" : `${n}y`, ...(r.month_day ? [String(r.month_day)] : []));
   if (r.when_done) parts.push("done");
   return `every:${parts.join(",")}${r.until ? ` until:${r.until}` : ""}`;
 }

@@ -42,7 +42,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: use the 6-8 px round dot of `.calv-agenda-bar` (`app.css:1994`) for both; same size and alignment as the
   calendar list.
 
-### V2 High: fresh install punishes day one again (regression of q115 finding 6)
+### V2 High: fresh install punishes day one again (regression of q115 finding 6) — fixed in 1.16 (fc0d995, worktime::DayTargets + counts_from; e2e 310)
 - Screen: fresh workspace ("Leer" start), Zeiterfassung > Wochenübersicht and assistant panel; de light 1280,
   contrast dark 1280.
 - Wrong: "Unter Soll: Mo 5. -8,00 h, Di 6. -8,00 h, Mi 7. -8,00 h, Do 8. -8,00 h" in red chips plus
@@ -174,7 +174,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: neutral `--bg-hover` filled chips with `--text-2` and the accent only on hover; collapse to
   "2 Tag-Vorschläge" when more than two.
 
-### V14 Medium: same week, opposite messages about "Lücken"
+### V14 Medium: same week, opposite messages about "Lücken" — fixed in 1.16 (fc0d995, budget badge test; „ohne Buchung“)
 - Screen: start page "Zeit diese Woche" says "Keine Lücken"; week review and timesheet say "Mo 5. 3 Lücken,
   Di 6. 1 Lücke …" and "Ohne Buchung" for the same week; budget widget shows "Im Plan" next to amber
   "Aufgebraucht in 11 Tagen".

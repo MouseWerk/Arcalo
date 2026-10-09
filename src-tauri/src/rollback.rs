@@ -247,7 +247,10 @@ fn copy_running(target: &Path) -> Result<(CopyKind, Option<PathBuf>)> {
     }
     #[cfg(windows)]
     {
-        let dir = exe()?.parent().map(Path::to_path_buf).ok_or_else(|| Error::State("no program folder".into()))?;
+        let dir = exe()?
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| Error::State(tr!("Programmordner nicht gefunden", "Program folder not found").into()))?;
         let to = target.join("app");
         copy_tree(&dir, &to)?;
         Ok((CopyKind::WindowsDir, Some(to)))
@@ -257,12 +260,18 @@ fn copy_running(target: &Path) -> Result<(CopyKind, Option<PathBuf>)> {
         let bundle = app_bundle()?;
         std::fs::create_dir_all(target)?;
         let to = target.join("Arcalo.app.tar.gz");
-        let parent = bundle.parent().ok_or_else(|| Error::State("no parent".into()))?;
-        let name = bundle.file_name().ok_or_else(|| Error::State("no bundle name".into()))?;
+        let parent = bundle.parent().ok_or_else(|| {
+            Error::State(tr!("Übergeordneter Ordner nicht gefunden", "Parent folder not found").into())
+        })?;
+        let name = bundle
+            .file_name()
+            .ok_or_else(|| Error::State(tr!("Name des Programmpakets fehlt", "The app bundle has no name").into()))?;
         let ok =
             std::process::Command::new("tar").arg("-czf").arg(&to).arg("-C").arg(parent).arg(name).status()?.success();
         if !ok {
-            return Err(Error::State("tar failed".into()));
+            return Err(Error::State(
+                tr!("Das Archiv ließ sich nicht packen (tar)", "Packing the archive failed (tar)").into(),
+            ));
         }
         Ok((CopyKind::MacApp, Some(to)))
     }
@@ -282,12 +291,13 @@ fn copy_running(target: &Path) -> Result<(CopyKind, Option<PathBuf>)> {
 #[cfg(target_os = "macos")]
 fn app_bundle() -> Result<PathBuf> {
     // Arcalo.app/Contents/MacOS/Arcalo
-    exe()?
-        .ancestors()
-        .nth(3)
-        .filter(|p| p.extension().is_some_and(|e| e == "app"))
-        .map(Path::to_path_buf)
-        .ok_or_else(|| Error::State("not running from an .app bundle".into()))
+    exe()?.ancestors().nth(3).filter(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or_else(
+        || {
+            Error::State(
+                tr!("Arcalo läuft nicht aus einem .app-Paket", "Arcalo is not running from an .app bundle").into(),
+            )
+        },
+    )
 }
 
 #[cfg(windows)]
@@ -316,7 +326,10 @@ fn reinstall(record: &RollbackRecord) -> Result<Restart> {
         #[cfg(windows)]
         (CopyKind::WindowsDir, Some(copy)) => {
             let exe = exe()?;
-            let dir = exe.parent().map(Path::to_path_buf).ok_or_else(|| Error::State("no program folder".into()))?;
+            let dir = exe
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| Error::State(tr!("Programmordner nicht gefunden", "Program folder not found").into()))?;
             // A running program may be renamed (not overwritten) on Windows.
             let aside = exe.with_extension("exe.rollback-old");
             let _ = std::fs::remove_file(&aside);
@@ -330,14 +343,20 @@ fn reinstall(record: &RollbackRecord) -> Result<Restart> {
         #[cfg(target_os = "macos")]
         (CopyKind::MacApp, Some(copy)) => {
             let bundle = app_bundle()?;
-            let parent = bundle.parent().map(Path::to_path_buf).ok_or_else(|| Error::State("no parent".into()))?;
+            let parent = bundle.parent().map(Path::to_path_buf).ok_or_else(|| {
+                Error::State(tr!("Übergeordneter Ordner nicht gefunden", "Parent folder not found").into())
+            })?;
             let unpack = parent.join(".arcalo-rollback");
             let _ = std::fs::remove_dir_all(&unpack);
             std::fs::create_dir_all(&unpack)?;
             if !std::process::Command::new("tar").arg("-xzf").arg(&copy).arg("-C").arg(&unpack).status()?.success() {
-                return Err(Error::State("tar failed".into()));
+                return Err(Error::State(
+                    tr!("Das Archiv ließ sich nicht packen (tar)", "Packing the archive failed (tar)").into(),
+                ));
             }
-            let name = bundle.file_name().ok_or_else(|| Error::State("no bundle name".into()))?;
+            let name = bundle.file_name().ok_or_else(|| {
+                Error::State(tr!("Name des Programmpakets fehlt", "The app bundle has no name").into())
+            })?;
             let aside = parent.join(".arcalo-rollback-old.app");
             let _ = std::fs::remove_dir_all(&aside);
             std::fs::rename(&bundle, &aside)?;
@@ -352,9 +371,9 @@ fn reinstall(record: &RollbackRecord) -> Result<Restart> {
         #[cfg(all(unix, not(target_os = "macos")))]
         (CopyKind::AppImage, Some(copy)) => {
             use std::os::unix::fs::PermissionsExt;
-            let image = std::env::var_os("APPIMAGE")
-                .map(PathBuf::from)
-                .ok_or_else(|| Error::State("not running as an AppImage".into()))?;
+            let image = std::env::var_os("APPIMAGE").map(PathBuf::from).ok_or_else(|| {
+                Error::State(tr!("Arcalo läuft nicht als AppImage", "Arcalo is not running as an AppImage").into())
+            })?;
             let tmp = image.with_extension("rollback-new");
             std::fs::copy(&copy, &tmp)?;
             std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;

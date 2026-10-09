@@ -113,6 +113,9 @@ pub struct Database {
     /// The title index of the unlinked mentions and the state of the database it was built
     /// from (see `mentions.rs`): page switches without a write in between reuse it.
     pub(crate) mention_cache: crate::mentions::MentionCache,
+    /// Tag suggestions per page and the state of the database they were made in (as the
+    /// mention cache): opening a page again without a write in between asks nothing.
+    pub(crate) tag_cache: crate::tagsuggest::TagCache,
 }
 
 pub(crate) fn ts(t: DateTime<Utc>) -> String {
@@ -189,6 +192,7 @@ impl Database {
             depth: Default::default(),
             settings_cache: Default::default(),
             mention_cache: Default::default(),
+            tag_cache: Default::default(),
         };
         db.migrate()?;
         Ok(db)
@@ -211,6 +215,7 @@ impl Database {
             depth: Default::default(),
             settings_cache: Default::default(),
             mention_cache: Default::default(),
+            tag_cache: Default::default(),
         };
         if db.schema_version()? != MIGRATIONS.len() {
             return Err(Error::State(
@@ -1032,6 +1037,7 @@ impl Database {
     /// (the UI uses [`Database::trash_page`]).
     pub fn delete_page(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM pages WHERE id = ?1", [id])?;
+        crate::ai::rag::pages_purged();
         Ok(())
     }
 

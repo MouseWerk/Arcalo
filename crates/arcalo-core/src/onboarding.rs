@@ -99,6 +99,13 @@ impl Database {
             completed_at: Some(now.to_rfc3339_opts(SecondsFormat::Secs, true)),
         };
         self.save_settings(&s)?;
+        // A new workspace: missing time counts from today on (the days before were not missed).
+        if self.meta_get(FIRST_SEEN)?.as_deref() == Some("fresh")
+            && self.meta_get(crate::worktime::COUNTS_FROM)?.is_none()
+        {
+            let day = now.with_timezone(&chrono::Local).date_naive();
+            self.meta_set(crate::worktime::COUNTS_FROM, &day.to_string())?;
+        }
         Ok(s)
     }
 

@@ -255,7 +255,18 @@ struct Target {
     auth: Option<(arcalo_core::ai::provider::AiProvider, Option<String>)>,
 }
 
-/// The services of `settings` (switched-on providers, sites and calendars included).
+/// Whether a request of `service` may go out: none to an AI provider (with its key) or of the
+/// assistant's web tool while „KI verwenden“ is off or a policy forbids the AI, also not for
+/// „Testen“ in Settings → Netzwerk.
+fn allowed(settings: &Settings, service: &Service) -> Result<()> {
+    match service {
+        Service::Ai { .. } | Service::HttpTool => settings.require_ai(),
+        _ => Ok(()),
+    }
+}
+
+/// The services of `settings` (switched-on providers, sites and calendars included; no AI
+/// services while the AI is off, [`allowed`]).
 fn services(settings: &Settings) -> Vec<(Service, String)> {
     let mut out = vec![(Service::Updates, String::new()), (Service::ReleaseNotes, String::new())];
     for p in settings.providers.iter().filter(|p| p.enabled) {
@@ -271,6 +282,7 @@ fn services(settings: &Settings) -> Vec<(Service, String)> {
     out.push((Service::VoiceModels, String::new()));
     out.push((Service::LinkPreview, String::new()));
     out.push((Service::HttpTool, String::new()));
+    out.retain(|(s, _)| allowed(settings, s).is_ok());
     out
 }
 
@@ -453,6 +465,7 @@ pub async fn network_service_test(
             .unwrap_or(Service::Ai { id, local: false }),
         s => s,
     };
+    allowed(&settings, &svc)?;
     let profile = net.profile_for(&svc);
     let password = password.filter(|p| !p.is_empty()).or_else(|| secret(&state, &profile.id).get());
     let Some(target) = target(&app, &settings, &svc) else {
@@ -531,9 +544,10 @@ pub async fn network_test(
     password: Option<String>,
 ) -> Result<NetworkTest> {
     let (settings, net) = draft_or_saved(&state, network)?;
+    let service = Service::Ai { id: arcalo_core::ai::provider::LEGACY_ID.into(), local: false };
+    allowed(&settings, &service)?;
     let base = base_url.unwrap_or(settings.litellm_base_url).trim().trim_end_matches('/').to_owned();
     let url = format!("{base}/v1/models");
-    let service = Service::Ai { id: arcalo_core::ai::provider::LEGACY_ID.into(), local: false };
     let profile = net.profile_for(&service);
     let password = password.filter(|p| !p.is_empty()).or_else(|| secret(&state, &profile.id).get());
     let provider = arcalo_core::ai::provider::AiProvider::litellm(&base);
@@ -549,8 +563,13 @@ pub async fn network_certificate(
     service: Option<String>,
     network: Option<NetworkSettings>,
 ) -> Result<Option<CertDetails>> {
-    let (_, net) = draft_or_saved(&state, network)?;
+    let (settings, net) = draft_or_saved(&state, network)?;
     let svc = service.as_deref().and_then(Service::parse).unwrap_or(Service::HttpTool);
+    // An AI provider's server is not contacted while the AI is off; another one's certificate
+    // (a proxy, Jira) still can be looked at.
+    if service.is_some() {
+        allowed(&settings, &svc)?;
+    }
     let profile = net.profile_for(&svc);
     let pw = secret(&state, &profile.id).get();
     let prepared = core::Prepared::new(&profile, pw.as_deref(), &[])?;
@@ -659,4 +678,35 @@ parent.postMessage({ ready: true }, "*");
         .header("Cache-Control", "no-store")
         .body(PAGE.as_bytes().to_vec())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcalo_core::ai::provider::AiProvider;
+
+    #[test]
+    fn with_the_ai_off_settings_network_neither_lists_nor_tests_ai_services() {
+        let mut s = Settings { providers: vec![AiProvider::litellm("https://llm.example.com")], ..Default::default() };
+        s.providers[0].enabled = true;
+        let keys = |s: &Settings| services(s).into_iter().map(|(svc, _)| svc.key()).collect::<Vec<_>>();
+        let ai = s.providers[0].service();
+        s.ai.enabled = true;
+        assert!(keys(&s).contains(&ai.key()), "{:?}", keys(&s));
+        assert!(keys(&s).contains(&Service::HttpTool.key()));
+        assert!(allowed(&s, &ai).is_ok());
+
+        s.ai.enabled = false;
+        let listed = keys(&s);
+        assert!(!listed.iter().any(|k| *k == ai.key() || *k == Service::HttpTool.key()), "{listed:?}");
+        assert!(listed.contains(&Service::Updates.key()));
+        for svc in
+            [ai, Service::HttpTool, Service::Ai { id: arcalo_core::ai::provider::LEGACY_ID.into(), local: false }]
+        {
+            let text = allowed(&s, &svc).unwrap_err().to_string();
+            assert!(text.contains("KI ist ausgeschaltet") || text.contains("AI is switched off"), "{text}");
+        }
+        assert!(allowed(&s, &Service::Updates).is_ok());
+        assert!(allowed(&s, &Service::GitSync).is_ok());
+    }
 }

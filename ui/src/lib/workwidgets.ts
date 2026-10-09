@@ -121,6 +121,8 @@ export interface FlaggedMail extends Mail {
 
 export const workApi = {
   absences: (from: string, to: string) => invoke<{ absences: Absence[]; holidays: Holiday[]; state: string }>("absence_list", { from, to }),
+  /** Target minutes of each day of `from..=to` (`worktime::DayTargets`: the rule of every view). */
+  dayTargets: (from: string, to: string) => invoke<number[]>("day_targets", { from, to }),
   saveAbsence: (from: string, to: string, kind: AbsenceKind, half: boolean, note: string) => invoke<string[]>("absence_save", { from, to, kind, half, note }),
   removeAbsence: (from: string, to: string) => invoke<number>("absence_remove", { from, to }),
   flagged: () => invoke<{ available: boolean; mails: FlaggedMail[] }>("mail_flagged"),

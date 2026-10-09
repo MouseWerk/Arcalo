@@ -51,11 +51,6 @@ export function showFirstSteps(now = new Date()) {
   save({ since: now.toISOString(), clicked: [], hidden: false });
 }
 
-/** The day the first setup of this workspace ended on this computer (null: not a new one). */
-export const startedOn = (): string | null => {
-  const s = useFirstSteps.getState().stored;
-  return s ? isoDay(new Date(s.since)) : null;
-};
 
 export const hideFirstSteps = () => {
   const cur = useFirstSteps.getState().stored;

@@ -390,7 +390,7 @@ fn page_collection(state: State<AppState>, parent_id: i64) -> Result<properties:
 /// The schema a page's properties follow (its parent's) and the parent's id.
 #[tauri::command(async)]
 fn page_schema(state: State<AppState>, page_id: i64) -> Result<Option<(i64, properties::Schema)>> {
-    state.db().page_schema(page_id)
+    state.reader().page_schema(page_id)
 }
 
 /// Names for person properties: person values and `@mentions`, most used first.
@@ -493,7 +493,7 @@ fn page_purge(state: State<AppState>, id: i64) -> Result<usize> {
 
 #[tauri::command(async)]
 fn trash_list(state: State<AppState>) -> Result<Vec<TrashEntry>> {
-    state.db().list_trash()
+    state.reader().list_trash()
 }
 
 #[tauri::command(async)]
@@ -556,6 +556,13 @@ fn tag_pages(state: State<AppState>, tag: String) -> Result<Vec<Page>> {
 #[tauri::command(async)]
 fn tasks_list(state: State<AppState>, filter: Option<TaskFilter>) -> Result<Vec<Task>> {
     state.reader().list_tasks(&filter.unwrap_or_default())
+}
+
+/// [`tasks_list`] for the task view: the same tasks in the compact form of
+/// [`arcalo_core::tasks::TaskTable`] (a third of the bytes over IPC).
+#[tauri::command(async)]
+fn tasks_compact(state: State<AppState>, filter: Option<TaskFilter>) -> Result<arcalo_core::tasks::TaskTable> {
+    Ok(state.reader().list_tasks(&filter.unwrap_or_default())?.into())
 }
 
 /// Checks or unchecks one task in its page's Markdown; the UI then reloads open editors of that page.
@@ -756,14 +763,14 @@ const NAME_HEADER: &str = "x-arcalo-name";
 #[tauri::command]
 async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<SavedAttachment> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err(Error::State("Dateiinhalt fehlt".into()));
+        return Err(Error::State(tr!("Dateiinhalt fehlt", "The file content is missing").into()));
     };
     let name = request
         .headers()
         .get(NAME_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(attachments::percent_decode)
-        .ok_or_else(|| Error::State("Dateiname fehlt".into()))?;
+        .ok_or_else(|| Error::State(tr!("Dateiname fehlt", "The file name is missing").into()))?;
     let saved = attachments::store_file(&state.attachments_dir(), &name, bytes)?;
     feed::file_added(&state, &saved.name);
     Ok(saved)
@@ -1497,7 +1504,9 @@ fn export_entries(
     include_exported: Option<bool>,
 ) -> Result<ExportResult> {
     let settings = state.settings();
-    let db = state.db();
+    // Only reading: a reader, so saves do not wait for the export; marking the entries as
+    // exported reads and writes on the writer (nothing changes in between).
+    let db = if mark_exported { state.db() } else { state.reader() };
     let status = only_released.then_some(StatusFlag::Released);
     let mut rows = db.list_time_entries(&EntryFilter { from, to, status, ..Default::default() })?;
     // Exported entries were already booked in SAP/Jira; exporting them again duplicates bookings.
@@ -1981,7 +1990,7 @@ struct MirrorStatus {
 
 #[tauri::command(async)]
 fn mirror_status(state: State<AppState>) -> Result<MirrorStatus> {
-    let db = state.db();
+    let db = state.reader();
     let last_at =
         db.meta_get(MIRROR_LAST)?.and_then(|s| DateTime::parse_from_rfc3339(&s).ok()).map(|t| t.with_timezone(&Local));
     Ok(MirrorStatus {
@@ -2133,7 +2142,7 @@ fn settings_get(state: State<AppState>) -> SettingsView {
         version: env!("CARGO_PKG_VERSION"),
         scopes: arcalo_core::settings_layers::scopes(&state.settings()),
         shared: arcalo_core::settings_layers::shared_dir().is_some(),
-        sync_last: state.db().settings_sync_last().ok().flatten(),
+        sync_last: state.reader().settings_sync_last().ok().flatten(),
         system_language: arcalo_core::i18n::system_lang(),
         ai_policy_off: arcalo_core::settings::ai_forbidden(),
     }
@@ -3941,7 +3950,7 @@ fn skip_onboarding() -> bool {
 /// Whether to play the intro and setup, or to show the hint for upgraded workspaces.
 #[tauri::command(async)]
 fn onboarding_status(state: State<AppState>) -> Result<arcalo_core::onboarding::OnboardingStatus> {
-    state.db().onboarding_status(skip_onboarding())
+    state.reader().onboarding_status(skip_onboarding())
 }
 
 /// Stores the settings the first-run flags changed (and tells the other windows).
@@ -4091,6 +4100,7 @@ fn startup_mark(phase: &str) {
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     startup_mark("first frame of the UI");
+    feed::FIRST_FRAME.store(true, std::sync::atomic::Ordering::Relaxed);
     show_main_once(&app, "ui");
     // The health check of the update rollback: this version started fine.
     updates::mark_healthy(&app);
@@ -4646,7 +4656,6 @@ pub fn run() {
             if let Err(e) = db.migrate_activity_tool() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
-            feed::backfill(&db, &attachments::dir(&dir));
             let (settings, unreadable) = db.load_settings_checked()?;
             if !unreadable.is_empty() {
                 // Kept for a look (and a fix by hand); the defaults are used meanwhile.
@@ -4745,6 +4754,9 @@ pub fn run() {
             app.manage(updates::Updates::after(after_update, rolled_back));
             updates::load_staged(app.handle());
             app.manage(backupdest::Destinations::default());
+            // The history from before the journal (once per workspace, a second on a large one):
+            // after the first frame, not before the window.
+            feed::backfill_later(app.handle());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
@@ -4868,6 +4880,7 @@ pub fn run() {
             tags_list,
             tag_pages,
             tasks_list,
+            tasks_compact,
             task_set_done,
             tasks_edit,
             tasks_undo,
@@ -5029,6 +5042,7 @@ pub fn run() {
             dashboard::dashboard_file_write,
             dashboard::dashboard_inbox_move,
             worktime::absence_list,
+            worktime::day_targets,
             worktime::absence_save,
             worktime::absence_remove,
             worktime::mail_flagged,
@@ -5242,6 +5256,52 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Commands that only read (named `…_list`, `…_get`, `…_status`, `…_schema`, `…_states`)
+    /// use a reader connection: on the writer they waited for every save and held it up. The
+    /// few that write under such a name are listed.
+    #[test]
+    fn read_commands_do_not_take_the_writer() {
+        const WRITE: [&str; 2] = [
+            "set_entry_status", // changes the status of entries
+            "time_chip_states", // links chips to their bookings (page_id)
+        ];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = vec![];
+        let mut stack = vec![root];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push(p);
+                }
+            }
+        }
+        assert!(files.len() > 20, "sources not found: {}", files.len());
+        let mut found = 0;
+        let mut stray = vec![];
+        for f in &files {
+            let text = std::fs::read_to_string(f).unwrap();
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            for (at, _) in code.match_indices("#[tauri::command") {
+                let rest = &code[at..];
+                let Some(fn_at) = rest.find("fn ") else { continue };
+                let name: String = rest[fn_at + 3..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                if !["_list", "_get", "_status", "_schema", "_states"].iter().any(|s| name.ends_with(s)) {
+                    continue;
+                }
+                found += 1;
+                let body = &rest[fn_at..rest[fn_at..].find("\n}\n").map_or(rest.len(), |e| fn_at + e)];
+                if body.contains(".db()") && !WRITE.contains(&name.as_str()) {
+                    stray.push(format!("{}: {name}", f.display()));
+                }
+            }
+        }
+        assert!(found > 20, "read commands not found: {found}");
+        assert!(stray.is_empty(), "read commands on the writer (use state.reader()):\n{}", stray.join("\n"));
+    }
 
     /// „KI verwenden“ off: no client exists and none can be built, so a provider (here a plain
     /// TCP listener standing in for Ollama) is never contacted; switched on, the same settings

@@ -77,14 +77,14 @@ const NAME_HEADER: &str = "x-arcalo-name";
 #[tauri::command]
 pub async fn mail_parse_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Mail> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err(Error::State("Dateiinhalt fehlt".into()));
+        return Err(Error::State(tr!("Dateiinhalt fehlt", "The file content is missing").into()));
     };
     let name = request
         .headers()
         .get(NAME_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(attachments::percent_decode)
-        .ok_or_else(|| Error::State("Dateiname fehlt".into()))?;
+        .ok_or_else(|| Error::State(tr!("Dateiname fehlt", "The file name is missing").into()))?;
     let bytes = bytes.clone();
     let root = temp_root(&app.state::<AppState>());
     tauri::async_runtime::spawn_blocking(move || {

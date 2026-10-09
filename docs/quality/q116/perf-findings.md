@@ -93,7 +93,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   (as in `pass2.mjs` `cpuOver`) and assert < 5 %; a UI unit test that fails on `animation: … infinite` for
   properties other than `opacity`/`transform` in `ui/src/styles` (like the CSP and colour checks).
 
-### P2 – High – Saving a page with many new tasks is cubic (10 s in release, writer lock held)
+### P2 – High – Saving a page with many new tasks is cubic (10 s in release, writer lock held) — fixed in 1.16 (a5137fa, saving_a_page_of_thousands_of_tasks_stays_fast)
 
 - Measurement (core, big workspace): first save of a 500 KB page with 2,400 tasks 9.8–10.1 s release / 44.4 s
   debug; the same text without task lines 175 ms; 100 KB with ~470 tasks 207 ms. In the app the 500 KB paste
@@ -138,7 +138,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: e2e budget on a generated 200 KB page (typing median < 80 ms debug, open < 2 s, source switch < 1.5 s),
   in the spirit of e2e 94; a unit test that `SourceEditor` does not call `markdownStats` synchronously per change.
 
-### P4 – Medium – Week review is an N+1: seven day reviews, each loading all open tasks
+### P4 – Medium – Week review is an N+1: seven day reviews, each loading all open tasks — fixed in 1.16 (fc0d995, a_week_with_thousands_of_open_tasks_stays_fast)
 
 - Measurement: `week_review` 621 ms release / 2,090 ms debug with 32k tasks and 20k bookings (UI command 2.09 s).
 - Root cause: `crates/arcalo-core/src/weekreview.rs:360` calls `dayreview::day_review` for each of the 7 days;
@@ -149,7 +149,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   counts the week view uses). Expected: < 80 ms release.
 - Guard: a budget test in `tests/bigworkspace.rs` (`week_review` < 300 ms in a debug build).
 
-### P5 – Medium – Tag suggestions on every page open scan nearly the whole full-text index
+### P5 – Medium – Tag suggestions on every page open scan nearly the whole full-text index — fixed in 1.16 (6ffc5c3, common_words_do_not_make_every_chunk_a_candidate)
 
 - Measurement: `tags_suggest` 232 ms average IPC per page open (n = 25), core 170 ms debug / 76–85 ms release;
   the query matched 12,529 of 13,531 chunks for every sampled page.
@@ -162,7 +162,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   visible, after the page is idle for ~500 ms. Expected: < 10 ms, one fewer slow reader per page switch.
 - Guard: core budget test on the big workspace (< 30 ms release / < 100 ms debug).
 
-### P6 – Medium – Pure reads go through the writer connection
+### P6 – Medium – Pure reads go through the writer connection — fixed in 1.16 (62efcf3, read_commands_do_not_take_the_writer)
 
 - Measurement: `page_schema` does 0.1 ms of work but averaged 101 ms (max 322 ms) over IPC during page switches.
 - Root cause: `src-tauri/src/lib.rs:391-393` `page_schema` uses `state.db()` (the write lock) instead of
@@ -175,7 +175,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: a shell test like the `client_for` check: commands whose names end in `_list/_get/_status/_schema/_states`
   must not call `state.db()` (allow-list for the few that write).
 
-### P7 – Medium – Trivial reads queue behind slow ones during a page switch
+### P7 – Medium – Trivial reads queue behind slow ones during a page switch — partly fixed in 1.16 (the slow and queued reads of P5/P6 are gone); not fixed: a shared WBS/Leistungsarten cache (changes outside the UI do not bump the WBS version, e2e 152 caught it) and a low-priority read queue
 
 - Measurement: `blocks_list` on an empty table 74 ms avg, `leistungsarten_list` 82 ms, `wbs_tree` 86 ms,
   `plugin:window|set_title` 106 ms avg (n = 44) while `tags_suggest`, `duplicates_for` (86 ms), `page_get` and
@@ -190,7 +190,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   Expected: page switch 245–344 → ~200 ms debug.
 - Guard: the bench's IPC summary as a CI budget: no IPC on a page switch slower than 150 ms in debug.
 
-### P8 – Medium – Large JSON over IPC
+### P8 – Medium – Large JSON over IPC — partly fixed in 1.16 (fc78911: tasks_compact for the task view, day review capped at 60 pages with pages_total); not fixed: graph_data, jira_issues, workspace_tree keep their shape (scripts and many e2e tests read them; sizes are moderate on real workspaces)
 
 - Measurement: `tasks_list` 5.2–6.1 MB (625–1,402 ms; tasks view 1.15 s), `graph_data` 2.3 MB (graph 1.1 s),
   `jira_issues` 1.9 MB, `workspace_tree` 1.38 MB (start and every tree refresh), `day_review` 1.39 MB.
@@ -203,7 +203,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   totals. Expected: tasks view < 400 ms, graph < 600 ms.
 - Guard: bench assertion „no IPC answer larger than 1 MB“ on the big workspace.
 
-### P9 – Medium – Start-up runs a 1.2 s history backfill before the window
+### P9 – Medium – Start-up runs a 1.2 s history backfill before the window — fixed in 1.16 (fc65d21, backfill after the first frame)
 
 - Measurement: `[startup]` marks: database open 101–108 ms, credential store 1,286–1,624 ms; core: `feed::backfill`
   1,097–1,282 ms (debug) and 1,226 ms (release) on the big workspace, 0.1 ms on later starts; every other start-up
@@ -278,7 +278,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Fix: share `vault::is_device_name` (trimmed stem) in `clean_name`.
 - Guard: extend `clean_name` tests with the vault's cases.
 
-### P16 – Low – Every save rewrites all task rows of the page
+### P16 – Low – Every save rewrites all task rows of the page — fixed in 1.16 (a5137fa, saving_a_page_of_thousands_of_tasks_stays_fast)
 
 - Measurement: one-character edit of a 500 KB page 105–110 ms release (477 ms debug).
 - Root cause: `crates/arcalo-core/src/tasks.rs:368-397` deletes and re-inserts every task row on each save (links,
@@ -286,7 +286,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Fix: diff by (ordinal, line, text, done, due, …) like `sync_rows`; skip when the task lines did not change.
 - Guard: core budget test for a one-character save of a 500 KB note.
 
-### P17 – Low – Short prefix searches compute bm25 for almost all chunks
+### P17 – Low – Short prefix searches compute bm25 for almost all chunks — fixed in 1.16 (8f2d6ce, one_or_two_letters_find_titles_…)
 
 - Measurement: `"a"*`, `"d"*` match ~12,500 chunks: 61–65 ms in optimized SQLite; `search_workspace` 53–90 ms IPC.
 - Root cause: `crates/arcalo-core/src/search.rs:72-82` makes the last term a prefix query; the FTS tables have no

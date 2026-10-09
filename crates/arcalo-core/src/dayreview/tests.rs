@@ -383,3 +383,16 @@ fn the_reminder_is_off_by_default_and_once_a_workday() {
     let r = day_review(&db, day(2026, 9, 24), &Berlin, &opts(berlin(2026, 9, 24, 18, 0))).unwrap();
     assert_eq!(reminder_body(&r), "0 h gebucht");
 }
+
+#[test]
+fn the_view_gets_the_most_recent_pages_and_their_total() {
+    let db = Database::open_in_memory().unwrap();
+    for i in 0..(MAX_PAGES as u32 + 10) {
+        page_at(&db, &format!("Import {i}"), berlin(2026, 10, 7, 8, 0) + Duration::seconds(i.into()));
+    }
+    let r = day_review(&db, day(2026, 10, 7), &Berlin, &opts(berlin(2026, 10, 7, 18, 0))).unwrap();
+    assert_eq!((r.pages.len(), r.pages_total), (MAX_PAGES + 10, MAX_PAGES as i64 + 10));
+    let view = r.capped();
+    assert_eq!((view.pages.len(), view.pages_total), (MAX_PAGES, MAX_PAGES as i64 + 10));
+    assert_eq!(view.pages[0].title, format!("Import {}", MAX_PAGES + 9), "most recent first");
+}

@@ -438,7 +438,7 @@ impl AiClient {
             };
             let Some(chunk) = next else { break };
             if cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
-                return Err(Error::State("Download abgebrochen".into()));
+                return Err(Error::State(tr!("Download abgebrochen", "Download cancelled").into()));
             }
             buf.extend_from_slice(&chunk?);
             while let Some(nl) = buf.iter().position(|&b| b == b'\n') {

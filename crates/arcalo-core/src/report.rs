@@ -62,7 +62,7 @@ fn day_start(d: NaiveDate, resolve: impl Fn(&NaiveDateTime) -> Option<DateTime<U
 /// Running timers are not counted.
 pub fn time_summary<Tz: TimeZone>(db: &Database, from: NaiveDate, to: NaiveDate, offset: &Tz) -> Result<TimeSummary> {
     if to < from {
-        return Err(Error::State("'to' liegt vor 'from'".into()));
+        return Err(Error::State(tr!("Das Ende liegt vor dem Anfang", "The end lies before the start").into()));
     }
     if (to - from).num_days() >= MAX_DAYS {
         return Err(Error::State(trf!("Zeitraum länger als {MAX_DAYS} Tage", "Period longer than {MAX_DAYS} days")));

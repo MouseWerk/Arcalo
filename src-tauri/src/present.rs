@@ -40,7 +40,9 @@ pub struct PresentInfo {
 /// Full screen for the slides; remembers the window's state for [`presentation_end`].
 #[tauri::command]
 pub fn presentation_begin(app: AppHandle) -> Result<PresentInfo> {
-    let w = app.get_webview_window(MAIN).ok_or_else(|| Error::State("Hauptfenster fehlt".into()))?;
+    let w = app
+        .get_webview_window(MAIN)
+        .ok_or_else(|| Error::State(arcalo_core::tr!("Hauptfenster fehlt", "The main window is missing").into()))?;
     {
         let mut saved = lock(&SAVED);
         if saved.is_none() {
@@ -88,7 +90,9 @@ pub fn presentation_end(app: AppHandle) -> Result<()> {
 /// (the UI shows the presenter view as an overlay then).
 #[tauri::command]
 pub async fn presenter_open(app: AppHandle) -> Result<bool> {
-    let w = app.get_webview_window(MAIN).ok_or_else(|| Error::State("Hauptfenster fehlt".into()))?;
+    let w = app
+        .get_webview_window(MAIN)
+        .ok_or_else(|| Error::State(arcalo_core::tr!("Hauptfenster fehlt", "The main window is missing").into()))?;
     let monitors = w.available_monitors().map_err(state_err)?;
     if monitors.len() < 2 {
         return Ok(false);

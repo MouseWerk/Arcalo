@@ -203,6 +203,8 @@ pub struct Day {
     pub booked_minutes: i64,
     /// The day's own target (a public holiday or an absence: less or none); `None`: the plan's.
     pub target_minutes: Option<i64>,
+    /// Missing time counts (not a day before the workspace existed, [`crate::worktime::counts_from`]).
+    pub counts: bool,
 }
 
 /// How [`build`] cuts and caps.
@@ -362,7 +364,7 @@ pub fn build(
             target_minutes: target,
             booked_minutes: day.booked_minutes,
             proposed_minutes: day_minutes,
-            gap_minutes: if started { (target - day.booked_minutes - day_minutes).max(0) } else { 0 },
+            gap_minutes: if started && day.counts { (target - day.booked_minutes - day_minutes).max(0) } else { 0 },
             capped_minutes: capped,
             started,
         });
@@ -651,22 +653,24 @@ pub fn propose(
     let until = if opts.rest_of_today { midnight(today + chrono::Days::new(1)).max(now) } else { now };
     let c = collect(db, from, to, now, zone, opts.sources.as_deref())?;
     let target = (settings.daily_target_hours * 60.0).round().max(0.0) as i64;
+    // Holidays, absence days and the days before the workspace existed are no gaps; a weekday
+    // with an own target (a Saturday too) is a workday.
+    let targets = crate::worktime::DayTargets::load(db, &settings, week_start, week_start + chrono::Days::new(6))?;
     let days: Vec<Day> = dates
         .iter()
         .map(|&d| {
-            let workday = settings.workdays.contains(&d.weekday().number_from_monday());
-            // Holidays and absence days are no gaps.
-            let own = if workday { crate::worktime::gap_target(db, d, target)? } else { target };
-            Ok(Day {
+            let own = targets.base(d);
+            Day {
                 date: d,
                 from: midnight(d),
                 to: midnight(d + chrono::Days::new(1)),
-                workday,
+                workday: crate::worktime::weekday_minutes(&settings, d) > 0,
                 booked_minutes: c.booked.get(&d).copied().unwrap_or(0),
                 target_minutes: (own != target).then_some(own),
-            })
+                counts: targets.counts(d),
+            }
         })
-        .collect::<Result<_>>()?;
+        .collect();
     // With the rest of today only today's appointments may lie ahead.
     let signals: Vec<Signal> = c
         .signals
@@ -1382,7 +1386,7 @@ pub fn open_days(db: &Database, now: DateTime<Utc>, zone: &Zone) -> Result<Vec<(
     let settings = db.load_settings().unwrap_or_default();
     let today = zone.to_wall(now).date();
     let monday = monday(today);
-    let target = (settings.daily_target_hours * 60.0).round() as i64;
+    let targets = crate::worktime::DayTargets::load(db, &settings, monday, today)?;
     let from = zone.to_utc(monday.and_time(NaiveTime::MIN));
     let to = zone.to_utc(today.and_time(NaiveTime::MIN));
     let mut booked: HashMap<NaiveDate, i64> = HashMap::new();
@@ -1395,11 +1399,9 @@ pub fn open_days(db: &Database, now: DateTime<Utc>, zone: &Zone) -> Result<Vec<(
     let mut out = vec![];
     let mut d = monday;
     while d < today {
-        if settings.workdays.contains(&d.weekday().number_from_monday()) {
-            let missing = crate::worktime::gap_target(db, d, target)? - booked.get(&d).copied().unwrap_or(0);
-            if missing > 0 {
-                out.push((d, missing));
-            }
+        let missing = targets.get(d) - booked.get(&d).copied().unwrap_or(0);
+        if missing > 0 {
+            out.push((d, missing));
         }
         d = d + chrono::Days::new(1);
     }

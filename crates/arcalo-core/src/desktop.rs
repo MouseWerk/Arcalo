@@ -4,7 +4,7 @@
 
 use crate::tr;
 use crate::trf;
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use serde::Serialize;
 
 use crate::capture;
@@ -165,8 +165,8 @@ pub fn end_of_day_reminder(
         return None;
     }
     let today = now.date();
-    let workday = settings.workdays.contains(&today.weekday().number_from_monday());
-    if !workday || now.time() < at || last_notified == Some(today) || target_minutes <= 0 {
+    // A day without a target (weekend, holiday, absence) needs no reminder.
+    if now.time() < at || last_notified == Some(today) || target_minutes <= 0 {
         return None;
     }
     (booked_minutes < target_minutes).then(|| {
@@ -411,9 +411,10 @@ mod tests {
         assert_eq!(end_of_day_reminder(at(wed, 18, 0), &s, 0, 480, Some(wed)), None);
         // Reminded yesterday counts for yesterday only.
         assert!(end_of_day_reminder(at(wed, 18, 0), &s, 0, 480, wed.pred_opt()).is_some());
-        // Weekend and switched off.
+        // Weekend (no target there) and switched off; a Saturday with an own target reminds.
         let sat = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
-        assert_eq!(end_of_day_reminder(at(sat, 18, 0), &s, 0, 480, None), None);
+        assert_eq!(end_of_day_reminder(at(sat, 18, 0), &s, 0, 0, None), None);
+        assert!(end_of_day_reminder(at(sat, 18, 0), &s, 0, 240, None).is_some());
         let off = Settings { reminder_time: None, ..Settings::default() };
         assert_eq!(end_of_day_reminder(at(wed, 18, 0), &off, 0, 480, None), None);
         // Time tracking off: no reminder about unbooked hours.

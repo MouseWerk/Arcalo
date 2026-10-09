@@ -26,7 +26,7 @@ export interface TasksData {
 }
 export interface WeekData {
   week_start: string;
-  days: { date: string; minutes: number; workday: boolean }[];
+  days: { date: string; minutes: number; workday: boolean; target_minutes: number }[];
   wbs: { label: string; title: string; minutes: number; by_day: number[] }[];
   target_minutes: number;
 }
@@ -100,6 +100,8 @@ export interface SuggestionData {
   due_today: number;
   worst_budget: string | null;
   week_minutes: number[];
+  /** The targets of these days (`worktime::DayTargets`). */
+  week_targets?: number[];
 }
 export interface QueryRow {
   key: string;

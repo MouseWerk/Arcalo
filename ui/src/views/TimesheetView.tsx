@@ -14,7 +14,7 @@ import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMi
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
-import { catsDecimalSep, catsGrid, dayTargets, undeletableReason, weekGaps } from "../lib/cats";
+import { catsDecimalSep, catsGrid, undeletableReason, weekGaps } from "../lib/cats";
 import { workApi, type Absence, type Holiday } from "../lib/workwidgets";
 import type { CalendarEvent, ExportFormat, ExportResult, ProjectTree, StatusFlag, TimeEntryRow, WbsHint } from "../lib/types";
 import { modLabel } from "../lib/shortcut";
@@ -26,7 +26,7 @@ import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { currentLang, useT, type TKey } from "../lib/i18n";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
-import { startedOn } from "../onboarding/firststeps";
+
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   running: { label: "time.status.running", tone: "info" },
@@ -361,39 +361,37 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
 
 // -------------------------------------------------------------- week grid
 
+const NO_TARGETS = [0, 0, 0, 0, 0, 0, 0];
+
 /**
- * Target minutes per day of the week (own weekday targets, holidays of the state, absences, as
- * the week proposal counts them) and the days off with their reason (holiday name, absence).
+ * Target minutes per day of the week from the backend (own weekday targets, holidays of the state,
+ * absences, the day a new workspace was set up: the rule of every view) and the days off with
+ * their reason (holiday name, absence).
  */
 function useWeekTargets(week: Date): { targets: number[]; off: Map<string, string> } {
   const t = useT();
   const settings = useApp((st) => st.settings?.settings);
-  const [data, setData] = useState<{ absences: Absence[]; holidays: Holiday[] } | null>(null);
+  const [data, setData] = useState<{ absences: Absence[]; holidays: Holiday[]; targets: number[] } | null>(null);
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const un = on("data://absences", () => setVersion((v) => v + 1));
     return () => void un.then((f) => f());
   }, []);
-  const state = settings?.time?.balance?.state ?? "";
+  // What the targets depend on besides the absences.
+  const rule = JSON.stringify([settings?.time?.balance?.state, settings?.daily_target_hours, settings?.workdays, settings?.time?.balance?.weekday_hours]);
   useEffect(() => {
     let live = true;
-    workApi
-      .absences(isoDay(week), isoDay(addDays(week, 6)))
-      .then((d) => live && setData(d))
+    const from = isoDay(week);
+    const to = isoDay(addDays(week, 6));
+    Promise.all([workApi.absences(from, to), workApi.dayTargets(from, to)])
+      .then(([d, targets]) => live && setData({ ...d, targets }))
       .catch(() => live && setData(null));
     return () => {
       live = false;
     };
-  }, [week, version, state]);
+  }, [week, version, rule]);
   return useMemo(() => {
-    const holidays = new Set(data?.holidays.map((h) => h.date));
-    const targets = dayTargets(week, {
-      daily: settings?.daily_target_hours ?? 8,
-      workdays: settings?.workdays ?? [1, 2, 3, 4, 5],
-      weekdayHours: settings?.time?.balance?.weekday_hours,
-      holidays,
-      absences: data?.absences,
-    });
+    const targets = data?.targets.length === 7 ? data.targets : NO_TARGETS;
     const off = new Map<string, string>();
     for (const h of data?.holidays ?? []) off.set(h.date, currentLang() === "en" ? h.name_en : h.name);
     for (const a of data?.absences ?? []) {
@@ -401,7 +399,7 @@ function useWeekTargets(week: Date): { targets: number[]; off: Map<string, strin
       off.set(a.date, a.half ? `${kind} (${t("work.abs.half")})` : kind);
     }
     return { targets, off };
-  }, [data, week, settings, t]);
+  }, [data, t]);
 }
 
 function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: { rows: TimeEntryRow[]; week: Date; todayKey: string; targets: number[]; off: Map<string, string>; workdays: number[]; onPropose: () => void }) {
@@ -421,8 +419,7 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
     return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, week]);
-  // A new workspace: the days before its first start were not missed.
-  const gaps = weekGaps(rows, week, new Date(), targets, startedOn());
+  const gaps = weekGaps(rows, week, new Date(), targets);
   const gapKeys = new Set(gaps.map((g) => isoDay(g.day)));
   const s = useApp.getState;
   const copyCats = async () => {

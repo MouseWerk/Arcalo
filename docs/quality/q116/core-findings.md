@@ -90,7 +90,7 @@ the same pattern elsewhere (none other found in core).
 Guard test: `taskedit` unit test with `✅ erledigt äh` and `✅ 🎉🎉🎉`: no panic, next occurrence added,
 the text after the marker kept.
 
-## C4 (high): The start page shows the flat daily target: own weekday targets, public holidays and absences are ignored („Heute“, „Zeit diese Woche“, week proposal total)
+## C4 (high): The start page shows the flat daily target: own weekday targets, public holidays and absences are ignored („Heute“, „Zeit diese Woche“, week proposal total) — fixed in 1.16 (fc0d995, dashboard test start_page_targets_follow_…)
 
 Repro (probe `p13_dashboard_today_target_ignores_weekday_targets_holidays_absences`, NW, weekday
 targets Mo-Do 8 h, Fr 5 h, vacation on Wed 2026-10-07):
@@ -149,7 +149,7 @@ bearbeitet“).
 Guard test: core gitsync test as the probe: after A's sync the server keeps B's text and A's
 `remote_changes` contains it.
 
-## C7 (medium): The in-memory vector index keeps the vectors of edited chunks; they crowd out other pages in search by meaning and grow without bound
+## C7 (medium): The in-memory vector index keeps the vectors of edited chunks; they crowd out other pages in search by meaning and grow without bound — fixed in 1.16 (9a54dcc, edited_and_deleted_chunks_leave_the_index)
 
 Repro (probe `p9_vector_index_keeps_stale_chunks`): two pages edited alternately 40 times with an
 embedding stored each time: `index rows 82 for 3 live chunks; results before [1, 2] after [1]`:
@@ -187,7 +187,7 @@ that provider id exists on this computer, in `apply`).
 
 Guard test: settings_sync test: B without A's provider keeps its router and embedding settings.
 
-## C9 (medium): The AI-off guard has a bypass: Settings → Netzwerk „Testen“ of an AI provider (and the LiteLLM test and the legacy probe) sends requests with the provider key while „KI verwenden“ is off or forbidden by policy
+## C9 (medium): The AI-off guard has a bypass: Settings → Netzwerk „Testen“ of an AI provider (and the LiteLLM test and the legacy probe) sends requests with the provider key while „KI verwenden“ is off or forbidden by policy — fixed in 1.16 (e2ac18d, network::tests)
 
 Confirmed by code path: `network_service_test` (src-tauri/src/network.rs:437) builds its own client
 via `http_test` (:370) and calls `provider.authorize(req, key)` for `Service::Ai` targets; it never
@@ -243,7 +243,7 @@ filter for the exact own files only (`zeiterfassung/*.csv`).
 Guard test: vault test that `page_paths` never yields reserved names; shell two-computer test with
 both page names.
 
-## C12 (medium): Repeating tasks: `every:monthly,15` skips the current month, `every:yearly` from 29 February drifts to the 28th for good, `every:monthly` from the 31st drifts to the 28th
+## C12 (medium): Repeating tasks: `every:monthly,15` skips the current month, `every:yearly` from 29 February drifts to the 28th for good, `every:monthly` from the 31st drifts to the 28th — fixed in 1.16 (c021844, a_monthly_or_yearly_series_…)
 
 Repro (probe `p4_recurrence`): `monthly,15` due 2026-01-10 -> 2026-02-15 (expected 2026-01-15);
 `yearly` from 2024-02-29 -> 2025-02-28, 2026-02-28, 2027-02-28, 2028-02-28 (expected 2028-02-29);
@@ -262,7 +262,7 @@ is a leap year (compute from the first due, e.g. `add_months(first_due, 12*k)`).
 
 Guard test: recurrence unit tests for the three cases above.
 
-## C13 (medium): ICS: an all-day series ignores EXDATE given as date-time, and a RECURRENCE-ID given as date-time shows the moved instance and the original
+## C13 (medium): ICS: an all-day series ignores EXDATE given as date-time, and a RECURRENCE-ID given as date-time shows the moved instance and the original — fixed in 1.16 (daea6b0, all_day_series_with_exdate_…)
 
 Repro (probe `p8_all_day_exdate_as_date_time`, local zone Berlin): `DTSTART;VALUE=DATE:20261005`,
 `RRULE:FREQ=WEEKLY;COUNT=4` with `EXDATE:20261012T000000` or `EXDATE;TZID=Europe/Berlin:20261012T000000`:
@@ -279,7 +279,7 @@ servers) write these with a time.
 
 Guard test: ics unit test with both forms (and the override).
 
-## C14 (low): „Aufräumen“ files untyped-date pages by the UTC date of `created_at`
+## C14 (low): „Aufräumen“ files untyped-date pages by the UTC date of `created_at` — fixed in 1.16 (3101715, tidy_files_by_the_local_creation_day)
 
 Repro (probe `p3_tidy_uses_the_utc_creation_date`, TZ=Europe/Berlin): a voice note created
 2026-11-01 00:30 local (`created_at` 2026-10-31T23:30:00Z) is planned into „Sprachnotizen / 2026 / 10 –
@@ -295,7 +295,7 @@ through `Snapshot::read`); same in `date_cell` for timestamps.
 Guard test: tidy test with a fixed zone (`Snapshot` taking a `Tz`): a page created 23:30Z on the
 last of the month in UTC+1 goes to the next month.
 
-## C15 (low): A vacation day on a public holiday or weekend counts against the vacation account
+## C15 (low): A vacation day on a public holiday or weekend counts against the vacation account — fixed in 1.16 (fc0d995, vacation_on_a_holiday_…)
 
 Repro (probe `p14_vacation_on_a_holiday_counts`): BY, single-day vacation on 2026-12-25:
 `taken 1 left 29`.
@@ -309,7 +309,7 @@ Fix: count `Absence::days()` only for days with `weekday_minutes > 0` and no hol
 
 Guard test: worktime test: vacation on a holiday and on a Saturday: taken 0.
 
-## C16 (low): Holidays: Berlin's one-off „Tag der Befreiung“ on 8 May 2020 is missing
+## C16 (low): Holidays: Berlin's one-off „Tag der Befreiung“ on 8 May 2020 is missing — fixed in 1.16 (fc0d995, holidays test BE 2020)
 
 Repro (probe `p7_berlin_2020`). holidays.rs:86 adds it for 2025 only; 2020 (75th anniversary) was a
 public holiday in Berlin as well (balance and absences of 2020 are off by a day for Berlin users
@@ -317,7 +317,7 @@ whose balance starts before that).
 
 Fix: `state == "BE" && (year == 2020 || year == 2025)`. Test: holidays test for BE 2020.
 
-## C17 (low): Untranslated user-facing errors (German in the English UI)
+## C17 (low): Untranslated user-facing errors (German in the English UI) — fixed in 1.16 (80b6d08, error_texts_are_translated)
 
 Confirmed by code: backupdest.rs:470 „Kopiervorgang abgebrochen“ (backup destination failure shown in
 Settings → Sicherung), capture.rs:362 „Nichts zu erfassen“, calendar.rs:37 and report.rs:65 „'to' liegt

@@ -26,12 +26,12 @@ pub fn prune(state: &AppState) {
 
 #[tauri::command]
 pub fn chat_list(state: State<AppState>, query: Option<String>, archived: Option<bool>) -> Result<Vec<Conversation>> {
-    state.db().chat_list(query.as_deref().unwrap_or(""), archived.unwrap_or(false), 500)
+    state.reader().chat_list(query.as_deref().unwrap_or(""), archived.unwrap_or(false), 500)
 }
 
 #[tauri::command]
 pub fn chat_get(state: State<AppState>, id: i64) -> Result<ConversationDoc> {
-    state.db().chat_get(id)
+    state.reader().chat_get(id)
 }
 
 /// A new conversation; `None` when chats are not saved.

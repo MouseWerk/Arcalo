@@ -83,8 +83,8 @@ pub fn holidays(year: i32, state: &str) -> Vec<Holiday> {
     if (state == "BE" && year >= 2019) || (state == "MV" && year >= 2023) {
         out.push((fixed(3, 8), "Internationaler Frauentag", "International Women's Day"));
     }
-    if state == "BE" && year == 2025 {
-        // Once, for the 80th anniversary of the end of the war.
+    if state == "BE" && (year == 2020 || year == 2025) {
+        // Twice so far, for the 75th and the 80th anniversary of the end of the war.
         out.push((fixed(5, 8), "Tag der Befreiung", "Liberation Day"));
     }
     if state == "BB" {

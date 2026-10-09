@@ -4,7 +4,6 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "../../lib/api";
 import { plannedMinutes } from "../../lib/blocks";
 import { CalendarCheck, FolderKanban, Gauge, WandSparkles } from "lucide-react";
-import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
 import { addDays, fmtDate, h1, isoDay, weekStart } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
@@ -14,7 +13,7 @@ import { openCalendarView } from "../../lib/calnav";
 import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openTimesheetDay } from "../../lib/reviewnav";
 import { requestWeekProposal } from "../../lib/weekplan";
-import { budgetForecast, configOf, weekBars, type Forecast } from "../../lib/dashboard";
+import { budgetForecast, budgetLevel, configOf, weekBars, type Forecast } from "../../lib/dashboard";
 import type { AlertLevel, FocusBlock, TimeEntryRow } from "../../lib/types";
 import type { BudgetRow, BudgetsData, ProjectData, ProposalData, WeekData } from "../../lib/dashtypes";
 import { Badge, Button, Progress, type Tone } from "../ui";
@@ -22,7 +21,6 @@ import { PageIcon } from "../icons";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, fmt, hhmm, hrs, Loadable, More, s, TaskRow, TimerBlock } from "./common";
 import type { WidgetProps } from "./registry";
-import { startedOn } from "../../onboarding/firststeps";
 
 const weekdayShort = (iso: string) => fmt(new Date(`${iso}T12:00:00`), { weekday: "short" }).replace(/\.$/, "").slice(0, 2);
 
@@ -30,7 +28,6 @@ const weekdayShort = (iso: string) => fmt(new Date(`${iso}T12:00:00`), { weekday
 
 export function WeekWidget({ widget }: WidgetProps) {
   const { data, error, loading } = useWidgetData<WeekData>(widget);
-  const settings = useApp((st) => st.settings?.settings);
   const mode = configOf(widget).mode === "wbs" ? "wbs" : "day";
   // Planned focus blocks of the week, next to the booked time.
   const [blocks, setBlocks] = useState<FocusBlock[]>([]);
@@ -49,15 +46,13 @@ export function WeekWidget({ widget }: WidgetProps) {
         const week = weekBars(
           d.days.map((x) => ({ date: x.date, booked_minutes: x.minutes })),
           monday,
-          settings?.daily_target_hours ?? 8,
-          settings?.workdays ?? [1, 2, 3, 4, 5],
+          d.days.map((x) => x.target_minutes),
           new Date(),
           labels,
-          startedOn(),
         );
         const gaps = week.bars.filter((b) => b.gap > 0);
         const planned = (iso: string) => plannedMinutes(blocks, new Date(`${iso}T12:00:00`));
-        const scale = Math.max(1, ...week.bars.map((b) => (b.fill > 0 ? b.minutes / b.fill : 0)), week.targetLine > 0 ? (settings?.daily_target_hours ?? 8) * 60 : 0);
+        const scale = Math.max(1, ...week.bars.map((b) => (b.fill > 0 ? b.minutes / b.fill : 0)), week.lineMinutes);
         const max = Math.max(1, ...d.wbs.map((w) => w.minutes));
         return (
           <div className="dw-week">
@@ -81,7 +76,7 @@ export function WeekWidget({ widget }: WidgetProps) {
                   >
                     <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
                     <span className="dw-bar-track">
-                      {b.workday && week.targetLine > 0 && <span className="dw-bar-target" aria-hidden />}
+                      {b.target > 0 && week.targetLine > 0 && <span className="dw-bar-target" style={{ "--day-target": b.target / Math.max(1, week.lineMinutes) } as CSSProperties} aria-hidden />}
                       {planned(b.date) > 0 && <span className="dw-bar-plan" style={{ height: `${Math.min(1, planned(b.date) / scale) * 100}%` }} aria-hidden />}
                       <span className="dw-bar-fill" style={{ height: `${b.fill * 100}%` }} />
                     </span>
@@ -140,6 +135,7 @@ export const LEVEL: Record<AlertLevel, { tone: Tone; label: TKey; rank: number }
   exceeded: { tone: "danger", label: "dash.lvl.exceeded", rank: 3 },
 };
 
+
 /** The worst budgets first (level, then consumption). */
 export const byRisk = (a: BudgetRow, b: BudgetRow) => LEVEL[b.level].rank - LEVEL[a.level].rank || b.consumed - a.consumed;
 
@@ -161,15 +157,16 @@ function forecastText(f: Forecast): { text: string; tone: "" | "warn" | "bad" } 
 export function BudgetRowView({ b, burnDays, forecast, onOpen }: { b: BudgetRow; burnDays: number; forecast: boolean; onOpen: () => void }) {
   const f = budgetForecast(b, b.recent_hours, burnDays, new Date());
   const fc = forecastText(f);
+  const level = budgetLevel(b.level, f);
   return (
     <button type="button" className={`dw-budget lvl-${b.level}`} onClick={onOpen} title={`${t("dash.budgetTitle", { booked: h1(b.booked_hours), planned: h1(b.planned_hours), eac: h1(b.eac_hours) })}${forecast ? `\n${fc.text}` : ""}`}>
       <span className="dw-budget-head">
         <span className="mono">{b.label}</span>
         <span className="faint ellipsis grow">{b.title}</span>
-        <Badge tone={LEVEL[b.level].tone}>{t(LEVEL[b.level].label)}</Badge>
+        <Badge tone={LEVEL[level].tone}>{t(LEVEL[level].label)}</Badge>
       </span>
       <span className="dw-budget-bar">
-        <Progress value={b.consumed} tone={LEVEL[b.level].tone} marker={b.planned_hours > 0 ? b.eac_hours / b.planned_hours : undefined} />
+        <Progress value={b.consumed} tone={LEVEL[level].tone} marker={b.planned_hours > 0 ? b.eac_hours / b.planned_hours : undefined} />
         <span className="num faint dw-budget-h">
           {h1(b.booked_hours)} / {h1(b.planned_hours)} h
         </span>

@@ -1,8 +1,7 @@
 // Week helpers for the timesheet: gaps against the daily target and a CATS-ready grid.
 
-import { addDays, decimalPoint, isoDay, isoWeekday } from "./format";
+import { addDays, decimalPoint, isoDay } from "./format";
 import type { StatusFlag, TimeEntryRow, TimePrefs } from "./types";
-import type { Absence } from "./workwidgets";
 import { t } from "./i18n";
 
 export interface DayGap {
@@ -11,52 +10,22 @@ export interface DayGap {
   missingMinutes: number;
 }
 
-/** What decides the target of a day (Settings → Zeiterfassung, the Kalender's absences). */
-export interface TargetInputs {
-  /** Daily target in hours, on the workdays. */
-  daily: number;
-  /** ISO weekdays (1 = Monday) that are workdays. */
-  workdays: number[];
-  /** Own targets Monday..Sunday in hours („Saldo und Urlaub“); empty: the daily target. */
-  weekdayHours?: number[];
-  /** Public holidays (`YYYY-MM-DD`). */
-  holidays?: ReadonlySet<string>;
-  absences?: Pick<Absence, "date" | "half">[];
-}
-
-/**
- * Target minutes of each day of the week starting at `week`, as the day review and the week
- * proposal count them (`worktime::gap_target`): the weekday's own target or the daily one on
- * workdays, none on a public holiday or a full absence day, half on a half one.
- */
-export function dayTargets(week: Date, p: TargetInputs): number[] {
-  const own = p.weekdayHours?.length === 7 ? p.weekdayHours : null;
-  return Array.from({ length: 7 }, (_, i) => {
-    const day = addDays(week, i);
-    const wd = isoWeekday(day);
-    if (!p.workdays.includes(wd)) return 0;
-    const base = Math.round(Math.max(0, own ? own[wd - 1] : p.daily) * 60);
-    const key = isoDay(day);
-    if (base <= 0 || p.holidays?.has(key)) return 0;
-    const absence = p.absences?.find((a) => a.date === key);
-    if (!absence) return base;
-    return absence.half ? base - Math.floor(base / 2) : 0;
-  });
-}
-
-/** Past (and today's, once over) days of the week below their target (`targets` per day, see {@link dayTargets});
- * days before `since` (YYYY-MM-DD, the first start of a new workspace) never count. */
-export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: number[], since: string | null = null): DayGap[] {
+/** Whether missing time on day `key` (YYYY-MM-DD) counts at `now`: past days, today once the working day is over. */
+export function dayIsOver(key: string, now: Date): boolean {
   const today = isoDay(now);
+  return key < today || (key === today && now.getHours() >= 18);
+}
+
+/** Days of the week that are over ({@link dayIsOver}) and below their target. `targets`: minutes per day from
+ * the backend (`day_targets`, `worktime::DayTargets`: weekday targets, holidays, absences, none before the day a
+ * new workspace was set up), so every view counts the same gaps. */
+export function weekGaps(rows: TimeEntryRow[], week: Date, now: Date, targets: number[]): DayGap[] {
   const out: DayGap[] = [];
   for (let i = 0; i < 7; i++) {
     const day = addDays(week, i);
     const key = isoDay(day);
     const target = targets[i] ?? 0;
-    // Today only counts once the working day is over.
-    if (key > today || (key === today && now.getHours() < 18)) continue;
-    if (since && key < since) continue;
-    if (target <= 0) continue;
+    if (!dayIsOver(key, now) || target <= 0) continue;
     const booked = rows
       .filter((r) => r.status_flag !== "running" && isoDay(new Date(r.start_time)) === key)
       .reduce((a, r) => a + (r.duration_minutes ?? 0), 0);

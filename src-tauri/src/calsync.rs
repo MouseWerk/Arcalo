@@ -313,7 +313,10 @@ pub fn calendar_source_remove(app: AppHandle, id: String) -> Result<CalendarStat
 #[tauri::command]
 pub async fn calendar_outlook_discover(app: AppHandle) -> Result<CalendarStatus> {
     if !outlook::available() {
-        return Err(Error::State("Outlook (klassisch) gibt es nur unter Windows".into()));
+        return Err(Error::State(
+            tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
+                .into(),
+        ));
     }
     {
         let sync = app.state::<CalendarSync>();
@@ -591,7 +594,10 @@ async fn sync_outlook(app: &AppHandle, ids: &[String]) -> Vec<(String, Result<us
             .map_err(|e| Error::State(e.to_string()))
             .and_then(|r| r)
     } else {
-        Err(Error::State("Outlook (klassisch) gibt es nur unter Windows".into()))
+        Err(Error::State(
+            tr!("Outlook (klassisch) gibt es nur unter Windows", "Outlook (classic) is only available on Windows")
+                .into(),
+        ))
     };
     match reads {
         Ok(reads) => {

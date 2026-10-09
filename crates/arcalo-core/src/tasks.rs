@@ -83,6 +83,28 @@ pub struct TaskFilter {
     pub changed_since: Option<String>,
 }
 
+/// [`Task`]s in a compact form for the task view (`tasks_compact`): each page's title and icon
+/// once, each task as an array `[page_id, ordinal, line, text, done, due, priority, tags, recur]`
+/// with the tags space-separated. A third of the size of the task objects (5 MB for 32,000
+/// tasks), decoded by the UI into the same objects.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct TaskTable {
+    pub pages: std::collections::BTreeMap<i64, (String, Option<String>)>,
+    #[allow(clippy::type_complexity)]
+    pub rows: Vec<(i64, i64, i64, String, bool, Option<String>, u8, String, Option<Recurrence>)>,
+}
+
+impl From<Vec<Task>> for TaskTable {
+    fn from(list: Vec<Task>) -> Self {
+        let mut out = TaskTable::default();
+        for t in list {
+            out.pages.entry(t.page_id).or_insert_with(|| (t.page_title, t.page_icon));
+            out.rows.push((t.page_id, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags.join(" "), t.recur));
+        }
+        out
+    }
+}
+
 /// Counts of open tasks, see [`Database::open_task_counts`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCounts {
@@ -101,6 +123,18 @@ const TEMPLATE_PAGES: &str = "WITH RECURSIVE tpl(id) AS (
                                  ORDER BY id LIMIT 1)
                  UNION ALL
                  SELECT p.id FROM pages p JOIN tpl ON p.parent_id = tpl.id)";
+
+/// A row of `tasks` without its page and ordinal (see [`Database::reindex_tasks`]).
+#[derive(Debug, PartialEq)]
+struct TaskRow {
+    line: i64,
+    text: String,
+    done: bool,
+    due: Option<String>,
+    priority: i64,
+    tags: String,
+    recur: Option<String>,
+}
 
 /// Compares like SQLite's `COLLATE NOCASE`: bytes, ASCII letters folded.
 fn nocase_cmp(a: &str, b: &str) -> std::cmp::Ordering {
@@ -365,14 +399,11 @@ pub fn set_task_state(markdown: &str, ordinal: usize, done: bool) -> Option<Stri
 }
 
 impl Database {
-    /// Rebuilds the task rows of one page (called from `reindex_page`).
+    /// Brings the task rows of one page up to date (called from `reindex_page`): only rows that
+    /// changed are written (an edit of a long page left its thousands of tasks as they were, yet
+    /// rewrote every row).
     pub(crate) fn reindex_tasks(&self, id: i64, content: &str) -> Result<()> {
         let conn = self.conn();
-        conn.execute("DELETE FROM tasks WHERE page_id = ?1", [id])?;
-        let mut ins = conn.prepare_cached(
-            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags, recur)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        )?;
         let tasks = parse_tasks(content);
         // Tags outside task lines (frontmatter, prose) belong to the page and so to each of its
         // tasks; a tag inside one task does not spread to the others.
@@ -380,20 +411,56 @@ impl Database {
         let prose: Vec<&str> =
             content.lines().enumerate().filter(|(i, _)| !task_lines.contains(i)).map(|(_, l)| l).collect();
         let page_tags = crate::notes::tags(&prose.join("\n"));
-        for t in tasks {
-            let mut tags = t.tags;
-            tags.extend(page_tags.iter().filter(|p| !tags.contains(p)).cloned().collect::<Vec<_>>());
-            ins.execute(params![
-                id,
-                t.ordinal as i64,
-                t.line as i64,
-                t.text,
-                t.done,
-                t.due,
-                t.priority,
-                tags.join(" "),
-                t.recur.as_ref().map(Recurrence::tokens)
-            ])?;
+        let fresh: Vec<TaskRow> = tasks
+            .into_iter()
+            .map(|t| {
+                let mut tags = t.tags;
+                tags.extend(page_tags.iter().filter(|p| !tags.contains(p)).cloned().collect::<Vec<_>>());
+                TaskRow {
+                    line: t.line as i64,
+                    text: t.text,
+                    done: t.done,
+                    due: t.due,
+                    priority: t.priority as i64,
+                    tags: tags.join(" "),
+                    recur: t.recur.as_ref().map(Recurrence::tokens),
+                }
+            })
+            .collect();
+        let stored: Vec<TaskRow> = conn
+            .prepare_cached(
+                "SELECT line, text, done, due, priority, tags, recur FROM tasks WHERE page_id = ?1 ORDER BY ordinal",
+            )?
+            .query_map([id], |r| {
+                Ok(TaskRow {
+                    line: r.get(0)?,
+                    text: r.get(1)?,
+                    done: r.get(2)?,
+                    due: r.get(3)?,
+                    priority: r.get(4)?,
+                    tags: r.get(5)?,
+                    recur: r.get(6)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        if stored == fresh {
+            return Ok(());
+        }
+        let mut put = conn.prepare_cached(
+            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags, recur)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(page_id, ordinal) DO UPDATE SET line = excluded.line, text = excluded.text,
+               done = excluded.done, due = excluded.due, priority = excluded.priority, tags = excluded.tags,
+               recur = excluded.recur",
+        )?;
+        for (ordinal, t) in fresh.iter().enumerate() {
+            if stored.get(ordinal) != Some(t) {
+                put.execute(params![id, ordinal as i64, t.line, t.text, t.done, t.due, t.priority, t.tags, t.recur])?;
+            }
+        }
+        if stored.len() > fresh.len() {
+            conn.prepare_cached("DELETE FROM tasks WHERE page_id = ?1 AND ordinal >= ?2")?
+                .execute(params![id, fresh.len() as i64])?;
         }
         Ok(())
     }
@@ -430,6 +497,51 @@ impl Database {
         ))?;
         let rows = st.query_map(params![self.templates_title()?, from, to], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Open tasks outside templates due in `from..before` (`YYYY-MM-DD`; no lower bound
+    /// without `from`), in the order of [`Database::list_tasks`]: the first `limit` and how many
+    /// there are. Sorted and cut in SQLite (the day and week review show a few of thousands).
+    pub fn open_tasks_due(&self, from: Option<&str>, before: &str, limit: usize) -> Result<(Vec<Task>, i64)> {
+        let tpl = self.templates_title()?;
+        let total: i64 = self
+            .conn()
+            .prepare_cached(&format!(
+                "{TEMPLATE_PAGES}
+             SELECT COUNT(*) FROM tasks t JOIN pages p ON p.id = t.page_id
+             WHERE t.done = 0 AND t.due IS NOT NULL AND t.due >= COALESCE(?2, '') AND t.due < ?3
+               AND p.deleted_at IS NULL AND t.page_id NOT IN tpl"
+            ))?
+            .query_row(params![tpl, from, before], |r| r.get(0))?;
+        let mut st = self.conn().prepare_cached(&format!(
+            "{TEMPLATE_PAGES}
+             SELECT t.page_id, p.title, p.icon, t.ordinal, t.line, t.text, t.due, t.priority, t.tags, t.recur
+             FROM tasks t JOIN pages p ON p.id = t.page_id
+             WHERE t.done = 0 AND t.due IS NOT NULL AND t.due >= COALESCE(?2, '') AND t.due < ?3
+               AND p.deleted_at IS NULL AND t.page_id NOT IN tpl
+             ORDER BY t.due, t.priority DESC, p.title COLLATE NOCASE, t.page_id, t.ordinal
+             LIMIT ?4"
+        ))?;
+        let list = st
+            .query_map(params![tpl, from, before, limit as i64], |r| {
+                let tags: String = r.get(8)?;
+                let recur: Option<String> = r.get(9)?;
+                Ok(Task {
+                    page_id: r.get(0)?,
+                    page_title: r.get(1)?,
+                    page_icon: r.get(2)?,
+                    ordinal: r.get(3)?,
+                    line: r.get(4)?,
+                    text: r.get(5)?,
+                    done: false,
+                    due: r.get(6)?,
+                    priority: r.get(7)?,
+                    tags: tags.split_whitespace().map(str::to_owned).collect(),
+                    recur: recur.as_deref().and_then(stored_rule),
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok((list, total))
     }
 
     /// Tasks of all pages: open first, then by due date (undated last), priority and page.
@@ -581,6 +693,78 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_compact_table_holds_every_task_with_its_page_once() {
+        let task = |page_id: i64, ordinal: i64, text: &str| Task {
+            page_id,
+            page_title: format!("Seite {page_id}"),
+            page_icon: (page_id == 2).then(|| "star".to_owned()),
+            ordinal,
+            line: ordinal * 2,
+            text: text.into(),
+            done: false,
+            due: Some("2026-10-09".into()),
+            priority: 1,
+            tags: vec!["a".into(), "b".into()],
+            recur: None,
+        };
+        let list = vec![task(1, 0, "eins"), task(2, 0, "zwei"), task(1, 1, "drei")];
+        let table = TaskTable::from(list);
+        assert_eq!(table.pages.len(), 2);
+        assert_eq!(table.pages[&2], ("Seite 2".to_owned(), Some("star".to_owned())));
+        let json = serde_json::to_value(&table).unwrap();
+        assert_eq!(json["rows"][2], serde_json::json!([1, 1, 2, "drei", false, "2026-10-09", 1, "a b", null]));
+        assert_eq!(json["pages"]["1"], serde_json::json!(["Seite 1", null]));
+    }
+
+    /// A long page of tasks (a paste, a restored version, a pulled note): the first save stays
+    /// linear (it was cubic: 10 s in a release build for 2,400 tasks), and a small edit writes
+    /// only what changed (it rewrote every task row).
+    #[test]
+    fn saving_a_page_of_thousands_of_tasks_stays_fast() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Liste", None).unwrap();
+        let tasks: String = (0..2400)
+            .map(|i| format!("- [ ] Aufgabe {i} für das Projekt mit etwas Text due:2026-11-{:02} #liste\n", i % 28 + 1))
+            .collect();
+        let body = format!("Notiz\n{tasks}");
+        let t = std::time::Instant::now();
+        db.save_page_content(p.id, &body).unwrap();
+        let first = t.elapsed();
+        let added: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM activity WHERE kind = 'task_added' AND page_id = ?1", [p.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(added, 2400);
+        // Debug build on a shared machine; the cubic version took 44 s here.
+        assert!(first < std::time::Duration::from_secs(8), "first save {first:?}");
+
+        // One character in the prose: no task row is written.
+        let before = db.conn().total_changes();
+        db.save_page_content(p.id, &format!("Notiz!\n{tasks}")).unwrap();
+        let task_rows = db.conn().total_changes() - before;
+        assert!(task_rows < 100, "{task_rows} rows written");
+        // One task checked off: its row and nothing else of the 2,400.
+        let checked = format!("Notiz!\n{}", tasks.replacen("- [ ] Aufgabe 7 ", "- [x] Aufgabe 7 ", 1));
+        let before = db.conn().total_changes();
+        db.save_page_content(p.id, &checked).unwrap();
+        assert!(db.conn().total_changes() - before < 100);
+        let done: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM tasks WHERE page_id = ?1 AND done = 1", [p.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(done, 1);
+        // Tasks removed: the rows go.
+        db.save_page_content(p.id, "- [ ] nur noch eine\n").unwrap();
+        let rows: Vec<String> = db
+            .list_tasks(&TaskFilter { page_id: Some(p.id), ..Default::default() })
+            .unwrap()
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        assert_eq!(rows, ["nur noch eine"]);
+    }
 
     #[test]
     fn tasks_in_tilde_code_blocks_are_code() {

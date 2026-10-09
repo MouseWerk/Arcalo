@@ -271,3 +271,42 @@ fn pending_chunks_come_from_the_queue_index() {
         .collect();
     assert!(plan.iter().any(|l| l.contains("idx_notes_blocks_unembedded")), "{plan:?}");
 }
+
+#[test]
+fn edited_and_deleted_chunks_leave_the_index() {
+    let db = Database::open_in_memory().unwrap();
+    let a = page(&db, "Urlaubsplanung", "Ferien im August.");
+    let b = page(&db, "Urlaub Team", "Urlaub der Kollegen.");
+    index(&db, true, &[]);
+    let mut vi = VectorIndex::default();
+    let q = embed("Urlaub");
+    let find = |vi: &mut VectorIndex| {
+        let mut p: Vec<i64> =
+            search(&db, vi, "Sommerpause", Some(&q), 10).unwrap().iter().filter_map(|h| h.page_id()).collect();
+        p.sort();
+        p
+    };
+    assert_eq!(find(&mut vi), [a, b]);
+    // Forty edits, each embedded: the old vectors go, the other page is still found.
+    for i in 0..40 {
+        let (id, text) = if i % 2 == 0 {
+            (a, format!("Ferien im August, Fassung {i}."))
+        } else {
+            (b, format!("Urlaub der Kollegen, Fassung {i}."))
+        };
+        db.save_page_content(id, &text).unwrap();
+        index(&db, true, &[]);
+        vi.sync(&db).unwrap();
+    }
+    let live: i64 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM notes_blocks WHERE vector_embedding IS NOT NULL", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(vi.len() as i64, live);
+    assert_eq!(find(&mut vi), [a, b]);
+    // Deleted for good (with its subtree): its vectors go too.
+    db.delete_page(b).unwrap();
+    vi.sync(&db).unwrap();
+    assert_eq!(vi.len(), 1);
+    assert_eq!(find(&mut vi), [a]);
+}

@@ -47,19 +47,54 @@ pub fn store_embedding(db: &Database, block_id: i64, embedding: &[f32]) -> Resul
     Ok(())
 }
 
-/// Chunks whose embedding was stored since the vectors were last cleared, in order, with the
-/// number of clears (`epoch`): the in-memory copy of the search ([`crate::semantic::VectorIndex`])
-/// reads only these rows again instead of every vector of the workspace.
-static STORED: std::sync::Mutex<(u64, Vec<i64>)> = std::sync::Mutex::new((0, Vec::new()));
-
-fn stored(block_id: i64) {
-    STORED.lock().unwrap_or_else(|e| e.into_inner()).1.push(block_id);
+/// A change of the stored embeddings, see [`STORED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Change {
+    /// The chunk got an embedding.
+    Stored(i64),
+    /// The chunk is gone (its text changed or was removed).
+    Removed(i64),
+    /// Pages were deleted for good (their chunks went with them).
+    Purged,
 }
 
-/// The clear epoch and the chunks stored since position `from` of it.
-pub(crate) fn stored_since(from: usize) -> (u64, Vec<i64>, usize) {
+/// Changes of the embeddings since the vectors were last cleared, in order, with the number of
+/// clears (`epoch`): the in-memory copy of the search ([`crate::semantic::VectorIndex`]) reads
+/// only these rows again instead of every vector of the workspace, and drops the rows that are
+/// gone. A long log starts a new epoch (the copies read everything once) instead of growing for
+/// the whole session.
+static STORED: std::sync::Mutex<(u64, Vec<Change>)> = std::sync::Mutex::new((0, Vec::new()));
+
+/// More entries than this: a new epoch.
+const LOG_MAX: usize = 50_000;
+
+fn log(c: Change) {
+    let mut s = STORED.lock().unwrap_or_else(|e| e.into_inner());
+    if s.1.len() >= LOG_MAX {
+        s.0 += 1;
+        s.1.clear();
+    }
+    s.1.push(c);
+}
+
+fn stored(block_id: i64) {
+    log(Change::Stored(block_id));
+}
+
+/// A chunk was deleted (an edit changed its text).
+pub(crate) fn chunk_removed(block_id: i64) {
+    log(Change::Removed(block_id));
+}
+
+/// Pages were deleted for good, with their chunks.
+pub(crate) fn pages_purged() {
+    log(Change::Purged);
+}
+
+/// The clear epoch and the changes since position `from` of it.
+pub(crate) fn stored_since(from: usize) -> (u64, Vec<Change>, usize) {
     let s = STORED.lock().unwrap_or_else(|e| e.into_inner());
-    (s.0, s.1.get(from..).map(<[i64]>::to_vec).unwrap_or_default(), s.1.len())
+    (s.0, s.1.get(from..).map(<[Change]>::to_vec).unwrap_or_default(), s.1.len())
 }
 
 /// Removes every embedding (another embedding model, „Index neu aufbauen“); the chunks are
@@ -330,7 +365,11 @@ pub fn retrieve(
                         let desc: String = r.get(4)?;
                         let target = v.map_or(np.clone(), |v| format!("{np}/{v}"));
                         let hours = minutes.map_or(tr!("läuft", "running").to_owned(), |m| format!("{:.2}h", m as f64 / 60.0));
-                        Ok(format!("{} {target} {hours}: {desc}", start.get(..10).unwrap_or(&start)))
+                        // The local day of the booking (its UTC stamp may name the day before).
+                        let day = crate::db::parse_ts(&start)
+                            .map(|t| t.with_timezone(&chrono::Local).date_naive().format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|_| start.get(..10).unwrap_or(&start).to_owned());
+                        Ok(format!("{day} {target} {hours}: {desc}"))
                     },
                 )
                 .optional()?

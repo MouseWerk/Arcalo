@@ -239,19 +239,94 @@ pub fn day_target(base: i64, holiday: bool, absence: Option<&Absence>, for_balan
     }
 }
 
-/// What the week proposal, the day review and the reminder take as the target of `date`,
-/// given the target `base` they computed: none on a holiday or a full absence day, half on a
-/// half one (so those days are no gaps).
-pub fn gap_target(db: &Database, date: NaiveDate, base: i64) -> Result<i64> {
-    let settings = db.load_settings().unwrap_or_default();
-    // Own targets per weekday (Saldo und Urlaub, e.g. Friday 5 h) replace the daily target.
-    let base = if settings.time.balance.weekday_hours.len() == 7 { weekday_minutes(&settings, date) } else { base };
-    if base <= 0 {
-        return Ok(base);
+/// Meta row: the local day (`YYYY-MM-DD`) a new workspace was set up ([`counts_from`]).
+pub const COUNTS_FROM: &str = "time.counts_from";
+
+/// The first day whose target can be missing time: the day a new workspace was set up (the
+/// days before Arcalo existed were not missed). `None`: every day counts (a workspace from
+/// before the setup existed, or set up before 1.15 without the setup date).
+pub fn counts_from(db: &Database) -> Result<Option<NaiveDate>> {
+    if let Some(day) = db.meta_get(COUNTS_FROM)?.and_then(|v| v.parse::<NaiveDate>().ok()) {
+        return Ok(Some(day));
     }
-    let holiday = !holidays_between(date, date, &settings.time.balance.state).is_empty();
-    let absence = db.absences(date, date)?.into_iter().next();
-    Ok(day_target(base, holiday, absence.as_ref(), false))
+    // Set up with 1.15 (before the meta row): the setup's time, if the workspace was new then.
+    if db.meta_get("onboarding.first_seen")?.as_deref() != Some("fresh") {
+        return Ok(None);
+    }
+    let at = db.load_settings().unwrap_or_default().onboarding.completed_at;
+    Ok(at.and_then(|at| crate::db::parse_ts(&at).ok()).map(|at| at.with_timezone(&chrono::Local).date_naive()))
+}
+
+/// The target of each day of `from..=to` as every view counts missing time (the timesheet,
+/// the start page, the week and day review, the week proposal, the reminders, the assistant's
+/// suggestions): the weekday's target ([`weekday_minutes`]), none on a public holiday, half on
+/// a half absence and none on a full one, none before [`counts_from`].
+#[derive(Debug, Clone)]
+pub struct DayTargets {
+    from: NaiveDate,
+    since: Option<NaiveDate>,
+    /// Before [`counts_from`] applies.
+    base: Vec<i64>,
+    minutes: Vec<i64>,
+    holidays: HashMap<NaiveDate, Holiday>,
+    absences: HashMap<NaiveDate, Absence>,
+}
+
+impl DayTargets {
+    pub fn load(db: &Database, settings: &Settings, from: NaiveDate, to: NaiveDate) -> Result<DayTargets> {
+        let to = to.max(from);
+        let holidays = holiday_map(from, to, &settings.time.balance.state);
+        let absences: HashMap<NaiveDate, Absence> = db.absences(from, to)?.into_iter().map(|a| (a.date, a)).collect();
+        let since = counts_from(db)?;
+        let n = ((to - from).num_days() + 1) as usize;
+        let (mut base, mut minutes) = (Vec::with_capacity(n), Vec::with_capacity(n));
+        let mut d = from;
+        while d <= to {
+            let target = day_target(weekday_minutes(settings, d), holidays.contains_key(&d), absences.get(&d), false);
+            base.push(target);
+            minutes.push(if since.is_some_and(|s| d < s) { 0 } else { target });
+            d += Duration::days(1);
+        }
+        Ok(DayTargets { from, since, base, minutes, holidays, absences })
+    }
+
+    fn at(&self, list: &[i64], d: NaiveDate) -> i64 {
+        usize::try_from((d - self.from).num_days()).ok().and_then(|i| list.get(i)).copied().unwrap_or(0)
+    }
+
+    /// The target of `d` in minutes (0 outside the loaded range).
+    pub fn get(&self, d: NaiveDate) -> i64 {
+        self.at(&self.minutes, d)
+    }
+
+    /// The target of `d` also before [`counts_from`] (how much the week proposal may fill in).
+    pub fn base(&self, d: NaiveDate) -> i64 {
+        self.at(&self.base, d)
+    }
+
+    /// Whether missing time on `d` counts (on or after [`counts_from`]).
+    pub fn counts(&self, d: NaiveDate) -> bool {
+        self.since.is_none_or(|s| d >= s)
+    }
+
+    pub fn holiday(&self, d: NaiveDate) -> Option<&Holiday> {
+        self.holidays.get(&d)
+    }
+
+    pub fn absence(&self, d: NaiveDate) -> Option<&Absence> {
+        self.absences.get(&d)
+    }
+
+    /// The targets in day order.
+    pub fn minutes(&self) -> &[i64] {
+        &self.minutes
+    }
+}
+
+/// The target of one day by the rule of [`DayTargets`] (so a holiday, an absence day or a day
+/// before the workspace existed is no gap).
+pub fn gap_target(db: &Database, settings: &Settings, date: NaiveDate) -> Result<i64> {
+    Ok(DayTargets::load(db, settings, date, date)?.get(date))
 }
 
 /// Booked minutes per local day of `from..=to`; a running timer counts until `now`.
@@ -322,7 +397,9 @@ pub fn balance<Tz: TimeZone>(
 ) -> Result<BalanceData> {
     let prefs = &settings.time.balance;
     let configured = prefs.start.is_some();
-    let start = prefs.start.unwrap_or_else(|| NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap_or(today));
+    // Not set: 1 January, or the day a new workspace was set up when that is later.
+    let jan = NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap_or(today);
+    let start = prefs.start.unwrap_or(counts_from(db)?.map_or(jan, |d| d.max(jan)));
     let opening = (prefs.opening_hours * 60.0).round() as i64;
     let running = db.running_timer()?.is_some();
     let mut data = BalanceData {
@@ -414,6 +491,12 @@ pub struct VacationData {
     pub upcoming: Vec<AbsenceBlock>,
 }
 
+/// The days an absence takes from the account: none on a day without a target (a weekend, a
+/// public holiday, a part-timer's free day), else 1 or ½.
+pub fn absence_days(settings: &Settings, a: &Absence, holidays: &HashMap<NaiveDate, Holiday>) -> f64 {
+    if weekday_minutes(settings, a.date) == 0 || holidays.contains_key(&a.date) { 0.0 } else { a.days() }
+}
+
 /// Groups days into blocks: same kind, nothing but days without a target between them.
 pub fn blocks(settings: &Settings, list: &[Absence], holidays: &HashMap<NaiveDate, Holiday>) -> Vec<AbsenceBlock> {
     let mut out: Vec<AbsenceBlock> = vec![];
@@ -430,11 +513,11 @@ pub fn blocks(settings: &Settings, list: &[Absence], holidays: &HashMap<NaiveDat
             }
             if free {
                 last.to = a.date;
-                last.days += a.days();
+                last.days += absence_days(settings, a, holidays);
                 continue;
             }
         }
-        out.push(AbsenceBlock { from: a.date, to: a.date, kind: a.kind, days: a.days() });
+        out.push(AbsenceBlock { from: a.date, to: a.date, kind: a.kind, days: absence_days(settings, a, holidays) });
     }
     out
 }
@@ -446,11 +529,14 @@ pub fn vacation(db: &Database, settings: &Settings, today: NaiveDate) -> Result<
     let jan = NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(today);
     let dec = NaiveDate::from_ymd_opt(year, 12, 31).unwrap_or(today);
     let in_year = db.absences(jan, dec)?;
+    // A vacation day on a weekend or a public holiday (also one that became a holiday after a
+    // change of the state) takes nothing from the account.
+    let year_holidays = holiday_map(jan, dec, &prefs.state);
     let vac = |past: bool| -> f64 {
         in_year
             .iter()
             .filter(|a| a.kind == AbsenceKind::Vacation && (a.date <= today) == past)
-            .map(Absence::days)
+            .map(|a| absence_days(settings, a, &year_holidays))
             .fold(0.0, |a, b| a + b)
     };
     let (taken, planned) = (vac(true), vac(false));

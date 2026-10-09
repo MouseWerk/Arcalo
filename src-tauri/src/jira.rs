@@ -577,7 +577,7 @@ pub fn jira_add_task(app: AppHandle, state: State<AppState>, key: String) -> Res
         Utc::now(),
         &Local,
     )?;
-    let appended = out.appended.ok_or_else(|| Error::State("nothing appended".into()))?;
+    let appended = out.appended.ok_or_else(|| Error::State(tr!("Nichts zu erfassen", "Nothing to capture").into()))?;
     let _ = app.emit("data://tasks", appended.page_id);
     Ok(AddedTask { page_id: appended.page_id, title: appended.title })
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { catsDecimalSep, catsGrid, dayTargets, undeletableReason, weekGaps } from "./cats";
+import { catsDecimalSep, catsGrid, dayIsOver, undeletableReason, weekGaps } from "./cats";
 import { formatPrefs, setFormatPrefs } from "./format";
 import type { TimeEntryRow } from "./types";
 
@@ -57,34 +57,31 @@ describe("catsDecimalSep", () => {
   });
 });
 
-describe("dayTargets", () => {
-  it("takes own weekday targets, holidays and absences into account", () => {
-    const base = { daily: 8, workdays: [1, 2, 3, 4, 5] };
-    expect(dayTargets(week, base)).toEqual([480, 480, 480, 480, 480, 0, 0]);
-    // Friday 5 h, a holiday on Tuesday, vacation on Wednesday, half a day on Thursday.
-    const t = dayTargets(week, { ...base, weekdayHours: [8, 8, 8, 8, 5, 4, 0], holidays: new Set(["2026-09-22"]), absences: [{ date: "2026-09-23", half: false }, { date: "2026-09-24", half: true }] });
-    // Saturday has hours but is no workday.
-    expect(t).toEqual([480, 0, 0, 240, 300, 0, 0]);
-    // A week starting on Sunday.
-    expect(dayTargets(new Date(2026, 8, 20), base)).toEqual([0, 480, 480, 480, 480, 480, 0]);
+describe("dayIsOver", () => {
+  it("counts past days, and today from 18:00 on", () => {
+    expect(dayIsOver("2026-09-23", new Date(2026, 8, 24, 10))).toBe(true);
+    expect(dayIsOver("2026-09-24", new Date(2026, 8, 24, 17, 59))).toBe(false);
+    expect(dayIsOver("2026-09-24", new Date(2026, 8, 24, 18))).toBe(true);
+    expect(dayIsOver("2026-09-25", new Date(2026, 8, 24, 23))).toBe(false);
   });
 });
 
 describe("weekGaps", () => {
-  it("flags past workdays below target, not weekends or the running day", () => {
+  it("flags days that are over below their target, not days without one or the running day", () => {
     const now = new Date(2026, 8, 24, 10); // Thursday morning
-    const gaps = weekGaps([row(1, 0, 480, "1", null), row(2, 1, 360, "1", null)], week, now, dayTargets(week, { daily: 8, workdays: [1, 2, 3, 4, 5] }));
+    const gaps = weekGaps([row(1, 0, 480, "1", null), row(2, 1, 360, "1", null)], week, now, [480, 480, 480, 480, 480, 0, 0]);
     expect(gaps.map((g) => [g.day.getDate(), g.missingMinutes])).toEqual([
       [22, 120],
       [23, 480],
     ]);
   });
 
-  it("does not flag holidays or absence days, and a half day by half", () => {
-    const now = new Date(2026, 8, 26, 10); // Saturday
-    const targets = dayTargets(week, { daily: 8, workdays: [1, 2, 3, 4, 5], holidays: new Set(["2026-09-21"]), absences: [{ date: "2026-09-22", half: true }, { date: "2026-09-23", half: false }] });
+  it("takes the backend's targets as they are (a holiday or absence 0, a half day half, a Saturday with own hours)", () => {
+    const now = new Date(2026, 8, 27, 10); // Sunday
+    const targets = [0, 240, 0, 480, 480, 120, 0];
     const gaps = weekGaps([row(1, 1, 240, "1", null), row(2, 3, 480, "1", null), row(3, 4, 480, "1", null)], week, now, targets);
-    expect(gaps).toEqual([]);
+    expect(gaps.map((g) => [g.day.getDate(), g.missingMinutes])).toEqual([[26, 120]]);
+    expect(weekGaps([], week, now, [])).toEqual([]);
   });
 });
 

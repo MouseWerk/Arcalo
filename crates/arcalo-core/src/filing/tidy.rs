@@ -57,7 +57,8 @@ struct Row {
     file_date: Option<String>,
     file_group: Option<String>,
     daily_date: Option<String>,
-    created: String,
+    /// The local day it was created on.
+    created: Option<NaiveDate>,
     head: String,
 }
 
@@ -79,6 +80,12 @@ fn date_of(s: &str) -> Option<NaiveDate> {
 
 impl Snapshot {
     pub(crate) fn read(db: &Database) -> Result<Self> {
+        Self::read_in(db, &chrono::Local)
+    }
+
+    /// The snapshot with creation days in `tz` (a page created at 00:30 on 1 November in Berlin
+    /// belongs to November, although its UTC stamp says 31 October).
+    pub(crate) fn read_in<Tz: chrono::TimeZone>(db: &Database, tz: &Tz) -> Result<Self> {
         let conn = db.conn();
         let mut rows = HashMap::new();
         let mut order = Vec::new();
@@ -101,7 +108,9 @@ impl Snapshot {
                     file_date: r.get(6)?,
                     file_group: r.get(7)?,
                     daily_date: r.get(8)?,
-                    created: r.get(9)?,
+                    created: crate::db::parse_ts(&r.get::<_, String>(9)?)
+                        .ok()
+                        .map(|t| t.with_timezone(tz).date_naive()),
                     head: r.get(10)?,
                 })
             })?;
@@ -180,7 +189,7 @@ impl Snapshot {
     /// note, a Jira issue note, or a page without children inside a type's folders.
     pub(crate) fn info_of(&self, db: &Database, id: i64) -> Option<FileInfo> {
         let r = self.rows.get(&id)?;
-        let created = date_of(&r.created).unwrap_or_default();
+        let created = r.created.unwrap_or_default();
         let kind = r
             .file_type
             .as_deref()

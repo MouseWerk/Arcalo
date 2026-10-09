@@ -353,6 +353,7 @@ impl Database {
             let mut del = conn.prepare_cached("DELETE FROM notes_blocks WHERE id = ?1")?;
             for (row_id, _) in old.into_values().flatten() {
                 del.execute([row_id])?;
+                crate::ai::rag::chunk_removed(row_id);
             }
             let mut ins = conn.prepare_cached(
                 "INSERT INTO notes_blocks (page_id, position, block_type, content_markdown) VALUES (?1, ?2, 'chunk', ?3)",

@@ -278,8 +278,26 @@ impl VectorIndex {
         }
     }
 
-    /// Brings the copy up to date with the database: the chunks stored since the last call,
-    /// or everything after the vectors were cleared (and on first use).
+    /// Drops the row of `block` (the last row takes its place).
+    fn remove(&mut self, block: i64) {
+        let Some(i) = self.slot.remove(&block) else { return };
+        let last = self.blocks.len() - 1;
+        if i != last {
+            self.blocks[i] = self.blocks[last];
+            self.pages[i] = self.pages[last];
+            self.scales[i] = self.scales[last];
+            self.data.copy_within(last * self.dims..(last + 1) * self.dims, i * self.dims);
+            self.slot.insert(self.blocks[i], i);
+        }
+        self.blocks.truncate(last);
+        self.pages.truncate(last);
+        self.scales.truncate(last);
+        self.data.truncate(last * self.dims);
+    }
+
+    /// Brings the copy up to date with the database: the chunks stored or removed since the
+    /// last call, or everything after the vectors were cleared (and on first use). Chunks that
+    /// are gone leave the copy, so they never crowd out other pages and the copy does not grow.
     pub fn sync(&mut self, db: &Database) -> Result<()> {
         let (epoch, changed, end) = rag::stored_since(self.log_pos);
         if self.epoch == Some(epoch) && changed.is_empty() {
@@ -300,10 +318,31 @@ impl VectorIndex {
         let mut st = db.conn().prepare_cached(
             "SELECT page_id, vector_embedding FROM notes_blocks WHERE id = ?1 AND vector_embedding IS NOT NULL",
         )?;
-        for id in changed {
-            let row = st.query_row([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))).optional()?;
-            if let Some((page, blob)) = row {
-                self.put(id, page, &rag::decode(&blob));
+        let mut purged = false;
+        for change in changed {
+            // A chunk's row decides: there with its vector, or gone.
+            let id = match change {
+                rag::Change::Stored(id) | rag::Change::Removed(id) => id,
+                rag::Change::Purged => {
+                    purged = true;
+                    continue;
+                }
+            };
+            match st.query_row([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))).optional()? {
+                Some((page, blob)) => self.put(id, page, &rag::decode(&blob)),
+                None => self.remove(id),
+            }
+        }
+        if purged {
+            // Pages deleted for good took their chunks along: keep the rows that are still there.
+            let live: HashSet<i64> = db
+                .conn()
+                .prepare_cached("SELECT id FROM notes_blocks WHERE vector_embedding IS NOT NULL")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let gone: Vec<i64> = self.blocks.iter().copied().filter(|b| !live.contains(b)).collect();
+            for b in gone {
+                self.remove(b);
             }
         }
         self.log_pos = end;

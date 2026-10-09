@@ -420,7 +420,7 @@ fn is_canvas_page(db: &Database, page_id: i64) -> Result<bool> {
 /// Both versions of a conflicted page and their block merge.
 #[tauri::command(async)]
 pub fn git_conflict_get(state: State<AppState>, page_id: i64) -> Result<ConflictView> {
-    let db = state.db();
+    let db = state.reader();
     let c = live(&db)?.into_iter().find(|c| c.page_id == page_id).ok_or_else(no_conflict)?;
     let mine = db.page_doc(page_id)?.content;
     let canvas = is_canvas_page(&db, page_id)?;

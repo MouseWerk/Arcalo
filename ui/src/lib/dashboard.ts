@@ -4,11 +4,12 @@
 // of `dashboard_data` each widget needs, the budget forecast and the week bars.
 
 import { addDays, isoDay, weekStart, weekdayLabels } from "./format";
+import { dayIsOver } from "./cats";
 import { t, type TKey } from "./i18n";
 import { COLS, clampRect, compact, findFree, resizeTo, settle, type MinSize } from "./dashgrid";
 import { emptyQuery, normalizeQuery, type WidgetQuery } from "./dashquery";
 import { LEGACY_BOARD_FORMAT } from "./legacy";
-import type { Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
+import type { AlertLevel, Board, Dashboard, DayOverview, GridWidget, LegacyWidget } from "./types";
 import { timeConfig, WORK_TIME_KINDS, workParts, workTopics, type WorkKind, type WorkPart } from "./workwidgets";
 
 // ------------------------------------------------------------------ catalogue
@@ -815,6 +816,14 @@ export function budgetForecast(b: { planned_hours: number; booked_hours: number 
   return { state: days <= soonDays ? "soon" : "ok", perDay, remaining, days, date };
 }
 
+/** The level a budget's badge shows: one used up at the current pace within two weeks is no longer „Im Plan“
+ * next to its forecast („Aufgebraucht in 11 Tagen“). */
+export function budgetLevel(level: AlertLevel, f: Pick<Forecast, "state">): AlertLevel {
+  if (level !== "ok") return level;
+  if (f.state === "used") return "critical";
+  return f.state === "soon" ? "warning" : level;
+}
+
 // ------------------------------------------------------------------ week bars
 
 export interface WeekBar {
@@ -825,48 +834,54 @@ export interface WeekBar {
   minutes: number;
   /** Bar height, 0..1 of the week's scale (target or the longest day, whichever is larger). */
   fill: number;
+  /** The day has a target. */
   workday: boolean;
   today: boolean;
   future: boolean;
-  /** Missing minutes on a past workday (0 otherwise). */
+  /** The day's target in minutes. */
+  target: number;
+  /** Missing minutes on a day that is over (0 otherwise). */
   gap: number;
 }
 
 export interface WeekSummary {
   bars: WeekBar[];
-  /** Height of the daily target line, 0..1. */
+  /** Height of the target line (the largest day target), 0..1. */
   targetLine: number;
+  /** The largest day target in minutes (where the line sits). */
+  lineMinutes: number;
   bookedMinutes: number;
-  /** Target of all workdays of the week. */
+  /** The targets of the days summed. */
   targetMinutes: number;
-  /** Sum of the gaps of past workdays. */
+  /** Sum of the gaps of the days that are over. */
   gapMinutes: number;
 }
 
 /**
- * Bars for the week starting `monday`: booked minutes per day against the daily target.
- * Gaps count only on past workdays (today is still running, weekends have no target) from
- * `since` on (the first start of a new workspace: the days before it were not missed).
+ * Bars for the week starting `monday`: booked minutes per day against the day's target. `targets`: minutes per
+ * day from the backend (`worktime::DayTargets`: weekday targets, holidays, absences, none before the day a new
+ * workspace was set up), so the start page, the timesheet and the assistant count the same gaps; a gap counts once
+ * the day is over ({@link dayIsOver}).
  */
-export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targetHours: number, workdays: number[], today: Date, labels = weekdayLabels(1), since: string | null = null): WeekSummary {
+export function weekBars(days: Pick<DayOverview, "date" | "booked_minutes">[], monday: Date, targets: number[], now: Date, labels = weekdayLabels(1)): WeekSummary {
   const byDate = new Map(days.map((d) => [d.date, d.booked_minutes]));
-  const target = Math.max(0, targetHours) * 60;
-  const todayIso = isoDay(today);
+  const todayIso = isoDay(now);
   const raw = labels.map((label, i) => {
     const date = isoDay(addDays(monday, i));
     const minutes = Math.max(0, byDate.get(date) ?? 0);
-    const workday = workdays.includes(i + 1);
-    const past = date < todayIso;
-    const gap = workday && past && (!since || date >= since) ? Math.max(0, target - minutes) : 0;
-    return { date, label, minutes, workday, today: date === todayIso, future: date > todayIso, gap };
+    const target = Math.max(0, targets[i] ?? 0);
+    const gap = dayIsOver(date, now) ? Math.max(0, target - minutes) : 0;
+    return { date, label, minutes, workday: target > 0, today: date === todayIso, future: date > todayIso, target, gap };
   });
-  const scale = Math.max(target, ...raw.map((b) => b.minutes), 1);
+  const line = Math.max(0, ...raw.map((b) => b.target));
+  const scale = Math.max(line, ...raw.map((b) => b.minutes), 1);
   const bars = raw.map((b) => ({ ...b, fill: b.minutes / scale }));
   return {
     bars,
-    targetLine: target / scale,
+    targetLine: line / scale,
+    lineMinutes: line,
     bookedMinutes: raw.reduce((a, b) => a + b.minutes, 0),
-    targetMinutes: target * raw.filter((b) => b.workday).length,
+    targetMinutes: raw.reduce((a, b) => a + b.target, 0),
     gapMinutes: raw.reduce((a, b) => a + b.gap, 0),
   };
 }
