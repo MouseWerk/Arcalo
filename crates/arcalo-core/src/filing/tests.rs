@@ -82,7 +82,8 @@ fn type_paths_per_granularity_and_language() {
 fn new_pages_land_in_their_folders_in_both_languages() {
     let db = Database::open_in_memory().unwrap();
     let daily = db.daily_note(day(2026, 10, 2)).unwrap();
-    assert_eq!(path(&db, daily.id), "Journal / 2026 / 10 – Oktober");
+    // A new German workspace files its daily notes under „Tagesnotizen“ (1.16).
+    assert_eq!(path(&db, daily.id), "Tagesnotizen / 2026 / 10 – Oktober");
     // The same month in English finds the German folder by its key; a new month is English.
     let en = with_lang(Language::En, || {
         let a = db.daily_note(day(2026, 10, 3)).unwrap();
@@ -90,7 +91,7 @@ fn new_pages_land_in_their_folders_in_both_languages() {
         (a, b)
     });
     assert_eq!(en.0.parent_id, daily.parent_id);
-    assert_eq!(path(&db, en.1.id), "Journal / 2026 / 11 – November");
+    assert_eq!(path(&db, en.1.id), "Tagesnotizen / 2026 / 11 – November");
     // Newest month first, newest day first.
     let year = db.page(daily.parent_id.unwrap()).unwrap().parent_id.unwrap();
     let months: Vec<String> =
@@ -208,7 +209,10 @@ fn rules_come_first_in_order() {
 fn tidy_up_plans_applies_and_undoes() {
     let db = Database::open_in_memory().unwrap();
     // Before 1.9: daily notes flat in the Journal, a meeting note at the top level of
-    // „Besprechungen“, a page the user put into a folder of their own.
+    // „Besprechungen“, a page the user put into a folder of their own. The settings of then
+    // (without the daily notes' folder) keep „Journal“ when they are migrated.
+    db.conn().execute("INSERT INTO settings (key, value) VALUES ('app', '{\"version\": 8}')", []).unwrap();
+    db.migrate_settings().unwrap();
     let journal = db.create_page(None, "Journal", None).unwrap();
     let d1 = db.create_page(Some(journal.id), "01.09.2026", None).unwrap();
     let d2 = db.create_page(Some(journal.id), "02.10.2026", None).unwrap();

@@ -23,7 +23,7 @@ use crate::ai::provider::{AiProvider, LEGACY_ID};
 use crate::prefs::{StartOpen, StartPrefs, WindowEffect};
 
 /// Version written by this release.
-pub const SETTINGS_VERSION: u32 = 16;
+pub const SETTINGS_VERSION: u32 = 17;
 
 /// One step `from → from + 1`: changes the settings object and says what it did (`None`:
 /// nothing to do for these settings).
@@ -51,6 +51,7 @@ pub const STEPS: [Step; SETTINGS_VERSION as usize] = [
     Step { from: 13, name: "search-by-meaning", run: search_by_meaning },
     Step { from: 14, name: "ai-switch", run: ai_switch },
     Step { from: 15, name: "theme-ids", run: theme_ids },
+    Step { from: 16, name: "daily-folder", run: daily_folder },
 ];
 
 /// What [`migrate`] did.
@@ -411,6 +412,22 @@ fn theme_ids(s: &mut Map<String, Value>) -> Option<String> {
     (!changed.is_empty()).then(|| changed.join(", "))
 }
 
+/// 16 → 17: a new German workspace files its daily notes under „Tagesnotizen“ (1.16), where
+/// „Journal“ was the default in both languages before. Stored settings without the folder keep
+/// „Journal“, the folder their daily notes are in; a stored folder stays.
+fn daily_folder(s: &mut Map<String, Value>) -> Option<String> {
+    let notes = s.entry("notes").or_insert_with(|| Value::Object(Map::new()));
+    if !notes.is_object() {
+        *notes = Value::Object(Map::new());
+    }
+    let notes = notes.as_object_mut()?;
+    if notes.get("daily_folder").and_then(Value::as_str).is_some_and(|f| !f.trim().is_empty()) {
+        return None;
+    }
+    notes.insert("daily_folder".into(), Value::String(crate::notes::JOURNAL_TITLE.into()));
+    Some(format!("notes.daily_folder = {} (as before)", crate::notes::JOURNAL_TITLE))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,8 +541,9 @@ mod tests {
         let mut v: Value = serde_json::from_str(old).unwrap();
         let m = migrate(&mut v);
         let names: Vec<&str> = m.notes.iter().map(|n| n.split(':').next().unwrap()).collect();
-        assert_eq!(names, ["start-open", "ai-providers", "window-effect", "language-choice", "ai-switch"]);
+        assert_eq!(names, ["start-open", "ai-providers", "window-effect", "language-choice", "ai-switch", "daily-folder"]);
         let s = Database::parse_settings(old).unwrap();
+        assert_eq!(s.notes.daily_folder, "Journal", "the daily notes stay where they are");
         assert_eq!(s.start.open, StartOpen::Daily);
         assert_eq!(s.providers.len(), 1);
         assert_eq!(s.providers[0].base_url, "https://llm.firma.de");
@@ -776,11 +794,11 @@ mod tests {
 
     #[test]
     fn work_hours_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 10, "time": {"enabled": true}, "locale": {"language": "de"}, "ai": {"enabled": true}});
+        let mut v = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "time": {"enabled": true}, "locale": {"language": "de"}, "ai": {"enabled": true}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["work-hours: time: work_start, work_end added".to_owned()]);
         assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
-        let mut mine = serde_json::json!({"version": 10, "time": {"work_start": "07:00"}});
+        let mut mine = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "time": {"work_start": "07:00"}});
         migrate(&mut mine);
         assert_eq!(
             (mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()),
@@ -790,7 +808,7 @@ mod tests {
 
     #[test]
     fn the_git_author_of_annalo_becomes_arcalo() {
-        let mut v = serde_json::json!({"version": 11, "locale": {"language": "en"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
+        let mut v = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "locale": {"language": "en"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo", "author_email": "annalo@localhost"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["git-author: git_sync: author_name, author_email of Arcalo".to_owned()]);
         assert_eq!(
@@ -798,20 +816,39 @@ mod tests {
             (Some("Arcalo"), Some("arcalo@localhost"))
         );
         // An author of one's own stays, also when only one part is the old default.
-        let mut mine = serde_json::json!({"version": 11, "git_sync": {"author_name": "Mia Meyer", "author_email": "annalo@localhost"}});
+        let mut mine = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "git_sync": {"author_name": "Mia Meyer", "author_email": "annalo@localhost"}});
         migrate(&mut mine);
         assert_eq!(
             (mine["git_sync"]["author_name"].as_str(), mine["git_sync"]["author_email"].as_str()),
             (Some("Mia Meyer"), Some("arcalo@localhost"))
         );
-        let mut own = serde_json::json!({"version": 11, "locale": {"language": "de"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
+        let mut own = serde_json::json!({"version": 11, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "git_sync": {"author_name": "Annalo Team", "author_email": "team@firma.de"}});
         assert!(migrate(&mut own).notes.is_empty());
         assert_eq!(crate::gitsync::GitSyncSettings::default().author_email, "arcalo@localhost");
     }
 
     #[test]
+    fn existing_settings_keep_the_journal_folder() {
+        // Stored settings without the folder: their daily notes are under „Journal“.
+        let mut v = serde_json::json!({"version": 16, "locale": {"language": "de"}});
+        let m = migrate(&mut v);
+        assert_eq!(m.notes, ["daily-folder: notes.daily_folder = Journal (as before)"]);
+        assert_eq!(v["notes"]["daily_folder"], "Journal");
+        let s = Database::parse_settings(&v.to_string()).unwrap();
+        assert_eq!(s.notes.daily_folder, "Journal");
+        // A folder of one's own (or „Journal“ written before) stays.
+        let mut own = serde_json::json!({"version": 16, "notes": {"daily_folder": "Tagebuch"}});
+        assert!(migrate(&mut own).notes.is_empty());
+        assert_eq!(own["notes"]["daily_folder"], "Tagebuch");
+        // A new German workspace (no stored settings) files under „Tagesnotizen“, an English one
+        // under „Journal“.
+        assert_eq!(Settings::default().notes.daily_folder, "Tagesnotizen");
+        crate::i18n::with_lang(crate::prefs::Language::En, || assert_eq!(Settings::default().notes.daily_folder, "Journal"));
+    }
+
+    #[test]
     fn theme_ids_of_annalo_become_arcalo() {
-        let mut v = serde_json::json!({"version": 15, "appearance": {"theme_light": "annalo-light", "theme_dark": "nord-dark"}});
+        let mut v = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"theme_light": "annalo-light", "theme_dark": "nord-dark"}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["theme-ids: appearance.theme_light = arcalo-light"]);
         assert_eq!(
@@ -820,9 +857,9 @@ mod tests {
         );
         assert_eq!(v["version"], SETTINGS_VERSION);
         // A chosen theme of another name and settings without appearance stay as they are.
-        let mut own = serde_json::json!({"version": 15, "appearance": {"theme_light": "custom-3"}});
+        let mut own = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"theme_light": "custom-3"}});
         assert!(migrate(&mut own).notes.is_empty());
-        assert!(migrate(&mut serde_json::json!({"version": 15})).notes.is_empty());
+        assert!(migrate(&mut serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}})).notes.is_empty());
     }
 
     #[test]
@@ -831,14 +868,14 @@ mod tests {
             {"id": "litellm", "kind": "litellm", "base_url": "https://llm.firma.de"},
             {"id": "ollama", "kind": "ollama", "base_url": "http://localhost:11434", "local": true}
         ]);
-        let mut local = serde_json::json!({"version": 13, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
+        let mut local = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
             "embedding_model": "nomic-embed-text", "embedding_provider": "ollama"});
         let m = migrate(&mut local);
         assert_eq!(m.notes, ["search-by-meaning: search.semantic = automatic (on, local embedding model)"]);
         assert_eq!(local["search"], serde_json::json!({"semantic": null}));
         let s: Settings = serde_json::from_value(local.clone()).unwrap();
         assert!(crate::semantic::plan(&s).active());
-        let mut cloud = serde_json::json!({"version": 13, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
+        let mut cloud = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "providers": providers,
             "embedding_model": "firma-embed", "embedding_provider": "litellm"});
         assert_eq!(
             migrate(&mut cloud).notes,
@@ -847,18 +884,18 @@ mod tests {
         let s: Settings = serde_json::from_value(cloud).unwrap();
         assert_eq!(crate::semantic::plan(&s).inactive, Some(crate::semantic::Inactive::SwitchedOff));
         // A stored choice stays; without an embedding model there is nothing to do.
-        let mut chosen = serde_json::json!({"version": 13, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": "x",
+        let mut chosen = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": "x",
             "search": {"semantic": true}});
         assert!(migrate(&mut chosen).notes.is_empty());
         assert_eq!(chosen["search"]["semantic"], true);
-        let mut none = serde_json::json!({"version": 13, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": null});
+        let mut none = serde_json::json!({"version": 13, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": true}, "embedding_model": null});
         assert!(migrate(&mut none).notes.is_empty());
         assert!(none.get("search").is_none());
     }
 
     #[test]
     fn the_ai_stays_on_for_existing_settings() {
-        let mut v = serde_json::json!({"version": 14, "locale": {"language": "de"}, "ai": {"temperature": 0.5}});
+        let mut v = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"temperature": 0.5}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, ["ai-switch: ai.enabled = true (as before)"]);
         assert_eq!(v["ai"], serde_json::json!({"temperature": 0.5, "enabled": true}));
@@ -866,10 +903,10 @@ mod tests {
         assert!(s.ai.enabled && s.ai_on_with(false));
         assert!(!s.ai_on_with(true), "a policy switches it off whatever is stored");
         // Without an `ai` section (1.6) it is added; a stored choice stays.
-        let mut old = serde_json::json!({"version": 14, "locale": {"language": "de"}});
+        let mut old = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}});
         migrate(&mut old);
         assert_eq!(old["ai"]["enabled"], true);
-        let mut off = serde_json::json!({"version": 14, "locale": {"language": "de"}, "ai": {"enabled": false}});
+        let mut off = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": false}});
         assert!(migrate(&mut off).notes.is_empty());
         assert_eq!(off["ai"]["enabled"], false);
         // New installs start with it on and decide in the setup.
@@ -881,15 +918,15 @@ mod tests {
         use crate::prefs::LanguageChoice;
         // A language picked at the first start (or later) is never switched to the system's.
         for lang in ["de", "en"] {
-            let mut v = serde_json::json!({"version": 12, "locale": {"language": lang, "date_format": "iso"}, "ai": {"enabled": true}});
+            let mut v = serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "locale": {"language": lang, "date_format": "iso"}, "ai": {"enabled": true}});
             assert!(migrate(&mut v).notes.is_empty(), "{lang}");
             assert_eq!(v["locale"]["language"], lang);
         }
         // Missing or unknown read as German before 1.13 and stay German.
         for mut v in [
-            serde_json::json!({"version": 12, "ai": {"enabled": true}}),
-            serde_json::json!({"version": 12, "locale": {"date_format": "iso"}, "ai": {"enabled": true}}),
-            serde_json::json!({"version": 12, "locale": {"language": "fr"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "locale": {"date_format": "iso"}, "ai": {"enabled": true}}),
+            serde_json::json!({"version": 12, "notes": {"daily_folder": "Journal"}, "locale": {"language": "fr"}, "ai": {"enabled": true}}),
         ] {
             let m = migrate(&mut v);
             assert_eq!(m.notes, vec!["language-choice: locale.language: de (as before)".to_owned()], "{v}");
@@ -911,11 +948,11 @@ mod tests {
 
     #[test]
     fn own_addresses_are_added_once_and_kept() {
-        let mut v = serde_json::json!({"version": 9, "mail": {"default_action": "note"}, "locale": {"language": "de"}, "ai": {"enabled": true}});
+        let mut v = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "mail": {"default_action": "note"}, "locale": {"language": "de"}, "ai": {"enabled": true}});
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["own-addresses: mail.own_addresses added".to_owned()]);
         assert_eq!(v["mail"]["own_addresses"], serde_json::json!([]));
-        let mut mine = serde_json::json!({"version": 9, "mail": {"own_addresses": ["ich@firma.de"]}, "locale": {"language": "en"}, "ai": {"enabled": true}});
+        let mut mine = serde_json::json!({"version": 9, "notes": {"daily_folder": "Journal"}, "mail": {"own_addresses": ["ich@firma.de"]}, "locale": {"language": "en"}, "ai": {"enabled": true}});
         assert!(migrate(&mut mine).notes.is_empty());
         assert_eq!(mine["mail"]["own_addresses"], serde_json::json!(["ich@firma.de"]));
     }

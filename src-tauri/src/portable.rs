@@ -87,7 +87,7 @@ pub fn webview_dir(data_dir: &Path) -> Option<PathBuf> {
 /// Why a feature that needs an installation is off.
 pub fn not_portable() -> &'static str {
     arcalo_core::tr!(
-        "Im portablen Modus nicht verfügbar: Arcalo schreibt dann nichts in das Benutzerprofil dieses Rechners",
+        "Im portablen Modus nicht verfügbar: Arcalo schreibt dann nichts in das Benutzerprofil dieses Computers",
         "Not available in portable mode: Arcalo then writes nothing into this computer's user profile"
     )
 }

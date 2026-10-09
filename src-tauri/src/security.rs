@@ -397,7 +397,7 @@ pub fn cipher_recovery_save(path: String, code: String) -> Result<()> {
     DbKey::from_recovery_code(&code)?;
     let text = trf!(
         "Arcalo – Wiederherstellungsschlüssel\n\n{code}\n\nDamit öffnet Arcalo die verschlüsselte Datenbank und ihre Sicherungen, \
-         wenn der Schlüssel auf einem Rechner fehlt. Bewahre diese Datei getrennt vom Rechner auf \
+         wenn der Schlüssel auf einem Computer fehlt. Bewahre diese Datei getrennt vom Computer auf \
          (Passwortmanager, Ausdruck im Schrank). Wer ihn hat, kann die Datenbank lesen.\n",
         "Arcalo – recovery key\n\n{code}\n\nWith it, Arcalo opens the encrypted database and its backups when the key \
          is missing on a computer. Keep this file away from the computer (password manager, a printout in a drawer). \

@@ -53,7 +53,7 @@ fn role_name(i: usize) -> &'static str {
         1 => tr!("Befehlspalette", "Command palette"),
         2 => tr!("Schnellsuche", "Quick search"),
         3 => tr!("Auswahl übernehmen", "Capture selection"),
-        4 => tr!("E-Mail übernehmen", "Take over e-mail"),
+        4 => tr!("E-Mail übernehmen", "Import e-mail"),
         _ => tr!("Sprachnotiz", "Voice note"),
     }
 }
@@ -1210,7 +1210,7 @@ fn parse_shortcut_for(spec: &str, mac: bool) -> std::result::Result<Shortcut, St
     if mac {
         if sc.mods.contains(Modifiers::ALT) && !sc.mods.intersects(Modifiers::CONTROL | Modifiers::SUPER) {
             return Err(trf!(
-                "Tastenkürzel „{spec}“ nicht möglich: ⌥ ohne ⌘ oder Ctrl tippt Zeichen wie @ oder €",
+                "Tastenkürzel „{spec}“ nicht möglich: ⌥ ohne ⌘ oder ⌃ tippt Zeichen wie @ oder €",
                 "The shortcut “{spec}” is not possible: ⌥ without ⌘ or Ctrl types characters like @ or €"
             ));
         }

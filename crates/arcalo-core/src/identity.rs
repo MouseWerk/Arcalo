@@ -470,7 +470,7 @@ pub fn notice(outcomes: &[Outcome]) -> Option<crate::datadir::Notice> {
             Status::Failed(e) => {
                 return Some(crate::datadir::Notice::titled(
                     "warning",
-                    tr!("Datenordner nicht übernommen", "Data folder not taken over"),
+                    tr!("Datenordner nicht übernommen", "Data folder not moved"),
                     trf!(
                         "Der Datenordner {} konnte nicht in den neuen Ordner {} kopiert werden ({e}). Arcalo arbeitet vorerst im bisherigen Ordner weiter und versucht es beim nächsten Start noch einmal.",
                         "The data folder {} could not be copied to the new folder {} ({e}). Arcalo keeps working in the previous folder for now and tries again at the next start.",
@@ -482,10 +482,10 @@ pub fn notice(outcomes: &[Outcome]) -> Option<crate::datadir::Notice> {
             Status::Refreshed { aside, .. } => {
                 return Some(crate::datadir::Notice::titled(
                     "info",
-                    tr!("Daten der älteren Version übernommen", "Data of the older version taken over"),
+                    tr!("Daten der älteren Version übernommen", "Data of the older version kept"),
                     trf!(
                         "Nach der Rückkehr zur älteren Version wurde dort weitergearbeitet: diese Daten wurden übernommen. Der Stand von vorher liegt unverändert in {}.",
-                        "Work continued in the older version after going back to it: that data was taken over. The state from before is kept unchanged in {}.",
+                        "Work continued in the older version after going back to it: that data was kept. The state from before is kept unchanged in {}.",
                         aside.display()
                     ),
                 ));

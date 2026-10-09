@@ -389,17 +389,17 @@ fn layered_set(store: &dyn Backend, file: &SecretFile, account: &str, field: &st
 fn label(kind: &Kind, portable: bool) -> &'static str {
     match kind {
         Kind::Native if cfg!(windows) && portable => arcalo_core::tr!(
-            "Windows-Anmeldeinformationsverwaltung dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
+            "Windows-Anmeldeinformationsverwaltung dieses Computers (portabler Modus: nicht auf dem Datenträger)",
             "Windows Credential Manager of this computer (portable mode: not on the drive)"
         ),
         Kind::Native if cfg!(windows) => "Windows-Anmeldeinformationsverwaltung",
         Kind::Native if portable => arcalo_core::tr!(
-            "macOS-Schlüsselbund dieses Rechners (portabler Modus: nicht auf dem Datenträger)",
+            "macOS-Schlüsselbund dieses Computers (portabler Modus: nicht auf dem Datenträger)",
             "macOS keychain of this computer (portable mode: not on the drive)"
         ),
         Kind::Native => arcalo_core::tr!("macOS-Schlüsselbund", "macOS keychain"),
         Kind::SecretService if portable => arcalo_core::tr!(
-            "Schlüsselbund dieses Rechners (Secret Service; portabler Modus: nicht auf dem Datenträger)",
+            "Schlüsselbund dieses Computers (Secret Service; portabler Modus: nicht auf dem Datenträger)",
             "Keyring of this computer (Secret Service; portable mode: not on the drive)"
         ),
         Kind::SecretService => {

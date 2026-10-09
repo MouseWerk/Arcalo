@@ -14,8 +14,16 @@ use crate::model::Page;
 
 /// Target size of a search/RAG chunk in characters.
 const CHUNK_CHARS: usize = 1200;
-/// Parent page that holds daily notes.
+/// Parent page that holds daily notes: the English name, and the German one of 1.15 and earlier
+/// (existing workspaces keep it).
 pub const JOURNAL_TITLE: &str = "Journal";
+/// The German name of the daily notes' folder in a workspace created with 1.16 or later.
+pub const JOURNAL_TITLE_DE: &str = "Tagesnotizen";
+
+/// The daily notes' folder of a new workspace, in the display language.
+pub fn default_daily_folder() -> &'static str {
+    tr!(JOURNAL_TITLE_DE, JOURNAL_TITLE)
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Backlink {
@@ -893,7 +901,7 @@ mod tests {
         assert_eq!(p.title, "2026-09-23");
         assert_eq!(db.daily_note(d).unwrap().id, p.id);
         assert!(db.page_doc(p.id).unwrap().content.starts_with("## Fokus"));
-        assert!(db.page_path(p.id).unwrap().starts_with(&format!("{JOURNAL_TITLE} / ")));
+        assert!(db.page_path(p.id).unwrap().starts_with(&format!("{JOURNAL_TITLE_DE} / ")));
     }
 
     #[test]

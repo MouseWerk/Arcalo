@@ -79,7 +79,9 @@ impl FileType {
     /// The root folder of a new workspace in German and English (empty: the top level).
     pub fn default_titles(self) -> [&'static str; 2] {
         match self {
-            FileType::Journal => [crate::notes::JOURNAL_TITLE, "Journal"],
+            // „Journal“ was the German name too up to 1.15: an existing folder of that name is
+            // found by the alternative titles.
+            FileType::Journal => [crate::notes::JOURNAL_TITLE_DE, crate::notes::JOURNAL_TITLE],
             FileType::Meeting => [crate::calsync::MEETINGS_TITLE, crate::calsync::MEETINGS_TITLE_EN],
             FileType::Voice => ["Sprachnotizen", "Voice notes"],
             FileType::Jira => ["Jira", "Jira"],
