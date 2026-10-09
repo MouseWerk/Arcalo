@@ -14,7 +14,9 @@
 //!   finds its data, and the update's backups keep their paths. When that older version wrote to
 //!   the old workspace after the copy, the next start copies it again and keeps the folder of
 //!   the new name beside it ([`Status::Refreshed`]). A pair that fails is used from the old
-//!   folder for that start ([`Outcome::usable`]) and tried again at the next one.
+//!   folder for that start ([`Outcome::usable`]) and tried again at the next one. A workspace
+//!   of the new identifier that was set up on its own is marked as such and never replaced by
+//!   an old folder that shows up later.
 //! - [`env_os`] reads `ARCALO_<name>` and falls back to `ANNALO_<name>`.
 //! - [`legacy`] gives the old spelling of a marker or file name (`.arcalo-update` →
 //!   `.annalo-update`) for readers that look for both.
@@ -75,6 +77,9 @@ pub fn legacy_env(name: &str) -> Option<String> {
 pub const MARKER: &str = ".arcalo-migrated.json";
 /// Suffix of the staging folder next to the new folder while a copy runs.
 const STAGING_SUFFIX: &str = ".migrating";
+/// Written into an existing folder of the new identifier before a copy is merged into it, and
+/// removed once the marker is there: a folder left with it holds an unfinished copy.
+const PARTIAL: &str = ".arcalo-copying";
 
 /// How a folder of the old identifier is taken over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,8 +239,33 @@ fn retarget_locations(outcomes: &[Outcome]) {
     }
 }
 
+/// Whether the workspace in `to` (without a marker) came from an unfinished copy of `from`, not
+/// from a start of its own: it has the marker of a merge that did not finish ([`PARTIAL`]) or a
+/// file only 1.14 and earlier write (`.annalo-health`, `.annalo-update`, …; a 1.15 copy that
+/// failed before its marker was written). A workspace without such a trace is never set aside.
+fn unfinished_copy(to: &Path) -> bool {
+    let legacy_prefix = format!(".{LEGACY_NAME}-");
+    to.join(PARTIAL).is_file()
+        || fs::read_dir(to)
+            .is_ok_and(|entries| entries.flatten().any(|e| e.file_name().to_string_lossy().starts_with(&legacy_prefix)))
+}
+
+/// Marks a workspace of the new identifier that was started on its own (no old folder at its
+/// start): a folder of the old identifier showing up later is never copied over it.
+fn mark_own(to: &Path) -> Result<()> {
+    write_record(to, &Record { from: String::new(), at: chrono::Utc::now().to_rfc3339(), stamp: None })
+}
+
 fn migrate_one(pair: &Pair) -> Status {
+    let own = pair.mode == Mode::Copy
+        && pair.to.join(crate::datadir::DB_FILE).is_file()
+        && read_record(&pair.to).is_none()
+        && !unfinished_copy(&pair.to);
     if !pair.from.is_dir() {
+        if own {
+            // Tried again at the next start when it fails.
+            let _ = mark_own(&pair.to);
+        }
         return Status::Nothing;
     }
     if pair.mode == Mode::Move {
@@ -261,10 +291,17 @@ fn migrate_one(pair: &Pair) -> Status {
             return Status::Failed(Error::file(&pair.to, e).to_string());
         }
         aside = Some(target);
+    } else if own {
+        // A workspace of its own (set up new with 1.15 or later, before the marker for that
+        // existed) and an old folder that showed up afterwards (an older version started once,
+        // a restored backup): the workspace in use stays as it is.
+        // Marked again at the next start when that fails; the folder in use is the new one.
+        let _ = mark_own(&pair.to);
+        return Status::Done;
     } else if pair.to.join(crate::datadir::DB_FILE).is_file() {
-        // A workspace without the marker: an earlier copy that failed after it was put in place
-        // (the marker not written). That start worked in the old folder, so this copy is stale;
-        // merged, it would hide that work for good. It is set aside like a refreshed one.
+        // An unfinished copy (see [`unfinished_copy`]): an earlier copy that failed after it was
+        // put in place. That start worked in the old folder, so this copy is stale; merged, it
+        // would hide that work for good. It is set aside like a refreshed one.
         let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
         let target = pair.to.with_file_name(format!("{IDENTIFIER}.{stamp}"));
         if let Err(e) = fs::rename(&pair.to, &target) {
@@ -314,10 +351,18 @@ fn copy_verified(from: &Path, to: &Path) -> Result<(usize, u64, Vec<String>)> {
         let record =
             Record { from: from.display().to_string(), at: chrono::Utc::now().to_rfc3339(), stamp: before.clone() };
         write_record(&staging, &record)?;
+        let merge = to.exists();
+        if merge {
+            fs::write(to.join(PARTIAL), b"").at(to.join(PARTIAL))?;
+        }
         let kept = commit(&staging, to)?;
         if read_record(to).as_ref() != Some(&record) {
             // Merged into a folder that had one (or something in its place).
             write_record(to, &record)?;
+        }
+        if merge {
+            // Left behind it changes nothing: the marker is there.
+            let _ = fs::remove_file(to.join(PARTIAL));
         }
         Ok((files, bytes, kept.into_iter().filter(|k| k != MARKER).collect()))
     })();
@@ -364,7 +409,7 @@ const SKIPPED: [&str; 12] = [
 /// Whether the entry `name` below `rel` is left out of the copy: WebView caches (only inside the
 /// WebView's own folders, never a user's folder of that name), staging folders and this marker.
 fn skipped(rel: &Path, name: &str) -> bool {
-    if rel.as_os_str().is_empty() && (name == MARKER || name.ends_with(STAGING_SUFFIX)) {
+    if rel.as_os_str().is_empty() && (name == MARKER || name == PARTIAL || name.ends_with(STAGING_SUFFIX)) {
         return true;
     }
     let in_webview = rel.components().next().is_some_and(|c| c.as_os_str() == "EBWebView");
@@ -728,6 +773,7 @@ mod tests {
         let Status::Copied { kept, .. } = &out[0].status else { panic!("{:?}", out[0].status) };
         assert_eq!(kept, &["secrets.json"]);
         assert_eq!(fs::read(new.join("secrets.json")).unwrap(), b"{}", "never overwritten");
+        assert!(!new.join(PARTIAL).exists());
         assert_eq!(
             Database::open(new.join(crate::datadir::DB_FILE)).unwrap().page_doc(id).unwrap().content,
             "geschrieben mit 1.14"
@@ -806,6 +852,76 @@ mod tests {
             "in der Ausweich-Sitzung geschrieben"
         );
         assert_eq!(migrate(&pair)[0].status, Status::Done);
+        assert!(!new.join(PARTIAL).exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A workspace set up new under the new identifier, with a page.
+    fn own_workspace(new: &Path) -> i64 {
+        fs::create_dir_all(new).unwrap();
+        let db = Database::open(new.join(crate::datadir::DB_FILE)).unwrap();
+        let page = db.create_page(None, "Echte Arbeit", None).unwrap();
+        db.save_page_content(page.id, "im neuen Ordner").unwrap();
+        db.checkpoint().unwrap();
+        page.id
+    }
+
+    fn content(dir: &Path, id: i64) -> String {
+        Database::open(dir.join(crate::datadir::DB_FILE)).unwrap().page_doc(id).unwrap().content
+    }
+
+    #[test]
+    fn an_old_folder_showing_up_later_never_replaces_a_new_workspace() {
+        let base = tmp("own-later");
+        let new = base.join(IDENTIFIER);
+        let id = own_workspace(&new);
+        let pair = pairs(&[(base.clone(), Mode::Copy)]);
+        // Started without an old folder: marked as a workspace of its own.
+        assert_eq!(migrate(&pair)[0].status, Status::Nothing);
+        assert!(read_record(&new).is_some_and(|r| r.from.is_empty() && r.stamp.is_none()));
+        // An older version is started once (or a backup restores its folder).
+        layout_114(&base);
+        assert_eq!(migrate(&pair)[0].status, Status::Done);
+        assert_eq!(content(&new, id), "im neuen Ordner");
+        assert_eq!(migrate(&pair)[0].status, Status::Done);
+        assert!(notice(&migrate(&pair)).is_none());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_new_workspace_from_before_the_mark_is_kept_when_an_old_folder_shows_up() {
+        // Set up with 1.15 or 1.16.0 (no mark written then); the old folder appears afterwards.
+        let base = tmp("own-unmarked");
+        let new = base.join(IDENTIFIER);
+        let id = own_workspace(&new);
+        layout_114(&base);
+        let pair = pairs(&[(base.clone(), Mode::Copy)]);
+        let out = migrate(&pair);
+        assert_eq!(out[0].status, Status::Done);
+        assert_eq!(out[0].usable(), new);
+        assert_eq!(content(&new, id), "im neuen Ordner");
+        assert!(!new.join(".annalo-update").exists(), "nothing merged in");
+        let siblings: Vec<_> = fs::read_dir(&base).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(siblings.len(), 2, "nothing set aside: {siblings:?}");
+        assert_eq!(migrate(&pair)[0].status, Status::Done);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_copy_of_115_without_its_marker_is_recognised_by_the_old_files() {
+        // 1.15 renamed the copy into place and then failed to write the marker.
+        let base = tmp("copy-115");
+        let (old, id) = layout_114(&base);
+        let new = base.join(IDENTIFIER);
+        copy_tree(&old, &new, Path::new("")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let db = Database::open(old.join(crate::datadir::DB_FILE)).unwrap();
+        db.save_page_content(id, "in der Ausweich-Sitzung geschrieben").unwrap();
+        db.checkpoint().unwrap();
+        drop(db);
+        let out = migrate(&pairs(&[(base.clone(), Mode::Copy)]));
+        assert!(matches!(out[0].status, Status::Refreshed { .. }), "{:?}", out[0].status);
+        assert_eq!(content(&new, id), "in der Ausweich-Sitzung geschrieben");
         let _ = fs::remove_dir_all(&base);
     }
 
