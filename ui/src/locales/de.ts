@@ -6047,6 +6047,7 @@ export const de: Catalog = {
   "mob.time.discard": "Verwerfen",
   "mob.time.stopped": "{time} auf {ref} gebucht",
   "mob.time.tooShort": "Weniger als eine Minute: nichts gebucht",
+  "mob.time.clockBack": "Gestoppt ohne Dauer: die Uhr wurde zurückgestellt. Trag die Zeit am Computer ein.",
   "mob.time.book": "Buchen",
   "mob.time.newBooking": "Neue Buchung",
   "mob.time.reference": "Netzplan und Vorgang",

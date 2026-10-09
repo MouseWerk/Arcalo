@@ -6049,6 +6049,7 @@ export const en = {
   "mob.time.discard": "Discard",
   "mob.time.stopped": "{time} booked on {ref}",
   "mob.time.tooShort": "Less than a minute: nothing booked",
+  "mob.time.clockBack": "Stopped without a duration: the clock was set back. Enter the time on the computer.",
   "mob.time.book": "Book",
   "mob.time.newBooking": "New booking",
   "mob.time.reference": "Network and activity",

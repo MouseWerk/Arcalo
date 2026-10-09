@@ -285,21 +285,13 @@ fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: b
     Ok(page)
 }
 
-/// Stops the timer; its booking (one per day over midnight) goes into the daily note as a chip.
+/// Stops the timer; its booking (one per day over midnight) goes into the daily note as a chip
+/// ([`companion::stop_timer`]).
 #[tauri::command(async)]
 fn mobile_timer_stop(app: AppHandle, state: State<AppState>) -> Result<Vec<arcalo_core::model::TimeEntry>> {
-    let now = Utc::now();
     let db = state.db();
-    let entries = db.stop_timer_in(now, &[], &Local)?;
+    let kept = companion::stop_timer(&db, Utc::now(), &Local)?;
     lock(&state.idle).reset();
-    // Less than a minute: nothing is booked (as on the desktop).
-    let kept = if entries.len() == 1 && entries[0].duration_minutes.unwrap_or(0) < 1 {
-        db.delete_time_entry(entries[0].id)?;
-        vec![]
-    } else {
-        companion::add_chips(&db, &entries, &Local)?;
-        entries
-    };
     drop(db);
     let _ = app.emit("data://entries", ());
     Ok(kept)
