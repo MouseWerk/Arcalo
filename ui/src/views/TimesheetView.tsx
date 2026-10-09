@@ -10,9 +10,9 @@ import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRa
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
-import { useTimerSeconds, stopTimer, toggleTimerPause } from "../components/Sidebar";
+import { TimerClock, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
 import { catsDecimalSep, catsGrid, dayTargets, undeletableReason, weekGaps } from "../lib/cats";
 import { workApi, type Absence, type Holiday } from "../lib/workwidgets";
@@ -219,7 +219,6 @@ function Stat({ label, value, tone, sub }: { label: string; value: string; tone?
 function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }) {
   const t = useT();
   const timer = useApp((s) => s.timer);
-  const seconds = useTimerSeconds();
   const [np, setNp] = useState<number | null>(() => {
     const v = localStorage.getItem("arcalo.timer.np");
     return v ? +v : null;
@@ -284,7 +283,9 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         <div className="timer-live">
           <span className={paused ? "pause-dot big" : "rec-dot big"} aria-hidden />
           <div>
-            <div className="timer-clock num">{clock(seconds)}</div>
+            <div className="timer-clock num">
+              <TimerClock />
+            </div>
             <div className="timer-what">
               <span className="mono">
                 {n?.netzplan_nr}

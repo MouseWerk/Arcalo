@@ -190,7 +190,7 @@
 .dw-next { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px 4px 10px; border-radius: var(--r-md); background: var(--bg-hover); font-size: var(--fs-sm); }
 .dw-next.muted { color: var(--text-3); }
 .dw-next-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
-.dw-next.live .dw-next-dot { background: var(--danger); animation: pulse 2s infinite; }
+.dw-next.live .dw-next-dot { position: relative; background: var(--danger); }
 .dw-next-when { font-weight: var(--fw-semibold); white-space: nowrap; }
 .dw-next-title { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .dw-next-title:hover { text-decoration: underline; }

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { buildExtensions, toMarkdown } from "./schema";
 import { chipMarkdown, chipStatuses, chipsIn, hoursAttr, staleAttrs } from "./timeChip";
-import { timerSeconds } from "../components/Sidebar";
+import { onSecondTick, secondTickRunning, timerSeconds } from "../components/Sidebar";
 import type { TimeEntryRow, TimerStatus } from "../lib/types";
 
 const row = (over: Partial<TimeEntryRow> = {}) =>
@@ -75,5 +75,43 @@ describe("timer seconds", () => {
     expect(timerSeconds(status({}), at("09:00"))).toBe(3600);
     expect(timerSeconds(status({ paused_seconds: 600 }), at("09:00"))).toBe(3000);
     expect(timerSeconds(status({ paused_seconds: 600, paused_since: "2026-10-02T08:30:00Z" }), at("12:00"))).toBe(1200);
+  });
+});
+
+// Every timer display shares one second tick, which stops while the window is hidden (a running timer kept
+// a CPU core busy before).
+describe("second tick", () => {
+  it("runs one interval for all displays and none while hidden", () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(globalThis, "setInterval");
+    let hidden = false;
+    const vis = vi.spyOn(document, "visibilityState", "get").mockImplementation(() => (hidden ? "hidden" : "visible"));
+    try {
+      const a = vi.fn();
+      const b = vi.fn();
+      const offA = onSecondTick(a);
+      const offB = onSecondTick(b);
+      expect(spy).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(3000);
+      expect(a.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(b.mock.calls.length).toBeGreaterThanOrEqual(3);
+      hidden = true;
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(secondTickRunning()).toBe(false);
+      const n = a.mock.calls.length;
+      vi.advanceTimersByTime(5000);
+      expect(a.mock.calls.length).toBe(n);
+      hidden = false;
+      document.dispatchEvent(new Event("visibilitychange"));
+      // Back: at once, then each second.
+      expect(a.mock.calls.length).toBe(n + 1);
+      offA();
+      offB();
+      expect(secondTickRunning()).toBe(false);
+    } finally {
+      vis.mockRestore();
+      spy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

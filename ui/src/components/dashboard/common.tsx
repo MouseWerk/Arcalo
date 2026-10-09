@@ -5,14 +5,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CalendarPlus, Pause, Play, Repeat, Square, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import { useApp } from "../../store/app";
-import { clock, fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
+import { fmtMinutes, formatPrefs, isoDay, relative } from "../../lib/format";
 import { t } from "../../lib/i18n";
 import type { Page, Task, TimeEntryRow } from "../../lib/types";
 import { Badge, Button, IconButton, Spinner } from "../ui";
 import { openPlanPicker, setPlanData, type PlanItem } from "../../lib/blocks";
 import { recurLabel } from "../../lib/tasks";
 import { PageIcon } from "../icons";
-import { stopTimer, toggleTimerPause, useTimerSeconds } from "../Sidebar";
+import { TimerClock, stopTimer, toggleTimerPause } from "../Sidebar";
 
 export const s = useApp.getState;
 
@@ -165,7 +165,6 @@ export function Ring({ value, size = 64, stroke = 6, tone = "accent", children, 
 /** The running timer with „Stoppen“, or a quick start on the last references. */
 export function TimerBlock({ refs, compact }: { refs: TimeEntryRow[] | undefined; compact?: boolean }) {
   const timer = useApp((st) => st.timer);
-  const seconds = useTimerSeconds();
   const start = async (r: TimeEntryRow) => {
     try {
       await api.timerStart(r.netzplan_id, r.vorgang_nr, r.leistungsart, r.description);
@@ -182,7 +181,9 @@ export function TimerBlock({ refs, compact }: { refs: TimeEntryRow[] | undefined
       <div className={`dw-timer running${paused ? " paused" : ""}`}>
         <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
         <div className="grow dw-timer-main">
-          <span className="num dw-big">{clock(seconds)}</span>
+          <span className="num dw-big">
+            <TimerClock />
+          </span>
           <span className="faint ellipsis">{paused ? t("timer.paused") : e.description || e.vorgang_nr || t("dash.w.timer")}</span>
         </div>
         <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} onClick={() => void toggleTimerPause()} />

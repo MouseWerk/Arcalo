@@ -1247,6 +1247,37 @@ function TreeRename({ node, onDone }: { node: PageNode; onDone: (refocus: boolea
 
 // ------------------------------------------------------------- timer dock
 
+// One second tick for every timer display: a single interval for all of them, none while no running timer is
+// shown or the window is hidden (on return it ticks at once).
+const tickers = new Set<() => void>();
+let tickId: ReturnType<typeof setInterval> | null = null;
+let tickWatch = false;
+function syncTicker() {
+  const want = tickers.size > 0 && document.visibilityState !== "hidden";
+  if (want && tickId == null) {
+    tickId = setInterval(() => tickers.forEach((f) => f()), 1000);
+    tickers.forEach((f) => f());
+  } else if (!want && tickId != null) {
+    clearInterval(tickId);
+    tickId = null;
+  }
+}
+/** Calls `f` once a second while the window is visible; returns the unsubscribe. */
+export function onSecondTick(f: () => void): () => void {
+  if (!tickWatch) {
+    tickWatch = true;
+    document.addEventListener("visibilitychange", syncTicker);
+  }
+  tickers.add(f);
+  syncTicker();
+  return () => {
+    tickers.delete(f);
+    syncTicker();
+  };
+}
+/** Whether the shared second tick runs (tests). */
+export const secondTickRunning = () => tickId != null;
+
 export function useTimerSeconds() {
   const timer = useApp((s) => s.timer);
   const [now, setNow] = useState(Date.now());
@@ -1255,10 +1286,14 @@ export function useTimerSeconds() {
     setNow(Date.now());
     // Paused: the clock stands still.
     if (timer.paused_since) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    return onSecondTick(() => setNow(Date.now()));
   }, [timer]);
   return timer ? timerSeconds(timer, now) : 0;
+}
+
+/** The running timer as „01:23:45“. Only this text re-renders each second, not the panel around it. */
+export function TimerClock() {
+  return <>{clock(useTimerSeconds())}</>;
 }
 
 /** Worked seconds of a running timer at `now`: the pauses are left out, a paused one stands still. */
@@ -1284,7 +1319,6 @@ export async function toggleTimerPause() {
 function TimerDock() {
   const t = useT();
   const timer = useApp((s) => s.timer);
-  const seconds = useTimerSeconds();
   // A timer left running stays in the data, but is not shown while time tracking is off.
   const timeOn = useTimeTracking();
   if (!timer || !timeOn) return null;
@@ -1294,7 +1328,9 @@ function TimerDock() {
     <div className={`timer-dock${paused ? " paused" : ""}`} role="status">
       <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
       <button type="button" className="timer-dock-main" onClick={() => useApp.getState().openTab({ kind: "timesheet" })}>
-        <span className="timer-dock-time num">{clock(seconds)}</span>
+        <span className="timer-dock-time num">
+          <TimerClock />
+        </span>
         <span className="timer-dock-label">{paused ? t("timer.paused") : e.description || `${e.vorgang_nr ?? "Timer"}`}</span>
       </button>
       <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} size="md" onClick={() => void toggleTimerPause()} />

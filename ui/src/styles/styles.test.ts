@@ -165,3 +165,43 @@ describe("selection and focus look", () => {
     }
   });
 });
+
+// An endless animation of anything but opacity or transform repaints every frame (a box-shadow pulse on the
+// timer dot kept a CPU core busy for as long as a timer ran). Endless loops are for short waits only; a dot
+// that stays on screen for hours (timer, recording, a meeting now) pulses a few times and then stands still.
+const ENDLESS_PAINT_OK: [string, string][] = [["rich-shimmer", "the placeholder of a diagram while it renders"]];
+
+describe("endless animations", () => {
+  const dir = resolve(__dirname);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".css"));
+  const css = files.map((f) => readFileSync(resolve(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")).join("\n");
+  const keyframes = new Map<string, string>();
+  for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/g)) keyframes.set(m[1], m[2]);
+  const rules = [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map((m) => ({ selector: m[1].replace(/\s+/g, " ").trim(), body: m[2] }));
+  const endless = rules.flatMap(({ selector, body }) =>
+    [...body.matchAll(/animation(?:-name)?\s*:\s*([^;]+)/g)]
+      .map((a) => a[1])
+      .filter((v) => /\binfinite\b/.test(v))
+      .map((v) => ({ selector, name: v.split(/[\s,]+/).find((w) => keyframes.has(w)) ?? "" })),
+  );
+
+  it("are found by the check", () => {
+    expect(keyframes.size).toBeGreaterThan(5);
+    expect(endless.length).toBeGreaterThan(3);
+  });
+
+  it("loop only opacity and transform", () => {
+    const bad: string[] = [];
+    for (const { selector, name } of endless) {
+      if (ENDLESS_PAINT_OK.some(([n]) => n === name)) continue;
+      const props = [...(keyframes.get(name) ?? "?:").matchAll(/([\w-]+)\s*:/g)].map((p) => p[1]);
+      if (!name || props.some((p) => p !== "opacity" && p !== "transform")) bad.push(`${selector} (${name || "unknown keyframes"})`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("never run on the live dots", () => {
+    const live = /rec-dot|voice-dot|dw-next-dot/;
+    expect(rules.filter((r) => live.test(r.selector) && /animation[^;]*\binfinite\b/.test(r.body)).map((r) => r.selector)).toEqual([]);
+  });
+});

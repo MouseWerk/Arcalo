@@ -8,9 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
-import { clock, h1, int, usd } from "../lib/format";
+import { h1, int, usd } from "../lib/format";
 import { shortenPaths } from "../lib/api";
-import { useTimerSeconds, stopTimer } from "./Sidebar";
+import { TimerClock, stopTimer } from "./Sidebar";
 import { useTimeTracking } from "../lib/timetracking";
 import { useAi } from "../lib/aiswitch";
 import { Onboarding } from "./Onboarding";
@@ -113,7 +113,6 @@ export function StatusBar() {
   const timer = useApp((s) => s.timer);
   const meter = useApp((s) => s.meter);
   const settings = useApp((s) => s.settings);
-  const seconds = useTimerSeconds();
   const timeOn = useTimeTracking();
   const ai = useAi();
   const s = useApp.getState;
@@ -127,7 +126,9 @@ export function StatusBar() {
       {!timeOn ? null : timer ? (
         <button type="button" className={`sb-item sb-timer${timer.paused_since ? " paused" : ""}`} onClick={() => stopTimer()} title={t("status.stopTimer")}>
           <span className={timer.paused_since ? "pause-dot" : "rec-dot"} aria-hidden />
-          <span className="num">{clock(seconds)}</span>
+          <span className="num">
+            <TimerClock />
+          </span>
           {timer.paused_since && <span className="faint">{t("timer.paused")}</span>}
           <span className="faint">{timer.entry.vorgang_nr ? `${timer.entry.vorgang_nr}` : ""}</span>
           {timer.idle_minutes > 0 && <span className="sb-warn">{t("status.idle", { n: timer.idle_minutes })}</span>}
