@@ -1307,8 +1307,8 @@ pub fn periodic(app: &AppHandle) {
     } else {
         let db = state.db();
         // Today's target: the weekday's, none on a public holiday or absence day, half on a half one.
-        let base = (settings.daily_target_hours.max(0.0) * 60.0).round() as i64;
-        let target = arcalo_core::worktime::gap_target(&db, now.date(), base).unwrap_or(base);
+        let target = arcalo_core::worktime::gap_target(&db, &settings, now.date())
+            .unwrap_or_else(|_| arcalo_core::worktime::weekday_minutes(&settings, now.date()));
         let eod = booked_today(&db).ok().and_then(|booked| {
             core::end_of_day_reminder(now, &settings, booked, target, meta_date(&db, "reminder.day"))
         });

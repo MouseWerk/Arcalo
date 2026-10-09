@@ -3,7 +3,7 @@ use crate::calsync::{Busy, NewEvent};
 use crate::model::{EntrySource, NewTimeEntry};
 use crate::prefs::Language;
 use crate::timeblocks::NewBlock;
-use crate::worktime::AbsenceKind;
+use crate::worktime::{Absence, AbsenceKind};
 use chrono_tz::Europe::Berlin;
 
 fn day(y: i32, m: u32, d: u32) -> NaiveDate {

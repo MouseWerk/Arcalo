@@ -59,7 +59,7 @@ describe("review block", () => {
     expect(md.endsWith(REVIEW_CLOSE)).toBe(true);
     expect(md).toContain("**Zeit:** 6,5 h von 8 h gebucht, 1,5 h fehlen");
     expect(md).toContain("- NP-8801/1020 Schnittstellen: 5 h\n- NP-8801 Integration: 1,5 h");
-    expect(md).toContain("**Lücken:** 10:30–13:00");
+    expect(md).toContain("**Ohne Buchung:** 10:30–13:00");
     expect(md).toContain("**Termine:** Jour fixe 09:00 (gebucht) · Kundentermin 11:00 (nicht gebucht)");
     expect(md).toContain("**Seiten:** [[Konzept Portal]] (neu) · Alt x");
     expect(md).not.toContain("[[24.09.2026]]");

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Page, SettingsView } from "../lib/types";
-import { firstSteps, hideFirstSteps, showFirstSteps, startedOn, useFirstSteps, type Stored } from "./firststeps";
+import { firstSteps, hideFirstSteps, showFirstSteps, useFirstSteps, type Stored } from "./firststeps";
 import { weekBars } from "../lib/dashboard";
 import { weekGaps } from "../lib/cats";
+import { isoDay } from "../lib/format";
 
 const since = "2026-10-07T09:00:00.000Z";
 const stored: Stored = { since, clicked: [], hidden: false };
@@ -42,19 +43,18 @@ describe("Erste Schritte", () => {
   it("is shown after the first setup, hidden on request, and remembers the day", () => {
     showFirstSteps(new Date(2026, 9, 7, 11));
     expect(useFirstSteps.getState().stored).toMatchObject({ clicked: [], hidden: false });
-    expect(startedOn()).toBe("2026-10-07");
+    expect(useFirstSteps.getState().stored?.since).toBe(new Date(2026, 9, 7, 11).toISOString());
     hideFirstSteps();
     expect(useFirstSteps.getState().stored?.hidden).toBe(true);
   });
 
-  it("does not count the days before the first start as missing time", () => {
+  it("does not count the days before the first start as missing time (no target there from the backend)", () => {
     const monday = new Date(2026, 9, 5);
     const days = [0, 1, 2, 3, 4].map((i) => ({ date: `2026-10-0${5 + i}`, booked_minutes: 0 }));
     const now = new Date(2026, 9, 9, 12);
-    expect(weekBars(days, monday, 8, [1, 2, 3, 4, 5], now).bars.filter((b) => b.gap > 0).length).toBe(4);
-    expect(weekBars(days, monday, 8, [1, 2, 3, 4, 5], now, undefined, "2026-10-07").bars.filter((b) => b.gap > 0).map((b) => b.date)).toEqual(["2026-10-07", "2026-10-08"]);
-    const targets = [480, 480, 480, 480, 480, 0, 0];
-    expect(weekGaps([], monday, now, targets).length).toBe(4);
-    expect(weekGaps([], monday, now, targets, "2026-10-08").length).toBe(1);
+    // `day_targets` of a workspace set up on Wednesday 7 October: nothing before it.
+    const targets = [0, 0, 480, 480, 480, 0, 0];
+    expect(weekBars(days, monday, targets, now).bars.filter((b) => b.gap > 0).map((b) => b.date)).toEqual(["2026-10-07", "2026-10-08"]);
+    expect(weekGaps([], monday, now, targets).map((g) => isoDay(g.day))).toEqual(["2026-10-07", "2026-10-08"]);
   });
 });

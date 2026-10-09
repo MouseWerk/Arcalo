@@ -24,7 +24,6 @@ use crate::db::{Database, parse_ts, ts};
 use crate::error::{Error, Result};
 use crate::feed::day_start;
 use crate::focus::hm;
-use crate::tasks::{TaskFilter, TaskStatus};
 
 /// Estimated editing time per save (autosave), as in the week proposal, and the most one
 /// hour's edits of a page count.
@@ -50,6 +49,15 @@ pub struct ReviewOptions {
 impl ReviewOptions {
     pub fn from_settings(s: &crate::settings::Settings, sources: Option<Vec<String>>, now: DateTime<Utc>) -> Self {
         ReviewOptions { daily_target_hours: s.daily_target_hours, workdays: s.workdays.clone(), sources, now }
+    }
+
+    /// The stored settings with this daily target and these workdays (what the targets of
+    /// [`crate::worktime::DayTargets`] are computed from).
+    pub fn settings(&self, db: &Database) -> crate::settings::Settings {
+        let mut s = db.load_settings().unwrap_or_default();
+        s.daily_target_hours = self.daily_target_hours;
+        s.workdays = self.workdays.clone();
+        s
     }
 }
 
@@ -303,6 +311,22 @@ pub fn gaps(mut spans: Vec<(DateTime<Utc>, DateTime<Utc>)>) -> Vec<ReviewGap> {
 
 /// The review of the local day `date` in `tz`.
 pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &ReviewOptions) -> Result<DayReview> {
+    let settings = opts.settings(db);
+    let targets = crate::worktime::DayTargets::load(db, &settings, date, date)?;
+    review_day(db, date, tz, opts, &settings, &targets, true)
+}
+
+/// [`day_review`] with the targets loaded by the caller; `open_tasks`: also the tasks still open
+/// and due that day or before (the week review reads those once for the whole week).
+pub(crate) fn review_day<Tz: TimeZone>(
+    db: &Database,
+    date: NaiveDate,
+    tz: &Tz,
+    opts: &ReviewOptions,
+    settings: &crate::settings::Settings,
+    targets: &crate::worktime::DayTargets,
+    open_tasks: bool,
+) -> Result<DayReview> {
     let next = date
         .succ_opt()
         .ok_or_else(|| Error::State(tr!("Datum außerhalb des gültigen Bereichs", "Date out of range").into()))?;
@@ -355,13 +379,12 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
     }
 
     // ---- time: finished entries starting that day, and a running timer.
-    let mut time =
-        ReviewTime { workday: opts.workdays.contains(&date.weekday().number_from_monday()), ..Default::default() };
-    if time.workday {
-        // A public holiday or an absence day has less or no target (it is no gap).
-        time.target_minutes =
-            crate::worktime::gap_target(db, date, (opts.daily_target_hours.max(0.0) * 60.0).round() as i64)?;
-    }
+    // A public holiday or an absence day has less or no target (it is no gap).
+    let mut time = ReviewTime {
+        workday: crate::worktime::weekday_minutes(settings, date) > 0,
+        target_minutes: targets.get(date),
+        ..Default::default()
+    };
     {
         let mut st = c.prepare_cached(
             "SELECT e.id, e.netzplan_id, e.vorgang_nr, e.start_time, e.duration_minutes, e.description, e.status_flag,
@@ -462,20 +485,27 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
     for t in &mut added {
         t.done = done_keys.contains(&(t.page_id, t.text.as_str()));
     }
-    let open =
-        db.list_tasks(&TaskFilter { status: TaskStatus::Open, due_before: Some(key.clone()), ..Default::default() })?;
-    let (due, overdue): (Vec<ReviewTask>, Vec<ReviewTask>) = open
-        .into_iter()
-        .filter(|t| t.due.is_some())
-        .map(|t| ReviewTask {
-            page_id: Some(t.page_id),
-            page_title: t.page_title,
-            text: t.text,
-            at: None,
-            due: t.due,
-            done: false,
-        })
-        .partition(|t| t.due.as_deref() == Some(key.as_str()));
+    // Only the first tasks of each list are read; the totals are counted in SQLite.
+    let open = |from: Option<&str>, before: &str| -> Result<(Vec<ReviewTask>, i64)> {
+        if !open_tasks {
+            return Ok((vec![], 0));
+        }
+        let (list, total) = db.open_tasks_due(from, before, MAX_TASKS)?;
+        let list = list
+            .into_iter()
+            .map(|t| ReviewTask {
+                page_id: Some(t.page_id),
+                page_title: t.page_title,
+                text: t.text,
+                at: None,
+                due: t.due,
+                done: false,
+            })
+            .collect();
+        Ok((list, total))
+    };
+    let (due, due_total) = open(Some(&key), &next.format("%Y-%m-%d").to_string())?;
+    let (overdue, overdue_total) = open(None, &key)?;
     let cap = |mut v: Vec<ReviewTask>| {
         v.truncate(MAX_TASKS);
         v
@@ -483,12 +513,12 @@ pub fn day_review<Tz: TimeZone>(db: &Database, date: NaiveDate, tz: &Tz, opts: &
     let tasks = ReviewTasks {
         done_total: done.len() as i64,
         added_total: added.len() as i64,
-        due_total: due.len() as i64,
-        overdue_total: overdue.len() as i64,
+        due_total,
+        overdue_total,
         done: cap(done),
         added: cap(added),
-        due: cap(due),
-        overdue: cap(overdue),
+        due,
+        overdue,
     };
 
     // ---- meetings of the calendar sources.

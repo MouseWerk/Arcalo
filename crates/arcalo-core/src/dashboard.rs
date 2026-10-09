@@ -173,7 +173,11 @@ pub struct TasksData {
 pub struct WeekDay {
     pub date: NaiveDate,
     pub minutes: i64,
+    /// The weekday has a target.
     pub workday: bool,
+    /// The day's target ([`crate::worktime::DayTargets`]: none on a holiday, an absence day or
+    /// before the workspace existed).
+    pub target_minutes: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -192,6 +196,7 @@ pub struct WeekData {
     pub days: Vec<WeekDay>,
     /// Most booked first.
     pub wbs: Vec<WeekWbs>,
+    /// The targets of the days summed.
     pub target_minutes: i64,
 }
 
@@ -300,6 +305,8 @@ pub struct SuggestionData {
     pub worst_budget: Option<String>,
     /// Booked minutes Monday..Sunday of this week.
     pub week_minutes: Vec<i64>,
+    /// The targets of these days ([`crate::worktime::DayTargets`]).
+    pub week_targets: Vec<i64>,
 }
 
 /// Everything a call needs besides the database.
@@ -326,12 +333,14 @@ impl<'a, Tz: TimeZone> Ctx<'a, Tz> {
         Ctx { db, tz, now, today, sources, settings, budgets: OnceCell::new() }
     }
 
-    fn target_minutes(&self) -> i64 {
-        (self.settings.daily_target_hours.max(0.0) * 60.0).round() as i64
+    /// The targets of `from..=to` by the rule every view uses.
+    fn targets(&self, from: NaiveDate, to: NaiveDate) -> Result<crate::worktime::DayTargets> {
+        crate::worktime::DayTargets::load(self.db, self.settings, from, to)
     }
 
+    /// The weekday has a target (a Saturday with own hours too).
     fn is_workday(&self, d: NaiveDate) -> bool {
-        self.settings.workdays.contains(&d.weekday().number_from_monday())
+        crate::worktime::weekday_minutes(self.settings, d) > 0
     }
 
     fn day_start(&self, d: NaiveDate) -> DateTime<Utc> {
@@ -450,7 +459,7 @@ fn today<Tz: TimeZone>(ctx: &Ctx<Tz>) -> Result<TodayData> {
         date: day,
         daily_note_id: note_id,
         booked_minutes: overview.map_or(0, |o| o.booked_minutes),
-        target_minutes: if ctx.is_workday(day) { ctx.target_minutes() } else { 0 },
+        target_minutes: ctx.targets(day, day)?.get(day),
         workday: ctx.is_workday(day),
         events: ctx.events(from, to)?,
         tasks: list,
@@ -522,10 +531,11 @@ fn wbs_label(r: &TimeEntryRow) -> String {
 
 fn week<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<WeekData> {
     let rows = entries(ctx, start, start + Duration::days(7))?;
+    let targets = ctx.targets(start, start + Duration::days(6))?;
     let mut days: Vec<WeekDay> = (0..7)
         .map(|i| {
             let date = start + Duration::days(i);
-            WeekDay { date, minutes: 0, workday: ctx.is_workday(date) }
+            WeekDay { date, minutes: 0, workday: ctx.is_workday(date), target_minutes: targets.get(date) }
         })
         .collect();
     let mut wbs: Vec<WeekWbs> = vec![];
@@ -550,7 +560,8 @@ fn week<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<WeekData> {
         wbs[at].by_day[i as usize] += minutes;
     }
     wbs.sort_by(|a, b| b.minutes.cmp(&a.minutes).then_with(|| a.label.cmp(&b.label)));
-    Ok(WeekData { week_start: start, days, wbs, target_minutes: ctx.target_minutes() })
+    let target_minutes = days.iter().map(|d| d.target_minutes).sum();
+    Ok(WeekData { week_start: start, days, wbs, target_minutes })
 }
 
 /// Descriptions of every Netzplan and Vorgang by lower-cased label (`np-8801/1020`).
@@ -723,13 +734,15 @@ fn embed(db: &Database, id: i64) -> Result<PageData> {
 
 fn proposal<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<ProposalData> {
     let w = week(ctx, start)?;
-    let target = ctx.target_minutes();
     let mut open_days: Vec<OpenDay> = vec![];
-    for d in w.days.iter().filter(|d| d.workday && d.date < ctx.today) {
-        // Holidays and absence days are no gaps.
-        let target = crate::worktime::gap_target(ctx.db, d.date, target)?;
-        if d.minutes < target {
-            open_days.push(OpenDay { date: d.date, booked_minutes: d.minutes, missing_minutes: target - d.minutes });
+    // Holidays, absence days and the days before the workspace existed are no gaps.
+    for d in w.days.iter().filter(|d| d.date < ctx.today) {
+        if d.minutes < d.target_minutes {
+            open_days.push(OpenDay {
+                date: d.date,
+                booked_minutes: d.minutes,
+                missing_minutes: d.target_minutes - d.minutes,
+            });
         }
     }
     let events = ctx.events(ctx.day_start(start), ctx.day_start(start + Duration::days(7)))?;
@@ -751,7 +764,7 @@ fn proposal<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<ProposalDat
         unbooked_meetings: unbooked.len(),
         unbooked_minutes: unbooked.iter().map(|e| (e.event.end - e.event.start).num_minutes().max(0)).sum(),
         booked_minutes: w.days.iter().map(|d| d.minutes).sum(),
-        target_minutes: target * w.days.iter().filter(|d| d.workday).count() as i64,
+        target_minutes: w.target_minutes,
     })
 }
 
@@ -825,6 +838,7 @@ fn suggestions<Tz: TimeZone>(ctx: &Ctx<Tz>) -> Result<SuggestionData> {
         due_today: counts.due_today,
         worst_budget: tracking::worst_budget(&statuses).map(|b| b.label.clone()),
         week_minutes: w.days.iter().map(|d| d.minutes).collect(),
+        week_targets: w.days.iter().map(|d| d.target_minutes).collect(),
     })
 }
 

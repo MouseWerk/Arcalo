@@ -221,7 +221,11 @@ fn week_per_day_and_per_wbs() {
         ]
     );
     assert_eq!(v["wbs"][0]["by_day"], serde_json::json!([120, 240, 0, 0, 0, 0, 0]));
-    assert_eq!(v["target_minutes"], 480);
+    // The days' targets (Monday to Friday 8 h) and their sum.
+    let targets: Vec<i64> =
+        v["days"].as_array().unwrap().iter().map(|d| d["target_minutes"].as_i64().unwrap()).collect();
+    assert_eq!(targets, [480, 480, 480, 480, 480, 0, 0]);
+    assert_eq!(v["target_minutes"], 2400);
 }
 
 #[test]
@@ -552,4 +556,40 @@ fn query_events_by_calendar_and_text() {
     assert_eq!(r.rows[0].minutes, Some(60));
     let r = w.query(Query { source: Source::Events, text: "stand".into(), days: 1, ..Default::default() });
     assert_eq!(r.total, 1);
+}
+
+#[test]
+fn start_page_targets_follow_weekday_targets_holidays_absences_and_day_one() {
+    use crate::worktime::{Absence, AbsenceKind, COUNTS_FROM, gap_target};
+    let mut w = world();
+    // Monday to Thursday 8 h, Friday 5 h, Saturday 2 h; NRW; vacation on Wednesday 7 October.
+    w.settings.time.balance.weekday_hours = vec![8.0, 8.0, 8.0, 8.0, 5.0, 2.0, 0.0];
+    w.settings.time.balance.state = "NW".into();
+    w.db.absence_put(&Absence { date: day(10, 7), kind: AbsenceKind::Vacation, half: false, note: String::new() })
+        .unwrap();
+    let today = |d: NaiveDate| {
+        let ctx = Ctx::new(&w.db, &Utc, now(), d, &w.sources, &w.settings);
+        part(&ctx, &Part::Today).unwrap()["target_minutes"].as_i64().unwrap()
+    };
+    for d in [day(10, 5), day(10, 7), day(10, 9), day(10, 10), day(12, 25)] {
+        assert_eq!(today(d), gap_target(&w.db, &w.settings, d).unwrap(), "{d}");
+    }
+    assert_eq!([today(day(10, 7)), today(day(10, 9)), today(day(10, 10)), today(day(12, 25))], [0, 300, 120, 0]);
+    // The week (Monday 5 October): the days' own targets, summed.
+    let v = w.get(Part::Week { week_start: day(10, 5) });
+    let targets: Vec<i64> =
+        v["days"].as_array().unwrap().iter().map(|d| d["target_minutes"].as_i64().unwrap()).collect();
+    assert_eq!(targets, [480, 480, 0, 480, 300, 120, 0]);
+    assert_eq!(v["target_minutes"], 1860);
+    assert_eq!(v["days"][5]["workday"], true);
+    // A new workspace set up on Thursday 24 September: the days before are no gaps anywhere.
+    w.db.meta_set(COUNTS_FROM, "2026-09-24").unwrap();
+    let ctx = Ctx::new(&w.db, &Utc, at(9, 28, 12, 0), day(9, 28), &w.sources, &w.settings);
+    let p = part(&ctx, &Part::Proposal { week_start: day(9, 21) }).unwrap();
+    let open: Vec<&str> = p["open_days"].as_array().unwrap().iter().map(|d| d["date"].as_str().unwrap()).collect();
+    assert_eq!(open, ["2026-09-24", "2026-09-25", "2026-09-26"]);
+    assert_eq!(p["target_minutes"], 480 + 300 + 120);
+    // The week of 28 September: Saturday 3 October is a public holiday.
+    let s = part(&ctx, &Part::Suggestions).unwrap();
+    assert_eq!(s["week_targets"], serde_json::json!([480, 480, 480, 480, 300, 0, 0]));
 }

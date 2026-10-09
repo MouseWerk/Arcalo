@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   budgetForecast,
+  budgetLevel,
   configOf,
   defaultDashboard,
   editBoard,
@@ -237,13 +238,27 @@ describe("budget forecast", () => {
   });
 });
 
+describe("budget badge", () => {
+  it("follows the forecast: a budget running out within two weeks is no longer on track", () => {
+    const today = new Date(2026, 8, 23);
+    const soon = budgetForecast({ planned_hours: 100, booked_hours: 89 }, 28, 28, today);
+    expect(soon.state).toBe("soon");
+    expect(budgetLevel("ok", soon)).toBe("warning");
+    expect(budgetLevel("ok", budgetForecast({ planned_hours: 100, booked_hours: 10 }, 28, 28, today))).toBe("ok");
+    expect(budgetLevel("ok", { state: "used" })).toBe("critical");
+    expect(budgetLevel("exceeded", soon)).toBe("exceeded");
+  });
+});
+
 describe("week bars", () => {
   const monday = new Date(2026, 8, 21); // Mo 21.09.2026
   const day = (date: string, booked_minutes: number): DayOverview => ({ date, booked_minutes, note_id: null, has_note: false, open_tasks: 0 });
   const days = [day("2026-09-21", 480), day("2026-09-22", 360), day("2026-09-23", 600), day("2026-09-24", 120), day("2026-09-26", 60)];
 
+  const targets = [480, 480, 480, 480, 480, 0, 0];
+
   it("scales to the longest day and counts gaps on past workdays only", () => {
-    const w = weekBars(days, monday, 8, [1, 2, 3, 4, 5], new Date(2026, 8, 24, 15, 0));
+    const w = weekBars(days, monday, targets, new Date(2026, 8, 24, 15, 0));
     expect(w.bars.map((b) => b.label)).toEqual(["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]);
     expect(w.bars.map((b) => b.minutes)).toEqual([480, 360, 600, 120, 0, 60, 0]);
     // 10 h on Wednesday sets the scale; the 8 h target line sits at 80 %.
@@ -260,12 +275,21 @@ describe("week bars", () => {
   });
 
   it("counts a whole past week and handles no target", () => {
-    const w = weekBars(days, monday, 8, [1, 2, 3, 4, 5], new Date(2026, 9, 1));
+    const w = weekBars(days, monday, targets, new Date(2026, 9, 1));
     // Thu 6 h and Fri 8 h missing, plus Tue 2 h; Saturday has no target.
     expect(w.gapMinutes).toBe(120 + 360 + 480);
-    const none = weekBars([], monday, 0, [1, 2, 3, 4, 5], new Date(2026, 9, 1));
+    const none = weekBars([], monday, [], new Date(2026, 9, 1));
     expect(none.gapMinutes).toBe(0);
     expect(none.bars.every((b) => b.fill === 0)).toBe(true);
     expect(none.targetLine).toBe(0);
+  });
+
+  it("takes each day's own target: Friday 5 h, a holiday, a Saturday with hours, today after 18:00", () => {
+    const own = [480, 0, 480, 480, 300, 120, 0];
+    const w = weekBars(days, monday, own, new Date(2026, 8, 26, 19));
+    expect(w.bars.map((b) => b.gap)).toEqual([0, 0, 0, 360, 300, 60, 0]);
+    expect(w.targetMinutes).toBe(1860);
+    expect([w.bars[1].workday, w.bars[5].workday, w.bars[6].workday]).toEqual([false, true, false]);
+    expect(w.lineMinutes).toBe(480);
   });
 });

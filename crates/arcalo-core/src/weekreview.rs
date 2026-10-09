@@ -33,9 +33,8 @@ use crate::focus::hm;
 use crate::meetwork::block;
 use crate::model::Page;
 use crate::settings::Settings;
-use crate::tasks::{TaskFilter, TaskStatus};
 use crate::templates::{TemplateVars, apply_template};
-use crate::worktime::{self, Absence};
+use crate::worktime;
 use crate::{tr, trf};
 
 /// At most this many tasks per list and pages (the totals count all).
@@ -351,19 +350,19 @@ pub fn week_review<Tz: TimeZone>(
     let (from, to) = (day_start(monday, tz), day_start(next, tz));
     let today = now.with_timezone(tz).date_naive();
     let opts = ReviewOptions::from_settings(settings, sources, now);
-    let holidays = worktime::holiday_map(monday, sunday, &settings.time.balance.state);
-    let absences: HashMap<NaiveDate, Absence> = db.absences(monday, sunday)?.into_iter().map(|a| (a.date, a)).collect();
+    // The rule of every view: the weekday's target, none on a holiday, half on a half absence.
+    let targets = worktime::DayTargets::load(db, settings, monday, sunday)?;
     let en = crate::i18n::is_en();
 
     let mut days = Vec::with_capacity(7);
     let mut reviews = Vec::with_capacity(7);
     for i in 0..7 {
         let d = monday + Duration::days(i);
-        let r = dayreview::day_review(db, d, tz, &opts)?;
-        let holiday = holidays.get(&d);
-        let absence = absences.get(&d);
-        // The balance's rules: the weekday's target, none on a holiday, half on a half absence.
-        let target = worktime::day_target(worktime::weekday_minutes(settings, d), holiday.is_some(), absence, false);
+        // The open tasks are read once for the week below, not per day.
+        let r = dayreview::review_day(db, d, tz, &opts, settings, &targets, false)?;
+        let holiday = targets.holiday(d);
+        let absence = targets.absence(d);
+        let target = targets.get(d);
         let future = d > today;
         days.push(WeekDay {
             date: d,
@@ -459,36 +458,37 @@ pub fn week_review<Tz: TimeZone>(
             .filter(|t| seen.insert((t.page_id, t.text.clone())))
             .count() as i64
     };
-    let monday_key = monday.format("%Y-%m-%d").to_string();
-    let open = db.list_tasks(&TaskFilter {
-        status: TaskStatus::Open,
-        due_before: Some(sunday.format("%Y-%m-%d").to_string()),
-        ..Default::default()
-    })?;
-    let (open, overdue): (Vec<WeekTask>, Vec<WeekTask>) = open
-        .into_iter()
-        .filter(|t| t.due.is_some())
-        .map(|t| WeekTask {
-            page_id: Some(t.page_id),
-            page_title: t.page_title,
-            repeating: t.recur.is_some(),
-            text: t.text,
-            day: None,
-            due: t.due,
-        })
-        .partition(|t| t.due.as_deref().is_some_and(|d| d >= monday_key.as_str()));
+    // Still open: due in the week, and overdue before it (the first ones, counted in SQLite).
+    let key = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+    let open_tasks = |from: Option<&str>, before: &str| -> Result<(Vec<WeekTask>, i64)> {
+        let (list, total) = db.open_tasks_due(from, before, MAX_TASKS)?;
+        let list = list
+            .into_iter()
+            .map(|t| WeekTask {
+                page_id: Some(t.page_id),
+                page_title: t.page_title,
+                repeating: t.recur.is_some(),
+                text: t.text,
+                day: None,
+                due: t.due,
+            })
+            .collect();
+        Ok((list, total))
+    };
+    let (open, open_total) = open_tasks(Some(&key(monday)), &key(next))?;
+    let (overdue, overdue_total) = open_tasks(None, &key(monday))?;
     let cap = |mut v: Vec<WeekTask>| {
         v.truncate(MAX_TASKS);
         v
     };
     let tasks = WeekTasks {
         done_total: done.len() as i64,
-        open_total: open.len() as i64,
-        overdue_total: overdue.len() as i64,
+        open_total,
+        overdue_total,
         added_total,
         done: cap(done),
-        open: cap(open),
-        overdue: cap(overdue),
+        open,
+        overdue,
     };
 
     // ---- meetings by day; one running over midnight shows on its first day.

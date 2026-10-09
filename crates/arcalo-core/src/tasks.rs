@@ -432,6 +432,51 @@ impl Database {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Open tasks outside templates due in `from..before` (`YYYY-MM-DD`; no lower bound
+    /// without `from`), in the order of [`Database::list_tasks`]: the first `limit` and how many
+    /// there are. Sorted and cut in SQLite (the day and week review show a few of thousands).
+    pub fn open_tasks_due(&self, from: Option<&str>, before: &str, limit: usize) -> Result<(Vec<Task>, i64)> {
+        let tpl = self.templates_title()?;
+        let total: i64 = self
+            .conn()
+            .prepare_cached(&format!(
+                "{TEMPLATE_PAGES}
+             SELECT COUNT(*) FROM tasks t JOIN pages p ON p.id = t.page_id
+             WHERE t.done = 0 AND t.due IS NOT NULL AND t.due >= COALESCE(?2, '') AND t.due < ?3
+               AND p.deleted_at IS NULL AND t.page_id NOT IN tpl"
+            ))?
+            .query_row(params![tpl, from, before], |r| r.get(0))?;
+        let mut st = self.conn().prepare_cached(&format!(
+            "{TEMPLATE_PAGES}
+             SELECT t.page_id, p.title, p.icon, t.ordinal, t.line, t.text, t.due, t.priority, t.tags, t.recur
+             FROM tasks t JOIN pages p ON p.id = t.page_id
+             WHERE t.done = 0 AND t.due IS NOT NULL AND t.due >= COALESCE(?2, '') AND t.due < ?3
+               AND p.deleted_at IS NULL AND t.page_id NOT IN tpl
+             ORDER BY t.due, t.priority DESC, p.title COLLATE NOCASE, t.page_id, t.ordinal
+             LIMIT ?4"
+        ))?;
+        let list = st
+            .query_map(params![tpl, from, before, limit as i64], |r| {
+                let tags: String = r.get(8)?;
+                let recur: Option<String> = r.get(9)?;
+                Ok(Task {
+                    page_id: r.get(0)?,
+                    page_title: r.get(1)?,
+                    page_icon: r.get(2)?,
+                    ordinal: r.get(3)?,
+                    line: r.get(4)?,
+                    text: r.get(5)?,
+                    done: false,
+                    due: r.get(6)?,
+                    priority: r.get(7)?,
+                    tags: tags.split_whitespace().map(str::to_owned).collect(),
+                    recur: recur.as_deref().and_then(stored_rule),
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok((list, total))
+    }
+
     /// Tasks of all pages: open first, then by due date (undated last), priority and page.
     pub fn list_tasks(&self, f: &TaskFilter) -> Result<Vec<Task>> {
         let done = match f.status {

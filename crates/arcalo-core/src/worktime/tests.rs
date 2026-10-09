@@ -84,7 +84,10 @@ fn state_specific_holidays() {
         }
     }
     assert_eq!(has(2025, "BE", "Tag der Befreiung"), Some(d(2025, 5, 8)));
+    assert_eq!(has(2020, "BE", "Tag der Befreiung"), Some(d(2020, 5, 8)));
     assert_eq!(has(2026, "BE", "Tag der Befreiung"), None);
+    assert_eq!(has(2021, "BE", "Tag der Befreiung"), None);
+    assert_eq!(has(2020, "BB", "Tag der Befreiung"), None);
     // The Reformation's 500th anniversary was a holiday everywhere.
     assert_eq!(has(2017, "BY", "Reformationstag"), Some(d(2017, 10, 31)));
     assert_eq!(has(2018, "BY", "Reformationstag"), None);
@@ -216,9 +219,9 @@ fn ranges_skip_weekends_and_holidays_and_vacation_is_counted() {
     assert!(save_range(&db, &s, d(2026, 1, 1), d(2027, 6, 1), AbsenceKind::Other, false, "").is_err());
     assert_eq!(db.absence_remove(d(2026, 11, 2), d(2026, 11, 3)).unwrap(), 2);
     // No gap on an absence day: the week proposal's target is 0, a half day half.
-    assert_eq!(gap_target(&db, d(2026, 10, 30), 480).unwrap(), 0);
-    assert_eq!(gap_target(&db, d(2026, 9, 1), 480).unwrap(), 240);
-    assert_eq!(gap_target(&db, d(2026, 9, 3), 480).unwrap(), 480);
+    assert_eq!(gap_target(&db, &s, d(2026, 10, 30)).unwrap(), 0);
+    assert_eq!(gap_target(&db, &s, d(2026, 9, 1)).unwrap(), 240);
+    assert_eq!(gap_target(&db, &s, d(2026, 9, 3)).unwrap(), 480);
 }
 
 #[test]
@@ -245,4 +248,62 @@ fn prefs_are_normalized() {
     s.time.balance = p;
     assert_eq!(weekday_minutes(&s, d(2026, 9, 28)), 540);
     assert_eq!(weekday_minutes(&s, d(2026, 10, 2)), 360);
+}
+
+#[test]
+fn missing_time_counts_from_the_day_a_new_workspace_was_set_up() {
+    let db = Database::open_in_memory().unwrap();
+    let s = Settings::default();
+    assert_eq!(counts_from(&db).unwrap(), None);
+    // An upgraded workspace: every day counts, also after its setup is completed.
+    db.meta_set("onboarding.first_seen", "existing").unwrap();
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 7, 12, 0, 0).unwrap()).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), None);
+    assert_eq!(gap_target(&db, &s, d(2026, 10, 5)).unwrap(), 480);
+    // A new one: from the day of its setup on (kept when the setup runs again later).
+    let db = Database::open_in_memory().unwrap();
+    db.onboarding_classify().unwrap();
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 7, 12, 0, 0).unwrap()).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
+    db.onboarding_reset().unwrap();
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 11, 2, 12, 0, 0).unwrap()).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
+    let t = DayTargets::load(&db, &s, d(2026, 10, 5), d(2026, 10, 11)).unwrap();
+    assert_eq!(t.minutes(), [0, 0, 480, 480, 480, 0, 0]);
+    assert_eq!((t.base(d(2026, 10, 5)), t.counts(d(2026, 10, 6)), t.counts(d(2026, 10, 7))), (480, false, true));
+    // Set up with 1.15 (no meta row yet): the day of the stored setup time.
+    let db = Database::open_in_memory().unwrap();
+    db.meta_set("onboarding.first_seen", "fresh").unwrap();
+    let mut st = db.load_settings().unwrap();
+    st.onboarding.completed_at = Some("2026-10-07T12:00:00Z".into());
+    db.save_settings(&st).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
+}
+
+#[test]
+fn vacation_on_a_holiday_or_a_day_without_target_takes_nothing_from_the_account() {
+    let db = Database::open_in_memory().unwrap();
+    let mut s = Settings::default();
+    s.time.balance.state = "BY".into();
+    // Christmas (a holiday), a Saturday, and a Wednesday: only the Wednesday counts.
+    for date in [d(2026, 12, 25), d(2026, 12, 19), d(2026, 12, 16)] {
+        save_range(&db, &s, date, date, AbsenceKind::Vacation, false, "").unwrap();
+    }
+    let v = vacation(&db, &s, d(2026, 12, 31)).unwrap();
+    assert_eq!((v.taken, v.planned, v.left), (1.0, 0.0, 29.0));
+    // A part-timer without Wednesdays: that day is free anyway.
+    s.time.balance.weekday_hours = vec![8.0, 8.0, 0.0, 8.0, 8.0, 0.0, 0.0];
+    assert_eq!(vacation(&db, &s, d(2026, 12, 31)).unwrap().taken, 0.0);
+}
+
+#[test]
+fn the_balance_of_a_new_workspace_starts_on_the_day_of_its_setup() {
+    let db = Database::open_in_memory().unwrap();
+    let s = Settings::default();
+    db.meta_set(COUNTS_FROM, "2026-10-07").unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 10, 9, 12, 0, 0).unwrap();
+    let b = balance(&db, &s, &Utc, d(2026, 10, 9), now, 4).unwrap();
+    assert_eq!((b.start, b.configured), (d(2026, 10, 7), false));
+    // Wednesday and Thursday without bookings; Friday (today) is still running.
+    assert_eq!(b.minutes, -960);
 }

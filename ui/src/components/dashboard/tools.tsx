@@ -3,7 +3,6 @@
 
 import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
-import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
 import { fmtDate, h1, isoDay, numberLocale, relative, weekStart } from "../../lib/format";
 import { currentLang, t } from "../../lib/i18n";
@@ -20,7 +19,6 @@ import { openQuickLinkAt, useQuickLinks } from "../QuickLinks";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, hhmm, hrs, Loadable, s, TaskRow } from "./common";
 import type { WidgetProps } from "./registry";
-import { startedOn } from "../../onboarding/firststeps";
 
 // ------------------------------------------------------------------ Abfrage
 
@@ -219,7 +217,6 @@ export function LinksWidget({ widget }: WidgetProps) {
 
 export function SuggestionsWidget({ widget }: WidgetProps) {
   const { data, error, loading } = useWidgetData<SuggestionData>(widget);
-  const settings = useApp((st) => st.settings?.settings);
   const [asked, setAsked] = useState<string | null>(null);
   const timeOn = useTimeTracking();
   const c = configOf(widget);
@@ -232,11 +229,8 @@ export function SuggestionsWidget({ widget }: WidgetProps) {
         const week = weekBars(
           d.week_minutes.map((m, i) => ({ date: isoDay(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)), booked_minutes: m })),
           monday,
-          settings?.daily_target_hours ?? 8,
-          settings?.workdays ?? [1, 2, 3, 4, 5],
+          d.week_targets ?? [],
           now,
-          undefined,
-          startedOn(),
         );
         const list = buildSuggestions({
           now,

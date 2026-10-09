@@ -5006,6 +5006,7 @@ pub fn run() {
             dashboard::dashboard_file_write,
             dashboard::dashboard_inbox_move,
             worktime::absence_list,
+            worktime::day_targets,
             worktime::absence_save,
             worktime::absence_remove,
             worktime::mail_flagged,

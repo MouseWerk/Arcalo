@@ -9,8 +9,8 @@ import { weekBars } from "../lib/dashboard";
 import { buildSuggestions, type Suggestion } from "../lib/suggestions";
 import { useApp } from "../store/app";
 import { useTimeTracking } from "../lib/timetracking";
+import { workApi } from "../lib/workwidgets";
 import type { PageDoc } from "../lib/types";
-import { startedOn } from "../onboarding/firststeps";
 
 const FALLBACK: Suggestion[] = buildSuggestions({ now: new Date(), page: null, overdue: 0, dueToday: 0, openTasks: 0, gapDays: [], budget: null, hasBookings: false });
 
@@ -33,13 +33,15 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
       const today = isoDay(now);
       const monday = weekStart(now);
       // Counts and the most critical budget come counted from the backend (not every open task).
-      const [facts, days, work] = await Promise.all([
+      const [facts, days, targets, work] = await Promise.all([
         api.suggestionFacts(today, pageId).catch(() => null),
         // Time tracking off: no bookings or Vorgang to look at.
         timeOn ? api.dailyOverview(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []) : Promise.resolve([]),
+        // The targets of every view (holidays, absences, none before a new workspace's first day).
+        timeOn ? workApi.dayTargets(isoDay(monday), isoDay(addDays(monday, 6))).catch(() => []) : Promise.resolve([]),
         pageId != null && timeOn ? api.pageWork(pageId).catch(() => null) : Promise.resolve(null),
       ]);
-      const week = weekBars(days, monday, settings?.daily_target_hours ?? 8, settings?.workdays ?? [1, 2, 3, 4, 5], now, undefined, startedOn());
+      const week = weekBars(days, monday, targets, now);
       const next = buildSuggestions({
         now,
         page: pageTitle != null ? { title: pageTitle, openTasks: facts?.page_open_tasks ?? 0, reference: work?.reference ?? null } : null,
@@ -57,6 +59,6 @@ export function useSuggestions(page: PageDoc | null, shown = true): Suggestion[]
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [shown, pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays, timeOn]);
+  }, [shown, pageId, pageTitle, entriesVersion, settings?.daily_target_hours, settings?.workdays, settings?.time?.balance, timeOn]);
   return list;
 }

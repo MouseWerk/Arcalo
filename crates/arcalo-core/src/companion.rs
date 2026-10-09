@@ -66,8 +66,7 @@ pub fn today<Tz: TimeZone>(db: &Database, settings: &Settings, now: DateTime<Utc
     let booked = crate::worktime::booked_by_day(db, tz, monday, date, now)?;
     let booked_minutes = booked.get(&date).copied().unwrap_or(0);
     let week_minutes = booked.values().sum();
-    let base = crate::worktime::weekday_minutes(settings, date);
-    let target_minutes = crate::worktime::gap_target(db, date, base)?;
+    let target_minutes = crate::worktime::gap_target(db, settings, date)?;
     let timer = running(db, now)?;
     let mut tasks =
         db.list_tasks(&TaskFilter { due_before: Some(date.format("%Y-%m-%d").to_string()), ..Default::default() })?;
