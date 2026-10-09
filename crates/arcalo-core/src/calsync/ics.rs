@@ -656,10 +656,18 @@ pub fn parse(
     let mut out = vec![];
     for uid in order {
         let (master, overrides) = &groups[&uid];
+        // An all-day series: an EXDATE or RECURRENCE-ID given with a time (Exchange, some CalDAV
+        // servers) means the date it names in its own zone (a UTC time: the local date).
+        let all_day = master.and_then(|m| when(m, "DTSTART", &zones)).is_some_and(|s| matches!(s, When::Date(_)));
+        let as_day = |w: When| match w {
+            When::Time(t, Zone::Utc) if all_day => When::Date(zones.default.to_wall(Zone::Utc.to_utc(t)).date()),
+            When::Time(t, _) if all_day => When::Date(t.date()),
+            w => w,
+        };
         let mut changed: HashMap<String, &Component> = HashMap::new();
         for o in overrides {
             if let Some(rid) = when(o, "RECURRENCE-ID", &zones) {
-                changed.insert(instance_key(&rid, &zones.default), o);
+                changed.insert(instance_key(&as_day(rid), &zones.default), o);
             }
         }
         let mut used: HashSet<String> = HashSet::new();
@@ -719,7 +727,7 @@ pub fn parse(
                     None => walls.push(start_wall),
                 }
                 walls.extend(rdates.iter().map(|r| r.wall_in(&zone)));
-                let ex: Vec<When> = m.all("EXDATE").flat_map(|p| whens(p, &zones)).collect();
+                let ex: Vec<When> = m.all("EXDATE").flat_map(|p| whens(p, &zones)).map(as_day).collect();
                 let ex_days: HashSet<NaiveDate> =
                     ex.iter().filter_map(|w| if let When::Date(d) = w { Some(*d) } else { None }).collect();
                 let ex_walls: HashSet<NaiveDateTime> =
@@ -1033,6 +1041,41 @@ mod tests {
         let bday: Vec<_> = evs.iter().filter(|e| e.uid == "bd").collect();
         assert_eq!(bday.len(), 1, "2027 excluded");
         assert_eq!((bday[0].instance.as_str(), bday[0].all_day), ("2026-09-30", true));
+    }
+
+    #[test]
+    fn all_day_series_with_exdate_and_recurrence_id_given_as_date_time() {
+        let series = |extra: &str| {
+            format!(
+                "BEGIN:VEVENT\r\nUID:w1\r\nSUMMARY:Ganztags\r\nDTSTART;VALUE=DATE:20261005\r\nDTEND;VALUE=DATE:20261006\r\n\
+                 RRULE:FREQ=WEEKLY;COUNT=4\r\n{extra}END:VEVENT\r\n"
+            )
+        };
+        let days = |body: &str| -> Vec<String> {
+            let mut d: Vec<String> = parse(&cal(body), window(), &berlin(), ALL)
+                .unwrap()
+                .iter()
+                .map(|e| berlin().to_wall(e.start).date().to_string())
+                .collect();
+            d.sort();
+            d
+        };
+        let all = ["2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"];
+        assert_eq!(days(&series("")), all);
+        for ex in [
+            "EXDATE:20261012T000000\r\n",
+            "EXDATE;TZID=Europe/Berlin:20261012T000000\r\n",
+            "EXDATE:20261011T220000Z\r\n",
+        ] {
+            assert_eq!(days(&series(ex)), ["2026-10-05", "2026-10-19", "2026-10-26"], "{ex}");
+        }
+        // The instance of 12 October moved to the 13th: shown once, on the 13th.
+        let moved = format!(
+            "{}BEGIN:VEVENT\r\nUID:w1\r\nRECURRENCE-ID:20261012T000000\r\nSUMMARY:Ganztags verschoben\r\n\
+             DTSTART;VALUE=DATE:20261013\r\nDTEND;VALUE=DATE:20261014\r\nEND:VEVENT\r\n",
+            series("")
+        );
+        assert_eq!(days(&moved), ["2026-10-05", "2026-10-13", "2026-10-19", "2026-10-26"]);
     }
 
     #[test]
