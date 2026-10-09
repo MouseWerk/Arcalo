@@ -19,7 +19,7 @@ Counts: HIGH 2, MEDIUM 10, LOW 8 (20 confirmed), plus 8 suspected.
 
 ## Confirmed
 
-### U1 HIGH: Global shortcuts and mouse back/forward act behind modal dialogs, the palette and the setup
+### U1 HIGH: Global shortcuts and mouse back/forward act behind modal dialogs, the palette and the setup — fixed in 1.16 (e2e 320, keymap.test modalLayer)
 
 Repro (p1): open a page with a subpage, „…“ → „Seite löschen“ (confirm dialog „… und 1 Unterseite
 löschen?“ is open), press Ctrl+W: the tab behind the dialog closes (3 → 2 tabs), the dialog stays. Press
@@ -41,7 +41,7 @@ keymap.ts keeps it testable.
 Guarding test: keymap.test.ts `commandAllowed` with an open modal (pure); e2e: confirm dialog open, Ctrl+W
 and Ctrl+N change nothing, Escape closes the dialog, then Ctrl+W closes the tab.
 
-### U2 HIGH: Switching tabs throws away scroll position, caret, undo history and view state
+### U2 HIGH: Switching tabs throws away scroll position, caret, undo history and view state — fixed in 1.16 (lib/keepalive.ts, e2e 320)
 
 Repro (p4): long page A scrolled to 3000 px, open page B in a new tab, click A's tab: A is at the top
 (`scrollTop` 0). Type in A, switch to B and back, Ctrl+Z: nothing is undone (the history is gone). Tasks view
@@ -62,7 +62,7 @@ the map and recreate the view from it.
 Guarding test: e2e: scroll A, switch to B and back → same `scrollTop` (±1 line); type, switch, Ctrl+Z undoes
 the typing; Tasks „Erledigt“ survives a switch. Unit test for the tab-state map (closing a tab drops it).
 
-### U3 MEDIUM: Undo of an earlier settings change also reverts a later change of the same section
+### U3 MEDIUM: Undo of an earlier settings change also reverts a later change of the same section — fixed in 1.16 (settingsApply revertPaths, e2e 321)
 
 Repro (p3): Settings → Editor, switch on „Typografische Anführungszeichen“ (toast A), 2 s later switch on
 „Klammern automatisch schließen“ (toast B). Click „Rückgängig“ on toast A: both are off again
@@ -81,7 +81,7 @@ burst touches the same leaf). Bursts should continue only for the same leaf path
 Guarding test: settingsApply.test.ts `revertPaths` (two bursts on `editor.smart_quotes` and
 `editor.auto_pair`, undo of the first keeps the second); e2e variant of the repro.
 
-### U4 MEDIUM: During a focus session every „Rückgängig“ toast is swallowed for good
+### U4 MEDIUM: During a focus session every „Rückgängig“ toast is swallowed for good — fixed in 1.16 (store toasts test)
 
 Repro (p2, vitest): start a focus session (`focus_start`), delete the open page from „…“: no toast, no undo;
 after the session ends (or is aborted) the summary lists only titles, the undo action is lost. Same for tree
@@ -98,7 +98,7 @@ implicitly when they carry an action. Background notices (budget, backup, sync) 
 Guarding test: store/app.test.ts: during a work phase a toast with an action is shown, a plain info toast is
 held.
 
-### U5 MEDIUM: „KI verwenden“ off: the page menu still offers „Besprechung zusammenfassen“ and „KI einrichten“
+### U5 MEDIUM: „KI verwenden“ off: the page menu still offers „Besprechung zusammenfassen“ and „KI einrichten“ — fixed in 1.16 (pv.summarize only with AI)
 
 Repro (p2): switch AI off, open a page, „…“: the menu lists „Besprechung zusammenfassen“; choosing it opens
 the dialog „Keine KI verbunden – … braucht Arcalo einen KI-Anbieter … KI einrichten“ (shot
@@ -113,7 +113,7 @@ MeetingSummaryDialog render nothing when `!aiEnabled()`.
 
 Guarding test: extend e2e 287 („the editor has no inline AI …“): the page menu has no „zusammenfassen“.
 
-### U6 MEDIUM: Outline panel shows the headings of another page (source mode, canvas)
+### U6 MEDIUM: Outline panel shows the headings of another page (source mode, canvas) — fixed in 1.16 (NoteEditor clears outline, SourceEditor sourceOutline, e2e 320)
 
 Repro (p3): page A (rich, headings Alpha, Beta) open, outline panel visible; open page B (source mode,
 heading Gamma) in a new tab: the panel shows „Gliederung 2 · Alpha · Beta“ for page B (shot
@@ -130,7 +130,7 @@ line), or show „Gliederung im Quelltext nicht verfügbar“ there.
 
 Guarding test: e2e: A with headings, B in source mode → panel shows B's headings (or the empty state), not A's.
 
-### U7 MEDIUM: IME composition: Enter commits or submits in the middle of a word
+### U7 MEDIUM: IME composition: Enter commits or submits in the middle of a word — fixed in 1.16 (lib/ime.ts everywhere, ime-guard.test, e2e 320)
 
 Repro (p3, p8; synthetic keydown `{key: "Enter", isComposing: true, keyCode: 229}` as a Japanese/Chinese IME
 sends it): page title → the title loses focus and is committed; tree rename (F2) → the field closes and the
@@ -152,7 +152,7 @@ Guarding test: ime.test.ts already covers the helper; add an e2e that dispatches
 tree rename and source view and asserts nothing happened; a grep test that `key === "Enter"` in a file with
 an `<input`/`<textarea` goes through `isComposing`.
 
-### U8 MEDIUM: Escape that closes the slash menu or the find bar also ends the focus mode
+### U8 MEDIUM: Escape that closes the slash menu or the find bar also ends the focus mode — fixed in 1.16 (keyConsumed, e2e 320)
 
 Repro (p5): Ctrl+. (focus mode), type `/`, Escape: the menu closes and the focus mode ends. Same with Ctrl+F,
 Escape in the find bar. Users press Escape to dismiss a popup, not to leave the mode.
@@ -166,7 +166,7 @@ make the suggestion popup / find bar `preventDefault` their Escape (the find bar
 
 Guarding test: e2e: focus mode, slash menu, Escape → menu closed, still focus mode; second Escape ends it.
 
-### U9 MEDIUM: „Rückgängig“ on a move toast undoes the latest move, not its own
+### U9 MEDIUM: „Rückgängig“ on a move toast undoes the latest move, not its own — fixed in 1.16 (move toast key move-undo)
 
 Repro (p9, via the commands the toasts use): move page A into „Ordner Eins“ (toast 1 „1 Seite verschoben –
 Rückgängig“), then B into „Ordner Zwei“ (toast 2). „Rückgängig“ of toast 1 runs `move_undo`: B goes back, A
@@ -181,7 +181,7 @@ dismiss older move toasts (`key: "move-undo"`) when a new move happens. The `key
 
 Guarding test: e2e: two moves, the first toast is gone (or its undo refuses), the second undo puts B back.
 
-### U10 MEDIUM: A purged page's id is reused and the new page inherits its view modes and tabs state
+### U10 MEDIUM: A purged page's id is reused and the new page inherits its view modes and tabs state — fixed in 1.16 (migration 0035_page_id_floor, db test)
 
 Repro (p10): page id 15 in source mode and full width, delete it and empty it from the trash, create „Ganz neue
 Seite“: it gets id 15 again and opens in source mode with full width. The same goes for anything the UI keys
@@ -198,7 +198,7 @@ via a new positional migration), and drop per-page UI state when a page is purge
 
 Guarding test: core unit test: create, purge, create → new id > old id; e2e repro asserts the rich editor.
 
-### U11 MEDIUM: Closing the palette or quick switcher drops the focus to the page body
+### U11 MEDIUM: Closing the palette or quick switcher drops the focus to the page body — fixed in 1.16 (palette restores focus, e2e 320)
 
 Repro (p7): caret in the editor, Ctrl+K, Escape: `document.activeElement` is `BODY`; the same with Ctrl+O +
 Escape and with a palette command that does not navigate (e.g. „Seitenleiste ein/aus“). Typing afterwards
@@ -213,7 +213,7 @@ frame).
 
 Guarding test: e2e: editor focused → Ctrl+K → Escape → the ProseMirror has the focus with the same caret.
 
-### U12 MEDIUM: Rich editor and source view differ: no failed-save state and fixed autosave in the source view
+### U12 MEDIUM: Rich editor and source view differ: no failed-save state and fixed autosave in the source view — fixed in 1.16 (SaveFailed and saveDelay in the source view, e2e 321)
 
 Repro (p9): source view, `test-disk-full` in the data folder, type: only the error toast; the rich editor
 shows the „Wird erneut versucht“ pill (`.save-failed`, NoteEditor.tsx:741) and `data-save-status`, the source
@@ -229,7 +229,7 @@ render the same pill in the source view.
 Guarding test: e2e 29-style disk-full test for the source view (pill shown, retried, gone after the disk
 frees); unit test that both use `saveDelay()`.
 
-### U13 LOW: „KI verwenden“ off: Settings → Tastatur still lists „Assistent“ and „Chat öffnen“
+### U13 LOW: „KI verwenden“ off: Settings → Tastatur still lists „Assistent“ and „Chat öffnen“ — fixed in 1.16 (KeyboardSection filters AI_SHORTCUTS)
 
 Repro (p5): AI off, Settings → Tastatur shows both commands with Ctrl+J / Ctrl+Shift+J; the shortcuts do
 nothing (App ignores AI_SHORTCUTS). Time tracking off hides its timer shortcuts the same way.
@@ -240,7 +240,7 @@ Fix: also filter `AI_SHORTCUTS` when `!aiOn(view)`.
 
 Guarding test: e2e 287 settings check: no „Assistent“/„Chat“ row in Tastatur.
 
-### U14 LOW: Start setting „Startseite“/„Tagesnotiz“ restores the last tabs and overwrites the active one
+### U14 LOW: Start setting „Startseite“/„Tagesnotiz“ restores the last tabs and overwrites the active one — fixed in 1.16 (start page and daily note in their own tab)
 
 Repro (p4): tabs [Undo A, Aufgaben (active)], Settings → Start → Öffnen „Startseite“, restart: tabs
 [Undo A, Neuer Tab]; the old tabs are restored and the last active tab was navigated to the start page
@@ -256,7 +256,7 @@ the minimal fix.
 
 Guarding test: e2e restart test for both settings.
 
-### U15 LOW: Undo of deleting the open page brings the page back but not its tab
+### U15 LOW: Undo of deleting the open page brings the page back but not its tab — fixed in 1.16 (deletePage undo reopens the tab, e2e 321)
 
 Repro (p4): open page, „…“ → „Seite löschen“ → toast „Rückgängig“: the page is restored, its tab and its
 back/forward entries are gone (the user sees another tab).
@@ -268,7 +268,7 @@ Fix: remember the tab (pane, index, history) before deleting and reopen it in th
 
 Guarding test: e2e: delete open page, undo → the page's tab is active again.
 
-### U16 LOW: Delete in the page tree leaves the focus on `body`
+### U16 LOW: Delete in the page tree leaves the focus on `body` — fixed in 1.16 (tree Delete focuses the next row, e2e 321)
 
 Repro (p9): focus a tree row, Delete: the page goes to the trash, `document.activeElement` is `BODY`;
 keyboard users must Tab back into the tree.
@@ -280,7 +280,7 @@ Fix: before deleting, compute the next (or previous) visible row and `focusRow()
 
 Guarding test: e2e 281-style: Delete on a row → the next row has the focus.
 
-### U17 LOW: Dragging one page in the tree has no undo, dragging several has
+### U17 LOW: Dragging one page in the tree has no undo, dragging several has — fixed in 1.16 (single drop through movePages)
 
 Confirmed by code: the multi-drop goes through `movePages` → `toastMoved` with „Rückgängig“
 (FilingDialogs.tsx:43-58); the single drop calls `api.movePage` and `refreshTree` only
@@ -290,7 +290,7 @@ Fix: route the single drop through `filingApi.movePages([id], …)` too (same un
 
 Guarding test: e2e drag one page into a folder → toast with „Rückgängig“ → back in place.
 
-### U18 LOW: German text in the English UI (tag view, PDF cards)
+### U18 LOW: German text in the English UI (tag view, PDF cards) — fixed in 1.16 (tag.count and file.pdfPages, i18n-strings GERMAN_WORDS)
 
 Confirmed by code: `ui/src/views/TagView.tsx:27` writes „Seite/Seiten“ literally; `ui/src/editor/fileEmbed.ts:207`
 writes „12 Seiten“ on PDF cards. Neither goes through the catalogs, so the English UI shows German, and the
@@ -300,7 +300,7 @@ Fix: `t("tag.count", { n })` / `t("file.pdfPages", { n })` in de.ts and en.ts.
 
 Guarding test: i18n-strings.test.ts: no German words in string literals outside locales (this pattern).
 
-### U19 LOW: Shortcut hints ignore the user's keymap
+### U19 LOW: Shortcut hints ignore the user's keymap — fixed in 1.16 (firststeps command ids, firststeps.test)
 
 Confirmed by code: „Erste Schritte“ shows fixed „Ctrl N“, „Ctrl Shift D“, „Ctrl J“ and „Ctrl K“
 (`ui/src/onboarding/firststeps.ts:91-98`, FirstStepsCard.tsx:78), the daily note's calendar button says
@@ -312,7 +312,7 @@ Fix: `hint("new_page")`, `hint("daily_note")`, `hint("assistant")`, `hint("palet
 
 Guarding test: firststeps.test.ts with a remapped keymap.
 
-### U20 LOW: A second confirm replaces the first one, whose promise never settles (window close can get stuck)
+### U20 LOW: A second confirm replaces the first one, whose promise never settles (window close can get stuck) — fixed in 1.16 (store confirm test)
 
 Repro (vitest against the store): `confirm(A)`, then `confirm(B)`, answer B: A stays pending forever. In the
 app: closing the window while a save fails shows „Ungespeicherte Änderungen“ (`flushBeforeExit`); tray
@@ -331,27 +331,27 @@ Guarding test: store/app.test.ts: two confirms → the first resolves `false`.
 
 ## Suspected, not confirmed
 
-- S1 Stale page in PageView callbacks: `onChange={(d) => setDoc({ ...doc, ...d })}` (`ui/src/views/PageView.tsx:278`)
+- S1 Stale page in PageView callbacks: `onChange={(d) => setDoc({ ...doc, ...d })}` (`ui/src/views/PageView.tsx:278`) — fixed in 1.16 (setDoc from the newest page)
   spreads the `doc` of the render the click/blur happened in. `commitTitle` awaits `flushAllEditors()` (which
   updates `doc.content` via `onOwnSave`) and then calls `onChange({ title })` with the old content; in the
   source view the `[doc.content]` effect then shows the pre-save text until the `reloadEditors()` refetch
   lands (a flash; a keystroke in that window would be saved on top of the old text). Same pattern for the
   favorite and icon buttons when a save lands during their request. Fix: `setDoc((cur) => cur && { ...cur, ...d })`.
-- S2 `settings://changed` refetch race (`ui/src/App.tsx:136`): two quick saves, the refetch started after the
+- S2 `settings://changed` refetch race (`ui/src/App.tsx:136`): two quick saves, the refetch started after the — fixed in 1.16 (an older settings answer is dropped)
   first resolves after the second save and is applied (`JSON` differs from the store) → the store (and the
   settings form) briefly flip back to the first state. Fix: ignore answers older than the latest own save
   (sequence number), or let the event carry the saved settings.
-- S3 Stale results of fast input: AssistantPanel route preview (`panels/AssistantPanel.tsx:460`, no
+- S3 Stale results of fast input: AssistantPanel route preview (`panels/AssistantPanel.tsx:460`, no — fixed in 1.16 (sequence checks: sidebar search Enter, export preview, issues list, route preview)
   sequence check), Timesheet export preview (`views/TimesheetView.tsx:979`), IssuesView list on filter change
   (`views/IssuesView.tsx:87`), Sidebar search Enter opens the first hit of the previous query while the
   new one is still debounced (`components/Sidebar.tsx:279`).
-- S4 Toast eviction: `toast()` keeps only the last three non-persistent toasts (`store/app.ts`), so a fourth
+- S4 Toast eviction: `toast()` keeps only the last three non-persistent toasts (`store/app.ts`), so a fourth — fixed in 1.16 (trimToasts keeps action toasts)
   quick message removes an older „Rückgängig“ (e.g. delete, then three settings changes). Consider keeping
   action toasts until their timeout.
-- S5 Board view drag (`views/collection/BoardView.tsx` `onCardDown`): no `pointercancel` handler and no
+- S5 Board view drag (`views/collection/BoardView.tsx` `onCardDown`): no `pointercancel` handler and no — fixed in 1.16 (BoardView pointercancel and Escape)
   Escape to cancel; a lost pointerup leaves the drag ghost and listeners until the next click.
-- S6 `goDay` in the daily note header (`PageView.tsx` `goDay`) computes from the shown day; two quick clicks
+- S6 `goDay` in the daily note header (`PageView.tsx` `goDay`) computes from the shown day; two quick clicks — fixed in 1.16 (pendingDay)
   both open the next day instead of moving two days.
-- S7 Rename in the page title has no undo toast while the tree rename has one (inconsistent).
-- S8 Canvas: Space with a focused button inside the canvas starts panning instead of pressing the button
+- S7 Rename in the page title has no undo toast while the tree rename has one (inconsistent). — fixed in 1.16 (editor/rename.ts shared with the tree)
+- S8 Canvas: Space with a focused button inside the canvas starts panning instead of pressing the button — fixed in 1.16 (Space on buttons in the canvas presses them)
   (`views/canvas/CanvasView.tsx:730`).

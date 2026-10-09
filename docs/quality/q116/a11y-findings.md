@@ -33,7 +33,7 @@ consistency.
 
 ## Accessibility (screen readers, semantics, contrast)
 
-### A1 – High – Editor suggestion menus are silent for screen readers (seen)
+### A1 – High – Editor suggestion menus are silent for screen readers (seen) — fixed in 1.16 (suggestion-popup ownerAria, e2e 321)
 - Where: `ui/src/editor/suggestion-popup.tsx` (`role="listbox"`, options with `aria-selected`) and
   the TipTap suggestion plugins for slash, `[[`, `#` and `/zeit` in `editor/extensions.tsx` and
   `schema.ts`.
@@ -50,7 +50,7 @@ consistency.
   `aria-activedescendant` points to the option with `aria-selected="true"` and that `aria-expanded` is
   true; after Escape it is false. Add a unit test of the attribute helper.
 
-### A2 – Medium – Dialogs announce only their title; the confirm is not an alertdialog (seen)
+### A2 – Medium – Dialogs announce only their title; the confirm is not an alertdialog (seen) — fixed in 1.16 (Dialog h2, aria-labelledby/describedby, alertdialog, e2e 320)
 - Where: `components/ui.tsx` `Dialog` (`role="dialog" aria-label={title}`) and `Shell.tsx`
   `ConfirmHost`.
 - What: the description and the message (`<p class="dialog-text">`) are not linked. „Papierkorb
@@ -63,7 +63,7 @@ consistency.
   `aria-describedby` resolves to the text. An e2e test checks that the trash confirm has
   `role=alertdialog` and that its description contains „rückgängig“.
 
-### A3 – Medium – Repeated identical control names in lists (seen)
+### A3 – Medium – Repeated identical control names in lists (seen) — fixed in 1.16 (labels name their entry, day or title)
 - Where:
   - `views/TimesheetView.tsx:658`: every entry checkbox is „Auswählen“, and every entry menu is
     „Aktionen“ (`ribbon.actions`).
@@ -86,7 +86,7 @@ consistency.
   the accessible names of `.pane.active button` in the calendar and timesheet and assert there are
   no duplicates, apart from an allow-list (Close).
 
-### A4 – Medium – Calendar events do not say their day (seen)
+### A4 – Medium – Calendar events do not say their day (seen) — fixed in 1.16 (calendar day groups, aria-expanded)
 - Where: `views/CalendarView.tsx` week and day grid (`.calv-col`, `evLabel()`).
 - What: the event button is named „Jour fixe Änderungen, 10:00–11:00“. The column has no role or
   label, so in week view nothing tells which day an event is on. Selecting an event does not expose
@@ -97,7 +97,7 @@ consistency.
 - Test: an e2e test (calendar fixtures) checks that the first event's accessible name, or its group,
   contains the weekday, and that `aria-expanded` turns true after Enter.
 
-### A5 – Medium – The shortcut recorder hides the current combination (code + seen)
+### A5 – Medium – The shortcut recorder hides the current combination (code + seen) — fixed in 1.16 (keys.recordValue, e2e 321)
 - Where: `views/settings/KeyboardSection.tsx`, `aria-label={t("keys.record", …)}` on the recorder
   button whose content is the `<kbd>`s.
 - What: `aria-label` replaces the content, so a screen reader hears „Tastenkürzel für
@@ -109,7 +109,7 @@ consistency.
 - Test: a unit test renders KeyboardSection and checks that the accessible name of
   `[data-command=palette]` contains `comboLabel("Ctrl+K")`.
 
-### A6 – Medium – Timesheet week table lacks table semantics (seen)
+### A6 – Medium – Timesheet week table lacks table semantics (seen) — fixed in 1.16 (week table scope, abbr and labels; projects table)
 - Where: `views/TimesheetView.tsx` Wochenübersicht table, and the two tables in `ProjectsView`.
 - What: there is no caption or label. The WBS code is a `td`, so rows have no header. `th` have no
   `scope`. „LA“ is never expanded, and „Mo 5.“ is read as „Mo 5 Punkt“. The Summe row starts with a
@@ -163,7 +163,7 @@ consistency.
 - Test: in `contrast.test.ts`, check `--border-focus` against every SURFACE and every TINT over it at
   3:1.
 
-### A10 – Low – Menu buttons do not say they open a menu (code)
+### A10 – Low – Menu buttons do not say they open a menu (code) — fixed in 1.16 (aria-haspopup and aria-expanded, a11y-menus.test)
 - Where: about 15 `IconButton`s that call `openMenuAt`/`setMenu` without `aria-haspopup`/
   `aria-expanded`: `Updates.tsx:334`, `Dashboard.tsx:306/640/664`, `Sidebar.tsx:1144`,
   `TimesheetView.tsx:679`, `PageView.tsx:466`, `JiraSection.tsx:260`, `CalendarSection.tsx:142`,
@@ -174,7 +174,7 @@ consistency.
 - Test: an AST test: a JSX element whose `onClick` calls `openMenuAt` or `setMenu` must carry
   `aria-haspopup`.
 
-### A11 – Low – Heading structure (seen)
+### A11 – Low – Heading structure (seen) — fixed in 1.16 (start page h1, counts read apart)
 - What: the start page has no `h1`; its first heading is the widget „Heute“ (h2), and „Guten
   Morgen“ is a `div`. Dialog titles are not headings (A2). Week review and the briefing put the
   count into the heading text („Termine0“, read as „Termine null“).
@@ -183,7 +183,7 @@ consistency.
 - Test: an e2e check per view (start page, calendar, timesheet, review, briefing): exactly one
   visible `h1` inside `.pane.active`.
 
-### A12 – Low – The start page week bars are buttons with `role="listitem"` (seen)
+### A12 – Low – The start page week bars are buttons with `role="listitem"` (seen) — fixed in 1.16 (list item wraps the button, a11y-menus.test)
 - Where: the `button.dw-bar-col` of „Zeit diese Woche“ (component `components/dashboard/time.tsx`).
 - What: the role override removes the button role, so screen readers do not announce them as
   activatable.
@@ -191,7 +191,7 @@ consistency.
 - Test: an AST rule in `a11y-buttons.test.ts`: no `role` other than button/tab/menuitem*/option/
   switch/radio on a `<button>`.
 
-### A13 – Low – Run-together accessible names (seen)
+### A13 – Low – Run-together accessible names (seen) — fixed in 1.16 (onboarding choices labelledby/describedby, week tile label)
 - What: names built from adjacent spans have no separator. Onboarding language radios read „Same as
   systemTakes the operating system's…“ and the rail „1Language“. The week review day tile reads „Mo
   5. 3 h fehlen 5 h / 8 h 3 h fehlen“; its warning `svg` has `aria-label` but no `role="img"`, and the
@@ -201,30 +201,30 @@ consistency.
 - Test: an e2e check that the accessible names of `.fr-choice` contain no lowercase-uppercase join
   (`/[a-z][A-Z]/`).
 
-### A14 – Low – Toasts sit in two nested live regions (code)
+### A14 – Low – Toasts sit in two nested live regions (code) — fixed in 1.16 (one live region per toast)
 - Where: `Shell.tsx` `Toasts`: the container has `aria-live="polite"`, and each toast has
   `role="alert"` or `"status"`.
 - What: some screen readers (NVDA, VoiceOver) announce a toast twice.
 - Fix: drop `aria-live` on the container, or the roles on the items.
 - Test: a unit test: `.toasts` has no `aria-live` when its children carry `role`.
 
-### A15 – Low – Sidebar tabs and editor tabs have no tabpanel (seen)
+### A15 – Low – Sidebar tabs and editor tabs have no tabpanel (seen) — fixed in 1.16 (tab and tabpanel pairs)
 - What: `.side-tabs [role=tab]` and `.tabs [role=tab]` have no `aria-controls` and no
   `role="tabpanel"` (only the side panel does).
 - Fix: `aria-controls` to the sidebar body and `role="tabpanel" aria-labelledby` on `.pane-body`.
 
-### A16 – Low – Field and control borders are below 3:1 (calc, 1.4.11)
+### A16 – Low – Field and control borders are below 3:1 (calc, 1.4.11) — not fixed here: pure contrast, belongs with the color pass (A7–A9)
 - What: `--border-strong` on the canvas is 1.55–2.36:1 in every theme except the two high-contrast
   ones. Inputs, selects and the segmented control are hard to find for low-vision users.
 - Fix: accept this as a design choice and point to „Hoher Kontrast“ in the docs, or give
   `.input/.select` a `--border-field` token at 3:1.
 
-### A17 – Low – Warning fill and star below 3:1 in three light themes (calc)
+### A17 – Low – Warning fill and star below 3:1 in three light themes (calc) — not fixed here: pure contrast, belongs with the color pass (A7–A9)
 - What: `--warning-fill`/`--star` on raised: Catppuccin Latte 2.42, Rosé Pine Dawn 2.16, Everforest
   Light 2.21 (budget bars, favourite star).
 - Fix: run `ensureContrast(…, 3)` for these two tokens in `themes.ts`.
 
-### A18 – Low – Citation chips show focus with an accent fill (code)
+### A18 – Low – Citation chips show focus with an accent fill (code) — fixed in 1.16 (neutral focus ring on citation chips)
 - Where: `app.css:1235` `.cite:hover, .cite:focus-visible { background: var(--accent); color: #fff;
   outline: none }`.
 - What: this goes against the focus rule (neutral ring, no accent for states), and white on `--accent`
@@ -235,7 +235,7 @@ consistency.
 
 ## Keyboard
 
-### K1 – High – Irreversible confirmations focus the destructive button (seen)
+### K1 – High – Irreversible confirmations focus the destructive button (seen) — fixed in 1.16 (Abbrechen has the focus on danger, e2e 320)
 - Where: `Shell.tsx` `ConfirmHost`: the confirm button always has `data-autofocus`, also when
   `danger`.
 - What: Papierkorb → „Papierkorb leeren“ → Enter opens „Papierkorb leeren? … kann nicht rückgängig
@@ -246,7 +246,7 @@ consistency.
 - Test: an e2e test in the trash: open the confirm and assert that `document.activeElement` is the
   cancel button; Enter closes it and the pages are still there.
 
-### K2 – Medium – Closing the command palette loses the focus (seen)
+### K2 – Medium – Closing the command palette loses the focus (seen) — fixed in 1.16 (palette focus restore, e2e 320)
 - Where: `components/CommandPalette.tsx` (open/close via `paletteOpen`).
 - What: focus on a tree row → Ctrl+K → Esc leaves `document.activeElement = body`. The next Tab
   starts at the ribbon, and from the editor the caret position is gone.
@@ -255,7 +255,7 @@ consistency.
 - Test: extend `e2e/tests/200-shell-keyboard.test.js`: focus a tree row, Ctrl+K, Escape, and the
   same row is active again.
 
-### K3 – Medium – Calendar event details: focus is not moved, then lost (seen)
+### K3 – Medium – Calendar event details: focus is not moved, then lost (seen) — fixed in 1.16 (detail heading takes the focus, back to the event)
 - Where: `views/CalendarView.tsx` (`onSelect` and the `aside.calv-detail`).
 - What: Enter on an event opens the detail, but the focus stays on the event. The detail is 15 Tab
   presses away (behind all other events). Esc inside the detail closes it, and the focus falls to
@@ -266,7 +266,7 @@ consistency.
 - Test: an e2e test (fixtures): Enter on an event makes `activeElement` sit inside `.calv-detail`;
   Escape puts it on `.calv-ev[data-key=…]`.
 
-### K4 – Medium – IME and dead keys: Enter/Esc submit or close during composition (code)
+### K4 – Medium – IME and dead keys: Enter/Esc submit or close during composition (code) — fixed in 1.16 (lib/ime.ts isComposing/isKey, ime-guard.test)
 - Where: `lib/ime.ts` says that WebKit (macOS) sends the composing Enter/Esc with `isComposing=false`
   and `keyCode 229`, but only CaptureApp, SearchApp and AssistantPanel use `isComposing()`.
   - These check only `e.nativeEvent.isComposing`, so macOS WebKit gets through: `CommandPalette:405`,
@@ -289,7 +289,7 @@ consistency.
   test: dispatch `keydown {key:"Enter", keyCode:229}` in the tree rename field; the name is
   unchanged.
 
-### K5 – Medium – Shortcut hints name US keys that German keyboards do not have there (seen)
+### K5 – Medium – Shortcut hints name US keys that German keyboards do not have there (seen) — fixed in 1.16 (comboLabel by layout, Strg/Umschalt, keymap.test)
 - Where: `lib/keymap.ts` NAMED (`Backslash`, `BracketLeft`/`Right` by position) and `comboLabel`.
 - What: „Seitenleiste ausblenden (Ctrl \)“ is really Strg+# on a German keyboard. A synthetic
   `keydown {key:"#", code:"Backslash", ctrlKey}` toggled the sidebar (seen), while Ctrl+AltGr+ß
@@ -302,7 +302,7 @@ consistency.
 - Test: a unit test in `keymap.test.ts`: `comboLabel("Ctrl+\\", { layout: "de" })` gives „Strg #“,
   and `comboLabel("Ctrl+[", mac, "de")` gives „⌘Ü“.
 
-### K6 – Medium – macOS: find and replace is ⌘H, which hides the app (code)
+### K6 – Medium – macOS: find and replace is ⌘H, which hides the app (code) — fixed in 1.16 (replaceHint/isReplaceKey ⌥⌘F)
 - Where: `editor/NoteEditor.tsx:693–701` (`k === "h"` with metaKey), the hints
   `keys("Mod H")` in `NoteEditor.tsx:778` and `EditorToolbar.tsx:137`, and
   `src-tauri/src/appmenu.rs:42` (`PredefinedMenuItem::hide`, ⌘H).
@@ -313,7 +313,7 @@ consistency.
 - Test: a unit test of a `replaceCombo(mac)` helper, and that the toolbar menu's shortcut on mac
   is „⌥⌘F“.
 
-### K7 – Medium – macOS: the next/previous tab hint is ⌘⇥, which is the app switcher (code)
+### K7 – Medium – macOS: the next/previous tab hint is ⌘⇥, which is the app switcher (code) — fixed in 1.16 (MAC_DEFAULTS next/prev tab, MAC_RESERVED)
 - Where: `lib/keymap.ts` COMMANDS `next_tab: "Ctrl+Tab"`, `prev_tab: "Ctrl+Shift+Tab"`, and no
   MAC_DEFAULTS entry. `comboLabel` maps Ctrl to ⌘ on a Mac.
 - What: Settings → Tastatur and tooltips show „⌘ ⇥“ and „⌘ ⇧ ⇥“; macOS takes ⌘⇥ for the app
@@ -323,7 +323,7 @@ consistency.
 - Test: in `keymap.test.ts`, no default on mac formats to a system-reserved combo (⌘⇥, ⌘H, ⌘M, ⌘Q,
   ⌘Space, ⌘⌥Esc). Keep a `MAC_RESERVED` table and use it in `findConflicts` too.
 
-### K8 – Medium – No way to jump between regions; toast actions are out of reach (seen + code)
+### K8 – Medium – No way to jump between regions; toast actions are out of reach (seen + code) — fixed in 1.16 (lib/regions.ts F6, e2e 321)
 - What: there is no F6 / Shift+F6 cycle and no skip link. The Tab order is ribbon (20 stops), then
   the sidebar header, filter, tree, row actions and footer, then the tab bar, toolbar (14) and
   content, then the side panel. Toasts with „Rückgängig“ (7 s) render at the end of the DOM, so they
@@ -334,7 +334,7 @@ consistency.
 - Test: an e2e test where F6 from the editor lands in the side panel, then the ribbon, then the
   sidebar's current row; after deleting a page, F6 reaches the „Rückgängig“ toast.
 
-### K9 – Medium – Help → „Tastenkürzel“ lists only the rebindable commands (seen)
+### K9 – Medium – Help → „Tastenkürzel“ lists only the rebindable commands (seen) — fixed in 1.16 (lib/keyhelp.ts in Settings → Tastatur, keyhelp.test, e2e 321)
 - Where: `components/Help.tsx` `showShortcuts` opens Settings → Tastatur, which lists `COMMANDS` only.
 - What: much keyboard handling is undocumented in the app:
   - Editor keys (Strg+B/I/E, Strg+F/H, Alt+Enter, slash, `[[`, `#`).
@@ -351,7 +351,7 @@ consistency.
   blocks `key` appears in `keyhelp.ts`. An e2e test asserts that Settings → Tastatur shows „F2“ and
   „Umbenennen“.
 
-### K10 – Low – Splitters cannot be used with the keyboard (code)
+### K10 – Low – Splitters cannot be used with the keyboard (code) — fixed in 1.16 (Resizer keys and aria-value*)
 - Where: `components/Resizer.tsx`: `role="separator"` without `tabIndex`, `aria-valuenow` or key
   handling.
 - What: sidebar width, side panel width and split panes can only be changed by dragging
@@ -360,7 +360,7 @@ consistency.
   `aria-valuenow/min/max` in px.
 - Test: a unit test: ArrowRight on the separator calls `onResize(16)` and `onEnd`.
 
-### K11 – Low – Editor toolbar: 14 tab stops in a `role="toolbar"` (seen)
+### K11 – Low – Editor toolbar: 14 tab stops in a `role="toolbar"` (seen) — fixed in 1.16 (roving toolbar)
 - Where: `editor/EditorToolbar.tsx`.
 - What: every button is `tabIndex=0`. The ARIA toolbar pattern expects one tab stop with ←/→ between
   buttons. From the tab bar to the text takes 14 Tabs.
@@ -368,7 +368,7 @@ consistency.
   last-focused button remembered.
 - Test: an e2e test: Tab into the toolbar, ArrowRight twice, Tab, and the focus is in the editor.
 
-### K12 – Low – Onboarding setup: Esc, focus after closing, radios (seen)
+### K12 – Low – Onboarding setup: Esc, focus after closing, radios (seen) — fixed in 1.16 (Escape ends the setup, focus back, roving radios)
 - Where: `onboarding/Intake.tsx` (no Escape handling), `steps.tsx` choice cards.
 - What:
   - The intro offers „Überspringen Esc“, but in the setup (`aria-modal` dialog) Esc does nothing.
@@ -379,20 +379,20 @@ consistency.
 - Test: e2e test 300 (onboarding): Escape in the setup closes it, the answers are kept, and
   `activeElement` is not `body`.
 
-### K13 – Low – The image full view takes no focus (code)
+### K13 – Low – The image full view takes no focus (code) — fixed in 1.16 (ImageViewer focus and trap)
 - Where: `editor/imageMenu.tsx` `ImageViewer`.
 - What: `role="dialog"` without `aria-modal`, initial focus, trap or focus return; Tab moves through
   the page under the overlay. (PdfViewer does this right.)
 - Fix: focus the close button on open, trap Tab, `aria-modal="true"`, and restore the focus on close.
 
-### K14 – Low – A Dialog without a field or primary button leaves the focus behind it (code)
+### K14 – Low – A Dialog without a field or primary button leaves the focus behind it (code) — fixed in 1.16 (Dialog falls back to itself)
 - Where: `components/ui.tsx:204–206`; the focus moves only to
   `[data-autofocus], input, textarea, select, button.btn-primary`.
 - What: in an info-only dialog the focus stays on the page behind it. The trap catches the first Tab,
   but screen readers do not enter the dialog.
 - Fix: fall back to the dialog element (`tabIndex=-1`) or its close button.
 
-### K15 – Low – macOS menu key equivalents ignore Settings → Tastatur (code)
+### K15 – Low – macOS menu key equivalents ignore Settings → Tastatur (code) — fixed in 1.16 (macOS menu keys count as conflicts (findConflicts on mac))
 - Where: `src-tauri/src/appmenu.rs:69–70` (`Cmd+\`, `Cmd+.` fixed) and `App.tsx:181`.
 - What: if the user moves „Seitenleiste umschalten“ or „Fokusmodus“ to another combo, ⌘\ and ⌘.
   still run them, and a command bound to ⌘\ never fires. The conflict check does not know about
@@ -400,7 +400,7 @@ consistency.
 - Fix: rebuild the menu from the effective keymap (`settings_changed`), or treat them as reserved
   on mac in `findConflicts`.
 
-### K16 – Low – Small keymap inconsistencies (code)
+### K16 – Low – Small keymap inconsistencies (code) — fixed in 1.16 (AI shortcuts filtered, imeNote)
 - What:
   - Settings → Tastatur hides the timer shortcuts when time tracking is off, but lists
     Assistent/Chat when AI is off (they do nothing then, `App.tsx` AI_SHORTCUTS).
