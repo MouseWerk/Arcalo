@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dayOff, dayProgress, dayShort, isEmptyWeek, isThisWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, weekProgress, weekRange, weekSubtitle, type WeekDay, type WeekMeeting, type WeekReview } from "./weekreview";
+import { dayOff, dayProgress, dayShort, daySub, isEmptyWeek, isThisWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, weekProgress, weekRange, weekSubtitle, weekTimeSub, type WeekDay, type WeekMeeting, type WeekReview } from "./weekreview";
 import { setLang } from "./i18n";
 import { setFormatPrefs } from "./format";
 
@@ -146,5 +146,23 @@ describe("week headings", () => {
     const src = readFileSync(resolve(__dirname, "../views/TimesheetView.tsx"), "utf8");
     expect(src).toMatch(/weekRange\(isoDay\(week\)\)/);
     expect(src).not.toMatch(/dayMonthName\(week\)/);
+  });
+});
+
+describe("the lines under the days and the week (q116 V14, R5)", () => {
+  it("names a workday before the setup neutrally and today's rest as open, not missing", () => {
+    setFormatPrefs({ lang: "de", hours: "decimal" });
+    const today = "2026-10-09";
+    expect(daySub(day("2026-10-05", { target_minutes: 0, before_setup: true }), today)).toBe("vor der Einrichtung");
+    expect(daySub(day("2026-10-10", { target_minutes: 0 }), today)).toBe("kein Arbeitstag");
+    expect(daySub(day(today), today)).toBe("noch 8,00 h offen");
+    expect(daySub(day("2026-10-08", { missing_minutes: 480 }), today)).toBe("8,00 h fehlen");
+    expect(daySub(day("2026-10-12", { future: true }), today)).toBe("");
+    expect(weekTimeSub({ target_minutes: 2400, booked_minutes: 2970, missing_minutes: 0 })).toBe("Soll erreicht");
+    expect(weekTimeSub({ target_minutes: 480, booked_minutes: 0, missing_minutes: 0 })).toBe("noch 8,00 h offen");
+    expect(weekTimeSub({ target_minutes: 2400, booked_minutes: 2970, missing_minutes: 480 })).toBe("8,00 h fehlen");
+    setLang("en");
+    setFormatPrefs({ lang: "en" });
+    expect(daySub(day("2026-10-05", { target_minutes: 0, before_setup: true }), today)).toBe("before setup");
   });
 });

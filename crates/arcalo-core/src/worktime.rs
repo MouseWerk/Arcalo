@@ -12,7 +12,7 @@ pub mod holidays;
 
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
@@ -320,6 +320,18 @@ impl DayTargets {
 /// before the workspace existed is no gap).
 pub fn gap_target(db: &Database, settings: &Settings, date: NaiveDate) -> Result<i64> {
     Ok(DayTargets::load(db, settings, date, date)?.get(date))
+}
+
+/// Local hour from which today counts as over (`dayIsOver` in ui/src/lib/cats.ts).
+pub const DAY_OVER_HOUR: u32 = 18;
+
+/// Whether time still missing on `d` counts as missing: the day is past, or it is today and
+/// [`DAY_OVER_HOUR`] has come. Before that, today's rest is still open, not missing. The one
+/// rule of the start page, the timesheet, the week proposal and the week and day review.
+pub fn day_is_over<Tz: TimeZone>(d: NaiveDate, now: DateTime<Utc>, tz: &Tz) -> bool {
+    let local = now.with_timezone(tz);
+    let today = local.date_naive();
+    d < today || (d == today && local.hour() >= DAY_OVER_HOUR)
 }
 
 /// Booked minutes per local day of `from..=to`; a running timer counts until `now`.

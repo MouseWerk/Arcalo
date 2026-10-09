@@ -339,7 +339,8 @@ export function ProposalWidget({ widget }: WidgetProps) {
               <span className="num dw-big">{fmtMinutes(p.booked_minutes)}</span>
               <span className="faint num">{t("dash.ofHours", { h: fmtMinutes(p.target_minutes) })}</span>
               <span className="grow" />
-              {complete ? <Badge tone="success">{t("dash.prop.complete")}</Badge> : <Badge tone="warning">{t("dash.gapShort", { h: hrs(p.missing_minutes) })}</Badge>}
+              {/* Missing hours only when there are some (days that are over); meetings alone are the line below. */}
+              {p.missing_minutes > 0 ? <Badge tone="warning">{t("dash.gapShort", { h: hrs(p.missing_minutes) })}</Badge> : complete ? <Badge tone="success">{t("dash.prop.complete")}</Badge> : null}
             </div>
             <div className="dw-meter" aria-hidden>
               <span style={{ width: `${Math.min(1, share) * 100}%` }} />

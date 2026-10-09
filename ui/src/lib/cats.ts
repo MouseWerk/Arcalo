@@ -10,7 +10,8 @@ export interface DayGap {
   missingMinutes: number;
 }
 
-/** Whether missing time on day `key` (YYYY-MM-DD) counts at `now`: past days, today once the working day is over. */
+/** Whether missing time on day `key` (YYYY-MM-DD) counts at `now`: past days, today once the working day is over
+ *  (18:00, as `worktime::day_is_over` in the core counts it for the reviews and the week proposal). */
 export function dayIsOver(key: string, now: Date): boolean {
   const today = isoDay(now);
   return key < today || (key === today && now.getHours() >= 18);

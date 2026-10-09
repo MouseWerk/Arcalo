@@ -16,13 +16,13 @@ import { pickDate } from "../components/CalendarPopover";
 import { flushAllEditors } from "../editor/saves";
 import { revealText } from "../editor/reveal";
 import { dayTitle, fileKind } from "../lib/activity";
-import { fmtDayMonth, fmtDuration, int, isoDay, time } from "../lib/format";
+import { fmtApprox, fmtDayMonth, fmtDuration, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
 import { openWeekReview } from "../lib/weekreview";
 import { useTimeTracking } from "../lib/timetracking";
-import { MEETING_LABEL, findReviewBlock, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
+import { MEETING_LABEL, dayTimeSub, findReviewBlock, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import { useAi } from "../lib/aiswitch";
@@ -202,7 +202,7 @@ export function DayReviewView() {
             <Button variant="ghost" icon={CalendarCheck} className="rv-week" onClick={(e) => openWeekReview(date, { newTab: e.ctrlKey || e.metaKey })} aria-label={t("week.view")} data-tooltip-full={t("week.view")}>
               {t("week.view")}
             </Button>
-            <Button variant={aiOn ? "secondary" : "primary"} icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
+            <Button variant={aiOn ? "secondary" : "primary"} icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()} aria-label={t("review.insert")} data-tooltip-full={t("review.insert")}>
               {t("review.insert")}
             </Button>
             {aiOn && (
@@ -385,9 +385,9 @@ function Stats({ r }: { r: DayReview }) {
           {fmtDuration(tm.booked_minutes)}
           {tm.target_minutes > 0 && <span className="rv-stat-of"> / {fmtDuration(tm.target_minutes)}</span>}
         </span>
-        <Progress value={progress(r)} tone={tm.target_minutes > 0 && tm.missing_minutes === 0 ? "success" : "accent"} />
+        <Progress value={progress(r)} tone={tm.target_minutes > 0 && tm.booked_minutes >= tm.target_minutes ? "success" : "accent"} />
         <span className="rv-stat-sub">
-          {tm.target_minutes <= 0 ? t("review.noWorkday") : tm.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(tm.missing_minutes) }) : t("review.targetReached")}
+          {dayTimeSub(tm)}
           {tm.running_minutes > 0 && ` · ${t("review.timer", { time: fmtDuration(tm.running_minutes) })}`}
         </span>
       </div>}
@@ -412,7 +412,7 @@ function Stats({ r }: { r: DayReview }) {
           <FileText size={13} aria-hidden /> {t("review.md.pages")}
         </span>
         <span className="rv-stat-value num">{Math.max(r.pages_total ?? 0, r.pages.length)}</span>
-        <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: fmtDuration(edited) }) : t("review.edited")}</span>
+        <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: fmtApprox(edited) }) : t("review.edited")}</span>
       </div>
       <div className="rv-stat tone-focus">
         <span className="rv-stat-label">
@@ -512,7 +512,7 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
 function PageRow({ p, onOpen }: { p: ReviewPage; onOpen: (newTab: boolean) => void }) {
   const t = useT();
   const words = (n: number) => t("review.words", { n: Math.abs(n), count: `${n > 0 ? "+" : "−"}${int(Math.abs(n))}` });
-  const bits = [p.minutes > 0 ? `~${p.minutes} min` : "", p.word_delta ? words(p.word_delta) : "", p.edits > 0 ? t("feed.changes", { n: p.edits }) : ""].filter(Boolean);
+  const bits = [p.minutes > 0 ? `~${fmtApprox(p.minutes)}` : "", p.word_delta ? words(p.word_delta) : "", p.edits > 0 ? t("feed.changes", { n: p.edits }) : ""].filter(Boolean);
   return (
     <button type="button" className={`rv-row rv-page ${p.gone ? "gone" : ""}`} onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}>
       <span className="rv-when num">{time(p.last_at)}</span>

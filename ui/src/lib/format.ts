@@ -70,6 +70,18 @@ export const fmtMinutes = (m: number | null | undefined, style = prefs.hours) =>
  */
 export const fmtDuration = (m: number | null | undefined, style = prefs.hours) => `${fmtMinutes(m, style)} h`;
 
+/**
+ * An estimated duration (how long pages were edited), rounded as an estimate reads: under an hour
+ * in minutes („35 Min.“, to 5 minutes), else in the hour format of the settings to the quarter
+ * hour („1,25 h“ or „1:15 h“). No „~“: the texts around it say it is an estimate.
+ */
+export function fmtApprox(m: number | null | undefined, style = prefs.hours): string {
+  const x = Math.max(0, m ?? 0);
+  const five = x < 10 ? Math.max(1, Math.round(x)) : Math.round(x / 5) * 5;
+  if (five < 60) return `${int(five)} ${t("unit.min")}`;
+  return fmtDuration(Math.round(x / 15) * 15, style);
+}
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** A day in the configured format: "24.09.2026", "2026-09-24", "24/09/2026" or "09/24/2026". */

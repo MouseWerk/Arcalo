@@ -271,13 +271,13 @@ export function positionLabel(key: string, lang: Lang = currentLang()): string {
   return lang === "de" ? GERMAN_POSITIONS[code] : key;
 }
 
-/** "Strg Umschalt D" as shown in tooltips and menus ("⌘⇧D" on macOS, where ⌘ acts as Ctrl); "" for none. */
+/** "Strg+Umschalt+D" as shown in tooltips, menus and hint texts ("⌘⇧D" on macOS, where ⌘ acts as Ctrl); "" for none. */
 export function comboLabel(combo: string | null | undefined, mac = IS_MAC, lang: Lang = currentLang()): string {
   if (!combo) return "";
   const parts = combo.endsWith("++") ? [...combo.slice(0, -2).split("+"), "+"] : combo.split("+");
   const key = parts.pop()!;
   const mods = parts.map((p) => (p === "Ctrl" ? "Mod" : p));
-  return formatShortcut([...mods, SYMBOLS[key] ?? positionLabel(key, lang)].join(" "), mac, " ");
+  return formatShortcut([...mods, SYMBOLS[key] ?? positionLabel(key, lang)].join(" "), mac);
 }
 
 /** The command bound to a key event. */
@@ -335,7 +335,7 @@ export function commandAllowed(id: string, target: Element | null, layer: "palet
 let current: Record<string, string> = { ...DEFAULT_KEYMAP };
 export const setCurrentKeymap = (m: Record<string, string>) => (current = m);
 export const currentKeymap = () => current;
-/** Shortcut hint of a command, e.g. "Ctrl Shift D" ("" when unbound). */
+/** Shortcut hint of a command, e.g. "Ctrl+Shift+D" ("" when unbound). */
 export const hint = (id: string) => comboLabel(current[id]);
-/** "Label (Ctrl N)" or just "Label" when the command has no shortcut. */
+/** "Label (Ctrl+N)" or just "Label" when the command has no shortcut. */
 export const withHint = (label: string, id: string) => (hint(id) ? `${label} (${hint(id)})` : label);

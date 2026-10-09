@@ -117,6 +117,20 @@ fn day_targets_follow_holidays_and_absences() {
     assert_eq!(day_target(480, false, Some(&a(AbsenceKind::Comp, false)), false), 0);
 }
 
+#[test]
+fn a_day_is_over_when_past_or_in_the_evening() {
+    let tz = chrono_tz::Europe::Berlin;
+    let at = |day: u32, h: u32, m: u32| tz.with_ymd_and_hms(2026, 10, day, h, m, 0).unwrap().with_timezone(&Utc);
+    let today = d(2026, 10, 14);
+    assert!(day_is_over(d(2026, 10, 13), at(14, 8, 0), &tz));
+    assert!(!day_is_over(today, at(14, 17, 59), &tz));
+    assert!(day_is_over(today, at(14, 18, 0), &tz));
+    assert!(!day_is_over(d(2026, 10, 15), at(14, 23, 0), &tz));
+    // Local time decides: 19:00 in Berlin is 17:00 UTC.
+    assert!(day_is_over(today, at(14, 19, 0), &tz));
+    assert!(!day_is_over(today, at(14, 19, 0), &Utc));
+}
+
 fn world() -> (Database, i64, Settings) {
     let db = Database::open_in_memory().unwrap();
     let p = db.create_project("PRJ", "Projekt").unwrap();

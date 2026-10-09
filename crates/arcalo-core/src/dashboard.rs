@@ -735,8 +735,9 @@ fn embed(db: &Database, id: i64) -> Result<PageData> {
 fn proposal<Tz: TimeZone>(ctx: &Ctx<Tz>, start: NaiveDate) -> Result<ProposalData> {
     let w = week(ctx, start)?;
     let mut open_days: Vec<OpenDay> = vec![];
-    // Holidays, absence days and the days before the workspace existed are no gaps.
-    for d in w.days.iter().filter(|d| d.date < ctx.today) {
+    // Holidays, absence days and the days before the workspace existed are no gaps; today counts
+    // once it is over, as on the week widget, in the timesheet and in the reviews.
+    for d in w.days.iter().filter(|d| crate::worktime::day_is_over(d.date, ctx.now, ctx.tz)) {
         if d.minutes < d.target_minutes {
             open_days.push(OpenDay {
                 date: d.date,

@@ -221,10 +221,10 @@ test("English UI: ribbon tooltips, sidebar and settings are translated", async (
     nav: [...document.querySelectorAll(".settings-nav-item")].map((b) => b.textContent),
     tab: document.querySelector(".tab.active .tab-title")?.textContent,
   }));
-  assert.equal(labels.settings, "Settings (Ctrl ,)");
+  assert.equal(labels.settings, "Settings (Ctrl+,)");
   assert.ok(labels.timesheet.includes("Time tracking"), labels.timesheet.join(", "));
-  assert.ok(labels.timesheet.includes("New page (Ctrl N)"));
-  assert.deepEqual(labels.sideTabs.slice(0, 2), ["Files", "Search (Ctrl Shift F)"]);
+  assert.ok(labels.timesheet.includes("New page (Ctrl+N)"));
+  assert.deepEqual(labels.sideTabs.slice(0, 2), ["Files", "Search (Ctrl+Shift+F)"]);
   assert.ok(labels.nav.includes("Network") && labels.nav.includes("Appearance"), labels.nav.join(", "));
   assert.equal(labels.tab, "Settings");
   await app.shot("settings-english");
@@ -253,7 +253,7 @@ test("a rebound shortcut runs its command; conflicts are shown", async () => {
   const view = await app.invoke("settings_get");
   assert.deepEqual(view.settings.keymap, { daily_note: "Ctrl+Shift+L" });
   // The ribbon shows the new shortcut, and it opens today's daily note.
-  assert.match(await app.browser.execute(() => document.querySelector('.ribbon [aria-label^="Heutige"]')?.getAttribute("aria-label")), /Strg Umschalt L/);
+  assert.match(await app.browser.execute(() => document.querySelector('.ribbon [aria-label^="Heutige"]')?.getAttribute("aria-label")), /Strg\+Umschalt\+L/);
   await app.browser.execute(() => document.activeElement?.blur());
   await app.keys(["Control", "Shift", "l"]);
   const today = new Date();

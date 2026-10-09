@@ -397,16 +397,24 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
   useEffect(() => {
     const el = tabsRef.current;
     if (!el) return;
-    // Fades at the edges that have hidden tabs; the list button when not all fit.
+    // A fade at the right edge when tabs are hidden there; the list button when not all fit.
     const edges = () => {
-      el.classList.toggle("fade-left", el.scrollLeft > 1);
       el.classList.toggle("fade-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
       // A tab cut at the left edge is hidden rather than shown as a faded sliver.
       const left = el.getBoundingClientRect().left;
       for (const tab of el.querySelectorAll<HTMLElement>(".tab")) tab.classList.toggle("cut", tab.getBoundingClientRect().left < left - 1);
     };
     const fit = () => {
-      el.scrollLeft = tabScrollLeft(el);
+      el.style.removeProperty("--tab-extra");
+      // The active tab's floor when space is short: about two words, or its whole title if shorter.
+      const act = el.querySelector<HTMLElement>(".tab.active:not(.pinned)");
+      const title = act?.querySelector<HTMLElement>(".tab-title");
+      const natural = act && title ? act.offsetWidth - title.clientWidth + title.scrollWidth : 0;
+      el.style.setProperty("--tab-active-min", `${Math.max(104, Math.min(160, Math.ceil(natural)))}px`);
+      const { left, extra } = tabScroll(el);
+      // Scrolled to the end, the strip could not start at a tab: the active tab takes the rest.
+      if (extra > 0) el.style.setProperty("--tab-extra", `${Math.ceil(extra)}px`);
+      el.scrollLeft = left;
       setOverflow(el.scrollWidth > el.clientWidth + 1);
       edges();
     };
@@ -424,7 +432,6 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       el.removeEventListener("scroll", edges);
     };
   }, [pane.activeTabId, pane.tabs.length]);
-  const pinnedCount = pane.tabs.filter((t) => t.pinned).length;
   const allTabs = (): MenuEntry[] =>
     pane.tabs.map((t) => ({ label: tabTitle(t, pages), checked: t.id === pane.activeTabId, onSelect: () => s().activateTab(t.id) }));
 
@@ -458,8 +465,9 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
         aria-label={tr("tabs.openTabs")}
         data-tauri-drag-region
         ref={tabsRef}
-        // Pinned tabs take only their compact width; the others share the rest as before.
-        style={pinnedCount ? { gridTemplateColumns: `repeat(${pinnedCount}, max-content)` } : undefined}
+        // Pinned tabs take only their compact width; the others share the rest, the active one
+        // keeps a readable title when space is short.
+        style={{ gridTemplateColumns: pane.tabs.map((x) => (x.pinned ? "max-content" : x.id === pane.activeTabId ? "var(--tab-col-active)" : "var(--tab-col)")).join(" ") }}
         // The mouse wheel scrolls the tab row sideways.
         onWheel={(e) => {
           if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
@@ -607,8 +615,10 @@ function PageOrCanvas({ pageId, tab, active }: { pageId: number; tab: Tab; activ
 }
 
 /** Where the tab strip scrolls so the active tab is fully in view and no tab is cut at the left
- *  edge (a cut one under the fade read as a ghost tab): the strip starts at a tab. */
-export function tabScrollLeft(el: HTMLElement): number {
+ *  edge (a cut one under the fade read as a ghost tab, a hidden one as an empty slot): the strip
+ *  starts at a tab. `extra`: how far that start lies past the end of the scroll range, the width
+ *  the active tab grows by so the strip can scroll there. */
+export function tabScroll(el: HTMLElement): { left: number; extra: number } {
   const box = el.getBoundingClientRect();
   const starts = [...el.querySelectorAll<HTMLElement>(".tab")].map((t) => {
     const r = t.getBoundingClientRect();
@@ -621,8 +631,9 @@ export function tabScrollLeft(el: HTMLElement): number {
     else if (active.right > left + el.clientWidth) left = active.right - el.clientWidth;
   }
   const max = Math.max(0, el.scrollWidth - el.clientWidth);
-  if (left <= 1) return 0;
+  if (left <= 1) return { left: 0, extra: 0 };
   // The first tab that starts at or after the edge; the active one bounds it, so it stays whole.
   const next = starts.find((t) => t.left >= left - 1)?.left ?? left;
-  return Math.min(next, active ? active.left : next, max);
+  const want = Math.min(next, active ? active.left : next);
+  return { left: want, extra: active && want > max ? want - max : 0 };
 }

@@ -27,7 +27,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import { useAi } from "../lib/aiswitch";
 import {
-  WEEK_REVIEW_EVENT, dayOff, dayProgress, dayShort, isEmptyWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, takeWeekReviewDay, weekApi, weekProgress, weekSubtitle,
+  WEEK_REVIEW_EVENT, dayOff, dayProgress, dayShort, daySub, isEmptyWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, takeWeekReviewDay, weekApi, weekProgress, weekSubtitle, weekTimeSub,
   type WeekPage, type WeekReview, type WeekTask,
 } from "../lib/weekreview";
 import { useT } from "../lib/i18n";
@@ -210,7 +210,7 @@ export function WeekReviewView() {
               <IconButton icon={ExternalLink} className="wr-open-report" label={t("week.openReport")} onClick={(e) => void openPage(r.report_page_id, e.ctrlKey || e.metaKey)} />
             )}
             <IconButton icon={LayoutTemplate} className="wr-template" label={t("week.template")} onClick={() => void editTemplate()} />
-            <Button variant={aiOn ? "secondary" : "primary"} icon={ClipboardList} className="wr-save" loading={saving} disabled={!r} onClick={() => void save()}>
+            <Button variant={aiOn ? "secondary" : "primary"} icon={ClipboardList} className="wr-save" loading={saving} disabled={!r} onClick={() => void save()} aria-label={t("week.save")} data-tooltip-full={t("week.save")}>
               {t("week.save")}
             </Button>
             {aiOn && (
@@ -338,7 +338,7 @@ function Stats({ r }: { r: WeekReview }) {
           </span>
           <Progress value={weekProgress(r)} tone={tm.target_minutes > 0 && tm.booked_minutes >= tm.target_minutes ? "success" : "accent"} />
           <span className="rv-stat-sub">
-            {tm.target_minutes <= 0 ? t("week.noTarget") : tm.missing_minutes > 0 ? t("week.missing", { h: fmtDuration(tm.missing_minutes) }) : t("review.targetReached")}
+            {weekTimeSub(tm)}
             {tm.running_minutes > 0 && ` · ${t("review.timer", { time: fmtDuration(tm.running_minutes) })}`}
           </span>
         </div>
@@ -393,7 +393,7 @@ function Days({ r }: { r: WeekReview }) {
       {r.days.map((d) => {
         const off = dayOff(d);
         const over = d.booked_minutes > d.target_minutes && d.target_minutes > 0;
-        const sub = off ?? (d.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(d.missing_minutes) }) : d.gaps.length ? t("week.gaps", { n: d.gaps.length }) : d.target_minutes <= 0 && !d.booked_minutes ? t("review.noWorkday") : "");
+        const sub = daySub(d, today);
         // One sentence for screen readers: the day, the hours, what is missing, what a click does.
         const label = [
           new Date(`${d.date}T12:00:00`).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }),
@@ -424,7 +424,7 @@ function Days({ r }: { r: WeekReview }) {
               <span className={over ? "over" : ""} style={{ width: `${dayProgress(d) * 100}%` }} />
             </span>
             <span className="wr-day-sub ellipsis">
-              {off ?? (d.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(d.missing_minutes) }) : d.gaps.length ? t("week.gaps", { n: d.gaps.length }) : d.target_minutes <= 0 && !d.booked_minutes ? t("review.noWorkday") : " ")}
+              {sub || " "}
             </span>
           </button>
         );

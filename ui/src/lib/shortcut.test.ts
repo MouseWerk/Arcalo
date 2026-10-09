@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatShortcut, isReplaceKey, keyName, keys, modLabel, recordShortcut, replaceHint } from "./shortcut";
+import fs from "node:fs";
+import path from "node:path";
+import { formatShortcut, isReplaceKey, keyChips, keyName, keys, modLabel, recordShortcut, replaceHint } from "./shortcut";
 import { setLang } from "./i18n";
 
 const key = (code: string, key: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
@@ -66,7 +68,7 @@ describe("formatShortcut", () => {
     expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Strg Umschalt K");
     expect(formatShortcut("Alt+Delete", false, " ")).toBe("Alt Entf");
     expect(formatShortcut("Shift+Enter", false)).toBe("Umschalt+Eingabe");
-    expect(keys("Shift Enter", false)).toBe("Umschalt Eingabe");
+    expect(keys("Shift Enter", false)).toBe("Umschalt+Eingabe");
     expect(keys("Delete", false)).toBe("Entf");
     expect(keyName("Umschalt")).toBe("Umschalt");
     setLang("en");
@@ -79,22 +81,22 @@ describe("formatShortcut", () => {
   });
   it("hints: Mod is ⌘ on macOS and Strg / Ctrl elsewhere", () => {
     expect(keys("Mod Shift D", true)).toBe("⇧⌘D");
-    expect(keys("Mod Shift D", false)).toBe("Strg Umschalt D");
+    expect(keys("Mod Shift D", false)).toBe("Strg+Umschalt+D");
     expect(keys("Mod \\", true)).toBe("⌘\\");
-    expect(keys("Mod ,", false)).toBe("Strg ,");
+    expect(keys("Mod ,", false)).toBe("Strg+,");
     expect(keys("Mod Enter", true)).toBe("⌘↩");
     expect(keys("Mod Klick", true)).toBe("⌘ Klick");
     expect(keys("Ctrl Tab", true)).toBe("⌃⇥");
-    expect(keys("Mod Shift \\", false)).toBe("Strg Umschalt \\");
+    expect(keys("Mod Shift \\", false)).toBe("Strg+Umschalt+\\");
     expect(modLabel(true)).toBe("⌘");
     expect(modLabel(false)).toBe("Strg");
     setLang("en");
-    expect(keys("Mod Shift D", false)).toBe("Ctrl Shift D");
+    expect(keys("Mod Shift D", false)).toBe("Ctrl+Shift+D");
     expect(modLabel(false)).toBe("Ctrl");
   });
   it("find and replace is ⌥⌘F on macOS (⌘H hides the app there) and Ctrl+H elsewhere", () => {
     expect(replaceHint(true)).toBe("⌥⌘F");
-    expect(replaceHint(false)).toBe("Strg H");
+    expect(replaceHint(false)).toBe("Strg+H");
     const k = (key: string, code: string, m: { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean }) => ({ key, code, ctrlKey: !!m.ctrl, metaKey: !!m.meta, altKey: !!m.alt, shiftKey: !!m.shift });
     expect(isReplaceKey(k("ƒ", "KeyF", { meta: true, alt: true }), true)).toBe(true);
     expect(isReplaceKey(k("h", "KeyH", { meta: true }), true)).toBe(false);
@@ -105,8 +107,26 @@ describe("formatShortcut", () => {
 
 describe("arrow keys", () => {
   it("shows DOM arrow names as arrows on every platform", () => {
-    expect(keys("Alt ArrowUp", false)).toBe("Alt ↑");
+    expect(keys("Alt ArrowUp", false)).toBe("Alt+↑");
     expect(keys("Alt ArrowDown", true)).toBe("⌥↓");
     expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Strg+←");
+  });
+});
+
+describe("one notation (q116 R8)", () => {
+  it("joins keys with + in tooltips, menus and hint texts, and splits them back into kbd chips", () => {
+    expect(keys("Mod Shift D", false)).toBe(formatShortcut("Ctrl+Shift+D", false));
+    expect(keyChips("Strg+Umschalt+D")).toEqual(["Strg", "Umschalt", "D"]);
+    expect(keyChips("Strg++")).toEqual(["Strg", "+"]);
+    expect(keyChips("Strg+Umschalt++")).toEqual(["Strg", "Umschalt", "+"]);
+    expect(keyChips("⇧⌘ Leertaste")).toEqual(["⇧⌘ Leertaste"]);
+    expect(keyChips("Bild↑")).toEqual(["Bild↑"]);
+  });
+  it("has no key combination written with spaces in the catalogs", () => {
+    for (const lang of ["de", "en"]) {
+      const src = fs.readFileSync(path.resolve(__dirname, `../locales/${lang}.ts`), "utf8");
+      const spaced = src.match(/\b(Strg|Ctrl|Umschalt|Shift) (Strg|Ctrl|Umschalt|Shift|Alt|Eingabe|Enter|[A-Z0-9])\b/g) ?? [];
+      expect(spaced, lang).toEqual([]);
+    }
   });
 });

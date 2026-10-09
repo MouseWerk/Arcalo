@@ -17,7 +17,7 @@ import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
 import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, revertPaths, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
-import { formatShortcut, keys } from "../lib/shortcut";
+import { formatShortcut, keyChips, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
 import { effectiveMode, INTERVALS, isManaged, NOT_CONFIGURED, updateHint } from "../lib/updates";
@@ -1891,7 +1891,7 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
   const [status, setStatus] = useState<DataDirStatus | null>(null);
   const loadStatus = () => void api.dataDirStatus().then(setStatus, () => setStatus(null));
   useEffect(loadStatus, []);
-  const global = (spec: string | null | undefined, label: string): [string, string][] => (spec?.trim() ? [[formatShortcut(spec, IS_MAC, " "), label]] : []);
+  const global = (spec: string | null | undefined, label: string): [string, string][] => (spec?.trim() ? [[formatShortcut(spec, IS_MAC), label]] : []);
   const keymap = effectiveKeymap(view.settings.keymap);
   const shortcuts: [string, string][] = [
     ...COMMANDS.filter((c) => keymap[c.id]).map((c): [string, string] => [comboLabel(keymap[c.id]), t(c.label)]),
@@ -2007,8 +2007,8 @@ function AboutSection({ draft, update, onOpenLog }: { draft: Settings; update: (
             <div key={`${k}-${d}`} className="shortcut">
               <span>{d}</span>
               <span className="keys">
-                {k.split(" ").map((x) => (
-                  <kbd key={x}>{x}</kbd>
+                {keyChips(k).map((x, i) => (
+                  <kbd key={`${x}-${i}`}>{x}</kbd>
                 ))}
               </span>
             </div>

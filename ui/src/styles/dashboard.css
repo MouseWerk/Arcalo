@@ -212,8 +212,16 @@
 }
 
 /* timer */
-.dw-timer { display: flex; align-items: center; gap: 10px; }
-.dw-timer-main { display: grid; min-width: 0; }
+/* The clock keeps its width: where the row has no room for it next to the buttons (the Heute
+   widget's side column), pause and stop go to a row of their own under it. */
+.dw-timer { container: dwtimer / inline-size; }
+.dw-timer-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.dw-timer-main { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 0; min-width: 0; }
+.dw-timer-main .dw-big { white-space: nowrap; }
+.dw-timer-btns { display: flex; align-items: center; gap: 6px; flex: none; }
+@container dwtimer (max-width: 280px) {
+  .dw-timer-btns { flex-basis: 100%; padding-left: 18px; }
+}
 .dw-timer-refs.compact { margin-top: -2px; }
 
 /* Termine */
@@ -277,6 +285,10 @@
 }
 .dw-budget:hover { background: var(--bg-hover); }
 .dw-budget-head, .dw-budget-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Label and status keep their width: in a narrow card the status goes under the label rather
+   than out of the card (the title gives way first). */
+.dw-budget-head { flex-wrap: wrap; justify-content: space-between; row-gap: 4px; }
+.dw-budget-head .faint { flex: 1 1 0; }
 .dw-budget-fc { display: block; }
 .dw-budget-bar .progress { flex: 1; }
 .dw-budget-bar .num { font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
@@ -513,7 +525,6 @@
 .dws-help { line-height: 1.45; }
 @container dw (max-width: 260px) {
   .dw-budget-head .faint { display: none; }
-  .dw-budget-head .badge { margin-left: auto; }
 }
 .dws-swatch { width: 10px; height: 10px; border-radius: var(--r-xs); flex: none; }
 

@@ -25,6 +25,7 @@ import { TurnView } from "./assistant/TurnView";
 import { SUGGESTION_ICONS } from "./assistant/icons";
 import { answerTitle, copyText } from "./assistant/actions";
 import { withHint } from "../lib/keymap";
+import { keys } from "../lib/shortcut";
 import { scrollMotion } from "../lib/motion";
 import { isComposing } from "../lib/ime";
 
@@ -602,7 +603,7 @@ export function Composer({ shown: shownProp, placeholder }: { shown?: boolean; p
         </div>
       </div>
       <div className="composer-foot faint">
-        <span>{tooLong ? t("chat.tooLong", { max: int(MAX_INPUT) }) : elsewhere ? t(inView ? "chatv.busyInPanel" : "chatv.busyInView") : t("chat.keysHint")}</span>
+        <span>{tooLong ? t("chat.tooLong", { max: int(MAX_INPUT) }) : elsewhere ? t(inView ? "chatv.busyInPanel" : "chatv.busyInView") : t("chat.keysHint", { send: keys("Enter"), newline: keys("Shift Enter") })}</span>
         {!inView && !useTools && <span>{t("chat.toolsOff")}</span>}
         {inView && <span>{t(notes ? "chatv.modeNotes" : "chatv.modePlain")}</span>}
       </div>

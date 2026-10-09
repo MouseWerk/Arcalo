@@ -480,7 +480,7 @@ export function CommandPalette() {
         </div>
         <div className="pal-foot">
           <span><kbd>↑</kbd><kbd>↓</kbd> {t("palette.footSelect")}</span>
-          <span><kbd>Enter</kbd> {t("palette.footOpen")}</span>
+          <span><kbd>{keys("Enter")}</kbd> {t("palette.footOpen")}</span>
           <span><kbd>{keys("Mod Enter")}</kbd> {t("palette.footNewTab")}</span>
           <span className="grow" />
           {searching && (found.meaning || exactOnly) && (

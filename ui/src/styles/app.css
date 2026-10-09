@@ -379,10 +379,9 @@ button.side-section-title:hover { color: var(--text-2); }
 /* A grid, not a row of flex items: when space is short every tab first gets its minimum, then the
    rest is shared evenly, so short titles stay whole and only long ones are shortened. */
 .tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(96px, max-content); justify-content: start; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-/* Tabs hidden past an edge fade out there. */
+/* Tabs hidden past the right edge fade out there; at the left edge the strip starts at a whole tab
+   (Workspace.tsx), so the first tab is not faded, and the list button names the hidden ones. */
 .tabs.fade-right { mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
-.tabs.fade-left { mask-image: linear-gradient(90deg, transparent, #000 12px); }
-.tabs.fade-left.fade-right { mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 28px), transparent); }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs .tab.cut { visibility: hidden; }
 .tabbar-drag { flex: 1; align-self: stretch; }
@@ -1991,6 +1990,12 @@ body.presenter-window .presenter { height: 100vh; }
   cursor: pointer;
 }
 .calv-entry span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* A strip too narrow for a readable reference (several bookings side by side) shows the hatch
+   only; the tooltip names it, as in narrow columns. */
+.calv-entry { container: calentry / inline-size; }
+@container calentry (max-width: 50px) {
+  .calv-entry span { display: none; }
+}
 .calv-entry.status-draft { background: linear-gradient(to right, color-mix(in srgb, var(--text-3) 45%, transparent) 2px, transparent 2px), repeating-linear-gradient(-45deg, color-mix(in srgb, var(--text) 6%, transparent) 0 1px, transparent 1px 7px), var(--bg-canvas); }
 .calv-entry:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 .calv-entry:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
@@ -2469,6 +2474,12 @@ body.presenter-window .presenter { height: 100vh; }
   /* The actions stay on one row: „Woche ansehen“ as its icon (name in the label and tooltip). */
   .rv-actions > .rv-week > span { display: none; }
   .rv-actions > .rv-week { padding-inline: 8px; }
+}
+@container pane (max-width: 700px) {
+  /* Next to „Zusammenfassen“ saving and inserting show as their icons too, so the AI action
+     does not wrap onto a row of its own. */
+  .rv-actions:has(> .rv-summarize, > .wr-summarize) > :is(.rv-insert, .wr-save) > span { display: none; }
+  .rv-actions:has(> .rv-summarize, > .wr-summarize) > :is(.rv-insert, .wr-save) { padding-inline: 8px; }
 }
 @container pane (max-width: 560px) {
   .rv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -3311,6 +3322,10 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
   .calv-plan-vs svg, .calv-hunit { display: none; }
   .calv-planned-sum, .calv-booked-sum { padding-inline: 3px; }
 }
+/* „Abwesend eintragen“ shows on hover only: it waits in the corner next to the date instead of
+   taking a place in the row of chips (where it pushed the last chip onto a row of its own). */
+.calv-dayhead { position: relative; }
+.calv-dayhead .wa-chip:not(.set) { position: absolute; top: 12px; right: 8px; }
 
 /* The side panel of a block. */
 .calv-block-swatch { flex: none; width: 10px; height: 10px; border: 1.5px dashed var(--accent); border-radius: var(--r-xs); background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -4031,6 +4046,14 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 /* A squeezed tab keeps a readable title: the close button of the other tabs lies over the
    title's end (shown on hover, the title fading out under it) instead of taking its room. */
 .tabs { grid-auto-columns: minmax(104px, max-content); }
+/* Columns of the strip (Workspace.tsx): the active tab keeps about two words of its title
+   (`--tab-active-min`, its own width when that is less) before it gives way, and takes the room
+   `--tab-extra` the strip needs to start at a tab when it is scrolled to its end (no empty slot
+   of a hidden tab at the left). */
+.tabs {
+  --tab-col: minmax(104px, max-content);
+  --tab-col-active: minmax(min(100%, calc(var(--tab-active-min, 104px) + var(--tab-extra, 0px))), max-content);
+}
 .tab { padding-right: 6px; }
 .tab.active { padding-right: 28px; }
 .tab-close { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); }
