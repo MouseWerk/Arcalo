@@ -15,6 +15,9 @@ export async function renamePageWithUndo(id: number, old: string, title: string)
   const count = await api.renamePage(id, title, true);
   reloadEditors();
   await s().refreshTree();
+  // A new page getting its first title (Ctrl+N, type, Enter) needs no undo to „Unbenannt“.
+  const firstTitle = !old.trim() || old === t("page.untitled") || old === t("common.untitled");
+  if (firstTitle && count === 0) return;
   s().toast({
     tone: "success",
     title: t("sb.renamed", { title }),
