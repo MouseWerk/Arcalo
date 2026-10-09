@@ -83,6 +83,28 @@ pub struct TaskFilter {
     pub changed_since: Option<String>,
 }
 
+/// [`Task`]s in a compact form for the task view (`tasks_compact`): each page's title and icon
+/// once, each task as an array `[page_id, ordinal, line, text, done, due, priority, tags, recur]`
+/// with the tags space-separated. A third of the size of the task objects (5 MB for 32,000
+/// tasks), decoded by the UI into the same objects.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct TaskTable {
+    pub pages: std::collections::BTreeMap<i64, (String, Option<String>)>,
+    #[allow(clippy::type_complexity)]
+    pub rows: Vec<(i64, i64, i64, String, bool, Option<String>, u8, String, Option<Recurrence>)>,
+}
+
+impl From<Vec<Task>> for TaskTable {
+    fn from(list: Vec<Task>) -> Self {
+        let mut out = TaskTable::default();
+        for t in list {
+            out.pages.entry(t.page_id).or_insert_with(|| (t.page_title, t.page_icon));
+            out.rows.push((t.page_id, t.ordinal, t.line, t.text, t.done, t.due, t.priority, t.tags.join(" "), t.recur));
+        }
+        out
+    }
+}
+
 /// Counts of open tasks, see [`Database::open_task_counts`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskCounts {
@@ -671,6 +693,30 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_compact_table_holds_every_task_with_its_page_once() {
+        let task = |page_id: i64, ordinal: i64, text: &str| Task {
+            page_id,
+            page_title: format!("Seite {page_id}"),
+            page_icon: (page_id == 2).then(|| "star".to_owned()),
+            ordinal,
+            line: ordinal * 2,
+            text: text.into(),
+            done: false,
+            due: Some("2026-10-09".into()),
+            priority: 1,
+            tags: vec!["a".into(), "b".into()],
+            recur: None,
+        };
+        let list = vec![task(1, 0, "eins"), task(2, 0, "zwei"), task(1, 1, "drei")];
+        let table = TaskTable::from(list);
+        assert_eq!(table.pages.len(), 2);
+        assert_eq!(table.pages[&2], ("Seite 2".to_owned(), Some("star".to_owned())));
+        let json = serde_json::to_value(&table).unwrap();
+        assert_eq!(json["rows"][2], serde_json::json!([1, 1, 2, "drei", false, "2026-10-09", 1, "a b", null]));
+        assert_eq!(json["pages"]["1"], serde_json::json!(["Seite 1", null]));
+    }
 
     /// A long page of tasks (a paste, a restored version, a pulled note): the first save stays
     /// linear (it was cubic: 10 s in a release build for 2,400 tasks), and a small edit writes

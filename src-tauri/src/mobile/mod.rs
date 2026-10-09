@@ -53,6 +53,7 @@ pub fn run() {
             crate::recent_pages,
             crate::search_workspace,
             crate::tasks_list,
+            crate::tasks_compact,
             crate::task_set_done,
             crate::task_next_due,
             crate::wbs_tree,

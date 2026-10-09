@@ -3,7 +3,21 @@
 import { addDays, fmtDate, isoDay, weekdayLabels, weekStart } from "./format";
 import { t, type TKey } from "./i18n";
 import { MAIL_SCHEME_SOURCE } from "./legacy";
-import type { Recurrence } from "./types";
+import type { Recurrence, Task } from "./types";
+
+/** What `tasks_compact` answers (`arcalo_core::tasks::TaskTable`): each page once, each task as an array. */
+export interface TaskTable {
+  pages: Record<string, [string, string | null]>;
+  rows: [number, number, number, string, boolean, string | null, number, string, Recurrence | null][];
+}
+
+/** The tasks of a {@link TaskTable} as the task objects of `tasks_list`. */
+export function fromTaskTable(table: TaskTable): Task[] {
+  return table.rows.map(([page_id, ordinal, line, text, done, due, priority, tags, recur]) => {
+    const [page_title, page_icon] = table.pages[page_id] ?? ["", null];
+    return { page_id, page_title, page_icon, ordinal, line, text, done, due, priority, tags: tags ? tags.split(" ") : [], recur };
+  });
+}
 
 export type TaskGroup = "overdue" | "today" | "week" | "later" | "none";
 

@@ -40,7 +40,7 @@ fn review(state: &AppState, db: &Database, date: NaiveDate) -> Result<DayReview>
 #[tauri::command(async)]
 pub fn day_review(state: State<AppState>, date: Option<NaiveDate>) -> Result<DayReview> {
     let date = date.unwrap_or_else(|| Local::now().date_naive());
-    review(&state, &state.reader(), date)
+    Ok(review(&state, &state.reader(), date)?.capped())
 }
 
 /// Streams a short summary of `date` (`ai://stream` events for `request_id`), written by a

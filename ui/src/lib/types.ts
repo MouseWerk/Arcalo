@@ -1619,6 +1619,8 @@ export interface DayReview {
   meetings: ReviewMeeting[];
   focus: { minutes: number; sessions: ReviewFocusSession[] };
   files: ReviewFile[];
+  /** Pages created or edited that day; `pages` holds the most recent 60 of them. */
+  pages_total?: number;
   /** Time tracking is off: no time section, gaps or booking states (meetings over are `done`). */
   without_time?: boolean;
 }

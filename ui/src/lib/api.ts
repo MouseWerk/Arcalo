@@ -6,6 +6,7 @@ import type * as T from "./types";
 import { noteSystemLang, t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
 import type * as G from "./graph";
+import { fromTaskTable, type TaskTable } from "./tasks";
 
 // App-Sperre: a command refused while locked never settles (the app behind the lock screen is
 // unmounted; its last requests are simply dropped instead of showing errors).
@@ -66,7 +67,8 @@ export const api = {
   dailyOverview: (from: string, to: string) => call<T.DayOverview[]>("daily_overview", { from, to }),
   tags: () => call<[string, number][]>("tags_list"),
   tagPages: (tag: string) => call<T.Page[]>("tag_pages", { tag }),
-  tasks: (filter: T.TaskFilter = {}) => call<T.Task[]>("tasks_list", { filter }),
+  /** The tasks of `filter`, sent compactly (each page once; `tasks_list` answers the same objects). */
+  tasks: (filter: T.TaskFilter = {}) => call<TaskTable>("tasks_compact", { filter }).then(fromTaskTable),
   setTaskDone: (pageId: number, ordinal: number, done: boolean, expectedText?: string) =>
     call<void>("task_set_done", { pageId, ordinal, done, expectedText: expectedText ?? null }),
   /** Changes tasks of any pages at once; the result undoes it with `tasksUndo`. */

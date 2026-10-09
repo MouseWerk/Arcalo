@@ -75,12 +75,27 @@ pub struct DayReview {
     pub meetings: Vec<ReviewMeeting>,
     pub focus: ReviewFocus,
     pub files: Vec<ReviewFile>,
+    /// Pages created or edited that day, also those [`DayReview::capped`] left out.
+    #[serde(default)]
+    pub pages_total: i64,
     /// Time tracking is off ([`DayReview::without_time`]): nothing about booking in it.
     #[serde(default)]
     pub without_time: bool,
 }
 
+/// Pages and files the review view gets at most ([`DayReview::capped`]).
+pub const MAX_PAGES: usize = 60;
+
 impl DayReview {
+    /// The review as the view gets it: at most [`MAX_PAGES`] pages (the most recent) and files;
+    /// `pages_total` counts all. A day of an import or a sync touched thousands of pages, which
+    /// made the answer megabytes long.
+    pub fn capped(mut self) -> Self {
+        self.pages.truncate(MAX_PAGES);
+        self.files.truncate(MAX_PAGES);
+        self
+    }
+
     /// The review for a workspace without time tracking: no time section and gaps, meetings
     /// that are over are just `done` (not booked, open or skipped), focus sessions without
     /// their Vorgang and booking. Only the view changes; the data stays.
@@ -569,7 +584,21 @@ pub(crate) fn review_day<Tz: TimeZone>(
         .collect::<rusqlite::Result<_>>()?
     };
 
-    Ok(DayReview { date, from, to, daily_note_id, pages, time, tasks, meetings, focus, files, without_time: false })
+    let pages_total = pages.len() as i64;
+    Ok(DayReview {
+        date,
+        from,
+        to,
+        daily_note_id,
+        pages,
+        time,
+        tasks,
+        meetings,
+        focus,
+        files,
+        pages_total,
+        without_time: false,
+    })
 }
 
 /// Words added over the day on page `id`: the content at the start of the day is the first

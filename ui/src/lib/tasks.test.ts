@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { nextMonday, recurLabel, recurTokens, selectClick, taskGroup, taskSegments } from "./tasks";
+import { fromTaskTable, nextMonday, recurLabel, recurTokens, selectClick, taskGroup, taskSegments, type TaskTable } from "./tasks";
 import { isoDay, setFormatPrefs } from "./format";
 import { setLang } from "./i18n";
 import type { Recurrence } from "./types";
@@ -71,6 +71,19 @@ describe("repeat rules", () => {
     expect(recurTokens(rule({ unit: "day", interval: 3, until: "2026-12-31" }))).toBe("every:3d until:2026-12-31");
     expect(recurTokens(rule({ unit: "year", interval: 2 }))).toBe("every:2y");
     expect(recurTokens(rule({ unit: "year", month_day: 29 }))).toBe("every:yearly,29");
+  });
+
+  it("decodes the compact task table into the task objects", () => {
+    const table: TaskTable = {
+      pages: { "1": ["Seite 1", null], "2": ["Seite 2", "star"] },
+      rows: [
+        [2, 0, 3, "zwei", false, "2026-10-09", 2, "a b", null],
+        [1, 4, 9, "eins", true, null, 0, "", { unit: "week", interval: 1, weekdays: [], month_day: null, until: null, when_done: false }],
+      ],
+    };
+    const list = fromTaskTable(table);
+    expect(list[0]).toEqual({ page_id: 2, page_title: "Seite 2", page_icon: "star", ordinal: 0, line: 3, text: "zwei", done: false, due: "2026-10-09", priority: 2, tags: ["a", "b"], recur: null });
+    expect([list[1].page_title, list[1].tags, list[1].recur?.unit]).toEqual(["Seite 1", [], "week"]);
   });
 
   it("next week starts on Monday", () => {

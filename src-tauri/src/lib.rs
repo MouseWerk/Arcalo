@@ -558,6 +558,13 @@ fn tasks_list(state: State<AppState>, filter: Option<TaskFilter>) -> Result<Vec<
     state.reader().list_tasks(&filter.unwrap_or_default())
 }
 
+/// [`tasks_list`] for the task view: the same tasks in the compact form of
+/// [`arcalo_core::tasks::TaskTable`] (a third of the bytes over IPC).
+#[tauri::command(async)]
+fn tasks_compact(state: State<AppState>, filter: Option<TaskFilter>) -> Result<arcalo_core::tasks::TaskTable> {
+    Ok(state.reader().list_tasks(&filter.unwrap_or_default())?.into())
+}
+
 /// Checks or unchecks one task in its page's Markdown; the UI then reloads open editors of that page.
 #[tauri::command(async)]
 fn task_set_done(
@@ -4850,6 +4857,7 @@ pub fn run() {
             tags_list,
             tag_pages,
             tasks_list,
+            tasks_compact,
             task_set_done,
             tasks_edit,
             tasks_undo,
