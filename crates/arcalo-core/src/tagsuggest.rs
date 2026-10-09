@@ -30,6 +30,14 @@ pub const AI_VOCABULARY: usize = 200;
 pub const AI_MAX_NEW: usize = 2;
 /// Distinctive words of a page used to find pages with similar text.
 const QUERY_WORDS: usize = 10;
+/// The page's most frequent words looked at to find them.
+const CANDIDATE_WORDS: usize = 30;
+/// A word in more than this share of all chunks says nothing (and makes the query rank almost
+/// every chunk of the workspace).
+const COMMON_SHARE: i64 = 20;
+
+/// See `Database::tag_cache`.
+pub(crate) type TagCache = std::cell::RefCell<Option<((i64, u64), HashMap<i64, Vec<TagSuggestion>>)>>;
 /// Pages with similar text that count.
 const SIMILAR_PAGES: i64 = 40;
 
@@ -66,7 +74,7 @@ fn distinctive_words(markdown: &str) -> Vec<String> {
     }
     let mut words: Vec<(String, usize)> = counts.into_iter().collect();
     words.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.chars().count().cmp(&a.0.chars().count())).then(a.0.cmp(&b.0)));
-    words.into_iter().take(QUERY_WORDS).map(|(w, _)| w).collect()
+    words.into_iter().take(CANDIDATE_WORDS).map(|(w, _)| w).collect()
 }
 
 /// Ranks tags by the pages that carry them: `neighbours` are (page id, similarity),
@@ -157,8 +165,49 @@ impl Database {
         Ok(st.query_map([page_id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Local tag suggestions for a page (see the module comment).
+    /// Local tag suggestions for a page (see the module comment), reused while the database is
+    /// unchanged.
     pub fn tag_suggestions(&self, page_id: i64) -> Result<Vec<TagSuggestion>> {
+        let version: i64 = self.conn().pragma_query_value(None, "data_version", |r| r.get(0))?;
+        let state = (version, self.conn().total_changes());
+        if let Some((at, pages)) = &*self.tag_cache.borrow()
+            && *at == state
+            && let Some(hit) = pages.get(&page_id)
+        {
+            return Ok(hit.clone());
+        }
+        let out = self.find_tag_suggestions(page_id)?;
+        let mut cache = self.tag_cache.borrow_mut();
+        match &mut *cache {
+            Some((at, pages)) if *at == state => {
+                pages.insert(page_id, out.clone());
+            }
+            _ => *cache = Some((state, HashMap::from([(page_id, out.clone())]))),
+        }
+        Ok(out)
+    }
+
+    /// The words of `candidates` that are not in more than 1/[`COMMON_SHARE`] of all chunks, at
+    /// most [`QUERY_WORDS`], in their order. Counted from the full-text index (no ranking).
+    fn uncommon_words(&self, candidates: Vec<String>) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let chunks: i64 = conn.query_row("SELECT count(*) FROM notes_blocks", [], |r| r.get(0))?;
+        let limit = (chunks / COMMON_SHARE).max(20);
+        let mut st = conn.prepare_cached("SELECT count(*) FROM notes_blocks_fts WHERE notes_blocks_fts MATCH ?1")?;
+        let mut out = vec![];
+        for w in candidates {
+            if out.len() >= QUERY_WORDS {
+                break;
+            }
+            let n: i64 = st.query_row([format!("\"{w}\"")], |r| r.get(0))?;
+            if n <= limit {
+                out.push(w);
+            }
+        }
+        Ok(out)
+    }
+
+    fn find_tag_suggestions(&self, page_id: i64) -> Result<Vec<TagSuggestion>> {
         let page = self.page(page_id)?;
         let conn = self.conn();
         let content: String = conn.query_row("SELECT content FROM pages WHERE id = ?1", [page_id], |r| r.get(0))?;
@@ -195,7 +244,7 @@ impl Database {
             }
         }
         // Pages with similar words (BM25 of the full-text index: rare words weigh more).
-        let words = distinctive_words(&format!("{}\n{}", page.title, content));
+        let words = self.uncommon_words(distinctive_words(&format!("{}\n{}", page.title, content)))?;
         if !words.is_empty() {
             let query = words.iter().map(|w| format!("\"{w}\"")).collect::<Vec<_>>().join(" OR ");
             let mut st = conn.prepare_cached(
@@ -278,6 +327,38 @@ mod tests {
         assert!(out.iter().position(|s| s.tag == "notiz").unwrap_or(9) > 0);
         let excl: HashSet<String> = ["projekt-x".to_owned()].into();
         assert!(rank_tags(&neighbours, &tags_of, &df, 100, &excl).iter().all(|s| s.tag != "projekt-x"));
+    }
+
+    /// Words every page has („Umsetzung, Konzept, Budget“) are no query words: the suggestions
+    /// stay quick on a large workspace (the query ranked nearly every chunk on every page open),
+    /// and opening the page again reuses them until something is written.
+    #[test]
+    fn common_words_do_not_make_every_chunk_a_candidate() {
+        let db = Database::open_in_memory().unwrap();
+        let filler = "Umsetzung Konzept Budget bereits Abstimmung Planung Termin Projekt Ergebnis Vorgehen";
+        db.atomic(|| {
+            for i in 0..1500 {
+                let p = db.create_page(None, &format!("Seite {i}"), None)?;
+                let extra = if i % 500 == 0 { " Brückenpfeiler Spannbeton #projekt-bruecke" } else { "" };
+                db.save_page_content(p.id, &format!("{filler} {filler} Nummer{i}{extra}\n\n{filler}"))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        let p = db.create_page(None, "Kickoff", None).unwrap();
+        db.save_page_content(p.id, &format!("{filler} {filler} {filler}\n\nBrückenpfeiler aus Spannbeton.")).unwrap();
+        let words =
+            db.uncommon_words(distinctive_words(&format!("{filler} {filler} Brückenpfeiler Spannbeton"))).unwrap();
+        assert_eq!(words, ["brückenpfeiler", "spannbeton"]);
+        let t = std::time::Instant::now();
+        let out = db.tag_suggestions(p.id).unwrap();
+        let took = t.elapsed();
+        assert_eq!(out.first().map(|s| s.tag.as_str()), Some("projekt-bruecke"), "{out:?}");
+
+        assert!(took < std::time::Duration::from_millis(250), "{took:?}");
+        let t = std::time::Instant::now();
+        assert_eq!(db.tag_suggestions(p.id).unwrap(), out);
+        assert!(t.elapsed() < std::time::Duration::from_millis(20), "again: {:?}", t.elapsed());
     }
 
     #[test]
