@@ -4187,6 +4187,14 @@ fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     dir.map_err(|e| Error::State(e.to_string()))
 }
 
+/// The standard data folder (the one without `location.json`).
+fn default_data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
+    #[cfg(desktop)]
+    return identity::data_dir(app);
+    #[cfg(mobile)]
+    return app.path().app_data_dir();
+}
+
 fn data_dir_status_of(app: &AppHandle, state: &AppState) -> DataDirStatus {
     let dir = state.data_dir.display().to_string();
     let pending = config_dir(app).ok().and_then(|c| datadir::read_location_file(&c)).and_then(|l| l.pending_move);
@@ -4264,11 +4272,8 @@ fn data_dir_set(
 fn data_dir_cancel(app: AppHandle, state: State<'_, AppState>) -> Result<DataDirStatus> {
     data_dir_env_guard()?;
     // The default folder is no path of its own: it follows the app identifier (1.15 renamed it).
-    let current = if identity::data_dir(&app).is_ok_and(|d| d == state.data_dir) {
-        PathBuf::new()
-    } else {
-        state.data_dir.clone()
-    };
+    let current =
+        if default_data_dir(&app).is_ok_and(|d| d == state.data_dir) { PathBuf::new() } else { state.data_dir.clone() };
     datadir::write_location(&config_dir(&app)?, &current)?;
     Ok(data_dir_status_of(&app, &state))
 }
