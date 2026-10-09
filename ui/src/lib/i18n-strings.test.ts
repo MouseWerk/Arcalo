@@ -50,6 +50,8 @@ const DOM_TEXT = new Set(["textContent", "innerText", "title", "alt", "placehold
 const MESSAGE_CALLS = new Set(["toast", "success", "info", "warning", "warn", "notify", "alert", "setError", "setStatus", "setMessage", "setHint", "setNotice", "error", "withHint"]);
 
 const GERMAN = /[äöüÄÖÜß„“‚‘]/;
+/** German words without umlauts that only a German UI text has („3 Seiten“, „gebucht“). */
+const GERMAN_WORDS = /(?<![\p{L}\p{N}_./-])(Seite|Seiten|Aufgabe|Aufgaben|Notiz|Notizen|Datei|Dateien|Termin|Termine|Buchung|Buchungen|Stunde|Stunden|Minuten|Woche|Wochen|gebucht|Gebucht|nicht|keine|Keine|wird|werden)(?![\p{L}\p{N}_])/u;
 const LETTERS = /[A-Za-zÄÖÜäöüß]{2,}/;
 /** i18n keys, CSS classes, identifiers, paths and other technical strings. */
 const TECHNICAL = [
@@ -134,14 +136,15 @@ const NAMES = new Set([
  */
 const ALLOWED: { file: string | RegExp; text: RegExp; why: string }[] = [
   { file: "lib/capture.ts", text: /^\[Hh\]eute|^\[Nn\]ext|\(\?:bis\|am\|zum\|fällig/, why: "German and English due words typed in quick capture (regex source)" },
-  { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht)$/, why: "stored schema colors and filter operators (German, machine format)" },
+  { file: "lib/collection.ts", text: /^(grün|enthält|enthält nicht|ist nicht|ist nicht leer)$/, why: "stored schema colors and filter operators (German, machine format)" },
+  { file: "lib/agenda.ts", text: /^Privater Termin$/, why: "the placeholder title the backend gives a private appointment (matched, never shown from here)" },
   { file: "lib/quicklinks.ts", text: /^grün$/, why: "stored group color id" },
   { file: "views/settings/FilingSection.tsx", text: /^März$/, why: "month folder names exactly as the core writes them (filing::month_name), per folder language" },
   { file: "lib/jira.ts", text: /^höchste$/, why: "a priority name Jira sends (matched for its level, never shown)" },
   { file: /^(lib\/dayreview.ts|views\/DayReviewView.tsx)$/, text: /^<!-- \/?rückblick -->$/, why: "HTML comment markers of the review block (machine format)" },
   {
     file: "lib/dashquery.ts",
-    text: /^(geändert|fällig|priorität|überfällig|später|läuft|enthält|enthält nicht|ist nicht leer)$/,
+    text: /^(geändert|fällig|priorität|überfällig|später|läuft|enthält|enthält nicht|ist nicht|ist nicht leer)$/,
     why: "stored query field names, words and operators (German machine format; English aliases map onto them)",
   },
   { file: "lib/noteQuery.ts", text: /^(fällig|geändert|priorität|zeiteinträge)$/, why: "option words of ```query blocks (syntax the user types, German and English)" },
@@ -180,6 +183,9 @@ function literalsIn(n: ts.Node | undefined): ts.Node[] {
   if (ts.isBinaryExpression(n) && [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken].includes(n.operatorToken.kind))
     return [...literalsIn(n.left), ...literalsIn(n.right)];
   if (ts.isJsxExpression(n)) return literalsIn(n.expression);
+  // `${n} ${n === 1 ? "Seite" : "Seiten"}`: the template itself and the texts in its parts.
+  if (ts.isTemplateExpression(n)) return [n, ...n.templateSpans.flatMap((s) => literalsIn(s.expression))];
+  if (ts.isArrayLiteralExpression(n)) return n.elements.flatMap((e) => literalsIn(e));
   return literalText(n) !== null ? [n] : [];
 }
 
@@ -217,7 +223,7 @@ function scan(file: string): Hit[] {
     const lit = literalText(n);
     // Search keywords list both languages on purpose.
     const keywords = !!n.parent && ts.isPropertyAssignment(n.parent) && n.parent.name.getText(sf) === "keywords";
-    if (lit !== null && GERMAN.test(lit) && !keywords && !ts.isTemplateExpression(n.parent)) flag(n, lit);
+    if (lit !== null && (GERMAN.test(lit) || GERMAN_WORDS.test(lit)) && !keywords && !ts.isTemplateExpression(n.parent)) flag(n, lit);
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -248,11 +254,14 @@ describe("no hard-coded UI text", () => {
         'el.textContent = "Loading now";',
         'const f = { reason: "Broken file", altLabel: "Keep both" };',
         'const g = withHint("Full width", "full_width");',
+        'const h = <span>{`${n} ${n === 1 ? "Seite" : "Seiten"}`}</span>;',
+        'meta.textContent = [n != null ? `${n} ${n === 1 ? "Seite" : "Seiten"}` : ""].join(" ");',
+        'const i = { text: done ? "Gebucht" : "" };',
       ].join("\n"),
     );
     try {
       const found = scan(tmp).map((h) => h.text);
-      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left", "Loading now", "Broken file", "Keep both", "Full width"]);
+      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left", "Loading now", "Broken file", "Keep both", "Full width", "Seite", "Seiten", "Seite", "Seiten", "Gebucht"]);
     } finally {
       fs.rmSync(tmp);
     }

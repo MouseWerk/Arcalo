@@ -4,7 +4,7 @@
 // German keyboards and types characters like \ | [ ] @.
 
 import { IS_MAC } from "./platform";
-import { formatShortcut } from "./shortcut";
+import { formatShortcut, keyName as printedKey } from "./shortcut";
 import type { TKey } from "./i18n";
 
 export interface CommandDef {
@@ -212,7 +212,8 @@ export function findConflicts(map: Record<string, string>, globals: { capture?: 
 
 const SYMBOLS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" };
 
-/** "Ctrl Shift D" as shown in tooltips and menus ("⌘ ⇧ D" on macOS, where ⌘ acts as Ctrl); "" for none. */
+/** "Ctrl Shift D" as shown in tooltips and menus („Strg Umschalt D“ in German, "⌘ ⇧ D" on macOS,
+ *  where ⌘ acts as Ctrl); "" for none. */
 export function comboLabel(combo: string | null | undefined, mac = IS_MAC): string {
   if (!combo) return "";
   if (mac) {
@@ -223,7 +224,7 @@ export function comboLabel(combo: string | null | undefined, mac = IS_MAC): stri
   }
   return combo
     .split("+")
-    .map((p, i, all) => (i === all.length - 1 ? (SYMBOLS[p] ?? p) : p))
+    .map((p, i, all) => (i === all.length - 1 ? (SYMBOLS[p] ?? printedKey(p)) : printedKey(p)))
     .join(" ")
     .replace(/  +/g, " + ");
 }

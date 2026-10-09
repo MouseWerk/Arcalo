@@ -1,7 +1,7 @@
 // Focus sessions (Pomodoro): countdown, ring, the last choices and the summary after a session.
 
 import type { FocusDone, FocusState, HeldNotification } from "./types";
-import { parseGermanNumber } from "./format";
+import { fmtDuration, parseGermanNumber } from "./format";
 import { t } from "./i18n";
 
 export const LENGTHS = [25, 50] as const;
@@ -38,8 +38,6 @@ export function parseMinutes(text: string): number | null {
   return n != null && n >= 1 && n <= MAX_MINUTES ? n : null;
 }
 
-/** `100` → `1:40 h` (like the daily note line). */
-export const hm = (minutes: number) => `${Math.floor(Math.max(0, minutes) / 60)}:${String(Math.max(0, Math.round(minutes)) % 60).padStart(2, "0")} h`;
 
 export interface FocusChoice {
   reference: string;
@@ -79,11 +77,11 @@ export function sessionSummary(done: FocusDone, heldToasts: { title: string }[],
   const minutes = done.entry ? s.worked_minutes : 0;
   // Time tracking off: the focus time, nothing about booking.
   if (!time) {
-    if (s.status === "done") parts.push(t("focus.focusOnly", { time: hm(s.worked_minutes) }));
+    if (s.status === "done") parts.push(t("focus.focusOnly", { time: fmtDuration(s.worked_minutes) }));
   } else if (done.entry) {
-    const what = done.extended ? t("focus.addedToBooking", { time: hm(minutes) }) : t("focus.bookedTime", { time: hm(minutes) });
+    const what = done.extended ? t("focus.addedToBooking", { time: fmtDuration(minutes) }) : t("focus.bookedTime", { time: fmtDuration(minutes) });
     parts.push(s.reference ? t("focus.bookedOn", { what, ref: s.reference }) : t("focus.bookedDraft", { what }));
-  } else if (s.status === "done" && !s.reference) parts.push(t("focus.noActivity", { time: hm(s.worked_minutes) }));
+  } else if (s.status === "done" && !s.reference) parts.push(t("focus.noActivity", { time: fmtDuration(s.worked_minutes) }));
   else if (s.status === "aborted") parts.push(t("focus.notBooked"));
   const titles = [...heldToasts.map((x) => x.title), ...held.map((h) => h.title)];
   if (titles.length) {

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, CalendarCheck2, FilePlus2, Play, Search, Square, Ticket, Timer } from "lucide-react";
 import { api, errorText, on } from "../lib/api";
 import { applyTheme } from "../lib/actions";
-import { hoursFromMinutes } from "../lib/format";
+import { fmtMinutes } from "../lib/format";
 import { exactOnlyPref } from "../lib/meaningSearch";
 import { isZeit, keepQuery, quickItems, snippetHtml, type QsAction, type QsItem } from "../lib/quicksearch";
 import { timeTrackingOn } from "../lib/timetracking";
@@ -178,7 +178,7 @@ export function SearchApp() {
           const out = await api.captureSubmit(a.line);
           const b = out.bookings[0];
           setQ("");
-          setNotice({ error: false, text: b ? `${hoursFromMinutes(b.entry.duration_minutes)} h auf ${b.reference} gebucht` : "Gebucht" });
+          setNotice({ error: false, text: b ? t("qs.bookedOn", { h: fmtMinutes(b.entry.duration_minutes), ref: b.reference }) : t("calv.booked") });
           break;
         }
       }

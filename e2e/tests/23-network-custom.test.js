@@ -247,13 +247,13 @@ test("a rebound shortcut runs its command; conflicts are shown", async () => {
   await app.waitText(".keys-conflict", /AltGr/);
   await app.click('.key-recorder[data-command="daily_note"]');
   await app.keys(["Control", "Shift", "l"]);
-  await app.browser.waitUntil(async () => /Ctrl\s*Shift\s*L/.test(await app.text('.key-recorder[data-command="daily_note"]')));
+  await app.browser.waitUntil(async () => /Strg\s*Umschalt\s*L/.test(await app.text('.key-recorder[data-command="daily_note"]')));
   await settingsSettled(app);
   await app.waitText(".toast-title", /Einstellung geändert/);
   const view = await app.invoke("settings_get");
   assert.deepEqual(view.settings.keymap, { daily_note: "Ctrl+Shift+L" });
   // The ribbon shows the new shortcut, and it opens today's daily note.
-  assert.match(await app.browser.execute(() => document.querySelector('.ribbon [aria-label^="Heutige"]')?.getAttribute("aria-label")), /Ctrl Shift L/);
+  assert.match(await app.browser.execute(() => document.querySelector('.ribbon [aria-label^="Heutige"]')?.getAttribute("aria-label")), /Strg Umschalt L/);
   await app.browser.execute(() => document.activeElement?.blur());
   await app.keys(["Control", "Shift", "l"]);
   const today = new Date();

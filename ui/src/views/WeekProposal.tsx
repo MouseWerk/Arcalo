@@ -299,7 +299,7 @@ function WeekStrip({ totals, today }: { totals: ReturnType<typeof dayTotals>; to
 export function WeekProposalButton({ onClick }: { onClick: () => void }) {
   useT();
   return (
-    <Button icon={WandSparkles} onClick={onClick} className="wp-open">
+    <Button icon={WandSparkles} onClick={onClick} className="wp-open" aria-label={tr("wp.title")} data-tooltip-full={tr("wp.title")}>
       {tr("wp.title")}
     </Button>
   );

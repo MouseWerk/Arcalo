@@ -40,7 +40,7 @@ describe("captureKind", () => {
 
   it("names the target in the hint", () => {
     expect(captureHint("task")).toMatch(/Aufgabe in der heutigen Tagesnotiz/);
-    expect(captureHint("note", targetPhrase({ target: { kind: "page", page_id: 3 }, label: "Kunde X" }))).toBe("Enter speichert die Notiz in „Kunde X“");
+    expect(captureHint("note", targetPhrase({ target: { kind: "page", page_id: 3 }, label: "Kunde X" }))).toBe("Eingabe speichert die Notiz in „Kunde X“");
     expect(targetPhrase({ target: { kind: "meeting", key: "k" }, label: "Jour fixe" })).toMatch(/Besprechungsnotiz/);
   });
 });

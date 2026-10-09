@@ -37,7 +37,7 @@ test("a note goes into the daily note, confirmed with a link, then the window hi
   await openCapture(app);
   await app.waitText(".capture-chip.target", /Tagesnotiz/);
   await app.type("Idee aus dem Fenster #idee");
-  await app.waitText(".capture-hint", /Enter hängt die Notiz an die heutige Tagesnotiz an/);
+  await app.waitText(".capture-hint", /Eingabe hängt die Notiz an die heutige Tagesnotiz an/);
   await app.shot("68-capture-typing");
   await app.keys(["Enter"]);
   await app.waitText(".capture-foot.done .capture-hint", /Gespeichert in/);

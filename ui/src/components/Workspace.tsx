@@ -343,9 +343,12 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
     const edges = () => {
       el.classList.toggle("fade-left", el.scrollLeft > 1);
       el.classList.toggle("fade-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+      // A tab cut at the left edge is hidden rather than shown as a faded sliver.
+      const left = el.getBoundingClientRect().left;
+      for (const tab of el.querySelectorAll<HTMLElement>(".tab")) tab.classList.toggle("cut", tab.getBoundingClientRect().left < left - 1);
     };
     const fit = () => {
-      el.querySelector<HTMLElement>(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      el.scrollLeft = tabScrollLeft(el);
       setOverflow(el.scrollWidth > el.clientWidth + 1);
       edges();
     };
@@ -540,4 +543,25 @@ function PageOrCanvas({ pageId, tab, active }: { pageId: number; tab: Tab; activ
   }, [kind, pageId]);
   if (kind == null && !checked) return null;
   return kind === "canvas" ? <CanvasView pageId={pageId} tab={tab} active={active} /> : <PageView pageId={pageId} tab={tab} active={active} />;
+}
+
+/** Where the tab strip scrolls so the active tab is fully in view and no tab is cut at the left
+ *  edge (a cut one under the fade read as a ghost tab): the strip starts at a tab. */
+export function tabScrollLeft(el: HTMLElement): number {
+  const box = el.getBoundingClientRect();
+  const starts = [...el.querySelectorAll<HTMLElement>(".tab")].map((t) => {
+    const r = t.getBoundingClientRect();
+    return { left: r.left - box.left + el.scrollLeft, right: r.right - box.left + el.scrollLeft, active: t.classList.contains("active") };
+  });
+  const active = starts.find((t) => t.active);
+  let left = el.scrollLeft;
+  if (active) {
+    if (active.left < left) left = active.left;
+    else if (active.right > left + el.clientWidth) left = active.right - el.clientWidth;
+  }
+  const max = Math.max(0, el.scrollWidth - el.clientWidth);
+  if (left <= 1) return 0;
+  // The first tab that starts at or after the edge; the active one bounds it, so it stays whole.
+  const next = starts.find((t) => t.left >= left - 1)?.left ?? left;
+  return Math.min(next, active ? active.left : next, max);
 }

@@ -42,7 +42,7 @@ test("> opens the page picker; the chosen page gets the text", async () => {
   await app.browser.waitUntil(async () => /Kunde Müller/.test(await chip()), { timeoutMsg: "target not set" });
   assert.equal(await app.browser.execute(() => document.activeElement?.getAttribute("aria-label")), "Schnellerfassung");
   await app.type("Rückruf vereinbart");
-  await app.waitText(".capture-hint", /Enter speichert die Notiz in „Kunde Müller“/);
+  await app.waitText(".capture-hint", /Eingabe speichert die Notiz in „Kunde Müller“/);
   await app.keys(["Enter"]);
   await app.waitText(".capture-foot.done .capture-link", /Kunde Müller/);
   assert.equal(await pageContent(app, "Kunde Müller"), "# Kunde Müller\n\nAbsatz über den Kunden. #vertrieb\n\n- Rückruf vereinbart\n");

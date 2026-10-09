@@ -6,7 +6,7 @@ import { plannedMinutes } from "../../lib/blocks";
 import { CalendarCheck, FolderKanban, Gauge, WandSparkles } from "lucide-react";
 import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
-import { addDays, fmtDate, h1, isoDay, weekStart } from "../../lib/format";
+import { addDays, fmtDate, fmtHours, fmtMinutes, isoDay, weekStart } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { hoursLabel } from "../../lib/calendar";
 import { timeRange } from "../../lib/agenda";
@@ -62,10 +62,10 @@ export function WeekWidget({ widget }: WidgetProps) {
         return (
           <div className="dw-week">
             <button type="button" className="dw-week-sum" onClick={() => openTimesheetDay(isoDay(new Date()))} aria-label={t("dash.weekOpen")}>
-              <span className="num dw-big">{h1(week.bookedMinutes / 60)}</span>
-              <span className="faint num">{t("dash.ofHours", { h: h1(week.targetMinutes / 60) })}</span>
+              <span className="num dw-big">{fmtMinutes(week.bookedMinutes)}</span>
+              <span className="faint num">{t("dash.ofHours", { h: fmtMinutes(week.targetMinutes) })}</span>
               <span className="grow" />
-              {gaps.length > 0 ? <Badge tone="warning">{t("dash.gapBadge", { h: h1(week.gapMinutes / 60) })}</Badge> : <Badge tone="success">{t("dash.noGaps")}</Badge>}
+              {gaps.length > 0 ? <Badge tone="warning">{t("dash.gapBadge", { h: fmtMinutes(week.gapMinutes) })}</Badge> : <Badge tone="success">{t("dash.noGaps")}</Badge>}
             </button>
             {mode === "day" ? (
               <div className="dw-bars" style={{ "--target": week.targetLine } as CSSProperties} role="list" aria-label={t("dash.perDay")}>
@@ -75,8 +75,8 @@ export function WeekWidget({ widget }: WidgetProps) {
                     type="button"
                     role="listitem"
                     className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
-                    title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${planned(b.date) ? ` · ${t("blocks.plannedSum", { h: hoursLabel(planned(b.date)) })}` : ""}${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
-                    aria-label={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? `, ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
+                    title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${planned(b.date) ? ` · ${t("blocks.plannedSum", { h: hoursLabel(planned(b.date)) })}` : ""}${b.gap > 0 ? ` · ${t("dash.missing", { h: fmtMinutes(b.gap) })}` : ""}`}
+                    aria-label={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? `, ${t("dash.missing", { h: fmtMinutes(b.gap) })}` : ""}`}
                     onClick={() => openTimesheetDay(b.date)}
                   >
                     <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
@@ -112,7 +112,7 @@ export function WeekWidget({ widget }: WidgetProps) {
                 <span className="faint">{t("dash.gaps")}</span>
                 {gaps.map((g) => (
                   <button key={g.date} type="button" className="dw-gap" onClick={() => openTimesheetDay(g.date)}>
-                    {g.label} <span className="num">{h1(g.gap / 60)} h</span>
+                    {g.label} <span className="num">{fmtMinutes(g.gap)} h</span>
                   </button>
                 ))}
               </div>
@@ -152,9 +152,9 @@ function forecastText(f: Forecast): { text: string; tone: "" | "warn" | "bad" } 
     case "idle":
       return { text: t("dash.fc.idle"), tone: "" };
     case "soon":
-      return { text: t("dash.fc.soon", { n: Math.max(1, Math.ceil(f.days ?? 0)), date: fmtDate(`${f.date}T12:00:00`), rate: h1(f.perDay) }), tone: "warn" };
+      return { text: t("dash.fc.soon", { n: Math.max(1, Math.ceil(f.days ?? 0)), date: fmtDate(`${f.date}T12:00:00`), rate: fmtHours(f.perDay) }), tone: "warn" };
     case "ok":
-      return { text: t("dash.fc.ok", { date: fmtDate(`${f.date}T12:00:00`), rate: h1(f.perDay) }), tone: "" };
+      return { text: t("dash.fc.ok", { date: fmtDate(`${f.date}T12:00:00`), rate: fmtHours(f.perDay) }), tone: "" };
   }
 }
 
@@ -162,7 +162,7 @@ export function BudgetRowView({ b, burnDays, forecast, onOpen }: { b: BudgetRow;
   const f = budgetForecast(b, b.recent_hours, burnDays, new Date());
   const fc = forecastText(f);
   return (
-    <button type="button" className={`dw-budget lvl-${b.level}`} onClick={onOpen} title={`${t("dash.budgetTitle", { booked: h1(b.booked_hours), planned: h1(b.planned_hours), eac: h1(b.eac_hours) })}${forecast ? `\n${fc.text}` : ""}`}>
+    <button type="button" className={`dw-budget lvl-${b.level}`} onClick={onOpen} title={`${t("dash.budgetTitle", { booked: fmtHours(b.booked_hours), planned: fmtHours(b.planned_hours), eac: fmtHours(b.eac_hours) })}${forecast ? `\n${fc.text}` : ""}`}>
       <span className="dw-budget-head">
         <span className="mono">{b.label}</span>
         <span className="faint ellipsis grow">{b.title}</span>
@@ -171,7 +171,7 @@ export function BudgetRowView({ b, burnDays, forecast, onOpen }: { b: BudgetRow;
       <span className="dw-budget-bar">
         <Progress value={b.consumed} tone={LEVEL[b.level].tone} marker={b.planned_hours > 0 ? b.eac_hours / b.planned_hours : undefined} />
         <span className="num faint dw-budget-h">
-          {h1(b.booked_hours)} / {h1(b.planned_hours)} h
+          {fmtHours(b.booked_hours)} / {fmtHours(b.planned_hours)} h
         </span>
       </span>
       {forecast && <span className={`dw-budget-fc ellipsis ${fc.tone}`}>{fc.text}</span>}
@@ -337,8 +337,8 @@ export function ProposalWidget({ widget }: WidgetProps) {
         return (
           <div className="dw-proposal">
             <div className="dw-review-hours">
-              <span className="num dw-big">{h1(p.booked_minutes / 60)}</span>
-              <span className="faint num">{t("dash.ofHours", { h: h1(p.target_minutes / 60) })}</span>
+              <span className="num dw-big">{fmtMinutes(p.booked_minutes)}</span>
+              <span className="faint num">{t("dash.ofHours", { h: fmtMinutes(p.target_minutes) })}</span>
               <span className="grow" />
               {complete ? <Badge tone="success">{t("dash.prop.complete")}</Badge> : <Badge tone="warning">{t("dash.gapShort", { h: hrs(p.missing_minutes) })}</Badge>}
             </div>

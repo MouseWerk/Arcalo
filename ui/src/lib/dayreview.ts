@@ -2,7 +2,7 @@
 // HTML comments and replaced on every write), the numbers the view shows, and whether a local
 // model can write the summary.
 
-import { addDays, decimal, isoDay, time } from "./format";
+import { addDays, fmtDuration, isoDay, time } from "./format";
 import type { AiProvider, DayReview, MeetingState, ReviewMeeting, ReviewTask } from "./types";
 import { currentLang, t, type TKey } from "./i18n";
 
@@ -18,10 +18,6 @@ const reviewMarkers = () => REVIEW_MARKERS[currentLang() === "en" ? "en" : "de"]
 /** The heading of the block, in the display language (the markers find the block). */
 export const reviewHeading = () => `## ${t("review.heading")}`;
 
-/** Minutes as hours: `390` → „6,5 h“. */
-export const hours = (minutes: number) => `${decimal(Math.round((minutes / 60) * 100) / 100)} h`;
-/** Minutes as „1:05 h“ (short spans: meetings, gaps, focus). */
-export const hm = (minutes: number) => `${Math.floor(Math.max(0, minutes) / 60)}:${String(Math.max(0, minutes) % 60).padStart(2, "0")} h`;
 
 export const MEETING_LABEL: Record<MeetingState, TKey> = {
   booked: "review.meeting.booked",
@@ -103,15 +99,15 @@ export function reviewMarkdown(r: DayReview, summary?: string | null): string {
   const label = (key: TKey) => `**${t(key)}:**`;
   // Time tracking off: no „Zeit“ line, WBS or gaps.
   if (!r.without_time) {
-    let zeit = `${label("review.md.time")} ${t("review.md.booked", { h: hours(tm.booked_minutes) })}`;
+    let zeit = `${label("review.md.time")} ${t("review.md.booked", { h: fmtDuration(tm.booked_minutes) })}`;
     if (tm.target_minutes > 0) {
-      zeit = `${label("review.md.time")} ${t("review.md.bookedOf", { h: hours(tm.booked_minutes), target: hours(tm.target_minutes) })}`;
-      if (tm.missing_minutes > 0) zeit += `, ${t("review.md.missing", { h: hours(tm.missing_minutes) })}`;
+      zeit = `${label("review.md.time")} ${t("review.md.bookedOf", { h: fmtDuration(tm.booked_minutes), target: fmtDuration(tm.target_minutes) })}`;
+      if (tm.missing_minutes > 0) zeit += `, ${t("review.md.missing", { h: fmtDuration(tm.missing_minutes) })}`;
     }
-    if (tm.running_minutes > 0) zeit += `, ${t("review.md.running", { time: hm(tm.running_minutes) })}`;
+    if (tm.running_minutes > 0) zeit += `, ${t("review.md.running", { time: fmtDuration(tm.running_minutes) })}`;
     out.push(zeit, "");
     if (tm.items.length) {
-      for (const w of tm.items) out.push(`- ${w.label}${w.title ? ` ${inline(w.title)}` : ""}: ${hours(w.minutes)}`);
+      for (const w of tm.items) out.push(`- ${w.label}${w.title ? ` ${inline(w.title)}` : ""}: ${fmtDuration(w.minutes)}`);
       out.push("");
     }
     if (tm.gaps.length) out.push(`${label("review.md.gaps")} ${tm.gaps.map((g) => `${time(g.start)}–${time(g.end)}`).join(", ")}`, "");
@@ -134,7 +130,7 @@ export function reviewMarkdown(r: DayReview, summary?: string | null): string {
   }
   if (r.focus.sessions.length) {
     const n = r.focus.sessions.length;
-    out.push(`${label("review.md.focus")} ${t("review.md.sessions", { n })}, ${hm(r.focus.minutes)}`, "");
+    out.push(`${label("review.md.focus")} ${t("review.md.sessions", { n })}, ${fmtDuration(r.focus.minutes)}`, "");
   }
   if (r.files.length) out.push(`${label("review.md.files")} ${r.files.map((f) => inline(f.name)).join(", ")}`, "");
   const text = summary ? cleanSummary(summary) : "";

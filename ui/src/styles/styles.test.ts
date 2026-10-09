@@ -27,7 +27,7 @@ describe("stylesheets", () => {
 const LITERAL_COLORS_OK: [RegExp, string][] = [
   [/win-close/, "Windows' own red close button"],
   [/fade-(left|right|top|bottom)|assistant-scroll|tab-title/, "mask gradients (only the alpha counts)"],
-  [/send-btn|task-check|qb-check|\.cite:hover|cf-choice\.on|btn-primary|switch-knob|\.check:|theme-card-now|taskList.*checked::after|slide-task > input:checked::after|swatch|bm-steps li\.on/, "white on --accent-strong or a color swatch (>= 4.5:1 by construction)"],
+  [/send-btn|task-check|qb-check|\.cite:hover|cf-choice\.on|btn-primary|switch-knob|\.check:|taskList.*checked::after|slide-task > input:checked::after|swatch|bm-steps li\.on/, "white on --accent-strong or a color swatch (>= 4.5:1 by construction)"],
   [/^:root, :root\[data-theme="dark"\]$|^body, \.app$/, "print: black on white paper"],
   [/onb-mark|about-mark/, "the app logo"],
   [/beamer/, "the white projector look of presentations"],
@@ -70,6 +70,14 @@ describe("design tokens", () => {
       expect(css.match(/z-index:\s*\d{2,}[^;}]*/g) ?? []).toEqual([]);
       expect(css.match(/outline:\s*2px solid var\(--border-focus\)/g) ?? []).toEqual([]);
       expect(css.match(/border-radius:[^;}]*\b999px/g) ?? []).toEqual([]);
+    });
+    it(`${name} sets the mono font without ligatures`, () => {
+      // JetBrains Mono's contextual alternates draw „http://“ as „http: //“ and „!==“ as one glyph.
+      const odd: string[] = [];
+      for (const m of code(name).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (/(^|;)\s*font(-family)?:[^;]*var\(--font-mono\)/.test(m[2]) && !/font-variant-ligatures:\s*none/.test(m[2])) odd.push(m[1].trim());
+      }
+      expect(odd, "add font-variant-ligatures: none").toEqual([]);
     });
     it(`${name} styles uppercase section labels one way`, () => {
       const odd: string[] = [];
@@ -138,8 +146,55 @@ describe("selection and focus look", () => {
         if (/::(before|after)/.test(selector) && get("left") === "0" && /^[1-4]px$/.test(get("width")) && COLORED.test(get("background"))) {
           bad.push(`${selector} (side bar)`);
         }
+        // A thin upright element in a color in front of a row (a meeting's calendar color as a bar
+        // instead of a dot), sized by itself or by a 1-4 px first grid column. A marker placed
+        // inside a chart (the „now“ line of a timeline) is no side bar.
+        const marker = get("position") === "absolute" && !/^0(px)?$/.test(get("left") || "0");
+        const fill = get("background") || get("background-color");
+        const px = (v: string) => (/^\d+(\.\d+)?px$/.test(v) ? parseFloat(v) : null);
+        const w = px(get("width")), h = px(get("height"));
+        if (!marker && COLORED.test(fill) && h != null && h >= 8 && ((w != null && w <= 4) || (!get("width") && /(bar|stripe|rail|edge)$/.test(selector)))) {
+          bad.push(`${selector} (upright bar, use an 8 px dot)`);
+        }
+        if (/^[1-4]px\b/.test(get("grid-template-columns"))) bad.push(`${selector} { grid-template-columns: ${get("grid-template-columns")} } (a bar column)`);
       }
       expect(bad, "use a tinted background and an icon").toEqual([]);
+    });
+  }
+
+  for (const name of sheets) {
+    it(`${name}: no colored frame marks a state`, () => {
+      const bad: string[] = [];
+      for (const { selector, decls } of rules(name)) {
+        // A slider's thumb is a control filled with its own color.
+        if (DRAG.test(selector) || /slider-thumb|range-thumb/.test(selector)) continue;
+        for (const [p, v] of decls) {
+          // A ring in a signal color (a day under its target outlined in amber): use a tint.
+          if (p === "box-shadow" && /inset\s+0(px)?\s+0(px)?\s+0(px)?\s+[1-9]/.test(v) && /--(accent|success|warning|danger|info)\b/.test(v)) bad.push(`${selector} { ${p}: ${v} }`);
+        }
+      }
+      expect(bad, "use a tinted background and text color").toEqual([]);
+    });
+  }
+
+  // Readable content is not faded with opacity (that drops it below 4.5:1, q116 A8): a state
+  // shows by the muted text color and a mark. Opacity stays for disabled controls, icons, drag
+  // and loading states and drawn decoration.
+  const FADE_OK = [
+    /:disabled|\.disabled\b|\.off\b.*(slider|swatch)|\.opacity-slider/,
+    /drag|is-loading|\.editing\b/,
+    /icon|svg|chevron|caret|crumb-sep|dw-dot|marker|meter|handle|resize|scroll-outline|faint-mark|bm-badge|chip-x/,
+    /wc-(bar|slice)|cv-mm|tm-(item|line)|gp-text|dwj-today|writing-bar|dw-size|progress/,
+    /btn|button|wm-actions|quick-link-add|vh-toolbar|\.act\b/,
+  ];
+  for (const name of sheets) {
+    it(`${name}: no faded text`, () => {
+      const bad: string[] = [];
+      for (const { selector, decls } of rules(name)) {
+        if (/^(@|from|to|\d)/.test(selector) || FADE_OK.some((re) => re.test(selector))) continue;
+        for (const [p, v] of decls) if (p === "opacity" && /^0?\.[0-7]\d*$/.test(v)) bad.push(`${selector} { opacity: ${v} }`);
+      }
+      expect(bad, "use color: var(--text-3) and a mark instead").toEqual([]);
     });
   }
 

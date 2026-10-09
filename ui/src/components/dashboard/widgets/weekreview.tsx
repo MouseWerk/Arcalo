@@ -5,8 +5,7 @@
 
 import { CalendarCheck, CalendarRange, CheckSquare, FileText } from "lucide-react";
 import { useT } from "../../../lib/i18n";
-import { isoDay } from "../../../lib/format";
-import { hours } from "../../../lib/dayreview";
+import { fmtDuration, isoDay } from "../../../lib/format";
 import { openDayReview } from "../../../lib/reviewnav";
 import { dayOff, dayProgress, dayShort, mondayOf, openWeekReview, weekApi, weekProgress, type WeekReview } from "../../../lib/weekreview";
 import { useApp } from "../../../store/app";
@@ -36,17 +35,17 @@ function WeekReviewWidget({ widget }: WidgetProps) {
             {!r.without_time && (
               <button type="button" className="dw-wr-time" onClick={() => openWeekReview(monday)}>
                 <span className="dw-wr-value num">
-                  {hours(tm.booked_minutes)}
-                  {tm.target_minutes > 0 && <span className="dw-wr-of"> / {hours(tm.target_minutes)}</span>}
+                  {fmtDuration(tm.booked_minutes)}
+                  {tm.target_minutes > 0 && <span className="dw-wr-of"> / {fmtDuration(tm.target_minutes)}</span>}
                 </span>
                 <Progress value={weekProgress(r)} tone={tm.target_minutes > 0 && tm.booked_minutes >= tm.target_minutes ? "success" : "accent"} />
-                <span className="dw-wr-sub">{tm.missing_minutes > 0 ? t("week.missing", { h: hours(tm.missing_minutes) }) : tm.target_minutes > 0 ? t("review.targetReached") : t("week.noTarget")}</span>
+                <span className="dw-wr-sub">{tm.missing_minutes > 0 ? t("week.missing", { h: fmtDuration(tm.missing_minutes) }) : tm.target_minutes > 0 ? t("review.targetReached") : t("week.noTarget")}</span>
               </button>
             )}
             <div className="dw-wr-days" role="group" aria-label={t("week.daysLabel")}>
               {r.days.map((d) => {
                 const share = r.without_time ? d.meetings / maxMeetings : dayProgress(d);
-                const label = r.without_time ? t("week.dayMeetings", { day: dayShort(d.date), n: d.meetings }) : `${dayShort(d.date)}: ${hours(d.booked_minutes)} / ${hours(d.target_minutes)}${dayOff(d) ? ` · ${dayOff(d)}` : ""}`;
+                const label = r.without_time ? t("week.dayMeetings", { day: dayShort(d.date), n: d.meetings }) : `${dayShort(d.date)}: ${fmtDuration(d.booked_minutes)} / ${fmtDuration(d.target_minutes)}${dayOff(d) ? ` · ${dayOff(d)}` : ""}`;
                 return (
                   <button
                     key={d.date}

@@ -146,7 +146,6 @@ export function AppearanceSection({ draft, update }: SectionProps) {
                       <ThemeMock def={d} />
                       <span className="theme-card-foot">
                         <span className="theme-card-name">{themeName(d)}</span>
-                        {now && <span className="theme-card-now">{t("set.appearance.shownNow")}</span>}
                         {on && <Check size={14} strokeWidth={2.5} className="theme-card-check" aria-hidden />}
                       </span>
                     </div>

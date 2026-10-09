@@ -17,12 +17,12 @@ import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes
 import { flushAllEditors } from "../editor/saves";
 import { reloadEditors } from "../editor/NoteEditor";
 import { revealText } from "../editor/reveal";
-import { fmtDayMonth, int, isoDay, time } from "../lib/format";
+import { fmtDayMonth, fmtDuration, int, isoDay, time } from "../lib/format";
 import { openCalendarView } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { openDayReview, openTimesheetDay } from "../lib/reviewnav";
 import { useTimeTracking } from "../lib/timetracking";
-import { MEETING_LABEL, hm, hours } from "../lib/dayreview";
+import { MEETING_LABEL } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import { useAi } from "../lib/aiswitch";
@@ -333,13 +333,13 @@ function Stats({ r }: { r: WeekReview }) {
             <Clock size={13} aria-hidden /> {t("calv.booked")}
           </span>
           <span className="rv-stat-value num">
-            {hours(tm.booked_minutes)}
-            {tm.target_minutes > 0 && <span className="rv-stat-of"> / {hours(tm.target_minutes)}</span>}
+            {fmtDuration(tm.booked_minutes)}
+            {tm.target_minutes > 0 && <span className="rv-stat-of"> / {fmtDuration(tm.target_minutes)}</span>}
           </span>
           <Progress value={weekProgress(r)} tone={tm.target_minutes > 0 && tm.booked_minutes >= tm.target_minutes ? "success" : "accent"} />
           <span className="rv-stat-sub">
-            {tm.target_minutes <= 0 ? t("week.noTarget") : tm.missing_minutes > 0 ? t("week.missing", { h: hours(tm.missing_minutes) }) : t("review.targetReached")}
-            {tm.running_minutes > 0 && ` · ${t("review.timer", { time: hm(tm.running_minutes) })}`}
+            {tm.target_minutes <= 0 ? t("week.noTarget") : tm.missing_minutes > 0 ? t("week.missing", { h: fmtDuration(tm.missing_minutes) }) : t("review.targetReached")}
+            {tm.running_minutes > 0 && ` · ${t("review.timer", { time: fmtDuration(tm.running_minutes) })}`}
           </span>
         </div>
       )}
@@ -373,7 +373,7 @@ function Stats({ r }: { r: WeekReview }) {
           <Target size={13} aria-hidden /> {t("review.md.focus")}
         </span>
         {/* No session yet: the time planned in focus blocks. */}
-        <span className="rv-stat-value num">{hm(r.focus.sessions || !r.focus.blocks.length ? r.focus.minutes : r.focus.planned_minutes)}</span>
+        <span className="rv-stat-value num">{fmtDuration(r.focus.sessions || !r.focus.blocks.length ? r.focus.minutes : r.focus.planned_minutes)}</span>
         <span className="rv-stat-sub">
           {r.focus.sessions || !r.focus.blocks.length
             ? [t("review.md.sessions", { n: r.focus.sessions }), r.focus.blocks.length ? t("week.blocks", { n: r.focus.blocks.length }) : ""].filter(Boolean).join(" · ")
@@ -404,17 +404,17 @@ function Days({ r }: { r: WeekReview }) {
           >
             <span className="wr-day-head">
               <span className="wr-day-name">{dayShort(d.date)}</span>
-              {d.missing_minutes > 0 && <AlertTriangle size={12} className="wr-day-warn" aria-label={t("review.md.missing", { h: hours(d.missing_minutes) })} />}
+              {d.missing_minutes > 0 && <AlertTriangle size={12} className="wr-day-warn" aria-label={t("review.md.missing", { h: fmtDuration(d.missing_minutes) })} />}
             </span>
             <span className="wr-day-value num">
-              {hours(d.booked_minutes)}
-              {d.target_minutes > 0 && <span className="wr-day-of"> / {hours(d.target_minutes)}</span>}
+              {fmtDuration(d.booked_minutes)}
+              {d.target_minutes > 0 && <span className="wr-day-of"> / {fmtDuration(d.target_minutes)}</span>}
             </span>
             <span className="wr-day-bar" aria-hidden>
               <span className={over ? "over" : ""} style={{ width: `${dayProgress(d) * 100}%` }} />
             </span>
             <span className="wr-day-sub ellipsis">
-              {off ?? (d.missing_minutes > 0 ? t("review.md.missing", { h: hours(d.missing_minutes) }) : d.gaps.length ? t("week.gaps", { n: d.gaps.length }) : d.target_minutes <= 0 && !d.booked_minutes ? t("review.noWorkday") : " ")}
+              {off ?? (d.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(d.missing_minutes) }) : d.gaps.length ? t("week.gaps", { n: d.gaps.length }) : d.target_minutes <= 0 && !d.booked_minutes ? t("review.noWorkday") : " ")}
             </span>
           </button>
         );
@@ -466,9 +466,9 @@ function TimeCard({ r }: { r: WeekReview }) {
   const toSheet = (newTab = false) => openTimesheetDay(r.monday, { newTab });
   const gapDays = r.days.filter((d) => d.gaps.length || d.missing_minutes > 0);
   return (
-    <Section icon={Clock} tone="time" title={t("week.topWbs")} count={tm.items.length} extra={tm.target_minutes > 0 ? t("review.hoursOf", { h: hours(tm.booked_minutes), target: hours(tm.target_minutes) }) : hours(tm.booked_minutes)} className="rv-time">
+    <Section icon={Clock} tone="time" title={t("week.topWbs")} count={tm.items.length} extra={tm.target_minutes > 0 ? t("review.hoursOf", { h: fmtDuration(tm.booked_minutes), target: fmtDuration(tm.target_minutes) }) : fmtDuration(tm.booked_minutes)} className="rv-time">
       {tm.items.length === 0 ? (
-        <div className="rv-empty">{tm.running_minutes > 0 ? t("review.timerRunning", { time: hm(tm.running_minutes) }) : t("review.nothingBooked")}</div>
+        <div className="rv-empty">{tm.running_minutes > 0 ? t("review.timerRunning", { time: fmtDuration(tm.running_minutes) }) : t("review.nothingBooked")}</div>
       ) : (
         tm.items.slice(0, 8).map((w) => (
           <button key={`${w.netzplan_id}-${w.label}`} type="button" className="rv-row rv-wbs" onClick={(e) => toSheet(e.ctrlKey || e.metaKey)} title={w.descriptions.join("\n")}>
@@ -482,7 +482,7 @@ function TimeCard({ r }: { r: WeekReview }) {
               </span>
               {w.descriptions.length > 0 && <span className="rv-sub ellipsis">{w.descriptions.join(" · ")}</span>}
             </span>
-            <span className="rv-meta num">{hours(w.minutes)}</span>
+            <span className="rv-meta num">{fmtDuration(w.minutes)}</span>
           </button>
         ))
       )}
@@ -492,13 +492,13 @@ function TimeCard({ r }: { r: WeekReview }) {
           <span>{t("review.gaps")}</span>
           {gapDays.map((d) => (
             <button key={d.date} type="button" className="gap-chip" onClick={(e) => openDayReview(d.date, { newTab: e.ctrlKey || e.metaKey })}>
-              {dayShort(d.date)} <span className="faint">({d.missing_minutes > 0 ? t("review.md.missing", { h: hours(d.missing_minutes) }) : t("week.gaps", { n: d.gaps.length })})</span>
+              {dayShort(d.date)} <span className="faint">({d.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(d.missing_minutes) }) : t("week.gaps", { n: d.gaps.length })})</span>
             </button>
           ))}
         </div>
       )}
       <button type="button" className="rv-foot-link" onClick={(e) => toSheet(e.ctrlKey || e.metaKey)}>
-        {tm.missing_minutes > 0 ? t("review.missingBook", { h: hours(tm.missing_minutes) }) : t("review.openTimesheet")}
+        {tm.missing_minutes > 0 ? t("review.missingBook", { h: fmtDuration(tm.missing_minutes) }) : t("review.openTimesheet")}
       </button>
     </Section>
   );
@@ -588,7 +588,7 @@ function TasksCard({ r, onOpen }: { r: WeekReview; onOpen: (task: WeekTask, newT
 function PageRow({ p, onOpen }: { p: WeekPage; onOpen: (newTab: boolean) => void }) {
   const t = useT();
   const words = (n: number) => t("review.words", { n: Math.abs(n), count: `${n > 0 ? "+" : "−"}${int(Math.abs(n))}` });
-  const bits = [p.days > 1 ? t("week.days", { n: p.days }) : "", p.edits > 0 ? t("feed.changes", { n: p.edits }) : "", p.word_delta ? words(p.word_delta) : "", p.minutes > 0 ? `~${hm(p.minutes)}` : ""].filter(Boolean);
+  const bits = [p.days > 1 ? t("week.days", { n: p.days }) : "", p.edits > 0 ? t("feed.changes", { n: p.edits }) : "", p.word_delta ? words(p.word_delta) : "", p.minutes > 0 ? `~${fmtDuration(p.minutes)}` : ""].filter(Boolean);
   return (
     <button type="button" className={`rv-row rv-page wr-page ${p.gone ? "gone" : ""}`} onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}>
       <span className="rv-main">
@@ -609,7 +609,7 @@ function FocusCard({ r }: { r: WeekReview }) {
   const t = useT();
   const f = r.focus;
   return (
-    <Section icon={Target} tone="focus" title={t("week.focus")} count={f.blocks.length} extra={f.sessions ? `${t("review.md.sessions", { n: f.sessions })} · ${hm(f.minutes)}` : undefined} empty={t("week.noBlocks")} className="rv-focus">
+    <Section icon={Target} tone="focus" title={t("week.focus")} count={f.blocks.length} extra={f.sessions ? `${t("review.md.sessions", { n: f.sessions })} · ${fmtDuration(f.minutes)}` : undefined} empty={t("week.noBlocks")} className="rv-focus">
       {f.blocks.map((b) => (
         <button key={b.id} type="button" className="rv-row" onClick={() => openCalendarView({ date: isoDay(new Date(b.start)) })}>
           <span className="rv-when num">
@@ -619,8 +619,8 @@ function FocusCard({ r }: { r: WeekReview }) {
             <span className="rv-title ellipsis">{b.title}</span>
           </span>
           <span className="rv-meta num">
-            {hm(b.minutes)}
-            {b.task_done ? ` · ${t("week.blockDone")}` : b.booked ? ` · ${t("review.meeting.booked")}` : b.focus_minutes ? ` · ${t("week.focused", { time: hm(b.focus_minutes) })}` : ""}
+            {fmtDuration(b.minutes)}
+            {b.task_done ? ` · ${t("week.blockDone")}` : b.booked ? ` · ${t("review.meeting.booked")}` : b.focus_minutes ? ` · ${t("week.focused", { time: fmtDuration(b.focus_minutes) })}` : ""}
           </span>
         </button>
       ))}

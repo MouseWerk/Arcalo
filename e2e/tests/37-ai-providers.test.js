@@ -35,7 +35,7 @@ const clickText = async (sel, re) => {
 test("a running Ollama is detected and added; the connection test checks every step", async () => {
   await app.keys(["Control", ","]);
   await app.waitText(".settings-head h1", /KI & Modelle/);
-  await app.waitText(".provider-found", /Ollama läuft auf diesem Rechner/, 10000);
+  await app.waitText(".provider-found", /Ollama läuft auf diesem Computer/, 10000);
   assert.match(await app.text(".provider-found"), /2 Modelle/);
   await app.shot("providers-detected");
 

@@ -64,6 +64,11 @@ export function fmtHours(hours: number, style = prefs.hours): string {
 }
 /** Minutes shown as hours in the configured style. */
 export const fmtMinutes = (m: number | null | undefined, style = prefs.hours) => fmtHours((m ?? 0) / 60, style);
+/**
+ * A duration with its unit, the one way the app shows hours (sums, tiles, focus time, gaps):
+ * „1,50 h“ or, with „Stunden als“ set to clock time, „1:30 h“.
+ */
+export const fmtDuration = (m: number | null | undefined, style = prefs.hours) => `${fmtMinutes(m, style)} h`;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -122,9 +127,10 @@ export function parseTimeInput(text: string): string | null {
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
 export const isoWeekday = (d: Date) => ((d.getDay() + 6) % 7) + 1;
 
-/** Two-letter weekday names in display order (week start from the settings). */
+/** Short weekday names in display order (week start from the settings): „Mo, Di“ in German,
+ *  "Mon, Tue" in English (as `Intl` writes them for en-GB). */
 export function weekdayLabels(startsOn: 0 | 1 = prefs.weekStartsOn, lang = prefs.lang): string[] {
-  const names = lang === "en" ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] : ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const names = lang === "en" ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   return startsOn === 1 ? names : [names[6], ...names.slice(0, 6)];
 }
 /** Day of the month as written after a weekday: „24.“ in German, „24“ in English. */

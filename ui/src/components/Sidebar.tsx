@@ -36,7 +36,7 @@ import type { TKey } from "../lib/i18n";
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
 /** Title of the daily notes' folder (Settings → Notizen). */
-const journalTitle = () => useApp.getState().settings?.settings.notes?.daily_folder || "Journal";
+const journalTitle = () => useApp.getState().settings?.settings.notes?.daily_folder || tStatic("fl.default.journal");
 /** Id of the Journal folder that was already collapsed once by default. */
 const JOURNAL_SEEN_KEY = "arcalo.journal-collapsed";
 
@@ -1295,7 +1295,7 @@ function TimerDock() {
       <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
       <button type="button" className="timer-dock-main" onClick={() => useApp.getState().openTab({ kind: "timesheet" })}>
         <span className="timer-dock-time num">{clock(seconds)}</span>
-        <span className="timer-dock-label">{paused ? t("timer.paused") : e.description || `${e.vorgang_nr ?? "Timer"}`}</span>
+        <span className="timer-dock-label">{paused ? t("timer.paused") : e.description || e.vorgang_nr || t("dash.w.timer")}</span>
       </button>
       <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} size="md" onClick={() => void toggleTimerPause()} />
       <IconButton icon={Square} label={t("status.stopTimer")} size="md" onClick={() => stopTimer()} />

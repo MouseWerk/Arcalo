@@ -18,6 +18,7 @@ export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tag
   const aiReady = useApp((s) => !!s.settings && usableProvider(s.settings));
   const [list, setList] = useState<TagSuggestion[]>([]);
   const [asking, setAsking] = useState(false);
+  const [all, setAll] = useState(false);
   const s = useApp.getState;
   const tagKey = tags.join(",");
   // The page asked for last: a newly opened page asks at once, so the row is there before
@@ -38,7 +39,10 @@ export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tag
     };
   }, [enabled, pageId, tagKey]);
 
-  useEffect(() => setList([]), [pageId]);
+  useEffect(() => {
+    setList([]);
+    setAll(false);
+  }, [pageId]);
 
   if (!enabled) return null;
   const have = new Set(tags.map((x) => x.toLowerCase()));
@@ -71,7 +75,7 @@ export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tag
   return (
     <div className="tag-suggest" aria-label={tr("ts.suggestion")}>
       {shown.length > 0 && <span className="tag-suggest-label faint">{tr("ts.suggestion")}</span>}
-      {shown.map((x) => (
+      {(all || shown.length <= 2 ? shown : shown.slice(0, 2)).map((x) => (
         <span key={x.tag} className={`tag-suggest-chip ${x.new ? "is-new" : ""}`} data-tag={x.tag}>
           <button
             type="button"
@@ -88,6 +92,11 @@ export function TagSuggestions({ pageId, tags, fm, onFm }: { pageId: number; tag
           </button>
         </span>
       ))}
+      {!all && shown.length > 2 && (
+        <button type="button" className="tag-suggest-more" onClick={() => setAll(true)}>
+          {tr("ts.more", { n: shown.length - 2 })}
+        </button>
+      )}
       {aiReady && (
         <button type="button" className="tag-suggest-ai" onClick={() => void askAi()} disabled={asking} title={tr("ts.ai")}>
           {asking ? <Spinner size={11} /> : <Sparkles size={11} />}

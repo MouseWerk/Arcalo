@@ -8,6 +8,7 @@ import { api } from "../../lib/api";
 import { aiPresets, meetingSummaryInstruction } from "../../lib/aitext";
 import { useT, type TKey } from "../../lib/i18n";
 import { usd } from "../../lib/format";
+import { keys } from "../../lib/shortcut";
 import type { AiPrefs, AiPresetDef, CostStatus } from "../../lib/types";
 import { Group, NumberInput, Row, Unfiltered, type SectionProps } from "./common";
 import { TIME_TOOLS, timeTrackingOn } from "../../lib/timetracking";
@@ -100,7 +101,7 @@ export function AiPrefGroups({ draft, update }: SectionProps) {
         </Row>
       </Group>
 
-      <Group title={t("set.ai.presets")} description={t("set.ai.presetsDesc")}>
+      <Group title={t("set.ai.presets")} description={t("set.ai.presetsDesc", { keys: keys("Mod J") })}>
         <Row label={t("set.ai.presetsReset")} keywords="inline ki ctrl j">
           <Button icon={RotateCcw} variant="ghost" disabled={ai.inline_presets == null} onClick={() => set({ inline_presets: null })}>
             {t("common.reset")}

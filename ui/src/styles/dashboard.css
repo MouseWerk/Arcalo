@@ -113,10 +113,17 @@
 .dw-start svg { color: var(--accent-text); flex: none; }
 .dw-when { font-size: var(--fs-xs); flex: none; white-space: nowrap; }
 .dw-more { color: var(--text-3); }
-.dw-task { display: flex; align-items: center; gap: 2px; padding-left: 6px; transition: opacity var(--dur); }
-.dw-task.done { opacity: 0.45; }
+.dw-task { display: flex; align-items: center; gap: 2px; padding-left: 6px; }
+/* Ticked off: the secondary text color and a strike-through, readable (no fading). */
+.dw-task.done .dw-task-text { color: var(--text-3); }
 .dw-task.done .dw-task-text span:first-child { text-decoration: line-through; }
-.dw-task-page { max-width: 40%; font-size: var(--fs-xs); flex: 0 1 auto; }
+/* The task is the content and keeps the room; the page name is metadata and gives way first. */
+.dw-task-text > .dw-task-title { flex: 1 1 auto; min-width: min(40%, 100%); }
+.dw-task-page { flex: 0 4 auto; min-width: 0; max-width: 35%; font-size: var(--fs-xs); }
+.dw-task-text > :is(.badge, .dw-when, .dw-task-recur) { flex: none; }
+@container dw (max-width: 380px) {
+  .dw-task-page { display: none; }
+}
 .dw-check {
   position: relative; flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-input); padding: 0; cursor: pointer;
   transition: border-color var(--dur-fast), background var(--dur-fast);
@@ -180,6 +187,11 @@
   position: absolute; height: calc(var(--lane-h) - 3px); margin-top: 3px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 8px; border: 0;
   border-radius: var(--r-xs); background: var(--ev-fill); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); overflow: hidden; cursor: pointer; z-index: 1;
   transition: box-shadow var(--dur-fast);
+  container-type: inline-size;
+}
+/* A chip with no room for a readable title shows its color only (the tooltip has the title). */
+@container (max-width: 44px) {
+  .dw-tl-ev > .ellipsis { display: none; }
 }
 .dw-tl-ev:hover { box-shadow: var(--shadow-sm); z-index: 2; }
 .dw-tl-ev:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
@@ -211,12 +223,12 @@
 .dw-agenda-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 36px; padding: 3px 6px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
 .dw-agenda-row:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--r-sm); }
 .dw-agenda-time { width: 40px; flex: none; color: var(--text-2); font-size: var(--fs-xs); }
-.dw-agenda-bar { width: 8px; height: 8px; align-self: center; border-radius: 50%; background: var(--ev, var(--accent)); flex: none; }
+.dw-agenda-dot { width: 8px; height: 8px; align-self: center; border-radius: 50%; background: var(--ev, var(--accent)); flex: none; }
 .dw-agenda-main { display: grid; min-width: 0; line-height: 1.3; }
 .dw-agenda-title { font-weight: var(--fw-semibold); }
 .dw-agenda-item.past .dw-agenda-row { color: var(--text-2); }
 .dw-agenda-item.past .dw-agenda-title { font-weight: var(--fw-medium); }
-.dw-agenda-item.past .dw-agenda-bar { background: color-mix(in srgb, var(--ev, var(--accent)) 50%, var(--bg-raised)); }
+.dw-agenda-item.past .dw-agenda-dot { background: color-mix(in srgb, var(--ev, var(--accent)) 50%, var(--bg-raised)); }
 .dw-agenda-item.live .dw-agenda-time { display: inline-flex; align-items: center; gap: 4px; color: var(--text); font-weight: var(--fw-semibold); }
 .dw-agenda-actions { display: flex; align-items: center; gap: 6px; flex: none; padding-right: 4px; }
 .dw-agenda-day + .dw-agenda-day { padding-top: 4px; }
@@ -232,7 +244,9 @@
 .dw-bar-col:hover .dw-bar-track { box-shadow: inset 0 0 0 1px var(--border-strong); }
 .dw-bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 4px 4px 0 0; transition: height var(--dur) var(--ease-out); }
 .dw-bar-target { position: absolute; left: 0; right: 0; bottom: calc(var(--target) * 100%); height: 0; border-top: 1px dashed var(--text-3); z-index: 1; opacity: 0.8; }
-.dw-bar-col.gap .dw-bar-track { box-shadow: inset 0 0 0 1px var(--warning); }
+/* A day under its target: a warning tint and the day in the warning color, no colored frame. */
+.dw-bar-col.gap .dw-bar-track { background: color-mix(in srgb, var(--warning-fill) 18%, var(--bg-active)); }
+.dw-bar-col.gap .dw-bar-day { color: var(--warning); font-weight: var(--fw-semibold); }
 .dw-bar-col.weekend .dw-bar-fill { background: var(--text-3); }
 .dw-bar-col.weekend .dw-bar-day { color: var(--text-3); }
 .dw-bar-h { font-size: var(--fs-xs); color: var(--text-2); min-height: 1.2em; }
@@ -273,7 +287,7 @@
 .dw-mini > .lvl-critical, .dw-mini > .lvl-exceeded { background: var(--danger); }
 
 /* Projekt */
-.dw-project { display: grid; gap: 8px; align-content: start; }
+.dw-project { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-content: start; }
 .dw-project-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-md); }
 .dw-project-vg { margin-top: -4px; }
 .dw-project-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding-top: 6px; border-top: 1px solid var(--border); }
@@ -325,7 +339,7 @@
 .dw-md p, .dw-md ul, .dw-md ol, .dw-md blockquote, .dw-md pre { margin: 0 0 8px; }
 .dw-md ul, .dw-md ol { padding-left: 20px; }
 .dw-md a { color: var(--accent-text); cursor: pointer; }
-.dw-md code { font-family: var(--font-mono); font-size: 0.92em; background: var(--bg-active); padding: 1px 4px; border-radius: var(--r-xs); }
+.dw-md code { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 0.92em; background: var(--bg-active); padding: 1px 4px; border-radius: var(--r-xs); }
 .dw-md pre { background: var(--code-bg); padding: 8px 10px; border-radius: var(--r-sm); overflow: auto; }
 .dw-md blockquote { border-left: 2px solid var(--border-strong); padding-left: 10px; color: var(--text-2); }
 .dw-md table { border-collapse: collapse; font-size: var(--fs-xs); }
@@ -387,7 +401,7 @@
 .dw-cal-wd { text-align: center; font-size: var(--fs-2xs); color: var(--text-3); padding-bottom: 2px; }
 .dw-cal-day { position: relative; height: 26px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; font-size: var(--fs-xs); color: var(--text); font-variant-numeric: tabular-nums; cursor: pointer; }
 .dw-cal-day:hover { background: var(--bg-hover); }
-.dw-cal-day.outside { color: var(--text-3); opacity: 0.6; }
+.dw-cal-day.outside { color: var(--text-3); }
 .dw-cal-day.today { background: var(--bg-current); color: var(--accent-text); font-weight: var(--fw-semibold); }
 .dw-cal-day.has-note::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--accent); }
 .dw-cal-day.tone-met { background: var(--success-soft); }

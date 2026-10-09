@@ -3,12 +3,12 @@
 // widget never asks the assistant). Its data is the briefing's one call, loaded once the widget
 // scrolls into view.
 
+import { fmtDuration } from "../../../lib/format";
 import { CalendarRange, Clock, ListChecks, Sparkles, Sun, Ticket, type LucideIcon } from "lucide-react";
 import { api } from "../../../lib/api";
 import { t } from "../../../lib/i18n";
 import { briefingCounts, nextMeeting, openBriefing, shows, summaryLines } from "../../../lib/briefing";
 import { hiddenCalendars, useHiddenCalendars } from "../../../lib/calvisibility";
-import { hours } from "../../../lib/dayreview";
 import { defineWidget } from "../define";
 import { useLazyData } from "../data";
 import { Loadable, hhmm } from "../common";
@@ -46,7 +46,7 @@ function BriefingWidget({ widget }: WidgetProps) {
               {shows(b, "meetings") && <Count icon={CalendarRange} section="meetings" value={String(c.upcoming)} label={t("dash.bf.meetings")} />}
               {shows(b, "tasks") && <Count icon={ListChecks} section="tasks" value={String(c.tasks)} label={t("dash.bf.tasks")} />}
               {shows(b, "jira") && b.jira && <Count icon={Ticket} section="jira" value={String(c.jira)} label={t("dash.bf.jira")} />}
-              {shows(b, "time") && b.time && <Count icon={Clock} section="time" value={hours(c.missing)} label={t("dash.bf.missing")} />}
+              {shows(b, "time") && b.time && <Count icon={Clock} section="time" value={fmtDuration(c.missing)} label={t("dash.bf.missing")} />}
             </div>
             <button type="button" className="dw-bf-next" onClick={() => openBriefing()}>
               <span className="dw-bf-next-label">{next ? t(new Date(next.start).getTime() <= Date.now() ? "brief.now" : "brief.next") : t("dash.bf.noNext")}</span>

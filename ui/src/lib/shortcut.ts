@@ -2,6 +2,7 @@
 // and showing shortcuts the way the platform does (macOS: ⌃⌥⇧⌘ glyphs).
 
 import { IS_MAC } from "./platform";
+import { t } from "./i18n";
 
 /**
  * A shortcut from a key press in the recorder field: `"Ctrl+Shift+Space"`, `""` (Entf/Backspace
@@ -59,6 +60,35 @@ const MODS: Record<string, Mod | "mod"> = {
 const MAC_ORDER: Mod[] = ["ctrl", "alt", "shift", "cmd"];
 const MAC_GLYPH: Record<Mod, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
 const NAME: Record<Mod, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", cmd: "Super" };
+
+/**
+ * A key's name as printed on the keyboard of the display language (Windows and Linux): German
+ * keyboards say „Strg“, „Umschalt“, „Eingabe“, „Entf“ and „Leertaste“. Other keys stay as given.
+ */
+export function keyName(key: string): string {
+  switch (key.toLowerCase()) {
+    case "ctrl":
+    case "control":
+    case "strg":
+      return t("keys.ctrl");
+    case "shift":
+    case "umschalt":
+      return t("keys.shift");
+    case "enter":
+    case "return":
+    case "eingabe":
+      return t("keys.enter");
+    case "delete":
+    case "del":
+    case "entf":
+      return t("keys.delete");
+    case "space":
+    case "leertaste":
+      return t("keys.space");
+    default:
+      return key;
+  }
+}
 const MAC_KEYS: Record<string, string> = {
   enter: "↩",
   return: "↩",
@@ -89,7 +119,7 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
     if (m) mods.push(m === "mod" ? (mac ? "cmd" : "ctrl") : m);
     else rest.push(ARROWS[t.toLowerCase()] ?? (t.length === 1 ? t.toUpperCase() : t));
   }
-  if (!mac) return [...mods.map((m) => NAME[m]), ...rest].join(sep);
+  if (!mac) return [...mods.map((m) => keyName(NAME[m])), ...rest.map(keyName)].join(sep);
   const glyphs = MAC_ORDER.filter((m) => mods.includes(m))
     .map((m) => MAC_GLYPH[m])
     .join("");
@@ -99,12 +129,13 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
   return glyphs + gap + key;
 }
 
-/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS and „Ctrl Shift D“ elsewhere. */
+/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS, „Strg Umschalt D“ in German
+ *  and „Ctrl Shift D“ in English elsewhere. */
 export function keys(spec: string, mac = IS_MAC): string {
   return formatShortcut(spec, mac, " ");
 }
 
-/** The primary modifier for labels: „⌘“ on macOS, „Ctrl“ elsewhere. */
+/** The primary modifier for labels: „⌘“ on macOS, „Strg“ / „Ctrl“ elsewhere. */
 export function modLabel(mac = IS_MAC): string {
-  return mac ? "⌘" : "Ctrl";
+  return mac ? "⌘" : keyName("Ctrl");
 }

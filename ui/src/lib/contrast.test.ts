@@ -45,6 +45,13 @@ function failures(name: string, k: Record<string, string>): string[] {
   // Primary buttons and switches: white on the strong accent.
   const white = contrast("#ffffff", k["--accent-strong"]);
   if (white < 4.5) out.push(`${name}: white on --accent-strong ${white.toFixed(2)}`);
+  // Small solid markers with text: today's date in the calendars, counters (q116 A7).
+  check("--on-accent", "--accent-fill", k["--accent-fill"], 4.5);
+  // Keyboard focus: the neutral ring 3:1 on every surface and on a current or selected row (A9).
+  for (const s of SURFACES) {
+    check("--border-focus", s, k[s], 3);
+    for (const tint of ["--bg-hover", "--bg-current", "--bg-selected"]) check("--border-focus", `${tint} on ${s}`, solid(k[tint], k[s]), 3);
+  }
   return out;
 }
 

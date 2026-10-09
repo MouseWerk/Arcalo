@@ -60,7 +60,7 @@ export function FilingSection({ draft, update }: SectionProps) {
   const filing: FilingSettings = { types: {}, rules: [], ...draft.filing };
   const set = (f: Partial<FilingSettings>) => update({ filing: { ...filing, ...f } });
   const defaults: Record<FileType, string> = {
-    journal: "Journal",
+    journal: t("fl.default.journal"),
     meeting: t("fl.default.meeting"),
     voice: t("fl.default.voice"),
     jira: "Jira",
@@ -71,7 +71,7 @@ export function FilingSection({ draft, update }: SectionProps) {
   };
   const folderOf = (k: FileType) => (k === "journal" ? draft.notes.daily_folder : k === "mail" ? (draft.mail?.notes_parent ?? "") : (typeFiling(filing, k).folder ?? ""));
   const setFolder = (k: FileType, v: string) => {
-    if (k === "journal") update({ notes: { ...draft.notes, daily_folder: v || "Journal" } });
+    if (k === "journal") update({ notes: { ...draft.notes, daily_folder: v || defaults.journal } });
     else if (k === "mail") update({ mail: { ...draft.mail, notes_parent: v || defaults.mail } });
     else set({ types: { ...filing.types, [k]: { ...typeFiling(filing, k), folder: v } } });
   };

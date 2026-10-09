@@ -161,7 +161,7 @@ describe("first-run steps", () => {
 describe("first-run summary", () => {
   const ctx = (lang: "de" | "en") => ({
     t: (k: TKey, v?: Record<string, string | number>) => translate(lang, k, v),
-    weekdays: lang === "de" ? ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] : ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    weekdays: lang === "de" ? ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     keys: [],
     icsCount: 0,
     workspace: null,

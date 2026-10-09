@@ -71,6 +71,8 @@ export interface AccentTokens {
   "--accent-strong": string;
   "--accent-soft": string;
   "--accent-text": string;
+  "--accent-fill": string;
+  "--on-accent": string;
 }
 
 const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`;
@@ -78,8 +80,10 @@ const rgba = (c: Rgb, a: number) => `rgb(${c.map(Math.round).join(" ")} / ${a})`
 /**
  * Accent tokens for one mode. Guarantees: `--accent-text` has ≥ 4.5:1 against the canvas,
  * the other `surfaces` (sidebar, menus, the current row) and the accent's own soft tint on
- * them, `--accent` (icons, fills) ≥ 3:1, and white text on `--accent-strong`
- * (primary buttons, switches) ≥ 4.5:1.
+ * them, `--accent` (icons, fills) ≥ 3:1, white text on `--accent-strong`
+ * (primary buttons, switches) ≥ 4.5:1, and `--on-accent` on `--accent-fill` (small solid markers
+ * with text: today's date, counters) ≥ 4.5:1: white on the strong accent in light themes, the
+ * canvas color on the accent in dark ones.
  */
 export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: string = CANVAS[mode], surfaces: string[] = []): AccentTokens {
   const base = parseHex(hex) ?? parseHex("#6366f1")!;
@@ -92,10 +96,15 @@ export function accentTokens(hex: string, mode: "light" | "dark", canvasHex: str
   let text = light ? mix(base, [0, 0, 0], 0.08) : mix(base, white, 0.35);
   for (const bg of [...under, ...under.map((u) => mix(u, accent, soft))]) text = ensureContrast(text, bg, 4.5, !light);
   const strong = ensureContrast(light ? mix(base, [0, 0, 0], 0.08) : base, white, 4.5, false);
+  // 4.6: headroom for the hex rounding.
+  const onDark = ensureContrast(canvas, accent, 4.6, false);
+  const fill = light ? strong : contrast(onDark, accent) >= 4.6 ? accent : ensureContrast(accent, onDark, 4.6, true);
   return {
     "--accent": toHex(accent),
     "--accent-strong": toHex(strong),
     "--accent-soft": rgba(accent, soft),
     "--accent-text": toHex(text),
+    "--accent-fill": toHex(fill),
+    "--on-accent": light ? "#ffffff" : toHex(onDark),
   };
 }

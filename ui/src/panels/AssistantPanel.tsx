@@ -350,9 +350,13 @@ function EmptyChat() {
   const activeDoc = useApp((st) => st.activeDoc);
   const activeTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTabId));
   const page = activeTab?.kind === "page" && activeDoc && activeDoc.id === activeTab.pageId ? activeDoc : null;
+  // Without a usable AI the suggestions and quick starts could not run: only the setup hint shows,
+  // and not twice when the chat view next to the panel already shows it.
+  const ready = !!settings && usableProvider(settings);
+  const chatViewOpen = activeTab?.kind === "chat";
   // Suggestions are shown in an empty chat of the visible assistant tab only.
   const shown = useApp((st) => st.panelOpen && st.panelTab === "assistant");
-  const suggestions = useSuggestions(page, shown);
+  const suggestions = useSuggestions(page, shown && ready);
   // Time tracking off: the assistant does not offer to book time.
   const timeOn = useTimeTracking();
   const quick: { label: string; icon: typeof Timer; text: string }[] = [
@@ -368,9 +372,9 @@ function EmptyChat() {
       </div>
       <div className="assistant-empty-title">{t("chat.emptyTitle")}</div>
       <p className="faint">{t(timeOn ? "chat.emptyText" : "tt.chatEmptyText")}</p>
-      {settings && !usableProvider(settings) && (
-        <AiSetupNote text={t("ai.setup.chat")} />
-      )}
+      {settings && !ready && !chatViewOpen && <AiSetupNote text={t("ai.setup.chat")} />}
+      {ready && (
+      <>
       <div className="suggestions">
         {suggestions.map((q) => {
           const Icon = SUGGESTION_ICONS[q.kind];
@@ -395,6 +399,8 @@ function EmptyChat() {
           </button>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }

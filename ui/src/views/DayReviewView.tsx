@@ -16,13 +16,13 @@ import { pickDate } from "../components/CalendarPopover";
 import { flushAllEditors } from "../editor/saves";
 import { revealText } from "../editor/reveal";
 import { dayTitle, fileKind } from "../lib/activity";
-import { fmtDayMonth, int, isoDay, time } from "../lib/format";
+import { fmtDayMonth, fmtDuration, int, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { REVIEW_EVENT, openTimesheetDay, takeReviewDay } from "../lib/reviewnav";
 import { openWeekReview } from "../lib/weekreview";
 import { useTimeTracking } from "../lib/timetracking";
-import { MEETING_LABEL, findReviewBlock, hm, hours, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
+import { MEETING_LABEL, findReviewBlock, localProviders, meetingsSub, openMeetings, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "../lib/dayreview";
 import { renderMarkdown } from "../lib/markdown";
 import { useAiTransform } from "../lib/useAiTransform";
 import { useAi } from "../lib/aiswitch";
@@ -199,7 +199,7 @@ export function DayReviewView() {
               <IconButton icon={ChevronRight} label={t("review.nextDay")} onClick={() => go(1)} />
               <IconButton icon={CalendarDays} label={t("review.pickDay")} onClick={(e) => pickDate(e.currentTarget, date, setDate)} />
             </div>
-            <Button variant="ghost" icon={CalendarCheck} className="rv-week" onClick={(e) => openWeekReview(date, { newTab: e.ctrlKey || e.metaKey })}>
+            <Button variant="ghost" icon={CalendarCheck} className="rv-week" onClick={(e) => openWeekReview(date, { newTab: e.ctrlKey || e.metaKey })} aria-label={t("week.view")} data-tooltip-full={t("week.view")}>
               {t("week.view")}
             </Button>
             <Button variant={aiOn ? "secondary" : "primary"} icon={NotebookPen} className="rv-insert" loading={inserting} disabled={!r} onClick={() => void insert()}>
@@ -324,7 +324,7 @@ export function DayReviewView() {
               </Section>
               <TasksCard r={r} onOpen={(task, newTab) => void openTask(task, newTab)} />
               {r.focus.sessions.length > 0 && (
-                <Section icon={Target} tone="focus" title={t("review.md.focus")} count={r.focus.sessions.length} extra={hm(r.focus.minutes)} className="rv-focus">
+                <Section icon={Target} tone="focus" title={t("review.md.focus")} count={r.focus.sessions.length} extra={fmtDuration(r.focus.minutes)} className="rv-focus">
                   {r.focus.sessions.map((f) => (
                     <button key={f.id} type="button" className="rv-row" onClick={(e) => !r.without_time && toSheet(e.ctrlKey || e.metaKey)}>
                       <span className="rv-when num">{time(f.started_at)}</span>
@@ -333,7 +333,7 @@ export function DayReviewView() {
                         {f.goal && f.reference && <span className="rv-sub mono ellipsis">{f.reference}</span>}
                       </span>
                       <span className="rv-meta num">
-                        {hm(f.worked_minutes)}
+                        {fmtDuration(f.worked_minutes)}
                         {f.status === "aborted" ? ` · ${t("review.aborted")}` : f.status === "running" ? ` · ${t("time.runningLower")}` : f.entry_id ? ` · ${t("review.meeting.booked")}` : ""}
                       </span>
                     </button>
@@ -382,13 +382,13 @@ function Stats({ r }: { r: DayReview }) {
           <Clock size={13} aria-hidden /> {t("calv.booked")}
         </span>
         <span className="rv-stat-value num">
-          {hours(tm.booked_minutes)}
-          {tm.target_minutes > 0 && <span className="rv-stat-of"> / {hours(tm.target_minutes)}</span>}
+          {fmtDuration(tm.booked_minutes)}
+          {tm.target_minutes > 0 && <span className="rv-stat-of"> / {fmtDuration(tm.target_minutes)}</span>}
         </span>
         <Progress value={progress(r)} tone={tm.target_minutes > 0 && tm.missing_minutes === 0 ? "success" : "accent"} />
         <span className="rv-stat-sub">
-          {tm.target_minutes <= 0 ? t("review.noWorkday") : tm.missing_minutes > 0 ? t("review.md.missing", { h: hours(tm.missing_minutes) }) : t("review.targetReached")}
-          {tm.running_minutes > 0 && ` · ${t("review.timer", { time: hm(tm.running_minutes) })}`}
+          {tm.target_minutes <= 0 ? t("review.noWorkday") : tm.missing_minutes > 0 ? t("review.md.missing", { h: fmtDuration(tm.missing_minutes) }) : t("review.targetReached")}
+          {tm.running_minutes > 0 && ` · ${t("review.timer", { time: fmtDuration(tm.running_minutes) })}`}
         </span>
       </div>}
       <div className="rv-stat tone-meetings">
@@ -412,13 +412,13 @@ function Stats({ r }: { r: DayReview }) {
           <FileText size={13} aria-hidden /> {t("review.md.pages")}
         </span>
         <span className="rv-stat-value num">{r.pages.length}</span>
-        <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: hm(edited) }) : t("review.edited")}</span>
+        <span className="rv-stat-sub">{edited ? t("review.editedFor", { time: fmtDuration(edited) }) : t("review.edited")}</span>
       </div>
       <div className="rv-stat tone-focus">
         <span className="rv-stat-label">
           <Target size={13} aria-hidden /> {t("review.md.focus")}
         </span>
-        <span className="rv-stat-value num">{hm(r.focus.minutes)}</span>
+        <span className="rv-stat-value num">{fmtDuration(r.focus.minutes)}</span>
         <span className="rv-stat-sub">{t("review.md.sessions", { n: r.focus.sessions.length })}</span>
       </div>
     </section>
@@ -466,9 +466,9 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
   const tm = r.time;
   const max = Math.max(1, ...tm.items.map((w) => w.minutes));
   return (
-    <Section icon={Clock} tone="time" title={t("review.md.time")} count={tm.items.length} extra={tm.target_minutes > 0 ? t("review.hoursOf", { h: hours(tm.booked_minutes), target: hours(tm.target_minutes) }) : hours(tm.booked_minutes)} className="rv-time">
+    <Section icon={Clock} tone="time" title={t("review.md.time")} count={tm.items.length} extra={tm.target_minutes > 0 ? t("review.hoursOf", { h: fmtDuration(tm.booked_minutes), target: fmtDuration(tm.target_minutes) }) : fmtDuration(tm.booked_minutes)} className="rv-time">
       {tm.items.length === 0 ? (
-        <div className="rv-empty">{tm.running_minutes > 0 ? t("review.timerRunning", { time: hm(tm.running_minutes) }) : t("review.nothingBooked")}</div>
+        <div className="rv-empty">{tm.running_minutes > 0 ? t("review.timerRunning", { time: fmtDuration(tm.running_minutes) }) : t("review.nothingBooked")}</div>
       ) : (
         tm.items.map((w) => (
           <button key={w.label} type="button" className="rv-row rv-wbs" onClick={(e) => onOpen(e.ctrlKey || e.metaKey)} title={w.descriptions.join("\n")}>
@@ -482,7 +482,7 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
               </span>
               {w.descriptions.length > 0 && <span className="rv-sub ellipsis">{w.descriptions.join(" · ")}</span>}
             </span>
-            <span className="rv-meta num">{hours(w.minutes)}</span>
+            <span className="rv-meta num">{fmtDuration(w.minutes)}</span>
           </button>
         ))
       )}
@@ -492,13 +492,13 @@ function TimeCard({ r, onOpen }: { r: DayReview; onOpen: (newTab?: boolean) => v
           <span>{t("review.gaps")}</span>
           {tm.gaps.map((g) => (
             <button key={g.start} type="button" className="gap-chip" onClick={() => onOpen()}>
-              {time(g.start)}–{time(g.end)} <span className="faint">({hm(g.minutes)})</span>
+              {time(g.start)}–{time(g.end)} <span className="faint">({fmtDuration(g.minutes)})</span>
             </button>
           ))}
         </div>
       )}
       <button type="button" className="rv-foot-link" onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}>
-        {tm.missing_minutes > 0 ? t("review.missingBook", { h: hours(tm.missing_minutes) }) : t("review.openTimesheet")}
+        {tm.missing_minutes > 0 ? t("review.missingBook", { h: fmtDuration(tm.missing_minutes) }) : t("review.openTimesheet")}
       </button>
     </Section>
   );

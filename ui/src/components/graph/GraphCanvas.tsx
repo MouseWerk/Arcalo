@@ -9,7 +9,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { GraphDisplay, GraphModel, GroupColor, VNode } from "../../lib/graph";
-import { nearestInDirection, nodeRadius, placeLabel } from "../../lib/graph";
+import { nearestInDirection, nodeRadius, placeLabel, sentences } from "../../lib/graph";
 import type { ForceParams, LayoutIn, LayoutOut, LayoutPort } from "../../lib/graphLayout";
 import { startLayout } from "../../lib/graphLayout";
 import { t } from "../../lib/i18n";
@@ -624,7 +624,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const describe = (i: number) => {
     const node = model.nodes[i];
     const where = node.page?.folder ? t("graph.a11yFolder", { folder: node.page.folder }) : "";
-    return `${node.label}. ${t("graph.a11yLinks", { n: node.degree })}${where ? `. ${where}` : ""}`;
+    return sentences([node.label, t("graph.a11yLinks", { n: node.degree }), where]);
   };
 
   const select = (i: number, center = false) => {

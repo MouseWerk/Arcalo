@@ -6,7 +6,7 @@ import { logUi } from "../lib/devlog";
 import type { BudgetStatus, FocusState, GitConflictInfo, PageDoc, PageNode, SessionMeter, SettingsView, TimerStatus } from "../lib/types";
 import { applyPrefs } from "../lib/prefs";
 import { t } from "../lib/i18n";
-import { h1 } from "../lib/format";
+import { fmtHours } from "../lib/format";
 
 export type TabKind = "home" | "page" | "timesheet" | "projects" | "settings" | "tag" | "trash" | "tasks" | "activity" | "attachments" | "pdf" | "conflict" | "calendar" | "review" | "weekreview" | "issues" | "briefing" | "graph" | "chat";
 /** A place a tab can show. */
@@ -571,7 +571,7 @@ export const useApp = create<State>((set, get) => ({
       const toast: Omit<Toast, "id"> = {
         tone: a.level === "warning" ? "warning" : "danger",
         title,
-        detail: t("budget.detail", { booked: h1(a.booked_hours), planned: h1(a.planned_hours), pct, etc: h1(a.etc_hours) }),
+        detail: t("budget.detail", { booked: fmtHours(a.booked_hours), planned: fmtHours(a.planned_hours), pct, etc: fmtHours(a.etc_hours) }),
       };
       if (hold) set({ heldToasts: [...get().heldToasts, toast].slice(-50) });
       else get().toast(toast);

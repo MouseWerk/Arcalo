@@ -8,7 +8,7 @@ import { openFocusDialog } from "../components/Focus";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Progress, useMenu, Skeleton } from "../components/ui";
-import { compact, h1, parseGermanNumber } from "../lib/format";
+import { compact, fmtHours, parseGermanNumber } from "../lib/format";
 import { LEVEL, useWbs } from "./wbs";
 import type { NetzplanOverview, NetzplanTree, ProjectTree, Vorgang } from "../lib/types";
 import { useT } from "../lib/i18n";
@@ -154,11 +154,11 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
         {total && (
           <div className="netzplan-budget">
             <div className="budget-numbers num">
-              <span className="strong">{h1(total.booked_hours)}</span>
-              <span className="faint"> / {h1(total.planned_hours)} h</span>
+              <span className="strong">{fmtHours(total.booked_hours)}</span>
+              <span className="faint"> / {fmtHours(total.planned_hours)} h</span>
             </div>
             <Progress value={total.consumed} tone={level!.tone} marker={total.planned_hours ? total.eac_hours / total.planned_hours : undefined} />
-            <Badge tone={level!.tone} title={t("proj.forecast", { etc: h1(total.etc_hours), eac: h1(total.eac_hours) })}>
+            <Badge tone={level!.tone} title={t("proj.forecast", { etc: fmtHours(total.etc_hours), eac: fmtHours(total.eac_hours) })}>
               {level!.label}
             </Badge>
           </div>
@@ -193,28 +193,18 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
         </div>
       </div>
       {netzplan.vorgaenge.length > 0 && (
-        <SideScroll label={t("proj.tableScroll")} moreLabel={t("proj.moreColumns")}>
+        <SideScroll label={t("proj.tableScroll")} moreLabel={t("proj.moreColumns")} className="vg-scroll">
           <table className="table vorgaenge">
-            <colgroup>
-              <col />
-              <col style={{ width: 124 }} />
-              <col style={{ width: 72 }} />
-              <col style={{ width: 80 }} />
-              <col style={{ width: 72 }} />
-              <col style={{ width: 104 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 92 }} />
-            </colgroup>
             <thead>
               <tr>
-                <th>{t("wbs.vorgang")}</th>
-                <th>{t("proj.col.schedule")}</th>
-                <th className="num">{t("proj.col.plan")}</th>
-                <th className="num">{t("calv.booked")}</th>
-                <th className="num">{t("proj.col.rest")}</th>
+                <th className="vg-name">{t("wbs.vorgang")}</th>
+                <th className="vg-sched">{t("proj.col.schedule")}</th>
+                <th className="num vg-plan">{t("proj.col.plan")}</th>
+                <th className="num vg-booked">{t("calv.booked")}</th>
+                <th className="num vg-rest">{t("proj.col.rest")}</th>
                 <th className="budget-col">{t("proj.col.progress")}</th>
-                <th>{t("upd.status")}</th>
-                <th />
+                <th className="vg-status">{t("upd.status")}</th>
+                <th className="row-actions" />
               </tr>
             </thead>
             <tbody>
@@ -222,31 +212,37 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                 const b = budget.find((x) => x.vorgang_nr === v.vorgang_nr);
                 const node = schedule?.nodes.find((x) => x.vorgang_id === v.id);
                 const lv = b ? LEVEL[b.level] : LEVEL.ok;
+                const sched = node ? (
+                  <span title={t("proj.scheduleTitle", { faz: node.faz, fez: node.fez, saz: node.saz, sez: node.sez })}>
+                    <span className="num">{t("proj.dayRange", { a: node.faz, b: node.fez })}</span>
+                    {node.critical ? <span className="crit">{t("proj.critical")}</span> : <span className="faint"> · {t("proj.float", { days: compact(node.gp) })}</span>}
+                  </span>
+                ) : (
+                  <span className="faint">{t("proj.days", { days: compact(v.duration_days) })}</span>
+                );
                 return (
                   <tr key={v.id} onDoubleClick={() => open({ kind: "vorgang", netzplan, vorgang: v })}>
-                    <td>
-                      <span className="mono strong vg-nr">{v.vorgang_nr}</span> {v.description}
+                    <td className="vg-name">
+                      <span className="vg-title" title={`${v.vorgang_nr} ${v.description}`}>
+                        <span className="mono strong vg-nr">{v.vorgang_nr}</span> {v.description}
+                      </span>
+                      {/* What the narrow layout leaves out of its own columns, as a second line. */}
+                      <span className="vg-sub small">
+                        <span className="vg-sub-sched">{sched}</span>
+                        <span className="vg-sub-hours num">{t("props.bookedOf", { booked: fmtHours(b?.booked_hours ?? 0), planned: fmtHours(v.planned_hours) })}</span>
+                      </span>
                     </td>
-                    <td className="small nowrap">
-                      {node ? (
-                        <span title={t("proj.scheduleTitle", { faz: node.faz, fez: node.fez, saz: node.saz, sez: node.sez })}>
-                          <span className="num">{t("proj.dayRange", { a: node.faz, b: node.fez })}</span>
-                          {node.critical ? <span className="crit">{t("proj.critical")}</span> : <span className="faint"> · {t("proj.float", { days: compact(node.gp) })}</span>}
-                        </span>
-                      ) : (
-                        <span className="faint">{t("proj.days", { days: compact(v.duration_days) })}</span>
-                      )}
-                    </td>
-                    <td className="num">{h1(v.planned_hours)}</td>
-                    <td className="num">{b ? h1(b.booked_hours) : "–"}</td>
-                    <td className="num" title={v.remaining_hours != null ? t("proj.restManual") : t("proj.restAuto")}>
-                      {b ? h1(b.etc_hours) : "–"}
+                    <td className="small nowrap vg-sched">{sched}</td>
+                    <td className="num vg-plan">{fmtHours(v.planned_hours)}</td>
+                    <td className="num vg-booked">{b ? fmtHours(b.booked_hours) : "–"}</td>
+                    <td className="num vg-rest" title={v.remaining_hours != null ? t("proj.restManual") : t("proj.restAuto")}>
+                      {b ? fmtHours(b.etc_hours) : "–"}
                       {v.remaining_hours != null && <span className="faint">*</span>}
                     </td>
                     <td className="budget-col">
                       <Progress value={b?.consumed ?? 0} tone={lv.tone} />
                     </td>
-                    <td>
+                    <td className="vg-status">
                       <Badge tone={lv.tone}>{lv.label}</Badge>
                     </td>
                     <td className="row-actions">

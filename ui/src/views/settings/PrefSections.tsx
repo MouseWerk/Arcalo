@@ -37,7 +37,7 @@ export function NotesPrefGroups({ draft, update }: SectionProps) {
           </Select>
         </Row>
         <Row label={t("set.notes.dailyFolder")} description={t("set.notes.dailyFolderDesc")}>
-          <CommitInput value={n.daily_folder} onCommit={(v) => set({ daily_folder: v || "Journal" })} aria-label={t("set.notes.dailyFolder")} />
+          <CommitInput value={n.daily_folder} onCommit={(v) => set({ daily_folder: v || t("fl.default.journal") })} aria-label={t("set.notes.dailyFolder")} />
         </Row>
       </Group>
       <Group title={t("set.notes.history")}>

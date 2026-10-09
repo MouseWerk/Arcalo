@@ -178,7 +178,7 @@ test("a short focus session holds toasts back, books its minutes and starts a br
   // End of the session: summary with what was booked and held back.
   await app.waitText(".toast-title", /Pause – 5 Min\./, 20000);
   const detail = await app.browser.execute(() => [...document.querySelectorAll(".toast")].find((t) => /Pause/.test(t.textContent))?.innerText ?? "");
-  assert.match(detail, /0:01 h gebucht auf NP-8801\/1020 \(Entwurf\)/);
+  assert.match(detail, /0,0\d h gebucht auf NP-8801\/1020 \(Entwurf\)/);
   // The booking toast; after the reminder time the shell's end-of-day notification is held too.
   assert.match(detail, /\d Hinweise? zurückgehalten: 0,50 h gebucht/);
   await app.waitFor(".statusbar .sb-focus.break");

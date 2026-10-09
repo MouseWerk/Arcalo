@@ -93,7 +93,7 @@ test("the day's sections show what was done", async () => {
     assert.match(shown, /^Ohne Buchung:/);
     for (const g of r.time.gaps) assert.ok(shown.includes(`${hhmm(g.start)}–${hhmm(g.end)}`), `${shown} lacks ${g.start}–${g.end}`);
   }
-  assert.match(await app.text(".rv-stat.tone-time"), /\/ 8 h/);
+  assert.match(await app.text(".rv-stat.tone-time"), /\/ 8,00 h/);
   // Meetings with their booking state.
   const meetings = await rows(".rv-meetings .rv-meeting");
   assert.ok(meetings.some((m) => /Daily Standup/.test(m) && /gebucht/.test(m) && !/nicht gebucht/.test(m)), meetings.join("\n"));

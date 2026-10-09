@@ -178,9 +178,11 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
   const code = (light: string, darkHex: string) => toHex(readable(rgb(dark ? darkHex : light), [codeBg], 4.6, dark));
   const violet = readable(rgb(dark ? "#a78bfa" : "#7c3aed"), [bg, raised], 4.5, dark);
   const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background, accentSurfaces(def));
-  // Focus and selection are neutral, never the accent: a gray ring (3:1 on every surface) and a
-  // text tint. High contrast themes add a neutral edge to selected rows, since a tint alone is faint.
-  const focus = readable(def.fixedAccent ? muted : mix(muted, bg, 0.25), plain, 3.1, dark);
+  // Focus and selection are neutral, never the accent: a gray ring (3:1 on every surface, also on
+  // the hovered, current or selected row there, where the focus usually is) and a text tint. High
+  // contrast themes add a neutral edge to selected rows, since a tint alone is faint.
+  const rows = plain.flatMap((on) => (dark ? [0.05, 0.12, 0.095] : [0.045, 0.1, 0.08]).map((a) => mix(on, text, a)));
+  const focus = readable(def.fixedAccent ? muted : mix(muted, bg, 0.25), [...plain, ...rows], 3.15, dark);
   // Meetings: the calendar color's share in their fill and their secondary text (lib/eventlook.ts).
   const ev = eventTokens({ canvas: toHex(bg), raised: toHex(raised), text: toHex(text), text2: toHex(text2), accent: accent["--accent"], dark });
   return {

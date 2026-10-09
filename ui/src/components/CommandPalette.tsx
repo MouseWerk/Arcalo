@@ -23,7 +23,7 @@ import { createCanvas } from "../views/canvas/create";
 import { requestAddProperty } from "../views/PageProperties";
 import { requestPageCommand } from "../lib/pageModes";
 import { stopTimer, toggleTimerPause } from "./Sidebar";
-import { hoursFromMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
+import { fmtMinutes, isoDay, isoWeek, weekStart } from "../lib/format";
 import type { SearchHit } from "../lib/types";
 import { importVault, exportVault, toggleTheme } from "../lib/actions";
 import { newPageFromTemplate } from "./Templates";
@@ -119,7 +119,7 @@ export function CommandPalette() {
         run: async () => {
           try {
             const out2 = await api.logTime(query);
-            s().toast({ tone: "success", title: t("time.booked", { h: hoursFromMinutes(out2.entry.duration_minutes) }), detail: out2.entry.description || undefined });
+            s().toast({ tone: "success", title: t("time.booked", { h: fmtMinutes(out2.entry.duration_minutes) }), detail: out2.entry.description || undefined });
             s().alerts(out2.alerts);
             s().bumpEntries();
           } catch (e) {

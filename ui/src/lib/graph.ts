@@ -517,3 +517,13 @@ export function nearestInDirection(pos: ArrayLike<number>, count: number, from: 
   }
   return best;
 }
+
+/** Parts read out as sentences: „Jour fixe 22.09. 3 Verknüpfungen.“, not „22.09.. 3“ (a part that
+ *  ends in punctuation gets no second period); empty parts are left out. */
+export function sentences(parts: string[]): string {
+  return parts
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p, i, all) => (i < all.length - 1 && !/[.!?…:]$/.test(p) ? `${p}.` : p))
+    .join(" ");
+}

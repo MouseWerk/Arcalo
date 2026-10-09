@@ -49,6 +49,9 @@ const COUNT_NEVER_ONE: Record<string, string> = {
   "cap.savingMany": "Only for two or more files; one file uses cap.savingOne.",
   "cap.hint.lines": "Only shown for two or more lines.",
   "cap.hint.linesZeit": "Only shown for two or more lines.",
+  "pv.deleteOne": "Days in the trash: 7 to 365.",
+  "assist.cut": "Only for answers longer than the shown part (thousands of characters).",
+  "chat.cut": "Only for answers longer than the shown part (thousands of characters).",
 };
 
 /** Format arguments with a different name per language (a constant with an `_EN` twin). */
@@ -219,6 +222,9 @@ function typography(t: Text): Finding[] {
   const s = prose(t.text);
   const out: Finding[] = [];
   if (s.includes("...")) out.push(at(t, "ellipsis", "... (use …)"));
+  // A label, placeholder or progress text ends in „…“ right after the word („Speichern…“); a
+  // space before „…“ only where words are left out inside a sentence.
+  if (/[\p{L}\p{N})] …$/u.test(s.trim())) out.push(at(t, "ellipsis", "space before the final … („Speichern…“)"));
   for (const m of s.matchAll(/[^\s] {2,}[^\s]/g)) out.push(at(t, "double-space", JSON.stringify(m[0])));
   for (const m of s.matchAll(/[^\s] +([,;!?]|[.:](?=\s|$))(?=\s|$|["“”)])/g)) out.push(at(t, "space-before-punct", JSON.stringify(m[0])));
   for (const m of s.matchAll(/[\p{L}\p{N})“”"] - [\p{L}\p{N}„"(]/gu)) out.push(at(t, "dash", `${JSON.stringify(m[0])} (use –)`));
@@ -293,7 +299,16 @@ function spelling(t: Text): Finding[] {
   ];
 }
 
-const RULES = [quotes, typography, address, glossary, leftovers, spelling];
+/** Error titles (keys ending in „Failed“) say what failed: „Seite nicht gespeichert“ / "Page not
+ *  saved", or the action: „Speichern fehlgeschlagen“. Not „Nicht gespeichert“, „Konnte nicht …“,
+ *  "Could not …" or a bare „Fehler“; the cause goes in the detail (docs/i18n.md). */
+function errorTitle(t: Text): Finding[] {
+  if (!/Failed(\.one|\.other)?$/.test(t.where)) return [];
+  const bad = t.lang === "de" ? /^(Nicht |Konnte nicht|Konnten nicht|Fehler$|Fehlgeschlagen$)/ : /^(Not |Could not|Error$|Failed$)/;
+  return bad.test(t.text.trim()) ? [at(t, "error-title", "name what failed: „<Ding> nicht <Partizip>“ / \"<Thing> not <participle>\"")] : [];
+}
+
+const RULES = [quotes, typography, address, glossary, leftovers, spelling, errorTitle];
 
 /** Whether the exception `a` covers the finding `f` (a key covers its plural forms, a file all
  *  its lines). */
@@ -360,8 +375,9 @@ describe("translations", () => {
       if (typeof a === "string" && typeof b === "string" && /\{\w+\}/.test(a)) {
         const hack = `${a} ${b}`.match(/\p{L}\((s|e|en|n)\)/u);
         if (hack) bad.push(`${k}: „${hack[0]}“ – use a { one, other } plural`);
-        const counted = a.match(/\{n\} (?!ms\b)([a-z]+s)\b/);
-        if (counted && !(k in COUNT_NEVER_ONE)) bad.push(`${k}: „{n} ${counted[1]}“ without a { one, other } plural`);
+        // Any count placeholder, not only {n}: „{pages} Seiten“ read „1 Seiten“ (q116 T12).
+        const counted = a.match(/\{(n|count|total|pages|links|files|days|hours|\w+Count)\} (?!ms\b)([a-z]+s)\b/);
+        if (counted && !(k in COUNT_NEVER_ONE)) bad.push(`${k}: „{${counted[1]}} ${counted[2]}“ without a { one, other } plural`);
       }
     }
     expect(bad, bad.join("\n")).toEqual([]);
@@ -422,6 +438,17 @@ describe("translation rules", () => {
     expect(rules(de1('Datei "Notiz" öffnen'))).toContain("quotes");
     expect(rules(de1("Datei “Notiz” öffnen"))).toContain("quotes");
     expect(rules(de1("Lädt..."))).toContain("ellipsis");
+    expect(rules(de1("Wird synchronisiert …"))).toContain("ellipsis");
+    expect(rules(en1("Import bookmarks …"))).toContain("ellipsis");
+    expect(rules(de1("Strg+Umschalt+K drücken"))).toEqual([]);
+    expect(rules(de1("Ctrl+Shift+K drücken"))).toContain("glossary");
+    expect(rules(de1("Enter speichert"))).toContain("glossary");
+    expect(rules(de1("Auf diesem Rechner"))).toContain("glossary");
+    expect(rules(en1("Nothing was taken over"))).toContain("glossary");
+    expect(rules(en1("Open the timesheet"))).toContain("glossary");
+    expect(rules({ where: "x.saveFailed", lang: "de", text: "Nicht gespeichert" })).toContain("error-title");
+    expect(rules({ where: "x.saveFailed", lang: "en", text: "Could not save" })).toContain("error-title");
+    expect(rules({ where: "x.saveFailed", lang: "en", text: "Page not saved" })).toEqual([]);
     expect(rules(de1("Zwei  Leerzeichen"))).toContain("double-space");
     expect(rules(de1("Fertig !"))).toContain("space-before-punct");
     expect(rules(de1("Projekt - Netzplan"))).toContain("dash");
@@ -452,6 +479,7 @@ describe("translation rules", () => {
       "z. B. /zeit NP-8801/1020 1.5h #DEV oder due:2026-09-30 und am 02.10.2026",
       "#meeting Besprechung mit Issues, Canvas und Briefing",
       "Was heute wichtig ist: Quelle, Steuer, Kalender",
+      "„Was habe ich am … gemacht?“ und Speichern…",
     ])
       expect(rules(de1(ok)), ok).toEqual([]);
     expect(rules(en1("Open the “Tasks” view – 3 e-mails, 10 min"))).toEqual([]);

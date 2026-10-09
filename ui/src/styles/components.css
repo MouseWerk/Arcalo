@@ -196,7 +196,7 @@
 
 /* ------------------------------------------------------------ empty state */
 
-.empty { display: grid; justify-items: center; text-align: center; gap: 6px; padding: 48px 24px; color: var(--text-2); }
+.empty { display: grid; justify-items: center; align-content: center; text-align: center; gap: 6px; padding: 48px 24px; color: var(--text-2); }
 .empty-icon { width: 44px; height: 44px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--bg-hover); color: var(--text-3); margin-bottom: 6px; }
 .empty-title { font-weight: var(--fw-semibold); color: var(--text); font-size: var(--fs-lg); }
 .empty-text { max-width: 380px; }
@@ -369,7 +369,7 @@
 .versions-tag { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent); }
 .versions-meta { font-size: var(--fs-xs); }
 .versions-preview { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.versions-pre { flex: 1; margin: 0; overflow: auto; padding: 10px 12px; border-radius: var(--r-sm); background: var(--bg-hover); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.versions-pre { flex: 1; margin: 0; overflow: auto; padding: 10px 12px; border-radius: var(--r-sm); background: var(--bg-hover); font-family: var(--font-mono); font-variant-ligatures: none; font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .versions-preview > .segmented { align-self: flex-start; }
 .versions-diff > div { padding: 0 4px 0 calc(2ch + 4px); text-indent: -2ch; border-radius: var(--r-2xs); }
 .versions-diff .diff-skip { color: var(--text-3); font-style: italic; font-family: var(--font-ui, inherit); padding-top: 2px; padding-bottom: 2px; }
@@ -490,7 +490,7 @@
   border-radius: var(--r-sm);
   background: var(--bg-hover);
   color: var(--text-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); font-variant-ligatures: none;
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
   max-height: 120px;

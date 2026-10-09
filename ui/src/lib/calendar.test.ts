@@ -32,10 +32,10 @@ describe("calendar", () => {
     expect(dayTone(new Date(2026, 8, 18), 0, 8, wd, today, "2026-09-21")).toBe("none");
   });
 
-  it("formats hours compactly", () => {
+  it("formats hours as everywhere else (Settings → Zeiterfassung „Stunden als“)", () => {
     expect(hoursLabel(0)).toBe("");
-    expect(hoursLabel(450)).toBe("7,5");
-    expect(hoursLabel(480)).toBe("8");
-    expect(hoursLabel(2)).toBe("0,1");
+    expect(hoursLabel(450)).toBe("7,50");
+    expect(hoursLabel(480)).toBe("8,00");
+    expect(hoursLabel(2)).toBe("0,03");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatShortcut, keys, modLabel, recordShortcut } from "./shortcut";
+import { setLang } from "./i18n";
+import { formatShortcut, keyName, keys, modLabel, recordShortcut } from "./shortcut";
 
 const key = (code: string, key: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
   recordShortcut({ code, key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods }, false);
@@ -54,21 +55,32 @@ describe("formatShortcut", () => {
     expect(formatShortcut("Cmd+Enter", true)).toBe("⌘↩");
     expect(formatShortcut("F9", true)).toBe("F9");
   });
-  it("keeps names elsewhere", () => {
-    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
+  it("names the keys as the keyboard of the language prints them elsewhere", () => {
+    // German keyboards: Strg, Umschalt, Eingabe, Entf, Leertaste (q116 T1).
+    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Strg+Umschalt+Leertaste");
+    expect(formatShortcut("Ctrl+Shift+D", false)).toBe("Strg+Umschalt+D");
     expect(formatShortcut("Cmd+K", false)).toBe("Super+K");
+    expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Strg Umschalt K");
+    expect(keys("Shift Enter", false)).toBe("Umschalt Eingabe");
+    expect(keys("Delete", false)).toBe("Entf");
+    setLang("en");
+    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
     expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Ctrl Shift K");
+    expect(keyName("Entf")).toBe("Delete");
   });
-  it("hints: Mod is ⌘ on macOS and Ctrl elsewhere", () => {
+  it("hints: Mod is ⌘ on macOS and Strg / Ctrl elsewhere", () => {
     expect(keys("Mod Shift D", true)).toBe("⇧⌘D");
-    expect(keys("Mod Shift D", false)).toBe("Ctrl Shift D");
+    expect(keys("Mod Shift D", false)).toBe("Strg Umschalt D");
     expect(keys("Mod \\", true)).toBe("⌘\\");
-    expect(keys("Mod ,", false)).toBe("Ctrl ,");
+    expect(keys("Mod ,", false)).toBe("Strg ,");
     expect(keys("Mod Enter", true)).toBe("⌘↩");
     expect(keys("Mod Klick", true)).toBe("⌘ Klick");
     expect(keys("Ctrl Tab", true)).toBe("⌃⇥");
-    expect(keys("Mod Shift \\", false)).toBe("Ctrl Shift \\");
+    expect(keys("Mod Shift \\", false)).toBe("Strg Umschalt \\");
     expect(modLabel(true)).toBe("⌘");
+    expect(modLabel(false)).toBe("Strg");
+    setLang("en");
+    expect(keys("Mod Shift D", false)).toBe("Ctrl Shift D");
     expect(modLabel(false)).toBe("Ctrl");
   });
 });
@@ -77,6 +89,6 @@ describe("arrow keys", () => {
   it("shows DOM arrow names as arrows on every platform", () => {
     expect(keys("Alt ArrowUp", false)).toBe("Alt ↑");
     expect(keys("Alt ArrowDown", true)).toBe("⌥↓");
-    expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Ctrl+←");
+    expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Strg+←");
   });
 });

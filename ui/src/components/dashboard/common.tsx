@@ -46,7 +46,7 @@ export function until(ms: number): string {
   const min = Math.max(0, Math.round(ms / 60000));
   if (min < 1) return t("dash.now");
   if (min < 60) return t("dash.inMin", { n: min });
-  return t("dash.inHours", { h: `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}` });
+  return t("dash.inHours", { h: fmtMinutes(min) });
 }
 
 /** Re-renders every `ms` (clocks, countdowns, the now marker). */
@@ -129,8 +129,8 @@ export function TaskRow({ task, today, page = true, onDone }: { task: Pick<Task,
   return (
     <li className={`dw-task ${gone ? "done" : ""}`} draggable={!gone} onDragStart={(e) => setPlanData(e.dataTransfer, plan)}>
       <button type="button" role="checkbox" aria-checked={gone} aria-label={t("dash.taskDone", { text: task.text })} className="dw-check" disabled={busy || gone} onClick={done} />
-      <button type="button" className="dw-task-text" onClick={(e) => s().openPage(task.page_id, { newTab: e.ctrlKey || e.metaKey })} title={task.page_title}>
-        <span className="grow ellipsis">{text}</span>
+      <button type="button" className="dw-task-text" onClick={(e) => s().openPage(task.page_id, { newTab: e.ctrlKey || e.metaKey })} data-tooltip-full={page ? `${text} · ${task.page_title}` : text}>
+        <span className="dw-task-title ellipsis">{text}</span>
         {task.recur && (
           <span className="dw-task-recur" title={t("tasks.recur.aria", { label: recurLabel(task.recur) })}>
             <Repeat size={12} aria-hidden />

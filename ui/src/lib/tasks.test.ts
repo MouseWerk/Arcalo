@@ -60,7 +60,7 @@ describe("repeat rules", () => {
     expect(recurLabel(rule({ unit: "month", month_day: 31, until: "2026-12-31" }))).toBe("Monatlich · am 31. · bis 31.12.2026");
     setLang("en");
     setFormatPrefs({ lang: "en" });
-    expect(recurLabel(rule({ interval: 2, weekdays: [4] }))).toBe("Every 2 weeks · Fr");
+    expect(recurLabel(rule({ interval: 2, weekdays: [4] }))).toBe("Every 2 weeks · Fri");
     expect(recurLabel(rule({ unit: "year" }))).toBe("Yearly");
   });
 

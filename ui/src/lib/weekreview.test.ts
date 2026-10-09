@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { dayOff, dayProgress, dayShort, isEmptyWeek, isThisWeek, meetingsByDay, mondayOf, openWeekMeetings, shiftWeek, weekProgress, weekRange, weekSubtitle, type WeekDay, type WeekMeeting, type WeekReview } from "./weekreview";
 import { setLang } from "./i18n";
@@ -136,5 +138,13 @@ describe("numbers", () => {
     expect(isEmptyWeek(empty)).toBe(true);
     expect(isEmptyWeek({ ...empty, focus: { ...empty.focus, blocks: [{ id: 1, title: "x", start: "", end: "", minutes: 60, task_done: null, focus_minutes: 0, booked: false }] } })).toBe(false);
     expect(isEmptyWeek(review())).toBe(false);
+  });
+});
+
+describe("week headings", () => {
+  it("time tracking names its week like the week review (q116 T7)", () => {
+    const src = readFileSync(resolve(__dirname, "../views/TimesheetView.tsx"), "utf8");
+    expect(src).toMatch(/weekRange\(isoDay\(week\)\)/);
+    expect(src).not.toMatch(/dayMonthName\(week\)/);
   });
 });
