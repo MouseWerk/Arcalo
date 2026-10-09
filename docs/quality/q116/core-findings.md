@@ -14,7 +14,7 @@ Counts: high 5, medium 8, low 4 (17 confirmed). 7 more under "suspected, not con
 
 ---
 
-## C1 (high): A page moved on one computer is deleted and re-created on the other; more than ten moves (Aufräumen) duplicate every moved page on both computers
+## C1 (high): A page moved on one computer is deleted and re-created on the other; more than ten moves (Aufräumen) duplicate every moved page on both computers — fixed in 1.16 (gitsync `moved_notes_are_pulled_as_moves`, `moves_meet_edits_without_losing_either`; syncmerge `moved_pages_keep_their_id_on_the_other_computer`)
 
 Repro (probe `p1_moves_on_one_computer_duplicate_or_recreate_pages_on_the_other`, two in-memory
 workspaces, one bare remote, real mirror + `gitsync::sync` + a faithful copy of `syncmerge::apply`):
@@ -112,7 +112,7 @@ still gate by `settings.workdays` (a Saturday with own hours is never a gap).
 Guard test: core dashboard test with weekday targets, a holiday and an absence: `Part::Today`
 target equals `gap_target`; `Part::Week` totals.
 
-## C5 (high): Rolling back from 1.15+ to 1.14 writes the "bad version" mark and the rollback notice into the new data folder, which 1.14 never reads
+## C5 (high): Rolling back from 1.15+ to 1.14 writes the "bad version" mark and the rollback notice into the new data folder, which 1.14 never reads — fixed in 1.16 (rollback `a_rollback_to_114_is_recorded_where_114_reads_it`)
 
 Confirmed by code path (shell, not runnable here): a 1.14 user updates to 1.15/1.16, the new version
 fails twice, rollback offered (or „Zur vorherigen Version zurückkehren“). `rollback::restore`
@@ -130,7 +130,7 @@ copy). Same for portable/custom folders: nothing to do (one folder).
 Guard test: shell unit test on `restore` with a temp layout (new folder + legacy sibling): the
 legacy `updates/state.json` lists the bad version, `rolled-back.json` exists there.
 
-## C6 (medium): A note deleted on this computer while another computer edited it: the edit is dropped without a conflict (it ends in the other computer's trash)
+## C6 (medium): A note deleted on this computer while another computer edited it: the edit is dropped without a conflict (it ends in the other computer's trash) — fixed in 1.16 (gitsync `a_note_deleted_here_and_edited_there_comes_back`; syncmerge `a_page_deleted_here_and_edited_there_comes_back`)
 
 Repro (probe `p2_local_deletion_drops_the_servers_edit_without_conflict`): A and B synced; B edits
 `Notiz.md` and pushes; A deletes it and syncs: message „1 Datei geändert“, `remote_changes` empty,
@@ -168,7 +168,7 @@ passed a position (or keep only the last N and force a full reload when a reader
 Guard test: semantic unit test as the probe: after 40 edits `idx.len() == live chunks` and the other
 page is found.
 
-## C8 (medium): Settings sync carries provider ids (router tiers, embedding provider/model) although providers are per computer: the second computer's assistant and search by meaning break
+## C8 (medium): Settings sync carries provider ids (router tiers, embedding provider/model) although providers are per computer: the second computer's assistant and search by meaning break — fixed in 1.16 (settings_sync `provider_choices_stay_on_their_computer`)
 
 Repro (probe `p11_settings_sync_carries_provider_ids`): synced keys include `embedding_model`,
 `embedding_provider`, `router.local_provider`, `router.standard_provider`, `router.reasoning_provider`.
@@ -205,7 +205,7 @@ Guard test: shell unit test on `services()` with `ai.enabled = false` (no `ai:*`
 `network_service_test("ai:litellm")` errs with `ai_off()` (lib.rs:5232 has a similar test for
 `provider_client`).
 
-## C10 (medium): Identity migration: a failure after the copy was committed (marker not written) leaves a stale copy that the next start keeps for good; the fallback session's work stays invisible
+## C10 (medium): Identity migration: a failure after the copy was committed (marker not written) leaves a stale copy that the next start keeps for good; the fallback session's work stays invisible — fixed in 1.16 (identity `a_copy_left_without_its_marker_does_not_hide_the_fallback_sessions_work`)
 
 Repro (probe `p5_identity_post_commit_failure_hides_the_fallback_sessions_work`): first start:
 `commit` moves the copy in, `write_record` fails -> `Failed`, the app works in the old folder and
@@ -225,7 +225,7 @@ so the next start copies into an empty folder. In the merge case, treat a `to` t
 Guard test: identity test as the probe (obstacle folder in place of the marker): after the next
 start the new folder holds the fallback session's text.
 
-## C11 (medium): Pages titled „README“ or below a page „Zeiterfassung“ never reach the other computer, and the sync deletes/re-adds them on every run
+## C11 (medium): Pages titled „README“ or below a page „Zeiterfassung“ never reach the other computer, and the sync deletes/re-adds them on every run — fixed in 1.16 (vault `page_paths_never_take_the_syncs_own_names`; syncmerge `pages_named_like_the_syncs_own_files_reach_the_other_computer`)
 
 Repro (probe `p12_pages_named_like_the_syncs_own_files`): A has a page „README“ and a page
 „Zeiterfassung“ with a subpage „Regeln für SAP“; B after its sync has only „Zeiterfassung“.
@@ -333,18 +333,18 @@ literals without `tr!` in non-test code.
 
 ## Suspected, not confirmed
 
-S1 (medium): backup destination copies that hang in the OS leave a thread behind each time
+S1 (medium): backup destination copies that hang in the OS leave a thread behind each time — checked, not a bug: the stuck copy holds its destination's busy flag (`Busy` in the work closure), so `pass` skips that destination ("still busy with the previous copy") and no further thread starts
 (`run_watched`, backupdest.rs:451 „the thread is left behind“); with a share that keeps hanging, a
 new attempt every 15 minutes adds a stuck thread each time (no cap, no "previous attempt still
 running" check found). Needs a test with a hook that blocks forever and two deliveries.
 
-S2 (medium): a secret changed in 1.14 after a rollback is ignored by 1.15 when the workspace lives in
+S2 (medium): a secret changed in 1.14 after a rollback is ignored by 1.15 when the workspace lives in — confirmed (also in the default folder: the stale new entry is read first) and fixed in 1.16 (secrets `after_a_rollback_to_114_its_secrets_are_taken_over_again`)
 a custom/portable folder: `credentials-moved.json` sits in the data folder (shared by both versions),
 so the account counts as moved and the stale `Arcalo` entry wins (secrets.rs:461 `take_over`,
 `read_with_fallback`). The default-folder case is fine (Refreshed copies a folder without the moved
 file). Needs a keyring double to prove.
 
-S3 (low): settings rollback: 1.14 saving settings over 1.15/1.16 ones keeps `version: 16` (its
+S3 (low): settings rollback: 1.14 saving settings over 1.15/1.16 ones keeps `version: 16` (its — checked, not a bug: 1.14 keeps unknown keys when it saves the settings (`unknown_keys`/`restore_key` in its settings.rs), so `ai.enabled` survives
 `migrate` writes `from.max(SETTINGS_VERSION)`) but drops `ai.enabled`; back on 1.16 the default
 (`true`) applies, so a user who chose „Ohne KI“ has the AI on again after a rollback + update.
 Depends on 1.14's serializer dropping unknown keys (not checked against the 1.14 tag).
@@ -353,15 +353,15 @@ S4 (low): `@29.02.` in `/zeit` on 2028-02-28 resolves to 2028-02-29 (future: "Bu
 in der Zukunft enden") because `with_year(2027)` fails and falls back to the future date
 (zeit.rs parse_date, last branch); in a non-leap year it is an error instead of the most recent 29 Feb.
 
-S5 (low): the git sync's deletion guard on the receiving side (`syncmerge::apply`) counts deletions
+S5 (low): the git sync's deletion guard on the receiving side (`syncmerge::apply`) counts deletions — fixed in 1.16 with C1 (a move has `theirs`, so it is no deletion for the guard)
 from a *rename-heavy* pull (C1) and then keeps pages that really were deleted together with them;
 fixed by C1.
 
-S7 (low): first settings sync of a fresh computer: `theirs_wins` (settings_sync.rs:250-256) lets the
+S7 (low): first settings sync of a fresh computer: `theirs_wins` (settings_sync.rs:250-256) lets the — not fixed: product decision (documented as intended)
 server win for settings neither side ever changed (`at == 0` on both), so a second computer adopts
 language-dependent defaults of the first; documented as intended, listed for a product decision.
 
-S6 (low): `gitsync::merge_remote` takes non-note files changed on both sides "this side" (e.g.
+S6 (low): `gitsync::merge_remote` takes non-note files changed on both sides "this side" (e.g. — confirmed, not fixed: attachments keep their name (only pasted images are content-hashed), so two different files of one name flip in the repository; neither computer loses its own copy (`copy_new_attachments` never overwrites). A fix needs a rename plus link rewrite on one side; proposed for 1.17
 `attachments/x.png` replaced on both computers): the server's file is overwritten without notice.
 Rare (attachments are content-hashed names?) — not checked.
 

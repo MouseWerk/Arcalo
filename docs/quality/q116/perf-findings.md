@@ -216,7 +216,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: start-up budget test reading the `[startup]` lines: „credential store“ − „database open“ < 300 ms on the big
   workspace.
 
-### P10 – Medium – Two instances can run on one data folder (Linux without a session bus)
+### P10 – Medium – Two instances can run on one data folder (Linux without a session bus) — fixed in 1.16 (e2e 301 `instance-lock`)
 
 - Measurement: `rob.mjs` „two“: installed mode (no `ARCALO_DATA_DIR`), no reachable session D-Bus: the second start
   keeps running next to the first after 8 s.
@@ -241,7 +241,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   small LRU; drop editor state on close.
 - Guard: bench assertion: RSS after closing 200 tabs ≤ start + 150 MB.
 
-### P12 – Low – Clock set back: no automatic backups, timer cannot be stopped
+### P12 – Low – Clock set back: no automatic backups, timer cannot be stopped — fixed in 1.16 (backup `a_backup_from_a_clock_that_ran_ahead_does_not_stop_the_daily_one`, timer `a_clock_set_back_behind_the_start_still_stops_the_timer`)
 
 - Root cause: (a) `src-tauri/src/lib.rs:2052-2053`: a backup is due when `now − newest.created_at ≥ 24 h`; a
   backup stamped in the future (clock was ahead, then corrected) makes that negative, so no daily backup is made
@@ -252,7 +252,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   `max(at, start)` with 0 minutes and a hint, or offer the edit dialog.
 - Guard: unit tests with a backup stamp tomorrow and a stop before the start.
 
-### P13 – Low – The password-wrapped key file is written in place
+### P13 – Low – The password-wrapped key file is written in place — fixed in 1.16 (cipher `a_failed_password_change_keeps_the_wrapped_key`; also `gitsync::write_restored` and the window state)
 
 - Root cause: `crates/arcalo-core/src/cipher.rs:750-753` (`WrappedKey::write`) and `:764-767` (`write_next`) use
   `fs::write` on the final name. Changing the password on a full disk or a crash mid-write truncates the only
@@ -262,7 +262,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   (`gitsync.rs:1465-1468`) and the window state (`src-tauri/src/prefs.rs:173`, only cosmetic).
 - Guard: a test that a failing write (read-only folder) leaves the previous file intact.
 
-### P14 – Low – Pasted images: no fsync, and a torn file is never rewritten
+### P14 – Low – Pasted images: no fsync, and a torn file is never rewritten — fixed in 1.16 (attachments `a_file_cut_short_under_the_hash_name_is_written_again`)
 
 - Root cause: `crates/arcalo-core/src/attachments.rs:186-191`: the content-hash file is written to `.tmp` and
   renamed without `sync_all`; after a power loss the name can exist with 0 bytes, and the next paste of the same
@@ -270,7 +270,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Fix: `write_atomic` (with `sync_all`) and treat an existing file whose size differs as missing.
 - Guard: unit test with a zero-length file under the hash name.
 
-### P15 – Low – Attachment names: weaker device-name rules than the export
+### P15 – Low – Attachment names: weaker device-name rules than the export — fixed in 1.16 (attachments `cleans_names`)
 
 - Root cause: `attachments.rs:229-233` reserves CON/PRN/AUX/NUL and COM/LPT+digit only; `vault.rs:495-505`
   also reserves `CONIN$`, `CONOUT$`, `COM¹²³`/`LPT¹²³` and a device name with trailing spaces before the dot
