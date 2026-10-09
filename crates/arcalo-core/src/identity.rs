@@ -197,7 +197,41 @@ fn write_record(to: &Path, record: &Record) -> Result<()> {
 /// Takes over every pair (see the module docs). Never deletes or changes anything in the old
 /// folders.
 pub fn migrate(pairs: &[Pair]) -> Vec<Outcome> {
-    pairs.iter().map(|p| Outcome { pair: p.clone(), status: migrate_one(p) }).collect()
+    let outcomes: Vec<Outcome> = pairs.iter().map(|p| Outcome { pair: p.clone(), status: migrate_one(p) }).collect();
+    retarget_locations(&outcomes);
+    outcomes
+}
+
+/// A `location.json` taken over that names a folder of the old identifier (the old default
+/// folder written by „Verschieben abbrechen“ or by a failed move) points at the folder of the new
+/// name instead, when that one was taken over. Without this the workspace stayed in the old
+/// folder, and every start copied it again ([`Status::Refreshed`]).
+fn retarget_locations(outcomes: &[Outcome]) {
+    let taken: Vec<&Pair> = outcomes
+        .iter()
+        .filter(|o| o.pair.mode == Mode::Copy && o.usable() == o.pair.to.as_path())
+        .map(|o| &o.pair)
+        .collect();
+    let map = |dir: &str| -> Option<String> {
+        let path = Path::new(dir.trim());
+        taken.iter().find_map(|p| path.strip_prefix(&p.from).ok().map(|rest| p.to.join(rest).display().to_string()))
+    };
+    for pair in &taken {
+        let Some(mut loc) = crate::datadir::read_location_file(&pair.to) else { continue };
+        let data_dir = map(&loc.data_dir);
+        let pending = loc.pending_move.as_deref().and_then(map);
+        if data_dir.is_none() && pending.is_none() {
+            continue;
+        }
+        if let Some(d) = data_dir {
+            loc.data_dir = d;
+        }
+        if let Some(d) = pending {
+            loc.pending_move = Some(d);
+        }
+        // On failure the old folder stays in use, as in 1.15.0; tried again at the next start.
+        let _ = crate::datadir::write_location_file(&pair.to, &loc);
+    }
 }
 
 fn migrate_one(pair: &Pair) -> Status {
@@ -599,6 +633,71 @@ mod tests {
             "the custom folder stays in use"
         );
         assert!(custom.join(crate::datadir::DB_FILE).is_file(), "and is not copied");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_location_json_naming_the_old_default_folder_is_moved_to_the_new_one() {
+        // „Verschieben abbrechen“ in 1.14 wrote the default folder itself into location.json.
+        let base = tmp("location-default");
+        let (old, id) = layout_114(&base);
+        crate::datadir::write_location(&old, &old).unwrap();
+        let pair = pairs(&[(base.clone(), Mode::Copy)]);
+        let new = base.join(IDENTIFIER);
+        for start in 0..3 {
+            let out = migrate(&pair);
+            let expected = if start == 0 { "Copied" } else { "Done" };
+            assert!(format!("{:?}", out[0].status).starts_with(expected), "start {start}: {:?}", out[0].status);
+            let s = crate::datadir::prepare(None, Some(&new), new.clone());
+            assert_eq!(s, crate::datadir::Startup { dir: new.clone(), notice: None }, "start {start}");
+            // The work of this start lands in the new folder; the old one stays untouched.
+            let db = Database::open(s.dir.join(crate::datadir::DB_FILE)).unwrap();
+            db.save_page_content(id, &format!("Start {start}")).unwrap();
+            db.checkpoint().unwrap();
+        }
+        let aside = fs::read_dir(&base).unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name() != IDENTIFIER);
+        assert_eq!(
+            aside.filter(|e| e.file_name().to_string_lossy().starts_with(IDENTIFIER)).count(),
+            0,
+            "no copies set aside"
+        );
+        // A custom folder inside the old one moves along; one elsewhere stays.
+        let sub = old.join("Unterordner");
+        crate::datadir::write_pending_move(&new, &sub, &base.join("D")).unwrap();
+        fs::write(old.join("x"), b"x").unwrap();
+        let _ = fs::remove_file(new.join(MARKER));
+        migrate(&pair);
+        let loc = crate::datadir::read_location_file(&new).unwrap();
+        assert_eq!(PathBuf::from(&loc.data_dir), new.join("Unterordner"));
+        assert_eq!(loc.pending_move.map(PathBuf::from), Some(base.join("D")));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_install_of_1150_that_kept_working_in_the_old_folder_moves_once() {
+        // 1.15.0 copied location.json unchanged and went on working in the old folder.
+        let base = tmp("location-1150");
+        let (old, id) = layout_114(&base);
+        crate::datadir::write_location(&old, &old).unwrap();
+        let pair = pairs(&[(base.clone(), Mode::Copy)]);
+        let new = base.join(IDENTIFIER);
+        migrate(&pair);
+        crate::datadir::write_location(&new, &old).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let db = Database::open(old.join(crate::datadir::DB_FILE)).unwrap();
+        db.save_page_content(id, "in 1.15.0 im alten Ordner").unwrap();
+        db.checkpoint().unwrap();
+        drop(db);
+        // 1.15.1: the work is taken over once, then the new folder is used.
+        let out = migrate(&pair);
+        assert!(matches!(out[0].status, Status::Refreshed { .. }), "{:?}", out[0].status);
+        let s = crate::datadir::prepare(None, Some(&new), new.clone());
+        assert_eq!(s.dir, new);
+        assert_eq!(
+            Database::open(new.join(crate::datadir::DB_FILE)).unwrap().page_doc(id).unwrap().content,
+            "in 1.15.0 im alten Ordner"
+        );
+        assert_eq!(migrate(&pair)[0].status, Status::Done);
         let _ = fs::remove_dir_all(&base);
     }
 

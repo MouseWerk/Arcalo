@@ -4256,7 +4256,13 @@ fn data_dir_set(
 #[tauri::command(async)]
 fn data_dir_cancel(app: AppHandle, state: State<'_, AppState>) -> Result<DataDirStatus> {
     data_dir_env_guard()?;
-    datadir::write_location(&config_dir(&app)?, &state.data_dir)?;
+    // The default folder is no path of its own: it follows the app identifier (1.15 renamed it).
+    let current = if identity::data_dir(&app).is_ok_and(|d| d == state.data_dir) {
+        PathBuf::new()
+    } else {
+        state.data_dir.clone()
+    };
+    datadir::write_location(&config_dir(&app)?, &current)?;
     Ok(data_dir_status_of(&app, &state))
 }
 

@@ -98,7 +98,9 @@ Done, as specified above; details in docs/ARCHITECTURE.md „Names kept from Ann
 
 Open for the owner: the website (repo and worker rename), the Windows/macOS manual checks in the
 release notes (taskbar pin, AUMID, macOS link in the signed bundle). Owner decision: 1.17 deletes the
-old folders and credential entries.
+old folders and credential entries. Before deleting, 1.17 must refuse while any `location.json`,
+`backup_dir`, `markdown_mirror_dir` or backup destination points into an old folder (1.15.1 rewrites
+`location.json`; see docs/quality/q116/core-findings.md C2).
 
 ## Tests
 

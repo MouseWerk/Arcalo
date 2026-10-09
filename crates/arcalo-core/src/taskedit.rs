@@ -221,7 +221,8 @@ fn next_line(line: &str, t: &ParsedTask, today: NaiveDate) -> Option<(String, Na
         let rest = &line[i + OBSIDIAN_DONE.len()..];
         let date = rest.trim_start();
         let gap = rest.len() - date.len();
-        if date.len() >= 10 && NaiveDate::parse_from_str(&date[..10], "%Y-%m-%d").is_ok() {
+        // `get`: the text after the marker may have a multi-byte character within its first 10 bytes.
+        if date.get(..10).is_some_and(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok()) {
             edits.push((i..i + OBSIDIAN_DONE.len() + gap + 10, String::new()));
         }
     }
@@ -502,6 +503,22 @@ mod tests {
 
     fn one(md: &str, ordinal: usize, edit: TaskEdit) -> String {
         edit_page(md, &[ordinal], &edit, day("2026-10-05")).content
+    }
+
+    #[test]
+    fn ticking_off_with_text_after_the_done_marker() {
+        // A multi-byte character within the first 10 bytes after ✅ (no date there) must not panic.
+        for rest in ["✅ erledigt äh", "✅ 🎉🎉🎉", "✅ ✅ ✅ ✅"] {
+            let md = format!("- [ ] Rechnung prüfen every:monthly due:2026-10-05 {rest}\n");
+            let out = one(&md, 0, TaskEdit::Done { done: true });
+            let lines: Vec<&str> = out.lines().collect();
+            assert_eq!(lines.len(), 2, "{out}");
+            assert!(lines.iter().any(|l| l.starts_with("- [x] Rechnung prüfen") && l.ends_with(rest)), "{out}");
+            assert!(
+                lines.iter().any(|l| l.starts_with("- [ ] Rechnung prüfen") && l.contains("due:2026-11-05")),
+                "{out}"
+            );
+        }
     }
 
     #[test]
