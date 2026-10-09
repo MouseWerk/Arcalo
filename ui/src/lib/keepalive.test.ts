@@ -80,6 +80,9 @@ describe("onHidden", () => {
         }
       },
     );
+    // The next frame, at once (the reaction waits for it).
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => (cb(0), 1));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
     const el = document.createElement("div");
     document.body.append(el);
     let shown = true;

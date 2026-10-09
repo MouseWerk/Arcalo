@@ -37,9 +37,18 @@ export function keepAlive(prev: Kept[], tab: Tab | null, tabIds: string[], max =
  */
 export function onHidden(el: Element, onHide: () => void): () => void {
   if (typeof ResizeObserver === "undefined") return () => {};
+  // Acted on in the next frame: removing an overlay inside the observer's callback changes layout
+  // during its delivery ("ResizeObserver loop completed with undelivered notifications").
+  let frame = 0;
   const watch = new ResizeObserver(() => {
-    if (el.isConnected && el.getClientRects().length === 0) onHide();
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (el.isConnected && el.getClientRects().length === 0) onHide();
+    });
   });
   watch.observe(el);
-  return () => watch.disconnect();
+  return () => {
+    cancelAnimationFrame(frame);
+    watch.disconnect();
+  };
 }
