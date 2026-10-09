@@ -12,6 +12,7 @@ import { keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
 import { useSourceChips } from "./sourceChips";
+import { LONG_TEXT, pacer } from "../lib/pace";
 
 const SAVE_MS = 700;
 const INDENT = "  ";
@@ -127,8 +128,21 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     timer.current = window.setTimeout(save, SAVE_MS);
   };
   const chips = useSourceChips(doc.id, () => latest.current, edit, mapCaret);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => chips.shown(value), [value]);
+  const chipsRef = useRef(chips);
+  chipsRef.current = chips;
+  // Which chips the text shows and its word count (status bar, the text without properties): at once in short
+  // texts, after a pause in typing in long ones (both scan the whole text).
+  const pace = useState(pacer)[0];
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => {
+    pace.run(value.length, () => {
+      const text = latest.current;
+      chipsRef.current.shown(text);
+      if (activeRef.current) useApp.getState().set({ editorStats: markdownStats(splitFrontmatter(text).body) });
+    });
+  }, [value, active, pace]);
+  useEffect(() => () => pace.cancel(), [pace]);
 
   const absorbRef = useRef(absorb);
   absorbRef.current = absorb;
@@ -180,10 +194,6 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
-  // The focused pane's editor feeds the word count in the status bar (the text without properties).
-  useEffect(() => {
-    if (active) useApp.getState().set({ editorStats: markdownStats(splitFrontmatter(value).body) });
-  }, [value, active]);
   useEffect(() => {
     if (active) return () => useApp.getState().set({ editorStats: null });
   }, [active]);
@@ -197,13 +207,21 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.content]);
 
-  // Grows with its text: the page scrolls, not the text box.
+  // Grows with its text: the page scrolls, not the text box. Fitting it anew lays the whole text out twice; in a
+  // long text a key only grows it when needed, and the exact fit (also shrinking) follows in a pause.
+  const fitPace = useState(pacer)[0];
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    if (value.length < LONG_TEXT || !el.style.height) return fit();
+    if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight}px`;
+    fitPace.run(value.length, fit);
+  }, [value, fitPace]);
+  useEffect(() => () => fitPace.cancel(), [fitPace]);
 
   const change = (next: string, caret?: [number, number]) => {
     setValue(next);
