@@ -162,8 +162,13 @@ pub struct ReviewTime {
     pub booked_minutes: i64,
     /// A timer started that day and still running: its minutes so far.
     pub running_minutes: i64,
-    /// Target minus booked (never negative).
+    /// Target minus booked (never negative) once the day is over
+    /// ([`crate::worktime::day_is_over`]); 0 before (today's rest is still open).
     pub missing_minutes: i64,
+    /// A workday before the workspace was set up ([`crate::worktime::counts_from`]): no target,
+    /// but not a day off either.
+    #[serde(default)]
+    pub before_setup: bool,
     /// Per WBS, most minutes first.
     pub items: Vec<ReviewWbs>,
     /// Finished entries by start.
@@ -398,6 +403,7 @@ pub(crate) fn review_day<Tz: TimeZone>(
     let mut time = ReviewTime {
         workday: crate::worktime::weekday_minutes(settings, date) > 0,
         target_minutes: targets.get(date),
+        before_setup: !targets.counts(date) && targets.base(date) > 0,
         ..Default::default()
     };
     {
@@ -470,7 +476,9 @@ pub(crate) fn review_day<Tz: TimeZone>(
             }
         }
         time.items.sort_by(|x, y| y.minutes.cmp(&x.minutes).then_with(|| x.label.cmp(&y.label)));
-        time.missing_minutes = (time.target_minutes - time.booked_minutes).max(0);
+        if crate::worktime::day_is_over(date, opts.now, tz) {
+            time.missing_minutes = (time.target_minutes - time.booked_minutes).max(0);
+        }
         time.gaps = gaps(time.entries.iter().filter(|e| e.minutes > 0).map(|e| (e.start, e.end)).collect());
     }
 
@@ -785,6 +793,8 @@ where
                 let missing = hm(tm.missing_minutes);
                 out.push_str(&trf!(", es fehlen {missing}", ", {missing} missing"));
             }
+        } else if tm.before_setup {
+            out.push_str(tr!(" (vor der Einrichtung von Arcalo)", " (before Arcalo was set up)"));
         } else {
             out.push_str(tr!(" (kein Arbeitstag)", " (not a workday)"));
         }

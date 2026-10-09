@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../store/app";
-import { addDays, dateLocale, isoDay, weekStart } from "./format";
+import { addDays, dateLocale, fmtDuration, isoDay, weekStart } from "./format";
 import { t } from "./i18n";
 import type { ChatOutcome, Page, ReviewMeeting, ReviewWbs } from "./types";
 
@@ -23,6 +23,8 @@ export interface WeekDay {
   running_minutes: number;
   missing_minutes: number;
   future: boolean;
+  /** A workday before the workspace was set up: no target, but no day off either. */
+  before_setup?: boolean;
   holiday: string | null;
   /** `vacation`, `sick`, `comp` or `other`. */
   absence: string | null;
@@ -189,6 +191,32 @@ export function weekProgress(r: Pick<WeekReview, "time">): number {
 export function dayProgress(d: WeekDay): number {
   if (d.target_minutes <= 0) return d.booked_minutes > 0 ? 1 : 0;
   return Math.min(1, d.booked_minutes / d.target_minutes);
+}
+
+/**
+ * The line under a day of the week: a day off by name; time missing once the day is over
+ * (warning); unbooked gaps; „vor der Einrichtung“ for a workday before the setup; „kein
+ * Arbeitstag“; today's rest of the target while today is still running (neutral, as on the start
+ * page; the backend counts it as missing only from the evening). `today`: YYYY-MM-DD.
+ */
+export function daySub(d: WeekDay, today: string): string {
+  const off = dayOff(d);
+  if (off) return off;
+  if (d.missing_minutes > 0) return t("review.md.missing", { h: fmtDuration(d.missing_minutes) });
+  if (d.gaps.length) return t("week.gaps", { n: d.gaps.length });
+  if (d.before_setup) return t("review.beforeSetup");
+  if (d.target_minutes <= 0 && !d.booked_minutes) return t("review.noWorkday");
+  if (d.date === today && d.booked_minutes < d.target_minutes) return t("week.missing", { h: fmtDuration(d.target_minutes - d.booked_minutes) });
+  return "";
+}
+
+/** The line under the week's booked time: missing time (days that are over), else the target
+ *  reached, else what is still open of the week's target. */
+export function weekTimeSub(tm: Pick<WeekTime, "target_minutes" | "booked_minutes" | "missing_minutes">): string {
+  if (tm.target_minutes <= 0) return t("week.noTarget");
+  if (tm.missing_minutes > 0) return t("review.md.missing", { h: fmtDuration(tm.missing_minutes) });
+  if (tm.booked_minutes >= tm.target_minutes) return t("review.targetReached");
+  return t("week.missing", { h: fmtDuration(tm.target_minutes - tm.booked_minutes) });
 }
 
 /** What a day off is: the holiday's name, else the absence („Urlaub“, „Krank (halber Tag)“). */

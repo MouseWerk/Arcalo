@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { fmtDuration, fmtHours, setFormatPrefs } from "./format";
+import { fmtApprox, fmtDuration, fmtHours, setFormatPrefs } from "./format";
 import * as dayreview from "./dayreview";
 import * as focus from "./focus";
 import { hoursLabel } from "./calendar";
@@ -119,6 +119,18 @@ describe("hours: one format everywhere (q116 V15, T4)", () => {
     expect(hoursLabel(450)).toBe("7:30");
     setFormatPrefs({ hours: "decimal", numberFormat: "point" });
     expect(fmtDuration(90)).toBe("1.50 h");
+  });
+
+  it("rounds estimates as estimates: minutes under an hour, quarter hours above (q116 R6)", () => {
+    setFormatPrefs({ hours: "decimal", numberFormat: "auto", lang: "de" });
+    expect(fmtApprox(34)).toBe("35 Min.");
+    expect(fmtApprox(3)).toBe("3 Min.");
+    expect(fmtApprox(58)).toBe("1,00 h");
+    expect(fmtApprox(80)).toBe("1,25 h");
+    setFormatPrefs({ hours: "clock" });
+    expect(fmtApprox(80)).toBe("1:15 h");
+    expect(fmtApprox(34)).toBe("35 Min.");
+    setFormatPrefs({ hours: "decimal" });
   });
 
   it("has no formatter of its own in the reviews and the focus sessions", () => {

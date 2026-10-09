@@ -41,6 +41,18 @@ export function progress(r: DayReview): number {
   return Math.min(1, t.booked_minutes / t.target_minutes);
 }
 
+/**
+ * The line under the day's booked time: no target (a day off, or a workday before the setup);
+ * time missing once the day is over; the target reached; else the rest of the target, neutral
+ * as on the start page (today, before the evening).
+ */
+export function dayTimeSub(tm: Pick<DayReview["time"], "target_minutes" | "booked_minutes" | "missing_minutes" | "before_setup">): string {
+  if (tm.target_minutes <= 0) return tm.before_setup ? t("review.beforeSetup") : t("review.noWorkday");
+  if (tm.missing_minutes > 0) return t("review.md.missing", { h: fmtDuration(tm.missing_minutes) });
+  if (tm.booked_minutes >= tm.target_minutes) return t("review.targetReached");
+  return t("dash.gapLeft", { h: fmtDuration(tm.target_minutes - tm.booked_minutes) });
+}
+
 /** Meetings that still need a booking. */
 export const openMeetings = (r: DayReview) => r.meetings.filter((m) => m.state === "open");
 

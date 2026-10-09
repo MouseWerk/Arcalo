@@ -85,10 +85,15 @@ pub struct WeekDay {
     pub booked_minutes: i64,
     /// A timer started that day and still running.
     pub running_minutes: i64,
-    /// Target minus booked, never negative; 0 for days still ahead.
+    /// Target minus booked, never negative, once the day is over ([`worktime::day_is_over`]);
+    /// 0 for days still ahead and for today before the evening.
     pub missing_minutes: i64,
     /// After today.
     pub future: bool,
+    /// A workday before the workspace was set up ([`worktime::counts_from`]): no target, but
+    /// not a day off either.
+    #[serde(default)]
+    pub before_setup: bool,
     /// Name of the public holiday (display language).
     pub holiday: Option<String>,
     /// `vacation`, `sick`, `comp` or `other`.
@@ -108,7 +113,7 @@ pub struct WeekTime {
     pub target_to_date: i64,
     pub booked_minutes: i64,
     pub running_minutes: i64,
-    /// Sum of the days' missing minutes (days up to today).
+    /// Sum of the days' missing minutes (the days that are over).
     pub missing_minutes: i64,
     /// Per Netzplan/Vorgang, most minutes first.
     pub items: Vec<ReviewWbs>,
@@ -369,8 +374,13 @@ pub fn week_review<Tz: TimeZone>(
             target_minutes: target,
             booked_minutes: r.time.booked_minutes,
             running_minutes: r.time.running_minutes,
-            missing_minutes: if future { 0 } else { (target - r.time.booked_minutes).max(0) },
+            missing_minutes: if worktime::day_is_over(d, now, tz) {
+                (target - r.time.booked_minutes).max(0)
+            } else {
+                0
+            },
             future,
+            before_setup: r.time.before_setup,
             holiday: holiday.map(|h| if en { h.name_en.clone() } else { h.name.clone() }),
             absence: absence.map(|a| a.kind.as_str().to_owned()),
             absence_half: absence.is_some_and(|a| a.half),

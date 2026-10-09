@@ -86,12 +86,40 @@ fn an_empty_week_has_its_targets_and_nothing_else() {
     assert!(md.contains("| **Woche** | **0 h** | **40 h** | **−40 h** |"), "{md}");
     assert!(md.contains("Keine Aufgaben") && md.contains("Keine Termine") && md.contains("Keine Seiten"));
 
-    // The current week: days still ahead have their target but nothing missing.
+    // The current week: days still ahead have their target but nothing missing; today's rest is
+    // still open until the evening (as on the start page and in the week proposal), then missing.
     let now = berlin(2026, 10, 14, 12, 0);
     let r = week_review(&db, day(2026, 10, 14), &Berlin, &settings(), None, now).unwrap();
     let future: Vec<bool> = r.days.iter().map(|d| d.future).collect();
     assert_eq!(future, [false, false, false, true, true, true, true]);
-    assert_eq!((r.time.target_minutes, r.time.target_to_date, r.time.missing_minutes), (2400, 1440, 1440));
+    assert_eq!((r.time.target_minutes, r.time.target_to_date, r.time.missing_minutes), (2400, 1440, 960));
+    assert_eq!(r.days[2].missing_minutes, 0);
+    let r = week_review(&db, day(2026, 10, 14), &Berlin, &settings(), None, berlin(2026, 10, 14, 18, 0)).unwrap();
+    assert_eq!((r.time.missing_minutes, r.days[2].missing_minutes), (1440, 480));
+    let r =
+        dayreview::day_review(&db, day(2026, 10, 14), &Berlin, &ReviewOptions::from_settings(&settings(), None, now))
+            .unwrap();
+    assert_eq!((r.time.target_minutes, r.time.missing_minutes), (480, 0));
+}
+
+#[test]
+fn days_before_the_setup_are_no_days_off() {
+    let db = Database::open_in_memory().unwrap();
+    // Set up on Thursday 15 October: Monday to Wednesday are workdays before the setup.
+    db.meta_set(crate::worktime::COUNTS_FROM, "2026-10-15").unwrap();
+    let now = berlin(2026, 10, 16, 12, 0);
+    let r = week_review(&db, day(2026, 10, 12), &Berlin, &settings(), None, now).unwrap();
+    let before: Vec<bool> = r.days.iter().map(|d| d.before_setup).collect();
+    assert_eq!(before, [true, true, true, false, false, false, false]);
+    let targets: Vec<i64> = r.days.iter().map(|d| d.target_minutes).collect();
+    assert_eq!(targets, [0, 0, 0, 480, 480, 0, 0]);
+    let opts = ReviewOptions::from_settings(&settings(), None, now);
+    let monday = dayreview::day_review(&db, day(2026, 10, 12), &Berlin, &opts).unwrap();
+    assert!(monday.time.before_setup);
+    assert!(dayreview::describe(&monday, &Berlin).contains("vor der Einrichtung"));
+    let saturday = dayreview::day_review(&db, day(2026, 10, 17), &Berlin, &opts).unwrap();
+    assert!(!saturday.time.before_setup);
+    assert!(dayreview::describe(&saturday, &Berlin).contains("kein Arbeitstag"));
 }
 
 #[test]

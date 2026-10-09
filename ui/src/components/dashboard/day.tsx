@@ -14,6 +14,7 @@ import { addMonths, dayTone, hoursLabel, monthGrid } from "../../lib/calendar";
 import { openCalendarView, openSettingsSection } from "../../lib/calnav";
 import { useHiddenCalendars, visibleEvents } from "../../lib/calvisibility";
 import { openDayReview } from "../../lib/reviewnav";
+import { dayIsOver } from "../../lib/cats";
 import { openBriefing } from "../../lib/briefing";
 import { requestWeekProposal } from "../../lib/weekplan";
 import { TODAY_TIME_BLOCKS, configOf, type TodayBlock } from "../../lib/dashboard";
@@ -653,7 +654,15 @@ export function ReviewWidget({ widget }: WidgetProps) {
                   <span className="num dw-big">{hrs(r.booked_minutes)}</span>
                   {r.target_minutes > 0 && <span className="faint num">/ {hrs(r.target_minutes)}</span>}
                   <span className="grow" />
-                  {r.target_minutes > 0 && (r.booked_minutes >= r.target_minutes ? <Badge tone="success">{t("dash.targetMet")}</Badge> : <Badge tone="warning">{t("dash.gapShort", { h: hrs(r.target_minutes - r.booked_minutes) })}</Badge>)}
+                  {/* Missing (warning) once the day is over; until then the rest is still open. */}
+                  {r.target_minutes > 0 &&
+                    (r.booked_minutes >= r.target_minutes ? (
+                      <Badge tone="success">{t("dash.targetMet")}</Badge>
+                    ) : dayIsOver(r.date, new Date()) ? (
+                      <Badge tone="warning">{t("dash.gapShort", { h: hrs(r.target_minutes - r.booked_minutes) })}</Badge>
+                    ) : (
+                      <Badge tone="neutral">{t("week.missing", { h: hrs(r.target_minutes - r.booked_minutes) })}</Badge>
+                    ))}
                 </div>}
                 {timeOn && r.target_minutes > 0 && (
                   <div className="dw-meter" aria-hidden>

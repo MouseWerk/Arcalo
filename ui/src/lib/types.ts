@@ -1650,6 +1650,8 @@ export interface ReviewTime {
   booked_minutes: number;
   running_minutes: number;
   missing_minutes: number;
+  /** A workday before the workspace was set up: no target, but no day off either. */
+  before_setup?: boolean;
   items: ReviewWbs[];
   entries: ReviewEntry[];
   gaps: { start: string; end: string; minutes: number }[];

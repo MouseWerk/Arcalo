@@ -340,6 +340,12 @@ fn proposal_counts_open_days_and_unbooked_meetings() {
     assert_eq!(open, [("2026-09-22".to_owned(), 210)]);
     assert_eq!((v["unbooked_meetings"].as_i64(), v["unbooked_minutes"].as_i64()), (Some(1), Some(60)));
     assert_eq!((v["booked_minutes"].as_i64(), v["target_minutes"].as_i64()), (Some(750), Some(2400)));
+    // In the evening today counts, as on the week widget and in the week review.
+    let ctx = Ctx::new(&w.db, &Utc, at(9, 23, 18, 0), day(9, 23), &w.sources, &w.settings);
+    let v = part(&ctx, &Part::Proposal { week_start: day(9, 21) }).unwrap();
+    let open: Vec<&str> = v["open_days"].as_array().unwrap().iter().map(|d| d["date"].as_str().unwrap()).collect();
+    assert_eq!(open, ["2026-09-22", "2026-09-23"]);
+    assert_eq!(v["missing_minutes"], 210 + 480);
 }
 
 #[test]

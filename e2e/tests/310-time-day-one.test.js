@@ -41,6 +41,8 @@ test("after the setup of a new workspace, the week before is no gap anywhere", a
   const w = await app.invoke("week_review", { date: iso(day(2)) });
   assert.equal(w.time.missing_minutes, 0);
   assert.ok(w.days.every((d) => d.missing_minutes === 0), JSON.stringify(w.days.map((d) => d.missing_minutes)));
+  // The workdays before the setup are no days off: „vor der Einrichtung“, not „kein Arbeitstag“.
+  assert.deepEqual(w.days.map((d) => !!d.before_setup), [true, true, true, true, true, false, false]);
   const data = await app.invoke("dashboard_data", { request: { today: iso(new Date()), parts: [{ key: "p", part: { kind: "proposal", week_start: iso(day(0)) } }, { key: "w", part: { kind: "week", week_start: iso(day(0)) } }] } });
   assert.deepEqual(data.parts.p.open_days, []);
   const week = data.parts.w;
