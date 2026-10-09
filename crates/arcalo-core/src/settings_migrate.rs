@@ -541,7 +541,10 @@ mod tests {
         let mut v: Value = serde_json::from_str(old).unwrap();
         let m = migrate(&mut v);
         let names: Vec<&str> = m.notes.iter().map(|n| n.split(':').next().unwrap()).collect();
-        assert_eq!(names, ["start-open", "ai-providers", "window-effect", "language-choice", "ai-switch", "daily-folder"]);
+        assert_eq!(
+            names,
+            ["start-open", "ai-providers", "window-effect", "language-choice", "ai-switch", "daily-folder"]
+        );
         let s = Database::parse_settings(old).unwrap();
         assert_eq!(s.notes.daily_folder, "Journal", "the daily notes stay where they are");
         assert_eq!(s.start.open, StartOpen::Daily);
@@ -798,7 +801,8 @@ mod tests {
         let m = migrate(&mut v);
         assert_eq!(m.notes, vec!["work-hours: time: work_start, work_end added".to_owned()]);
         assert_eq!((v["time"]["work_start"].as_str(), v["time"]["work_end"].as_str()), (Some("08:00"), Some("18:00")));
-        let mut mine = serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "time": {"work_start": "07:00"}});
+        let mut mine =
+            serde_json::json!({"version": 10, "notes": {"daily_folder": "Journal"}, "time": {"work_start": "07:00"}});
         migrate(&mut mine);
         assert_eq!(
             (mine["time"]["work_start"].as_str(), mine["time"]["work_end"].as_str()),
@@ -843,7 +847,9 @@ mod tests {
         // A new German workspace (no stored settings) files under „Tagesnotizen“, an English one
         // under „Journal“.
         assert_eq!(Settings::default().notes.daily_folder, "Tagesnotizen");
-        crate::i18n::with_lang(crate::prefs::Language::En, || assert_eq!(Settings::default().notes.daily_folder, "Journal"));
+        crate::i18n::with_lang(crate::prefs::Language::En, || {
+            assert_eq!(Settings::default().notes.daily_folder, "Journal")
+        });
     }
 
     #[test]
@@ -859,7 +865,9 @@ mod tests {
         // A chosen theme of another name and settings without appearance stay as they are.
         let mut own = serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}, "appearance": {"theme_light": "custom-3"}});
         assert!(migrate(&mut own).notes.is_empty());
-        assert!(migrate(&mut serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}})).notes.is_empty());
+        assert!(
+            migrate(&mut serde_json::json!({"version": 15, "notes": {"daily_folder": "Journal"}})).notes.is_empty()
+        );
     }
 
     #[test]
@@ -903,7 +911,8 @@ mod tests {
         assert!(s.ai.enabled && s.ai_on_with(false));
         assert!(!s.ai_on_with(true), "a policy switches it off whatever is stored");
         // Without an `ai` section (1.6) it is added; a stored choice stays.
-        let mut old = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}});
+        let mut old =
+            serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}});
         migrate(&mut old);
         assert_eq!(old["ai"]["enabled"], true);
         let mut off = serde_json::json!({"version": 14, "notes": {"daily_folder": "Journal"}, "locale": {"language": "de"}, "ai": {"enabled": false}});
