@@ -198,6 +198,9 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
   const [searching, setSearching] = useState(false);
   const [workerKind, setWorkerKind] = useState<string>("");
   const [hls, setHls] = useState<PdfHighlight[]>([]);
+  const [hlsLoaded, setHlsLoaded] = useState(false);
+  // The start position (page or highlight) stands: `data-settled` on the scroll area.
+  const [settled, setSettled] = useState(false);
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const [popover, setPopover] = useState<{ h: PdfHighlight; x: number; y: number } | null>(null);
   const [flash, setFlash] = useState<number | null>(highlight ?? null);
@@ -251,7 +254,10 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
 
   useEffect(() => {
     let alive = true;
-    api.pdfHighlights(name).then((l) => alive && setHls(l), () => {});
+    api.pdfHighlights(name).then(
+      (l) => alive && (setHls(l), setHlsLoaded(true)),
+      () => alive && setHlsLoaded(true),
+    );
     return () => {
       alive = false;
     };
@@ -268,26 +274,13 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc]);
 
-  // A link `[[x.pdf#page=3&hl=7]]` opens on the page and flashes the highlight.
+  // A link `[[x.pdf#page=3&hl=7]]` flashes the highlight for a moment once the view stands on it.
   useEffect(() => {
-    if (flash == null || !doc || !hls.length) return;
-    const h = hls.find((x) => x.id === flash);
-    if (!h) return;
-    let tries = 0;
-    let timer = 0;
-    const find = () => {
-      const el = scroller.current?.querySelector<HTMLElement>(`.pdf-mark[data-mark-id="${h.id}"]`);
-      if (el) el.scrollIntoView({ block: "center" });
-      else if (tries++ < 30) {
-        timer = window.setTimeout(find, 100);
-        return;
-      }
-      timer = window.setTimeout(() => setFlash(null), 2400);
-    };
-    timer = window.setTimeout(find, 150);
+    if (!settled || flash == null) return;
+    const timer = window.setTimeout(() => setFlash(null), 2400);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, hls.length]);
+  }, [settled]);
 
   const byPage = useMemo(() => {
     const m = new Map<number, PdfHighlight[]>();
@@ -336,13 +329,29 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
     [sizes.length],
   );
 
-  // Opens on the page of `![[x.pdf#page=3]]`.
+  // Opens on the page of `![[x.pdf#page=3]]`, or with the highlight of `[[x.pdf#page=3&hl=7]]` in the middle:
+  // one scroll, straight to where the view stays (first the page and then the highlight moved the view twice,
+  // under a click already on its way). The highlights' boxes are laid out with the pages, before any rendering.
   const started = useRef(false);
   useEffect(() => {
-    if (!doc || started.current) return;
+    if (!doc || started.current || (highlight != null && !hlsLoaded)) return;
     started.current = true;
-    if (startPage && startPage > 1) requestAnimationFrame(() => goTo(startPage));
-  }, [doc, startPage, goTo]);
+    const sc = scroller.current;
+    const h = highlight != null ? hls.find((x) => x.id === highlight) : undefined;
+    const mark = h ? sc?.querySelector<HTMLElement>(`.pdf-mark[data-mark-id="${h.id}"]`) : null;
+    if (sc && mark) {
+      const m = mark.getBoundingClientRect();
+      const box = sc.getBoundingClientRect();
+      sc.scrollTop += m.top + m.height / 2 - (box.top + sc.clientHeight / 2);
+    } else {
+      const n = h?.page ?? startPage ?? 1;
+      if (n > 1) goTo(n);
+    }
+    onScroll();
+    // After the scroll event of this frame.
+    requestAnimationFrame(() => setSettled(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, hlsLoaded, startPage, goTo]);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -562,6 +571,7 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
       <div
         ref={scrollRef}
         className="pdf-scroll"
+        data-settled={settled || undefined}
         onScroll={() => {
           onScroll();
           // The bar follows its selection.
