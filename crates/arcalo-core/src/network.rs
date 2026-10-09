@@ -951,8 +951,9 @@ pub fn parse_certificates(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         let mut rest = text.as_ref();
         while let Some(start) = rest.find("-----BEGIN CERTIFICATE-----") {
             let body = &rest[start + "-----BEGIN CERTIFICATE-----".len()..];
-            let end =
-                body.find("-----END CERTIFICATE-----").ok_or_else(|| Error::Parse("PEM: END-Zeile fehlt".into()))?;
+            let end = body
+                .find("-----END CERTIFICATE-----")
+                .ok_or_else(|| Error::Parse(tr!("PEM: END-Zeile fehlt", "PEM: the END line is missing").into()))?;
             let b64: String = body[..end].chars().filter(|c| !c.is_whitespace()).collect();
             let der = base64::engine::general_purpose::STANDARD
                 .decode(b64)

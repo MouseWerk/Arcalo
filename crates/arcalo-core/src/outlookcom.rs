@@ -45,7 +45,10 @@ pub fn write_script(script_dir: &Path, script: Script) -> Result<PathBuf> {
 /// synchronisieren.“).
 pub fn run(script_dir: &Path, script: Script, args: &[OsString], timeout: Duration, retry: &str) -> Result<String> {
     if !cfg!(windows) {
-        return Err(Error::State("Outlook (klassisch) gibt es nur unter Windows.".into()));
+        return Err(Error::State(
+            tr!("Outlook (klassisch) gibt es nur unter Windows.", "Outlook (classic) is only available on Windows.")
+                .into(),
+        ));
     }
     let path = write_script(script_dir, script)?;
     let mut cmd = std::process::Command::new(powershell());

@@ -118,7 +118,9 @@ pub fn daily(db: &Database, date: NaiveDate, create: bool) -> Result<Option<Page
 }
 
 fn daily_page(db: &Database, date: NaiveDate) -> Result<Page> {
-    daily(db, date, true)?.ok_or_else(|| Error::State("daily note".into()))
+    daily(db, date, true)?.ok_or_else(|| {
+        Error::State(tr!("Die Tagesnotiz ließ sich nicht anlegen", "The daily note could not be created").into())
+    })
 }
 
 /// The running timer with its reference and worked minutes.

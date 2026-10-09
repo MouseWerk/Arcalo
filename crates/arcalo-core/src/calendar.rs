@@ -34,7 +34,7 @@ pub fn daily_overview<Tz: TimeZone>(
     offset: &Tz,
 ) -> Result<Vec<DayOverview>> {
     if to < from {
-        return Err(Error::State("'to' liegt vor 'from'".into()));
+        return Err(Error::State(crate::tr!("Das Ende liegt vor dem Anfang", "The end lies before the start").into()));
     }
     if (to - from).num_days() >= MAX_DAYS {
         return Err(Error::State(trf!("Zeitraum länger als {MAX_DAYS} Tage", "Period longer than {MAX_DAYS} days")));

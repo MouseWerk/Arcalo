@@ -756,14 +756,14 @@ const NAME_HEADER: &str = "x-arcalo-name";
 #[tauri::command]
 async fn attachment_store(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<SavedAttachment> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err(Error::State("Dateiinhalt fehlt".into()));
+        return Err(Error::State(tr!("Dateiinhalt fehlt", "The file content is missing").into()));
     };
     let name = request
         .headers()
         .get(NAME_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(attachments::percent_decode)
-        .ok_or_else(|| Error::State("Dateiname fehlt".into()))?;
+        .ok_or_else(|| Error::State(tr!("Dateiname fehlt", "The file name is missing").into()))?;
     let saved = attachments::store_file(&state.attachments_dir(), &name, bytes)?;
     feed::file_added(&state, &saved.name);
     Ok(saved)

@@ -275,7 +275,10 @@ fn mobile_capture(app: AppHandle, state: State<AppState>, text: String, inbox: b
         companion::daily(&db, Local::now().date_naive(), false)?;
     }
     let (out, _) = arcalo_core::capture::capture_to(&db, &text, &target, &opts, Utc::now(), &Local)?;
-    let page_id = out.appended.map(|a| a.page_id).ok_or_else(|| Error::State("Nichts zu erfassen".into()))?;
+    let page_id = out
+        .appended
+        .map(|a| a.page_id)
+        .ok_or_else(|| Error::State(arcalo_core::tr!("Nichts zu erfassen", "Nothing to capture").into()))?;
     let page = db.page(page_id)?;
     let _ = app.emit("data://pages", ());
     Ok(page)

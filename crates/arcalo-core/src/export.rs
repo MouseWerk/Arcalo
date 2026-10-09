@@ -88,7 +88,7 @@ pub fn export(rows: &[TimeEntryRow], format: ExportFormat, opts: &ExportOptions)
         .filter(|r| {
             let ok = r.entry.status_flag != StatusFlag::Running && r.entry.duration_minutes.is_some();
             if !ok {
-                skipped.push((r.entry.id, "timer still running".to_owned()));
+                skipped.push((r.entry.id, crate::tr!("Timer läuft noch", "Timer still running").to_owned()));
             }
             ok
         })
@@ -207,8 +207,11 @@ fn jira(rows: &[&TimeEntryRow], opts: &ExportOptions, skipped: &mut Vec<(i64, St
             .and_then(|k| opts.jira_issue_map.get(k))
             .or_else(|| opts.jira_issue_map.get(&r.netzplan_nr));
         let Some(key) = key else {
-            skipped
-                .push((r.entry.id, format!("no Jira issue mapped for {}", specific.unwrap_or(r.netzplan_nr.clone()))));
+            let what = specific.unwrap_or(r.netzplan_nr.clone());
+            skipped.push((
+                r.entry.id,
+                crate::trf!("Kein Jira-Vorgang für {what} zugeordnet", "No Jira issue mapped for {what}"),
+            ));
             continue;
         };
         logs.push(JiraWorklog {

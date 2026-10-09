@@ -234,13 +234,13 @@ impl SystemCall {
         let s = |k: &str| args[k].as_str().map(str::to_owned);
         let call = match name {
             "run_powershell" => SystemCall::RunPowershell {
-                script: s("script").ok_or_else(|| Error::Parse("Skript fehlt".into()))?,
+                script: s("script").ok_or_else(|| Error::Parse(tr!("Skript fehlt", "Script missing").into()))?,
                 cwd: s("cwd"),
             },
             "git" => {
                 let list: Vec<String> = args["args"]
                     .as_array()
-                    .ok_or_else(|| Error::Parse("git-Argumente fehlen".into()))?
+                    .ok_or_else(|| Error::Parse(tr!("git-Argumente fehlen", "git arguments missing").into()))?
                     .iter()
                     .map(|a| {
                         a.as_str().map(str::to_owned).ok_or_else(|| {
@@ -267,7 +267,11 @@ impl SystemCall {
                         tr!("Diese git-Option ist nicht erlaubt", "This git option is not allowed").into(),
                     ));
                 }
-                SystemCall::Git { args: list, repo: s("repo").ok_or_else(|| Error::Parse("Repository fehlt".into()))? }
+                SystemCall::Git {
+                    args: list,
+                    repo: s("repo")
+                        .ok_or_else(|| Error::Parse(tr!("Repository fehlt", "Repository missing").into()))?,
+                }
             }
             "http_request" => {
                 let method = s("method").unwrap_or_else(|| "GET".into()).to_uppercase();
@@ -277,7 +281,7 @@ impl SystemCall {
                         "The HTTP method {method} is not allowed"
                     )));
                 }
-                let url = s("url").ok_or_else(|| Error::Parse("URL fehlt".into()))?;
+                let url = s("url").ok_or_else(|| Error::Parse(tr!("URL fehlt", "URL missing").into()))?;
                 if !(url.starts_with("https://") || url.starts_with("http://")) {
                     return Err(Error::State(
                         tr!("Nur http- und https-Adressen sind erlaubt", "Only http and https addresses are allowed")
@@ -505,7 +509,8 @@ async fn run_git(args: &[String], repo: &str) -> Result<String> {
         )));
     }
     let mut cmd = git_command(repo);
-    let (sub, rest) = args.split_first().ok_or_else(|| Error::Parse("git-Argumente fehlen".into()))?;
+    let (sub, rest) =
+        args.split_first().ok_or_else(|| Error::Parse(tr!("git-Argumente fehlen", "git arguments missing").into()))?;
     cmd.arg(sub).args(safe_flags(sub)).args(rest);
     run(cmd).await
 }

@@ -463,4 +463,53 @@ mod tests {
         assert!(text.contains("abgelehnt") || text.contains("Keine Verbindung"), "{text}");
         assert!(text.len() > "Verbindungsfehler: error sending request".len(), "{text}");
     }
+
+    /// Error texts reach the UI in its language: a literal in `Error::State("…")` or
+    /// `Error::Parse("…")` outside test code goes through `tr!`/`trf!`. The few internal ones
+    /// (checks of the UI's own arguments, test hooks) are listed here.
+    #[test]
+    fn error_texts_are_translated() {
+        const INTERNAL: [&str; 11] = [
+            "killed (test)",
+            "range",
+            "snooze",
+            "encrypt",
+            "not a Jira call",
+            "Jira calls run in the shell",
+            "debug builds only",
+            "no recovery screen",
+            "not available",
+            "bad address",
+            "unknown sample",
+        ];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = vec![];
+        let mut stack = vec![root.join("src"), root.join("../../src-tauri/src")];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") && !p.ends_with("tests.rs") {
+                    files.push(p);
+                }
+            }
+        }
+        assert!(files.len() > 50, "sources not found: {}", files.len());
+        let mut stray = vec![];
+        for f in &files {
+            let text = std::fs::read_to_string(f).unwrap();
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            for pat in ["Error::State(\"", "Error::Parse(\""] {
+                for (at, _) in code.match_indices(pat) {
+                    let rest = &code[at + pat.len()..];
+                    let literal = &rest[..rest.find('"').unwrap_or(rest.len())];
+                    if !INTERNAL.contains(&literal) {
+                        stray.push(format!("{}: {literal}", f.display()));
+                    }
+                }
+            }
+        }
+        assert!(stray.is_empty(), "untranslated error texts (use tr!):\n{}", stray.join("\n"));
+    }
 }

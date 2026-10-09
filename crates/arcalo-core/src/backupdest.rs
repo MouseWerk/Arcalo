@@ -467,7 +467,11 @@ pub fn run_watched<T: Send + 'static>(
         match rx.recv_timeout(poll) {
             Ok(res) => return res,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(Failure::new(Problem::Other, "Kopiervorgang abgebrochen", path.display().to_string()));
+                return Err(Failure::new(
+                    Problem::Other,
+                    tr!("Kopiervorgang abgebrochen", "Copying was cut off"),
+                    path.display().to_string(),
+                ));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) if activity.idle() >= stall => {
                 activity.cancelled.store(true, Ordering::Relaxed);
