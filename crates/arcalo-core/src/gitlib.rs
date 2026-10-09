@@ -523,9 +523,24 @@ fn diff(repo: &Repository, p: &Parsed, out: &mut String) -> Result<bool, git2::E
         if only_deleted && delta.status() != Delta::Deleted {
             continue;
         }
-        if p.has("--name-status") {
-            out.push(status_letter(delta.status()));
-            out.push('\0');
+        if p.has("--raw") {
+            // `:<mode> <mode> <old id> <new id> <status>` (full ids, as with `--no-abbrev`).
+            let (old, new) = (delta.old_file(), delta.new_file());
+            let _ = write!(
+                out,
+                ":{:06o} {:06o} {} {} {}\0",
+                u32::from(old.mode()),
+                u32::from(new.mode()),
+                old.id(),
+                new.id(),
+                status_letter(delta.status())
+            );
+        }
+        if p.has("--name-status") || p.has("--raw") {
+            if !p.has("--raw") {
+                out.push(status_letter(delta.status()));
+                out.push('\0');
+            }
             // Like git: a rename lists the old path before the new one.
             if delta.status() == Delta::Renamed {
                 out.push_str(
@@ -763,6 +778,10 @@ mod tests {
         // With rename detection the move is one entry, old path first (git writes `R100`).
         let status = ok(&g, &work, &["diff", "--cached", "--name-status", "-M", "-z", "HEAD"]);
         assert_eq!(status, "R\0Notiz.md\0Ordner/Notiz.md\0");
+        // `--raw` carries both object ids (the same blob for a plain move).
+        let raw = ok(&g, &work, &["diff", "--cached", "--raw", "--no-abbrev", "-M", "-z", "HEAD"]);
+        let id = ok(&g, &work, &["rev-parse", "-q", "--verify", ":Ordner/Notiz.md"]).trim().to_owned();
+        assert_eq!(raw, format!(":100644 100644 {id} {id} R\0Notiz.md\0Ordner/Notiz.md\0"));
         assert_eq!(ok(&g, &work, &["rev-parse", "-q", "--verify", ":Ordner/Notiz.md"]).trim().len(), 40);
         ok(&g, &work, &["reset", "-q"]);
         assert_eq!(ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]), "");
