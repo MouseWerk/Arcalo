@@ -11,7 +11,8 @@
 //! credential, at any depth, and URLs with a password; [`scrub`]), and what belongs to one
 //! computer or one workspace ([`EXCLUDED`], [`EXCLUDED_FIELDS`]): folders and paths, window
 //! and backdrop, devices, proxy and network, the update channel (admin policies), the Git
-//! sync itself, AI connections (their keys are per computer), Jira sites and calendars (their
+//! sync itself, AI connections and what names them (providers, the models of the tiers and of
+//! the search by meaning, prices; their keys are per computer), Jira sites and calendars (their
 //! tokens and addresses are secrets), the start page and links (they point to pages and
 //! folders of this workspace), the first-run state and which sections a workspace shares.
 
@@ -28,11 +29,15 @@ use crate::settings::Settings;
 pub const FILE: &str = "settings.json";
 
 /// Top-level keys that never leave this computer.
-pub const EXCLUDED: [&str; 24] = [
+pub const EXCLUDED: [&str; 27] = [
     "version",
     "workspace_scopes",
     "litellm_base_url",
     "providers",
+    // They name providers and their models, which are set up per computer.
+    "embedding_provider",
+    "embedding_model",
+    "prices",
     "backup_dir",
     "backup_targets",
     "markdown_mirror",
@@ -56,7 +61,13 @@ pub const EXCLUDED: [&str; 24] = [
 ];
 
 /// Fields of synced sections that belong to this computer or workspace.
-pub const EXCLUDED_FIELDS: [&str; 13] = [
+pub const EXCLUDED_FIELDS: [&str; 19] = [
+    "router.local_provider",
+    "router.standard_provider",
+    "router.reasoning_provider",
+    "router.local_model",
+    "router.standard_model",
+    "router.reasoning_model",
     "appearance.window_effect",
     "appearance.window_opacity",
     "appearance.custom_titlebar",
@@ -543,6 +554,42 @@ mod tests {
         for ok in ["keymap", "jira_issue_map", "monkey_mode", "author_name", "keywords"] {
             assert!(!is_secret_name(ok), "{ok}");
         }
+    }
+
+    #[test]
+    fn provider_choices_stay_on_their_computer() {
+        let mut a = Settings::default();
+        a.router.standard_provider = "firma-ollama".into();
+        a.router.standard_model = "llama3.3".into();
+        a.embedding_provider = "firma-ollama".into();
+        a.embedding_model = Some("nomic-embed-text".into());
+        a.router.standard_threshold = 42;
+        let keys: Vec<String> = entries(&a).into_keys().collect();
+        for k in
+            ["embedding_provider", "embedding_model", "prices", "router.standard_provider", "router.standard_model"]
+        {
+            assert!(!keys.contains(&k.to_owned()), "{k} synced");
+            assert!(!syncable(k), "{k}");
+        }
+        // A file of 1.15 still carries them: the other computer keeps its own.
+        let stamps: BTreeMap<String, i64> = keys.iter().map(|k| (k.clone(), 1_000)).collect();
+        let mut file = build(&a, &stamps, "a");
+        for (k, v) in [
+            ("router.standard_provider", Value::from("firma-ollama")),
+            ("embedding_provider", Value::from("firma-ollama")),
+            ("embedding_model", Value::from("nomic-embed-text")),
+        ] {
+            file.settings.insert(k.into(), Entry { value: v, at: 1_000 });
+        }
+        let b = Settings::default();
+        let (next, _, _) = apply(&b, &BTreeMap::new(), &SyncFile::parse(&file.to_text()));
+        assert_eq!(next.router.standard_provider, b.router.standard_provider);
+        assert_eq!(next.router.standard_model, b.router.standard_model);
+        assert_eq!(
+            (next.embedding_provider.as_str(), next.embedding_model.as_deref()),
+            (b.embedding_provider.as_str(), None)
+        );
+        assert_eq!(next.router.standard_threshold, 42, "the rest of the router travels");
     }
 
     #[test]
