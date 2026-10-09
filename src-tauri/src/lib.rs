@@ -4086,6 +4086,7 @@ fn startup_mark(phase: &str) {
 #[tauri::command]
 fn window_ready(app: AppHandle) {
     startup_mark("first frame of the UI");
+    feed::FIRST_FRAME.store(true, std::sync::atomic::Ordering::Relaxed);
     show_main_once(&app, "ui");
     // The health check of the update rollback: this version started fine.
     updates::mark_healthy(&app);
@@ -4625,7 +4626,6 @@ pub fn run() {
             if let Err(e) = db.migrate_activity_tool() {
                 devlog::warn("core", format!("settings migration failed: {e}"));
             }
-            feed::backfill(&db, &attachments::dir(&dir));
             let (settings, unreadable) = db.load_settings_checked()?;
             if !unreadable.is_empty() {
                 // Kept for a look (and a fix by hand); the defaults are used meanwhile.
@@ -4724,6 +4724,9 @@ pub fn run() {
             app.manage(updates::Updates::after(after_update, rolled_back));
             updates::load_staged(app.handle());
             app.manage(backupdest::Destinations::default());
+            // The history from before the journal (once per workspace, a second on a large one):
+            // after the first frame, not before the window.
+            feed::backfill_later(app.handle());
             // No tray (e.g. a Linux desktop without StatusNotifier): the app still works,
             // closing then minimizes instead of hiding.
             if let Err(e) = desktop::setup_tray(app.handle()) {
