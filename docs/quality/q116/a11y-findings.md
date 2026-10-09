@@ -213,13 +213,13 @@ consistency.
   `role="tabpanel"` (only the side panel does).
 - Fix: `aria-controls` to the sidebar body and `role="tabpanel" aria-labelledby` on `.pane-body`.
 
-### A16 – Low – Field and control borders are below 3:1 (calc, 1.4.11) — not fixed here: pure contrast, belongs with the color pass (A7–A9)
+### A16 – Low – Field and control borders are below 3:1 (calc, 1.4.11) — not fixed: design choice (quiet field borders; fields are marked by their fill and label), the two high-contrast themes reach 3:1
 - What: `--border-strong` on the canvas is 1.55–2.36:1 in every theme except the two high-contrast
   ones. Inputs, selects and the segmented control are hard to find for low-vision users.
 - Fix: accept this as a design choice and point to „Hoher Kontrast“ in the docs, or give
   `.input/.select` a `--border-field` token at 3:1.
 
-### A17 – Low – Warning fill and star below 3:1 in three light themes (calc) — not fixed here: pure contrast, belongs with the color pass (A7–A9)
+### A17 – Low – Warning fill and star below 3:1 in three light themes (calc) — fixed in 1.16 (--warning-fill and --star at 3:1 in every theme, themes.test)
 - What: `--warning-fill`/`--star` on raised: Catppuccin Latte 2.42, Rosé Pine Dawn 2.16, Everforest
   Light 2.21 (budget bars, favourite star).
 - Fix: run `ensureContrast(…, 3)` for these two tokens in `themes.ts`.

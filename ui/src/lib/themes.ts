@@ -176,6 +176,7 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
   const codeBg = dark ? (contrast(app, bg) >= 1.04 ? app : mix(bg, text0, 0.07)) : mix(bg, text0, 0.035);
   // 4.6: a little headroom, the hex rounding may cost a few hundredths.
   const code = (light: string, darkHex: string) => toHex(readable(rgb(dark ? darkHex : light), [codeBg], 4.6, dark));
+  const fill = readable(rgb(k.warning), [bg, raised], 3.1, dark);
   const violet = readable(rgb(dark ? "#a78bfa" : "#7c3aed"), [bg, raised], 4.5, dark);
   const accent = accentTokens(k.accent, dark ? "dark" : "light", k.background, accentSurfaces(def));
   // Focus and selection are neutral, never the accent: a gray ring (3:1 on every surface, also on
@@ -205,8 +206,9 @@ export function themeTokens(def: ThemeDef): Record<string, string> {
     "--text": toHex(text),
     "--text-2": toHex(text2),
     "--text-3": toHex(muted),
-    "--star": k.warning,
-    "--warning-fill": k.warning,
+    // Graphics (budget bars, the favorite star): 3:1 on the page and on cards (WCAG 1.4.11).
+    "--star": toHex(fill),
+    "--warning-fill": toHex(fill),
     "--text-inverse": dark ? toHex(bg) : "#ffffff",
     ...accent,
     "--success": toHex(success),

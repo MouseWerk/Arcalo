@@ -55,6 +55,10 @@ describe("color themes", () => {
       for (const s of ["--success", "--warning", "--danger", "--info"]) {
         expect(contrast(k[s], canvas), `${t.id} ${s}`).toBeGreaterThanOrEqual(4.5);
       }
+      // Graphics (budget bars, the favorite star) reach 3:1 on the page and on cards.
+      for (const g of ["--warning-fill", "--star"]) {
+        for (const bgKey of ["--bg-canvas", "--bg-raised"]) expect(contrast(k[g], k[bgKey]), `${t.id} ${g} on ${bgKey}`).toBeGreaterThanOrEqual(3);
+      }
       // Borders are visible, but quieter than text.
       expect(contrast(k["--border-strong"], canvas), `${t.id} border`).toBeGreaterThan(1.15);
       expect(k["color-scheme"]).toBe(t.dark ? "dark" : "light");
@@ -113,6 +117,7 @@ describe("color themes", () => {
         expect(contrast(k[s], canvas), `tokens.css ${name} ${s}`).toBeGreaterThanOrEqual(4.5);
       }
       expect(contrast(k["--text-3"], canvas), `tokens.css ${name} --text-3`).toBeGreaterThanOrEqual(3);
+      for (const g of ["--warning-fill", "--star"]) expect(contrast(k[g], canvas), `tokens.css ${name} ${g}`).toBeGreaterThanOrEqual(3);
       for (const s of ["--code-keyword", "--code-string", "--code-number", "--code-title", "--code-type", "--code-meta"]) {
         expect(contrast(k[s], k["--code-bg"]), `tokens.css ${name} ${s}`).toBeGreaterThanOrEqual(4.5);
       }

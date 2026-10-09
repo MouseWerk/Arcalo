@@ -44,7 +44,7 @@ Guard test: core `gitsync` test with a bare remote: move 1 and 12 pages on A, as
 (same page id, parent changed, no duplicates, nothing in the trash) plus a round trip A->B->A without
 duplicates.
 
-## C2 (high): A `location.json` that names the old default folder keeps 1.15 working in `app.annalo.desktop` and copies the whole data folder again at every start (and 1.17 would delete the live workspace)
+## C2 (high): A `location.json` that names the old default folder keeps 1.15 working in `app.annalo.desktop` and copies the whole data folder again at every start (and 1.17 would delete the live workspace) — fixed in 1.15.1 (identity::retarget_locations)
 
 Repro (probe `p6_location_json_naming_the_old_default_folder`): old folder with a workspace and a
 `location.json` whose `data_dir` is that same folder; three starts of `identity::migrate` +
@@ -74,7 +74,7 @@ backup destination points into them.
 Guard test: core identity test „a location.json naming the old default folder is moved to the new
 one“: after `migrate` + `prepare`, `dir == new`, second `migrate` returns `Done`, no aside folder.
 
-## C3 (high): Ticking off a repeating task panics (app crash, `panic = "abort"`) when the text after the Obsidian done marker has a multi-byte character at byte 10
+## C3 (high): Ticking off a repeating task panics (app crash, `panic = "abort"`) when the text after the Obsidian done marker has a multi-byte character at byte 10 — fixed in 1.15.1 (taskedit ticking_off_with_text_after_the_done_marker)
 
 Repro (probe `p10_tick_repeating_task_with_umlaut_after_done_marker`): page
 `- [ ] Rechnung prüfen every:monthly due:2026-10-05 ✅ erledigt äh`, `edit_tasks(.., Done{true}, ..)`
