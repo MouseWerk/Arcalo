@@ -70,16 +70,26 @@ impl SearchHit {
 /// operators and punctuation are literal) and the last term is a prefix match
 /// for search-as-you-type. Returns `None` for blank input.
 pub fn fts_query(input: &str) -> Option<String> {
-    let terms: Vec<String> = input
+    fts_query_from(input, 1)
+}
+
+/// The last term is a prefix match only from this many characters on in the text of notes and
+/// bookings: „a*“ matches nearly every chunk, and ranking all of them made each of the first
+/// keystrokes slow (titles keep the prefix from the first letter).
+const TEXT_PREFIX_FROM: usize = 3;
+
+/// [`fts_query`] with the last term a prefix only when it has at least `prefix_from` characters
+/// (else it matches whole words).
+fn fts_query_from(input: &str, prefix_from: usize) -> Option<String> {
+    let raw: Vec<&str> = input
         .split_whitespace()
         .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
         .filter(|t| !t.is_empty())
-        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
         .collect();
-    if terms.is_empty() {
-        return None;
-    }
-    Some(format!("{}*", terms.join(" ")))
+    let last = raw.last()?;
+    let terms: Vec<String> = raw.iter().map(|t| format!("\"{}\"", t.replace('"', "\"\""))).collect();
+    let star = if last.chars().count() >= prefix_from { "*" } else { "" };
+    Some(format!("{}{star}", terms.join(" ")))
 }
 
 /// Title matches are boosted so that typing a page name finds the page first.
@@ -139,6 +149,7 @@ pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>
         return Ok(hits);
     }
     let Some(q) = fts_query(input) else { return Ok(vec![]) };
+    let text_q = fts_query_from(input, TEXT_PREFIX_FROM).unwrap_or_else(|| q.clone());
     let conn = db.conn();
     let limit_i = limit as i64;
     let mut hits: Vec<SearchHit> = vec![];
@@ -168,7 +179,7 @@ pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>
          ORDER BY bm25(notes_blocks_fts) LIMIT ?2",
     )?;
     let mut seen = std::collections::HashSet::new();
-    for h in st.query_map(params![q, limit_i * 4], |r| {
+    for h in st.query_map(params![text_q, limit_i * 4], |r| {
         Ok(SearchHit::Note {
             page_id: r.get(0)?,
             title: r.get(1)?,
@@ -195,7 +206,7 @@ pub fn search(db: &Database, input: &str, limit: usize) -> Result<Vec<SearchHit>
          WHERE time_entries_fts MATCH ?1
          ORDER BY bm25(time_entries_fts) LIMIT ?2",
     )?;
-    for h in st.query_map(params![q, limit_i], |r| {
+    for h in st.query_map(params![text_q, limit_i], |r| {
         Ok(SearchHit::TimeEntry {
             id: r.get(0)?,
             netzplan_nr: r.get(1)?,
@@ -221,6 +232,38 @@ mod tests {
     fn query_sanitising() {
         assert_eq!(fts_query("  "), None);
         assert_eq!(fts_query("NEAR( foo OR \"bar"), Some("\"NEAR\" \"foo\" \"OR\" \"bar\"*".into()));
+        // In the text, one or two letters match whole words only (no ranking of every chunk).
+        assert_eq!(fts_query_from("Budget a", TEXT_PREFIX_FROM), Some("\"Budget\" \"a\"".into()));
+        assert_eq!(fts_query_from("np", TEXT_PREFIX_FROM), Some("\"np\"".into()));
+        assert_eq!(fts_query_from("bud", TEXT_PREFIX_FROM), Some("\"bud\"*".into()));
+        assert_eq!(fts_query("k"), Some("\"k\"*".into()));
+    }
+
+    #[test]
+    fn one_or_two_letters_find_titles_and_whole_words_but_rank_no_chunk_of_other_words() {
+        let db = Database::open_in_memory().unwrap();
+        let kick = db.create_page(None, "Kickoff", None).unwrap();
+        db.save_page_content(kick.id, "Termin mit NP Team.").unwrap();
+        db.atomic(|| {
+            for i in 0..3000 {
+                let p = db.create_page(None, &format!("Seite {i}"), None)?;
+                db.save_page_content(p.id, &format!("Abstimmung zum Angebot {i} mit allen Beteiligten"))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // „k“: the title by prefix; no chunk is ranked for a word starting with it.
+        let hits = search(&db, "k", 20).unwrap();
+        assert!(hits.iter().any(|h| matches!(h, SearchHit::Page { page_id, .. } if *page_id == kick.id)), "{hits:?}");
+        assert!(!hits.iter().any(|h| matches!(h, SearchHit::Note { .. })), "{hits:?}");
+        // „a“ matches no whole word; „np“ is one.
+        let t = std::time::Instant::now();
+        assert!(search(&db, "a", 20).unwrap().iter().all(|h| !matches!(h, SearchHit::Note { .. })));
+        assert!(t.elapsed() < std::time::Duration::from_millis(100), "{:?}", t.elapsed());
+        let np = search(&db, "np", 20).unwrap();
+        assert!(np.iter().any(|h| matches!(h, SearchHit::Note { page_id, .. } if *page_id == kick.id)), "{np:?}");
+        // From three letters on, words by their start again.
+        assert!(search(&db, "abst", 5).unwrap().iter().any(|h| matches!(h, SearchHit::Note { .. })));
     }
 
     #[test]
