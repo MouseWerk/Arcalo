@@ -8,7 +8,7 @@
 //! pages, versions, time entries and the attachments folder ([`backfill`]).
 
 use crate::{tr, trf};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use rusqlite::{OptionalExtension, params};
@@ -255,9 +255,10 @@ impl Database {
 
     /// Writes one event at `now`.
     pub fn record_activity(&self, a: &NewActivity, now: DateTime<Utc>) -> Result<i64> {
-        self.conn().execute(
+        self.conn().prepare_cached(
             "INSERT INTO activity (at, kind, page_id, entry_id, netzplan_id, vorgang_nr, title, detail, amount, people)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?.execute(
             params![
                 ts(now),
                 a.kind,
@@ -331,6 +332,8 @@ impl Database {
 
     /// Tasks added or checked off by a save. While a task is being typed each autosave sees a
     /// "new" text: an event of this hour whose text is no longer on the page takes the new text.
+    /// Linear in the tasks of the page: the hour's events are read once (a paste of thousands of
+    /// tasks used to read them again for each new one).
     #[allow(clippy::too_many_arguments)]
     fn feed_tasks(
         &self,
@@ -351,8 +354,23 @@ impl Database {
         for t in &before {
             old_state.entry(t.text.as_str()).or_default().push(t.done);
         }
-        let texts: Vec<&str> = after.iter().map(|t| t.text.as_str()).collect();
+        let texts: HashSet<&str> = after.iter().map(|t| t.text.as_str()).collect();
         let (hour, hour_end) = hour_range(now);
+        // This hour's added tasks whose text is gone from the page, newest first: each takes over
+        // one new text. Rows written below carry a text that is on the page, so none joins them.
+        let mut stale: std::collections::VecDeque<i64> = {
+            let mut st = self.conn().prepare_cached(
+                "SELECT id, title FROM activity WHERE page_id = ?1 AND kind = 'task_added' AND at >= ?2 AND at < ?3
+                 ORDER BY at DESC",
+            )?;
+            st.query_map(params![page_id, hour, hour_end], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .filter_map(|r| match r {
+                    Ok((_, title)) if texts.contains(title.as_str()) => None,
+                    Ok((id, _)) => Some(Ok(id)),
+                    Err(e) => Some(Err(e)),
+                })
+                .collect::<rusqlite::Result<_>>()?
+        };
         for t in &after {
             if t.text.trim().is_empty() {
                 continue;
@@ -384,19 +402,10 @@ impl Database {
                 None => {
                     // New text: an earlier event of this hour for a text that is gone is the same
                     // task being typed (or edited).
-                    let stale: Vec<(i64, String)> = {
-                        let mut st = self.conn().prepare_cached(
-                            "SELECT id, title FROM activity WHERE page_id = ?1 AND kind = 'task_added' AND at >= ?2 AND at < ?3
-                             ORDER BY at DESC",
-                        )?;
-                        st.query_map(params![page_id, hour, hour_end], |r| Ok((r.get(0)?, r.get(1)?)))?
-                            .collect::<rusqlite::Result<_>>()?
-                    };
-                    if let Some((id, _)) = stale.iter().find(|(_, title)| !texts.contains(&title.as_str())) {
-                        self.conn().execute(
-                            "UPDATE activity SET title = ?2, at = ?3 WHERE id = ?1",
-                            params![id, t.text, ts(now)],
-                        )?;
+                    if let Some(id) = stale.pop_front() {
+                        self.conn()
+                            .prepare_cached("UPDATE activity SET title = ?2, at = ?3 WHERE id = ?1")?
+                            .execute(params![id, t.text, ts(now)])?;
                     } else {
                         let a = NewActivity {
                             kind: if t.done { "task_done" } else { "task_added" },

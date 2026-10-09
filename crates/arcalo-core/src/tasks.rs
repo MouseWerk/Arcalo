@@ -102,6 +102,18 @@ const TEMPLATE_PAGES: &str = "WITH RECURSIVE tpl(id) AS (
                  UNION ALL
                  SELECT p.id FROM pages p JOIN tpl ON p.parent_id = tpl.id)";
 
+/// A row of `tasks` without its page and ordinal (see [`Database::reindex_tasks`]).
+#[derive(Debug, PartialEq)]
+struct TaskRow {
+    line: i64,
+    text: String,
+    done: bool,
+    due: Option<String>,
+    priority: i64,
+    tags: String,
+    recur: Option<String>,
+}
+
 /// Compares like SQLite's `COLLATE NOCASE`: bytes, ASCII letters folded.
 fn nocase_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     a.bytes().map(|c| c.to_ascii_lowercase()).cmp(b.bytes().map(|c| c.to_ascii_lowercase()))
@@ -365,14 +377,11 @@ pub fn set_task_state(markdown: &str, ordinal: usize, done: bool) -> Option<Stri
 }
 
 impl Database {
-    /// Rebuilds the task rows of one page (called from `reindex_page`).
+    /// Brings the task rows of one page up to date (called from `reindex_page`): only rows that
+    /// changed are written (an edit of a long page left its thousands of tasks as they were, yet
+    /// rewrote every row).
     pub(crate) fn reindex_tasks(&self, id: i64, content: &str) -> Result<()> {
         let conn = self.conn();
-        conn.execute("DELETE FROM tasks WHERE page_id = ?1", [id])?;
-        let mut ins = conn.prepare_cached(
-            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags, recur)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        )?;
         let tasks = parse_tasks(content);
         // Tags outside task lines (frontmatter, prose) belong to the page and so to each of its
         // tasks; a tag inside one task does not spread to the others.
@@ -380,20 +389,56 @@ impl Database {
         let prose: Vec<&str> =
             content.lines().enumerate().filter(|(i, _)| !task_lines.contains(i)).map(|(_, l)| l).collect();
         let page_tags = crate::notes::tags(&prose.join("\n"));
-        for t in tasks {
-            let mut tags = t.tags;
-            tags.extend(page_tags.iter().filter(|p| !tags.contains(p)).cloned().collect::<Vec<_>>());
-            ins.execute(params![
-                id,
-                t.ordinal as i64,
-                t.line as i64,
-                t.text,
-                t.done,
-                t.due,
-                t.priority,
-                tags.join(" "),
-                t.recur.as_ref().map(Recurrence::tokens)
-            ])?;
+        let fresh: Vec<TaskRow> = tasks
+            .into_iter()
+            .map(|t| {
+                let mut tags = t.tags;
+                tags.extend(page_tags.iter().filter(|p| !tags.contains(p)).cloned().collect::<Vec<_>>());
+                TaskRow {
+                    line: t.line as i64,
+                    text: t.text,
+                    done: t.done,
+                    due: t.due,
+                    priority: t.priority as i64,
+                    tags: tags.join(" "),
+                    recur: t.recur.as_ref().map(Recurrence::tokens),
+                }
+            })
+            .collect();
+        let stored: Vec<TaskRow> = conn
+            .prepare_cached(
+                "SELECT line, text, done, due, priority, tags, recur FROM tasks WHERE page_id = ?1 ORDER BY ordinal",
+            )?
+            .query_map([id], |r| {
+                Ok(TaskRow {
+                    line: r.get(0)?,
+                    text: r.get(1)?,
+                    done: r.get(2)?,
+                    due: r.get(3)?,
+                    priority: r.get(4)?,
+                    tags: r.get(5)?,
+                    recur: r.get(6)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        if stored == fresh {
+            return Ok(());
+        }
+        let mut put = conn.prepare_cached(
+            "INSERT INTO tasks (page_id, ordinal, line, text, done, due, priority, tags, recur)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(page_id, ordinal) DO UPDATE SET line = excluded.line, text = excluded.text,
+               done = excluded.done, due = excluded.due, priority = excluded.priority, tags = excluded.tags,
+               recur = excluded.recur",
+        )?;
+        for (ordinal, t) in fresh.iter().enumerate() {
+            if stored.get(ordinal) != Some(t) {
+                put.execute(params![id, ordinal as i64, t.line, t.text, t.done, t.due, t.priority, t.tags, t.recur])?;
+            }
+        }
+        if stored.len() > fresh.len() {
+            conn.prepare_cached("DELETE FROM tasks WHERE page_id = ?1 AND ordinal >= ?2")?
+                .execute(params![id, fresh.len() as i64])?;
         }
         Ok(())
     }
@@ -626,6 +671,54 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A long page of tasks (a paste, a restored version, a pulled note): the first save stays
+    /// linear (it was cubic: 10 s in a release build for 2,400 tasks), and a small edit writes
+    /// only what changed (it rewrote every task row).
+    #[test]
+    fn saving_a_page_of_thousands_of_tasks_stays_fast() {
+        let db = Database::open_in_memory().unwrap();
+        let p = db.create_page(None, "Liste", None).unwrap();
+        let tasks: String = (0..2400)
+            .map(|i| format!("- [ ] Aufgabe {i} für das Projekt mit etwas Text due:2026-11-{:02} #liste\n", i % 28 + 1))
+            .collect();
+        let body = format!("Notiz\n{tasks}");
+        let t = std::time::Instant::now();
+        db.save_page_content(p.id, &body).unwrap();
+        let first = t.elapsed();
+        let added: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM activity WHERE kind = 'task_added' AND page_id = ?1", [p.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(added, 2400);
+        // Debug build on a shared machine; the cubic version took 44 s here.
+        assert!(first < std::time::Duration::from_secs(8), "first save {first:?}");
+
+        // One character in the prose: no task row is written.
+        let before = db.conn().total_changes();
+        db.save_page_content(p.id, &format!("Notiz!\n{tasks}")).unwrap();
+        let task_rows = db.conn().total_changes() - before;
+        assert!(task_rows < 100, "{task_rows} rows written");
+        // One task checked off: its row and nothing else of the 2,400.
+        let checked = format!("Notiz!\n{}", tasks.replacen("- [ ] Aufgabe 7 ", "- [x] Aufgabe 7 ", 1));
+        let before = db.conn().total_changes();
+        db.save_page_content(p.id, &checked).unwrap();
+        assert!(db.conn().total_changes() - before < 100);
+        let done: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM tasks WHERE page_id = ?1 AND done = 1", [p.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(done, 1);
+        // Tasks removed: the rows go.
+        db.save_page_content(p.id, "- [ ] nur noch eine\n").unwrap();
+        let rows: Vec<String> = db
+            .list_tasks(&TaskFilter { page_id: Some(p.id), ..Default::default() })
+            .unwrap()
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        assert_eq!(rows, ["nur noch eine"]);
+    }
 
     #[test]
     fn tasks_in_tilde_code_blocks_are_code() {
