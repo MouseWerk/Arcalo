@@ -177,19 +177,24 @@ export function TimerBlock({ refs, compact }: { refs: TimeEntryRow[] | undefined
   if (timer) {
     const e = timer.entry;
     const paused = !!timer.paused_since;
+    // In a narrow column (the Heute widget's side) the buttons go under the clock, never over it.
     return (
       <div className={`dw-timer running${paused ? " paused" : ""}`}>
-        <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
-        <div className="grow dw-timer-main">
-          <span className="num dw-big">
-            <TimerClock />
-          </span>
-          <span className="faint ellipsis">{paused ? t("timer.paused") : e.description || e.vorgang_nr || t("dash.w.timer")}</span>
+        <div className="dw-timer-row">
+          <span className={paused ? "pause-dot" : "rec-dot"} aria-hidden />
+          <div className="dw-timer-main">
+            <span className="num dw-big">
+              <TimerClock />
+            </span>
+            <span className="faint ellipsis">{paused ? t("timer.paused") : e.description || e.vorgang_nr || t("dash.w.timer")}</span>
+          </div>
+          <div className="dw-timer-btns">
+            <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} onClick={() => void toggleTimerPause()} />
+            <Button size="sm" icon={Square} onClick={() => stopTimer()}>
+              {t("dash.stop")}
+            </Button>
+          </div>
         </div>
-        <IconButton icon={paused ? Play : Pause} label={paused ? t("timer.resume") : t("timer.pause")} onClick={() => void toggleTimerPause()} />
-        <Button size="sm" icon={Square} onClick={() => stopTimer()}>
-          {t("dash.stop")}
-        </Button>
       </div>
     );
   }
