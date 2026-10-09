@@ -1332,7 +1332,14 @@ export async function stopTimer() {
     }
     const out = await api.timerStop(subtract);
     const entries = out.entries?.length ? out.entries : [out.entry];
-    if (out.clock_back) s.toast({ tone: "warning", persistent: true, title: tStatic("timer.clockBackTitle"), detail: tStatic("timer.clockBackDetail") });
+    if (out.clock_back)
+      s.toast({
+        tone: "warning",
+        persistent: true,
+        title: tStatic("timer.clockBackTitle"),
+        detail: tStatic("timer.clockBackDetail"),
+        action: { label: tStatic("timer.clockBackOpen"), run: () => useApp.getState().openTab({ kind: "timesheet" }) },
+      });
     else if (out.discarded) s.toast({ tone: "info", title: tStatic("focus.notBooked"), detail: tStatic("timer.underMinute") });
     else if (entries.length > 1)
       // Over midnight: one booking per day.

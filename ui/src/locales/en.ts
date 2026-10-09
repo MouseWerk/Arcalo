@@ -3847,6 +3847,7 @@ export const en = {
   "timer.bookFull": "Book in full",
   "timer.underMinute": "The timer ran for less than a minute.",
   "timer.clockBackTitle": "Timer stopped, duration missing",
+  "timer.clockBackOpen": "Open",
   "timer.clockBackDetail": "The computer's clock was set back behind the timer's start. The booking is in the time sheet without a duration: enter the duration there.",
   "timer.stopFailed": "The timer could not be stopped",
   // ---- aip

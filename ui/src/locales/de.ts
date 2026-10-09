@@ -3844,6 +3844,7 @@ export const de: Catalog = {
   "timer.bookFull": "Voll buchen",
   "timer.underMinute": "Der Timer lief weniger als eine Minute.",
   "timer.clockBackTitle": "Timer gestoppt, Dauer fehlt",
+  "timer.clockBackOpen": "Öffnen",
   "timer.clockBackDetail": "Die Uhr des Computers wurde hinter den Start des Timers zurückgestellt. Die Buchung steht ohne Dauer in der Zeiterfassung: trag die Dauer dort ein.",
   "timer.stopFailed": "Timer konnte nicht gestoppt werden",
   // ---- aip
