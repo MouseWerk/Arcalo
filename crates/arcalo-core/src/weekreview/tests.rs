@@ -440,3 +440,33 @@ fn folders_templates_and_the_report_are_no_pages_worked_on() {
     assert_eq!(r.pages_total, 1);
     assert_eq!(r.report_page_id, Some(report.id));
 }
+
+/// Thousands of open tasks: the week reads them once, cut in SQLite (it ran seven day reviews,
+/// each loading and sorting every open task), with the totals right.
+#[test]
+fn a_week_with_thousands_of_open_tasks_stays_fast() {
+    let db = Database::open_in_memory().unwrap();
+    db.atomic(|| {
+        for p in 0..40 {
+            let page = db.create_page(None, &format!("Liste {p}"), None)?;
+            let body: String = (0..500)
+                .map(|i| format!("- [ ] Aufgabe {p}-{i} due:2026-{:02}-{:02}\n", 1 + i % 10, 1 + i % 28))
+                .collect();
+            db.save_page_content(page.id, &body)?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let t = std::time::Instant::now();
+    let w = week_review(&db, day(2026, 10, 7), &Berlin, &settings(), Some(vec![]), berlin(2026, 10, 9, 12, 0)).unwrap();
+    let took = t.elapsed();
+    // Due 5 to 11 October: days 5..=11 of month 10 (i % 10 == 9), the rest before is overdue.
+    let in_week = (0..500).filter(|i| 1 + i % 10 == 10 && (5..=11).contains(&(1 + i % 28))).count() as i64 * 40;
+    let before = (0..500).filter(|i| 1 + i % 10 < 10 || (1 + i % 28) < 5).count() as i64 * 40;
+    assert_eq!((w.tasks.open_total, w.tasks.overdue_total), (in_week, before));
+    assert_eq!((w.tasks.open.len(), w.tasks.overdue.len()), (MAX_TASKS.min(in_week as usize), MAX_TASKS));
+    assert!(w.tasks.overdue.windows(2).all(|p| p[0].due <= p[1].due), "sorted by due date");
+    // Debug build on a shared machine: about 0.25 s; the eight full task lists of before took
+    // well over a second on their own.
+    assert!(took < std::time::Duration::from_millis(700), "week review {took:?}");
+}
