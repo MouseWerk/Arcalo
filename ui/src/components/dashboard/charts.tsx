@@ -18,6 +18,7 @@ import { PageIcon } from "../icons";
 import { useDash, useWidgetData } from "./data";
 import { Empty, fmt, Loadable, s } from "./common";
 import type { WidgetProps } from "./registry";
+import { isComposing } from "../../lib/ime";
 
 /** The size of an element, live. */
 function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, number, number] {
@@ -399,6 +400,7 @@ function Kanban({ data }: { data: KanbanData }) {
     window.addEventListener("pointerup", onUp);
   };
   const onKey = (e: ReactKeyboardEvent, row: Row, gi: number) => {
+    if (isComposing(e)) return;
     if (e.key === "Enter") s().openPage(row.id);
     if (!e.altKey || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
     e.preventDefault();

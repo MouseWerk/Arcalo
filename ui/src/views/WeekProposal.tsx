@@ -11,6 +11,7 @@ import { NetzplanSelect, VorgangSelect } from "./wbs";
 import { accepted, dayState, dayTotals, edit, gapSummary, initRows, nextRow, overlaps, rowProblem, selectable, setChecked, toggle, wbsKey, type ReviewRow } from "../lib/weekplan";
 import type { ProjectTree, ProposalConfidence, ProposalSourceKind, TimeEntryRow, WeekProposal } from "../lib/types";
 import { t as tr, useT, withLabel, type TKey } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 const CONFIDENCE: Record<ProposalConfidence, { readonly label: string; tone: Tone }> = {
   high: withLabel({ tone: "success" as Tone }, "wp.conf.high"),
@@ -94,6 +95,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
   const focusRow = (id: string | null) => id && listRef.current?.querySelector<HTMLElement>(`.wp-row[data-id="${CSS.escape(id)}"]`)?.focus();
   // Space toggles the focused row, arrows move, Enter takes the selection over.
   const onKey = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     const target = e.target as HTMLElement;
     const row = target.classList.contains("wp-row") ? target.dataset.id ?? null : null;
     if (row && e.key === " ") {
@@ -102,7 +104,7 @@ export function WeekProposalDialog({ week, entries, wbs, onClose }: { week: Date
     } else if (row && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
       focusRow(nextRow(rows.map((r) => r.id), row, e.key === "ArrowDown" ? 1 : -1));
-    } else if (e.key === "Enter" && !e.nativeEvent.isComposing && (row || target.tagName === "INPUT")) {
+    } else if (e.key === "Enter" && (row || target.tagName === "INPUT")) {
       e.preventDefault();
       void apply(rows);
     }

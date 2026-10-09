@@ -13,6 +13,7 @@ import { PageIcon } from "./icons";
 import { Button, Dialog, EmptyState, Input, Spinner } from "./ui";
 import type { Page } from "../lib/types";
 import { currentLang, t as tr, useT } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 type Mode = "insert" | "page";
 interface Pick {
@@ -143,6 +144,7 @@ function TemplatePicker({ req }: { req: Request }) {
     }
   };
   const onKey = (e: { key: string; preventDefault: () => void; stopPropagation: () => void }) => {
+    if (isComposing(e)) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       e.stopPropagation();

@@ -2,6 +2,7 @@
 // and showing shortcuts the way the platform does (macOS: ⌃⌥⇧⌘ glyphs).
 
 import { IS_MAC } from "./platform";
+import { t } from "./i18n";
 
 /**
  * A shortcut from a key press in the recorder field: `"Ctrl+Shift+Space"`, `""` (Entf/Backspace
@@ -58,7 +59,23 @@ const MODS: Record<string, Mod | "mod"> = {
 };
 const MAC_ORDER: Mod[] = ["ctrl", "alt", "shift", "cmd"];
 const MAC_GLYPH: Record<Mod, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
-const NAME: Record<Mod, string> = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", cmd: "Super" };
+/** Modifier names as printed on the keys of the UI language's keyboards (Strg, Umschalt). */
+const NAME: Record<Mod, () => string> = { ctrl: () => t("keys.ctrl"), alt: () => t("keys.alt"), shift: () => t("keys.shift"), cmd: () => "Super" };
+/** Named keys as printed on the keys (Entf, Pos1, Leertaste on German keyboards). */
+const KEY_NAMES: Record<string, () => string> = {
+  enter: () => t("keys.enter"),
+  return: () => t("keys.enter"),
+  delete: () => t("keys.delete"),
+  entf: () => t("keys.delete"),
+  space: () => t("keys.space"),
+  backspace: () => t("keys.backspace"),
+  escape: () => "Esc",
+  esc: () => "Esc",
+  home: () => t("keys.home"),
+  end: () => t("keys.end"),
+  pageup: () => t("keys.pageUp"),
+  pagedown: () => t("keys.pageDown"),
+};
 const MAC_KEYS: Record<string, string> = {
   enter: "↩",
   return: "↩",
@@ -89,22 +106,39 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
     if (m) mods.push(m === "mod" ? (mac ? "cmd" : "ctrl") : m);
     else rest.push(ARROWS[t.toLowerCase()] ?? (t.length === 1 ? t.toUpperCase() : t));
   }
-  if (!mac) return [...mods.map((m) => NAME[m]), ...rest].join(sep);
+  const named = (k: string) => KEY_NAMES[k.toLowerCase()]?.() ?? k;
+  if (!mac) return [...mods.map((m) => NAME[m]()), ...rest.map(named)].join(sep);
   const glyphs = MAC_ORDER.filter((m) => mods.includes(m))
     .map((m) => MAC_GLYPH[m])
     .join("");
-  const key = rest.map((k) => MAC_KEYS[k.toLowerCase()] ?? k).join(" ");
+  const key = rest.map((k) => MAC_KEYS[k.toLowerCase()] ?? named(k)).join(" ");
   // Words (Space, Klick) keep a gap; single keys, glyphs and F-keys follow the modifiers directly.
   const gap = glyphs && [...key].length > 1 && !/^F\d{1,2}$/.test(key) ? " " : "";
   return glyphs + gap + key;
 }
 
-/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS and „Ctrl Shift D“ elsewhere. */
+/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS and „Strg Umschalt D“ (German) elsewhere. */
 export function keys(spec: string, mac = IS_MAC): string {
   return formatShortcut(spec, mac, " ");
 }
 
-/** The primary modifier for labels: „⌘“ on macOS, „Ctrl“ elsewhere. */
+/** The primary modifier for labels: „⌘“ on macOS, „Strg“ (German) or „Ctrl“ elsewhere. */
 export function modLabel(mac = IS_MAC): string {
-  return mac ? "⌘" : "Ctrl";
+  return mac ? "⌘" : t("keys.ctrl");
+}
+
+/**
+ * Find and replace in a note: Ctrl+H, but ⌥⌘F on macOS, where ⌘H hides the app before the page
+ * sees it (Apple's own apps use ⌥⌘F).
+ */
+export function replaceHint(mac = IS_MAC): string {
+  return keys(mac ? "Alt Mod F" : "Mod H", mac);
+}
+
+/** Whether a key press opens find and replace (see `replaceHint`). */
+export function isReplaceKey(e: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">, mac = IS_MAC): boolean {
+  if (e.shiftKey) return false;
+  // Option changes the character (⌥F types ƒ): the key is told by its position.
+  if (mac) return e.metaKey && e.altKey && !e.ctrlKey && e.code === "KeyF";
+  return (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "h";
 }

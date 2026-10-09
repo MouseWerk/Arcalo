@@ -51,6 +51,7 @@ import {
   Unfiltered,
   type SectionProps,
 } from "./common";
+import { isKey } from "../../lib/ime";
 
 const COLORS = [
   "#2563eb",
@@ -256,7 +257,7 @@ export function JiraSection({ draft, update }: SectionProps) {
                     )
                   }
                 />
-                <IconButton
+                <IconButton aria-haspopup="menu"
                   icon={MoreHorizontal}
                   label={t("calset.actionsFor", { name: site.name })}
                   onClick={(e) => openMenuAt(e, siteMenu(site))}
@@ -459,7 +460,7 @@ function Queries({
               aria-label={t("jira.set.jql")}
               className="mono grow"
               spellCheck={false}
-              onKeyDown={(e) => e.key === "Enter" && add()}
+              onKeyDown={(e) => isKey(e, "Enter") && add()}
             />
             <Button icon={Plus} onClick={add} disabled={!jql.trim()}>
               {t("common.add")}

@@ -19,6 +19,7 @@ import { openQuickLinkAt, useQuickLinks } from "../QuickLinks";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, hhmm, hrs, Loadable, s, TaskRow } from "./common";
 import type { WidgetProps } from "./registry";
+import { isKey } from "../../lib/ime";
 
 // ------------------------------------------------------------------ Abfrage
 
@@ -98,7 +99,7 @@ function QueryTable({ q, res }: { q: WidgetQuery; res: QueryResult }) {
         </thead>
         <tbody>
           {res.rows.map((r) => (
-            <tr key={r.key} onClick={(e) => openRow(q, r, e.ctrlKey || e.metaKey)} tabIndex={0} onKeyDown={(e) => e.key === "Enter" && openRow(q, r, false)}>
+            <tr key={r.key} onClick={(e) => openRow(q, r, e.ctrlKey || e.metaKey)} tabIndex={0} onKeyDown={(e) => isKey(e, "Enter") && openRow(q, r, false)}>
               {cells(r).map((c, i) => (
                 <td key={i} className={i === 0 ? "" : "faint"}>
                   {c}

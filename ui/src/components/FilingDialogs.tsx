@@ -9,6 +9,7 @@ import { PageIcon } from "./icons";
 import { useApp } from "../store/app";
 import { t as tr, useT, type TKey } from "../lib/i18n";
 import { filingApi, folderOptions, fuzzyScore, pickFolders, type MoveOutcome, type TidyMove } from "../lib/filing";
+import { isComposing } from "../lib/ime";
 
 const s = useApp.getState;
 
@@ -46,6 +47,8 @@ export function toastMoved(out: MoveOutcome) {
     tone: "success",
     title: tr("fl.moved", { n: out.moved }),
     detail: out.folders ? tr("fl.foldersCreated", { n: out.folders }) : undefined,
+    // Only the last move can be undone: a newer move replaces this toast (its undo would take that one back).
+    key: "move-undo",
     action: { label: tr("fl.undo"), run: () => void undoLastMove() },
   });
 }
@@ -220,6 +223,7 @@ function MoveDialog({ ids, onClose }: { ids: number[]; onClose: () => void }) {
         data-autofocus
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "ArrowDown") (e.preventDefault(), setCursor((c) => Math.min(c + 1, targets.length - 1)));
           else if (e.key === "ArrowUp") (e.preventDefault(), setCursor((c) => Math.max(c - 1, 0)));
           else if (e.key === "Enter") (e.preventDefault(), targets[cursor] && choose(targets[cursor].id));

@@ -10,6 +10,7 @@ import { useT } from "../../lib/i18n";
 import type { Settings } from "../../lib/types";
 import type { HelpTopic } from "../../lib/helpLinks";
 import { openDocs } from "../../components/Help";
+import { isKey } from "../../lib/ime";
 
 export type Update = (p: Partial<Settings>) => void;
 export interface SectionProps {
@@ -142,7 +143,7 @@ export function NumberInput({ value, min, max, step = 1, onCommit, ...rest }: { 
           setEditing(false);
           commit();
         }}
-        onKeyDown={(e) => e.key === "Enter" && commit()}
+        onKeyDown={(e) => isKey(e, "Enter") && commit()}
       />
       {/* While typing: what is allowed (leaving the field brings the value into the range). */}
       {editing && invalid && (
@@ -180,7 +181,7 @@ export function CommitInput({ value, onCommit, validate, ...rest }: { value: str
           if (error) setError(validate?.(e.target.value.trim()) ?? null);
         }}
         onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && commit()}
+        onKeyDown={(e) => isKey(e, "Enter") && commit()}
       />
       {error && (
         <span className="field-error" role="alert">

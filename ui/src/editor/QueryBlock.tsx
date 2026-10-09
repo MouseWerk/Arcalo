@@ -18,6 +18,7 @@ import { escapeHtml } from "../lib/htmlExport";
 import { BarChart } from "../components/dashboard/tools";
 import { PageIcon } from "../components/icons";
 import { track } from "./lazyRender";
+import { isKey } from "../lib/ime";
 
 /** Runs a parsed block: the backend's result with the rows in the block's order. */
 export async function runNoteQuery(nq: NoteQuery): Promise<QueryResult> {
@@ -161,7 +162,7 @@ function Result({ nq, res, reload }: { nq: NoteQuery; res: QueryResult; reload: 
                     className={i === 0 ? "qb-main" : "faint"}
                     onClick={i === 0 ? (e) => openRow(r, e) : undefined}
                     tabIndex={i === 0 && r.page_id != null ? 0 : undefined}
-                    onKeyDown={i === 0 ? (e) => e.key === "Enter" && openRow(r, e) : undefined}
+                    onKeyDown={i === 0 ? (e) => isKey(e, "Enter") && openRow(r, e) : undefined}
                   >
                     {c}
                   </td>

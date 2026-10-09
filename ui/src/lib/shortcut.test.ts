@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatShortcut, keys, modLabel, recordShortcut } from "./shortcut";
+import { formatShortcut, isReplaceKey, keys, modLabel, recordShortcut, replaceHint } from "./shortcut";
+import { setLang } from "./i18n";
 
 const key = (code: string, key: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
   recordShortcut({ code, key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods }, false);
@@ -47,29 +48,51 @@ describe("recordShortcut on macOS", () => {
 
 describe("formatShortcut", () => {
   it("uses glyphs in Apple's order on macOS", () => {
+    expect(formatShortcut("Cmd+Shift+Space", true)).toBe("⇧⌘ Leertaste");
+    setLang("en");
     expect(formatShortcut("Cmd+Shift+Space", true)).toBe("⇧⌘ Space");
+    setLang("de");
     expect(formatShortcut("Ctrl+Shift+K", true)).toBe("⌃⇧K");
     expect(formatShortcut("Super+Alt+k", true)).toBe("⌥⌘K");
     expect(formatShortcut("Meta+Ctrl+Alt+Shift+F9", true)).toBe("⌃⌥⇧⌘F9");
     expect(formatShortcut("Cmd+Enter", true)).toBe("⌘↩");
     expect(formatShortcut("F9", true)).toBe("F9");
   });
-  it("keeps names elsewhere", () => {
-    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
+  it("keeps names elsewhere, as printed on the keys of the UI language's keyboards", () => {
+    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Strg+Umschalt+Leertaste");
+    expect(formatShortcut("Ctrl+Shift+D", false)).toBe("Strg+Umschalt+D");
     expect(formatShortcut("Cmd+K", false)).toBe("Super+K");
+    expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Strg Umschalt K");
+    expect(formatShortcut("Alt+Delete", false, " ")).toBe("Alt Entf");
+    expect(formatShortcut("Shift+Enter", false)).toBe("Umschalt+Eingabe");
+    setLang("en");
+    expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
     expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Ctrl Shift K");
+    expect(formatShortcut("Shift+Enter", false)).toBe("Shift+Enter");
   });
-  it("hints: Mod is ⌘ on macOS and Ctrl elsewhere", () => {
+  it("hints: Mod is ⌘ on macOS and Strg (Ctrl) elsewhere", () => {
     expect(keys("Mod Shift D", true)).toBe("⇧⌘D");
-    expect(keys("Mod Shift D", false)).toBe("Ctrl Shift D");
+    expect(keys("Mod Shift D", false)).toBe("Strg Umschalt D");
     expect(keys("Mod \\", true)).toBe("⌘\\");
-    expect(keys("Mod ,", false)).toBe("Ctrl ,");
+    expect(keys("Mod ,", false)).toBe("Strg ,");
     expect(keys("Mod Enter", true)).toBe("⌘↩");
     expect(keys("Mod Klick", true)).toBe("⌘ Klick");
     expect(keys("Ctrl Tab", true)).toBe("⌃⇥");
-    expect(keys("Mod Shift \\", false)).toBe("Ctrl Shift \\");
+    expect(keys("Mod Shift \\", false)).toBe("Strg Umschalt \\");
     expect(modLabel(true)).toBe("⌘");
+    expect(modLabel(false)).toBe("Strg");
+    setLang("en");
+    expect(keys("Mod Shift D", false)).toBe("Ctrl Shift D");
     expect(modLabel(false)).toBe("Ctrl");
+  });
+  it("find and replace is ⌥⌘F on macOS (⌘H hides the app there) and Ctrl+H elsewhere", () => {
+    expect(replaceHint(true)).toBe("⌥⌘F");
+    expect(replaceHint(false)).toBe("Strg H");
+    const k = (key: string, code: string, m: { ctrl?: boolean; meta?: boolean; alt?: boolean; shift?: boolean }) => ({ key, code, ctrlKey: !!m.ctrl, metaKey: !!m.meta, altKey: !!m.alt, shiftKey: !!m.shift });
+    expect(isReplaceKey(k("ƒ", "KeyF", { meta: true, alt: true }), true)).toBe(true);
+    expect(isReplaceKey(k("h", "KeyH", { meta: true }), true)).toBe(false);
+    expect(isReplaceKey(k("h", "KeyH", { ctrl: true }), false)).toBe(true);
+    expect(isReplaceKey(k("f", "KeyF", { ctrl: true }), false)).toBe(false);
   });
 });
 
@@ -77,6 +100,6 @@ describe("arrow keys", () => {
   it("shows DOM arrow names as arrows on every platform", () => {
     expect(keys("Alt ArrowUp", false)).toBe("Alt ↑");
     expect(keys("Alt ArrowDown", true)).toBe("⌥↓");
-    expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Ctrl+←");
+    expect(formatShortcut("Ctrl+ArrowLeft", false)).toBe("Strg+←");
   });
 });

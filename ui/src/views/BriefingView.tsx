@@ -203,7 +203,13 @@ function Card({ id, title, count, extra, className = "", children }: { id: Brief
             <Icon size={14} />
           </span>
           {label}
-          {count != null && <span className="rv-count num">{count}</span>}
+          {count != null && (
+            <span className="rv-count num">
+              <span className="sr-only"> (</span>
+              {count}
+              <span className="sr-only">)</span>
+            </span>
+          )}
         </h2>
         {extra}
       </div>

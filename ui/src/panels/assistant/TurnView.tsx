@@ -20,6 +20,7 @@ import { useApp } from "../../store/app";
 import { TOOL_ICONS } from "./icons";
 import { copyText, insertIntoPage, saveAnswerAsPage } from "./actions";
 import { useSession } from "./session";
+import { isComposing } from "../../lib/ime";
 
 /** Characters of an answer rendered at a time; „Mehr anzeigen“ adds as many again. */
 export const MAX_SHOWN = 100_000;
@@ -170,10 +171,11 @@ function UserTurn({ turn, editable }: { turn: Extract<Turn, { kind: "user" }>; e
           aria-label={t("chat.editQuestion")}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Escape") {
               e.preventDefault();
               setEditing(false);
-            } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            } else if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               setEditing(false);
               editAndResend(turn.id, draft);
@@ -346,6 +348,7 @@ function AnswerTurn({ turn, last, busy }: { turn: Extract<Turn, { kind: "assista
             openSrc(src);
           }}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             const el = citeOf(e.target);
             const src = el && sources[Number(el.dataset.cite) - 1];
             if (src && (e.key === "Enter" || e.key === " ")) {

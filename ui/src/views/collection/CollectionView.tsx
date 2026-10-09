@@ -49,6 +49,7 @@ import { KIND_ICON, OptionsDialog, Popover, kindMenu, optionsForKind } from "./c
 import { TableView } from "./TableView";
 import { BoardView } from "./BoardView";
 import { t, useT, type TKey } from "../../lib/i18n";
+import { isKey } from "../../lib/ime";
 
 /** What the table and the board get from the view. */
 export interface Ctx {
@@ -307,7 +308,7 @@ export function CollectionView({ pageId, fm, onFm }: { pageId: number; fm: strin
             {t("coll.filter")}
           </Button>
           {view.type === "board" && <BoardGroupSelect ctx={ctx} />}
-          <IconButton
+          <IconButton aria-haspopup="menu"
             icon={Columns3}
             label={t("coll.properties")}
             size="sm"
@@ -514,7 +515,7 @@ function FilterForm({ filter, defs, fields, onChange, onDone }: { filter: Filter
         </span>
       );
     } else {
-      value = <input className="input" autoFocus value={filter.value} aria-label={t("coll.value")} placeholder={t("coll.value")} spellCheck={false} onChange={(e) => onChange({ ...filter, value: e.target.value })} onKeyDown={(e) => e.key === "Enter" && onDone()} />;
+      value = <input className="input" autoFocus value={filter.value} aria-label={t("coll.value")} placeholder={t("coll.value")} spellCheck={false} onChange={(e) => onChange({ ...filter, value: e.target.value })} onKeyDown={(e) => isKey(e, "Enter") && onDone()} />;
     }
   }
   return (

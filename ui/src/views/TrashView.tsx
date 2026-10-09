@@ -11,14 +11,17 @@ import type { TrashEntry, TrashedFile } from "../lib/types";
 import { formatSize } from "../editor/fileEmbed";
 import { t, useT } from "../lib/i18n";
 
-export async function restorePage(id: number, title: string) {
+/** Takes a page back from the trash; true when it is back. */
+export async function restorePage(id: number, title: string): Promise<boolean> {
   const s = useApp.getState();
   try {
     const p = await api.restorePage(id);
     await s.refreshTree();
     s.toast({ tone: "success", title: t("trash.restored"), detail: p.title !== title ? t("trash.restoredAs", { title: p.title }) : title, action: { label: t("file.open"), run: () => s.openPage(p.id) } });
+    return true;
   } catch (e) {
     s.error(t("trash.restoreFailed"), e);
+    return false;
   }
 }
 
@@ -89,10 +92,10 @@ export function TrashView() {
                     {e.parent_title && ` · ${t("trash.from", { title: e.parent_title })}`}
                   </span>
                 </div>
-                <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)}>
+                <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)} aria-label={t("trash.restoreOne", { title: e.title })}>
                   {t("trash.restore")}
                 </Button>
-                <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => purge(e)} />
+                <IconButton icon={X} label={t("trash.deleteOne", { title: e.title })} size="md" onClick={() => purge(e)} />
               </div>
             ))}
           </div>
@@ -142,10 +145,10 @@ function FileTrash() {
                 {t("trash.deletedWhen", { when: relative(f.deleted_at) })} · {formatSize(f.size)}
               </span>
             </div>
-            <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)}>
+            <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)} aria-label={t("trash.restoreOne", { title: f.name })}>
               {t("trash.restore")}
             </Button>
-            <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => void purge(f)} />
+            <IconButton icon={X} label={t("trash.deleteOne", { title: f.name })} size="md" onClick={() => void purge(f)} />
           </div>
         ))}
       </div>

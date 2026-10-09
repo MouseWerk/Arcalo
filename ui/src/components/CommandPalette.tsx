@@ -53,6 +53,7 @@ import { startFirstRun } from "../onboarding/state";
 import { openDocs, openIssueForm, showShortcuts, showVersionNotes } from "./Help";
 import { newChat, openChatView, showHistory } from "../store/chat";
 import { startVoice, stopVoice, useVoice } from "../lib/voice";
+import { isComposing } from "../lib/ime";
 
 /** Palette commands of the time tracking (hidden when „Zeiterfassung verwenden“ is off). */
 
@@ -95,6 +96,21 @@ export function CommandPalette() {
       setTimeout(() => input.current?.focus(), 10);
     }
   }, [open, initial]);
+  // The focus goes back where it was (the editor's caret, a tree row) when the palette closes,
+  // unless the chosen command put it somewhere else.
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement;
+    return () => {
+      const back = () => {
+        const now = document.activeElement;
+        if (now && now !== document.body && !now.closest(".palette")) return;
+        if (opener instanceof HTMLElement && opener.isConnected && opener.offsetParent !== null) opener.focus({ preventScroll: true });
+      };
+      // After the command ran and React drew what it opened.
+      requestAnimationFrame(() => requestAnimationFrame(back));
+    };
+  }, [open]);
 
   const query = q.trim();
   const exactOnly = useExactOnly();
@@ -396,13 +412,14 @@ export function CommandPalette() {
               setSel(0);
             }}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "ArrowDown") {
                 e.preventDefault();
                 setSel((v) => (v + 1) % Math.max(items.length, 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setSel((v) => (v - 1 + items.length) % Math.max(items.length, 1));
-              } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              } else if (e.key === "Enter") {
                 e.preventDefault();
                 run(sel, e.ctrlKey || e.metaKey);
               } else if (e.key === "Escape") {

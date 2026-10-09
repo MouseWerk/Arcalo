@@ -15,6 +15,7 @@ import type { CaInfo, CertDetails, NetworkSettings, NetworkStatus, NetworkTest, 
 import { CommitInput, Group, NumberInput, Row, SectionHead, Unfiltered, type SectionProps } from "./common";
 import { checkProxy, checkUrl } from "../../lib/settingsApply";
 import { DEFAULT_PROFILE, addProfile, duplicateProfile, fingerprint, pacTargets, removeProfile, routeOf, routeText, setRoute, trustCertificate, untrust, updateProfile } from "../../lib/network";
+import { isKey } from "../../lib/ime";
 
 /** Evaluates the PAC of every PAC profile for the app's hosts and returns the settings with the answers. */
 export async function withPacResults(s: Settings): Promise<Settings> {
@@ -510,7 +511,7 @@ function ProfileEditor({
                 autoComplete="off"
                 spellCheck={false}
                 disabled={locked}
-                onKeyDown={(e) => e.key === "Enter" && password && savePassword(password)}
+                onKeyDown={(e) => isKey(e, "Enter") && password && savePassword(password)}
               />
               <IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowPassword(!showPassword)} />
             </div>

@@ -13,6 +13,7 @@ import { useT } from "../../lib/i18n";
 import { CAL_COLORS, KIND_LABEL, rowStatus } from "../../lib/outlookcal";
 import type { CalendarStatus, OutlookCalendarRow } from "../../lib/types";
 import { StatusNote } from "./common";
+import { isKey } from "../../lib/ime";
 
 /** Discovery runs by itself once per session when the section first shows. */
 let autoDiscovered = false;
@@ -136,7 +137,7 @@ export function OutlookCalendars({ status, setStatus }: { status: CalendarStatus
           <span>{t("olcal.people")}</span>
         </div>
         <div className="olcal-people-add">
-          <Input value={person} onChange={(e) => setPerson(e.target.value)} placeholder={t("olcal.peoplePlaceholder")} aria-label={t("olcal.people")} spellCheck={false} onKeyDown={(e) => e.key === "Enter" && addPerson()} />
+          <Input value={person} onChange={(e) => setPerson(e.target.value)} placeholder={t("olcal.peoplePlaceholder")} aria-label={t("olcal.people")} spellCheck={false} onKeyDown={(e) => isKey(e, "Enter") && addPerson()} />
           <Button icon={Plus} onClick={addPerson} disabled={!person.trim() || d.running}>
             {t("olcal.open")}
           </Button>

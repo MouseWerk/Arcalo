@@ -90,7 +90,7 @@ function ProjectCard({ project, overview, open }: { project: ProjectTree; overvi
         <Button size="sm" icon={Plus} variant="ghost" onClick={() => open({ kind: "netzplan", projectId: project.id })}>
           {t("wbs.netzplan")}
         </Button>
-        <IconButton
+        <IconButton aria-haspopup="menu"
           icon={MoreHorizontal}
           label={t("proj.actions")}
           onClick={(e) =>
@@ -166,7 +166,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
         <div className="netzplan-actions">
           <IconButton icon={Play} label={t("proj.timerNetzplan")} onClick={() => startTimer(null)} />
           <IconButton icon={Plus} label={t("proj.addVorgang")} onClick={() => open({ kind: "vorgang", netzplan })} />
-          <IconButton
+          <IconButton aria-haspopup="menu"
             icon={MoreHorizontal}
             label={t("proj.netzplanActions")}
             onClick={(e) =>
@@ -194,7 +194,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
       </div>
       {netzplan.vorgaenge.length > 0 && (
         <SideScroll label={t("proj.tableScroll")} moreLabel={t("proj.moreColumns")}>
-          <table className="table vorgaenge">
+          <table className="table vorgaenge" aria-label={t("proj.vorgaengeOf", { name: netzplan.netzplan_nr })}>
             <colgroup>
               <col />
               <col style={{ width: 124 }} />
@@ -207,14 +207,22 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
             </colgroup>
             <thead>
               <tr>
-                <th>{t("wbs.vorgang")}</th>
-                <th>{t("proj.col.schedule")}</th>
-                <th className="num">{t("proj.col.plan")}</th>
-                <th className="num">{t("calv.booked")}</th>
-                <th className="num">{t("proj.col.rest")}</th>
-                <th className="budget-col">{t("proj.col.progress")}</th>
-                <th>{t("upd.status")}</th>
-                <th />
+                <th scope="col">{t("wbs.vorgang")}</th>
+                <th scope="col">{t("proj.col.schedule")}</th>
+                <th scope="col" className="num">
+                  {t("proj.col.plan")}
+                </th>
+                <th scope="col" className="num">
+                  {t("calv.booked")}
+                </th>
+                <th scope="col" className="num">
+                  {t("proj.col.rest")}
+                </th>
+                <th scope="col" className="budget-col">
+                  {t("proj.col.progress")}
+                </th>
+                <th scope="col">{t("upd.status")}</th>
+                <th scope="col" aria-label={t("ribbon.actions")} />
               </tr>
             </thead>
             <tbody>
@@ -224,9 +232,9 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                 const lv = b ? LEVEL[b.level] : LEVEL.ok;
                 return (
                   <tr key={v.id} onDoubleClick={() => open({ kind: "vorgang", netzplan, vorgang: v })}>
-                    <td>
+                    <th scope="row">
                       <span className="mono strong vg-nr">{v.vorgang_nr}</span> {v.description}
-                    </td>
+                    </th>
                     <td className="small nowrap">
                       {node ? (
                         <span title={t("proj.scheduleTitle", { faz: node.faz, fez: node.fez, saz: node.saz, sez: node.sez })}>

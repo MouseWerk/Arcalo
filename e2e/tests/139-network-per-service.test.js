@@ -43,7 +43,7 @@ const site = (p = {}) => ({ id: "corp", name: "Corp Jira", color: "", kind: "ser
 const row = (key) => `.net-svc[data-service="${key}"]`;
 const openNetwork = async () => {
   await app.dismissToasts();
-  const onSettings = await app.browser.execute(() => !!document.querySelector(".settings-nav"));
+  const onSettings = await app.browser.execute(() => !!document.querySelector(".pane-content:not([hidden]) .settings-nav"));
   if (!onSettings) await app.keys(["Control", ","]);
   // Opened afresh, so sites added since appear in the table.
   else await app.click('.settings-nav-item[data-section="appearance"]');

@@ -32,6 +32,7 @@ import { BlockDetail, BlockItem, DropGhost, deleteBlock, saveBlock, useBlocks } 
 import { blockIdOf, blockKey, blockMinutes, canPlan, dropRange, linkOf, minuteAt, plannedMinutes, readPlanData, type PlanItem } from "../lib/blocks";
 import type { BlockPatch, FocusBlock } from "../lib/types";
 import { PrepActions } from "../components/MeetingWork";
+import { isComposing } from "../lib/ime";
 
 /** Pixels per hour in the time grid. */
 const HOUR = 48;
@@ -89,6 +90,34 @@ export function CalendarView() {
   const [now, setNow] = useState(() => new Date());
   const { wbs, las } = useWbs();
   const root = useRef<HTMLDivElement>(null);
+  // Chosen with the keyboard, the details take the focus; closed, it goes back to the event.
+  const byKeys = useRef(false);
+  useEffect(() => {
+    const keys = () => (byKeys.current = true);
+    const pointer = () => (byKeys.current = false);
+    window.addEventListener("keydown", keys, true);
+    window.addEventListener("pointerdown", pointer, true);
+    return () => {
+      window.removeEventListener("keydown", keys, true);
+      window.removeEventListener("pointerdown", pointer, true);
+    };
+  }, []);
+  const shownBefore = useRef(selected);
+  useEffect(() => {
+    const was = shownBefore.current;
+    shownBefore.current = selected;
+    if (selected === was) return;
+    const box = root.current;
+    if (selected && byKeys.current) {
+      requestAnimationFrame(() => box?.querySelector<HTMLElement>(".calv-detail h2, .calv-detail .calv-block-name")?.focus());
+    } else if (!selected && was) {
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (at && at !== document.body && at.isConnected) return;
+        box?.querySelector<HTMLElement>(`[data-key="${CSS.escape(was)}"]`)?.focus();
+      });
+    }
+  }, [selected]);
   // Without a calendar the grid can still be used for focus blocks alone (remembered).
   const [planOnly, setPlanOnly] = useState(() => stored("arcalo.calendar.planOnly", ["1", "0"] as const, "0") === "1");
   const s = useApp.getState;
@@ -207,6 +236,7 @@ export function CalendarView() {
   keyState.current = { selected, go, today, setView };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       const el = root.current;
       const focused = document.activeElement as HTMLElement | null;
       if (!el || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -537,6 +567,11 @@ function EventMarks({ e, booked }: { e: CalendarEvent; booked: Booked }) {
 
 const startTime = (e: CalendarEvent) => timeRange(e).slice(0, 5);
 
+/** „Montag, 5. Oktober“: names the day of a column and of the buttons that act on one day. */
+function dayLabel(d: Date, l = dateLocale()) {
+  return d.toLocaleDateString(l, { weekday: "long", day: "numeric", month: "long" });
+}
+
 function evLabel(e: CalendarEvent, booked: Booked) {
   const parts = [e.title, timeRange(e), e.location, booked.get(e.key) ? tr("review.meeting.booked") : e.skip ? tr("review.meeting.skipped") : ""].filter(Boolean);
   return parts.join(", ");
@@ -547,16 +582,17 @@ function DayHead({ d, ov, planned, onDay }: { d: Date; ov: DayOverview | undefin
   const iso = isoDay(d);
   const isToday = iso === isoDay(new Date());
   const l = dateLocale();
+  const dayName = dayLabel(d, l);
   return (
     <div className={`calv-dayhead ${isToday ? "today" : ""}`} data-date={iso}>
-      <button type="button" className="calv-dayhead-date" onClick={() => onDay(d)} aria-label={t("calv.showDay", { day: d.toLocaleDateString(l, { weekday: "long", day: "numeric", month: "long" }) })}>
+      <button type="button" className="calv-dayhead-date" onClick={() => onDay(d)} aria-label={t("calv.showDay", { day: dayName })}>
         <span className="calv-wd">{d.toLocaleDateString(l, { weekday: "short" }).replace(".", "")}</span>
         <span className="calv-dn">{d.getDate()}</span>
       </button>
       <div className="calv-dayhead-info">
         <DayOffChip date={iso} />
         {ov?.has_note && (
-          <button type="button" className="calv-chip-btn" onClick={() => void openDailyNote(iso)} data-tooltip={t("calv.openDaily")} aria-label={t("calv.openDaily")}>
+          <button type="button" className="calv-chip-btn" onClick={() => void openDailyNote(iso)} data-tooltip={t("calv.openDaily")} aria-label={t("calv.openDailyDay", { day: dayName })}>
             <FileText size={12} aria-hidden />
           </button>
         )}
@@ -585,7 +621,7 @@ function DayHead({ d, ov, planned, onDay }: { d: Date; ov: DayOverview | undefin
           </span>
         )}
         {iso <= isoDay(new Date()) && (
-          <button type="button" className="calv-chip-btn calv-review-btn" onClick={(e) => openDayReview(iso, { newTab: e.ctrlKey || e.metaKey })} data-tooltip={t("ribbon.review")} aria-label={t("ribbon.review")}>
+          <button type="button" className="calv-chip-btn calv-review-btn" onClick={(e) => openDayReview(iso, { newTab: e.ctrlKey || e.metaKey })} data-tooltip={t("ribbon.review")} aria-label={t("calv.reviewDay", { day: dayName })}>
             <Sunset size={12} aria-hidden />
           </button>
         )}
@@ -652,7 +688,7 @@ function TimeGrid(props: {
               return (
                 <div key={isoDay(d)} className="calv-allday-cell">
                   {list.map((e) => (
-                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected, cal, now)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)}>
+                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected, cal, now)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)} aria-expanded={selected === e.key} aria-controls={selected === e.key ? "calv-detail" : undefined} data-key={e.key}>
                       <span className="calv-ev-title">{e.title}</span>
                       <span className="calv-ev-marks">
                         <EventMarks e={e} booked={booked} />
@@ -690,6 +726,9 @@ function TimeGrid(props: {
               <div
                 key={iso}
                 className={`calv-col ${weekend ? "weekend" : ""} ${iso === todayIso ? "today" : ""} ${lane.length ? "has-lane" : ""} ${dropAt?.iso === iso ? "dropping" : ""}`}
+                // The day of the events in it (the event buttons say only their time).
+                role="group"
+                aria-label={dayLabel(d)}
                 data-date={iso}
                 onDragOver={(e) => {
                   if (!canPlan([...e.dataTransfer.types])) return;
@@ -749,6 +788,8 @@ function TimeGrid(props: {
                         style={{ ...style, "--lines": fit.titleLines } as CSSProperties}
                         onClick={() => onSelect(e.key)}
                         aria-label={evLabel(e, booked)}
+                        aria-expanded={selected === e.key}
+                        aria-controls={selected === e.key ? "calv-detail" : undefined}
                         data-key={e.key}
                       >
                         <span className="calv-ev-title">{e.title}</span>
@@ -865,6 +906,9 @@ function MonthGrid(props: {
                       style={eventStyle(e, cal)}
                       onClick={() => onSelect(e.key)}
                       aria-label={evLabel(e, booked)}
+                      aria-expanded={selected === e.key}
+                      aria-controls={selected === e.key ? "calv-detail" : undefined}
+                      data-key={e.key}
                     >
                       {!isAllDayLike(e) && <span className="calv-mev-time">{startTime(e)}</span>}
                       <span className="calv-ev-title">{e.title}</span>
@@ -946,6 +990,9 @@ function AgendaList({ range, events, blocks, cal, booked, selected, onSelect }: 
               style={eventStyle(e, cal)}
               onClick={() => onSelect(e.key)}
               aria-label={evLabel(e, booked)}
+              aria-expanded={selected === e.key}
+              aria-controls={selected === e.key ? "calv-detail" : undefined}
+              data-key={e.key}
             >
               <span className="calv-agenda-time">{timeRange(e)}</span>
               <span className="calv-agenda-bar" aria-hidden />
@@ -996,7 +1043,7 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
   const calendar = cal?.outlook_calendars?.find((c) => c.id === e.source);
   const past = !e.all_day && end.getTime() <= Date.now();
   return (
-    <aside className="calv-detail" aria-label={t("cal.appointment")} style={eventStyle(e, cal)}>
+    <aside className="calv-detail" id="calv-detail" aria-label={t("cal.appointment")} style={eventStyle(e, cal)}>
       <div className="calv-detail-head">
         <span className="calv-detail-source">
           <span className="calv-dot" aria-hidden />
@@ -1005,7 +1052,9 @@ function EventDetail({ event: e, cal, booked, timeOn, onClose, onBook, onNote, o
         <IconButton icon={X} label={t("calv.closeEsc")} size="sm" onClick={onClose} />
       </div>
       <div className="calv-detail-top">
-        <h2 className="calv-detail-title">{e.title}</h2>
+        <h2 className="calv-detail-title" tabIndex={-1}>
+          {e.title}
+        </h2>
         <div className="calv-detail-when">
           <span>{when}</span>
           {e.recurring && (

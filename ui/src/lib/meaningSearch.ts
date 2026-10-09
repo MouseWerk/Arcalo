@@ -55,6 +55,8 @@ export const isSimilar = (h: SearchHit): h is Extract<SearchHit, { kind: "simila
 export function useMeaningSearch(query: string, limit: number, opts: { enabled: boolean; exact: boolean; delay: number }) {
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [meaning, setMeaning] = useState(false);
+  // The query the hits answer (typing on, they belong to an older one until the next answer).
+  const [answered, setAnswered] = useState<string | null>(null);
   const { enabled, exact, delay } = opts;
   useEffect(() => {
     if (!enabled) {
@@ -70,6 +72,7 @@ export function useMeaningSearch(query: string, limit: number, opts: { enabled: 
           if (!alive) return;
           setHits(h);
           setMeaning(false);
+          setAnswered(query);
           if (exact) return;
           api
             .searchSemantic(query, limit)
@@ -87,5 +90,5 @@ export function useMeaningSearch(query: string, limit: number, opts: { enabled: 
       clearTimeout(t);
     };
   }, [query, limit, enabled, exact, delay]);
-  return { hits, meaning };
+  return { hits, meaning, answered };
 }

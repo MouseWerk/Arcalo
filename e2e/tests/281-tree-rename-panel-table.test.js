@@ -162,7 +162,7 @@ test("the Projekte table in a narrow pane shows that more columns follow and scr
     app.browser.execute(() => {
       const wrap = document.querySelector(".pane.active .side-scroll");
       const box = wrap.querySelector(".table-wrap");
-      const first = box.querySelector(".vorgaenge tbody td:first-child");
+      const first = box.querySelector(".vorgaenge tbody tr > :first-child");
       return {
         right: wrap.classList.contains("more-right"),
         left: wrap.classList.contains("more-left"),

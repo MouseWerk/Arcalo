@@ -101,9 +101,9 @@ function PlanPicker({ item, onClose }: { item: PlanItem; onClose: () => void }) 
         ) : slots.length === 0 ? (
           <p className="plan-picker-none faint">{t("blocks.noSlots")}</p>
         ) : (
-          <div className="plan-slots" role="list" aria-label={t("blocks.slots")}>
+          <div className="plan-slots" role="group" aria-label={t("blocks.slots")}>
             {slots.map((s) => (
-              <button key={s} type="button" role="listitem" className="plan-slot" disabled={busy} onClick={() => void plan(s)}>
+              <button key={s} type="button" className="plan-slot" disabled={busy} onClick={() => void plan(s)}>
                 <CalendarClock size={13} aria-hidden />
                 <span className="num">
                   {time(s)}–{time(new Date(new Date(s).getTime() + minutes * 60_000).toISOString())}

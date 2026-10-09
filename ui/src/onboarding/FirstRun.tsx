@@ -4,7 +4,9 @@
 import { useEffect, useRef } from "react";
 import { Intake } from "./Intake";
 import { Intro } from "./Intro";
-import { startIntake, useFirstRun } from "./state";
+import { finishFirstRun, startIntake, useFirstRun } from "./state";
+import { focusMain } from "../lib/regions";
+import { isComposing } from "../lib/ime";
 
 export function FirstRun() {
   const phase = useFirstRun((s) => s.phase);
@@ -12,11 +14,15 @@ export function FirstRun() {
   const box = useRef<HTMLDivElement>(null);
   const active = phase !== "off" && !paused;
 
-  // The element that had the focus gets it back afterwards.
+  // The element that had the focus gets it back afterwards; at the first start (nothing had it)
+  // the page behind does, so the next Tab does not start at the window's edge.
   useEffect(() => {
     if (!active) return;
     const prev = document.activeElement as HTMLElement | null;
-    return () => prev?.focus?.();
+    return () => {
+      if (prev && prev !== document.body && prev.isConnected) prev.focus();
+      else requestAnimationFrame(() => focusMain());
+    };
   }, [active]);
 
   if (!active) return null;
@@ -25,6 +31,12 @@ export function FirstRun() {
     // A dialog opened from a step (provider, confirm) is portaled out and handles its own keys.
     if (!el || !el.contains(e.target as Node)) return;
     e.stopPropagation();
+    // Escape in the setup is „Einrichtung beenden“: the answers so far are kept (each step saves).
+    if (e.key === "Escape" && phase === "intake" && !e.defaultPrevented && !isComposing(e)) {
+      e.preventDefault();
+      void finishFirstRun();
+      return;
+    }
     if (e.key !== "Tab") return;
     const all = [...el.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]")].filter(
       (x) => x.tabIndex >= 0 && !(x as HTMLButtonElement).disabled && x.offsetParent !== null,

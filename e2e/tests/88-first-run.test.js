@@ -39,8 +39,15 @@ async function tabTo(sel, max = 60) {
   }
   throw new Error(`Tab never reached ${sel} (at ${await active()})`);
 }
-/** Focuses `sel` with Tab and presses Enter. */
+/**
+ * Focuses `sel` with Tab and presses Enter. A choice card is one of a radio group: Tab reaches the
+ * group (its chosen card), the arrows move to the card (and choose it), as with native radios.
+ */
 async function press(sel, key = "Enter") {
+  if (sel.startsWith("[data-choice=")) {
+    await tabTo(`.fr-choices:has(${sel}) [role="radio"][tabindex="0"]`);
+    for (let i = 0; i < 8 && !(await app.browser.execute((s) => !!document.activeElement?.matches(s), sel)); i++) await app.keys(["ArrowDown"]);
+  }
   await tabTo(sel);
   await app.keys([key]);
 }

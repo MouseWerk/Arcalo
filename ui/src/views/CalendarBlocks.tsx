@@ -13,6 +13,7 @@ import { hm } from "../lib/focus";
 import { openFocusDialog } from "../components/Focus";
 import { openIssue } from "../lib/jiraActions";
 import type { BlockPatch, FocusBlock } from "../lib/types";
+import { isComposing } from "../lib/ime";
 
 /** The blocks of `from..to`, reloaded when they change anywhere; `patch` updates one at once (before the save). */
 export function useBlocks(from: Date, to: Date, version: number) {
@@ -129,6 +130,7 @@ export function BlockItem(props: {
   };
 
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isComposing(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     let p: BlockPatch | null = null;
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -228,7 +230,7 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
   };
 
   return (
-    <aside className="calv-detail calv-block-detail" aria-label={t("blocks.title")}>
+    <aside className="calv-detail calv-block-detail" id="calv-detail" aria-label={t("blocks.title")}>
       <div className="calv-detail-head">
         <span className="calv-detail-source">
           <span className="calv-block-swatch" aria-hidden />
@@ -244,6 +246,7 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
           onChange={(e) => setTitle(e.target.value)}
           onBlur={rename}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Enter") (e.preventDefault(), rename(), (e.target as HTMLInputElement).blur());
             if (e.key === "Escape") (e.stopPropagation(), setTitle(b.title));
           }}

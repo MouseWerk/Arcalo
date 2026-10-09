@@ -1,7 +1,7 @@
 // Right-click on an image in a note: size (`![[bild.png|480]]`), full view, open in its app or
 // in the file manager, copy the image or the embed, remove it.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -11,6 +11,7 @@ import { IconButton } from "../components/ui";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { t, type TKey } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 const SIZES: { label: TKey; width: number | null }[] = [
   { label: "img.small", width: 240 },
@@ -82,13 +83,30 @@ export function imageMenu(editor: Editor, pos: number, img: HTMLImageElement, vi
 
 /** Full view of an image; Esc or a click closes it. */
 export function ImageViewer({ src, name, onClose }: { src: string; name: string; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), onClose());
+    const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
+      if (e.key === "Escape") (e.stopPropagation(), onClose());
+      // Like a dialog: the focus stays on the full view (its only control is „Schließen“).
+      else if (e.key === "Tab") {
+        e.preventDefault();
+        box.current?.querySelector<HTMLElement>("button")?.focus();
+      }
+    };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
+  // The close button takes the focus; it goes back where it was afterwards.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    box.current?.querySelector<HTMLElement>("button")?.focus();
+    return () => {
+      if (prev?.isConnected) prev.focus({ preventScroll: true });
+    };
+  }, []);
   return createPortal(
-    <div className="image-viewer" role="dialog" aria-label={name} onClick={onClose}>
+    <div className="image-viewer" role="dialog" aria-modal="true" aria-label={name} onClick={onClose} ref={box}>
       <img src={src} alt={name} onClick={(e) => e.stopPropagation()} />
       <div className="image-viewer-bar" onClick={(e) => e.stopPropagation()}>
         <span className="image-viewer-name">{name}</span>

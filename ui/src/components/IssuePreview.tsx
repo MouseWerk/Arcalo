@@ -9,6 +9,7 @@ import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
 import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { fmtDate } from "../lib/format";
 import { t } from "../lib/i18n";
+import { isKey } from "../lib/ime";
 
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
 
@@ -62,7 +63,7 @@ export function IssuePreview() {
       window.clearTimeout(timer.current);
       setShown(null);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && hide();
+    const onKey = (e: KeyboardEvent) => isKey(e, "Escape") && hide();
     const onDown = (e: MouseEvent) => !card.current?.contains(e.target as Node) && hide();
     window.addEventListener("mouseover", onOver);
     window.addEventListener("mouseout", onOut);

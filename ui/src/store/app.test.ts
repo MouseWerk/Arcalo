@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import type { PageNode } from "../lib/types";
-import { useApp } from "./app";
+import { trimToasts, useApp } from "./app";
 
 const node = (id: number, title: string): PageNode => ({ id, title, parent_id: null, children: [] }) as unknown as PageNode;
 
@@ -154,5 +154,41 @@ describe("pinned tabs", () => {
     const moved = useApp.getState().panes.find((p) => p.id === right.id)!;
     expect(moved.tabs.map((t) => `${t.kind}${t.pinned ? "*" : ""}`)).toEqual(["calendar*", "tasks"]);
     expect(useApp.getState().panes[0].tabs.map((t) => t.id)).toEqual([leftTasks]);
+  });
+});
+
+describe("toasts during a focus session", () => {
+  it("show an answer with „Rückgängig“ right away and hold plain messages for the summary", () => {
+    useApp.setState({ toasts: [], heldToasts: [], focus: { phase: "work" } as never });
+    const s = useApp.getState();
+    s.toast({ tone: "success", title: "Seite gelöscht", action: { label: "Rückgängig", run: () => {} } });
+    s.toast({ tone: "info", title: "Sicherung fertig" });
+    expect(useApp.getState().toasts.map((t) => t.title)).toEqual(["Seite gelöscht"]);
+    expect(useApp.getState().heldToasts.map((t) => t.title)).toEqual(["Sicherung fertig"]);
+    useApp.setState({ toasts: [], heldToasts: [], focus: null });
+  });
+});
+
+describe("trimToasts", () => {
+  it("lets plain messages give way before an older „Rückgängig“", () => {
+    const undo = { id: 1, tone: "success" as const, title: "Gelöscht", action: { label: "Rückgängig", run: () => {} } };
+    const plain = (id: number) => ({ id, tone: "info" as const, title: `Info ${id}` });
+    expect(trimToasts([undo, plain(2), plain(3), plain(4)]).map((t) => t.id)).toEqual([1, 3, 4]);
+    // Only action toasts: the oldest goes, the newest always stays; persistent ones do not count.
+    const acts = [1, 2, 3, 4].map((id) => ({ ...undo, id }));
+    expect(trimToasts([{ ...plain(9), persistent: true }, ...acts]).map((t) => t.id)).toEqual([9, 2, 3, 4]);
+  });
+});
+
+describe("confirm", () => {
+  it("a second question cancels the first one instead of leaving it pending", async () => {
+    const s = useApp.getState();
+    const first = s.confirm({ title: "A", message: "a" });
+    const second = s.confirm({ title: "B", message: "b" });
+    expect(await first).toBe(false);
+    expect(useApp.getState().confirmRequest?.title).toBe("B");
+    useApp.getState().confirmRequest!.resolve("confirm");
+    expect(await second).toBe(true);
+    expect(useApp.getState().confirmRequest).toBeNull();
   });
 });

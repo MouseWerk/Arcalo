@@ -13,6 +13,7 @@ import { pickDate } from "../../components/CalendarPopover";
 import { COLORS, colorLabels, colorIndex, hasOptions, kindLabel, writeFromText, type Cell, type CellWrite, type PropDef, type PropKind, type SelectOption } from "../../lib/collection";
 import { decimal } from "../../lib/format";
 import { t, useT } from "../../lib/i18n";
+import { isComposing, isKey } from "../../lib/ime";
 
 export const KIND_ICON: Record<PropKind, LucideIcon> = {
   text: Type,
@@ -128,6 +129,7 @@ export function Popover({ anchor, onClose, children, className = "", label }: { 
       close.current();
     };
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       if (e.key === "Escape" && !document.querySelector(".calendar, .select-pop")) {
         e.preventDefault();
         e.stopPropagation();
@@ -200,6 +202,7 @@ export function OptionPicker({
             setSel(0);
           }}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               if (count) setSel((s) => (s + (e.key === "ArrowDown" ? 1 : count - 1)) % count);
@@ -325,6 +328,7 @@ export function ComboInput({
         }}
         onBlur={() => commit(draft)}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           const n = items?.length ?? 0;
           if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) {
             e.preventDefault();
@@ -531,7 +535,7 @@ export function OptionsDialog({ def, onClose, onSave }: { def: PropDef; onClose:
               aria-invalid={(!!r.name.trim() && names.indexOf(r.name.trim().toLowerCase()) !== i) || undefined}
               spellCheck={false}
               onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-              onKeyDown={(e) => e.key === "Enter" && !dup && save()}
+              onKeyDown={(e) => isKey(e, "Enter") && !dup && save()}
             />
             <IconButton icon={ArrowUp} label={t("common.up")} size="sm" disabled={i === 0} onClick={() => move(i, -1)} />
             <IconButton icon={ArrowDown} label={t("common.down")} size="sm" disabled={i === rows.length - 1} onClick={() => move(i, 1)} />

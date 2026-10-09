@@ -15,6 +15,7 @@ import { appendMarkdown } from "../editor/ai-insert";
 import { toMarkdown } from "../editor/schema";
 import { useT } from "../lib/i18n";
 import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes";
+import { useAi } from "../lib/aiswitch";
 
 interface Props {
   page: { id: number; title: string };
@@ -26,7 +27,9 @@ interface Props {
 }
 
 export function MeetingSummaryDialog({ open, ...props }: Props & { open: boolean }) {
-  return open ? <SummaryDialog {...props} /> : null;
+  // „KI verwenden“ off: no summary (and no „KI einrichten“ in its place).
+  const ai = useAi();
+  return open && ai ? <SummaryDialog {...props} /> : null;
 }
 
 function SummaryDialog({ page, reference, getEditor, flush, onClose }: Props) {

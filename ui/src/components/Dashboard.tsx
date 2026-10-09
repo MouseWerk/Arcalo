@@ -50,6 +50,7 @@ import { BoardContext } from "./dashboard/board";
 import { bodyOf, iconOf, openerOf } from "./dashboard/registry";
 import { Gallery } from "./dashboard/Gallery";
 import { WidgetSettings } from "./dashboard/WidgetSettings";
+import { isComposing } from "../lib/ime";
 
 const s = useApp.getState;
 
@@ -230,6 +231,8 @@ export function Dashboard() {
 
   return (
     <section className={`dash ${editing ? "editing" : ""}`} aria-label={tr("dash.label")}>
+      {/* The page heading for screen readers: the start page and its board (the greeting is a widget). */}
+      <h1 className="sr-only">{dash.boards.length > 1 ? `${tr("dash.label")}: ${board.name}` : tr("dash.label")}</h1>
       <div className="dash-top">
         <div className="dash-tabs" role="tablist" aria-label={tr("dash.boards")}>
           {dash.boards.map((b, i) =>
@@ -243,6 +246,7 @@ export function Dashboard() {
                 onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => renameBoard(b.id, e.currentTarget.value)}
                 onKeyDown={(e) => {
+                  if (isComposing(e)) return;
                   if (e.key === "Enter") renameBoard(b.id, e.currentTarget.value);
                   if (e.key === "Escape") setRenaming(null);
                 }}
@@ -292,7 +296,7 @@ export function Dashboard() {
               </button>
             ),
           )}
-          <IconButton icon={Plus} size="sm" label={tr("dash.board.add")} onClick={newBoardMenu} />
+          <IconButton icon={Plus} size="sm" label={tr("dash.board.add")} onClick={newBoardMenu} aria-haspopup="menu" />
         </div>
         <div className="dash-bar">
           {editing ? (
@@ -300,10 +304,10 @@ export function Dashboard() {
               <Button size="sm" icon={Plus} onClick={() => setGallery(true)}>
                 {tr("dash.addWidget")}
               </Button>
-              <Button size="sm" variant="ghost" icon={LayoutTemplate} onClick={presetMenu}>
+              <Button size="sm" variant="ghost" icon={LayoutTemplate} onClick={presetMenu} aria-haspopup="menu">
                 {tr("dash.presets")}
               </Button>
-              <IconButton icon={MoreHorizontal} label={tr("dash.more2")} onClick={moreMenu} />
+              <IconButton icon={MoreHorizontal} label={tr("dash.more2")} onClick={moreMenu} aria-haspopup="menu" />
               <span className="dash-bar-sep" aria-hidden />
               <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
                 {tr("dash.cancel")}
@@ -426,6 +430,7 @@ function BoardGrid({ board: stored, editing, timeOn, onLayout, onAction, onSetti
   const describe = (w: GridWidget) => tr("dash.a11y.pos", { name: titleOf(w), x: w.x + 1, y: w.y + 1, w: w.w, h: w.h });
 
   const keyDown = (w: GridWidget, e: ReactKeyboardEvent) => {
+    if (isComposing(e)) return;
     if (!editing || e.target !== e.currentTarget) return;
     const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const d = dir[e.key];
@@ -636,7 +641,7 @@ function WidgetCard({
         {editing ? (
           <div className="dw-tools">
             {compact ? (
-              <IconButton
+              <IconButton aria-haspopup="menu"
                 icon={MoreHorizontal}
                 label={tr("dash.widgetMenu")}
                 size="sm"
@@ -660,7 +665,7 @@ function WidgetCard({
         ) : (
           <div className="dw-hover-tools">
             <IconButton icon={Settings2} label={tr("dash.settingsOf", { name: title })} size="sm" className="dw-gear" onClick={onSettings} />
-            <IconButton
+            <IconButton aria-haspopup="menu"
               icon={MoreHorizontal}
               label={tr("dash.menuOf", { name: title })}
               size="sm"

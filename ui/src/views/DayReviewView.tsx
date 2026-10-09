@@ -452,7 +452,12 @@ function Section({
             <Icon size={14} />
           </span>
           {title}
-          <span className="rv-count num">{count}</span>
+          <span className="rv-count num">
+            {/* Read as „Termine (0)“, not „Termine0“. */}
+            <span className="sr-only"> (</span>
+            {count}
+            <span className="sr-only">)</span>
+          </span>
         </h2>
         {extra && <span className="rv-card-extra num">{extra}</span>}
       </div>

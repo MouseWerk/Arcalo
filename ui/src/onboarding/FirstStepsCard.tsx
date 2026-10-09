@@ -6,7 +6,7 @@ import { openAssistant, openToday } from "../components/Ribbon";
 import { createSubpage } from "../views/PageView";
 import { openSettingsSection } from "../lib/calnav";
 import { useT } from "../lib/i18n";
-import { keys } from "../lib/shortcut";
+import { hint } from "../lib/keymap";
 import { useApp } from "../store/app";
 import { firstSteps, followFirstStep, hideFirstSteps, useFirstSteps, type FirstStepId } from "./firststeps";
 
@@ -62,11 +62,14 @@ export function FirstSteps() {
                 </span>
                 <span className="first-step-sub">{t(x.text)}</span>
               </span>
-              {x.hint && (
+              {/* The shortcut of Settings → Tastatur (none when it was removed there). */}
+              {x.command && hint(x.command) && (
                 <span className="keys first-step-keys" aria-hidden>
-                  {keys(x.hint).split(" ").map((k, i) => (
-                    <kbd key={`${k}-${i}`}>{k}</kbd>
-                  ))}
+                  {hint(x.command)
+                    .split(" ")
+                    .map((k, i) => (
+                      <kbd key={`${k}-${i}`}>{k}</kbd>
+                    ))}
                 </span>
               )}
               <ChevronRight size={14} className="first-step-go" aria-hidden />
@@ -74,9 +77,7 @@ export function FirstSteps() {
           </li>
         ))}
       </ol>
-      <p className="first-steps-foot">
-        {t("fs.palette", { keys: keys("Mod K").replace(" ", "+") })}
-      </p>
+      {hint("palette") && <p className="first-steps-foot">{t("fs.palette", { keys: hint("palette").split(" ").join("+") })}</p>}
     </section>
   );
 }

@@ -11,13 +11,15 @@ import {
   ArrowDownAZ, ArrowUpAZ, ListX, Clock, BarChart3, Sparkles, MoreHorizontal, Heading,
 } from "lucide-react";
 import { IconButton, Select, useMenu, type MenuEntry } from "../components/ui";
-import { keys } from "../lib/shortcut";
+import { keys, replaceHint } from "../lib/shortcut";
 import { slashItems, type SlashOptions } from "./extensions";
 import { changeSelectionCase, clearFormatting, dedupeSelectedLines, moveBlock, sortSelectedLines, statsText, textStats } from "./tools";
 import { useApp } from "../store/app";
 import { fmtDate, int, time } from "../lib/format";
 import { useT, withLabel } from "../lib/i18n";
 import { useAi } from "../lib/aiswitch";
+import { isComposing } from "../lib/ime";
+import { consumeKey } from "../lib/keymap";
 
 type Block = "paragraph" | "h1" | "h2" | "h3" | "h4";
 const BLOCKS: { value: Block; readonly label: string }[] = [
@@ -32,7 +34,22 @@ const BLOCKS: { value: Block; readonly label: string }[] = [
 const MORE_W = 38;
 const MAX_LEVEL = 6;
 
+/** The toolbar's controls in order: shown and enabled ones (not the link field). */
+function toolbarItems(bar: HTMLElement): HTMLElement[] {
+  return [...bar.querySelectorAll<HTMLElement>("button")].filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null);
+}
+
 export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind: (replace: boolean) => void; onAi: () => void }) {
+  // Roving Tab stop: the control used last (else the first) is the toolbar's one Tab stop.
+  const lastFocused = useRef<HTMLElement | null>(null);
+  const rove = (box: HTMLElement) => {
+    const items = toolbarItems(box);
+    const stop = lastFocused.current && items.includes(lastFocused.current) ? lastFocused.current : items[0];
+    for (const el of box.querySelectorAll<HTMLElement>("button")) el.tabIndex = el === stop ? 0 : -1;
+  };
+  useLayoutEffect(() => {
+    if (bar.current) rove(bar.current);
+  });
   const ai = useAi();
   const t = useT();
   const [menu, , openMenuAt] = useMenu();
@@ -134,7 +151,7 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
     const now = new Date();
     return [
       { label: t("tb.find"), icon: Replace, shortcut: keys("Mod F"), onSelect: () => onFind(false) },
-      { label: t("tb.replace"), icon: Replace, shortcut: keys("Mod H"), onSelect: () => onFind(true) },
+      { label: t("tb.replace"), icon: Replace, shortcut: replaceHint(), onSelect: () => onFind(true) },
       "separator",
       {
         label: t("tb.case"),
@@ -222,7 +239,22 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
         const el = e.currentTarget;
         if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
       }}
-      onMouseDown={(e) => (e.target as HTMLElement).closest("button") && e.preventDefault()}>
+      onMouseDown={(e) => (e.target as HTMLElement).closest("button") && e.preventDefault()}
+      onFocus={(e) => toolbarItems(e.currentTarget).includes(e.target as HTMLElement) && (lastFocused.current = e.target as HTMLElement)}
+      onKeyDown={(e) => {
+        // One Tab stop; ←/→ (Home/End) move between the controls, as in a toolbar of the system.
+        if (e.target instanceof HTMLInputElement || e.altKey || e.ctrlKey || e.metaKey) return;
+        const items = toolbarItems(e.currentTarget);
+        const i = items.indexOf(e.target as HTMLElement);
+        if (i < 0) return;
+        const to = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : null;
+        if (to === null) return;
+        e.preventDefault();
+        const next = items[(to + items.length) % items.length];
+        lastFocused.current = next;
+        rove(e.currentTarget);
+        next.focus();
+      }}>
       {shown(4) && <div className="tb-group" data-collapse={4}>
         <IconButton icon={Undo2} label={`${t("tb.undo")} (${keys("Mod Z")})`} disabled={!st.canUndo} onClick={() => c().undo().run()} size={28} iconSize={15} />
         <IconButton icon={Redo2} label={`${t("tb.redo")} (${keys("Mod Shift Z")})`} disabled={!st.canRedo} onClick={() => c().redo().run()} size={28} iconSize={15} />
@@ -250,8 +282,9 @@ export function EditorToolbar({ editor, onFind, onAi }: { editor: Editor; onFind
             onChange={(e) => setUrl(e.target.value)}
             onBlur={() => setUrl(null)}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "Enter") (e.preventDefault(), applyLink());
-              else if (e.key === "Escape") (e.preventDefault(), setUrl(null), editor.commands.focus());
+              else if (e.key === "Escape") (e.preventDefault(), consumeKey(e), setUrl(null), editor.commands.focus());
             }}
           />
         )}

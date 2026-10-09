@@ -22,6 +22,8 @@ import { KINDS, kindLabel, cellInput, defOf, hasOptions, inferKind, isManagedKey
 import { KIND_ICON, OptionsDialog, TypedValue, kindMenu, optionsForKind } from "./collection/controls";
 import { renameOptionValues, updateSchema } from "./collection/write";
 import { t as tr, useT } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
+import { consumeKey } from "../lib/keymap";
 
 const TYPE_ICON: Record<Property["type"], LucideIcon> = { text: Type, date: CalendarDays, list: Tags, raw: Braces };
 /** `vorgang:` / `netzplan:` with the WBS picker; plain text properties while time tracking is off. */
@@ -239,8 +241,9 @@ function PropertyRow({ prop, onChange, onRename, onRemove, onMenu }: { prop: Pro
           onChange={(e) => setKey(e.target.value.replace(/[:\n]/g, ""))}
           onBlur={commitKey}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Enter" && !invalid) (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") setKey(prop.key);
+            if (e.key === "Escape") (consumeKey(e), setKey(prop.key));
           }}
         />
       )}
@@ -296,8 +299,9 @@ function TextValue({ prop, onChange }: { prop: Property; onChange: (v: string) =
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") setDraft(prop.value);
+          if (e.key === "Escape") (consumeKey(e), setDraft(prop.value));
         }}
       />
     );
@@ -368,6 +372,7 @@ function RefCombo({ value, draft, setDraft, label, onCommit, onPick, onRevert }:
           onCommit();
         }}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           const nav = e.key === "ArrowDown" || e.key === "ArrowUp";
           const text = draft.trim();
           const exact = items?.find((it) => it.insert.toLowerCase() === text.toLowerCase());
@@ -458,6 +463,7 @@ function ListValue({ items, hashed, onChange }: { items: string[]; hashed: boole
         onChange={(e) => setDraft(e.target.value)}
         onBlur={add}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Enter" || e.key === ",") {
             e.preventDefault();
             add();
@@ -528,8 +534,10 @@ function NewProperty({ autoOpen, onAdd, onDone }: { autoOpen: boolean; onAdd: (k
         onChange={(e) => setDraft(e.target.value.replace(/[:\n]/g, ""))}
         onBlur={finish}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Enter" && !invalid) (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") {
+            consumeKey(e);
             setDraft(null);
             onDone();
           }

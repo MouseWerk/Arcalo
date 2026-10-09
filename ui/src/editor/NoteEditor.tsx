@@ -36,16 +36,19 @@ import { spellcheckAttrs } from "../lib/prefs";
 import { ZeitConfirm, type ZeitChoice } from "./ZeitConfirm";
 import { lacksReference, referenceOffset } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
-import { AlertTriangle, ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Replace, Search, X } from "lucide-react";
 import type { PageDoc, SavedPage } from "../lib/types";
-import { keys } from "../lib/shortcut";
+import { isReplaceKey, keys, replaceHint } from "../lib/shortcut";
 import { merge3 } from "../lib/merge3";
 import { replaceChanged } from "./replaceChanged";
-import { flushAllEditors, keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
+import { flushAllEditors, keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
+import { SaveFailed } from "./SaveFailed";
 import { titleSet } from "../lib/links";
 import { t as tr, useT } from "../lib/i18n";
 import { isVoiceAudio, openTranscribeAgain, startVoice } from "../lib/voice";
 import { scrollMotion } from "../lib/motion";
+import { isComposing } from "../lib/ime";
+import { consumeKey } from "../lib/keymap";
 
 /** Where a `/zeit` line is in the document: position of its paragraph, or -1. */
 function findLine(editor: Editor, line: string): number {
@@ -106,8 +109,6 @@ async function largePaste(editor: Editor, text: string, from: number, to: number
 /** Document size above which the outline and word count wait for a pause in typing. */
 const LONG_NOTE = 20_000;
 
-/** Autosave delay after the last change (Settings → Editor, 250–3000 ms). */
-const saveDelay = () => Math.min(3000, Math.max(250, useApp.getState().settings?.settings.editor?.autosave_ms ?? 450));
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
 const typingPrefs = (): TypingPrefs => {
   const e = editorPrefs();
@@ -448,6 +449,7 @@ export function NoteEditor({
         attributes: () => ({ class: "prose", ...spellcheckAttrs(editorPrefs()?.spellcheck), "aria-label": tr("ne.aria"), style: `tab-size: ${editorPrefs()?.tab_size ?? 4}` }),
         // Ctrl+J on a selection: inline AI instead of the assistant panel (App's global Ctrl+J).
         handleKeyDown: (view, event) => {
+          if (isComposing(event)) return false;
           // Alt+Enter: follows the link at the caret (Ctrl+Alt+Enter: in a new tab), for keyboard use.
           if (event.altKey && !event.shiftKey && !event.metaKey && event.key === "Enter") {
             const link = linkAtCaret(view.state);
@@ -624,7 +626,7 @@ export function NoteEditor({
     // and no jump function that keeps a closed editor alive.
     return () => {
       const st = useApp.getState();
-      st.set(st.scrollToPos === scrollToPos ? { editorStats: null, scrollToPos: null } : { editorStats: null });
+      st.set(st.scrollToPos === scrollToPos ? { editorStats: null, scrollToPos: null, outline: [] } : { editorStats: null });
     };
   }, [editor, active]);
 
@@ -689,8 +691,10 @@ export function NoteEditor({
   const toolbarOn = useApp((s) => s.settings?.settings.editor?.toolbar ?? true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (k === "f" || k === "h") && activeRef.current) {
+      const wantsFind = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f";
+      // Ctrl+H; ⌥⌘F on macOS, where ⌘H hides the app.
+      const wantsReplace = isReplaceKey(e);
+      if ((wantsFind || wantsReplace) && activeRef.current) {
         // Not while typing somewhere else (a dialog, the sidebar, the assistant).
         const el = document.activeElement as HTMLElement | null;
         const pane = wrapRef.current?.closest(".pane") ?? wrapRef.current?.closest(".page-scroll-wrap");
@@ -698,7 +702,7 @@ export function NoteEditor({
         const editable = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
         if (!inside && (editable || document.querySelector(".overlay"))) return;
         e.preventDefault();
-        openFind(k === "h");
+        openFind(wantsReplace);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -738,14 +742,7 @@ export function NoteEditor({
 
   return (
     <div className="editor-wrap" data-save-status={status} ref={wrapRef}>
-      {status === "failed" && (
-        <div className="save-failed" role="status">
-          <span className="save-failed-pill">
-            <AlertTriangle size={13} aria-hidden />
-            {tr("ne.saveRetry")}
-          </span>
-        </div>
-      )}
+      {status === "failed" && <SaveFailed />}
       {editor &&
         toolbarOn &&
         (toolbarSlot
@@ -763,11 +760,12 @@ export function NoteEditor({
             aria-label={tr("ne.findPh")}
             onChange={(e) => setFind(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "Enter") {
                 e.preventDefault();
                 editor?.commands.findStep(e.shiftKey ? -1 : 1);
               } else if (e.key === "Escape") {
-                e.preventDefault();
+                (e.preventDefault(), consumeKey(e));
                 closeFind();
               }
             }}
@@ -775,7 +773,7 @@ export function NoteEditor({
           <span className="find-count num">{find ? (ui?.findCount ? `${ui.findIndex + 1}/${ui.findCount}` : "0") : ""}</span>
           <IconButton icon={ChevronUp} label={tr("pdf.prevHit")} size={24} iconSize={14} onClick={() => editor?.commands.findStep(-1)} />
           <IconButton icon={ChevronDown} label={tr("pdf.nextHit")} size={24} iconSize={14} onClick={() => editor?.commands.findStep(1)} />
-          <IconButton icon={Replace} label={`${tr("aibar.replace")} (${keys("Mod H")})`} active={replace !== null} size={24} iconSize={14} onClick={() => setReplace((r) => (r === null ? "" : null))} />
+          <IconButton icon={Replace} label={`${tr("aibar.replace")} (${replaceHint()})`} active={replace !== null} size={24} iconSize={14} onClick={() => setReplace((r) => (r === null ? "" : null))} />
           <IconButton icon={X} label={tr("common.close")} size={24} iconSize={14} onClick={closeFind} />
         </div>
         {replace !== null && (
@@ -787,12 +785,13 @@ export function NoteEditor({
               aria-label={tr("ne.replaceWith")}
               onChange={(e) => setReplace(e.target.value)}
               onKeyDown={(e) => {
+                if (isComposing(e)) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
                   if (e.ctrlKey || e.metaKey) editor?.commands.replaceAll(replace);
                   else editor?.commands.replaceCurrent(replace);
                 } else if (e.key === "Escape") {
-                  e.preventDefault();
+                  (e.preventDefault(), consumeKey(e));
                   closeFind();
                 }
               }}
@@ -853,12 +852,13 @@ export function NoteEditor({
               onChange={(e) => setLinkDraft(e.target.value)}
               onBlur={() => setLinkDraft(null)}
               onKeyDown={(e) => {
+                if (isComposing(e)) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
                   if (/^(https?:\/\/|mailto:)\S+/.test(linkDraft)) editor.chain().focus().setLink({ href: linkDraft }).run();
                   setLinkDraft(null);
                 } else if (e.key === "Escape") {
-                  e.preventDefault();
+                  (e.preventDefault(), consumeKey(e));
                   setLinkDraft(null);
                   editor.commands.focus();
                 }

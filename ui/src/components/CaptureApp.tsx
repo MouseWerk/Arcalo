@@ -575,8 +575,8 @@ export function CaptureApp() {
   // ------------------------------------------------------------------ keys
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter/Esc/arrows while an input method composes (IME, ⌥U for umlauts) stay with it.
     if (isComposing(e.nativeEvent)) return;
+    // Enter/Esc/arrows while an input method composes (IME, ⌥U for umlauts) stay with it.
     if (sugg && popup.current?.onKeyDown({ event: e.nativeEvent } as SuggestionKeyDownProps)) {
       e.preventDefault();
       return;

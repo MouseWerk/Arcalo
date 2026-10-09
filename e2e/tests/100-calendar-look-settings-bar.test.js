@@ -44,7 +44,7 @@ const measure = () =>
   app.browser.execute(() =>
     [...document.querySelectorAll(".settings")].map((s) => {
       const r = (el) => el.getBoundingClientRect();
-      const nav = s.querySelector(".settings-nav");
+      const nav = s.querySelector(".pane-content:not([hidden]) .settings-nav");
       const bar = s.querySelector(".settings-bar");
       const pane = s.closest(".pane-content");
       const out = {

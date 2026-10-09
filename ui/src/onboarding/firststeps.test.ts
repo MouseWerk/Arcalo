@@ -4,6 +4,7 @@ import { firstSteps, hideFirstSteps, showFirstSteps, useFirstSteps, type Stored 
 import { weekBars } from "../lib/dashboard";
 import { weekGaps } from "../lib/cats";
 import { isoDay } from "../lib/format";
+import { DEFAULT_KEYMAP, comboLabel, hint, setCurrentKeymap } from "../lib/keymap";
 
 const since = "2026-10-07T09:00:00.000Z";
 const stored: Stored = { since, clicked: [], hidden: false };
@@ -56,5 +57,17 @@ describe("Erste Schritte", () => {
     const targets = [0, 0, 480, 480, 480, 0, 0];
     expect(weekBars(days, monday, targets, now).bars.filter((b) => b.gap > 0).map((b) => b.date)).toEqual(["2026-10-07", "2026-10-08"]);
     expect(weekGaps([], monday, now, targets).map((g) => isoDay(g.day))).toEqual(["2026-10-07", "2026-10-08"]);
+  });
+});
+
+describe("first steps shortcuts", () => {
+  it("name the keymap command, so the hint follows Settings → Tastatur (and goes when unbound)", () => {
+    const steps = firstSteps(view(), [], stored, "2026-10-08");
+    expect(steps.find((s) => s.id === "note")?.command).toBe("new_page");
+    expect(steps.find((s) => s.id === "today")?.command).toBe("daily_note");
+    setCurrentKeymap({ ...DEFAULT_KEYMAP, new_page: "Ctrl+Shift+N", daily_note: "" });
+    expect(hint("new_page")).toBe(comboLabel("Ctrl+Shift+N"));
+    expect(hint("daily_note")).toBe("");
+    setCurrentKeymap({ ...DEFAULT_KEYMAP });
   });
 });

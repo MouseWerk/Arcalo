@@ -37,6 +37,7 @@ import {
   type Plan,
   type TreeIndex,
 } from "../lib/bookmarks";
+import { isComposing } from "../lib/ime";
 
 const useBmDialog = create<{ open: boolean }>(() => ({ open: false }));
 
@@ -450,6 +451,7 @@ function SelectStep({ loaded, idx, sel, setSel, total }: { loaded: Loaded; idx: 
   const shownLeaves = visible ? [...visible].filter((id) => !idx.entries.get(id)!.folder) : allLeaves(idx);
 
   const onKey = (e: ReactKeyboardEvent, id: string) => {
+    if (isComposing(e)) return;
     const e0 = idx.entries.get(id)!;
     const i = rows.indexOf(id);
     const isOpen = !!visible || open.has(id);

@@ -1,6 +1,10 @@
 // Pending saves of all editors (rename, mode switch, window close wait for them).
 
 import { t } from "../lib/i18n";
+import { useApp } from "../store/app";
+
+/** Autosave delay after the last change (Settings → Editor, 250–3000 ms), for both editors. */
+export const saveDelay = () => Math.min(3000, Math.max(250, useApp.getState().settings?.settings.editor?.autosave_ms ?? 450));
 
 // Flush handles of all mounted editors.
 const flushers = new Set<() => Promise<void>>();

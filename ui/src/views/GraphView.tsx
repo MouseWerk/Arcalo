@@ -36,6 +36,7 @@ import {
   type GroupRule,
   } from "../lib/graph";
 import type { PageNode } from "../lib/types";
+import { isComposing } from "../lib/ime";
 
 let settingsTimer = 0;
 
@@ -154,6 +155,7 @@ export function GraphView() {
               setHitIdx(0);
             }}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "Enter") {
                 e.preventDefault();
                 focusHit(e.shiftKey);

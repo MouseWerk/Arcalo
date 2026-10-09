@@ -4,7 +4,7 @@ import {
   Activity, AlertTriangle, Briefcase, Home as HomeIcon, CheckCircle2, Cpu, Hash, Info, Link2, Play, Settings, Timer, Trash2, X, XCircle, ListChecks,
   FileText, GitMerge, Paperclip, CalendarCheck, CalendarRange, Sunset, Sun, Ticket, Waypoints, ChevronDown, MessagesSquare,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useApp, type Tab } from "../store/app";
 import { PageIcon } from "./icons";
 import { Button, Dialog, IconButton } from "./ui";
@@ -259,7 +259,7 @@ export function Toasts() {
   return (
     <div
       className="toasts"
-      aria-live="polite"
+      // No live region of its own: each toast is one (role status or alert), or it would be read twice.
       ref={box}
       onMouseLeave={() => {
         pointed.current = false;
@@ -301,26 +301,34 @@ export function Toasts() {
 
 export function ConfirmHost() {
   const req = useApp((s) => s.confirmRequest);
+  const textId = useId();
   if (!req) return null;
+  // A destructive question starts on the safe answer: Enter (or a held Enter) cancels, confirming
+  // takes Tab or a click.
   return (
     <Dialog
       open
+      key={req.id}
+      role="alertdialog"
+      describedBy={textId}
       onClose={() => req.resolve("cancel")}
       title={req.title}
       width={req.altLabel ? 480 : 420}
       footer={
         <>
-          <Button variant="ghost" onClick={() => req.resolve("cancel")}>
+          <Button variant="ghost" onClick={() => req.resolve("cancel")} data-autofocus={req.danger || undefined}>
             {req.cancelLabel ?? tr("common.cancel")}
           </Button>
           {req.altLabel && <Button onClick={() => req.resolve("alt")}>{req.altLabel}</Button>}
-          <Button variant={req.danger ? "danger" : "primary"} onClick={() => req.resolve("confirm")} data-autofocus>
+          <Button variant={req.danger ? "danger" : "primary"} onClick={() => req.resolve("confirm")} data-autofocus={!req.danger || undefined}>
             {req.confirmLabel}
           </Button>
         </>
       }
     >
-      <p className="dialog-text">{req.message}</p>
+      <p className="dialog-text" id={textId}>
+        {req.message}
+      </p>
     </Dialog>
   );
 }

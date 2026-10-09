@@ -36,6 +36,7 @@ import {
 } from "../../lib/canvas/model";
 import { Card, EdgeLabels, EdgeLayer, Group, Minimap, type CardHost, type EdgeDraft } from "./CanvasCards";
 import { exportCanvas, type CanvasExportFormat } from "./exportCanvas";
+import { isComposing } from "../../lib/ime";
 
 const MIN_ZOOM = 0.1;
 /** Below this zoom cards show only their first line (nothing smaller is readable). */
@@ -723,11 +724,13 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
   // ------------------------------------------------------------------ keyboard
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isComposing(e)) return;
     const target = e.target as HTMLElement;
     if (target.closest("input, textarea")) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    if (e.key === " ") {
+    // Space pans, except on a focused button or link (there it presses it).
+    if (e.key === " " && !target.closest("button, a[href], [role='button'], [role='menuitem'], select")) {
       e.preventDefault();
       spaceDown.current = true;
       setPanning(true);
@@ -1083,7 +1086,7 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
             {sel.size > 1 && (
               <>
                 <span className="cv-sep" />
-                <IconButton
+                <IconButton aria-haspopup="menu"
                   icon={AlignStartVertical}
                   label={t("canvas.align")}
                   onClick={(e) =>
@@ -1237,6 +1240,7 @@ function NotePicker({ onClose, onPick, exclude }: { onClose: () => void; onPick:
             setIndex(0);
           }}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "ArrowDown") setIndex((i) => Math.min(list.length - 1, i + 1));
             else if (e.key === "ArrowUp") setIndex((i) => Math.max(0, i - 1));
             else if (e.key === "Enter" && list[index]) pick(list[index].id);

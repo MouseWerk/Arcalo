@@ -14,6 +14,7 @@ import { t as tr, useT } from "../lib/i18n";
 import { EntryDialog, iconOf, type EntryEdit } from "./LinkDialogs";
 import { openBookmarkImport } from "./BookmarkImport";
 import { FILTER_FROM, OPEN_ALL_CONFIRM, colorHex, filterItems, groupChoices, isGroup, kindOf, moveItem, normalizeLinks, removeItem, shortUrl, webItems, type Loc } from "../lib/quicklinks";
+import { isComposing } from "../lib/ime";
 
 export { guessIcon } from "./LinkDialogs";
 
@@ -389,6 +390,7 @@ function LinkGroupPopover({
       onClose(false);
     };
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       // A context menu or dialog opened from here handles its own keys.
       if (document.querySelector(".menu, .dialog")) return;
       if (e.key === "Escape") {

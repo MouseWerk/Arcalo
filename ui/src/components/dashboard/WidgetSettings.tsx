@@ -23,6 +23,7 @@ import { viewOf } from "./define";
 import { cityOf, timeZones } from "../../lib/worldclock";
 import { WORK_SETTINGS } from "./workSettings";
 import { JiraWidgetFields } from "./jira";
+import { isKey } from "../../lib/ime";
 
 type Config = Record<string, unknown>;
 
@@ -445,7 +446,7 @@ function ZoneList({ zones, onChange }: { zones: string[]; onChange: (zones: stri
               // Picking from the list adds at once.
               if (all.includes(e.target.value)) add(e.target.value);
             }}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add(q))}
+            onKeyDown={(e) => isKey(e, "Enter") && (e.preventDefault(), add(q))}
           />
           <datalist id="dws-zones">
             {all.map((z) => (

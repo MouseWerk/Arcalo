@@ -273,9 +273,9 @@ test("Eine Obsidian-Canvas aus einem Vault öffnet mit Karten, Gruppe, Link und 
   await app.click(`.tree-row[data-id="${page.id}"]`);
   await app.browser.waitUntil(() => app.browser.execute((id) => document.querySelector(`.cv-board[data-canvas="${id}"]`) != null, page.id), { timeout: 10000, timeoutMsg: "imported canvas opened" });
   await app.browser.waitUntil(async () => (await count(`.cv-board[data-canvas="${page.id}"] .cv-card`)) === 3, { timeoutMsg: "three cards" });
-  assert.equal(await count(".cv-board .cv-group"), 1);
-  assert.equal(await count(".cv-board .cv-edge"), 2);
-  assert.equal(await count(".cv-board .cv-edge-arrow"), 1, "the second edge has no arrow");
+  assert.equal(await count(`.cv-board[data-canvas="${page.id}"] .cv-group`), 1);
+  assert.equal(await count(`.cv-board[data-canvas="${page.id}"] .cv-edge`), 2);
+  assert.equal(await count(`.cv-board[data-canvas="${page.id}"] .cv-edge-arrow`), 1, "the second edge has no arrow");
   await app.waitText(".cv-group-label", /Go-live/);
   await app.waitText(".cv-card[data-kind=text] .cv-md", /Daten migrieren/);
   await app.waitText(".cv-card[data-kind=note] .cv-note-body", /Meilensteine/, 10000);

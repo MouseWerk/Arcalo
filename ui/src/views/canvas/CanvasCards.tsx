@@ -13,6 +13,7 @@ import { hydrate, mountPageEmbed, type EmbedHost } from "../../editor/embedView"
 import { renderPageHtml, type AttachmentSource } from "../../editor/shareHtml";
 import { anchor, arrowHead, autoSides, bounds, edgePath, HANDLES, type Point, type Rect } from "../../lib/canvas/geometry";
 import { baseName, colorValue, noteTitle, SIDES, type CanvasEdge, type CanvasNode, type CardKind, type Side } from "../../lib/canvas/model";
+import { isComposing } from "../../lib/ime";
 
 const NO_FILES: AttachmentSource = { read: async () => null, size: async () => null };
 
@@ -85,6 +86,7 @@ function TextEditor({ node, host }: { node: CanvasNode; host: CardHost }) {
       onBlur={() => host.onEndEdit()}
       onKeyDown={(e) => {
         e.stopPropagation();
+        if (isComposing(e)) return;
         if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
           e.preventDefault();
           host.onEndEdit();
@@ -251,6 +253,7 @@ export const Group = memo(function Group({ node, selected, single, editing, host
           onBlur={(e) => host.onLabel(node.id, e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
+            if (isComposing(e)) return;
             if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
           }}
         />
@@ -328,6 +331,7 @@ export const EdgeLabels = memo(function EdgeLabels({ edges, nodes, selected, edi
                 onBlur={(ev) => onLabel(e.id, ev.target.value)}
                 onKeyDown={(ev) => {
                   ev.stopPropagation();
+                  if (isComposing(ev)) return;
                   if (ev.key === "Enter" || ev.key === "Escape") (ev.target as HTMLInputElement).blur();
                 }}
               />

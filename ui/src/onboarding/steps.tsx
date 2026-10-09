@@ -1,7 +1,7 @@
 // The setup steps. Each one is thin: it writes its answer to the settings at once (write.ts,
 // flow.ts) through the existing APIs, and links to its settings section for the rest.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   Check, CheckCircle2, ChevronRight, Cloud, Cpu, CalendarRange, DatabaseBackup, FilePlus2, FolderInput, FolderOpen, GitBranch, Globe, LayoutDashboard, Loader2, Lock, MinusCircle, Monitor, Moon, PlugZap, RefreshCw, Server, ShieldCheck, Sparkles, Sun, Timer, XCircle,
   type LucideIcon,
@@ -29,6 +29,7 @@ import {
 import { applyLanguage, osLanguage } from "./lang";
 import { finishFirstRun, pauseForSettings, useFirstRun } from "./state";
 import { writeSettings } from "./write";
+import { isComposing, isKey } from "../lib/ime";
 
 type Write = typeof writeSettings;
 
@@ -55,17 +56,26 @@ export function StepFrame({ step, title, lead, children }: { step: StepId; title
 
 /** A large radio card. */
 function Choice({ on, icon: Icon, title, text, onPick, disabled, badge, name }: { on: boolean; icon: LucideIcon; title: string; text: string; onPick: () => void; disabled?: boolean; badge?: string; name?: string }) {
+  // Named by the title (and badge), described by the line below: read apart, not run together.
+  const id = useId();
   return (
-    <button type="button" role="radio" aria-checked={on} className={`fr-choice ${on ? "on" : ""}`} onClick={onPick} disabled={disabled} data-choice={name}>
+    <button type="button" role="radio" aria-checked={on} aria-labelledby={`${id}-t`} aria-describedby={`${id}-d`} className={`fr-choice ${on ? "on" : ""}`} onClick={onPick} disabled={disabled} data-choice={name}>
       <span className="fr-choice-icon" aria-hidden>
         <Icon size={18} strokeWidth={1.8} />
       </span>
       <span className="fr-choice-text">
-        <span className="fr-choice-title">
+        <span className="fr-choice-title" id={`${id}-t`}>
           {title}
-          {badge && <Badge>{badge}</Badge>}
+          {badge && (
+            <>
+              <span className="sr-only">, </span>
+              <Badge>{badge}</Badge>
+            </>
+          )}
         </span>
-        <span className="fr-choice-sub">{text}</span>
+        <span className="fr-choice-sub" id={`${id}-d`}>
+          {text}
+        </span>
       </span>
       <span className="fr-choice-check" aria-hidden>
         {on && <Check size={12} strokeWidth={3} />}
@@ -76,8 +86,17 @@ function Choice({ on, icon: Icon, title, text, onPick, disabled, badge, name }: 
 
 /** Arrow keys move between the cards of a radio group (like native radios). */
 function ChoiceGroup({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+  // One Tab stop for the group (the chosen card, else the first); the arrows move and choose,
+  // as native radio buttons do.
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const all = [...(box.current?.querySelectorAll<HTMLButtonElement>(".fr-choice") ?? [])];
+    const stop = all.find((b) => b.getAttribute("aria-checked") === "true" && !b.disabled) ?? all.find((b) => !b.disabled);
+    all.forEach((b) => (b.tabIndex = b === stop ? 0 : -1));
+  });
   return (
     <div
+      ref={box}
       className={`fr-choices ${className}`}
       role="radiogroup"
       aria-label={label}
@@ -89,7 +108,9 @@ function ChoiceGroup({ label, children, className = "" }: { label: string; child
         e.preventDefault();
         e.stopPropagation();
         const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
-        all[(i + d + all.length) % all.length]?.focus();
+        const next = all[(i + d + all.length) % all.length];
+        next?.focus();
+        next?.click();
       }}
     >
       {children}
@@ -168,7 +189,7 @@ export function ThemeStep({ view, write }: { view: SettingsView; write: Write })
               data-theme-card={d.id}
               className={`theme-card ${on ? "on" : ""}`}
               onClick={() => write((x) => withThemePick(x, d))}
-              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), write((x) => withThemePick(x, d)))}
+              onKeyDown={(e) => !isComposing(e) && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), write((x) => withThemePick(x, d)))}
             >
               <ThemeMock def={d} />
               <span className="theme-card-foot">
@@ -467,7 +488,7 @@ export function CalendarStep({ view, write }: { view: SettingsView; write: Write
           <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void add()}
+            onKeyDown={(e) => isKey(e, "Enter") && void add()}
             placeholder="https://… .ics"
             aria-label={t("fr.cal.ics")}
             className="grow"

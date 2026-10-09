@@ -18,6 +18,7 @@ import { keys } from "../lib/shortcut";
 import { useT } from "../lib/i18n";
 import { scrollMotion } from "../lib/motion";
 import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes";
+import { isComposing } from "../lib/ime";
 
 const BAR_WIDTH = 560;
 
@@ -182,6 +183,7 @@ export function InlineAiBar({
       aria-label={t("aibar.label")}
       style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: "hidden", width: BAR_WIDTH }}
       onKeyDown={(e) => {
+        if (isComposing(e)) return;
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
@@ -203,7 +205,8 @@ export function InlineAiBar({
           disabled={!configured}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !(e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
+            if (isComposing(e)) return;
+            if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) {
               e.preventDefault();
               submitInput();
             }

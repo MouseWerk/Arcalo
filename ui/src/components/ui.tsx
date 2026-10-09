@@ -1,9 +1,10 @@
 // Small, dependency-free UI primitives in the app's design language.
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronRight, Loader2, X, type LucideIcon } from "lucide-react";
 import { t } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -184,6 +185,8 @@ export function Dialog({
   children,
   footer,
   width = 480,
+  role = "dialog",
+  describedBy,
 }: {
   open: boolean;
   onClose: () => void;
@@ -192,8 +195,15 @@ export function Dialog({
   children?: ReactNode;
   footer?: ReactNode;
   width?: number;
+  /** "alertdialog" for a question that needs an answer (the confirm). */
+  role?: "dialog" | "alertdialog";
+  /** Id of the body text that describes the dialog (default: the description). */
+  describedBy?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const ids = useId();
+  const titleId = `${ids}-title`;
+  const descId = description ? `${ids}-desc` : undefined;
   // Callers often pass a new close function on every render: the effect below must not
   // re-run for that (it would hand the focus back to the element behind the dialog).
   const close = useRef(onClose);
@@ -202,10 +212,15 @@ export function Dialog({
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
     const t = setTimeout(() => {
-      const first = ref.current?.querySelector<HTMLElement>("[data-autofocus], input, textarea, select, button.btn-primary");
-      first?.focus();
+      const box = ref.current;
+      if (!box || box.contains(document.activeElement)) return;
+      // A marked control first, then the first field or the primary button; an info-only dialog
+      // takes the focus itself (screen readers read it, Tab goes to its first control).
+      const first = box.querySelector<HTMLElement>("[data-autofocus]") ?? box.querySelector<HTMLElement>("input, textarea, select, button.btn-primary");
+      (first ?? box).focus();
     }, 20);
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       const box = ref.current;
       // A newer dialog (a confirm on top) or a menu/calendar opened from this one handles its own keys.
       const above = [...document.querySelectorAll(".dialog, .menu, .calendar, .select-pop")].some((el) => el !== box && !box?.contains(el) && !!(box && box.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -236,11 +251,17 @@ export function Dialog({
   if (!open) return null;
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref} style={{ width }}>
+      <div className="dialog" role={role} aria-modal="true" aria-label={title} aria-labelledby={titleId} aria-describedby={describedBy ?? descId} ref={ref} style={{ width }} tabIndex={-1}>
         <div className="dialog-head">
           <div>
-            <div className="dialog-title">{title}</div>
-            {description && <div className="dialog-desc">{description}</div>}
+            <h2 className="dialog-title" id={titleId}>
+              {title}
+            </h2>
+            {description && (
+              <div className="dialog-desc" id={descId}>
+                {description}
+              </div>
+            )}
           </div>
           <IconButton icon={X} label={t("common.close")} onClick={onClose} />
         </div>
@@ -354,6 +375,7 @@ export function Menu({
     // Clicks inside any menu level are not "outside"; the submenu lives in its own portal.
     const onDown = (e: MouseEvent) => !(e.target instanceof Element && e.target.closest(".menu")) && onClose();
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       if (sub) return; // the open submenu handles the keyboard
       if (e.key === "Escape" || (e.key === "ArrowLeft" && onBack)) {
         e.preventDefault();
@@ -461,6 +483,7 @@ type Trigger = { currentTarget: EventTarget | null; detail?: number; preventDefa
  */
 export function useMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuEntry[]; anchor?: Box; preselect?: boolean } | null>(null);
+  const trigger = useRef<Element | null>(null);
   const open = (e: { clientX: number; clientY: number; preventDefault?: () => void }, items: MenuEntry[]) => {
     e.preventDefault?.();
     setMenu({ x: e.clientX, y: e.clientY, items });
@@ -472,8 +495,19 @@ export function useMenu() {
     event?.preventDefault?.();
     const r = el.getBoundingClientRect();
     const anchor = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    // A menu button says it is open while its menu is (aria-haspopup is on the button itself).
+    if (el.hasAttribute("aria-haspopup")) {
+      trigger.current?.setAttribute("aria-expanded", "false");
+      el.setAttribute("aria-expanded", "true");
+      trigger.current = el;
+    }
     setMenu({ x: r.left, y: r.bottom + MENU_GAP, items, anchor, preselect: opts.keyboard ?? event?.detail === 0 });
   };
-  const node = menu ? <Menu x={menu.x} y={menu.y} anchor={menu.anchor} preselect={menu.preselect} items={menu.items} onClose={() => setMenu(null)} /> : null;
+  const close = () => {
+    trigger.current?.setAttribute("aria-expanded", "false");
+    trigger.current = null;
+    setMenu(null);
+  };
+  const node = menu ? <Menu x={menu.x} y={menu.y} anchor={menu.anchor} preselect={menu.preselect} items={menu.items} onClose={close} /> : null;
   return [node, open, openAt] as const;
 }

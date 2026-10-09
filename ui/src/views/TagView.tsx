@@ -24,7 +24,7 @@ export function TagView({ tag }: { tag: string }) {
               <Hash size={22} strokeWidth={2} />
               {tag}
             </h1>
-            <div className="view-sub">{list ? `${list.length} ${list.length === 1 ? "Seite" : "Seiten"}` : ""}</div>
+            <div className="view-sub">{list ? t("tag.count", { n: list.length }) : ""}</div>
           </div>
         </header>
         {!list ? (

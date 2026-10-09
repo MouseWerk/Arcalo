@@ -19,6 +19,7 @@ import { useApp } from "../store/app";
 import { t, useT } from "../lib/i18n";
 import type { PdfHighlight } from "../lib/types";
 import { HighlightLayer, HighlightPopover, SelectionBar, currentNote, hasTextLayer, pageChoices, readSelection, takeIntoNote, type PdfSelection } from "./pdfHighlights";
+import { isComposing, isKey } from "../lib/ime";
 
 const NO_MARKS: PdfHighlight[] = [];
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
@@ -425,6 +426,7 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
   }, [mode]);
 
   const handleKey = (e: KeyboardEvent, inside: boolean) => {
+    if (isComposing(e)) return;
     const el = frame.current;
     if (!el) return false;
     const mod = e.ctrlKey || e.metaKey;
@@ -497,7 +499,7 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
               value={pageInput}
               inputMode="numeric"
               onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => e.key === "Enter" && goTo(Number(pageInput) || 1)}
+              onKeyDown={(e) => isKey(e, "Enter") && goTo(Number(pageInput) || 1)}
               onBlur={() => setPageInput(String(current))}
             />
             <span className="pdf-page-count">/ {sizes.length || "–"}</span>
@@ -523,6 +525,7 @@ function PdfDocument({ name, page: startPage, highlight, onClose, mode }: { name
                 setHits(null);
               }}
               onKeyDown={(e) => {
+                if (isComposing(e)) return;
                 if (e.key !== "Enter") return;
                 e.preventDefault();
                 void search(e.shiftKey);

@@ -8,6 +8,7 @@ import { t } from "../../lib/i18n";
 import { useApp } from "../../store/app";
 import { PageIcon } from "../../components/icons";
 import type { Page } from "../../lib/types";
+import { isComposing } from "../../lib/ime";
 
 /** Pages whose title contains `query` (title starts first), at most `limit`. */
 export function matchPages<P extends { id: number; title: string; deleted_at?: string | null }>(pages: Iterable<P>, query: string, limit = 8): P[] {
@@ -70,6 +71,7 @@ export function AttachPage({ onPick, icon: Icon }: { onPick: (id: number) => voi
             aria-controls="attach-list"
             onChange={(e) => (setQ(e.target.value), setActive(0))}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
                 setActive(Math.max(0, Math.min(hits.length - 1, index + (e.key === "ArrowDown" ? 1 : -1))));

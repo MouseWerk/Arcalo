@@ -9,8 +9,7 @@ import {
 } from "lucide-react";
 import { api, errorParts } from "../lib/api";
 import { cleanTitleChars } from "../lib/links";
-import { flushAllEditors } from "../editor/saves";
-import { reloadEditors } from "../editor/NoteEditor";
+import { renamePageWithUndo } from "../editor/rename";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
@@ -32,6 +31,7 @@ import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWit
 import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import type { TKey } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -129,6 +129,8 @@ export function Sidebar() {
             size="lg"
             onClick={() => setTab(st.id)}
             role="tab"
+            id={`side-tab-${st.id}`}
+            aria-controls="sidebar-body"
             aria-selected={tab === st.id}
             // One Tab stop for the row; the arrows switch between the panes.
             tabIndex={tab === st.id ? 0 : -1}
@@ -145,6 +147,8 @@ export function Sidebar() {
         ))}
       </div>
 
+      {/* The shown tab's content (files, search, bookmarks, tags). */}
+      <div className="sidebar-body" id="sidebar-body" role="tabpanel" aria-labelledby={`side-tab-${tab}`}>
       {tab === "files" && (
         <>
           <div className="side-toolbar">
@@ -157,7 +161,7 @@ export function Sidebar() {
               size="md"
               onClick={() => saveCollapsed(allCollapsed ? new Set() : new Set(withChildren))}
             />
-            <IconButton icon={SlidersHorizontal} label={t("fl.treeMenu")} size="md" className="tree-options" onClick={(e) => openTreeMenuAt(e, treeMenuItems())} />
+            <IconButton aria-haspopup="menu" icon={SlidersHorizontal} label={t("fl.treeMenu")} size="md" className="tree-options" onClick={(e) => openTreeMenuAt(e, treeMenuItems())} />
             {treeMenu}
           </div>
           {tree.length > 0 && (
@@ -169,6 +173,7 @@ export function Sidebar() {
                 aria-label={t("fl.filter")}
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isComposing(e)) return;
                   if (e.key === "Escape" && filter) (e.preventDefault(), e.stopPropagation(), setFilter(""));
                   else if (e.key === "ArrowDown") (e.preventDefault(), document.querySelector<HTMLElement>(".sidebar .tree .tree-row")?.focus());
                 }}
@@ -195,6 +200,7 @@ export function Sidebar() {
       {tab === "search" && <SearchPane />}
       {tab === "bookmarks" && <Bookmarks activePageId={active?.kind === "page" ? active.pageId : undefined} />}
       {tab === "tags" && <TagsPane activeTag={active?.kind === "tag" ? active.tag : undefined} />}
+      </div>
 
       <TimerDock />
       <SidebarFooter />
@@ -240,7 +246,7 @@ function SearchPane() {
   const tr = useT();
   const [q, setQ] = useState(() => sessionStorage.getItem("arcalo.sidesearch") ?? "");
   const exactOnly = useExactOnly();
-  const { hits, meaning } = useMeaningSearch(q, 60, { enabled: q.trim().length >= 2, exact: exactOnly, delay: 120 });
+  const { hits, meaning, answered } = useMeaningSearch(q, 60, { enabled: q.trim().length >= 2, exact: exactOnly, delay: 120 });
   const input = useRef<HTMLInputElement>(null);
   const s = useApp.getState;
   useEffect(() => {
@@ -276,9 +282,21 @@ function SearchPane() {
           placeholder={tr("sidebar.searchPlaceholder")}
           aria-label={tr("sidebar.fulltext")}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              const first = [...byPage.keys()][0];
-              if (first) s().openPage(first, { newTab: e.ctrlKey || e.metaKey });
+            if (isComposing(e)) return;
+            if (e.key === "Enter") {
+              const newTab = e.ctrlKey || e.metaKey;
+              // The hits shown may still be those of the text before the last keystroke: then
+              // the first hit of what is typed now.
+              if (answered === q) {
+                const first = [...byPage.keys()][0];
+                if (first) s().openPage(first, { newTab });
+              } else if (q.trim().length >= 2) {
+                const typed = q;
+                void api.search(typed, 5).then((h) => {
+                  const first = h.find((x) => x.kind === "note" || x.kind === "similar");
+                  if (first && (first.kind === "note" || first.kind === "similar")) s().openPage(first.page_id, { newTab });
+                }, () => {});
+              }
             }
             if (e.key === "Escape") setQ("");
           }}
@@ -413,34 +431,7 @@ function TodayHours() {
 // --------------------------------------------------------------- page tree
 
 /** Renames a page with its links rewritten; the toast undoes it. */
-async function renameInTree(n: PageNode, title: string) {
-  const s = useApp.getState;
-  const old = n.title;
-  // All editors: a pending autosave elsewhere would write the old [[links]] back.
-  await flushAllEditors();
-  const count = await api.renamePage(n.id, title, true);
-  reloadEditors();
-  await s().refreshTree();
-  s().toast({
-    tone: "success",
-    title: tStatic("sb.renamed", { title }),
-    detail: count > 0 ? tStatic("page.linksUpdated", { n: count }) : undefined,
-    action: {
-      label: tStatic("common.undo"),
-      run: async () => {
-        try {
-          await flushAllEditors();
-          await api.renamePage(n.id, old, true);
-          reloadEditors();
-          await s().refreshTree();
-          s().toast({ tone: "info", title: tStatic("sb.renameUndone"), detail: tStatic("common.quoted", { text: old }) });
-        } catch (e) {
-          s().error(tStatic("page.renameFailed"), e);
-        }
-      },
-    },
-  });
-}
+const renameInTree = (n: PageNode, title: string) => renamePageWithUndo(n.id, n.title, title);
 
 type DropPos = "before" | "inside" | "after";
 
@@ -538,40 +529,21 @@ function PageTree({
     const many = drag?.many;
     setDrag(null);
     if (id == null || id === target.id) return;
-    if (many) {
-      const ids = selection().filter((x) => x !== target.id);
-      setSelected(new Set());
-      // Before or after a page: there, among the pages that stay (not at the folder's end).
-      let position: number | null = null;
-      if (pos !== "inside") {
-        const siblings = target.parent_id == null ? s().tree : (s().pages.get(target.parent_id)?.children ?? []);
-        const staying = siblings.filter((x) => !ids.includes(x.id));
-        position = staying.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
-      }
-      const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id, position);
-      if (out && pos === "inside") {
-        const next = new Set(collapsed);
-        next.delete(target.id);
-        setCollapsed(next);
-      }
-      return;
+    // One page or the selection: the same move, with the same „Rückgängig“.
+    const ids = many ? selection().filter((x) => x !== target.id) : [id];
+    if (many) setSelected(new Set());
+    // Before or after a page: there, among the pages that stay (not at the folder's end).
+    let position: number | null = null;
+    if (pos !== "inside") {
+      const siblings = target.parent_id == null ? s().tree : (s().pages.get(target.parent_id)?.children ?? []);
+      const staying = siblings.filter((x) => !ids.includes(x.id));
+      position = staying.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
     }
-    const pages = s().pages;
-    try {
-      if (pos === "inside") {
-        await api.movePage(id, target.id, target.children.length);
-        const next = new Set(collapsed);
-        next.delete(target.id);
-        setCollapsed(next);
-      } else {
-        const siblings = target.parent_id == null ? s().tree : (pages.get(target.parent_id)?.children ?? []);
-        const without = siblings.filter((x) => x.id !== id);
-        const idx = without.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
-        await api.movePage(id, target.parent_id, idx);
-      }
-      await s().refreshTree();
-    } catch (e) {
-      s().error(tStatic("sb.moveFailed"), e);
+    const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id, position);
+    if (out && pos === "inside") {
+      const next = new Set(collapsed);
+      next.delete(target.id);
+      setCollapsed(next);
     }
   };
 
@@ -820,8 +792,15 @@ function PageTree({
     if (key === "F2" && !selected.size) return (handled(), setRenaming(n.id));
     if (key === "Delete" || (key === "Backspace" && e.metaKey)) {
       handled();
-      if (selected.size > 1 && selected.has(n.id)) void deleteSelection();
-      else void deletePage(n);
+      const many = selected.size > 1 && selected.has(n.id);
+      // The focus goes on to the next row that stays (else the one before), not to the page.
+      const gone = many ? [...selected] : [n.id];
+      const inside = (id: number) => {
+        for (let p: number | null | undefined = id; p != null; p = s().pages.get(p)?.parent_id) if (gone.includes(p)) return true;
+        return false;
+      };
+      const after = rows.slice(i + 1).find((r) => !inside(r.node.id)) ?? [...rows.slice(0, i)].reverse().find((r) => !inside(r.node.id));
+      void (many ? deleteSelection() : deletePage(n)).then(() => !s().pages.has(n.id) && requestAnimationFrame(() => focusRow(after?.node.id)));
       return;
     }
     if (key === "Enter" || key === " ") (handled(), s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }));
@@ -1228,6 +1207,7 @@ function TreeRename({ node, onDone }: { node: PageNode; onDone: (refocus: boolea
         onKeyDown={(e) => {
           // The row's keys (arrows, Delete, F2, Ctrl+A) stay with the text field.
           e.stopPropagation();
+          if (isComposing(e)) return;
           if (e.key === "Enter") (e.preventDefault(), void commit(false));
           else if (e.key === "Escape") (e.preventDefault(), finish(true));
         }}

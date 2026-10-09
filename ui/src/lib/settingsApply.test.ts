@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { BURST_GAP, waitsForField, changedKeys, checkProxy, checkTime, checkUrl, continueBurst, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, workHoursOrder } from "./settingsApply";
+import { BURST_GAP, waitsForField, changedKeys, checkProxy, checkTime, checkUrl, continueBurst, isDestructive, leafDiff, loadCollapsed, pick, revertPaths, saveCollapsed, toggled, undoTimeout, workHoursOrder } from "./settingsApply";
 import type { Settings } from "./types";
 
 const base = {
@@ -33,6 +33,22 @@ describe("instant apply", () => {
     expect(c.id).toBe(3);
     const d = continueBurst(c, { pernr: "12" }, base, 1600 + BURST_GAP + 1, 4);
     expect(d).not.toBe(c);
+  });
+
+  it("undo of an earlier change keeps a later change of the same section", () => {
+    const s0 = { ...base, editor: { tab_size: 2, smart_quotes: false, auto_pair: false } } as unknown as Settings;
+    // A: smart quotes on; B (later, own toast): auto pair on.
+    const a = continueBurst(null, { editor: { ...s0.editor, smart_quotes: true } }, s0, 1000, 1);
+    const s1 = { ...s0, editor: { ...s0.editor, smart_quotes: true } } as Settings;
+    const b = continueBurst(a, { editor: { ...s1.editor, auto_pair: true } }, s1, 1200, 2);
+    expect(b).not.toBe(a);
+    const s2 = { ...s1, editor: { ...s1.editor, auto_pair: true } } as Settings;
+    const undoA = revertPaths(s2, s0, s1);
+    expect({ ...s2, ...undoA }.editor).toEqual({ tab_size: 2, smart_quotes: false, auto_pair: true });
+    // A value changed again later is left alone.
+    const s3 = { ...s2, editor: { ...s2.editor, smart_quotes: false, tab_size: 8 } } as unknown as Settings;
+    expect({ ...s3, ...revertPaths(s3, s0, s1) }.editor).toEqual({ tab_size: 8, smart_quotes: false, auto_pair: true });
+    expect(leafDiff(s0, s2).sort()).toEqual(["editor.auto_pair", "editor.smart_quotes"]);
   });
 
   it("switching time tracking or the Git sync off and removing things are destructive", () => {

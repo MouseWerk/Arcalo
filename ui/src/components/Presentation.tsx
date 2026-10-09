@@ -20,6 +20,7 @@ import { useMenu } from "./ui";
 import { t as tr, useT } from "../lib/i18n";
 import { embedLabel, embedProblem, splitTarget } from "../editor/embedSyntax";
 import { time } from "../lib/format";
+import { isComposing } from "../lib/ime";
 
 /** Design size of a slide; it is scaled to the screen (and to the previews). */
 const STAGE_W = 1600;
@@ -327,7 +328,7 @@ export function PresenterPanel({ deck, onNav, overlay }: { deck: DeckState; onNa
           <button type="button" className="present-btn" aria-label={t("present.nextSlide")} disabled={deck.index >= deck.slides.length - 1} onClick={() => onNav({ action: "next" })}>
             <ChevronRight size={18} />
           </button>
-          <button
+          <button aria-haspopup="menu"
             type="button"
             className="present-btn"
             aria-label={t("present.target")}
@@ -476,6 +477,7 @@ function Presentation({ pageId }: { pageId: number }) {
   // Keys: navigation, digits + Enter to jump, Esc ends; nothing reaches the app underneath.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       if (document.querySelector(".menu")) return;
       e.stopPropagation();
       if (e.key === "Escape") {
@@ -611,6 +613,7 @@ export function PresenterApp() {
   const send = (n: Nav) => void emitTo("main", "presentation://nav", n).catch(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       if (document.querySelector(".menu")) return;
       if (e.key === "Escape") return void send({ action: "end" });
       const n = keyNav(e, typed);
