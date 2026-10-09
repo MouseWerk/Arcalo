@@ -128,6 +128,7 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
   useEffect(() => {
     if (sourceMode || !loaded) return;
     return registerFrontmatterOwner(pageId, {
+      shown: () => (root.current?.getClientRects().length ?? 0) > 0,
       get: () => fmRef.current,
       set: (next) => {
         fmRef.current = next;
@@ -185,9 +186,9 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
     return () => window.removeEventListener(ADD_PROPERTY_EVENT, onAdd);
   }, [active]);
 
-  // Slash „/Zusammenfassung“ in this page's editor.
+  // Slash „/Zusammenfassung“ in this page's editor (sent from the editor's element).
   useEffect(() => {
-    const onSummary = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === pageId && setSummaryOpen(true);
+    const onSummary = (e: Event) => (e as CustomEvent<{ id: number }>).detail.id === pageId && e.target instanceof Node && !!root.current?.contains(e.target) && setSummaryOpen(true);
     window.addEventListener(MEETING_SUMMARY_EVENT, onSummary);
     return () => window.removeEventListener(MEETING_SUMMARY_EVENT, onSummary);
   }, [pageId]);

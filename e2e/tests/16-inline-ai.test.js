@@ -220,6 +220,33 @@ test("/Zusammenfassung opens the summary; „Als neue Seite“ links back", asyn
   assert.match(md, /## Offene Punkte/);
 });
 
+test("/Zusammenfassung opens one summary when the note is also kept open behind another tab", async () => {
+  const jf = await pageId("Jour fixe 22.09.");
+  const other = await pageId("Architektur");
+  // The note in a tab that then shows another page (the note stays mounted there, hidden), and
+  // in a new tab.
+  await app.invoke("search_open", { target: { kind: "page", page_id: jf, new_tab: false } });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Jour fixe 22.09.");
+  await app.invoke("search_open", { target: { kind: "page", page_id: other, new_tab: false } });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Architektur");
+  await app.invoke("search_open", { target: { kind: "page", page_id: jf, new_tab: true } });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Jour fixe 22.09.");
+  assert.ok(
+    await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content[hidden] .page-title")].some((t) => t.value === "Jour fixe 22.09.")),
+    "the note kept behind the other tab",
+  );
+  await app.caretToEnd();
+  await app.keys(["Enter"]);
+  await app.type("/zusammenf");
+  await app.waitText(".sugg-item.sel", /Zusammenfassung/);
+  await app.keys(["Enter"]);
+  await app.waitFor('[role="dialog"][aria-label="Besprechung zusammenfassen"]');
+  await app.browser.pause(600);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll('[role="dialog"][aria-label="Besprechung zusammenfassen"]').length), 1);
+  await app.keys(["Escape"]);
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelectorAll('[role="dialog"]').length)) === 0, { timeoutMsg: "summary not closed" });
+});
+
 test("no console errors", async () => {
   assert.deepEqual(await app.consoleErrors(), []);
 });

@@ -12,6 +12,8 @@ import { parseFrontmatter } from "../../lib/frontmatter";
 export interface FrontmatterOwner {
   get: () => string;
   set: (fm: string) => void;
+  /** Whether the view is on screen (not in a tab kept open behind another one). */
+  shown?: () => boolean;
 }
 
 const owners = new Map<number, Set<FrontmatterOwner>>();
@@ -32,7 +34,9 @@ export const FRONTMATTER_EVENT = "arcalo:frontmatter-changed";
 
 /** Changes a page's frontmatter; resolves to the new block, `null` when nothing changed. */
 export async function updateFrontmatter(id: number, change: (fm: string) => string): Promise<string | null> {
-  const owner = owners.get(id)?.values().next().value;
+  // The view on screen when the page is open twice: the user sees the change at once there.
+  const all = [...(owners.get(id) ?? [])];
+  const owner = all.find((o) => o.shown?.()) ?? all[0];
   if (owner) {
     const cur = owner.get();
     const next = change(cur);

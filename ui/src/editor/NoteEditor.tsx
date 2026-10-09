@@ -435,7 +435,9 @@ export function NoteEditor({
         onInsertDrawing: insertDrawing,
         onOpenDrawing: openDrawing,
         onAi: (editor) => openAi(editor),
-        onSummary: () => window.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { detail: { id: doc.id } })),
+        // From this editor's element: only its own page view opens the summary (not another
+        // view of the same page in a second pane or a tab kept open behind another one).
+        onSummary: (editor) => editor.view.dom.dispatchEvent(new CustomEvent(MEETING_SUMMARY_EVENT, { bubbles: true, detail: { id: doc.id } })),
         onVoice: () => void startVoice({ pageId: doc.id }),
         typing: typingPrefs,
         fetchTitle: (url) => api.linkTitle(url).catch(() => null),
