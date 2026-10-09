@@ -32,6 +32,7 @@ import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import type { TKey } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
+import { SHOWN_PLACE } from "../lib/keepalive";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -604,7 +605,7 @@ function PageTree({
               await api.movePage(p.id, n.parent_id, i + 1);
               await s().refreshTree();
               s().openPage(p.id);
-              setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 120);
+              setTimeout(() => document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select(), 120);
             } catch (e) {
               s().error(tStatic("sb.createFailed"), e);
             }

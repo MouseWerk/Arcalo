@@ -186,7 +186,8 @@ function TimeCard({ today, now }: { today: Today; now: Date }) {
               onClick={act(async () => {
                 const done = await mobileApi.timerStop();
                 const minutes = done.reduce((n, e) => n + (e.duration_minutes ?? 0), 0);
-                m.toast(done.length ? "success" : "info", done.length ? t("mob.time.stopped", { time: hours(minutes), ref: timer.reference }) : t("mob.time.tooShort"));
+                if (done.length && !minutes) m.toast("info", t("mob.time.clockBack"));
+                else m.toast(done.length ? "success" : "info", done.length ? t("mob.time.stopped", { time: hours(minutes), ref: timer.reference }) : t("mob.time.tooShort"));
               })}
             >
               <Square size={18} />

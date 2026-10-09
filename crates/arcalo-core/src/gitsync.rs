@@ -1376,14 +1376,22 @@ fn hold_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
 /// added files by content (`-M`); among files with the same text a note keeps its file name
 /// where it can (several empty pages moved at once must not swap their identities).
 fn note_renames(git: &Git, repo: &Path, from: &str, to: &str) -> Result<Vec<(String, String)>> {
-    let out = git.check(Some(repo), &["diff", "--name-status", "-M", "-z", from, to, "--"])?;
+    // `--raw` carries the object ids at both ends: no `rev-parse` per rename (an „Aufräumen“
+    // of thousands of pages would start thousands of processes).
+    let out = git.check(Some(repo), &["diff", "--raw", "--no-abbrev", "-M", "-z", from, to, "--"])?;
     let mut parts = out.split('\0').filter(|p| !p.is_empty());
     let mut found = Vec::new();
-    while let Some(status) = parts.next() {
+    // The ids of each rename: (old at `from`, new at `to`).
+    let mut ids: Vec<(String, String)> = Vec::new();
+    while let Some(header) = parts.next() {
+        // `:<mode> <mode> <old id> <new id> <status>`
+        let fields: Vec<&str> = header.trim_start_matches(':').split(' ').collect();
+        let [_, _, old_id, new_id, status] = fields.as_slice() else { break };
         if status.starts_with(['R', 'C']) {
             let (Some(old), Some(new)) = (parts.next(), parts.next()) else { break };
             if status.starts_with('R') && is_note(old) && is_note(new) {
                 found.push((old.to_owned(), new.to_owned()));
+                ids.push(((*old_id).to_owned(), (*new_id).to_owned()));
             }
         } else if parts.next().is_none() {
             break;
@@ -1392,11 +1400,10 @@ fn note_renames(git: &Git, repo: &Path, from: &str, to: &str) -> Result<Vec<(Str
     let file_name = |p: &str| p.rsplit('/').next().unwrap_or(p).to_lowercase();
     // Pairs whose texts are the same at both ends, grouped by those texts: within a group the
     // old paths are handed out again, the one with the same file name first.
-    let mut groups: std::collections::HashMap<(Option<String>, Option<String>), Vec<usize>> = Default::default();
-    for (i, (old, new)) in found.iter().enumerate() {
-        let key = (blob_id(git, repo, from, old)?, blob_id(git, repo, to, new)?);
-        if key.0.is_some() && key.0 == key.1 {
-            groups.entry(key).or_default().push(i);
+    let mut groups: std::collections::HashMap<&str, Vec<usize>> = Default::default();
+    for (i, (old_id, new_id)) in ids.iter().enumerate() {
+        if old_id == new_id {
+            groups.entry(old_id.as_str()).or_default().push(i);
         }
     }
     for members in groups.values().filter(|m| m.len() > 1) {

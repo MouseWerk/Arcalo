@@ -138,11 +138,15 @@ describe("chunked lexing", () => {
   it("lexes long notes in linear time", () => {
     const ed = editor();
     const note = (n: number) => Array.from({ length: n }, (_, i) => `Absatz ${i} mit etwas Text und einem [[Link ${i}]].`).join("\n\n");
-    const time = (md: string) => {
-      const t = performance.now();
-      parse(ed, md, CHUNK_LINES);
-      return performance.now() - t;
-    };
+    // The fastest of three runs: a garbage collection or a busy machine only ever adds time.
+    const time = (md: string) =>
+      Math.min(
+        ...[0, 1, 2].map(() => {
+          const t = performance.now();
+          parse(ed, md, CHUNK_LINES);
+          return performance.now() - t;
+        }),
+      );
     time(note(200));
     const small = time(note(400));
     const large = time(note(1600));

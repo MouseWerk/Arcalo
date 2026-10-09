@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { drawingTitle, isDrawingName, lastDrawingEditor } from "./drawing";
+import { SHOWN_PLACE } from "../lib/keepalive";
 import { t } from "../lib/i18n";
 
 const DrawingEditor = lazy(() => {
@@ -49,8 +50,11 @@ export async function insertDrawing(editor: Editor) {
 
 /** Command palette „Neue Zeichnung einfügen“: into the note of the active pane, else the last focused one. */
 export function insertDrawingInActiveNote() {
-  const dom = document.querySelector<HTMLElement & { editor?: Editor }>(".pane.active .ProseMirror");
-  const editor = dom?.editor && !dom.editor.isDestroyed ? dom.editor : lastDrawingEditor();
+  const dom = document.querySelector<HTMLElement & { editor?: Editor }>(`${SHOWN_PLACE} .ProseMirror`);
+  // The last focused note only while it is on screen (not in a hidden kept tab).
+  const last = lastDrawingEditor();
+  const lastShown = last && (last.view.dom as HTMLElement).getClientRects().length > 0 ? last : null;
+  const editor = dom?.editor && !dom.editor.isDestroyed ? dom.editor : lastShown;
   if (!editor) {
     useApp.getState().toast({ tone: "warning", title: t("draw.noNote"), detail: t("draw.noNoteDetail") });
     return;

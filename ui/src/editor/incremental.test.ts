@@ -50,6 +50,7 @@ function check(editor: Editor) {
 }
 
 describe("incremental decorations", () => {
+  // Hundreds of edits through a full editor: about 1.5 s alone, more on a busy machine.
   it("equal a full rebuild after random edits", () => {
     const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: NOTE, contentType: "markdown" });
     expect(editor.state.plugins.some((p) => (p as unknown as { key: string }).key.startsWith("footnote"))).toBe(true);
@@ -83,7 +84,7 @@ describe("incremental decorations", () => {
       check(editor);
     }
     editor.destroy();
-  });
+  }, 30_000);
 
   it("reports mark changes as changed ranges", () => {
     const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: "a #tag b", contentType: "markdown" });

@@ -63,8 +63,17 @@ pub fn decide(state: &OnboardingState, first_seen: Option<&str>, hint_shown: boo
 impl Database {
     /// Records once whether this workspace existed before the intro: stored settings, the
     /// answered welcome choice, pages or projects. Runs at start, before anything is saved.
+    /// Also freezes the setup day of a workspace set up new with 1.15 (before the
+    /// `time.counts_from` row existed) so a later setup run cannot move it.
     pub fn onboarding_classify(&self) -> Result<()> {
-        if self.meta_get(FIRST_SEEN)?.is_some() {
+        if let Some(seen) = self.meta_get(FIRST_SEEN)? {
+            if seen == "fresh" && self.meta_get(crate::worktime::COUNTS_FROM)?.is_none() {
+                let at = self.load_settings()?.onboarding.completed_at;
+                if let Some(at) = at.and_then(|at| crate::db::parse_ts(&at).ok()) {
+                    let day = at.with_timezone(&chrono::Local).date_naive();
+                    self.meta_set(crate::worktime::COUNTS_FROM, &day.to_string())?;
+                }
+            }
             return Ok(());
         }
         let settings_row: bool =
@@ -94,13 +103,16 @@ impl Database {
     /// The setup was finished or closed: the intro is not shown again by itself.
     pub fn onboarding_complete(&self, now: DateTime<Utc>) -> Result<Settings> {
         let mut s = self.load_settings()?;
+        let first = s.onboarding.completed_at.is_none();
         s.onboarding = OnboardingState {
             completed_version: Some(INTRO_VERSION.into()),
             completed_at: Some(now.to_rfc3339_opts(SecondsFormat::Secs, true)),
         };
         self.save_settings(&s)?;
-        // A new workspace: missing time counts from today on (the days before were not missed).
-        if self.meta_get(FIRST_SEEN)?.as_deref() == Some("fresh")
+        // A new workspace: missing time counts from the day of its first setup on (the days
+        // before were not missed). Running the intro again later keeps that day.
+        if first
+            && self.meta_get(FIRST_SEEN)?.as_deref() == Some("fresh")
             && self.meta_get(crate::worktime::COUNTS_FROM)?.is_none()
         {
             let day = now.with_timezone(&chrono::Local).date_naive();

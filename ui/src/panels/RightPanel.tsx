@@ -14,6 +14,7 @@ import { baseName, fileExtension, isImageName, isPdfName } from "../editor/fileE
 import { openFile, openPdfViewer } from "../editor/files";
 import { t as tr, useT } from "../lib/i18n";
 import { useAi } from "../lib/aiswitch";
+import { SHOWN_PLACE } from "../lib/keepalive";
 
 // The local graph brings the canvas and the layout along: loaded with its tab.
 const LocalGraph = lazy(() => import("./LocalGraph").then((m) => ({ default: m.LocalGraph })));
@@ -117,7 +118,7 @@ function OutlinePanel() {
 function useReadingHeading(count: number, pageId: number | undefined) {
   const [reading, setReading] = useState(-1);
   useEffect(() => {
-    const sc = document.querySelector<HTMLElement>(".pane.active .page-scroll");
+    const sc = document.querySelector<HTMLElement>(`${SHOWN_PLACE} .page-scroll`);
     if (!sc || !count) return;
     const update = () => {
       const line = sc.getBoundingClientRect().top + sc.clientHeight / 3;

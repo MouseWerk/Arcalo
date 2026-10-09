@@ -577,11 +577,11 @@ pub fn take_over_stores(stores: &[SecretStore], new: &dyn Backend, old: &dyn Bac
 }
 
 /// At the start: takes over every known entry of the old service name (credential stores only;
-/// `secrets.json` moved with the data folder).
-pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::Settings>) {
+/// `secrets.json` moved with the data folder). `again`: [`older_version_ran`], read before the
+/// start count of this version removes the old version's marker.
+pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::Settings>, again: bool) {
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     if matches!(kind(), Kind::Native | Kind::SecretService) {
-        let again = older_version_ran(data_dir);
         if again {
             crate::devlog::info(
                 "secrets",
@@ -606,7 +606,7 @@ pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::S
             );
         }
     }
-    let _ = (data_dir, settings);
+    let _ = (data_dir, settings, again);
 }
 
 // ------------------------------------------------------------------ migration

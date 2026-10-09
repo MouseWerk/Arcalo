@@ -1067,9 +1067,10 @@ mod tests {
             best = best.min(t.elapsed());
             assert!(!r.outgoing.is_empty() && !r.incoming.is_empty());
         }
-        // The budget guards against a scan of every page (seconds, not milliseconds); shared CI
-        // runners run the tests in parallel and get a wider margin.
-        let budget = if std::env::var_os("CI").is_some() { 250 } else { 50 };
+        // The budget guards against a scan of every page (seconds, not milliseconds): the indexed
+        // scan takes a few ms, so 150 ms still catches that while a busy machine (builds, other
+        // test runs) passes; shared CI runners get a wider margin.
+        let budget = if std::env::var_os("CI").is_some() { 250 } else { 150 };
         assert!(best.as_millis() < budget, "mention scan took {best:?} (budget {budget} ms)");
     }
 }

@@ -178,6 +178,16 @@ describe("keymap", () => {
     expect(commandAllowed("palette", document.body)).toBe(false);
     palette.remove();
     dialog.remove();
+    // A dialog inside a hidden kept tab is not in front: the shortcuts work.
+    const kept = document.createElement("div");
+    kept.hidden = true;
+    const behind = document.createElement("div");
+    behind.setAttribute("aria-modal", "true");
+    kept.append(behind);
+    document.body.append(kept);
+    expect(modalLayer()).toBeNull();
+    expect(commandAllowed("close_tab", document.body)).toBe(true);
+    kept.remove();
     // The setup counts even while the focus is outside it.
     const setup = document.createElement("div");
     setup.className = "fr-overlay";

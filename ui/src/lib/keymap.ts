@@ -319,7 +319,8 @@ const OVER_PALETTE = new Set(["palette", "quick_switcher"]);
  * the mouse back/forward buttons wait.
  */
 export function modalLayer(root: ParentNode | null = typeof document === "undefined" ? null : document): "palette" | "modal" | null {
-  const layers = root ? [...root.querySelectorAll('[aria-modal="true"], .fr-overlay')] : [];
+  // A layer inside a hidden place (a kept tab) is not in front of anything.
+  const layers = root ? [...root.querySelectorAll('[aria-modal="true"], .fr-overlay')].filter((el) => !el.closest("[hidden]")) : [];
   if (!layers.length) return null;
   return layers.every((el) => el.classList.contains("palette")) ? "palette" : "modal";
 }

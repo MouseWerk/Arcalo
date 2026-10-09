@@ -186,6 +186,24 @@ pub fn add_chips<Tz: TimeZone>(db: &Database, entries: &[TimeEntry], tz: &Tz) ->
     Ok(())
 }
 
+/// Stops the timer on the phone; its bookings (one per day over midnight) go into the daily note
+/// as chips. Less than a minute books nothing (as on the desktop). When the clock was set back
+/// behind the timer's start, the booking is kept without a duration (and without a chip) for the
+/// user to enter the time, as on the desktop: the phone says so for a booking of 0 minutes.
+pub fn stop_timer<Tz: TimeZone>(db: &Database, now: DateTime<Utc>, tz: &Tz) -> Result<Vec<TimeEntry>> {
+    let clock_back = db.running_timer()?.is_some_and(|r| now < r.start_time);
+    let entries = db.stop_timer_in(now, &[], tz)?;
+    if clock_back {
+        return Ok(entries);
+    }
+    if entries.len() == 1 && entries[0].duration_minutes.unwrap_or(0) < 1 {
+        db.delete_time_entry(entries[0].id)?;
+        return Ok(vec![]);
+    }
+    add_chips(db, &entries, tz)?;
+    Ok(entries)
+}
+
 /// A reference booked recently (the „Zeit“ screen offers them first).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RecentTarget {
@@ -484,6 +502,27 @@ mod tests {
         let before = db.page_doc(day.id).unwrap().content;
         assert!(book(&db, "/zeit NP-9999 1h Fehler", now, &tz(), &Thresholds::default()).is_err());
         assert_eq!(db.page_doc(day.id).unwrap().content, before);
+    }
+
+    #[test]
+    fn a_timer_stopped_on_the_phone_after_the_clock_went_back_is_kept() {
+        let db = Database::open_in_memory().unwrap();
+        wbs(&db);
+        let np = db.netzplan_by_ref("NP-8801").unwrap();
+        // A normal run: booked with its chip.
+        db.start_timer(np.id, Some("1020"), None, "Konzept", at("2026-10-08T09:00:00+02:00")).unwrap();
+        let out = stop_timer(&db, at("2026-10-08T10:00:00+02:00"), &tz()).unwrap();
+        assert_eq!(out[0].duration_minutes, Some(60));
+        assert!(db.time_entry(out[0].id).unwrap().page_id.is_some(), "chip in the daily note");
+        // Less than a minute: nothing booked.
+        db.start_timer(np.id, None, None, "kurz", at("2026-10-08T11:00:00+02:00")).unwrap();
+        assert!(stop_timer(&db, at("2026-10-08T11:00:20+02:00"), &tz()).unwrap().is_empty());
+        // Started while the clock ran ahead: kept with 0 minutes and no chip, not deleted.
+        let e = db.start_timer(np.id, None, None, "Uhr", at("2026-10-08T15:00:00+02:00")).unwrap();
+        let out = stop_timer(&db, at("2026-10-08T14:00:00+02:00"), &tz()).unwrap();
+        assert_eq!((out.len(), out[0].id, out[0].duration_minutes), (1, e.id, Some(0)));
+        assert_eq!(db.time_entry(e.id).unwrap().page_id, None, "no chip");
+        assert!(db.running_timer().unwrap().is_none());
     }
 
     #[test]
