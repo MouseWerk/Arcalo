@@ -6,7 +6,7 @@ import { plannedMinutes } from "../../lib/blocks";
 import { CalendarCheck, FolderKanban, Gauge, WandSparkles } from "lucide-react";
 import { useApp } from "../../store/app";
 import { useTimeTracking } from "../../lib/timetracking";
-import { addDays, fmtDate, fmtHours, fmtMinutes, isoDay, weekStart } from "../../lib/format";
+import { addDays, fmtDate, fmtHours, fmtMinutes, isoDay, weekdayShort, weekStart } from "../../lib/format";
 import { t, type TKey } from "../../lib/i18n";
 import { hoursLabel } from "../../lib/calendar";
 import { timeRange } from "../../lib/agenda";
@@ -24,7 +24,8 @@ import { dayLabel, Empty, fmt, hhmm, hrs, Loadable, More, s, TaskRow, TimerBlock
 import type { WidgetProps } from "./registry";
 import { startedOn } from "../../onboarding/firststeps";
 
-const weekdayShort = (iso: string) => fmt(new Date(`${iso}T12:00:00`), { weekday: "short" }).replace(/\.$/, "").slice(0, 2);
+/** „Mo“ / "Mon", as everywhere else (lib/format.ts). */
+const weekdayOf = (iso: string) => weekdayShort(new Date(`${iso}T12:00:00`));
 
 // ------------------------------------------------------------------ Zeit diese Woche
 
@@ -45,7 +46,7 @@ export function WeekWidget({ widget }: WidgetProps) {
       {() => {
         const d = data!;
         const monday = new Date(`${d.week_start}T00:00:00`);
-        const labels = d.days.map((x) => weekdayShort(x.date));
+        const labels = d.days.map((x) => weekdayOf(x.date));
         const week = weekBars(
           d.days.map((x) => ({ date: x.date, booked_minutes: x.minutes })),
           monday,
