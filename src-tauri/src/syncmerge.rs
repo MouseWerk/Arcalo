@@ -107,6 +107,23 @@ fn folder_page(
     Ok(Some(page.id))
 }
 
+/// Where a note a computer still on 1.15 wrote below `Zeiterfassung/` is here.
+/// 1.15 put the subpages of a top-level page „Zeiterfassung“ there; 1.16 keeps that name for
+/// the time sheets and writes them to `Zeiterfassung (2)/…`. Mapped to the folder of that page
+/// here, such a note updates it instead of creating a new „Zeiterfassung“ with copies at every
+/// sync (the 1.15 computer puts the note back each time, it never takes over deletions there).
+/// `None`: not such a note, or no such page here.
+fn time_dir_alias(path: &str, by_folder: &HashMap<String, i64>) -> Option<String> {
+    let dir = arcalo_core::mirror::TIME_DIR.to_lowercase();
+    let head = path.get(..dir.len())?;
+    let rest = path[dir.len()..].strip_prefix('/').filter(|_| head.to_lowercase() == dir)?;
+    let folder = by_folder
+        .keys()
+        .filter(|k| !k.contains('/') && **k != dir && names_title(k, arcalo_core::mirror::TIME_DIR))
+        .min_by_key(|k| (k.len(), (*k).clone()))?;
+    Some(format!("{folder}/{rest}"))
+}
+
 /// A path without its extension (`.md`, `.canvas`): the folder of the page's subpages.
 fn without_ext(lower: &str) -> &str {
     lower.strip_suffix(".md").or_else(|| lower.strip_suffix(".canvas")).unwrap_or(lower)
@@ -222,13 +239,21 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
             by_folder.insert(new.to_lowercase(), id);
         }
         for c in changes {
-            let lower = c.path.to_lowercase();
-            if !is_page_path(&lower) {
+            if !is_page_path(&c.path.to_lowercase()) {
                 continue;
             }
-            let dir = parent_dir(&c.path);
+            // A note of a 1.15 computer below `Zeiterfassung/` (never a deletion there: 1.16
+            // computers moved those notes away themselves).
+            let alias = |path: &str| {
+                let known = by_file.contains_key(&path.to_lowercase());
+                let aliased = c.theirs.as_ref().filter(|_| !known).and_then(|_| time_dir_alias(path, &by_folder));
+                aliased.unwrap_or_else(|| path.to_owned())
+            };
+            let path = alias(&c.path);
+            let lower = path.to_lowercase();
+            let dir = parent_dir(&path);
             // Moved or renamed there: the page of the old path moves here as well.
-            let moved = c.from.as_deref().and_then(|f| by_file.get(&f.to_lowercase()).copied());
+            let moved = c.from.as_deref().and_then(|f| by_file.get(&alias(f).to_lowercase()).copied());
             if let (Some(id), Some(from)) = (moved, c.from.as_deref()) {
                 let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
                 let page = db.page(id)?;
@@ -777,23 +802,29 @@ mod tests {
             std::fs::create_dir_all(&files).unwrap();
             let own = dir.join("mirror");
             arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
+            apply(db, &self.push(pc, &own, &hold_paths(db)), Local::now()).unwrap()
+        }
+
+        /// Syncs the mirror folder `source` as computer `pc`; the server's changes.
+        fn push(&self, pc: &str, source: &std::path::Path, hold: &[String]) -> Vec<RemoteChange> {
+            let dir = self.base.join(pc);
             let out = gitsync::sync(
                 &gitsync::Git::new(None, &self.settings.remote_url),
                 &gitsync::SyncRequest {
                     repo: &dir.join("git-sync"),
-                    source: &own,
+                    source,
                     database: None,
                     settings: &self.settings,
                     host: pc,
                     now: Local::now(),
-                    hold: &hold_paths(db),
+                    hold,
                     allow_deletions: false,
                     settings_file: None,
                     companion: false,
                 },
             )
             .unwrap();
-            apply(db, &out.remote_changes, Local::now()).unwrap()
+            out.remote_changes
         }
     }
 
@@ -937,6 +968,51 @@ mod tests {
         }
     }
 
+    /// A computer still on 1.15 keeps writing the subpages of a page „Zeiterfassung“ to
+    /// `Zeiterfassung/…` (1.16 writes `Zeiterfassung (2)/…`, the name is the time sheets'
+    /// folder) and never takes over deletions there. This computer maps those notes to its own
+    /// page instead of creating a new „Zeiterfassung“ with copies at every sync.
+    #[test]
+    fn notes_of_a_115_computer_below_zeiterfassung_are_not_copied_again_and_again() {
+        let Some(pcs) = Pcs::new("time-dir-115") else { return };
+        // The 1.15 computer (its mirror written by hand): a folder-only page with a subpage.
+        let old = pcs.base.join("a-mirror");
+        let files = pcs.base.join("a-files");
+        std::fs::create_dir_all(&files).unwrap();
+        // The mirror's own files (its marker) from an empty workspace.
+        arcalo_core::mirror::write_mirror(&Database::open_in_memory().unwrap(), &old, &files, &Local).unwrap();
+        let put = |rel: &str, text: &str| {
+            let path = old.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        put("Zeiterfassung/Regeln.md", "Immer bis Freitag");
+        pcs.push("a", &old, &[]);
+        // This computer (1.16) has the same pages.
+        let b = Database::open_in_memory().unwrap();
+        let z = b.create_page(None, "Zeiterfassung", Some("folder")).unwrap();
+        let regeln = b.create_page(Some(z.id), "Regeln", None).unwrap();
+        b.save_page_content(regeln.id, "Immer bis Freitag").unwrap();
+        let count = |t: &str| b.list_pages().unwrap().iter().filter(|p| p.deleted_at.is_none() && p.title == t).count();
+        for round in 0..3 {
+            let out = pcs.sync(&b, "b");
+            assert!(out.created.is_empty() && out.trashed.is_empty(), "round {round}: {out:?}");
+            assert_eq!((count("Zeiterfassung"), count("Regeln")), (1, 1), "round {round}");
+            // The 1.15 computer took over `Zeiterfassung (2)/Regeln.md` as a page of its own and
+            // puts its own note back where 1.15 writes it.
+            put("Zeiterfassung (2)/Regeln.md", "Immer bis Freitag");
+            pcs.push("a", &old, &[]);
+        }
+        // An edit made on the 1.15 computer reaches this one's page.
+        put("Zeiterfassung/Regeln.md", "Immer bis Donnerstag");
+        pcs.push("a", &old, &[]);
+        let out = pcs.sync(&b, "b");
+        assert!(out.created.is_empty(), "{out:?}");
+        assert_eq!(count("Regeln"), 1);
+        let edited = b.page_doc(regeln.id).unwrap().content == "Immer bis Donnerstag";
+        assert!(edited || out.conflicts.contains(&regeln.id), "{out:?}");
+    }
+
     #[test]
     fn canvas_conflicts_are_decided_whole() {
         let db = Database::open_in_memory().unwrap();
@@ -962,6 +1038,7 @@ mod tests {
         assert_eq!(db.page_doc(board.id).unwrap().content, mine);
         assert!(keep_theirs_as_copy(&db, board.id, broken).is_err());
     }
+
     /// The conflict view runs on a read-only connection: a conflict of a page deleted since is
     /// left out without writing the list (the writer prunes it in `git_conflicts`).
     #[test]
