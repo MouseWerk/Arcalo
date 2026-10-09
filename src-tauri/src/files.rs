@@ -19,7 +19,7 @@ async fn blocking<T: Send + 'static>(
 /// Every file in the attachments folder with type, size, date and the pages using it.
 #[tauri::command]
 pub async fn attachments_list(app: AppHandle) -> Result<AttachmentList> {
-    blocking(app, |s| manager::list(&s.db(), &s.attachments_dir())).await
+    blocking(app, |s| manager::list(&s.reader(), &s.attachments_dir())).await
 }
 
 /// Renames a file and rewrites its embeds in every page (the previous contents are kept as
