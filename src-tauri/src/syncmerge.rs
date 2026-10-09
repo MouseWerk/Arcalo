@@ -7,7 +7,7 @@
 //! Conflicts live in the meta row `gitsync.conflicts` (JSON); while one is open its file is
 //! held at the server's version in the sync's working tree (`SyncRequest::hold`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use arcalo_core::gitsync::{self, RemoteChange, SyncOutcome};
 use arcalo_core::merge::{self, MergeResult};
@@ -60,6 +60,10 @@ pub struct Pulled {
     /// Pages the server deleted that stay here: too many at once (see `gitsync::mass_deletion`).
     /// The next sync uploads them again.
     pub kept: Vec<i64>,
+    /// Pages moved or renamed like on the other computer.
+    pub moved: Vec<i64>,
+    /// Pages deleted here that the other computer edited meanwhile: back with that text.
+    pub restored: Vec<i64>,
 }
 
 fn stem(path: &str) -> String {
@@ -73,40 +77,189 @@ fn is_canvas_path(lower: &str) -> bool {
     lower.ends_with(".canvas")
 }
 
+/// A note of a page: not the sync's own README (in 1.15 and earlier a page could take that
+/// name) and nothing in the attachments folder. Pages below a folder „Zeiterfassung“ are pages
+/// (the time sheets there are `.csv`).
 fn is_page_path(lower: &str) -> bool {
-    (lower.ends_with(".md") || is_canvas_path(lower)) && lower != "readme.md" && !lower.starts_with("zeiterfassung/")
+    (lower.ends_with(".md") || is_canvas_path(lower)) && lower != "readme.md" && !lower.starts_with("attachments/")
+}
+
+/// The page of the folder `dir` of a pulled note (`None`: the top level). A folder without a page
+/// here (a page without text of its own is written as a folder only, such as the year and month
+/// folders of „Aufräumen“) gets one, so the note keeps its place.
+fn folder_page(
+    db: &Database,
+    dir: Option<&str>,
+    by_file: &HashMap<String, i64>,
+    by_folder: &mut HashMap<String, i64>,
+    out: &mut Pulled,
+) -> Result<Option<i64>> {
+    let Some(dir) = dir.filter(|d| !d.is_empty()) else { return Ok(None) };
+    let key = dir.to_lowercase();
+    if let Some(&id) = by_folder.get(&key).or_else(|| by_file.get(&format!("{key}.md"))) {
+        by_folder.insert(key, id);
+        return Ok(Some(id));
+    }
+    let parent = folder_page(db, parent_dir(dir), by_file, by_folder, out)?;
+    let page = db.create_page(parent, dir.rsplit('/').next().unwrap_or(dir), Some("folder"))?;
+    out.created.push(page.id);
+    by_folder.insert(key, page.id);
+    Ok(Some(page.id))
+}
+
+/// A path without its extension (`.md`, `.canvas`): the folder of the page's subpages.
+fn without_ext(lower: &str) -> &str {
+    lower.strip_suffix(".md").or_else(|| lower.strip_suffix(".canvas")).unwrap_or(lower)
+}
+
+fn parent_dir(path: &str) -> Option<&str> {
+    path.rsplit_once('/').map(|(d, _)| d)
+}
+
+/// Whether a file named `stem` is where the mirror puts a page titled `title`: its file name,
+/// or that name with the number the mirror adds when two pages share it (`Notiz (2)`).
+fn names_title(stem: &str, title: &str) -> bool {
+    let name = vault::file_name(title).to_lowercase();
+    let stem = stem.to_lowercase();
+    let numbered = || {
+        let n = stem.strip_prefix(&name)?.strip_prefix(" (")?.strip_suffix(')')?;
+        n.parse::<u32>().ok()
+    };
+    stem == name || numbered().is_some()
+}
+
+/// Folders (lower case) of pages written as a folder only: no text, so no file of their own.
+fn folders_only(by_file: &HashMap<String, i64>, by_folder: &HashMap<String, i64>) -> HashMap<String, i64> {
+    by_folder
+        .iter()
+        .filter(|(k, _)| !by_file.contains_key(&format!("{k}.md")) && !by_file.contains_key(&format!("{k}.canvas")))
+        .map(|(k, id)| (k.clone(), *id))
+        .collect()
+}
+
+/// Folder-only pages whose notes all moved to one other, new folder: the folder was renamed or
+/// moved there. `(old folder, new folder)`, outer folders first.
+fn folder_moves(
+    changes: &[RemoteChange],
+    by_file: &HashMap<String, i64>,
+    by_folder: &HashMap<String, i64>,
+    only: &HashMap<String, i64>,
+) -> Vec<(String, String)> {
+    let moves: HashMap<String, &str> =
+        changes.iter().filter_map(|c| Some((c.from.as_ref()?.to_lowercase(), c.path.as_str()))).collect();
+    let target_of = |folder: &str| -> Option<String> {
+        let prefix = format!("{folder}/");
+        let mut target: Option<String> = None;
+        for file in by_file.keys().filter(|f| f.starts_with(&prefix)) {
+            let rest = &file[prefix.len()..];
+            let mut parts: Vec<&str> = moves.get(file)?.split('/').collect();
+            let depth = rest.split('/').count();
+            if parts.len() <= depth {
+                return None;
+            }
+            let tail = parts.split_off(parts.len() - depth).join("/");
+            let dir = parts.join("/");
+            if tail.to_lowercase() != rest || target.as_ref().is_some_and(|t| *t != dir) {
+                return None;
+            }
+            target = Some(dir);
+        }
+        let key = target.as_ref()?.to_lowercase();
+        let fresh = key != folder
+            && !key.starts_with(&prefix)
+            && !by_folder.contains_key(&key)
+            && !by_file.contains_key(&format!("{key}.md"));
+        target.filter(|_| fresh)
+    };
+    let mut out: Vec<(String, String)> =
+        only.keys().filter_map(|folder| Some((folder.clone(), target_of(folder)?))).collect();
+    out.sort_by_key(|(old, _)| (old.matches('/').count(), old.clone()));
+    out
 }
 
 /// Takes over the notes the server changed. A note unchanged here since the last sync gets
 /// the server's content (the previous content is kept as a version), is created or moved to
 /// the trash; a note changed on both sides, or edited here since the mirror was written,
-/// becomes a conflict. Files outside the notes (README, time CSVs) are skipped.
+/// becomes a conflict. A note the server moved or renamed moves here too: the page keeps its
+/// id, versions, time entries and links. Files outside the notes (the sync's README, time
+/// sheets, attachments) are skipped.
 pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> Result<Pulled> {
     db.atomic(|| {
         let paths = vault::page_paths(db)?;
-        let by_file: HashMap<String, i64> =
+        let mut by_file: HashMap<String, i64> =
             paths.iter().filter_map(|p| Some((p.file.as_ref()?.to_lowercase(), p.page_id))).collect();
         let mut by_folder: HashMap<String, i64> =
             paths.iter().filter_map(|p| Some((p.folder.as_ref()?.to_lowercase(), p.page_id))).collect();
+        let only = folders_only(&by_file, &by_folder);
         let mut conflicts = load(db);
         let mut out = Pulled::default();
+        // Pages a change of this pull names.
+        let mut named: HashSet<i64> = HashSet::new();
         // Deleting many pages at once (another computer's mirror went missing, a wrong folder)
-        // is not taken over: the pages stay and go back to the server with the next sync.
+        // is not taken over: the pages stay and go back to the server with the next sync. Moves
+        // are no deletions.
         let deletions = changes
             .iter()
             .filter(|c| c.theirs.is_none() && !c.conflict && by_file.contains_key(&c.path.to_lowercase()))
             .count();
         let tracked = by_file.keys().filter(|k| is_page_path(k)).count();
         let refuse_deletions = gitsync::mass_deletion(deletions, tracked);
+        // Folders renamed or moved there: the folder's page follows (its notes follow below).
+        for (old, new) in folder_moves(changes, &by_file, &by_folder, &only) {
+            let Some(&id) = by_folder.get(&old) else { continue };
+            let parent = folder_page(db, parent_dir(&new), &by_file, &mut by_folder, &mut out)?;
+            let page = db.page(id)?;
+            if page.parent_id != parent && db.move_page(id, parent, i64::MAX).is_err() {
+                continue;
+            }
+            let name = new.rsplit('/').next().unwrap_or(&new);
+            if !names_title(name, &page.title) {
+                db.rename_page(id, name)?;
+            }
+            out.moved.push(id);
+            named.insert(id);
+            by_folder.remove(&old);
+            by_folder.insert(new.to_lowercase(), id);
+        }
         for c in changes {
             let lower = c.path.to_lowercase();
             if !is_page_path(&lower) {
                 continue;
             }
-            match by_file.get(&lower) {
-                Some(&id) => {
+            let dir = parent_dir(&c.path);
+            // Moved or renamed there: the page of the old path moves here as well.
+            let moved = c.from.as_deref().and_then(|f| by_file.get(&f.to_lowercase()).copied());
+            if let (Some(id), Some(from)) = (moved, c.from.as_deref()) {
+                let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                let page = db.page(id)?;
+                // Never into its own subpages (a loop): then it keeps its place here.
+                let placed = page.parent_id == parent || db.move_page(id, parent, i64::MAX).is_ok();
+                let name = stem(&c.path);
+                if stem(from) != name && !names_title(&name, &page.title) {
+                    db.rename_page(id, &name)?;
+                }
+                if placed {
+                    out.moved.push(id);
+                }
+                let old = from.to_lowercase();
+                by_file.remove(&old);
+                if let Some(sub) = by_folder.remove(without_ext(&old)) {
+                    by_folder.insert(without_ext(&lower).to_owned(), sub);
+                }
+            }
+            // A folder-only page here (no text of its own) that has text there.
+            let as_folder = || {
+                let id = *only.get(without_ext(&lower))?;
+                (lower.ends_with(".md") && by_folder.get(without_ext(&lower)) == Some(&id)).then_some(id)
+            };
+            match moved.or_else(|| by_file.get(&lower).copied()).or_else(as_folder) {
+                Some(id) => {
+                    named.insert(id);
+                    by_file.insert(lower.clone(), id);
                     let current = db.page_doc(id)?.content;
-                    let unchanged_here = c.mine.as_deref() == Some(current.as_str());
+                    // A page without text here takes the server's text as a new note.
+                    let unchanged_here =
+                        c.mine.as_deref() == Some(current.as_str()) || (c.mine.is_none() && current.is_empty());
                     match (&c.theirs, c.conflict || !unchanged_here) {
                         // A canvas the server holds as unreadable JSON stays as it is here.
                         (Some(theirs), false) if is_canvas_path(&lower) && !arcalo_core::canvas::is_valid(theirs) => {}
@@ -144,31 +297,76 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
                 }
                 None => {
                     let Some(theirs) = &c.theirs else { continue };
-                    let dir = c.path.rsplit_once('/').map(|(d, _)| d.to_lowercase());
-                    let parent = dir.and_then(|d| by_folder.get(&d).copied());
-                    if is_canvas_path(&lower) {
-                        // A canvas from another computer (or Obsidian); an unreadable file stays on the server.
-                        if !arcalo_core::canvas::is_valid(theirs) {
-                            continue;
-                        }
-                        let page = db.create_page(parent, &stem(&c.path), Some(arcalo_core::canvas::ICON))?;
-                        db.make_canvas(page.id, theirs)?;
-                        out.created.push(page.id);
+                    let canvas = is_canvas_path(&lower);
+                    if canvas && !arcalo_core::canvas::is_valid(theirs) {
+                        // An unreadable canvas from another computer (or Obsidian) stays on the server.
                         continue;
                     }
-                    let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
-                    db.save_page_content(page.id, theirs)?;
-                    out.created.push(page.id);
-                    // Its subpages (later in the list) go below it.
-                    if let Some(folder) = lower.strip_suffix(".md") {
-                        by_folder.entry(folder.to_owned()).or_insert(page.id);
+                    let parent = folder_page(db, dir, &by_file, &mut by_folder, &mut out)?;
+                    // Deleted here while the other computer edited it: the edit brings it back, as
+                    // the page from the trash when it was deleted on its own.
+                    let came_back = c.mine.is_none() && c.base.is_some();
+                    let from_trash =
+                        if came_back { restore_from_trash(db, parent, &stem(&c.path), canvas)? } else { None };
+                    let id = match from_trash {
+                        Some(id) => {
+                            db.snapshot_page(id)?;
+                            db.save_page_content(id, theirs)?;
+                            id
+                        }
+                        None if canvas => {
+                            let page = db.create_page(parent, &stem(&c.path), Some(arcalo_core::canvas::ICON))?;
+                            db.make_canvas(page.id, theirs)?;
+                            out.created.push(page.id);
+                            page.id
+                        }
+                        None => {
+                            let page = db.create_page(parent, &stem(&c.path), Some("file-text"))?;
+                            db.save_page_content(page.id, theirs)?;
+                            out.created.push(page.id);
+                            page.id
+                        }
+                    };
+                    if came_back {
+                        out.restored.push(id);
                     }
+                    named.insert(id);
+                    by_file.insert(lower.clone(), id);
+                    // Its subpages (later in the list) go below it.
+                    by_folder.entry(without_ext(&lower).to_owned()).or_insert(id);
+                }
+            }
+        }
+        // A folder-only page whose subpages all went there (deleted or moved away) is gone there
+        // too: kept here, it would go back to the other computer as an empty page.
+        if !out.trashed.is_empty() || !out.moved.is_empty() {
+            let live: Vec<arcalo_core::model::Page> = db.list_pages()?;
+            for &id in only.values().filter(|id| !named.contains(id)) {
+                let has_children = live.iter().any(|p| p.parent_id == Some(id));
+                if !has_children && live.iter().any(|p| p.id == id) && db.page_doc(id)?.content.is_empty() {
+                    db.trash_page(id)?;
+                    out.trashed.push(id);
                 }
             }
         }
         store(db, &conflicts)?;
         Ok(out)
     })
+}
+
+/// A page deleted here that the other computer edited since: the trashed page of that name below
+/// `parent`, trashed on its own (no subpages with it), is put back. `None`: a new page.
+fn restore_from_trash(db: &Database, parent: Option<i64>, name: &str, canvas: bool) -> Result<Option<i64>> {
+    let entry = db.list_trash()?.into_iter().find(|e| {
+        e.descendants == 0
+            && e.page.parent_id == parent
+            && (e.page.kind.as_deref() == Some(arcalo_core::canvas::KIND)) == canvas
+            && names_title(name, &e.page.title)
+    });
+    match entry {
+        Some(e) => Ok(Some(db.restore_page(e.page.id)?.id)),
+        None => Ok(None),
+    }
 }
 
 /// Drops conflicts of pages that are gone or in the trash.
@@ -343,6 +541,7 @@ mod tests {
     ) -> RemoteChange {
         RemoteChange {
             path: path.into(),
+            from: None,
             base: base.map(Into::into),
             mine: mine.map(Into::into),
             theirs: theirs.map(Into::into),
@@ -374,7 +573,8 @@ mod tests {
                 change("Projekt/Neu.md", None, None, Some("ganz neu"), false),
                 change("Bearbeitet.md", Some("stand"), Some("stand"), Some("vom Server"), false),
                 change("README.md", None, None, Some("x"), false),
-                change("Zeiterfassung/2026-09.md", None, None, Some("x"), false),
+                change("Zeiterfassung/2026-09.csv", None, None, Some("x"), false),
+                change("attachments/notiz.md", None, None, Some("x"), false),
             ],
             now,
         )
@@ -535,6 +735,198 @@ mod tests {
         run(&a, "a", None).unwrap();
         assert_eq!(live_titles(&a), ["Heute", "Notiz", "Plan", "Projekt"]);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Two computers on one bare remote for the tests below: `sync(db, pc)` writes the mirror,
+    /// syncs and takes over what came back.
+    struct Pcs {
+        base: std::path::PathBuf,
+        settings: arcalo_core::gitsync::GitSyncSettings,
+    }
+
+    impl Pcs {
+        fn new(name: &str) -> Option<Pcs> {
+            use std::process::Command;
+            if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
+                return None;
+            }
+            let base = std::env::temp_dir().join(format!("arcalo-pcs-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&base);
+            std::fs::create_dir_all(&base).unwrap();
+            let bare = base.join("remote.git");
+            assert!(Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap().success());
+            let settings = arcalo_core::gitsync::GitSyncSettings {
+                enabled: true,
+                remote_url: bare.display().to_string(),
+                ..Default::default()
+            };
+            Some(Pcs { base, settings })
+        }
+
+        fn sync(&self, db: &Database, pc: &str) -> Pulled {
+            let dir = self.base.join(pc);
+            let files = dir.join("attachments");
+            std::fs::create_dir_all(&files).unwrap();
+            let own = dir.join("mirror");
+            arcalo_core::mirror::write_mirror(db, &own, &files, &Local).unwrap();
+            let out = gitsync::sync(
+                &gitsync::Git::new(None, &self.settings.remote_url),
+                &gitsync::SyncRequest {
+                    repo: &dir.join("git-sync"),
+                    source: &own,
+                    database: None,
+                    settings: &self.settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &hold_paths(db),
+                    allow_deletions: false,
+                    settings_file: None,
+                    companion: false,
+                },
+            )
+            .unwrap();
+            apply(db, &out.remote_changes, Local::now()).unwrap()
+        }
+    }
+
+    impl Drop for Pcs {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    /// `(title, parent title)` of every live page, sorted.
+    fn tree(db: &Database) -> Vec<(String, Option<String>)> {
+        let pages = db.list_pages().unwrap();
+        let title = |id: Option<i64>| id.and_then(|id| pages.iter().find(|p| p.id == id)).map(|p| p.title.clone());
+        let mut t: Vec<(String, Option<String>)> =
+            pages.iter().map(|p| (p.title.clone(), title(p.parent_id))).collect();
+        t.sort();
+        t
+    }
+
+    #[test]
+    fn moved_pages_keep_their_id_on_the_other_computer() {
+        let Some(pcs) = Pcs::new("moves") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let mut ids = vec![];
+        for i in 0..12 {
+            let p = a.create_page(None, &format!("Notiz {i:02}"), None).unwrap();
+            a.save_page_content(p.id, &format!("Text {i}")).unwrap();
+            ids.push(p.id);
+        }
+        let leer = a.create_page(None, "Leer", None).unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = |t: &str| b.page_by_title(t).unwrap().unwrap();
+        let first = on_b("Notiz 00");
+        b.snapshot_page(first.id).unwrap();
+        let versions = b.list_versions(first.id).unwrap().len();
+
+        // One page moved below a new page, one renamed, on A.
+        let archiv = a.create_page(None, "Archiv", None).unwrap();
+        a.save_page_content(archiv.id, "Ordner").unwrap();
+        a.move_page(ids[0], Some(archiv.id), 0).unwrap();
+        a.rename_page(ids[1], "Notiz eins").unwrap();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        assert!(out.trashed.is_empty() && out.kept.is_empty(), "{out:?}");
+        assert_eq!(out.created, [on_b("Archiv").id]);
+        let moved = on_b("Notiz 00");
+        assert_eq!((moved.id, moved.parent_id), (first.id, Some(on_b("Archiv").id)), "same page, new place");
+        assert_eq!(b.list_versions(first.id).unwrap().len(), versions, "its versions stay");
+        assert!(b.page_by_title("Notiz 01").unwrap().is_none());
+        assert_eq!(on_b("Notiz eins").parent_id, None);
+
+        // „Aufräumen“ on A: the other eleven into year and month folders (folder-only pages).
+        let jahr = a.create_page(None, "2026", Some("folder")).unwrap();
+        let monat = a.create_page(Some(jahr.id), "10 – Oktober", Some("folder")).unwrap();
+        for id in ids[2..].iter().chain([&leer.id]) {
+            a.move_page(*id, Some(monat.id), 99).unwrap();
+        }
+        let before: Vec<i64> = (2..12).map(|i| on_b(&format!("Notiz {i:02}")).id).collect();
+        pcs.sync(&a, "a");
+        let out = pcs.sync(&b, "b");
+        assert!(out.trashed.is_empty() && out.kept.is_empty(), "{out:?}");
+        assert_eq!(out.moved.len(), 11, "{out:?}");
+        let after: Vec<i64> = (2..12).map(|i| on_b(&format!("Notiz {i:02}")).id).collect();
+        assert_eq!(before, after);
+        assert_eq!(tree(&a), tree(&b));
+        assert!(b.list_trash().unwrap().is_empty());
+
+        // And back: no duplicates on either side, nothing moves again.
+        let out = pcs.sync(&b, "b");
+        assert!(out.created.is_empty() && out.moved.is_empty(), "{out:?}");
+        let out = pcs.sync(&a, "a");
+        assert!(out.created.is_empty() && out.trashed.is_empty() && out.moved.is_empty(), "{out:?}");
+        assert_eq!(tree(&a), tree(&b));
+        assert_eq!(a.list_pages().unwrap().len(), 16);
+
+        // A folder-only page renamed on B: the page follows on A, with its notes.
+        b.rename_page(on_b("10 – Oktober").id, "Oktober").unwrap();
+        pcs.sync(&b, "b");
+        let out = pcs.sync(&a, "a");
+        assert!(out.created.is_empty() && out.trashed.is_empty(), "{out:?}");
+        assert_eq!(a.page(monat.id).unwrap().title, "Oktober");
+        assert_eq!(tree(&a), tree(&b));
+    }
+
+    #[test]
+    fn a_page_deleted_here_and_edited_there_comes_back() {
+        let Some(pcs) = Pcs::new("delete-edit") else { return };
+        let a = Database::open_in_memory().unwrap();
+        for i in 0..6 {
+            let p = a.create_page(None, &format!("N{i}"), None).unwrap();
+            a.save_page_content(p.id, "x").unwrap();
+        }
+        let notiz = a.create_page(None, "Notiz", None).unwrap();
+        a.save_page_content(notiz.id, "v1").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        pcs.sync(&b, "b");
+        let on_b = b.page_by_title("Notiz").unwrap().unwrap();
+        b.save_page_content(on_b.id, "wichtige Ergänzung von B").unwrap();
+        pcs.sync(&b, "b");
+        a.trash_page(notiz.id).unwrap();
+        let out = pcs.sync(&a, "a");
+        assert_eq!(out.restored, [notiz.id], "{out:?}");
+        let back = a.page(notiz.id).unwrap();
+        assert!(back.deleted_at.is_none());
+        assert_eq!(a.page_doc(notiz.id).unwrap().content, "wichtige Ergänzung von B");
+        // B keeps its page.
+        let out = pcs.sync(&b, "b");
+        assert!(out.trashed.is_empty(), "{out:?}");
+        assert_eq!(b.page_doc(on_b.id).unwrap().content, "wichtige Ergänzung von B");
+    }
+
+    #[test]
+    fn pages_named_like_the_syncs_own_files_reach_the_other_computer() {
+        let Some(pcs) = Pcs::new("own-names") else { return };
+        let a = Database::open_in_memory().unwrap();
+        let z = a.create_page(None, "Zeiterfassung", None).unwrap();
+        a.save_page_content(z.id, "Wie ich buche").unwrap();
+        let k = a.create_page(Some(z.id), "Regeln für SAP", None).unwrap();
+        a.save_page_content(k.id, "Immer bis Freitag").unwrap();
+        let r = a.create_page(None, "README", None).unwrap();
+        a.save_page_content(r.id, "Lies mich").unwrap();
+        let att = a.create_page(None, "attachments", None).unwrap();
+        let sub = a.create_page(Some(att.id), "Liste", None).unwrap();
+        a.save_page_content(sub.id, "Anhänge").unwrap();
+        pcs.sync(&a, "a");
+        let b = Database::open_in_memory().unwrap();
+        let out = pcs.sync(&b, "b");
+        assert_eq!(out.created.len(), 5, "{out:?}");
+        let text = |db: &Database, t: &str| db.page_doc(db.page_by_title(t).unwrap().unwrap().id).unwrap().content;
+        assert_eq!(text(&b, "Regeln für SAP"), "Immer bis Freitag");
+        let readme = b.list_pages().unwrap().into_iter().find(|p| p.title.starts_with("README")).unwrap();
+        assert_eq!(b.page_doc(readme.id).unwrap().content, "Lies mich");
+        assert_eq!(text(&b, "Liste"), "Anhänge");
+        // Nothing goes back and forth.
+        for pc in ["b", "a", "b"] {
+            let out = pcs.sync(if pc == "a" { &a } else { &b }, pc);
+            assert!(out.created.is_empty() && out.trashed.is_empty() && out.kept.is_empty(), "{pc}: {out:?}");
+        }
     }
 
     #[test]

@@ -184,10 +184,11 @@ pub fn save(attachments_dir: &Path, bytes: &[u8], name: &str, mime: &str) -> Res
     let file = format!("{}.{ext}", &sha256_hex(bytes)[..16]);
     fs::create_dir_all(attachments_dir).at(attachments_dir)?;
     let path = attachments_dir.join(&file);
-    if !path.is_file() {
-        // Write-then-rename so a crash never leaves a truncated file under the final name.
-        let tmp = attachments_dir.join(format!(".{file}.tmp"));
-        fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, &path)).at(&path)?;
+    // A file of another size under the name was cut short (a power loss before it reached the
+    // disk): written again. Written to a temporary file, flushed and renamed, so a crash never
+    // leaves a truncated file under the final name.
+    if !fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64) {
+        crate::drawings::write_atomic(&path, bytes)?;
     }
     Ok(SavedAttachment {
         markdown: format!("![[{file}]]"),
@@ -227,11 +228,8 @@ pub fn clean_name(name: &str) -> Result<String> {
     }
     let stem = stem.trim_end_matches(['.', ' ']);
     let device = stem.split('.').next().unwrap_or("");
-    let upper = device.to_ascii_uppercase();
-    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (upper.len() == 4
-            && (upper.starts_with("COM") || upper.starts_with("LPT"))
-            && upper.as_bytes()[3].is_ascii_digit());
+    // The same rules as the Markdown export (`CONIN$`, `COM¹`, `CON .txt`).
+    let reserved = crate::vault::is_device_name(device.trim_end());
     Ok(match (stem.is_empty(), reserved) {
         (true, _) => trf!("Datei{ext}", "File{ext}"),
         (false, true) => format!("{device}_{}{ext}", &stem[device.len()..]),
@@ -474,6 +472,18 @@ mod tests {
     }
 
     #[test]
+    fn a_file_cut_short_under_the_hash_name_is_written_again() {
+        let dir = tmp("save-torn");
+        let a = save(&dir, b"\x89PNG ganz", "bild.png", "").unwrap();
+        // A power loss left the name with nothing in it.
+        fs::write(dir.join(&a.name), b"").unwrap();
+        let b = save(&dir, b"\x89PNG ganz", "bild.png", "").unwrap();
+        assert_eq!(a.name, b.name);
+        assert_eq!(fs::read(dir.join(&a.name)).unwrap(), b"\x89PNG ganz");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
+    }
+
+    #[test]
     fn resolve_rejects_traversal() {
         let dir = tmp("resolve").join("attachments");
         let a = save(&dir, b"img", "a.png", "").unwrap();
@@ -537,6 +547,13 @@ mod tests {
         assert_eq!(clean_name("name. .pdf").unwrap(), "name.pdf");
         assert_eq!(clean_name("CON.txt").unwrap(), "CON_.txt");
         assert_eq!(clean_name("lpt1.tar.gz").unwrap(), "lpt1_.tar.gz");
+        // The export's rules: console devices, superscript digits, a space before the dot.
+        assert_eq!(clean_name("CONIN$.txt").unwrap(), "CONIN$_.txt");
+        assert_eq!(clean_name("conout$.log").unwrap(), "conout$_.log");
+        assert_eq!(clean_name("COM\u{b9}.txt").unwrap(), "COM\u{b9}_.txt");
+        assert_eq!(clean_name("lpt\u{b3}.pdf").unwrap(), "lpt\u{b3}_.pdf");
+        assert_eq!(clean_name("CON .x.txt").unwrap(), "CON _.x.txt");
+        assert_eq!(clean_name("CONSOLE.txt").unwrap(), "CONSOLE.txt");
         assert!(clean_name("  .pdf").unwrap_err().to_string().contains("Dateiendung"));
         assert_eq!(clean_name("x\u{0}y\n.csv").unwrap(), "x-y-.csv");
         let long = clean_name(&format!("{}.pdf", "ä".repeat(200))).unwrap();

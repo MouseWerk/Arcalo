@@ -526,6 +526,13 @@ fn diff(repo: &Repository, p: &Parsed, out: &mut String) -> Result<bool, git2::E
         if p.has("--name-status") {
             out.push(status_letter(delta.status()));
             out.push('\0');
+            // Like git: a rename lists the old path before the new one.
+            if delta.status() == Delta::Renamed {
+                out.push_str(
+                    &delta.old_file().path().map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default(),
+                );
+                out.push('\0');
+            }
         }
         out.push_str(&delta_path(&delta));
         out.push('\0');
@@ -753,6 +760,9 @@ mod tests {
         assert_eq!(deleted, "", "a move is no deletion");
         let status = ok(&g, &work, &["diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"]);
         assert_eq!(status, "D\0Notiz.md\0A\0Ordner/Notiz.md\0");
+        // With rename detection the move is one entry, old path first (git writes `R100`).
+        let status = ok(&g, &work, &["diff", "--cached", "--name-status", "-M", "-z", "HEAD"]);
+        assert_eq!(status, "R\0Notiz.md\0Ordner/Notiz.md\0");
         assert_eq!(ok(&g, &work, &["rev-parse", "-q", "--verify", ":Ordner/Notiz.md"]).trim().len(), 40);
         ok(&g, &work, &["reset", "-q"]);
         assert_eq!(ok(&g, &work, &["diff", "--cached", "--name-only", "-z"]), "");

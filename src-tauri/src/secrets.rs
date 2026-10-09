@@ -18,7 +18,9 @@
 //! under the new name, read back and compared; the accounts done are noted in
 //! `credentials-moved.json` in the data folder. Until an account is done, it is still read under
 //! the old name. The old entries are not deleted in 1.15 (an older version started again, after a
-//! rollback, still finds them).
+//! rollback, still finds them). An older version that ran on the data folder after the take-over
+//! (a rollback, see [`older_version_ran`]) used and changed the old entries: they are taken over
+//! once more, over the new ones.
 //!
 //! Portable mode: the credential store belongs to the user of the computer, not to the data
 //! folder on the stick. A portable copy names its entries `<account>@<namespace>`
@@ -435,6 +437,12 @@ impl Moved {
         self.read().contains(account)
     }
 
+    /// Starts the list anew (an older version ran on the folder since, see [`older_version_ran`]).
+    fn reset(&self) {
+        let _guard = crate::lock(&MOVED_LOCK);
+        let _ = write_private(&self.path, b"[]");
+    }
+
     /// Notes `account` as done (best effort: without the note the old entry is only read again).
     pub fn add(&self, account: &str) {
         let _guard = crate::lock(&MOVED_LOCK);
@@ -474,6 +482,31 @@ pub fn take_over(new: &dyn Backend, old: &dyn Backend, moved: &Moved, account: &
     };
     moved.add(account);
     result
+}
+
+/// [`take_over`] after an older version ran on the data folder: the old entry is the one in use
+/// there, so it replaces a different new one.
+pub fn take_over_again(new: &dyn Backend, old: &dyn Backend, moved: &Moved, account: &str, field: &str) -> TakeOver {
+    let result = match (old.get(account, field), new.get(account, field)) {
+        (Err(e), _) => return TakeOver::Failed(e),
+        (Ok(None), _) => TakeOver::Nothing,
+        (Ok(Some(secret)), Ok(Some(current))) if current == secret => TakeOver::Nothing,
+        (Ok(Some(secret)), _) => match new.set(account, field, &secret) {
+            Err(e) => return TakeOver::Failed(e),
+            Ok(()) if new.get(account, field).ok().flatten().as_deref() == Some(secret.as_str()) => TakeOver::Copied,
+            Ok(()) => return TakeOver::Failed("read back differently".into()),
+        },
+    };
+    moved.add(account);
+    result
+}
+
+/// Whether a version of 1.14 or earlier started on `data_dir` after its secrets were taken over
+/// (its start count file is newer than the list of accounts taken over): back after a rollback.
+pub fn older_version_ran(data_dir: &Path) -> bool {
+    let health = data_dir.join(arcalo_core::identity::legacy(arcalo_core::update_state::HEALTH_FILE));
+    let Ok(ran) = std::fs::metadata(health).and_then(|m| m.modified()) else { return false };
+    std::fs::metadata(data_dir.join(MOVED_FILE)).and_then(|m| m.modified()).ok().is_none_or(|done| ran > done)
 }
 
 /// The secret under the new name; else, while the account is not taken over, under the old one
@@ -525,11 +558,16 @@ pub struct TakeOverReport {
     pub failed: Vec<String>,
 }
 
-/// Takes over the entries of `stores` from `old` into `new` (see [`take_over`]).
-pub fn take_over_stores(stores: &[SecretStore], new: &dyn Backend, old: &dyn Backend) -> TakeOverReport {
+/// Takes over the entries of `stores` from `old` into `new` (see [`take_over`]; `again`: after an
+/// older version ran, see [`take_over_again`]).
+pub fn take_over_stores(stores: &[SecretStore], new: &dyn Backend, old: &dyn Backend, again: bool) -> TakeOverReport {
     let mut out = TakeOverReport::default();
+    if again && let Some(s) = stores.first() {
+        s.moved().reset();
+    }
     for s in stores {
-        match take_over(new, old, &s.moved(), &s.account, &s.field) {
+        let step = if again { take_over_again } else { take_over };
+        match step(new, old, &s.moved(), &s.account, &s.field) {
             TakeOver::Copied => out.copied.push(s.account.clone()),
             TakeOver::Nothing => {}
             TakeOver::Failed(e) => out.failed.push(format!("{} ({e})", s.account)),
@@ -543,7 +581,14 @@ pub fn take_over_stores(stores: &[SecretStore], new: &dyn Backend, old: &dyn Bac
 pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::Settings>) {
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     if matches!(kind(), Kind::Native | Kind::SecretService) {
-        let report = take_over_stores(&known_stores(data_dir, settings), &Keyring::CURRENT, &Keyring::LEGACY);
+        let again = older_version_ran(data_dir);
+        if again {
+            crate::devlog::info(
+                "secrets",
+                format!("an older version ran on this data folder: „{LEGACY_SERVICE}“ taken over again"),
+            );
+        }
+        let report = take_over_stores(&known_stores(data_dir, settings), &Keyring::CURRENT, &Keyring::LEGACY, again);
         if !report.copied.is_empty() {
             crate::devlog::info(
                 "secrets",
@@ -970,7 +1015,7 @@ mod tests {
         };
         settings.jira.sites = vec![arcalo_core::issues::JiraSite { id: "site-1".into(), ..Default::default() }];
         let stores = known_stores(&dir, Some(&settings));
-        let report = take_over_stores(&stores, &new, &old);
+        let report = take_over_stores(&stores, &new, &old, false);
         let mut copied = report.copied.clone();
         copied.sort();
         assert_eq!(copied, ["ai-provider-openai", "app-lock-pin", "git-token", "jira-site-1"]);
@@ -979,8 +1024,36 @@ mod tests {
         assert_eq!(old.entries.borrow().len(), 4, "the old entries are kept");
         // Idempotent; and an entry changed later under the new name is not overwritten.
         new.entries.borrow_mut().insert("git-token".into(), "ghp-115".into());
-        assert_eq!(take_over_stores(&stores, &new, &old), TakeOverReport::default());
+        assert_eq!(take_over_stores(&stores, &new, &old, false), TakeOverReport::default());
         assert_eq!(new.entries.borrow().get("git-token").map(String::as_str), Some("ghp-115"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn after_a_rollback_to_114_its_secrets_are_taken_over_again() {
+        let dir = temp("takeover-again");
+        let (new, old) = stores_114();
+        let stores = known_stores(&dir, None);
+        let health = dir.join(".annalo-health");
+        // A data folder of its own that 1.14 used before: taken over at the first start.
+        std::fs::write(&health, b"{}").unwrap();
+        assert!(older_version_ran(&dir), "nothing taken over yet");
+        take_over_stores(&stores, &new, &old, older_version_ran(&dir));
+        assert!(!older_version_ran(&dir));
+        // Back on 1.14 (a rollback), the user enters a new token; it is saved under the old name.
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        old.entries.borrow_mut().insert("git-token".into(), "ghp-neu-in-114".into());
+        std::fs::write(&health, b"{}").unwrap();
+        // The next start of the new version takes it, over the stale new entry.
+        assert!(older_version_ran(&dir));
+        let report = take_over_stores(&stores, &new, &old, true);
+        assert_eq!(report.copied, ["git-token"]);
+        assert_eq!(new.entries.borrow().get("git-token").map(String::as_str), Some("ghp-neu-in-114"));
+        assert!(!older_version_ran(&dir), "once");
+        // A change made in the new version afterwards stays.
+        new.entries.borrow_mut().insert("git-token".into(), "ghp-116".into());
+        take_over_stores(&stores, &new, &old, older_version_ran(&dir));
+        assert_eq!(new.entries.borrow().get("git-token").map(String::as_str), Some("ghp-116"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1025,7 +1098,7 @@ mod tests {
         old.entries.borrow_mut().insert("db-key".into(), key.to_hex().to_string());
         let next = DbKey::generate().unwrap();
         old.entries.borrow_mut().insert("db-key-next".into(), next.to_hex().to_string());
-        let report = take_over_stores(&known_stores(&dir, None), &new, &old);
+        let report = take_over_stores(&known_stores(&dir, None), &new, &old, false);
         assert_eq!(report.copied, ["db-key", "db-key-next"]);
         let moved = Moved { path: dir.join(MOVED_FILE) };
         let hex = read_with_fallback(&new, &Mem::default(), &moved, "db-key", "db_key").unwrap();

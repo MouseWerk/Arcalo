@@ -75,10 +75,10 @@ pub fn early_check(app: &tauri::AppHandle, dir: &Path, version: &str) {
             match restore(dir, &record) {
                 Ok(Restart::Previous(exe)) => {
                     crate::devlog::info("update", format!("rolled back to {from}, starting {}", exe.display()));
-                    // Otherwise the previous version would only bring this process to the front.
-                    if crate::portable::active() {
-                        crate::portable::unlock_instance();
-                    } else {
+                    // Otherwise the previous version would only bring this process to the front, or
+                    // stop at the data folder's lock.
+                    crate::portable::unlock_instance();
+                    if !crate::portable::active() {
                         tauri_plugin_single_instance::destroy(app);
                     }
                     if let Err(e) = spawn(&exe) {
@@ -169,6 +169,18 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
             return Err(e);
         }
     };
+    mark_rolled_back(dir, record, st::HEALTH_FILE);
+    // A version from before the app identifier changed (1.15) reads the folder of the old one:
+    // it learns there that the version it returns from is bad and tells the user.
+    if let Some(old) = legacy_folder(dir, &record.from) {
+        mark_rolled_back(&old, record, &arcalo_core::identity::legacy(st::HEALTH_FILE));
+    }
+    Ok(restart)
+}
+
+/// Records the rollback in `dir`: the version returned from as bad, the notice for the next
+/// start, no record and no start count (`health`: the name of its file there) left.
+fn mark_rolled_back(dir: &Path, record: &RollbackRecord, health: &str) {
     let mut state = UpdateState::load(dir);
     state.mark_bad(&record.to);
     if state.skipped.as_deref() == Some(record.to.as_str()) {
@@ -180,8 +192,17 @@ pub fn restore(dir: &Path, record: &RollbackRecord) -> Result<Restart> {
         std::fs::write(dir.join(st::UPDATES_DIR).join(NOTICE_FILE), serde_json::to_string(&notice).unwrap_or_default());
     RollbackRecord::clear(dir);
     // The previous version starts with its own count.
-    let _ = std::fs::remove_file(dir.join(st::HEALTH_FILE));
-    Ok(restart)
+    let _ = std::fs::remove_file(dir.join(health));
+}
+
+/// The data folder of the old app identifier next to `dir` when `version` is older than 1.15
+/// (which took the new identifier) and `dir` is the default folder of the new one.
+fn legacy_folder(dir: &Path, version: &str) -> Option<PathBuf> {
+    let v = semver::Version::parse(version.trim().trim_start_matches('v')).ok()?;
+    if v >= semver::Version::new(1, 15, 0) || dir.file_name()? != arcalo_core::identity::IDENTIFIER {
+        return None;
+    }
+    Some(dir.with_file_name(arcalo_core::identity::LEGACY_IDENTIFIER)).filter(|d| d.is_dir())
 }
 
 /// Reads and removes the note of a rollback (shown once).
@@ -410,5 +431,44 @@ mod tests {
         assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
         assert_eq!(std::fs::read(&db).unwrap(), b"before the update");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_rollback_to_114_is_recorded_where_114_reads_it() {
+        use arcalo_core::identity::{IDENTIFIER, LEGACY_IDENTIFIER};
+        let base = std::env::temp_dir().join(format!("arcalo-rollback-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, old) = (base.join(IDENTIFIER), base.join(LEGACY_IDENTIFIER));
+        for d in [&dir, &old] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(dir.join(arcalo_core::datadir::DB_FILE), b"migrated by 1.16").unwrap();
+        let backup = dir.join("pre-update.db");
+        std::fs::write(&backup, b"before the update").unwrap();
+        let record = RollbackRecord {
+            from: "1.14.1".into(),
+            to: "1.16.0".into(),
+            backup: Some(backup),
+            copy: None,
+            kind: CopyKind::None,
+            created: Utc::now(),
+        };
+        // 1.14 kept its own record of the update to 1.15 there.
+        RollbackRecord { to: "1.15.0".into(), ..record.clone() }.save(&old).unwrap();
+        record.save(&dir).unwrap();
+        std::fs::write(old.join(".annalo-health"), b"{}").unwrap();
+        assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
+        for d in [&dir, &old] {
+            assert!(UpdateState::load(d).bad_versions.contains(&"1.16.0".to_owned()), "{}", d.display());
+            assert!(RollbackRecord::load(d).is_none(), "{}", d.display());
+            assert_eq!(take_notice(d).map(|n| n.to), Some("1.16.0".into()), "{}", d.display());
+        }
+        assert!(!old.join(".annalo-health").exists());
+        // A rollback between versions of the new identifier leaves the old folder alone.
+        let record = RollbackRecord { from: "1.15.1".into(), to: "1.16.0".into(), ..record };
+        std::fs::write(dir.join("pre-update.db"), b"before").unwrap();
+        assert!(matches!(restore(&dir, &record), Ok(Restart::Continue)));
+        assert!(take_notice(&old).is_none());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

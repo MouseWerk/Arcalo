@@ -747,9 +747,12 @@ impl WrappedKey {
         serde_json::from_slice(&fs::read(dir.join(WRAPPED_FILE)).ok()?).ok()
     }
 
+    /// Written to a temporary file and renamed: a full disk or a crash never leaves the only
+    /// password-wrapped copy of the key cut short.
     pub fn write(&self, dir: &Path) -> Result<()> {
-        let path = dir.join(WRAPPED_FILE);
-        fs::write(&path, serde_json::to_vec_pretty(self)?).at(&path)
+        crate::drawings::write_atomic(&dir.join(WRAPPED_FILE), &serde_json::to_vec_pretty(self)?)?;
+        fsync_dir(dir);
+        Ok(())
     }
 
     pub fn remove(dir: &Path) -> Result<()> {
@@ -762,8 +765,9 @@ impl WrappedKey {
 
     /// Keeps the new key of a key change wrapped with the same password until the swap.
     pub fn write_next(&self, dir: &Path) -> Result<()> {
-        let path = dir.join(WRAPPED_NEXT_FILE);
-        fs::write(&path, serde_json::to_vec_pretty(self)?).at(&path)
+        crate::drawings::write_atomic(&dir.join(WRAPPED_NEXT_FILE), &serde_json::to_vec_pretty(self)?)?;
+        fsync_dir(dir);
+        Ok(())
     }
 
     /// The key change finished: the wrapped new key replaces the old one (if there is one).

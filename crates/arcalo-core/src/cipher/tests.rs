@@ -375,6 +375,19 @@ fn a_password_wraps_the_key() {
 }
 
 #[test]
+fn a_failed_password_change_keeps_the_wrapped_key() {
+    let dir = tmp("wrap-fail");
+    let key = DbKey::generate().unwrap();
+    WrappedKey::wrap(&key, "altes Passwort", (1024, 1, 1)).unwrap().write(&dir).unwrap();
+    // The new file cannot be written (here: a folder where its temporary file goes).
+    fs::create_dir_all(dir.join(format!(".{WRAPPED_FILE}.tmp")).join("x")).unwrap();
+    let next = WrappedKey::wrap(&key, "neues Passwort", (1024, 1, 1)).unwrap();
+    assert!(next.write(&dir).is_err());
+    assert_eq!(WrappedKey::read(&dir).unwrap().unwrap_key("altes Passwort").unwrap(), key, "the old one still opens");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn secure_delete_overwrites_then_removes() {
     let dir = tmp("shred");
     let f = dir.join("old.db");

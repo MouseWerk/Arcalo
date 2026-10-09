@@ -431,8 +431,18 @@ export function App() {
 async function onPulled(p: GitPulled) {
   const st = useApp.getState();
   await st.refreshTree().catch(() => {});
-  reloadEditors([...p.pages, ...p.created]);
+  reloadEditors([...p.pages, ...p.created, ...(p.restored ?? [])]);
   await st.refreshConflicts();
+  if (p.restored?.length) {
+    const first = p.restored[0];
+    st.toast({
+      tone: "info",
+      timeout: 15000,
+      title: t("app.restoredTitle", { n: p.restored.length }),
+      detail: t("app.restoredDetail", { n: p.restored.length }),
+      action: { label: t("app.restoredOpen"), run: () => useApp.getState().openTab({ kind: "page", pageId: first }) },
+    });
+  }
   if (p.kept?.length) {
     st.toast({
       tone: "warning",

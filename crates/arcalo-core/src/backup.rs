@@ -70,6 +70,15 @@ pub fn list_backups(dir: &Path) -> Result<Vec<BackupInfo>> {
     Ok(out)
 }
 
+/// Whether the daily backup is due (`list` newest first, see [`list_backups`]): there is none,
+/// the newest is a day old, or it lies more than an hour ahead (made while the clock ran ahead;
+/// waiting for it would leave out every backup until then).
+pub fn daily_due(list: &[BackupInfo], now: DateTime<Local>) -> bool {
+    list.first().is_none_or(|b| {
+        now - b.created_at >= chrono::TimeDelta::hours(24) || b.created_at - now > chrono::TimeDelta::hours(1)
+    })
+}
+
 /// Writes a snapshot of `db` into `dir` and deletes all but the newest `keep` (at least 1) backups.
 pub fn backup_to(db: &Database, dir: &Path, keep: usize) -> Result<BackupInfo> {
     backup_at(db, dir, keep, Utc::now().naive_utc())
@@ -235,6 +244,22 @@ pub fn restore_latest(db_file: &Path, backups: &Path, now: DateTime<Utc>) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_backup_from_a_clock_that_ran_ahead_does_not_stop_the_daily_one() {
+        let now = Local::now();
+        let made = |offset: chrono::TimeDelta| BackupInfo {
+            file_name: "arcalo-x.db".into(),
+            path: String::new(),
+            size_bytes: 1,
+            created_at: now + offset,
+        };
+        assert!(daily_due(&[], now));
+        assert!(!daily_due(&[made(chrono::TimeDelta::hours(-3))], now));
+        assert!(daily_due(&[made(chrono::TimeDelta::hours(-25))], now));
+        assert!(!daily_due(&[made(chrono::TimeDelta::minutes(20))], now), "a clock a little off");
+        assert!(daily_due(&[made(chrono::TimeDelta::days(1))], now), "made tomorrow");
+    }
 
     #[test]
     fn a_broken_database_is_replaced_by_the_newest_backup() {

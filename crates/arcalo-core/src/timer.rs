@@ -171,9 +171,10 @@ impl Database {
     /// nothing is left to book, the stopped entry with 0 minutes (the caller discards it).
     pub fn stop_timer_in<Tz: TimeZone>(&self, at: DateTime<Utc>, idle: &[Gap], tz: &Tz) -> Result<Vec<TimeEntry>> {
         let running = self.running_or_err()?;
-        if at < running.start_time {
-            return Err(Error::State(tr!("Das Ende liegt vor dem Beginn", "The end is before the start").into()));
-        }
+        // The clock went back behind the start (it ran ahead when the timer started): stopped at
+        // the start with nothing booked, instead of a timer that cannot be stopped. The caller
+        // keeps that entry for the user to enter the time.
+        let at = at.max(running.start_time);
         let mut gaps: Vec<Gap> =
             self.timer_pauses(running.id)?.into_iter().map(|(a, b)| (a, b.unwrap_or(at))).collect();
         gaps.extend_from_slice(idle);
@@ -361,5 +362,15 @@ mod tests {
         db.pause_timer(at(1, 13, 0)).unwrap();
         let out = db.stop_timer_in(at(1, 14, 0), &[], &cet()).unwrap();
         assert_eq!((out.len(), out[0].duration_minutes), (1, Some(0)));
+    }
+
+    #[test]
+    fn a_clock_set_back_behind_the_start_still_stops_the_timer() {
+        let (db, np) = seeded();
+        db.start_timer(np, None, None, "", at(1, 10, 0)).unwrap();
+        let out = db.stop_timer_in(at(1, 9, 30), &[], &cet()).unwrap();
+        assert_eq!((out.len(), out[0].duration_minutes, out[0].end_time), (1, Some(0), Some(at(1, 10, 0))));
+        assert!(db.running_timer().unwrap().is_none(), "a new timer can start");
+        db.start_timer(np, None, None, "", at(1, 9, 31)).unwrap();
     }
 }

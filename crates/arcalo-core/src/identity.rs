@@ -261,6 +261,16 @@ fn migrate_one(pair: &Pair) -> Status {
             return Status::Failed(Error::file(&pair.to, e).to_string());
         }
         aside = Some(target);
+    } else if pair.to.join(crate::datadir::DB_FILE).is_file() {
+        // A workspace without the marker: an earlier copy that failed after it was put in place
+        // (the marker not written). That start worked in the old folder, so this copy is stale;
+        // merged, it would hide that work for good. It is set aside like a refreshed one.
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let target = pair.to.with_file_name(format!("{IDENTIFIER}.{stamp}"));
+        if let Err(e) = fs::rename(&pair.to, &target) {
+            return Status::Failed(Error::file(&pair.to, e).to_string());
+        }
+        aside = Some(target);
     }
     match copy_verified(&pair.from, &pair.to) {
         Ok((files, bytes, kept)) => match aside {
@@ -300,12 +310,16 @@ fn copy_verified(from: &Path, to: &Path) -> Result<(usize, u64, Vec<String>)> {
                 .into(),
             ));
         }
+        // The marker goes in with the copy (one rename), so a copy in place always has it.
+        let record =
+            Record { from: from.display().to_string(), at: chrono::Utc::now().to_rfc3339(), stamp: before.clone() };
+        write_record(&staging, &record)?;
         let kept = commit(&staging, to)?;
-        write_record(
-            to,
-            &Record { from: from.display().to_string(), at: chrono::Utc::now().to_rfc3339(), stamp: before.clone() },
-        )?;
-        Ok((files, bytes, kept))
+        if read_record(to).as_ref() != Some(&record) {
+            // Merged into a folder that had one (or something in its place).
+            write_record(to, &record)?;
+        }
+        Ok((files, bytes, kept.into_iter().filter(|k| k != MARKER).collect()))
     })();
     let _ = fs::remove_dir_all(&staging);
     result
@@ -665,7 +679,9 @@ mod tests {
         let sub = old.join("Unterordner");
         crate::datadir::write_pending_move(&new, &sub, &base.join("D")).unwrap();
         fs::write(old.join("x"), b"x").unwrap();
+        // Copied again into the folder (without a workspace of its own, which would be set aside).
         let _ = fs::remove_file(new.join(MARKER));
+        let _ = fs::remove_file(new.join(crate::datadir::DB_FILE));
         migrate(&pair);
         let loc = crate::datadir::read_location_file(&new).unwrap();
         assert_eq!(PathBuf::from(&loc.data_dir), new.join("Unterordner"));
@@ -761,6 +777,46 @@ mod tests {
         );
         assert_eq!(notice(&out).unwrap().kind, "info");
         assert_eq!(migrate(&pair)[0].status, Status::Done, "once");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_copy_left_without_its_marker_does_not_hide_the_fallback_sessions_work() {
+        let base = tmp("no-marker");
+        let (old, id) = layout_114(&base);
+        let new = base.join(IDENTIFIER);
+        // Something keeps the marker from being written (here: a folder in its place).
+        fs::create_dir_all(new.join(MARKER)).unwrap();
+        let pair = pairs(&[(base.clone(), Mode::Copy)]);
+        let out = migrate(&pair);
+        assert!(matches!(out[0].status, Status::Failed(_)), "{:?}", out[0].status);
+        assert_eq!(out[0].usable(), old, "this start works in the old folder");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let db = Database::open(old.join(crate::datadir::DB_FILE)).unwrap();
+        db.save_page_content(id, "in der Ausweich-Sitzung geschrieben").unwrap();
+        db.checkpoint().unwrap();
+        drop(db);
+        fs::remove_dir_all(new.join(MARKER)).unwrap();
+        // The next start copies again; the stale copy is set aside, not merged.
+        let out = migrate(&pair);
+        let Status::Refreshed { aside, .. } = &out[0].status else { panic!("{:?}", out[0].status) };
+        assert!(aside.join(crate::datadir::DB_FILE).is_file());
+        assert_eq!(
+            Database::open(new.join(crate::datadir::DB_FILE)).unwrap().page_doc(id).unwrap().content,
+            "in der Ausweich-Sitzung geschrieben"
+        );
+        assert_eq!(migrate(&pair)[0].status, Status::Done);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_marker_is_in_place_with_the_copy() {
+        let base = tmp("marker-with-copy");
+        layout_114(&base);
+        let out = migrate(&pairs(&[(base.clone(), Mode::Copy)]));
+        let Status::Copied { kept, .. } = &out[0].status else { panic!("{:?}", out[0].status) };
+        assert!(kept.is_empty(), "{kept:?}");
+        assert!(read_record(&base.join(IDENTIFIER)).is_some_and(|r| r.stamp.is_some()));
         let _ = fs::remove_dir_all(&base);
     }
 

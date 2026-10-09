@@ -167,11 +167,8 @@ pub fn window_state_save(app: AppHandle) -> Result<()> {
     if maximized && let Some(old) = load_window_state(&path) {
         state = WindowState { maximized: true, ..old };
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(path, serde_json::to_string(&state)?)?;
-    Ok(())
+    // Atomic: a window file cut short (a crash while writing) would forget the window's place.
+    arcalo_core::drawings::write_atomic(&path, serde_json::to_string(&state)?.as_bytes())
 }
 
 // --------------------------------------------------------------- AI costs
