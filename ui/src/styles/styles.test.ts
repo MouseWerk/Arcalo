@@ -105,8 +105,9 @@ describe("selection and focus look", () => {
         .filter((d) => d.includes(":"))
         .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()] as const),
     }));
-  const STATE = /\.(active|selected|sel|current|on|checked|picked|now|today|focused|is-selected|is-editing|recording|ProseMirror-selectednode)\b|:checked|:focus(-visible|-within)?\b|\[aria-(selected|current|pressed|checked)/;
-  const ACCENT = /--accent(-strong|-soft|-text)?\b/;
+  const STATE = /\.(active|selected|sel|current|on|checked|picked|now|today|focused|is-selected|is-editing|recording|running|live|playing|ProseMirror-selectednode)\b|:checked|:focus(-visible|-within)?\b|\[aria-(selected|current|pressed|checked)/;
+  // The accent and the status colors: a red frame around the running timer is the same "AI look".
+  const ACCENT = /--(accent(-strong|-soft|-text)?|success|warning|danger|info)\b/;
   const FRAME = /^(border(-(top|right|bottom|left|inline|block|inline-start|inline-end))?(-color)?|outline(-color)?|box-shadow)$/;
   const DRAG = /drop|drag|\.over\b/;
   const COLORED = /--(accent|success|warning|danger|info|violet|ev|c|c-fill|star|series-\d|cv-c\d)\b|color-mix|#[0-9a-f]{3,8}\b|rgba?\(/i;
@@ -218,5 +219,45 @@ describe("selection and focus look", () => {
       expect(values.length, token).toBeGreaterThan(0);
       for (const v of values) expect(v, token).not.toMatch(ACCENT);
     }
+  });
+});
+
+// An endless animation of anything but opacity or transform repaints every frame (a box-shadow pulse on the
+// timer dot kept a CPU core busy for as long as a timer ran). Endless loops are for short waits only; a dot
+// that stays on screen for hours (timer, recording, a meeting now) pulses a few times and then stands still.
+const ENDLESS_PAINT_OK: [string, string][] = [["rich-shimmer", "the placeholder of a diagram while it renders"]];
+
+describe("endless animations", () => {
+  const dir = resolve(__dirname);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".css"));
+  const css = files.map((f) => readFileSync(resolve(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")).join("\n");
+  const keyframes = new Map<string, string>();
+  for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/g)) keyframes.set(m[1], m[2]);
+  const rules = [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map((m) => ({ selector: m[1].replace(/\s+/g, " ").trim(), body: m[2] }));
+  const endless = rules.flatMap(({ selector, body }) =>
+    [...body.matchAll(/animation(?:-name)?\s*:\s*([^;]+)/g)]
+      .map((a) => a[1])
+      .filter((v) => /\binfinite\b/.test(v))
+      .map((v) => ({ selector, name: v.split(/[\s,]+/).find((w) => keyframes.has(w)) ?? "" })),
+  );
+
+  it("are found by the check", () => {
+    expect(keyframes.size).toBeGreaterThan(5);
+    expect(endless.length).toBeGreaterThan(3);
+  });
+
+  it("loop only opacity and transform", () => {
+    const bad: string[] = [];
+    for (const { selector, name } of endless) {
+      if (ENDLESS_PAINT_OK.some(([n]) => n === name)) continue;
+      const props = [...(keyframes.get(name) ?? "?:").matchAll(/([\w-]+)\s*:/g)].map((p) => p[1]);
+      if (!name || props.some((p) => p !== "opacity" && p !== "transform")) bad.push(`${selector} (${name || "unknown keyframes"})`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("never run on the live dots", () => {
+    const live = /rec-dot|voice-dot|dw-next-dot/;
+    expect(rules.filter((r) => live.test(r.selector) && /animation[^;]*\binfinite\b/.test(r.body)).map((r) => r.selector)).toEqual([]);
   });
 });

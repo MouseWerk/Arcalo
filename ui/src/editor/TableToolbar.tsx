@@ -1,5 +1,6 @@
 // Floating toolbar above a table while the cursor is in it: rows, columns, delete.
 
+import { useCallback } from "react";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -19,21 +20,30 @@ function tableElement(editor: Editor): HTMLElement | null {
   return null;
 }
 
+const PLACEMENT = { placement: "top-end", offset: 6, flip: true, shift: true } as const;
+
 export function TableToolbar({ editor, hidden }: { editor: Editor; hidden: boolean }) {
   const t = useT();
   const header = useEditorState({ editor, selector: ({ editor: e }) => inHeaderRow(e.state) });
+  // Stable props: new functions or options make the menu send them again with a transaction on every render of
+  // the editor (every key), which lays a long note out once more.
+  const shouldShow = useCallback(
+    ({ editor: e, state }: { editor: Editor; state: Editor["state"] }) => !hidden && e.isEditable && e.isActive("table") && (state.selection.empty || state.selection instanceof CellSelection),
+    [hidden],
+  );
+  const reference = useCallback(() => {
+    const el = tableElement(editor);
+    if (!el) return null;
+    return { getBoundingClientRect: () => el.getBoundingClientRect(), getClientRects: () => el.getClientRects() };
+  }, [editor]);
   return (
     <BubbleMenu
       editor={editor}
       pluginKey="tableToolbar"
       className="bubble table-toolbar"
-      shouldShow={({ editor: e, state }) => !hidden && e.isEditable && e.isActive("table") && (state.selection.empty || state.selection instanceof CellSelection)}
-      getReferencedVirtualElement={() => {
-        const el = tableElement(editor);
-        if (!el) return null;
-        return { getBoundingClientRect: () => el.getBoundingClientRect(), getClientRects: () => el.getClientRects() };
-      }}
-      options={{ placement: "top-end", offset: 6, flip: true, shift: true }}
+      shouldShow={shouldShow}
+      getReferencedVirtualElement={reference}
+      options={PLACEMENT}
     >
       {TABLE_ACTIONS.map((a, i) => (
         <span key={a.id} style={{ display: "contents" }}>

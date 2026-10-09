@@ -1,6 +1,6 @@
 // The Markdown note editor (TipTap, live preview, autosave).
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -108,6 +108,7 @@ async function largePaste(editor: Editor, text: string, from: number, to: number
 
 /** Document size above which the outline and word count wait for a pause in typing. */
 const LONG_NOTE = 20_000;
+type BubbleShow = NonNullable<ComponentProps<typeof BubbleMenu>["shouldShow"]>;
 
 const editorPrefs = () => useApp.getState().settings?.settings.editor;
 const typingPrefs = (): TypingPrefs => {
@@ -689,6 +690,14 @@ export function NoteEditor({
     setTimeout(() => findInput.current?.select(), 10);
   };
   const toolbarOn = useApp((s) => s.settings?.settings.editor?.toolbar ?? true);
+  // The same function from render to render: a new one makes the bubble menu send its options again with a
+  // transaction, which in a long note lays the whole note out once more after every key.
+  const findOpen = find !== null;
+  const showBubble = useCallback<BubbleShow>(
+    ({ editor: e, state }) =>
+      !findOpen && !aiOpen.current && !state.selection.empty && !(state.selection instanceof NodeSelection) && !e.isActive("codeBlock") && !e.isActive("wikiLink") && !e.isActive("timeEntry") && !e.isActive("imageEmbed") && !e.isActive("image"),
+    [findOpen],
+  );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const wantsFind = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f";
@@ -808,7 +817,7 @@ export function NoteEditor({
       )}
       {editor && (
         // A selected block (table of contents, image, drawing, file) has no text to format.
-        <BubbleMenu editor={editor} className="bubble" shouldShow={({ editor: e, state }) => find === null && !aiOpen.current && !state.selection.empty && !(state.selection instanceof NodeSelection) && !e.isActive("codeBlock") && !e.isActive("wikiLink") && !e.isActive("timeEntry") && !e.isActive("imageEmbed") && !e.isActive("image")}>
+        <BubbleMenu editor={editor} className="bubble" shouldShow={showBubble}>
           <IconButton icon={Bold} label={`${tr("tb.bold")} (${keys("Mod B")})`} active={ui?.bold} onClick={() => editor.chain().focus().toggleBold().run()} tooltipSide="top" />
           <IconButton icon={Italic} label={`${tr("tb.italic")} (${keys("Mod I")})`} active={ui?.italic} onClick={() => editor.chain().focus().toggleItalic().run()} tooltipSide="top" />
           <IconButton icon={Strikethrough} label={tr("tb.strike")} active={ui?.strike} onClick={() => editor.chain().focus().toggleStrike().run()} tooltipSide="top" />

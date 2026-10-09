@@ -230,6 +230,16 @@ export async function pdfFlow(app, L, shot) {
   }, `${L.pageLabel} 2`);
   await app.waitFor(".pdf-overlay .pdf-mark.is-flash", 15000);
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pdf-overlay .pdf-page-input")?.value)) === "2", { timeoutMsg: "not on page 2" });
+  // The view goes straight to the highlight and then stands still (a second scroll once moved it under the click).
+  await app.waitFor(".pdf-overlay .pdf-scroll[data-settled]");
+  const drift = await app.browser.executeAsync((done) => {
+    const top = () => document.querySelector(".pdf-overlay .pdf-mark.is-green").getBoundingClientRect().top;
+    const sc = document.querySelector(".pdf-overlay .pdf-scroll");
+    const before = top();
+    const inView = before > sc.getBoundingClientRect().top && before < sc.getBoundingClientRect().bottom;
+    setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => done({ moved: Math.abs(top() - before), inView }))), 600);
+  });
+  assert.deepEqual(drift, { moved: 0, inView: true }, "the highlight moved after the viewer settled");
   // Deleting a highlight.
   await app.click(".pdf-overlay .pdf-mark.is-green");
   await app.click(".pdf-hl-pop .pdf-hl-delete");

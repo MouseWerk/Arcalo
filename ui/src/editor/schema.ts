@@ -290,6 +290,55 @@ const setSpaced = (node: JsonNode | null | undefined) => {
     lexer.lex = (src: string) => (chunkLines > 0 ? chunkedLex(lexer, src, chunkLines) : Object.getPrototypeOf(lexer).lex.call(lexer, src));
     return lexer;
   };
+  // Every editor's manager registered the tokenizers of its extensions again on the shared `marked`, bound to
+  // itself: each closed editor (with its note) stayed reachable from there, and parsing got slower with every
+  // note opened. A tokenizer is registered once per `marked` instance, bound to no manager (its helpers only
+  // need the lexer marked hands it).
+  type Helpers = { inlineTokens: (src: string) => unknown[]; blockTokens: (src: string) => unknown[] };
+  type TokenizerSpec = { name: string; start?: string | ((src: string) => number); level?: "inline" | "block"; tokenize: (src: string, tokens: unknown[], h: Helpers) => { type?: string; raw?: string; tokens?: unknown[] } | undefined };
+  type MarkedLike = { Lexer: new (o: unknown) => Lexer; defaults: unknown; use: (o: unknown) => void };
+  const registered = new WeakMap<object, WeakSet<object>>();
+  const tokenizerProto = MarkdownManager.prototype as unknown as { registerTokenizer: (this: { markedInstance?: MarkedLike }, t: TokenizerSpec) => void };
+  tokenizerProto.registerTokenizer = function (tokenizer) {
+    const m = this.markedInstance;
+    if (!m) return;
+    let seen = registered.get(m);
+    if (!seen) registered.set(m, (seen = new WeakSet()));
+    if (seen.has(tokenizer)) return;
+    seen.add(tokenizer);
+    const { name, start, level = "inline", tokenize } = tokenizer;
+    const helpers = (lexer: Lexer): Helpers => ({ inlineTokens: (src) => lexer.inlineTokens(src), blockTokens: (src) => lexer.blockTokens(src) });
+    const freshLexer = () => new m.Lexer(m.defaults);
+    const startCb = !start
+      ? (src: string) => {
+          const r = tokenize(src, [], helpers(freshLexer()));
+          return r?.raw ? src.indexOf(r.raw) : -1;
+        }
+      : typeof start === "function"
+        ? start
+        : (src: string) => src.indexOf(start);
+    m.use({
+      extensions: [
+        {
+          name,
+          level,
+          start: startCb,
+          tokenizer(this: { lexer?: Lexer }, src: string, tokens: unknown[]) {
+            const r = tokenize(src, tokens, helpers(this.lexer ?? freshLexer()));
+            if (r?.type) return { ...r, type: r.type || name, raw: r.raw || "", tokens: r.tokens || [] };
+            return undefined;
+          },
+          childTokens: [],
+        },
+      ],
+    });
+  };
+}
+
+/** How many tokenizers the shared `marked` holds (tests: opening editors must not add more). */
+export function markedTokenizerCount(): number {
+  const ext = (new MarkdownManager() as unknown as { markedInstance?: { defaults?: { extensions?: { inline?: unknown[]; block?: unknown[] } } } }).markedInstance?.defaults?.extensions;
+  return (ext?.inline?.length ?? 0) + (ext?.block?.length ?? 0);
 }
 
 const ENTITY_RE = /&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|[A-Za-z][A-Za-z\d]{1,31});/g;

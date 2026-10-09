@@ -72,7 +72,7 @@ two instances), `pdf144.mjs` (e2e 144 timeline), `seed20k.py`. Core timings came
 Severity: High = users notice it in normal use or it costs seconds/a core; Medium = noticeable with large data or a
 reliability gap; Low = edge case or hygiene. Expected gains are estimates from the measurements.
 
-### P1 – High – A running timer keeps one CPU core busy
+### P1 – High – A running timer keeps one CPU core busy — fixed in 1.16 (7c2f011, e2e 340: 5 % CPU with a timer)
 
 - Measurement: idle CPU 0.8 % without a timer, 98.8–104 % with one (WebKitWebProcess 91–95 %); with
   `.rec-dot { animation: none }` injected: 8.5 %. Three dots are on screen (status bar, sidebar dock, timesheet).
@@ -111,7 +111,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Guard: core test „a save that adds 3,000 tasks“ with a budget (< 1 s in a debug build) and a check that the
   activity feed holds at most one aggregated row for it.
 
-### P3 – High – Large pages degrade linearly per keystroke and superlinearly on open/source switch
+### P3 – High – Large pages degrade linearly per keystroke and superlinearly on open/source switch — partly fixed in 1.16 (10cd08c, e2e 340): source view paces word count, chip scan and height fit; bubble menus no longer relayout per key. Not fixed: content-visibility/contain on the blocks measured 7–9× slower per key in WebKitGTK 2.52 (1.0–1.1 s vs 116 ms at 200 KB, with and without compositing), so it was dropped; chunked large pastes need an undo/smart-paste design (owner decision); the remaining per-key cost is WebKit editing + layout of the contenteditable
 
 - Measurement: see the scaling rows. 1 MB: open 35 s, 882 ms per key, rich → source 104 s, 686 ms per key in the
   source view, back 34 s; a 500 KB paste blocks the UI 16.7 s. `probe.mjs` on 200 KB: one `insertText` costs
@@ -229,7 +229,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
   skipping it.
 - Guard: extend the e2e two-instance check (or a shell test) to a run without a bus.
 
-### P11 – Medium – Memory is not given back after many tabs
+### P11 – Medium – Memory is not given back after many tabs — fixed in 1.16 (1ca10c4, markedTokenizers.test, e2e 340): every editor registered its Markdown tokenizers on the shared marked again, bound to itself
 
 - Measurement: 200 tabs opened and closed: RSS 890 → 1,123 → 1,303 MB with 0 editors and the DOM back to 1,553
   nodes; usage loop 1,090 → 1,234 MB in 2 minutes, still rising (1.11 measured „level after the first rounds“).
@@ -294,7 +294,7 @@ reliability gap; Low = edge case or hygiene. Expected gains are estimates from t
 - Fix: `prefix='2 3'` on the FTS5 tables (new migration with rebuild) or note hits only from 3 characters on.
 - Guard: core budget for a one-letter query.
 
-### P18 – Medium – Flaky e2e 144 „PDF highlight in English“: the click lands while the viewer still scrolls
+### P18 – Medium – Flaky e2e 144 „PDF highlight in English“: the click lands while the viewer still scrolls — fixed in 1.16 (0382151; 144 green 10×)
 
 - Measurement (`pdf144.mjs`, 8 runs): after the link's mousedown the viewer jumps to page 2 (`goTo`, t ≈ 255–305 ms),
   the test's conditions (`.pdf-mark.is-flash` and page input „2“) hold at t ≈ 255–385 ms, and only then does the

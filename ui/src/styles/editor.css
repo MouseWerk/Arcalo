@@ -231,7 +231,7 @@
 }
 .time-chip-target { font-family: var(--font-mono); font-variant-ligatures: none; font-weight: var(--fw-medium); font-size: var(--fs-xs); color: var(--text-2); }
 .time-chip-text { font-weight: var(--fw-normal); color: var(--text-2); max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.time-chip.ProseMirror-selectednode { outline: 2px solid var(--success); }
+.time-chip.ProseMirror-selectednode { outline: var(--focus-ring); }
 
 .editor-wrap { position: relative; }
 .ProseMirror-gapcursor::after { border-top-color: var(--text); }
