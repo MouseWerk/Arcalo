@@ -1032,6 +1032,7 @@ impl Database {
     /// (the UI uses [`Database::trash_page`]).
     pub fn delete_page(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM pages WHERE id = ?1", [id])?;
+        crate::ai::rag::pages_purged();
         Ok(())
     }
 
