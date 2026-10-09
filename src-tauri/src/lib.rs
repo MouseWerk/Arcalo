@@ -4535,6 +4535,8 @@ pub fn run() {
             if let Some(n) = &startup.notice {
                 devlog::warn("core", format!("data folder: {}", n.message));
             }
+            // Read before the start count below removes the marker of 1.14 and earlier.
+            let older_version_ran = secrets::older_version_ran(&dir);
             // Before the database is opened: failed starts of a fresh update offer the way back.
             let version = updates::current_version(app.handle());
             rollback::early_check(app.handle(), &dir, &version);
@@ -4699,7 +4701,7 @@ pub fn run() {
                 settings.voice.shortcut.clone(),
             ];
             secrets::init(&dir);
-            secrets::take_over_all(&dir, Some(&settings));
+            secrets::take_over_all(&dir, Some(&settings), older_version_ran);
             startup_mark("credential store");
             let secrets = SecretStore::new(&dir);
             let proxy_passwords = network::passwords_of(&dir, &settings.network);
@@ -5256,6 +5258,24 @@ fn on_run_event(app: &AppHandle, event: tauri::RunEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_older_versions_marker_is_read_before_the_start_count_removes_it() {
+        // `begin_start` (in `early_check`) deletes `.annalo-health`; read after it, a secret
+        // changed in 1.14 after going back to it was never taken over again.
+        let dir = std::env::temp_dir().join(format!("arcalo-older-ran-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".annalo-health"), b"{}").unwrap();
+        assert!(secrets::older_version_ran(&dir));
+        arcalo_core::update_state::begin_start(&dir, "1.16.0", None);
+        assert!(!secrets::older_version_ran(&dir), "gone after the start count");
+        let _ = std::fs::remove_dir_all(&dir);
+        let code = include_str!("lib.rs");
+        let read = code.find("let older_version_ran = secrets::older_version_ran(&dir);").unwrap();
+        assert!(read < code.find("rollback::early_check(app.handle()").unwrap());
+        assert!(read < code.find("secrets::take_over_all(&dir, Some(&settings), older_version_ran)").unwrap());
+    }
 
     /// Commands that only read (named `…_list`, `…_get`, `…_status`, `…_schema`, `…_states`)
     /// use a reader connection: on the writer they waited for every save and held it up. The
