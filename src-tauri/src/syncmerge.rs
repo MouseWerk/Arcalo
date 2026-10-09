@@ -369,11 +369,15 @@ fn restore_from_trash(db: &Database, parent: Option<i64>, name: &str, canvas: bo
     }
 }
 
-/// Drops conflicts of pages that are gone or in the trash.
+/// The conflicts of pages that are neither gone nor in the trash (reads only: also on a reader).
+fn live_view(db: &Database) -> Vec<Conflict> {
+    load(db).into_iter().filter(|c| db.page(c.page_id).is_ok_and(|p| p.deleted_at.is_none())).collect()
+}
+
+/// Drops conflicts of pages that are gone or in the trash (writes: on the writer only).
 fn live(db: &Database) -> Result<Vec<Conflict>> {
     let all = load(db);
-    let kept: Vec<Conflict> =
-        all.iter().filter(|c| db.page(c.page_id).is_ok_and(|p| p.deleted_at.is_none())).cloned().collect();
+    let kept = live_view(db);
     if kept.len() != all.len() {
         store(db, &kept)?;
     }
@@ -420,10 +424,14 @@ fn is_canvas_page(db: &Database, page_id: i64) -> Result<bool> {
 /// Both versions of a conflicted page and their block merge.
 #[tauri::command(async)]
 pub fn git_conflict_get(state: State<AppState>, page_id: i64) -> Result<ConflictView> {
-    let db = state.reader();
-    let c = live(&db)?.into_iter().find(|c| c.page_id == page_id).ok_or_else(no_conflict)?;
+    conflict_view(&state.reader(), page_id)
+}
+
+/// [`git_conflict_get`] on a read-only connection: the list is filtered, not stored.
+fn conflict_view(db: &Database, page_id: i64) -> Result<ConflictView> {
+    let c = live_view(db).into_iter().find(|c| c.page_id == page_id).ok_or_else(no_conflict)?;
     let mine = db.page_doc(page_id)?.content;
-    let canvas = is_canvas_page(&db, page_id)?;
+    let canvas = is_canvas_page(db, page_id)?;
     let merge = merge::merge3(c.base.as_deref(), &mine, &c.theirs);
     Ok(ConflictView {
         page_id,
@@ -953,5 +961,37 @@ mod tests {
         assert_eq!(db.page_doc(copy).unwrap().content, theirs);
         assert_eq!(db.page_doc(board.id).unwrap().content, mine);
         assert!(keep_theirs_as_copy(&db, board.id, broken).is_err());
+    }
+    /// The conflict view runs on a read-only connection: a conflict of a page deleted since is
+    /// left out without writing the list (the writer prunes it in `git_conflicts`).
+    #[test]
+    fn the_conflict_view_reads_only_also_when_a_conflicted_page_is_gone() {
+        let dir = std::env::temp_dir().join(format!("arcalo-conflict-ro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("workspace.db");
+        let db = Database::open(&file).unwrap();
+        let p = db.create_page(None, "P", None).unwrap();
+        let q = db.create_page(None, "Q", None).unwrap();
+        db.save_page_content(q.id, "meine").unwrap();
+        let conflict = |id: i64, title: &str| Conflict {
+            page_id: id,
+            title: title.into(),
+            path: format!("{title}.md"),
+            base: None,
+            theirs: "andere".into(),
+            at: Local::now(),
+        };
+        store(&db, &[conflict(p.id, "P"), conflict(q.id, "Q")]).unwrap();
+        db.trash_page(p.id).unwrap();
+        let reader = Database::open_read_only(&file).unwrap();
+        let view = conflict_view(&reader, q.id).unwrap();
+        assert_eq!((view.mine.as_str(), view.theirs.as_str()), ("meine", "andere"));
+        assert!(conflict_view(&reader, p.id).is_err(), "the trashed page has no conflict view");
+        assert_eq!(load(&db).len(), 2, "nothing written by the reader");
+        assert_eq!(live(&db).unwrap().len(), 1);
+        assert_eq!(load(&db).len(), 1, "pruned on the writer");
+        drop((reader, db));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
