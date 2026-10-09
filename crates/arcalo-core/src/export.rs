@@ -210,7 +210,7 @@ fn jira(rows: &[&TimeEntryRow], opts: &ExportOptions, skipped: &mut Vec<(i64, St
             let what = specific.unwrap_or(r.netzplan_nr.clone());
             skipped.push((
                 r.entry.id,
-                crate::trf!("Kein Jira-Vorgang für {what} zugeordnet", "No Jira issue mapped for {what}"),
+                crate::trf!("Kein Jira-Issue für {what} zugeordnet", "No Jira issue mapped for {what}"),
             ));
             continue;
         };
