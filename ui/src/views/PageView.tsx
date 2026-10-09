@@ -35,11 +35,12 @@ import { useMentionHints } from "../editor/mentionHints";
 import { sharePageAsHtml } from "../editor/shareHtml";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
-import { keys } from "../lib/shortcut";
-import { hint, withHint } from "../lib/keymap";
+import { aiEnabled } from "../lib/aiswitch";
+import { consumeKey, hint, withHint } from "../lib/keymap";
 import { withSaved } from "../lib/pagesave";
 import { openDayReview } from "../lib/reviewnav";
 import { t as tr, useT } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   useT();
@@ -428,7 +429,7 @@ function PageHeader({
       {daily && (
         <>
           <IconButton icon={ChevronLeft} label={tr("pv.prevDay")} size="md" onClick={() => goDay(-1)} />
-          <IconButton icon={CalendarDays} label={tr("pv.calendar", { keys: keys("Mod Shift C") })} size="md" onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
+          <IconButton icon={CalendarDays} label={hint("calendar") ? tr("pv.calendar", { keys: hint("calendar") }) : tr("cmd.calendar")} size="md" onClick={(e) => openCalendar(e.currentTarget, doc.daily_date ?? undefined)} />
           <IconButton icon={ChevronRight} label={tr("pv.nextDay")} size="md" onClick={() => goDay(1)} />
         </>
       )}
@@ -462,7 +463,7 @@ function PageHeader({
           }
         }}
       />
-      <IconButton
+      <IconButton aria-haspopup="menu"
         icon={MoreHorizontal}
         label={tr("pv.more")}
         size="md"
@@ -481,7 +482,8 @@ function PageHeader({
               ? [{ label: tr("pv.shareHtmlTree"), icon: Share2, onSelect: () => sharePageAsHtml(doc.id, true) }]
               : []),
             { label: tr("pv.versions"), icon: History, onSelect: () => setVersionsOpen(true) },
-            { label: tr("pv.summarize"), icon: NotebookPen, onSelect: onSummary },
+            // „KI verwenden“ off: no AI entries in the menu either.
+            ...(aiEnabled() ? [{ label: tr("pv.summarize"), icon: NotebookPen, onSelect: onSummary }] : []),
             { label: tr("pv.newSubpage"), icon: CornerDownRight, onSelect: () => createSubpage(doc.id) },
             ...(viewType === null
               ? []
@@ -544,12 +546,14 @@ function PageHeader({
                 }}
                 onBlur={commitTitle}
                 onKeyDown={(e) => {
+                  if (isComposing(e)) return;
                   if (e.key === "Enter") {
                     e.preventDefault();
                     (e.target as HTMLTextAreaElement).blur();
                     root.current?.querySelector<HTMLElement>(".ProseMirror")?.focus();
                   }
-                  if (e.key === "Escape") setTitle(doc.title);
+                  // Escape takes back the typing (and is not passed on to end the focus mode).
+                  if (e.key === "Escape" && title !== doc.title) (consumeKey(e), setTitle(doc.title));
                 }}
               />
             </div>
@@ -622,7 +626,7 @@ function Properties({ doc, fm, typed, onAdd }: { doc: PageDoc; fm: string; typed
         </button>
       ))}
       {!typed && !parseFrontmatter(fm).some((p) => (p.key || p.value.trim()) && !isManagedKey(p.key)) && (
-        <button type="button" className="prop-add" onClick={onAdd} title={`${tr("props.add")} (${keys("Mod ;")})`}>
+        <button type="button" className="prop-add" onClick={onAdd} title={withHint(tr("props.add"), "add_property")}>
           <Plus size={13} /> {tr("props.add")}
         </button>
       )}

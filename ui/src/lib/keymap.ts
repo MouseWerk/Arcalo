@@ -5,7 +5,7 @@
 
 import { IS_MAC } from "./platform";
 import { formatShortcut } from "./shortcut";
-import type { TKey } from "./i18n";
+import { currentLang, type Lang, type TKey } from "./i18n";
 
 export interface CommandDef {
   id: string;
@@ -49,9 +49,29 @@ export const COMMANDS: CommandDef[] = [
 
 /**
  * Defaults that differ on macOS: Option+←/→ jumps by word there, so back/forward use ⌘[ and
- * ⌘] (as Safari and Finder do).
+ * ⌘] (as Safari and Finder do); ⌘⇥ is the app switcher, so the next and previous tab are ⌘⇧]
+ * and ⌘⇧[ (as in Safari, Finder and Xcode).
  */
-export const MAC_DEFAULTS: Record<string, string> = { back: "Ctrl+[", forward: "Ctrl+]" };
+export const MAC_DEFAULTS: Record<string, string> = { back: "Ctrl+[", forward: "Ctrl+]", next_tab: "Ctrl+Shift+]", prev_tab: "Ctrl+Shift+[" };
+
+/** Combos macOS takes before the window sees them (⌘ is written Ctrl here). */
+export const MAC_RESERVED: Record<string, TKey> = {
+  "Ctrl+H": "keys.reserved.hide",
+  "Ctrl+M": "keys.reserved.minimize",
+  "Ctrl+Q": "keys.reserved.quit",
+  "Ctrl+Tab": "keys.reserved.appSwitcher",
+  "Ctrl+Shift+Tab": "keys.reserved.appSwitcher",
+  "Ctrl+Space": "keys.reserved.spotlight",
+  "Ctrl+Shift+W": "keys.reserved.closeWindow",
+};
+
+/** The macOS menu's fixed key equivalents: they run their command whatever the keymap says. */
+const MAC_MENU: Record<string, string> = { "Ctrl+,": "settings", "Ctrl+\\": "toggle_sidebar", "Ctrl+.": "focus_mode" };
+
+/** Combos some input methods take on Windows (switching punctuation or simplified/traditional). */
+const IME_TAKEN = new Set(["Ctrl+Shift+F", "Ctrl+.", "Ctrl+Space", "Ctrl+Shift+Space"]);
+/** A note for a combo an input method may take (shown under the shortcut, not as a conflict). */
+export const imeNote = (combo: string | null | undefined, mac = IS_MAC): TKey | null => (!mac && combo && IME_TAKEN.has(combo) ? "keys.imeNote" : null);
 
 /** The default combos of the platform (Settings → Tastatur shows and resets to these). */
 export function defaultKeymap(mac = IS_MAC): Record<string, string> {
@@ -185,8 +205,12 @@ export interface Conflict {
   other?: TKey | "global.capture" | "global.palette" | "global.selection" | "global.mail";
 }
 
-/** Combos used twice, or taken by the editor or a global shortcut. */
-export function findConflicts(map: Record<string, string>, globals: { capture?: string | null; palette?: string | null; selection?: string | null; mail?: string | null } = {}): Conflict[] {
+/** Combos used twice, or taken by the editor, the system (macOS) or a global shortcut. */
+export function findConflicts(
+  map: Record<string, string>,
+  globals: { capture?: string | null; palette?: string | null; selection?: string | null; mail?: string | null } = {},
+  mac = IS_MAC,
+): Conflict[] {
   const byCombo = new Map<string, string[]>();
   for (const [id, combo] of Object.entries(map)) {
     if (!combo) continue;
@@ -201,6 +225,10 @@ export function findConflicts(map: Record<string, string>, globals: { capture?: 
   for (const [combo, ids] of byCombo) {
     if (ids.length > 1) out.push({ combo, commands: ids });
     if (RESERVED[combo]) out.push({ combo, commands: ids, other: RESERVED[combo] });
+    if (mac && MAC_RESERVED[combo]) out.push({ combo, commands: ids, other: MAC_RESERVED[combo] });
+    // The menu's ⌘, ⌘\ ⌘. run their own command first.
+    const menu = mac ? MAC_MENU[combo] : undefined;
+    if (menu && !(ids.length === 1 && ids[0] === menu)) out.push({ combo, commands: ids, other: COMMANDS.find((c) => c.id === menu)!.label });
     if (capture && combo === capture) out.push({ combo, commands: ids, other: "global.capture" });
     if (selection && combo === selection) out.push({ combo, commands: ids, other: "global.selection" });
     if (mail && combo === mail) out.push({ combo, commands: ids, other: "global.mail" });
@@ -212,20 +240,44 @@ export function findConflicts(map: Record<string, string>, globals: { capture?: 
 
 const SYMBOLS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" };
 
-/** "Ctrl Shift D" as shown in tooltips and menus ("⌘ ⇧ D" on macOS, where ⌘ acts as Ctrl); "" for none. */
-export function comboLabel(combo: string | null | undefined, mac = IS_MAC): string {
-  if (!combo) return "";
-  if (mac) {
-    const parts = combo.split("+");
-    const key = parts.pop()!;
-    const mods = parts.map((p) => (p === "Ctrl" ? "Mod" : p)).join(" ");
-    return formatShortcut(`${mods} ${SYMBOLS[key] ?? key}`.trim(), true, " ");
+/** Keys stored by their position, with the code of that position. */
+const POSITIONAL: Record<string, string> = { "\\": "Backslash", "[": "BracketLeft", "]": "BracketRight" };
+/** What those positions show on a German keyboard (Strg+# toggles the sidebar there, ⌘Ü goes back). */
+const GERMAN_POSITIONS: Record<string, string> = { Backslash: "#", BracketLeft: "Ü", BracketRight: "+" };
+/** The keyboard's own characters by position, when the engine tells them (Keyboard API). */
+let layoutMap: Map<string, string> | null = null;
+
+/** Learns the characters of the keyboard layout (where the engine offers it; WebKit does not). */
+export async function learnKeyboardLayout(): Promise<void> {
+  const nav = (typeof navigator === "undefined" ? undefined : navigator) as (Navigator & { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }) | undefined;
+  try {
+    const map = await nav?.keyboard?.getLayoutMap?.();
+    if (map?.size) layoutMap = new Map(map);
+  } catch {
+    /* not offered */
   }
-  return combo
-    .split("+")
-    .map((p, i, all) => (i === all.length - 1 ? (SYMBOLS[p] ?? p) : p))
-    .join(" ")
-    .replace(/  +/g, " + ");
+}
+
+/**
+ * The label of a key stored by its position (\ [ ]) on the user's keyboard: the layout's own
+ * character when the engine tells it, else the German one with a German UI (most people with a
+ * German UI type on a German keyboard), else the US one.
+ */
+export function positionLabel(key: string, lang: Lang = currentLang()): string {
+  const code = POSITIONAL[key];
+  if (!code) return key;
+  const own = layoutMap?.get(code);
+  if (own) return own.toUpperCase();
+  return lang === "de" ? GERMAN_POSITIONS[code] : key;
+}
+
+/** "Strg Umschalt D" as shown in tooltips and menus ("⌘⇧D" on macOS, where ⌘ acts as Ctrl); "" for none. */
+export function comboLabel(combo: string | null | undefined, mac = IS_MAC, lang: Lang = currentLang()): string {
+  if (!combo) return "";
+  const parts = combo.endsWith("++") ? [...combo.slice(0, -2).split("+"), "+"] : combo.split("+");
+  const key = parts.pop()!;
+  const mods = parts.map((p) => (p === "Ctrl" ? "Mod" : p));
+  return formatShortcut([...mods, SYMBOLS[key] ?? positionLabel(key, lang)].join(" "), mac, " ");
 }
 
 /** The command bound to a key event. */
@@ -249,8 +301,32 @@ export function isTextTarget(el: Element | null): boolean {
   return !["button", "checkbox", "radio", "range", "color", "file", "submit", "reset", "image"].includes(type);
 }
 
-/** Whether command `id` runs for a key event with the focus on `target`. */
-export function commandAllowed(id: string, target: Element | null): boolean {
+/**
+ * Key presses a popup already used (an Escape that closed the slash menu or the find bar). The
+ * window's own meaning of the key (Escape ends the focus mode) then does not apply. A mark of its
+ * own: the editor calls preventDefault on every Escape, so `defaultPrevented` cannot tell.
+ */
+const consumed = new WeakSet<Event>();
+export const consumeKey = (e: Event | { nativeEvent: Event }) => void consumed.add("nativeEvent" in e ? e.nativeEvent : e);
+export const keyConsumed = (e: Event) => consumed.has(e);
+
+/** Commands that also run over the palette: they switch or close it. */
+const OVER_PALETTE = new Set(["palette", "quick_switcher"]);
+
+/**
+ * The modal layer in front of the window, if any: the palette alone, or another one (a dialog,
+ * the setup, a presentation, the lock screen, a full view). Behind it the window's commands and
+ * the mouse back/forward buttons wait.
+ */
+export function modalLayer(root: ParentNode | null = typeof document === "undefined" ? null : document): "palette" | "modal" | null {
+  const layers = root ? [...root.querySelectorAll('[aria-modal="true"], .fr-overlay')] : [];
+  if (!layers.length) return null;
+  return layers.every((el) => el.classList.contains("palette")) ? "palette" : "modal";
+}
+
+/** Whether command `id` runs for a key event with the focus on `target` (and `layer` in front). */
+export function commandAllowed(id: string, target: Element | null, layer: "palette" | "modal" | null = modalLayer()): boolean {
+  if (layer === "modal" || (layer === "palette" && !OVER_PALETTE.has(id))) return false;
   return !(TEXT_KEEPS.has(id) && isTextTarget(target));
 }
 

@@ -38,6 +38,7 @@ import { visibleRange } from "../lib/activity";
 import type { Recurrence, Task, TaskChange, TaskEdit, TaskStatus } from "../lib/types";
 import { t as tr, useT, withLabel } from "../lib/i18n";
 import { RecurDialog, TaskMoveDialog } from "./TaskDialogs";
+import { isComposing, isKey } from "../lib/ime";
 
 const STATUS: { value: TaskStatus; readonly label: string }[] = [
   withLabel({ value: "open" as TaskStatus }, "tasks.status.open"),
@@ -274,6 +275,7 @@ export function TasksView() {
     if (!range) anchor.current = k;
   };
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isComposing(e)) return;
     const target = e.target as HTMLElement;
     const typing = target.matches("input:not([type=checkbox]), textarea, select, [contenteditable=true]");
     if (typing || e.altKey) return;
@@ -591,7 +593,7 @@ const TaskRow = memo(function TaskRow({
           {t.priority === 1 && <ChevronUp size={14} strokeWidth={2.25} className="task-prio medium" aria-label={tr("tasks.prioMediumLabel")} />}
           {taskSegments(t.text).map((seg, i) =>
             seg.kind === "link" ? (
-              <span key={i} className="wikilink" data-target={seg.target} role="link" tabIndex={0} onClick={(e) => act.current.openLink(seg.target, e.ctrlKey || e.metaKey)} onKeyDown={(e) => e.key === "Enter" && act.current.openLink(seg.target, false)}>
+              <span key={i} className="wikilink" data-target={seg.target} role="link" tabIndex={0} onClick={(e) => act.current.openLink(seg.target, e.ctrlKey || e.metaKey)} onKeyDown={(e) => isKey(e, "Enter") && act.current.openLink(seg.target, false)}>
                 {seg.text}
               </span>
             ) : seg.kind === "mail" ? (
@@ -600,7 +602,7 @@ const TaskRow = memo(function TaskRow({
                 <span>{tr("tasks.mail")}</span>
               </button>
             ) : seg.kind === "tag" ? (
-              <span key={i} className="tag" role="link" tabIndex={0} onClick={() => s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })} onKeyDown={(e) => e.key === "Enter" && s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })}>
+              <span key={i} className="tag" role="link" tabIndex={0} onClick={() => s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })} onKeyDown={(e) => isKey(e, "Enter") && s().openTab({ kind: "tag", tag: seg.tag }, { newTab: true })}>
                 {seg.text}
               </span>
             ) : (

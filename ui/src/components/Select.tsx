@@ -11,6 +11,7 @@
 import { Children, Fragment, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, type LucideIcon } from "lucide-react";
+import { isComposing } from "../lib/ime";
 
 export interface SelectOption {
   value: string;
@@ -187,6 +188,7 @@ export function Select({ value, onChange, options, children, disabled, className
     const onScroll = (e: Event) => e.target instanceof Node && !pop.current?.contains(e.target) && trigger.current && e.target.contains(trigger.current) && setOpen(false);
     const close = () => setOpen(false);
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       const stop = () => (e.preventDefault(), e.stopPropagation());
       // Keys can come faster than renders: the highlighted option is read from the ref.
       const at = activeRef.current;
@@ -255,6 +257,7 @@ export function Select({ value, onChange, options, children, disabled, className
   });
 
   const onTriggerKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (isComposing(e)) return;
     if (open || disabled) return;
     if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
       e.preventDefault();

@@ -28,6 +28,7 @@ import { useWbs } from "../../views/wbs";
 import { useDash, useWidgetData } from "./data";
 import { dayLabel, Empty, fmt, hhmm, hrs, Loadable, More, Ring, s, TaskRow, TimerBlock, until, useNow } from "./common";
 import type { WidgetProps } from "./registry";
+import { isComposing } from "../../lib/ime";
 
 const EntryDialog = lazy(() => import("../../views/TimesheetView").then((m) => ({ default: m.EntryDialog })));
 
@@ -103,7 +104,7 @@ function Timeline({ events, now }: { events: CalendarEvent[]; now: number }) {
           ))}
         </div>
       )}
-      <div className="dw-tl-track" role="list" aria-label={t("dash.timeline")}>
+      <div className="dw-tl-track" role="group" aria-label={t("dash.timeline")}>
         {hours.map((h) => (
           <span key={h} className="dw-tl-hour" style={{ left: `${((h - from) / (to - from)) * 100}%` }} aria-hidden>
             {h < to && <span className="num">{String(h).padStart(2, "0")}</span>}
@@ -118,7 +119,6 @@ function Timeline({ events, now }: { events: CalendarEvent[]; now: number }) {
             <button
               key={e.key}
               type="button"
-              role="listitem"
               className={`dw-tl-ev ${past ? "past" : ""} ${live ? "live" : ""}`}
               style={{ left: `${a}%`, width: `max(4px, ${b - a}%)`, top: `calc(${lane.get(e.key) ?? 0} * var(--lane-h))`, "--ev": sourceColor(e.source, cal) } as CSSProperties}
               title={`${timeRange(e)} ${e.title}`}
@@ -200,7 +200,8 @@ function AddTask({ target, onAdded }: { target?: number | null; onAdded: () => v
       disabled={busy}
       onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+        if (isComposing(e)) return;
+        if (e.key === "Enter") {
           e.preventDefault();
           void add();
         }

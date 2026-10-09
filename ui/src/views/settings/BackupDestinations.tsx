@@ -29,6 +29,7 @@ import {
   type SourcedBackup,
 } from "../../lib/backupdest";
 import { Group, NumberInput, PathValue, Row, StatusNote } from "./common";
+import { isComposing } from "../../lib/ime";
 
 const PLATFORM = IS_MAC ? "mac" : IS_LINUX ? "linux" : "windows";
 const KIND_ICON: Record<PathKind, typeof Server> = { unc: Network, drive: HardDrive, mount: Server, cloud: Cloud, local: FolderOpen };
@@ -105,6 +106,7 @@ export function BackupDestinationsGroup({ draft, update }: { draft: Settings; up
             aria-label={t("bdest.path")}
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "Enter") add();
             }}
           />

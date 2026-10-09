@@ -59,7 +59,7 @@ test("purging from the trash deletes the page for good", async () => {
   await deleteFromTree(PAGE);
   await app.click('.sidebar-foot [aria-label^="Papierkorb"]');
   await app.waitFor(".trash-item");
-  await app.click('.trash-item [aria-label="Endgültig löschen"]');
+  await app.click('.trash-item [aria-label$="endgültig löschen"]');
   await app.waitFor(".dialog");
   await app.click(".dialog .btn-danger");
   await app.waitText(".empty-title", /Papierkorb ist leer/);

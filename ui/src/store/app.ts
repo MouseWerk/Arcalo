@@ -52,6 +52,8 @@ export interface Toast {
 }
 
 export interface ConfirmRequest {
+  /** Changes with every question (the dialog starts afresh for a new one). */
+  id: number;
   title: string;
   message: string;
   confirmLabel: string;
@@ -260,6 +262,18 @@ export function savePref(key: string, v: boolean) {
 const initial = loadLayout();
 const initialPane = initial.panes.find((p) => p.id === initial.activePaneId) ?? initial.panes[0];
 let toastSeq = 0;
+/**
+ * At most `max` closing toasts at a time: the oldest give way, plain messages before those with
+ * an action, so quick messages do not take away a recent „Rückgängig“. Persistent ones stay.
+ */
+export function trimToasts(list: Toast[], max = 3): Toast[] {
+  const closing = list.filter((x) => !x.persistent);
+  const drop = new Set<Toast>();
+  for (const plainFirst of [true, false])
+    for (const x of closing) if (closing.length - drop.size > max && !!x.action !== plainFirst && x !== list[list.length - 1]) drop.add(x);
+  return drop.size ? list.filter((x) => !drop.has(x)) : list;
+}
+let confirmSeq = 0;
 /** Countdown of each closing toast: the running timer, or the time left while held. */
 const toastClocks = new Map<number, { timer: number | null; left: number; since: number }>();
 let toastsHeld = false;
@@ -271,9 +285,14 @@ export const useApp = create<State>((set, get) => ({
   confirmRequest: null,
   confirm: async (opts) => (await get().choose({ ...opts, altLabel: "" })) === "confirm",
   choose: (opts) =>
-    new Promise<ConfirmChoice>((resolve) =>
+    new Promise<ConfirmChoice>((resolve) => {
+      // A newer question replaces an open one: that one counts as cancelled, so whoever waits
+      // for it (a window close, a paste) goes on instead of waiting forever.
+      get().confirmRequest?.resolve("cancel");
+      const id = ++confirmSeq;
       set({
         confirmRequest: {
+          id,
           title: opts.title,
           message: opts.message,
           confirmLabel: opts.confirmLabel ?? t("common.confirm"),
@@ -281,12 +300,12 @@ export const useApp = create<State>((set, get) => ({
           altLabel: opts.altLabel || undefined,
           danger: opts.danger ?? false,
           resolve: (choice) => {
-            set({ confirmRequest: null });
+            if (get().confirmRequest?.id === id) set({ confirmRequest: null });
             resolve(choice);
           },
         },
-      }),
-    ),
+      });
+    }),
   tabs: initialPane.tabs,
   activeTabId: initialPane.activeTabId,
   panes: initial.panes,
@@ -515,14 +534,18 @@ export const useApp = create<State>((set, get) => ({
   bumpWbs: () => set({ wbsVersion: get().wbsVersion + 1 }),
   set: (patch) => set(patch),
   toast: (t) => {
-    // Focus session: everything but errors waits for the end of the session.
-    if (get().focus?.phase === "work" && !t.urgent && t.tone !== "danger") {
+    // Focus session: background messages wait for the end of the session. Errors and the answer
+    // to something the user just did („Rückgängig“ after a delete, a move, a setting) show now:
+    // held, their undo would be lost.
+    if (get().focus?.phase === "work" && !t.urgent && t.tone !== "danger" && !t.action) {
       set({ heldToasts: [...get().heldToasts, t].slice(-50) });
       return;
     }
     const id = ++toastSeq;
     const rest = t.key ? get().toasts.filter((x) => x.key !== t.key) : get().toasts;
-    set({ toasts: [...rest, { ...t, id }].filter((x, i, all) => x.persistent || i >= all.length - 3) });
+    const toasts = trimToasts([...rest, { ...t, id }]);
+    for (const x of get().toasts) if (!toasts.includes(x)) toastClocks.delete(x.id);
+    set({ toasts });
     const ms = t.timeout ?? (t.tone === "danger" ? 8000 : t.action ? 7000 : t.tone === "success" ? 3200 : 4500);
     if (!t.persistent)
       toastClocks.set(id, { timer: toastsHeld ? null : window.setTimeout(() => get().dismissToast(id), ms), left: ms, since: Date.now() });

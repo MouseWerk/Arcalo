@@ -14,6 +14,7 @@ import type { ForceParams, LayoutIn, LayoutOut, LayoutPort } from "../../lib/gra
 import { startLayout } from "../../lib/graphLayout";
 import { t } from "../../lib/i18n";
 import { reducedMotion } from "../../lib/motion";
+import { isComposing } from "../../lib/ime";
 
 export interface GraphCanvasHandle {
   fit(animate?: boolean): void;
@@ -662,6 +663,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     const s = st.current;
     const n = model.nodes.length;
     if (!n) return;

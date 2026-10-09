@@ -20,6 +20,7 @@ import { TYPE_SVG, typeOf } from "../lib/issueTypes";
 import { useTimeTracking } from "../lib/timetracking";
 import { openPlanPicker, setPlanData } from "../lib/blocks";
 import { useGroupWindow } from "../lib/groupWindow";
+import { isComposing } from "../lib/ime";
 
 const PREF = "arcalo.issues.view";
 /** From this many issues on, only the rows in view are rendered. */
@@ -243,7 +244,7 @@ export function IssuesView() {
                             tabIndex={0}
                             aria-expanded={open === i.key}
                             onClick={() => setOpen(open === i.key ? null : i.key)}
-                            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(open === i.key ? null : i.key))}
+                            onKeyDown={(e) => !isComposing(e) && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(open === i.key ? null : i.key))}
                             onContextMenu={(e) => openMenuAt(e, issueMenu(i))}
                           >
                             {sites.length > 1 && <span className="issues-site-dot" style={{ background: siteColor(i.site) }} title={siteName(i.site)} aria-hidden />}
@@ -262,7 +263,7 @@ export function IssuesView() {
                             <IconButton icon={ExternalLink} size="sm" label={t("jira.openBrowser")} onClick={() => void openIssueInBrowser(i.key, i.url)} />
                             <IconButton icon={FileText} size="sm" label={t("jira.openNote")} onClick={(e) => void openIssueNote(i.key, { newTab: e.ctrlKey || e.metaKey })} />
                             <IconButton icon={Copy} size="sm" label={t("jira.copyKey")} onClick={() => void copyIssueKey(i.key)} />
-                            <IconButton icon={MoreHorizontal} size="sm" label={t("jira.more", { key: i.key })} onClick={(e) => openMenuAt(e, issueMenu(i))} />
+                            <IconButton aria-haspopup="menu" icon={MoreHorizontal} size="sm" label={t("jira.more", { key: i.key })} onClick={(e) => openMenuAt(e, issueMenu(i))} />
                           </span>
                           {open === i.key && <IssueDetail issue={i} />}
                         </li>

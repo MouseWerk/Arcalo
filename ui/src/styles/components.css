@@ -231,8 +231,10 @@
   animation: pop-in var(--dur) var(--ease-out);
   user-select: text;
 }
+/* An info-only dialog holds the focus itself; the box is no control, so no ring. */
+.dialog:focus { outline: none; }
 .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 0; }
-.dialog-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.dialog-title { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: inherit; }
 .dialog-desc { color: var(--text-2); margin-top: 2px; }
 .dialog-body { padding: 16px 20px; overflow: auto; }
 .dialog-text { margin: 0; color: var(--text-2); line-height: 1.6; }
@@ -324,9 +326,13 @@
 }
 /* Rows follow the density setting (38 px at the default, like the entry rows). */
 .table td { padding: calc((var(--entry-row-h) - 20px) / 2) var(--sp-3); border-bottom: 1px solid var(--border); vertical-align: middle; }
-.table tbody tr:hover td { background: var(--bg-hover); }
-.table tbody tr:last-child td { border-bottom: 0; }
-.table tfoot td { font-weight: var(--fw-semibold); border-top: 1px solid var(--border-strong); border-bottom: 0; }
+/* Row headers (a Netzplan, a Vorgang, „Summe“) look like the cells beside them. */
+.table tbody th, .table tfoot th { font-size: inherit; color: inherit; padding-top: calc((var(--entry-row-h) - 20px) / 2); padding-bottom: calc((var(--entry-row-h) - 20px) / 2); vertical-align: middle; }
+.table tbody th { font-weight: inherit; }
+.table abbr { text-decoration: none; }
+.table tbody tr:hover > td, .table tbody tr:hover > th { background: var(--bg-hover); }
+.table tbody tr:last-child > td, .table tbody tr:last-child > th { border-bottom: 0; }
+.table tfoot td, .table tfoot th { font-weight: var(--fw-semibold); border-top: 1px solid var(--border-strong); border-bottom: 0; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .strong { font-weight: var(--fw-semibold); }
 .small { font-size: var(--fs-sm); }

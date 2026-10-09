@@ -14,6 +14,7 @@ import { BREAKS, LENGTHS, MAX_MINUTES, countdown, lastChoice, parseMinutes, phas
 import type { FocusDone } from "../lib/types";
 import { t as tr, useT } from "../lib/i18n";
 import { decimal } from "../lib/format";
+import { isComposing, isKey } from "../lib/ime";
 
 const s = useApp.getState;
 
@@ -201,7 +202,7 @@ export function FocusStatus() {
     : tr("focus.breakStatus", { left });
   return (
     <>
-      <button
+      <button aria-haspopup="menu"
         type="button"
         className={`sb-item sb-focus ${work ? "work" : "break"}`}
         aria-label={label}
@@ -269,6 +270,7 @@ function RefCombo({ value, onChange }: { value: string; onChange: (v: string) =>
         onBlur={() => window.setTimeout(() => setOpen(false), 120)}
         onChange={(e) => (onChange(e.target.value), setOpen(true))}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (!open || !items.length) return;
           if (e.key === "ArrowDown") (e.preventDefault(), setSel((v) => (v + 1) % items.length));
           else if (e.key === "ArrowUp") (e.preventDefault(), setSel((v) => (v - 1 + items.length) % items.length));
@@ -346,7 +348,7 @@ function FocusDialog({ preset }: { preset: { reference?: string; goal?: string; 
         </>
       }
     >
-      <div className="focus-form" onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && !e.defaultPrevented && (e.preventDefault(), start())}>
+      <div className="focus-form" onKeyDown={(e) => isKey(e, "Enter") && (e.target as HTMLElement).tagName === "INPUT" && !e.defaultPrevented && (e.preventDefault(), start())}>
         {timeOn && (
           <Field label={tr("focus.ref")} hint={reference.trim() ? undefined : tr("focus.noRefHint")}>
             <RefCombo value={reference} onChange={setReference} />

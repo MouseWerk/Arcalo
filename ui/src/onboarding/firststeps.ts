@@ -73,8 +73,8 @@ export interface FirstStep {
   id: FirstStepId;
   title: TKey;
   text: TKey;
-  /** A shortcut that does the same (`keymap` spec). */
-  hint?: string;
+  /** The keymap command that does the same: its shortcut of Settings → Tastatur is shown. */
+  command?: string;
   done: boolean;
 }
 
@@ -88,14 +88,14 @@ export function firstSteps(view: SettingsView | null, pages: Iterable<Page>, sto
   const calendar = !!s?.calendar && (s.calendar.outlook || (s.calendar.sources ?? []).some((x) => x.enabled));
   const clicked = (id: string) => stored.clicked.includes(id);
   const out: FirstStep[] = [
-    { id: "note", title: "fs.note", text: "fs.noteText", hint: "Mod N", done: written },
-    { id: "today", title: "fs.today", text: "fs.todayText", hint: "Mod Shift D", done: daily },
+    { id: "note", title: "fs.note", text: "fs.noteText", command: "new_page", done: written },
+    { id: "today", title: "fs.today", text: "fs.todayText", command: "daily_note", done: daily },
     { id: "task", title: "fs.task", text: "fs.taskText", done: clicked("task") },
   ];
   if (!calendar) out.push({ id: "calendar", title: "fs.calendar", text: "fs.calendarText", done: false });
   else if (s && timeTrackingOn(s)) out.push({ id: "time", title: "fs.time", text: "fs.timeText", done: clicked("time") });
   else if (view && aiOn(view))
-    out.push(usableProvider(view) ? { id: "ai", title: "fs.ai", text: "fs.aiText", hint: "Mod J", done: clicked("ai") } : { id: "aiSetup", title: "fs.aiSetup", text: "fs.aiSetupText", done: clicked("aiSetup") });
+    out.push(usableProvider(view) ? { id: "ai", title: "fs.ai", text: "fs.aiText", command: "assistant", done: clicked("ai") } : { id: "aiSetup", title: "fs.aiSetup", text: "fs.aiSetupText", done: clicked("aiSetup") });
   return out;
 }
 

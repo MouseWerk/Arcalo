@@ -26,15 +26,56 @@ export interface Burst {
   before: Settings;
   /** Last edit (ms). */
   at: number;
+  /** The settings right after its last edit (what „Rückgängig“ takes back is the difference). */
+  after?: Settings;
   /** Every key the change touched. */
   touched: Set<keyof Settings>;
 }
 
 export const BURST_GAP = 1500;
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The paths of the values that differ between `a` and `b` („editor.smart_quotes“); lists count as one value. */
+export function leafDiff(a: unknown, b: unknown, prefix = ""): string[] {
+  if (isObject(a) && isObject(b)) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].flatMap((k) => leafDiff(a[k], b[k], prefix ? `${prefix}.${k}` : k));
+  }
+  return JSON.stringify(a) === JSON.stringify(b) ? [] : [prefix];
+}
+
+const getPath = (s: unknown, path: string): unknown => path.split(".").reduce<unknown>((o, k) => (isObject(o) ? o[k] : undefined), s);
+function setPath(s: Record<string, unknown>, path: string, value: unknown) {
+  const keys = path.split(".");
+  let o = s;
+  for (const k of keys.slice(0, -1)) {
+    if (!isObject(o[k])) o[k] = {};
+    o = o[k] as Record<string, unknown>;
+  }
+  const last = keys[keys.length - 1];
+  if (value === undefined) delete o[last];
+  else o[last] = structuredClone(value);
+}
+
+/**
+ * The patch that undoes one change (`before` → `after`) in the settings as they are now: only
+ * the values it changed go back, and only those nobody changed again since (a later change of
+ * another switch in the same section stays).
+ */
+export function revertPaths(current: Settings, before: Settings, after: Settings): Partial<Settings> {
+  const paths = leafDiff(before, after).filter((p) => JSON.stringify(getPath(current, p)) === JSON.stringify(getPath(after, p)));
+  const top = new Set(paths.map((p) => p.split(".")[0] as keyof Settings));
+  const out = pick(current, [...top]) as Record<string, unknown>;
+  for (const p of paths) setPath(out, p, getPath(before, p));
+  return out as Partial<Settings>;
+}
+
 /** The burst `patch` belongs to: `prev` when it continues it, else a new one from `before`. */
 export function continueBurst(prev: Burst | null, patch: Partial<Settings>, before: Settings, now: number, nextId: number): Burst {
-  const keys = Object.keys(patch).sort().join(",");
+  // The same value typed on (or switched again): one change. Another switch of the same
+  // section is a change of its own, with its own „Rückgängig“.
+  const keys = leafDiff(before, { ...before, ...patch }).sort().join(",") || Object.keys(patch).sort().join(",");
   if (prev && prev.keys === keys && now - prev.at <= BURST_GAP) {
     prev.at = now;
     return prev;

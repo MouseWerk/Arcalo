@@ -8,12 +8,13 @@ import type { PageDoc, SavedPage } from "../lib/types";
 import { useApp } from "../store/app";
 import { splitFrontmatter } from "./extensions";
 import { markdownStats } from "../lib/plaintext";
-import { keepUnsaved, registerFlusher, takeUnsaved, trackSave } from "./saves";
+import { keepUnsaved, registerFlusher, saveDelay, takeUnsaved, trackSave } from "./saves";
+import { SaveFailed } from "./SaveFailed";
 import { merge3 } from "../lib/merge3";
 import { t } from "../lib/i18n";
 import { useSourceChips } from "./sourceChips";
+import { isComposing } from "../lib/ime";
 
-const SAVE_MS = 700;
 const INDENT = "  ";
 
 /** What Enter continues on the next line: the list marker of `line`, or null. */
@@ -23,6 +24,33 @@ export function continuation(line: string): { prefix: string; empty: boolean } |
   const [all, indent, marker, gap, box] = m;
   const next = /^\d/.test(marker) ? `${parseInt(marker, 10) + 1}${marker.slice(-1)}` : marker;
   return { prefix: `${indent}${next}${gap}${box ? "[ ] " : ""}`, empty: line.trim().length === all.trim().length };
+}
+
+/** The headings of Markdown source (ATX, outside code blocks and properties) with their offset. */
+export function sourceOutline(text: string): { level: number; text: string; pos: number }[] {
+  const out: { level: number; text: string; pos: number }[] = [];
+  let fence: string | null = null;
+  let pos = 0;
+  const lines = text.split("\n");
+  // The properties block at the top is not part of the outline.
+  let i = 0;
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((l, k) => k > 0 && l.trim() === "---");
+    if (end > 0) {
+      for (; i <= end; i++) pos += lines[i].length + 1;
+    }
+  }
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    const f = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (f) fence = fence === null ? f[1][0] : fence === f[1][0] ? null : fence;
+    else if (fence === null) {
+      const h = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);
+      if (h) out.push({ level: h[1].length, text: h[2], pos });
+    }
+    pos += line.length + 1;
+  }
+  return out;
 }
 
 /** Where a caret at `at` in `a` belongs in `b` (text before it that did not change keeps it). */
@@ -55,6 +83,8 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   // Gone (tab closed, mode switch): failed edits are kept by `keepUnsaved` instead.
   const unmounted = useRef(false);
   const failed = useRef(false);
+  // A failed save shows the same note as in the visual editor until a retry works.
+  const [status, setStatus] = useState<"saved" | "failed">("saved");
 
   const save = () => {
     window.clearTimeout(timer.current);
@@ -68,6 +98,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
       .then(() => api.savePage(doc.id, content))
       .then((saved) => {
         failed.current = false;
+        if (!unmounted.current) setStatus("saved");
         if (merges.current === mergesBefore) base.current = content;
         cb.current({ ...saved, content });
         window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id: doc.id, content, from: instance.current } }));
@@ -78,6 +109,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
         if (!failed.current) useApp.getState().error(t("editor.saveFailed"), e);
         failed.current = true;
         if (unmounted.current) return keepUnsaved(doc.id, content, api.savePage);
+        setStatus("failed");
         // Try again later; the edits stay in the editor meanwhile.
         window.clearTimeout(timer.current);
         timer.current = window.setTimeout(save, 5000);
@@ -117,14 +149,14 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     replaceText(merged);
     dirty.current = true;
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(save, SAVE_MS);
+    timer.current = window.setTimeout(save, saveDelay());
   };
   /** `next` as an edit of the user (the chip put back by „Rückgängig“), saved as typed text is. */
   const edit = (next: string) => {
     replaceText(next);
     dirty.current = true;
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(save, SAVE_MS);
+    timer.current = window.setTimeout(save, saveDelay());
   };
   const chips = useSourceChips(doc.id, () => latest.current, edit, mapCaret);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,7 +172,7 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     if (kept !== undefined && kept !== latest.current) {
       replaceText(kept);
       dirty.current = true;
-      timer.current = window.setTimeout(save, SAVE_MS);
+      timer.current = window.setTimeout(save, saveDelay());
     }
     const unregister = registerFlusher(async () => {
       await save();
@@ -187,6 +219,34 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   useEffect(() => {
     if (active) return () => useApp.getState().set({ editorStats: null });
   }, [active]);
+  // The outline panel lists the headings of the source text; a click puts the caret on the line.
+  useEffect(() => {
+    if (!active) return;
+    const t = window.setTimeout(() => useApp.getState().set({ outline: sourceOutline(value) }), value.length < 20_000 ? 0 : 300);
+    return () => window.clearTimeout(t);
+  }, [value, active]);
+  useEffect(() => {
+    if (!active) return;
+    const scrollToPos = (pos: number) => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(pos, pos);
+      // The text box grows with its text: the page scrolls to the line (by its share of the lines).
+      const lines = el.value.split("\n").length;
+      const line = el.value.slice(0, pos).split("\n").length - 1;
+      const sc = el.closest(".page-scroll");
+      if (sc) {
+        const y = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop + (el.scrollHeight * line) / Math.max(1, lines);
+        sc.scrollTo({ top: Math.max(0, y - sc.clientHeight / 3), behavior: "instant" });
+      }
+    };
+    useApp.getState().set({ outline: sourceOutline(latest.current), scrollToPos });
+    return () => {
+      const st = useApp.getState();
+      if (st.scrollToPos === scrollToPos) st.set({ scrollToPos: null, outline: [] });
+    };
+  }, [active]);
   // The page view fetched the page anew (after a mode switch, a reload): show that, unless
   // there are own edits.
   useEffect(() => {
@@ -209,11 +269,12 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     setValue(next);
     dirty.current = true;
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(save, SAVE_MS);
+    timer.current = window.setTimeout(save, saveDelay());
     if (caret) requestAnimationFrame(() => ref.current?.setSelectionRange(caret[0], caret[1]));
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isComposing(e)) return;
     const el = e.currentTarget;
     const { selectionStart: a, selectionEnd: b, value: v } = el;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -245,7 +306,8 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   };
 
   return (
-    <div className="source-editor">
+    <div className="source-editor" data-save-status={status}>
+      {status === "failed" && <SaveFailed />}
       <textarea
         ref={ref}
         className="source-text"

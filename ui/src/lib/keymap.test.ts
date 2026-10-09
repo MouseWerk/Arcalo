@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, DEFAULT_KEYMAP, commandAllowed, comboFromEvent, comboLabel, comboProblem, commandFor, defaultKeymap, effectiveKeymap, findConflicts, isTextTarget, keymapOverrides, normalizeCombo } from "./keymap";
+import { COMMANDS, DEFAULT_KEYMAP, MAC_RESERVED, commandAllowed, comboFromEvent, comboLabel, comboProblem, commandFor, defaultKeymap, effectiveKeymap, findConflicts, imeNote, isTextTarget, keymapOverrides, modalLayer, normalizeCombo, positionLabel } from "./keymap";
+import { setLang } from "./i18n";
 
 const ev = (key: string, code: string, mods: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean; altGr?: boolean } = {}) => ({
   key,
@@ -46,9 +47,44 @@ describe("keymap", () => {
     expect(normalizeCombo("cmd+arrowleft")).toBe("Ctrl+ArrowLeft");
     expect(normalizeCombo("Ctrl+K+J")).toBeNull();
     expect(normalizeCombo("")).toBeNull();
-    expect(comboLabel("Ctrl+Shift+D")).toBe("Ctrl Shift D");
-    expect(comboLabel("Alt+ArrowLeft")).toBe("Alt ←");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg Umschalt D");
+    expect(comboLabel("Alt+ArrowLeft", false)).toBe("Alt ←");
+    setLang("en");
+    expect(comboLabel("Ctrl+Shift+Space", false, "en")).toBe("Ctrl Shift Space");
+    setLang("de");
     expect(comboLabel("")).toBe("");
+  });
+
+  it("labels keys stored by position the way the keyboard shows them (German: Strg+# toggles the sidebar)", () => {
+    expect(comboLabel("Ctrl+\\", false, "de")).toBe("Strg #");
+    expect(comboLabel("Ctrl+Shift+\\", false, "de")).toBe("Strg Umschalt #");
+    expect(comboLabel("Ctrl+[", true, "de")).toBe("⌘Ü");
+    expect(comboLabel("Ctrl+]", true, "de")).toBe("⌘+");
+    setLang("en");
+    expect(comboLabel("Ctrl+\\", false, "en")).toBe("Ctrl \\");
+    setLang("de");
+    expect(comboLabel("Ctrl+[", true, "en")).toBe("⌘[");
+    // Not positional: the character itself.
+    expect(positionLabel(",", "de")).toBe(",");
+    // The German key reached with Strg+# is the one the recorder stores as Ctrl+\.
+    expect(comboFromEvent(ev("#", "Backslash", { ctrl: true }))).toBe("Ctrl+\\");
+  });
+
+  it("no macOS default is a combo macOS takes for itself (⌘⇥, ⌘H, ⌘M, ⌘Q, ⌘Space)", () => {
+    const mac = defaultKeymap(true);
+    for (const [id, combo] of Object.entries(mac)) expect(MAC_RESERVED[combo], id).toBeUndefined();
+    expect(mac.next_tab).toBe("Ctrl+Shift+]");
+    expect(mac.prev_tab).toBe("Ctrl+Shift+[");
+    expect(comboLabel(mac.next_tab, true, "en")).toBe("⇧⌘]");
+    expect(findConflicts(mac, {}, true)).toEqual([]);
+    // Rebinding onto one of them, or onto a menu key of another command, is a conflict there only.
+    expect(findConflicts({ ...mac, tasks: "Ctrl+H" }, {}, true)).toContainEqual({ combo: "Ctrl+H", commands: ["tasks"], other: "keys.reserved.hide" });
+    expect(findConflicts({ ...mac, tasks: "Ctrl+H" }, {}, false)).toEqual([]);
+    expect(findConflicts({ ...mac, focus_mode: "", tasks: "Ctrl+." }, {}, true)).toContainEqual({ combo: "Ctrl+.", commands: ["tasks"], other: "cmd.focusMode" });
+    // Input methods: a note, not a conflict.
+    expect(imeNote("Ctrl+Shift+F", false)).toBe("keys.imeNote");
+    expect(imeNote("Ctrl+Shift+F", true)).toBeNull();
+    expect(imeNote("Ctrl+K", false)).toBeNull();
   });
 
   it("macOS: back/forward default to Cmd+[ / Cmd+] (Option+arrows jump by word there)", () => {
@@ -66,23 +102,26 @@ describe("keymap", () => {
     expect(commandFor(ev("]", "BracketRight", { meta: true }), mac)).toBe("forward");
     expect(commandFor(ev("ArrowLeft", "ArrowLeft", { alt: true }), mac)).toBeNull();
     expect(normalizeCombo("cmd+[")).toBe("Ctrl+[");
-    expect(comboLabel("Ctrl+[", true)).toContain("[");
+    expect(comboLabel("Ctrl+[", true, "en")).toContain("[");
   });
 
-  it("labels every default command the platform's way: ⌘ on macOS, Ctrl elsewhere", () => {
+  it("labels every default command the platform's way: ⌘ on macOS, Strg (Ctrl) elsewhere", () => {
     for (const [id, combo] of Object.entries(defaultKeymap(true))) {
       const label = comboLabel(combo, true);
-      expect(label, id).not.toMatch(/Ctrl|Strg|Alt|Shift/);
+      expect(label, id).not.toMatch(/Ctrl|Strg|Alt|Shift|Umschalt/);
       if (combo.startsWith("Ctrl+")) expect(label, id).toContain("⌘");
     }
     for (const [id, combo] of Object.entries(defaultKeymap(false))) {
       const label = comboLabel(combo, false);
-      expect(label, id).not.toMatch(/[⌘⌥⇧⌃]/);
-      if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Ctrl /);
+      expect(label, id).not.toMatch(/[⌘⌥⇧⌃]|Ctrl|Shift/);
+      if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Strg /);
+      setLang("en");
+      expect(comboLabel(combo, false, "en"), id).not.toMatch(/Strg|Umschalt/);
+      setLang("de");
     }
     expect(comboLabel("Ctrl+Shift+D", true)).toBe("⇧⌘D");
     expect(comboLabel("Ctrl+W", true)).toBe("⌘W");
-    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Ctrl Shift D");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg Umschalt D");
   });
 
   it("back/forward stay with text fields and the editor", () => {
@@ -104,6 +143,34 @@ describe("keymap", () => {
     expect(commandAllowed("back", button)).toBe(true);
     expect(commandAllowed("back", document.body)).toBe(true);
     editable.remove();
+  });
+
+  it("no command runs behind a dialog or the setup; over the palette only the palette commands", () => {
+    expect(modalLayer()).toBeNull();
+    const palette = document.createElement("div");
+    palette.className = "palette";
+    palette.setAttribute("aria-modal", "true");
+    document.body.append(palette);
+    expect(modalLayer()).toBe("palette");
+    expect(commandAllowed("close_tab", document.body)).toBe(false);
+    expect(commandAllowed("new_page", document.body)).toBe(false);
+    expect(commandAllowed("palette", document.body)).toBe(true);
+    expect(commandAllowed("quick_switcher", document.body)).toBe(true);
+    const dialog = document.createElement("div");
+    dialog.className = "dialog";
+    dialog.setAttribute("aria-modal", "true");
+    document.body.append(dialog);
+    expect(modalLayer()).toBe("modal");
+    expect(commandAllowed("palette", document.body)).toBe(false);
+    palette.remove();
+    dialog.remove();
+    // The setup counts even while the focus is outside it.
+    const setup = document.createElement("div");
+    setup.className = "fr-overlay";
+    document.body.append(setup);
+    expect(commandAllowed("close_tab", document.body)).toBe(false);
+    setup.remove();
+    expect(commandAllowed("close_tab", document.body)).toBe(true);
   });
 
   it("defaults match the documented shortcuts and have no conflicts", () => {

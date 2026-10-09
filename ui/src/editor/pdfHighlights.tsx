@@ -16,6 +16,7 @@ import { appendMarkdown, insertMarkdownBelow } from "./ai-insert";
 import { editorForPage } from "./reveal";
 import { t, useT } from "../lib/i18n";
 import type { TKey } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 const colorKey = (c: string) => `pdfh.${c}` as TKey;
 
@@ -152,6 +153,7 @@ export function HighlightPopover({
       role="dialog"
       aria-label={t("pdfh.note")}
       onKeyDown={(e) => {
+        if (isComposing(e)) return;
         if (e.key === "Escape") {
           e.stopPropagation();
           onClose();
@@ -181,6 +183,7 @@ export function HighlightPopover({
         onChange={(e) => setNote(e.target.value)}
         onBlur={() => note !== h.note && void save({ note })}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             void save({ note });

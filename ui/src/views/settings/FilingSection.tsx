@@ -19,6 +19,7 @@ import {
   type RuleKind,
 } from "../../lib/filing";
 import { CommitInput, Group, Row, StatusNote, type SectionProps } from "./common";
+import { isKey } from "../../lib/ime";
 
 const RULE_KINDS: RuleKind[] = ["tag", "property", "jira", "netzplan", "title"];
 const GRANULARITIES: Granularity[] = ["none", "year", "month", "week"];
@@ -192,7 +193,7 @@ export function FilingSection({ draft, update }: SectionProps) {
       <Group title={t("fl.test.title")} description={t("fl.test.desc")}>
         <Row label={t("fl.test.page")}>
           <div className="filing-test">
-            <Input value={probe} onChange={(e) => setProbe(e.target.value)} onKeyDown={(e) => e.key === "Enter" && test()} aria-label={t("fl.test.page")} placeholder={t("fl.test.page")} />
+            <Input value={probe} onChange={(e) => setProbe(e.target.value)} onKeyDown={(e) => isKey(e, "Enter") && test()} aria-label={t("fl.test.page")} placeholder={t("fl.test.page")} />
             <Button size="sm" icon={FlaskConical} onClick={test} disabled={!probe.trim()}>
               {t("fl.test.run")}
             </Button>

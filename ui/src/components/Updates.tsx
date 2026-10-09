@@ -331,7 +331,7 @@ export function UpdateToast() {
               <Button size="sm" variant="ghost" onClick={() => useUpdates.setState({ notesOpen: true })}>
                 {t("upd.whatsNew")}
               </Button>
-              <IconButton icon={MoreHorizontal} label={t("upd.later")} size="sm" onClick={(e) => openMenuAt(e, laterItems(available.version))} />
+              <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("upd.later")} size="sm" onClick={(e) => openMenuAt(e, laterItems(available.version))} />
             </div>
           </>
         )}
@@ -399,7 +399,7 @@ export function UpdateStatusItem() {
       <button type="button" className="sb-update-action" onClick={() => useUpdates.setState({ hintHidden: hint.version })}>
         {t("upd.later")}
       </button>
-      <button type="button" className="sb-update-btn" aria-label={t("upd.moreOptions")} title={t("upd.moreOptions")} onClick={(e) => openMenuAt(e, laterItems(hint.version))}>
+      <button aria-haspopup="menu" type="button" className="sb-update-btn" aria-label={t("upd.moreOptions")} title={t("upd.moreOptions")} onClick={(e) => openMenuAt(e, laterItems(hint.version))}>
         <MoreHorizontal size={12} />
       </button>
       {menu}

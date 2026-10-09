@@ -26,6 +26,7 @@ import { SUGGESTION_ICONS } from "./assistant/icons";
 import { answerTitle, copyText } from "./assistant/actions";
 import { withHint } from "../lib/keymap";
 import { scrollMotion } from "../lib/motion";
+import { isComposing } from "../lib/ime";
 
 export { openSource } from "./assistant/TurnView";
 
@@ -102,6 +103,7 @@ function ChatHeader() {
           autoFocus
           onFocus={(e) => e.currentTarget.select()}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Enter") {
               e.preventDefault();
               setEditing(false);
@@ -499,8 +501,9 @@ export function Composer({ shown: shownProp, placeholder }: { shown?: boolean; p
           aria-invalid={tooLong || undefined}
           onChange={(e) => use.setState({ input: e.target.value })}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             // Enter during IME composition picks the candidate, it does not send.
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
             } else if (e.key === "Escape" && busy) {
@@ -543,7 +546,7 @@ export function Composer({ shown: shownProp, placeholder }: { shown?: boolean; p
             </button>
           )}
           {inView && !attached && <AttachPage onPick={(id) => use.setState((s) => ({ attachedPage: id, focusTick: s.focusTick + 1 }))} icon={Paperclip} />}
-          <button
+          <button aria-haspopup="menu"
             type="button"
             className="model-pill"
             aria-label={`${t("chat.modelChoice")}: ${currentTier.label}`}

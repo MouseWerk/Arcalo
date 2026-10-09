@@ -27,6 +27,7 @@ import { currentLang, useT, type TKey } from "../lib/i18n";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
 import { startedOn } from "../onboarding/firststeps";
+import { isComposing, isKey } from "../lib/ime";
 
 const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   running: { label: "time.status.running", tone: "info" },
@@ -34,6 +35,10 @@ const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
   released: { label: "time.status.released", tone: "accent" },
   exported: { label: "time.status.exported", tone: "success" },
 };
+
+/** An entry for screen readers in a list of many („4711/0010, 09:00–10:30“): its controls say which one they act on. */
+const entryName = (r: TimeEntryRow) => `${r.netzplan_nr}${r.vorgang_nr ? `/${r.vorgang_nr}` : ""}`;
+const entryTime = (r: TimeEntryRow) => `${time(r.start_time)}–${r.end_time ? time(r.end_time) : "…"}`;
 
 export function TimesheetView() {
   const t = useT();
@@ -329,7 +334,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
         <NetzplanSelect wbs={wbs} value={np} onChange={chooseNp} />
         <VorgangSelect wbs={wbs} netzplanId={np} value={vorgang} onChange={setVorgang} />
         <LeistungsartSelect las={las} value={la} onChange={setLa} />
-        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t("time.workingOn")} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && start()} aria-label={t("time.description")} />
+        <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t("time.workingOn")} onKeyDown={(e) => isKey(e, "Enter") && start()} aria-label={t("time.description")} />
         <span className="timer-start">
           <Button variant="primary" icon={Play} onClick={start} disabled={np == null}>
             {t("time.start")}
@@ -351,7 +356,7 @@ function TimerCard({ wbs, las }: { wbs: ProjectTree[]; las: [string, string][] }
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
           placeholder={t("time.quickBookPlaceholder")}
-          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && quick.trim() && book()}
+          onKeyDown={(e) => isKey(e, "Enter") && quick.trim() && book()}
           aria-label={t("time.quickBook")}
         />
       </div>
@@ -481,24 +486,30 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
         </div>
       )}
       <div className="table-wrap">
-        <table className="table week-grid">
+        <table className="table week-grid" aria-label={t("time.weekTable")}>
           <thead>
             <tr>
-              <th>{t("time.col.wbs")}</th>
-              <th>{t("time.col.la")}</th>
+              <th scope="col">{t("time.col.wbs")}</th>
+              <th scope="col">
+                <abbr title={t("wbs.leistungsart")}>{t("time.col.la")}</abbr>
+              </th>
               {days.map((d, i) => (
-                <th key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) || off.has(keys[i]) ? "weekend" : ""}`} data-tooltip={off.get(keys[i])}>
+                <th key={i} scope="col" className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) || off.has(keys[i]) ? "weekend" : ""}`} data-tooltip={off.get(keys[i])} aria-label={`${d.toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" })}${off.has(keys[i]) ? `, ${off.get(keys[i])}` : ""}`}>
                   {weekdayShort(d)} <span className="faint">{dayOfMonth(d)}</span>
                   {off.has(keys[i]) && <span className="sr-only">, {off.get(keys[i])}</span>}
                 </th>
               ))}
-              <th className="num">{t("time.col.total")}</th>
+              <th scope="col" className="num">
+                {t("time.col.total")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {lines.map((l) => (
               <tr key={l.label + l.la}>
-                <td className="mono">{l.label}</td>
+                <th scope="row" className="mono">
+                  {l.label}
+                </th>
                 <td>{l.la && <Badge>{l.la}</Badge>}</td>
                 {l.perDay.map((m, i) => (
                   <td key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) ? "weekend" : ""}`}>
@@ -511,7 +522,9 @@ function WeekGrid({ rows, week, todayKey, targets, off, workdays, onPropose }: {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={2}>{t("time.col.total")}</td>
+              <th scope="row" colSpan={2}>
+                {t("time.col.total")}
+              </th>
               {dayTotals.map((m, i) => (
                 <td key={i} className={`num ${keys[i] === todayKey ? "today" : ""} ${weekend(i) ? "weekend" : ""} ${gapKeys.has(keys[i]) ? "gap" : ""}`}>
                   {cell(m)}
@@ -642,7 +655,7 @@ function EntryList({ rows, issues, selected, setSelected, onEdit, week }: { rows
                 type="checkbox"
                 className="check"
                 checked={allSel}
-                aria-label={t("time.selectDay")}
+                aria-label={t("time.selectDayN", { day: new Date(day + "T12:00:00").toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }) })}
                 onChange={() => {
                   const next = new Set(selected);
                   selectable.forEach((r) => (allSel ? next.delete(r.id) : next.add(r.id)));
@@ -655,7 +668,7 @@ function EntryList({ rows, issues, selected, setSelected, onEdit, week }: { rows
             </div>
             {list.map((r) => (
               <div key={r.id} className={`entry ${selected.has(r.id) ? "sel" : ""}`} onDoubleClick={() => r.status_flag !== "running" && r.status_flag !== "exported" && onEdit(r)}>
-                <input type="checkbox" className="check" checked={selected.has(r.id)} disabled={r.status_flag === "running" || r.status_flag === "exported"} onChange={() => toggle(r.id)} aria-label={t("common.select")} title={r.status_flag === "exported" ? t("time.alreadyExported") : undefined} />
+                <input type="checkbox" className="check" checked={selected.has(r.id)} disabled={r.status_flag === "running" || r.status_flag === "exported"} onChange={() => toggle(r.id)} aria-label={t("time.selectEntry", { wbs: entryName(r), time: entryTime(r) })} title={r.status_flag === "exported" ? t("time.alreadyExported") : undefined} />
                 <span className="entry-time num faint">
                   {time(r.start_time)}–{r.end_time ? time(r.end_time) : "…"}
                 </span>
@@ -675,9 +688,9 @@ function EntryList({ rows, issues, selected, setSelected, onEdit, week }: { rows
                 </span>
                 <Badge tone={STATUS[r.status_flag].tone}>{t(STATUS[r.status_flag].label)}</Badge>
                 <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : t("time.runningLower")}</span>
-                <IconButton
+                <IconButton aria-haspopup="menu"
                   icon={MoreHorizontal}
-                  label={t("ribbon.actions")}
+                  label={t("time.entryActions", { wbs: entryName(r), time: entryTime(r) })}
                   size="md"
                   disabled={r.status_flag === "running"}
                   onClick={(e) =>
@@ -794,7 +807,8 @@ export function EntryDialog({ entry, wbs, las, onClose, defaultDay, prefill, onS
   };
   // Enter submits, except while an input method composes a word.
   const onEnter = (e: { key: string; nativeEvent: { isComposing: boolean } }) => {
-    if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+    if (isComposing(e)) return;
+    if (e.key === "Enter") submit();
   };
 
   return (

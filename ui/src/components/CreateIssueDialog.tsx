@@ -7,6 +7,7 @@ import { t } from "../lib/i18n";
 import { jiraApi, type RemoteProject } from "../lib/jira";
 import { CREATE_ISSUE_EVENT, type CreateIssueRequest } from "../editor/taskIssue";
 import { Button, Dialog, Field, Input, Select } from "./ui";
+import { isKey } from "../lib/ime";
 
 const LAST = "arcalo.jira.lastCreate";
 function last(): { site?: string; project?: string; type?: string } {
@@ -117,7 +118,7 @@ function CreateIssueDialog({ req, onClose }: { req: CreateIssueRequest; onClose:
         </Field>
       </div>
       <Field label={t("jira.summary")}>
-        <Input value={summary} aria-label={t("jira.summary")} onChange={(e) => setSummary(e.target.value)} data-autofocus onKeyDown={(e) => e.key === "Enter" && void create()} />
+        <Input value={summary} aria-label={t("jira.summary")} onChange={(e) => setSummary(e.target.value)} data-autofocus onKeyDown={(e) => isKey(e, "Enter") && void create()} />
       </Field>
       {error && <div className="jira-test-result bad">{error}</div>}
     </Dialog>

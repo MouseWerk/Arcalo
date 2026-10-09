@@ -17,6 +17,7 @@ import type { AppearancePrefs, CustomTheme } from "../../lib/types";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
 import { ThemeEditor, ThemeMock, newThemeId } from "./ThemeEditor";
+import { isComposing, isKey } from "../../lib/ime";
 
 export function AppearanceSection({ draft, update }: SectionProps) {
   const t = useT();
@@ -141,7 +142,7 @@ export function AppearanceSection({ draft, update }: SectionProps) {
                       data-theme-card={d.id}
                       className={`theme-card ${on ? "on" : ""} ${now ? "shown" : ""}`}
                       onClick={() => pick(d)}
-                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick(d))}
+                      onKeyDown={(e) => !isComposing(e) && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick(d))}
                     >
                       <ThemeMock def={d} />
                       <span className="theme-card-foot">
@@ -407,7 +408,7 @@ function AccentRow({ a, set, light, dark, shown }: { a: AppearancePrefs; set: (p
           placeholder="#6366f1"
           onChange={(e) => setCustom(e.target.value)}
           onBlur={() => commitCustom(custom)}
-          onKeyDown={(e) => e.key === "Enter" && commitCustom(custom)}
+          onKeyDown={(e) => isKey(e, "Enter") && commitCustom(custom)}
         />
       </div>
       <div className="accent-preview small">

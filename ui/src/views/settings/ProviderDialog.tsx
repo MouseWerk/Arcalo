@@ -10,6 +10,7 @@ import { Badge, Button, Dialog, Field, IconButton, Input, Progress, Select, Swit
 import { KIND_LABELS, URL_HINTS, isLoopback, needsKey, providerName, validateProvider } from "../../lib/providers";
 import type { AiProvider, ProviderKind, ProviderTest, ProviderTestStep, PullProgress } from "../../lib/types";
 import { useT, type TKey } from "../../lib/i18n";
+import { isKey } from "../../lib/ime";
 
 const STEP_LABELS: Record<ProviderTestStep["id"], TKey> = {
   reach: "fr.ai.test.reach",
@@ -275,7 +276,7 @@ function OllamaModels({ provider, models, onPulled }: { provider: AiProvider; mo
           onChange={(e) => setName(e.target.value)}
           placeholder={t("prov.pullPlaceholder")}
           aria-label={t("prov.pull")}
-          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void pull())}
+          onKeyDown={(e) => isKey(e, "Enter") && (e.preventDefault(), void pull())}
           disabled={!!progress}
         />
         <Button icon={Download} onClick={pull} loading={!!progress} disabled={!name.trim()}>

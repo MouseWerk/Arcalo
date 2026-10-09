@@ -11,6 +11,7 @@ import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import { ArcaloLogo } from "../components/Logo";
 import { useT, type TKey } from "../lib/i18n";
 import { LocalVisual, MeetingsVisual, NotesVisual, TimeVisual, WelcomeVisual } from "./scenes";
+import { isComposing } from "../lib/ime";
 
 interface Scene {
   id: string;
@@ -97,6 +98,7 @@ export function Intro({ onDone }: { onDone: () => void }) {
   const onBlur = (e: React.FocusEvent) => !e.currentTarget.contains(e.relatedTarget as Node) && setFocusIn(false);
 
   const onKey = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     const onButton = (e.target as HTMLElement).closest("button");
     if (e.key === "Escape") {
       e.preventDefault();

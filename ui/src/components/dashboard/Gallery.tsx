@@ -9,6 +9,7 @@ import { Dialog, Input } from "../ui";
 import { iconOf } from "./registry";
 import { viewOf, type GalleryLook as Look } from "./define";
 import { workApi } from "../../lib/workwidgets";
+import { isComposing } from "../../lib/ime";
 
 const LOOK: Record<WidgetKind, Look> = {
   today: "timeline",
@@ -160,6 +161,7 @@ export function Gallery({ onPick, onClose, timeOn = true }: { onPick: (kind: Wid
             aria-label={t("dash.gallery.search")}
             data-autofocus
             onKeyDown={(e) => {
+              if (isComposing(e)) return;
               if (e.key === "Enter") {
                 const first = [...groups.values()][0]?.[0];
                 if (first) onPick(first);

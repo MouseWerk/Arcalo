@@ -10,6 +10,7 @@ import { boardCards, cellOf, defOf, fieldLabel, groupRows, groupWrite, groupable
 import { CellDisplay, Invalid, OptionChip } from "./controls";
 import type { Ctx } from "./CollectionView";
 import { useT } from "../../lib/i18n";
+import { isComposing } from "../../lib/ime";
 
 type Drag = { row: Row; from: string; x: number; y: number; dx: number; dy: number; w: number; target: string | null; before: number | null };
 
@@ -170,6 +171,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                         onPointerDown={(e) => onCardDown(e, row, g.key)}
                         onClick={(e) => !dragged.current && !(e.target as HTMLElement).closest("button") && ctx.open(row, e.ctrlKey || e.metaKey)}
                         onKeyDown={(e) => {
+                          if (isComposing(e)) return;
                           if (e.key === "Enter") ctx.open(row, e.ctrlKey || e.metaKey);
                           if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
                             e.preventDefault();
@@ -181,7 +183,7 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
                         <div className="board-card-title">
                           <PageIcon name={row.icon} size={14} />
                           <span>{row.title}</span>
-                          <IconButton icon={MoreHorizontal} label={t("coll.board.cardMenu")} size="sm" className="board-card-menu" onClick={(e) => openMenuAt(e, cardMenu(row, g.key))} />
+                          <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("coll.board.cardMenu")} size="sm" className="board-card-menu" onClick={(e) => openMenuAt(e, cardMenu(row, g.key))} />
                         </div>
                         {cardKeys.map((k) => {
                           const d = defOf(defs, k);

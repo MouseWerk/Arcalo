@@ -1,6 +1,6 @@
 // The editor area: one or more panes side by side, each with its own tabs.
 
-import { Fragment, lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
+import { Activity, Fragment, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ArrowRightLeft, ChevronDown, Columns2, Copy, House, MinusCircle, PanelRight, Pin, PinOff, Plus, Timer, X } from "lucide-react";
 import { useApp, savePref, type Pane, type Tab } from "../store/app";
 import { Button, EmptyState, IconButton, useMenu, type MenuEntry } from "./ui";
@@ -18,6 +18,8 @@ import { isPdfName } from "../editor/fileEmbed";
 import { lazyView, preloadWhenIdle } from "./lazyView";
 import { t, useT } from "../lib/i18n";
 import { hint, withHint } from "../lib/keymap";
+import { keepAlive, type Kept } from "../lib/keepalive";
+import { isComposing } from "../lib/ime";
 
 // Views other than pages load when first opened (a smaller script at start), or in the
 // background once the app is idle.
@@ -93,6 +95,9 @@ export function Workspace() {
           {i > 0 && (
             <Resizer
               label={t("ws.paneWidth")}
+              value={(sizes[i - 1] ?? 0) * 100}
+              min={0}
+              max={100}
               className="pane-resizer"
               onResize={(dx) => resize(i, dx)}
               onEnd={() => (drag.current = null)}
@@ -110,6 +115,14 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
   useT();
   const tab = pane.tabs.find((x) => x.id === pane.activeTabId) ?? null;
   const s = useApp.getState;
+  // Switching tabs (or going back and forth in one) keeps the recent places mounted.
+  const keptRef = useRef<Kept[]>([]);
+  const kept = (keptRef.current = keepAlive(
+    keptRef.current,
+    tab,
+    pane.tabs.map((x) => x.id),
+  ));
+  const shownKey = kept[0].key;
   // A tab dragged from another pane can be dropped onto this pane's content.
   const [dropHere, setDropHere] = useState(false);
   const [fileDrop, setFileDrop] = useState(false);
@@ -153,11 +166,56 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
       aria-label={t("ws.pane")}
     >
       <PaneTabs pane={pane} last={last} />
-      <div className="pane-content" key={tab ? `${tab.id}:${tab.kind}:${tab.pageId ?? tab.tag ?? ""}` : "home"}>
-        {!tab && <Home />}
-        {tab && <TabContent tab={tab} active={active} />}
-      </div>
+      {kept.map((k) => {
+        const shown = k.key === shownKey;
+        const content = k.tab ? <TabContent tab={k.tab} active={active && shown} /> : <Home />;
+        return (
+          <KeptContent key={k.key} shown={shown} tabId={shown ? k.tab?.id : undefined}>
+            {/* A page keeps its editor running while hidden (like one in another pane, it is
+                just not the active one): undo history, caret and scroll stay. Other views keep
+                their state but pause their effects (window keys, polling) while hidden. */}
+            {!k.tab || k.tab.kind === "page" ? content : <Activity mode={shown ? "visible" : "hidden"}>{content}</Activity>}
+          </KeptContent>
+        );
+      })}
     </section>
+  );
+}
+
+/**
+ * One kept place: hidden when another one is shown. Scroll offsets inside are put back when it
+ * shows again (a hidden box loses them in some engines).
+ */
+function KeptContent({ shown, tabId, children }: { shown: boolean; tabId?: string; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const offsets = useRef(new Map<Element, [number, number]>());
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onScroll = (e: Event) => shownRef.current && e.target instanceof Element && offsets.current.set(e.target, [e.target.scrollTop, e.target.scrollLeft]);
+    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => el.removeEventListener("scroll", onScroll, { capture: true });
+  }, []);
+  useLayoutEffect(() => {
+    if (!shown) return;
+    for (const [el, [top, left]] of offsets.current) {
+      if (!el.isConnected || !box.current?.contains(el)) offsets.current.delete(el);
+      else if (el.scrollTop !== top || el.scrollLeft !== left) el.scrollTo({ top, left, behavior: "instant" });
+    }
+  }, [shown]);
+  return (
+    <div
+      ref={box}
+      className="pane-content"
+      hidden={!shown}
+      role="tabpanel"
+      id={tabId ? `tabpanel-${tabId}` : undefined}
+      aria-labelledby={tabId ? `tab-${tabId}` : undefined}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -411,6 +469,8 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
             <div
               key={t.id}
               role="tab"
+              id={`tab-${t.id}`}
+              aria-controls={selected ? `tabpanel-${t.id}` : undefined}
               aria-selected={selected}
               className={`tab ${selected ? "active" : ""} ${t.pinned ? "pinned" : ""} ${dropAt === i ? "drop-before" : ""} ${dropAt === pane.tabs.length && i === pane.tabs.length - 1 ? "drop-after" : ""}`}
               draggable
@@ -431,6 +491,7 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
               onContextMenu={(e) => openMenu(e, tabMenu(t))}
               tabIndex={selected ? 0 : -1}
               onKeyDown={(e) => {
+                if (isComposing(e)) return;
                 if (menu || e.target !== e.currentTarget) return;
                 const sibling = (d: number) => {
                   const all = [...(e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(".tab") ?? [])];

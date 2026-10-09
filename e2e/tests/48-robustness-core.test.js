@@ -76,7 +76,7 @@ test("an exported booking cannot be deleted; errors read as plain German", async
     { timeoutMsg: "entry not listed" },
   );
   await app.dismissToasts();
-  await (await row.$('[aria-label="Aktionen"]')).click();
+  await (await row.$('[aria-label^="Aktionen"]')).click();
   await app.waitFor(".menu");
   let item;
   for (const m of await app.$$(".menu-item")) if (/Löschen/.test(await app.textOf(m))) item = m;

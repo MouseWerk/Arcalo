@@ -32,9 +32,10 @@ import { tabTitle } from "./components/Shell";
 import { requestPageCommand } from "./lib/pageModes";
 import { sidebarShown, toggleSidebar, useCompactPanel, useNarrowWindow } from "./lib/layout";
 import { flushBeforeExit } from "./lib/exit";
+import { cycleRegion } from "./lib/regions";
 import { startUpdateChecks } from "./components/Updates";
 import { takeUpdateSession } from "./lib/updatesession";
-import { commandAllowed, commandFor, currentKeymap } from "./lib/keymap";
+import { commandAllowed, commandFor, currentKeymap, keyConsumed, learnKeyboardLayout, modalLayer } from "./lib/keymap";
 import { usesPac, withPacResults } from "./views/settings/NetworkSection";
 import { warnDestination } from "./views/settings/BackupDestinations";
 import type { SettingsView } from "./lib/types";
@@ -50,7 +51,8 @@ import { openDayReview } from "./lib/reviewnav";
 import { offerBriefing, openBriefing, startBriefing } from "./lib/briefing";
 import { FirstRun } from "./onboarding/FirstRun";
 import { checkFirstRun } from "./onboarding/state";
-import { t, useT } from "./lib/i18n";
+import { refreshI18n, t, useT } from "./lib/i18n";
+import { isComposing } from "./lib/ime";
 
 export function App() {
   useT();
@@ -89,6 +91,8 @@ export function App() {
       // PAC: re-evaluate once per start (the script may have changed) and store changed answers.
       void refreshPac(view);
     })().catch((e) => s.error(t("onb.failed"), e));
+    // Shortcut hints name the keys of the actual keyboard where the engine tells its layout.
+    void learnKeyboardLayout().then(refreshI18n);
     // SQLite in a sync client's or a network folder can be corrupted: warn until dismissed.
     api
       .dataDirStatus()
@@ -181,6 +185,8 @@ export function App() {
       // macOS app menu (its key equivalents ⌘, ⌘\ ⌘. never reach the keydown handler below).
       on<string>("menu://action", (action) => {
         const st = useApp.getState();
+        // Like the keys: nothing happens behind a dialog or the setup.
+        if (modalLayer() === "modal") return;
         if (action === "settings") st.openTab({ kind: "settings" });
         else if (action === "sidebar") toggleSidebar();
         else if (action === "focus") st.set({ focusMode: !st.focusMode });
@@ -240,6 +246,7 @@ export function App() {
       // Global palette shortcut: toggles while the window is in front, otherwise always opens.
       on<boolean>("palette://toggle", (foreground) => {
         const st = useApp.getState();
+        if (modalLayer() === "modal") return;
         st.set({ paletteOpen: foreground ? !st.paletteOpen : true, paletteMode: "all", paletteQuery: "" });
       }),
     ];
@@ -254,19 +261,32 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       // AltGr arrives as Ctrl+Alt on Windows; it types characters like \ | [ ] @ on German keyboards.
       if (e.getModifierState("AltGraph") || (e.ctrlKey && e.altKey)) return;
       const st = useApp.getState();
-      if (e.key === "Escape" && st.focusMode && !st.paletteOpen) return st.set({ focusMode: false });
+      // Escape ends the focus mode unless something in front took it first (a menu, the find bar,
+      // a suggestion list, a dialog, the palette).
+      if (e.key === "Escape") {
+        if (st.focusMode && !st.paletteOpen && !keyConsumed(e) && !modalLayer()) st.set({ focusMode: false });
+        return;
+      }
       // Settings → Tastatur: the keymap decides which command a combination runs.
       const id = commandFor(e, currentKeymap());
       const command = id ? COMMAND_RUNNERS[id] : undefined;
+      // F6 / Shift+F6 (unless bound to a command): to the next region; a dialog keeps the focus.
+      if (!command && e.key === "F6" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.defaultPrevented && !modalLayer()) {
+        e.preventDefault();
+        cycleRegion(e.shiftKey ? -1 : 1);
+        return;
+      }
       if (!command) return;
       // „Zeiterfassung verwenden“ off: the timer shortcut does nothing (and the key stays free).
       if (TIME_SHORTCUTS.has(id!) && !timeTrackingEnabled()) return;
       // „KI verwenden“ off: the assistant and chat shortcuts do nothing (Ctrl+J stays free).
       if (AI_SHORTCUTS.has(id!) && !aiEnabled()) return;
-      // Back/forward never while typing: there the keys move the caret (word jumps on macOS).
+      // Nothing runs behind a dialog, the setup or the palette (it only switches or closes there);
+      // back/forward never while typing: there the keys move the caret (word jumps on macOS).
       if (!commandAllowed(id!, document.activeElement)) return;
       // The editor takes Ctrl+J on a selection (inline AI) and marks the event handled.
       if (id === "assistant" && e.defaultPrevented) return;
@@ -275,6 +295,7 @@ export function App() {
     };
     // Mouse back/forward buttons.
     const onMouse = (e: MouseEvent) => {
+      if ((e.button === 3 || e.button === 4) && modalLayer()) return;
       if (e.button === 3) (e.preventDefault(), useApp.getState().goBack());
       else if (e.button === 4) (e.preventDefault(), useApp.getState().goForward());
     };
@@ -369,6 +390,9 @@ export function App() {
           <Sidebar />
           <Resizer
             label={t("app.sidebar")}
+            value={sideW}
+            min={200}
+            max={480}
             className="side-resizer"
             onResize={(dx) => {
               if (!dragStart.current) dragStart.current = sideW;
@@ -390,6 +414,9 @@ export function App() {
         <>
           <Resizer
             label={t("panel.label")}
+            value={panelW}
+            min={280}
+            max={640}
             className="panel-resizer"
             onResize={(dx) => {
               if (!dragStart.current) dragStart.current = panelW;

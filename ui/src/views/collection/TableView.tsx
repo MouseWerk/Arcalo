@@ -11,6 +11,7 @@ import { CellDisplay, ComboInput, Invalid, KIND_ICON, OptionPicker, Popover, edi
 import type { Ctx } from "./CollectionView";
 import { useT } from "../../lib/i18n";
 import { modLabel } from "../../lib/shortcut";
+import { isComposing } from "../../lib/ime";
 
 const ROW_H = 34;
 /** Folders up to this size render every row; larger ones only the visible window. */
@@ -135,6 +136,7 @@ export function TableView({ ctx }: { ctx: Ctx }) {
   };
 
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isComposing(e)) return;
     const td = (e.target as HTMLElement).closest<HTMLElement>("[data-cell]");
     if (!td || editing || picker || (e.target as HTMLElement).tagName === "INPUT") return;
     const [idText, ...rest] = td.dataset.cell!.split(":");

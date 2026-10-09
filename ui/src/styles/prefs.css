@@ -84,6 +84,10 @@
 .key-recorder:hover { border-color: var(--text-3); }
 .key-recorder.recording { border-color: var(--border-focus); box-shadow: var(--focus-halo); }
 .key-recorder kbd { font-size: var(--fs-xs); }
+/* Settings → Tastatur: the fixed keys of the views (lib/keyhelp.ts). */
+.key-help { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 3px; font-size: var(--fs-sm); }
+.key-help kbd { font-size: var(--fs-xs); }
+.key-help-or { margin: 0 2px; font-size: var(--fs-xs); }
 .keys-conflict { font-weight: var(--fw-medium); }
 
 /* network */

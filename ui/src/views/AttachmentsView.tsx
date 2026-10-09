@@ -21,6 +21,7 @@ import { openDrawing } from "../editor/drawings";
 import { flushAllEditors, reloadEditors } from "../editor/NoteEditor";
 import { DEFAULT_FILTER, filterAttachments, isUnused, LARGE_BYTES, onlyInVersions, renameProblem, stemLength, totalSize, type KindFilter, type ListFilter, type SortKey } from "../lib/attachments";
 import { t, useT, withLabel, type TKey } from "../lib/i18n";
+import { isKey } from "../lib/ime";
 
 const KINDS: { value: KindFilter; readonly label: string }[] = [
   withLabel({ value: "all" as KindFilter }, "att.kind.all"),
@@ -228,7 +229,7 @@ export function AttachmentsView() {
                   aria-label={t("att.search")}
                   value={filter.query}
                   onChange={(e) => set({ query: e.target.value })}
-                  onKeyDown={(e) => e.key === "Escape" && filter.query && (e.stopPropagation(), set({ query: "" }))}
+                  onKeyDown={(e) => isKey(e, "Escape") && filter.query && (e.stopPropagation(), set({ query: "" }))}
                 />
                 {filter.query && <IconButton icon={X} label={t("att.clearSearch")} size="sm" onClick={() => set({ query: "" })} />}
               </label>
@@ -304,7 +305,7 @@ export function AttachmentsView() {
                         )}
                       </span>
                       <span role="cell" className="att-c-act">
-                        <IconButton icon={MoreHorizontal} label={t("calset.actionsFor", { name: f.name })} size="sm" onClick={(e) => openMenuAt(e, rowMenu(f))} />
+                        <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("calset.actionsFor", { name: f.name })} size="sm" onClick={(e) => openMenuAt(e, rowMenu(f))} />
                       </span>
                     </div>
                   );
@@ -380,7 +381,7 @@ function RenameDialog({ file, names, onClose, onDone }: { file: AttachmentInfo; 
         ref={input}
         value={value}
         onChange={(e) => (setValue(e.target.value), setServerError(null))}
-        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void submit())}
+        onKeyDown={(e) => isKey(e, "Enter") && (e.preventDefault(), void submit())}
         aria-label={t("att.newName")}
         aria-invalid={!!error}
         className="input att-rename-input"

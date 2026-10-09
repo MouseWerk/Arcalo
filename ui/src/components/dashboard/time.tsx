@@ -70,23 +70,24 @@ export function WeekWidget({ widget }: WidgetProps) {
             {mode === "day" ? (
               <div className="dw-bars" style={{ "--target": week.targetLine } as CSSProperties} role="list" aria-label={t("dash.perDay")}>
                 {week.bars.map((b) => (
-                  <button
-                    key={b.date}
-                    type="button"
-                    role="listitem"
-                    className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
-                    title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${planned(b.date) ? ` · ${t("blocks.plannedSum", { h: hoursLabel(planned(b.date)) })}` : ""}${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
-                    aria-label={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? `, ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
-                    onClick={() => openTimesheetDay(b.date)}
-                  >
-                    <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
-                    <span className="dw-bar-track">
-                      {b.workday && week.targetLine > 0 && <span className="dw-bar-target" aria-hidden />}
-                      {planned(b.date) > 0 && <span className="dw-bar-plan" style={{ height: `${Math.min(1, planned(b.date) / scale) * 100}%` }} aria-hidden />}
-                      <span className="dw-bar-fill" style={{ height: `${b.fill * 100}%` }} />
-                    </span>
-                    <span className="dw-bar-day">{b.label}</span>
-                  </button>
+                  // The list item wraps the button (a role on the button itself would hide that it is one).
+                  <div key={b.date} role="listitem" className="dw-bar-item">
+                    <button
+                      type="button"
+                      className={`dw-bar-col ${b.workday ? "" : "weekend"} ${b.today ? "today" : ""} ${b.gap > 0 ? "gap" : ""}`}
+                      title={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${planned(b.date) ? ` · ${t("blocks.plannedSum", { h: hoursLabel(planned(b.date)) })}` : ""}${b.gap > 0 ? ` · ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
+                      aria-label={`${b.label}: ${hoursLabel(b.minutes) || "0"} h${b.gap > 0 ? `, ${t("dash.missing", { h: h1(b.gap / 60) })}` : ""}`}
+                      onClick={() => openTimesheetDay(b.date)}
+                    >
+                      <span className="dw-bar-h num">{hoursLabel(b.minutes)}</span>
+                      <span className="dw-bar-track">
+                        {b.workday && week.targetLine > 0 && <span className="dw-bar-target" aria-hidden />}
+                        {planned(b.date) > 0 && <span className="dw-bar-plan" style={{ height: `${Math.min(1, planned(b.date) / scale) * 100}%` }} aria-hidden />}
+                        <span className="dw-bar-fill" style={{ height: `${b.fill * 100}%` }} />
+                      </span>
+                      <span className="dw-bar-day">{b.label}</span>
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : d.wbs.length === 0 ? (

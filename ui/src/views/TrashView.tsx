@@ -89,10 +89,10 @@ export function TrashView() {
                     {e.parent_title && ` · ${t("trash.from", { title: e.parent_title })}`}
                   </span>
                 </div>
-                <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)}>
+                <Button size="sm" icon={RotateCcw} onClick={() => restorePage(e.id, e.title)} aria-label={t("trash.restoreOne", { title: e.title })}>
                   {t("trash.restore")}
                 </Button>
-                <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => purge(e)} />
+                <IconButton icon={X} label={t("trash.deleteOne", { title: e.title })} size="md" onClick={() => purge(e)} />
               </div>
             ))}
           </div>
@@ -142,10 +142,10 @@ function FileTrash() {
                 {t("trash.deletedWhen", { when: relative(f.deleted_at) })} · {formatSize(f.size)}
               </span>
             </div>
-            <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)}>
+            <Button size="sm" icon={RotateCcw} onClick={() => void restore(f)} aria-label={t("trash.restoreOne", { title: f.name })}>
               {t("trash.restore")}
             </Button>
-            <IconButton icon={X} label={t("trash.purge")} size="md" onClick={() => void purge(f)} />
+            <IconButton icon={X} label={t("trash.deleteOne", { title: f.name })} size="md" onClick={() => void purge(f)} />
           </div>
         ))}
       </div>

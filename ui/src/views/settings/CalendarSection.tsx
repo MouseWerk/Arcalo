@@ -15,6 +15,7 @@ import { MailGroup } from "./MailGroup";
 import { OutlookCalendars } from "./OutlookCalendars";
 import { outlookSummary } from "../../lib/outlookcal";
 import { DocLink, Group, NumberInput, Row, StatusNote, Unfiltered, type SectionProps } from "./common";
+import { isKey } from "../../lib/ime";
 
 const COLORS = ["#2563eb", "#0d9488", "#9333ea", "#ea580c", "#db2777", "#65a30d", "#0891b2", "#ca8a04"];
 const COLOR_NAMES: TKey[] = ["calset.color.blue", "calset.color.petrol", "calset.color.violet", "calset.color.orange", "calset.color.pink", "calset.color.green", "calset.color.cyan", "calset.color.gold"];
@@ -139,7 +140,7 @@ export function CalendarSection({ draft, update }: SectionProps) {
                   <SourceStatus src={src} />
                 </div>
                 <Switch label={t("calset.syncSource", { name: src.name })} checked={src.enabled} onChange={(v) => void run(() => api.calendarSourceUpdate(src.id, { enabled: v }))} />
-                <IconButton icon={MoreHorizontal} label={t("calset.actionsFor", { name: src.name })} onClick={(e) => openMenuAt(e, sourceMenu(src))} />
+                <IconButton aria-haspopup="menu" icon={MoreHorizontal} label={t("calset.actionsFor", { name: src.name })} onClick={(e) => openMenuAt(e, sourceMenu(src))} />
               </div>
             ))}
           </div>
@@ -285,10 +286,10 @@ function AddSourceDialog({ kind, onClose, onAdd }: { kind: "url" | "file"; onClo
     >
       <Field label={url ? t("links.url") : t("feed.kind.file")} hint={url ? t("calset.urlHint") : undefined}>
         {url ? (
-          <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics" spellCheck={false} data-autofocus onKeyDown={(e) => e.key === "Enter" && void submit()} />
+          <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics" spellCheck={false} data-autofocus onKeyDown={(e) => isKey(e, "Enter") && void submit()} />
         ) : (
           <div className="calset-file">
-            <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder={t("calset.filePlaceholder")} spellCheck={false} data-autofocus onKeyDown={(e) => e.key === "Enter" && void submit()} />
+            <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder={t("calset.filePlaceholder")} spellCheck={false} data-autofocus onKeyDown={(e) => isKey(e, "Enter") && void submit()} />
             <Button
               icon={FolderOpen}
               onClick={async () => {
@@ -305,7 +306,7 @@ function AddSourceDialog({ kind, onClose, onAdd }: { kind: "url" | "file"; onClo
         )}
       </Field>
       <Field label={t("links.name")}>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={url ? t("calset.namePlaceholderUrl") : t("calset.namePlaceholderFile")} onKeyDown={(e) => e.key === "Enter" && void submit()} />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={url ? t("calset.namePlaceholderUrl") : t("calset.namePlaceholderFile")} onKeyDown={(e) => isKey(e, "Enter") && void submit()} />
       </Field>
     </Dialog>
   );

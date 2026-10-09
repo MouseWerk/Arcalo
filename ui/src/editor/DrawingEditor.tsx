@@ -12,6 +12,7 @@ import { useApp } from "../store/app";
 import { DRAWING_SAVED_EVENT, drawingLabel } from "./drawing";
 import { parseDrawing } from "./drawingFormat";
 import { FileWarning } from "lucide-react";
+import { isComposing } from "../lib/ime";
 
 const SAVE_DELAY = 800;
 /** Shapes the user added to Excalidraw's library, kept across drawings. */
@@ -212,6 +213,7 @@ export default function DrawingEditor({ name, onClose }: { name: string; onClose
   }, []);
 
   const onKeyDownCapture = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     if (e.key !== "Escape" || e.defaultPrevented) return;
     // Esc first leaves text or line editing, drops the active tool or closes Excalidraw's own menus; only then the editor.
     const s = apiRef.current?.getAppState();

@@ -16,7 +16,7 @@ import { applyTheme, exportVault, importVault, pickFolder } from "../lib/actions
 import { flushAllEditors } from "../editor/NoteEditor";
 import { dateTime, decimal, fileSize, fmtDate, importSummary, relative, weekdayLabels } from "../lib/format";
 import { Badge, Button, Field, IconButton, Input, Segmented, Select, Switch, TextArea } from "../components/ui";
-import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
+import { changedKeys, checkTime, checkUrl, workHoursOrder, continueBurst, waitsForField, isDestructive, loadCollapsed, pick, revertPaths, saveCollapsed, toggled, undoTimeout, type Burst } from "../lib/settingsApply";
 import { formatShortcut, keys } from "../lib/shortcut";
 import { IS_LINUX, IS_MAC } from "../lib/platform";
 import { ShortcutField } from "./settings/common";
@@ -52,6 +52,7 @@ import { takeSettingsSection } from "../lib/calnav";
 import { NavButtons } from "../components/ViewHeader";
 import type { Tab } from "../store/app";
 import { resetOnboarding, startFirstRun } from "../onboarding/state";
+import { isComposing, isKey } from "../lib/ime";
 
 type Section = "appearance" | "search" | "locale" | "start" | "keyboard" | "editor" | "notes" | "filing" | "time" | "calendar" | "voice" | "jira" | "briefing" | "ai" | "privacy" | "network" | "notifications" | "backup" | "security" | "desktop" | "admin" | "logs" | "about";
 const NAV: { id: string; label: TKey; items: { id: Section; label: TKey; icon: typeof Server }[] }[] = [
@@ -300,6 +301,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
   const offerUndo = (b: Burst, opts: { destructive?: boolean; title?: string }) => {
     const keys = [...b.touched];
     const after = latest.current ?? draft;
+    const changed = b.after ?? structuredClone(after);
     if (!changedKeys(pick(b.before, keys) as Settings, pick(after, keys) as Settings).length) return;
     const destructive = opts.destructive ?? isDestructive(b.before, after);
     s().toast({
@@ -312,7 +314,8 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         label: t("common.undo"),
         run: () => {
           flush();
-          apply(pick(b.before, keys), { undo: true });
+          // Only what this change changed, and not what a later change changed again.
+          apply(revertPaths(latest.current ?? draft, b.before, changed), { undo: true });
         },
       },
     });
@@ -330,6 +333,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
       if (timer.current != null) flush();
       burst.current = null;
       const b = opts.undo ? null : continueBurst(null, patch, base, Date.now(), ++burstSeq.current);
+      if (b) b.after = structuredClone(next);
       persist(b, opts);
       return;
     }
@@ -343,6 +347,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
     const before = burst.current;
     // The first storable state after waiting continues the change that started the wait.
     const b = waitsForField(base) && before ? before : continueBurst(before, patch, base, Date.now(), burstSeq.current + 1);
+    b.after = structuredClone(next);
     if (b !== before) {
       // Another change: the one still being typed is saved first.
       if (timer.current != null) flush();
@@ -498,6 +503,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         aria-label={t("settings.search")}
         spellCheck={false}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Escape") setQuery("");
           // Enter opens the first section with a hit.
           if (e.key === "Enter") {
@@ -542,6 +548,7 @@ export function SettingsView({ tab }: { tab?: Tab }) {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) flush();
       }}
       onKeyDown={(e) => {
+        if (isComposing(e)) return;
         // Mod+F inside the settings goes to their search.
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
           e.preventDefault();
@@ -1281,7 +1288,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
             aria-label={t("set.git.tokenLabel")}
             autoComplete="off"
             spellCheck={false}
-            onKeyDown={(e) => e.key === "Enter" && token.trim() && saveToken(token.trim())}
+            onKeyDown={(e) => isKey(e, "Enter") && token.trim() && saveToken(token.trim())}
           />
           <IconButton icon={showToken ? EyeOff : Eye} label={showToken ? t("common.hide") : t("common.show")} size="sm" onClick={() => setShowToken(!showToken)} />
         </div>
@@ -1390,7 +1397,7 @@ function GitSyncGroup({ draft, update, dbSize, onSynced }: { draft: Settings; up
       </Row>
       {restoreUrl != null && (
         <Row stack label={t("set.git.repoUrl")} description={t("set.git.repoUrlDesc")}>
-          <Input value={restoreUrl} onChange={(e) => setRestoreUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && restore()} aria-label={t("set.git.repoUrlLabel")} className="grow" autoFocus />
+          <Input value={restoreUrl} onChange={(e) => setRestoreUrl(e.target.value)} onKeyDown={(e) => isKey(e, "Enter") && restore()} aria-label={t("set.git.repoUrlLabel")} className="grow" autoFocus />
           <Button variant="primary" onClick={restore} loading={restoring} disabled={!restoreUrl.trim()}>
             {t("common.import")}
           </Button>

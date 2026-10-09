@@ -12,6 +12,7 @@ import { IconButton, useMenu, type MenuEntry } from "../../components/ui";
 import { useApp } from "../../store/app";
 import { deleteChat, duplicateChat, openChatView, openInPanel, renameChatById, saveChatAsPage, togglePinChat } from "../../store/chat";
 import { useSession } from "./session";
+import { isComposing } from "../../lib/ime";
 
 const GROUP_LABEL: Record<HistoryGroupKey, () => string> = {
   pinned: () => t("chat.group.pinned"),
@@ -107,6 +108,7 @@ export function HistoryView({ compact = false, onOpened }: { compact?: boolean; 
   ];
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     if (renaming != null) return;
     const inSearch = e.target === search.current;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -197,6 +199,7 @@ export function HistoryView({ compact = false, onOpened }: { compact?: boolean; 
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => {
                           e.stopPropagation();
+                          if (isComposing(e)) return;
                           if (e.key === "Enter") rename(c, e.currentTarget.value);
                           else if (e.key === "Escape") {
                             setRenaming(null);
@@ -240,7 +243,7 @@ export function HistoryView({ compact = false, onOpened }: { compact?: boolean; 
                         togglePin(c);
                       }}
                     />
-                    <IconButton
+                    <IconButton aria-haspopup="menu"
                       icon={MoreHorizontal}
                       label={t("chat.more")}
                       size="sm"

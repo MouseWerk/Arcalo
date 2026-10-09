@@ -8,6 +8,7 @@ import { Button } from "../components/ui";
 import { confidenceLabel } from "./zeit-suggest";
 import type { ZeitGuess } from "../lib/types";
 import { useT } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 export type ZeitChoice = "book" | "other" | "cancel";
 
@@ -19,6 +20,7 @@ export function ZeitConfirm({ guess, onChoice, style, className = "" }: { guess:
   // Capture phase: runs before the editor (or an input) sees the key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isComposing(e)) return;
       let choice: ZeitChoice | null;
       if (e.key === "Escape") choice = "cancel";
       else if (e.key === "Enter" && !e.shiftKey) choice = ready ? "book" : null;

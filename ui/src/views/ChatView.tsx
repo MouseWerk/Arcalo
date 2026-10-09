@@ -16,6 +16,7 @@ import { ensureChatListeners, openInPanel, viewChat } from "../store/chat";
 import { ChatSessionContext } from "../panels/assistant/session";
 import { HistoryView } from "../panels/assistant/HistoryView";
 import { ChatBody, Composer } from "../panels/AssistantPanel";
+import { isComposing, isKey } from "../lib/ime";
 
 /** Below this width the chat list is a drawer over the conversation. */
 export const NARROW_CHAT = 760;
@@ -97,6 +98,7 @@ function ChatTitle() {
       autoFocus
       onFocus={(e) => e.currentTarget.select()}
       onKeyDown={(e) => {
+        if (isComposing(e)) return;
         if (e.key === "Enter") {
           e.preventDefault();
           done(e.currentTarget.value);
@@ -198,7 +200,7 @@ export function ChatView({ tab }: { tab: Tab }) {
           <IconButton icon={SquarePen} label={t("chat.newChat")} onClick={newChat} />
         </div>
       </div>
-      <div ref={root} className={`chat-view ${narrow ? "narrow" : ""} ${listOpen ? "list-open" : ""}`} onKeyDown={(e) => narrow && drawer && e.key === "Escape" && (e.preventDefault(), setDrawer(false))}>
+      <div ref={root} className={`chat-view ${narrow ? "narrow" : ""} ${listOpen ? "list-open" : ""}`} onKeyDown={(e) => narrow && drawer && isKey(e, "Escape") && (e.preventDefault(), setDrawer(false))}>
         {listOpen && (
           <aside id="chat-view-list" className="chat-view-list" aria-label={t("chat.history")}>
             <button type="button" className="chat-view-new" onClick={newChat}>

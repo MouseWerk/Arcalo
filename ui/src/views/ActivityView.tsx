@@ -289,7 +289,7 @@ export function ActivityView() {
             {query || kinds.length || wbsFilter || person ? t("feed.emptyFiltered") : t("feed.emptyHint")}
           </EmptyState>
         ) : (
-          <div className="activity-list" ref={listRef} style={{ height: total }} role="list" aria-label={t("feed.list")}>
+          <div className="activity-list" ref={listRef} style={{ height: total }} role="group" aria-label={t("feed.list")}>
             {rows.slice(start, end).map((r, k) => (
               <Row key={r.key} row={r} top={offsets[start + k]} onOpen={open} />
             ))}
@@ -332,7 +332,7 @@ function Row({ row, top, onOpen }: { row: FeedRow; top: number; onOpen: (a: Acti
   const Icon = KIND_ICON[a.kind] ?? GROUP_ICON[g];
   const d = describe(a);
   return (
-    <button type="button" role="listitem" className={`activity-item kind-${g}`} data-kind={a.kind} style={{ top }} onClick={(e) => onOpen(a, e.ctrlKey || e.metaKey)}>
+    <button type="button" className={`activity-item kind-${g}`} data-kind={a.kind} style={{ top }} onClick={(e) => onOpen(a, e.ctrlKey || e.metaKey)}>
       <span className="activity-time num">{time(a.at)}</span>
       <span className="activity-icon" aria-hidden>
         {a.page_icon && g === "pages" ? <PageIcon name={a.page_icon} size={15} /> : <Icon size={15} />}

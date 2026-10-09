@@ -32,6 +32,7 @@ import { DEFAULT_STYLE, FOLDER_COLORS, FOLDER_SORTS, filingApi, filterIds, isWit
 import { movePages, openMoveTo, openTidyUp, undoLastMove } from "./FilingDialogs";
 import { SMART_EVENT, SmartFolders, setSmartHidden, smartHidden } from "./SmartFolders";
 import type { TKey } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 type SideTab = "files" | "search" | "bookmarks" | "tags";
 
@@ -129,6 +130,8 @@ export function Sidebar() {
             size="lg"
             onClick={() => setTab(st.id)}
             role="tab"
+            id={`side-tab-${st.id}`}
+            aria-controls="sidebar-body"
             aria-selected={tab === st.id}
             // One Tab stop for the row; the arrows switch between the panes.
             tabIndex={tab === st.id ? 0 : -1}
@@ -145,6 +148,8 @@ export function Sidebar() {
         ))}
       </div>
 
+      {/* The shown tab's content (files, search, bookmarks, tags). */}
+      <div className="sidebar-body" id="sidebar-body" role="tabpanel" aria-labelledby={`side-tab-${tab}`}>
       {tab === "files" && (
         <>
           <div className="side-toolbar">
@@ -157,7 +162,7 @@ export function Sidebar() {
               size="md"
               onClick={() => saveCollapsed(allCollapsed ? new Set() : new Set(withChildren))}
             />
-            <IconButton icon={SlidersHorizontal} label={t("fl.treeMenu")} size="md" className="tree-options" onClick={(e) => openTreeMenuAt(e, treeMenuItems())} />
+            <IconButton aria-haspopup="menu" icon={SlidersHorizontal} label={t("fl.treeMenu")} size="md" className="tree-options" onClick={(e) => openTreeMenuAt(e, treeMenuItems())} />
             {treeMenu}
           </div>
           {tree.length > 0 && (
@@ -169,6 +174,7 @@ export function Sidebar() {
                 aria-label={t("fl.filter")}
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isComposing(e)) return;
                   if (e.key === "Escape" && filter) (e.preventDefault(), e.stopPropagation(), setFilter(""));
                   else if (e.key === "ArrowDown") (e.preventDefault(), document.querySelector<HTMLElement>(".sidebar .tree .tree-row")?.focus());
                 }}
@@ -195,6 +201,7 @@ export function Sidebar() {
       {tab === "search" && <SearchPane />}
       {tab === "bookmarks" && <Bookmarks activePageId={active?.kind === "page" ? active.pageId : undefined} />}
       {tab === "tags" && <TagsPane activeTag={active?.kind === "tag" ? active.tag : undefined} />}
+      </div>
 
       <TimerDock />
       <SidebarFooter />
@@ -276,7 +283,8 @@ function SearchPane() {
           placeholder={tr("sidebar.searchPlaceholder")}
           aria-label={tr("sidebar.fulltext")}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            if (isComposing(e)) return;
+            if (e.key === "Enter") {
               const first = [...byPage.keys()][0];
               if (first) s().openPage(first, { newTab: e.ctrlKey || e.metaKey });
             }
@@ -538,40 +546,21 @@ function PageTree({
     const many = drag?.many;
     setDrag(null);
     if (id == null || id === target.id) return;
-    if (many) {
-      const ids = selection().filter((x) => x !== target.id);
-      setSelected(new Set());
-      // Before or after a page: there, among the pages that stay (not at the folder's end).
-      let position: number | null = null;
-      if (pos !== "inside") {
-        const siblings = target.parent_id == null ? s().tree : (s().pages.get(target.parent_id)?.children ?? []);
-        const staying = siblings.filter((x) => !ids.includes(x.id));
-        position = staying.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
-      }
-      const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id, position);
-      if (out && pos === "inside") {
-        const next = new Set(collapsed);
-        next.delete(target.id);
-        setCollapsed(next);
-      }
-      return;
+    // One page or the selection: the same move, with the same „Rückgängig“.
+    const ids = many ? selection().filter((x) => x !== target.id) : [id];
+    if (many) setSelected(new Set());
+    // Before or after a page: there, among the pages that stay (not at the folder's end).
+    let position: number | null = null;
+    if (pos !== "inside") {
+      const siblings = target.parent_id == null ? s().tree : (s().pages.get(target.parent_id)?.children ?? []);
+      const staying = siblings.filter((x) => !ids.includes(x.id));
+      position = staying.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
     }
-    const pages = s().pages;
-    try {
-      if (pos === "inside") {
-        await api.movePage(id, target.id, target.children.length);
-        const next = new Set(collapsed);
-        next.delete(target.id);
-        setCollapsed(next);
-      } else {
-        const siblings = target.parent_id == null ? s().tree : (pages.get(target.parent_id)?.children ?? []);
-        const without = siblings.filter((x) => x.id !== id);
-        const idx = without.findIndex((x) => x.id === target.id) + (pos === "after" ? 1 : 0);
-        await api.movePage(id, target.parent_id, idx);
-      }
-      await s().refreshTree();
-    } catch (e) {
-      s().error(tStatic("sb.moveFailed"), e);
+    const out = await movePages(ids, pos === "inside" ? target.id : target.parent_id, position);
+    if (out && pos === "inside") {
+      const next = new Set(collapsed);
+      next.delete(target.id);
+      setCollapsed(next);
     }
   };
 
@@ -1228,6 +1217,7 @@ function TreeRename({ node, onDone }: { node: PageNode; onDone: (refocus: boolea
         onKeyDown={(e) => {
           // The row's keys (arrows, Delete, F2, Ctrl+A) stay with the text field.
           e.stopPropagation();
+          if (isComposing(e)) return;
           if (e.key === "Enter") (e.preventDefault(), void commit(false));
           else if (e.key === "Escape") (e.preventDefault(), finish(true));
         }}

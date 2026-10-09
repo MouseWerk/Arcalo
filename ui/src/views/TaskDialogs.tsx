@@ -12,6 +12,7 @@ import { folderOptions, fuzzyScore } from "../lib/filing";
 import { recurTokens } from "../lib/tasks";
 import { t as tr, useT } from "../lib/i18n";
 import type { Recurrence, Task } from "../lib/types";
+import { isComposing, isKey } from "../lib/ime";
 
 type Freq = "never" | Recurrence["unit"];
 
@@ -94,7 +95,7 @@ export function RecurDialog({ tasks, onClose, onSave }: { tasks: Task[]; onClose
         </>
       }
     >
-      <div className="recur-form" onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && (e.preventDefault(), save())}>
+      <div className="recur-form" onKeyDown={(e) => isKey(e, "Enter") && (e.target as HTMLElement).tagName === "INPUT" && (e.preventDefault(), save())}>
         <div className="recur-row" role="group" aria-labelledby="recur-freq-label">
           <span className="field-label" id="recur-freq-label">
             {tr("tasks.recur.freq")}
@@ -223,6 +224,7 @@ export function TaskMoveDialog({ count, exclude, onClose, onPick }: { count: num
         data-autofocus
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "ArrowDown") (e.preventDefault(), setCursor((c) => Math.min(c + 1, hits.length - 1)));
           else if (e.key === "ArrowUp") (e.preventDefault(), setCursor((c) => Math.max(c - 1, 0)));
           else if (e.key === "Enter") (e.preventDefault(), choose(cursor));

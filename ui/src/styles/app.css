@@ -85,6 +85,9 @@ body.ready .app { opacity: 1; }
 }
 .resizer:hover::after { background: var(--accent); transition-delay: 150ms; }
 body.resizing .resizer:active::after { background: var(--accent); }
+/* Keyboard: a neutral line where the splitter is (its arrows move it). */
+.resizer:focus-visible { outline: none; }
+.resizer:focus-visible::after { inset: 0 2px; background: var(--border-focus); }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 
@@ -93,6 +96,8 @@ body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 .pane + .resizer + .pane, .pane.multi + .resizer + .pane { border-left: 1px solid var(--border); }
 .pane-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* A tab kept alive while another one is shown (Workspace keepAlive). */
+.pane-content[hidden] { display: none; }
 .pane-content > .home, .pane-content > .page-view, .pane-content > .view-body, .pane-content > .center-fill, .pane-content > .empty { flex: 1; min-height: 0; }
 .page-view { display: flex; flex-direction: column; min-height: 0; }
 .page-view > .page-scroll, .view-body { flex: 1; min-height: 0; }
@@ -216,6 +221,7 @@ body.resizing iframe, body.resizing .ProseMirror { pointer-events: none; }
 
 /* ---------------------------------------------------------------- sidebar */
 
+.sidebar-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .sidebar {
   flex: none;
   width: clamp(200px, var(--sidebar-w), max(200px, 24vw));
@@ -853,8 +859,8 @@ button.side-section-title:hover { color: var(--text-2); }
    least 220 px, the table scrolls sideways in narrow panes with the name pinned. */
 .vorgaenge { table-layout: fixed; min-width: 864px; }
 .vorgaenge th:first-child, .vorgaenge td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-raised); }
-.vorgaenge tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
-.vorgaenge td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vorgaenge tbody tr:hover > :first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
+.vorgaenge tbody > tr > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ---- tables in narrow panes (1.13) ----
    Hidden columns show as a shadow on that edge (on the left behind the pinned name column);
    on the right a small round button pages there. The box is one Tab stop: arrows scroll it. */
@@ -991,7 +997,8 @@ button.side-section-title:hover { color: var(--text-2); }
   .ribbon, .sidebar, .panel, .resizer, .statusbar, .tabbar, .vh, .toasts, .pane:not(.active), .find-anchor, .bubble, .ai-bar,
   .timer-card, .bulk, .row-actions, .entry .icon-btn, .view-actions, .icon-picker, .prop-add, .prop-row .icon-btn,
   .prop-picker, .prop-sugg, .prop-key-hint, .work-head .btn, .properties-head svg, .work-toggle { display: none !important; }
-  .main, .workspace, .pane, .pane-content, .page-view, .view-body, .page-scroll-wrap, .page-scroll, .view-scroll { display: block !important; height: auto !important; overflow: visible !important; }
+  .pane-content[hidden] { display: none !important; }
+  .main, .workspace, .pane, .pane-content:not([hidden]), .page-view, .view-body, .page-scroll-wrap, .page-scroll, .view-scroll { display: block !important; height: auto !important; overflow: visible !important; }
   .page, .view { max-width: none; padding: 0 !important; margin: 0; }
   .page-title-row { margin-left: 0 !important; }
   .page-icon-btn { display: none; }
@@ -1232,7 +1239,9 @@ body.capture-mode { background: transparent; }
   cursor: pointer;
   user-select: none;
 }
-.cite:hover, .cite:focus-visible { background: var(--accent); color: #fff; outline: none; }
+/* Hover: the text darkens; keyboard focus: the neutral ring (no accent fill for a state). */
+.cite:hover { color: var(--text); }
+.cite:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .cite.cite-static { vertical-align: middle; cursor: inherit; }
 .cite-card .link-preview-title { min-width: 0; }
 .cite-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1264,7 +1273,7 @@ body.search-mode { background: transparent; }
 .stat-note { font-size: var(--fs-xs); color: var(--text-3); margin-top: 2px; }
 .week-grid th:first-child, .week-grid td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-raised); }
 /* The pinned column stays opaque while the days scroll underneath (also on hover). */
-.week-grid tbody tr:hover td:first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
+.week-grid tbody tr:hover > :first-child { background: linear-gradient(var(--bg-hover), var(--bg-hover)) var(--bg-raised); }
 
 
 @container pane (max-width: 600px) {

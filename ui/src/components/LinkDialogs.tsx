@@ -11,6 +11,7 @@ import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { useT } from "../lib/i18n";
 import { openBookmarkImport } from "./BookmarkImport";
 import { LINK_COLORS, groupChoices, insertItem, isGroup, isPath, kindOf, moveItem, newGroup, removeItem, shortUrl, updateItem, type LinkKind } from "../lib/quicklinks";
+import { isComposing } from "../lib/ime";
 
 /** An icon that fits the address when none was picked. */
 export function guessIcon(url: string, kind: LinkKind = "link"): string {
@@ -267,6 +268,7 @@ function GroupFields({ draft, setDraft }: { draft: { links: QuickLink[]; gi: num
               onPointerDown={(e) => onGripDown(e, i)}
               onDoubleClick={() => setSub({ index: i, link: l })}
               onKeyDown={(e) => {
+                if (isComposing(e)) return;
                 if (e.target !== e.currentTarget) return;
                 if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
                   e.preventDefault();
@@ -298,7 +300,7 @@ function GroupFields({ draft, setDraft }: { draft: { links: QuickLink[]; gi: num
                 <span className="group-item-url">{shortUrl(l.url)}</span>
               </span>
               <IconButton icon={Pencil} label={t("links.edit")} size="sm" onClick={() => setSub({ index: i, link: l })} />
-              <IconButton icon={ArrowRightLeft} label={t("links.moveTo")} size="sm" onClick={(e) => openMenuAt(e, moveMenu(i))} />
+              <IconButton aria-haspopup="menu" icon={ArrowRightLeft} label={t("links.moveTo")} size="sm" onClick={(e) => openMenuAt(e, moveMenu(i))} />
               <IconButton icon={X} label={t("links.remove")} size="sm" onClick={() => setDraft({ links: removeItem(links, at(i)), gi })} />
             </div>
           ))}

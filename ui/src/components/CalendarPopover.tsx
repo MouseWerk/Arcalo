@@ -12,6 +12,7 @@ import { addMonths, dayTone, hoursLabel, monthGrid, weekNumber } from "../lib/ca
 import type { DayOverview } from "../lib/types";
 import { Button, IconButton, MENU_GAP } from "./ui";
 import { t, useT } from "../lib/i18n";
+import { isComposing } from "../lib/ime";
 
 
 /** Opens the calendar next to `el` (or centered without an element), showing `date` (default today). */
@@ -112,6 +113,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
   const picked = onPick && date ? date : null;
 
   const onKey = (e: React.KeyboardEvent) => {
+    if (isComposing(e)) return;
     const move = (d: Date) => {
       e.preventDefault();
       e.stopPropagation();
