@@ -83,7 +83,14 @@ test("without an AI the meeting summary and the assistant say how to set one up"
   await openFromTree("Architektur");
   await app.waitFor(".pane.active .ProseMirror p");
   const id = await pageId("Architektur");
-  await app.browser.execute((id) => window.dispatchEvent(new CustomEvent("arcalo:meeting-summary", { detail: { id } })), id);
+  // As „/Zusammenfassung“ does: from the shown editor of the page (a kept page elsewhere stays out).
+  await app.browser.execute(
+    (id) =>
+      document
+        .querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror")
+        .dispatchEvent(new CustomEvent("arcalo:meeting-summary", { bubbles: true, detail: { id } })),
+    id,
+  );
   await app.waitText(".dialog .ai-setup-note", /Besprechung braucht Arcalo einen KI-Anbieter/);
   assert.equal(await exists(".dialog .thinking"), false, "no request is started");
   await app.shot("170-summary-no-ai");

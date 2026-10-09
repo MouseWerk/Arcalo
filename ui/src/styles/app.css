@@ -4052,7 +4052,9 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
    of a hidden tab at the left). */
 .tabs {
   --tab-col: minmax(104px, max-content);
-  --tab-col-active: minmax(min(100%, calc(var(--tab-active-min, 104px) + var(--tab-extra, 0px))), max-content);
+  /* No percentage here: a track that depends on the strip's width squeezed the other tabs instead
+     of letting the strip scroll. The floor is capped to the strip's width in Workspace.tsx. */
+  --tab-col-active: minmax(calc(var(--tab-active-min, 104px) + var(--tab-extra, 0px)), max-content);
 }
 .tab { padding-right: 6px; }
 .tab.active { padding-right: 28px; }

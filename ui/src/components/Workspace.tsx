@@ -409,8 +409,12 @@ function PaneTabs({ pane, last }: { pane: Pane; last: boolean }) {
       // The active tab's floor when space is short: about two words, or its whole title if shorter.
       const act = el.querySelector<HTMLElement>(".tab.active:not(.pinned)");
       const title = act?.querySelector<HTMLElement>(".tab-title");
-      const natural = act && title ? act.offsetWidth - title.clientWidth + title.scrollWidth : 0;
-      el.style.setProperty("--tab-active-min", `${Math.max(104, Math.min(160, Math.ceil(natural)))}px`);
+      // The title's own text width: scrollWidth is never below the box, so it would keep a tab at the
+      // floor it already got.
+      const range = document.createRange();
+      if (title) range.selectNodeContents(title);
+      const natural = act && title ? act.offsetWidth - title.clientWidth + range.getBoundingClientRect().width : 0;
+      el.style.setProperty("--tab-active-min", `${Math.min(el.clientWidth, Math.max(104, Math.min(160, Math.ceil(natural))))}px`);
       const { left, extra } = tabScroll(el);
       // Scrolled to the end, the strip could not start at a tab: the active tab takes the rest.
       if (extra > 0) el.style.setProperty("--tab-extra", `${Math.ceil(extra)}px`);
