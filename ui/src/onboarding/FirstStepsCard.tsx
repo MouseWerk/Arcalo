@@ -7,6 +7,7 @@ import { createSubpage } from "../views/PageView";
 import { openSettingsSection } from "../lib/calnav";
 import { useT } from "../lib/i18n";
 import { hint } from "../lib/keymap";
+import { keyChips } from "../lib/shortcut";
 import { useApp } from "../store/app";
 import { firstSteps, followFirstStep, hideFirstSteps, useFirstSteps, type FirstStepId } from "./firststeps";
 
@@ -65,11 +66,9 @@ export function FirstSteps() {
               {/* The shortcut of Settings → Tastatur (none when it was removed there). */}
               {x.command && hint(x.command) && (
                 <span className="keys first-step-keys" aria-hidden>
-                  {hint(x.command)
-                    .split(" ")
-                    .map((k, i) => (
-                      <kbd key={`${k}-${i}`}>{k}</kbd>
-                    ))}
+                  {keyChips(hint(x.command)).map((k, i) => (
+                    <kbd key={`${k}-${i}`}>{k}</kbd>
+                  ))}
                 </span>
               )}
               <ChevronRight size={14} className="first-step-go" aria-hidden />
@@ -77,7 +76,7 @@ export function FirstSteps() {
           </li>
         ))}
       </ol>
-      {hint("palette") && <p className="first-steps-foot">{t("fs.palette", { keys: hint("palette").split(" ").join("+") })}</p>}
+      {hint("palette") && <p className="first-steps-foot">{t("fs.palette", { keys: hint("palette") })}</p>}
     </section>
   );
 }

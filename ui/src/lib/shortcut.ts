@@ -134,10 +134,16 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
   return glyphs + gap + key;
 }
 
-/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS, „Strg Umschalt D“ in German
- *  and „Ctrl Shift D“ in English elsewhere. */
+/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS, „Strg+Umschalt+D“ in German
+ *  and „Ctrl+Shift+D“ in English elsewhere. The one notation of tooltips, menus and hint texts. */
 export function keys(spec: string, mac = IS_MAC): string {
-  return formatShortcut(spec, mac, " ");
+  return formatShortcut(spec, mac);
+}
+
+/** A shown shortcut („Strg+Umschalt+D“, „Strg++“, „⇧⌘ Leertaste“) as the keys to draw as `kbd`
+ *  chips: split at each „+“ between two keys. */
+export function keyChips(label: string): string[] {
+  return label.split(/(?<=.)\+(?=.)/);
 }
 
 /** The primary modifier for labels: „⌘“ on macOS, „Strg“ (German) or „Ctrl“ elsewhere. */

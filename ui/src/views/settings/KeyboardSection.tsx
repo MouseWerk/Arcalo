@@ -7,7 +7,7 @@ import { Badge, Button, IconButton } from "../../components/ui";
 import { useT } from "../../lib/i18n";
 import { COMMANDS, DEFAULT_KEYMAP, comboFromEvent, comboLabel, comboProblem, effectiveKeymap, findConflicts, imeNote, keymapOverrides } from "../../lib/keymap";
 import { KEY_HELP, helpSpec } from "../../lib/keyhelp";
-import { keys } from "../../lib/shortcut";
+import { keyChips, keys } from "../../lib/shortcut";
 import { AI_SHORTCUTS, aiSwitchOn } from "../../lib/aiswitch";
 import { useApp } from "../../store/app";
 import { Group, Row, SectionHead, type SectionProps } from "./common";
@@ -114,9 +114,7 @@ export function KeyboardSection({ draft, update }: SectionProps) {
                       {t("keys.press")}
                     </span>
                   ) : combo ? (
-                    comboLabel(combo)
-                      .split(" ")
-                      .map((k, i) => <kbd key={i}>{k}</kbd>)
+                    keyChips(comboLabel(combo)).map((k, i) => <kbd key={i}>{k}</kbd>)
                   ) : (
                     <span className="faint">{t("keys.none")}</span>
                   )}
@@ -143,9 +141,7 @@ export function KeyboardSection({ draft, update }: SectionProps) {
                       {it.typed ? (
                         <code>{spec}</code>
                       ) : (
-                        (helpSpec(spec) ?? keys(spec))
-                          .split(" ")
-                          .map((k, j) => <kbd key={j}>{k}</kbd>)
+                        keyChips(helpSpec(spec) ?? keys(spec)).map((k, j) => <kbd key={j}>{k}</kbd>)
                       )}
                     </Fragment>
                   ))}

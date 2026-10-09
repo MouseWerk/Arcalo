@@ -50,6 +50,7 @@ import {
 } from "../lib/capture";
 import { fmtDate, time as clockTime } from "../lib/format";
 import { IS_MAC } from "../lib/platform";
+import { keys } from "../lib/shortcut";
 import { isComposing } from "../lib/ime";
 import { SuggestionPopup, type PopupHandle, type PopupItem } from "../editor/suggestion-popup";
 import { lacksReference, referenceOffset, zeitToken, type ZeitToken } from "../editor/zeit-suggest";
@@ -68,7 +69,6 @@ const WIDTH = 640;
 const MIN_HEIGHT = 112;
 const MAX_HEIGHT = 480;
 const MAX_LINES = 8;
-const mod = () => (IS_MAC ? "⌘" : t("keys.ctrl"));
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
 const DEFAULT_PREFS: CapturePrefs = { default_target: "daily", inbox_title: "", selection_shortcut: "", auto_hide_ms: 1200, meeting_target: true };
@@ -125,7 +125,6 @@ const time = (iso: string) => clockTime(iso);
 
 export function CaptureApp() {
   useT();
-  const MOD = mod();
   const draft = useMemo(loadDraft, []);
   const [text, setText] = useState(draft?.text ?? "");
   const [target, setTarget] = useState<TargetChoice>(draft?.target ?? DAILY);
@@ -392,7 +391,7 @@ export function CaptureApp() {
         });
       const title = q.trim();
       if (title && !pages.some((p) => !p.deleted_at && fold(p.title) === fold(title)))
-        out.push({ id: "new", title: t("cap.newPage", { title }), hint: `${mod()}+Enter`, icon: <FilePlus2 size={15} />, section: t("cap.sec.new"), choice: { target: { kind: "new_page", title }, label: title } });
+        out.push({ id: "new", title: t("cap.newPage", { title }), hint: keys("Mod Enter"), icon: <FilePlus2 size={15} />, section: t("cap.sec.new"), choice: { target: { kind: "new_page", title }, label: title } });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -656,7 +655,7 @@ export function CaptureApp() {
       ? t("cap.multi.daily")
       : t("cap.multi.where", { where });
   const hint = !text.trim()
-    ? t("cap.hint.empty")
+    ? t("cap.hint.empty", { save: keys("Enter"), newline: keys("Shift Enter") })
     : lines > 1
       ? t(zeit ? "cap.hint.linesZeit" : "cap.hint.lines", { n: lines, multi })
       : t("cap.hint.one", { hint: captureHint(kind, where) });
@@ -688,13 +687,13 @@ export function CaptureApp() {
           ))}
         {undoable && (
           <button type="button" className="capture-undo" onClick={() => void undo()}>
-            <Undo2 size={13} /> {t("common.undo")} <kbd>{MOD}+Z</kbd>
+            <Undo2 size={13} /> {t("common.undo")} <kbd>{keys("Mod Z")}</kbd>
           </button>
         )}
       </>
     );
   else if (notice) status = notice;
-  else status = picker ? t("cap.pickHint", { mod: MOD }) : hintOff;
+  else status = picker ? t("cap.pickHint", { enter: keys("Enter"), newPage: keys("Mod Enter") }) : hintOff;
 
   return (
     <div className="capture" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
@@ -726,7 +725,7 @@ export function CaptureApp() {
             <button type="button" className="capture-chip clip" onClick={insertClipboard} title={clip.slice(0, 200)}>
               <Clipboard size={13} strokeWidth={1.9} />
               <span className="capture-chip-label">{t("cap.pasteClip")}</span>
-              <kbd>{MOD}+⇧+V</kbd>
+              <kbd>{keys("Mod Shift V")}</kbd>
             </button>
           )}
           <span className="capture-spacer" />
@@ -826,7 +825,7 @@ export function CaptureApp() {
               <span>{t("cap.recent")}</span>
               {undoable && (
                 <span className="faint">
-                  <kbd>{MOD}+Z</kbd> {t("cap.undoLast")}
+                  <kbd>{keys("Mod Z")}</kbd> {t("cap.undoLast")}
                 </span>
               )}
             </div>

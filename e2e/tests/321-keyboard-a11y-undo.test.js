@@ -120,7 +120,7 @@ test("Settings → Tastatur: each recorder says its keys (Strg), and the fixed k
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => /Tastatur/.test(b.textContent))?.click());
   await app.waitText(".settings-head h1", /Tastatur/);
   const label = await app.browser.execute(() => document.querySelector('.key-recorder[data-command="palette"]').getAttribute("aria-label"));
-  assert.match(label, /Befehlspalette.*Strg K/);
+  assert.match(label, /Befehlspalette.*Strg\+K/);
   const shown = await app.browser.execute(() => document.querySelector('.key-recorder[data-command="new_page"]').textContent);
   assert.match(shown, /Strg/);
   assert.doesNotMatch(shown, /Ctrl/);

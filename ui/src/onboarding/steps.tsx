@@ -12,7 +12,7 @@ import { Badge, Button, Input, Segmented, Switch } from "../components/ui";
 import { translate, useT, type LanguageChoice, type TKey } from "../lib/i18n";
 import { weekdayLabels } from "../lib/format";
 import { IS_MAC } from "../lib/platform";
-import { formatShortcut, keys } from "../lib/shortcut";
+import { formatShortcut, keyChips, keys } from "../lib/shortcut";
 import { KIND_LABELS, PRESETS, fromPreset, localTierNotLocal, providerName } from "../lib/providers";
 import { BUILTIN_THEMES, findTheme, themeName } from "../lib/themes";
 import { aiSwitchOn } from "../lib/aiswitch";
@@ -584,7 +584,7 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
     // Without time tracking there is no /zeit to tell about.
     ...(timeTrackingOn(view.settings) ? ([[zeitCommand(), "fr.tip.zeit"]] as [string, TKey][]) : []),
     ["[[ ]]", "fr.tip.links"],
-    ...(capture ? ([[formatShortcut(capture, IS_MAC, " "), "fr.tip.capture"]] as [string, TKey][]) : []),
+    ...(capture ? ([[formatShortcut(capture, IS_MAC), "fr.tip.capture"]] as [string, TKey][]) : []),
   ];
   // „Später einrichten“: the setup ends (answers are saved) and the section opens.
   const later = async (section: string) => {
@@ -632,7 +632,7 @@ export function DoneStep({ view, onEdit }: { view: SettingsView; onEdit: (step: 
           {tips.map(([k, label]) => (
             <div key={label} className="fr-tip">
               <span className="keys">
-                {k.split(" ").map((x, i) => (
+                {keyChips(k).map((x, i) => (
                   <kbd key={`${x}-${i}`}>{x}</kbd>
                 ))}
               </span>

@@ -47,21 +47,21 @@ describe("keymap", () => {
     expect(normalizeCombo("cmd+arrowleft")).toBe("Ctrl+ArrowLeft");
     expect(normalizeCombo("Ctrl+K+J")).toBeNull();
     expect(normalizeCombo("")).toBeNull();
-    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg Umschalt D");
-    expect(comboLabel("Alt+ArrowLeft", false)).toBe("Alt ←");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg+Umschalt+D");
+    expect(comboLabel("Alt+ArrowLeft", false)).toBe("Alt+←");
     setLang("en");
-    expect(comboLabel("Ctrl+Shift+Space", false, "en")).toBe("Ctrl Shift Space");
+    expect(comboLabel("Ctrl+Shift+Space", false, "en")).toBe("Ctrl+Shift+Space");
     setLang("de");
     expect(comboLabel("")).toBe("");
   });
 
   it("labels keys stored by position the way the keyboard shows them (German: Strg+# toggles the sidebar)", () => {
-    expect(comboLabel("Ctrl+\\", false, "de")).toBe("Strg #");
-    expect(comboLabel("Ctrl+Shift+\\", false, "de")).toBe("Strg Umschalt #");
+    expect(comboLabel("Ctrl+\\", false, "de")).toBe("Strg+#");
+    expect(comboLabel("Ctrl+Shift+\\", false, "de")).toBe("Strg+Umschalt+#");
     expect(comboLabel("Ctrl+[", true, "de")).toBe("⌘Ü");
     expect(comboLabel("Ctrl+]", true, "de")).toBe("⌘+");
     setLang("en");
-    expect(comboLabel("Ctrl+\\", false, "en")).toBe("Ctrl \\");
+    expect(comboLabel("Ctrl+\\", false, "en")).toBe("Ctrl+\\");
     setLang("de");
     expect(comboLabel("Ctrl+[", true, "en")).toBe("⌘[");
     // Not positional: the character itself.
@@ -116,16 +116,16 @@ describe("keymap", () => {
       expect(label, id).not.toMatch(/[⌘⌥⇧⌃]/);
       // German keyboards say Strg and Umschalt (q116 T1).
       expect(label, id).not.toMatch(/\b(Ctrl|Shift)\b/);
-      if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Strg /);
+      if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Strg\+/);
       setLang("en");
       expect(comboLabel(combo, false, "en"), id).not.toMatch(/Strg|Umschalt/);
       setLang("de");
     }
     expect(comboLabel("Ctrl+Shift+D", true)).toBe("⇧⌘D");
     expect(comboLabel("Ctrl+W", true)).toBe("⌘W");
-    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg Umschalt D");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg+Umschalt+D");
     setLang("en");
-    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Ctrl Shift D");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Ctrl+Shift+D");
     setLang("de");
   });
 

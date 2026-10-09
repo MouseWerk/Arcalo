@@ -13,6 +13,7 @@ import type { DayOverview } from "../lib/types";
 import { Button, IconButton, MENU_GAP } from "./ui";
 import { t, useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
+import { keys } from "../lib/shortcut";
 
 
 /** Opens the calendar next to `el` (or centered without an element), showing `date` (default today). */
@@ -242,7 +243,7 @@ function Calendar({ x, y, date, onPick }: { x?: number; y?: number; date?: strin
         </span>
         <span className="grow" />
         <span className="faint" title={t("calpop.keys", { enter: onPick ? t("calpop.take") : t("calpop.open") })}>
-          <kbd>Enter</kbd> {onPick ? t("calpop.take") : t("calpop.open")}
+          <kbd>{keys("Enter")}</kbd> {onPick ? t("calpop.take") : t("calpop.open")}
         </span>
       </div>
     </div>

@@ -278,7 +278,7 @@ export function SearchApp() {
           ) : (
             <>
               <span><kbd>↑</kbd><kbd>↓</kbd> {t("qs.choose")}</span>
-              <span><kbd>Enter</kbd> {t("qs.open")}</span>
+              <span><kbd>{keys("Enter")}</kbd> {t("qs.open")}</span>
               <span><kbd>{keys("Mod Enter")}</kbd> {t("qs.newTab")}</span>
               <span className="grow" />
               {timeOn && <span className="faint">{t("qs.zeit")}</span>}
