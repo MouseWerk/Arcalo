@@ -49,6 +49,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0032_kept_issue_links.sql"),
     include_str!("../migrations/0033_task_recurrence.sql"),
     include_str!("../migrations/0034_embedding_queue.sql"),
+    include_str!("../migrations/0035_page_id_floor.sql"),
 ];
 
 /// A migration with this marker adds a derived page index; every page is re-indexed after it ran.
@@ -1011,8 +1012,11 @@ impl Database {
             [parent_id],
             |r| r.get(0),
         )?;
+        // Never an id that was used before (a purged page's view state stays with its id).
         self.conn.execute(
-            "INSERT INTO pages (parent_id, title, icon, position) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO pages (id, parent_id, title, icon, position) VALUES (
+                 MAX(COALESCE((SELECT MAX(id) FROM pages), 0), COALESCE((SELECT value FROM id_floor WHERE name = 'pages'), 0)) + 1,
+                 ?1, ?2, ?3, ?4)",
             params![parent_id, title, icon, position],
         )?;
         let page = self.page(self.conn.last_insert_rowid())?;
@@ -1142,6 +1146,20 @@ mod tests {
         let p = db.create_project("PRJ-2026-X", "Arcalo Rollout").unwrap();
         let np = db.create_netzplan(p.id, "NP-8801", "NP-8801-1020", "Systemintegration", 40.0).unwrap();
         (db, np)
+    }
+
+    #[test]
+    fn a_purged_page_id_is_never_used_again() {
+        let db = Database::open_in_memory().unwrap();
+        let a = db.create_page(None, "Alt", None).unwrap();
+        db.trash_page(a.id).unwrap();
+        db.purge_page(a.id).unwrap();
+        let b = db.create_page(None, "Ganz neue Seite", None).unwrap();
+        assert!(b.id > a.id, "id {} came back", a.id);
+        // Also when a page arrived another way (an import with its own id).
+        db.conn.execute("INSERT INTO pages (id, title) VALUES (?1, 'Import')", [b.id + 10]).unwrap();
+        db.conn.execute("DELETE FROM pages WHERE id = ?1", [b.id + 10]).unwrap();
+        assert!(db.create_page(None, "Danach", None).unwrap().id > b.id + 10);
     }
 
     #[test]
