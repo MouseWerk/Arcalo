@@ -146,7 +146,7 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
   return {
     /** The text box shows `md` now (typed, merged, reloaded). */
     shown(md: string) {
-      chipsPresent(owner, sourceChipIds(md));
+      chipsPresent(owner, sourceChipIds(md), pageId);
     },
     /**
      * Text of another pane came in (`theirs`, changed from `base`): its chip changes are not
@@ -172,7 +172,7 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
             if (sourceChipIds(cur).has(c.id!)) return;
             const pos = Math.min(io.current.mapPos(base, cur, at), cur.length);
             io.current.edit(cur.slice(0, pos) + chip + cur.slice(pos));
-          });
+          }, pageId);
         }
       };
       const { removed, appeared } = chipDiff(before, md, links.current);

@@ -87,6 +87,24 @@ describe("removing a booked chip", () => {
     expect(api.chipDelete).not.toHaveBeenCalled();
   });
 
+  it("another editor of the same note (a tab kept open behind another one) is not where the chip moved", async () => {
+    const sameNote = {};
+    chipsPresent(sameNote, [12], 7);
+    chipRemoved(12, { hours: "1,50" }, undefined, () => {}, 7);
+    expect(chipAwaited(12)).toBe(true);
+    expect(useApp.getState().toasts.some((x) => x.key === "chip-12")).toBe(true);
+    await vi.advanceTimersByTimeAsync(7100);
+    expect(api.chipDelete).toHaveBeenCalledWith(12);
+    chipsPresent(sameNote, null);
+    await chipReturned(12, () => {});
+    // In another note it is a move: the booking goes along.
+    const otherNote = {};
+    chipsPresent(otherNote, [13], 8);
+    chipRemoved(13, { hours: "1,50" }, undefined, () => {}, 7);
+    expect(chipAwaited(13)).toBe(false);
+    chipsPresent(otherNote, null);
+  });
+
   it("„Rückgängig“ in the toast puts the chip back and keeps the booking", async () => {
     const putBack = vi.fn();
     chipRemoved(12, { hours: "1,50" }, undefined, putBack);

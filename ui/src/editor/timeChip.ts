@@ -166,14 +166,20 @@ const GRACE_MS = 7000;
 const pendingDeletes = new Map<number, number>();
 // Bookings deleted with their chip in this session: put back when the chip comes back.
 const deletedWithChip = new Map<number, TimeEntry>();
-// Chip ids in the open editors, rich and source (a chip pasted into another note keeps the booking).
-const presentIn = new Map<object, Set<number>>();
+// Chip ids in the open editors, rich and source, with their page (a chip pasted into another
+// note keeps the booking).
+const presentIn = new Map<object, { page: number | null; ids: Set<number> }>();
 
-const presentAnywhere = (id: number) => [...presentIn.values()].some((s) => s.has(id));
+/**
+ * Whether chip `id` is in an open note other than `from`. Another editor of the same note (a
+ * second pane, a tab kept open behind another one) shows that note's text, not a copy: it
+ * follows the removal once it is saved.
+ */
+const presentElsewhere = (id: number, from: number | null) => [...presentIn.values()].some((p) => p.ids.has(id) && (from == null || p.page !== from));
 
-/** The chip ids an editor (`owner`) shows now; `null` when it closes. */
-export function chipsPresent(owner: object, ids: Iterable<number> | null) {
-  if (ids) presentIn.set(owner, new Set(ids));
+/** The chip ids an editor (`owner`) of note `page` shows now; `null` when it closes. */
+export function chipsPresent(owner: object, ids: Iterable<number> | null, page: number | null = null) {
+  if (ids) presentIn.set(owner, { page, ids: new Set(ids) });
   else presentIn.delete(owner);
 }
 
@@ -186,13 +192,13 @@ export function describeChip(a: Partial<ChipAttrs>) {
 }
 
 /**
- * The booked chip `id` was removed from a note: its booking goes after the undo toast.
+ * The booked chip `id` was removed from note `from`: its booking goes after the undo toast.
  * „Rückgängig“ keeps the booking and calls `putBack` to put the chip where it was.
  */
-export function chipRemoved(id: number, a: Partial<ChipAttrs>, row: TimeEntryRow | undefined, putBack: () => void) {
+export function chipRemoved(id: number, a: Partial<ChipAttrs>, row: TimeEntryRow | undefined, putBack: () => void, from: number | null = null) {
   const s = useApp.getState();
   // Moved: pasted into another open note already, the booking goes along.
-  if (pendingDeletes.has(id) || presentAnywhere(id)) return;
+  if (pendingDeletes.has(id) || presentElsewhere(id, from)) return;
   if (row && (row.status_flag === "exported" || row.status_flag === "released")) {
     // Already in SAP (or released for it): the booking stays, the user is told.
     s.toast({ tone: "info", title: t("chip.keptExported"), detail: describeChip(a), key: `chip-${id}` });
@@ -200,7 +206,7 @@ export function chipRemoved(id: number, a: Partial<ChipAttrs>, row: TimeEntryRow
   }
   const timer = window.setTimeout(async () => {
     pendingDeletes.delete(id);
-    if (presentAnywhere(id)) return;
+    if (presentElsewhere(id, from)) return;
     try {
       deletedWithChip.set(id, await api.chipDelete(id));
       useApp.getState().bumpEntries();
@@ -221,7 +227,7 @@ export function chipRemoved(id: number, a: Partial<ChipAttrs>, row: TimeEntryRow
       run: () => {
         cancelDelete(id);
         // The chip back where it was (the booking was not touched yet).
-        if (!presentAnywhere(id)) putBack();
+        if (!presentElsewhere(id, from)) putBack();
       },
     },
   });
@@ -365,7 +371,7 @@ export function chipLinkPlugin(pageId: number) {
           view.dispatch(tr);
         }, 250);
       };
-      const remember = () => chipsPresent(view, chipsIn(view.state.doc).flatMap((c) => (c.id != null ? [c.id] : [])));
+      const remember = () => chipsPresent(view, chipsIn(view.state.doc).flatMap((c) => (c.id != null ? [c.id] : [])), pageId);
       remember();
       refresh();
       // Entries changed (timesheet, another note, a timer): the link may have changed too.
@@ -385,7 +391,7 @@ export function chipLinkPlugin(pageId: number) {
           if (fresh.length) handled = fresh[fresh.length - 1].seq;
           if (!timeTrackingEnabled()) return;
           for (const e of fresh) {
-            if (e.kind === "removed") chipRemoved(e.id, e.node.attrs as ChipAttrs, st.rows.get(e.id), () => putBackIn(v, e.id));
+            if (e.kind === "removed") chipRemoved(e.id, e.node.attrs as ChipAttrs, st.rows.get(e.id), () => putBackIn(v, e.id), pageId);
             else
               void chipReturned(e.id, (newId) => {
                 if (v.isDestroyed) return;

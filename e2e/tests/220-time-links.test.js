@@ -16,9 +16,12 @@ const content = async () => (await app.invoke("page_get", { id: pageId })).conte
 const entries = () => app.invoke("time_entries", { from: null, to: null });
 const entry = async (id) => (await entries()).find((e) => e.id === id);
 const until = (f, msg, timeout = 8000) => app.browser.waitUntil(f, { timeout, timeoutMsg: msg });
+// The note shown in the active pane (a note left in the same tab stays mounted, hidden).
+const SHOWN = ".pane.active > .pane-content:not([hidden])";
 const chips = () =>
-  app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .ProseMirror .time-chip")].map((c) => ({ cls: c.className, text: c.textContent, link: c.dataset.chip ?? "" })),
+  app.browser.execute(
+    (s) => [...document.querySelectorAll(`${s} .ProseMirror .time-chip`)].map((c) => ({ cls: c.className, text: c.textContent, link: c.dataset.chip ?? "" })),
+    SHOWN,
   );
 const chipId = async () => Number(/<time-entry id="(\d+)"/.exec(await content())?.[1]);
 /** Clicks the first `sel` that reads `label`. */
@@ -26,9 +29,21 @@ const clickText = async (sel, label) => {
   for (const el of await app.$$(sel)) if ((await app.textOf(el)) === label) return el.click();
   throw new Error(`no ${sel} reading ${label}`);
 };
+/** Clicks `label` in the toast titled `title` (a rename toast offers „Rückgängig“ too). */
+const toastAction = (title, label) =>
+  app.browser.execute(
+    (t, l) => {
+      const toast = [...document.querySelectorAll(".toast")].find((x) => new RegExp(t).test(x.querySelector(".toast-title")?.textContent ?? ""));
+      const button = [...(toast?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === l);
+      button?.click();
+      return !!button;
+    },
+    title.source,
+    label,
+  );
 /** Opens the menu of the `i`-th chip and picks `label`. */
 const chipMenu = async (i, label) => {
-  const all = await app.$$(".pane.active .ProseMirror .time-chip");
+  const all = await app.$$(`${SHOWN} .ProseMirror .time-chip`);
   await all[i].click();
   await app.waitFor(".menu");
   await clickText(".menu .menu-item", label);
@@ -42,7 +57,7 @@ test("a /zeit chip shows its booking's values and follows edits made elsewhere",
   await app.type("/zeit NP-8801/1040 1h #TEST Chiptest");
   await app.keys(["Escape"]);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .ProseMirror .time-chip");
+  await app.waitFor(`${SHOWN} .ProseMirror .time-chip`);
   pageId = (await app.invoke("page_resolve", { title: "Zeitnotiz", create: false })).id;
   await until(async () => /la="TEST" date="\d{4}-\d{2}-\d{2}">Chiptest<\/time-entry>/.test(await content()), "chip saved with Leistungsart and day");
   const id = await chipId();
@@ -82,7 +97,7 @@ test("removing a chip removes its booking after the undo toast; undo in the edit
   await app.waitText(".toast-title", /Buchung mit dem Chip gelöscht/);
   assert.equal((await chips()).length, 0);
   // „Rückgängig“ in the toast: the chip is back, the booking was never touched.
-  await clickText(".toast button", "Rückgängig");
+  assert.ok(await toastAction(/Buchung mit dem Chip gelöscht/, "Rückgängig"), "undo in the chip's toast");
   await until(async () => (await chips()).length === 1, "chip back");
   await app.browser.pause(7500);
   assert.ok(await entry(id), "booking kept");
@@ -108,7 +123,7 @@ test("a copied chip does not share the booking and can be booked on its own", as
   await until(async () => (await chips())[1].cls.includes("time-chip--copy"), "second is a copy");
   assert.match((await chips())[1].text, /Kopie, nicht gebucht/);
   // Copy and paste through HTML keeps every value.
-  const html = await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror time-entry, .pane.active .ProseMirror .time-chip")?.outerHTML ?? "");
+  const html = await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror :is(time-entry, .time-chip)")?.outerHTML ?? "");
   assert.ok(html);
   await app.shot("220-chip-copy");
   const before = (await entries()).length;
@@ -118,6 +133,28 @@ test("a copied chip does not share the booking and can be booked on its own", as
   await until(async () => new Set(await ids()).size === 2, "the copy has its own booking");
   assert.equal((await ids())[0], id);
   await until(async () => (await chips()).every((c) => c.link === "linked"), "both booked");
+});
+
+test("removing a chip still removes its booking when the note is also kept open behind another tab", async () => {
+  // The note left in its tab for another page (kept hidden), then opened in a new tab: the hidden
+  // copy is the same note, not a place the chip was moved to.
+  const other = await app.invoke("page_create", { parentId: null, title: "Andere Notiz", icon: null, content: "Text\n" });
+  await app.invoke("search_open", { target: { kind: "page", page_id: other.id, new_tab: false } });
+  await app.waitText(".pane.active .tab.active .tab-title", /Andere Notiz/);
+  await app.invoke("search_open", { target: { kind: "page", page_id: pageId, new_tab: true } });
+  await app.waitText(".pane.active .tab.active .tab-title", /Zeitnotiz/);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content[hidden] .ProseMirror .time-chip").length), 2, "the note kept hidden");
+  await until(async () => (await chips()).length === 2 && (await chips()).every((c) => c.link === "linked"), "both chips linked");
+  const ids = [...(await content()).matchAll(/<time-entry id="(\d+)"/g)].map((m) => Number(m[1]));
+  const last = ids[1];
+  await app.dismissToasts();
+  await chipMenu(1, "Chip und Buchung entfernen");
+  await app.waitText(".toast-title", /Buchung mit dem Chip gelöscht/);
+  await until(async () => !(await entry(last)), "booking deleted after the toast", 12000);
+  assert.ok(await entry(ids[0]), "the other chip's booking stays");
+  // The copy kept behind the other tab follows (it never writes the chip back).
+  await until(() => app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content[hidden] .ProseMirror .time-chip").length === 1), "kept note follows");
+  assert.equal([...(await content()).matchAll(/<time-entry /g)].length, 1);
 });
 
 test("the timer pauses and resumes from the widget, the palette and the shortcut", async () => {
