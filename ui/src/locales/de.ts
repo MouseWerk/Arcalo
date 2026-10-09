@@ -3592,6 +3592,9 @@ export const de: Catalog = {
   "app.hideFailed": "Fenster konnte nicht ausgeblendet werden",
   "app.closeFailed": "Fenster konnte nicht geschlossen werden",
   "app.sidebar": "Seitenleiste",
+  "app.restoredTitle": { one: "Gelöschte Seite zurückgeholt", other: "{n} gelöschte Seiten zurückgeholt" },
+  "app.restoredDetail": { one: "Du hattest sie hier gelöscht, auf einem anderen Computer wurde sie inzwischen bearbeitet. Die Bearbeitung bleibt erhalten.", other: "Du hattest sie hier gelöscht, auf einem anderen Computer wurden sie inzwischen bearbeitet. Die Bearbeitungen bleiben erhalten." },
+  "app.restoredOpen": "Öffnen",
   "app.keptTitle": "Löschungen vom Server nicht übernommen",
   "app.keptDetail": { one: "Auf dem Server fehlt {n} Seite. Sie bleibt hier erhalten und wird bei der nächsten Synchronisierung wieder übertragen. Wenn sie gelöscht werden soll, hier löschen.", other: "Auf dem Server fehlen {n} Seiten auf einmal. Sie bleiben hier erhalten und werden bei der nächsten Synchronisierung wieder übertragen. Wenn sie gelöscht werden sollen, hier löschen." },
   "app.aNote": "Eine Notiz",
@@ -3840,6 +3843,8 @@ export const de: Catalog = {
   "timer.idleSubtract": "Leerlauf abziehen",
   "timer.bookFull": "Voll buchen",
   "timer.underMinute": "Der Timer lief weniger als eine Minute.",
+  "timer.clockBackTitle": "Timer gestoppt, Dauer fehlt",
+  "timer.clockBackDetail": "Die Uhr des Computers wurde hinter den Start des Timers zurückgestellt. Die Buchung steht ohne Dauer in der Zeiterfassung: trag die Dauer dort ein.",
   "timer.stopFailed": "Timer konnte nicht gestoppt werden",
   // ---- aip
   "aip.aria.local": "Lokales Modell",

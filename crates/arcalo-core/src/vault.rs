@@ -460,7 +460,7 @@ fn has_markdown(dir: &Path) -> bool {
 }
 
 /// Characters Windows does not allow in file names.
-pub(crate) fn file_name(title: &str) -> String {
+pub fn file_name(title: &str) -> String {
     let cleaned: String =
         title
             .chars()
@@ -493,7 +493,7 @@ pub(crate) fn file_name(title: &str) -> String {
 }
 
 /// Windows device names (`CON`, `com1`, `LPT¹`, `CONIN$`, …), which no file may be named.
-fn is_device_name(stem: &str) -> bool {
+pub(crate) fn is_device_name(stem: &str) -> bool {
     let upper = stem.to_ascii_uppercase();
     if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
         return true;
@@ -522,7 +522,21 @@ struct Planner<'a> {
     taken: std::collections::HashSet<String>,
 }
 
-impl Planner<'_> {
+/// Top-level names a page never gets: the folder of the embedded files, and in the Markdown
+/// mirror the Git sync's README and the time sheets' folder. Reserved as file and as folder
+/// (`README.md`, `README/`), so a page with subpages keeps one name for both (`README (2).md`,
+/// `README (2)/`).
+const RESERVED: [&str; 1] = [attachments::DIR_NAME];
+const RESERVED_MIRROR: [&str; 2] = ["README", crate::mirror::TIME_DIR];
+
+impl<'a> Planner<'a> {
+    /// `mirror`: the Markdown mirror (also the Git sync's names reserved).
+    fn new(root: Option<&'a Path>, mirror: bool) -> Self {
+        let names = RESERVED.iter().chain(if mirror { RESERVED_MIRROR.as_slice() } else { &[] });
+        let taken = names.flat_map(|n| ["", ".md", ".canvas"].map(|ext| format!("{n}{ext}").to_lowercase())).collect();
+        Planner { root, taken }
+    }
+
     fn unique(&mut self, dir: &str, base: &str, ext: &str) -> String {
         let join = |name: String| if dir.is_empty() { name } else { format!("{dir}/{name}") };
         let mut candidate = join(format!("{base}{ext}"));
@@ -561,7 +575,7 @@ pub fn page_paths(db: &Database) -> Result<Vec<PagePath>> {
         .query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     let mut out = Vec::new();
-    Planner { root: None, taken: Default::default() }.plan(&|id| filled.contains(&id), &db.page_tree()?, "", &mut out);
+    Planner::new(None, true).plan(&|id| filled.contains(&id), &db.page_tree()?, "", &mut out);
     Ok(out)
 }
 
@@ -613,12 +627,7 @@ pub fn export_vault(db: &Database, dir: &Path, attachments_dir: &Path) -> Result
 pub fn export_snapshot(snap: &VaultSnapshot, dir: &Path, attachments_dir: &Path) -> Result<usize> {
     fs::create_dir_all(dir).at(dir)?;
     let mut planned = Vec::new();
-    Planner { root: Some(dir), taken: Default::default() }.plan(
-        &|id| !snap.content(id).is_empty(),
-        &snap.tree,
-        "",
-        &mut planned,
-    );
+    Planner::new(Some(dir), !snap.export).plan(&|id| !snap.content(id).is_empty(), &snap.tree, "", &mut planned);
     // Canvases: the page of each note card by title (the first of a title, like links).
     let mut kinds: std::collections::HashMap<i64, bool> = std::collections::HashMap::new();
     fn walk(nodes: &[PageNode], out: &mut std::collections::HashMap<i64, bool>) {
@@ -1018,6 +1027,44 @@ mod tests {
                 assert_eq!(fs::read_to_string(out.join(f)).unwrap(), db.page_doc(p.page_id).unwrap().content, "{f}");
             }
         }
+    }
+
+    #[test]
+    fn page_paths_never_take_the_syncs_own_names() {
+        let db = Database::open_in_memory().unwrap();
+        for title in ["README", "Zeiterfassung", "attachments"] {
+            let p = db.create_page(None, title, None).unwrap();
+            db.save_page_content(p.id, "Text").unwrap();
+            let sub = db.create_page(Some(p.id), "Unterseite", None).unwrap();
+            db.save_page_content(sub.id, "x").unwrap();
+        }
+        let paths = page_paths(&db).unwrap();
+        let mut names: Vec<String> = paths.iter().flat_map(|p| [p.file.clone(), p.folder.clone()]).flatten().collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "README (2)",
+                "README (2).md",
+                "README (2)/Unterseite.md",
+                "Zeiterfassung (2)",
+                "Zeiterfassung (2).md",
+                "Zeiterfassung (2)/Unterseite.md",
+                "attachments (2)",
+                "attachments (2).md",
+                "attachments (2)/Unterseite.md",
+            ]
+        );
+        // The mirror writes them there; an export leaving Arcalo keeps README and Zeiterfassung.
+        let mirror = tmp("own-names");
+        crate::mirror::write_mirror(&db, &mirror, &tmp("own-names-att"), &chrono::Local).unwrap();
+        for p in paths.iter().filter_map(|p| p.file.as_ref()) {
+            assert!(mirror.join(p).is_file(), "{p}");
+        }
+        let out = tmp("own-names-export");
+        export_vault(&db, &out, &tmp("own-names-att")).unwrap();
+        assert!(out.join("README.md").is_file() && out.join("Zeiterfassung/Unterseite.md").is_file());
+        assert!(out.join("attachments (2).md").is_file());
     }
 
     #[test]

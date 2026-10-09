@@ -201,6 +201,8 @@ export interface StopOutcome extends LogOutcome {
   entries?: TimeEntry[];
   idle_minutes: number;
   discarded: boolean;
+  /** The clock was set back behind the start: kept without a duration, to be entered. */
+  clock_back?: boolean;
 }
 /** How a `/zeit` chip in a note relates to its booking (1.12). */
 export type ChipLink = "linked" | "elsewhere" | "missing";
@@ -1365,6 +1367,10 @@ export interface GitPulled {
   conflicts: number[];
   /** Pages the server deleted, kept here because there were too many at once. */
   kept?: number[];
+  /** Pages moved or renamed like on the other computer. */
+  moved?: number[];
+  /** Pages deleted here that another computer edited meanwhile: back with that text. */
+  restored?: number[];
 }
 
 // ---- calendar sync (Kalender)

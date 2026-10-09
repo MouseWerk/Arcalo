@@ -149,10 +149,20 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   is merged with the remote when the histories are related (merge commit „Abgleich mit dem Server …“, file by file against
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
-  repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and deletions keep this
-  side. The shell (`syncmerge.rs`) maps paths to pages with `vault::page_paths` (the export's naming, case-insensitive) and
-  takes pulled notes over through `save_page_content` after a snapshot (new files become pages below the page of their
-  folder, deletions go to the trash, attachments the repository has and the data folder lacks are copied). A note edited
+  repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and a deletion there keep
+  this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Moves and renames are pulled
+  as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
+  and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
+  at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
+  The mirror reserves the sync's own top-level names (`README`, `Zeiterfassung`, `attachments`, as file and folder:
+  `vault::Planner`), so no page lands where the pull skips files. The shell (`syncmerge.rs`) maps paths to pages with
+  `vault::page_paths` (the export's naming, case-insensitive) and takes pulled notes over through `save_page_content` after
+  a snapshot (new files become pages below the page of their folder, a folder without a page here gets one,
+  deletions go to the trash, attachments the repository has and the data folder lacks are copied). A moved note moves
+  its page (same id, versions, time entries, links; renamed when the file name changed beyond the mirror's „ (2)“), a
+  folder-only page whose notes all moved to one new folder follows them, and one whose subpages all went is trashed. A
+  page deleted here that came back is restored from the trash when it was trashed on its own (`Pulled.restored`, a
+  toast). A note edited
   here since the mirror was written, or changed on both sides, becomes a conflict in the meta row `gitsync.conflicts`
   (page, path, base, theirs; mine is the page itself): the page is marked („Konflikt“ banner, dot in the tree), and until
   it is merged its path is held at the committed (server) version in the working tree (`SyncRequest::hold`), so nothing

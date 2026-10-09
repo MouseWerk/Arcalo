@@ -501,6 +501,7 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bo
             }
             if to.is_file() && !same_file(&from, &to)? && is_note(&path) {
                 out.push(RemoteChange {
+                    from: None,
                     base: None,
                     mine: Some(String::from_utf8_lossy(&fs::read(&from)?).into_owned()),
                     theirs: Some(String::from_utf8_lossy(&fs::read(&to)?).into_owned()),
@@ -534,7 +535,7 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bo
     server_notes(repo, "", &mut theirs)?;
     for path in theirs.into_iter().filter(|p| !seen.contains(&p.to_lowercase())) {
         let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
-        changes.push(RemoteChange { path, base: None, mine: None, theirs: Some(text), conflict: false });
+        changes.push(RemoteChange { path, from: None, base: None, mine: None, theirs: Some(text), conflict: false });
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     write_own_files(source, repo, database, companion)?;
@@ -989,6 +990,11 @@ pub struct RemoteChange {
     pub theirs: Option<String>,
     /// Changed differently on both sides: the user decides (see [`crate::merge`]).
     pub conflict: bool,
+    /// The note's path before the server moved or renamed it (a page moved below another one,
+    /// „Aufräumen“, a new title): the page moves along instead of being deleted and created anew.
+    /// `base` and `mine` are the texts at that path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1265,10 +1271,15 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
         let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
         let fresh = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
-        // A path pulled twice keeps the newest server state, and stays a conflict once it was one.
+        // A path pulled twice keeps the newest server state, and stays a conflict once it was one;
+        // a note moved again keeps where it came from here.
         for c in fresh {
-            match pulled.iter_mut().find(|p| p.path == c.path) {
+            match pulled.iter_mut().find(|p| p.path == c.path || c.from.as_ref() == Some(&p.path)) {
                 Some(p) => {
+                    if p.path != c.path {
+                        p.from = p.from.take().or(Some(p.path.clone()));
+                        p.path = c.path;
+                    }
                     p.theirs = c.theirs;
                     p.conflict |= c.conflict;
                 }
@@ -1361,8 +1372,71 @@ fn hold_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Notes moved or renamed between two commits, as `(old, new)` paths. Git pairs the deleted and
+/// added files by content (`-M`); among files with the same text a note keeps its file name
+/// where it can (several empty pages moved at once must not swap their identities).
+fn note_renames(git: &Git, repo: &Path, from: &str, to: &str) -> Result<Vec<(String, String)>> {
+    let out = git.check(Some(repo), &["diff", "--name-status", "-M", "-z", from, to, "--"])?;
+    let mut parts = out.split('\0').filter(|p| !p.is_empty());
+    let mut found = Vec::new();
+    while let Some(status) = parts.next() {
+        if status.starts_with(['R', 'C']) {
+            let (Some(old), Some(new)) = (parts.next(), parts.next()) else { break };
+            if status.starts_with('R') && is_note(old) && is_note(new) {
+                found.push((old.to_owned(), new.to_owned()));
+            }
+        } else if parts.next().is_none() {
+            break;
+        }
+    }
+    let file_name = |p: &str| p.rsplit('/').next().unwrap_or(p).to_lowercase();
+    // Pairs whose texts are the same at both ends, grouped by those texts: within a group the
+    // old paths are handed out again, the one with the same file name first.
+    let mut groups: std::collections::HashMap<(Option<String>, Option<String>), Vec<usize>> = Default::default();
+    for (i, (old, new)) in found.iter().enumerate() {
+        let key = (blob_id(git, repo, from, old)?, blob_id(git, repo, to, new)?);
+        if key.0.is_some() && key.0 == key.1 {
+            groups.entry(key).or_default().push(i);
+        }
+    }
+    for members in groups.values().filter(|m| m.len() > 1) {
+        let mut olds: Vec<String> = members.iter().map(|&i| found[i].0.clone()).collect();
+        let news: Vec<String> = members.iter().map(|&i| found[i].1.clone()).collect();
+        let mut assigned = vec![None; news.len()];
+        for (k, new) in news.iter().enumerate() {
+            if let Some(at) = olds.iter().position(|o| file_name(o) == file_name(new)) {
+                assigned[k] = Some(olds.remove(at));
+            }
+        }
+        for slot in assigned.iter_mut().filter(|s| s.is_none()) {
+            *slot = Some(olds.remove(0));
+        }
+        for (&i, old) in members.iter().zip(assigned) {
+            found[i].0 = old.unwrap_or_default();
+        }
+    }
+    Ok(found)
+}
+
+/// Writes `text` as `path` into the working tree and the index.
+fn put_path(git: &Git, repo: &Path, path: &str, text: &str) -> Result<()> {
+    let full = repo.join(path);
+    if let Some(dir) = full.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(&full, text)?;
+    git.check(Some(repo), &["add", "--", path])?;
+    Ok(())
+}
+
+/// Removes `path` from the index and the working tree (nothing when it is not there).
+fn drop_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
+    git.check(Some(repo), &["rm", "-q", "-f", "--ignore-unmatch", "--", path])?;
+    Ok(())
+}
+
 /// Merges the server's commit `theirs` into `ours` (both descend from `base`), see [`sync`].
-/// Returns the notes the server changed.
+/// Returns the notes the server changed, moved or brought back.
 fn merge_remote(
     git: &Git,
     repo: &Path,
@@ -1373,23 +1447,107 @@ fn merge_remote(
     now: &DateTime<Local>,
 ) -> Result<Vec<RemoteChange>> {
     let remote = changed_paths(git, repo, base, theirs)?;
+    let renames = note_renames(git, repo, base, theirs)?;
     let pulled = |path: &String| -> Result<RemoteChange> {
         let old = blob_text(git, repo, base, path)?;
         let new = blob_text(git, repo, theirs, path)?;
-        Ok(RemoteChange { path: path.clone(), base: old.clone(), mine: old, theirs: new, conflict: false })
+        Ok(RemoteChange { path: path.clone(), from: None, base: old.clone(), mine: old, theirs: new, conflict: false })
+    };
+    let moved = |old: &String, new: &String| -> Result<RemoteChange> {
+        let text = blob_text(git, repo, base, old)?;
+        Ok(RemoteChange {
+            path: new.clone(),
+            from: Some(old.clone()),
+            base: text.clone(),
+            mine: text,
+            theirs: blob_text(git, repo, theirs, new)?,
+            conflict: false,
+        })
     };
     let mut changes = Vec::new();
     if base == ours {
         // Nothing new here: the server's state is taken as it is.
-        for path in remote.iter().filter(|p| is_note(p)) {
+        let mut handled = BTreeSet::new();
+        for (old, new) in &renames {
+            changes.push(moved(old, new)?);
+            handled.extend([old.clone(), new.clone()]);
+        }
+        for path in remote.iter().filter(|p| is_note(p) && !handled.contains(*p)) {
             changes.push(pulled(path)?);
         }
         git.check(Some(repo), &["reset", "-q", "--hard", theirs])?;
+        changes.sort_by(|a, b| a.path.cmp(&b.path));
         return Ok(changes);
     }
     let local = changed_paths(git, repo, base, ours)?;
+    let local_moves: std::collections::HashMap<String, String> =
+        note_renames(git, repo, base, ours)?.into_iter().collect();
     git.check(Some(repo), &with_identity(identity, &["merge", "-q", "--no-ff", "--no-commit", "-s", "ours", theirs]))?;
-    for path in &remote {
+    let mut handled = BTreeSet::new();
+    for (old, new) in &renames {
+        let here = local_moves.get(old);
+        // The new path changed here in another way (a note of its own there): path by path below.
+        if local.contains(new) && here != Some(new) {
+            continue;
+        }
+        handled.extend([old.clone(), new.clone()]);
+        let base_id = blob_id(git, repo, base, old)?;
+        let theirs_id = blob_id(git, repo, theirs, new)?;
+        let edited_there = base_id != theirs_id;
+        if !local.contains(old) {
+            // Moved only there: the page moves here too.
+            changes.push(moved(old, new)?);
+            drop_path(git, repo, old)?;
+            take_path(git, repo, theirs, new)?;
+            continue;
+        }
+        if let Some(here) = here {
+            // Moved on both sides: it stays where this computer put it, with the server's text
+            // when only the server changed that.
+            if here != new {
+                drop_path(git, repo, new)?;
+            }
+            let mine_id = blob_id(git, repo, ours, here)?;
+            if !edited_there || mine_id == theirs_id {
+                continue;
+            }
+            let theirs_text = blob_text(git, repo, theirs, new)?.unwrap_or_default();
+            let base_text = blob_text(git, repo, base, old)?;
+            let conflict = mine_id != base_id;
+            changes.push(RemoteChange {
+                path: here.clone(),
+                from: None,
+                mine: if conflict { blob_text(git, repo, ours, here)? } else { base_text.clone() },
+                base: base_text,
+                theirs: Some(theirs_text.clone()),
+                conflict,
+            });
+            // Taken over, or (a conflict) kept at the server's version until the user has merged it.
+            put_path(git, repo, here, &theirs_text)?;
+            continue;
+        }
+        let Some(mine_id) = blob_id(git, repo, ours, old)? else {
+            // Deleted here, moved there: an edit made there brings it back, a plain move does not.
+            if edited_there {
+                changes.push(RemoteChange { mine: None, from: None, ..moved(old, new)? });
+                take_path(git, repo, theirs, new)?;
+            }
+            continue;
+        };
+        // Edited here, moved there: the note moves with this computer's text; changed on both
+        // sides, the server's text waits at the new place for the user to merge.
+        let mine = blob_text(git, repo, ours, old)?;
+        drop_path(git, repo, old)?;
+        if !edited_there || mine_id.as_str() == theirs_id.as_deref().unwrap_or_default() {
+            let text = mine.clone().unwrap_or_default();
+            put_path(git, repo, new, &text)?;
+            changes.push(RemoteChange { mine: mine.clone(), theirs: mine, ..moved(old, new)? });
+        } else {
+            take_path(git, repo, theirs, new)?;
+            changes.push(RemoteChange { mine, conflict: true, ..moved(old, new)? });
+        }
+    }
+    for path in remote.iter().filter(|p| !handled.contains(*p)) {
         let note = is_note(path);
         if !local.contains(path) {
             if note {
@@ -1407,12 +1565,41 @@ fn merge_remote(
             }
             continue;
         }
-        // Same change on both sides, a deletion on one side, or not a note: this side's state stays.
+        let base_id = blob_id(git, repo, base, path)?;
+        let edited_there = theirs_id.is_some() && theirs_id != base_id;
+        if let Some(here) = local_moves.get(path).filter(|_| note && edited_there && base_id.is_some()) {
+            // Moved here, edited there: the server's text goes to the new place (a conflict when
+            // this computer changed the text as well).
+            let mine_here = blob_id(git, repo, ours, here)?;
+            if mine_here == theirs_id {
+                continue;
+            }
+            let theirs_text = blob_text(git, repo, theirs, path)?.unwrap_or_default();
+            let conflict = mine_here != base_id;
+            changes.push(RemoteChange {
+                path: here.clone(),
+                from: None,
+                base: blob_text(git, repo, base, path)?,
+                mine: if conflict { blob_text(git, repo, ours, here)? } else { blob_text(git, repo, base, path)? },
+                theirs: Some(theirs_text.clone()),
+                conflict,
+            });
+            put_path(git, repo, here, &theirs_text)?;
+            continue;
+        }
+        if note && mine_id.is_none() && base_id.is_some() && edited_there {
+            // Deleted here, edited there: the edit wins, the note comes back (`mine: None`).
+            changes.push(RemoteChange { mine: None, ..pulled(path)? });
+            take_path(git, repo, theirs, path)?;
+            continue;
+        }
+        // Same change on both sides, a deletion there, edited here, or not a note: this side's state stays.
         if mine_id == theirs_id || mine_id.is_none() || theirs_id.is_none() || !note {
             continue;
         }
         changes.push(RemoteChange {
             path: path.clone(),
+            from: None,
             base: blob_text(git, repo, base, path)?,
             mine: blob_text(git, repo, ours, path)?,
             theirs: blob_text(git, repo, theirs, path)?,
@@ -1427,6 +1614,7 @@ fn merge_remote(
         now.format(tr!("%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M"))
     );
     git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
+    changes.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(changes)
 }
 
@@ -1463,8 +1651,8 @@ pub fn mark_restored(data_dir: &Path, from: &str, now: DateTime<chrono::Utc>) ->
 }
 
 pub fn write_restored(data_dir: &Path, r: &Restored) -> Result<()> {
-    let path = data_dir.join(RESTORED_FILE);
-    fs::write(&path, serde_json::to_vec_pretty(r)?).map_err(|e| Error::file(&path, e))
+    // Atomic: a torn file would read as „no restore“, and the next sync would push the older state.
+    crate::drawings::write_atomic(&data_dir.join(RESTORED_FILE), &serde_json::to_vec_pretty(r)?)
 }
 
 pub fn read_restored(data_dir: &Path) -> Option<Restored> {
@@ -1599,6 +1787,7 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
                 "A" => out.only_here += 1,
                 "D" => out.changes.push(RemoteChange {
                     path: path.to_owned(),
+                    from: None,
                     base: None,
                     mine: None,
                     theirs: blob_text(git, repo, "HEAD", path)?,
@@ -1614,6 +1803,7 @@ pub fn check_restore(git: &Git, req: &SyncRequest) -> Result<Option<RestoreCompa
                     let mine = blob_text(git, repo, "", path)?;
                     out.changes.push(RemoteChange {
                         path: path.to_owned(),
+                        from: None,
                         base: if older { mine.clone() } else { None },
                         mine,
                         theirs: blob_text(git, repo, "HEAD", path)?,
@@ -2067,6 +2257,7 @@ mod tests {
             mine: m.map(Into::into),
             theirs: t.map(Into::into),
             conflict: path == "Notiz.md",
+            from: None,
         };
         assert_eq!(
             ch,
@@ -2484,6 +2675,172 @@ mod safety_tests {
         assert!(out.committed);
         let notes: Vec<_> = r.tree().into_iter().filter(|p| p.starts_with("Besprechungen/2026/")).collect();
         assert_eq!(notes.len(), 14, "{notes:?}");
+    }
+
+    /// What a sync pulled, as `(path, from, theirs)`.
+    fn pulled(out: &SyncOutcome) -> Vec<(String, Option<String>, Option<String>)> {
+        out.remote_changes.iter().map(|c| (c.path.clone(), c.from.clone(), c.theirs.clone())).collect()
+    }
+
+    /// Moves on one computer (a new parent, „Aufräumen“ into folders, a new title) reach the other
+    /// one as moves, not as a deletion and a new note: with nothing new there (fast-forward) and
+    /// with changes of its own (merge).
+    #[test]
+    fn moved_notes_are_pulled_as_moves() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("pulled-moves");
+        for pc in ["a", "b"] {
+            mark(&r.mirror(pc));
+            for i in 0..12 {
+                put(&r.mirror(pc).join(format!("Notiz {i:02}.md")), &format!("Text {i}\n"));
+            }
+            // Pages without text are written as empty files: the same text many times.
+            for i in 0..3 {
+                put(&r.mirror(pc).join(format!("Leer {i}.md")), "");
+            }
+            put(&r.mirror(pc).join("Bleibt.md"), "x\n");
+        }
+        r.sync("a").unwrap();
+        r.sync("b").unwrap();
+
+        // One note moved below a new page, one renamed.
+        let a = r.mirror("a");
+        put(&a.join("Archiv.md"), "Ordner\n");
+        fs::create_dir_all(a.join("Archiv")).unwrap();
+        fs::rename(a.join("Notiz 00.md"), a.join("Archiv/Notiz 00.md")).unwrap();
+        fs::rename(a.join("Notiz 01.md"), a.join("Notiz eins.md")).unwrap();
+        r.sync("a").unwrap();
+        let out = r.sync("b").unwrap();
+        assert_eq!(
+            pulled(&out),
+            [
+                ("Archiv.md".into(), None, Some("Ordner\n".into())),
+                ("Archiv/Notiz 00.md".into(), Some("Notiz 00.md".into()), Some("Text 0\n".into())),
+                ("Notiz eins.md".into(), Some("Notiz 01.md".into()), Some("Text 1\n".into())),
+            ]
+        );
+        assert!(out.remote_changes.iter().all(|c| !c.conflict && c.mine == c.base));
+
+        // „Aufräumen“: the rest into year/month folders at once; b has a change of its own (merge).
+        let folder = "Tagesnotizen/2026/10 – Oktober";
+        fs::create_dir_all(a.join(folder)).unwrap();
+        for i in 2..12 {
+            fs::rename(a.join(format!("Notiz {i:02}.md")), a.join(format!("{folder}/Notiz {i:02}.md"))).unwrap();
+        }
+        for i in 0..3 {
+            fs::rename(a.join(format!("Leer {i}.md")), a.join(format!("{folder}/Leer {i}.md"))).unwrap();
+        }
+        r.sync("a").unwrap();
+        let b = r.mirror("b");
+        put(&b.join("Bleibt.md"), "von B\n");
+        let out = r.sync("b").unwrap();
+        assert!(!out.fallback, "{out:?}");
+        let moves: Vec<(String, String)> = out
+            .remote_changes
+            .iter()
+            .filter_map(|c| Some((c.from.clone()?, c.path.rsplit('/').next()?.to_owned())))
+            .collect();
+        assert_eq!(moves.len(), 13, "{:?}", pulled(&out));
+        // Every note keeps its own identity, the empty ones too.
+        assert!(moves.iter().all(|(from, name)| from == name), "{moves:?}");
+        assert!(out.remote_changes.iter().all(|c| c.theirs.is_some() && !c.conflict));
+        assert_eq!(sh(&r.base.join("remote.git"), &["show", &format!("main:{folder}/Notiz 05.md")]), "Text 5\n");
+        let tree = r.tree();
+        assert!(!tree.contains(&"Notiz 05.md".to_owned()) && tree.contains(&"Bleibt.md".to_owned()), "{tree:?}");
+    }
+
+    /// Edited here while the other computer moved the note: it moves with this computer's text; changed
+    /// on both sides it is a conflict at the new place. Moved here while edited there: the edit
+    /// lands at the new place.
+    #[test]
+    fn moves_meet_edits_without_losing_either() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("move-edit");
+        let zwei = |first: &str, last: &str| {
+            format!(
+                "# Zwei {first}\n\n{}\n{last}\n",
+                (1..12).map(|i| format!("- Punkt {i}")).collect::<Vec<_>>().join("\n")
+            )
+        };
+        for pc in ["a", "b"] {
+            mark(&r.mirror(pc));
+            for n in ["Eins", "Drei", "Vier"] {
+                put(&r.mirror(pc).join(format!("{n}.md")), &format!("{n} alt\n"));
+            }
+            put(&r.mirror(pc).join("Zwei.md"), &zwei("alt", "alt"));
+        }
+        r.sync("a").unwrap();
+        r.sync("b").unwrap();
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        fs::create_dir_all(a.join("Ordner")).unwrap();
+        fs::rename(a.join("Eins.md"), a.join("Ordner/Eins.md")).unwrap();
+        fs::remove_file(a.join("Zwei.md")).unwrap();
+        put(&a.join("Ordner/Zwei.md"), &zwei("alt", "von A"));
+        put(&a.join("Drei.md"), "Drei neu von A\n");
+        r.sync("a").unwrap();
+        put(&b.join("Eins.md"), "Eins neu von B\n");
+        put(&b.join("Zwei.md"), &zwei("von B", "alt"));
+        fs::create_dir_all(b.join("Ablage")).unwrap();
+        fs::rename(b.join("Drei.md"), b.join("Ablage/Drei.md")).unwrap();
+        let out = r.sync("b").unwrap();
+        let by_path = |p: &str| out.remote_changes.iter().find(|c| c.path == p).cloned();
+        let eins = by_path("Ordner/Eins.md").expect("Eins moved");
+        assert_eq!((eins.from.as_deref(), eins.conflict), (Some("Eins.md"), false));
+        assert_eq!(
+            (eins.mine.as_deref(), eins.theirs.as_deref()),
+            (Some("Eins neu von B\n"), Some("Eins neu von B\n"))
+        );
+        let server = |p: &str| sh(&r.base.join("remote.git"), &["show", &format!("main:{p}")]);
+        assert_eq!(server("Ordner/Eins.md"), "Eins neu von B\n", "B's edit at the new place");
+        // Moved and edited there, edited here: a conflict at the new place (the server's text kept).
+        let moved = by_path("Ordner/Zwei.md").expect("Zwei moved");
+        assert!(moved.conflict && moved.from.as_deref() == Some("Zwei.md"), "{moved:?}");
+        assert_eq!(moved.mine, Some(zwei("von B", "alt")));
+        assert_eq!(server("Ordner/Zwei.md"), zwei("alt", "von A"));
+        // Moved here, edited there: the server's text at this computer's place.
+        let drei = by_path("Ablage/Drei.md").expect("Drei taken over");
+        assert_eq!((drei.from, drei.conflict, drei.theirs.as_deref()), (None, false, Some("Drei neu von A\n")));
+        assert_eq!(server("Ablage/Drei.md"), "Drei neu von A\n");
+        let tree = r.tree();
+        for gone in ["Eins.md", "Zwei.md", "Drei.md"] {
+            assert!(!tree.contains(&gone.to_owned()), "{gone} left behind: {tree:?}");
+        }
+    }
+
+    /// A note deleted here while the other computer edited it: the edit wins and comes back.
+    #[test]
+    fn a_note_deleted_here_and_edited_there_comes_back() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("delete-edit");
+        for pc in ["a", "b"] {
+            mark(&r.mirror(pc));
+            for n in 0..6 {
+                put(&r.mirror(pc).join(format!("N{n}.md")), "x\n");
+            }
+            put(&r.mirror(pc).join("Notiz.md"), "v1\n");
+        }
+        r.sync("a").unwrap();
+        r.sync("b").unwrap();
+        put(&r.mirror("b").join("Notiz.md"), "wichtige Ergänzung von B\n");
+        r.sync("b").unwrap();
+        fs::remove_file(r.mirror("a").join("Notiz.md")).unwrap();
+        // A plain deletion of another note there stays a deletion.
+        fs::remove_file(r.mirror("a").join("N0.md")).unwrap();
+        let out = r.sync("a").unwrap();
+        assert_eq!(
+            out.remote_changes.iter().map(|c| (c.path.as_str(), c.mine.as_deref(), c.conflict)).collect::<Vec<_>>(),
+            [("Notiz.md", None, false)]
+        );
+        assert_eq!(out.remote_changes[0].theirs.as_deref(), Some("wichtige Ergänzung von B\n"));
+        let server = sh(&r.base.join("remote.git"), &["show", "main:Notiz.md"]);
+        assert_eq!(server, "wichtige Ergänzung von B\n");
+        assert!(!r.tree().contains(&"N0.md".to_owned()));
     }
 
     #[test]
