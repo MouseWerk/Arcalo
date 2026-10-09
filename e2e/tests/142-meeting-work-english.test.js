@@ -8,22 +8,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { guarded } from "../lib/harness.js";
+import { guarded, daytimeZone } from "../lib/harness.js";
 import { germanLeftovers, launchEnglish } from "../lib/english.js";
 import { iso } from "../lib/calendar-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app, dataDir, dir, noteId;
+daytimeZone();
 const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86_400_000));
 const tomorrow = iso(new Date(Date.now() + 86_400_000));
 const pad = (n) => String(n).padStart(2, "0");
 const icsTime = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
-const slot = (min) => {
-  const late = new Date();
-  late.setHours(20, 0, 0, 0);
-  return Date.now() < late.getTime() ? new Date(Date.now() + min * 60_000) : new Date(late.getTime() + min * 60_000);
-};
+/** A time `min` minutes from now (still today: see `daytimeZone`). */
+const slot = (min) => new Date(Date.now() + min * 60_000);
 const ALLOW = [/Müller|Weiß|Zürich|Kundentermin|Abstimmung|Vertriebsrunde/];
 const paneText = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror")?.innerText ?? "");
 

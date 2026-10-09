@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { launch, guarded } from "../lib/harness.js";
+import { launch, guarded, daytimeZone } from "../lib/harness.js";
 import { startFakeJira, defaultIssues } from "../lib/fake-jira.js";
 import { startFakeOpenAI } from "../lib/fake-openai.js";
 import { iso } from "../lib/calendar-fixtures.js";
@@ -18,17 +18,14 @@ import { OUTLOOK_MAILS, mailEnv } from "../lib/mail-fixtures.js";
 
 const test = guarded(nodeTest, () => app);
 let app, jira, cloud, local, dir, fixture, noteId, eventKey;
+daytimeZone();
 const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86_400_000));
 const tomorrow = iso(new Date(Date.now() + 86_400_000));
 const pad = (n) => String(n).padStart(2, "0");
 const icsTime = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
-/** A time `min` minutes from now; late in the evening fixed times today instead (never tomorrow). */
-const slot = (min) => {
-  const late = new Date();
-  late.setHours(20, 0, 0, 0);
-  return Date.now() < late.getTime() ? new Date(Date.now() + min * 60_000) : new Date(late.getTime() + min * 60_000);
-};
+/** A time `min` minutes from now (still today: see `daytimeZone`). */
+const slot = (min) => new Date(Date.now() + min * 60_000);
 const provider = (id, name, kind, base_url, isLocal) => ({ id, name, kind, base_url, local: isLocal, enabled: true, bypass_proxy: isLocal, api_version: "", models: [] });
 
 /** „Jour fixe Portal“ every day since yesterday with three attendees (one is the user). */
@@ -255,7 +252,7 @@ test("Nachfass-Mail as an Outlook draft with attendees, subject and escaped body
   await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)')), { timeout: 10000, timeoutMsg: "last time link" });
   await app.browser.execute(() => document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)').click());
   await app.browser.waitUntil(async () => /Go-Live im November/.test(await paneText()), { timeout: 10000, timeoutMsg: "note opened" });
-  await app.click('.pane.active button[aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await clickMenuItem("^Nachfass-Mail$");
   await app.waitFor(".dialog .mw-fu-preview", 10000);
   assert.match(await app.text(".dialog .mw-fu-subject"), /^Zusammenfassung: Jour fixe Portal \(\d{2}\.\d{2}\.\d{4}\)$/);

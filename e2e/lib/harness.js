@@ -127,6 +127,19 @@ export function guarded(test, getApp) {
     });
 }
 
+/**
+ * Runs this test file (and the apps it starts) in a time zone where it is now about `hour` in the
+ * morning, so meetings placed "later today" are in the future and on today's date at any hour the
+ * run happens. Call before computing any local date or time.
+ */
+export function daytimeZone(hour = 9) {
+  let offset = (((hour - new Date().getUTCHours()) % 24) + 24) % 24;
+  if (offset > 14) offset -= 24;
+  // Etc/GMT zones count the other way round: Etc/GMT-3 is three hours ahead of UTC.
+  process.env.TZ = offset === 0 ? "Etc/UTC" : `Etc/GMT${offset > 0 ? "-" : "+"}${Math.abs(offset)}`;
+  return process.env.TZ;
+}
+
 /** The folder the app uses as its data folder under `home` (Linux: `$XDG_DATA_HOME/<identifier>`). */
 export const homeDataDir = (home) => path.join(home, ".local", "share", "de.mousewerk.arcalo");
 
