@@ -125,6 +125,9 @@ test("a chip cut in the source view and pasted into another note keeps its booki
   const from = await pageOf("Quellnotiz");
   await app.dismissToasts();
   await setSource((v) => v.replace(chipText, ""));
+  // Bookings changed right after the cut, before it is saved (on a slow machine the booking
+  // restored above lands about then): the link check that follows still knows the cut chip.
+  await emit("data://entries");
   await until(async () => !chipRe.test(await content("Quellnotiz")), "cut saved");
   await app.waitText(".toast-title", /Buchung mit dem Chip gelöscht/);
   // Another note, also in the source view: the chip pasted there.

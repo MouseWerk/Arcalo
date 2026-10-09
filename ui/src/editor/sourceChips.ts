@@ -91,10 +91,11 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
   const stale = useRef(false);
   const generation = useRef(0);
 
-  /** The chips' links and booking rows in `md`. */
-  const statesOf = async (md: string, flush: boolean) => {
+  /** The links and booking rows of the chips in `texts` (an id's first chip is asked for). */
+  const statesOf = async (texts: string[], flush: boolean) => {
     const seen = new Set<number>();
-    const chips = sourceChips(md)
+    const chips = texts
+      .flatMap((md) => sourceChips(md))
       .filter((c) => c.id != null && c.attrs.state !== "deleted" && !seen.has(c.id) && (seen.add(c.id), true))
       .map((c) => ({ id: c.id!, target: String(c.attrs.target ?? "") }));
     if (!chips.length) return { links: new Map<number, ChipLink>(), rows: new Map<number, TimeEntryRow>() };
@@ -114,7 +115,9 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
     stale.current = true;
     timer.current = window.setTimeout(async () => {
       try {
-        const next = await statesOf(io.current.text(), flush);
+        // The text compared last too: a chip removed in the text box but not saved yet stays
+        // known, else the save after this refresh would not see its removal.
+        const next = await statesOf([io.current.text(), last.current], flush);
         if (!alive.current || gen !== generation.current) return;
         links.current = next.links;
         rows.current = next.rows;
@@ -180,7 +183,7 @@ export function useSourceChips(pageId: number, text: () => string, edit: (next: 
       // else a chip cut right after its booking came back would keep a deleted-looking link.
       const gone = sourceChips(before).some((c) => c.id != null && !sourceChipIds(md).has(c.id));
       if (stale.current && gone)
-        void statesOf(before, false).then(
+        void statesOf([before], false).then(
           (s) => alive.current && remove(s.links, s.rows),
           () => alive.current && remove(links.current, rows.current),
         );

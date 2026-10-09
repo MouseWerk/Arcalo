@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chipDiff, retargetChip, sourceChipIds, sourceChips } from "./sourceChips";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { chipDiff, retargetChip, sourceChipIds, sourceChips, useSourceChips } from "./sourceChips";
 import { chipAwaited, chipRemoved, chipReturned, chipsPresent } from "./timeChip";
 import { api } from "../lib/api";
 import { useApp } from "../store/app";
@@ -113,5 +115,43 @@ describe("removing a booked chip", () => {
     expect(putBack).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(8000);
     expect(api.chipDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe("the source view's link check", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useApp.setState({ toasts: [] } as never);
+    vi.mocked(api.chipStates).mockImplementation(async (_page, chips) => chips.map((c) => ({ id: c.id, link: "linked" as const, row: null })));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("keeps a chip removed but not saved yet known when the bookings change before the save", async () => {
+    let text = `Notiz ${chip(12)}`;
+    let chips: ReturnType<typeof useSourceChips> | null = null;
+    const Probe = () => {
+      chips = useSourceChips(7, () => text, () => {}, (_a, _b, at) => at);
+      return null;
+    };
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(api.chipStates).toHaveBeenLastCalledWith(7, [{ id: 12, target: "NP-8801/1020" }]);
+    // The chip cut in the text box; before the save, the bookings change (a booking restored,
+    // another note) and the links are checked again: the chip of the saved text is asked too.
+    text = "Notiz ";
+    await act(async () => useApp.setState({ entriesVersion: useApp.getState().entriesVersion + 1 }));
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(api.chipStates).toHaveBeenCalledTimes(2);
+    expect(api.chipStates).toHaveBeenLastCalledWith(7, [{ id: 12, target: "NP-8801/1020" }]);
+    // The save sees the removal: the undo toast, then the booking goes.
+    chips!.checked(text);
+    expect(useApp.getState().toasts.some((x) => x.key === "chip-12" && x.action)).toBe(true);
+    await act(() => vi.advanceTimersByTimeAsync(7100));
+    expect(api.chipDelete).toHaveBeenCalledWith(12);
+    await act(async () => root.unmount());
   });
 });
