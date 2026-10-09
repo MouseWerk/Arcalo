@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REVIEW_CLOSE, REVIEW_OPEN, cleanSummary, findReviewBlock, hm, hours, localProviders, meetingsSub, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "./dayreview";
+import { REVIEW_CLOSE, REVIEW_OPEN, cleanSummary, findReviewBlock, localProviders, meetingsSub, progress, reviewMarkdown, shiftDay, upsertReviewBlock } from "./dayreview";
 import type { AiProvider, DayReview } from "./types";
 
 /** A local time on the review day as ISO (the block shows local times). */
@@ -57,14 +57,14 @@ describe("review block", () => {
     const md = reviewMarkdown(review());
     expect(md.startsWith(`${REVIEW_OPEN}\n\n## Rückblick\n\n`)).toBe(true);
     expect(md.endsWith(REVIEW_CLOSE)).toBe(true);
-    expect(md).toContain("**Zeit:** 6,5 h von 8 h gebucht, 1,5 h fehlen");
-    expect(md).toContain("- NP-8801/1020 Schnittstellen: 5 h\n- NP-8801 Integration: 1,5 h");
+    expect(md).toContain("**Zeit:** 6,50 h von 8,00 h gebucht, 1,50 h fehlen");
+    expect(md).toContain("- NP-8801/1020 Schnittstellen: 5,00 h\n- NP-8801 Integration: 1,50 h");
     expect(md).toContain("**Ohne Buchung:** 10:30–13:00");
     expect(md).toContain("**Termine:** Jour fixe 09:00 (gebucht) · Kundentermin 11:00 (nicht gebucht)");
     expect(md).toContain("**Seiten:** [[Konzept Portal]] (neu) · Alt x");
     expect(md).not.toContain("[[24.09.2026]]");
     expect(md).toContain("**Aufgaben:** 1 erledigt (Angebot schreiben) · 1 neu · 1 überfällig");
-    expect(md).toContain("**Fokus:** 2 Sitzungen, 0:35 h");
+    expect(md).toContain("**Fokus:** 2 Sitzungen, 0,58 h");
     expect(md).toContain("**Dateien:** skizze.png");
     // No checkbox: the review must not add tasks to the daily note.
     expect(md).not.toMatch(/\[[ x]\]/);
@@ -88,7 +88,7 @@ describe("review block", () => {
       tasks: { done: [], added: [], due: [], overdue: [], done_total: 0, added_total: 0, due_total: 0, overdue_total: 0 },
       time: { target_minutes: 0, workday: false, booked_minutes: 0, running_minutes: 0, missing_minutes: 0, items: [], entries: [], gaps: [] },
     });
-    expect(reviewMarkdown(empty)).toBe(`${REVIEW_OPEN}\n\n## Rückblick\n\n**Zeit:** 0 h gebucht\n\n${REVIEW_CLOSE}`);
+    expect(reviewMarkdown(empty)).toBe(`${REVIEW_OPEN}\n\n## Rückblick\n\n**Zeit:** 0,00 h gebucht\n\n${REVIEW_CLOSE}`);
     expect(progress(empty)).toBe(0);
     expect(progress(review())).toBeCloseTo(390 / 480);
   });
@@ -132,10 +132,7 @@ describe("review block", () => {
 });
 
 describe("helpers", () => {
-  it("formats hours and moves days", () => {
-    expect(hours(390)).toBe("6,5 h");
-    expect(hours(20)).toBe("0,33 h");
-    expect(hm(65)).toBe("1:05 h");
+  it("moves days", () => {
     expect(shiftDay("2026-03-29", 1)).toBe("2026-03-30");
     expect(shiftDay("2026-03-01", -1)).toBe("2026-02-28");
   });

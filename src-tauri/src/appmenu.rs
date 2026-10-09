@@ -35,7 +35,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             &PredefinedMenuItem::about(app, Some(tr!("Über Arcalo", "About Arcalo")), Some(about))?,
             &sep()?,
-            &item("menu:settings", tr!("Einstellungen …", "Settings …"), Some("Cmd+,"))?,
+            &item("menu:settings", tr!("Einstellungen…", "Settings…"), Some("Cmd+,"))?,
             &sep()?,
             &PredefinedMenuItem::services(app, Some(tr!("Dienste", "Services")))?,
             &sep()?,

@@ -13,8 +13,7 @@ import { DateInput, dayLabel } from "../components/DateInput";
 import { pickDate } from "../components/CalendarPopover";
 import { PageIcon } from "../components/icons";
 import { useWbs } from "./wbs";
-import { hm } from "../lib/focus";
-import { decimal, isoDay, time } from "../lib/format";
+import { decimal, fmtDuration, isoDay, time } from "../lib/format";
 import {
   KIND_GROUPS, RANGE_LABELS, dayBounds, dayTitle, describe, feedRows, groupOf, presetDays, rowOffsets, visibleRange, type FeedRow, type KindGroup, type RangePreset,
 } from "../lib/activity";
@@ -278,7 +277,7 @@ export function ActivityView() {
             <Stat value={summary?.pages_edited ?? 0} label={t("feed.stat.pages", { n: summary?.pages_edited ?? 0 })} icon={FileText} tone="pages" />
             <Stat value={summary?.tasks_done ?? 0} label={t("feed.stat.tasks", { n: summary?.tasks_done ?? 0 })} icon={CheckSquare} tone="tasks" />
             {timeOn && <Stat value={`${decimal((summary?.booked_minutes ?? 0) / 60)} h`} label={t("feed.stat.booked")} icon={Clock} tone="time" />}
-            <Stat value={summary?.focus_sessions ?? 0} label={summary?.focus_minutes ? t("feed.stat.focusTime", { time: hm(summary.focus_minutes) }) : t("feed.stat.focus")} icon={Target} tone="focus" />
+            <Stat value={summary?.focus_sessions ?? 0} label={summary?.focus_minutes ? t("feed.stat.focusTime", { time: fmtDuration(summary.focus_minutes) }) : t("feed.stat.focus")} icon={Target} tone="focus" />
           </div>
         </section>
 

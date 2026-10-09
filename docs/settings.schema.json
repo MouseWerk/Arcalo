@@ -1340,8 +1340,8 @@
     "NotesPrefs": {
       "properties": {
         "daily_folder": {
-          "default": "Journal",
-          "description": "Top-level page that holds the daily notes.",
+          "default": "Tagesnotizen",
+          "description": "Top-level page that holds the daily notes („Tagesnotizen“ / „Journal“ in a new workspace; settings of 1.15 and earlier keep „Journal“).",
           "type": "string"
         },
         "daily_title": {
@@ -2917,7 +2917,7 @@
         }
       ],
       "default": {
-        "daily_folder": "Journal",
+        "daily_folder": "Tagesnotizen",
         "daily_title": "iso",
         "max_versions": 50,
         "trash_retention_days": 30,
@@ -3247,7 +3247,7 @@
       "description": "Update mode, own source, interval and session restore (Settings → Über; an organization's policy can override them, see `update_policy`)."
     },
     "version": {
-      "default": 16,
+      "default": 17,
       "description": "Version of the stored shape (see [`crate::settings_migrate`]); settings without one are from 1.9 or older. A newer version's number is kept.",
       "format": "uint32",
       "minimum": 0.0,

@@ -167,7 +167,7 @@ test("tabs: „In neuem Tab öffnen“ opens a new tab, Ctrl+W closes it; Ctrl+c
   await app.browser.waitUntil(async () => (await app.$$(".sidebar .tree-row.selected")).length === 0, { timeoutMsg: "selection kept" });
   // A page that is not open yet (an open page is focused, not opened twice).
   const open = await app.browser.execute(() => [...document.querySelectorAll(".tab")].map((t) => t.textContent.trim()));
-  const target = (await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row .tree-label")].map((e) => e.textContent))).find((t) => t && !open.includes(t) && t !== "Journal");
+  const target = (await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row .tree-label")].map((e) => e.textContent))).find((t) => t && !open.includes(t) && t !== "Journal" && t !== "Tagesnotizen");
   await (await row(target)).click({ button: "right" });
   await app.waitFor(".menu");
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.textContent.includes("In neuem Tab öffnen"))?.click());

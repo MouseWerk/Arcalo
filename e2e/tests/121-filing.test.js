@@ -129,7 +129,7 @@ test("new meeting, voice and Jira notes land in year/month and project folders",
 
   // The daily note of today too.
   const daily = flat(await app.invoke("workspace_tree")).find((p) => p.daily_date === `${year}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
-  if (daily) assert.equal(await pathOf(daily.id), `Journal / ${year} / ${month}`);
+  if (daily) assert.equal(await pathOf(daily.id), `Tagesnotizen / ${year} / ${month}`);
 
   await reload();
   await expand("Besprechungen");

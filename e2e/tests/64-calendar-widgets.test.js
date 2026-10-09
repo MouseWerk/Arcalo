@@ -34,8 +34,8 @@ test("Ctrl+Shift+E and the palette open the Kalender", async () => {
   await app.click(".pane.active .tab.active .tab-close");
   await app.keys(["Control", "k"]);
   await app.waitFor(".palette");
-  await app.type("Kalender öffnen");
-  await app.waitText(".pal-item.sel", /Kalender öffnen/);
+  await app.type("Kalender");
+  await app.waitText(".pal-item.sel", /Termine aus Outlook und ICS/);
   await app.keys(["Enter"]);
   await app.waitFor(".pane.active .calv");
 });

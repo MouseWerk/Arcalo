@@ -176,7 +176,7 @@ test("a changed WBS is taken over with the rest by Enter; drafts appear in the g
   assert.equal(events.find((e) => e.title === "Jour fixe Änderungen").entry_id, got["Jour fixe Änderungen"].id);
   assert.ok((await app.invoke("focus_entry_ids")).includes(got["Mapping Materialstamm"].id));
   // The week grid shows the drafts.
-  await app.waitText(".pane.active .week-grid tbody td.mono", /NP-8802\/2010/);
+  await app.waitText(".pane.active .week-grid tbody th.mono", /NP-8802\/2010/);
   await app.waitText(".pane.active .entry-desc", /Konzept Portal/);
   await app.browser.execute(() => document.querySelector(".pane.active .week-grid").scrollIntoView({ block: "center" }));
   await app.shot("65-week-proposal-applied");

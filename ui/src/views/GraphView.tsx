@@ -141,7 +141,7 @@ export function GraphView() {
         <div className="graph-title">
           <Waypoints size={16} strokeWidth={1.75} aria-hidden />
           <h1>{t("graph.title")}</h1>
-          {model && <span className="graph-stats">{t("graph.stats", { pages: int(pages), links: int(links) })}</span>}
+          {model && <span className="graph-stats">{t("graph.stats", { pages: t("graph.pages", { n: int(pages) }), links: t("graph.links", { n: int(links) }) })}</span>}
         </div>
         <div className="graph-search">
           <Search size={14} aria-hidden />
@@ -208,7 +208,7 @@ export function GraphView() {
                 seed={seed}
                 onSettled={saveLayout}
                 onOpen={(n, newTab) => void openGraphNode(n, newTab)}
-                label={t("graph.canvasLabel", { pages: int(pages), links: int(links) })}
+                label={t("graph.canvasLabel", { pages: t("graph.pages", { n: int(pages) }), links: t("graph.links", { n: int(links) }) })}
               />
               <Legend groups={settings.groups} palette={palette} />
               <p id="graph-keys-help" className="sr-only">

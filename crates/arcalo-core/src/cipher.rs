@@ -217,7 +217,7 @@ pub fn file_state(path: &Path) -> FileState {
 /// The message when an encrypted database cannot be opened for lack of the key.
 pub fn missing_key_text() -> String {
     tr!(
-        "Die Datenbank ist verschlüsselt, der Schlüssel fehlt auf diesem Rechner",
+        "Die Datenbank ist verschlüsselt, der Schlüssel fehlt auf diesem Computer",
         "The database is encrypted and its key is missing on this computer"
     )
     .into()

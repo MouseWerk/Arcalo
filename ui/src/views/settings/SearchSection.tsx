@@ -112,10 +112,10 @@ export function SearchPrefsSection({ draft, update }: SectionProps) {
                     : p.total === 0
                       ? t("set.search.empty")
                       : status?.running
-                        ? t("set.search.running", { done: p.done, total: p.total })
+                        ? t("set.search.running", { done: p.done, total: p.total, count: p.total })
                         : p.done >= p.total
                           ? t("set.search.ready", { n: p.total })
-                          : t("set.search.partial", { done: p.done, total: p.total })}
+                          : t("set.search.partial", { done: p.done, total: p.total, count: p.total })}
                   {status && status.memory > 0 && <span className="faint"> · {t("set.search.memory", { size: fileSize(status.memory) })}</span>}
                 </span>
                 <Button size="sm" variant="ghost" icon={RefreshCw} className="search-rebuild" onClick={() => void rebuild()} disabled={status?.running}>

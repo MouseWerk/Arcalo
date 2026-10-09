@@ -14,7 +14,7 @@ import { TRANSCRIBE_AGAIN_EVENT, fileEmbedAt } from "./fileEmbed";
 import { insertTemplate } from "../components/Templates";
 import { insertDrawing, openDrawing } from "./drawings";
 import { useApp } from "../store/app";
-import { h1, hoursFromMinutes, isoDay, time } from "../lib/format";
+import { fmtMinutes, h1, hoursFromMinutes, isoDay, time } from "../lib/format";
 import { joinFrontmatter, linkAtCaret, pageSuggestItem, splitFrontmatter, type LinkSuggestItem } from "./extensions";
 import { buildExtensions, textShape, toMarkdown, withShape } from "./schema";
 import { anchorItems, embedMount, richMount } from "./liveMounts";
@@ -382,7 +382,7 @@ export function NoteEditor({
             s.bumpEntries();
             s.alerts(out.alerts);
             const target = out.reference || (line.trim().split(/\s+/)[1] ?? "");
-            s.toast({ tone: "success", title: tr("ne.booked", { h: hoursFromMinutes(out.entry.duration_minutes) }), detail: `${target}${out.entry.description ? " · " + out.entry.description : ""}` });
+            s.toast({ tone: "success", title: tr("ne.booked", { h: fmtMinutes(out.entry.duration_minutes) }), detail: `${target}${out.entry.description ? " · " + out.entry.description : ""}` });
             return { entryId: out.entry.id, hours: hoursFromMinutes(out.entry.duration_minutes), target, text: out.entry.description, la: out.entry.leistungsart ?? "", date: isoDay(new Date(out.entry.start_time)) };
           } catch (e) {
             useApp.getState().error(tr("ne.bookFailed"), e);

@@ -397,7 +397,8 @@ choice!(DailyTitle {
 #[serde(default)]
 pub struct NotesPrefs {
     pub daily_title: DailyTitle,
-    /// Top-level page that holds the daily notes.
+    /// Top-level page that holds the daily notes („Tagesnotizen“ / „Journal“ in a new
+    /// workspace; settings of 1.15 and earlier keep „Journal“).
     pub daily_folder: String,
     /// Days pages stay in the trash (7–365).
     pub trash_retention_days: u32,
@@ -411,7 +412,7 @@ impl Default for NotesPrefs {
     fn default() -> Self {
         NotesPrefs {
             daily_title: DailyTitle::Iso,
-            daily_folder: crate::notes::JOURNAL_TITLE.into(),
+            daily_folder: crate::notes::default_daily_folder().into(),
             trash_retention_days: 30,
             version_interval_minutes: 10,
             max_versions: 50,

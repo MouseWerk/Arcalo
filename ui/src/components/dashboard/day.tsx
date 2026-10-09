@@ -121,7 +121,7 @@ function Timeline({ events, now }: { events: CalendarEvent[]; now: number }) {
               type="button"
               className={`dw-tl-ev ${past ? "past" : ""} ${live ? "live" : ""}`}
               style={{ left: `${a}%`, width: `max(4px, ${b - a}%)`, top: `calc(${lane.get(e.key) ?? 0} * var(--lane-h))`, "--ev": sourceColor(e.source, cal) } as CSSProperties}
-              title={`${timeRange(e)} ${e.title}`}
+              data-tooltip-full={`${timeRange(e)} ${e.title}`}
               aria-label={`${timeRange(e)} ${e.title}`}
               onClick={() => openCalendarView({ date: isoDay(date), key: e.key })}
             >
@@ -430,7 +430,7 @@ export function AgendaWidget({ widget }: WidgetProps) {
                       <li key={e.key} className={`dw-agenda-item ${past ? "past" : ""} ${live ? "live" : ""}`} style={{ "--ev": sourceColor(e.source, cal) } as CSSProperties}>
                         <button type="button" className="dw-agenda-row" onClick={() => openCalendarView({ date: day, key: e.key })} title={`${timeRange(e)} · ${sourceName(e.source, cal)}`}>
                           <span className="dw-agenda-time num">{isAllDayLike(e) ? t("dash.allDay") : hhmm(e.start)}</span>
-                          <span className="dw-agenda-bar" aria-hidden />
+                          <span className="dw-agenda-dot" aria-hidden />
                           <span className="dw-agenda-main">
                             <span className="ellipsis dw-agenda-title">{e.title}</span>
                             {e.location && <span className="ellipsis faint small">{e.location}</span>}

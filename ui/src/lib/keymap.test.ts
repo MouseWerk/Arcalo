@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COMMANDS, DEFAULT_KEYMAP, MAC_RESERVED, commandAllowed, comboFromEvent, comboLabel, comboProblem, commandFor, defaultKeymap, effectiveKeymap, findConflicts, imeNote, isTextTarget, keymapOverrides, modalLayer, normalizeCombo, positionLabel } from "./keymap";
-import { setLang } from "./i18n";
+import { setLang, t } from "./i18n";
 
 const ev = (key: string, code: string, mods: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean; altGr?: boolean } = {}) => ({
   key,
@@ -105,7 +105,7 @@ describe("keymap", () => {
     expect(comboLabel("Ctrl+[", true, "en")).toContain("[");
   });
 
-  it("labels every default command the platform's way: ⌘ on macOS, Strg (Ctrl) elsewhere", () => {
+  it("labels every default command the platform's way: ⌘ on macOS, Strg / Ctrl elsewhere", () => {
     for (const [id, combo] of Object.entries(defaultKeymap(true))) {
       const label = comboLabel(combo, true);
       expect(label, id).not.toMatch(/Ctrl|Strg|Alt|Shift|Umschalt/);
@@ -113,7 +113,9 @@ describe("keymap", () => {
     }
     for (const [id, combo] of Object.entries(defaultKeymap(false))) {
       const label = comboLabel(combo, false);
-      expect(label, id).not.toMatch(/[⌘⌥⇧⌃]|Ctrl|Shift/);
+      expect(label, id).not.toMatch(/[⌘⌥⇧⌃]/);
+      // German keyboards say Strg and Umschalt (q116 T1).
+      expect(label, id).not.toMatch(/\b(Ctrl|Shift)\b/);
       if (combo.startsWith("Ctrl+")) expect(label, id).toMatch(/^Strg /);
       setLang("en");
       expect(comboLabel(combo, false, "en"), id).not.toMatch(/Strg|Umschalt/);
@@ -122,6 +124,18 @@ describe("keymap", () => {
     expect(comboLabel("Ctrl+Shift+D", true)).toBe("⇧⌘D");
     expect(comboLabel("Ctrl+W", true)).toBe("⌘W");
     expect(comboLabel("Ctrl+Shift+D", false)).toBe("Strg Umschalt D");
+    setLang("en");
+    expect(comboLabel("Ctrl+Shift+D", false)).toBe("Ctrl Shift D");
+    setLang("de");
+  });
+
+  it("names every command differently in both languages (Settings → Tastatur, the palette)", () => {
+    for (const lang of ["de", "en"] as const) {
+      setLang(lang);
+      // „Kalender“ and „Kalender öffnen“ cannot be told apart either: the verb does not count.
+      const labels = COMMANDS.map((c) => t(c.label).replace(/\b(öffnen|anzeigen|zeigen|open|show)\b/gi, "").trim().toLowerCase());
+      expect(labels.filter((l, i) => labels.indexOf(l) !== i), lang).toEqual([]);
+    }
   });
 
   it("back/forward stay with text fields and the editor", () => {

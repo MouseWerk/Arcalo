@@ -1225,7 +1225,7 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
                     (true, true) => "note",
                     (false, true) => "notes",
                 };
-                trf!("{pulled} {noun} vom Server übernommen", "{pulled} {noun} taken over from the server")
+                trf!("{pulled} {noun} vom Server übernommen", "{pulled} {noun} pulled from the server")
             }
             (true, false) => commit_message(&req.now, changed),
             (false, false) => {
@@ -1832,12 +1832,12 @@ pub fn pull_restored(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let conflicts = notes(conflicts);
         trf!(
             "Neuerer Stand vom Server: {taken} übernommen, {conflicts} hier und dort verschieden – bitte zusammenführen",
-            "Newer state from the server: {taken} taken over, {conflicts} different here and there – please merge"
+            "Newer state from the server: {taken} applied, {conflicts} different here and there – please merge"
         )
     } else {
         trf!(
             "Neuerer Stand vom Server: {taken} übernommen, der wiederhergestellte Text liegt in den Versionen",
-            "Newer state from the server: {taken} taken over, the restored text is kept in the versions"
+            "Newer state from the server: {taken} applied, the restored text is kept in the versions"
         )
     };
     let commit = rev(git, req.repo, "HEAD")?.map(|h| h.chars().take(7).collect());

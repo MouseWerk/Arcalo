@@ -60,7 +60,7 @@
   padding-right: 0.6em;
   text-align: right;
   white-space: pre;
-  font: 0.84em / 1.65 var(--font-mono);
+  font: 0.84em / 1.65 var(--font-mono); font-variant-ligatures: none;
   color: var(--text-3);
   border-right: 1px solid var(--border);
   user-select: none;
@@ -125,7 +125,7 @@
 /* ---- developer log ---- */
 .devlog-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; min-width: 0; }
 .devlog-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.devlog-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-canvas); font: var(--fs-xs) / 1.55 var(--font-mono); }
+.devlog-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-canvas); font: var(--fs-xs) / 1.55 var(--font-mono); font-variant-ligatures: none; }
 .devlog-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-width: 0; }
 .devlog-entry:last-child { border-bottom: 0; }
 .devlog-entry.level-error { background: var(--danger-soft); }

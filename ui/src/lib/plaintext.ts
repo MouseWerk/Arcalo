@@ -23,13 +23,23 @@ export function stripMarkdown(line: string, opts: { keepWikilinks?: boolean } = 
     .replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, "$1")
     .replace(/!\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g, (_, name: string) => name.trim());
   if (!opts.keepWikilinks) s = s.replace(/\[\[([^\]|#\n]*)(?:#([^\]|\n]*))?(?:\|([^\]\n]+))?\]\]/g, (_, page: string, heading?: string, alias?: string) => (alias ?? (page || heading || "")).trim());
+  // Code spans keep their text as written (`a !== b`); only the marks around them go.
   return s
-    .replace(/`+/g, "")
-    .replace(/(\*\*|__|~~|==)/g, "")
-    .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1$2")
-    .replace(/(^|[^\w])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2")
+    .split(/(`+[^`\n]*`+)/)
+    .map((part, i) => (i % 2 ? part.replace(/^`+|`+$/g, "") : stripInline(part)))
+    .join("")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Emphasis marks of text outside code: only pairs around text go, so code-like text (`!==`,
+ *  `a__b`, an unmatched backtick of a cut snippet) stays readable. */
+export function stripInline(s: string): string {
+  return s
+    .replace(/`+/g, "")
+    .replace(/(\*\*|__|~~|==)(?=\S)(.*?\S)\1/g, "$2")
+    .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1$2")
+    .replace(/(^|[^\w])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2");
 }
 
 /** Word and character (without spaces) count of a text, as the status bar shows it. */

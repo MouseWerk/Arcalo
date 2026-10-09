@@ -26,7 +26,7 @@ describe("display preferences", () => {
     expect(weekStart(d).getDate()).toBe(20); // Sunday
     expect(weekdayLabels()[0]).toBe("So");
     expect(monthGrid(2026, 8)[0][0].getDay()).toBe(0);
-    expect(weekdayLabels(1, "en")).toEqual(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]);
+    expect(weekdayLabels(1, "en")).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   });
 
   it("export file names from the pattern", () => {

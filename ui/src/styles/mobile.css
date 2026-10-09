@@ -384,7 +384,7 @@ html.mobile body {
   color: var(--text);
 }
 .m-chip-main {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); font-variant-ligatures: none;
   font-size: var(--fs-md);
 }
 .m-chip-sub {
@@ -502,7 +502,7 @@ select.m-input {
   overflow-x: auto;
 }
 .m-line code {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); font-variant-ligatures: none;
   font-size: var(--fs-md);
   color: var(--text-2);
   white-space: nowrap;
@@ -984,7 +984,7 @@ select.m-input {
   color: var(--text-2);
 }
 .m-read code {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); font-variant-ligatures: none;
   font-size: 0.9em;
   padding: 1px 4px;
   border-radius: var(--r-xs);
@@ -1058,7 +1058,7 @@ select.m-input {
 .m-editor-text {
   flex: 1;
   min-height: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-mono); font-variant-ligatures: none;
   font-size: var(--fs-base);
 }
 .m-editor-hint {

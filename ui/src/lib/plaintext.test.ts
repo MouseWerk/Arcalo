@@ -12,6 +12,11 @@ describe("stripMarkdown", () => {
   it("drops emphasis and code marks", () => {
     expect(stripMarkdown("mit **fett**, *kursiv*, _auch_, ~~weg~~, ==markiert== und `code`")).toBe("mit fett, kursiv, auch, weg, markiert und code");
   });
+  it("keeps code as written (search snippets of code lines)", () => {
+    expect(stripMarkdown('p.filter((x) => x.name.trim() !== "")')).toBe('p.filter((x) => x.name.trim() !== "")');
+    expect(stripMarkdown("mit `a == b && c__d` im Text")).toBe("mit a == b && c__d im Text");
+    expect(stripMarkdown("if (a === b) return a ** 2;")).toBe("if (a === b) return a ** 2;");
+  });
   it("keeps identifiers and arithmetic", () => {
     expect(stripMarkdown("snake_case_name und 5 * 3 * 2")).toBe("snake_case_name und 5 * 3 * 2");
   });

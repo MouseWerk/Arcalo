@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatShortcut, isReplaceKey, keys, modLabel, recordShortcut, replaceHint } from "./shortcut";
+import { formatShortcut, isReplaceKey, keyName, keys, modLabel, recordShortcut, replaceHint } from "./shortcut";
 import { setLang } from "./i18n";
 
 const key = (code: string, key: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
@@ -58,19 +58,26 @@ describe("formatShortcut", () => {
     expect(formatShortcut("Cmd+Enter", true)).toBe("⌘↩");
     expect(formatShortcut("F9", true)).toBe("F9");
   });
-  it("keeps names elsewhere, as printed on the keys of the UI language's keyboards", () => {
+  it("names the keys as the keyboard of the language prints them elsewhere", () => {
+    // German keyboards: Strg, Umschalt, Eingabe, Entf, Leertaste (q116 T1).
     expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Strg+Umschalt+Leertaste");
     expect(formatShortcut("Ctrl+Shift+D", false)).toBe("Strg+Umschalt+D");
     expect(formatShortcut("Cmd+K", false)).toBe("Super+K");
     expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Strg Umschalt K");
     expect(formatShortcut("Alt+Delete", false, " ")).toBe("Alt Entf");
     expect(formatShortcut("Shift+Enter", false)).toBe("Umschalt+Eingabe");
+    expect(keys("Shift Enter", false)).toBe("Umschalt Eingabe");
+    expect(keys("Delete", false)).toBe("Entf");
+    expect(keyName("Umschalt")).toBe("Umschalt");
     setLang("en");
     expect(formatShortcut("Ctrl+Shift+Space", false)).toBe("Ctrl+Shift+Space");
     expect(formatShortcut("ctrl+shift+k", false, " ")).toBe("Ctrl Shift K");
     expect(formatShortcut("Shift+Enter", false)).toBe("Shift+Enter");
+    expect(keyName("Entf")).toBe("Delete");
+    expect(keyName("Umschalt")).toBe("Shift");
+    expect(keyName("PageDown")).toBe(keyName("pagedown"));
   });
-  it("hints: Mod is ⌘ on macOS and Strg (Ctrl) elsewhere", () => {
+  it("hints: Mod is ⌘ on macOS and Strg / Ctrl elsewhere", () => {
     expect(keys("Mod Shift D", true)).toBe("⇧⌘D");
     expect(keys("Mod Shift D", false)).toBe("Strg Umschalt D");
     expect(keys("Mod \\", true)).toBe("⌘\\");

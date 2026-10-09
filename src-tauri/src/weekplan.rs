@@ -73,7 +73,7 @@ pub fn periodic(app: &AppHandle) {
         msg
     };
     if let Some(body) = body {
-        notify(app, arcalo_core::tr!("Woche vorschlagen", "Propose the week"), &body);
+        notify(app, arcalo_core::tr!("Woche vorschlagen", "Plan the week's bookings"), &body);
         let focused = app.get_webview_window(MAIN).is_some_and(|w| w.is_focused().unwrap_or(false));
         if !focused {
             PENDING.store(true, Ordering::Relaxed);

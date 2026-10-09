@@ -45,7 +45,7 @@ test("the start page shows the default widgets with the demo data", async () => 
   await app.waitText('[data-widget="budget"] .dw-budget', /NP-8801\/1010[\s\S]*Warnung/);
   // Week: seven bars with the booked hours; recent pages; quick timer starts in „Heute“.
   assert.equal((await app.$$('[data-widget="week"] .dw-bar-col')).length, 7);
-  await app.waitText('[data-widget="week"] .dw-week-sum', /von \d+(,\d)? h/);
+  await app.waitText('[data-widget="week"] .dw-week-sum', /von \d+,\d\d h/);
   await app.waitText('[data-widget="recent"] .dw-page', /Architektur/);
   await app.waitFor('[data-widget="today"] [aria-label^="Timer starten: NP-88"]');
   await app.shot("dashboard");

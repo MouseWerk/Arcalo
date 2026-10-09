@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  sentences,
   activeFilterCount,
   applyPatch,
   buildModel,
@@ -206,5 +207,12 @@ describe("placeLabel", () => {
     expect(p.width).toBeLessThanOrEqual(192);
     expect(p.text.endsWith("…")).toBe(true);
     expect(p.x).toBeGreaterThanOrEqual(4 + p.width / 2);
+  });
+});
+
+describe("announcements", () => {
+  it("joins parts as sentences without a double period", () => {
+    expect(sentences(["Jour fixe 22.09.", "3 Verknüpfungen", ""])).toBe("Jour fixe 22.09. 3 Verknüpfungen");
+    expect(sentences(["Architektur", "1 Verknüpfung", "Ordner Projekte"])).toBe("Architektur. 1 Verknüpfung. Ordner Projekte");
   });
 });

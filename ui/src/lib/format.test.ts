@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fmtDuration, fmtHours, setFormatPrefs } from "./format";
+import * as dayreview from "./dayreview";
+import * as focus from "./focus";
+import { hoursLabel } from "./calendar";
 import { fileSize, importProgress, longTimerHours, importSummary, parseDayInput, parseDuration, parseDurationInput, parseGermanNumber, parseTimeInput, versionTimes } from "./format";
 
 describe("parseGermanNumber", () => {
@@ -46,7 +52,7 @@ describe("longTimerHours", () => {
 describe("importProgress", () => {
   it("counts the files read", () => {
     expect(importProgress({ done: 120, total: 480 })).toBe("120 von 480 Dateien gelesen");
-    expect(importProgress({ done: 0, total: 0 })).toBe("Dateien werden gelesen …");
+    expect(importProgress({ done: 0, total: 0 })).toBe("Dateien werden gelesen…");
     // Then the pages are written in batches.
     expect(importProgress({ done: 400, total: 20000, writing: true })).toBe("400 von 20000 Seiten angelegt");
   });
@@ -97,5 +103,42 @@ describe("durations", () => {
   it("reads typed durations: hours, clock and /zeit units with spaces", () => {
     for (const [s, m] of [["1,5", 90], ["1.5", 90], ["2", 120], ["1:30", 90], ["90m", 90], ["90 min", 90], ["1h 30m", 90], ["1,5 Std.", 90], ["2 hours", 120]] as const) expect(parseDurationInput(s), s).toBe(m);
     for (const s of ["", "abc", "1,5 Tage"]) expect(parseDurationInput(s), s).toBeNull();
+  });
+});
+
+describe("hours: one format everywhere (q116 V15, T4)", () => {
+  it("follows „Stunden als“: decimal with the regional separator or clock time", () => {
+    expect(fmtDuration(90)).toBe("1,50 h");
+    expect(fmtDuration(0)).toBe("0,00 h");
+    expect(fmtDuration(2970)).toBe("49,50 h");
+    expect(fmtHours(49.5)).toBe("49,50");
+    expect(hoursLabel(450)).toBe("7,50");
+    setFormatPrefs({ hours: "clock" });
+    expect(fmtDuration(65)).toBe("1:05 h");
+    expect(fmtDuration(0)).toBe("0:00 h");
+    expect(hoursLabel(450)).toBe("7:30");
+    setFormatPrefs({ hours: "decimal", numberFormat: "point" });
+    expect(fmtDuration(90)).toBe("1.50 h");
+  });
+
+  it("has no formatter of its own in the reviews and the focus sessions", () => {
+    expect(Object.keys(dayreview)).not.toContain("hm");
+    expect(Object.keys(dayreview)).not.toContain("hours");
+    expect(Object.keys(focus)).not.toContain("hm");
+  });
+
+  it("writes no hours by hand („0:45 h“ built from minutes, h1 for hours)", () => {
+    const files = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(d, e.name);
+        return e.isDirectory() ? (e.name === "locales" ? [] : files(p)) : /\.tsx?$/.test(e.name) && !/\.test\./.test(e.name) ? [p] : [];
+      });
+    const bad: string[] = [];
+    for (const f of files(path.resolve(__dirname, ".."))) {
+      const src = fs.readFileSync(f, "utf8");
+      // `${Math.floor(m / 60)}:${…} h` and h1(minutes / 60): both ignore the setting.
+      for (const m of src.matchAll(/`\$\{[^`]*\/ 60[^`]*\}:\$\{[^`]*\} h`|\bh1\([^()]*\/ 60\)|\bh1\(\w+\.\w*hours\)/g)) bad.push(`${path.basename(f)}: ${m[0].slice(0, 80)}`);
+    }
+    expect(bad).toEqual([]);
   });
 });

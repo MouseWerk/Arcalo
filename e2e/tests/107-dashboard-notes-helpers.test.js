@@ -128,7 +128,7 @@ test("the new widgets with sample data (German)", async () => {
 
   // Posteingang: two captures, newest first; one filed into a page, the other ticked off.
   assert.match(await widgetText("inbox"), /Angebot an Müller nachfassen[\s\S]*Review-Termin verschieben/);
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="inbox"] [aria-label="Ablegen in …"]').click());
+  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="inbox"] [aria-label="Ablegen in…"]').click());
   await app.waitFor(".dialog .dws-picker input");
   await (await app.$(".dialog .dws-picker input")).setValue("Projektstatus");
   await clickText(".dialog .dws-hits [role=option]", "Projektstatus");

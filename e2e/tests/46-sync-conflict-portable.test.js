@@ -80,7 +80,7 @@ test("a note changed here and on the server becomes a conflict; the rest is take
 
   // The notice, the mark in the sidebar and the banner on the page.
   await app.waitText(".toast-title", /Konflikt bei der Git-Synchronisierung/);
-  await app.waitText(".toast-detail", /„Architektur“ wurde hier und auf einem anderen Rechner geändert/);
+  await app.waitText(".toast-detail", /„Architektur“ wurde hier und auf einem anderen Computer geändert/);
   await app.waitFor(`.tree-row[data-id="${await pageId("Architektur")}"] .tree-conflict`);
   await app.dismissToasts();
   await openByPalette("Architektur");

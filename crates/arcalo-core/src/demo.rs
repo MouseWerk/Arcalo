@@ -92,13 +92,13 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
     db.save_page_content(
         start.id,
         tr!(
-            "Arcalo ist dein ganzer Arbeitstag in einer App: Notizen, Aufgaben, Besprechungen und Zeit, lokal auf deinem Rechner.\n\n\
+            "Arcalo ist dein ganzer Arbeitstag in einer App: Notizen, Aufgaben, Besprechungen und Zeit, lokal auf deinem Computer.\n\n\
              ## So arbeitest du hier\n\n\
              - Notizen sind Markdown. Verlinke Seiten mit `[[Seitenname]]` und verschlagworte mit `#tag`.\n\
              - Aufgaben sind Checkboxen in jeder Notiz, zum Beispiel `- [ ] Angebot senden due:2026-10-15`. Alle offenen stehen unter Aufgaben.\n\
              - Termine aus Outlook oder einem ICS-Link stehen im Kalender und in der Tagesnotiz; ein Klick legt die Besprechungsnotiz an.\n\
-             - Wenn du Zeit buchst: tippe `/zeit NP-8801/1020 1.5h Review` direkt in den Text und drücke Enter.\n\
-             - `Ctrl K` öffnet die Befehlspalette, `Ctrl O` den Schnellwechsler.\n\n\
+             - Wenn du Zeit buchst: tippe `/zeit NP-8801/1020 1.5h Review` direkt in den Text und drücke die Eingabetaste.\n\
+             - `Strg K` öffnet die Befehlspalette, `Strg O` den Schnellwechsler.\n\n\
              ## Einstieg\n\n\
              - [ ] Die Besprechungsnotiz [[Jour fixe 22.09.]] ansehen\n\
              - [ ] Das Projekt unter [[PRJ-2026-X Rollout]] ansehen\n\
@@ -213,7 +213,7 @@ pub fn seed(db: &Database, now: DateTime<Utc>) -> Result<bool> {
              ## Agenda\n\n1. \n\n\
              ## Entscheidungen\n\n- \n\n\
              ## Aufgaben\n\n- [ ] \n\n\
-             > [!tip] Zeit buchen\n> Tippe `/zeit NP-8801/1020 1h Besprechung` und drücke Enter.\n",
+             > [!tip] Zeit buchen\n> Tippe `/zeit NP-8801/1020 1h Besprechung` und drücke die Eingabetaste.\n",
             "{{weekday}}, {{date}} · {{time}} #meeting\n\n\
              ## Attendees\n\n- \n\n\
              ## Agenda\n\n1. \n\n\

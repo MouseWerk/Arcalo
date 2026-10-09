@@ -121,7 +121,7 @@ consistency.
 - Test: an e2e or unit test checks that `thead th[scope=col]` count = columns and that each `tbody
   tr` has a `th[scope=row]`.
 
-### A7 – Medium – „Today“ markers fail AA in the default light theme and 3 more (calc)
+### A7 – Medium – „Today“ markers fail AA in the default light theme and 3 more (calc) — fixed in 1.16 (--accent-fill/--on-accent, contrast.test)
 - Where: `styles/app.css:524/526` `.cal-day.today .cal-num`, `:1844` `.calv-dayhead.today .calv-dn`,
   `:1961` `.calv-mcell.today .calv-mday`, `:3580` `.graph-badge` and `:1544` `.sb-focus-held`. All are
   `color: var(--text-inverse)` on `background: var(--accent)`, at 10–12 px.
@@ -133,7 +133,7 @@ consistency.
 - Test: add `--text-inverse on --accent` (or the new pair) at 4.5 to `failures()` in
   `contrast.test.ts`, across themes and presets.
 
-### A8 – Medium – Text dimmed with opacity drops below AA (calc + seen)
+### A8 – Medium – Text dimmed with opacity drops below AA (calc + seen) — fixed in 1.16 (styles.test faded text)
 - Where and values (light / dark; worst built-in theme):
   - `dashboard.css:117` `.dw-task.done { opacity: .45 }`, done tasks on the start page: text-2 2.14 /
     2.53 (Everforest Light 1.96).
@@ -152,7 +152,7 @@ consistency.
 - Test: in `styles.test.ts`, fail on `opacity: 0.[0-7]` in rules whose selector does not contain
   `:disabled`, `disabled`, `drag`, an icon class, or an allow-list entry.
 
-### A9 – Medium – The focus ring loses contrast on the current row in light themes (calc)
+### A9 – Medium – The focus ring loses contrast on the current row in light themes (calc) — fixed in 1.16 (focus ring on tinted rows, contrast.test)
 - Where: `--border-focus` (tokens.css comment: „3:1 on every surface“) on `.tree-row.active`,
   `.settings-nav-item.active` and other rows with `--bg-current` over `--bg-sidebar`.
 - What: Arcalo Hell 2.58:1; Catppuccin Latte 2.72, Solarized Light 2.64, Gruvbox Light 2.66, GitHub
@@ -413,7 +413,7 @@ consistency.
 
 ## Texts (German and English)
 
-### T1 – Medium – Key names: „Ctrl/Shift“ in German, three spellings side by side (seen)
+### T1 – Medium – Key names: „Ctrl/Shift“ in German, three spellings side by side (seen) — fixed in 1.16 (keyName, shortcut.test, glossary)
 - What: `formatShortcut`/`comboLabel` write `Ctrl` and `Shift` in every German tooltip, menu and
   setting („Neue Seite (Ctrl N)“, the settings search „Ctrl F“). German keyboards say Strg and ⇧ or
   Umschalt, and the catalog already has `keys.ctrl` „Strg“ (used only in the quick capture window).
@@ -445,7 +445,7 @@ consistency.
   `forbiddenDe: ["Ctrl", "Shift"]`), and „Enter“ is allowed only inside code spans. A `shortcut.test.ts`
   case: `formatShortcut("Ctrl+Shift+D")` in German gives „Strg+Umschalt+D“.
 
-### T2 – Medium – „taken over“ is a literal „übernommen“ (18 texts)
+### T2 – Medium – „taken over“ is a literal „übernommen“ (18 texts) — fixed in 1.16 (glossary taken over)
 - Where: en `set.git.restoredPulled`, `bm.skippedTitle`, `vault.cancelledDesc`, `mail.importFailed`,
   `mail.importing`, `onb.importText`, `app.keptTitle`, `wp.applyFailed`, `voice.set.importFailed`,
   `voice.set.imported`, `settings.synced`, `set.git.syncSettingsDesc`, `set.git.lastMergeText`,
@@ -474,7 +474,7 @@ consistency.
 - Test: glossary `forbiddenEn: ["taken over", "taking over", "takes over"]` (concept „übernehmen“:
   import, apply, keep).
 
-### T3 – Medium – Error messages: five patterns and several without a subject
+### T3 – Medium – Error messages: five patterns and several without a subject — fixed in 1.16 (translations.test error-title)
 - What: of the 240 error keys, about 88 are „X nicht …“, 55 „ließ sich nicht / konnte nicht“, 44
   „fehlgeschlagen“ and 11 „nicht möglich“. English mixes „X not saved“, „Could not open X“ and „The X
   could not be …“. Some say neither what nor where:
@@ -499,7 +499,7 @@ consistency.
 - Test: a translations.test rule: `*Failed` keys must not start with „Nicht“/"Not"/"Could not" and
   must not be just „Fehler“/"Error".
 
-### T4 – Medium – Durations shown five ways (seen)
+### T4 – Medium – Durations shown five ways (seen) — fixed in 1.16 (fmtDuration, format.test hours)
 - What, for the same week:
   - start page „27,0 von 40,0 h“ and „0,00 h / 8,00 h“
   - timesheet „27,00 h“ and „14,50“
@@ -513,7 +513,7 @@ consistency.
 - Test: a unit test that `lib/dayreview.ts` and `lib/focus.ts` export no own formatter, plus a grep
   test: no `` `${…}:${…} h` `` template in `ui/src`.
 
-### T5 – Medium – Two commands are both „Kalender“
+### T5 – Medium – Two commands are both „Kalender“ — fixed in 1.16 (keymap.test unique labels)
 - Where: `cmd.calendar` „Kalender“ / "Calendar" (opens the date picker for daily notes, Ctrl+Shift+C)
   vs `cmd.calendarView` „Kalender öffnen“ / "Open calendar" (Ctrl+Shift+E). In the ribbon:
   „Kalender (Ctrl Shift C)“ next to „Kalender: Termine und gebuchte Zeit (Ctrl Shift E)“.
@@ -522,7 +522,7 @@ consistency.
   `cmd.calendarView` de „Kalender“ / en "Calendar"; ribbon label of the chevron = `cmd.calendar`.
 - Test: a unit test: the labels of COMMANDS are unique in both languages.
 
-### T6 – Low – Ellipsis with and without a space (46 vs 94 texts)
+### T6 – Low – Ellipsis with and without a space (46 vs 94 texts) — fixed in 1.16 (translations.test final ellipsis)
 - What: menu items „Lesezeichen importieren …“, „Board exportieren …“ and „Auswählen …“ against
   „Neue Seite aus Vorlage…“ and „Verschieben nach…“. Progress texts „Wird synchronisiert …“ against
   „Prüfe…“. The macOS menu has „Einstellungen …“ / "Settings …". The same split appears in English.
@@ -532,7 +532,7 @@ consistency.
   `appmenu.rs:38`.
 - Test: a translations.test typography rule: `\w …$` fails.
 
-### T7 – Low – Date ranges in four formats (seen)
+### T7 – Low – Date ranges in four formats (seen) — fixed in 1.16 (weekRange in time tracking, weekreview.test)
 - What: calendar „5.–9. Oktober 2026“, week review „5.–11. Oktober 2026“, timesheet „5. Okt. – 11.
   Okt. 2026“, activity „05.10.2026 – 09.10.2026“.
 - Fix: use `weekRange()` from `lib/weekreview.ts` for every week heading. Use `fmtDate` ranges only
@@ -540,14 +540,14 @@ consistency.
 - Test: a unit test: Timesheet and Activity headings call `weekRange`; snapshot test of the 4
   headings.
 
-### T8 – Low – „Rechner“ (52) and „Computer“ (20) for the same thing
+### T8 – Low – „Rechner“ (52) and „Computer“ (20) for the same thing — fixed in 1.16 (glossary Rechner)
 - Example: „auf diesem Rechner“ (AI hints, onboarding) vs „auf diesem Computer“ (calendar intro,
   `settings.synced`, Git texts). English always says computer.
 - Fix: glossary entry: concept computer, de „Computer“ (or „Rechner“, owner's choice), forbidden the
   other; change the 20 (or 52) texts accordingly.
 - Test: the glossary entry itself.
 
-### T9 – Low – English calls the time tracking view „timesheet“ (8 texts)
+### T9 – Low – English calls the time tracking view „timesheet“ (8 texts) — fixed in 1.16 (glossary timesheet)
 - Where: `dash.weekOpen`, `dash.hoursLabel`, `dash.timerEmpty`, `brief.timesheet`,
   `cmd.weekProposalSub`, `set.time.useDesc`, `fr.work.hidden`, `tt.setUseDescOff`. The ribbon and the
   view say „Time tracking“.
@@ -560,14 +560,14 @@ consistency.
   - replace „the timesheet“ with „time tracking“ in the three settings texts
 - Test: glossary `forbiddenEn: ["timesheet*", "Timesheet*"]`.
 
-### T10 – Low – „Propose (the) week“, „Derive tasks“
+### T10 – Low – „Propose (the) week“, „Derive tasks“ — fixed in 1.16 (glossary week proposal, extract tasks)
 - What: literal translations, and „Propose week“ (`dash.act.week`) vs „Propose the week“
   (`cmd.weekProposal`, `wp.title`).
 - Fix (en): `dash.act.week`, `cmd.weekProposal`, `wp.title`, `set.notify.weekProposal` "Plan the
   week's bookings"; `aitext.write-tasks`, `chat.quick.tasks` "Extract tasks"; `aitext.write-tasks.prompt`
   "Extract the open tasks from …"; `wp.nothing` "Nothing to plan". de unchanged.
 
-### T11 – Low – The German default daily-note folder is „Journal“ (seen)
+### T11 – Low – The German default daily-note folder is „Journal“ (seen) — fixed in 1.16 (settings step 17 daily-folder, settings_migrate test)
 - Where: `crates/arcalo-core/src/notes.rs:18` `JOURNAL_TITLE = "Journal"`, `settings.rs`
   `daily_folder`. The tree and the graph legend show „Journal“.
 - What: the glossary forbids „Journal*“ in German (daily note = Tagesnotiz).
@@ -575,7 +575,7 @@ consistency.
   Existing folders stay („existing pages move only via Aufräumen“). Otherwise add an exception to the
   glossary note.
 
-### T12 – Low – Missing plural and a double period (seen)
+### T12 – Low – Missing plural and a double period (seen) — fixed in 1.16 (graph plurals, sentences(), count placeholders in translations.test)
 - `graph.stats` / `graph.canvasLabel` „{pages} Seiten · {links} Verknüpfungen“ shows „1 Seiten“ and
   „1 Verknüpfungen“ for a filtered graph. Make both plurals, with two keys (`graph.pages`,
   `graph.links`): de one „{n} Seite“, other „{n} Seiten“; one „{n} Verknüpfung“, other „{n}
@@ -585,14 +585,14 @@ consistency.
 - Test: `translations.test` COUNT_NEVER_ONE must not list placeholders other than `n`/`count`, and
   graph a11y unit test with title „X.“.
 
-### T13 – Low – Briefing tile „0 / von 0 heute“
+### T13 – Low – Briefing tile „0 / von 0 heute“ — fixed in 1.16 (brief.ov.meetings)
 - Where: `brief.ov.meetings` de „von {n} heute“ / en "of {n} today", below the big number.
 - What: it reads as „0 von 0 heute“, and it is unclear whether the big number means meetings left or
   done.
 - Fix: de „noch offen, {n} heute insgesamt“ / en "still ahead, {n} today in total" (or follow the
   tasks tile: „heute fällig“).
 
-### T14 – Low – English weekday abbreviations „Mo, Tu, We“
+### T14 – Low – English weekday abbreviations „Mo, Tu, We“ — fixed in 1.16 (weekdayLabels Mon/Tue)
 - Where: start page week bars and gap chips („Mo 3.0 h“), `fr.v.mo`–`fr.v.fr`.
 - Fix: en "Mon, Tue, Wed, Thu, Fri, Sat, Sun" (Intl `weekday: "short"` with `en-GB` gives exactly
   these); de stays „Mo, Di …“.

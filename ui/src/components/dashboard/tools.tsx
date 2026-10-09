@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { Link2, ListFilter, Sparkles } from "lucide-react";
 import { useTimeTracking } from "../../lib/timetracking";
-import { fmtDate, h1, isoDay, numberLocale, relative, weekStart } from "../../lib/format";
+import { fmtDate, fmtHours, fmtMinutes, isoDay, numberLocale, relative, weekStart } from "../../lib/format";
 import { currentLang, t } from "../../lib/i18n";
 import { configOf, weekBars } from "../../lib/dashboard";
 import { bars, displayProblem, groupLabel, normalizeQuery, type QueryDisplay, type WidgetQuery } from "../../lib/dashquery";
@@ -80,7 +80,7 @@ function QueryTable({ q, res }: { q: WidgetQuery; res: QueryResult }) {
       case "tasks":
         return [r.title, r.detail, when];
       case "entries":
-        return [when, r.detail, r.title, r.minutes != null ? h1(r.minutes / 60) : ""];
+        return [when, r.detail, r.title, r.minutes != null ? fmtMinutes(r.minutes) : ""];
       case "events":
         return [`${when} ${r.date ? hhmm(r.date) : ""}`, r.title, r.detail];
     }
@@ -118,7 +118,7 @@ function QueryNumber({ q, res }: { q: WidgetQuery; res: QueryResult }) {
   const unit = hours ? "h" : q.source === "tasks" ? (res.total === 1 ? t("dash.q.unit.task") : t("dash.q.unit.tasks")) : q.source === "events" ? (res.total === 1 ? t("dash.q.unit.meeting") : t("dash.q.unit.meetings")) : res.total === 1 ? t("dash.q.unit.page") : t("dash.q.unit.pages");
   return (
     <div className="dw-number">
-      <span className="num dw-number-value">{hours ? h1((res.minutes ?? 0) / 60) : res.total.toLocaleString(numberLocale())}</span>
+      <span className="num dw-number-value">{hours ? fmtMinutes(res.minutes ?? 0) : res.total.toLocaleString(numberLocale())}</span>
       <span className="muted">{unit}</span>
       {hours && <span className="faint small">{t("dash.q.entries", { n: res.total })}</span>}
     </div>
@@ -128,7 +128,7 @@ function QueryNumber({ q, res }: { q: WidgetQuery; res: QueryResult }) {
 /** Horizontal bars (one series, accent), labels and values in text colors, a tooltip per bar. */
 export function BarChart({ groups, unit, label }: { groups: { label: string; value: number }[]; unit: string; label: string }) {
   const rows = bars(groups);
-  const fmt = (v: number) => (unit === "h" ? h1(v) : v.toLocaleString(numberLocale()));
+  const fmt = (v: number) => (unit === "h" ? fmtHours(v) : v.toLocaleString(numberLocale()));
   const withUnit = (v: number) => (unit ? `${fmt(v)} ${unit}` : fmt(v));
   const rowH = 22;
   const summary = rows.map((r) => `${r.label}: ${withUnit(r.value)}`).join(", ");

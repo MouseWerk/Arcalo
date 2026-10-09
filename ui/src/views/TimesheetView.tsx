@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  AlertTriangle, CalendarDays, Check, CloudUpload, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pause, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
+  AlertTriangle, CalendarDays, Check, CircleDashed, CloudUpload, Printer, ChevronLeft, ChevronRight, Clipboard, Download, MoreHorizontal, Pause, Pencil, Play, Plus, RotateCcw, Send, Square, Target, Timer, Trash2, WandSparkles, X,
 } from "lucide-react";
 import { api, on } from "../lib/api";
 import { bookingPrefill, durationMinutes, sourceColor, nonBookingSources, timeRange, unbooked } from "../lib/agenda";
 import { useApp } from "../store/app";
 import { Badge, Button, Dialog, EmptyState, Field, IconButton, Input, Segmented, Switch, useMenu, type Tone } from "../components/ui";
 import { DateInput, TimeInput } from "../components/DateInput";
-import { addDays, clock, dateLocale, dayMonthName, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
+import { addDays, clock, dateLocale, dayOfMonth, decimalSep, fmtMinutes, isoDay, isoWeek, isoWeekday, parseDurationInput, time, weekStart, weekdayShort } from "../lib/format";
 import { exportFileName } from "../lib/prefs";
 import { useTimerSeconds, stopTimer, toggleTimerPause } from "../components/Sidebar";
 import { LeistungsartSelect, NetzplanSelect, VorgangSelect, useWbs } from "./wbs";
@@ -22,22 +22,38 @@ import { withHint } from "../lib/keymap";
 import { openFocusDialog } from "../components/Focus";
 import { WeekProposalButton, WeekProposalDialog } from "./WeekProposal";
 import { OPEN_EVENT, takeWeekProposalRequest } from "../lib/weekplan";
+import { weekRange } from "../lib/weekreview";
 import { TIMESHEET_DAY_EVENT, takeTimesheetDay } from "../lib/reviewnav";
 import { currentLang, useT, type TKey } from "../lib/i18n";
 import { jiraApi, worklogDeleteKeys, worklogShown, type EntryIssue } from "../lib/jira";
 import { defaultLeistungsart } from "../lib/timetracking";
 import { isComposing, isKey } from "../lib/ime";
 
-const STATUS: Record<StatusFlag, { label: TKey; tone: Tone }> = {
-  running: { label: "time.status.running", tone: "info" },
-  draft: { label: "time.status.draft", tone: "neutral" },
-  released: { label: "time.status.released", tone: "accent" },
-  exported: { label: "time.status.exported", tone: "success" },
+const STATUS: Record<StatusFlag, { label: TKey; tone: Tone; icon: typeof Check }> = {
+  running: { label: "time.status.running", tone: "info", icon: Timer },
+  draft: { label: "time.status.draft", tone: "neutral", icon: CircleDashed },
+  released: { label: "time.status.released", tone: "accent", icon: Send },
+  exported: { label: "time.status.exported", tone: "success", icon: Check },
 };
 
 /** An entry for screen readers in a list of many („4711/0010, 09:00–10:30“): its controls say which one they act on. */
 const entryName = (r: TimeEntryRow) => `${r.netzplan_nr}${r.vorgang_nr ? `/${r.vorgang_nr}` : ""}`;
 const entryTime = (r: TimeEntryRow) => `${time(r.start_time)}–${r.end_time ? time(r.end_time) : "…"}`;
+
+/** An entry's status: the word, or in a narrow pane only its icon (the description keeps the room). */
+function EntryStatus({ flag }: { flag: StatusFlag }) {
+  const t = useT();
+  const st = STATUS[flag];
+  const Icon = st.icon;
+  return (
+    <span className="entry-status" data-tooltip={t(st.label)}>
+      <Badge tone={st.tone}>
+        <Icon size={11} aria-hidden className="entry-status-icon" />
+        <span className="entry-status-text">{t(st.label)}</span>
+      </Badge>
+    </span>
+  );
+}
 
 export function TimesheetView() {
   const t = useT();
@@ -96,8 +112,8 @@ export function TimesheetView() {
   const settings = useApp((st) => st.settings?.settings);
   const workdays = settings?.workdays ?? [1, 2, 3, 4, 5];
   const { targets, off } = useWeekTargets(week);
-  const end = addDays(week, 6);
-  const range = `${dayMonthName(week)} – ${dayMonthName(end, true)}`;
+  // The week as everywhere else (calendar, week review): „5.–11. Oktober 2026“.
+  const range = weekRange(isoDay(week));
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try {
@@ -129,11 +145,12 @@ export function TimesheetView() {
               <IconButton icon={ChevronRight} label={t("time.nextWeek")} onClick={() => setWeek(addDays(week, 7))} />
             </div>
             <IconButton icon={Printer} label={t("time.print")} onClick={() => window.print()} />
-            <Button icon={Download} onClick={() => setExporting(true)}>
+            {/* In a narrow pane the buttons show their icons only (the name stays as label and tooltip). */}
+            <Button icon={Download} onClick={() => setExporting(true)} aria-label={t("time.export")} data-tooltip-full={t("time.export")}>
               {t("time.export")}
             </Button>
             <WeekProposalButton onClick={() => setProposing(true)} />
-            <Button icon={Plus} variant="primary" onClick={() => setEditing("new")}>
+            <Button icon={Plus} variant="primary" onClick={() => setEditing("new")} aria-label={t("time.entry")} data-tooltip-full={t("time.entry")}>
               {t("time.entry")}
             </Button>
           </div>
@@ -682,7 +699,7 @@ function EntryList({ rows, issues, selected, setSelected, onEdit, week }: { rows
                   )}
                   {issues.has(r.id) && <WorklogChip issue={issues.get(r.id)!} />}
                 </span>
-                <Badge tone={STATUS[r.status_flag].tone}>{t(STATUS[r.status_flag].label)}</Badge>
+                <EntryStatus flag={r.status_flag} />
                 <span className="entry-dur num">{r.duration_minutes != null ? `${fmtMinutes(r.duration_minutes)} h` : t("time.runningLower")}</span>
                 <IconButton aria-haspopup="menu"
                   icon={MoreHorizontal}
@@ -916,7 +933,7 @@ function MeetingSuggestions({ week, rows, wbs, las, onPropose }: { week: Date; r
       <ul className="ts-meeting-list">
         {shown.map((e) => (
           <li key={e.key} className="ts-meeting" style={{ "--ev": sourceColor(e.source, useApp.getState().settings?.settings.calendar) } as React.CSSProperties}>
-            <span className="ts-meeting-bar" aria-hidden />
+            <span className="ts-meeting-dot" aria-hidden />
             <span className="ts-meeting-when num">
               {weekdayShort(new Date(e.start))} {timeRange(e)}
             </span>

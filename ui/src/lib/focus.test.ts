@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countdown, hm, parseMinutes, phaseProgress, remainingMs, sessionSummary } from "./focus";
+import { countdown, parseMinutes, phaseProgress, remainingMs, sessionSummary } from "./focus";
 import type { FocusDone, FocusSession, FocusState } from "./types";
 
 const session: FocusSession = {
@@ -33,7 +33,6 @@ describe("Fokus-Countdown", () => {
     expect(countdown(1)).toBe("00:01");
     expect(countdown(25 * 60_000)).toBe("25:00");
     expect(countdown(3_900_000)).toBe("1:05:00");
-    expect(hm(100)).toBe("1:40 h");
   });
   it("eigene Länge", () => {
     expect(parseMinutes("35")).toBe(35);
@@ -54,7 +53,7 @@ describe("Zusammenfassung nach der Sitzung", () => {
   it("gebucht, mit zurückgehaltenen Hinweisen", () => {
     const s = sessionSummary(done({}), [{ title: "Budget-Warnung: NP-8801" }], [{ title: "Timer läuft noch", body: "" }]);
     expect(s.title).toBe("Pause – 5 Min.");
-    expect(s.detail).toBe("0:25 h gebucht auf NP-8801/1020 (Entwurf). 2 Hinweise zurückgehalten: Budget-Warnung: NP-8801 · Timer läuft noch");
+    expect(s.detail).toBe("0,42 h gebucht auf NP-8801/1020 (Entwurf). 2 Hinweise zurückgehalten: Budget-Warnung: NP-8801 · Timer läuft noch");
   });
   it("verlängert, abgebrochen, ohne Vorgang", () => {
     expect(sessionSummary(done({}, true, true), []).detail).toContain("zur Buchung hinzugefügt");

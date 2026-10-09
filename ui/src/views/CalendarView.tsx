@@ -609,13 +609,14 @@ function DayHead({ d, ov, planned, onDay }: { d: Date; ov: DayOverview | undefin
               <span className="calv-planned-sum" aria-label={t("blocks.plannedSum", { h: fmtMinutes(planned) })} data-tooltip={ov?.booked_minutes ? undefined : t("blocks.plannedSum", { h: fmtMinutes(planned) })}>
                 <Target size={11} aria-hidden />
                 {fmtMinutes(planned)}
-                {!ov?.booked_minutes && " h"}
+                {!ov?.booked_minutes && <span className="calv-hunit"> h</span>}
               </span>
             )}
             {!!ov?.booked_minutes && (
               <span className="calv-booked-sum" data-tooltip={planned > 0 ? undefined : t("calv.booked")} aria-label={t("calv.hoursBooked", { h: fmtMinutes(ov.booked_minutes) })}>
                 <Timer size={11} aria-hidden />
-                {fmtMinutes(ov.booked_minutes)} h
+                {fmtMinutes(ov.booked_minutes)}
+                <span className="calv-hunit"> h</span>
               </span>
             )}
           </span>
@@ -688,7 +689,7 @@ function TimeGrid(props: {
               return (
                 <div key={isoDay(d)} className="calv-allday-cell">
                   {list.map((e) => (
-                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected, cal, now)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)} aria-expanded={selected === e.key} aria-controls={selected === e.key ? "calv-detail" : undefined} data-key={e.key}>
+                    <button type="button" key={e.key} className={`${eventClass(e, booked, selected, cal, now)} calv-chip`} style={eventStyle(e, cal)} onClick={() => onSelect(e.key)} aria-label={evLabel(e, booked)} aria-expanded={selected === e.key} aria-controls={selected === e.key ? "calv-detail" : undefined} data-key={e.key} data-tooltip-full={e.title}>
                       <span className="calv-ev-title">{e.title}</span>
                       <span className="calv-ev-marks">
                         <EventMarks e={e} booked={booked} />
@@ -790,6 +791,7 @@ function TimeGrid(props: {
                         aria-label={evLabel(e, booked)}
                         aria-expanded={selected === e.key}
                         aria-controls={selected === e.key ? "calv-detail" : undefined}
+                        data-tooltip-full={`${e.title} · ${timeRange(e)}`}
                         data-key={e.key}
                       >
                         <span className="calv-ev-title">{e.title}</span>
@@ -883,7 +885,12 @@ function MonthGrid(props: {
                     {d.getDate()}
                   </button>
                   {ov?.has_note && <span className="calv-mnote" data-tooltip={t("capture.daily")} aria-label={t("capture.daily")} />}
-                  {!!ov?.booked_minutes && <span className="calv-mhours">{fmtMinutes(ov.booked_minutes)} h</span>}
+                  {!!ov?.booked_minutes && (
+                    <span className="calv-mhours">
+                      {fmtMinutes(ov.booked_minutes)}
+                      <span className="calv-hunit"> h</span>
+                    </span>
+                  )}
                 </div>
                 <div className="calv-mlist">
                   {cell?.items.map(({ e, b }) =>
@@ -894,6 +901,7 @@ function MonthGrid(props: {
                         className={`calv-mev calv-mblock ${selected === blockKey(b.id) ? "selected" : ""}`}
                         onClick={() => onSelect(blockKey(b.id))}
                         aria-label={`${t("blocks.title")}: ${b.title}, ${blockTime(b)}`}
+                        data-tooltip-full={`${b.title} · ${blockTime(b)}`}
                       >
                         <span className="calv-mev-time">{blockTime(b).slice(0, 5)}</span>
                         <span className="calv-ev-title">{b.title}</span>
@@ -909,6 +917,7 @@ function MonthGrid(props: {
                       aria-expanded={selected === e.key}
                       aria-controls={selected === e.key ? "calv-detail" : undefined}
                       data-key={e.key}
+                      data-tooltip-full={`${e.title} · ${timeRange(e)}`}
                     >
                       {!isAllDayLike(e) && <span className="calv-mev-time">{startTime(e)}</span>}
                       <span className="calv-ev-title">{e.title}</span>
@@ -975,7 +984,7 @@ function AgendaList({ range, events, blocks, cal, booked, selected, onSelect }: 
                 aria-label={`${t("blocks.title")}: ${b.title}, ${blockTime(b)}`}
               >
                 <span className="calv-agenda-time">{blockTime(b)}</span>
-                <span className="calv-agenda-bar" aria-hidden />
+                <span className="calv-agenda-dot" aria-hidden />
                 <span className="calv-agenda-text">
                   <span className="calv-ev-title">{b.title}</span>
                   {(b.page_title || b.issue_summary) && <span className="calv-ev-meta">{b.page_title ?? b.issue_summary}</span>}
@@ -995,7 +1004,7 @@ function AgendaList({ range, events, blocks, cal, booked, selected, onSelect }: 
               data-key={e.key}
             >
               <span className="calv-agenda-time">{timeRange(e)}</span>
-              <span className="calv-agenda-bar" aria-hidden />
+              <span className="calv-agenda-dot" aria-hidden />
               <span className="calv-agenda-text">
                 <span className="calv-ev-title">{e.title}</span>
                 {e.location && <span className="calv-ev-meta">{e.location}</span>}

@@ -61,13 +61,22 @@ const MAC_ORDER: Mod[] = ["ctrl", "alt", "shift", "cmd"];
 const MAC_GLYPH: Record<Mod, string> = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
 /** Modifier names as printed on the keys of the UI language's keyboards (Strg, Umschalt). */
 const NAME: Record<Mod, () => string> = { ctrl: () => t("keys.ctrl"), alt: () => t("keys.alt"), shift: () => t("keys.shift"), cmd: () => "Super" };
-/** Named keys as printed on the keys (Entf, Pos1, Leertaste on German keyboards). */
+/** Named keys as printed on the keys (Entf, Pos1, Leertaste on German keyboards), by any of their names. */
 const KEY_NAMES: Record<string, () => string> = {
+  ctrl: NAME.ctrl,
+  control: NAME.ctrl,
+  strg: NAME.ctrl,
+  alt: NAME.alt,
+  shift: NAME.shift,
+  umschalt: NAME.shift,
   enter: () => t("keys.enter"),
   return: () => t("keys.enter"),
+  eingabe: () => t("keys.enter"),
   delete: () => t("keys.delete"),
+  del: () => t("keys.delete"),
   entf: () => t("keys.delete"),
   space: () => t("keys.space"),
+  leertaste: () => t("keys.space"),
   backspace: () => t("keys.backspace"),
   escape: () => "Esc",
   esc: () => "Esc",
@@ -76,6 +85,15 @@ const KEY_NAMES: Record<string, () => string> = {
   pageup: () => t("keys.pageUp"),
   pagedown: () => t("keys.pageDown"),
 };
+
+/**
+ * A key's name as printed on the keyboard of the display language (Windows and Linux): German
+ * keyboards say „Strg“, „Umschalt“, „Eingabe“, „Entf“, „Leertaste“ and „Pos1“. Other keys stay as
+ * given. The one place that names keys: `formatShortcut`, `keys` and `comboLabel` go through it.
+ */
+export function keyName(key: string): string {
+  return KEY_NAMES[key.toLowerCase()]?.() ?? key;
+}
 const MAC_KEYS: Record<string, string> = {
   enter: "↩",
   return: "↩",
@@ -106,25 +124,25 @@ export function formatShortcut(spec: string, mac = IS_MAC, sep = "+"): string {
     if (m) mods.push(m === "mod" ? (mac ? "cmd" : "ctrl") : m);
     else rest.push(ARROWS[t.toLowerCase()] ?? (t.length === 1 ? t.toUpperCase() : t));
   }
-  const named = (k: string) => KEY_NAMES[k.toLowerCase()]?.() ?? k;
-  if (!mac) return [...mods.map((m) => NAME[m]()), ...rest.map(named)].join(sep);
+  if (!mac) return [...mods.map((m) => NAME[m]()), ...rest.map(keyName)].join(sep);
   const glyphs = MAC_ORDER.filter((m) => mods.includes(m))
     .map((m) => MAC_GLYPH[m])
     .join("");
-  const key = rest.map((k) => MAC_KEYS[k.toLowerCase()] ?? named(k)).join(" ");
+  const key = rest.map((k) => MAC_KEYS[k.toLowerCase()] ?? keyName(k)).join(" ");
   // Words (Space, Klick) keep a gap; single keys, glyphs and F-keys follow the modifiers directly.
   const gap = glyphs && [...key].length > 1 && !/^F\d{1,2}$/.test(key) ? " " : "";
   return glyphs + gap + key;
 }
 
-/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS and „Strg Umschalt D“ (German) elsewhere. */
+/** An in-app shortcut hint: `keys("Mod Shift D")` is „⌘⇧D“ on macOS, „Strg Umschalt D“ in German
+ *  and „Ctrl Shift D“ in English elsewhere. */
 export function keys(spec: string, mac = IS_MAC): string {
   return formatShortcut(spec, mac, " ");
 }
 
 /** The primary modifier for labels: „⌘“ on macOS, „Strg“ (German) or „Ctrl“ elsewhere. */
 export function modLabel(mac = IS_MAC): string {
-  return mac ? "⌘" : t("keys.ctrl");
+  return mac ? "⌘" : keyName("Ctrl");
 }
 
 /**

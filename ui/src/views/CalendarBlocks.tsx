@@ -7,9 +7,8 @@ import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { Badge, Button, IconButton, Input } from "../components/ui";
 import { useT, t as tr } from "../lib/i18n";
-import { dateLong } from "../lib/format";
+import { dateLong, fmtDuration } from "../lib/format";
 import { blockTime, linkLabel, moved, resized, SNAP } from "../lib/blocks";
-import { hm } from "../lib/focus";
 import { openFocusDialog } from "../components/Focus";
 import { openIssue } from "../lib/jiraActions";
 import type { BlockPatch, FocusBlock } from "../lib/types";
@@ -254,7 +253,7 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
         <div className="calv-detail-when">
           <span>{dateLong(b.start)}</span>
           <span>
-            {blockTime(b)} · {hm(minutes)}
+            {blockTime(b)} · {fmtDuration(minutes)}
           </span>
         </div>
       </div>
@@ -317,7 +316,7 @@ export function BlockDetail({ block: b, timeOn, onClose, onChange, onDelete }: {
       <div className="calv-block-states">
         {b.focus_minutes > 0 && (
           <span className="calv-block-state">
-            <Target size={13} aria-hidden /> {t("blocks.focused", { time: hm(b.focus_minutes) })}
+            <Target size={13} aria-hidden /> {t("blocks.focused", { time: fmtDuration(b.focus_minutes) })}
           </span>
         )}
         {timeOn && b.entry_id != null && (

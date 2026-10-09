@@ -204,7 +204,7 @@ export const FileEmbed = Node.create<FileEmbedOptions>({
       let bytes: number | null = null;
       let pages: number | null = null;
       const showMeta = () => {
-        const parts = [pages != null ? t("file.pdfPages", { n: pages }) : "", bytes != null ? formatSize(bytes) : ""].filter(Boolean);
+        const parts = [pages != null ? t("pdf.pages", { n: pages }) : "", bytes != null ? formatSize(bytes) : ""].filter(Boolean);
         meta.textContent = parts.join(" · ");
       };
       let alive = true;

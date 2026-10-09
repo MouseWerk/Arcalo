@@ -9,7 +9,7 @@ import { AlertTriangle, ListFilter, Pencil } from "lucide-react";
 import { api, on } from "../lib/api";
 import { useApp } from "../store/app";
 import { useTimeTracking, timeTrackingEnabled } from "../lib/timetracking";
-import { fmtDate, h1, isoDay, numberLocale, time } from "../lib/format";
+import { fmtDate, fmtMinutes, isoDay, numberLocale, time } from "../lib/format";
 import { currentLang, t, useT } from "../lib/i18n";
 import { groupLabel } from "../lib/dashquery";
 import { backendQuery, parseNoteQuery, sortRows, type NoteQuery } from "../lib/noteQuery";
@@ -17,6 +17,8 @@ import type { QueryResult, QueryRow } from "../lib/dashtypes";
 import { escapeHtml } from "../lib/htmlExport";
 import { BarChart } from "../components/dashboard/tools";
 import { PageIcon } from "../components/icons";
+import { taskSegments } from "../lib/tasks";
+import { stripInline, stripMarkdown } from "../lib/plaintext";
 import { track } from "./lazyRender";
 import { isKey } from "../lib/ime";
 
@@ -31,6 +33,51 @@ export async function runNoteQuery(nq: NoteQuery): Promise<QueryResult> {
 /** A task's text without its #tags (as in the dashboard's task lists). */
 export const taskText = (text: string) => text.replace(/\s#[\p{L}\p{N}_/-]+/gu, "").trim() || text;
 
+/** Opens the page a [[link]] in a task points to (created like a click in the editor would). */
+async function openLinkTarget(target: string, newTab: boolean) {
+  const s = useApp.getState();
+  try {
+    const page = await api.resolvePage(target, true);
+    if (!page) return;
+    if (!s.pages.has(page.id)) await s.refreshTree();
+    s.openPage(page.id, { newTab });
+  } catch (e) {
+    s.error(t("tasks.linkFailed"), e);
+  }
+}
+
+/** A task's text as the tasks view shows it: [[links]] as links, the other marks gone. */
+function TaskInline({ text }: { text: string }) {
+  return (
+    <>
+      {taskSegments(taskText(text)).map((seg, i) =>
+        seg.kind === "link" ? (
+          <span
+            key={i}
+            className="wikilink"
+            data-target={seg.target}
+            role="link"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              void openLinkTarget(seg.target, e.ctrlKey || e.metaKey);
+            }}
+            onKeyDown={(e) => {
+              if (!isKey(e, "Enter")) return;
+              e.stopPropagation();
+              void openLinkTarget(seg.target, false);
+            }}
+          >
+            {seg.text}
+          </span>
+        ) : (
+          <span key={i}>{stripInline(seg.text)}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 const dateText = (d: string | null) => (d ? fmtDate(d.length === 10 ? `${d}T12:00:00` : d) : "");
 
 /** Header and cells of the table of a result. */
@@ -42,9 +89,9 @@ export function queryTable(nq: NoteQuery, rows: QueryRow[]): { head: string[]; c
         ? { head: [t("dash.q.col.title"), ...q.columns], cells: (r) => [r.title, ...q.columns.map((c) => r.cells[c] ?? "")] }
         : { head: [t("dash.q.col.title"), t("query.col.changed")], cells: (r) => [r.title, dateText(r.date)] };
     case "tasks":
-      return { head: [t("dash.q.col.task"), t("dash.q.col.page"), t("dash.q.col.due")], cells: (r) => [taskText(r.title), r.detail, dateText(r.date)] };
+      return { head: [t("dash.q.col.task"), t("dash.q.col.page"), t("dash.q.col.due")], cells: (r) => [stripMarkdown(taskText(r.title)), r.detail, dateText(r.date)] };
     case "entries":
-      return { head: [t("dash.q.col.date"), t("dash.q.col.wbs"), t("dash.q.col.text"), "h"], cells: (r) => [dateText(r.date), r.detail, r.title, r.minutes != null ? h1(r.minutes / 60) : ""] };
+      return { head: [t("dash.q.col.date"), t("dash.q.col.wbs"), t("dash.q.col.text"), "h"], cells: (r) => [dateText(r.date), r.detail, r.title, r.minutes != null ? fmtMinutes(r.minutes) : ""] };
     case "events":
       void rows;
       return { head: [t("dash.q.col.date"), t("dash.q.col.title"), t("dash.q.col.place")], cells: (r) => [`${dateText(r.date)} ${r.date ? time(r.date) : ""}`.trim(), r.title, r.detail] };
@@ -77,7 +124,7 @@ export async function queryStaticHtml(src: string): Promise<string> {
   const table = (head: string[], rows: string[][]) =>
     `<table class="query"><thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   if (nq.display === "count") {
-    const value = nq.query.source === "entries" ? h1((res.minutes ?? 0) / 60) : res.total.toLocaleString(numberLocale());
+    const value = nq.query.source === "entries" ? fmtMinutes(res.minutes ?? 0) : res.total.toLocaleString(numberLocale());
     return table([t("query.count")], [[`${value} ${unitOf(nq, res.total)}`]]);
   }
   if (nq.display === "chart") return table([nq.query.group, nq.query.source === "entries" ? "h" : t("query.count")], res.groups.map((g) => [groupLabel(g.label, nq.query.group, currentLang()), g.value.toLocaleString(numberLocale())]));
@@ -120,7 +167,7 @@ function Result({ nq, res, reload }: { nq: NoteQuery; res: QueryResult; reload: 
     const hours = nq.query.source === "entries";
     return (
       <div className="qb-count">
-        <span className="num qb-count-value">{hours ? h1((res.minutes ?? 0) / 60) : res.total.toLocaleString(numberLocale())}</span>
+        <span className="num qb-count-value">{hours ? fmtMinutes(res.minutes ?? 0) : res.total.toLocaleString(numberLocale())}</span>
         <span className="muted">{unitOf(nq, res.total)}</span>
         {hours && <span className="faint small">{t("dash.q.entries", { n: res.total })}</span>}
       </div>
@@ -164,7 +211,7 @@ function Result({ nq, res, reload }: { nq: NoteQuery; res: QueryResult; reload: 
                     tabIndex={i === 0 && r.page_id != null ? 0 : undefined}
                     onKeyDown={i === 0 ? (e) => isKey(e, "Enter") && openRow(r, e) : undefined}
                   >
-                    {c}
+                    {tasks && i === 0 ? <TaskInline text={r.title} /> : c}
                   </td>
                 ))}
               </tr>
@@ -181,10 +228,10 @@ function Result({ nq, res, reload }: { nq: NoteQuery; res: QueryResult; reload: 
           {tasks && <TaskBox row={r} onChanged={reload} />}
           {nq.query.source === "pages" && <PageIcon name={r.icon} size={14} />}
           <button type="button" className="qb-row" onClick={(e) => openRow(r, e)}>
-            <span className="ellipsis">{nq.query.source === "tasks" ? taskText(r.title) : r.title}</span>
+            <span className="ellipsis">{nq.query.source === "tasks" ? <TaskInline text={r.title} /> : r.title}</span>
           </button>
           {r.detail && nq.query.source !== "pages" && <span className="faint small ellipsis qb-detail">{r.detail}</span>}
-          {r.minutes != null && nq.query.source === "entries" && <span className="num small">{h1(r.minutes / 60)} h</span>}
+          {r.minutes != null && nq.query.source === "entries" && <span className="num small">{fmtMinutes(r.minutes)} h</span>}
           {r.date && <span className="faint small num qb-when">{dateText(r.date)}</span>}
         </li>
       ))}

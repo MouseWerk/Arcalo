@@ -17,8 +17,8 @@ const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate(
 const openCalendarFromPalette = async () => {
   await app.keys(["Control", "k"]);
   await app.waitFor(".palette");
-  await app.type("Kalender");
-  await app.waitText(".pal-item.sel", /Kalender/);
+  await app.type("Tagesnotiz eines Tages");
+  await app.waitText(".pal-item.sel", /Tagesnotiz eines Tages öffnen/);
   await app.keys(["Enter"]);
   await app.waitFor(".calendar");
 };
@@ -40,7 +40,7 @@ test("the palette opens the calendar with today and the demo daily note", async 
   const booked = days.find((d) => d.booked_minutes > 0);
   assert.ok(booked, "demo bookings in the visible weeks");
   const hours = await app.text(`.cal-day[data-date="${booked.date}"] .cal-hours`);
-  assert.equal(hours, (Math.round((booked.booked_minutes / 60) * 10) / 10).toLocaleString("de-DE"));
+  assert.equal(hours, (booked.booked_minutes / 60).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   await app.shot("calendar");
 
   // Escape closes it.

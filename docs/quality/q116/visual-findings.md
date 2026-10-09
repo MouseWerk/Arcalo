@@ -31,7 +31,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 
 ## High
 
-### V1 High: colored left bars in "Termine buchen" (timesheet) and the start page agenda
+### V1 High: colored left bars in "Termine buchen" (timesheet) and the start page agenda — fixed in 1.16 (styles.test upright bars, e2e 330)
 - Screen: Zeiterfassung > "Termine buchen" list; start page "Termine" widget rows; all themes, all sizes.
 - Wrong: each meeting row starts with an 18 px (timesheet) / 16 px (widget) vertical bar in the calendar color
   in front of the time. CLAUDE.md: "No colored bars on the left side anywhere". The calendar's own list view
@@ -55,7 +55,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: count target hours only from the first day with any booking or from the install date (whichever is
   later); no gap suggestion before that day. Add the fresh-workspace case to the q115 e2e.
 
-### V3 High: projects table is cut off with an overlapping scroll button
+### V3 High: projects table is cut off with an overlapping scroll button — fixed in 1.16 (e2e 330 Projekte table)
 - Screen: Projekte; de/en, light/dark/contrast, 1280 with side panel and 900 without.
 - Wrong: the Vorgänge table is wider than the card; the last column ("Rest") is cut mid-number ("0,", "24,"),
   a round ">" scroll button sits on top of the header cell, and the table scrolls sideways inside the card
@@ -67,14 +67,14 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: below ~900 px of card width drop the low-priority columns (Termin/Puffer, Rest) into a second line or a
   container query layout; keep the side-scroll affordance outside the header row and fade the cut edge.
 
-### V4 High: hard-coded German in the English UI
+### V4 High: hard-coded German in the English UI — fixed in 1.16 (i18n-strings scanner: German words in templates)
 - Screen: English, PDF embed in a page ("3 Seiten · 1.7 kB"), tag view subtitle ("n Seiten").
 - Wrong: mixed languages; the translation check does not catch template literals.
 - Shot: `shots/en-light-1280-page-mid2.png` (`q116/visual/audit-en-light_1280x800-*.json`, "3 Seiten").
 - Files: `ui/src/editor/fileEmbed.ts:207`, `ui/src/views/TagView.tsx:27`.
 - Fix: `t("pdf.pages", { n })` / `t("tag.pages", { n })` with de/en plural entries.
 
-### V5 High: calendar day headers spill out of the last column, stray tooltip
+### V5 High: calendar day headers spill out of the last column, stray tooltip — fixed in 1.16 (e2e 330 day heads, tooltip watch)
 - Screen: Kalender work week at 1280 with side panel and at 900; de/en, all themes.
 - Wrong: the Friday header's icon row (note, tasks, export) runs past the right edge and is clipped
   mid-icon; the booked-hours chips of Mo-Do show a trailing clipped glyph ("12,00 h ,"). The tooltip
@@ -90,7 +90,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 
 ## Medium
 
-### V6 Medium: booked time in the calendar collapses to stray gray lines
+### V6 Medium: booked time in the calendar collapses to stray gray lines — fixed in 1.16 (e2e 330 booked strip)
 - Screen: Kalender work week/week at 1280 (with panel) and 900.
 - Wrong: the booked-time blocks next to the meetings shrink to 2 px vertical gray lines in every column
   (only the draft stripe is left), which reads as a rendering glitch. At 1920 the same blocks show as hatched
@@ -101,7 +101,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: give booked blocks a minimum width (e.g. 14 px) with only the hatch, or show them as a thin summary
   bar under the day header when the column is narrower than ~140 px.
 
-### V7 Medium: calendar texts reduced to single letters
+### V7 Medium: calendar texts reduced to single letters — fixed in 1.16 (cut-text tooltips, month cell container query, e2e 330)
 - Screen: Kalender month (1280 + panel), work week in split panes, start page timeline strip (all sizes).
 - Wrong: month cells show "10:00 J…", "08:00 A…"; split-pane events "Ab…", "Jo…"; the start page day
   timeline shows chips "V", "…", "Ku…". None has a tooltip (audit: `calv-ev-title` truncated without title,
@@ -114,7 +114,7 @@ defect a demanding user notices; **Low** = small inconsistency.
   rely on the day detail; timeline chips without room show no text (color only) and all get `data-tooltip`
   with title and time.
 
-### V8 Medium: start page "Fällig"/"Aufgaben" widgets truncate the task, not the page
+### V8 Medium: start page "Fällig"/"Aufgaben" widgets truncate the task, not the page — fixed in 1.16 (dashboard task row)
 - Screen: Startseite Heute and Projekte boards; 900, 1280, 1920.
 - Wrong: the task title is cut to 4-10 characters ("Überfällig…", "Überf…", "Morgen fäl…") while the source
   page and the "überfällig" chip keep their full width; the row with a priority chip ("hoch So., 11.10.")
@@ -125,7 +125,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: title `flex: 1 1 auto; min-width: 40%`, page name `flex: 0 1 auto; max-width: 40%`, chips `flex: none`;
   hide the page name first when narrow.
 
-### V9 Medium: sideways scrollbars in split panes and widgets
+### V9 Medium: sideways scrollbars in split panes and widgets — fixed in 1.16 (e2e 330 split panes; rich footers wrap, task lists and project widget constrained)
 - Screen: split view (page | tasks/calendar/timesheet), start page "Projekt" widget.
 - Wrong: the left page pane shows a horizontal scrollbar under the editor (audit `div.page-scroll` 314 > 293,
   `div.editor-toolbar` 125 > 95); the tasks view in the right pane scrolls sideways (`div.view-scroll`
@@ -137,7 +137,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: `overflow-wrap: anywhere` for inline code in narrow panes, toolbar overflow menu instead of scroll,
   wrap the tasks header controls, container query for the project widget rows.
 
-### V10 Medium: page title breaks inside words in narrow panes
+### V10 Medium: page title breaks inside words in narrow panes — fixed in 1.16 (title scales with the pane, break-word and hyphens)
 - Screen: split view, long title.
 - Wrong: "Seitenübersc / hrift" and "Gestaltung / aller Blöcke" at 40 px size in a 300 px pane; broken
   mid-word without hyphen.
@@ -146,7 +146,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: `hyphens: auto` with `lang` set, `overflow-wrap: break-word` (not `anywhere`), and scale the title
   font with the pane width (`font-size: clamp(var(--fs-xl), 6cqi, var(--fs-title))`).
 
-### V11 Medium: tab bar shows a half-faded ghost tab in narrow panes
+### V11 Medium: tab bar shows a half-faded ghost tab in narrow panes — fixed in 1.16 (tab strip starts at a tab, cut tabs hidden; e2e 330)
 - Screen: split view with several tabs.
 - Wrong: next to the home button a 30 px fragment of a tab ("[." / "CAT…") is visible under the left fade
   mask, and the active tab shrinks to "Sehr …". Looks like a glitch rather than scrolled tabs.
@@ -155,7 +155,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: scroll the active tab fully into view with the neighbour either fully shown or fully hidden, or
   give tabs a min width (~96 px) and let the overflow chevron list the rest.
 
-### V12 Medium: colored outline for "gap" days in "Zeit diese Woche"
+### V12 Medium: colored outline for "gap" days in "Zeit diese Woche" — fixed in 1.16 (styles.test colored state rings)
 - Screen: start page widget "Zeit diese Woche", dark 1920 (AI off) and others when a day is under target.
 - Wrong: the bar track of a gap day gets a 1 px amber inset outline (`box-shadow: inset 0 0 0 1px
   var(--warning)`), a colored border as a state marker.
@@ -164,7 +164,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: neutral treatment: warning-tinted track fill (`--warning-soft`) and the weekday label in warning
   text color; no outline.
 
-### V13 Medium: tag suggestions use dashed accent borders on every page
+### V13 Medium: tag suggestions use dashed accent borders on every page — fixed in 1.16 (neutral chips, +n weitere)
 - Screen: every page header ("Vorschlag: # architektur ×"), all themes; strongest in contrast dark (cyan).
 - Wrong: accent-colored dashed chip borders (violet for new tags) above the content of almost every page -
   the "AI look" the design rules avoid, and visual noise at the top of every note.
@@ -184,7 +184,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: one term per concept: "Lücke" = hours missing to target; unbooked meetings = "nicht gebuchte Termine".
   Budget badge follows the forecast (warning when it runs out before the plan end).
 
-### V15 Medium: inconsistent hour formats on one screen
+### V15 Medium: inconsistent hour formats on one screen — fixed in 1.16 (fmtDuration, format.test hours)
 - Screen: week review / day review / timesheet / briefing.
 - Wrong: "49,5 h" and "49,50 h", "0 h", "0,00 h" and "0:00 h" (focus) for the same unit, sometimes in one
   card row.
@@ -194,7 +194,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: one helper for hours (decimal with the locale's separator, two decimals in tables, one in summary
   tiles) and use it for focus time too.
 
-### V16 Medium: timesheet entry descriptions cut to ~10 characters
+### V16 Medium: timesheet entry descriptions cut to ~10 characters — fixed in 1.16 (status as icon in narrow panes, cut-text tooltip)
 - Screen: Zeiterfassung > entries, 1280 with panel and split pane.
 - Wrong: "Schulungsun…", "Abstimmung …", "Datenmigrati…" without tooltip (audit: `span.entry-desc` 579 > 95
   px), while every row repeats an identical "Entwurf" badge.
@@ -203,7 +203,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: description gets the flexible column, status badge only when it differs from the day's default
   (or as an icon), `title` on the description.
 
-### V17 Medium: meaning search lists everything as "ähnlich" for nonsense queries
+### V17 Medium: meaning search lists everything as "ähnlich" for nonsense queries — not fixed: a threshold exists (MIN_SIMILARITY 0.5 plus a 0.25 window); the hits come from the fake model, whose nonsense-query vector is the constant dimension every page shares; no realistic embedding model could be run here (HuggingFace blocked, no Ollama), and collapsing meaning hits without exact hits would hide the main use case
 - Screen: search sidebar, query "qqqxyz": "9 Seiten · 9 nach Bedeutung", every page tagged "ähnlich"
   with unrelated snippets ("2026-10-09 []").
 - Shot: `shots/de-dark-1280-search-empty.png`, `shots/de-light-1280-search-empty.png`.
@@ -212,7 +212,7 @@ defect a demanding user notices; **Low** = small inconsistency.
   "Keine Treffer" plus "Ähnliche Seiten anzeigen" collapsed. (The fake embedding model exaggerates the
   effect, but no threshold is visible.)
 
-### V18 Medium: query block table shows raw Markdown and misaligned checkboxes
+### V18 Medium: query block table shows raw Markdown and misaligned checkboxes — fixed in 1.16 (e2e 330 query table)
 - Screen: page with a `query` block (tasks, table), all themes.
 - Wrong: task cells show "[[Weekly sync 22.09.]]" and "[[PRJ-2026-X Rollout]]" literally; the checkbox
   column is ~60 px wide with the box top-aligned while the text is vertically centered.
@@ -221,7 +221,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: render task text through the inline Markdown renderer used by the tasks view; checkbox column
   `width: 28px; vertical-align: middle`.
 
-### V19 Medium: intro scene "Zeit" at 900 px falls apart
+### V19 Medium: intro scene "Zeit" at 900 px falls apart — fixed in 1.16 (time scene stacked below 1080 px)
 - Screen: intro scene 4, de contrast dark 900x700.
 - Wrong: the note card sits top left, the chart card far lower right, a 100 px empty band between them;
   the composition no longer reads as one board.
@@ -229,7 +229,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - File: `ui/src/styles/firstrun.css` (scene layout).
 - Fix: below 1000 px stack the two cards with a fixed 16 px gap, centered, and scale the visual.
 
-### V20 Medium: AI surfaces doubled in a fresh workspace without AI
+### V20 Medium: AI surfaces doubled in a fresh workspace without AI — fixed in 1.16 (panel hint once, no suggestions without AI)
 - Screen: fresh workspace, chat view open: the chat view and the side panel both show "Keine KI verbunden …
   KI einrichten" (dashed box) plus AI suggestion chips; status bar "KI einrichten".
 - Shot: `shots/empty-de-light-chat.png`, `shots/empty-de-light-timesheet.png`.
@@ -237,7 +237,7 @@ defect a demanding user notices; **Low** = small inconsistency.
 - Fix: one place for the setup hint (the view in focus); hide the panel's suggestions while no provider is
   configured.
 
-### V21 Medium: truncation without tooltip in tree and search results
+### V21 Medium: truncation without tooltip in tree and search results — fixed in 1.16 (automatic tooltip for cut text in lib/tooltip.ts)
 - Screen: tree, search sidebar, palette snippets, review stat subtitles ("3 nicht gebucht …").
 - Wrong: audit found 80+ ellipses without `title`/`data-tooltip` (`span.tree-label`, `span.side-result-name`,
   `span.rv-stat-sub`, `span.select-label`, `span.pal-snippet`).
@@ -247,47 +247,47 @@ defect a demanding user notices; **Low** = small inconsistency.
 
 ## Low
 
-### V22 Low: Mermaid edge labels on gray boxes
+### V22 Low: Mermaid edge labels on gray boxes — fixed in 1.16 (e2e 330 Mermaid label)
 - All themes: "ja"/"nein" labels sit on a light gray rectangle that matches neither light nor dark
   background. Shot: `shots/de-contrast-dark-1280-page-mid2.png`, `shots/en-light-1920-page-mid2.png`.
   Fix: set `edgeLabelBackground` in the Mermaid theme variables from `--bg-canvas`.
 
-### V23 Low: URLs in settings render as "http: //127.0.0.1"
+### V23 Low: URLs in settings render as "http: //127.0.0.1" — fixed in 1.16 (styles.test mono ligatures)
 - AI providers, network proxy, backup paths: a visible gap after "http:" in the mono font (JetBrains Mono
   contextual alternates). Shot: `shots/de-dark-1280-settings-ai.png`, `shots/de-dark-1280-settings-network.png`.
   Fix: `font-variant-ligatures: none; font-feature-settings: "calt" 0` on settings mono text (as
   `app.css:3953` already does for JQL).
 
-### V24 Low: search snippets mangle code
+### V24 Low: search snippets mangle code — fixed in 1.16 (plaintext.test code)
 - "p.filter((x) ⇒ x.name.trim() ! "")": `!==` loses `==` (highlight syntax stripped) and `=>` is shown as an
   arrow. Shot: `shots/de-light-900-search-sidebar2.png`. File: plain-text snippet builder
   (`ui/src/lib/plaintext.ts`). Fix: skip Markdown inline stripping inside code spans/fences.
 
-### V25 Low: theme picker marks the active theme twice
+### V25 Low: theme picker marks the active theme twice — fixed in 1.16 (check mark only)
 - Settings > Darstellung: "Aktiv" accent badge and a check mark on the light card, only the check mark on
   the dark card. Shot: `shots/en-light-1920-settings-appearance.png`,
   `shots/de-contrast-light-1920-settings-appearance.png`. Fix: keep the check mark only; the mode switch
   already says which one is in use.
 
-### V26 Low: same action, different labels
+### V26 Low: same action, different labels — fixed in 1.16 (one label, compact week button)
 - Week review "Zusammenfassen" vs day review "Zusammenfassung schreiben"; the day review's primary
   button wraps alone onto a second row at 1280 with panel. Shot: `shots/de-dark-1280-dayreview.png`,
   `shots/de-dark-1280-weekreview.png`. Fix: one label ("Zusammenfassen"), keep the toolbar on one row.
 
-### V27 Low: timesheet toolbar wraps into three rows in a split pane
+### V27 Low: timesheet toolbar wraps into three rows in a split pane — fixed in 1.16 (icon buttons in narrow panes)
 - Shot: `shots/de-dark-1280-split-page-timesheet.png`, `shots/de-light-900-split-page-timesheet.png`.
   Fix: put week navigation and actions in one row with an overflow menu below ~420 px.
 
-### V28 Low: slash menu hints and subtitles cut without tooltip
+### V28 Low: slash menu hints and subtitles cut without tooltip — fixed in 1.16 (two-line subtitles, wider menu, cut-text tooltip)
 - "```query" hint and "Live-Liste von Aufgaben, Seiten, Buch…" are clipped. Shot:
   `shots/de-light-1280-slash.png`, `shots/de-light-1280-slash-filtered.png`. Fix: two-line subtitle or
   `data-tooltip`.
 
-### V29 Low: empty graph splits its message
+### V29 Low: empty graph splits its message — fixed in 1.16 (.empty centered as one block)
 - Fresh workspace graph: "Nichts anzuzeigen" at the top, the hint at the bottom of the canvas. Shot:
   `shots/empty-de-light-graph.png`. Fix: one centered empty state block.
 
-### V30 Low: about page shows "Version 1.0.0"
+### V30 Low: about page shows "Version 1.0.0" — not fixed: only the debug and e2e builds report 1.0.0; release builds carry the real version
 - Settings > Über / "Neu in Arcalo": the build reports 1.0.0 (workspace version in `Cargo.toml` and
   `tauri.conf.json`); release builds set the real version, but dev and e2e screenshots used for the website
   will show 1.0.0. Shot: `shots/de-dark-1280-settings-about.png`.

@@ -1594,7 +1594,7 @@ mod tests {
         s.normalize();
         assert_eq!((s.appearance.ui_scale, s.appearance.accent.as_str()), (125, "#aabbcc"));
         assert_eq!((s.editor.autosave_ms, s.notes.trash_retention_days), (250, 7));
-        assert_eq!(s.notes.daily_folder, "Journal");
+        assert_eq!(s.notes.daily_folder, crate::notes::default_daily_folder());
         assert_eq!(s.time.rounding.step_minutes, 0);
         assert_eq!(s.time.default_leistungsart.get("NP-1").map(String::as_str), Some("DEV"));
         assert_eq!((s.ai.temperature, s.ai.allowed_tools.clone()), (2.0, vec!["git".to_owned()]));

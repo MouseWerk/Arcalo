@@ -138,7 +138,7 @@ test("the week's days and sections show what was done", async () => {
   assert.match(await app.text(".pane.active .wr-date"), new RegExp(`^Diese Woche · KW ${kw.week} · `));
   assert.equal((await app.$$(".pane.active .wr-day")).length, 7);
   assert.match(await app.text(".pane.active .wr-day:first-child"), /^Mo/);
-  assert.match(await app.text(".pane.active .rv-stat.tone-time"), /\/ 40 h/);
+  assert.match(await app.text(".pane.active .rv-stat.tone-time"), /\/ 40,00 h/);
   await app.waitText(".pane.active .rv-time .rv-wbs", /NP-8801\/1020/);
   // Meetings by day with their booking state.
   // Day heads are small caps (upper case by CSS).
@@ -198,7 +198,7 @@ test("the Kalender header, the Tagesrückblick and the start page open it", asyn
   await app.keys(["Control", "t"]);
   await app.waitFor('.pane.active [data-widget="week_review"] .dw-wr', 15000);
   assert.equal((await app.$$('.pane.active [data-widget="week_review"] .dw-wr-day')).length, 7);
-  assert.match(await app.text('.pane.active [data-widget="week_review"] .dw-wr-time'), /\/ 40 h/);
+  assert.match(await app.text('.pane.active [data-widget="week_review"] .dw-wr-time'), /\/ 40,00 h/);
   assert.match(await app.text('.pane.active [data-widget="week_review"] .dw-wr-counts'), /Termine/);
   await shot("285-week-widget");
   await app.click('.pane.active [data-widget="week_review"] .dw-wr-links .dw-link');
@@ -237,7 +237,7 @@ test("„Als Wochenbericht speichern“ writes a filed page and updates it in pl
   assert.match(first, /## Fokus[\s\S]*Fokus Wochenbericht/);
   assert.match(first, /## Seiten\n\n[\s\S]*- \[\[Wochen Konzept\]\] \(neu/);
   // Folders the filing made, templates and the report itself are no work on the week.
-  assert.doesNotMatch(first.split("## Seiten")[1], /\[\[(Journal|Vorlagen|\d{4}|Wochenbericht KW[^\]]*)\]\]/);
+  assert.doesNotMatch(first.split("## Seiten")[1], /\[\[(Journal|Tagesnotizen|Vorlagen|\d{4}|Wochenbericht KW[^\]]*)\]\]/);
   assert.doesNotMatch(first, /- \[[ x]\]/, "the report adds no tasks");
   assert.match(first, /## Notizen/);
 

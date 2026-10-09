@@ -13,13 +13,12 @@ import { useAi } from "../lib/aiswitch";
 import { Badge, Button, EmptyState, IconButton, Progress, Skeleton } from "../components/ui";
 import { revealText } from "../editor/reveal";
 import { dayTitle } from "../lib/activity";
-import { fmtDate, isoDay, time } from "../lib/format";
+import { fmtDate, fmtDuration, isoDay, time } from "../lib/format";
 import { openCalendarView, openSettingsSection } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { hiddenCalendars, useHiddenCalendars } from "../lib/calvisibility";
 import { openTimesheetDay } from "../lib/reviewnav";
 import { requestWeekProposal } from "../lib/weekplan";
-import { hm, hours } from "../lib/dayreview";
 import { briefingCounts, briefingSettings, missingLabel, shows } from "../lib/briefing";
 import { openIssueInBrowser, openIssueNote } from "../lib/jiraActions";
 import { useTimeTracking } from "../lib/timetracking";
@@ -225,7 +224,7 @@ function Overview({ b }: { b: Briefing }) {
   if (shows(b, "meetings")) items.push({ id: "meetings", value: String(c.upcoming), label: t("brief.ov.meetings", { n: c.meetings }) });
   if (shows(b, "tasks")) items.push({ id: "tasks", value: String(c.tasks), label: c.overdue ? t("brief.ov.overdue", { n: c.overdue }) : t("brief.ov.tasks") });
   if (shows(b, "jira") && b.jira) items.push({ id: "jira", value: String(c.jira), label: b.jira.blocked_total ? t("brief.ov.blocked", { n: b.jira.blocked_total }) : t("brief.ov.jira") });
-  if (shows(b, "time") && b.time) items.push({ id: "time", value: hours(c.missing), label: missingLabel(b) });
+  if (shows(b, "time") && b.time) items.push({ id: "time", value: fmtDuration(c.missing), label: missingLabel(b) });
   if (!items.length) return null;
   return (
     <section className="bf-overview" data-n={items.length} aria-label={t("review.overview")}>
@@ -490,12 +489,12 @@ function TimeCard({ b }: { b: Briefing }) {
   const pct = tm.target_minutes > 0 ? Math.min(100, Math.round((tm.booked_minutes / tm.target_minutes) * 100)) : 100;
   const why = tm.holiday ? t("brief.holiday", { name: tm.holiday }) : tm.absence ? t(ABSENCE[tm.absence] ?? "brief.abs.other") + (tm.half ? ` (${t("brief.half")})` : "") : null;
   return (
-    <Card id="time" title={t("brief.lastDay", { day: dayTitle(tm.date) })} extra={<span className="rv-card-extra num">{tm.target_minutes > 0 ? t("review.hoursOf", { h: hours(tm.booked_minutes), target: hours(tm.target_minutes) }) : hours(tm.booked_minutes)}</span>}>
+    <Card id="time" title={t("brief.lastDay", { day: dayTitle(tm.date) })} extra={<span className="rv-card-extra num">{tm.target_minutes > 0 ? t("review.hoursOf", { h: fmtDuration(tm.booked_minutes), target: fmtDuration(tm.target_minutes) }) : fmtDuration(tm.booked_minutes)}</span>}>
       <div className="bf-time-body">
         <Progress value={pct} tone={tm.missing_minutes === 0 ? "success" : "accent"} />
         <div className={`bf-time-state ${tm.missing_minutes > 0 ? "missing" : "ok"}`}>
           <Clock size={14} aria-hidden />
-          <span>{tm.missing_minutes > 0 ? t("brief.missing", { time: hm(tm.missing_minutes) }) : tm.target_minutes > 0 ? t("review.targetReached") : t("brief.noGap")}</span>
+          <span>{tm.missing_minutes > 0 ? t("brief.missing", { time: fmtDuration(tm.missing_minutes) }) : tm.target_minutes > 0 ? t("review.targetReached") : t("brief.noGap")}</span>
           {why && <span className="faint">· {why}</span>}
         </div>
         <div className="bf-time-actions">
