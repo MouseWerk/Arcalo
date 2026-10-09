@@ -29,7 +29,7 @@ const splitRight = async () => {
   await app.browser.execute(() => document.querySelector(".pane.active .vh [aria-label='Weitere Aktionen']").click());
   await app.waitFor(".menu");
   await app.browser.execute(() => [...document.querySelectorAll(".menu [role^=menuitem], .menu button")].find((b) => /Rechts daneben/.test(b.textContent))?.click());
-  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane .ProseMirror")).length === 2, { timeoutMsg: "no split" });
+  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane > .pane-content:not([hidden]) .ProseMirror")).length === 2, { timeoutMsg: "no split" });
 };
 const closeSplit = async () => {
   while ((await app.$$(".workspace > .pane")).length > 1) {
@@ -115,14 +115,14 @@ test("two panes on the same page: alternating typing keeps every edit", async ()
   const c = (await app.invoke("page_get", { id })).content;
   for (const w of ["AAA1", "BBB1", "AAA2", "BBB2"]) assert.ok(c.includes(w), `${w} lost: ${JSON.stringify(c)}`);
   // Both panes end up showing everything.
-  const texts = await app.browser.execute(() => [...document.querySelectorAll(".workspace > .pane .ProseMirror")].map((p) => p.innerText));
+  const texts = await app.browser.execute(() => [...document.querySelectorAll(".workspace > .pane > .pane-content:not([hidden]) .ProseMirror")].map((p) => p.innerText));
   for (const t of texts) for (const w of ["AAA1", "BBB1", "AAA2", "BBB2"]) assert.ok(t.includes(w), `pane misses ${w}: ${JSON.stringify(t)}`);
 });
 
 test("two panes in source mode: quick alternating edits keep both", async () => {
   const id = await pageId("Zwei Fenster");
   await app.keys(["Control", "Shift", "m"]);
-  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane .source-text")).length === 2, { timeoutMsg: "no source" });
+  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane > .pane-content:not([hidden]) .source-text")).length === 2, { timeoutMsg: "no source" });
   const typeSrc = async (i, text) => {
     await app.browser.execute((i) => {
       const t = document.querySelectorAll(".workspace > .pane")[i].querySelector(".source-text");
@@ -138,11 +138,11 @@ test("two panes in source mode: quick alternating edits keep both", async () => 
   await sleep(2500);
   const c = (await app.invoke("page_get", { id })).content;
   for (const w of ["XXX", "YYY", "ZZZ"]) assert.ok(c.includes(w), `${w} lost: ${JSON.stringify(c)}`);
-  const vals = await app.browser.execute(() => [...document.querySelectorAll(".source-text")].map((t) => t.value));
+  const vals = await app.browser.execute(() => [...document.querySelectorAll(".pane-content:not([hidden]) .source-text")].map((t) => t.value));
   for (const v of vals) for (const w of ["XXX", "YYY", "ZZZ"]) assert.ok(v.includes(w), `pane misses ${w}`);
   await app.shot("sync-two-source-panes");
   await app.keys(["Control", "Shift", "m"]);
-  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane .ProseMirror")).length === 2, { timeoutMsg: "no visual editor" });
+  await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane > .pane-content:not([hidden]) .ProseMirror")).length === 2, { timeoutMsg: "no visual editor" });
   await closeSplit();
 });
 

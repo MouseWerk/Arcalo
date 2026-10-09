@@ -101,7 +101,7 @@ test("narrow panes: a section dropdown instead of the menu, nothing sideways or 
       const settings = document.querySelector(".pane.active .settings");
       const shown = (el) => !!el && el.offsetParent !== null;
       return {
-        nav: shown(settings.querySelector(".settings-nav")),
+        nav: shown(settings.querySelector(".pane-content:not([hidden]) .settings-nav")),
         topbar: shown(settings.querySelector(".settings-topbar")),
         dropdown: shown(settings.querySelector(".settings-section-select")),
         search: shown(settings.querySelector(".settings-topbar .settings-search")),

@@ -23,7 +23,7 @@ const today = (() => {
 })();
 const openSection = async (id) => {
   await app.dismissToasts();
-  const onSettings = await app.browser.execute(() => !!document.querySelector(".settings-nav"));
+  const onSettings = await app.browser.execute(() => !!document.querySelector(".pane-content:not([hidden]) .settings-nav"));
   if (!onSettings) await app.keys(["Control", ","]);
   await app.click(`.settings-nav-item[data-section="${id}"]`);
 };

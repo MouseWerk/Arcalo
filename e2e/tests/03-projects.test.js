@@ -15,8 +15,8 @@ const setField = async (placeholder, value) => {
 test("projects view shows budget and schedule facts", async () => {
   await app.click(".ribbon [aria-label=\"Projekte\"]");
   await app.waitText(".view-header h1", /Projekte/);
-  await app.waitText(".vorgaenge td", /kritisch/);
-  await app.waitText(".vorgaenge td", /Puffer 1 T/);
+  await app.waitText(".vorgaenge :is(td, th)", /kritisch/);
+  await app.waitText(".vorgaenge :is(td, th)", /Puffer 1 T/);
   await app.shot("projects");
 });
 
@@ -47,7 +47,7 @@ test("create a project with Netzplan and Vorgang", async () => {
   await inputs[3].setValue("40");
   await app.shot("vorgang-dialog");
   await app.click(".dialog .btn-primary");
-  await app.waitText(".vorgaenge td", /0010 Ticketbearbeitung/);
+  await app.waitText(".vorgaenge :is(td, th)", /0010 Ticketbearbeitung/);
 
   const tree = await app.invoke("wbs_tree");
   const p = tree.find((x) => x.project_code === "PRJ-2027-A");

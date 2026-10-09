@@ -163,7 +163,7 @@ test("Über lists Arcalo's license and the open-source libraries", async () => {
 test("Mod+F goes to the visible search field in a narrow pane too", async () => {
   await app.browser.setWindowSize(900, 800);
   try {
-    await app.browser.waitUntil(() => app.browser.execute(() => getComputedStyle(document.querySelector(".settings-nav")).display === "none"), { timeoutMsg: "menu still shown" });
+    await app.browser.waitUntil(() => app.browser.execute(() => getComputedStyle(document.querySelector(".pane-content:not([hidden]) .settings-nav")).display === "none"), { timeoutMsg: "menu still shown" });
     await app.browser.execute(() => document.querySelector(".settings-body button")?.focus());
     await app.keys(["Control", "f"]);
     await app.browser.waitUntil(() => app.browser.execute(() => !!document.activeElement?.closest(".settings-topbar .settings-search")), { timeoutMsg: "search not focused" });

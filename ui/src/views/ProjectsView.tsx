@@ -222,9 +222,7 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                   {t("proj.col.progress")}
                 </th>
                 <th scope="col">{t("upd.status")}</th>
-                <th scope="col">
-                  <span className="sr-only">{t("ribbon.actions")}</span>
-                </th>
+                <th scope="col" aria-label={t("ribbon.actions")} />
               </tr>
             </thead>
             <tbody>
