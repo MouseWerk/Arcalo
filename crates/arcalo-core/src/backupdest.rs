@@ -1636,13 +1636,16 @@ mod tests {
         // The abandoned copy stops at its next step and never renames a partial file into place.
         std::thread::sleep(Duration::from_millis(2500));
         assert!(list_own(&slow.join("pc")).is_empty());
-        // A slow but steady copy is not given up: progress keeps it alive.
-        let steady: Hook = Arc::new(|_: &Path| std::thread::sleep(Duration::from_millis(100)));
+        // A slow but steady copy is not given up: progress keeps it alive, also when the whole copy
+        // takes longer than the limit. The limit leaves room for the real writes and syncs of a busy
+        // machine next to each slow step.
+        let steady: Hook = Arc::new(|_: &Path| std::thread::sleep(Duration::from_millis(150)));
         let job2 = job(&b, &root.join("stetig"), "pc", 3);
-        let ok = run_watched(&root.join("stetig"), Duration::from_millis(300), Activity::new(Some(steady)), move |a| {
-            deliver(&job2, a)
-        });
+        let limit = Duration::from_secs(1);
+        let begun = Instant::now();
+        let ok = run_watched(&root.join("stetig"), limit, Activity::new(Some(steady)), move |a| deliver(&job2, a));
         assert!(ok.is_ok(), "{ok:?}");
+        assert!(begun.elapsed() > limit, "the copy took longer than the limit: {:?}", begun.elapsed());
         assert!(with_timeout(Duration::from_millis(50), || std::thread::sleep(Duration::from_secs(1))).is_none());
         assert_eq!(with_timeout(Duration::from_secs(1), || 5), Some(5));
         let _ = fs::remove_dir_all(&root);
