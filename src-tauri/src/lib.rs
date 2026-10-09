@@ -1194,6 +1194,9 @@ struct StopOutcome {
     alerts: Vec<BudgetStatus>,
     /// True when less than a minute was recorded and nothing was booked.
     discarded: bool,
+    /// The clock was set back behind the timer's start: the booking is kept without a duration
+    /// for the user to enter it.
+    clock_back: bool,
 }
 
 /// Stops the timer. With `subtract_idle` the detected idle time is not booked; pauses never
@@ -1207,6 +1210,7 @@ fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Re
     };
     let thresholds = state.settings().thresholds;
     let db = state.db();
+    let clock_back = db.running_timer()?.is_some_and(|r| now < r.start_time);
     let entries = db.stop_timer_in(now, &idle, &Local)?;
     lock(&state.idle).reset();
     let _ = app.emit("data://entries", ());
@@ -1214,12 +1218,16 @@ fn timer_stop(app: AppHandle, state: State<AppState>, subtract_idle: bool) -> Re
     desktop::refresh_tray(&app);
     let db = state.db();
     let entry = entries[0].clone();
+    if clock_back {
+        devlog::warn("time", "timer stopped before its start (the clock was set back): kept without a duration");
+        return Ok(StopOutcome { entry, entries, idle_minutes, alerts: vec![], discarded: false, clock_back });
+    }
     if entries.len() == 1 && entry.duration_minutes.unwrap_or(0) < 1 {
         db.delete_time_entry(entry.id)?;
-        return Ok(StopOutcome { entry, entries: vec![], idle_minutes, alerts: vec![], discarded: true });
+        return Ok(StopOutcome { entry, entries: vec![], idle_minutes, alerts: vec![], discarded: true, clock_back });
     }
     let alerts = tracking::alerts_for(&db, entry.netzplan_id, entry.vorgang_nr.as_deref(), &thresholds)?;
-    Ok(StopOutcome { entry, entries, idle_minutes, alerts, discarded: false })
+    Ok(StopOutcome { entry, entries, idle_minutes, alerts, discarded: false, clock_back })
 }
 
 #[tauri::command(async)]
@@ -2043,14 +2051,13 @@ fn backup_list(state: State<AppState>) -> Result<Vec<BackupInfo>> {
 /// Backs up once a day: a few minutes after the start when the newest backup is older than
 /// 24 h, then checks hourly. The hourly Git sync (mode `hourly`) runs in the same loop.
 fn spawn_backup_scheduler(app: AppHandle) {
-    const DAY: chrono::TimeDelta = chrono::TimeDelta::hours(24);
     std::thread::spawn(move || {
         // Not while the app starts and the first notes open (the mirror writes every page).
         std::thread::sleep(startup_backup_delay());
         loop {
             let state = app.state::<AppState>();
             let due = match backup::list_backups(&state.backup_dir()) {
-                Ok(list) => list.first().is_none_or(|b| Local::now() - b.created_at >= DAY),
+                Ok(list) => backup::daily_due(&list, Local::now()),
                 Err(_) => true,
             };
             // Whether the backup also refreshed the mirror (a failed mirror is written again by the sync).
@@ -4298,11 +4305,10 @@ pub(crate) fn prepare_exit(app: &AppHandle) {
             }
         }
     }
-    // Otherwise the new process would only focus this one.
-    if portable::active() {
-        portable::unlock_instance();
-    } else {
-        #[cfg(desktop)]
+    // Otherwise the new process would only focus this one, or stop at the data folder's lock.
+    portable::unlock_instance();
+    #[cfg(desktop)]
+    if !portable::active() {
         tauri_plugin_single_instance::destroy(app);
     }
 }
@@ -4339,7 +4345,7 @@ pub(crate) fn resume_after_failed_exit(app: &AppHandle) {
                 *lock(reader) = r;
             }
         }
-        if portable::active() {
+        if arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none() {
             portable::lock_instance(&state.data_dir);
         }
     }
@@ -4480,6 +4486,18 @@ pub fn run() {
             if let Some(e) = folder_error {
                 recovery::show(app.handle(), &dir, recovery::Failure::Folder(Error::file(&dir, e).to_string()));
                 return Ok(());
+            }
+            // The second line of defence against two processes on one workspace: the
+            // single-instance plugin needs a session bus on Linux, and an installed copy and the
+            // Store's may share a data folder. A lock on a file in the data folder, as a portable
+            // copy holds already. Test runs (ARCALO_DATA_DIR) use folders of their own.
+            if portable::detect().is_none()
+                && arcalo_core::identity::env_os("ARCALO_DATA_DIR").is_none()
+                && !portable::lock_instance(&dir)
+            {
+                devlog::warn("core", format!("another Arcalo process runs on {}: this one ends", dir.display()));
+                portable::already_running(&dir);
+                std::process::exit(0);
             }
             devlog::info(
                 "core",

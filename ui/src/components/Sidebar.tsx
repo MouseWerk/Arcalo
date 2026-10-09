@@ -1332,7 +1332,8 @@ export async function stopTimer() {
     }
     const out = await api.timerStop(subtract);
     const entries = out.entries?.length ? out.entries : [out.entry];
-    if (out.discarded) s.toast({ tone: "info", title: tStatic("focus.notBooked"), detail: tStatic("timer.underMinute") });
+    if (out.clock_back) s.toast({ tone: "warning", persistent: true, title: tStatic("timer.clockBackTitle"), detail: tStatic("timer.clockBackDetail") });
+    else if (out.discarded) s.toast({ tone: "info", title: tStatic("focus.notBooked"), detail: tStatic("timer.underMinute") });
     else if (entries.length > 1)
       // Over midnight: one booking per day.
       s.toast({

@@ -33,18 +33,18 @@ pub fn active() -> bool {
     detect().is_some()
 }
 
-/// Held while a portable copy runs (see [`lock_instance`]): the lock file and the one of
-/// 1.14 and earlier.
+/// Held while the app runs (see [`lock_instance`]): the lock file and the one of 1.14 and earlier.
 static INSTANCE: std::sync::Mutex<Vec<std::fs::File>> = std::sync::Mutex::new(Vec::new());
 
 /// The lock file in the data folder.
 const LOCK_FILE: &str = ".arcalo.lock";
 
-/// A portable copy's single-instance check: a lock on a file in its own data folder. The
-/// installed copy's check is keyed by the app identifier, which both share, so it would let a
-/// portable copy only bring the installed one to the front (and the other way round).
-/// Returns `false` when another process runs on this data folder. A copy of 1.14 or earlier
-/// locks `.annalo.lock`: it is checked too, so the two never run on one folder.
+/// The single-instance check on the data folder: a lock on a file in it. A portable copy's only
+/// check (the installed copy's plugin is keyed by the app identifier, which both share, so it
+/// would let a portable copy only bring the installed one to the front, and the other way
+/// round); for the installed copy the second line behind that plugin, which needs a session bus
+/// on Linux. Returns `false` when another process runs on this data folder. A copy of 1.14 or
+/// earlier locks `.annalo.lock`: it is checked too, so the two never run on one folder.
 pub fn lock_instance(data_dir: &Path) -> bool {
     let _ = std::fs::create_dir_all(data_dir);
     let mut held = Vec::new();
@@ -65,6 +65,28 @@ pub fn lock_instance(data_dir: &Path) -> bool {
     }
     *INSTANCE.lock().unwrap_or_else(|e| e.into_inner()) = held;
     true
+}
+
+/// Tells that Arcalo runs already on `data_dir` (a second start that found the lock taken).
+#[cfg(desktop)]
+pub fn already_running(data_dir: &Path) {
+    let text = arcalo_core::trf!(
+        "Arcalo läuft bereits mit dem Datenordner {}. Wechsle zum geöffneten Fenster (es kann auch minimiert sein).",
+        "Arcalo is already running with the data folder {}. Switch to its window (it may be minimized).",
+        data_dir.display()
+    );
+    eprintln!("{text}");
+    // Test runs (debug builds) see the line only.
+    let raw = std::env::var("ARCALO_TEST_NO_DIALOG").ok();
+    if arcalo_core::update::test_override(cfg!(debug_assertions), raw.as_deref()).is_some() {
+        return;
+    }
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Info)
+        .set_title("Arcalo")
+        .set_description(text)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
 }
 
 /// Releases the lock of [`lock_instance`] (before a restart, whose new process takes it).
