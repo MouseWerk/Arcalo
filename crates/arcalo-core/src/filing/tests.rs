@@ -489,3 +489,20 @@ fn moving_many_to_a_position_keeps_their_order_there() {
     db.move_pages_at(&[kids[2], kids[0]], Some(folder.id), Some(0)).unwrap();
     assert_eq!(order(&db), ["Drei", "Eins", "Y", "X", "Zwei"]);
 }
+
+#[test]
+fn tidy_files_by_the_local_creation_day() {
+    let db = Database::open_in_memory().unwrap();
+    let p = db.create_page(None, "Sprachnotiz", None).unwrap();
+    // Created 00:30 on 1 November in Berlin: 23:30 on 31 October in UTC.
+    db.conn()
+        .execute(
+            "UPDATE pages SET created_at = '2026-10-31T23:30:00Z', file_type = 'voice', file_date = NULL WHERE id = ?1",
+            [p.id],
+        )
+        .unwrap();
+    let in_berlin = tidy::Snapshot::read_in(&db, &chrono_tz::Europe::Berlin).unwrap();
+    assert_eq!(in_berlin.info_of(&db, p.id).map(|i| i.date), Some(day(2026, 11, 1)));
+    let in_utc = tidy::Snapshot::read_in(&db, &Utc).unwrap();
+    assert_eq!(in_utc.info_of(&db, p.id).map(|i| i.date), Some(day(2026, 10, 31)));
+}

@@ -330,7 +330,11 @@ pub fn retrieve(
                         let desc: String = r.get(4)?;
                         let target = v.map_or(np.clone(), |v| format!("{np}/{v}"));
                         let hours = minutes.map_or(tr!("läuft", "running").to_owned(), |m| format!("{:.2}h", m as f64 / 60.0));
-                        Ok(format!("{} {target} {hours}: {desc}", start.get(..10).unwrap_or(&start)))
+                        // The local day of the booking (its UTC stamp may name the day before).
+                        let day = crate::db::parse_ts(&start)
+                            .map(|t| t.with_timezone(&chrono::Local).date_naive().format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|_| start.get(..10).unwrap_or(&start).to_owned());
+                        Ok(format!("{day} {target} {hours}: {desc}"))
                     },
                 )
                 .optional()?

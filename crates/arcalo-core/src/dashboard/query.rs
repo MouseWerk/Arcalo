@@ -255,6 +255,15 @@ fn date_cell(key: &str, date: Option<&str>) -> Cell {
     }
 }
 
+/// A UTC timestamp (`updated_at`) as the local day in `tz` (an edit at 00:30 belongs to that
+/// day, not to the one before it in UTC).
+fn stamp_cell<Tz: TimeZone>(key: &str, stamp: &str, tz: &Tz) -> Cell {
+    match crate::db::parse_ts(stamp) {
+        Ok(t) => date_cell(key, Some(&t.with_timezone(tz).date_naive().format("%Y-%m-%d").to_string())),
+        Err(_) => date_cell(key, Some(stamp)),
+    }
+}
+
 /// Whether every filter passes; `cell` gives the cell of a field (lower case), `None` when the
 /// row has no such field.
 fn passes(filters: &[Filter], today: NaiveDate, mut cell: impl FnMut(&str) -> Option<Cell>) -> bool {
@@ -334,7 +343,7 @@ fn pages<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Group
         let find = |key: &str| -> Option<Cell> {
             match key {
                 "titel" | "title" => Some(text_cell(key, page.title.clone())),
-                "geändert" | "changed" => Some(date_cell(key, Some(&page.updated_at))),
+                "geändert" | "changed" => Some(stamp_cell(key, &page.updated_at, ctx.tz)),
                 _ => cells.iter().find(|c| c.key.to_lowercase() == key).cloned(),
             }
         };
@@ -683,4 +692,18 @@ fn events<Tz: TimeZone>(ctx: &Ctx<Tz>, q: &Query) -> Result<(Vec<QueryRow>, Grou
         });
     }
     Ok((rows, groups, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_change_time_is_the_local_day() {
+        let berlin = chrono_tz::Europe::Berlin;
+        // 00:30 on 1 November in Berlin.
+        assert_eq!(stamp_cell("geändert", "2026-10-31T23:30:00Z", &berlin).text, "2026-11-01");
+        assert_eq!(stamp_cell("geändert", "2026-10-31T23:30:00Z", &chrono::Utc).text, "2026-10-31");
+        assert_eq!(stamp_cell("geändert", "2026-10-31", &berlin).text, "2026-10-31");
+    }
 }
