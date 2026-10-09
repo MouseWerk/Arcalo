@@ -3,6 +3,12 @@
 
 import type { Tab } from "../store/app";
 
+/**
+ * The shown place of the active pane. Kept places are in the pane too (hidden), so queries for
+ * the editor, title or scroll box of what the user sees go through this, never just `.pane.active`.
+ */
+export const SHOWN_PLACE = ".pane.active > .pane-content:not([hidden])";
+
 /** How many places a pane keeps alive (the shown one and the most recently left ones). */
 export const KEEP_ALIVE = 5;
 

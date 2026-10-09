@@ -47,6 +47,7 @@ import { DateInput } from "./DateInput";
 import { flushAllEditors } from "../editor/saves";
 import { reloadEditors } from "../editor/NoteEditor";
 import { aiEnabled, useAi } from "../lib/aiswitch";
+import { SHOWN_PLACE } from "../lib/keepalive";
 
 const s = () => useApp.getState();
 
@@ -366,7 +367,9 @@ const SECTION_LABEL: Record<ReportSection, TKey> = {
 /** Waits until the page's editor is in the active pane (for printing it). */
 async function untilShown(title: string) {
   for (let i = 0; i < 40; i++) {
-    const pane = document.querySelector(".pane.active");
+    // The shown place only: a hidden kept note in the same pane has an editor too, and the tab
+    // strip has the title.
+    const pane = document.querySelector(SHOWN_PLACE);
     const input = pane?.querySelector<HTMLInputElement | HTMLTextAreaElement>(".page-title, textarea.page-title, input.page-title");
     if (pane?.querySelector(".ProseMirror") && (!input || input.value === title || pane.textContent?.includes(title))) return;
     await new Promise((r) => setTimeout(r, 100));

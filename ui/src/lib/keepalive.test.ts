@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { keepAlive, type Kept } from "./keepalive";
+import fs from "node:fs";
+import path from "node:path";
+import { SHOWN_PLACE, keepAlive, type Kept } from "./keepalive";
 import type { Tab } from "../store/app";
 
 const tab = (id: string, pageId?: number, kind: Tab["kind"] = "page"): Tab => ({ id, kind, pageId, back: [], forward: [] });
@@ -29,5 +31,35 @@ describe("keepAlive", () => {
     // Tasks view tab: kept like a page.
     kept = keepAlive(kept, tab("t", undefined, "tasks"), ["g", "f", "t"]);
     expect(kept.map((k) => k.key)).toEqual(["t:tasks:", "g:page:7", "f:page:6"]);
+  });
+});
+
+describe("queries of the shown place", () => {
+  const SRC = path.resolve(__dirname, "..");
+  const sources = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) return sources(p);
+      return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+    });
+
+  it("go through SHOWN_PLACE: a hidden kept tab in the active pane has an editor and a title too", () => {
+    // `.pane.active .x` finds the first match in the pane, which may be in a hidden kept place.
+    const stray = sources(SRC).flatMap((f) =>
+      fs
+        .readFileSync(f, "utf8")
+        .split("\n")
+        .flatMap((line, i) => (/\.pane\.active\s+[^\s>"'`]/.test(line) ? [`${path.relative(SRC, f)}:${i + 1}`] : [])),
+    );
+    expect(stray).toEqual([]);
+  });
+
+  it("matches the shown place only", () => {
+    document.body.innerHTML = `<section class="pane active"><div class="pane-content"><div class="ProseMirror" id="a"></div></div><div class="pane-content" hidden><div class="ProseMirror" id="b"></div></div></section>`;
+    const pane = document.querySelector(".pane")!;
+    // The shown one second in the document (a hidden one first).
+    pane.append(pane.firstElementChild!);
+    expect(document.querySelector(`${SHOWN_PLACE} .ProseMirror`)?.id).toBe("a");
+    document.body.innerHTML = "";
   });
 });

@@ -42,6 +42,7 @@ import { withSaved } from "../lib/pagesave";
 import { openDayReview } from "../lib/reviewnav";
 import { t as tr, useT } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
+import { SHOWN_PLACE } from "../lib/keepalive";
 
 export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; active: boolean }) {
   useT();
@@ -672,7 +673,7 @@ export function printActivePane() {
 
 /** Renders the lazy blocks of the open pages for printing; diagrams light until it is over. */
 async function preparePrint() {
-  const pane = document.querySelector(".pane.active") ?? document;
+  const pane = document.querySelector(SHOWN_PLACE) ?? document;
   if (!pane.querySelector(".page-embed, .rich-preview")) return;
   const [{ renderAllNow }, { setPrintTheme }] = await Promise.all([import("../editor/lazyRender"), import("../editor/mermaid")]);
   setPrintTheme(true);
@@ -712,7 +713,7 @@ export async function createSubpage(parentId: number | null, title = tr("page.un
     const p = await api.createPage(title, parent, icon);
     await s.refreshTree();
     s.openPage(p.id);
-    setTimeout(() => document.querySelector<HTMLTextAreaElement>(".pane.active .page-title")?.select(), 120);
+    setTimeout(() => document.querySelector<HTMLTextAreaElement>(`${SHOWN_PLACE} .page-title`)?.select(), 120);
   } catch (e) {
     s.error(tr("page.createFailed"), e);
   }
