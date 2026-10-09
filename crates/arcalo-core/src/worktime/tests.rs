@@ -277,7 +277,22 @@ fn missing_time_counts_from_the_day_a_new_workspace_was_set_up() {
     let mut st = db.load_settings().unwrap();
     st.onboarding.completed_at = Some("2026-10-07T12:00:00Z".into());
     db.save_settings(&st).unwrap();
+    db.onboarding_classify().unwrap();
     assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
+    // Running the intro again (palette or settings) keeps the first day.
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 12, 1, 12, 0, 0).unwrap()).unwrap();
+    db.onboarding_classify().unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 10, 7)));
+}
+
+#[test]
+fn running_the_intro_again_keeps_the_first_counted_day() {
+    let db = Database::open_in_memory().unwrap();
+    db.onboarding_classify().unwrap();
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 3, 2, 12, 0, 0).unwrap()).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 3, 2)));
+    db.onboarding_complete(Utc.with_ymd_and_hms(2026, 10, 9, 12, 0, 0).unwrap()).unwrap();
+    assert_eq!(counts_from(&db).unwrap(), Some(d(2026, 3, 2)));
 }
 
 #[test]

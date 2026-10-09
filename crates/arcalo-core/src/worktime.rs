@@ -244,17 +244,10 @@ pub const COUNTS_FROM: &str = "time.counts_from";
 
 /// The first day whose target can be missing time: the day a new workspace was set up (the
 /// days before Arcalo existed were not missed). `None`: every day counts (a workspace from
-/// before the setup existed, or set up before 1.15 without the setup date).
+/// before the setup existed). A workspace set up with 1.15 gets its row at the first start of
+/// 1.16 ([`Database::onboarding_classify`]), never from a later setup run.
 pub fn counts_from(db: &Database) -> Result<Option<NaiveDate>> {
-    if let Some(day) = db.meta_get(COUNTS_FROM)?.and_then(|v| v.parse::<NaiveDate>().ok()) {
-        return Ok(Some(day));
-    }
-    // Set up with 1.15 (before the meta row): the setup's time, if the workspace was new then.
-    if db.meta_get("onboarding.first_seen")?.as_deref() != Some("fresh") {
-        return Ok(None);
-    }
-    let at = db.load_settings().unwrap_or_default().onboarding.completed_at;
-    Ok(at.and_then(|at| crate::db::parse_ts(&at).ok()).map(|at| at.with_timezone(&chrono::Local).date_naive()))
+    Ok(db.meta_get(COUNTS_FROM)?.and_then(|v| v.parse::<NaiveDate>().ok()))
 }
 
 /// The target of each day of `from..=to` as every view counts missing time (the timesheet,
