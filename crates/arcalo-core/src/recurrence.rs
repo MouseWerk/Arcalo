@@ -36,7 +36,8 @@ pub struct Recurrence {
     /// Weekly on these days, 0 Monday … 6 Sunday, sorted; empty: the weekday of the base date.
     #[serde(default)]
     pub weekdays: Vec<u8>,
-    /// Monthly on this day (1–31; a shorter month takes its last day); `None`: the base date's day.
+    /// Monthly (or yearly, in the base date's month) on this day (1–31; a shorter month takes its
+    /// last day); `None`: the base date's day.
     #[serde(default)]
     pub month_day: Option<u8>,
     /// No occurrence after this day (`YYYY-MM-DD`).
@@ -212,7 +213,7 @@ impl Recurrence {
             month_day = Some(u8::try_from(n).ok().filter(|d| (1..=31).contains(d))?);
             bare_day = true;
         }
-        if bare_day && unit != Some(Unit::Month) {
+        if bare_day && !matches!(unit, Some(Unit::Month | Unit::Year)) {
             return None;
         }
         if !meaningful {
@@ -228,7 +229,9 @@ impl Recurrence {
         };
         // Weekdays belong to weekly rules, a day of the month to monthly ones.
         let unit = if unit == Unit::Day && !weekdays.is_empty() && interval.is_none() { Unit::Week } else { unit };
-        if (!weekdays.is_empty() && unit != Unit::Week) || (month_day.is_some() && unit != Unit::Month) {
+        if (!weekdays.is_empty() && unit != Unit::Week)
+            || (month_day.is_some() && !matches!(unit, Unit::Month | Unit::Year))
+        {
             return None;
         }
         let interval = interval.unwrap_or(1);
@@ -259,7 +262,12 @@ impl Recurrence {
                     parts.push(d.to_string());
                 }
             }
-            Unit::Year => parts.push(if n == 1 { "yearly".into() } else { format!("{n}y") }),
+            Unit::Year => {
+                parts.push(if n == 1 { "yearly".into() } else { format!("{n}y") });
+                if let Some(d) = self.month_day {
+                    parts.push(d.to_string());
+                }
+            }
         }
         if self.when_done {
             parts.push("done".into());
@@ -290,9 +298,26 @@ impl Recurrence {
                 let monday = d - Duration::days(wd.into());
                 monday.checked_add_signed(Duration::weeks(n.into()) + Duration::days(self.weekdays[0].into()))
             }
-            Unit::Month => add_months(d, n, self.month_day.map_or(d.day(), u32::from)),
-            Unit::Year => add_months(d, n.checked_mul(12)?, d.day()),
+            Unit::Month => {
+                // The chosen day may still lie ahead in this month (`monthly,15` due on the 10th).
+                if let Some(day) = self.month_day
+                    && let Some(this) = add_months(d, 0, day.into()).filter(|this| *this > d)
+                {
+                    return Some(this);
+                }
+                add_months(d, n, self.month_day.map_or(d.day(), u32::from))
+            }
+            Unit::Year => add_months(d, n.checked_mul(12)?, self.month_day.map_or(d.day(), u32::from)),
         }
+    }
+
+    /// The rule with the series' day of the month written into it, when the next occurrence of a
+    /// task due on `base` would otherwise lose it: a monthly or yearly rule without a day, from
+    /// the 29th, 30th or 31st (else 31 January, 28 February, 28 March … and 29 February,
+    /// 28 February for good). `None` when nothing needs to change.
+    pub fn pinned(&self, base: NaiveDate) -> Option<Recurrence> {
+        let unpinned = matches!(self.unit, Unit::Month | Unit::Year) && self.month_day.is_none() && !self.when_done;
+        (unpinned && base.day() > 28).then(|| Recurrence { month_day: u8::try_from(base.day()).ok(), ..self.clone() })
     }
 
     /// The due date of the next occurrence of a task due on `due` (if it has one) and done on
@@ -416,6 +441,25 @@ mod tests {
         ] {
             assert_eq!(Recurrence::parse(s), None, "{s}");
         }
+    }
+
+    #[test]
+    fn a_day_of_the_month_still_ahead_comes_first_and_yearly_keeps_a_set_day() {
+        assert_eq!(r("monthly,15").next_due(Some(d("2026-01-10")), d("2026-01-10")), Some(d("2026-01-15")));
+        assert_eq!(r("monthly,15").next_due(Some(d("2026-01-15")), d("2026-01-15")), Some(d("2026-02-15")));
+        assert_eq!(r("monthly,15").next_due(Some(d("2026-01-20")), d("2026-01-20")), Some(d("2026-02-15")));
+        assert_eq!(r("3m,15").next_due(Some(d("2026-01-10")), d("2026-01-10")), Some(d("2026-01-15")));
+        assert_eq!(r("monthly,31").next_due(Some(d("2026-04-10")), d("2026-04-10")), Some(d("2026-04-30")));
+        assert_eq!(r("yearly,29").spec(), "yearly,29");
+        let feb29: Vec<NaiveDate> = r("yearly,29").preview(Some(d("2024-02-29")), d("2024-02-29"), 4);
+        assert_eq!(feb29, [d("2025-02-28"), d("2026-02-28"), d("2027-02-28"), d("2028-02-29")]);
+        assert_eq!(r("monthly").pinned(d("2026-01-31")).map(|p| p.spec()), Some("monthly,31".into()));
+        assert_eq!(r("yearly").pinned(d("2024-02-29")).map(|p| p.spec()), Some("yearly,29".into()));
+        assert_eq!(r("monthly").pinned(d("2026-01-28")), None);
+        assert_eq!(r("monthly,15").pinned(d("2026-01-31")), None);
+        assert_eq!(r("weekly").pinned(d("2026-01-31")), None);
+        // A bare day only with a monthly or yearly unit.
+        assert!(Recurrence::parse("weekly 15").is_none());
     }
 
     #[test]

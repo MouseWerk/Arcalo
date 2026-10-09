@@ -86,7 +86,7 @@ export function recurLabel(r: Recurrence): string {
     const names = weekdayLabels(1);
     parts.push(r.weekdays.length === 5 && r.weekdays.every((d, i) => d === i) ? t("tasks.recur.workdays") : r.weekdays.map((d) => names[d]).join(", "));
   }
-  if (r.unit === "month" && r.month_day) parts.push(t("tasks.recur.onDay", { d: r.month_day }));
+  if ((r.unit === "month" || r.unit === "year") && r.month_day) parts.push(t("tasks.recur.onDay", { d: r.month_day }));
   if (r.when_done) parts.push(t("tasks.recur.whenDone"));
   if (r.until) parts.push(t("tasks.recur.until", { date: fmtDate(`${r.until}T12:00:00`) }));
   return parts.join(" · ");
@@ -102,7 +102,7 @@ export function recurTokens(r: Recurrence): string {
   else if (r.unit === "week" && !r.weekdays.length) parts.push(n === 1 ? "weekly" : `${n}w`);
   else if (r.unit === "week") parts.push(...(n > 1 ? [`${n}w`] : []), ...r.weekdays.map((d) => WEEKDAY_SPEC[d]));
   else if (r.unit === "month") parts.push(n === 1 ? "monthly" : `${n}m`, ...(r.month_day ? [String(r.month_day)] : []));
-  else parts.push(n === 1 ? "yearly" : `${n}y`);
+  else parts.push(n === 1 ? "yearly" : `${n}y`, ...(r.month_day ? [String(r.month_day)] : []));
   if (r.when_done) parts.push("done");
   return `every:${parts.join(",")}${r.until ? ` until:${r.until}` : ""}`;
 }

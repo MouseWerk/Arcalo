@@ -70,6 +70,7 @@ describe("repeat rules", () => {
     expect(recurTokens(rule({ unit: "month", month_day: 31, when_done: true }))).toBe("every:monthly,31,done");
     expect(recurTokens(rule({ unit: "day", interval: 3, until: "2026-12-31" }))).toBe("every:3d until:2026-12-31");
     expect(recurTokens(rule({ unit: "year", interval: 2 }))).toBe("every:2y");
+    expect(recurTokens(rule({ unit: "year", month_day: 29 }))).toBe("every:yearly,29");
   });
 
   it("next week starts on Monday", () => {
