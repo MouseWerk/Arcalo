@@ -9,7 +9,14 @@ import { captureVisible, dailyContent, openCapture, pageContent } from "../lib/c
 
 const test = guarded(nodeTest, () => app);
 let app;
-before(async () => (app = await launch()));
+before(async () => {
+  app = await launch();
+  // The focus goes back and forth between the windows: a reminder due today (the week proposal
+  // on the last workday from 14:00, the end of the day) would open its view on the next focus
+  // of the main window, in the middle of a test. Not what this file is about.
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...view.settings, notifications: { ...view.settings.notifications, week_proposal: false, end_of_day: false } } });
+});
 after(async () => app?.close());
 
 const value = () => app.browser.execute(() => document.querySelector(".capture-input")?.value ?? null);

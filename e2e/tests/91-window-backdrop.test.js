@@ -151,7 +151,8 @@ test("no see-through seams between sidebar, split panes and panel (40/80/100 %, 
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane")).length === 2);
   await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.textContent.trim() === "Architektur").click());
   await app.waitText(".workspace > .pane:last-child .tab.active .tab-title", /Architektur/);
-  assert.equal((await app.$$(".settings")).length, 1);
+  // The settings once on screen (the right pane keeps its copy of the tab hidden, as any tab left).
+  assert.equal((await app.$$(".pane > .pane-content:not([hidden]) .settings")).length, 1);
   await app.browser.execute(() => {
     if (!document.querySelector(".app > .panel")) document.querySelector(".workspace > .pane:last-child .tabbar > button:last-of-type").click();
   });

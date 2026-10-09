@@ -159,7 +159,16 @@ test("/canvas in a note creates a linked canvas below it", async () => {
   await app.type("/canvas");
   await app.waitText(".sugg-item.sel", /Canvas/);
   await app.keys(["Enter"]);
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelectorAll(".cv-board").length === 1), { timeoutMsg: "canvas opened next to the note" });
+  // Shown next to the note (the board left in the note's tab stays mounted there, hidden).
+  await app.browser.waitUntil(
+    () =>
+      app.browser.execute(() => {
+        const boards = [...document.querySelectorAll(".pane > .pane-content:not([hidden]) .cv-board")];
+        const note = [...document.querySelectorAll(".pane > .pane-content:not([hidden]) .page-title")].find((t) => t.value === "Kickoff notes")?.closest(".pane");
+        return boards.length === 1 && !!note && boards[0].closest(".pane") !== note;
+      }),
+    { timeoutMsg: "canvas opened next to the note" },
+  );
   const tree = await app.invoke("workspace_tree");
   const flat = tree.flatMap(function f(n) { return [n, ...n.children.flatMap(f)]; });
   const created = flat.find((n) => n.parent_id === p.id && n.kind === "canvas");

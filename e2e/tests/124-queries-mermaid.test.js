@@ -44,15 +44,15 @@ const menuClick = (label) =>
 const content = async (id) => (await app.invoke("page_get", { id })).content;
 async function open(id, title) {
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 }
 async function setSettings(patch) {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: patch(view.settings) });
 }
 /** Scrolls every preview of the active page into view once (they render lazily). */
-async function scrollPreviews(sel = ".pane.active .rich-preview") {
+async function scrollPreviews(sel = ".pane.active > .pane-content:not([hidden]) .rich-preview") {
   const n = await app.browser.execute((s) => document.querySelectorAll(s).length, sel);
   for (let i = 0; i < n; i++) {
     await app.browser.execute((s, k) => document.querySelectorAll(s)[k]?.scrollIntoView({ block: "center" }), sel, i);
@@ -60,7 +60,7 @@ async function scrollPreviews(sel = ".pane.active .rich-preview") {
   }
 }
 const queryBlocks = () =>
-  app.browser.execute(() => [...document.querySelectorAll(".pane.active .rich-preview.rich-query")].map((e) => ({ text: e.innerText, display: e.querySelector(".qb")?.dataset.display ?? "" })));
+  app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .rich-preview.rich-query")].map((e) => ({ text: e.innerText, display: e.querySelector(".qb")?.dataset.display ?? "" })));
 
 before(async () => {
   app = await launch();
@@ -89,18 +89,18 @@ test("query blocks: table, count, problems inline, the source on demand", async 
   assert.match(bookings.text, /h/);
   assert.match(bad.text, /Nicht verstanden: from: nirgends/);
   // The code is hidden; „Abfrage bearbeiten“ shows it, „Fertig“ hides it again.
-  assert.equal(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active pre.rich-src")).display), "none");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .rich-query .rich-btn")][0].click());
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active pre.rich-src").classList.contains("is-editing")), { timeoutMsg: "source not shown" });
-  assert.notEqual(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active pre.rich-src")).display), "none");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .rich-query .rich-btn")][0].click());
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active pre.rich-src").classList.contains("is-hidden")), { timeoutMsg: "source not hidden" });
+  assert.equal(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src")).display), "none");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .rich-query .rich-btn")][0].click());
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src").classList.contains("is-editing")), { timeoutMsg: "source not shown" });
+  assert.notEqual(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src")).display), "none");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .rich-query .rich-btn")][0].click());
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src").classList.contains("is-hidden")), { timeoutMsg: "source not hidden" });
   await app.shot("124-queries");
 });
 
 test("ticking a task in a query result checks it in its page; the counts follow", async () => {
   await app.browser.execute(() => {
-    const row = [...document.querySelectorAll(".pane.active .qb-table tr")].find((r) => r.textContent.includes("Kunde anrufen"));
+    const row = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .qb-table tr")].find((r) => r.textContent.includes("Kunde anrufen"));
     row.querySelector(".qb-check").click();
   });
   await app.browser.waitUntil(async () => /- \[x\] Kunde anrufen/.test(await content(ids.tasks)), { timeout: 8000, timeoutMsg: "task not checked in its page" });
@@ -115,8 +115,8 @@ test("with time tracking off the bookings source is hidden", async () => {
   await app.browser.waitUntil(async () => !/ausgeschaltet/.test((await queryBlocks())[2].text), { timeout: 8000, timeoutMsg: "bookings not back" });
 });
 
-const diagramStates = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .rich-preview.mmd")].map((e) => ({ state: e.dataset.state, svg: !!e.querySelector(".mmd-view svg"), kind: e.querySelector(".rich-kind")?.textContent ?? "" })));
-const flowchartSvg = () => app.browser.execute(() => document.querySelector(".pane.active .rich-preview.mmd .mmd-view")?.innerHTML ?? "");
+const diagramStates = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .rich-preview.mmd")].map((e) => ({ state: e.dataset.state, svg: !!e.querySelector(".mmd-view svg"), kind: e.querySelector(".rich-kind")?.textContent ?? "" })));
+const flowchartSvg = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .rich-preview.mmd .mmd-view")?.innerHTML ?? "");
 
 test("Mermaid: seven diagram types render, errors show the source, the source toggles", async () => {
   await open(ids.diagrams, "Diagramme");
@@ -130,18 +130,18 @@ test("Mermaid: seven diagram types render, errors show the source, the source to
     [...Object.keys(DIAGRAMS).map(() => "ready:true"), "error:false"],
   );
   assert.deepEqual(states.map((d) => d.kind), ["Mermaid · flowchart", "Mermaid · sequenceDiagram", "Mermaid · gantt", "Mermaid · classDiagram", "Mermaid · stateDiagram-v2", "Mermaid · erDiagram", "Mermaid · mindmap", "Mermaid · flowchart"]);
-  const err = await app.browser.execute(() => document.querySelector('.pane.active .mmd[data-state="error"] .rich-error').innerText);
+  const err = await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .mmd[data-state="error"] .rich-error').innerText);
   assert.match(err, /Das Diagramm enthält einen Fehler/);
   assert.match(err, /A\[\[\[ --> B/, "the source is shown with the error");
   assert.deepEqual(await app.browser.execute(() => window.__arcaloErrors ?? []), []);
   // Source toggle.
-  await app.browser.execute(() => document.querySelector(".pane.active .mmd .mmd-edit").click());
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active pre.rich-src").classList.contains("is-editing")), { timeoutMsg: "source not shown" });
-  assert.match(await app.browser.execute(() => document.querySelector(".pane.active .mmd .mmd-edit").textContent), /Fertig/);
-  await app.browser.execute(() => document.querySelector(".pane.active .mmd .mmd-edit").click());
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active pre.rich-src").classList.contains("is-hidden")), { timeoutMsg: "source not hidden" });
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd .mmd-edit").click());
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src").classList.contains("is-editing")), { timeoutMsg: "source not shown" });
+  assert.match(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd .mmd-edit").textContent), /Fertig/);
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd .mmd-edit").click());
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) pre.rich-src").classList.contains("is-hidden")), { timeoutMsg: "source not hidden" });
   assert.equal((await content(ids.diagrams)).split("```mermaid").length - 1, 8, "the Markdown is unchanged");
-  await app.browser.execute(() => document.querySelector(".pane.active .rich-preview.mmd").scrollIntoView({ block: "start" }));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .rich-preview.mmd").scrollIntoView({ block: "start" }));
   await app.shot("124-mermaid-light");
 });
 
@@ -181,9 +181,9 @@ test("Mermaid exports SVG and PNG; HTML share has inline SVG and query tables; p
   await app.browser.waitUntil(async () => !/#ECECFF/i.test(await flowchartSvg()), { timeout: 10000 });
   await app.browser.execute(() => {
     window.__printed = null;
-    window.print = () => (window.__printed = { svgs: document.querySelectorAll(".pane.active .mmd-view svg").length, light: /#ECECFF/i.test(document.querySelector(".pane.active .mmd-view").innerHTML) });
+    window.print = () => (window.__printed = { svgs: document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .mmd-view svg").length, light: /#ECECFF/i.test(document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd-view").innerHTML) });
   });
-  await app.click('.pane.active .page-view [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Drucken / als PDF"));
   await app.browser.waitUntil(() => app.browser.execute(() => window.__printed != null), { timeout: 15000, timeoutMsg: "print not reached" });
   assert.deepEqual(await app.browser.execute(() => window.__printed), { svgs: 7, light: true });
@@ -193,7 +193,7 @@ test("Mermaid exports SVG and PNG; HTML share has inline SVG and query tables; p
 test("presentation mode shows diagrams and embedded sections", async () => {
   ids.deck = (await app.invoke("page_create", { parentId: null, title: "Vortrag Diagramm", icon: null, content: `# Ablauf\n\n${fence("mermaid", DIAGRAMS.flowchart)}\n\n![[Abfrage-Aufgaben]]\n` })).id;
   await open(ids.deck, "Vortrag Diagramm");
-  await app.click('.pane.active .page-view [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Präsentieren"));
   await app.waitFor(".presentation .present-slide");
   await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".presentation .slide-content .slide-diagram svg")), { timeout: 10000, timeoutMsg: "no diagram on the slide" });
@@ -222,10 +222,10 @@ test("a page with 10 embeds, 3 queries and 3 diagrams opens without jank and ren
   });
   const t0 = Date.now();
   await open(ids.big, "Viele Blöcke");
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelectorAll('.pane.active .page-embed[data-state="ready"]').length >= 1), { timeout: 8000, timeoutMsg: "first embed not shown" });
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelectorAll('.pane.active > .pane-content:not([hidden]) .page-embed[data-state="ready"]').length >= 1), { timeout: 8000, timeoutMsg: "first embed not shown" });
   const opened = Date.now() - t0;
   assert.ok(opened < 4000, `opened in ${opened} ms`);
-  const states = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .page-embed, .pane.active .rich-preview.mmd")].map((e) => e.dataset.state));
+  const states = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .page-embed, .pane.active > .pane-content:not([hidden]) .rich-preview.mmd")].map((e) => e.dataset.state));
   assert.equal(states.length, 13);
   assert.ok(states.filter((s) => s === "waiting").length >= 5, `below the fold waits: ${states}`);
   const long = await app.browser.execute(() => window.__long);

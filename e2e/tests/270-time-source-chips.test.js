@@ -31,13 +31,13 @@ const entry = async (id) => (await app.invoke("time_entries", { from: null, to: 
 const chipRe = /<time-entry id="(\d+)"[^>]*>[^<]*<\/time-entry>/;
 const emit = (event) => app.browser.executeAsync((e, done) => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: e, payload: null }).then(done, done), event);
 const link = async (id) => (await app.invoke("jira_entry_issues", { entryIds: [id] }))[0];
-const chips = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .ProseMirror .time-chip")].map((c) => c.dataset.chip ?? ""));
+const chips = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip")].map((c) => c.dataset.chip ?? ""));
 const clickText = async (sel, label) => {
   for (const el of await app.$$(sel)) if ((await app.textOf(el)) === label) return el.click();
   throw new Error(`no ${sel} reading ${label}`);
 };
 const chipMenu = async (label) => {
-  await (await app.$(".pane.active .ProseMirror .time-chip")).click();
+  await (await app.$(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip")).click();
   await app.waitFor(".menu");
   await clickText(".menu .menu-item", label);
 };
@@ -51,18 +51,18 @@ async function noteWithChip(title, line) {
   await app.type(line);
   await app.keys(["Escape"]);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .ProseMirror .time-chip");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip");
   await until(async () => chipRe.test(await content(title)), "chip saved");
   await until(async () => (await chips())[0] === "linked", "chip linked");
   return Number(chipRe.exec(await content(title))[1]);
 }
 
-const source = () => app.waitFor(".pane.active .source-text");
-const sourceValue = () => app.browser.execute(() => document.querySelector(".pane.active .source-text").value);
+const source = () => app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
+const sourceValue = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text").value);
 /** Selects the first chip in the source text box (focused). */
 const selectChip = () =>
   app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .source-text");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     const m = /<time-entry[^>]*>[^<]*<\/time-entry>/.exec(t.value);
     t.focus();
     t.setSelectionRange(m.index, m.index + m[0].length);
@@ -71,7 +71,7 @@ const selectChip = () =>
 const setSource = async (f) => {
   const next = f(await sourceValue());
   await app.browser.execute((v) => {
-    const t = document.querySelector(".pane.active .source-text");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
     setter.call(t, v);
     t.dispatchEvent(new Event("input", { bubbles: true }));
@@ -94,7 +94,14 @@ test("removing a chip in the source view removes its booking after the undo toas
   await app.waitText(".toast-title", /Buchung mit dem Chip gelöscht/);
   await until(async () => !chipRe.test(await content("Quellnotiz")), "saved without the chip");
   await app.shot("270-source-chip-removed");
-  await clickText(".toast button", "Rückgängig");
+  // „Rückgängig“ of the chip's toast (the new note's rename toast offers one too).
+  const undone = await app.browser.execute(() => {
+    const toast = [...document.querySelectorAll(".toast")].find((x) => /Buchung mit dem Chip gelöscht/.test(x.querySelector(".toast-title")?.textContent ?? ""));
+    const button = [...(toast?.querySelectorAll("button") ?? [])].find((b) => b.textContent.trim() === "Rückgängig");
+    button?.click();
+    return !!button;
+  });
+  assert.ok(undone, "undo in the chip's toast");
   await until(async () => (await sourceValue()).includes(chipText), "chip text back");
   await until(async () => (await content("Quellnotiz")).includes(chipText), "saved with the chip");
   await app.browser.pause(7500);
@@ -152,7 +159,7 @@ test("an exported booking stays when its chip is removed in the source view", as
 test("a booking back before its worklog deletion was sent keeps its worklog", async () => {
   // In the rich editor of a new note: a chip booked on a Jira issue.
   await app.keys(["Control", "Shift", "m"]);
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   const id = await noteWithChip("Jiranotiz", "/zeit 1h PROJ-123 Jira Chip");
   await until(async () => (await link(id))?.worklog_state === "posted", "worklog posted", 15000);
   const w = (await link(id)).worklog_id;

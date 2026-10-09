@@ -25,8 +25,8 @@ const pageId = async (title) => (await app.invoke("page_resolve", { title, creat
 const content = async (title) => (await app.invoke("page_get", { id: await pageId(title) })).content;
 const att = (name) => path.join(app.dataDir, "attachments", name);
 const clickMenu = (label) => app.browser.execute((l) => [...document.querySelectorAll(".menu-item")].find((b) => b.textContent.trim() === l).click(), label);
-const rowSel = (name) => `.att-row[data-file="${name}"]`;
-const shownRows = () => app.browser.execute(() => [...document.querySelectorAll(".att-row[data-file]")].map((r) => r.dataset.file));
+const rowSel = (name) => `.pane.active > .pane-content:not([hidden]) .att-row[data-file="${name}"]`;
+const shownRows = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .att-row[data-file]")].map((r) => r.dataset.file));
 
 /** A PDF from raw page content streams; `fonts` are the objects the pages' /F1 resource names. */
 function pdfFrom(streams, font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", extra = []) {
@@ -106,7 +106,7 @@ async function openAttachments() {
   await input.setValue("Anhänge verwalten");
   await app.waitText(".pal-item.sel", /Anhänge verwalten/);
   await app.keys(["Enter"]);
-  await app.waitFor(".att-table", 10000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .att-table", 10000);
 }
 
 test("the attachment manager lists every file with type, size, date and usage", async () => {
@@ -136,7 +136,7 @@ test("the attachment manager lists every file with type, size, date and usage", 
   assert.equal(list.total_size, list.files.reduce((n, f) => n + f.size, 0));
 
   await openAttachments();
-  await app.waitText(".att-summary", /5 Dateien · .* insgesamt · 1 unbenutzt \(2 kB\)/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .att-summary", /5 Dateien · .* insgesamt · 1 unbenutzt \(2 kB\)/);
   assert.deepEqual(await shownRows(), ["alt.zip", "daten.xlsx", "Handbuch.pdf", png, "Skizze.excalidraw"].sort((x, y) => x.localeCompare(y, "de", { sensitivity: "base" })));
   await app.waitText(`${rowSel("alt.zip")} .att-unused`, /Nicht verwendet/);
   await app.waitText(`${rowSel("Handbuch.pdf")} .att-uses`, /Anhang-Test/);
@@ -147,33 +147,33 @@ test("the attachment manager lists every file with type, size, date and usage", 
     () =>
       app.browser.execute(
         (p) =>
-          document.querySelector(`.att-row[data-file="${p}"] .att-thumb img`)?.naturalWidth > 0 &&
-          document.querySelector('.att-row[data-file="Skizze.excalidraw"] .att-thumb img')?.naturalWidth > 0 &&
-          document.querySelector('.att-row[data-file="Handbuch.pdf"] .att-thumb canvas.ready')?.width > 0,
+          document.querySelector(`.pane.active > .pane-content:not([hidden]) .att-row[data-file="${p}"] .att-thumb img`)?.naturalWidth > 0 &&
+          document.querySelector('.pane.active > .pane-content:not([hidden]) .att-row[data-file="Skizze.excalidraw"] .att-thumb img')?.naturalWidth > 0 &&
+          document.querySelector('.pane.active > .pane-content:not([hidden]) .att-row[data-file="Handbuch.pdf"] .att-thumb canvas.ready')?.width > 0,
         png,
       ),
     { timeout: 15000, timeoutMsg: "thumbnails not shown" },
   );
 
   // Filters: type, unused, search (name or page), sort by size.
-  await app.click('.att-toolbar .segmented button:nth-child(4)');
+  await app.click('.pane.active > .pane-content:not([hidden]) .att-toolbar .segmented button:nth-child(4)');
   await app.browser.waitUntil(async () => JSON.stringify(await shownRows()) === '["Handbuch.pdf"]', { timeoutMsg: "PDF filter" });
-  await app.click('.att-toolbar .segmented button:nth-child(1)');
-  await app.click(".att-chip:nth-child(1)");
+  await app.click('.pane.active > .pane-content:not([hidden]) .att-toolbar .segmented button:nth-child(1)');
+  await app.click(".pane.active > .pane-content:not([hidden]) .att-chip:nth-child(1)");
   await app.browser.waitUntil(async () => JSON.stringify(await shownRows()) === '["alt.zip"]', { timeoutMsg: "unused filter" });
-  await app.click(".att-chip:nth-child(1)");
-  await app.click(".att-search-input");
+  await app.click(".pane.active > .pane-content:not([hidden]) .att-chip:nth-child(1)");
+  await app.click(".pane.active > .pane-content:not([hidden]) .att-search-input");
   await app.type("zweite");
   await app.browser.waitUntil(async () => JSON.stringify((await shownRows()).sort()) === JSON.stringify(["Handbuch.pdf", png].sort()), { timeoutMsg: "search by page" });
-  await app.browser.execute(() => document.querySelector(".att-search [aria-label='Suche leeren']").click());
-  await app.select(".att-sort", "size");
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .att-search [aria-label='Suche leeren']").click());
+  await app.select(".pane.active > .pane-content:not([hidden]) .att-sort", "size");
   await app.browser.waitUntil(async () => (await shownRows())[0] === "Handbuch.pdf" || (await shownRows())[0] === "alt.zip", { timeoutMsg: "size sort" });
-  await app.select(".att-sort", "name");
+  await app.select(".pane.active > .pane-content:not([hidden]) .att-sort", "name");
   await app.shot("attachments-manager");
   // „Verwendet in“ opens the page.
   await app.browser.execute((s) => [...document.querySelectorAll(`${s} .att-use`)].find((b) => b.textContent.includes("Zweite Notiz")).click(), rowSel("Handbuch.pdf"));
   await app.waitText(".tab.active .tab-title", /Zweite Notiz/);
-  await app.waitFor('.pane.active .pdf-embed[data-file="Handbuch.pdf"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .pdf-embed[data-file="Handbuch.pdf"]');
 });
 
 test("rename rewrites every embed through the save path; open editors follow", async () => {
@@ -215,7 +215,7 @@ test("rename rewrites every embed through the save path; open editors follow", a
 
   // The open editor of „Zweite Notiz“ shows the new name without a reload by hand.
   await app.browser.execute(() => [...document.querySelectorAll(".tab")].find((t) => t.textContent.includes("Zweite Notiz")).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
-  await app.waitFor('.pane.active .pdf-embed[data-file="Handbuch 2026.pdf"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .pdf-embed[data-file="Handbuch 2026.pdf"]');
 
   // The shell checks names too: other extensions and taken names (any case) are refused.
   await assert.rejects(app.invoke("attachment_rename", { name: "alt.zip", newName: "DATEN.xlsx" }), /Dateiendung/);
@@ -248,9 +248,9 @@ test("delete warns when the file is used, goes to the trash and can be undone; c
 
   // Clean-up lists the unused files with their total size.
   await store("rest.bin", Buffer.alloc(1000, 1));
-  await app.click('.view-actions [aria-label="Neu laden"]');
-  await app.waitText(".att-summary", /2 unbenutzt/);
-  await app.browser.execute(() => [...document.querySelectorAll(".view-actions button")].find((b) => b.textContent.includes("Unbenutzte aufräumen")).click());
+  await app.click('.pane.active > .pane-content:not([hidden]) .view-actions [aria-label="Neu laden"]');
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .att-summary", /2 unbenutzt/);
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .view-actions button")].find((b) => b.textContent.includes("Unbenutzte aufräumen")).click());
   await app.waitFor(".att-clean-list");
   assert.deepEqual(await app.browser.execute(() => [...document.querySelectorAll(".att-clean-name")].map((e) => e.textContent)), ["alt.zip", "rest.bin"]);
   await app.waitText(".dialog .btn-danger", /2 Dateien löschen \(3 kB\)/);
@@ -291,11 +291,13 @@ test("a 150-page PDF parses in a worker; the UI keeps painting and far pages giv
     };
     requestAnimationFrame(tick);
   });
+  // A manager kept from before lists the new file once it has reloaded.
+  await app.waitFor(`${rowSel("Gross.pdf")} .att-name`, 10000);
   const start = await app.browser.execute(() => window.__frames.length);
-  await app.browser.execute(() => document.querySelector('.att-row[data-file="Gross.pdf"] .att-name').click());
-  await app.waitFor(".pane.active .pdf-pane", 15000);
-  await app.waitText(".pane.active .pdf-pane .pdf-page-count", /\/ 150/, 20000);
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pdf-pane .pdf-page[data-page="1"].is-rendered')), { timeout: 15000, timeoutMsg: "first page not rendered" });
+  await app.browser.execute((s) => document.querySelector(`${s} .att-name`).click(), rowSel("Gross.pdf"));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .pdf-pane", 15000);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page-count", /\/ 150/, 20000);
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="1"].is-rendered')), { timeout: 15000, timeoutMsg: "first page not rendered" });
   const frames = await app.browser.execute((s) => {
     const f = window.__frames.slice(s);
     let gap = 0;
@@ -304,21 +306,21 @@ test("a 150-page PDF parses in a worker; the UI keeps painting and far pages giv
   }, start);
   assert.ok(frames.count >= 10, `frames kept coming: ${JSON.stringify(frames)}`);
   assert.ok(frames.gap < 600, `no long freeze: ${JSON.stringify(frames)}`);
-  assert.equal(await app.browser.execute(() => document.querySelector(".pdf-pane").dataset.worker), "worker", "pdf.js runs in its Web Worker");
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .pdf-pane").dataset.worker), "worker", "pdf.js runs in its Web Worker");
   await app.waitText(".tab.active .tab-title", /Gross\.pdf/);
   await app.shot("pdf-tab");
 
   // Through the whole document: only pages near the viewport hold pixels.
   for (const p of [20, 60, 100, 150]) {
     await app.browser.execute((n) => {
-      const sc = document.querySelector(".pdf-pane .pdf-scroll");
-      sc.scrollTop = document.querySelector(`.pdf-pane .pdf-page[data-page="${n}"]`).offsetTop - 16;
+      const sc = document.querySelector(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-scroll");
+      sc.scrollTop = document.querySelector(`.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="${n}"]`).offsetTop - 16;
     }, p);
-    await app.browser.waitUntil(() => app.browser.execute((n) => !!document.querySelector(`.pdf-pane .pdf-page[data-page="${n}"].is-rendered`), p), { timeout: 15000, timeoutMsg: `page ${p} not rendered` });
+    await app.browser.waitUntil(() => app.browser.execute((n) => !!document.querySelector(`.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="${n}"].is-rendered`), p), { timeout: 15000, timeoutMsg: `page ${p} not rendered` });
   }
   const canvases = await app.browser.execute(() => {
-    const all = [...document.querySelectorAll(".pdf-pane .pdf-page canvas")];
-    return { held: all.filter((c) => c.width > 0).length, first: all[0].width, total: all.length, layers: document.querySelectorAll(".pdf-pane .textLayer span").length };
+    const all = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page canvas")];
+    return { held: all.filter((c) => c.width > 0).length, first: all[0].width, total: all.length, layers: document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .pdf-pane .textLayer span").length };
   });
   assert.equal(canvases.total, 150);
   assert.ok(canvases.held > 0 && canvases.held <= 20, `canvases with pixels: ${JSON.stringify(canvases)}`);
@@ -327,30 +329,30 @@ test("a 150-page PDF parses in a worker; the UI keeps painting and far pages giv
 });
 
 test("search highlights every hit with next/previous; text can be selected and copied", async () => {
-  await app.click(".pdf-pane .pdf-search-input");
+  await app.click(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-search-input");
   await app.type("treffer");
   await app.keys(["Enter"]);
   // Four hits on three pages; the first one at or after the current page (150) wraps to page 10.
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 10 · 1\/4/, 20000);
-  const hitsOn = (p) => app.browser.execute((n) => ({ all: document.querySelectorAll(`.pdf-pane .pdf-page[data-page="${n}"] .highlight`).length, sel: document.querySelectorAll(`.pdf-pane .pdf-page[data-page="${n}"] .highlight.selected`).length }), p);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 10 · 1\/4/, 20000);
+  const hitsOn = (p) => app.browser.execute((n) => ({ all: document.querySelectorAll(`.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="${n}"] .highlight`).length, sel: document.querySelectorAll(`.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="${n}"] .highlight.selected`).length }), p);
   await app.browser.waitUntil(async () => (await hitsOn(10)).sel === 1, { timeout: 15000, timeoutMsg: "hit on page 10 not highlighted" });
   await app.keys(["Enter"]);
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 75 · 2\/4/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 75 · 2\/4/);
   let on75;
   await app.browser
     .waitUntil(async () => (on75 = await hitsOn(75)).all === 2 && on75.sel === 1, { timeout: 15000 })
     .catch(() => assert.fail(`both hits on page 75 highlighted: ${JSON.stringify(on75)}`));
-  await app.click(".pdf-pane .pdf-hit-next");
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 75 · 3\/4/);
-  await app.click(".pdf-pane .pdf-hit-next");
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 140 · 4\/4/);
-  await app.click(".pdf-pane .pdf-hit-prev");
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 75 · 3\/4/);
-  await app.click(".pdf-pane .pdf-hit-next");
-  await app.waitText(".pdf-pane .pdf-hits", /Seite 140 · 4\/4/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hit-next");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 75 · 3\/4/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hit-next");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 140 · 4\/4/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hit-prev");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 75 · 3\/4/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hit-next");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-hits", /Seite 140 · 4\/4/);
   await app.browser.waitUntil(async () => (await hitsOn(140)).sel === 1, { timeout: 15000, timeoutMsg: "hit on page 140 not highlighted" });
   const box = await app.browser.execute(() => {
-    const r = document.querySelector(".pdf-pane .highlight.selected").getBoundingClientRect();
+    const r = document.querySelector(".pane.active > .pane-content:not([hidden]) .pdf-pane .highlight.selected").getBoundingClientRect();
     return { w: r.width, h: r.height };
   });
   assert.ok(box.w > 20 && box.h > 8, `highlight covers the word: ${JSON.stringify(box)}`);
@@ -358,7 +360,7 @@ test("search highlights every hit with next/previous; text can be selected and c
 
   // Select the first line of page 140 in its text layer and copy it.
   const selected = await app.browser.execute(() => {
-    const span = [...document.querySelectorAll('.pdf-pane .pdf-page[data-page="140"] .textLayer span')].find((s) => s.textContent.startsWith("Seite 140 von"));
+    const span = [...document.querySelectorAll('.pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page[data-page="140"] .textLayer span')].find((s) => s.textContent.startsWith("Seite 140 von"));
     const range = document.createRange();
     range.selectNodeContents(span);
     const sel = window.getSelection();
@@ -386,7 +388,7 @@ test("Chinese/Japanese/Korean text in a font that is not embedded renders with t
   await app.invoke("page_save", { id: await pageId("Zweite Notiz"), content: "CJK: ![[Japanisch.pdf]]\n" });
   await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
   await openByPalette("Zweite Notiz");
-  await app.click('.pane.active .pdf-embed[data-file="Japanisch.pdf"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .pdf-embed[data-file="Japanisch.pdf"]');
   await app.waitFor(".pdf-overlay .pdf-page.is-rendered", 20000);
   await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pdf-overlay .textLayer")?.textContent.includes("日本語テキスト")), { timeout: 10000, timeoutMsg: "CJK text not in the text layer" });
   // Glyphs were drawn: dark pixels in the text's band (the page has nothing else).
@@ -424,15 +426,15 @@ test("a PDF dropped on the tab bar (or on a pane without a note) opens in a tab"
     );
   assert.ok(await drop(".pane.active .tabbar .tabs", "Abgelegt.pdf"), "drop handled");
   await app.waitText(".tab.active .tab-title", /^Abgelegt\.pdf$/, 10000);
-  await app.waitFor('.pane.active .pdf-pane[aria-label="PDF Abgelegt.pdf"] .pdf-page.is-rendered', 15000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .pdf-pane[aria-label="PDF Abgelegt.pdf"] .pdf-page.is-rendered', 15000);
   assert.ok(fs.existsSync(att("Abgelegt.pdf")));
 
   // A new, empty tab (start page): dropping on its content opens the PDF too.
   await app.keys(["Control", "t"]);
   await app.waitText(".tab.active .tab-title", /Neuer Tab/);
-  assert.ok(await drop(".pane.active .pane-content", "Zweiter Drop.pdf"));
+  assert.ok(await drop(".pane.active > .pane-content:not([hidden])", "Zweiter Drop.pdf"));
   await app.waitText(".tab.active .tab-title", /^Zweiter Drop\.pdf$/, 10000);
-  await app.waitFor(".pane.active .pdf-pane .pdf-page.is-rendered", 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page.is-rendered", 15000);
 });
 
 test("no CSP violations and a clean console", async () => {

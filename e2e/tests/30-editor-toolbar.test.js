@@ -10,6 +10,13 @@ let app, llm;
 before(async () => {
   llm = await startFakeLiteLLM({ port: 4991 });
   app = await launch();
+  // A usable AI (without one the assistant offers its setup instead of suggestions); the first
+  // test reloads the window, which reads it.
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", {
+    settings: { ...view.settings, litellm_base_url: llm.url, router: { ...view.settings.router, local_model: "firma-schnell", standard_model: "firma-standard", reasoning_model: "firma-reasoning" } },
+  });
+  await app.invoke("api_key_set", { key: llm.apiKey });
 });
 after(async () => {
   await app?.close();
@@ -136,11 +143,6 @@ test("the assistant suggests from the open page and the data; follow-ups after a
   assert.ok(texts.length >= 2 && texts.length <= 5, texts.join(" | "));
   await app.shot("assistant-suggestions");
 
-  const view = await app.invoke("settings_get");
-  await app.invoke("settings_save", {
-    settings: { ...view.settings, litellm_base_url: llm.url, router: { ...view.settings.router, local_model: "firma-schnell", standard_model: "firma-standard", reasoning_model: "firma-reasoning" } },
-  });
-  await app.invoke("api_key_set", { key: llm.apiKey });
   await app.browser.execute(() => [...document.querySelectorAll(".ai-suggestion")][0].click());
   await app.waitFor(".follow-ups .follow-up");
   const before = llm.requests.length;

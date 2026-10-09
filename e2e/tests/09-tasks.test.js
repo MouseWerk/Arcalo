@@ -13,7 +13,9 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0
 const today = iso(new Date());
 const yesterday = iso(new Date(Date.now() - 86400000));
 const content = async () => (await app.invoke("page_get", { id: page.id })).content;
-const row = (ordinal) => `.tasks-view .task-row[data-page="${page.id}"][data-ordinal="${ordinal}"]`;
+// What a pane shows (a view left in a tab stays mounted there, hidden).
+const SHOWN = ".pane > .pane-content:not([hidden])";
+const row = (ordinal) => `${SHOWN} .tasks-view .task-row[data-page="${page.id}"][data-ordinal="${ordinal}"]`;
 
 test("Ctrl+Shift+A lists tasks from all notes grouped by due date", async () => {
   page = await app.invoke("page_create", {
@@ -23,30 +25,30 @@ test("Ctrl+Shift+A lists tasks from all notes grouped by due date", async () => 
     content: `# Plan\n\n\`\`\`\n- [ ] im Code\n\`\`\`\n\n- [ ] Angebot an [[Architektur]] senden due:${yesterday} !!\n- [ ] Aufräumen #e2e\n- [x] Schon erledigt\n`,
   });
   await app.keys(["Control", "Shift", "a"]);
-  await app.waitFor(".tasks-view");
+  await app.waitFor(`${SHOWN} .tasks-view`);
   await app.waitFor(row(0));
   assert.equal(await app.text(".pane.active .tab.active .tab-title"), "Aufgaben");
 
-  const overdue = await app.$(".task-group-overdue");
+  const overdue = await app.$(`${SHOWN} .task-group-overdue`);
   assert.match(await app.textOf(overdue), /Überfällig/);
   assert.match(await app.textOf(await overdue.$(`.task-row[data-page="${page.id}"]`)), /Angebot an Architektur senden/);
   assert.ok(await (await overdue.$(`.task-row[data-page="${page.id}"] .badge-danger`)).isExisting(), "overdue badge is red");
   assert.ok(await (await overdue.$(`.task-row[data-page="${page.id}"] .task-prio.high`)).isExisting(), "priority marker");
-  assert.match(await app.textOf(await app.$(".task-group-none")), /Aufräumen/);
+  assert.match(await app.textOf(await app.$(`${SHOWN} .task-group-none`)), /Aufräumen/);
   assert.ok(!(await (await app.$(row(2))).isExisting()), "done task hidden under Offen");
   await app.shot("tasks-view");
 });
 
 test("filters by status and tag", async () => {
-  await app.click('.tasks-view .segmented [role="radio"]:nth-child(2)');
-  await app.waitText(".tasks-view .task-row", /Schon erledigt/);
+  await app.click(`${SHOWN} .tasks-view .segmented [role="radio"]:nth-child(2)`);
+  await app.waitText(`${SHOWN} .tasks-view .task-row`, /Schon erledigt/);
   assert.ok(!(await (await app.$(row(0))).isExisting()));
-  await app.click('.tasks-view .segmented [role="radio"]:nth-child(1)');
+  await app.click(`${SHOWN} .tasks-view .segmented [role="radio"]:nth-child(1)`);
   await app.waitFor(row(0));
-  await app.select('.tasks-view [role="combobox"]', "e2e");
+  await app.select(`${SHOWN} .tasks-view [role="combobox"]`, "e2e");
   await app.browser.waitUntil(async () => !(await (await app.$(row(0))).isExisting()), { timeoutMsg: "tag filter not applied" });
   assert.ok(await (await app.$(row(1))).isExisting());
-  await app.select('.tasks-view [role="combobox"]', "");
+  await app.select(`${SHOWN} .tasks-view [role="combobox"]`, "");
   await app.waitFor(row(0));
 });
 
@@ -69,7 +71,7 @@ test("toggling a task rewrites its checkbox and reloads the open editor", async 
   assert.match(md, /^- \[ \] im Code$/m, "code block untouched");
   await app.browser.waitUntil(async () => !(await (await app.$(row(0))).isExisting()), { timeoutMsg: "done task still listed" });
   await app.browser.waitUntil(
-    () => app.browser.execute(() => document.querySelector(".pane:first-child .ProseMirror li[data-checked]")?.getAttribute("data-checked") === "true"),
+    () => app.browser.execute(() => document.querySelector(".pane:first-child > .pane-content:not([hidden]) .ProseMirror li[data-checked]")?.getAttribute("data-checked") === "true"),
     { timeoutMsg: "editor did not reload" },
   );
 });
@@ -77,7 +79,7 @@ test("toggling a task rewrites its checkbox and reloads the open editor", async 
 test("slash menu inserts a due date and the palette opens Aufgaben", async () => {
   // Caret to the end of the last task without clicking (a click could hit the [[link]]).
   await app.browser.execute(() => {
-    const el = document.querySelector(".pane:first-child .ProseMirror");
+    const el = document.querySelector(".pane:first-child > .pane-content:not([hidden]) .ProseMirror");
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el.lastElementChild ?? el);
@@ -93,7 +95,7 @@ test("slash menu inserts a due date and the palette opens Aufgaben", async () =>
   await app.waitText(".sugg-item.sel", /Fälligkeitsdatum/);
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await content()).includes(`- [ ] Neue Aufgabe due:${today}`), { timeoutMsg: "due date not saved" });
-  await app.waitText(`.tasks-view .task-group-today .task-row[data-page="${page.id}"]`, /Neue Aufgabe/);
+  await app.waitText(`${SHOWN} .tasks-view .task-group-today .task-row[data-page="${page.id}"]`, /Neue Aufgabe/);
 
   await app.click(".pane:first-child .tab");
   await app.keys(["Control", "k"]);
@@ -104,5 +106,11 @@ test("slash menu inserts a due date and the palette opens Aufgaben", async () =>
       await it.click();
       break;
     }
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .tasks-view")).length === 1);
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .tasks-view")).length === 1);
+  // Back in the first pane: the task view its tab showed before comes back (kept) with what
+  // changed meanwhile.
+  const first = ".pane:first-child > .pane-content:not([hidden])";
+  await app.click(`${first} [aria-label^="Zurück"]`);
+  await app.waitText(`${first} .tasks-view .task-row[data-page="${page.id}"]`, /Neue Aufgabe/);
+  assert.ok(!(await (await app.$(`${first} .task-row[data-page="${page.id}"][data-ordinal="0"]`)).isExisting()), "done task not listed");
 });

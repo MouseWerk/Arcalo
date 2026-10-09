@@ -6,14 +6,18 @@
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { launch, guarded } from "../lib/harness.js";
+import { startFakeLiteLLM } from "../lib/fake-litellm.js";
 
 const test = guarded(nodeTest, () => app);
-let app;
+let app, llm;
 before(async () => {
   app = await launch();
   await app.browser.setTimeout({ script: 120_000 });
 });
-after(async () => app?.close());
+after(async () => {
+  await app?.close();
+  await llm?.close();
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const create = (title, content, parentId = null) => app.invoke("page_create", { parentId, title, icon: null, content });
@@ -210,6 +214,14 @@ test("the task list renders only the rows in view of a long list; ticking one fa
 });
 
 test("hidden assistant suggestions do no work on page switches", async () => {
+  // Suggestions need a usable AI (without one the assistant offers its setup instead); the
+  // reload reads it.
+  llm = await startFakeLiteLLM({ port: 4957 });
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...view.settings, litellm_base_url: llm.url } });
+  await app.invoke("api_key_set", { key: llm.apiKey });
+  await app.browser.refresh();
+  await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
   const a = await create("Wechsel A", "A");
   const b = await create("Wechsel B", "B");
   await open(a);

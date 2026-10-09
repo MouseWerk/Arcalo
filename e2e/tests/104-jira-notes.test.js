@@ -61,18 +61,18 @@ async function setTheme(mode) {
 }
 async function hoverChip(key) {
   await app.browser.execute(() => document.querySelector(".issue-preview") && document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
-  const chip = await app.waitFor(`.pane.active .ProseMirror .issue-chip[data-issue="${key}"]`);
+  const chip = await app.waitFor(`.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip[data-issue="${key}"]`);
   await chip.moveTo();
   await app.waitFor(".issue-preview", 6000);
 }
 
 test("an issue key becomes a live chip with a hover card", async () => {
   await clickText(".sidebar .tree-row", /^Sprint-Planung/);
-  await app.waitFor('.pane.active .ProseMirror .issue-chip[data-issue="PROJ-123"]', 10000);
-  assert.equal(await count(".pane.active .ProseMirror .issue-chip"), 1, "ISO-9001 and UTF-8 stay text");
-  assert.match(await app.text('.pane.active .ProseMirror .issue-chip-tail[data-issue="PROJ-123"]'), /Login fails on SSO/i);
-  assert.equal(await app.browser.execute(() => document.querySelector('.pane.active .ProseMirror .issue-chip-tail[data-issue="PROJ-123"] .issue-chip-dot.cat-indeterminate')?.getAttribute("aria-label")), "In Progress");
-  assert.ok(await (await app.$('.pane.active .ProseMirror .issue-chip-head.issue-type-bug')).isExisting(), "bug icon");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip[data-issue="PROJ-123"]', 10000);
+  assert.equal(await count(".pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip"), 1, "ISO-9001 and UTF-8 stay text");
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-123"]'), /Login fails on SSO/i);
+  assert.equal(await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-123"] .issue-chip-dot.cat-indeterminate')?.getAttribute("aria-label")), "In Progress");
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-head.issue-type-bug')).isExisting(), "bug icon");
   // The Markdown keeps the plain key.
   assert.match((await app.invoke("page_get", { id: pageId })).content, /^Heute PROJ-123 besprechen/);
   await hoverChip("PROJ-123");
@@ -100,8 +100,8 @@ const CHIPS = [
 /** Positions and boxes of the chips in the open note. */
 const chipInfo = () =>
   app.browser.execute(() => {
-    const ed = document.querySelector(".pane.active .ProseMirror").editor;
-    return [...document.querySelectorAll(".pane.active .ProseMirror .issue-chip")].map((k) => {
+    const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
+    return [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip")].map((k) => {
       const head = k.previousElementSibling?.matches(".issue-chip-head") ? k.previousElementSibling : null;
       const tail = k.nextElementSibling?.matches(".issue-chip-tail") ? k.nextElementSibling : null;
       const from = ed.view.posAtDOM(k.firstChild, 0);
@@ -115,24 +115,24 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   await app.invoke("page_save", { id: page.id, content: CHIPS + "\n" });
   await reload();
   await clickText(".sidebar .tree-row", /^Chip-Layout/);
-  await app.browser.waitUntil(async () => (await count(".pane.active .ProseMirror .issue-chip")) === 11, { timeout: 10000, timeoutMsg: "chips not drawn" });
+  await app.browser.waitUntil(async () => (await count(".pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip")) === 11, { timeout: 10000, timeoutMsg: "chips not drawn" });
   const chips = await chipInfo();
   // Keys without a synced issue (OPS-8 is someone else's) are the key alone.
   assert.deepEqual(chips.filter((c) => !c.head && !c.tail).map((c) => c.key), ["OPS-8", "PROJ-999"]);
-  assert.equal(await count(".pane.active .ProseMirror .issue-chip.unknown"), 2);
+  assert.equal(await count(".pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip.unknown"), 2);
   for (const c of chips.filter((c) => c.head)) {
     assert.ok(c.tail, `${c.key}: tail`);
     assert.ok(Math.abs(c.head.top - c.keyBox.top) < 1 && Math.abs(c.tail.top - c.keyBox.top) < 1, `${c.key}: head, key and tail on one line`);
     assert.ok(c.head.right <= c.keyBox.left + 1 && c.keyBox.right <= c.tail.left + 1, `${c.key}: one pill`);
   }
   // No line-height jump: a line with a chip is as tall as one without.
-  const heights = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .ProseMirror > p")].slice(1, 3).map((p) => p.getBoundingClientRect().height));
+  const heights = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror > p")].slice(1, 3).map((p) => p.getBoundingClientRect().height));
   assert.ok(Math.abs(heights[0] - heights[1]) < 0.5, `line heights ${heights}`);
   await app.shot("104-chips-light");
 
   // At any width the pill moves to the next line as a whole.
   const broken = await app.browser.execute(() => {
-    const host = document.querySelector(".pane.active .ProseMirror");
+    const host = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const out = [];
     for (let w = 260; w <= 760; w += 3) {
       host.style.maxWidth = `${w}px`;
@@ -150,13 +150,13 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   const mid = (await chipInfo()).find((c) => c.key === "PROJ-124");
   const caret = (pos) =>
     app.browser.execute((p) => {
-      const ed = document.querySelector(".pane.active .ProseMirror").editor;
+      const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
       ed.commands.focus();
       ed.commands.setTextSelection(p);
       // Where the browser put the caret: -1 before the pill, 1 after it, 0 inside.
       const r = getSelection().getRangeAt(0);
-      const head = document.querySelector('.pane.active .ProseMirror .issue-chip-head[data-issue="PROJ-124"]');
-      const tail = document.querySelector('.pane.active .ProseMirror .issue-chip-tail[data-issue="PROJ-124"]');
+      const head = document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-head[data-issue="PROJ-124"]');
+      const tail = document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-124"]');
       const at = (fn) => {
         const t = document.createRange();
         fn(t);
@@ -170,7 +170,7 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   // The browser moves the caret; the editor reads it from the selectionchange event that follows,
   // a moment later on a slow machine: wait for each step to arrive (a key that moves nothing
   // keeps the old position and fails below).
-  const selFrom = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.state.selection.from);
+  const selFrom = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor.state.selection.from);
   const press = async (key) => {
     const was = await selFrom();
     await app.browser.keys([key]);
@@ -187,7 +187,7 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   // Copying a selection over a chip gives the plain text.
   const copied = await app.browser.execute(
     (from, to) => {
-      const ed = document.querySelector(".pane.active .ProseMirror").editor;
+      const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
       ed.commands.setTextSelection({ from, to });
       const dt = new DataTransfer();
       let ev = new ClipboardEvent("copy", { clipboardData: dt, bubbles: true, cancelable: true });
@@ -208,9 +208,9 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   const end = (await chipInfo()).find((c) => c.key === "OPS-7");
   await caret(end.to);
   await app.browser.keys([..."; gut"]);
-  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror > p").textContent.includes("; gut")), { timeoutMsg: "typed text missing" });
+  await app.browser.waitUntil(() => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror > p").textContent.includes("; gut")), { timeoutMsg: "typed text missing" });
   const after = await app.browser.execute(() => {
-    const k = document.querySelector('.pane.active .ProseMirror .issue-chip[data-issue="OPS-7"]');
+    const k = document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip[data-issue="OPS-7"]');
     return { key: k.textContent, inChip: !!getSelection().anchorNode?.parentElement?.closest(".issue-chip, .issue-chip-tail") };
   });
   assert.deepEqual(after, { key: "OPS-7", inChip: false });
@@ -219,8 +219,8 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   await hoverChip("PROJ-124");
   const pos = await app.browser.execute(() => {
     const card = document.querySelector(".issue-preview").getBoundingClientRect();
-    const head = document.querySelector('.pane.active .ProseMirror .issue-chip-head[data-issue="PROJ-124"]').getBoundingClientRect();
-    const tail = document.querySelector('.pane.active .ProseMirror .issue-chip-tail[data-issue="PROJ-124"]').getBoundingClientRect();
+    const head = document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-head[data-issue="PROJ-124"]').getBoundingClientRect();
+    const tail = document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-124"]').getBoundingClientRect();
     return { dx: card.left - head.left, below: card.top - tail.bottom };
   });
   assert.ok(Math.abs(pos.dx) < 2 && pos.below >= 0 && pos.below < 12, `card at ${JSON.stringify(pos)}`);
@@ -231,18 +231,18 @@ test("a chip is one pill on the text line: no break, caret outside, plain copy",
   await app.invoke("jira_sync_now", { site: "acme" });
   await sleep(800);
   assert.deepEqual(await chipInfo(), before, "chips moved after a sync");
-  assert.equal(await count(".pane.active .issue-chip-head:not([data-mark])"), 0, "chips drawn anew");
+  assert.equal(await count(".pane.active > .pane-content:not([hidden]) .issue-chip-head:not([data-mark])"), 0, "chips drawn anew");
 
   await setTheme("dark");
   await clickText(".sidebar .tree-row", /^Chip-Layout/);
-  await app.waitFor(".pane.active .ProseMirror .issue-chip-head");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-head");
   await app.shot("104-chips-dark");
   await setTheme("light");
 });
 
 test("a click on the chip opens the issue's note; the issue lists the pages naming it", async () => {
   await clickText(".sidebar .tree-row", /^Sprint-Planung/);
-  const chip = await app.waitFor('.pane.active .ProseMirror .issue-chip-tail[data-issue="PROJ-123"]');
+  const chip = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip-tail[data-issue="PROJ-123"]');
   await chip.click();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.textContent ?? "")).includes("PROJ-123 Login fails on SSO"), { timeout: 10000, timeoutMsg: "issue note not opened" });
   const view = await app.invoke("jira_issue_view", { key: "PROJ-123" });
@@ -257,7 +257,7 @@ test("a click on the chip opens the issue's note; the issue lists the pages nami
 
 test("a task becomes a Jira issue from its context menu", async () => {
   await clickText(".sidebar .tree-row", /^Sprint-Planung/);
-  const task = await app.waitFor(".pane.active .ProseMirror li[data-checked]");
+  const task = await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror li[data-checked]");
   await task.click({ button: "right" });
   await clickText(".menu [role^='menuitem'], .menu button", /Jira-Issue anlegen/);
   await app.waitFor(".dialog");
@@ -265,7 +265,7 @@ test("a task becomes a Jira issue from its context menu", async () => {
   await app.browser.waitUntil(async () => !(await app.browser.execute(() => document.querySelector('.dialog [aria-label="Typ"]')?.getAttribute("aria-disabled") === "true" || document.querySelector('.dialog [aria-label="Typ"]')?.disabled)), { timeoutMsg: "types not loaded" });
   await sleep(300);
   await clickText(".dialog button", /Issue anlegen/);
-  await app.waitFor('.pane.active .ProseMirror .issue-chip[data-issue="PROJ-126"]', 10000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror .issue-chip[data-issue="PROJ-126"]', 10000);
   const created = jira.issues.find((i) => i.key === "PROJ-126");
   assert.equal(created.summary, "Fix SSO für Kunde");
   assert.match(created.description, /Angelegt aus der Notiz „Sprint-Planung“ in Arcalo/);
