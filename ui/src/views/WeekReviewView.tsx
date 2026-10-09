@@ -17,7 +17,7 @@ import { AiErrorNote, AiSetupNote, useAiConfigured } from "../components/AiNotes
 import { flushAllEditors } from "../editor/saves";
 import { reloadEditors } from "../editor/NoteEditor";
 import { revealText } from "../editor/reveal";
-import { fmtDayMonth, int, isoDay, time } from "../lib/format";
+import { dateLocale, fmtDayMonth, int, isoDay, time } from "../lib/format";
 import { openCalendarView } from "../lib/calnav";
 import { sourceColor } from "../lib/agenda";
 import { openDayReview, openTimesheetDay } from "../lib/reviewnav";
@@ -393,6 +393,15 @@ function Days({ r }: { r: WeekReview }) {
       {r.days.map((d) => {
         const off = dayOff(d);
         const over = d.booked_minutes > d.target_minutes && d.target_minutes > 0;
+        const sub = off ?? (d.missing_minutes > 0 ? t("review.md.missing", { h: hours(d.missing_minutes) }) : d.gaps.length ? t("week.gaps", { n: d.gaps.length }) : d.target_minutes <= 0 && !d.booked_minutes ? t("review.noWorkday") : "");
+        // One sentence for screen readers: the day, the hours, what is missing, what a click does.
+        const label = [
+          new Date(`${d.date}T12:00:00`).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }),
+          d.target_minutes > 0 ? t("week.dayBooked", { booked: hours(d.booked_minutes), target: hours(d.target_minutes) }) : hours(d.booked_minutes),
+          sub,
+        ]
+          .filter(Boolean)
+          .join(", ");
         return (
           <button
             key={d.date}
@@ -400,11 +409,12 @@ function Days({ r }: { r: WeekReview }) {
             className={`wr-day ${d.future ? "future" : ""} ${d.date === today ? "today" : ""} ${off ? "off" : ""}`}
             onClick={(e) => openDayReview(d.date, { newTab: e.ctrlKey || e.metaKey })}
             title={t("week.openDay")}
+            aria-label={`${label} – ${t("week.openDay")}`}
             aria-current={d.date === today ? "date" : undefined}
           >
             <span className="wr-day-head">
               <span className="wr-day-name">{dayShort(d.date)}</span>
-              {d.missing_minutes > 0 && <AlertTriangle size={12} className="wr-day-warn" aria-label={t("review.md.missing", { h: hours(d.missing_minutes) })} />}
+              {d.missing_minutes > 0 && <AlertTriangle size={12} className="wr-day-warn" aria-hidden />}
             </span>
             <span className="wr-day-value num">
               {hours(d.booked_minutes)}

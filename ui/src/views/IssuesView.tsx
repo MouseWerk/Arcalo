@@ -2,7 +2,7 @@
 // the offline cache, filterable by site, project, status, sprint and priority, grouped, and
 // searchable. A row opens the issue: description, last comments, the pages that name it, its WBS.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarPlus, CheckSquare, Copy, ExternalLink, FileText, ListPlus, MoreHorizontal, RefreshCw, Search, Settings2, Ticket, WifiOff, FileBarChart } from "lucide-react";
 import { openStatusReport } from "../components/MeetingWork";
 import { on } from "../lib/api";
@@ -84,12 +84,15 @@ export function IssuesView() {
       return next;
     });
 
+  // Only the newest request fills the list (a slow one for the filter before must not win).
+  const loads = useRef(0);
   const load = useCallback(() => {
+    const seq = ++loads.current;
     jiraApi.status().then(setStatus, () => {});
     jiraApi
       .issues({ query: pref.search === "all" ? "" : pref.search })
-      .then(setList)
-      .catch((e) => (setList([]), s().error(t("jira.loadFailed"), e)));
+      .then((l) => seq === loads.current && setList(l))
+      .catch((e) => seq === loads.current && (setList([]), s().error(t("jira.loadFailed"), e)));
   }, [pref.search, s]);
 
   useEffect(() => {

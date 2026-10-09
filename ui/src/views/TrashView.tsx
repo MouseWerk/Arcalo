@@ -11,14 +11,17 @@ import type { TrashEntry, TrashedFile } from "../lib/types";
 import { formatSize } from "../editor/fileEmbed";
 import { t, useT } from "../lib/i18n";
 
-export async function restorePage(id: number, title: string) {
+/** Takes a page back from the trash; true when it is back. */
+export async function restorePage(id: number, title: string): Promise<boolean> {
   const s = useApp.getState();
   try {
     const p = await api.restorePage(id);
     await s.refreshTree();
     s.toast({ tone: "success", title: t("trash.restored"), detail: p.title !== title ? t("trash.restoredAs", { title: p.title }) : title, action: { label: t("file.open"), run: () => s.openPage(p.id) } });
+    return true;
   } catch (e) {
     s.error(t("trash.restoreFailed"), e);
+    return false;
   }
 }
 

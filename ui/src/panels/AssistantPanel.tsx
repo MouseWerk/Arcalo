@@ -459,8 +459,13 @@ export function Composer({ shown: shownProp, placeholder }: { shown?: boolean; p
   }, [focusTick, shown]);
   useEffect(() => {
     if (!input.trim()) return setPreview(null);
-    const timer = setTimeout(() => api.routePreview(input, useTools, tier, convId).then(setPreview).catch(() => {}), 250);
-    return () => clearTimeout(timer);
+    // Only the answer for the text as it is now (an older, slower one is dropped).
+    let alive = true;
+    const timer = setTimeout(() => api.routePreview(input, useTools, tier, convId).then((p) => alive && setPreview(p)).catch(() => {}), 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
   }, [input, tier, useTools, convId]);
 
   const router = settings?.settings.router;

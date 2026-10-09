@@ -11,7 +11,7 @@ import { ConflictBanner } from "./ConflictView";
 import { useApp, type Tab } from "../store/app";
 import { ViewHeader } from "../components/ViewHeader";
 import { ScrollOutline } from "../components/ScrollOutline";
-import { MEETING_SUMMARY_EVENT, NoteEditor, flushAllEditors, reloadEditors, type NoteEditorHandle } from "../editor/NoteEditor";
+import { MEETING_SUMMARY_EVENT, NoteEditor, flushAllEditors, type NoteEditorHandle } from "../editor/NoteEditor";
 import { splitFrontmatter } from "../editor/extensions";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { cleanTitleChars } from "../lib/links";
@@ -35,6 +35,7 @@ import { useMentionHints } from "../editor/mentionHints";
 import { sharePageAsHtml } from "../editor/shareHtml";
 import { openCalendar } from "../components/CalendarPopover";
 import { MeetingSummaryDialog } from "./MeetingSummaryDialog";
+import { renamePageWithUndo } from "../editor/rename";
 import { aiEnabled } from "../lib/aiswitch";
 import { consumeKey, hint, withHint } from "../lib/keymap";
 import { withSaved } from "../lib/pagesave";
@@ -276,7 +277,8 @@ export function PageView({ pageId, tab, active }: { pageId: number; tab: Tab; ac
         root={root}
         doc={doc}
         crumbs={crumbs}
-        onChange={(d) => setDoc({ ...doc, ...d })}
+        // From the newest page (a save may have landed while the title or a button waited).
+        onChange={(d) => setDoc((cur) => cur && { ...cur, ...d })}
         onSummary={() => setSummaryOpen(true)}
         toolbarSlot={setToolbarSlot}
         full={full}
@@ -375,13 +377,9 @@ function PageHeader({
     const t = title.trim();
     if (!t || t === doc.title) return setTitle(doc.title);
     try {
-      // All editors: a pending autosave elsewhere would write the old [[links]] back.
-      await flushAllEditors();
-      const n = await api.renamePage(doc.id, t, true);
+      // As in the tree: links follow, and the toast takes it back.
+      await renamePageWithUndo(doc.id, doc.title, t);
       onChange({ title: t });
-      reloadEditors();
-      await s().refreshTree();
-      if (n > 0) s().toast({ tone: "info", title: tr("page.renamed"), detail: tr("page.linksUpdated", { n }) });
     } catch (e) {
       setTitle(doc.title);
       s().error(tr("page.renameFailed"), e);
@@ -390,9 +388,17 @@ function PageHeader({
 
   const daily = doc.daily_date ? new Date(doc.daily_date + "T12:00:00") : null;
   const goDay = async (delta: number) => {
-    const p = await api.dailyNote(isoDay(addDays(daily!, delta)));
-    await s().refreshTree();
-    s().openPage(p.id);
+    // Quick clicks add up: from the day still being opened, not the one shown.
+    const day = isoDay(addDays(pendingDay.day ? new Date(`${pendingDay.day}T12:00:00`) : daily!, delta));
+    pendingDay.day = day;
+    try {
+      const p = await api.dailyNote(day);
+      if (pendingDay.day !== day) return;
+      await s().refreshTree();
+      s().openPage(p.id);
+    } finally {
+      if (pendingDay.day === day) pendingDay.day = null;
+    }
   };
 
   const titleInput = useRef<HTMLTextAreaElement>(null);
@@ -712,6 +718,9 @@ export async function createSubpage(parentId: number | null, title = tr("page.un
   }
 }
 
+/** The daily note the previous/next buttons are opening (several clicks before it shows). */
+const pendingDay: { day: string | null } = { day: null };
+
 export async function deletePage(page: { id: number; title: string }) {
   const s = useApp.getState();
   const kids = s.pages.get(page.id)?.children.length ?? 0;
@@ -719,10 +728,18 @@ export async function deletePage(page: { id: number; title: string }) {
   const message = kids ? tr("pv.deleteTree", { title: page.title, n: kids, days }) : tr("pv.deleteOne", { title: page.title, days });
   // A single page just moves to the trash (undo in the toast); only subtrees ask first.
   if (kids && !(await s.confirm({ title: tr("pv.deleteTitle"), message, confirmLabel: tr("common.delete"), danger: true }))) return;
+  // The pane that shows the page: „Rückgängig“ brings its tab back there.
+  const shownIn = s.panes.find((p) => p.tabs.some((t) => t.id === p.activeTabId && t.kind === "page" && t.pageId === page.id))?.id;
+  const undo = async () => {
+    if (!(await restorePage(page.id, page.title)) || !shownIn) return;
+    const st = useApp.getState();
+    if (st.panes.some((p) => p.id === shownIn)) st.focusPane(shownIn);
+    st.openPage(page.id, { newTab: true });
+  };
   try {
     await api.deletePage(page.id);
     await s.refreshTree();
-    s.toast({ tone: "info", title: tr("pv.deleted"), detail: tr("pv.inTrash", { title: page.title }), action: { label: tr("common.undo"), run: () => restorePage(page.id, page.title) } });
+    s.toast({ tone: "info", title: tr("pv.deleted"), detail: tr("pv.inTrash", { title: page.title }), action: { label: tr("common.undo"), run: () => void undo() } });
   } catch (e) {
     s.error(tr("pv.deleteFailed"), e);
   }

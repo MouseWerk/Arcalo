@@ -729,7 +729,8 @@ export function CanvasView({ pageId, tab, active }: { pageId: number; tab: Tab; 
     if (target.closest("input, textarea")) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
-    if (e.key === " ") {
+    // Space pans, except on a focused button or link (there it presses it).
+    if (e.key === " " && !target.closest("button, a[href], [role='button'], [role='menuitem'], select")) {
       e.preventDefault();
       spaceDown.current = true;
       setPanning(true);

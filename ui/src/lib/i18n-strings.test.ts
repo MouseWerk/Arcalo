@@ -51,6 +51,8 @@ const MESSAGE_CALLS = new Set(["toast", "success", "info", "warning", "warn", "n
 
 const GERMAN = /[äöüÄÖÜß„“‚‘]/;
 const LETTERS = /[A-Za-zÄÖÜäöüß]{2,}/;
+/** German words without umlauts that showed up hard-coded in counts („3 Seiten“), wherever they sit. */
+const GERMAN_WORDS = /^(Seite|Seiten|Unterseite|Unterseiten|Stunde|Stunden|Minute|Minuten|Woche|Wochen|Eintrag|Aufgabe|Aufgaben|Datei|Dateien|Termin|Termine)$/;
 /** i18n keys, CSS classes, identifiers, paths and other technical strings. */
 const TECHNICAL = [
   /^[a-z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/, // i18n key
@@ -218,6 +220,7 @@ function scan(file: string): Hit[] {
     // Search keywords list both languages on purpose.
     const keywords = !!n.parent && ts.isPropertyAssignment(n.parent) && n.parent.name.getText(sf) === "keywords";
     if (lit !== null && GERMAN.test(lit) && !keywords && !ts.isTemplateExpression(n.parent)) flag(n, lit);
+    else if (lit !== null && GERMAN_WORDS.test(lit.trim())) flag(n, lit);
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -248,11 +251,12 @@ describe("no hard-coded UI text", () => {
         'el.textContent = "Loading now";',
         'const f = { reason: "Broken file", altLabel: "Keep both" };',
         'const g = withHint("Full width", "full_width");',
+        'const h = `${n} ${n === 1 ? "Seite" : "Seiten"}`;',
       ].join("\n"),
     );
     try {
       const found = scan(tmp).map((h) => h.text);
-      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left", "Loading now", "Broken file", "Keep both", "Full width"]);
+      expect(found).toEqual(["Speichern", "Hello there", "Open page", "Saved", "Größe", "Saving now", "{} left", "Loading now", "Broken file", "Keep both", "Full width", "Seite", "Seiten"]);
     } finally {
       fs.rmSync(tmp);
     }

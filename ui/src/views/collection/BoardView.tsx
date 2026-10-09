@@ -97,18 +97,36 @@ export function BoardView({ ctx }: { ctx: Ctx }) {
       current = { row, from, x: r.left, y: r.top, w: r.width, dx: ev.clientX - x0, dy: ev.clientY - y0, ...where(ev.clientX, ev.clientY) };
       setDrag(current);
     };
-    const onUp = () => {
+    const end = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", onKey, true);
       setDrag(null);
+    };
+    const onUp = () => {
+      end();
       if (current) {
         dragged.current = true;
         setTimeout(() => (dragged.current = false), 0);
         drop(current);
       }
     };
+    // A lost pointer (the window lost it, a touch was taken over) or Escape: no drop, nothing left behind.
+    const cancel = () => {
+      end();
+      current = null;
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (isComposing(ev) || ev.key !== "Escape" || !current) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      cancel();
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", onKey, true);
   };
 
   const cardMenu = (row: Row, from: string): MenuEntry[] => [

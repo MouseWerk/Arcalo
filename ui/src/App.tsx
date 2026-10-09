@@ -78,8 +78,9 @@ export function App() {
       else if (open === "daily") {
         const p = await api.dailyNote();
         await s.refreshTree();
-        s.openPage(p.id);
-      } else if (open === "dashboard") s.openTab({ kind: "home" });
+        // In a tab of its own (or its open one): the restored tabs stay as they were.
+        s.openPage(p.id, { newTab: true });
+      } else if (open === "dashboard") s.openTab({ kind: "home" }, { newTab: true });
       // The benchmark (docs/performance.md) reads the time to interactive from this mark.
       performance.mark("arcalo-ready");
       document.body.classList.add("ready");
@@ -138,8 +139,12 @@ export function App() {
       on<number[]>("data://pages", (ids) => reloadEditors(ids)),
       // Saved elsewhere (another window, a test, an import): take over the new settings.
       on("settings://changed", async () => {
+        const asked = useApp.getState().settings;
         const next = await api.settings().catch(() => null);
         const cur = useApp.getState().settings;
+        // A save of this window landed while the answer was on its way: it is newer (the next
+        // event brings anything after it), so the older answer must not flip the form back.
+        if (cur !== asked) return;
         if (next && JSON.stringify(next) !== JSON.stringify(cur)) {
           useApp.getState().set({ settings: next });
           applyTheme(next.settings.theme);

@@ -9,8 +9,7 @@ import {
 } from "lucide-react";
 import { api, errorParts } from "../lib/api";
 import { cleanTitleChars } from "../lib/links";
-import { flushAllEditors } from "../editor/saves";
-import { reloadEditors } from "../editor/NoteEditor";
+import { renamePageWithUndo } from "../editor/rename";
 import { useApp } from "../store/app";
 import { PAGE_ICONS, PageIcon, iconLabel } from "./icons";
 import { Button, IconButton, useMenu, type MenuEntry, type MenuItem } from "./ui";
@@ -247,7 +246,7 @@ function SearchPane() {
   const tr = useT();
   const [q, setQ] = useState(() => sessionStorage.getItem("arcalo.sidesearch") ?? "");
   const exactOnly = useExactOnly();
-  const { hits, meaning } = useMeaningSearch(q, 60, { enabled: q.trim().length >= 2, exact: exactOnly, delay: 120 });
+  const { hits, meaning, answered } = useMeaningSearch(q, 60, { enabled: q.trim().length >= 2, exact: exactOnly, delay: 120 });
   const input = useRef<HTMLInputElement>(null);
   const s = useApp.getState;
   useEffect(() => {
@@ -285,8 +284,19 @@ function SearchPane() {
           onKeyDown={(e) => {
             if (isComposing(e)) return;
             if (e.key === "Enter") {
-              const first = [...byPage.keys()][0];
-              if (first) s().openPage(first, { newTab: e.ctrlKey || e.metaKey });
+              const newTab = e.ctrlKey || e.metaKey;
+              // The hits shown may still be those of the text before the last keystroke: then
+              // the first hit of what is typed now.
+              if (answered === q) {
+                const first = [...byPage.keys()][0];
+                if (first) s().openPage(first, { newTab });
+              } else if (q.trim().length >= 2) {
+                const typed = q;
+                void api.search(typed, 5).then((h) => {
+                  const first = h.find((x) => x.kind === "note" || x.kind === "similar");
+                  if (first && (first.kind === "note" || first.kind === "similar")) s().openPage(first.page_id, { newTab });
+                }, () => {});
+              }
             }
             if (e.key === "Escape") setQ("");
           }}
@@ -421,34 +431,7 @@ function TodayHours() {
 // --------------------------------------------------------------- page tree
 
 /** Renames a page with its links rewritten; the toast undoes it. */
-async function renameInTree(n: PageNode, title: string) {
-  const s = useApp.getState;
-  const old = n.title;
-  // All editors: a pending autosave elsewhere would write the old [[links]] back.
-  await flushAllEditors();
-  const count = await api.renamePage(n.id, title, true);
-  reloadEditors();
-  await s().refreshTree();
-  s().toast({
-    tone: "success",
-    title: tStatic("sb.renamed", { title }),
-    detail: count > 0 ? tStatic("page.linksUpdated", { n: count }) : undefined,
-    action: {
-      label: tStatic("common.undo"),
-      run: async () => {
-        try {
-          await flushAllEditors();
-          await api.renamePage(n.id, old, true);
-          reloadEditors();
-          await s().refreshTree();
-          s().toast({ tone: "info", title: tStatic("sb.renameUndone"), detail: tStatic("common.quoted", { text: old }) });
-        } catch (e) {
-          s().error(tStatic("page.renameFailed"), e);
-        }
-      },
-    },
-  });
-}
+const renameInTree = (n: PageNode, title: string) => renamePageWithUndo(n.id, n.title, title);
 
 type DropPos = "before" | "inside" | "after";
 
@@ -809,8 +792,15 @@ function PageTree({
     if (key === "F2" && !selected.size) return (handled(), setRenaming(n.id));
     if (key === "Delete" || (key === "Backspace" && e.metaKey)) {
       handled();
-      if (selected.size > 1 && selected.has(n.id)) void deleteSelection();
-      else void deletePage(n);
+      const many = selected.size > 1 && selected.has(n.id);
+      // The focus goes on to the next row that stays (else the one before), not to the page.
+      const gone = many ? [...selected] : [n.id];
+      const inside = (id: number) => {
+        for (let p: number | null | undefined = id; p != null; p = s().pages.get(p)?.parent_id) if (gone.includes(p)) return true;
+        return false;
+      };
+      const after = rows.slice(i + 1).find((r) => !inside(r.node.id)) ?? [...rows.slice(0, i)].reverse().find((r) => !inside(r.node.id));
+      void (many ? deleteSelection() : deletePage(n)).then(() => !s().pages.has(n.id) && requestAnimationFrame(() => focusRow(after?.node.id)));
       return;
     }
     if (key === "Enter" || key === " ") (handled(), s().openPage(n.id, { newTab: e.ctrlKey || e.metaKey, split: e.altKey }));

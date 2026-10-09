@@ -991,10 +991,15 @@ function ExportDialog({ week, onClose }: { week: Date; onClose: () => void }) {
   const range = () => ({ from: new Date(`${from}T00:00:00`).toISOString(), to: addDays(new Date(`${to}T00:00:00`), 1).toISOString() });
 
   useEffect(() => {
+    // Only the answer for the current choice (a slower one for an earlier format or range is dropped).
+    let alive = true;
     api
       .exportEntries({ format, ...range(), onlyReleased, markExported: false, path: null })
-      .then(setPreview)
-      .catch(() => setPreview(null));
+      .then((p) => alive && setPreview(p))
+      .catch(() => alive && setPreview(null));
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [format, from, to, onlyReleased]);
 
