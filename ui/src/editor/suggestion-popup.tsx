@@ -6,6 +6,7 @@ import type { SuggestionOptions, SuggestionProps, SuggestionKeyDownProps } from 
 import { t } from "../lib/i18n";
 import { isComposing } from "../lib/ime";
 import { consumeKey } from "../lib/keymap";
+import { onHidden } from "../lib/keepalive";
 
 export interface PopupItem {
   id: string;
@@ -147,6 +148,14 @@ export function popupRenderer<I extends PopupItem>(emptyText?: string | (() => s
     let renderer: ReactRenderer<PopupHandle, PopupProps> | null = null;
     let host: HTMLDivElement | null = null;
     let owner: HTMLElement | undefined;
+    let unwatch = () => {};
+    // Dismissed (Escape, or the note hidden behind another tab): the keys belong to the text
+    // again until the suggestion ends.
+    const dismiss = () => {
+      renderer?.destroy();
+      renderer = null;
+      host?.remove();
+    };
     const place = (props: SuggestionProps<I>) => {
       if (!host) return;
       host.style.display = empty === null && !props.items.length ? "none" : "";
@@ -170,6 +179,8 @@ export function popupRenderer<I extends PopupItem>(emptyText?: string | (() => s
         });
         host.appendChild(renderer.element);
         requestAnimationFrame(() => place(props));
+        unwatch();
+        unwatch = onHidden(props.editor.view.dom, dismiss);
       },
       onUpdate: (props) => {
         renderer?.updateProps({ items: props.items, command: props.command as (i: PopupItem) => void, empty: text() ?? undefined, className, owner });
@@ -182,17 +193,14 @@ export function popupRenderer<I extends PopupItem>(emptyText?: string | (() => s
         if (!renderer) return false;
         if (props.event.key === "Escape") {
           consumeKey(props.event);
-          renderer.destroy();
-          renderer = null;
-          host?.remove();
+          dismiss();
           return true;
         }
         return renderer.ref?.onKeyDown(props) ?? false;
       },
       onExit: () => {
-        renderer?.destroy();
-        host?.remove();
-        renderer = null;
+        unwatch();
+        dismiss();
         host = null;
       },
     };

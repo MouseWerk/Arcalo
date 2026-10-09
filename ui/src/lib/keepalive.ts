@@ -29,3 +29,17 @@ export function keepAlive(prev: Kept[], tab: Tab | null, tabIds: string[], max =
   const rest = prev.filter((k) => k.key !== key && (k.tab ? tabIds.includes(k.tab.id) : !tab));
   return [{ key, tab }, ...rest].slice(0, max);
 }
+
+/**
+ * Calls `onHide` when `el` stops being laid out: its kept place was hidden (another tab is
+ * shown in the pane). What an editor puts over the page on `document.body` (a hint, a popup)
+ * goes with it, so it never floats over the tab shown instead. Returns the disconnect function.
+ */
+export function onHidden(el: Element, onHide: () => void): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+  const watch = new ResizeObserver(() => {
+    if (el.isConnected && el.getClientRects().length === 0) onHide();
+  });
+  watch.observe(el);
+  return () => watch.disconnect();
+}

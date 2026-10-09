@@ -10,6 +10,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { classifyPaste, type ChatMessage, type PasteKind } from "./paste";
 import { t } from "../lib/i18n";
+import { onHidden } from "../lib/keepalive";
 
 export interface SmartPasteOptions {
   /** Title of a web page (Rust `link_title`); null or the URL itself when there is none. */
@@ -286,6 +287,9 @@ export const SmartPaste = Extension.create<SmartPasteOptions>({
             if (el && hint) place(hint);
           };
           window.addEventListener("scroll", onScroll, true);
+          // Another tab shown in the pane (this note kept hidden): the hint goes, it would float
+          // over that tab and act on this note.
+          const unwatch = onHidden(view.dom, () => key.getState(view.state)?.hint && setHint(view, null));
           return {
             update(v) {
               const hint = key.getState(v.state)?.hint ?? null;
@@ -295,6 +299,7 @@ export const SmartPaste = Extension.create<SmartPasteOptions>({
             },
             destroy() {
               remove();
+              unwatch();
               window.removeEventListener("scroll", onScroll, true);
             },
           };

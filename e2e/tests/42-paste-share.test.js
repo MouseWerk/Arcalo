@@ -46,13 +46,13 @@ async function newPage(title, md) {
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title, create: false })) !== null);
   await app.invoke("page_save", { id: await pageId(title), content: md });
   await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
-  await app.browser.waitUntil(() => app.browser.execute((t) => document.querySelector(".pane.active .ProseMirror")?.textContent.includes(t), md.split("\n")[0].replace(/^#+ /, "")));
+  await app.browser.waitUntil(() => app.browser.execute((t) => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror")?.textContent.includes(t), md.split("\n")[0].replace(/^#+ /, "")));
 }
 
 /** Caret at the end of the block with text `text`, then Enter for a fresh line. */
 async function freshLineAfter(text) {
   await app.browser.execute((t) => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     pm.focus();
     const el = [...pm.querySelectorAll("p, h1, h2, li")].find((e) => e.textContent === t);
     const range = document.createRange();
@@ -79,7 +79,7 @@ async function paste(text, html = "") {
         ev = new Event("paste", { bubbles: true, cancelable: true });
         Object.defineProperty(ev, "clipboardData", { value: dt });
       }
-      document.querySelector(".pane.active .ProseMirror").dispatchEvent(ev);
+      document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").dispatchEvent(ev);
       return ev.defaultPrevented;
     },
     text,
@@ -92,9 +92,9 @@ test("pasting Excel rows makes a table with a header row", async () => {
   await freshLineAfter("Start");
   const handled = await paste("Name\tStunden\tStatus\r\nAnna\t2,5\toffen\r\nBen\t4\terledigt\r\n", "<table><tr><td>Name</td><td>Stunden</td><td>Status</td></tr></table>");
   assert.equal(handled, true, "smart paste handled the event");
-  await app.waitFor(".pane.active .ProseMirror table");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror table");
   assert.deepEqual(
-    await app.browser.execute(() => [...document.querySelectorAll(".pane.active .ProseMirror table tr:first-child th")].map((c) => c.textContent)),
+    await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror table tr:first-child th")].map((c) => c.textContent)),
     ["Name", "Stunden", "Status"],
   );
   await waitContent("Einfuegen", /^\| Name +\| Stunden +\| Status +\|$/m);
@@ -105,15 +105,17 @@ test("pasting Excel rows makes a table with a header row", async () => {
 
 test("pasting a stack trace makes a code block; „Als Text einfügen“ undoes it", async () => {
   await newPage("Fehler", "Log\n");
+  // The table note stays open behind this one (same tab): its hint went with it.
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".paste-hint").length), 0, "hint of the hidden note left on screen");
   await freshLineAfter("Log");
   const trace = 'Exception in thread "main" java.lang.IllegalStateException: kaputt\n\tat com.firma.App.run(App.java:42)\n\tat com.firma.App.main(App.java:10)';
   await paste(trace);
-  await app.waitFor(".pane.active .ProseMirror pre code");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror pre code");
   await waitContent("Fehler", /^```java\nException in thread "main"/m);
   await app.waitText(".paste-hint", /Als Text einfügen/);
   await app.shot("paste-stacktrace");
   await app.browser.execute(() => document.querySelector(".paste-hint").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })));
-  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".pane.active .ProseMirror pre")), { timeoutMsg: "code block not undone" });
+  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror pre")), { timeoutMsg: "code block not undone" });
   await waitContent("Fehler", /^Exception in thread "main" java\.lang\.IllegalStateException: kaputt$/m, "plain text not pasted");
   await app.browser.waitUntil(async () => !/```/.test(await content("Fehler")), { timeoutMsg: "code block still saved" });
 });
@@ -132,6 +134,17 @@ test("pasting a URL gives the link the page title", async () => {
   assert.doesNotMatch(await content("Links"), /```|\| |^- /m);
 });
 
+test("the slash list goes with its note when another page is shown in the tab", async () => {
+  await newPage("Liste", "Anfang\n");
+  await freshLineAfter("Anfang");
+  await app.type("/");
+  await app.waitFor(".sugg-host .sugg");
+  // Another page in the same tab: the note stays mounted behind it, its list must not.
+  await app.invoke("search_open", { target: { kind: "page", page_id: await pageId("Links"), new_tab: false } });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Links");
+  await app.browser.waitUntil(() => app.browser.execute(() => !document.querySelector(".sugg-host")), { timeout: 3000, timeoutMsg: "slash list of the hidden note left on screen" });
+});
+
 test("a page is shared as one self-contained HTML file", async () => {
   const img = await app.invoke("attachment_save", { data: PNG, name: "Diagramm.png", mime: "image/png" });
   const md = `# Bericht\n\n[TOC]\n\n## Stand\n\nSiehe [[Architektur]] und https://example.com/doku, Quelle[^1].\n\n![[${img.name}]]\n\n> [!note]- Details\n> Versteckt\n\n[^1]: Die Quelle.\n`;
@@ -139,7 +152,7 @@ test("a page is shared as one self-contained HTML file", async () => {
   const out = path.join(app.dataDir, "export", "Bericht.html");
   fs.mkdirSync(path.dirname(out), { recursive: true });
   // The native save dialog cannot be driven: answer it with the path.
-  await app.click('.pane.active [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   const labels = await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].map((b) => b.textContent.trim()));
   assert.ok(labels.includes("Als HTML-Datei teilen…"), labels.join(", "));
@@ -176,7 +189,7 @@ test("with subpages: one file with a table of contents and links between the pag
   const out = path.join(app.dataDir, "export", "Bericht mit Unterseiten.html");
   await app.browser.execute(() => [...document.querySelectorAll(".sidebar .tree-row")].find((r) => r.innerText.trim() === "Bericht").click());
   await app.waitText(".pane.active .tab.active .tab-title", /Bericht/);
-  await app.click('.pane.active [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   const labels = await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].map((b) => b.textContent.trim()));
   assert.ok(labels.includes("Mit Unterseiten als HTML teilen…"), labels.join(", "));

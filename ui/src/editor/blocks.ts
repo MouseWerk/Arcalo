@@ -22,6 +22,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
 import { currentLang, t } from "../lib/i18n";
 import { scrollMotion } from "../lib/motion";
+import { onHidden } from "../lib/keepalive";
 
 // ---------------------------------------------------------------- columns
 
@@ -655,7 +656,16 @@ export const Footnotes = Extension.create({
             },
           },
         },
-        view: () => ({ destroy: hide }),
+        view: (view) => {
+          // The note hidden behind another tab: the card goes with it.
+          const unwatch = onHidden(view.dom, hide);
+          return {
+            destroy() {
+              hide();
+              unwatch();
+            },
+          };
+        },
       }),
     ];
   },

@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { SHOWN_PLACE, keepAlive, type Kept } from "./keepalive";
+import { SHOWN_PLACE, keepAlive, onHidden, type Kept } from "./keepalive";
 import type { Tab } from "../store/app";
 
 const tab = (id: string, pageId?: number, kind: Tab["kind"] = "page"): Tab => ({ id, kind, pageId, back: [], forward: [] });
@@ -61,5 +61,40 @@ describe("queries of the shown place", () => {
     pane.append(pane.firstElementChild!);
     expect(document.querySelector(`${SHOWN_PLACE} .ProseMirror`)?.id).toBe("a");
     document.body.innerHTML = "";
+  });
+});
+
+describe("onHidden", () => {
+  it("tells when the element is no longer laid out, not while it is shown", () => {
+    // The engine's observer, driven by hand: it calls back on every size change.
+    const observers: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private cb: () => void) {}
+        observe() {
+          observers.push(this.cb);
+        }
+        disconnect() {
+          observers.splice(observers.indexOf(this.cb), 1);
+        }
+      },
+    );
+    const el = document.createElement("div");
+    document.body.append(el);
+    let shown = true;
+    el.getClientRects = () => (shown ? [new DOMRect(0, 0, 10, 10)] : []) as unknown as DOMRectList;
+    let hidden = 0;
+    const off = onHidden(el, () => hidden++);
+    observers.forEach((f) => f());
+    expect(hidden).toBe(0);
+    // Its kept place hidden (another tab shown).
+    shown = false;
+    observers.forEach((f) => f());
+    expect(hidden).toBe(1);
+    off();
+    expect(observers).toEqual([]);
+    el.remove();
+    vi.unstubAllGlobals();
   });
 });
