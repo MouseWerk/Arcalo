@@ -468,26 +468,9 @@ pub fn rename(db: &Database, attachments_dir: &Path, old: &str, new: &str) -> Re
         done.push(m);
     }
     let rewrite = db.atomic(|| {
-        let uses = db.pages_using(old)?;
+        let uses: Vec<i64> = db.pages_using(old)?.into_iter().map(|u| u.id).collect();
         db.rename_pdf_highlights(old, &new)?;
-        let now = Utc::now();
-        let mut changed = Vec::new();
-        for u in uses {
-            let content: String =
-                db.conn().query_row("SELECT content FROM pages WHERE id = ?1", params![u.id], |r| r.get(0))?;
-            let updated = if db.is_canvas(u.id)? {
-                crate::canvas::rename_file(&content, old, &new)
-            } else {
-                replace_file_refs(&content, old, &new)
-            };
-            if updated != content {
-                // Rewritten by the rename, not by the user: keep what they wrote.
-                db.store_version(u.id, &content, now)?;
-                db.save_page_content_at(u.id, &updated, now)?;
-                changed.push(u.id);
-            }
-        }
-        Ok(changed)
+        rewrite_refs(db, &uses, old, &new, Utc::now())
     });
     match rewrite {
         Ok(pages) => Ok(RenameOutcome { name: new, pages }),
@@ -498,6 +481,29 @@ pub fn rename(db: &Database, attachments_dir: &Path, old: &str, new: &str) -> Re
             Err(e)
         }
     }
+}
+
+/// Rewrites the references to the file `old` in the pages `ids` to `new` (trashed pages too);
+/// each page that changes is saved after a version of its previous content. Returns those pages.
+/// Run inside a transaction by the callers.
+pub fn rewrite_refs(db: &Database, ids: &[i64], old: &str, new: &str, now: DateTime<Utc>) -> Result<Vec<i64>> {
+    let mut changed = Vec::new();
+    for &id in ids {
+        let content: String =
+            db.conn().query_row("SELECT content FROM pages WHERE id = ?1", params![id], |r| r.get(0))?;
+        let updated = if db.is_canvas(id)? {
+            crate::canvas::rename_file(&content, old, new)
+        } else {
+            replace_file_refs(&content, old, new)
+        };
+        if updated != content {
+            // Rewritten by the rename, not by the user: keep what they wrote.
+            db.store_version(id, &content, now)?;
+            db.save_page_content_at(id, &updated, now)?;
+            changed.push(id);
+        }
+    }
+    Ok(changed)
 }
 
 // ------------------------------------------------------------------ file trash

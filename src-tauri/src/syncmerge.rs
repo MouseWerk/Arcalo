@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use arcalo_core::gitsync::{self, RemoteChange, SyncOutcome};
+use arcalo_core::gitsync::{self, FileRename, RemoteChange, SyncOutcome};
 use arcalo_core::merge::{self, MergeResult};
 use arcalo_core::notes::PageDoc;
 use arcalo_core::{Database, Error, vault};
@@ -377,6 +377,51 @@ pub fn apply(db: &Database, changes: &[RemoteChange], now: DateTime<Local>) -> R
         store(db, &conflicts)?;
         Ok(out)
     })
+}
+
+/// This computer's files the sync renamed because the server has another file of the same name
+/// (see `gitsync::FileRename`): the file here takes the new name (the server's comes in under the
+/// old one with the other new files afterwards), and the pages of the notes this computer wrote
+/// link to it. Run after [`apply`], whose changes already carry the new links where they bring this
+/// computer's text. Returns the pages rewritten.
+pub fn apply_file_renames(
+    db: &Database,
+    attachments_dir: &std::path::Path,
+    repo: &std::path::Path,
+    renames: &[FileRename],
+    now: DateTime<Local>,
+) -> Result<Vec<i64>> {
+    let repo_files = repo.join(arcalo_core::attachments::DIR_NAME);
+    let mut pages = Vec::new();
+    for r in renames {
+        let mut moves = vec![(r.from.clone(), r.to.clone())];
+        if arcalo_core::attachments::is_drawing(&r.from) {
+            moves.push((arcalo_core::drawings::preview_name(&r.from), arcalo_core::drawings::preview_name(&r.to)));
+        }
+        for (from, to) in moves {
+            let (here, target) = (attachments_dir.join(&from), attachments_dir.join(&to));
+            // Only this computer's own file (the one the sync renamed): one changed since stays.
+            let ours = std::fs::read(repo_files.join(&to)).ok();
+            if !target.exists() && ours.is_some() && std::fs::read(&here).ok() == ours {
+                std::fs::rename(&here, &target).map_err(|e| Error::file(&here, e))?;
+            }
+        }
+        let paths = vault::page_paths(db)?;
+        let ids: Vec<i64> = r
+            .notes
+            .iter()
+            .filter_map(|n| {
+                let n = n.to_lowercase();
+                paths.iter().find(|p| p.file.as_ref().is_some_and(|f| f.to_lowercase() == n)).map(|p| p.page_id)
+            })
+            .collect();
+        let changed = db.atomic(|| {
+            db.rename_pdf_highlights(&r.from, &r.to)?;
+            arcalo_core::attachment_manager::rewrite_refs(db, &ids, &r.from, &r.to, now.with_timezone(&chrono::Utc))
+        })?;
+        pages.extend(changed);
+    }
+    Ok(pages)
 }
 
 /// A page deleted here that the other computer edited since: the trashed page of that name below
@@ -1037,6 +1082,91 @@ mod tests {
         assert_eq!(db.page_doc(copy).unwrap().content, theirs);
         assert_eq!(db.page_doc(board.id).unwrap().content, mine);
         assert!(keep_theirs_as_copy(&db, board.id, broken).is_err());
+    }
+
+    /// Two computers attach a different file of one name: after the syncs each computer has both
+    /// files, each note shows the file it was written with, and further syncs change nothing.
+    #[test]
+    fn two_computers_attaching_different_files_of_one_name_keep_both() {
+        use arcalo_core::gitsync::{Git, GitSyncSettings, SyncOutcome, SyncRequest};
+        use std::process::Command;
+        if !Command::new("git").arg("--version").output().is_ok_and(|o| o.status.success()) {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("arcalo-same-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let bare = base.join("remote.git");
+        assert!(Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).status().unwrap().success());
+        let settings = GitSyncSettings { enabled: true, remote_url: bare.display().to_string(), ..Default::default() };
+        let files = |pc: &str| base.join(pc).join("attachments");
+        // A sync and what the shell does with its outcome (`take_over_pulled`).
+        let run = |db: &Database, pc: &str| -> SyncOutcome {
+            let dir = base.join(pc);
+            std::fs::create_dir_all(files(pc)).unwrap();
+            arcalo_core::mirror::write_mirror(db, &dir.join("mirror"), &files(pc), &Local).unwrap();
+            let out = arcalo_core::gitsync::sync(
+                &Git::new(None, &settings.remote_url),
+                &SyncRequest {
+                    repo: &dir.join("git-sync"),
+                    source: &dir.join("mirror"),
+                    database: None,
+                    settings: &settings,
+                    host: pc,
+                    now: Local::now(),
+                    hold: &hold_paths(db),
+                    allow_deletions: false,
+                    settings_file: None,
+                    companion: false,
+                },
+            )
+            .unwrap();
+            apply(db, &out.remote_changes, Local::now()).unwrap();
+            apply_file_renames(db, &files(pc), &dir.join("git-sync"), &out.renamed_files, Local::now()).unwrap();
+            for e in std::fs::read_dir(dir.join("git-sync/attachments")).into_iter().flatten().flatten() {
+                if !files(pc).join(e.file_name()).exists() {
+                    std::fs::copy(e.path(), files(pc).join(e.file_name())).unwrap();
+                }
+            }
+            out
+        };
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        let start = a.create_page(None, "Start", None).unwrap();
+        a.save_page_content(start.id, "Start").unwrap();
+        run(&a, "a");
+        run(&b, "b");
+        let note = |db: &Database, pc: &str, title: &str, bytes: &str| {
+            std::fs::write(files(pc).join("Bericht.pdf"), bytes).unwrap();
+            let p = db.create_page(None, title, None).unwrap();
+            db.save_page_content(p.id, &format!("{title}: ![[Bericht.pdf]]")).unwrap();
+            p.id
+        };
+        let note_a = note(&a, "a", "Von A", "PDF von A");
+        let note_b = note(&b, "b", "Von B", "PDF von B");
+        run(&a, "a");
+        let out = run(&b, "b");
+        assert_eq!(out.renamed_files.len(), 1, "{out:?}");
+        let new = out.renamed_files[0].to.clone();
+        assert!(new.starts_with("Bericht-") && new.ends_with(".pdf"), "{new}");
+        run(&a, "a");
+        // Both computers have both files; every note shows its own.
+        for (db, pc, mine) in [(&a, "a", note_a), (&b, "b", note_b)] {
+            assert_eq!(std::fs::read_to_string(files(pc).join("Bericht.pdf")).unwrap(), "PDF von A", "{pc}");
+            assert_eq!(std::fs::read_to_string(files(pc).join(&new)).unwrap(), "PDF von B", "{pc}");
+            let other = db.page_by_title(if pc == "a" { "Von B" } else { "Von A" }).unwrap().unwrap();
+            let (own, theirs) = (db.page_doc(mine).unwrap().content, db.page_doc(other.id).unwrap().content);
+            let (a_text, b_text) = if pc == "a" { (own, theirs) } else { (theirs, own) };
+            assert_eq!(a_text, "Von A: ![[Bericht.pdf]]", "{pc}");
+            assert_eq!(b_text, format!("Von B: ![[{new}]]"), "{pc}");
+        }
+        // B's own text before the rewrite is kept as a version.
+        assert_eq!(b.version_content(b.list_versions(note_b).unwrap()[0].id).unwrap(), "Von B: ![[Bericht.pdf]]");
+        // Nothing flips back and forth.
+        for (db, pc) in [(&b, "b"), (&a, "a"), (&b, "b")] {
+            let out = run(db, pc);
+            assert!(!out.committed && out.renamed_files.is_empty(), "{pc}: {out:?}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// The conflict view runs on a read-only connection: a conflict of a page deleted since is

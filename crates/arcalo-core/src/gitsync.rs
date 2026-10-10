@@ -1015,6 +1015,26 @@ pub struct SyncOutcome {
     /// The merged settings file after the sync (when the request had one), for the shell to apply.
     #[serde(default, skip_serializing)]
     pub settings_file: Option<String>,
+    /// This computer's files renamed because the server has another file of the same name, for
+    /// the shell to rename here too.
+    #[serde(default, skip_serializing)]
+    pub renamed_files: Vec<FileRename>,
+}
+
+/// Both computers added or changed a file of one name in the attachments folder, with different
+/// content: both are kept. The server's file keeps the name (the other computer's notes link to
+/// it already); this computer's takes a name with its content's hash (`Bericht-1a2b3c4d.pdf`, the
+/// same on every computer) and the notes this computer changed link to that instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileRename {
+    /// The name in the attachments folder both had.
+    pub from: String,
+    /// This computer's file from now on.
+    pub to: String,
+    /// Notes (repository paths) whose page here links to `to` from now on and still has to be
+    /// rewritten here: the ones kept as this computer wrote them, and conflicts (their page holds
+    /// this computer's text). Notes the pull rewrites itself are not listed.
+    pub notes: Vec<String>,
 }
 
 /// Last run, as shown in the settings.
@@ -1191,12 +1211,14 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             message: "Nichts zu synchronisieren".into(),
             remote_changes: vec![],
             settings_file: None,
+            renamed_files: vec![],
         });
     };
     let short = |git: &Git| -> Result<Option<String>> {
         Ok(Some(git.check(Some(repo), &["rev-parse", "--short", "HEAD"])?.trim().to_owned()))
     };
-    let done = |commit, target: &str, fallback: bool, remote_changes: Vec<RemoteChange>| {
+    let mut renamed: Vec<FileRename> = Vec::new();
+    let done = |commit, target: &str, fallback: bool, remote_changes: Vec<RemoteChange>, renamed_files| {
         let pulled = remote_changes.len();
         let conflicts = remote_changes.iter().filter(|c| c.conflict).count();
         let message = match (committed, fallback) {
@@ -1244,16 +1266,17 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
                 .settings_file
                 .as_ref()
                 .and_then(|_| fs::read_to_string(repo.join(crate::settings_sync::FILE)).ok()),
+            renamed_files,
         }
     };
 
     if tip.as_deref() == Some(head.as_str()) {
-        return Ok(done(short(git)?, branch, false, pulled));
+        return Ok(done(short(git)?, branch, false, pulled, renamed));
     }
     let target = format!("HEAD:refs/heads/{branch}");
     let push = git.run(Some(repo), &["push", "-q", "origin", &target])?;
     if push.ok {
-        return Ok(done(short(git)?, branch, false, pulled));
+        return Ok(done(short(git)?, branch, false, pulled, renamed));
     }
     if !rejected(&push) {
         return Err(git.failure(&["push"], &push));
@@ -1270,7 +1293,8 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         let Some(theirs) = tip.clone() else { break };
         let Some(base) = merge_base(git, repo, "HEAD", &theirs)? else { break };
         let ours = rev(git, repo, "HEAD")?.unwrap_or_default();
-        let fresh = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
+        let (fresh, files) = merge_remote(git, repo, &identity, &base, &ours, &theirs, &req.now)?;
+        renamed.extend(files);
         // A path pulled twice keeps the newest server state, and stays a conflict once it was one;
         // a note moved again keeps where it came from here.
         for c in fresh {
@@ -1287,19 +1311,19 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             }
         }
         if rev(git, repo, "HEAD")? == tip {
-            return Ok(done(short(git)?, branch, false, pulled));
+            return Ok(done(short(git)?, branch, false, pulled, renamed));
         }
         let again = git.run(Some(repo), &["push", "-q", "origin", &target])?;
         if again.ok {
-            return Ok(done(short(git)?, branch, false, pulled));
+            return Ok(done(short(git)?, branch, false, pulled, renamed));
         }
         if !rejected(&again) {
             return Err(git.failure(&["push"], &again));
         }
     }
-    if !pulled.is_empty() {
+    if !pulled.is_empty() || !renamed.is_empty() {
         // Merged, but the server moved on again: taken over here, pushed with the next sync.
-        let mut out = done(short(git)?, branch, false, pulled);
+        let mut out = done(short(git)?, branch, false, pulled, renamed);
         out.message.push_str(tr!(
             " – der Server hat sich währenddessen erneut geändert, die nächste Synchronisierung überträgt den Stand",
             " – the server changed again meanwhile, the next sync transfers the state"
@@ -1308,7 +1332,7 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     }
     let fb = fallback_branch(req.host);
     git.check(Some(repo), &["push", "-q", "--force", "origin", &format!("HEAD:refs/heads/{fb}")])?;
-    Ok(done(short(git)?, &fb, true, vec![]))
+    Ok(done(short(git)?, &fb, true, vec![], vec![]))
 }
 
 fn with_identity<'a>(identity: &'a [String; 2], rest: &[&'a str]) -> Vec<&'a str> {
@@ -1442,8 +1466,163 @@ fn drop_path(git: &Git, repo: &Path, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// A file of the attachments folder (not in a subfolder): `attachments/<name>`.
+fn attachment_name(path: &str) -> Option<&str> {
+    let name = path.strip_prefix(crate::attachments::DIR_NAME)?.strip_prefix('/')?;
+    (!name.is_empty() && !name.contains('/')).then_some(name)
+}
+
+/// The name this computer's file `name` takes when the server has another file of that name:
+/// the first 8 hex digits of its content's SHA-256 before the extension (`Bericht-1a2b3c4d.pdf`;
+/// a drawing keeps `.excalidraw`). Deterministic, so another computer with the same file picks
+/// the same name; `taken` (a name in use for other content) makes it longer.
+fn clash_name(name: &str, bytes: &[u8], taken: impl Fn(&str) -> bool) -> String {
+    use sha2::{Digest, Sha256};
+    let hash: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
+        _ => (name, String::new()),
+    };
+    let mut candidate = String::new();
+    for len in [8, 16, 64] {
+        candidate = format!("{stem}-{}{ext}", &hash[..len]);
+        if !taken(&candidate) {
+            break;
+        }
+    }
+    candidate
+}
+
+/// Two different files of one name in the attachments folder, one added or changed on each side:
+/// the server's keeps the name, this computer's gets [`clash_name`] (a drawing takes its preview
+/// along). Returns `(old path, new path)` of each; index and working tree hold both files.
+fn keep_both_files(
+    git: &Git,
+    repo: &Path,
+    ours: &str,
+    theirs: &str,
+    remote: &BTreeSet<String>,
+    local: &BTreeSet<String>,
+) -> Result<Vec<(String, String)>> {
+    let dir = crate::attachments::DIR_NAME;
+    let mut out = Vec::new();
+    for path in remote.intersection(local) {
+        let Some(name) = attachment_name(path) else { continue };
+        // A drawing's preview follows its drawing.
+        let drawing = name.len().checked_sub(".svg".len()).and_then(|n| name.get(n..).zip(name.get(..n)));
+        if drawing.is_some_and(|(ext, stem)| ext.eq_ignore_ascii_case(".svg") && crate::attachments::is_drawing(stem)) {
+            continue;
+        }
+        let (Some(mine), Some(there)) = (blob_id(git, repo, ours, path)?, blob_id(git, repo, theirs, path)?) else {
+            continue;
+        };
+        if mine == there {
+            continue;
+        }
+        // The working tree holds this computer's file (the commit just made).
+        let bytes = fs::read(repo.join(path))?;
+        let free = |n: &str| -> bool {
+            let p = format!("{dir}/{n}");
+            repo.join(&p).exists()
+                || blob_id(git, repo, ours, &p).ok().flatten().is_some()
+                || blob_id(git, repo, theirs, &p).ok().flatten().is_some()
+        };
+        let new_name = clash_name(name, &bytes, |n| free(n) || free(&crate::drawings::preview_name(n)));
+        let mut moves = vec![(path.clone(), format!("{dir}/{new_name}"))];
+        if crate::attachments::is_drawing(name) {
+            let preview = format!("{dir}/{}", crate::drawings::preview_name(name));
+            if blob_id(git, repo, ours, &preview)?.is_some() {
+                moves.push((preview, format!("{dir}/{}", crate::drawings::preview_name(&new_name))));
+            }
+        }
+        for (from, to) in &moves {
+            fs::copy(repo.join(from), repo.join(to))?;
+            git.check(Some(repo), &["add", "--", to])?;
+            take_path(git, repo, theirs, from)?;
+        }
+        out.push((path.clone(), format!("{dir}/{new_name}")));
+    }
+    Ok(out)
+}
+
+/// After a merge that renamed this computer's files ([`keep_both_files`]): its notes link to the
+/// new names. A note this computer changed is rewritten where its text stays as written here (in
+/// the working tree, or as the text a pulled change takes over); a conflict's own text (`mine`)
+/// is rewritten in the change, and its page here by the shell. Returns the renames as the shell
+/// takes them.
+fn relink_notes(
+    git: &Git,
+    repo: &Path,
+    ours: &str,
+    local: &BTreeSet<String>,
+    files: &[(String, String)],
+    changes: &mut [RemoteChange],
+) -> Result<Vec<FileRename>> {
+    let names: Vec<(String, String)> = files
+        .iter()
+        .filter_map(|(a, b)| Some((attachment_name(a)?.to_owned(), attachment_name(b)?.to_owned())))
+        .collect();
+    let mut out: Vec<FileRename> =
+        names.iter().map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![] }).collect();
+    let relink = |path: &str, text: &str| -> (String, Vec<usize>) {
+        let canvas = path.to_ascii_lowercase().ends_with(".canvas");
+        let mut text = text.to_owned();
+        let mut hit = Vec::new();
+        for (i, (from, to)) in names.iter().enumerate() {
+            let next = if canvas {
+                crate::canvas::rename_file(&text, from, to)
+            } else {
+                crate::attachment_manager::replace_file_refs(&text, from, to)
+            };
+            if next != text {
+                hit.push(i);
+                text = next;
+            }
+        }
+        (text, hit)
+    };
+    for path in local.iter().filter(|p| is_note(p)) {
+        let Some(mine) = blob_text(git, repo, ours, path)? else { continue };
+        let (text, hit) = relink(path, &mine);
+        if hit.is_empty() {
+            continue;
+        }
+        match changes.iter_mut().find(|c| c.path == *path || c.from.as_deref() == Some(path.as_str())) {
+            None => {
+                // Kept as written here (nothing pulled for it): rewritten in place.
+                if fs::read_to_string(repo.join(path)).ok().as_deref() != Some(mine.as_str()) {
+                    continue;
+                }
+                put_path(git, repo, path, &text)?;
+                for i in hit {
+                    out[i].notes.push(path.clone());
+                }
+            }
+            Some(c) if c.conflict => {
+                // The server's text waits in the repository; this computer's is the page here.
+                if let Some(m) = c.mine.as_mut() {
+                    *m = relink(&c.path, m).0;
+                }
+                for i in hit {
+                    out[i].notes.push(c.path.clone());
+                }
+            }
+            Some(c) if c.theirs.is_some() && c.theirs == c.mine => {
+                // This computer's text goes to the server's place: the pull takes it over linked.
+                let linked = relink(&c.path, c.theirs.as_deref().unwrap_or_default()).0;
+                put_path(git, repo, &c.path, &linked)?;
+                c.theirs = Some(linked);
+            }
+            // The server's text was taken: its links are the server's.
+            Some(_) => {}
+        }
+    }
+    Ok(out)
+}
+
 /// Merges the server's commit `theirs` into `ours` (both descend from `base`), see [`sync`].
-/// Returns the notes the server changed, moved or brought back.
+/// Returns the notes the server changed, moved or brought back, and this computer's files renamed
+/// because the server has another file of the same name ([`FileRename`]).
 fn merge_remote(
     git: &Git,
     repo: &Path,
@@ -1452,7 +1631,7 @@ fn merge_remote(
     ours: &str,
     theirs: &str,
     now: &DateTime<Local>,
-) -> Result<Vec<RemoteChange>> {
+) -> Result<(Vec<RemoteChange>, Vec<FileRename>)> {
     let remote = changed_paths(git, repo, base, theirs)?;
     let renames = note_renames(git, repo, base, theirs)?;
     let pulled = |path: &String| -> Result<RemoteChange> {
@@ -1484,13 +1663,21 @@ fn merge_remote(
         }
         git.check(Some(repo), &["reset", "-q", "--hard", theirs])?;
         changes.sort_by(|a, b| a.path.cmp(&b.path));
-        return Ok(changes);
+        return Ok((changes, vec![]));
     }
     let local = changed_paths(git, repo, base, ours)?;
     let local_moves: std::collections::HashMap<String, String> =
         note_renames(git, repo, base, ours)?.into_iter().collect();
     git.check(Some(repo), &with_identity(identity, &["merge", "-q", "--no-ff", "--no-commit", "-s", "ours", theirs]))?;
     let mut handled = BTreeSet::new();
+    // Two different files of one name: both kept (before anything else changes the working tree).
+    let files = keep_both_files(git, repo, ours, theirs, &remote, &local)?;
+    for (from, _) in &files {
+        handled.insert(from.clone());
+        if let Some(name) = attachment_name(from) {
+            handled.insert(format!("{}/{}", crate::attachments::DIR_NAME, crate::drawings::preview_name(name)));
+        }
+    }
     for (old, new) in &renames {
         let here = local_moves.get(old);
         // The new path changed here in another way (a note of its own there): path by path below.
@@ -1615,6 +1802,7 @@ fn merge_remote(
         // Until the user has merged it, the server keeps its version.
         take_path(git, repo, theirs, path)?;
     }
+    let renamed = if files.is_empty() { vec![] } else { relink_notes(git, repo, ours, &local, &files, &mut changes)? };
     let msg = trf!(
         "Abgleich mit dem Server {}",
         "Merge with the server {}",
@@ -1622,7 +1810,7 @@ fn merge_remote(
     );
     git.check(Some(repo), &with_identity(identity, &["commit", "-q", "--no-verify", "-m", &msg]))?;
     changes.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(changes)
+    Ok((changes, renamed))
 }
 
 // ------------------------------------------------------------ after a restore
@@ -1857,6 +2045,7 @@ pub fn pull_restored(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         message,
         remote_changes: cmp.changes,
         settings_file: None,
+        renamed_files: vec![],
     })
 }
 
@@ -3059,5 +3248,143 @@ mod safety_tests {
         mark(&base.join("c/mirror"));
         assert!(check_restore(&git, &req("c", false)).unwrap().is_none());
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_clashing_file_name_gets_its_contents_hash() {
+        let name = clash_name("Bericht.pdf", b"PDF von B", |_| false);
+        assert!(name.starts_with("Bericht-") && name.ends_with(".pdf") && name.len() == "Bericht-12345678.pdf".len());
+        assert_eq!(name, clash_name("Bericht.pdf", b"PDF von B", |_| false), "the same on every computer");
+        assert_ne!(name, clash_name("Bericht.pdf", b"PDF von C", |_| false));
+        let longer = clash_name("Bericht.pdf", b"PDF von B", |n| n == name);
+        assert_eq!(longer.len(), "Bericht-.pdf".len() + 16);
+        assert!(clash_name("Skizze.excalidraw", b"{}", |_| false).ends_with(".excalidraw"));
+        assert!(clash_name("README", b"x", |_| false).starts_with("README-"));
+        assert_eq!(attachment_name("attachments/a b.png"), Some("a b.png"));
+        assert_eq!(attachment_name("attachments/sub/a.png"), None);
+        assert_eq!(attachment_name("Notiz.md"), None);
+    }
+
+    /// The server's file under its name, as it is in the repository.
+    fn server_file(r: &Remote, path: &str) -> String {
+        sh(&r.base.join("remote.git"), &["show", &format!("main:{path}")])
+    }
+
+    /// What the shell does with a pull, on a mirror: this computer's renamed files and the links
+    /// of its notes, then the server's notes and the files it does not have yet.
+    fn take_over(r: &Remote, pc: &str, out: &SyncOutcome) {
+        let (mirror, repo) = (r.mirror(pc), r.base.join(pc).join(REPO_DIR));
+        let files = mirror.join("attachments");
+        for f in &out.renamed_files {
+            fs::rename(files.join(&f.from), files.join(&f.to)).unwrap();
+            for note in &f.notes {
+                let text = fs::read_to_string(mirror.join(note)).unwrap();
+                put(&mirror.join(note), &crate::attachment_manager::replace_file_refs(&text, &f.from, &f.to));
+            }
+        }
+        for c in out.remote_changes.iter().filter(|c| !c.conflict) {
+            match &c.theirs {
+                Some(t) => put(&mirror.join(&c.path), t),
+                None => {
+                    let _ = fs::remove_file(mirror.join(&c.path));
+                }
+            }
+        }
+        for e in fs::read_dir(repo.join("attachments")).unwrap().flatten() {
+            if !files.join(e.file_name()).exists() {
+                fs::copy(e.path(), files.join(e.file_name())).unwrap();
+            }
+        }
+    }
+
+    /// Two computers attach a different file of one name: after the syncs both computers have
+    /// both files, every note shows its own, and nothing flips back and forth in the repository.
+    #[test]
+    fn two_different_files_of_one_name_are_both_kept() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("same-name");
+        for pc in ["a", "b"] {
+            mark(&r.mirror(pc));
+            put(&r.mirror(pc).join("Start.md"), "Start\n");
+        }
+        r.sync("a").unwrap();
+        r.sync("b").unwrap();
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        put(&a.join("attachments/Bericht.pdf"), "PDF von A");
+        put(&a.join("Notiz A.md"), "Bericht von A: ![[Bericht.pdf]]\n");
+        put(&b.join("attachments/Bericht.pdf"), "PDF von B");
+        put(&b.join("Notiz B.md"), "Bericht von B: [Bericht](attachments/Bericht.pdf)\n");
+        r.sync("a").unwrap();
+        let out = r.sync("b").unwrap();
+        let new = clash_name("Bericht.pdf", b"PDF von B", |_| false);
+        assert_eq!(
+            out.renamed_files,
+            [FileRename { from: "Bericht.pdf".into(), to: new.clone(), notes: vec!["Notiz B.md".into()] }]
+        );
+        // The server has both files; each note links to its own.
+        assert_eq!(server_file(&r, "attachments/Bericht.pdf"), "PDF von A");
+        assert_eq!(server_file(&r, &format!("attachments/{new}")), "PDF von B");
+        assert_eq!(server_file(&r, "Notiz A.md"), "Bericht von A: ![[Bericht.pdf]]\n");
+        assert_eq!(server_file(&r, "Notiz B.md"), format!("Bericht von B: [Bericht](attachments/{new})\n"));
+        take_over(&r, "b", &out);
+        assert_eq!(fs::read_to_string(b.join("attachments/Bericht.pdf")).unwrap(), "PDF von A");
+        assert_eq!(fs::read_to_string(b.join(format!("attachments/{new}"))).unwrap(), "PDF von B");
+        // A takes over B's note and file.
+        let out = r.sync("a").unwrap();
+        assert!(out.renamed_files.is_empty(), "{:?}", out.renamed_files);
+        take_over(&r, "a", &out);
+        assert_eq!(fs::read_to_string(a.join(format!("attachments/{new}"))).unwrap(), "PDF von B");
+        // Nothing flips: further syncs on both sides change nothing.
+        for pc in ["b", "a", "b"] {
+            let out = r.sync(pc).unwrap();
+            assert!(!out.committed && out.renamed_files.is_empty(), "{pc}: {out:?}");
+        }
+        assert_eq!(server_file(&r, "attachments/Bericht.pdf"), "PDF von A");
+        assert_eq!(server_file(&r, &format!("attachments/{new}")), "PDF von B");
+    }
+
+    /// A drawing changed on both computers keeps both versions, each with its preview; a note
+    /// changed on both sides (a conflict) gets the new link in this computer's text only.
+    #[test]
+    fn a_drawing_changed_on_both_sides_and_a_conflict_keep_their_links() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("same-drawing");
+        for pc in ["a", "b"] {
+            mark(&r.mirror(pc));
+            put(&r.mirror(pc).join("attachments/Skizze.excalidraw"), "{\"v\":0}");
+            put(&r.mirror(pc).join("attachments/Skizze.excalidraw.svg"), "<svg>0</svg>");
+            put(&r.mirror(pc).join("Plan.md"), "Plan\n\n![[Skizze.excalidraw]]\n");
+        }
+        r.sync("a").unwrap();
+        r.sync("b").unwrap();
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        put(&a.join("attachments/Skizze.excalidraw"), "{\"v\":\"A\"}");
+        put(&a.join("attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
+        put(&a.join("Plan.md"), "Plan von A\n\n![[Skizze.excalidraw]]\n");
+        put(&b.join("attachments/Skizze.excalidraw"), "{\"v\":\"B\"}");
+        put(&b.join("attachments/Skizze.excalidraw.svg"), "<svg>B</svg>");
+        put(&b.join("Plan.md"), "Plan von B\n\n![[Skizze.excalidraw]]\n");
+        r.sync("a").unwrap();
+        let out = r.sync("b").unwrap();
+        let new = clash_name("Skizze.excalidraw", b"{\"v\":\"B\"}", |_| false);
+        assert_eq!(out.renamed_files.len(), 1, "{:?}", out.renamed_files);
+        assert_eq!(
+            (out.renamed_files[0].to.as_str(), out.renamed_files[0].notes.as_slice()),
+            (new.as_str(), &["Plan.md".to_owned()][..])
+        );
+        assert_eq!(server_file(&r, "attachments/Skizze.excalidraw"), "{\"v\":\"A\"}");
+        assert_eq!(server_file(&r, "attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
+        assert_eq!(server_file(&r, &format!("attachments/{new}")), "{\"v\":\"B\"}");
+        assert_eq!(server_file(&r, &format!("attachments/{new}.svg")), "<svg>B</svg>");
+        // The note is a conflict: the server keeps A's text; B's text links to B's drawing.
+        let plan = out.remote_changes.iter().find(|c| c.path == "Plan.md").unwrap();
+        assert!(plan.conflict);
+        assert_eq!(plan.mine.as_deref(), Some(format!("Plan von B\n\n![[{new}]]\n").as_str()));
+        assert_eq!(plan.theirs.as_deref(), Some("Plan von A\n\n![[Skizze.excalidraw]]\n"));
+        assert_eq!(server_file(&r, "Plan.md"), "Plan von A\n\n![[Skizze.excalidraw]]\n");
     }
 }

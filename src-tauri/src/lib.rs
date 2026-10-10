@@ -1706,7 +1706,7 @@ pub(crate) fn run_git_sync_with(
     })();
     let mut taken_over = true;
     if let Ok(out) = &res
-        && !out.remote_changes.is_empty()
+        && (!out.remote_changes.is_empty() || !out.renamed_files.is_empty())
     {
         taken_over = take_over_pulled(app, &state, out);
     }
@@ -1757,7 +1757,34 @@ pub(crate) fn run_git_sync_with(
 fn take_over_pulled(app: &AppHandle, state: &AppState, out: &SyncOutcome) -> bool {
     let pulled = syncmerge::apply(&state.db(), &out.remote_changes, Local::now());
     match pulled {
-        Ok(p) => {
+        Ok(mut p) => {
+            // Files of one name that differ here and there: this computer's takes its new name
+            // before the server's comes in under the old one (below), its notes link to it.
+            if !out.renamed_files.is_empty() {
+                let renamed = syncmerge::apply_file_renames(
+                    &state.db(),
+                    &state.attachments_dir(),
+                    &state.git_repo_dir(),
+                    &out.renamed_files,
+                    Local::now(),
+                );
+                match renamed {
+                    Ok(pages) => {
+                        let names: Vec<String> =
+                            out.renamed_files.iter().map(|r| format!("{} → {}", r.from, r.to)).collect();
+                        devlog::info(
+                            "git",
+                            format!("files that differ on the server kept under a new name here: {}", names.join(", ")),
+                        );
+                        for id in pages {
+                            if !p.pages.contains(&id) {
+                                p.pages.push(id);
+                            }
+                        }
+                    }
+                    Err(e) => devlog::warn("git", format!("files of the same name not renamed here: {e}")),
+                }
+            }
             // For the start page's „Per Git-Sync geändert“.
             use arcalo_core::dashboard::notes::{PulledChange, record_pulled};
             let changes: Vec<(i64, PulledChange)> = p

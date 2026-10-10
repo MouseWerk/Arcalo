@@ -196,7 +196,7 @@ impl Database {
     }
 
     /// Highlights follow their file when it is renamed.
-    pub(crate) fn rename_pdf_highlights(&self, old: &str, new: &str) -> Result<()> {
+    pub fn rename_pdf_highlights(&self, old: &str, new: &str) -> Result<()> {
         self.conn().execute("UPDATE pdf_highlights SET attachment = ?2 WHERE attachment = ?1", params![old, new])?;
         Ok(())
     }

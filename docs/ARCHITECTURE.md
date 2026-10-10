@@ -150,7 +150,13 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   the merge base; a fast-forward when this side has nothing new); unrelated histories go to `arcalo-sync-<host>`. Files only
   the server changed take the server's state; a note changed on both sides differently keeps the server's version in the
   repository and comes back as a `RemoteChange` with `conflict` (base, mine, theirs); non-notes and a deletion there keep
-  this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Moves and renames are pulled
+  this side, a note deleted here and edited there comes back (`mine: None`, the edit wins). Two different files of one name
+  in `attachments/`, changed on both sides (1.17, `keep_both_files`): the server's keeps the name, this side's takes
+  `<name>-<8 hex of its SHA-256>.<ext>` (a drawing with its preview), and the notes this side changed link to it
+  (`relink_notes`: in the repository, in a pulled change that brings this side's text, and in a conflict's `mine`); the
+  shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
+  before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
+  Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict
   at the new place when both changed it), one moved here and edited there gets the server's text at this side's place.
