@@ -156,6 +156,8 @@ Read commands use three read-only connections (WAL), each with a 16 MB page cach
   (`relink_notes`: in the repository, in a pulled change that brings this side's text, and in a conflict's `mine`); the
   shell renames the file here and rewrites those pages (`SyncOutcome.renamed_files`, `syncmerge::apply_file_renames`)
   before the server's file is copied in. Notes this side did not change keep the name, so they show the server's file.
+  The first sync of a new computer (`adopt_tree`) does the same (`adopt_clashes`) instead of copying its file over the
+  server's.
   Moves and renames are pulled
   as such (1.16): `note_renames` pairs deleted and added notes with `git diff -M` (identical texts keep their file names)
   and the change carries `from`, the old path; a note moved there and edited here moves with this side's text (a conflict

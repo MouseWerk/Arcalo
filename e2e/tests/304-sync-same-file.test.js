@@ -1,7 +1,8 @@
 // Git sync, 1.17: two computers attach a different file of the same name. Both files are kept:
 // the one the server has first keeps the name, this computer's takes a name with its content's
 // hash, and every note shows the file it was written with, here and on the other computer. Nothing
-// flips back and forth with later syncs. The other computer is a clone of the bare repository.
+// flips back and forth with later syncs. The same holds for the first sync of a new computer.
+// The other computer is a clone of the bare repository.
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -93,5 +94,41 @@ test("a file of the same name from another computer is kept beside this computer
   assert.equal(again.committed, false, JSON.stringify(again));
   gitOther("pull", "-q", "origin", "main");
   assert.equal(fs.readFileSync(path.join(other, "attachments", "Bericht.docx"), "utf8"), "PK Bericht vom Laptop");
+  assert.deepEqual(await app.consoleErrors(), []);
+});
+
+test("a new computer's first sync never overwrites the server's file of the same name", async () => {
+  await app.close();
+  // A computer set up on its own, with its own „Bericht.docx“, joins the repository.
+  app = await launch({ demo: false });
+  const file = path.join(base, "neu", "Bericht.docx");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "PK Bericht vom neuen Computer");
+  const saved = await app.invoke("attachment_import", { path: file });
+  const neu = await app.invoke("page_create", { parentId: null, title: "Neuer Computer", icon: null, content: `Sein Bericht: ${saved.markdown}` });
+  const view = await app.invoke("settings_get");
+  await app.invoke("settings_save", {
+    settings: { ...view.settings, git_sync: { ...view.settings.git_sync, enabled: true, remote_url: bare, author_name: "E2E", author_email: "e2e@example.com" } },
+  });
+  await app.invoke("git_sync_now");
+
+  const files = (await app.invoke("attachments_list")).files.map((f) => f.name);
+  const own = files.find((n) => /^Bericht-[0-9a-f]{8}\.docx$/.test(n) && fs.readFileSync(path.join(app.dataDir, "attachments", n), "utf8").includes("neuen"));
+  assert.ok(own, JSON.stringify(files));
+  const attachments = path.join(app.dataDir, "attachments");
+  assert.equal(fs.readFileSync(path.join(attachments, "Bericht.docx"), "utf8"), "PK Bericht vom Laptop");
+  assert.equal((await app.invoke("page_get", { id: neu.id })).content, `Sein Bericht: ![[${own}]]`);
+  const laptop = await pageNamed("Vom Laptop");
+  assert.equal((await app.invoke("page_get", { id: laptop.id })).content, "Der Bericht vom Laptop: ![[Bericht.docx]]");
+  await openTree("Neuer Computer");
+  await app.waitText(".pane.active .file-embed .file-embed-name", new RegExp(`^${own.replace(".", "\\.")}$`));
+
+  // The server still has the laptop's file under the name, and the new one beside it.
+  gitOther("pull", "-q", "origin", "main");
+  assert.equal(fs.readFileSync(path.join(other, "attachments", "Bericht.docx"), "utf8"), "PK Bericht vom Laptop");
+  assert.equal(fs.readFileSync(path.join(other, "attachments", own), "utf8"), "PK Bericht vom neuen Computer");
+  assert.equal(fs.readFileSync(path.join(other, "Neuer Computer.md"), "utf8"), `Sein Bericht: ![[${own}]]`);
+  const again = await app.invoke("git_sync_now");
+  assert.equal(again.committed, false, JSON.stringify(again));
   assert.deepEqual(await app.consoleErrors(), []);
 });

@@ -480,9 +480,22 @@ fn prepare_tree_as(source: &Path, repo: &Path, database: Option<&Path>, companio
 /// computer has are added, other files it changed replace the server's, except notes: a
 /// note both sides have with different text keeps the server's version and comes back as
 /// a conflict. Notes only the server has come back with `mine: None`, so the shell creates
-/// them here.
-fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bool) -> Result<Vec<RemoteChange>> {
-    fn walk(src: &Path, dst: &Path, rel: &str, seen: &mut BTreeSet<String>, out: &mut Vec<RemoteChange>) -> Result<()> {
+/// them here. A file of the attachments folder both have with different content is kept
+/// twice ([`adopt_clashes`]).
+fn adopt_tree(
+    source: &Path,
+    repo: &Path,
+    database: Option<&Path>,
+    companion: bool,
+) -> Result<(Vec<RemoteChange>, Vec<FileRename>)> {
+    fn walk(
+        src: &Path,
+        dst: &Path,
+        rel: &str,
+        seen: &mut BTreeSet<String>,
+        out: &mut Vec<RemoteChange>,
+        clashes: &mut Vec<String>,
+    ) -> Result<()> {
         for (name, is_dir) in source_entries(src)? {
             let Some(name_s) = name.to_str() else { continue };
             let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
@@ -492,7 +505,7 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bo
                     remove_path(&to)?;
                 }
                 fs::create_dir_all(&to)?;
-                walk(&from, &to, &path, seen, out)?;
+                walk(&from, &to, &path, seen, out, clashes)?;
                 continue;
             }
             seen.insert(path.to_lowercase());
@@ -510,36 +523,130 @@ fn adopt_tree(source: &Path, repo: &Path, database: Option<&Path>, companion: bo
                 });
                 continue;
             }
+            if to.is_file() && attachment_name(&path).is_some() && !same_file(&from, &to)? {
+                // Never over the server's file of that name (see `adopt_clashes`).
+                clashes.push(path);
+                continue;
+            }
             if !to.exists() || !same_file(&from, &to)? {
                 fs::copy(&from, &to)?;
             }
         }
         Ok(())
     }
-    fn server_notes(dir: &Path, rel: &str, out: &mut Vec<String>) -> Result<()> {
-        for (name, is_dir) in source_entries(dir)? {
-            let Some(name_s) = name.to_str() else { continue };
-            let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
-            if is_dir {
-                server_notes(&dir.join(&name), &path, out)?;
-            } else if is_note(&path) && path != README_FILE {
-                out.push(path);
-            }
-        }
-        Ok(())
-    }
     let mut seen = BTreeSet::new();
     let mut changes = Vec::new();
-    walk(source, repo, "", &mut seen, &mut changes)?;
+    let mut clashes = Vec::new();
+    walk(source, repo, "", &mut seen, &mut changes, &mut clashes)?;
+    let renamed = adopt_clashes(source, repo, &clashes, &mut changes)?;
     let mut theirs = Vec::new();
-    server_notes(repo, "", &mut theirs)?;
+    note_paths(repo, "", &mut theirs)?;
     for path in theirs.into_iter().filter(|p| !seen.contains(&p.to_lowercase())) {
         let text = String::from_utf8_lossy(&fs::read(repo.join(&path))?).into_owned();
         changes.push(RemoteChange { path, from: None, base: None, mine: None, theirs: Some(text), conflict: false });
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     write_own_files(source, repo, database, companion)?;
-    Ok(changes)
+    Ok((changes, renamed))
+}
+
+/// The notes below `dir` (the sync's README left out), as repository paths.
+fn note_paths(dir: &Path, rel: &str, out: &mut Vec<String>) -> Result<()> {
+    for (name, is_dir) in source_entries(dir)? {
+        let Some(name_s) = name.to_str() else { continue };
+        let path = if rel.is_empty() { name_s.to_owned() } else { format!("{rel}/{name_s}") };
+        if is_dir {
+            note_paths(&dir.join(&name), &path, out)?;
+        } else if is_note(&path) && path != README_FILE {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// [`adopt_tree`]: files of the attachments folder that the server and this computer both have
+/// with different content (`clashes`, still the server's in the working tree). As in a merge
+/// ([`keep_both_files`]): the server's keeps the name, this computer's goes in under
+/// [`clash_name`] with its drawing preview, and this computer's notes link to it: in the working
+/// tree where its text was taken, in a conflict's own text. A preview alone (its drawing the same)
+/// is this computer's, as before.
+fn adopt_clashes(
+    source: &Path,
+    repo: &Path,
+    clashes: &[String],
+    changes: &mut [RemoteChange],
+) -> Result<Vec<FileRename>> {
+    let dir = crate::attachments::DIR_NAME;
+    let preview_of = |name: &str| -> Option<String> {
+        let n = name.len().checked_sub(".svg".len())?;
+        let (stem, ext) = (name.get(..n)?, name.get(n..)?);
+        (ext.eq_ignore_ascii_case(".svg") && crate::attachments::is_drawing(stem)).then(|| stem.to_owned())
+    };
+    let mut names: Vec<(String, String)> = Vec::new();
+    for path in clashes {
+        let Some(name) = attachment_name(path) else { continue };
+        if let Some(drawing) = preview_of(name) {
+            if !clashes.contains(&format!("{dir}/{drawing}")) {
+                fs::copy(source.join(path), repo.join(path))?;
+            }
+            continue;
+        }
+        let bytes = fs::read(source.join(path))?;
+        let taken = |n: &str| repo.join(dir).join(n).exists() || source.join(dir).join(n).exists();
+        let new_name = clash_name(name, &bytes, |n| taken(n) || taken(&crate::drawings::preview_name(n)));
+        fs::copy(source.join(path), repo.join(dir).join(&new_name))?;
+        let preview = crate::drawings::preview_name(name);
+        if crate::attachments::is_drawing(name) && source.join(dir).join(&preview).is_file() {
+            fs::copy(source.join(dir).join(&preview), repo.join(dir).join(crate::drawings::preview_name(&new_name)))?;
+        }
+        names.push((name.to_owned(), new_name));
+    }
+    let mut out: Vec<FileRename> =
+        names.iter().map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![] }).collect();
+    if names.is_empty() {
+        return Ok(out);
+    }
+    let mut notes = Vec::new();
+    note_paths(source, "", &mut notes)?;
+    for path in notes {
+        let mine = String::from_utf8_lossy(&fs::read(source.join(&path))?).into_owned();
+        let (text, hit) = relink_text(&path, &mine, &names);
+        if hit.is_empty() {
+            continue;
+        }
+        if let Some(c) = changes.iter_mut().find(|c| c.path == path && c.conflict) {
+            // The server's text stays in the working tree; this computer's is the page here.
+            c.mine = Some(text);
+        } else if fs::read(repo.join(&path)).ok().as_deref() == Some(mine.as_bytes()) {
+            fs::write(repo.join(&path), &text)?;
+        } else {
+            continue;
+        }
+        for i in hit {
+            out[i].notes.push(path.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// `text` (of the note at `path`) with its links to each `(old, new)` file name rewritten, and
+/// the indexes of the names it linked to.
+fn relink_text(path: &str, text: &str, names: &[(String, String)]) -> (String, Vec<usize>) {
+    let canvas = path.to_ascii_lowercase().ends_with(".canvas");
+    let mut text = text.to_owned();
+    let mut hit = Vec::new();
+    for (i, (from, to)) in names.iter().enumerate() {
+        let next = if canvas {
+            crate::canvas::rename_file(&text, from, to)
+        } else {
+            crate::attachment_manager::replace_file_refs(&text, from, to)
+        };
+        if next != text {
+            hit.push(i);
+            text = next;
+        }
+    }
+    (text, hit)
 }
 
 /// Writes the sync's own files next to the notes (`database`: see [`prepare_tree`]).
@@ -1154,6 +1261,8 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
         }
     }
 
+    // This computer's files renamed because the server has another file of that name.
+    let mut renamed: Vec<FileRename> = Vec::new();
     let mut pulled: Vec<RemoteChange> = {
         // The mirror is read in one complete state (no swap in between).
         let _swap = crate::mirror::hold_swaps();
@@ -1165,7 +1274,9 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
             )));
         }
         if adopted {
-            adopt_tree(req.source, repo, req.database, req.companion)?
+            let (changes, files) = adopt_tree(req.source, repo, req.database, req.companion)?;
+            renamed = files;
+            changes
         } else {
             prepare_tree_as(req.source, repo, req.database, req.companion)?;
             vec![]
@@ -1217,7 +1328,6 @@ pub fn sync(git: &Git, req: &SyncRequest) -> Result<SyncOutcome> {
     let short = |git: &Git| -> Result<Option<String>> {
         Ok(Some(git.check(Some(repo), &["rev-parse", "--short", "HEAD"])?.trim().to_owned()))
     };
-    let mut renamed: Vec<FileRename> = Vec::new();
     let done = |commit, target: &str, fallback: bool, remote_changes: Vec<RemoteChange>, renamed_files| {
         let pulled = remote_changes.len();
         let conflicts = remote_changes.iter().filter(|c| c.conflict).count();
@@ -1564,23 +1674,7 @@ fn relink_notes(
         .collect();
     let mut out: Vec<FileRename> =
         names.iter().map(|(from, to)| FileRename { from: from.clone(), to: to.clone(), notes: vec![] }).collect();
-    let relink = |path: &str, text: &str| -> (String, Vec<usize>) {
-        let canvas = path.to_ascii_lowercase().ends_with(".canvas");
-        let mut text = text.to_owned();
-        let mut hit = Vec::new();
-        for (i, (from, to)) in names.iter().enumerate() {
-            let next = if canvas {
-                crate::canvas::rename_file(&text, from, to)
-            } else {
-                crate::attachment_manager::replace_file_refs(&text, from, to)
-            };
-            if next != text {
-                hit.push(i);
-                text = next;
-            }
-        }
-        (text, hit)
-    };
+    let relink = |path: &str, text: &str| relink_text(path, text, &names);
     for path in local.iter().filter(|p| is_note(p)) {
         let Some(mine) = blob_text(git, repo, ours, path)? else { continue };
         let (text, hit) = relink(path, &mine);
@@ -3386,5 +3480,75 @@ mod safety_tests {
         assert_eq!(plan.mine.as_deref(), Some(format!("Plan von B\n\n![[{new}]]\n").as_str()));
         assert_eq!(plan.theirs.as_deref(), Some("Plan von A\n\n![[Skizze.excalidraw]]\n"));
         assert_eq!(server_file(&r, "Plan.md"), "Plan von A\n\n![[Skizze.excalidraw]]\n");
+    }
+
+    /// The first sync of a new computer that has its own file of a name the server has with other
+    /// content: the server's file is never overwritten; both are kept as in a merge.
+    #[test]
+    fn a_new_computers_file_of_a_name_the_server_has_is_kept_beside_it() {
+        if !git_available() {
+            return;
+        }
+        let r = Remote::new("adopt-same-name");
+        let (a, b) = (r.mirror("a"), r.mirror("b"));
+        mark(&a);
+        put(&a.join("attachments/Bericht.pdf"), "PDF von A");
+        put(&a.join("attachments/Skizze.excalidraw"), "{\"v\":\"A\"}");
+        put(&a.join("attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
+        put(&a.join("Notiz A.md"), "![[Bericht.pdf]] und ![[Skizze.excalidraw]]\n");
+        put(&a.join("Plan.md"), "Plan von A ![[Bericht.pdf]]\n");
+        r.sync("a").unwrap();
+        // A new computer with its own files of those names and notes of its own.
+        mark(&b);
+        put(&b.join("attachments/Bericht.pdf"), "PDF von B");
+        put(&b.join("attachments/Skizze.excalidraw"), "{\"v\":\"B\"}");
+        put(&b.join("attachments/Skizze.excalidraw.svg"), "<svg>B</svg>");
+        put(&b.join("Notiz B.md"), "Bericht von B: [Bericht](attachments/Bericht.pdf), ![[Skizze.excalidraw]]\n");
+        put(&b.join("Plan.md"), "Plan von B ![[Bericht.pdf]]\n");
+        let out = r.sync("b").unwrap();
+        let pdf = clash_name("Bericht.pdf", b"PDF von B", |_| false);
+        let drawing = clash_name("Skizze.excalidraw", b"{\"v\":\"B\"}", |_| false);
+        let mut renamed = out.renamed_files.clone();
+        renamed.sort_by(|x, y| x.from.cmp(&y.from));
+        assert_eq!(
+            renamed,
+            [
+                FileRename {
+                    from: "Bericht.pdf".into(),
+                    to: pdf.clone(),
+                    notes: vec!["Notiz B.md".into(), "Plan.md".into()]
+                },
+                FileRename { from: "Skizze.excalidraw".into(), to: drawing.clone(), notes: vec!["Notiz B.md".into()] },
+            ]
+        );
+        // The server's files keep their names and content; B's are there under the new names.
+        assert_eq!(server_file(&r, "attachments/Bericht.pdf"), "PDF von A");
+        assert_eq!(server_file(&r, "attachments/Skizze.excalidraw.svg"), "<svg>A</svg>");
+        assert_eq!(server_file(&r, &format!("attachments/{pdf}")), "PDF von B");
+        assert_eq!(server_file(&r, &format!("attachments/{drawing}")), "{\"v\":\"B\"}");
+        assert_eq!(server_file(&r, &format!("attachments/{drawing}.svg")), "<svg>B</svg>");
+        assert_eq!(server_file(&r, "Notiz A.md"), "![[Bericht.pdf]] und ![[Skizze.excalidraw]]\n");
+        assert_eq!(
+            server_file(&r, "Notiz B.md"),
+            format!("Bericht von B: [Bericht](attachments/{pdf}), ![[{drawing}]]\n")
+        );
+        // The note both have differently is a conflict: B's own text links to B's file.
+        let plan = out.remote_changes.iter().find(|c| c.path == "Plan.md").unwrap();
+        assert!(plan.conflict);
+        assert_eq!(plan.mine.as_deref(), Some(format!("Plan von B ![[{pdf}]]\n").as_str()));
+        assert_eq!(server_file(&r, "Plan.md"), "Plan von A ![[Bericht.pdf]]\n");
+        // Taken over on both computers, nothing flips afterwards.
+        take_over(&r, "b", &out);
+        put(&b.join("Plan.md"), &format!("Plan von B ![[{pdf}]]\n"));
+        let out = r.sync("a").unwrap();
+        take_over(&r, "a", &out);
+        for pc in ["b", "a", "b"] {
+            let out = r.sync(pc).unwrap();
+            assert!(out.renamed_files.is_empty(), "{pc}: {out:?}");
+        }
+        assert_eq!(server_file(&r, "attachments/Bericht.pdf"), "PDF von A");
+        assert_eq!(server_file(&r, &format!("attachments/{pdf}")), "PDF von B");
+        assert_eq!(fs::read_to_string(a.join(format!("attachments/{pdf}"))).unwrap(), "PDF von B");
+        assert_eq!(fs::read_to_string(b.join("attachments/Bericht.pdf")).unwrap(), "PDF von A");
     }
 }
