@@ -78,10 +78,10 @@ test("a file of the same name from another computer is kept beside this computer
 
   // Each page shows its own file.
   await openTree("Von hier");
-  await app.waitText(".pane.active .file-embed .file-embed-name", new RegExp(`^${renamed.replace(".", "\\.")}$`));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-name", new RegExp(`^${renamed.replace(".", "\\.")}$`));
   await app.shot("304-own-file-after-sync");
   await openTree("Vom Laptop");
-  await app.waitText(".pane.active .file-embed .file-embed-name", /^Bericht\.docx$/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-name", /^Bericht\.docx$/);
 
   // The other computer gets both files and this computer's note with the new link.
   gitOther("pull", "-q", "origin", "main");
@@ -121,7 +121,7 @@ test("a new computer's first sync never overwrites the server's file of the same
   const laptop = await pageNamed("Vom Laptop");
   assert.equal((await app.invoke("page_get", { id: laptop.id })).content, "Der Bericht vom Laptop: ![[Bericht.docx]]");
   await openTree("Neuer Computer");
-  await app.waitText(".pane.active .file-embed .file-embed-name", new RegExp(`^${own.replace(".", "\\.")}$`));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .file-embed .file-embed-name", new RegExp(`^${own.replace(".", "\\.")}$`));
 
   // The server still has the laptop's file under the name, and the new one beside it.
   gitOther("pull", "-q", "origin", "main");
