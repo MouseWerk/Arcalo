@@ -412,6 +412,24 @@ fn big_workspace() {
     time("tag_counts", 5, || db.tag_counts().unwrap());
     time("issues_list", 5, || db.issues_list(&Default::default()).unwrap());
     time("graph_data", 3, || db.graph_data(&Default::default()).unwrap());
+    // The answers of the views' big reads as JSON: the objects and the compact rows the UI loads
+    // (1.17): at most 60 % of the objects; the tree and the graph under 1 MB (the issue list keeps
+    // the descriptions its text search looks through, 560 KB of the 2,000 here).
+    let json = |v: serde_json::Result<Vec<u8>>| v.unwrap().len();
+    let tree = db.page_tree().unwrap();
+    let rows: Vec<arcalo_core::model::PageRow> = tree.iter().cloned().map(Into::into).collect();
+    let graph = db.graph_data(&Default::default()).unwrap();
+    let graph_rows = arcalo_core::graph::GraphTable::from(graph.clone());
+    let issues = db.issues_list(&Default::default()).unwrap();
+    let issue_rows = arcalo_core::issues::IssueTable::from(issues.clone());
+    for (label, objects, compact, max) in [
+        ("workspace_tree", json(serde_json::to_vec(&tree)), json(serde_json::to_vec(&rows)), 1_000_000),
+        ("graph_data", json(serde_json::to_vec(&graph)), json(serde_json::to_vec(&graph_rows)), 1_000_000),
+        ("jira_issues", json(serde_json::to_vec(&issues)), json(serde_json::to_vec(&issue_rows)), usize::MAX),
+    ] {
+        println!("core json {label}: {objects} bytes, compact {compact} bytes");
+        assert!(compact * 10 < objects * 6 && compact < max, "{label}: {compact} of {objects} bytes");
+    }
     time("page_schema", 5, || db.page_schema(100).unwrap());
     time("page_work", 5, || arcalo_core::pagework::page_work(&db, 100, &t).unwrap());
     time("leistungsarten", 5, || db.list_leistungsarten().unwrap());

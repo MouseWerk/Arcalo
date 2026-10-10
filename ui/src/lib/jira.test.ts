@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, groupIssues, isKey, isSiteAddress, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
+import { burndownPaths, columnsOf, emptyIssueQuery, filterIssues, findKeys, fromIssueTable, groupIssues, isKey, isSiteAddress, overdue, priorityClass, priorityLevel, priorityRank, valuesOf, worklogDeleteKeys, worklogShown, type EntryIssue, type Issue } from "./jira";
 import { guessKind } from "../views/settings/JiraSection";
 import { typeOf } from "./issueTypes";
 import { quickItems } from "./quicksearch";
@@ -158,5 +158,24 @@ describe("isSiteAddress", () => {
   });
   it("refuses what cannot be an address", () => {
     for (const bad of ["", "jira", "https://", "http://ji ra", "ftp://jira.firma.de", "jira firma.de", "mia@firma.de", "https://jira:port"]) expect(isSiteAddress(bad), bad).toBe(false);
+  });
+});
+
+describe("compact issue list", () => {
+  it("decodes the table of jira_issues_compact into the issue objects, without comments", () => {
+    const [a, b] = fromIssueTable({
+      projects: [
+        ["PROJ", "Projekt"],
+        ["OPS", "Betrieb"],
+      ],
+      rows: [
+        ["acme", "PROJ-1", "10001", "Erstes", "In Arbeit", "indeterminate", "High", 4, "Mia", "Tom", "Task", 0, "Sprint 3", "active", "2026-10-20", "2026-10-01T08:00:00Z", null, "https://acme/browse/PROJ-1", "Text", ["mine"]],
+        ["acme", "OPS-2", "10002", "Zweites", "Erledigt", "done", "", 0, "", "", "Bug", 1, "", "", null, null, "2026-10-02T08:00:00Z", "", "", []],
+      ],
+    });
+    expect(a).toEqual(
+      issue("PROJ-1", { remote_id: "10001", summary: "Erstes", status: "In Arbeit", status_category: "indeterminate", priority: "High", priority_level: 4, reporter: "Tom", project_name: "Projekt", sprint: "Sprint 3", sprint_state: "active", due_date: "2026-10-20", updated: "2026-10-01T08:00:00Z", url: "https://acme/browse/PROJ-1", description: "Text" }),
+    );
+    expect([b.project_key, b.project_name, b.resolved, b.comments, b.matches]).toEqual(["OPS", "Betrieb", "2026-10-02T08:00:00Z", [], []]);
   });
 });

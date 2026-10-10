@@ -16,7 +16,7 @@
 //   continuation lines indented by four spaces.
 
 import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { touchesNodes } from "./incremental";
@@ -175,6 +175,8 @@ export interface TocEntry {
   pos: number;
 }
 
+const isHeading = (node: PMNode) => node.type.name === "heading";
+
 /** The page's headings in order (also inside columns and callouts). */
 export function headingsOf(doc: PMNode): TocEntry[] {
   const out: TocEntry[] = [];
@@ -277,7 +279,8 @@ export const TableOfContents = Node.create({
         };
         body.append(list(tocTree(entries)));
       };
-      const onTr = ({ transaction }: { transaction: { docChanged: boolean } }) => transaction.docChanged && render();
+      // Only edits of headings change it: other keys do not walk the whole note.
+      const onTr = ({ transaction }: { transaction: Transaction }) => transaction.docChanged && touchesNodes(transaction, isHeading) && render();
       editor.on("transaction", onTr);
       render();
       dom.addEventListener("mousedown", (e) => {

@@ -6,6 +6,8 @@ import type * as T from "./types";
 import { noteSystemLang, t, type TKey } from "./i18n";
 import type * as B from "./backupdest";
 import type * as G from "./graph";
+import { fromGraphTable } from "./graph";
+import { fromPageRows, type PageRow } from "./tree";
 import { fromTaskTable, type TaskTable } from "./tasks";
 
 // App-Sperre: a command refused while locked never settles (the app behind the lock screen is
@@ -21,12 +23,12 @@ function withSystemLang(v: T.SettingsView): T.SettingsView {
 
 export const api = {
   // pages
-  tree: () => call<T.PageNode[]>("workspace_tree"),
+  tree: () => call<PageRow[]>("workspace_tree_compact").then(fromPageRows),
   page: (id: number) => call<T.PageDoc>("page_get", { id }),
   /** What `![[target#anchor]]` shows (page, heading section or block). */
   pageEmbed: (target: string, anchor: string | null) => call<T.EmbedView>("page_embed", { target, anchor }),
   // graph view
-  graphData: (filter: G.GraphFilter) => call<G.GraphData>("graph_data", { filter }),
+  graphData: (filter: G.GraphFilter) => call<G.GraphTable>("graph_compact", { filter }).then(fromGraphTable),
   graphPatch: (ids: number[], filter: G.GraphFilter) => call<G.GraphData>("graph_patch", { ids, filter }),
   /** `layout`, `presets` or `view`, stored per workspace. */
   graphStateGet: (key: "layout" | "presets" | "view") => call<unknown>("graph_state_get", { key }),

@@ -1469,6 +1469,43 @@ mod tests {
         let tree = db.page_tree().unwrap();
         assert_eq!(tree.len(), 1);
         assert_eq!(tree[0].children[0].children[0].page.title, "2026-09-23");
+        // The sidebar's rows: every field of the node in order, children nested the same way.
+        let rows: Vec<PageRow> = tree.iter().cloned().map(PageRow::from).collect();
+        let json = serde_json::to_value(&rows).unwrap();
+        let n = &tree[0].children[0];
+        assert_eq!(
+            json[0][12][0],
+            serde_json::json!([
+                n.page.id,
+                root.id,
+                "Meeting Notes",
+                null,
+                n.page.position,
+                n.page.updated_at,
+                false,
+                null,
+                null,
+                n.created_at,
+                null,
+                null,
+                [[
+                    n.children[0].page.id,
+                    child.id,
+                    "2026-09-23",
+                    null,
+                    0,
+                    n.children[0].page.updated_at,
+                    false,
+                    null,
+                    null,
+                    n.children[0].created_at,
+                    null,
+                    null,
+                    []
+                ]]
+            ])
+        );
+        assert!(serde_json::to_vec(&rows).unwrap().len() < serde_json::to_vec(&tree).unwrap().len() * 2 / 3);
     }
 
     #[test]

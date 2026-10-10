@@ -128,6 +128,8 @@ interface LinkState {
   rows: Map<number, TimeEntryRow>;
   deco: DecorationSet;
   count: number;
+  /** Counts the transactions that may have changed the chips (inserted, removed, changed one). */
+  version: number;
   /**
    * Booked chips removed by user edits, and removed chips that came back, numbered: a dispatch
    * may apply several transactions (appended ones), the view handles each event once.
@@ -282,18 +284,19 @@ export function chipLinkPlugin(pageId: number) {
   return new Plugin<LinkState>({
     key: chipLinkKey,
     state: {
-      init: (_, state) => ({ links: new Map(), rows: new Map(), ...decorate(state.doc, new Map()), events: [], parked: new Map() }),
+      init: (_, state) => ({ links: new Map(), rows: new Map(), ...decorate(state.doc, new Map()), version: 0, events: [], parked: new Map() }),
       apply(tr, prev, oldState: EditorState, newState: EditorState) {
         const meta = tr.getMeta(chipLinkKey) as { links: Map<number, ChipLink>; rows: Map<number, TimeEntryRow> } | undefined;
         const links = meta?.links ?? prev.links;
         const rows = meta?.rows ?? prev.rows;
         if (!tr.docChanged && !meta) return prev;
-        let next: { deco: DecorationSet; count: number };
-        if (meta || touchesChips(tr)) next = decorate(newState.doc, links);
-        else {
+        let next: { deco: DecorationSet; count: number } | null = null;
+        if (!meta && !touchesChips(tr)) {
           const mapped = prev.deco.map(tr.mapping, newState.doc);
-          next = mapped.find().length === prev.count ? { deco: mapped, count: prev.count } : decorate(newState.doc, links);
+          if (mapped.find().length === prev.count) next = { deco: mapped, count: prev.count };
         }
+        const version = next ? prev.version : prev.version + 1;
+        next ??= decorate(newState.doc, links);
         let parked = prev.parked;
         if (tr.docChanged && parked.size) parked = new Map([...parked].map(([id, r]) => [id, { ...r, pos: tr.mapping.map(r.pos, -1) }]));
         let events = prev.events;
@@ -317,7 +320,7 @@ export function chipLinkPlugin(pageId: number) {
         }
         // A short log is enough: the view handles new events right after each dispatch.
         if (events.length > 20) events = events.slice(-20);
-        return { links, rows, ...next, events, parked };
+        return { links, rows, ...next, version, events, parked };
       },
     },
     props: {
@@ -333,8 +336,11 @@ export function chipLinkPlugin(pageId: number) {
           .filter((c) => c.id != null && c.node.attrs.state !== "deleted" && !seen.has(c.id) && (seen.add(c.id), true))
           .map((c) => ({ id: c.id!, target: String(c.node.attrs.target ?? "") }));
       };
+      // Chips not asked about while time tracking was off: asked at the next edit.
+      let skipped = false;
       const refresh = (force = false, flush = false) => {
-        if (!timeTrackingEnabled()) return;
+        skipped = !timeTrackingEnabled();
+        if (skipped) return;
         const chips = query();
         const key = JSON.stringify(chips);
         if (!force && key === asked) return;
@@ -382,11 +388,15 @@ export function chipLinkPlugin(pageId: number) {
         refresh(true);
       });
       let handled = 0;
+      let seen = chipLinkKey.getState(view.state)?.version ?? 0;
       return {
         update(v, prevState) {
           const st = chipLinkKey.getState(v.state);
           if (!st || v.state.doc === prevState.doc) return;
-          remember();
+          // Typing that leaves the chips as they were: no walk through the note to list them again.
+          const changed = st.version !== seen;
+          seen = st.version;
+          if (changed) remember();
           const fresh = st.events.filter((e) => e.seq > handled);
           if (fresh.length) handled = fresh[fresh.length - 1].seq;
           if (!timeTrackingEnabled()) return;
@@ -399,7 +409,7 @@ export function chipLinkPlugin(pageId: number) {
                 if (at) v.dispatch(v.state.tr.setNodeMarkup(at.pos, undefined, { ...at.node.attrs, entryId: newId }).setMeta("addToHistory", false).setMeta(OWN, true));
               });
           }
-          refresh(false, fresh.some((e) => e.kind === "appeared"));
+          if (changed || skipped || fresh.length) refresh(false, fresh.some((e) => e.kind === "appeared"));
         },
         destroy() {
           alive = false;

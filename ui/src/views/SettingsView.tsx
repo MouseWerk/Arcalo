@@ -861,7 +861,6 @@ function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (
                   try {
                     await api.deleteLeistungsart(code);
                     reload();
-                    s().bumpWbs();
                   } catch (e) {
                     s().error(t("common.deleteFailed"), e);
                   }
@@ -880,7 +879,6 @@ function TimeSection({ draft, update, setEnabled }: { draft: Settings; update: (
                   await api.saveLeistungsart(newLa.code, newLa.desc);
                   setNewLa({ code: "", desc: "" });
                   reload();
-                  s().bumpWbs();
                 } catch (e) {
                   s().error(t("common.saveFailed"), e);
                 }
@@ -958,7 +956,6 @@ function NotesSection({ draft, update }: { draft: Settings; update: (p: Partial<
               try {
                 const n = await api.removeDemo();
                 await s.refreshTree();
-                s.bumpWbs();
                 s.bumpEntries();
                 s.toast({ tone: "success", title: t("set.notes.samplesRemoved"), detail: n ? t("set.notes.samplesRemovedPages") : t("set.notes.samplesRemovedProject") });
               } catch (e) {

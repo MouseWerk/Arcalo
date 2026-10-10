@@ -876,3 +876,47 @@ fn a_booking_that_comes_back_takes_its_worklog_back() {
     let kept: i64 = db.conn().query_row("SELECT COUNT(*) FROM time_entry_issues_deleted", [], |r| r.get(0)).unwrap();
     assert_eq!(kept, 0);
 }
+
+/// The issue list's table: every field but the comments, in the order of `Issue`, each project once.
+#[test]
+fn the_issue_table_holds_the_list_without_comments() {
+    let mut a = issue("PROJ-1", "indeterminate");
+    a.description = "Beschreibung".into();
+    a.comments =
+        vec![IssueComment { author: "Anna".into(), created: "2026-10-01T10:00:00Z".into(), body: "Text".into() }];
+    a.due_date = Some("2026-10-20".into());
+    a.matches = vec!["mine".into()];
+    a.priority_level = 4;
+    let b = Issue { project_key: "OPS".into(), project_name: "Betrieb".into(), ..issue("OPS-2", "done") };
+    let c = issue("PROJ-3", "new");
+    let t = IssueTable::from(vec![a.clone(), b, c]);
+    assert_eq!(t.projects, vec![("PROJ".into(), "Project".into()), ("OPS".into(), "Betrieb".into())]);
+    assert_eq!(t.rows.iter().map(|r| r.11).collect::<Vec<_>>(), vec![0, 1, 0]);
+    let json = serde_json::to_value(&t.rows[0]).unwrap();
+    assert_eq!(
+        json,
+        json!([
+            "acme",
+            "PROJ-1",
+            "",
+            "Summary of PROJ-1",
+            "In Progress",
+            "indeterminate",
+            "",
+            4,
+            "",
+            "",
+            "",
+            0,
+            "",
+            "",
+            "2026-10-20",
+            null,
+            null,
+            a.url,
+            "Beschreibung",
+            ["mine"]
+        ])
+    );
+    assert!(!serde_json::to_string(&t).unwrap().contains("Anna"));
+}

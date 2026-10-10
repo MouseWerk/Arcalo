@@ -105,7 +105,6 @@ function ProjectCard({ project, overview, open }: { project: ProjectTree; overvi
                   if (!(await s().confirm({ title: t("proj.deleteAsk"), message: t("proj.deleteText", { code: project.project_code }), confirmLabel: t("common.delete"), danger: true }))) return;
                   try {
                     await api.deleteProject(project.id);
-                    s().bumpWbs();
                   } catch (e) {
                     s().error(t("common.deleteFailed"), e);
                   }
@@ -181,7 +180,6 @@ function NetzplanBlock({ netzplan, facts, open }: { netzplan: NetzplanTree; fact
                     if (!(await s().confirm({ title: t("proj.deleteNetzplanAsk"), message: t("proj.deleteNetzplanText", { nr: netzplan.netzplan_nr }), confirmLabel: t("common.delete"), danger: true }))) return;
                     try {
                       await api.deleteNetzplan(netzplan.id);
-                      s().bumpWbs();
                     } catch (e) {
                       s().error(t("common.deleteFailed"), e);
                     }
@@ -311,7 +309,6 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
         if (state.vorgang) await api.updateVorgang(state.vorgang.id, f.desc, days, hours, rest);
         else await api.createVorgang(state.netzplan.id, f.nr, f.desc, days, hours, f.after.split(",").map((x) => x.trim()).filter(Boolean));
       }
-      s().bumpWbs();
       s().bumpEntries();
       onClose();
     } catch (e) {
@@ -335,7 +332,6 @@ function WbsDialog({ state, onClose }: { state: DialogState; onClose: () => void
           if (!(await s().confirm({ title: t("proj.deleteVorgangAsk"), message: t("proj.deleteVorgangText", { what: `${state.vorgang!.vorgang_nr} ${state.vorgang!.description}` }), confirmLabel: t("common.delete"), danger: true }))) return;
           try {
             await api.deleteVorgang(state.vorgang!.id);
-            s().bumpWbs();
             onClose();
           } catch (e) {
             s().error(t("common.deleteFailed"), e);

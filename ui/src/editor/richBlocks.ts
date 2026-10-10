@@ -8,6 +8,7 @@ import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/s
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { richKind, type RichKind } from "./embedSyntax";
+import { touchesNodes } from "./incremental";
 
 /** What a preview gets from the editor. */
 export interface RichControl {
@@ -49,6 +50,8 @@ function richBlocksOf(doc: PMNode): Block[] {
   });
   return out;
 }
+
+const isRich = (node: PMNode) => node.type.name === "codeBlock" && !!richKind(node.attrs.language);
 
 const editingOf = (state: EditorState, b: Block) => {
   const { from, to } = state.selection;
@@ -145,16 +148,35 @@ export const RichBlocks = Extension.create<RichBlocksOptions>({
             if (!tr.docChanged && prev.selection.eq(state.selection)) return old;
             // A selection move that neither enters nor leaves a block keeps the decorations.
             if (!tr.docChanged && blocks.every((b) => editingOf(prev, b) === editingOf(state, b))) return old;
+            // An edit elsewhere (typing in the text around them) only moves the blocks: no walk through the note.
+            if (tr.docChanged && !touchesNodes(tr, isRich)) {
+              const moved = blocks.map((b) => ({ ...b, pos: tr.mapping.map(b.pos) }));
+              if (moved.every((b, i) => state.doc.nodeAt(b.pos) === b.node && editingOf(prev, blocks[i]) === editingOf(state, b))) {
+                blocks = moved;
+                return old.map(tr.mapping, tr.doc);
+              }
+            }
             return build(state);
           },
         },
         props: { decorations: (state) => key.getState(state) },
-        view: () => ({
-          update: (view, prev) => {
-            if (view.state.doc === prev.doc && view.state.selection.eq(prev.selection)) return;
-            for (const b of blocks) previews.get(b.key)?.update(b.node.textContent, editingOf(view.state, b));
-          },
-        }),
+        view: () => {
+          // What each preview was told last: only a changed block or a caret entering or leaving one tells it again.
+          const told = new Map<string, { node: PMNode; editing: boolean }>();
+          return {
+            update: (view, prev) => {
+              if (view.state.doc === prev.doc && view.state.selection.eq(prev.selection)) return;
+              for (const b of blocks) {
+                const editing = editingOf(view.state, b);
+                const last = told.get(b.key);
+                const preview = previews.get(b.key);
+                if (!preview || (last?.node === b.node && last.editing === editing)) continue;
+                told.set(b.key, { node: b.node, editing });
+                preview.update(b.node.textContent, editing);
+              }
+            },
+          };
+        },
       }),
     ];
   },

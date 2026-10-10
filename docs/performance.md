@@ -133,3 +133,77 @@ search; after an edit only the new chunk is read again (188 ms). The scan itself
 build: 1.6 ms for 13,531 chunks, 4.3 ms for 30,000, 14 ms for 60,000. The query's embedding
 comes on top (a local Ollama answers a short query in a few tens of milliseconds; repeated
 queries come from a cache).
+
+## Long notes, page switches and large answers (1.17)
+
+The findings P3, P7 and P8 of the 1.16 audit (`docs/quality/q116/perf-findings.md`). Measured with the
+benchmark above on the large workspace (its 10,000-word page, 78 KB) and with a note of 200 KB and one of
+1 MB built like a long working document (sections of paragraphs with bold text, links and tags, lists, tasks,
+a table in every fourth section, a Mermaid diagram in every eighth, a page embed and an image in every tenth;
+the generator of e2e 340), in the 1.16 build and the 1.17 build one after the other on a quiet machine (load
+about 1). Debug builds, Xvfb, software rendering as above; typing is keypress to painted frame, median.
+
+| Metric | 1.16 | 1.17 |
+|---|---:|---:|
+| 200 KB note: open (first time) | 1,308–1,388 ms | 1,088–1,253 ms |
+| … typing (median) | 42–47 ms | 29–35 ms |
+| … to the Markdown source view | 327–451 ms | 127–195 ms |
+| … back to the visual editor | 1,079–1,389 ms | 925–973 ms |
+| … typing in the source view (median) | 18–21 ms | 18–21 ms |
+| … walks through the whole note per key (calls counted by e2e 340) | about 12 | 0 |
+| … list items created when it opens / on the way to the source view | twice each / each once more | each once / none |
+| 1 MB note: open (first time) | 5,204 ms | 4,901 ms |
+| … typing (median) | 157 ms | 101 ms |
+| … to the source view / back | 1,536–2,136 / 5,046–5,583 ms | 526–550 / 4,727–4,735 ms |
+| Benchmark, 10,000-word page: open (first time) | 759 ms | 534–624 ms |
+| … typing (median / p95) | 41 / 70 ms | 26–29 / 38–39 ms |
+| … to the source view / back | 173–269 / 569–669 ms | 102–176 / 432–512 ms |
+| Benchmark: reads of the WBS (`wbs_tree`) during the run | 16 (and 15 of the Leistungsarten) | 1 |
+| Graph view, click to first frame | 1,004 ms | 944–965 ms |
+| … its answer (`graph_data` / `graph_compact`) | 2.30 MB, 435 ms | 0.81 MB, 338–373 ms |
+| Issues page with 2,000 issues | 630 ms | 581–605 ms |
+| … its answer (`jira_issues` / `jira_issues_compact`) | 1.91 MB, 108–144 ms | 1.08 MB, 83–113 ms |
+| Sidebar tree answer (`workspace_tree` / `workspace_tree_compact`, core) | 1.38 MB | 0.72 MB |
+| Page switch, five small pages opened for the first time (median, three runs each) | 159–176 ms | 165–178 ms |
+
+What changed:
+
+- **Drawn once.** Tiptap's React binding gives the editor its node views again when the editor's content
+  mounts (for React node views, which render through its portals; the app has none) and takes them away
+  when it unmounts. ProseMirror drew the whole note anew each time: about 300 ms for the 200 KB note on
+  opening, as much again on the way to the source view or when its tab closed, right before the editor was
+  destroyed. The views given when the view is created now stay (`editor/stableViews.ts`).
+- **No whole-note work per key.** Tiptap's code highlighting looked for every code block twice per
+  transaction and highlighted all of them again when one changed; the chat times, the diagram blocks and
+  their decorations were rebuilt; the time chips were listed twice; the table of contents read every heading;
+  every diagram preview was told about the edit, which touched its DOM and made WebKit lay the note out once
+  more inside the key (the forced layout of `scrollToSelection` went from 37–57 ms to under 1 ms at 1 MB).
+  Each now follows the edit (`incremental.ts`: only the blocks a transaction touched) or skips edits that
+  cannot concern it. e2e 340 counts walks through the whole document while a key is applied: none.
+- **One read of the WBS.** Views and pickers that show projects, Netzpläne or Leistungsarten share one read
+  per `wbsVersion` (`lib/wbsCache.ts`); the backend reports every change (`data://wbs`), also changes made
+  outside the views, so the version no longer needs bumping by hand.
+- **Slow reads of the opened page on their own connection.** Tag suggestions, duplicate hints and unlinked
+  mentions run on a blocking thread with a fourth read connection (`background_read`): they hold neither a
+  worker of the async runtime nor one of the three readers the next switch needs.
+- **Compact answers.** The tree, the graph and the issue list come as rows and are decoded into the same
+  objects (`lib/tree.ts`, `lib/graph.ts`, `lib/jira.ts`); the graph without the dates the view does not use,
+  the issue list without the comments (the opened issue reads them with its view). The core benchmark prints
+  both sizes (`core json …`).
+
+Not changed:
+
+- The way back from the source view parses the Markdown, builds the editor and lays out the note once
+  (about 0.5, 0.35 and 0.35 s at 200 KB; linear). Keeping the visual editor alive while the source view is
+  shown would avoid it, at the cost of a second editor per page in memory.
+- Typing in the source view of a 1 MB note (87 ms per key) is WebKit laying out the text box; the default
+  value React writes into a controlled text box per key costs 0.3 ms (an uncontrolled box was slower).
+- The issue list keeps the descriptions (560 KB of the 1.08 MB here): its text search looks through them.
+
+Budgets (min of several runs, `budget()` in `e2e/lib/harness.js`, 1.6 times on CI): e2e 340 opens the
+200 KB note three times (open < 2.5 s, to the source view < 350 ms, back < 2.5 s) and checks that it is drawn
+once and not again on the way to the source view, that typing walks through the whole note zero times,
+typing in the source view (< 80 ms), that six views in new tabs read the WBS at most once and once more after
+a change from outside, and that the tree and the graph load their compact rows (< 60 % and < 50 % of the
+objects); e2e 103 that the issue list loads rows without comments and the opened issue still shows them; the
+core benchmark keeps the compact answers under 60 % of the objects and the tree and graph under 1 MB.

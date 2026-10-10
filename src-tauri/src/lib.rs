@@ -224,8 +224,9 @@ pub struct AppState {
     db: Mutex<Database>,
     /// Read-only connections for commands that only read (WAL: they see the last committed
     /// state and neither wait for a save nor hold one up); several, so one long read (the task
-    /// list, the graph) does not hold up the small reads of a page switch. Empty when they could
-    /// not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    /// list, the graph) does not hold up the small reads of a page switch. The one after the
+    /// first [`READERS`] is for slow reads nobody waits for ([`background_read`]). Empty when they
+    /// could not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
     readers: Vec<Mutex<Database>>,
     /// The reader to wait for when all are busy (round robin).
     next_reader: AtomicUsize,
@@ -251,8 +252,21 @@ pub struct AppState {
     caps: Mutex<Capabilities>,
 }
 
-/// Read-only connections of [`AppState`].
+/// Read-only connections of [`AppState`] for the reads of views and page switches.
 const READERS: usize = 3;
+
+/// Runs a slow read that no view waits for (tag suggestions, duplicate hints, unlinked mentions
+/// of the opened page) on a thread of its own with the background connection: it holds neither a
+/// worker of the async runtime nor one of the readers the next page switch needs. Such reads
+/// queue behind each other instead.
+pub(crate) async fn background_read<T: Send + 'static>(
+    app: tauri::AppHandle,
+    f: impl FnOnce(&Database) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>().background_reader()))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // A panic while holding the lock leaves SQLite consistent (transactions roll back).
@@ -265,17 +279,25 @@ impl AppState {
     }
     /// The connection for commands that only read (see [`AppState::reader`]).
     fn reader(&self) -> MutexGuard<'_, Database> {
-        if self.readers.is_empty() {
+        let readers = &self.readers[..self.readers.len().min(READERS)];
+        if readers.is_empty() {
             return lock(&self.db);
         }
-        for r in &self.readers {
+        for r in readers {
             match r.try_lock() {
                 Ok(g) => return g,
                 Err(std::sync::TryLockError::Poisoned(e)) => return e.into_inner(),
                 Err(std::sync::TryLockError::WouldBlock) => {}
             }
         }
-        lock(&self.readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len()])
+        lock(&readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % readers.len()])
+    }
+    /// The connection for slow reads nobody waits for (see [`background_read`]).
+    fn background_reader(&self) -> MutexGuard<'_, Database> {
+        match self.readers.get(READERS) {
+            Some(r) => lock(r),
+            None => self.reader(),
+        }
     }
     /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
     /// neither connection above is held meanwhile; `None` falls back to the main one.
@@ -342,6 +364,12 @@ impl AppState {
 #[tauri::command(async)]
 fn workspace_tree(state: State<AppState>) -> Result<Vec<PageNode>> {
     state.reader().page_tree()
+}
+
+/// The tree as the sidebar loads it: rows instead of objects (`PageRow`), half the size.
+#[tauri::command(async)]
+fn workspace_tree_compact(state: State<AppState>) -> Result<Vec<arcalo_core::model::PageRow>> {
+    Ok(state.reader().page_tree()?.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command(async)]
@@ -995,25 +1023,36 @@ fn required(value: &str, what: &str) -> Result<String> {
     if v.is_empty() { Err(Error::State(trf!("{what} fehlt", "{what} is missing"))) } else { Ok(v.to_owned()) }
 }
 
-#[tauri::command(async)]
-fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
-    state
-        .db()
-        .create_project(&required(&code, tr!("Projekt-ID", "Project ID"))?, &required(&name, tr!("Name", "Name"))?)
+/// Tells the UI that projects, Netzpläne, Vorgänge or Leistungsarten changed (its shared WBS cache
+/// reads them again), whoever changed them: a view, the assistant, a test, the sample data.
+fn wbs_changed<T>(app: &AppHandle, result: Result<T>) -> Result<T> {
+    if result.is_ok() {
+        let _ = app.emit("data://wbs", ());
+    }
+    result
 }
 
 #[tauri::command(async)]
-fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
-    state.db().update_project(id, &required(&name, tr!("Name", "Name"))?)
+fn project_create(app: AppHandle, state: State<AppState>, code: String, name: String) -> Result<Project> {
+    let code = required(&code, tr!("Projekt-ID", "Project ID"))?;
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().create_project(&code, &name))
 }
 
 #[tauri::command(async)]
-fn project_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_project(id)
+fn project_update(app: AppHandle, state: State<AppState>, id: i64, name: String) -> Result<()> {
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().update_project(id, &name))
+}
+
+#[tauri::command(async)]
+fn project_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_project(id))
 }
 
 #[tauri::command(async)]
 fn netzplan_create(
+    app: AppHandle,
     state: State<AppState>,
     project_id: i64,
     netzplan_nr: String,
@@ -1023,28 +1062,31 @@ fn netzplan_create(
 ) -> Result<Netzplan> {
     let nr = required(&netzplan_nr, tr!("Netzplan-Nr.", "Network no."))?;
     let wbs = if wbs_element.trim().is_empty() { nr.clone() } else { wbs_element.trim().to_owned() };
-    state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
+    wbs_changed(&app, state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
 fn netzplan_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     wbs_element: String,
     description: String,
     planned_hours: f64,
 ) -> Result<()> {
-    state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0))
+    wbs_changed(&app, state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
-fn netzplan_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_netzplan(id)
+fn netzplan_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_netzplan(id))
 }
 
 /// Adds a Vorgang; `predecessors` are Vorgang numbers of the same Netzplan.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 fn vorgang_create(
+    app: AppHandle,
     state: State<AppState>,
     netzplan_id: i64,
     vorgang_nr: String,
@@ -1066,7 +1108,7 @@ fn vorgang_create(
                 .ok_or_else(|| Error::not_found("vorgang", p.clone()))
         })
         .collect::<Result<_>>()?;
-    db.atomic(|| {
+    let created = db.atomic(|| {
         // A new Vorgang has no successors, so linking it cannot create a cycle.
         let mut v =
             db.create_vorgang(netzplan_id, &nr, description.trim(), duration_days.max(0.0), planned_hours.max(0.0))?;
@@ -1075,11 +1117,13 @@ fn vorgang_create(
             v.predecessors.push(p);
         }
         Ok(v)
-    })
+    });
+    wbs_changed(&app, created)
 }
 
 #[tauri::command(async)]
 fn vorgang_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     description: String,
@@ -1087,12 +1131,16 @@ fn vorgang_update(
     planned_hours: f64,
     remaining_hours: Option<f64>,
 ) -> Result<()> {
-    state.db().update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours)
+    let db = state.db();
+    wbs_changed(
+        &app,
+        db.update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours),
+    )
 }
 
 #[tauri::command(async)]
-fn vorgang_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_vorgang(id)
+fn vorgang_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_vorgang(id))
 }
 
 #[tauri::command(async)]
@@ -1101,13 +1149,13 @@ fn leistungsarten_list(state: State<AppState>) -> Result<Vec<(String, String)>> 
 }
 
 #[tauri::command(async)]
-fn leistungsart_save(state: State<AppState>, code: String, description: String) -> Result<()> {
-    state.db().upsert_leistungsart(&code, &description)
+fn leistungsart_save(app: AppHandle, state: State<AppState>, code: String, description: String) -> Result<()> {
+    wbs_changed(&app, state.db().upsert_leistungsart(&code, &description))
 }
 
 #[tauri::command(async)]
-fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
-    state.db().delete_leistungsart(&code)
+fn leistungsart_delete(app: AppHandle, state: State<AppState>, code: String) -> Result<()> {
+    wbs_changed(&app, state.db().delete_leistungsart(&code))
 }
 
 // ---------------------------------------------------------- time tracking
@@ -4020,6 +4068,7 @@ fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsVi
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     let n = demo::remove(&state.db())?;
     let _ = app.emit("data://entries", ());
+    let _ = app.emit("data://wbs", ());
     Ok(n)
 }
 
@@ -4740,7 +4789,7 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, &proxy_passwords);
 
-            let readers = match (0..READERS)
+            let readers = match (0..=READERS)
                 .map(|_| Database::open_read_only(dir.join(datadir::DB_FILE)))
                 .collect::<arcalo_core::Result<Vec<_>>>()
             {
@@ -4882,6 +4931,7 @@ pub fn run() {
             security::applock_show_main,
             security::applock_test_idle,
             workspace_tree,
+            workspace_tree_compact,
             page_get,
             page_save,
             page_collection,
@@ -5142,6 +5192,7 @@ pub fn run() {
             jira::jira_wbs_set,
             jira::jira_sync_now,
             jira::jira_issues,
+            jira::jira_issues_compact,
             jira::jira_index,
             jira::jira_issue_view,
             jira::jira_issue_fetch,
@@ -5158,6 +5209,7 @@ pub fn run() {
             filing::smart_pages,
             filing::smart_groups,
             graph::graph_data,
+            graph::graph_compact,
             graph::graph_patch,
             graph::graph_state_get,
             graph::graph_state_set,

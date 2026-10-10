@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use arcalo_core::issues::jira::{self as core_jira, JiraClient};
 use arcalo_core::issues::{
-    self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, JiraSite,
-    NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
+    self as issues, BurnPoint, EntryIssue, Issue, IssueBacklink, IssueFilter, IssueProvider, IssueSettings, IssueTable,
+    JiraSite, NewIssue, RemoteProject, SiteKind, SiteSync, Sprint, WbsMapping,
 };
 use arcalo_core::model::{Page, TimeEntry};
 use arcalo_core::{Error, tr, trf};
@@ -426,6 +426,12 @@ pub fn spawn_scheduler(app: AppHandle) {
 #[tauri::command(async)]
 pub fn jira_issues(state: State<AppState>, filter: Option<IssueFilter>) -> Result<Vec<Issue>> {
     state.reader().issues_list(&filter.unwrap_or_default())
+}
+
+/// The issues as the issue list and widget load them: rows without comments (`IssueTable`).
+#[tauri::command(async)]
+pub fn jira_issues_compact(state: State<AppState>, filter: Option<IssueFilter>) -> Result<IssueTable> {
+    Ok(state.reader().issues_list(&filter.unwrap_or_default())?.into())
 }
 
 /// What a chip shows of an issue.

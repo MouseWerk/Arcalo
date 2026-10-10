@@ -25,7 +25,8 @@ import { t } from "../lib/i18n";
 import { Column, Columns, FootnoteDefinition, FootnoteRef, Footnotes, TableOfContents, TIGHT_MARK } from "./blocks";
 import { HtmlBlock, HtmlInline, LiteralHash, codeFence, openEmptyTasks, rawHtmlNode } from "./rawMarkdown";
 import { CHUNK_LINES, chunkedLex } from "./chunkedLex";
-import { LazyHighlight, lowlight } from "./languages";
+import { LazyHighlight, codeHighlightPlugin, lowlight } from "./languages";
+import { StableNodeViews } from "./stableViews";
 import { PageEmbed, type PageEmbedOptions } from "./pageEmbed";
 import { RichBlocks, type RichBlocksOptions } from "./richBlocks";
 import { mailLinkId } from "../lib/legacy";
@@ -669,6 +670,14 @@ const ImageParagraph = Paragraph.extend({
   },
 });
 
+/** Code blocks highlighted by `codeHighlightPlugin` instead of Tiptap's lowlight plugin (which works on the whole note per key). */
+const CodeBlockHighlight = CodeBlockLowlight.extend({
+  addProseMirrorPlugins() {
+    const own = (this.parent?.() ?? []).filter((p) => !(p as unknown as { key: string }).key.startsWith("lowlight$"));
+    return [...own, codeHighlightPlugin()];
+  },
+});
+
 /** Task lists with tab-indented nesting and their items' source (sourceStyle.ts). */
 const SourceTaskList = TaskList.extend({
   markdownTokenizer: TaskList.config.markdownTokenizer && {
@@ -696,7 +705,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
       // 1.14 and earlier too) are kept.
       isAllowedUri: (url, ctx) => mailLinkId(url) !== null || ctx.defaultValidate(url),
     }),
-    CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
+    CodeBlockHighlight.configure({ lowlight, defaultLanguage: null }),
     LazyHighlight,
     SourceTaskList,
     TaskItem.configure({ nested: true, a11y: { checkboxLabel: (node) => t("editor.taskCheckbox", { text: node.textContent || t("editor.taskEmpty") }) } }),
@@ -754,6 +763,7 @@ export function buildExtensions(o: SchemaOptions = {}): Extensions {
     Footnotes,
     CiteFlash,
     TypingAids.configure({ prefs: o.typing ?? (() => TYPING_DEFAULTS) }),
+    StableNodeViews,
   ];
 }
 

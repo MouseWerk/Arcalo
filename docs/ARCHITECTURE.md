@@ -74,7 +74,9 @@ text cards, no tasks. Rewrites (page or attachment renamed, import) replace sing
 Migration v8 only adds lookup indexes: page titles (`COLLATE NOCASE`), activity by `(kind, title)`
 and by `entry_id`. Migration v30 adds `idx_pages_meta` (the page metadata without the content, id
 first) and `idx_tasks_open (done, due, page_id)` for large workspaces (see `docs/performance.md`).
-Read commands use three read-only connections (WAL), each with a 16 MB page cache.
+Read commands use three read-only connections (WAL), each with a 16 MB page cache, and a fourth one for slow
+reads nobody waits for (`background_read`: tag suggestions, duplicate hints and unlinked mentions of the opened
+page, on a blocking thread).
 
 ## Data safety
 
@@ -939,6 +941,12 @@ quelle: "[[Konzept]]"
   in one read transaction (`MirrorSnapshot`, `VaultSnapshot`), then write the files without any
   database lock. The scheduler's first backup check runs 3 minutes after the start
   (`ARCALO_BACKUP_DELAY_SECS` for tests).
+- The largest answers come as rows, decoded by the UI into the same objects (`lib/tasks.ts`, `lib/tree.ts`,
+  `lib/graph.ts`, `lib/jira.ts`): `tasks_compact`, `workspace_tree_compact`, `graph_compact` (without the
+  dates) and `jira_issues_compact` (without the comments, which the opened issue reads with
+  `jira_issue_view`). The object commands stay for scripts and tests.
+- The WBS and the Leistungsarten are read once and shared (`lib/wbsCache.ts`) until `wbsVersion` changes;
+  the backend emits `data://wbs` after every change of them.
 - `page_save` returns `SavedPage` (tags, unresolved links, `updated_at`), not the page: the editor has
   the content and a save does not change backlinks. A save writes only what changed: chunk rows whose
   text is still on the page keep their row, search entry and embedding; links and tags are diffed.

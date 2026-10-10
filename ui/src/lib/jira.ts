@@ -65,6 +65,20 @@ export interface Issue {
   comments: IssueComment[];
   matches: string[];
 }
+type Opt = string | null;
+/** What `jira_issues_compact` answers (`arcalo_core::issues::IssueTable`): each project once, each issue as an array, no comments. */
+export interface IssueTable {
+  projects: [string, string][];
+  rows: [string, string, string, string, string, Category, string, number, string, string, string, number, string, string, Opt, Opt, Opt, string, string, string[]][];
+}
+
+/** The issues of an {@link IssueTable} as the objects of `jira_issues`, without comments (the issue's view has them). */
+export function fromIssueTable(table: IssueTable): Issue[] {
+  return table.rows.map(([site, key, remote_id, summary, status, status_category, priority, priority_level, assignee, reporter, issue_type, project, sprint, sprint_state, due_date, updated, resolved, url, description, matches]) => {
+    const [project_key, project_name] = table.projects[project] ?? ["", ""];
+    return { site, key, remote_id, summary, status, status_category, priority, priority_level, assignee, reporter, issue_type, project_key, project_name, sprint, sprint_state, due_date, updated, resolved, url, description, comments: [], matches };
+  });
+}
 export interface SiteSync {
   site: string;
   synced_at: string | null;
@@ -225,7 +239,9 @@ export const jiraApi = {
   test: (site: JiraSite, token: string | null) => call<TestResult>("jira_test", { site, token }),
   setWbs: (kind: "issue" | "project", key: string, reference: string) => call<JiraStatus>("jira_wbs_set", { kind, key, reference }),
   syncNow: (site: string | null = null) => call<JiraStatus>("jira_sync_now", { site }),
-  issues: (filter: IssueFilterArgs = {}) => call<Issue[]>("jira_issues", { filter: { site: "", query: "", all: false, limit: null, ...filter } }),
+  /** Without comments (the issue's `view` has them). */
+  issues: (filter: IssueFilterArgs = {}) =>
+    call<IssueTable>("jira_issues_compact", { filter: { site: "", query: "", all: false, limit: null, ...filter } }).then(fromIssueTable),
   index: () => call<IssueIndex>("jira_index"),
   view: (key: string) => call<IssueView>("jira_issue_view", { key }),
   fetch: (key: string) => call<Issue>("jira_issue_fetch", { key }),
