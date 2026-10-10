@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
-import { ensureLanguages, highlightCodeBlocks, lazyGrammar, loadLanguage, lowlight } from "./languages";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { EditorState, type Plugin } from "@tiptap/pm/state";
+import type { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { ensureLanguages, highlightCodeBlocks, highlightKey, lazyGrammar, loadLanguage, lowlight } from "./languages";
 import { renderMarkdown } from "../lib/markdown";
 import { buildExtensions } from "./schema";
 
@@ -60,5 +63,34 @@ describe("languages", () => {
     expect(unknown.querySelector("span")).toBeNull();
     // Twice is harmless.
     expect(await highlightCodeBlocks(root)).toBe(0);
+  });
+
+  it("highlights code as Tiptap's lowlight plugin does, also after edits", () => {
+    const md = "# Code\n\n```ts\nconst x: number = 1; // Kommentar\n```\n\n```\nplain <b>text</b> 42\n```\n\n> Zitat\n>\n> ```python\n> def f():\n>     return 'a'\n> ```\n\n- Punkt\n\n  ```json\n  {\"a\": [1, true]}\n  ```\n";
+    const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: md, contentType: "markdown" });
+    // Tiptap's plugin on the same document.
+    const ext = CodeBlockLowlight.configure({ lowlight, defaultLanguage: null });
+    const add = ext.config.addProseMirrorPlugins as unknown as (this: unknown) => Plugin[];
+    const [theirs] = add.call({ name: "codeBlock", options: ext.options, parent: () => [], editor });
+    const norm = (set: DecorationSet) => set.find().map((d: Decoration) => `${d.from}-${d.to}:${JSON.stringify((d as unknown as { type: { attrs: unknown } }).type.attrs)}`).sort();
+    const compare = () => {
+      const ref = EditorState.create({ doc: editor.state.doc, plugins: [theirs] });
+      const ours = norm(highlightKey.getState(editor.state) as DecorationSet);
+      expect(ours).toEqual(norm(theirs.getState(ref) as DecorationSet));
+      return ours.length;
+    };
+    expect(compare()).toBeGreaterThan(5);
+    let at = 0;
+    editor.state.doc.descendants((n, p) => {
+      if (!at && n.type.name === "codeBlock") at = p + 3;
+      return !at;
+    });
+    for (const text of ["let ", "// neu\n", "\"s\" + 1"]) {
+      editor.chain().setTextSelection(at).insertContent(text).run();
+      compare();
+    }
+    editor.chain().setTextSelection(1).insertContent("Titel ").run();
+    compare();
+    editor.destroy();
   });
 });

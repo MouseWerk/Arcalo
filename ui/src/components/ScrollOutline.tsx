@@ -15,6 +15,9 @@ export function markPositions(headingTops: number[], scrollHeight: number): numb
   return headingTops.map((t) => (scrollHeight > 0 ? Math.min(1, Math.max(0, t / scrollHeight)) : 0));
 }
 
+type View = { top: number; height: number };
+const sameView = (v: View, top: number, height: number): View => (v.top === top && v.height === height ? v : { top, height });
+
 export function ScrollOutline({ scrollRef }: { scrollRef: RefObject<HTMLElement | null> }) {
   const [marks, setMarks] = useState<Mark[]>([]);
   const [view, setView] = useState({ top: 0, height: 1 });
@@ -26,14 +29,16 @@ export function ScrollOutline({ scrollRef }: { scrollRef: RefObject<HTMLElement 
     if (!sc) return;
     const total = sc.scrollHeight;
     setLong(total > sc.clientHeight * 1.3);
-    setView({ top: sc.scrollTop / total, height: sc.clientHeight / total });
+    setView((v) => sameView(v, sc.scrollTop / total, sc.clientHeight / total));
     const base = sc.getBoundingClientRect().top - sc.scrollTop;
     const hs = [...sc.querySelectorAll<HTMLElement>(".ProseMirror h1, .ProseMirror h2, .ProseMirror h3")];
     const tops = markPositions(
       hs.map((h) => h.getBoundingClientRect().top - base),
       total,
     );
-    setMarks(hs.map((h, i) => ({ top: tops[i], level: Number(h.tagName[1]), text: h.textContent ?? "", el: h })));
+    const next = hs.map((h, i) => ({ top: tops[i], level: Number(h.tagName[1]), text: h.textContent ?? "", el: h }));
+    // Typing mostly moves nothing: no new marks, no render.
+    setMarks((cur) => (cur.length === next.length && cur.every((m, i) => m.top === next[i].top && m.level === next[i].level && m.text === next[i].text && m.el === next[i].el) ? cur : next));
   }, [scrollRef]);
 
   useEffect(() => {

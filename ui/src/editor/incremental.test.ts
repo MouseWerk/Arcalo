@@ -15,6 +15,8 @@ const NOTE = [
   "> Normales Zitat",
   "- Liste #eins\n- [ ] Aufgabe due:2026-10-01\n  - tiefer #zwei",
   "```\n#kein-tag im Code\n```",
+  "```ts\nconst a = 1; // Kommentar\nlet b = \"x\";\n```",
+  "- **Anna** (10:32): Hallo\n- **Ben** (10:33): Ja #chat",
   "Fußnote[^1] und[^2] im Text.",
   "[^1]: Erste #fn\n[^2]: Zweite",
   "| A | B |\n| --- | --- |\n| #zelle | 2 |",
@@ -37,7 +39,10 @@ function norm(set: DecorationSet | undefined) {
     .sort();
 }
 
-const KEYS = ["tagHighlight$", "callouts$", "footnotes$"];
+const KEYS = ["tagHighlight$", "callouts$", "footnotes$", "codeHighlight$", "smartPaste$"];
+
+/** The decorations of a plugin's state (smart paste keeps them next to its paste hint). */
+const decos = (s: unknown) => (s && typeof s === "object" && "decos" in s ? (s as { decos: DecorationSet }).decos : (s as DecorationSet));
 
 function check(editor: Editor) {
   const state = editor.state;
@@ -45,7 +50,7 @@ function check(editor: Editor) {
   for (const k of KEYS) {
     const plugin = state.plugins.find((p: Plugin) => (p as unknown as { key: string }).key.startsWith(k.slice(0, -1)));
     if (!plugin) continue;
-    expect(norm(plugin.getState(state) as DecorationSet), k).toEqual(norm(plugin.getState(fresh) as DecorationSet));
+    expect(norm(decos(plugin.getState(state))), k).toEqual(norm(decos(plugin.getState(fresh))));
   }
 }
 
@@ -54,9 +59,14 @@ describe("incremental decorations", () => {
   it("equal a full rebuild after random edits", () => {
     const editor = new Editor({ element: document.createElement("div"), extensions: buildExtensions(), content: NOTE, contentType: "markdown" });
     expect(editor.state.plugins.some((p) => (p as unknown as { key: string }).key.startsWith("footnote"))).toBe(true);
+    // Highlighted code and chat times are part of the note, and Tiptap's own (whole-note) highlighter is gone.
+    const own = (k: string) => editor.state.plugins.filter((p) => (p as unknown as { key: string }).key.startsWith(k));
+    expect(norm(decos(own("codeHighlight")[0].getState(editor.state))).some((d) => d.includes("hljs-comment"))).toBe(true);
+    expect(norm(decos(own("smartPaste")[0].getState(editor.state)))).toHaveLength(2);
+    expect(own("lowlight")).toEqual([]);
     check(editor);
     const rand = rng(99);
-    const texts = ["#neu", " ", "x", "[!tip] ", "due:2026-01-02", "#a/b-c", "\n", "[^1]"];
+    const texts = ["#neu", " ", "x", "[!tip] ", "due:2026-01-02", "#a/b-c", "\n", "[^1]", "// c", " (10:34)"];
     let ops = 0;
     for (let n = 0; n < 300; n++) {
       const size = editor.state.doc.content.size;

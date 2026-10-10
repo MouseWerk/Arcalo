@@ -2,7 +2,7 @@
 // Saves like the visual editor (debounced, one after another) and keeps other panes in sync
 // through the same events.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { PageDoc, SavedPage } from "../lib/types";
 import { useApp } from "../store/app";
@@ -68,6 +68,9 @@ export function mapCaret(a: string, b: string, at: number): number {
 
 export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; onSaved: (d: SavedPage & { content: string }) => void; active?: boolean }) {
   const [value, setValue] = useState(doc.content);
+  // What the text box starts with (React does not hold its text, see below), and whether it got it.
+  const initial = useRef(value).current;
+  const filled = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const dirty = useRef(false);
   const latest = useRef(value);
@@ -283,12 +286,18 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
   }, [value, fitPace]);
   useEffect(() => () => fitPace.cancel(), [fitPace]);
 
-  const change = (next: string, caret?: [number, number]) => {
+  // Typed text: the text box has it already.
+  const typed = (next: string) => {
     setValue(next);
     dirty.current = true;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(save, saveDelay());
-    if (caret) requestAnimationFrame(() => ref.current?.setSelectionRange(caret[0], caret[1]));
+  };
+  /** Text changed by a key we handle (Tab, Enter in a list): into the text box, then as typed. */
+  const change = (next: string, caret: [number, number]) => {
+    if (ref.current) ref.current.value = next;
+    typed(next);
+    requestAnimationFrame(() => ref.current?.setSelectionRange(caret[0], caret[1]));
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -323,20 +332,39 @@ export function SourceEditor({ doc, onSaved, active = true }: { doc: PageDoc; on
     }
   };
 
-  return (
-    <div className="source-editor" data-save-status={status}>
-      {status === "failed" && <SaveFailed />}
+  // The text box gets its text once, from here, and is rendered once (per language). React sets a text box's
+  // default value (the whole text, as the box's child) whenever it renders a controlled one and after every
+  // key for one with a default value, which in a long text costs more than the key itself. Changes go into
+  // the box directly (`replaceText`, `change`).
+  const keys = useRef({ typed, onKeyDown });
+  keys.current = { typed, onKeyDown };
+  const label = t("editor.source");
+  const box = useMemo(
+    () => (
       <textarea
-        ref={ref}
+        ref={(el) => {
+          if (el && !filled.current) {
+            el.value = initial;
+            filled.current = true;
+          }
+          ref.current = el;
+        }}
         className="source-text"
-        value={value}
         spellCheck={false}
-        aria-label={t("editor.source")}
-        onChange={(e) => change(e.target.value)}
-        onKeyDown={onKeyDown}
+        aria-label={label}
+        onChange={(e) => keys.current.typed(e.target.value)}
+        onKeyDown={(e) => keys.current.onKeyDown(e)}
         // Other editors of this page store their edits first, so we continue from them.
         onFocus={() => window.dispatchEvent(new CustomEvent("arcalo:flush-page", { detail: { id: doc.id, from: instance.current } }))}
       />
+    ),
+    [initial, label, doc.id],
+  );
+
+  return (
+    <div className="source-editor" data-save-status={status}>
+      {status === "failed" && <SaveFailed />}
+      {box}
     </div>
   );
 }
