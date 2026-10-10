@@ -5,6 +5,8 @@
 // ~/.local/share/app.annalo.desktop, the config in ~/.config/app.annalo.desktop, the secrets in
 // secrets.json (no Secret Service), an encrypted workspace, the update marker `.annalo-update`.
 // The app runs as installed (no ARCALO_DATA_DIR), with a home folder of its own.
+// 1.17 deletes the old folders at a later start, once their copy is in use, and keeps them while
+// anything still points into them (here: location.json, through a link).
 import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
@@ -19,7 +21,9 @@ const test = guarded(nodeTest, () => app);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OLD = "app.annalo.desktop";
 const NEW = "de.mousewerk.arcalo";
-const ENV = { ARCALO_SECRET_STORE: "file", ARCALO_BACKUP_DELAY_SECS: "3600" };
+// The cleanup of the old folders waits until a test asks for it (CLEANUP).
+const ENV = { ARCALO_SECRET_STORE: "file", ARCALO_BACKUP_DELAY_SECS: "3600", ARCALO_CLEANUP_DELAY_SECS: "3600" };
+const CLEANUP = { ...ENV, ARCALO_CLEANUP_DELAY_SECS: "1" };
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-288-home-"));
 const share = path.join(home, ".local", "share");
@@ -28,6 +32,7 @@ const newData = homeDataDir(home);
 const roots = [share, path.join(home, ".config"), path.join(home, ".cache")];
 let customHome;
 let customDir;
+let linkHome;
 let pageIds;
 let version;
 
@@ -112,7 +117,7 @@ before(async () => {
 after(async () => {
   await app?.close();
   killApp();
-  for (const d of [home, customHome, customDir]) if (d) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  for (const d of [home, customHome, customDir, linkHome]) if (d) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 test("an installation of 1.14 opens unchanged: pages, settings, the encrypted workspace, the secret", async () => {
@@ -162,6 +167,41 @@ test("the next start copies nothing again and keeps what was written since", asy
   app = null;
 });
 
+test("1.17: a later start deletes the old folders once their copy is in use, and says so once", async () => {
+  const oldConfig = path.join(home, ".config", OLD);
+  assert.ok(fs.existsSync(oldData) && fs.existsSync(oldConfig), "kept until now");
+  app = await start({ env: CLEANUP });
+  await until("the old folders deleted", () => (logOf(newData).match(new RegExp(`${OLD.replaceAll(".", "\\.")} deleted \\(`, "g")) ?? []).length >= 2);
+  for (const root of roots) {
+    assert.ok(!fs.existsSync(path.join(root, OLD)), `${root}/${OLD} is gone`);
+    assert.ok(!fs.existsSync(path.join(root, `${OLD}.removing`)), "nothing left aside");
+  }
+  // The workspace in the new folders is untouched: pages, encryption, the secret, settings, storage.
+  const now = await titles();
+  assert.ok(now.includes("Notiz aus 1.14") && now.includes("Nach dem Umzug"), JSON.stringify(now));
+  assert.match((await app.invoke("page_get", { id: pageIds.geheim })).content, /Kontonummer 4711-0815/);
+  assert.ok(!isPlain(path.join(newData, "workspace.db")), "still encrypted");
+  assert.equal((await app.invoke("git_sync_status")).token_set, true);
+  assert.equal((await app.invoke("settings_get")).settings.daily_target_hours, 7.5);
+  assert.equal(await app.browser.execute(() => localStorage.getItem("arcalo.sidebar-w")), "333");
+  // A quiet notice says what went and how much space it freed.
+  const toast = await app.$(".toast*=Alte Daten aufgeräumt");
+  await toast.waitForDisplayed({ timeout: 10000 });
+  assert.match(await toast.getText(), /2 alte Ordner, [\d,]+ (KB|MB) frei geworden/);
+  await app.shot("288-old-folders-deleted");
+  const record = JSON.parse(fs.readFileSync(path.join(home, ".config", NEW, "legacy-cleanup.json"), "utf8"));
+  assert.deepEqual(record.removed.map((r) => r.path).sort(), [oldConfig, oldData].sort());
+  assert.equal(record.untold, null, "told");
+  assert.deepEqual(await app.consoleErrors(), []);
+  await app.close();
+  // Once: the next start finds nothing to delete and nothing to tell.
+  app = await start({ env: CLEANUP });
+  assert.equal(await app.invoke("legacy_cleanup_notice"), null);
+  assert.ok((await titles()).includes("Notiz aus 1.14"));
+  await app.close();
+  app = null;
+});
+
 test("a data folder chosen in 1.14 (location.json) stays in use", async () => {
   customDir = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-288-eigen-"));
   app = await launch({ demo: false, dataDir: customDir, env: ENV });
@@ -176,4 +216,34 @@ test("a data folder chosen in 1.14 (location.json) stays in use", async () => {
   assert.equal((await app.invoke("data_dir_status")).data_dir, customDir);
   assert.ok((await titles()).includes("Notiz im eigenen Ordner"));
   assert.ok(fs.existsSync(path.join(customHome, ".config", NEW, "location.json")), "location.json came along");
+  await app.close();
+  app = null;
+});
+
+test("1.17: an old folder that location.json points into (through a link) is kept", async () => {
+  // A 1.14 install taken over by 1.15 (its data folder; the config was not renamed then).
+  linkHome = fs.mkdtempSync(path.join(os.tmpdir(), "arcalo-e2e-288-home3-"));
+  const share3 = path.join(linkHome, ".local", "share");
+  app = await launch({ demo: false, home: linkHome, env: ENV });
+  await app.invoke("page_create", { parentId: null, title: "Notiz im alten Ordner", icon: null, content: "bleibt" });
+  await app.close();
+  app = null;
+  fs.renameSync(path.join(share3, NEW), path.join(share3, OLD));
+  app = await launch({ demo: false, home: linkHome, env: ENV });
+  await app.close();
+  app = null;
+  assert.ok(fs.existsSync(path.join(share3, NEW, ".arcalo-migrated.json")), "taken over");
+  // The data folder chosen through a link that leads into the old folder.
+  const link = path.join(linkHome, "Daten");
+  fs.symlinkSync(path.join(share3, OLD), link);
+  fs.mkdirSync(path.join(linkHome, ".config", NEW), { recursive: true });
+  fs.writeFileSync(path.join(linkHome, ".config", NEW, "location.json"), JSON.stringify({ data_dir: link }));
+  app = await launch({ demo: false, home: linkHome, env: CLEANUP });
+  assert.equal((await app.invoke("data_dir_status")).data_dir, link);
+  await until("the cleanup ran", () => new RegExp(`${OLD.replaceAll(".", "\\.")} kept: .* points into it`).test(logOf(link)));
+  assert.ok(fs.existsSync(path.join(share3, OLD, "workspace.db")), "nothing deleted");
+  assert.ok(fs.existsSync(path.join(share3, NEW, "workspace.db")));
+  assert.ok((await titles()).includes("Notiz im alten Ordner"));
+  assert.equal(await app.invoke("legacy_cleanup_notice"), null, "nothing to tell");
+  assert.ok(!fs.readdirSync(share3).some((n) => n.endsWith(".removing")));
 });

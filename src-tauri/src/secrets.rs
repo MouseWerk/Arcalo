@@ -20,7 +20,8 @@
 //! the old name. The old entries are not deleted in 1.15 (an older version started again, after a
 //! rollback, still finds them). An older version that ran on the data folder after the take-over
 //! (a rollback, see [`older_version_ran`]) used and changed the old entries: they are taken over
-//! once more, over the new ones.
+//! once more, over the new ones. 1.17 deletes the old entry of every account taken over whose new
+//! entry exists ([`remove_legacy`]), once no folder of the old identifier is left (`identity.rs`).
 //!
 //! Portable mode: the credential store belongs to the user of the computer, not to the data
 //! folder on the stick. A portable copy names its entries `<account>@<namespace>`
@@ -609,6 +610,85 @@ pub fn take_over_all(data_dir: &Path, settings: Option<&arcalo_core::settings::S
     let _ = (data_dir, settings, again);
 }
 
+/// What [`remove_legacy`] did with the old entries.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Removal {
+    /// Accounts whose old entry was deleted.
+    pub removed: Vec<String>,
+    /// Old entries kept: the account has no entry under the new name.
+    pub kept: Vec<String>,
+    /// Old entries the store could not read or delete (with the reason).
+    pub failed: Vec<String>,
+}
+
+/// Deletes the old entry of every account taken over (`moved`) whose entry under the new name
+/// exists; an old entry without that counterpart stays, as does every account not taken over.
+#[cfg_attr(not(desktop), allow(dead_code))]
+pub fn remove_legacy(new: &dyn Backend, old: &dyn Backend, moved: &Moved) -> Removal {
+    let mut out = Removal::default();
+    let accounts = {
+        let _guard = crate::lock(&MOVED_LOCK);
+        moved.read()
+    };
+    for account in accounts {
+        match old.get(&account, "") {
+            Ok(None) => continue,
+            Ok(Some(_)) => {}
+            Err(e) => {
+                out.failed.push(format!("{account} ({e})"));
+                continue;
+            }
+        }
+        match new.get(&account, "") {
+            Ok(Some(_)) => match old.delete(&account, "") {
+                Ok(()) => out.removed.push(account),
+                Err(e) => out.failed.push(format!("{account} ({e})")),
+            },
+            Ok(None) => out.kept.push(account),
+            Err(e) => out.failed.push(format!("{account} ({e})")),
+        }
+    }
+    out
+}
+
+/// [`remove_legacy`] on this computer's credential store for the data folder `data_dir`. Returns
+/// the accounts whose old entry went, and whether none that could go is left (then it need not
+/// run again). Without a credential store (the file) nothing is done and it runs again later.
+#[cfg(desktop)]
+pub fn remove_legacy_all(data_dir: &Path) -> (Vec<String>, bool) {
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    if matches!(kind(), Kind::Native | Kind::SecretService) {
+        let moved = Moved { path: data_dir.join(MOVED_FILE) };
+        let r = remove_legacy(&Keyring::CURRENT, &Keyring::LEGACY, &moved);
+        if !r.removed.is_empty() {
+            crate::devlog::info(
+                "secrets",
+                format!(
+                    "{} entries of „{LEGACY_SERVICE}“ deleted (taken over to „{SERVICE}“): {}",
+                    r.removed.len(),
+                    r.removed.join(", ")
+                ),
+            );
+        }
+        if !r.kept.is_empty() {
+            crate::devlog::info(
+                "secrets",
+                format!("entries of „{LEGACY_SERVICE}“ kept (none under „{SERVICE}“): {}", r.kept.join(", ")),
+            );
+        }
+        if !r.failed.is_empty() {
+            crate::devlog::warn(
+                "secrets",
+                format!("entries of „{LEGACY_SERVICE}“ not deleted: {}", r.failed.join(", ")),
+            );
+        }
+        let done = r.kept.is_empty() && r.failed.is_empty();
+        return (r.removed, done);
+    }
+    let _ = data_dir;
+    (Vec::new(), false)
+}
+
 // ------------------------------------------------------------------ migration
 
 /// What [`migrate`] did.
@@ -1105,6 +1185,84 @@ mod tests {
         let taken = DbKey::from_hex(&hex).unwrap();
         assert!(cipher::key_opens(&workspace, &taken), "the workspace opens with the key read under the new name");
         assert!(!cipher::key_opens(&workspace, &next));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn old_entries_go_only_where_their_counterpart_exists() {
+        let dir = temp("remove-legacy");
+        let (new, old) = stores_114();
+        let mut settings = arcalo_core::settings::Settings {
+            providers: vec![arcalo_core::ai::provider::AiProvider { id: "openai".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        settings.jira.sites = vec![arcalo_core::issues::JiraSite { id: "site-1".into(), ..Default::default() }];
+        let stores = known_stores(&dir, Some(&settings));
+        take_over_stores(&stores, &new, &old, false);
+        // The user removed the Jira token under the new name: its old entry stays.
+        new.entries.borrow_mut().remove("jira-site-1");
+        // An entry of the old name never taken over (an account this version does not know) stays.
+        old.entries.borrow_mut().insert("unbekannt".into(), "x".into());
+        let moved = Moved { path: dir.join(MOVED_FILE) };
+        let r = remove_legacy(&new, &old, &moved);
+        let mut removed = r.removed.clone();
+        removed.sort();
+        assert_eq!(removed, ["ai-provider-openai", "app-lock-pin", "git-token"]);
+        assert_eq!((r.kept, r.failed), (vec!["jira-site-1".to_string()], vec![]));
+        let mut left: Vec<String> = old.entries.borrow().keys().cloned().collect();
+        left.sort();
+        assert_eq!(left, ["jira-site-1", "unbekannt"]);
+        // The new entries are untouched and still read.
+        assert_eq!(read_with_fallback(&new, &old, &moved, "git-token", "git_token").as_deref(), Some("ghp-114"));
+        // Idempotent: nothing more to delete.
+        assert_eq!(remove_legacy(&new, &old, &moved).removed, Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_encrypted_workspace_keeps_opening_after_its_old_key_entry_is_gone() {
+        use arcalo_core::cipher::{self, DbKey};
+        let dir = temp("remove-legacy-key");
+        let plain = dir.join("plain.db");
+        drop(arcalo_core::Database::open(&plain).unwrap());
+        let key = DbKey::generate().unwrap();
+        let workspace = dir.join(arcalo_core::datadir::DB_FILE);
+        cipher::export(&plain, None, &workspace, Some(&key)).unwrap();
+        let (new, old) = (Mem::default(), Mem::default());
+        old.entries.borrow_mut().insert("db-key".into(), key.to_hex().to_string());
+        take_over_stores(&known_stores(&dir, None), &new, &old, false);
+        let moved = Moved { path: dir.join(MOVED_FILE) };
+        assert_eq!(remove_legacy(&new, &old, &moved).removed, ["db-key"]);
+        assert!(old.entries.borrow().is_empty());
+        let hex = read_with_fallback(&new, &old, &moved, "db-key", "db_key").unwrap();
+        assert!(cipher::key_opens(&workspace, &DbKey::from_hex(&hex).unwrap()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_store_that_cannot_delete_keeps_the_old_entry() {
+        let dir = temp("remove-legacy-fail");
+        let (new, old) = stores_114();
+        take_over_stores(&known_stores(&dir, None), &new, &old, false);
+        /// Reads, but refuses to delete (a locked keychain).
+        struct NoDelete(Mem);
+        impl Backend for NoDelete {
+            fn get(&self, a: &str, f: &str) -> Res<Option<String>> {
+                self.0.get(a, f)
+            }
+            fn set(&self, a: &str, f: &str, s: &str) -> Res<()> {
+                self.0.set(a, f, s)
+            }
+            fn delete(&self, _: &str, _: &str) -> Res<()> {
+                Err("locked".into())
+            }
+        }
+        let old = NoDelete(old);
+        let r = remove_legacy(&new, &old, &Moved { path: dir.join(MOVED_FILE) });
+        assert!(r.removed.is_empty() && r.failed.len() == 2, "{r:?}");
+        assert!(old.0.entries.borrow().contains_key("git-token"));
+        // Tests never reach the user's keyring: the file store does nothing and asks again later.
+        assert_eq!(remove_legacy_all(&dir), (vec![], false));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -22,6 +22,9 @@
 //!   `.annalo-update`) for readers that look for both.
 //!
 //! The credential store's entries are copied in the shell (`secrets.rs`), which owns the store.
+//!
+//! 1.17 deletes the old folders once their copy is in use ([`cleanup`]), and the shell the old
+//! credential entries.
 
 use std::ffi::OsString;
 use std::fs;
@@ -33,14 +36,16 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, IoAt, Result, copy_file};
 use crate::{tr, trf};
 
+pub mod cleanup;
+
 /// The app identifier from 1.15 on (folders, Windows toasts, macOS bundle id).
 pub const IDENTIFIER: &str = "de.mousewerk.arcalo";
 /// The app identifier of 1.14 and earlier.
 pub const LEGACY_IDENTIFIER: &str = "app.annalo.desktop";
 /// Service name of the entries in the credential store from 1.15 on.
 pub const CREDENTIAL_SERVICE: &str = "Arcalo";
-/// Service name of the credential store's entries of 1.14 and earlier (read as a fallback; the
-/// entries are not deleted in 1.15).
+/// Service name of the credential store's entries of 1.14 and earlier (read as a fallback until
+/// an entry is taken over; deleted from 1.17 on once taken over).
 pub const LEGACY_CREDENTIAL_SERVICE: &str = "Annalo";
 /// Prefix of the environment variables.
 pub const ENV_PREFIX: &str = "ARCALO_";
@@ -567,13 +572,13 @@ mod tests {
         d
     }
 
-    fn put(path: &Path, body: &[u8]) {
+    pub(super) fn put(path: &Path, body: &[u8]) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, body).unwrap();
     }
 
     /// A data folder as 1.14 left it on Linux (data, WebKitGTK storage and caches in one folder).
-    fn layout_114(base: &Path) -> (PathBuf, i64) {
+    pub(super) fn layout_114(base: &Path) -> (PathBuf, i64) {
         let old = base.join(LEGACY_IDENTIFIER);
         fs::create_dir_all(&old).unwrap();
         let db = Database::open(old.join(crate::datadir::DB_FILE)).unwrap();

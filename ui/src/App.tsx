@@ -106,6 +106,13 @@ export function App() {
         if (d.synced) s.toast({ tone: "warning", persistent: true, title: t("app.syncedDb"), detail: t("app.syncedDbDetail", { dir: d.data_dir }) });
       })
       .catch(() => {});
+    // 1.17 deletes the folders of the old app identifier in the background: what went, once.
+    const showCleaned = () =>
+      void api
+        .legacyCleanupNotice()
+        .then((text) => text && useApp.getState().toast({ tone: "info", title: t("app.legacyCleaned"), detail: text, timeout: 12000 }))
+        .catch(() => {});
+    showCleaned();
 
     // Only builds with an update key look for new releases; installing always needs a click.
     const stopUpdates = startUpdateChecks();
@@ -115,6 +122,7 @@ export function App() {
     media.addEventListener("change", onMedia);
     const unlisten = [
       on("data://entries", () => useApp.getState().bumpEntries()),
+      on("identity://cleaned", showCleaned),
       on<string>("backup://failed", (msg) => notify("backup_failed") && useApp.getState().toast({ tone: "warning", title: t("app.backupFailed"), detail: msg })),
       on<Parameters<typeof warnDestination>[0]>("backup://destination-failed", (w) => notify("backup_failed") && warnDestination(w)),
       // Git sync: only failures are shown (successes appear in the settings' status line).

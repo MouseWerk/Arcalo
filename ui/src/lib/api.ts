@@ -290,6 +290,8 @@ export const api = {
   /** Takes effect at the next start; `useExisting` opens a workspace already in `path`. */
   setDataDir: (path: string, useExisting = false) => call<T.DataDirStatus>("data_dir_set", { path, useExisting }),
   cancelDataDirMove: () => call<T.DataDirStatus>("data_dir_cancel"),
+  /** What 1.17 deleted of the data kept twice since the rename in 1.15, once; null when nothing (or told already). */
+  legacyCleanupNotice: () => call<string | null>("legacy_cleanup_notice"),
   restart: () => call<void>("app_restart"),
   updateStatus: () => call<T.UpdateStatus>("update_status"),
   /** Asks the release feed; null when this is the newest version. Never installs. */

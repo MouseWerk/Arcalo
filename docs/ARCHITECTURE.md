@@ -1133,7 +1133,22 @@ The 1.15 migration (`crates/arcalo-core/src/identity.rs`, `src-tauri/src/identit
   PIN, AI provider keys, Git token, proxy passwords, calendar addresses, Jira tokens, also the
   namespaced accounts of portable copies) is written under `Arcalo`, read back and compared;
   `credentials-moved.json` in the data folder notes the accounts done. Until then the old entry is
-  read as a fallback. The old entries are not deleted in 1.15 (a later release may).
+  read as a fallback. The old entries are not deleted in 1.15 and 1.16.
+- 1.17 deletes the old folders (`identity/cleanup.rs`, run by `src-tauri/src/identity.rs` in the
+  background 10 s after the start): only a folder of a copied pair whose new folder's marker names
+  it, at a start whose migration found the pair done, with the workspace in the new folder. Kept
+  (with the reason in the log) for a portable copy, unreadable settings, an unfinished copy, a
+  changed old database, a possible return to 1.14 (rollback record), anything pointing into it
+  (data and config folder in use, `location.json` `data_dir` and `pending_move`, backup folder,
+  Markdown copy, backup destinations and the backup registry, a network profile's root
+  certificate, the rollback's backup and copy, the program folder; by spelling and through links),
+  a move or a running older version (its lock) in it, a symbolic link in it, or a file newer than
+  the copy. A folder is renamed to `app.annalo.desktop.removing` and then deleted (a cut-off
+  deletion is finished at the next start). Once no old folder is left, the `Annalo` entry of every
+  account in `credentials-moved.json` whose `Arcalo` entry exists is deleted
+  (`secrets::remove_legacy`). The outcome is kept in `legacy-cleanup.json` in the config folder; what
+  was removed is told once (`legacy_cleanup_notice`, toast „Alte Daten aufgeräumt“ with the freed
+  size).
 - localStorage keys `annalo.*` are copied to `arcalo.*` once at UI start (`ui/src/lib/legacy.ts`).
 - Settings step 16 „theme-ids“ maps `annalo-light`/`annalo-dark`; the ids are read as the new
   ones wherever they come from (synced settings, exported files).

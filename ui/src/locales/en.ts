@@ -3655,6 +3655,7 @@ export const en = {
   "app.dirMoved": "Storage location changed",
   "app.dirUnavailable": "Data folder not available",
   "app.dirNotMoved": "Data not moved",
+  "app.legacyCleaned": "Old data cleaned up",
   "app.syncedDb": "Database in a synced folder",
   "app.syncedDbDetail": "The database is in a synced or network folder – that can damage it. Backups there are fine. ({dir})",
   "app.backupFailed": "Automatic backup failed",

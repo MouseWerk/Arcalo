@@ -3652,6 +3652,7 @@ export const de: Catalog = {
   "app.dirMoved": "Speicherort geändert",
   "app.dirUnavailable": "Datenordner nicht verfügbar",
   "app.dirNotMoved": "Daten nicht verschoben",
+  "app.legacyCleaned": "Alte Daten aufgeräumt",
   "app.syncedDb": "Datenbank im synchronisierten Ordner",
   "app.syncedDbDetail": "Die Datenbank liegt in einem synchronisierten oder Netzwerkordner – das kann sie beschädigen. Sicherungen dorthin sind unbedenklich. ({dir})",
   "app.backupFailed": "Automatische Sicherung fehlgeschlagen",

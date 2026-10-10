@@ -4825,6 +4825,8 @@ pub fn run() {
             jira::spawn_scheduler(app.handle().clone());
             semantic::spawn_indexer(app.handle().clone());
             mail::clean_temp(app.handle());
+            // 1.17: the folders and credential entries of the old identifier, once their copies are in use.
+            identity::spawn_cleanup(app.handle());
             Ok(())
         })
         .invoke_handler(security::guard(tauri::generate_handler![
@@ -5011,6 +5013,7 @@ pub fn run() {
             data_dir_inspect,
             data_dir_set,
             data_dir_cancel,
+            identity::legacy_cleanup_notice,
             app_restart,
             demo_remove,
             onboarding_needed,
