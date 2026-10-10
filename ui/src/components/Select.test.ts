@@ -114,6 +114,26 @@ describe("<Select>", () => {
     expect(picked).toEqual(["h1"]);
   });
 
+  it("keeps the selected option active when the list opens under a pointer that does not move", () => {
+    const trigger = mount("h2", () => {});
+    trigger.focus();
+    key(trigger, "ArrowDown");
+    const active = () => document.getElementById(trigger.getAttribute("aria-activedescendant") ?? "")?.textContent;
+    const move = (value: string, x: number) =>
+      act(() => {
+        document.querySelector(`[role="option"][data-value="${value}"]`)!.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: x, screenY: 300 }));
+      });
+    // The engine reports the pointer over the new list (twice, it did not move).
+    move("paragraph", 200);
+    move("paragraph", 200);
+    expect(active()).toBe("Überschrift 2");
+    // A real move picks the option under the pointer.
+    move("paragraph", 204);
+    expect(active()).toBe("Text");
+    move("h1", 210);
+    expect(active()).toBe("Überschrift 1");
+  });
+
   it("chooses with the mouse and closes on a click outside", () => {
     const picked: string[] = [];
     const trigger = mount("paragraph", (v) => picked.push(v));

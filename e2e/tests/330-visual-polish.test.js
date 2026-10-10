@@ -213,10 +213,22 @@ test("German shortcut names, today's marker and one hour format", async () => {
   const [a, b] = marker.map(lum).sort((x, y) => y - x);
   assert.ok((a + 0.05) / (b + 0.05) >= 4.5, `today's marker ${marker.join(" on ")}`);
   // The daily review: hours with two decimals everywhere, also the target and the focus time.
+  // Today a workday (with a target) whatever the day of the week: on a Saturday the review
+  // showed „kein Arbeitstag“ without one.
+  const today = ((new Date().getDay() + 6) % 7) + 1;
+  const view = await app.invoke("settings_get");
+  const workdays = view.settings.workdays;
+  if (!workdays.includes(today)) {
+    await app.invoke("settings_save", { settings: { ...view.settings, workdays: [...workdays, today].sort() } });
+    await app.browser.refresh();
+    await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after the reload" });
+  }
   await ribbon("Tagesrückblick");
   await app.waitText(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-time", /h/, 10000);
   assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-time"), /\d+,\d\d h\s*\/\s*\d+,\d\d h/);
   assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-focus"), /\d+,\d\d h/);
+  const after = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...after.settings, workdays } });
 });
 
 test("no console errors", async () => {
