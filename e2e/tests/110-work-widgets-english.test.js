@@ -59,17 +59,17 @@ after(async () => {
 
 test("the gallery offers flagged e-mails where Outlook can be asked; the widget lists them", async () => {
   assert.equal(await app.invoke("mail_flagged_available"), true);
-  await clickText(".pane.active .dash-bar button", "Customize");
-  await app.waitFor(".pane.active .dash.editing");
-  await clickText(".pane.active .dash-bar button", "Add widget");
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Customize");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash.editing");
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Add widget");
   await app.waitFor(".dash-gallery");
   await app.waitFor('.dash-gallery-card[data-kind="mail_flags"]');
   for (const k of ["balance", "vacation", "deadlines", "next_meeting", "team", "chart", "heatmap", "kanban"]) assert.ok(await (await app.$(`.dash-gallery-card[data-kind="${k}"]`)).isExisting(), k);
   assert.match(await app.text(".dash-gallery"), /Charts & data/i);
   await app.click('.dash-gallery-card[data-kind="mail_flags"]');
-  await clickText(".pane.active .dash-bar button", "Done");
-  await app.waitFor('.pane.active [data-widget^="mail_flags"] .wm-row', 15000);
-  const rows = await app.browser.execute(() => [...document.querySelectorAll('.pane.active [data-widget^="mail_flags"] .wm-row')].map((r) => r.textContent));
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Done");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) [data-widget^="mail_flags"] .wm-row', 15000);
+  const rows = await app.browser.execute(() => [...document.querySelectorAll('.pane.active > .pane-content:not([hidden]) [data-widget^="mail_flags"] .wm-row')].map((r) => r.textContent));
   assert.equal(rows.length, 3);
   assert.match(rows[0], /Approve the portal offer[\s\S]*Miller, Anna · Follow up[\s\S]*1 day overdue/);
   assert.match(rows[1], /Feedback on the specification[\s\S]*in 2 days/);
@@ -78,9 +78,9 @@ test("the gallery offers flagged e-mails where Outlook can be asked; the widget 
 
 test("„open in Outlook“ asks Outlook for the mail, „make task“ opens the e-mail dialog with it", async () => {
   const opened = `${fx.flagged}.opened`;
-  await app.click('.pane.active [data-widget^="mail_flags"] .wm-row [aria-label^="Open “Approve the portal offer”"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [data-widget^="mail_flags"] .wm-row [aria-label^="Open “Approve the portal offer”"]');
   await app.browser.waitUntil(() => fs.existsSync(opened) && fs.readFileSync(opened, "utf8").includes("00000000FL01\t0000000038A1BB10"), { timeout: 8000, timeoutMsg: "not opened" });
-  await app.click('.pane.active [data-widget^="mail_flags"] .wm-row [aria-label^="Make a task of “Feedback on the specification”"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [data-widget^="mail_flags"] .wm-row [aria-label^="Make a task of “Feedback on the specification”"]');
   await app.waitText(".dialog .mailx-subject", /Feedback on the specification/);
   assert.equal(await app.browser.execute(() => document.querySelector(".dialog .mailx-task-text")?.value), "Feedback on the specification");
   await app.shot("110-flagged-task-dialog");
@@ -109,18 +109,18 @@ test("every work and chart widget in English with English numbers", async () => 
   ];
   await app.invoke("dashboard_save", { dashboard: d });
   await reload();
-  await app.waitFor('.pane.active [data-widget="balance"] .wb-value', 15000);
-  assert.match(await app.text('.pane.active [data-widget="balance"] .wb-value'), /^[+−±]\d+(,\d{3})*\.\d\d h$/);
-  assert.match(await app.text('.pane.active [data-widget="balance"] .wb-today'), /Today[\s\S]*of \d\.\d\d h/);
-  await app.waitText('.pane.active [data-widget="vacation"] .wv-dl', /Entitlement \d{4}\s*28/);
-  await app.waitText('.pane.active [data-widget="deadlines"]', /Write the changelog[\s\S]*in 3 days/);
-  await app.waitText('.pane.active [data-widget="next_meeting"] .wn-actions', /Join[\s\S]*Meeting note/, 15000);
-  await app.waitText('.pane.active [data-widget="team"] .wt-list', /Out of office[\s\S]*Busy/, 15000);
-  await app.waitFor('.pane.active [data-widget="chart"] .wc-bar', 15000);
-  assert.match(await app.text('.pane.active [data-widget="chart"] .wc-top .dw-big'), /^\d+(,\d{3})*\.\d\d h$/);
-  await app.waitText('.pane.active [data-widget="pie"] .wc-legend', /Open\s*2[\s\S]*Doing\s*1/);
-  await app.waitText('.pane.active [data-widget="kanban"] .wk-cols', /Open\s*2[\s\S]*Website/);
-  await app.waitText('.pane.active [data-widget="heatmap"] .wh-top', /\d+\.\d\d h on \d+ days/);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) [data-widget="balance"] .wb-value', 15000);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="balance"] .wb-value'), /^[+−±]\d+(,\d{3})*\.\d\d h$/);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="balance"] .wb-today'), /Today[\s\S]*of \d\.\d\d h/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="vacation"] .wv-dl', /Entitlement \d{4}\s*28/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="deadlines"]', /Write the changelog[\s\S]*in 3 days/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="next_meeting"] .wn-actions', /Join[\s\S]*Meeting note/, 15000);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="team"] .wt-list', /Out of office[\s\S]*Busy/, 15000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) [data-widget="chart"] .wc-bar', 15000);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="chart"] .wc-top .dw-big'), /^\d+(,\d{3})*\.\d\d h$/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="pie"] .wc-legend', /Open\s*2[\s\S]*Doing\s*1/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="kanban"] .wk-cols', /Open\s*2[\s\S]*Website/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) [data-widget="heatmap"] .wh-top', /\d+\.\d\d h on \d+ days/);
   // Nothing German: the fixtures' names of people and places aside.
   const left = await germanLeftovers(app, [/Müller|Weiß|Zürich|Kundentermin|Abstimmung|Vertriebsrunde|Kalender/]);
   assert.deepEqual(left, []);

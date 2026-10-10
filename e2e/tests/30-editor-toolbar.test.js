@@ -27,11 +27,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pageId;
 const content = async () => (await app.invoke("page_get", { id: pageId })).content;
 const saved = (pred, msg) => app.browser.waitUntil(async () => pred(await content()), { timeout: 6000, timeoutMsg: msg });
-const tb = (label) => app.browser.execute((l) => document.querySelector(`.pane.active .editor-toolbar [aria-label^="${l}"]`).click(), label);
+const tb = (label) => app.browser.execute((l) => document.querySelector(`.pane.active > .pane-content:not([hidden]) .editor-toolbar [aria-label^="${l}"]`).click(), label);
 const menu = (button, item) =>
   app.browser.execute(
     (b, i) => {
-      [...document.querySelectorAll(".pane.active .editor-toolbar .tb-menu")].find((x) => (x.getAttribute("aria-label") ?? x.textContent).includes(b)).click();
+      [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .editor-toolbar .tb-menu")].find((x) => (x.getAttribute("aria-label") ?? x.textContent).includes(b)).click();
       return new Promise((r) => setTimeout(() => ([...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((x) => x.textContent.includes(i))?.click(), r()), 80));
     },
     button,
@@ -41,7 +41,7 @@ const menu = (button, item) =>
 const selectBlocks = (sel, from, to) =>
   app.browser.execute(
     (s, a, b) => {
-      const els = [...document.querySelectorAll(`.pane.active .ProseMirror ${s}`)];
+      const els = [...document.querySelectorAll(`.pane.active > .pane-content:not([hidden]) .ProseMirror ${s}`)];
       const r = document.createRange();
       r.setStart(els[a].firstChild ?? els[a], 0);
       const last = els[b];
@@ -62,24 +62,24 @@ test("toolbar: formatting, block type, insert menu", async () => {
   await app.browser.refresh();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")));
   for (const r of await app.$$(".sidebar .tree-row")) if ((await app.textOf(r)) === "Werkzeugtest") await r.click();
-  await app.waitFor(".pane.active .editor-toolbar");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .editor-toolbar");
   // In the header row, above the page title, instead of the small title.
   const place = await app.browser.execute(() => {
-    const bar = document.querySelector(".pane.active .editor-toolbar");
-    const title = document.querySelector(".pane.active .page-title, .pane.active h1");
-    return { inHeader: !!bar.closest(".vh"), smallTitle: !!document.querySelector(".pane.active .vh-title-text"), above: bar.getBoundingClientRect().bottom <= title.getBoundingClientRect().top, oneRow: bar.getBoundingClientRect().height <= 34 };
+    const bar = document.querySelector(".pane.active > .pane-content:not([hidden]) .editor-toolbar");
+    const title = document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title, .pane.active > .pane-content:not([hidden]) h1");
+    return { inHeader: !!bar.closest(".vh"), smallTitle: !!document.querySelector(".pane.active > .pane-content:not([hidden]) .vh-title-text"), above: bar.getBoundingClientRect().bottom <= title.getBoundingClientRect().top, oneRow: bar.getBoundingClientRect().height <= 34 };
   });
   assert.deepEqual(place, { inHeader: true, smallTitle: false, above: true, oneRow: true });
   await app.shot("editor-toolbar");
 
   // Heading from the block-type dropdown.
   await selectBlocks("p", 0, 0);
-  await app.select('.pane.active .editor-toolbar [role="combobox"][aria-label="Absatzformat"]', "h2");
+  await app.select('.pane.active > .pane-content:not([hidden]) .editor-toolbar [role="combobox"][aria-label="Absatzformat"]', "h2");
   await saved((c) => c.startsWith("## Titelzeile"), "heading not applied");
 
   // Bold on a selection.
   await app.browser.execute(() => {
-    const p = [...document.querySelectorAll(".pane.active .ProseMirror p")].find((x) => x.textContent === "Erster Absatz");
+    const p = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror p")].find((x) => x.textContent === "Erster Absatz");
     const r = document.createRange();
     r.selectNodeContents(p);
     window.getSelection().removeAllRanges();
@@ -90,7 +90,7 @@ test("toolbar: formatting, block type, insert menu", async () => {
 
   // „Einfügen“ offers the slash commands: a divider.
   await app.browser.execute(() => {
-    const p = [...document.querySelectorAll(".pane.active .ProseMirror p")].find((x) => x.textContent === "Zweiter Absatz");
+    const p = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror p")].find((x) => x.textContent === "Zweiter Absatz");
     const r = document.createRange();
     r.setStart(p.firstChild, p.textContent.length);
     r.collapse(true);
@@ -109,7 +109,7 @@ test("tools: sort lines, move a block, find and replace, statistics", async () =
 
   // Alt+↓ moves the item with the cursor down.
   await app.browser.execute(() => {
-    const p = document.querySelector(".pane.active .ProseMirror li p");
+    const p = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror li p");
     const r = document.createRange();
     r.setStart(p.firstChild, 1);
     r.collapse(true);

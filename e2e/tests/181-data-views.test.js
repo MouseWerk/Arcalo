@@ -97,10 +97,10 @@ async function palette(command) {
 
 async function settings(section) {
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   const wide = await app.browser.execute((s) => !!document.querySelector(`.settings-nav-item[data-section="${s}"]`)?.offsetParent, section);
   if (wide) await app.click(`.settings-nav-item[data-section="${section}"]`);
-  else await app.select(".pane.active .settings-section-select", section);
+  else await app.select(".pane.active > .pane-content:not([hidden]) .settings-section-select", section);
   await sleep(500);
 }
 
@@ -120,8 +120,8 @@ async function views(lang, tag, page) {
   await app.waitFor(".att-table", 10000);
   await app.shot(name("attachments"));
   await app.invoke("search_open", { target: { kind: "page", page_id: page, new_tab: false } });
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click(`.pane.active [aria-label="${L[lang].more}"]`);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click(`.pane.active > .pane-content:not([hidden]) [aria-label="${L[lang].more}"]`);
   await app.waitFor(".menu");
   await app.browser.execute(
     (src) => [...document.querySelectorAll(".menu-item")].find((el) => new RegExp(src).test(el.textContent))?.click(),

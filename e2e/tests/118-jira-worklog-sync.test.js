@@ -96,7 +96,7 @@ test("the Morgen-Briefing opens on a new day while the app keeps running, once",
   await patchSettings((s) => ({ ...s, briefing: { ...s.briefing, mode: "start" } }));
   // The window comes to the front (or the next reminder tick sees it in front): the new day's check.
   await app.browser.executeAsync((done) => window.__TAURI_INTERNALS__.invoke("plugin:window|set_focus", { label: "main" }).then(done, done));
-  await app.waitFor(".pane.active .bf-view", 45000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-view", 45000);
   assert.equal(await tabs(), 1);
   assert.equal(await app.invoke("briefing_start"), "none", "used up for today");
   await app.browser.execute(() => {
@@ -204,7 +204,7 @@ test("the next-meeting widget keeps its title at a small size", async () => {
   await app.keys(["Control", "t"]);
   const check = async () => {
     for (const id of ["small", "narrow", "wide"]) {
-      const sel = `.pane.active [data-widget="${id}"] .wn-title`;
+      const sel = `.pane.active > .pane-content:not([hidden]) [data-widget="${id}"] .wn-title`;
       await app.waitText(sel, /Abstimmung/, 15000);
       const box = await app.browser.execute((s) => {
         const t = document.querySelector(s);

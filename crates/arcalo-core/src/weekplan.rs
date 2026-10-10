@@ -917,7 +917,7 @@ impl WbsContext {
         }
         Ok(self.memory(db, "text", &key)?.and_then(|(np, v, la, _)| {
             self.guess(np, v, la, Confidence::High, Basis::Learned, |r| {
-                trf!("gelernt: „{text}“ zuletzt auf {r} übernommen", "learned: “{text}” last taken to {r}")
+                trf!("gelernt: „{text}“ zuletzt auf {r} übernommen", "learned: “{text}” last booked to {r}")
             })
         }))
     }
@@ -1098,7 +1098,10 @@ impl WbsContext {
         if let Some((np, v, la, link_ref)) = self.memory(db, "page", &page_id.to_string())?
             && link_ref == own.clone().unwrap_or_default()
             && let Some(g) = self.guess(np, v, la, Confidence::High, Basis::Learned, |r| {
-                trf!("gelernt: Seite „{title}“ zuletzt auf {r} übernommen", "learned: page “{title}” last taken to {r}")
+                trf!(
+                    "gelernt: Seite „{title}“ zuletzt auf {r} übernommen",
+                    "learned: page “{title}” last booked to {r}"
+                )
             })
         {
             return Ok(Some(g));

@@ -52,15 +52,15 @@ test("a canvas conflict offers mine, theirs or both and keeps both as two canvas
 
   // The board shows the banner; the conflict view decides the canvas as a whole.
   await app.invoke("search_open", { target: { kind: "page", page_id: cv.id, new_tab: false } });
-  await app.waitText(".pane.active .cv-conflict .cf-banner", /Konflikt/);
-  await app.click(".pane.active .cv-conflict .cf-banner button");
-  await app.waitFor(".pane.active .cf-keep-both");
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active .cf-conflict, .pane.active .cf-result").length), 0, "no text merge of the JSON");
-  const sums = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .cf-canvas-sum")].map((e) => e.textContent.trim()));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .cv-conflict .cf-banner", /Konflikt/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .cv-conflict .cf-banner button");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .cf-keep-both");
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .cf-conflict, .pane.active > .pane-content:not([hidden]) .cf-result").length), 0, "no text merge of the JSON");
+  const sums = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .cf-canvas-sum")].map((e) => e.textContent.trim()));
   assert.deepEqual(sums, ["3 Karten · 0 Verbindungen", "2 Karten · 0 Verbindungen"]);
   await app.shot("132-canvas-conflict");
 
-  await app.click(".pane.active .cf-keep-both");
+  await app.click(".pane.active > .pane-content:not([hidden]) .cf-keep-both");
   await app.waitText(".toast-detail", /Strategie \(Server\)/);
   assert.deepEqual(await app.invoke("git_conflicts"), []);
   assert.equal((await app.invoke("page_get", { id: cv.id })).content, mine, "this computer's board stays");
@@ -71,6 +71,6 @@ test("a canvas conflict offers mine, theirs or both and keeps both as two canvas
   // Both are on the server after the sync that followed.
   assert.equal(git(bare, "show", `main:${file}`), mine);
   assert.ok(fileOf("Strategie (Server).canvas"), "the copy is synced too");
-  await app.waitFor(".pane.active .cv-board");
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active .cv-conflict .cf-banner").length), 0);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .cv-board");
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .cv-conflict .cf-banner").length), 0);
 });

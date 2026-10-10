@@ -152,7 +152,7 @@ test("Ctrl+K opens the feed; the assistant reads it with the activity_log tool",
   await app.browser.execute(() => (document.documentElement.dataset.theme = "dark"));
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);
-  await app.waitFor(".pane.active .activity-view");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .activity-view");
   await app.shot("activity-dark-split");
   const overflow = await app.browser.execute(() => [...document.querySelectorAll(".activity-view")].some((v) => v.scrollWidth > v.clientWidth + 1));
   assert.equal(overflow, false, "no horizontal overflow in a split pane");

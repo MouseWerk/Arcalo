@@ -70,8 +70,8 @@ test("palette → recording → English transcript → automatic summary with ta
   assert.ok(content.includes(`- [ ] Book the workshop room @Ben due:${isoIn(4)}`), content);
   const tasks = await app.invoke("tasks_list", { filter: { status: "open" } });
   assert.ok(tasks.some((t) => /Book the workshop room/.test(t.text) && t.due === isoIn(4)));
-  await app.waitFor(".pane.active .audio-embed", 10000);
-  assert.ok(await app.browser.execute(() => !!document.querySelector(".pane.active .audio-embed audio[src]")), "audio player");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .audio-embed", 10000);
+  assert.ok(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .audio-embed audio[src]")), "audio player");
   await app.shot("112-voice-note-dark");
 });
 

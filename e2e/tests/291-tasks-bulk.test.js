@@ -148,9 +148,9 @@ test("the task menu acts on one task or on the selection", async () => {
   await selectRows(0, 1);
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await until(async () => (await app.$$(".pane")).length === 2, "split");
-  await app.browser.execute(() => document.querySelector(".pane:first-child .view-scroll")?.scrollTo(0, 0));
+  await app.browser.execute(() => document.querySelector(".pane:first-child > .pane-content:not([hidden]) .view-scroll")?.scrollTo(0, 0));
   const overflow = await app.browser.execute(() => {
-    const bar = document.querySelector(".pane:first-child .task-bulk");
+    const bar = document.querySelector(".pane:first-child > .pane-content:not([hidden]) .task-bulk");
     return bar ? bar.scrollWidth - bar.clientWidth : -1;
   });
   assert.ok(overflow <= 1, `bar overflows by ${overflow}px`);

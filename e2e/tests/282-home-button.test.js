@@ -33,7 +33,7 @@ test("the home button shows the start page: its tab when open, a new one otherwi
   // No start page tab open: a new tab with the start page.
   const before = await tabCount();
   await app.click(home);
-  await app.waitFor(".pane.active .dash-grid");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid");
   assert.equal(await tabCount(), before + 1);
   assert.equal(await homeActive(), true);
 
@@ -42,7 +42,7 @@ test("the home button shows the start page: its tab when open, a new one otherwi
   await app.waitText(".pane.active .tab.active", /Home Alpha/);
   const open = await tabCount();
   await app.click(home);
-  await app.waitFor(".pane.active .dash-grid");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid");
   assert.equal(await tabCount(), open);
   assert.equal(await homeActive(), true);
 });

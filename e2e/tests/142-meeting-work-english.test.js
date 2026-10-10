@@ -23,7 +23,7 @@ const icsTime = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.
 /** A time `min` minutes from now (still today: see `daytimeZone`). */
 const slot = (min) => new Date(Date.now() + min * 60_000);
 const ALLOW = [/Müller|Weiß|Zürich|Kundentermin|Abstimmung|Vertriebsrunde/];
-const paneText = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror")?.innerText ?? "");
+const paneText = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror")?.innerText ?? "");
 
 async function patchSettings(f) {
   const view = await app.invoke("settings_get");
@@ -101,8 +101,8 @@ test("Prepare meeting from the palette, in English, without Jira and AI", async 
 
 test("Follow-up mail through the mail program, and copy as text", async () => {
   await app.click(".ribbon .ribbon-briefing");
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)')), { timeout: 10000, timeoutMsg: "last time link" });
-  await app.browser.execute(() => document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)').click());
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)')), { timeout: 10000, timeoutMsg: "last time link" });
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)').click());
   await app.browser.waitUntil(async () => /We ship on Friday/.test(await paneText()) && !/Last minutes/.test(await paneText()), { timeout: 10000, timeoutMsg: "minutes opened" });
   await palette("Follow-up mail");
   await app.waitFor(".dialog .mw-fu-preview", 10000);
@@ -129,8 +129,8 @@ test("Follow-up mail through the mail program, and copy as text", async () => {
 
 test("Status report of a network from the Projects view", async () => {
   await palette("Open projects");
-  await app.waitFor(".pane.active .projects-report", 10000);
-  await app.click(".pane.active .projects-report");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .projects-report", 10000);
+  await app.click(".pane.active > .pane-content:not([hidden]) .projects-report");
   await app.waitFor(".dialog .mw-sr-create");
   assert.match(await app.text(".dialog .mw-sr-scope"), /NP-/);
   // No AI: the summary switch still works, the report is written without it.

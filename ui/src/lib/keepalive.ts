@@ -15,19 +15,34 @@ export const KEEP_ALIVE = 5;
 export interface Kept {
   key: string;
   tab: Tab | null;
+  /** When the place was last shown (a counter): the least recent one goes first when too many are kept. */
+  shown: number;
 }
 
 /** A tab's current place („home“ for a pane without tabs). */
 export const slotKey = (tab: Tab | null) => (tab ? `${tab.id}:${tab.kind}:${tab.pageId ?? tab.tag ?? ""}` : "home");
 
 /**
- * The places of a pane that stay mounted: the shown one first (so it comes first in the
- * document), then the most recently left ones of tabs still open, at most `max`.
+ * The places of a pane that stay mounted, in the order they are in the document: the shown one
+ * and the most recently left ones of tabs still open, at most `max`. The order is stable: a
+ * place shown again stays where it is, so switching tabs never moves a kept view in the document
+ * (a moved node loses its scroll offsets and selection, reloads its frames and fires its
+ * observers). A new place goes first, so what was just opened is first in the document. Hidden
+ * places are out of the accessibility tree and the Tab order; the shown one is the only panel
+ * after the tab strip a screen reader sees.
  */
 export function keepAlive(prev: Kept[], tab: Tab | null, tabIds: string[], max = KEEP_ALIVE): Kept[] {
   const key = slotKey(tab);
-  const rest = prev.filter((k) => k.key !== key && (k.tab ? tabIds.includes(k.tab.id) : !tab));
-  return [{ key, tab }, ...rest].slice(0, max);
+  const shown = Math.max(0, ...prev.map((k) => k.shown)) + 1;
+  const open = prev.filter((k) => k.key === key || (k.tab ? tabIds.includes(k.tab.id) : !tab));
+  const kept = open.some((k) => k.key === key)
+    ? open.map((k) => (k.key === key ? { key, tab, shown } : k))
+    : [{ key, tab, shown }, ...open];
+  while (kept.length > max) {
+    const oldest = kept.reduce((a, b) => (b.shown < a.shown ? b : a));
+    kept.splice(kept.indexOf(oldest), 1);
+  }
+  return kept;
 }
 
 /**

@@ -18,7 +18,7 @@ import { isPdfName } from "../editor/fileEmbed";
 import { lazyView, preloadWhenIdle } from "./lazyView";
 import { t, useT } from "../lib/i18n";
 import { hint, withHint } from "../lib/keymap";
-import { keepAlive, type Kept } from "../lib/keepalive";
+import { keepAlive, slotKey, type Kept } from "../lib/keepalive";
 import { isComposing } from "../lib/ime";
 
 // Views other than pages load when first opened (a smaller script at start), or in the
@@ -115,14 +115,15 @@ function PaneView({ pane, size, active, last, multi }: { pane: Pane; size: numbe
   useT();
   const tab = pane.tabs.find((x) => x.id === pane.activeTabId) ?? null;
   const s = useApp.getState;
-  // Switching tabs (or going back and forth in one) keeps the recent places mounted.
+  // Switching tabs (or going back and forth in one) keeps the recent places mounted, each where
+  // it is in the document.
   const keptRef = useRef<Kept[]>([]);
   const kept = (keptRef.current = keepAlive(
     keptRef.current,
     tab,
     pane.tabs.map((x) => x.id),
   ));
-  const shownKey = kept[0].key;
+  const shownKey = slotKey(tab);
   // A tab dragged from another pane can be dropped onto this pane's content.
   const [dropHere, setDropHere] = useState(false);
   const [fileDrop, setFileDrop] = useState(false);

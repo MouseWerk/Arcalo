@@ -168,7 +168,7 @@ test("a meeting note is created from the appointment and opened", async () => {
   assert.equal(btn, "Besprechungsnotiz");
   await app.browser.execute(() => [...document.querySelectorAll(".calv-detail-actions .btn")].find((b) => /Besprechungsnotiz/.test(b.textContent)).click());
   const title = `Kundentermin Müller ${de(week().at(4, 0))}`;
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue().catch(() => "")) === title, { timeoutMsg: `note ${title} not opened` });
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue().catch(() => "")) === title, { timeoutMsg: `note ${title} not opened` });
   const page = await app.invoke("page_resolve", { title, create: false });
   const doc = await app.invoke("page_get", { id: page.id });
   assert.match(doc.content, /^---\ndatum: \d{4}-\d{2}-\d{2}\nuhrzeit: "09:00–10:30"\nort: "Microsoft Teams-Besprechung"\norganisator: "Müller, Anna"\nteilnehmer: "Müller, Anna, Weiß, Jörg"/);
@@ -231,9 +231,9 @@ test("dark theme and a narrow split pane stay readable", async () => {
   await app.waitText(".menu-item", /Rechts daneben öffnen/);
   await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((b) => /Rechts daneben öffnen/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelectorAll(".pane").length)) === 2, { timeoutMsg: "no split" });
-  await app.waitFor(".pane.active .calv-view-select");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-view-select");
   const overflow = await app.browser.execute(() => {
-    const p = document.querySelector(".pane.active .calv");
+    const p = document.querySelector(".pane.active > .pane-content:not([hidden]) .calv");
     return p.scrollWidth - p.clientWidth;
   });
   assert.ok(overflow <= 1, `no sideways scrolling: ${overflow}`);

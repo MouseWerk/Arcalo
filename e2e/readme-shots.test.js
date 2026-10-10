@@ -21,7 +21,7 @@ const panel = (open) =>
 const menuClick = (label) =>
   app.browser.execute((l) => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes(l))?.click(), label);
 /** A text cursor in the last heading instead of a selected first block. */
-const placeCursor = () => app.click(".pane.active .ProseMirror h2:last-of-type");
+const placeCursor = () => app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror h2:last-of-type");
 /** Shows a page without the cursor blinking in it and without hover states. */
 const settle = async () => {
   await app.browser.execute(() => {
@@ -146,25 +146,25 @@ test("README screenshots", async () => {
   // Board and table, without the side panel so the columns have room.
   await panel(false);
   await openTree("Sprint Go-Live");
-  await app.waitFor(".pane.active .coll .board-col");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll .board-col");
   await settle();
   await app.shot("board-view");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll button")].find((b) => b.innerText.trim() === "Tabelle")?.click());
-  await app.waitFor(".pane.active .coll-table");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Tabelle")?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-table");
   await settle();
   await app.shot("table-view");
 
   // Editor blocks: table of contents, columns, callouts, footnotes.
   await openTree("Konzept Auftragsportal");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await placeCursor();
   await settle();
   await app.shot("editor-blocks");
 
   // Presentation.
   await openTree("Statusbericht KW 39");
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await menuClick("Präsentieren");
   await app.waitFor(".presentation .present-slide");
   await app.keys(["ArrowRight"]);
@@ -192,7 +192,7 @@ test("README screenshots", async () => {
   await app.browser.refresh();
   await ready();
   await openTree("Konzept Auftragsportal");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await placeCursor();
   await settle();
   await app.shot("theme-tokyo-night");

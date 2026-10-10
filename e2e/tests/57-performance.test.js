@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const create = (title, content, parentId = null) => app.invoke("page_create", { parentId, title, icon: null, content });
 async function open(page) {
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === page.title, {
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === page.title, {
     timeout: 30000,
     timeoutMsg: `${page.title} not open`,
   });
@@ -67,12 +67,12 @@ test("a long note opens quickly, with every block, and saves back unchanged", as
   const page = await create("Lange Notiz", LONG);
   const t0 = Date.now();
   await open(page);
-  await app.waitText(".pane.active .ProseMirror", /Letzter Absatz/, 30000);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Letzter Absatz/, 30000);
   const ms = Date.now() - t0;
   // Lexed as a whole this note took far longer; in pieces it is a matter of a few seconds at most.
   assert.ok(ms < 15000, `opened in ${ms} ms`);
   const counts = await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     return {
       h2: pm.querySelectorAll("h2").length,
       tables: pm.querySelectorAll("table").length,
@@ -91,7 +91,7 @@ test("a long note opens quickly, with every block, and saves back unchanged", as
 
   // An edit at the end: the stored note is the original plus that edit.
   await app.browser.execute(() => {
-    const ed = document.querySelector(".pane.active .ProseMirror").editor;
+    const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
     let pos = null;
     ed.state.doc.descendants((n, p) => {
       if (n.isTextblock && n.textContent === "Letzter Absatz.") pos = p + n.nodeSize - 1;
@@ -107,7 +107,7 @@ test("a long note opens quickly, with every block, and saves back unchanged", as
 
 test("typing in the long note keeps tags, callouts and footnotes decorated", async () => {
   await app.browser.execute(() => {
-    const ed = document.querySelector(".pane.active .ProseMirror").editor;
+    const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
     let pos = null;
     ed.state.doc.descendants((n, p) => {
       if (n.isTextblock && n.textContent.startsWith("Absatz 60 ")) pos = p + n.nodeSize - 1;
@@ -116,9 +116,9 @@ test("typing in the long note keeps tags, callouts and footnotes decorated", asy
     ed.chain().focus().setTextSelection(pos).scrollIntoView().run();
   });
   await app.type(" #neu");
-  await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active .ProseMirror .tag[data-tag="neu"]')), { timeout: 5000, timeoutMsg: "new tag not highlighted" });
+  await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .ProseMirror .tag[data-tag="neu"]')), { timeout: 5000, timeoutMsg: "new tag not highlighted" });
   const counts = await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     return { tags: pm.querySelectorAll(".tag").length, callouts: pm.querySelectorAll("blockquote.callout").length, refs: pm.querySelectorAll(".footnote-ref[data-num]").length };
   });
   assert.deepEqual(counts, { tags: SECTIONS + 1, callouts: 2 * SECTIONS, refs: SECTIONS });
@@ -131,7 +131,7 @@ test("a page does not fetch itself again after its own save", async () => {
   await countCalls();
   await app.type(" und mehr");
   await app.browser.waitUntil(async () => (await calls()).includes("page_save"), { timeout: 8000, timeoutMsg: "not saved" });
-  await app.waitFor('.pane.active .editor-wrap[data-save-status="saved"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .editor-wrap[data-save-status="saved"]');
   await sleep(1200);
   const seen = await calls();
   assert.match((await app.invoke("page_get", { id: page.id })).content, /Anfang und mehr/);
@@ -179,7 +179,7 @@ test("the sidebar renders only the rows in view of a large tree; keyboard, hover
   });
   await app.waitFor(`.sidebar .tree-row[data-id="${last}"]`);
   await app.click(`.sidebar .tree-row[data-id="${last}"]`);
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === "Unterseite 399", { timeout: 8000, timeoutMsg: "click did not open the page" });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Unterseite 399", { timeout: 8000, timeoutMsg: "click did not open the page" });
   assert.ok((await app.browser.execute(() => document.querySelectorAll(".sidebar .tree [role=treeitem]").length)) < 150);
   await app.shot("perf-sidebar-virtual");
 
@@ -247,13 +247,13 @@ test("code in a language loaded on demand is highlighted, without a save", async
   const before = (await app.invoke("page_get", { id: page.id })).updated_at;
   await countCalls();
   await open(page);
-  await app.waitFor(".pane.active pre code .hljs-keyword");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) pre code .hljs-keyword");
   await app.browser.waitUntil(
-    async () => app.browser.execute(() => [...document.querySelectorAll(".pane.active pre")][0]?.querySelector(".hljs-keyword")?.textContent === "fn"),
+    async () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) pre")][0]?.querySelector(".hljs-keyword")?.textContent === "fn"),
     { timeout: 8000, timeoutMsg: "rust not highlighted" },
   );
   await sleep(1200);
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .editor-wrap")?.dataset.saveStatus), "saved");
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .editor-wrap")?.dataset.saveStatus), "saved");
   assert.ok(!(await calls()).includes("page_save"), "loading a grammar saves nothing");
   assert.equal((await app.invoke("page_get", { id: page.id })).updated_at, before);
 });

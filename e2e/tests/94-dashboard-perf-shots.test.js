@@ -88,24 +88,24 @@ test("a large workspace: ten widgets, one call, rendered within 150 ms of the an
   await app.invoke("dashboard_save", { dashboard: { version: 2, boards, active: "perf", notes: {} } });
   await app.keys(["Control", "t"]);
   await reload();
-  await app.waitFor(".pane.active .dw[data-widget='q2'] .dw-table", 30000);
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .dw:not([data-widget='proposal']) .dw-skel")).length === 0, { timeout: 30000, timeoutMsg: "widgets still loading" });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dw[data-widget='q2'] .dw-table", 30000);
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .dw:not([data-widget='proposal']) .dw-skel")).length === 0, { timeout: 30000, timeoutMsg: "widgets still loading" });
   const perf = await app.browser.execute(() => window.__arcaloDashPerf ?? []);
   assert.ok(perf.length >= 1, "no timing recorded");
   const first = perf[0];
   // The ten widgets in view need 11 parts („Heute“ also asks for the timer's references),
   // all in the first call; the widget far below is not loaded yet.
   assert.equal(first.parts, 11, JSON.stringify(perf));
-  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active .dw[data-widget='proposal'] .dw-proposal")), false, "off-screen widget loaded early");
+  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .dw[data-widget='proposal'] .dw-proposal")), false, "off-screen widget loaded early");
   console.log(`dashboard_data: backend ${first.backendMs.toFixed(1)} ms, round trip ${first.roundTripMs.toFixed(1)} ms, commit ${first.commitMs.toFixed(1)} ms, painted ${first.renderMs.toFixed(1)} ms after the answer`);
   assert.ok(first.renderMs < 150, `rendered ${first.renderMs} ms after the data arrived`);
   // Scrolling down loads the rest in another single call.
   await app.browser.execute(() => {
-    const el = document.querySelector(".pane.active .dw[data-widget='proposal']");
+    const el = document.querySelector(".pane.active > .pane-content:not([hidden]) .dw[data-widget='proposal']");
     const home = el.closest(".home");
     home.scrollTop += el.getBoundingClientRect().top - home.getBoundingClientRect().top - 100;
   });
-  await app.waitFor(".pane.active .dw[data-widget='proposal'] .dw-proposal", 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dw[data-widget='proposal'] .dw-proposal", 15000);
   const after = await app.browser.execute(() => window.__arcaloDashPerf);
   assert.ok(after.some((p) => p.parts === 1), JSON.stringify(after));
   // A booking elsewhere reloads the widgets showing time entries, in one call.
@@ -129,7 +129,7 @@ const setTheme = async (theme) => {
 test("screenshots of the presets and the gallery, light and dark, wide and narrow", async () => {
   await app.invoke("dashboard_save", { dashboard: { version: 0, boards: [], active: "", notes: {} } });
   await reload();
-  await app.waitFor(".pane.active .dw[data-widget='today']");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dw[data-widget='today']");
   // A realistic day: a booking this morning and a note with tasks.
   const now = new Date();
   const tree = await app.invoke("wbs_tree");
@@ -144,27 +144,27 @@ test("screenshots of the presets and the gallery, light and dark, wide and narro
       ["lead", "Projektleitung"],
       ["minimal", "Minimal"],
     ]) {
-      await clickText(".pane.active .dash-bar button", "Anpassen");
-      await clickText(".pane.active .dash-bar button", "Vorlage");
+      await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Anpassen");
+      await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Vorlage");
       await clickText(".menu [role^=menuitem]", preset[1]);
-      await clickText(".pane.active .dash-bar button", "Fertig");
-      await app.browser.waitUntil(async () => !(await (await app.$(".pane.active .dash.editing")).isExisting()));
+      await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Fertig");
+      await app.browser.waitUntil(async () => !(await (await app.$(".pane.active > .pane-content:not([hidden]) .dash.editing")).isExisting()));
       for (const width of [1480, 900]) {
         await app.browser.setWindowSize(width, 1000);
         await app.browser.pause(250);
-        await app.browser.waitUntil(async () => (await app.$$(".pane.active .dw-skel")).length === 0, { timeout: 15000 });
+        await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .dw-skel")).length === 0, { timeout: 15000 });
         await app.browser.execute(() => document.querySelector(".home").scrollTo(0, 0));
         await app.shot(`94-${preset[0]}-${theme}-${width}`);
       }
       await app.browser.setWindowSize(1480, 1000);
     }
-    await clickText(".pane.active .dash-bar button", "Anpassen");
-    await clickText(".pane.active .dash-bar button", "Widget hinzufügen");
+    await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Anpassen");
+    await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Widget hinzufügen");
     await app.waitFor(".dash-gallery");
     await app.shot(`94-gallery-${theme}`);
     await app.keys(["Escape"]);
     await app.shot(`94-edit-${theme}`);
-    await clickText(".pane.active .dash-bar button", "Abbrechen");
+    await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Abbrechen");
   }
   await app.browser.setWindowSize(1480, 920);
   assert.deepEqual(await app.consoleErrors(), []);

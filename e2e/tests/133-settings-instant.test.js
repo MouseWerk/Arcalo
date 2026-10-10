@@ -17,16 +17,16 @@ after(async () => app?.close());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function openSection(id) {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
-  await app.browser.execute((s) => document.querySelector(`.pane.active .settings-nav-item[data-section="${s}"]`).click(), id);
-  await app.waitFor(`.pane.active .settings-nav-item.active[data-section="${id}"]`);
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
+  await app.browser.execute((s) => document.querySelector(`.pane.active > .pane-content:not([hidden]) .settings-nav-item[data-section="${s}"]`).click(), id);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) .settings-nav-item.active[data-section="${id}"]`);
 }
 const toastTitles = () => app.browser.execute(() => [...document.querySelectorAll(".toast-title")].map((t) => t.textContent));
 
 test("a switch applies at once, without a save bar, and „Rückgängig“ takes it back", async () => {
   await openSection("editor");
-  const sw = '.pane.active button[role="switch"][aria-label="Typografische Anführungszeichen"]';
+  const sw = '.pane.active > .pane-content:not([hidden]) button[role="switch"][aria-label="Typografische Anführungszeichen"]';
   const before = (await storedSettings(app)).editor.smart_quotes;
   await app.click(sw);
   await settingsSettled(app);
@@ -44,7 +44,7 @@ test("a switch applies at once, without a save bar, and „Rückgängig“ takes
 
 test("typing is one change: saved once it pauses, one undo restores the text before", async () => {
   await openSection("ai");
-  const area = await app.waitFor(".pane.active textarea");
+  const area = await app.waitFor(".pane.active > .pane-content:not([hidden]) textarea");
   await area.click();
   await app.type("Antworte kurz.");
   await sleep(1200);
@@ -62,15 +62,15 @@ test("an address applies on Enter, an invalid one stays with an inline error", a
   const mode = (await storedSettings(app)).network.profiles[0].mode;
   await openSection("network");
   // „Manuell“ waits for an address before it is stored (a manual proxy needs one).
-  await app.browser.execute(() => [...document.querySelectorAll('.pane.active [role="radiogroup"][aria-label="Proxy-Modus"] [role="radio"]')].find((b) => b.textContent.trim() === "Manuell").click());
+  await app.browser.execute(() => [...document.querySelectorAll('.pane.active > .pane-content:not([hidden]) [role="radiogroup"][aria-label="Proxy-Modus"] [role="radio"]')].find((b) => b.textContent.trim() === "Manuell").click());
   await settingsSettled(app);
   assert.equal((await storedSettings(app)).network.profiles[0].mode, mode, "not stored without an address");
-  const field = '.pane.active input[aria-label="HTTP-Proxy"]';
+  const field = '.pane.active > .pane-content:not([hidden]) input[aria-label="HTTP-Proxy"]';
   const el = await app.waitFor(field);
   await el.click();
   await app.type("proxy firma");
   await app.keys(["Enter"]);
-  await app.waitText(".pane.active .field-error", /Ungültige Adresse/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .field-error", /Ungültige Adresse/);
   assert.equal(await app.browser.execute((f) => document.querySelector(f).getAttribute("aria-invalid"), field), "true");
   await settingsSettled(app);
   assert.equal((await storedSettings(app)).network.profiles[0].http_proxy, "", "not stored");
@@ -84,7 +84,7 @@ test("an address applies on Enter, an invalid one stays with an inline error", a
   await settingsSettled(app);
   const net = (await storedSettings(app)).network.profiles[0];
   assert.deepEqual([net.mode, net.http_proxy], ["manual", "http://proxy.firma.de:8080"], "mode and address stored together (normalized)");
-  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active .field-error")), false);
+  assert.equal(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .field-error")), false);
   await app.shot("133-network-inline");
   const back = await storedSettings(app);
   await app.invoke("settings_save", { settings: { ...back, network: { ...back.network, profiles: back.network.profiles.map((p, i) => (i ? p : { ...p, mode, http_proxy: "" })) } } });
@@ -93,7 +93,7 @@ test("an address applies on Enter, an invalid one stays with an inline error", a
 
 test("switching time tracking off applies at once and keeps its undo longer", async () => {
   await openSection("time");
-  await app.click('.pane.active button[role="switch"][aria-label="Zeiterfassung verwenden"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) button[role="switch"][aria-label="Zeiterfassung verwenden"]');
   await settingsSettled(app);
   assert.equal((await storedSettings(app)).time.enabled, false);
   await app.waitText(".toast-title", /Einstellung geändert/);
@@ -108,7 +108,7 @@ test("switching time tracking off applies at once and keeps its undo longer", as
 
 test("„Abschnitt zurücksetzen“ restores the defaults of the section, with undo", async () => {
   await openSection("editor");
-  const field = '.pane.active input[aria-label="Automatisch speichern nach"]';
+  const field = '.pane.active > .pane-content:not([hidden]) input[aria-label="Automatisch speichern nach"]';
   await app.browser.execute((f) => {
     const i = document.querySelector(f);
     i.focus();
@@ -119,7 +119,7 @@ test("„Abschnitt zurücksetzen“ restores the defaults of the section, with u
   await settingsSettled(app);
   assert.equal((await storedSettings(app)).editor.autosave_ms, 1200);
   await app.dismissToasts();
-  await app.click(".pane.active .settings-reset");
+  await app.click(".pane.active > .pane-content:not([hidden]) .settings-reset");
   await settingsSettled(app);
   const reset = await storedSettings(app);
   assert.notEqual(reset.editor.autosave_ms, 1200, "back to the default");
@@ -132,22 +132,22 @@ test("„Abschnitt zurücksetzen“ restores the defaults of the section, with u
 
 test("the grouped menu: collapsible, remembered, never over the search, scrolls inside at 760 and 920 px", async () => {
   await openSection("appearance");
-  const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-nav-group-label")].map((g) => g.textContent.trim()));
+  const groups = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-nav-group-label")].map((g) => g.textContent.trim()));
   assert.deepEqual(groups, ["Allgemein", "Arbeiten", "KI & Sprache", "Daten & Sicherheit", "System"]);
-  const count = await app.browser.execute(() => document.querySelectorAll(".pane.active .settings-nav-item").length);
+  const count = await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-nav-item").length);
   assert.equal(count, 23, "21 sections, „Sicherheit“ (1.10) and „Suche“ (1.15)");
   // Collapse „Arbeiten“: its items hide, the state survives a reload.
-  await app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
-  const hidden = () => app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-items').hidden);
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
+  const hidden = () => app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-items').hidden);
   assert.equal(await hidden(), true);
   await app.browser.execute(() => location.reload());
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await openSection("appearance");
   assert.equal(await hidden(), true, "remembered");
   // The search still finds a section of the collapsed group.
-  await app.browser.execute(() => document.querySelector(".pane.active .settings-nav .settings-search input").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-nav .settings-search input").focus());
   await app.type("Jira");
-  await app.waitFor('.pane.active .settings-hit-section[data-section="jira"]:not([hidden])');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .settings-hit-section[data-section="jira"]:not([hidden])');
   await app.keys(["Escape"]);
   // Opening a section of a collapsed group shows the group.
   await openSection("jira");
@@ -157,7 +157,7 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
     await app.browser.setWindowSize(w, h);
     await sleep(350);
     const m = await app.browser.execute(() => {
-      const nav = document.querySelector(".pane.active .settings-nav");
+      const nav = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-nav");
       if (!nav || nav.offsetParent === null) return { shown: false };
       const search = nav.querySelector(".settings-search").getBoundingClientRect();
       const list = nav.querySelector(".settings-nav-list");
@@ -177,6 +177,6 @@ test("the grouped menu: collapsible, remembered, never over the search, scrolls 
   await sleep(300);
   await app.shot("133-settings-grouped-920");
   // Expanded again for the next runs.
-  await app.browser.execute(() => document.querySelector('.pane.active .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .settings-nav-group[data-group="work"] .settings-nav-group-label').click());
   assert.equal(await hidden(), false);
 });

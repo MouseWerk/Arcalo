@@ -43,9 +43,9 @@ test("long notes get a scroll outline with heading marks", async () => {
   await openFromTree("Lange Seite");
   await app.waitFor(".scroll-outline");
   await app.browser.waitUntil(async () => (await app.$$(".so-mark")).length === 12, { timeoutMsg: "12 heading marks" });
-  const before = await app.browser.execute(() => document.querySelector(".pane.active .page-scroll").scrollTop);
+  const before = await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll").scrollTop);
   await app.browser.execute(() => document.querySelectorAll(".so-mark")[9].click());
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-scroll").scrollTop)) > before + 500, { timeoutMsg: "did not scroll" });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll").scrollTop)) > before + 500, { timeoutMsg: "did not scroll" });
   await app.browser.waitUntil(async () => (await app.$$(".so-mark.on")).length === 1);
   await app.shot("scroll-outline");
 });

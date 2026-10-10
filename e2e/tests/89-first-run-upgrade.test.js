@@ -27,8 +27,8 @@ const overlay = () => app.browser.execute(() => !!document.querySelector(".fr-ov
 const hintToasts = () => app.browser.execute(() => [...document.querySelectorAll(".toast")].filter((t) => /1\.6/.test(t.textContent)).length);
 
 async function openAbout() {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="about"]').click());
   await app.waitFor(".fr-rerun");
 }

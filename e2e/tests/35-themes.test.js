@@ -22,8 +22,8 @@ const bg = (sel) => app.browser.execute((s) => getComputedStyle(document.querySe
 const settings = async () => (await app.invoke("settings_get")).settings;
 
 async function openAppearance() {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="appearance"]').click());
   await app.waitText(".settings-head h1", /Darstellung/);
 }

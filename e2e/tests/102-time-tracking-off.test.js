@@ -179,25 +179,25 @@ test("Kalender: no „Zeit buchen“, no booking state, no booked hours", async 
 
 test("start page: no time widgets, no hours in „Heute“, a gallery without them", async () => {
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-kind="today"] .dw-today', 15000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="today"] .dw-today', 15000);
   await app.browser.pause(500);
-  const kinds = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .dw[data-kind]")].map((w) => w.dataset.kind));
+  const kinds = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dw[data-kind]")].map((w) => w.dataset.kind));
   for (const k of ["week", "budget", "timer", "proposal"]) assert.ok(!kinds.includes(k), `${k} hidden: ${kinds}`);
-  assert.ok(!(await has(".pane.active .dw-today-hours")), "no hours ring");
-  assert.ok(!(await app.browser.execute(() => [...document.querySelectorAll(".pane.active .dw-actions button")].some((b) => /Woche/.test(b.textContent)))));
+  assert.ok(!(await has(".pane.active > .pane-content:not([hidden]) .dw-today-hours")), "no hours ring");
+  assert.ok(!(await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dw-actions button")].some((b) => /Woche/.test(b.textContent)))));
   // The stored board still has them (they come back when switched on).
   const board = (await app.invoke("settings_get")).settings.dashboard;
   if (board?.boards?.length) assert.ok(board.boards.some((b) => b.widgets.some((w) => ["week", "budget"].includes(w.kind))), "kept in the layout");
   await app.shot("time-off-dashboard");
-  await clickText(".pane.active .dash-bar button", /^Anpassen$/);
-  await clickText(".pane.active button", /Widget hinzufügen/);
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", /^Anpassen$/);
+  await clickText(".pane.active > .pane-content:not([hidden]) button", /Widget hinzufügen/);
   await app.waitFor(".dash-gallery");
   const gallery = await app.browser.execute(() => [...document.querySelectorAll(".dash-gallery-card")].map((c) => c.dataset.kind));
   for (const k of ["week", "budget", "timer", "proposal", "project"]) assert.ok(!gallery.includes(k), `${k} not offered`);
   assert.ok(gallery.includes("tasks"));
   await app.shot("time-off-gallery");
   await app.keys(["Escape"]);
-  await clickText(".pane.active .dash-bar button", /^Abbrechen$/);
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", /^Abbrechen$/);
 });
 
 test("Tagesrückblick without the Zeit section and booking states", async () => {
@@ -232,11 +232,11 @@ test("switched on again, everything is back and the entries are intact", async (
   const info = await app.invoke("desktop_info");
   if (info.tray_menu) assert.ok(info.tray_menu.includes("stop") && info.tray_menu.includes("resume"));
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-kind="today"] .dw-today', 15000);
-  await app.waitFor(".pane.active .dw-today-hours");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="today"] .dw-today', 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dw-today-hours");
   await app.click('.ribbon [aria-label^="Zeiterfassung"]');
-  await app.waitFor(".pane.active .ts-grid, .pane.active .timesheet", 15000).catch(() => {});
-  assert.ok(!(await has(".pane.active .empty-state")) || !(await app.text(".pane.active .view-body")).includes("ausgeschaltet"));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ts-grid, .pane.active > .pane-content:not([hidden]) .timesheet", 15000).catch(() => {});
+  assert.ok(!(await has(".pane.active > .pane-content:not([hidden]) .empty-state")) || !(await app.text(".pane.active > .pane-content:not([hidden]) .view-body")).includes("ausgeschaltet"));
   // Booking works again.
   const out = await app.invoke("log_time", { line: "/zeit NP-8801/1020 0.5h 'Wieder an'", pageId: null });
   assert.ok(out.entry.id > 0);

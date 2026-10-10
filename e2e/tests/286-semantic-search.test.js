@@ -162,7 +162,7 @@ test("the sidebar finds a page by meaning, labelled „ähnlich“ with its pass
   await theme(app, "light");
   // Opening it.
   await app.browser.execute(() => [...document.querySelectorAll(".side-result.similar")].find((r) => r.textContent.includes("Dachsanierung"))?.click());
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 });
 
 test("„Nur exakt“ hides the meaning hits, in the sidebar and in the palette", async () => {

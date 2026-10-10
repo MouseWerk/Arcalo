@@ -119,7 +119,7 @@ test("a task of the dashboard is dragged into the week; a deleted block comes ba
     dashboard: { version: 2, active: "plan", notes: {}, boards: [{ id: "plan", name: "Plan", widgets: [{ id: "tasks", kind: "tasks", x: 0, y: 0, w: 6, h: 8, config: {} }] }] },
   });
   await app.keys(["Control", "t"]);
-  const task = ".pane.active .dw-task";
+  const task = ".pane.active > .pane-content:not([hidden]) .dw-task";
   await app.browser.waitUntil(() => app.browser.execute((s) => [...document.querySelectorAll(s)].some((li) => /Write the report/.test(li.textContent)), task), { timeout: 15000, timeoutMsg: "task widget" });
   const payload = await app.browser.execute((s) => {
     const li = [...document.querySelectorAll(s)].find((x) => /Write the report/.test(x.textContent));

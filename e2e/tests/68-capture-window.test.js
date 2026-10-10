@@ -127,7 +127,7 @@ test("dark theme and the settings of quick capture", async () => {
 
   // Settings → Desktop shows the group.
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].find((b) => b.textContent.includes("Desktop"))?.click());
   await app.waitText(".settings-head h1", /Desktop/);
   await app.waitFor('[aria-label="Standardziel der Schnellerfassung"]');

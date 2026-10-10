@@ -33,19 +33,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const real = (problems) => problems.filter((p) => !p.startsWith("select too narrow"));
 
 async function openSettings() {
-  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active .settings")))) await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  if (!(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .settings")))) await app.keys(["Control", ","]);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
 }
 const search = (q) =>
   app.browser.execute((v) => {
     // The visible search field (menu or top bar).
-    const input = [...document.querySelectorAll(".pane.active .settings-search input")].find((i) => i.offsetParent !== null);
+    const input = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-search input")].find((i) => i.offsetParent !== null);
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, v);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }, q);
-const visibleSections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-hit-section:not([hidden])")].map((s) => s.dataset.section));
+const visibleSections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-hit-section:not([hidden])")].map((s) => s.dataset.section));
 const visibleRows = () =>
-  app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-hit-section:not([hidden]) .set-group:not([hidden]) .set-row-label")].map((l) => l.textContent));
+  app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-hit-section:not([hidden]) .set-group:not([hidden]) .set-row-label")].map((l) => l.textContent));
 
 test("the search filters rows across all sections", async () => {
   await openSettings();
@@ -77,19 +77,19 @@ test("the search filters rows across all sections", async () => {
   // Enter opens the first section with a hit; the search is cleared.
   await search("zeilenbreite");
   await app.browser.waitUntil(async () => (await visibleSections()).length > 0);
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings-search input")].find((i) => i.offsetParent !== null).focus());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings-search input")].find((i) => i.offsetParent !== null).focus());
   await app.keys(["Enter"]);
   await app.waitText(".settings-head h1", /Darstellung/);
   assert.equal(await app.browser.execute(() => document.querySelector(".settings-nav-item.active")?.dataset.section), "appearance");
   // Ctrl+F in the settings goes to the search; Escape clears it.
   // (Keyboard focus somewhere in the settings, here the menu.)
-  await app.browser.execute(() => document.querySelector(".pane.active .settings-nav-item.active").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-nav-item.active").focus());
   await app.keys(["Control", "f"]);
   await app.browser.waitUntil(async () => app.browser.execute(() => document.activeElement?.matches(".settings-search input")), { timeoutMsg: "Ctrl+F did not focus the search" });
   await app.type("sicher");
   await app.browser.waitUntil(async () => (await visibleSections()).length > 0, { timeoutMsg: "typed search" });
   await app.keys(["Escape"]);
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .settings-search input").value)) === "", { timeoutMsg: "Escape did not clear" });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-search input").value)) === "", { timeoutMsg: "Escape did not clear" });
 });
 
 test("narrow panes: a section dropdown instead of the menu, nothing sideways or cut off", async () => {
@@ -98,7 +98,7 @@ test("narrow panes: a section dropdown instead of the menu, nothing sideways or 
     await app.browser.setWindowSize(w, h);
     await sleep(300);
     const layout = await app.browser.execute(() => {
-      const settings = document.querySelector(".pane.active .settings");
+      const settings = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings");
       const shown = (el) => !!el && el.offsetParent !== null;
       return {
         nav: shown(settings.querySelector(".pane-content:not([hidden]) .settings-nav")),
@@ -111,25 +111,25 @@ test("narrow panes: a section dropdown instead of the menu, nothing sideways or 
     // Every section through the dropdown: no horizontal overflow, no clipped or overlapping controls.
     const sections = await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item")].map((b) => b.dataset.section));
     for (const s of sections) {
-      await app.select(".pane.active .settings-section-select", s);
+      await app.select(".pane.active > .pane-content:not([hidden]) .settings-section-select", s);
       await sleep(150);
-      const problems = real(await app.browser.execute(auditLayout, ".pane.active .settings"));
+      const problems = real(await app.browser.execute(auditLayout, ".pane.active > .pane-content:not([hidden]) .settings"));
       assert.deepEqual(problems, [], `${s} at ${w}px`);
       const sideways = await app.browser.execute(() => {
-        const scroll = document.querySelector(".pane.active .settings-scroll");
-        const settings = document.querySelector(".pane.active .settings");
+        const scroll = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-scroll");
+        const settings = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings");
         return [scroll.scrollWidth - scroll.clientWidth, settings.scrollWidth - settings.clientWidth, document.documentElement.scrollWidth - document.documentElement.clientWidth];
       });
       assert.deepEqual(sideways, [0, 0, 0], `${s} at ${w}px scrolls sideways`);
     }
-    await app.select(".pane.active .settings-section-select", "appearance");
+    await app.select(".pane.active > .pane-content:not([hidden]) .settings-section-select", "appearance");
     if (w === 900) await app.shot("settings-narrow-appearance");
   }
   // Wide again: the menu is back, the dropdown gone.
   await app.browser.setWindowSize(1480, 920);
   await sleep(300);
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .settings-nav").offsetParent !== null), true);
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .settings-topbar").offsetParent === null), true);
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-nav").offsetParent !== null), true);
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-topbar").offsetParent === null), true);
 });
 
 test("Über: the update row wraps its buttons and long paths shorten in the middle", async () => {
@@ -151,13 +151,13 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
     await app.browser.setWindowSize(w, h);
     await sleep(300);
     const r = await app.browser.execute((dir) => {
-      const row = [...document.querySelectorAll(".pane.active .set-row")].find((x) => x.querySelector(".update-state"));
+      const row = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .set-row")].find((x) => x.querySelector(".update-state"));
       const card = row.closest(".set-group-body").getBoundingClientRect();
       const buttons = [...row.querySelectorAll("button")].map((b) => {
         const box = b.getBoundingClientRect();
         return { text: b.textContent.trim(), inside: box.left >= card.left - 0.5 && box.right <= card.right + 0.5, whole: b.scrollWidth <= b.clientWidth + 1 };
       });
-      const path = [...document.querySelectorAll(".pane.active .path-text")].find((p) => p.title === dir);
+      const path = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .path-text")].find((p) => p.title === dir);
       const pbox = path.getBoundingClientRect();
       const pcard = path.closest(".set-group-body").getBoundingClientRect();
       const head = path.querySelector(".path-head");
@@ -173,12 +173,12 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
     assert.equal(r.path.tail, dataDir.slice(dataDir.lastIndexOf("/")));
     assert.equal(r.path.text, dataDir, "the whole path is there to select and copy");
     if (w === 900) assert.ok(r.path.cut, "shortened in the middle when narrow");
-    assert.deepEqual(real(await app.browser.execute(auditLayout, ".pane.active .settings")), [], `${w}px`);
+    assert.deepEqual(real(await app.browser.execute(auditLayout, ".pane.active > .pane-content:not([hidden]) .settings")), [], `${w}px`);
     await app.shot(`settings-about-${w}`);
   }
   // The copy button confirms.
-  await app.click(".pane.active .path-text.data-dir + button");
-  await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active .path-value button[aria-label="Kopiert"]')), { timeoutMsg: "no copy feedback" });
+  await app.click(".pane.active > .pane-content:not([hidden]) .path-text.data-dir + button");
+  await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .path-value button[aria-label="Kopiert"]')), { timeoutMsg: "no copy feedback" });
   await app.browser.execute(() => window.__arcaloUpdates.setState({ available: null, status: null }));
   await app.browser.setWindowSize(1480, 920);
 });
@@ -186,7 +186,7 @@ test("Über: the update row wraps its buttons and long paths shorten in the midd
 test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () => {
   await openSettings();
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="appearance"]').click());
-  const scale = '.pane.active [role="combobox"][aria-label="Skalierung"]';
+  const scale = '.pane.active > .pane-content:not([hidden]) [role="combobox"][aria-label="Skalierung"]';
   await app.waitFor(scale);
   await app.browser.execute((s) => document.querySelector(s).scrollIntoView({ block: "center" }), scale);
   const value =() => app.browser.execute((s) => document.querySelector(s).dataset.value, scale);
@@ -221,7 +221,7 @@ test("the dropdown: keyboard, type-ahead, Escape and a click outside", async () 
   // A click outside closes it.
   await app.keys([" "]);
   await app.browser.waitUntil(open);
-  await app.click(".pane.active .settings-head h1");
+  await app.click(".pane.active > .pane-content:not([hidden]) .settings-head h1");
   await app.browser.waitUntil(async () => !(await open()), { timeoutMsg: "click outside did not close" });
   // Back to 100 %: typing a whole label while closed picks it, like a native select.
   await app.browser.execute((s) => document.querySelector(s).focus(), scale);

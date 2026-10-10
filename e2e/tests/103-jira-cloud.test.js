@@ -153,19 +153,19 @@ test("the Jira widgets on the start page", async () => {
   await reload();
   // A new tab shows the start page.
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-widget="jira"] .dwj-row', 15000);
-  assert.equal(await count('.pane.active .dw[data-widget="jira"] .dwj-row'), 4);
-  assert.match(await app.text('.pane.active .dw[data-widget="jira_query"]'), /OPS-8[\s\S]*Rotate certificates[\s\S]*Tom/);
-  await app.waitText('.pane.active .dw[data-widget="jira_sprint"]', /Sprint 4[\s\S]*0 von 3 erledigt/, 15000);
-  assert.ok(await (await app.$('.pane.active .dw[data-widget="jira_sprint"] path.dwj-actual')).isExisting(), "burndown drawn");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] .dwj-row', 15000);
+  assert.equal(await count('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] .dwj-row'), 4);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_query"]'), /OPS-8[\s\S]*Rotate certificates[\s\S]*Tom/);
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"]', /Sprint 4[\s\S]*0 von 3 erledigt/, 15000);
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"] path.dwj-actual')).isExisting(), "burndown drawn");
   await app.dismissToasts();
   await app.shot("103-widgets-light");
   await setTheme("dark");
-  await app.waitFor('.pane.active .dw[data-widget="jira_sprint"] path.dwj-actual', 15000);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira_sprint"] path.dwj-actual', 15000);
   await sleep(300);
   await app.shot("103-widgets-dark");
   await setTheme("light");
   // A click on a row opens the issue's note.
-  await app.click('.pane.active .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="jira"] [data-issue-row="OPS-7"]');
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .tab.active")?.textContent ?? "")).includes("OPS-7 Nightly backup job"), { timeout: 10000, timeoutMsg: "note not opened" });
 });

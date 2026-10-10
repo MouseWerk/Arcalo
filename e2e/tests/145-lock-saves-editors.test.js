@@ -28,7 +28,7 @@ test("the idle lock saves the text typed right before it", async () => {
   await app.invoke("applock_configure", { config: { ...s.config, mode: "idle", idle_minutes: 5 }, pin: PIN });
   const page = await app.invoke("page_create", { title: "Sperrnotiz", parentId: null, content: "Erste Zeile" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === "Sperrnotiz", { timeoutMsg: "page not open" });
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Sperrnotiz", { timeoutMsg: "page not open" });
   await app.caretToEnd();
   await app.keys(["Enter"]);
   await app.type(TYPED);

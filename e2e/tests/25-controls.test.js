@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Operates the controls of the open settings section in the page; returns what did not react. */
 function sweepSection(done) {
-  const body = document.querySelector(".pane.active .settings-body");
+  const body = document.querySelector(".pane.active > .pane-content:not([hidden]) .settings-body");
   const out = { problems: [], switches: 0, radios: 0, selects: 0 };
   const label = (el) => el.getAttribute("aria-label") || el.closest(".set-row")?.querySelector(".set-row-label")?.textContent || el.textContent;
   const wait = () => new Promise((r) => setTimeout(r, 60));
@@ -136,7 +136,7 @@ test("settings: every switch, option and dropdown reacts and applies at once; un
   }
   // „Rückgängig“ in the toast restores the state before one change.
   await app.browser.execute(() => document.querySelector('.settings-nav-item[data-section="notifications"]').click());
-  const sw = await app.waitFor('.pane.active .settings-body button[role="switch"]');
+  const sw = await app.waitFor('.pane.active > .pane-content:not([hidden]) .settings-body button[role="switch"]');
   const label = await sw.getAttribute("aria-label");
   await sw.click();
   await settingsSettled(app);
@@ -150,7 +150,7 @@ test("settings: every switch, option and dropdown reacts and applies at once; un
   await settingsSettled(app);
   await app.dismissToasts();
   const changed = (await app.invoke("settings_get")).settings.notifications;
-  await app.click(".pane.active .settings-reset");
+  await app.click(".pane.active > .pane-content:not([hidden]) .settings-reset");
   await settingsSettled(app);
   await app.waitText(".toast-title", /Abschnitt zurückgesetzt/);
   assert.deepEqual((await app.invoke("settings_get")).settings.notifications, JSON.parse(saved).notifications, "defaults again");
@@ -165,20 +165,20 @@ test("settings: every switch, option and dropdown reacts and applies at once; un
 test("time tracking: week navigation, new entry, release, bulk actions, export, quick booking", async () => {
   await app.click('.ribbon [aria-label="Zeiterfassung"]');
   // The week overview only shows with bookings or gaps (none on a Monday morning); the navigation always.
-  await app.waitFor(".pane.active .week-nav");
-  const week = () => app.browser.execute(() => document.querySelector(".pane.active .view-sub").textContent);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .week-nav");
+  const week = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .view-sub").textContent);
   const kw = await week();
-  await app.click('.pane.active [aria-label="Vorherige Woche"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Vorherige Woche"]');
   await app.browser.waitUntil(async () => (await week()) !== kw, { timeoutMsg: "previous week" });
-  await app.click('.pane.active [aria-label="Nächste Woche"]');
-  await app.click('.pane.active [aria-label="Nächste Woche"]');
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .week-nav button")].find((b) => /Diese Woche/.test(b.textContent)).click());
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Nächste Woche"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Nächste Woche"]');
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .week-nav button")].find((b) => /Diese Woche/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => (await week()) === kw, { timeoutMsg: "back to this week" });
 
   // New entry through the dialog.
-  const count = () => app.browser.execute(() => document.querySelectorAll(".pane.active .entry").length);
+  const count = () => app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry").length);
   const n0 = await count();
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .view-actions button")].find((b) => /Eintrag/.test(b.textContent)).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .view-actions button")].find((b) => /Eintrag/.test(b.textContent)).click());
   await app.waitFor(".dialog");
   // The first dropdown (Netzplan): open it and choose the first real option.
   const netzplan = '.dialog [role="combobox"]';
@@ -195,23 +195,23 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
   });
   await app.browser.execute(() => [...document.querySelectorAll(".dialog button")].find((b) => /Buchen|Speichern/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => (await count()) === n0 + 1, { timeoutMsg: "entry added" });
-  assert.ok(await app.browser.execute(() => [...document.querySelectorAll(".pane.active .entry-desc")].some((e) => /Kontrolltest Buchung/.test(e.textContent))));
+  assert.ok(await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry-desc")].some((e) => /Kontrolltest Buchung/.test(e.textContent))));
 
   // Release through the row menu, then back to draft.
-  const row = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .entry")].findIndex((e) => /Kontrolltest Buchung/.test(e.textContent)));
-  const status = async () => app.browser.execute((i) => document.querySelectorAll(".pane.active .entry")[i].querySelector(".badge:not(.entry-la .badge)")?.textContent, await row());
-  await app.browser.execute((i) => document.querySelectorAll(".pane.active .entry")[i].querySelector('[aria-label^="Aktionen"]').click(), await row());
+  const row = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry")].findIndex((e) => /Kontrolltest Buchung/.test(e.textContent)));
+  const status = async () => app.browser.execute((i) => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry")[i].querySelector(".badge:not(.entry-la .badge)")?.textContent, await row());
+  await app.browser.execute((i) => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry")[i].querySelector('[aria-label^="Aktionen"]').click(), await row());
   await app.browser.execute(() => [...document.querySelectorAll(".menu-item, [role^=menuitem]")].find((b) => /Freigeben/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => /Freigegeben/.test((await status()) ?? ""), { timeoutMsg: "released" });
 
   // Bulk: select it, back to draft.
-  await app.browser.execute((i) => document.querySelectorAll(".pane.active .entry")[i].querySelector("input.check").click(), await row());
-  await app.waitText(".pane.active .bulk", /1 ausgewählt/);
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .bulk button")].find((b) => /Entwurf/.test(b.textContent)).click());
+  await app.browser.execute((i) => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .entry")[i].querySelector("input.check").click(), await row());
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .bulk", /1 ausgewählt/);
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .bulk button")].find((b) => /Entwurf/.test(b.textContent)).click());
   await app.browser.waitUntil(async () => /Entwurf/.test((await status()) ?? ""), { timeoutMsg: "bulk draft" });
 
   // Export dialog: every format shows its preview; the switches toggle.
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .view-actions button")].find((b) => /Export/.test(b.textContent)).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .view-actions button")].find((b) => /Export/.test(b.textContent)).click());
   await app.waitFor(".dialog .segmented");
   for (const f of ["Jira", "CSV", "JSON", "SAP CATS"]) {
     await app.browser.execute((f) => [...document.querySelectorAll(".dialog .segmented button")].find((b) => b.textContent === f).click(), f);
@@ -229,7 +229,7 @@ test("time tracking: week navigation, new entry, release, bulk actions, export, 
 
   // Quick booking in the timer card.
   const n1 = await count();
-  const quick = await app.$(".pane.active .quick-book input");
+  const quick = await app.$(".pane.active > .pane-content:not([hidden]) .quick-book input");
   await quick.setValue("NP-8801/1020 0.5h #DEV Schnellbuchung Kontrolle");
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await count()) === n1 + 1, { timeoutMsg: "quick booking" });

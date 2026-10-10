@@ -243,9 +243,11 @@
 
 /* Zeit diese Woche */
 .dw-week { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
-.dw-week-sum { display: flex; align-items: baseline; gap: 6px; padding: 2px 4px; margin: 0 -4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* A narrow card: „von 40,00 h“ stays whole and the badge moves to a line of its own. */
+.dw-week-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 2px 4px; margin: 0 -4px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .dw-week-sum:hover { background: var(--bg-hover); }
 .dw-week-sum .badge { align-self: center; }
+.dw-week-sum > .num { white-space: nowrap; }
 .dw-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; flex: 1; min-height: 70px; }
 .dw-bar-item { display: flex; min-width: 0; }
 .dw-bar-item > .dw-bar-col { flex: 1; }

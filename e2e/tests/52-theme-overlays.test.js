@@ -141,28 +141,28 @@ for (const [mode, id] of [["dark", "arcalo-dark"], ["dark", "nord"], ["light", "
   test(`${id}: code, callouts, slash menu, bubble, AI bar and PDF tab are readable`, async () => {
     await theme(mode, id);
     await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-    await app.waitFor(".pane.active .ProseMirror pre");
+    await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror pre");
     await sleep(500);
 
     // Code: its own background, every token readable on it.
     // Comments are quieter on purpose (--text-3, at least 3:1); every other token 4.5:1.
-    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active .ProseMirror pre", 4.5, ".hljs-comment"), [], `${id} code tokens`);
-    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active .ProseMirror pre", 3), [], `${id} code comments`);
-    const tokens = await app.browser.execute(() => new Set([...document.querySelectorAll(".pane.active pre [class^=hljs-]")].map((s) => getComputedStyle(s).color)).size);
+    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active > .pane-content:not([hidden]) .ProseMirror pre", 4.5, ".hljs-comment"), [], `${id} code tokens`);
+    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active > .pane-content:not([hidden]) .ProseMirror pre", 3), [], `${id} code comments`);
+    const tokens = await app.browser.execute(() => new Set([...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) pre [class^=hljs-]")].map((s) => getComputedStyle(s).color)).size);
     assert.ok(tokens >= 4, `${id}: several syntax colors (${tokens})`);
-    const bgs = await app.browser.execute(() => [getComputedStyle(document.querySelector(".pane.active pre")).backgroundColor, getComputedStyle(document.querySelector(".pane.active .page-scroll")).backgroundColor]);
+    const bgs = await app.browser.execute(() => [getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) pre")).backgroundColor, getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll")).backgroundColor]);
     assert.notEqual(bgs[0], bgs[1], `${id}: code block background differs from the page`);
     // The callout label (violet) and the page text.
-    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active .ProseMirror", 4.5, ".hljs-comment"), [], `${id} page text`);
+    assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active > .pane-content:not([hidden]) .ProseMirror", 4.5, ".hljs-comment"), [], `${id} page text`);
     const label = await app.browser.execute(() => {
-      const m = document.querySelector(".pane.active blockquote.callout-question .callout-marker");
+      const m = document.querySelector(".pane.active > .pane-content:not([hidden]) blockquote.callout-question .callout-marker");
       return getComputedStyle(m, "::before").content;
     });
     assert.equal(label, '"Frage"');
     await app.shot(`themes-${id}-note`);
 
     // Slash menu at the end of the note.
-    await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.commands.focus("end"));
+    await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor.commands.focus("end"));
     await app.keys(["Enter"]);
     await app.type("/");
     await app.waitFor(".sugg");
@@ -175,7 +175,7 @@ for (const [mode, id] of [["dark", "arcalo-dark"], ["dark", "nord"], ["light", "
 
     // Formatting bubble and inline AI bar over a selection.
     await app.browser.execute(() => {
-      const ed = document.querySelector(".pane.active .ProseMirror").editor;
+      const ed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor;
       ed.commands.focus();
       ed.commands.setTextSelection({ from: 1, to: 18 });
     });
@@ -195,7 +195,7 @@ for (const [mode, id] of [["dark", "arcalo-dark"], ["dark", "nord"], ["light", "
     assert.deepEqual(await app.browser.execute(lowContrast, ".ai-bar", 3), [], `${id} AI bar`);
     await app.shot(`themes-${id}-aibar`);
     await app.keys(["Escape"]);
-    await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.commands.undo());
+    await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor.commands.undo());
 
     // PDF tab: toolbar readable, the page is paper white.
     if (pdfOk) {
@@ -207,9 +207,9 @@ for (const [mode, id] of [["dark", "arcalo-dark"], ["dark", "nord"], ["light", "
       await app.keys(["Enter"]);
       await app.waitFor('.att-row[data-file="Themen.pdf"] .att-name');
       await app.browser.execute(() => document.querySelector('.att-row[data-file="Themen.pdf"] .att-name').click());
-      await app.waitFor(".pane.active .pdf-pane .pdf-page", 15000);
+      await app.waitFor(".pane.active > .pane-content:not([hidden]) .pdf-pane .pdf-page", 15000);
       await sleep(800);
-      assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active .pdf-pane", 3), [], `${id} PDF tab`);
+      assert.deepEqual(await app.browser.execute(lowContrast, ".pane.active > .pane-content:not([hidden]) .pdf-pane", 3), [], `${id} PDF tab`);
       await app.shot(`themes-${id}-pdf`);
       await app.browser.execute(() => document.querySelector(".pane.active .tab.active .tab-close").click());
     }
@@ -225,8 +225,8 @@ test("„Beamer“ slides are dark on white in a dark theme too", async () => {
     content: "# Code\n\n> [!question] Frage\n> Text mit [Link](https://example.com) und ==Markierung==[^1]\n\n```js\nconst a = { ok: true, n: null, v: 42 };\n```\n\n[^1]: Fußnote\n",
   });
   await app.invoke("search_open", { target: { kind: "page", page_id: p.id, new_tab: false } });
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.textContent.trim().startsWith("Präsentieren")).click());
   await app.waitFor(".presentation .present-slide");
   const beamer = () => app.browser.execute(() => document.querySelector(".presentation").classList.contains("beamer"));

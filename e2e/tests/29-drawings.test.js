@@ -74,7 +74,7 @@ test("app shortcuts do not fire inside the drawing editor", async () => {
   assert.ok(await overlayOpen());
   // Keys aimed at the note behind the overlay do not edit it.
   const before = await content("Skizzen");
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").focus());
   await app.type("xy");
   await app.browser.pause(700);
   assert.equal(await content("Skizzen"), before);
@@ -96,16 +96,16 @@ test("drawing a rectangle saves the scene and the preview", async () => {
 
   await app.click(".drawing-done");
   await app.browser.waitUntil(async () => !(await overlayOpen()), { timeoutMsg: "overlay did not close" });
-  const img = await app.waitFor(".pane.active .drawing-embed img.drawing-preview");
+  const img = await app.waitFor(".pane.active > .pane-content:not([hidden]) .drawing-embed img.drawing-preview");
   await app.browser.waitUntil(() => app.browser.execute((el) => el.complete && el.naturalWidth > 0, img), { timeoutMsg: "preview did not load" });
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .drawing-embed").classList.contains("is-empty")), false);
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .drawing-embed").classList.contains("is-empty")), false);
   await app.shot("drawing-in-note");
   // The note keeps the plain embed.
   assert.equal(drawingsIn(await content("Skizzen")).length, 1);
 });
 
 test("clicking the preview reopens the drawing with its content", async () => {
-  await app.click(".pane.active .drawing-embed");
+  await app.click(".pane.active > .pane-content:not([hidden]) .drawing-embed");
   await app.waitFor(".drawing-overlay canvas.excalidraw__canvas.interactive", 20000);
   await app.browser.pause(400);
   // The empty-canvas hints are gone: the rectangle was loaded.
@@ -137,7 +137,7 @@ test("clicking the preview reopens the drawing with its content", async () => {
 
 test("the command palette inserts a new drawing", async () => {
   // Caret to the end without clicking (a click on the preview would open the drawing).
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").editor.commands.focus("end"));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").editor.commands.focus("end"));
   await app.keys(["Control", "k"]);
   await app.waitFor(".palette");
   await app.type("Neue Zeichnung");
@@ -147,7 +147,7 @@ test("the command palette inserts a new drawing", async () => {
   await app.browser.waitUntil(async () => drawingsIn(await content("Skizzen")).length === 2, { timeoutMsg: "second embed not saved" });
   await app.click(".drawing-done");
   await app.browser.waitUntil(async () => !(await overlayOpen()));
-  await app.waitText(".pane.active .drawing-embed.is-empty .drawing-empty", /Leere Zeichnung/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .drawing-embed.is-empty .drawing-empty", /Leere Zeichnung/);
 });
 
 test("drawings need nothing from the network", async () => {

@@ -70,11 +70,11 @@ test("an edit changes only the edited line of a page written elsewhere", async (
   ids.links = (await app.invoke("page_create", { parentId: null, title: "Quelle 260", icon: "file-text", content: LINKS })).id;
   await reload();
   await openTree("Stil 260");
-  await app.waitFor(".pane.active .ProseMirror pre");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror pre");
   await app.shot("260-source-style");
   // Typing at the end of the last paragraph.
   await app.browser.execute(() => {
-    const p = [...document.querySelectorAll(".pane.active .ProseMirror p")].find((e) => e.textContent === "Letzter Absatz.");
+    const p = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror p")].find((e) => e.textContent === "Letzter Absatz.");
     const r = document.createRange();
     r.selectNodeContents(p);
     r.collapse(false);
@@ -87,7 +87,7 @@ test("an edit changes only the edited line of a page written elsewhere", async (
   assert.equal((await app.invoke("page_get", { id: ids.style })).content, SOURCE.replace("Letzter Absatz.", "Letzter Absatz. Neu"));
   // An edited list keeps its markers.
   await app.browser.execute(() => {
-    const li = [...document.querySelectorAll(".pane.active .ProseMirror li p")].find((e) => e.textContent === "Punkt zwei");
+    const li = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror li p")].find((e) => e.textContent === "Punkt zwei");
     const r = document.createRange();
     r.selectNodeContents(li);
     r.collapse(false);
@@ -102,11 +102,11 @@ test("an edit changes only the edited line of a page written elsewhere", async (
 
 /** Hovers the n-th wiki link of the active page and waits for its card. */
 async function hover(n) {
-  await app.browser.execute(() => document.querySelector(".pane.active .page-scroll")?.scrollTo(0, 0));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll")?.scrollTo(0, 0));
   await app.browser.execute(() => document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
   await sleep(300);
-  const links = await app.$$(".pane.active .ProseMirror a.wikilink");
-  await (await app.$(".pane.active .ProseMirror h1")).moveTo();
+  const links = await app.$$(".pane.active > .pane-content:not([hidden]) .ProseMirror a.wikilink");
+  await (await app.$(".pane.active > .pane-content:not([hidden]) .ProseMirror h1")).moveTo();
   await sleep(300);
   await links[n].moveTo();
   await app.waitFor(".link-preview .link-preview-title");
@@ -119,7 +119,7 @@ async function hover(n) {
 
 test("hovering [[Seite#Abschnitt]] previews that section", async () => {
   await openTree("Quelle 260");
-  await app.waitFor(".pane.active .ProseMirror a.wikilink");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror a.wikilink");
   const card = await hover(0);
   assert.match(card.title, /Ziel 260\s*›\s*Zweiter Abschnitt/);
   assert.match(card.body, /Inhalt des zweiten Abschnitts/);
@@ -140,7 +140,7 @@ test("hovering [[Seite#^id]] previews the block, [[#Abschnitt]] the section of t
   await app.browser.waitUntil(
     () =>
       app.browser.execute(() => {
-        const h = [...document.querySelectorAll(".pane.active .ProseMirror h2")].find((e) => e.textContent === "Unten");
+        const h = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror h2")].find((e) => e.textContent === "Unten");
         const r = h?.getBoundingClientRect();
         const box = h?.closest(".page-scroll")?.getBoundingClientRect();
         return !!r && r.top >= box.top && r.bottom <= box.bottom;
@@ -153,7 +153,7 @@ test("a missing section previews the page top with a hint", async () => {
   await app.invoke("page_save", { id: ids.links, content: LINKS.replace("[[#Unten]]", "[[Ziel 260#Gibt es nicht]]") });
   await reload();
   await openTree("Quelle 260");
-  await app.waitFor(".pane.active .ProseMirror a.wikilink");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror a.wikilink");
   const card = await hover(2);
   assert.match(card.body, /Seitenanfang/);
   assert.match(await app.textOf(await app.$(".link-preview-note")), /Gibt es nicht/);

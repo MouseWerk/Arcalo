@@ -141,9 +141,20 @@ export function Select({ value, onChange, options, children, disabled, className
     setOpen(false);
     if (o.value !== current) onChange?.({ target: { value: o.value }, currentTarget: { value: o.value } });
   };
+  // Where the pointer was when the list reported it last: the list opening under a pointer that
+  // did not move gets a mouse move from the engine too, which must not take the highlight from
+  // the selected option (opened with the keyboard).
+  const pointer = useRef<string | null>(null);
+  const hover = (e: React.MouseEvent, i: number) => {
+    const at = `${e.screenX},${e.screenY}`;
+    const moved = pointer.current !== null && pointer.current !== at;
+    pointer.current = at;
+    if (moved && !items[i].disabled && activeRef.current !== i) highlight(i);
+  };
   const show = () => {
     if (disabled || !items.length) return;
     typed.current.text = "";
+    pointer.current = null;
     highlight(selected >= 0 && !items[selected].disabled ? selected : step(items, -1, 1));
     setOpen(true);
   };
@@ -325,7 +336,7 @@ export function Select({ value, onChange, options, children, disabled, className
                   aria-selected={i === selected}
                   aria-disabled={o.disabled || undefined}
                   className={`select-option ${i === active ? "active" : ""} ${i === selected ? "selected" : ""} ${o.disabled ? "disabled" : ""}`}
-                  onMouseMove={() => !o.disabled && active !== i && highlight(i)}
+                  onMouseMove={(e) => hover(e, i)}
                   onClick={() => choose(i)}
                 >
                   <span className="select-check">{i === selected && <Check size={14} strokeWidth={2.25} />}</span>

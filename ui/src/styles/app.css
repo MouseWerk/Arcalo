@@ -862,7 +862,8 @@ button.side-section-title:hover { color: var(--text-2); }
 
 .project > * { min-width: 0; }
 .project { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-raised); overflow: hidden; }
-.project-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+/* A narrow pane: „Netzplan“ and the menu wrap under the name instead of leaving the card. */
+.project-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .project-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
 .project-code { white-space: nowrap; flex: none; padding: 2px 7px; border-radius: var(--r-xs); background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-sm); }
 .netzplan + .netzplan { border-top: 1px solid var(--border); }
@@ -888,7 +889,8 @@ button.side-section-title:hover { color: var(--text-2); }
 .vorgaenge tbody > tr > :first-child { overflow: hidden; }
 .vg-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vg-sub { display: none; gap: 4px 12px; flex-wrap: wrap; color: var(--text-2); }
-.vg-sub-hours { display: none; }
+/* „12,00 / 16,00 h gebucht“ wraps in the name column instead of running under the next one. */
+.vg-sub-hours { display: none; white-space: normal; }
 @container vg (max-width: 819px) {
   .vorgaenge { min-width: 600px; }
   .vorgaenge :is(.vg-sched, .budget-col) { display: none; }
@@ -2515,7 +2517,8 @@ body.presenter-window .presenter { height: 100vh; }
 .wr-view .rv-group > .rv-row { width: 100%; }
 .wr-meeting-day + .wr-meeting-day { margin-top: 4px; }
 .wr-page { grid-template-columns: minmax(0, 1fr) auto; }
-.calv-week-review { display: inline-flex; flex: none; align-items: center; gap: 5px; align-self: center; padding: 2px 8px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; cursor: pointer; }
+/* At least 22 px high: with its label gone in a narrow pane it is an icon to hit. */
+.calv-week-review { display: inline-flex; flex: none; align-items: center; gap: 5px; align-self: center; min-height: 22px; padding: 2px 8px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; cursor: pointer; }
 .calv-week-review:hover { background: var(--bg-hover); color: var(--text); }
 .calv-week-review:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 @container pane (max-width: 1000px) {
@@ -3321,6 +3324,12 @@ button.assistant-title:disabled { cursor: default; color: var(--text-2); }
 @container calhead (max-width: 130px) {
   .calv-plan-vs svg, .calv-hunit { display: none; }
   .calv-planned-sum, .calv-booked-sum { padding-inline: 3px; }
+}
+/* Six day columns next to the side panel (the work week seen on a Saturday): the chips move
+   closer together and into the head's padding, so today's note, hours and review keep one row. */
+@container calhead (max-width: 100px) {
+  .calv-dayhead-info { gap: 3px; margin-inline: -4px; }
+  .calv-chip-btn { padding-inline: 3px; }
 }
 /* „Abwesend eintragen“ shows on hover only: it waits in the corner next to the date instead of
    taking a place in the row of chips (where it pushed the last chip onto a row of its own). */

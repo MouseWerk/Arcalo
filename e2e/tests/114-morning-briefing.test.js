@@ -65,7 +65,7 @@ async function patchSettings(f) {
   await app.browser.pause(400);
 }
 const texts = (sel) => app.browser.execute((s) => [...document.querySelectorAll(s)].map((e) => e.textContent.trim()), sel);
-const sections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .bf-grid > .bf-card")].map((e) => e.dataset.section));
+const sections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .bf-grid > .bf-card")].map((e) => e.dataset.section));
 const briefingTabs = () => app.browser.execute(() => [...document.querySelectorAll(".tab")].filter((t) => /Briefing/.test(t.textContent)).length);
 async function closeBriefingTabs() {
   await app.browser.execute(() => {
@@ -75,7 +75,7 @@ async function closeBriefingTabs() {
 }
 const openBriefing = async () => {
   await app.click(".ribbon .ribbon-briefing");
-  await app.waitFor(".pane.active .bf-view .bf-grid", 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-view .bf-grid", 15000);
 };
 
 before(async () => {
@@ -124,10 +124,10 @@ after(async () => {
 
 test("the briefing: meetings with preparation, Jira, tasks, the last workday", async () => {
   await openBriefing();
-  assert.match(await app.text(".pane.active .bf-view h1"), /Morgen-Briefing/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .bf-view h1"), /Morgen-Briefing/);
   assert.deepEqual(await sections(), ["ai", "meetings", "tasks", "jira", "time"]);
   // Meetings: the Jour fixe with last time's note, the review with its Teams link.
-  const meetings = '.pane.active .bf-card[data-section="meetings"]';
+  const meetings = '.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"]';
   await app.waitText(meetings, /Jour fixe Portal/);
   const rows = await texts(`${meetings} .bf-meeting`);
   const jf = rows.find((r) => /Jour fixe/.test(r));
@@ -137,33 +137,33 @@ test("the briefing: meetings with preparation, Jira, tasks, the last workday", a
   assert.match(review, /Beitreten/);
   assert.match(await app.text(`${meetings} .bf-meeting.next`), /Jour fixe Portal/);
   // „Notiz anlegen“ creates the review's note and opens it.
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .bf-meeting")].find((r) => /Sprint Review/.test(r.textContent))?.querySelector(".bf-note")?.click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .bf-meeting")].find((r) => /Sprint Review/.test(r.textContent))?.querySelector(".bf-note")?.click());
   await app.waitText(".toast-title", /Besprechungsnotiz angelegt|Notiz angelegt/);
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await openBriefing();
   await app.waitText(meetings, /Notiz:\s*Sprint Review/);
 
   // Tasks: overdue and due today; the later one and the page text are not there.
-  const tasks = await app.text('.pane.active .bf-card[data-section="tasks"]');
+  const tasks = await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="tasks"]');
   assert.match(tasks, /Überfällig[\s\S]*Angebot an Kunde X schicken[\s\S]*Heute fällig[\s\S]*Vertrag gegenlesen/i);
   assert.doesNotMatch(tasks, /Später/);
   // Jira: overdue PROJ-123, due PROJ-130, blocked PROJ-131.
-  const j = await app.text('.pane.active .bf-card[data-section="jira"]');
+  const j = await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="jira"]');
   assert.match(j, /Überfällig[\s\S]*PROJ-123[\s\S]*Heute fällig[\s\S]*PROJ-130[\s\S]*Blockiert[\s\S]*PROJ-131/i);
   assert.doesNotMatch(j, /PROJ-124|PROJ-100/);
   // The last workday with German hours and the way to the week proposal and the timesheet.
-  const time = await app.text('.pane.active .bf-card[data-section="time"]');
+  const time = await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="time"]');
   assert.match(time, /Letzter Arbeitstag:/);
   assert.match(time, /\d+(,\d+)? h von \d+(,\d+)? h|Soll erreicht|kein Soll/);
-  assert.ok(await app.browser.execute(() => !!document.querySelector(".pane.active .bf-week") && !!document.querySelector(".pane.active .bf-sheet")));
+  assert.ok(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .bf-week") && !!document.querySelector(".pane.active > .pane-content:not([hidden]) .bf-sheet")));
   // The overview numbers.
-  assert.equal(await app.text('.pane.active .bf-overview [data-section="tasks"] .rv-stat-value'), "2");
-  assert.equal(await app.text('.pane.active .bf-overview [data-section="jira"] .rv-stat-value'), "3");
+  assert.equal(await app.text('.pane.active > .pane-content:not([hidden]) .bf-overview [data-section="tasks"] .rv-stat-value'), "2");
+  assert.equal(await app.text('.pane.active > .pane-content:not([hidden]) .bf-overview [data-section="jira"] .rv-stat-value'), "3");
   assert.deepEqual(await app.consoleErrors(), []);
 });
 
 test("„Was heute wichtig ist“: titles and counts only, cached, private content stays local", async () => {
-  await app.waitText(".pane.active .bf-ai-text", /Angebot an Kunde X heute verschicken/, 15000);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .bf-ai-text", /Angebot an Kunde X heute verschicken/, 15000);
   assert.equal(cloud.chats().length, 1);
   assert.equal(ollama.chats().length, 0);
   const sent = JSON.stringify(cloud.chats()[0].body.messages);
@@ -171,36 +171,36 @@ test("„Was heute wichtig ist“: titles and counts only, cached, private conte
   assert.match(sent, /Aufgaben überfällig: 1/);
   assert.match(sent, /PROJ-131 Payment provider switch/);
   assert.doesNotMatch(sent, /Geheimer Seiteninhalt|Raum Elbe|teams\.microsoft/);
-  assert.match(await app.text(".pane.active .bf-ai-meta"), /gpt-4o-mini/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .bf-ai-meta"), /gpt-4o-mini/);
   // Cached for the day: opening it again asks nobody.
   await reload();
   await openBriefing();
-  await app.waitText(".pane.active .bf-ai-text", /Angebot an Kunde X/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .bf-ai-text", /Angebot an Kunde X/);
   assert.equal(cloud.chats().length, 1, "from the cache");
   // A #privat task: the text is written again by the local model only.
   await app.invoke("page_create", { parentId: null, title: "Privat", icon: null, content: `- [ ] Arzt anrufen #privat due:${today}\n` });
-  await app.click(".pane.active .bf-ai-refresh");
-  await app.waitText(".pane.active .bf-ai-text", /Lokal geschrieben/, 15000);
+  await app.click(".pane.active > .pane-content:not([hidden]) .bf-ai-refresh");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .bf-ai-text", /Lokal geschrieben/, 15000);
   assert.equal(cloud.chats().length, 1, "nothing private went to the cloud");
   assert.equal(ollama.chats().length, 1);
-  assert.match(await app.text(".pane.active .bf-ai-meta"), /lokal · llama3\.2:latest/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .bf-ai-meta"), /lokal · llama3\.2:latest/);
   await app.shot("114-briefing-light");
 });
 
 test("sections switched off and moved with the gear (saved in the settings)", async () => {
-  await app.click(".pane.active .bf-gear");
-  await app.waitFor(".pane.active .bf-customize .bf-section-item");
-  await app.click('.pane.active .bf-customize .bf-section-item[data-section="meetings"] .switch');
+  await app.click(".pane.active > .pane-content:not([hidden]) .bf-gear");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-customize .bf-section-item");
+  await app.click('.pane.active > .pane-content:not([hidden]) .bf-customize .bf-section-item[data-section="meetings"] .switch');
   await app.browser.waitUntil(async () => !(await sections()).includes("meetings"), { timeoutMsg: "meetings still shown" });
   // Tasks one up: before the meetings' place, right after the text.
-  await app.click('.pane.active .bf-customize .bf-section-item[data-section="jira"] button[aria-label="Nach oben"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .bf-customize .bf-section-item[data-section="jira"] button[aria-label="Nach oben"]');
   await app.browser.waitUntil(async () => (await sections()).join(",") === "ai,jira,tasks,time", { timeoutMsg: `order ${await sections()}` });
   const saved = (await app.invoke("settings_get")).settings.briefing.sections;
   assert.deepEqual(saved.map((s) => `${s.id}:${s.on}`), ["ai:true", "meetings:false", "jira:true", "tasks:true", "time:true"]);
-  assert.equal(await app.browser.execute(() => !!document.querySelector('.pane.active .bf-overview [data-section="meetings"]')), false);
+  assert.equal(await app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .bf-overview [data-section="meetings"]')), false);
   await app.shot("114-briefing-customize");
   // Settings → Briefing shows the same list.
-  await app.browser.execute(() => document.querySelector(".pane.active .bf-customize .bf-section-item")?.closest(".card")?.querySelector("button[aria-label='Schließen']")?.click());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .bf-customize .bf-section-item")?.closest(".card")?.querySelector("button[aria-label='Schließen']")?.click());
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav");
   await app.click('.settings-nav-item[data-section="briefing"]');
@@ -222,7 +222,7 @@ test("the first start of a workday opens it; not on an absence day, not twice", 
   await app.invoke("absence_remove", { from: today, to: today });
   // A workday: the first start opens it, the next one does not.
   await reload();
-  await app.waitFor(".pane.active .bf-view", 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-view", 15000);
   await closeBriefingTabs();
   await reload();
   await app.browser.pause(800);
@@ -237,7 +237,7 @@ test("the start page widget: counts, the next meeting and the line of the text",
   });
   await reload();
   await app.keys(["Control", "t"]);
-  const w = '.pane.active [data-widget="briefing"]';
+  const w = '.pane.active > .pane-content:not([hidden]) [data-widget="briefing"]';
   await app.waitFor(`${w} .dw-bf-count`, 15000);
   const counts = await app.browser.execute((sel) => Object.fromEntries([...document.querySelectorAll(`${sel} .dw-bf-count`)].map((e) => [e.dataset.section, e.querySelector(".dw-bf-value").textContent])), w);
   assert.equal(counts.tasks, "3");
@@ -246,8 +246,8 @@ test("the start page widget: counts, the next meeting and the line of the text",
   assert.match(await app.text(`${w} .dw-bf-ai`), /Lokal geschrieben: Arzt anrufen/);
   await app.shot("114-briefing-widget");
   // Heute: „Briefing“ opens it.
-  await app.click('.pane.active [data-widget="today"] .dw-briefing');
-  await app.waitFor(".pane.active .bf-view", 15000);
+  await app.click('.pane.active > .pane-content:not([hidden]) [data-widget="today"] .dw-briefing');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-view", 15000);
   assert.deepEqual(await app.consoleErrors(), []);
 });
 

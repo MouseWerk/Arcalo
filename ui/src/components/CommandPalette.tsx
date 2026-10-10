@@ -97,7 +97,8 @@ export function CommandPalette() {
     }
   }, [open, initial]);
   // The focus goes back where it was (the editor's caret, a tree row) when the palette closes,
-  // unless the chosen command put it somewhere else.
+  // unless the chosen command put it somewhere else. A command that showed a tab of another pane
+  // made that pane the active one: the focus going back would make the old one active again.
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement;
@@ -105,6 +106,7 @@ export function CommandPalette() {
       const back = () => {
         const now = document.activeElement;
         if (now && now !== document.body && !now.closest(".palette")) return;
+        if (opener?.closest(".pane:not(.active)")) return;
         if (opener instanceof HTMLElement && opener.isConnected && opener.offsetParent !== null) opener.focus({ preventScroll: true });
       };
       // After the command ran and React drew what it opened.

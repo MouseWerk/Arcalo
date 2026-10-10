@@ -11,6 +11,11 @@ import { remote } from "webdriverio";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 // Resolved, so `pkill -f APP` also matches an app that restarted itself (it runs as its real path).
 export const APP = path.resolve(process.env.ARCALO_APP ?? path.join(ROOT, "target/debug/arcalo"));
+/**
+ * The first editor on screen. A kept tab keeps its editor in the document while hidden, and kept
+ * places do not move when their tab is shown again, so a hidden one may come first.
+ */
+export const EDITOR = ".ProseMirror:not([hidden] *)";
 export const SHOTS = process.env.ARCALO_SHOTS ?? path.join(ROOT, "e2e/screenshots");
 const DISPLAY = process.env.DISPLAY ?? ":99";
 
@@ -120,7 +125,7 @@ export function guarded(test, getApp) {
         const app = getApp();
         const slug = name.replace(/[^a-z0-9]+/gi, "-").slice(0, 60);
         await app?.browser.saveScreenshot(path.join(SHOTS, `FAIL-${slug}.png`)).catch(() => {});
-        const dom = await app?.browser.execute(() => document.querySelector(".ProseMirror")?.innerHTML ?? "").catch(() => "");
+        const dom = await app?.browser.execute((sel) => document.querySelector(sel)?.innerHTML ?? "", EDITOR).catch(() => "");
         if (dom) fs.writeFileSync(path.join(SHOTS, `FAIL-${slug}.html`), dom);
         throw e;
       }
@@ -281,17 +286,17 @@ export async function launch({ demo = true, onboarding = false, width = 1480, he
     },
     /** Puts the caret on a fresh empty line at the end of the open note. */
     async caretToEnd() {
-      const pm = await app.waitFor(".ProseMirror");
+      const pm = await app.waitFor(EDITOR);
       await pm.click();
-      await browser.execute(() => {
-        const el = document.querySelector(".ProseMirror");
+      await browser.execute((css) => {
+        const el = document.querySelector(css);
         const sel = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(el.lastElementChild ?? el);
         range.collapse(false);
         sel.removeAllRanges();
         sel.addRange(range);
-      });
+      }, EDITOR);
       await browser.pause(60);
       await browser.keys(["End"]);
     },

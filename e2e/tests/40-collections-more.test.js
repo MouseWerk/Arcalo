@@ -42,31 +42,31 @@ test("500 pages: the table renders a window of rows and stays quick", async () =
   await ready();
   await openTree("Großer Ordner");
   const t0 = Date.now();
-  await app.waitFor(".pane.active .coll-table .coll-row");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-table .coll-row");
   const ms = Date.now() - t0;
-  const rendered = await app.browser.execute(() => document.querySelectorAll(".pane.active .coll-row").length);
+  const rendered = await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-row").length);
   assert.ok(rendered < 120, `only a window of rows is rendered (${rendered})`);
-  assert.match(await app.text(".pane.active .coll-count"), /500 Seiten/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .coll-count"), /500 Seiten/);
   assert.ok(ms < 5000, `opened in ${ms} ms`);
   // Sorting 500 rows by a number, descending, and scrolling to the end.
   await app.browser.execute(() => {
-    const th = document.querySelector(".pane.active th[data-col='nr'] .coll-th-inner");
+    const th = document.querySelector(".pane.active > .pane-content:not([hidden]) th[data-col='nr'] .coll-th-inner");
     for (let i = 0; i < 2; i++) {
       th.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 5, clientY: 5 }));
       window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 5, clientY: 5 }));
     }
   });
-  await app.waitText(".pane.active .coll-row:first-of-type .coll-title-link, .pane.active .coll-row .coll-title-link", /Eintrag 500/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .coll-row:first-of-type .coll-title-link, .pane.active > .pane-content:not([hidden]) .coll-row .coll-title-link", /Eintrag 500/);
   await app.browser.execute(() => {
-    const w = document.querySelector(".pane.active .coll-table-wrap");
+    const w = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-table-wrap");
     w.scrollTop = w.scrollHeight;
     w.dispatchEvent(new Event("scroll"));
   });
-  await app.waitText(".pane.active .coll-row .coll-title-link", /Eintrag 001/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .coll-row .coll-title-link", /Eintrag 001/);
   // The header stays at the top of the scroll box.
   const stuck = await app.browser.execute(() => {
-    const w = document.querySelector(".pane.active .coll-table-wrap").getBoundingClientRect();
-    const th = document.querySelector(".pane.active .coll-th").getBoundingClientRect();
+    const w = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-table-wrap").getBoundingClientRect();
+    const th = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-th").getBoundingClientRect();
     return Math.abs(th.top - w.top) < 3;
   });
   assert.ok(stuck, "sticky header");
@@ -74,19 +74,19 @@ test("500 pages: the table renders a window of rows and stays quick", async () =
 });
 
 test("narrow split pane: the table scrolls sideways with the title column fixed", async () => {
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Rechts daneben öffnen")).click());
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2, { timeoutMsg: "no split" });
-  await app.waitFor(".pane.active .coll-table-wrap");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-table-wrap");
   // Wider columns than the pane.
   await app.browser.execute(() => {
-    const w = document.querySelector(".pane.active .coll-table-wrap");
+    const w = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-table-wrap");
     w.scrollLeft = 400;
   });
   const r = await app.browser.execute(() => {
-    const w = document.querySelector(".pane.active .coll-table-wrap");
+    const w = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-table-wrap");
     const wr = w.getBoundingClientRect();
-    const title = document.querySelector(".pane.active .coll-row .coll-title-cell").getBoundingClientRect();
+    const title = document.querySelector(".pane.active > .pane-content:not([hidden]) .coll-row .coll-title-cell").getBoundingClientRect();
     return { scrolls: w.scrollWidth > w.clientWidth, left: title.left - wr.left, scrollLeft: w.scrollLeft, pageScroll: document.documentElement.scrollWidth <= window.innerWidth };
   });
   assert.ok(r.scrolls, "the table scrolls sideways");
@@ -113,7 +113,7 @@ test("board: reorder cards within a column, add a card to a column", async () =>
   await app.browser.refresh();
   await ready();
   await openTree("Team-Board");
-  const col = '.pane.active .board-col[data-group="Offen"]';
+  const col = '.pane.active > .pane-content:not([hidden]) .board-col[data-group="Offen"]';
   await app.waitFor(`${col} .board-card[data-row="${kids.Gamma}"]`);
   const order = () => app.browser.execute((c) => [...document.querySelectorAll(`${c} .board-card`)].map((e) => e.getAttribute("aria-label")), col);
   assert.deepEqual(await order(), ["Alpha", "Beta", "Gamma"]);
@@ -143,7 +143,7 @@ test("board: reorder cards within a column, add a card to a column", async () =>
 
   // Without dragging: the card menu moves it; the toast undoes the move.
   await app.dismissToasts();
-  await app.browser.execute((id) => document.querySelector(`.pane.active .board-card[data-row="${id}"] .board-card-menu`).click(), kids.Beta);
+  await app.browser.execute((id) => document.querySelector(`.pane.active > .pane-content:not([hidden]) .board-card[data-row="${id}"] .board-card-menu`).click(), kids.Beta);
   await app.browser.execute(() => {
     const item = [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Verschieben nach"));
     item.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
@@ -158,8 +158,8 @@ test("board: reorder cards within a column, add a card to a column", async () =>
   await app.waitFor(`${col} .board-card[data-row="${kids.Beta}"]`);
 
   // „+“ in the „Fertig“ column: a new page with status Fertig.
-  await app.click('.pane.active .board-col[data-group="Fertig"] .board-add');
-  await app.waitFor('.pane.active .board-col[data-group="Fertig"] .board-card');
+  await app.click('.pane.active > .pane-content:not([hidden]) .board-col[data-group="Fertig"] .board-add');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .board-col[data-group="Fertig"] .board-card');
   const col2 = await app.invoke("page_collection", { parentId: folder.id });
   const created = col2.rows.find((r) => /^Unbenannt/.test(r.title));
   assert.ok(created, "new page");
@@ -167,31 +167,31 @@ test("board: reorder cards within a column, add a card to a column", async () =>
 });
 
 test("renaming an option updates the pages that use it", async () => {
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-switch button")].find((b) => b.innerText.includes("Tabelle")).click());
-  await app.waitFor('.pane.active th[data-col="status"]');
-  await app.browser.execute(() => document.querySelector(".pane.active th[data-col='status'] .coll-th-menu").click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-switch button")].find((b) => b.innerText.includes("Tabelle")).click());
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) th[data-col="status"]');
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) th[data-col='status'] .coll-th-menu").click());
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Optionen bearbeiten")).click());
   const name = await app.waitFor('.dialog input[aria-label="Name der Option"]');
   await name.setValue("Neu");
   await app.browser.execute(() => [...document.querySelectorAll(".dialog .btn")].find((b) => b.innerText.includes("Speichern")).click());
   await app.browser.waitUntil(async () => /status: \{typ: auswahl, optionen: \{Neu: grau, Fertig: grün\}\}/.test(await content(folder.id)), { timeoutMsg: `schema: ${await content(folder.id)}` });
   for (const t of ["Alpha", "Beta", "Gamma"]) await app.browser.waitUntil(async () => (await content(kids[t])) === "---\nstatus: Neu\n---\n", { timeoutMsg: `${t} not renamed: ${await content(kids[t])}` });
-  await app.waitText(`.pane.active [data-cell="${kids.Alpha}:status"]`, /^Neu$/);
+  await app.waitText(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Alpha}:status"]`, /^Neu$/);
 });
 
 test("person cells suggest known names (values and @mentions)", async () => {
-  await app.click(`.pane.active [data-cell="${kids.Beta}:wer"]`);
-  await app.waitFor(`.pane.active [data-cell="${kids.Beta}:wer"] input`);
+  await app.click(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Beta}:wer"]`);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Beta}:wer"] input`);
   await press("A", "n");
-  await app.waitText(".pane.active .combo-item", /^Anna$/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .combo-item", /^Anna$/);
   await press("ArrowDown", "Enter");
   await app.browser.waitUntil(async () => /\nwer: Anna\n/.test(await content(kids.Beta)), { timeoutMsg: "person not saved" });
-  await app.waitText(`.pane.active [data-cell="${kids.Beta}:wer"]`, /Anna/);
+  await app.waitText(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Beta}:wer"]`, /Anna/);
   // Escape while editing keeps the old value.
-  await app.click(`.pane.active [data-cell="${kids.Alpha}:wer"]`);
-  await app.waitFor(`.pane.active [data-cell="${kids.Alpha}:wer"] input`);
+  await app.click(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Alpha}:wer"]`);
+  await app.waitFor(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Alpha}:wer"] input`);
   await press("X", "Escape");
-  await app.browser.waitUntil(async () => !(await (await app.$(`.pane.active [data-cell="${kids.Alpha}:wer"] input`)).isExisting()));
+  await app.browser.waitUntil(async () => !(await (await app.$(`.pane.active > .pane-content:not([hidden]) [data-cell="${kids.Alpha}:wer"] input`)).isExisting()));
   assert.equal(await content(kids.Alpha), "---\nstatus: Neu\n---\n");
   await app.shot("collection-person");
 });

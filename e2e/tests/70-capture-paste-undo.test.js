@@ -180,6 +180,6 @@ test("„Gespeichert in …“ opens the page in the main window", async () => {
   await app.browser.execute(() => setTimeout(() => document.querySelector(".capture-foot.done .capture-link").click(), 50));
   await w.toMain();
   await app.browser.waitUntil(async () => (await captureVisible(app)) === false, { timeoutMsg: "capture window not hidden" });
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Kundenideen", { timeoutMsg: "page not opened" });
-  await app.waitText(".pane.active .ProseMirror", /Workshop anbieten/);
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === "Kundenideen", { timeoutMsg: "page not opened" });
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Workshop anbieten/);
 });

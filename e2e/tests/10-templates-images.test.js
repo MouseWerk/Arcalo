@@ -14,7 +14,7 @@ const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGM4YWMDRAw
 
 const pageId = async (title) => (await app.invoke("page_resolve", { title, create: false })).id;
 const content = async (title) => (await app.invoke("page_get", { id: await pageId(title) })).content;
-const title = async () => (await (await app.$(".pane.active .page-title")).getValue());
+const title = async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue());
 const today = () => new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 
 test("palette creates a page from a template", async () => {
@@ -110,11 +110,11 @@ test("pasting an image file stores it and inserts an embed", async () => {
     // A trailing byte: different content, different file.
     dt.items.add(new File([bytes, new Uint8Array([0])], "paste.png", { type: "image/png" }));
     const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
-    document.querySelector(".pane.active .ProseMirror").dispatchEvent(ev);
+    document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").dispatchEvent(ev);
     return ev.defaultPrevented;
   }, PNG);
   assert.ok(ok, "paste handled");
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .ProseMirror img.embed-image")).length === 2, { timeoutMsg: "pasted image not inserted" });
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .ProseMirror img.embed-image")).length === 2, { timeoutMsg: "pasted image not inserted" });
   await app.browser.waitUntil(async () => ((await content("Screenshots")).match(/!\[\[[0-9a-f]{16}\.png\]\]/g) ?? []).length === 2, {
     timeoutMsg: "pasted embed not saved",
   });

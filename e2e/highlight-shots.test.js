@@ -120,7 +120,7 @@ async function shoot(lang) {
     const r = [...document.querySelectorAll(".sidebar .tree-row")].find((x) => x.querySelector(".tree-label")?.textContent === t);
     r?.click();
   }, tx.page);
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .ProseMirror :is(.rich-mermaid, .mmd-view) svg")), { timeout: 15000, timeoutMsg: "no diagram" });
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror :is(.rich-mermaid, .mmd-view) svg")), { timeout: 15000, timeoutMsg: "no diagram" });
   // Out of the editor: the diagram shows without its source.
   await app.browser.execute(() => {
     document.activeElement?.blur();
@@ -128,7 +128,7 @@ async function shoot(lang) {
   });
   await sleep(800);
   const svg = await app.browser.execute(() => {
-    const b = document.querySelector(".pane.active .ProseMirror :is(.rich-mermaid, .mmd-view) svg").getBoundingClientRect();
+    const b = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror :is(.rich-mermaid, .mmd-view) svg").getBoundingClientRect();
     // The whole diagram with a margin, in the picture's proportions.
     const w = Math.max(b.width + 32, (b.height + 32) * 1.6);
     return { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - w / 3.2, w, h: w / 1.6 };
