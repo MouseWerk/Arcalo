@@ -2,7 +2,7 @@
 // (from the widget and from the Kalender's day header), an absence day that is no gap in the
 // week proposal, deadlines with countdowns, the next meeting with join and the following one,
 // and team availability from two shared Outlook calendars (one free/busy only). Light and dark.
-import { test as nodeTest, before, after } from "node:test";
+import { test as nodeTest, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { launch, guarded } from "../lib/harness.js";
@@ -72,6 +72,16 @@ after(async () => {
   if (fx) fs.rmSync(fx.dir, { recursive: true, force: true });
 });
 
+// The tests after the absence test start on the start page also when it failed with a dialog or
+// the Kalender open.
+afterEach(async () => {
+  if (!app) return;
+  if (await (await app.$(".dialog")).isExisting()) await app.keys(["Escape"]);
+  for (let i = 0; i < 3 && (await (await app.$(".pane.active > .pane-content:not([hidden]) .calv-views")).isExisting()); i++) {
+    await app.click(".pane.active .tab.active .tab-close");
+  }
+});
+
 const setTheme = async (theme) => {
   const view = await app.invoke("settings_get");
   await app.invoke("settings_save", { settings: { ...view.settings, theme } });
@@ -118,7 +128,9 @@ test("the absence dialog enters vacation for today; the Kalender's day header sh
   await app.waitFor(".dialog .wa-remove");
   await app.click(".dialog .wa-remove");
   await app.browser.waitUntil(async () => !(await (await app.$(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${today}"] .wa-chip.set`)).isExisting()), { timeout: 8000, timeoutMsg: "chip stays" });
-  // A day without an absence offers entering one from the header.
+  // A day without an absence offers entering one from the header: the chip shows while the
+  // pointer is over the header (the dialog closed over the timeline, so the pointer is not there).
+  await (await app.$(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${today}"] .calv-dayhead-date`)).moveTo();
   await app.click(`.pane.active > .pane-content:not([hidden]) .calv-dayhead[data-date="${today}"] .wa-chip`);
   await app.waitFor(".dialog .wa-kinds");
   await app.keys(["Escape"]);
