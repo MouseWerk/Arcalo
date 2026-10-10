@@ -23,7 +23,7 @@ const menuClick = (label) =>
 const create = (title, content, parentId = null) => app.invoke("page_create", { parentId, title, icon: null, content });
 async function open(page) {
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === page.title, {
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === page.title, {
     timeoutMsg: `${page.title} not open`,
   });
   await sleep(400);
@@ -33,9 +33,9 @@ const words = () => app.browser.execute(() => document.querySelector(".statusbar
 test("a callout without a title shows its type label; with a title only the title", async () => {
   const page = await create("Callouts ohne Titel", "> [!question]\n> Wer gibt frei?\n\n> [!warning] Eigener Titel\n> Achtung\n\n> [!tip]\n> Tipp\n");
   await open(page);
-  await app.waitFor(".pane.active blockquote.callout");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) blockquote.callout");
   const labels = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active blockquote.callout .callout-marker")].map((m) => [m.dataset.label, getComputedStyle(m, "::before").content]),
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) blockquote.callout .callout-marker")].map((m) => [m.dataset.label, getComputedStyle(m, "::before").content]),
   );
   assert.deepEqual(labels, [
     ["Frage", '"Frage"'],
@@ -43,7 +43,7 @@ test("a callout without a title shows its type label; with a title only the titl
     ["Tipp", '"Tipp"'],
   ]);
   // The violet of question callouts is a theme token, readable on the page.
-  const color = await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active blockquote.callout-question .callout-marker"), "::before").color);
+  const color = await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) blockquote.callout-question .callout-marker"), "::before").color);
   assert.equal(color, await app.browser.execute(() => {
     const probe = document.createElement("span");
     probe.style.color = "var(--violet)";
@@ -100,9 +100,9 @@ test("table: the page icon keeps its size and titles use the whole cell", async 
   await create("Kurz", "---\nstatus: Offen\naufwand: 3\n---\n", parent.id);
   await create("Delta-Load testen und die Ergebnisse mit dem Fachbereich in einem ausführlichen Termin abstimmen", "---\nstatus: Fertig\naufwand: 8\n---\n", parent.id);
   await open(parent);
-  await app.waitFor(".pane.active .coll-title");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-title");
   const cells = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .coll-title")].map((t) => {
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-title")].map((t) => {
       const icon = t.querySelector("svg").getBoundingClientRect();
       const link = t.querySelector(".coll-title-link").getBoundingClientRect();
       const open = getComputedStyle(t.querySelector(".coll-open"));
@@ -125,12 +125,12 @@ test("board: a long title keeps its icon on the first line, a bare number shows 
   const parent = await create("Sprint Board", SPRINT.replace("typ: tabelle", "typ: board\n  gruppierung: status\n  karten: [aufwand]"));
   await create("Delta-Load testen und die Ergebnisse mit dem Fachbereich in einem ausführlichen Termin abstimmen", "---\nstatus: Offen\naufwand: 8\n---\n", parent.id);
   await open(parent);
-  await app.waitFor(".pane.active .board-card");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .board-card");
   const card = await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .board-card-title");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .board-card-title");
     const icon = t.querySelector("svg").getBoundingClientRect();
     const text = t.querySelector("span").getBoundingClientRect();
-    const prop = document.querySelector(".pane.active .board-card-prop");
+    const prop = document.querySelector(".pane.active > .pane-content:not([hidden]) .board-card-prop");
     return { iconTop: icon.top - text.top, textHeight: text.height, prop: prop?.innerText.replace(/\s+/g, " ").trim() };
   });
   assert.ok(card.textHeight > 30, "the title wraps");
@@ -144,26 +144,26 @@ test("the status bar counts the source editor and follows the focused pane", asy
   const b = await create("Zählen B", "eins zwei drei vier fünf sechs sieben");
   await open(a);
   await app.browser.waitUntil(async () => (await words()) === "4 Wörter", { timeoutMsg: `visual: ${await words()}` });
-  await app.click('.pane.active .vh [aria-label^="Markdown-Quelltext"]');
-  await app.waitFor(".pane.active .source-text");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label^="Markdown-Quelltext"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   // Properties, markers and fences do not count; the count is the source editor's own.
   await app.browser.waitUntil(async () => (await words()) === "4 Wörter", { timeoutMsg: `source: ${await words()}` });
   await app.browser.execute(() => {
-    const ta = document.querySelector(".pane.active .source-text");
+    const ta = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
   });
   await app.type(" fünf");
   await app.browser.waitUntil(async () => (await words()) === "5 Wörter", { timeoutMsg: `typed: ${await words()}` });
   await app.browser.waitUntil(async () => /fünf/.test((await app.invoke("page_get", { id: a.id })).content), { timeoutMsg: "not saved" });
-  await app.browser.execute(() => document.querySelector(".pane.active .vh [aria-label^='Normaler Editor']").click());
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .vh [aria-label^='Normaler Editor']").click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   // Split: the other pane shows B; the count follows the focus.
   await app.browser.execute(() => document.querySelector('.pane.active .tabbar [aria-label="Rechts teilen"]').click());
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane")).length === 2);
   await open(b);
   await app.browser.waitUntil(async () => (await words()) === "7 Wörter", { timeoutMsg: `pane B: ${await words()}` });
-  await app.browser.execute(() => document.querySelector(".workspace > .pane:first-child .ProseMirror").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  await app.browser.execute(() => document.querySelector(".workspace > .pane:first-child > .pane-content:not([hidden]) .ProseMirror").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
   await app.browser.waitUntil(async () => (await words()) === "5 Wörter", { timeoutMsg: `pane A again: ${await words()}` });
   await app.shot("vis-status-split");
   // Back to one pane for the next tests.
@@ -176,7 +176,7 @@ const DECK = "# Agenda\n\n[TOC]\n\n---\n\n# Zahlen\n\nUmsatz ==steigt== deutlich
 test("slides: table of contents, footnotes, highlights and columns; the presenter's slide is 16:9", async () => {
   const deck = await create("Folien E2E", DECK);
   await open(deck);
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Präsentieren"));
   await app.waitFor(".presentation .present-slide");
   await app.waitText(".presentation .present-counter", /^1 \/ 3$/);
@@ -268,18 +268,18 @@ test("tabs: titles are whole while there is room; short tabs stay whole when it 
 test("time tracking: the four KPI cards are two by two in a narrow pane", async () => {
   await app.browser.setWindowSize(1100, 760);
   await app.click('.ribbon [aria-label="Zeiterfassung"]');
-  await app.waitFor(".pane.active .stat-row");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .stat-row");
   await app.browser.execute(() => document.querySelector('.pane.active .tabbar [aria-label="Rechts teilen"]').click());
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane")).length === 2);
   await sleep(500);
-  const rows = await app.browser.execute(() => [...document.querySelector(".workspace > .pane:first-child .stat-row").children].map((c) => Math.round(c.getBoundingClientRect().top)));
+  const rows = await app.browser.execute(() => [...document.querySelector(".workspace > .pane:first-child > .pane-content:not([hidden]) .stat-row").children].map((c) => Math.round(c.getBoundingClientRect().top)));
   assert.equal(rows.length, 4);
   assert.equal(new Set(rows).size, 2, `two rows: ${rows}`);
   assert.equal(rows[0], rows[1]);
   assert.equal(rows[2], rows[3]);
   // The figures stay on one line and inside their tiles.
   const values = await app.browser.execute(() =>
-    [...document.querySelectorAll(".workspace > .pane:first-child .stat-row .stat-value")].map((v) => ({
+    [...document.querySelectorAll(".workspace > .pane:first-child > .pane-content:not([hidden]) .stat-row .stat-value")].map((v) => ({
       lines: Math.round(v.getBoundingClientRect().height / parseFloat(getComputedStyle(v).lineHeight)),
       fits: v.scrollWidth <= v.clientWidth && v.getBoundingClientRect().right <= v.parentElement.getBoundingClientRect().right,
     })),
@@ -294,17 +294,17 @@ test("time tracking: the four KPI cards are two by two in a narrow pane", async 
 test("source editor without ligatures; task boxes, badges, disclosure rows and provider presets", async () => {
   const page = await create("Kleinigkeiten", "- [ ] Angebot schicken\n\n```js\nconst a = 1;\n```\n");
   await open(page);
-  const label = await app.browser.execute(() => document.querySelector(".pane.active ul[data-type=taskList] input[type=checkbox]")?.getAttribute("aria-label"));
+  const label = await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) ul[data-type=taskList] input[type=checkbox]")?.getAttribute("aria-label"));
   assert.equal(label, "Aufgabe: Angebot schicken");
-  await app.click('.pane.active .vh [aria-label^="Markdown-Quelltext"]');
-  await app.waitFor(".pane.active .source-text");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label^="Markdown-Quelltext"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   const lig = await app.browser.execute(() => {
-    const s = getComputedStyle(document.querySelector(".pane.active .source-text"));
+    const s = getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text"));
     return [s.fontVariantLigatures, s.fontFeatureSettings];
   });
   assert.equal(lig[0], "none");
   assert.match(lig[1], /"calt" 0/);
-  await app.browser.execute(() => document.querySelector(".pane.active .vh [aria-label^='Normaler Editor']").click());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .vh [aria-label^='Normaler Editor']").click());
   // A badge with an icon keeps a gap between icon and text.
   assert.equal(await app.browser.execute(() => {
     const b = document.createElement("span");
@@ -318,8 +318,8 @@ test("source editor without ligatures; task boxes, badges, disclosure rows and p
   await app.keys(["Control", ","]);
   await app.waitFor(".settings-nav-item[data-section='ai']");
   await app.browser.execute(() => document.querySelector(".settings-nav-item[data-section='ai']").click());
-  await app.browser.waitUntil(async () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings button")].some((b) => /Anbieter hinzufügen/.test(b.innerText))));
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .settings button")].find((b) => /Anbieter hinzufügen/.test(b.innerText)).click());
+  await app.browser.waitUntil(async () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings button")].some((b) => /Anbieter hinzufügen/.test(b.innerText))));
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .settings button")].find((b) => /Anbieter hinzufügen/.test(b.innerText)).click());
   await app.waitFor(".menu");
   const presets = await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].map((b) => [b.textContent.trim(), !!b.querySelector(".menu-icon svg")]));
   assert.ok(presets.length >= 8);

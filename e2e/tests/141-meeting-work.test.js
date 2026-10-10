@@ -65,7 +65,7 @@ async function reload() {
   await app.browser.pause(300);
   await app.browser.waitUntil(() => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after reload" });
 }
-const paneText = () => app.browser.execute(() => document.querySelector(".pane.active .ProseMirror")?.innerText ?? "");
+const paneText = () => app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror")?.innerText ?? "");
 async function clickMenuItem(pattern) {
   await app.browser.waitUntil(() => app.browser.execute((p) => [...document.querySelectorAll(".menu-item")].some((m) => new RegExp(p).test(m.textContent)), pattern), { timeout: 4000, timeoutMsg: `menu item ${pattern}` });
   await app.browser.execute((p) => [...document.querySelectorAll(".menu-item")].find((m) => new RegExp(p).test(m.textContent)).click(), pattern);
@@ -140,8 +140,8 @@ after(async () => {
 
 test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worauf achten“", async () => {
   await app.click(".ribbon .ribbon-briefing");
-  const row = '.pane.active .bf-card[data-section="meetings"] .bf-meeting';
-  await app.waitText(`.pane.active .bf-card[data-section="meetings"]`, /Jour fixe Portal/, 15000);
+  const row = '.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-meeting';
+  await app.waitText(`.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"]`, /Jour fixe Portal/, 15000);
   // The briefing may have written its own text already.
   const base = cloud.chats().length;
   await app.browser.execute((sel) => [...document.querySelectorAll(sel)].find((r) => /Jour fixe Portal/.test(r.textContent) && !r.classList.contains("past")).querySelector(".bf-prepare").click(), row);
@@ -179,7 +179,7 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   const prepId = await app.invoke("meeting_prep_page", { key: eventKey });
   assert.ok(prepId);
   assert.match((await app.invoke("page_get", { id: prepId })).content, /<!-- arcalo:auto -->/);
-  await app.waitFor(".pane.active .md-managed.begin");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .md-managed.begin");
   await app.shot("141-prep-page");
 
   // The user writes below the generated part; „Aktualisieren“ from the calendar detail keeps it.
@@ -187,11 +187,11 @@ test("Besprechung vorbereiten: series, open points, Jira, attendees and „Worau
   await app.type("Eigene Frage an Jörg");
   await app.browser.pause(1200);
   await app.click(".ribbon .ribbon-briefing");
-  await app.waitText(`.pane.active .bf-card[data-section="meetings"]`, /Vorbereitung/, 10000);
+  await app.waitText(`.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"]`, /Vorbereitung/, 10000);
   await app.browser.execute((sel) => [...document.querySelectorAll(sel)].find((r) => /Jour fixe Portal/.test(r.textContent) && !r.classList.contains("past")).querySelector(".rv-title").click(), row);
-  await app.waitFor(".pane.active .calv-detail .mw-prep-btn", 10000);
-  assert.match(await app.text(".pane.active .calv-detail .mw-prep-btn"), /Vorbereitung aktualisieren/);
-  await app.click(".pane.active .calv-detail .mw-prep-btn");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn", 10000);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn"), /Vorbereitung aktualisieren/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .calv-detail .mw-prep-btn");
   await app.browser.waitUntil(async () => cloud.chats().length === base + 2, { timeout: 15000, timeoutMsg: "refreshed" });
   const after = (await app.invoke("page_get", { id: prepId })).content;
   assert.match(after, /Eigene Frage an Jörg/, "the user's text is saved");
@@ -207,8 +207,8 @@ test("Statusbericht for a Jira project: page, PDF, Markdown and the start page w
   });
   await reload();
   await app.click(".ribbon .ribbon-issues");
-  await app.waitFor(".pane.active .issues-report", 10000);
-  await app.click(".pane.active .issues-report");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .issues-report", 10000);
+  await app.click(".pane.active > .pane-content:not([hidden]) .issues-report");
   await app.waitFor(".dialog .mw-sr-scope");
   await app.select(".dialog .mw-sr-scope", "jira:PROJ");
   await app.click('.dialog .mw-chip-toggle[data-section="deadlines"]');
@@ -223,7 +223,7 @@ test("Statusbericht for a Jira project: page, PDF, Markdown and the start page w
   // PDF: the report opens and the pane is printed.
   await app.browser.execute(() => {
     window.__printed = null;
-    window.print = () => (window.__printed = document.querySelector(".pane.active .ProseMirror")?.innerText ?? "");
+    window.print = () => (window.__printed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror")?.innerText ?? "");
   });
   await app.click(".dialog .mw-sr-pdf");
   await app.browser.waitUntil(() => app.browser.execute(() => window.__printed != null), { timeout: 10000, timeoutMsg: "printed" });
@@ -240,8 +240,8 @@ test("Statusbericht for a Jira project: page, PDF, Markdown and the start page w
   assert.doesNotMatch(file, /arcalo:auto/);
   // The widget: the last report and „Neu erstellen“ (same page).
   await app.keys(["Control", "t"]);
-  await app.waitText('.pane.active .dw[data-widget="sr"] .dw-sr-title', /Statusbericht PROJ Portal/, 10000);
-  await app.click('.pane.active .dw[data-widget="sr"] .dw-sr-again');
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-widget="sr"] .dw-sr-title', /Statusbericht PROJ Portal/, 10000);
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="sr"] .dw-sr-again');
   await app.waitText(".toast", /Bericht aktualisiert/, 15000);
   assert.equal((await app.invoke("status_last")).page_id, last.page_id);
   await app.shot("141-status-widget");
@@ -249,8 +249,8 @@ test("Statusbericht for a Jira project: page, PDF, Markdown and the start page w
 
 test("Nachfass-Mail as an Outlook draft with attendees, subject and escaped body", async () => {
   await app.click(".ribbon .ribbon-briefing");
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)')), { timeout: 10000, timeoutMsg: "last time link" });
-  await app.browser.execute(() => document.querySelector('.pane.active .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)').click());
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)')), { timeout: 10000, timeoutMsg: "last time link" });
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="meetings"] .bf-prep:not(.bf-prep-page)').click());
   await app.browser.waitUntil(async () => /Go-Live im November/.test(await paneText()), { timeout: 10000, timeoutMsg: "note opened" });
   await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await clickMenuItem("^Nachfass-Mail$");

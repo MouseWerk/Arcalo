@@ -61,7 +61,7 @@ test("list views share one title position and type", async () => {
   const seen = {};
   for (const label of ["Aufgaben", "Zeiterfassung", "Projekte", "Aktivität", "Morgen-Briefing", "Tagesrückblick", "Einstellungen"]) {
     await open(label);
-    await app.waitFor(".pane.active .view-header h1, .pane.active .settings-head h1");
+    await app.waitFor(".pane.active > .pane-content:not([hidden]) .view-header h1, .pane.active > .pane-content:not([hidden]) .settings-head h1");
     seen[label] = await header();
     // Activity rows are two-line buttons by design (time, kind, title and detail).
     const problems = (await app.browser.execute(auditLayout, ".pane.active .pane-content")).filter((p) => !p.startsWith("wraps: button.activity-item"));
@@ -78,15 +78,15 @@ test("list views share one title position and type", async () => {
 
 test("tool views share one header height and title size", async () => {
   await open(".ribbon-calendar-view");
-  await app.waitFor(".pane.active .calv-head");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-head");
   const cal = await app.browser.execute(() => {
-    const h = document.querySelector(".pane.active .calv-head");
+    const h = document.querySelector(".pane.active > .pane-content:not([hidden]) .calv-head");
     return { min: getComputedStyle(h).minHeight, title: getComputedStyle(h.querySelector("h1")).fontSize };
   });
   await open("Graphansicht");
-  await app.waitFor(".pane.active .graph-toolbar");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .graph-toolbar");
   const graph = await app.browser.execute(() => {
-    const h = document.querySelector(".pane.active .graph-toolbar");
+    const h = document.querySelector(".pane.active > .pane-content:not([hidden]) .graph-toolbar");
     return { min: getComputedStyle(h).minHeight, height: h.getBoundingClientRect().height, title: getComputedStyle(h.querySelector("h1")).fontSize };
   });
   assert.equal(cal.min, graph.min);
@@ -99,14 +99,14 @@ test("a narrow split pane keeps stat numbers on one line and nothing sticks out"
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await sleep(500);
   await open("Zeiterfassung");
-  await app.waitFor(".pane.active .stat-value");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .stat-value");
   // Narrow the new pane by widening the panes around it: the window keeps its size.
   await app.browser.setWindowSize(1100, 800);
   await sleep(600);
   const width = await app.browser.execute(() => document.querySelector(".pane.active .pane-content").getBoundingClientRect().width);
   assert.ok(width < 520, `the pane is narrow (${width} px)`);
   const lines = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .stat-value")].map((v) => Math.round(v.getBoundingClientRect().height / parseFloat(getComputedStyle(v).lineHeight))),
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .stat-value")].map((v) => Math.round(v.getBoundingClientRect().height / parseFloat(getComputedStyle(v).lineHeight))),
   );
   assert.ok(lines.length >= 2 && lines.every((n) => n === 1), `stat values on one line: ${lines}`);
   assert.deepEqual(await sticking(), []);
@@ -116,7 +116,7 @@ test("a narrow split pane keeps stat numbers on one line and nothing sticks out"
 test("keyboard focus is visible and neutral on buttons, fields and segments", async () => {
   await open("Aufgaben");
   const rings = [];
-  for (const sel of [".pane.active .view-header .segmented button.on", ".pane.active .view-header .select", ".ribbon .icon-btn"]) {
+  for (const sel of [".pane.active > .pane-content:not([hidden]) .view-header .segmented button.on", ".pane.active > .pane-content:not([hidden]) .view-header .select", ".ribbon .icon-btn"]) {
     const el = await app.$(sel);
     await app.browser.execute((e) => e.focus({ focusVisible: true }), el);
     await app.keys(["Shift"]);

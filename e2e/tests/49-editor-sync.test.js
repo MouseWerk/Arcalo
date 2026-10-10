@@ -26,7 +26,7 @@ const reload = async () => {
   await sleep(500);
 };
 const splitRight = async () => {
-  await app.browser.execute(() => document.querySelector(".pane.active .vh [aria-label='Weitere Aktionen']").click());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .vh [aria-label='Weitere Aktionen']").click());
   await app.waitFor(".menu");
   await app.browser.execute(() => [...document.querySelectorAll(".menu [role^=menuitem], .menu button")].find((b) => /Rechts daneben/.test(b.textContent))?.click());
   await app.browser.waitUntil(async () => (await app.$$(".workspace > .pane > .pane-content:not([hidden]) .ProseMirror")).length === 2, { timeoutMsg: "no split" });
@@ -43,25 +43,25 @@ const closeSplit = async () => {
 
 test("visual → source right after typing shows the typed text, and back; nothing is lost", async () => {
   await openTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await app.caretToEnd();
   await app.keys(["Enter"]);
   await app.type("RICHWORT1");
   // No pause: the switch comes while the autosave is still waiting.
   await app.keys(["Control", "Shift", "m"]);
-  const ta = await app.waitFor(".pane.active .source-text");
+  const ta = await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   await app.browser.waitUntil(async () => (await ta.getValue()).includes("RICHWORT1"), { timeout: 3000, timeoutMsg: "source editor shows an old state" });
   // Typed in the source, switched back at once.
   await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .source-text");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     t.focus();
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
     setter.call(t, t.value + "\n\nSRCWORT2\n");
     t.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await app.keys(["Control", "Shift", "m"]);
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.browser.waitUntil(async () => (await app.text(".pane.active .ProseMirror")).includes("SRCWORT2"), { timeout: 3000, timeoutMsg: "visual editor shows an old state" });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.browser.waitUntil(async () => (await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")).includes("SRCWORT2"), { timeout: 3000, timeoutMsg: "visual editor shows an old state" });
   await app.shot("sync-source-switch");
   // Typing afterwards keeps both earlier edits.
   await app.caretToEnd();
@@ -72,17 +72,17 @@ test("visual → source right after typing shows the typed text, and back; nothi
   for (const w of ["RICHWORT1", "SRCWORT2", "LATER3"]) assert.ok(stored.includes(w), `${w} lost: ${stored.slice(-200)}`);
   // Real keystrokes in the source, switched back at once (well before its autosave).
   await app.keys(["Control", "Shift", "m"]);
-  await app.waitFor(".pane.active .source-text");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .source-text");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     t.focus();
     t.setSelectionRange(t.value.length, t.value.length);
   });
   await app.keys(["Enter"]);
   await app.type("SRCKEYS4");
   await app.keys(["Control", "Shift", "m"]);
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.browser.waitUntil(async () => (await app.text(".pane.active .ProseMirror")).includes("SRCKEYS4"), { timeout: 3000, timeoutMsg: "keys typed in the source are missing" });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.browser.waitUntil(async () => (await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")).includes("SRCKEYS4"), { timeout: 3000, timeoutMsg: "keys typed in the source are missing" });
   assert.ok((await content("Architektur")).includes("SRCKEYS4"), "not saved");
 });
 
@@ -90,7 +90,7 @@ test("two panes on the same page: alternating typing keeps every edit", async ()
   const id = await pageId("Zwei Fenster", true);
   await reload();
   await openTree("Zwei Fenster");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await splitRight();
   const typeIn = async (i, text) => {
     await app.browser.execute((i) => {
@@ -152,7 +152,7 @@ test("a dialog keeps the focus while typing (template search in insert mode)", a
   await pageId("Notizzettel", true);
   await reload();
   await openTree("Notizzettel");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.type("/vorlage");
   await app.waitText(".sugg-item.sel", /Vorlage einfügen/);
@@ -176,7 +176,7 @@ test("Ctrl+F while typing in the command palette does not open the note search",
   await pageId("Notizzettel", true);
   await reload();
   await openTree("Notizzettel");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Control", "k"]);
   await app.waitFor(".palette input");
@@ -197,9 +197,9 @@ test("Alt+← in the editor moves the caret, it does not go back in the history"
   await pageId("Notizzettel", true);
   await reload();
   await openTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await openTree("Notizzettel");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Alt", "ArrowLeft"]);
   await sleep(400);
@@ -215,12 +215,12 @@ test("„Als Text einfügen“ right after typing keeps the typed text", async (
   await app.invoke("page_save", { id: p.id, content: "Start\n" });
   await reload();
   await openTree("Einfügen");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Enter"]);
   // Typing and pasting in one go, like typing and then Ctrl+V.
   await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     pm.focus();
     document.execCommand("insertText", false, "Getippt: ");
     const dt = new DataTransfer();
@@ -248,12 +248,12 @@ test("raw HTML, comments, long code fences, empty tasks and \\#tags survive an e
   await app.invoke("page_save", { id: p.id, content: md });
   await reload();
   await openTree("Rohes HTML");
-  await app.waitFor(".pane.active .ProseMirror .md-html");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .md-html");
   // Shown as source text, never rendered.
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active .ProseMirror kbd, .pane.active .ProseMirror details").length), 0);
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror kbd, .pane.active > .pane-content:not([hidden]) .ProseMirror details").length), 0);
   await app.shot("sync-raw-html");
   await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     pm.focus();
     const r = document.createRange();
     r.setStart(pm.querySelector("p").firstChild, 4);

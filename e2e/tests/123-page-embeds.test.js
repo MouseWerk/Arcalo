@@ -27,8 +27,8 @@ const menuClick = (label) =>
 const content = async (id) => (await app.invoke("page_get", { id })).content;
 async function open(id, title) {
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === title, { timeoutMsg: `${title} not open` });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 }
 /** The embeds of the active pane's page, top level only: state and text. */
 const embeds = (pane = ".pane.active") =>
@@ -44,7 +44,7 @@ const embeds = (pane = ".pane.active") =>
 async function scrollAll() {
   // Embeds render as they come into view.
   for (let i = 0; i < 8; i++) {
-    await app.browser.execute((n) => document.querySelectorAll(".pane.active .ProseMirror > p > .page-embed")[n]?.scrollIntoView({ block: "center" }), i);
+    await app.browser.execute((n) => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror > p > .page-embed")[n]?.scrollIntoView({ block: "center" }), i);
     await app.browser.pause(120);
   }
 }
@@ -76,8 +76,8 @@ test("page, heading and block embeds render read-only with their source as a lin
   assert.equal(block.text.trim(), "Zu spät geliefert.");
   assert.equal(circle.state, "ready");
   // A embeds B embeds A: the inner one is a notice.
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active .page-embed .page-embed .page-embed[data-state="cycle"]')), { timeoutMsg: "no cycle notice" });
-  assert.match(await app.browser.execute(() => document.querySelector('.pane.active .page-embed[data-state="cycle"] .pe-notice').innerText), /„Kreis A“ wird um diese Einbettung herum schon gezeigt/);
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector('.pane.active > .pane-content:not([hidden]) .page-embed .page-embed .page-embed[data-state="cycle"]')), { timeoutMsg: "no cycle notice" });
+  assert.match(await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .page-embed[data-state="cycle"] .pe-notice').innerText), /„Kreis A“ wird um diese Einbettung herum schon gezeigt/);
   assert.equal(missing.state, "missing");
   assert.match(missing.text, /Eine Seite „Gibt es nicht“ gibt es noch nicht\.\s*Seite anlegen/);
   assert.equal(noSection.state, "missing");
@@ -88,16 +88,16 @@ test("page, heading and block embeds render read-only with their source as a lin
 });
 
 test("„Seite anlegen“ creates the missing page in place; collapse; the title opens the source", async () => {
-  await app.browser.execute(() => document.querySelector('.pane.active .page-embed[data-state="missing"] .pe-create').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .page-embed[data-state="missing"] .pe-create').click());
   await app.browser.waitUntil(async () => (await app.invoke("page_resolve", { title: "Gibt es nicht", create: false })) !== null, { timeoutMsg: "page not created" });
   await app.browser.waitUntil(async () => (await embeds())[4]?.text.includes("Die Seite ist leer."), { timeout: 8000, timeoutMsg: "created page not shown" });
   assert.equal(await content(ids.host), HOST, "creating the page does not touch the Markdown");
 
-  await app.browser.execute(() => document.querySelector(".pane.active .page-embed .pe-toggle").click());
-  assert.ok(await app.browser.execute(() => document.querySelector(".pane.active .page-embed").classList.contains("is-collapsed")));
-  assert.equal(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active .page-embed .pe-body")).display), "none");
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .page-embed .pe-toggle").getAttribute("aria-expanded")), "false");
-  await app.browser.execute(() => document.querySelector(".pane.active .page-embed .pe-toggle").click());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-toggle").click());
+  assert.ok(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed").classList.contains("is-collapsed")));
+  assert.equal(await app.browser.execute(() => getComputedStyle(document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-body")).display), "none");
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-toggle").getAttribute("aria-expanded")), "false");
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-toggle").click());
 
   // Embeds are backlinks of their page.
   const doc = await app.invoke("page_get", { id: ids.quelle });
@@ -105,17 +105,17 @@ test("„Seite anlegen“ creates the missing page in place; collapse; the title
 });
 
 test("an embed follows edits of its source in another pane", async () => {
-  await app.click('.pane.active .page-view [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Rechts daneben öffnen"));
   await app.browser.waitUntil(() => app.browser.execute(() => document.querySelectorAll(".pane").length === 2), { timeoutMsg: "no split" });
   // In the right pane, the embed's title opens the source.
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .page-embed .pe-title")));
-  await app.browser.execute(() => document.querySelector(".pane.active .page-embed .pe-title").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === "Quelle", { timeoutMsg: "title did not open the page" });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-title")));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-embed .pe-title").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Quelle", { timeoutMsg: "title did not open the page" });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   // Type at the end of „Einleitung Quelle“.
   await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     pm.focus();
     const p = [...pm.querySelectorAll("p")].find((e) => e.textContent === "Einleitung Quelle");
     const r = document.createRange();
@@ -142,7 +142,7 @@ test("`![[` completes pages, then headings after #", async () => {
   for (const k of "![[Quel") await app.keys([k]);
   await app.browser.waitUntil(() => app.browser.execute(() => [...document.querySelectorAll(".sugg-item")].some((e) => e.textContent.includes("Quelle"))), { timeoutMsg: "no page suggestion" });
   await app.keys(["Enter"]);
-  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active .ProseMirror .page-embed")), { timeoutMsg: "no embed inserted" });
+  await app.browser.waitUntil(() => app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror .page-embed")), { timeoutMsg: "no embed inserted" });
   await app.keys(["Enter"]);
   for (const k of "![[Quelle#Zi") await app.keys([k]);
   await app.browser.waitUntil(() => app.browser.execute(() => [...document.querySelectorAll(".sugg-item")].some((e) => e.textContent.includes("## Ziele"))), { timeoutMsg: "no heading suggestion" });
@@ -165,9 +165,9 @@ test("HTML share and print contain the embedded content", async () => {
   await open(ids.host, "Einbettungen");
   await app.browser.execute(() => {
     window.__printed = null;
-    window.print = () => (window.__printed = document.querySelector(".pane.active .ProseMirror").innerText);
+    window.print = () => (window.__printed = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").innerText);
   });
-  await app.click('.pane.active .page-view [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Drucken / als PDF"));
   await app.browser.waitUntil(() => app.browser.execute(() => window.__printed != null), { timeout: 10000, timeoutMsg: "print not reached" });
   const printed = await app.browser.execute(() => window.__printed);

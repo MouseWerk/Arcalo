@@ -68,7 +68,7 @@ test("navigating a tab keeps history for back and forward", async () => {
 
   await app.keys(["Alt", "ArrowLeft"]);
   await app.waitText(".pane.active .tab.active .tab-title", /Architektur/);
-  await app.click('.pane.active .vh-nav [aria-label^="Vorwärts"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh-nav [aria-label^="Vorwärts"]');
   await app.waitText(".pane.active .tab.active .tab-title", /PRJ-2026-X Rollout/);
 });
 
@@ -80,9 +80,9 @@ test("split view shows two notes side by side and edits stay in sync", async () 
   assert.deepEqual(await titles(), ["Architektur", "Architektur"]);
 
   // Type in the right pane; the left one picks up the saved text.
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     pm.focus();
     const sel = window.getSelection();
     sel.selectAllChildren(pm);
@@ -91,12 +91,12 @@ test("split view shows two notes side by side and edits stay in sync", async () 
   await app.keys(["Enter"]);
   for (const ch of "Synchron geprüft") await app.keys([ch]);
   await app.browser.waitUntil(
-    async () => app.browser.execute(() => document.querySelectorAll(".pane")[0].querySelector(".ProseMirror")?.textContent.includes("Synchron geprüft")),
+    async () => app.browser.execute(() => document.querySelectorAll(".pane")[0].querySelector(":scope > .pane-content:not([hidden]) .ProseMirror")?.textContent.includes("Synchron geprüft")),
     { timeout: 6000, timeoutMsg: "left pane did not sync" },
   );
 
   // Alt+click in the tree opens into the other pane.
-  await (await app.$(".pane:not(.active) .pane-content")).click();
+  await (await app.$(".pane:not(.active) > .pane-content:not([hidden])")).click();
   await openFromTree("PRJ-2026-X Rollout", { alt: true });
   await app.browser.waitUntil(async () => (await titles()).includes("PRJ-2026-X Rollout"));
   await app.shot("split-view");
@@ -140,7 +140,7 @@ test("Ctrl+Shift+F searches all notes in the sidebar", async () => {
   const marks = await app.$$(".side-result mark");
   assert.ok(marks.length > 0, "hits are highlighted");
   await (await app.$(".side-result")).click();
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.shot("sidebar-search");
   await app.click('.side-tabs [aria-label="Dateien"]');
 });
@@ -151,9 +151,9 @@ test("renaming a page updates links shown in another pane", async () => {
   await app.waitText(".pane.active .tab.active .tab-title", /PRJ-2026-X Rollout/);
   await openFromTree("Architektur", { alt: true });
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);
-  await app.waitFor(".pane.active .page-title");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .page-title");
   await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .page-title");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title");
     t.focus();
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
     set.call(t, "Architektur neu");
@@ -161,7 +161,7 @@ test("renaming a page updates links shown in another pane", async () => {
     t.blur();
   });
   await app.browser.waitUntil(
-    async () => app.browser.execute(() => document.querySelectorAll(".pane")[0].querySelector(".ProseMirror")?.textContent.includes("Architektur neu")),
+    async () => app.browser.execute(() => document.querySelectorAll(".pane")[0].querySelector(":scope > .pane-content:not([hidden]) .ProseMirror")?.textContent.includes("Architektur neu")),
     { timeout: 6000, timeoutMsg: "left pane kept the old link" },
   );
   // Nothing writes the old title back.

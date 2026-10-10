@@ -94,11 +94,11 @@ test("ticking a repeating task in the editor adds the next one; Ctrl+Z takes bot
   const before = await content();
   // The third task item of the note: „Blumen gießen“.
   await app.browser.execute(() => {
-    const li = [...document.querySelectorAll(".pane.active .ProseMirror li[data-checked]")].find((l) => l.textContent.includes("Blumen gießen"));
+    const li = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror li[data-checked]")].find((l) => l.textContent.includes("Blumen gießen"));
     li.querySelector("input[type=checkbox]").click();
   });
   await until(async () => (await content()).includes(`- [x] Blumen gießen every:alle 3 Tage\n- [ ] Blumen gießen every:alle 3 Tage due:${inDays(3)}\n`), "editor did not add the next occurrence");
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").focus());
   await app.keys(["Control", "z"]);
   await until(async () => (await content()) === before, "one undo did not take both back");
 });

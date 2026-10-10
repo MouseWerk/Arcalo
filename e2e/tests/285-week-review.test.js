@@ -61,7 +61,7 @@ async function openWeek() {
   await app.type("Wochenrückblick");
   await app.waitText(".pal-item.sel", /^Wochenrückblick/);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .wr-view .rv-stats", 15000);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wr-view .rv-stats", 15000);
 }
 async function report(id) {
   return (await app.invoke("page_get", { id })).content;
@@ -135,27 +135,27 @@ test("the week's days and sections show what was done", async () => {
   await app.browser.execute(() => document.querySelector('button[aria-label^="Seitenpanel"].active, button[aria-label^="Seitenpanel"][aria-pressed="true"]')?.click());
   await openWeek();
   await app.waitText(".pane.active .tab.active", /Wochenrückblick/);
-  assert.match(await app.text(".pane.active .wr-date"), new RegExp(`^Diese Woche · KW ${kw.week} · `));
-  assert.equal((await app.$$(".pane.active .wr-day")).length, 7);
-  assert.match(await app.text(".pane.active .wr-day:first-child"), /^Mo/);
-  assert.match(await app.text(".pane.active .rv-stat.tone-time"), /\/ 40,00 h/);
-  await app.waitText(".pane.active .rv-time .rv-wbs", /NP-8801\/1020/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-date"), new RegExp(`^Diese Woche · KW ${kw.week} · `));
+  assert.equal((await app.$$(".pane.active > .pane-content:not([hidden]) .wr-day")).length, 7);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-day:first-child"), /^Mo/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-time"), /\/ 40,00 h/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .rv-time .rv-wbs", /NP-8801\/1020/);
   // Meetings by day with their booking state.
   // Day heads are small caps (upper case by CSS).
-  const heads = await rows(".pane.active .rv-meetings .rv-group-head");
+  const heads = await rows(".pane.active > .pane-content:not([hidden]) .rv-meetings .rv-group-head");
   assert.match(heads[0], /^mo /i, heads.join(" | "));
-  const meetings = await rows(".pane.active .rv-meetings .rv-meeting");
+  const meetings = await rows(".pane.active > .pane-content:not([hidden]) .rv-meetings .rv-meeting");
   assert.ok(meetings.some((m) => /Wochenstart Rückblick/.test(m) && /gebucht/.test(m) && !/nicht gebucht/.test(m)), meetings.join("\n"));
   assert.ok(meetings.some((m) => /Kundentermin Woche/.test(m)));
-  const done = await rows(".pane.active .rv-tasks .rv-group-done .rv-task");
+  const done = await rows(".pane.active > .pane-content:not([hidden]) .rv-tasks .rv-group-done .rv-task");
   assert.ok(done.some((t) => /Angebot Woche/.test(t) && /Wochen Konzept/.test(t)), done.join("\n"));
-  assert.ok((await rows(".pane.active .rv-tasks .rv-group-open .rv-task")).some((t) => /Bericht Woche/.test(t)));
-  assert.ok((await rows(".pane.active .rv-tasks .rv-group-overdue .rv-task")).some((t) => /Alte Sache/.test(t)));
-  assert.ok((await rows(".pane.active .rv-pages .rv-page")).some((p) => /Wochen Konzept/.test(p) && /neu/.test(p)));
-  assert.match(await app.text(".pane.active .rv-focus"), /Fokus Wochenbericht/);
+  assert.ok((await rows(".pane.active > .pane-content:not([hidden]) .rv-tasks .rv-group-open .rv-task")).some((t) => /Bericht Woche/.test(t)));
+  assert.ok((await rows(".pane.active > .pane-content:not([hidden]) .rv-tasks .rv-group-overdue .rv-task")).some((t) => /Alte Sache/.test(t)));
+  assert.ok((await rows(".pane.active > .pane-content:not([hidden]) .rv-pages .rv-page")).some((p) => /Wochen Konzept/.test(p) && /neu/.test(p)));
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-focus"), /Fokus Wochenbericht/);
   // No horizontal scroll at 1440 px.
   const overflow = await app.browser.execute(() => {
-    const v = document.querySelector(".pane.active .view-scroll");
+    const v = document.querySelector(".pane.active > .pane-content:not([hidden]) .view-scroll");
     return v ? v.scrollWidth - v.clientWidth : -1;
   });
   assert.ok(overflow <= 1, `no horizontal overflow (${overflow})`);
@@ -165,57 +165,57 @@ test("the week's days and sections show what was done", async () => {
 
 test("←, →, T and the buttons move between weeks; a day opens its Tagesrückblick", async () => {
   await openWeek();
-  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active .wr-this-week")?.disabled), true);
+  assert.equal(await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .wr-this-week")?.disabled), true);
   await app.browser.execute(() => document.activeElement?.blur());
   await app.keys(["ArrowLeft"]);
-  await app.waitText(".pane.active .wr-date", /^Letzte Woche · KW /);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .wr-date", /^Letzte Woche · KW /);
   await app.keys(["ArrowLeft"]);
-  await app.browser.waitUntil(async () => /^KW \d+ · /.test(await app.text(".pane.active .wr-date")), { timeoutMsg: "two weeks back" });
+  await app.browser.waitUntil(async () => /^KW \d+ · /.test(await app.text(".pane.active > .pane-content:not([hidden]) .wr-date")), { timeoutMsg: "two weeks back" });
   await app.keys(["t"]);
-  await app.waitText(".pane.active .wr-date", /^Diese Woche · /);
-  await app.click(".pane.active .rv-nav button[aria-label^='Nächste Woche']");
-  await app.browser.waitUntil(async () => /^KW \d+ · /.test(await app.text(".pane.active .wr-date")), { timeoutMsg: "next week" });
-  await app.click(".pane.active .wr-this-week");
-  await app.waitText(".pane.active .wr-date", /^Diese Woche · /);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .wr-date", /^Diese Woche · /);
+  await app.click(".pane.active > .pane-content:not([hidden]) .rv-nav button[aria-label^='Nächste Woche']");
+  await app.browser.waitUntil(async () => /^KW \d+ · /.test(await app.text(".pane.active > .pane-content:not([hidden]) .wr-date")), { timeoutMsg: "next week" });
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-this-week");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .wr-date", /^Diese Woche · /);
   // Monday's card opens the Tagesrückblick of that day.
-  await app.click(".pane.active .wr-day:first-child");
-  await app.waitFor(".pane.active .rv-view:not(.wr-view) .rv-stats");
-  assert.match(await app.text(".pane.active .rv-date"), /Montag/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-day:first-child");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view:not(.wr-view) .rv-stats");
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-date"), /Montag/);
 });
 
 test("the Kalender header, the Tagesrückblick and the start page open it", async () => {
   // From the day review: „Woche ansehen“.
   await app.click(".ribbon .ribbon-review");
-  await app.waitFor(".pane.active .rv-view .rv-week");
-  await app.click(".pane.active .rv-week");
-  await app.waitFor(".pane.active .wr-view .rv-stats");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view .rv-week");
+  await app.click(".pane.active > .pane-content:not([hidden]) .rv-week");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wr-view .rv-stats");
   // From the Kalender's week header.
   await app.keys(["Control", "Shift", "e"]);
-  await app.waitFor(".pane.active .calv");
-  await app.click(".pane.active .calv-week-review");
-  await app.waitText(".pane.active .wr-date", new RegExp(`KW ${kw.week} · `));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv");
+  await app.click(".pane.active > .pane-content:not([hidden]) .calv-week-review");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .wr-date", new RegExp(`KW ${kw.week} · `));
   // The start page widget: hours against the target, the days, the way in.
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active [data-widget="week_review"] .dw-wr', 15000);
-  assert.equal((await app.$$('.pane.active [data-widget="week_review"] .dw-wr-day')).length, 7);
-  assert.match(await app.text('.pane.active [data-widget="week_review"] .dw-wr-time'), /\/ 40,00 h/);
-  assert.match(await app.text('.pane.active [data-widget="week_review"] .dw-wr-counts'), /Termine/);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) [data-widget="week_review"] .dw-wr', 15000);
+  assert.equal((await app.$$('.pane.active > .pane-content:not([hidden]) [data-widget="week_review"] .dw-wr-day')).length, 7);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="week_review"] .dw-wr-time'), /\/ 40,00 h/);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) [data-widget="week_review"] .dw-wr-counts'), /Termine/);
   await shot("285-week-widget");
-  await app.click('.pane.active [data-widget="week_review"] .dw-wr-links .dw-link');
-  await app.waitFor(".pane.active .wr-view .rv-stats");
+  await app.click('.pane.active > .pane-content:not([hidden]) [data-widget="week_review"] .dw-wr-links .dw-link');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wr-view .rv-stats");
 });
 
 test("„Zusammenfassen“ without AI explains how to set it up", async () => {
   await openWeek();
-  await app.click(".pane.active .wr-summarize");
-  await app.waitText(".pane.active .wr-setup .ai-setup-note", /KI einrichten/);
-  assert.match(await app.text(".pane.active .wr-setup .ai-setup-note"), /Zusammenfassung der Woche/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-summarize");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .wr-setup .ai-setup-note", /KI einrichten/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-setup .ai-setup-note"), /Zusammenfassung der Woche/);
   await assert.rejects(app.invoke("week_review_summary", { requestId: "wr-none", date: mondayIso }), /Keine KI verbunden/);
 });
 
 test("„Als Wochenbericht speichern“ writes a filed page and updates it in place", async () => {
   await openWeek();
-  await app.click(".pane.active .wr-save");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-save");
   await app.waitText(".toast-title", /Wochenbericht gespeichert/);
   const r = await app.invoke("week_review", { date: mondayIso });
   assert.ok(r.report_page_id, "the review knows its report");
@@ -246,7 +246,7 @@ test("„Als Wochenbericht speichern“ writes a filed page and updates it in pl
   const np = (await app.invoke("wbs_tree")).flatMap((p) => p.netzplaene).find((n) => n.netzplan_nr === "NP-8801");
   await app.invoke("time_entry_create", { netzplanId: np.id, vorgangNr: "1020", leistungsart: null, startTime: at(0, 16).toISOString(), durationMinutes: 45, description: "Nachtrag Woche" });
   await app.dismissToasts();
-  await app.click(".pane.active .wr-save");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-save");
   await app.waitText(".dialog .dialog-title", /Wochenbericht aktualisieren\?/);
   await app.click(".dialog .btn-primary");
   await app.waitText(".toast-title", /Wochenbericht aktualisiert/);
@@ -259,8 +259,8 @@ test("„Als Wochenbericht speichern“ writes a filed page and updates it in pl
 
   // The report page in light and dark.
   await app.dismissToasts();
-  await app.click(".pane.active .wr-open-report");
-  await app.waitText(".pane.active .ProseMirror h2", /Zeit/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-open-report");
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror h2", /Zeit/);
   await shot("285-week-report-light");
   await setTheme("dark");
   await shot("285-week-report-dark");
@@ -272,9 +272,9 @@ test("„Als Wochenbericht speichern“ writes a filed page and updates it in pl
 
 test("the template „Wochenbericht“ opens from the view", async () => {
   await openWeek();
-  await app.click(".pane.active .wr-template");
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue().catch(() => "")) === "Wochenbericht", { timeoutMsg: "template not opened" });
-  await app.waitText(".pane.active .ProseMirror", /\{\{rückblick\}\}/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-template");
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue().catch(() => "")) === "Wochenbericht", { timeoutMsg: "template not opened" });
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /\{\{rückblick\}\}/);
 });
 
 test("narrow panes: the days wrap, nothing scrolls sideways", async () => {
@@ -282,7 +282,7 @@ test("narrow panes: the days wrap, nothing scrolls sideways", async () => {
   await app.browser.setWindowSize(960, 900);
   await app.browser.pause(400);
   const overflow = await app.browser.execute(() => {
-    const v = document.querySelector(".pane.active .view-scroll");
+    const v = document.querySelector(".pane.active > .pane-content:not([hidden]) .view-scroll");
     return v ? v.scrollWidth - v.clientWidth : -1;
   });
   assert.ok(overflow <= 1, `no horizontal overflow (${overflow})`);
@@ -297,11 +297,11 @@ test("without time tracking the time part is gone", async () => {
   assert.equal(r.time.booked_minutes, 0);
   assert.ok(r.meetings.every((m) => !["booked", "open", "skipped"].includes(m.state)));
   await openWeek();
-  await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".pane.active .wr-view .rv-stat.tone-time"))), { timeoutMsg: "time stat still shown" });
-  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active .wr-days, .pane.active .wr-view .rv-time").length), 0);
-  assert.match(await app.text(".pane.active .rv-tasks"), /Angebot Woche/);
+  await app.browser.waitUntil(async () => !(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .wr-view .rv-stat.tone-time"))), { timeoutMsg: "time stat still shown" });
+  assert.equal(await app.browser.execute(() => document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .wr-days, .pane.active > .pane-content:not([hidden]) .wr-view .rv-time").length), 0);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-tasks"), /Angebot Woche/);
   await shot("285-week-review-no-time");
-  await app.click(".pane.active .wr-save");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-save");
   await app.waitText(".dialog .dialog-title", /Wochenbericht aktualisieren\?/);
   await app.click(".dialog .btn-primary");
   await app.waitText(".toast-title", /Wochenbericht aktualisiert/);
@@ -322,13 +322,13 @@ test("in English", async () => {
   await app.type("Weekly review");
   await app.waitText(".pal-item.sel", /^Weekly review/);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .wr-view .rv-stats", 15000);
-  assert.match(await app.text(".pane.active .wr-view h1"), /^Weekly review$/);
-  assert.match(await app.text(".pane.active .wr-date"), new RegExp(`^This week · Week ${kw.week} · `));
-  assert.match(await app.text(".pane.active .wr-save"), /Save as weekly report/);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wr-view .rv-stats", 15000);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-view h1"), /^Weekly review$/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-date"), new RegExp(`^This week · Week ${kw.week} · `));
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .wr-save"), /Save as weekly report/);
   assert.deepEqual(await germanLeftovers(app, [/Rückblick|Kundentermin|Abstimmung|Müller|Weiß|Zürich/]), []);
   await shot("285-week-review-english");
-  await app.click(".pane.active .wr-save");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wr-save");
   await app.waitText(".toast-title", /Weekly report saved/);
   const r = await app.invoke("week_review", { date: mondayIso });
   const page = await app.invoke("page_get", { id: r.report_page_id });

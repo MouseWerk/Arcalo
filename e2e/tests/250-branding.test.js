@@ -113,7 +113,7 @@ test("window title, Settings and the developer log say Arcalo", async () => {
   assert.deepEqual(await oldName(), [], "home");
 
   await app.keys(["Control", ","]);
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   // Every section once (the Über section names the app, Protokoll its log file).
   const sections = await app.browser.execute(() => [...document.querySelectorAll(".settings-nav-item[data-section]")].map((b) => b.dataset.section));
   assert.ok(sections.includes("about"), sections.join());

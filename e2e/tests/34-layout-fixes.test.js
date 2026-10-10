@@ -22,13 +22,13 @@ const rect = (sel) => app.browser.execute((s) => {
 
 test("find and replace: two bars under each other at the top right of the pane", async () => {
   await openTree("Architektur");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await app.keys(["Control", "h"]);
   await app.waitFor(".find-bar.find-replace");
   const [find, repl] = await app.browser.execute(() => [...document.querySelectorAll(".find-bar")].map((b) => { const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, right: r.right }; }));
   assert.ok(repl.top >= find.bottom, `no overlap: ${JSON.stringify([find, repl])}`);
-  const header = await rect(".pane.active .vh");
-  const pane = await rect(".pane.active .page-scroll");
+  const header = await rect(".pane.active > .pane-content:not([hidden]) .vh");
+  const pane = await rect(".pane.active > .pane-content:not([hidden]) .page-scroll");
   assert.ok(find.top >= header.bottom && find.top < header.bottom + 30, "right below the header row");
   assert.ok(pane.right - find.right < 40, "at the right edge");
   assert.equal(await app.browser.execute(() => document.activeElement?.getAttribute("aria-label")), "In Seite suchen");
@@ -67,22 +67,22 @@ test("many tabs: they shrink, the active one stays visible, + and the tab list a
 
 test("header toolbar in a narrow pane: essentials stay, the rest is in „Weitere Formatierung“", async () => {
   await openTree("Architektur");
-  await app.waitFor(".pane.active .vh .editor-toolbar");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .vh .editor-toolbar");
   await app.browser.execute(() => document.querySelector('.pane.active .tabbar [aria-label="Rechts teilen"]').click());
   await app.browser.waitUntil(async () => (await app.$$(".pane")).length === 2);
   await app.browser.execute(() => { if (!document.querySelector(".app > .panel")) document.querySelector(".workspace > .pane:last-child .tabbar > button:last-of-type").click(); });
   await sleep(500);
   const state = await app.browser.execute(() => {
-    const bar = document.querySelector(".pane.active .vh .editor-toolbar");
+    const bar = document.querySelector(".pane.active > .pane-content:not([hidden]) .vh .editor-toolbar");
     const vis = (label) => { const b = bar.querySelector(`[aria-label^="${label}"]`); if (!b) return false; const r = b.getBoundingClientRect(), br = bar.getBoundingClientRect(); return r.width > 0 && r.right <= br.right + 1 && r.left >= br.left - 1; };
     return { more: !!bar.querySelector('[aria-label="Weitere Formatierung"]'), insert: vis("Einfügen"), tools: vis("Werkzeuge"), bold: vis("Fett"), fits: bar.scrollWidth <= bar.clientWidth + 1 };
   });
   assert.deepEqual(state, { more: true, insert: true, tools: true, bold: true, fits: true });
-  await app.click('.pane.active .vh [aria-label="Weitere Formatierung"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Formatierung"]');
   await app.waitText(".menu", /Aufzählung/);
   await app.shot("toolbar-overflow");
   await app.browser.execute(() => [...document.querySelectorAll(".menu-item")].find((b) => b.textContent.includes("Aufgabenliste")).click());
-  await app.waitFor(".pane.active .ProseMirror ul[data-type=taskList]");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror ul[data-type=taskList]");
   await app.keys(["Control", "z"]);
 });
 

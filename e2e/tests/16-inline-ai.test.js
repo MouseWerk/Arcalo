@@ -34,7 +34,7 @@ const transforms = () => llm.requests.filter((r) => r.url === "/v1/chat/completi
 /** Selects `text` inside the open note (one text node) through the DOM, as a mouse drag would. */
 const selectText = async (text) => {
   const ok = await app.browser.execute((t) => {
-    const root = document.querySelector(".pane.active .ProseMirror");
+    const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const i = n.data.indexOf(t);
@@ -124,17 +124,17 @@ test("KI in the toolbar on an empty line writes new text there, with the page as
   await app.waitFor(".ProseMirror h2");
   // Cursor into a new empty paragraph after the first one.
   await app.browser.execute(() => {
-    const p = document.querySelector(".pane.active .ProseMirror p");
+    const p = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror p");
     const r = document.createRange();
     r.selectNodeContents(p);
     r.collapse(false);
-    document.querySelector(".pane.active .ProseMirror").focus();
+    document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").focus();
     getSelection().removeAllRanges();
     getSelection().addRange(r);
   });
   await app.keys(["End", "Enter"]);
   await app.browser.pause(200);
-  await app.click(".pane.active .vh .tb-ai");
+  await app.click(".pane.active > .pane-content:not([hidden]) .vh .tb-ai");
   await app.waitFor(".ai-bar");
   await app.waitText(".ai-chip", /Weiterschreiben/);
   await clickText(".ai-chip", /^Weiterschreiben$/);
@@ -154,7 +154,7 @@ test("near the bottom of the window the bar opens above the selection and stays 
   await openFromTree("Architektur");
   await app.waitFor(".ProseMirror h2");
   await app.browser.execute(() => {
-    const s = document.querySelector(".pane.active .page-scroll");
+    const s = document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll");
     s.scrollTop = s.scrollHeight;
   });
   await selectText("Verzug verschiebt die Abnahme.");
@@ -163,7 +163,7 @@ test("near the bottom of the window the bar opens above the selection and stays 
   await app.browser.pause(400);
   const r = await app.browser.execute(() => {
     const b = document.querySelector(".ai-bar").getBoundingClientRect();
-    const s = document.querySelector(".pane.active .page-scroll").getBoundingClientRect();
+    const s = document.querySelector(".pane.active > .pane-content:not([hidden]) .page-scroll").getBoundingClientRect();
     return { top: b.top, bottom: b.bottom, viewTop: s.top, viewBottom: s.bottom };
   });
   assert.ok(r.top >= r.viewTop - 1 && r.bottom <= r.viewBottom + 1, JSON.stringify(r));
@@ -175,9 +175,9 @@ test("near the bottom of the window the bar opens above the selection and stays 
 
 test("page menu „Besprechung zusammenfassen“ streams a summary and inserts it at the end", async () => {
   await openFromTree("Jour fixe 22.09.");
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Jour fixe 22.09.");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click('.pane.active [aria-label="Weitere Aktionen"]');
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === "Jour fixe 22.09.");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   await clickText(".menu-item", /Besprechung zusammenfassen/);
   await app.waitFor('[role="dialog"][aria-label="Besprechung zusammenfassen"]');
@@ -212,7 +212,7 @@ test("/Zusammenfassung opens the summary; „Als neue Seite“ links back", asyn
   await app.waitFor('[role="dialog"][aria-label="Besprechung zusammenfassen"]');
   await app.waitText(".dialog-foot .btn", /Als neue Seite/);
   await clickText(".dialog-foot .btn", /Als neue Seite/);
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Jour fixe 22.09. – Zusammenfassung", {
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === "Jour fixe 22.09. – Zusammenfassung", {
     timeoutMsg: "summary page opened",
   });
   const md = await content("Jour fixe 22.09. – Zusammenfassung");

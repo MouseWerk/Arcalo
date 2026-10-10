@@ -41,7 +41,7 @@ async function palette(text, item) {
 test("„Aktuelle E-Mail übernehmen“ reads the selected Outlook mails", async () => {
   page = await app.invoke("page_create", { parentId: null, title: "Projekt Portal", icon: null, content: "# Portal\n\n## Aufgaben\n\n- [ ] Kickoff vorbereiten\n\n## Notizen\n\nText\n" });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: false } });
-  await app.waitText(".pane.active .ProseMirror", /Kickoff vorbereiten/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .ProseMirror", /Kickoff vorbereiten/);
 
   await palette("Aktuelle E-Mail", /Aktuelle E-Mail übernehmen/);
   await app.waitText(".dialog .dialog-title", /E-Mail übernehmen \(1 von 2\)/);
@@ -119,7 +119,7 @@ test("the link chip opens the mail again in Outlook", async () => {
   const below = (nodes) => nodes.flatMap((n) => [n, ...below(n.children ?? [])]);
   const note = below((await app.invoke("workspace_tree")).find((n) => n.title === "E-Mails").children).find((n) => n.title === "Protokoll Lenkungskreis");
   await app.invoke("search_open", { target: { kind: "page", page_id: note.id, new_tab: false } });
-  const chip = await app.waitFor('.pane.active .ProseMirror a[href^="arcalo-mail:"]');
+  const chip = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror a[href^="arcalo-mail:"]');
   assert.match(await app.textOf(chip), /E-Mail: Protokoll Lenkungskreis \(Weiß, Jörg, 23\.09\.2026\)/);
   await app.shot("76-mail-note");
   await app.dismissToasts();

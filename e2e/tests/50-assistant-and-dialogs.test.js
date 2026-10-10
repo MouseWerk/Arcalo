@@ -206,7 +206,7 @@ test("a damaged drawing is shown as such and never overwritten", async () => {
   const p = await app.invoke("page_resolve", { title: "Zeichnungen 1.4", create: true });
   await app.invoke("page_save", { id: p.id, content: "![[Kaputt.excalidraw]]\n" });
   await openPage("Zeichnungen 1.4");
-  await app.click(".pane.active .drawing-embed");
+  await app.click(".pane.active > .pane-content:not([hidden]) .drawing-embed");
   await app.waitText(".drawing-overlay .drawing-broken", /beschädigt/);
   assert.equal((await app.$$(".drawing-overlay canvas.excalidraw__canvas")).length, 0, "an empty canvas was opened over the file");
   await app.shot("drawing-broken");
@@ -214,7 +214,7 @@ test("a damaged drawing is shown as such and never overwritten", async () => {
   await app.browser.waitUntil(async () => (await app.$$(".drawing-overlay")).length === 0, { timeoutMsg: "did not close" });
   assert.equal(fs.readFileSync(att("Kaputt.excalidraw"), "utf8"), broken, "file changed");
   // „Neu beginnen“ keeps a copy first.
-  await app.click(".pane.active .drawing-embed");
+  await app.click(".pane.active > .pane-content:not([hidden]) .drawing-embed");
   await app.waitFor(".drawing-overlay .drawing-broken");
   await app.browser.execute(() => [...document.querySelectorAll(".drawing-broken button")].find((b) => /Neu beginnen/.test(b.textContent)).click());
   await app.waitFor(".drawing-overlay canvas.excalidraw__canvas.interactive", 20000);
@@ -233,7 +233,7 @@ test("a drawing in Obsidian's Markdown form opens with its content", async () =>
   const p = await app.invoke("page_resolve", { title: "Zeichnungen 1.4", create: true });
   await app.invoke("page_save", { id: p.id, content: "![[Obsidian.excalidraw]]\n" });
   await openPage("Zeichnungen 1.4");
-  await app.click(".pane.active .drawing-embed");
+  await app.click(".pane.active > .pane-content:not([hidden]) .drawing-embed");
   await app.waitFor(".drawing-overlay canvas.excalidraw__canvas.interactive", 20000);
   await sleep(400);
   assert.equal((await app.$$(".drawing-overlay .drawing-broken")).length, 0);
@@ -252,10 +252,10 @@ test("pasting megabytes of text offers to attach it as a file", async () => {
   const p = await app.invoke("page_resolve", { title: "Großer Text", create: true });
   await app.invoke("page_save", { id: p.id, content: "Vorher\n" });
   await openPage("Großer Text");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const dt = new DataTransfer();
     dt.setData("text/plain", "Zeile mit Protokolltext 0123456789\n".repeat(40_000));
     let ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
@@ -268,7 +268,7 @@ test("pasting megabytes of text offers to attach it as a file", async () => {
   await app.waitText(".dialog", /Sehr großer Text/);
   await app.shot("large-paste");
   await app.browser.execute(() => [...document.querySelectorAll(".dialog button")].find((b) => /Als Datei anhängen/.test(b.textContent)).click());
-  await app.waitFor(".pane.active .ProseMirror .file-embed");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .file-embed");
   await sleep(1500);
   const c = (await app.invoke("page_get", { id: p.id })).content;
   const name = /!\[\[(Eingefügter Text [^\]]+\.txt)\]\]/.exec(c)?.[1];

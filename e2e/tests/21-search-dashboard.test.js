@@ -122,7 +122,7 @@ test("edit mode adds, removes, reorders and resizes, and it persists", async () 
   await clickText(".dash-bar button", "Abbrechen");
   assert.deepEqual(await order(), expected);
   await app.keys(["Control", "t"]);
-  await app.browser.waitUntil(async () => (await app.$$(".dash")).length >= 1 && (await app.$(".pane.active .dash-grid")).isExisting());
+  await app.browser.waitUntil(async () => (await app.$$(".dash")).length >= 1 && (await app.$(".pane.active > .pane-content:not([hidden]) .dash-grid")).isExisting());
   assert.deepEqual(await app.consoleErrors(), []);
 });
 

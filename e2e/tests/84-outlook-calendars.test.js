@@ -130,8 +130,8 @@ test("the Kalender shows each calendar in its color; the legend hides one in the
 
 test("the start page's „Termine“ lists the Outlook calendars by name and color", async () => {
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-widget="agenda"]');
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-widget="agenda"] .dw-gear').click());
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="agenda"]');
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-widget="agenda"] .dw-gear').click());
   await app.waitFor(".dialog .dws");
   const rows = await app.browser.execute(() => [...document.querySelectorAll(".dialog .dws-check")].map((l) => `${l.querySelector(".ellipsis")?.textContent}|${l.querySelector(".dws-swatch")?.style.background}`));
   const names = rows.map((r) => r.split("|")[0]);

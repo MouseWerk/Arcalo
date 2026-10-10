@@ -12,10 +12,10 @@ before(async () => (app = await launch()));
 after(async () => app?.close());
 
 const content = async (id) => (await app.invoke("page_get", { id })).content;
-const view = '.pane.active .coll[data-page]';
+const view = '.pane.active > .pane-content:not([hidden]) .coll[data-page]';
 const cell = (id, key) => `${view} [data-cell="${id}:${key}"]`;
 /** Titles of the table rows, top to bottom. */
-const rowTitles = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-row .coll-title-link")].map((b) => b.innerText.trim()));
+const rowTitles = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-row .coll-title-link")].map((b) => b.innerText.trim()));
 /** Presses keys one after another (WebKit drops characters of a string sent at once). */
 const press = async (...keys) => {
   for (const k of keys) await app.keys([k]);
@@ -33,8 +33,8 @@ test("a folder with three pages shows them as a table", async () => {
   await app.browser.refresh();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.body.classList.contains("ready"))) === true, { timeout: 20000 });
   await openTree("Sprint-Board");
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Als Tabelle anzeigen")).click());
   await app.waitFor(`${view} .coll-table`);
   await app.browser.waitUntil(async () => (await rowTitles()).length === 3, { timeoutMsg: "three rows" });
@@ -105,15 +105,15 @@ test("define the schema and edit cells with typed controls", async () => {
 });
 
 test("sort by clicking a header and filter with the filter bar", async () => {
-  await app.browser.execute(() => document.querySelector(".pane.active th[data-col='aufwand'] .coll-th-inner").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) th[data-col='aufwand'] .coll-th-inner").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
   await app.browser.execute(() => window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
   await app.browser.waitUntil(async () => (await rowTitles()).join() === "Export prüfen,Login bauen,Suche planen", { timeoutMsg: `not sorted: ${await rowTitles()}` });
-  await app.browser.execute(() => document.querySelector(".pane.active th[data-col='aufwand'] .coll-th-inner").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) th[data-col='aufwand'] .coll-th-inner").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
   await app.browser.execute(() => window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, clientX: 10, clientY: 10 })));
   await app.browser.waitUntil(async () => (await rowTitles()).join() === "Suche planen,Login bauen,Export prüfen", { timeoutMsg: "not descending" });
   await app.browser.waitUntil(async () => /sortierung: \{feld: aufwand, richtung: ab\}/.test(await content(parent.id)), { timeoutMsg: "sort not saved" });
 
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-tools .btn")].find((b) => b.innerText.includes("Filter")).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-tools .btn")].find((b) => b.innerText.includes("Filter")).click());
   await app.waitFor('.coll-pop [role="combobox"][aria-label="Eigenschaft"]');
   await app.select('.coll-pop [role="combobox"][aria-label="Eigenschaft"]', "status");
   await app.select('.coll-pop [role="combobox"][aria-label="Bedingung"]', "ist");
@@ -130,7 +130,7 @@ test("sort by clicking a header and filter with the filter bar", async () => {
 });
 
 test("board: drag a card to another column sets the child's property", async () => {
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-switch button")].find((b) => b.innerText.includes("Board")).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-switch button")].find((b) => b.innerText.includes("Board")).click());
   await app.waitFor(`${view} .board`);
   await app.browser.waitUntil(async () => /\n {2}typ: board\n/.test(await content(parent.id)), { timeoutMsg: "board not saved" });
   const col = (name) => `${view} .board-col[data-group="${name}"]`;
@@ -179,7 +179,7 @@ test("invalid values are marked, kept and fixed in the property editor", async (
   const text = "---\nstatus: Später\naufwand: viel\n---\nCSV und JSON.\n";
   await app.invoke("page_save", { id: kids.export, content: text });
   await app.browser.execute((id, c) => window.dispatchEvent(new CustomEvent("arcalo:page-saved", { detail: { id, content: c, from: "test" } })), kids.export, text);
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll-switch button")].find((b) => b.innerText.includes("Tabelle")).click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll-switch button")].find((b) => b.innerText.includes("Tabelle")).click());
   await app.waitFor(`${cell(kids.export, "aufwand")} .val-invalid`);
   assert.equal(await app.browser.execute((sel) => document.querySelector(sel).dataset.tooltip, `${cell(kids.export, "aufwand")} .val-invalid`), "Keine Zahl");
   assert.equal(await app.text(cell(kids.export, "aufwand")), "viel", "shown as written");
@@ -188,16 +188,16 @@ test("invalid values are marked, kept and fixed in the property editor", async (
   await app.shot("collection-invalid");
 
   // The child page: typed rows from the folder's schema, the invalid value marked there too.
-  await app.browser.execute((id) => document.querySelector(`.pane.active [data-cell="${id}:titel"] .coll-title-link`).click(), kids.export);
-  await app.waitFor('.pane.active .properties [data-prop-key="aufwand"][data-kind="number"]');
-  assert.ok(await (await app.$('.pane.active .properties [data-prop-key="aufwand"] .val-invalid')).isExisting(), "marked in the editor");
-  assert.ok(await (await app.$('.pane.active .properties [data-prop-key="fällig"] .prop-date')).isExisting(), "missing schema property listed as a date");
-  const input = await app.$('.pane.active .properties [data-prop-key="aufwand"] input');
+  await app.browser.execute((id) => document.querySelector(`.pane.active > .pane-content:not([hidden]) [data-cell="${id}:titel"] .coll-title-link`).click(), kids.export);
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="aufwand"][data-kind="number"]');
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="aufwand"] .val-invalid')).isExisting(), "marked in the editor");
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="fällig"] .prop-date')).isExisting(), "missing schema property listed as a date");
+  const input = await app.$('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="aufwand"] input');
   await input.click();
   await app.browser.keys(["Control", "a"]);
   await press("2", ",", "5", "Enter");
   await app.browser.waitUntil(async () => /\naufwand: 2\.5\n/.test(await content(kids.export)), { timeoutMsg: `not fixed: ${await content(kids.export)}` });
-  await app.browser.waitUntil(async () => !(await (await app.$('.pane.active .properties [data-prop-key="aufwand"] .val-invalid')).isExisting()), { timeoutMsg: "still marked" });
+  await app.browser.waitUntil(async () => !(await (await app.$('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="aufwand"] .val-invalid')).isExisting()), { timeoutMsg: "still marked" });
   await app.shot("collection-child-properties");
 });
 
@@ -205,11 +205,11 @@ test("a property of one page can become a property of the folder", async () => {
   const text = await content(kids.export);
   await app.invoke("page_save", { id: kids.export, content: text.replace("---\nstatus", "---\nquelle: https://example.org\nstatus") });
   await app.browser.execute(() => window.dispatchEvent(new CustomEvent("arcalo:reload-pages", { detail: {} })));
-  await app.waitFor('.pane.active .properties [data-prop-key="quelle"] .prop-icon-btn');
-  await app.click('.pane.active .properties [data-prop-key="quelle"] .prop-icon-btn');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="quelle"] .prop-icon-btn');
+  await app.click('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="quelle"] .prop-icon-btn');
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => b.innerText.includes("Für alle Seiten im Ordner")).click());
   await app.browser.waitUntil(async () => /\n {2}quelle: link\n/.test(await content(parent.id)), { timeoutMsg: `not in the schema: ${await content(parent.id)}` });
-  await app.waitFor('.pane.active .properties [data-prop-key="quelle"][data-kind="link"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .properties [data-prop-key="quelle"][data-kind="link"]');
 });
 
 test("no console errors", async () => {

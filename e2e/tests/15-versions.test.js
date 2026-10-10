@@ -41,7 +41,7 @@ test("versions: snapshot, diff against now and restore", async () => {
   await app.browser.pause(900);
   assert.match(await content("Architektur"), /Zweiter Stand der Seite/);
 
-  await app.click('.pane.active [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   await clickText(".menu-item", /Versionen/);
   await app.waitFor(".versions-item");
@@ -71,7 +71,7 @@ test("versions: snapshot, diff against now and restore", async () => {
   await confirms[confirms.length - 1].click();
   await app.waitText(".toast-title", /Version wiederhergestellt/);
   assert.equal(await content("Architektur"), original);
-  await app.browser.waitUntil(async () => !/Zweiter Stand/.test(await (await app.$(".pane.active .ProseMirror")).getHTML()), {
+  await app.browser.waitUntil(async () => !/Zweiter Stand/.test(await (await app.$(".pane.active > .pane-content:not([hidden]) .ProseMirror")).getHTML()), {
     timeoutMsg: "editor still shows the replaced text",
   });
   // The replaced state is still available as a version.
@@ -83,7 +83,7 @@ test("versions: snapshot, diff against now and restore", async () => {
 test("table toolbar adds a column; the slash menu offers row commands inside tables", async () => {
   await app.dismissToasts();
   await app.keys(["Control", "n"]);
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === "Unbenannt", { timeoutMsg: "no new page" });
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === "Unbenannt", { timeoutMsg: "no new page" });
   await app.browser.waitUntil(() => app.browser.execute(() => document.activeElement?.classList.contains("page-title") && document.activeElement.selectionEnd > 0));
   await app.type("Tabellenseite");
   await app.keys(["Enter"]);
@@ -91,7 +91,7 @@ test("table toolbar adds a column; the slash menu offers row commands inside tab
   await app.type("/tabelle");
   await app.waitText(".sugg-item.sel", /Tabelle/);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .ProseMirror table");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror table");
   await app.type("Kopf");
   await app.browser.pause(900);
   assert.equal(tableColumns(await content("Tabellenseite")), 3);

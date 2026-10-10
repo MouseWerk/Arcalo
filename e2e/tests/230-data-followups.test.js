@@ -27,7 +27,7 @@ const content = async (title) => (await app.invoke("page_get", { id: await pageI
 const open = async (title) => {
   await app.invoke("search_open", { target: { kind: "page", page_id: await pageId(title), new_tab: false } });
   await app.browser.waitUntil(async () => (await app.text(".pane.active .tab.active .tab-title")) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
 };
 const palette = async (command, wait) => {
   await app.keys(["Control", "k"]);

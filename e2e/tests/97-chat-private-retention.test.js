@@ -85,8 +85,8 @@ test("a chat about #privat content is private, locked and stays local", async ()
   assert.ok(!llm.requests.some((r) => JSON.stringify(r.body ?? "").includes("Gehaltserhöhung")), "the private text never reached the cloud");
   // A page saved from a private chat keeps the marker, so it stays private there too.
   await app.browser.execute(() => document.querySelector('.msg-ai.last [aria-label="Als Seite speichern"]').click());
-  await app.browser.waitUntil(async () => (await app.invoke("workspace_tree")).length > 0 && (await app.$$(".pane.active .page-title")).length > 0, { timeoutMsg: "no page" });
-  const pageTitle = await (await app.$(".pane.active .page-title")).getValue();
+  await app.browser.waitUntil(async () => (await app.invoke("workspace_tree")).length > 0 && (await app.$$(".pane.active > .pane-content:not([hidden]) .page-title")).length > 0, { timeoutMsg: "no page" });
+  const pageTitle = await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue();
   const page = await app.invoke("page_resolve", { title: pageTitle, create: false });
   assert.match((await app.invoke("page_get", { id: page.id })).content, /#privat/);
 });

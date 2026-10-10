@@ -157,10 +157,10 @@ test("the right panel's view strip is one Tab stop: arrows, Home and End switch 
 
 test("the Projekte table in a narrow pane shows that more columns follow and scrolls by keyboard", async () => {
   await app.click('.ribbon [aria-label^="Projekte"]');
-  await app.waitFor(".pane.active .vorgaenge");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .vorgaenge");
   const state = () =>
     app.browser.execute(() => {
-      const wrap = document.querySelector(".pane.active .side-scroll");
+      const wrap = document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll");
       const box = wrap.querySelector(".table-wrap");
       const first = box.querySelector(".vorgaenge tbody tr > :first-child");
       return {
@@ -177,12 +177,12 @@ test("the Projekte table in a narrow pane shows that more columns follow and scr
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await app.browser.setWindowSize(1100, 800);
   await sleep(700);
-  await app.waitFor(".pane.active .side-scroll.more-right");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .side-scroll.more-right");
   let s = await state();
   assert.deepEqual({ ...s, label: undefined }, { right: true, left: false, button: true, tab: "0", role: "region", label: undefined, scroll: 0, sticky: 0 });
   assert.match(s.label, /weitere Spalten rechts/);
   await app.shot("281-projects-narrow");
-  await app.browser.execute(() => document.querySelector(".pane.active .side-scroll .table-wrap").focus());
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll .table-wrap").focus());
   for (let i = 0; i < 4; i++) await app.keys("ArrowRight");
   await sleep(400);
   s = await state();
@@ -192,7 +192,7 @@ test("the Projekte table in a narrow pane shows that more columns follow and scr
   await app.shot("281-projects-scrolled");
   // The button pages to the end; there the hint goes away.
   for (let i = 0; i < 6 && (await state()).button; i++) {
-    await app.click(".pane.active .side-scroll-more");
+    await app.click(".pane.active > .pane-content:not([hidden]) .side-scroll-more");
     await sleep(500);
   }
   s = await state();
@@ -200,7 +200,7 @@ test("the Projekte table in a narrow pane shows that more columns follow and scr
   assert.equal(s.button, false);
   // The name column leaves room for the scrolled ones.
   const nameW = await app.browser.execute(() => {
-    const box = document.querySelector(".pane.active .side-scroll .table-wrap");
+    const box = document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll .table-wrap");
     return [Math.round(box.querySelector("th").getBoundingClientRect().width), Math.round(box.clientWidth)];
   });
   assert.ok(nameW[0] < nameW[1] * 0.75, `name column ${nameW[0]} px of ${nameW[1]} px`);
@@ -216,7 +216,7 @@ test("the Projekte table in a narrow pane shows that more columns follow and scr
   await sleep(700);
   s = await state();
   const dims = await app.browser.execute(() => {
-    const box = document.querySelector(".pane.active .side-scroll .table-wrap");
+    const box = document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll .table-wrap");
     return { win: innerWidth, panel: !!document.querySelector(".panel-tabs"), box: box.clientWidth, table: box.scrollWidth, panes: document.querySelectorAll(".pane").length };
   });
   assert.equal(s.right || s.left, false, `nothing hidden in a wide pane (${JSON.stringify(dims)})`);

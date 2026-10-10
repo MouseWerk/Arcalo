@@ -46,12 +46,12 @@ const clickText = async (sel, text) => {
 const saved = async () => (await app.invoke("settings_get")).settings.dashboard;
 const W = (id, kind, x, y, w, h, config = {}) => ({ id, kind, x, y, w, h, config });
 const KINDS = ["scratchpad", "inbox", "resurface", "writing", "pomodoro", "clock", "checklist", "status", "synced", "embed", "week"];
-const widgetText = (kind) => app.browser.execute((k) => document.querySelector(`.pane.active .dw[data-kind="${k}"]`)?.innerText ?? "", kind);
+const widgetText = (kind) => app.browser.execute((k) => document.querySelector(`.pane.active > .pane-content:not([hidden]) .dw[data-kind="${k}"]`)?.innerText ?? "", kind);
 // Scrolls the start page (not the window) so the widget is in view.
 const into = (kind) =>
   app.browser.execute((k) => {
-    const home = document.querySelector(".pane.active .home");
-    const el = document.querySelector(`.pane.active .dw[data-kind="${k}"]`);
+    const home = document.querySelector(".pane.active > .pane-content:not([hidden]) .home");
+    const el = document.querySelector(`.pane.active > .pane-content:not([hidden]) .dw[data-kind="${k}"]`);
     if (home && el) home.scrollTop += el.getBoundingClientRect().top - home.getBoundingClientRect().top - 80;
   }, kind);
 const setTheme = async (theme) => {
@@ -97,21 +97,21 @@ async function prepare(lang) {
   await app.invoke("dashboard_save", { dashboard: { version: 3, boards: [...(d.boards?.length ? d.boards : []), board], active: "mine", notes: {} } });
   await reload();
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-kind="scratchpad"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="scratchpad"]');
   // Every widget renders without an error once it is in view.
   for (const k of KINDS) {
     await into(k);
-    await app.browser.waitUntil(() => app.browser.execute((kk) => (() => { const b = document.querySelector(`.pane.active .dw[data-kind="${kk}"] .dw-body`); return !!b?.firstElementChild && !b.querySelector(".dw-skel") && (!!b.innerText.trim() || !!b.querySelector("textarea")); })(), k), { timeout: 15000, timeoutMsg: `${k} stays empty` });
-    assert.equal(await (await app.$(`.pane.active .dw[data-kind="${k}"] .dw-error`)).isExisting(), false, `${k} shows an error`);
+    await app.browser.waitUntil(() => app.browser.execute((kk) => (() => { const b = document.querySelector(`.pane.active > .pane-content:not([hidden]) .dw[data-kind="${kk}"] .dw-body`); return !!b?.firstElementChild && !b.querySelector(".dw-skel") && (!!b.innerText.trim() || !!b.querySelector("textarea")); })(), k), { timeout: 15000, timeoutMsg: `${k} stays empty` });
+    assert.equal(await (await app.$(`.pane.active > .pane-content:not([hidden]) .dw[data-kind="${k}"] .dw-error`)).isExisting(), false, `${k} shows an error`);
   }
-  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
+  await app.browser.execute(() => (document.querySelector(".pane.active > .pane-content:not([hidden]) .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   return { status };
 }
 
 test("the new widgets with sample data (German)", async () => {
   await prepare("de");
   // Notizzettel: the first words create a page of its own; a checkbox ticks the task there.
-  await app.click('.pane.active .dw[data-kind="scratchpad"] textarea');
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-kind="scratchpad"] textarea');
   await app.type("Einkauf");
   await app.keys(["Enter"]);
   await app.type("- [ ] Milch");
@@ -121,14 +121,14 @@ test("the new widgets with sample data (German)", async () => {
   const pageId = (await saved()).boards.find((b) => b.id === "mine").widgets.find((w) => w.id === "scratchpad").config.page;
   await app.browser.waitUntil(async () => (await app.invoke("page_get", { id: pageId })).content.includes("- [ ] Brot"), { timeoutMsg: "scratchpad not saved" });
   assert.equal((await app.invoke("page_get", { id: pageId })).title, "Notizzettel");
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="scratchpad"] [aria-label="Ansicht mit Checkboxen"]').click());
-  await app.waitFor('.pane.active .dw[data-kind="scratchpad"] input[data-task="0"]');
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="scratchpad"] input[data-task="0"]').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-kind="scratchpad"] [aria-label="Ansicht mit Checkboxen"]').click());
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="scratchpad"] input[data-task="0"]');
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-kind="scratchpad"] input[data-task="0"]').click());
   await app.browser.waitUntil(async () => (await app.invoke("page_get", { id: pageId })).content.includes("- [x] Milch"), { timeoutMsg: "checkbox not saved" });
 
   // Posteingang: two captures, newest first; one filed into a page, the other ticked off.
   assert.match(await widgetText("inbox"), /Angebot an Müller nachfassen[\s\S]*Review-Termin verschieben/);
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="inbox"] [aria-label="Ablegen in…"]').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-kind="inbox"] [aria-label="Ablegen in…"]').click());
   await app.waitFor(".dialog .dws-picker input");
   await (await app.$(".dialog .dws-picker input")).setValue("Projektstatus");
   await clickText(".dialog .dws-hits [role=option]", "Projektstatus");
@@ -136,7 +136,7 @@ test("the new widgets with sample data (German)", async () => {
   const status = (await app.invoke("page_resolve", { title: "Projektstatus", create: false })).id;
   assert.match((await app.invoke("page_get", { id: status })).content, /Angebot an Müller nachfassen/);
   await app.browser.waitUntil(async () => !/Angebot an Müller/.test(await widgetText("inbox")), { timeoutMsg: "entry still in the inbox" });
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="inbox"] [aria-label="Erledigt"]').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-kind="inbox"] [aria-label="Erledigt"]').click());
   await app.browser.waitUntil(async () => /Nichts im Posteingang/.test(await widgetText("inbox")), { timeoutMsg: "inbox not empty" });
   await app.dismissToasts();
 
@@ -144,35 +144,35 @@ test("the new widgets with sample data (German)", async () => {
   assert.match(await widgetText("resurface"), new RegExp(`${new Date().getFullYear() - 1}[\\s\\S]*vor einem Jahr[\\s\\S]*Tagesnotiz`));
   assert.match(await widgetText("resurface"), /Zufällige Notiz/i);
   // Schreiben: 14 days, today with the scratchpad's words.
-  assert.equal((await app.$$('.pane.active .dw[data-kind="writing"] .dw-writing-bar')).length, 14);
+  assert.equal((await app.$$('.pane.active > .pane-content:not([hidden]) .dw[data-kind="writing"] .dw-writing-bar')).length, 14);
   assert.match(await widgetText("writing"), /Wörter in 14 Tagen/);
   // Fokus-Timer: starts a focus session (the same as in the status bar) and ends it.
-  await clickText('.pane.active .dw[data-kind="pomodoro"] button', "25 Min.");
-  await app.waitFor('.pane.active .dw[data-kind="pomodoro"] .dw-pomo.work');
+  await clickText('.pane.active > .pane-content:not([hidden]) .dw[data-kind="pomodoro"] button', "25 Min.");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="pomodoro"] .dw-pomo.work');
   assert.match(await widgetText("pomodoro"), /2[45]:\d\d[\s\S]*Fokus/);
   assert.ok(await app.invoke("focus_state"), "a focus session runs");
   // Uhr with two more zones, Checkliste, Git sync off, „Öffnen“ of the embedded page.
   assert.match(await widgetText("clock"), /New York[\s\S]*Tokyo/);
-  assert.equal((await app.$$('.pane.active .dw[data-kind="clock"] .dw-zones li')).length, 2);
+  assert.equal((await app.$$('.pane.active > .pane-content:not([hidden]) .dw[data-kind="clock"] .dw-zones li')).length, 2);
   assert.match(await widgetText("checklist"), /1 von 2 erledigt/);
-  await (await app.$('.pane.active .dw[data-kind="checklist"] .dw-check-add input')).setValue("Retro planen");
+  await (await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-kind="checklist"] .dw-check-add input')).setValue("Retro planen");
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await saved()).boards.find((b) => b.id === "mine").widgets.find((w) => w.id === "checklist").config.items.length === 3, { timeoutMsg: "item not saved" });
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-kind="checklist"] [role=checkbox][aria-checked="false"]').click());
-  await app.waitText('.pane.active .dw[data-kind="checklist"] .dw-check-foot', /2 von 3 erledigt/);
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-kind="checklist"] [role=checkbox][aria-checked="false"]').click());
+  await app.waitText('.pane.active > .pane-content:not([hidden]) .dw[data-kind="checklist"] .dw-check-foot', /2 von 3 erledigt/);
   assert.match(await widgetText("synced"), /Git-Sync ist aus/);
   assert.match(await widgetText("embed"), /Projektstatus[\s\S]*Umsetzung/);
-  assert.ok(await (await app.$('.pane.active .dw[data-kind="embed"] .dw-embed-head [aria-label="Öffnen"]')).isExisting(), "open button");
+  assert.ok(await (await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-kind="embed"] .dw-embed-head [aria-label="Öffnen"]')).isExisting(), "open button");
   // Sicherung & Sync: „Jetzt sichern“ writes a backup and the widget says so.
   await into("status");
-  await clickText('.pane.active .dw[data-kind="status"] button', "Jetzt sichern");
+  await clickText('.pane.active > .pane-content:not([hidden]) .dw[data-kind="status"] button', "Jetzt sichern");
   await app.browser.waitUntil(async () => /Letzte Sicherung/.test(await widgetText("status")), { timeout: 20000, timeoutMsg: "no last backup" });
   assert.ok((await app.invoke("backup_list")).length > 0, "a backup was written");
   assert.match(await widgetText("status"), /Git-Sync[\s\S]*Git-Sync ist aus/);
   // German hours with a decimal comma.
   assert.match(await widgetText("week"), /\d,\d+ h/);
   await app.dismissToasts();
-  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
+  await app.browser.execute(() => (document.querySelector(".pane.active > .pane-content:not([hidden]) .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   for (const theme of ["light", "dark"]) {
     await setTheme(theme);
     await app.browser.pause(300);
@@ -186,7 +186,7 @@ test("the new widgets in English, hours with a decimal point", async () => {
   await app.close();
   ({ app, dataDir: enDir } = await launchEnglish({ width: 1480, height: 1000 }));
   await prepare("en");
-  const titles = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .dw .dw-head h2")].map((h) => h.textContent.trim()));
+  const titles = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dw .dw-head h2")].map((h) => h.textContent.trim()));
   for (const name of ["Scratchpad", "Inbox", "A year ago", "Writing", "Focus timer", "Checklist", "Backup & sync", "Changed by Git sync"]) assert.ok(titles.includes(name), `${name} in ${titles}`);
   assert.match(await widgetText("inbox"), /Follow up the offer to Miller/);
   assert.match(await widgetText("resurface"), /a year ago[\s\S]*Daily note/);
@@ -204,6 +204,6 @@ test("the new widgets in English, hours with a decimal point", async () => {
   // No German left on the start page (the sample content is English too).
   const left = (await germanLeftovers(app)).filter((h) => !/Müller/.test(h));
   assert.deepEqual(left, []);
-  await app.browser.execute(() => (document.querySelector(".pane.active .home").scrollTo(0, 0), window.scrollTo(0, 0)));
+  await app.browser.execute(() => (document.querySelector(".pane.active > .pane-content:not([hidden]) .home").scrollTo(0, 0), window.scrollTo(0, 0)));
   await app.shot("107-notes-board-en");
 });

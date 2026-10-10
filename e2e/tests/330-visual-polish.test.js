@@ -51,7 +51,7 @@ const ribbon = async (label) => {
 };
 async function open(id) {
   await app.invoke("search_open", { target: { kind: "page", page_id: id, new_tab: false } });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await sleep(400);
 }
 /** Elements of `sel` that are drawn as a thin upright bar (≤ 4 px wide, taller than wide). */
@@ -61,13 +61,13 @@ const bars = (sel) =>
 test("meetings show a round dot in their calendar color, never an upright bar", async () => {
   await app.click(".pane.active .tabbar-home");
   await sleep(700);
-  await app.waitFor(".pane.active .dw-agenda-dot", 15000);
-  const dots = await bars(".pane.active .dw-agenda-dot");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dw-agenda-dot", 15000);
+  const dots = await bars(".pane.active > .pane-content:not([hidden]) .dw-agenda-dot");
   assert.ok(dots.length > 0);
   for (const d of dots) assert.ok(d.w === 8 && d.h === 8 && d.radius === "50%", JSON.stringify(d));
   // Nothing in a row is drawn as a colored bar at its left.
   const upright = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .dw-agenda-row *, .pane.active .ts-meeting *")]
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dw-agenda-row *, .pane.active > .pane-content:not([hidden]) .ts-meeting *")]
       .filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.width <= 4 && r.height >= 8 && getComputedStyle(e).backgroundColor !== "rgba(0, 0, 0, 0)"; })
       .map((e) => e.className),
   );
@@ -78,50 +78,50 @@ test("the Projekte table fits its card next to the side panel and in a narrow wi
   for (const [w, h] of [[1280, 800], [900, 700]]) {
     await app.browser.setWindowSize(w, h);
     await ribbon("Projekte");
-    await app.waitFor(".pane.active .vorgaenge");
+    await app.waitFor(".pane.active > .pane-content:not([hidden]) .vorgaenge");
     await sleep(500);
     const s = await app.browser.execute(() => {
-      const box = document.querySelector(".pane.active .side-scroll .table-wrap");
+      const box = document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll .table-wrap");
       const r = box.getBoundingClientRect();
       const out = [...box.querySelectorAll("th, td")].filter((c) => c.getBoundingClientRect().width > 0 && c.getBoundingClientRect().right > r.right + 1).length;
-      return { scroll: box.scrollWidth - box.clientWidth, out, more: !!document.querySelector(".pane.active .side-scroll-more") };
+      return { scroll: box.scrollWidth - box.clientWidth, out, more: !!document.querySelector(".pane.active > .pane-content:not([hidden]) .side-scroll-more") };
     });
     assert.deepEqual(s, { scroll: 0, out: 0, more: false }, `${w}px`);
   }
   // What the narrow layout leaves out of its columns is in the second line under the name.
-  assert.match(await app.text(".pane.active .vorgaenge tbody tr:first-child .vg-sub"), /T\d+–T\d+|\d+ T/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .vorgaenge tbody tr:first-child .vg-sub"), /T\d+–T\d+|\d+ T/);
   await app.browser.setWindowSize(1280, 800);
 });
 
 test("calendar day heads keep their chips inside the column; booked time stays a readable strip", async () => {
   await ribbon("Kalender");
-  await app.waitFor(".pane.active .calv-dayhead");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-dayhead");
   await sleep(800);
   const heads = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .calv-dayhead")].map((h) => {
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-dayhead")].map((h) => {
       const r = h.getBoundingClientRect();
       return [...h.querySelectorAll("*")].filter((e) => { const x = e.getBoundingClientRect(); return x.width > 0 && x.right > r.right + 1; }).length;
     }),
   );
   assert.ok(heads.length >= 5);
   assert.deepEqual(heads.filter((n) => n > 0), [], "nothing runs out of a day head");
-  const lanes = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-lane")].map((l) => Math.round(l.getBoundingClientRect().width)));
+  const lanes = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-lane")].map((l) => Math.round(l.getBoundingClientRect().width)));
   for (const w of lanes) assert.ok(w >= 12, `booked time strip ${w} px`);
   // A tooltip shown under a still pointer goes when the view changes under it.
-  const chip = await app.$(".pane.active .calv-dayhead [data-tooltip]");
+  const chip = await app.$(".pane.active > .pane-content:not([hidden]) .calv-dayhead [data-tooltip]");
   if (await chip.isExisting()) {
     await chip.moveTo();
     await app.browser.waitUntil(async () => app.browser.execute(() => !!document.querySelector(".tooltip.on")), { timeout: 3000, timeoutMsg: "no tooltip on hover" });
-    await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.textContent.trim() === "Monat")?.click());
+    await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button")].find((b) => b.textContent.trim() === "Monat")?.click());
     await app.browser.waitUntil(async () => app.browser.execute(() => !document.querySelector(".tooltip.on")), { timeout: 3000, timeoutMsg: "tooltip left behind after the view changed" });
   }
 });
 
 test("cut text shows in full as a tooltip (a meeting in a narrow month cell)", async () => {
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .calv-views button")].find((b) => b.textContent.trim() === "Monat")?.click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-views button")].find((b) => b.textContent.trim() === "Monat")?.click());
   await sleep(800);
   const target = await app.browser.execute(() => {
-    const ev = [...document.querySelectorAll(".pane.active .calv-mev[data-tooltip-full]")].find((e) => {
+    const ev = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-mev[data-tooltip-full]")].find((e) => {
       const t = e.querySelector(".calv-ev-title");
       return t && t.scrollWidth > t.clientWidth + 1;
     });
@@ -132,7 +132,7 @@ test("cut text shows in full as a tooltip (a meeting in a narrow month cell)", a
   if (!target) return; // the month view fits every title at this width
   await (await app.$('[data-e2e-cut="1"]')).moveTo();
   await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".tooltip.on")?.textContent ?? "")) === target, { timeout: 3000, timeoutMsg: `no tooltip „${target}“` });
-  await (await app.$(".pane.active h1, .pane.active .calv-heading")).moveTo();
+  await (await app.$(".pane.active > .pane-content:not([hidden]) h1, .pane.active > .pane-content:not([hidden]) .calv-heading")).moveTo();
 });
 
 test("split panes do not scroll sideways and show no cut tab", async () => {
@@ -161,10 +161,10 @@ test("split panes do not scroll sideways and show no cut tab", async () => {
 
 test("the query table renders [[links]] and keeps the checkbox column narrow; Mermaid labels sit on the page", async () => {
   await open(ids.rich);
-  await app.browser.execute(() => document.querySelector(".pane.active .qb-table")?.scrollIntoView({ block: "center" }));
-  await app.waitText(".pane.active .qb-table", /Protokoll aus/, 10000);
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .qb-table")?.scrollIntoView({ block: "center" }));
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .qb-table", /Protokoll aus/, 10000);
   const q = await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .qb-table");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .qb-table");
     const row = [...t.querySelectorAll("tbody tr")].find((r) => r.textContent.includes("Protokoll"));
     const check = row.querySelector(".qb-check-cell").getBoundingClientRect();
     const box = row.querySelector(".qb-check").getBoundingClientRect();
@@ -176,13 +176,13 @@ test("the query table renders [[links]] and keeps the checkbox column narrow; Me
   assert.ok(q.width <= 40, `checkbox column ${q.width} px`);
   assert.ok(q.middle <= 2, `checkbox off the text's middle by ${q.middle} px`);
   // The link opens its page.
-  await app.click(".pane.active .qb-table .qb-main .wikilink");
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === "Weekly sync 22.09.", { timeoutMsg: "link did not open" });
+  await app.click(".pane.active > .pane-content:not([hidden]) .qb-table .qb-main .wikilink");
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Weekly sync 22.09.", { timeoutMsg: "link did not open" });
   await open(ids.rich);
-  await app.browser.execute(() => document.querySelector(".pane.active .mmd")?.scrollIntoView({ block: "center" }));
-  await app.waitFor(".pane.active .mmd-view svg .edgeLabel", 10000);
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd")?.scrollIntoView({ block: "center" }));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .mmd-view svg .edgeLabel", 10000);
   const label = await app.browser.execute(() => {
-    const rect = document.querySelector(".pane.active .mmd-view svg .edgeLabel .label rect");
+    const rect = document.querySelector(".pane.active > .pane-content:not([hidden]) .mmd-view svg .edgeLabel .label rect");
     const probe = document.createElement("div");
     probe.style.background = "var(--bg-canvas)";
     document.body.append(probe);
@@ -200,9 +200,9 @@ test("German shortcut names, today's marker and one hour format", async () => {
   assert.doesNotMatch(ribbonLabel, /\b(Ctrl|Shift)\b/);
   // Today's date in the calendar: text on the solid marker has 4.5:1.
   await ribbon("Kalender");
-  await app.waitFor(".pane.active .calv-dayhead.today .calv-dn, .pane.active .calv-mcell.today .calv-mday");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-dayhead.today .calv-dn, .pane.active > .pane-content:not([hidden]) .calv-mcell.today .calv-mday");
   const marker = await app.browser.execute(() => {
-    const e = document.querySelector(".pane.active .calv-dayhead.today .calv-dn, .pane.active .calv-mcell.today .calv-mday");
+    const e = document.querySelector(".pane.active > .pane-content:not([hidden]) .calv-dayhead.today .calv-dn, .pane.active > .pane-content:not([hidden]) .calv-mcell.today .calv-mday");
     const cs = getComputedStyle(e);
     return [cs.color, cs.backgroundColor];
   });
@@ -214,9 +214,9 @@ test("German shortcut names, today's marker and one hour format", async () => {
   assert.ok((a + 0.05) / (b + 0.05) >= 4.5, `today's marker ${marker.join(" on ")}`);
   // The daily review: hours with two decimals everywhere, also the target and the focus time.
   await ribbon("Tagesrückblick");
-  await app.waitText(".pane.active .rv-stat.tone-time", /h/, 10000);
-  assert.match(await app.text(".pane.active .rv-stat.tone-time"), /\d+,\d\d h\s*\/\s*\d+,\d\d h/);
-  assert.match(await app.text(".pane.active .rv-stat.tone-focus"), /\d+,\d\d h/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-time", /h/, 10000);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-time"), /\d+,\d\d h\s*\/\s*\d+,\d\d h/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .rv-stat.tone-focus"), /\d+,\d\d h/);
 });
 
 test("no console errors", async () => {

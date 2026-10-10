@@ -45,14 +45,14 @@ const clickText = async (sel, text) => {
 };
 const menuItem = (label) => clickText(".menu [role^=menuitem]", label);
 const saved = async () => (await app.invoke("settings_get")).settings.dashboard;
-const tabs = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .dash-tab")].map((t) => t.textContent.trim()));
-const activeTab = () => app.browser.execute(() => document.querySelector('.pane.active .dash-tab[aria-selected="true"]')?.textContent.trim());
+const tabs = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-tab")].map((t) => t.textContent.trim()));
+const activeTab = () => app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dash-tab[aria-selected="true"]')?.textContent.trim());
 const board = async (name) => (await saved()).boards.find((b) => b.name === name);
 const place = async (name, id) => (await board(name))?.widgets.find((w) => w.id === id);
 const noOverlaps = (ws) => {
   for (const a of ws) for (const b of ws) if (a !== b) assert.ok(!(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h), `${a.id} overlaps ${b.id}`);
 };
-const shownIds = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .dash-grid .dw")].map((el) => el.dataset.widget));
+const shownIds = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-grid .dw")].map((el) => el.dataset.widget));
 
 const W = (id, kind, x, y, w, h, config = {}) => ({ id, kind, x, y, w, h, config });
 // As 1.6 saved it: two boards, a note's text, „Projekte“ used last, and a widget of a kind
@@ -75,28 +75,28 @@ test("a 1.6 layout opens unchanged on the board used last", async () => {
   await app.invoke("dashboard_save", { dashboard: V16 });
   await reload();
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-widget="clock"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="clock"]');
   assert.equal(await activeTab(), "Projekte");
   assert.deepEqual((await shownIds()).sort(), ["clock", "favorites", "recent"], "the unknown widget is hidden");
   // Stored as it was, the unknown widget included.
   assert.deepEqual((await saved()).boards, V16.boards);
-  await clickText(".pane.active .dash-tab", "Heute");
-  await app.waitFor('.pane.active .dw[data-widget="note"] textarea');
-  assert.equal(await (await app.$('.pane.active .dw[data-widget="note"] textarea')).getValue(), "Merkzettel aus 1.6");
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-tab", "Heute");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="note"] textarea');
+  assert.equal(await (await app.$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="note"] textarea')).getValue(), "Merkzettel aus 1.6");
   // The switch is saved in the format of 1.7, nothing lost.
   await app.browser.waitUntil(async () => (await saved()).active === "heute", { timeoutMsg: "tab not saved" });
   const d = await saved();
   assert.equal(d.version, 3);
   assert.deepEqual(d.boards, V16.boards);
   assert.deepEqual(d.notes, V16.notes);
-  await clickText(".pane.active .dash-tab", "Projekte");
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-tab", "Projekte");
 });
 
 test("preset sizes from the keys, the size buttons and the widget menu", async () => {
-  await clickText(".pane.active .dash-bar button", "Anpassen");
-  await app.waitFor(".pane.active .dash.editing");
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Anpassen");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash.editing");
   // Keyboard: 3 = wide, 5 = wide and tall, 1 = small.
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-widget="clock"]').focus());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-widget="clock"]').focus());
   for (const [key, w, h] of [
     ["3", 8, 7],
     ["5", 8, 14],
@@ -104,27 +104,27 @@ test("preset sizes from the keys, the size buttons and the widget menu", async (
   ]) {
     await app.keys([key]);
     await app.browser.waitUntil(
-      () => app.browser.execute((ww, hh) => document.querySelector('.pane.active .dw[data-widget="clock"]').style.gridColumn.endsWith(`span ${ww}`) && document.querySelector('.pane.active .dw[data-widget="clock"]').style.gridRow.endsWith(`span ${hh}`), w, h),
+      () => app.browser.execute((ww, hh) => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-widget="clock"]').style.gridColumn.endsWith(`span ${ww}`) && document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-widget="clock"]').style.gridRow.endsWith(`span ${hh}`), w, h),
       { timeoutMsg: `key ${key} did not resize` },
     );
   }
-  assert.match(await app.text(".pane.active .dash > .sr-only[aria-live]"), /Uhr: Spalte \d+, Zeile \d+, 3 × 4/);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .dash > .sr-only[aria-live]"), /Uhr: Spalte \d+, Zeile \d+, 3 × 4/);
   // The size buttons of a wide widget (drawn to scale): „Hoch“.
   await app.keys(["2"]);
   await app.browser.pause(150);
-  await app.click('.pane.active .dw[data-widget="recent"] [aria-label="Widget-Optionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="recent"] [aria-label="Widget-Optionen"]');
   await menuItem("Größe: Breit");
-  await app.waitFor('.pane.active .dw[data-widget="recent"] .dw-sizes [aria-label="Größe: Hoch"]');
-  assert.equal(await (await app.$$('.pane.active .dw[data-widget="recent"] .dw-sizes button')).length, 5);
-  await app.click('.pane.active .dw[data-widget="recent"] .dw-sizes [aria-label="Größe: Hoch"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="recent"] .dw-sizes [aria-label="Größe: Hoch"]');
+  assert.equal(await (await app.$$('.pane.active > .pane-content:not([hidden]) .dw[data-widget="recent"] .dw-sizes button')).length, 5);
+  await app.click('.pane.active > .pane-content:not([hidden]) .dw[data-widget="recent"] .dw-sizes [aria-label="Größe: Hoch"]');
   await app.shot("106-sizes-editing");
-  await clickText(".pane.active .dash-bar button", "Fertig");
-  await app.browser.waitUntil(async () => !(await (await app.$(".pane.active .dash.editing")).isExisting()));
+  await clickText(".pane.active > .pane-content:not([hidden]) .dash-bar button", "Fertig");
+  await app.browser.waitUntil(async () => !(await (await app.$(".pane.active > .pane-content:not([hidden]) .dash.editing")).isExisting()));
   let p = await board("Projekte");
   assert.deepEqual([p.widgets.find((w) => w.id === "recent").w, p.widgets.find((w) => w.id === "recent").h], [4, 14]);
   noOverlaps(p.widgets);
   // Outside edit mode: the widget menu has the sizes; the change is saved at once.
-  await app.browser.execute(() => document.querySelector('.pane.active .dw[data-widget="favorites"] .dw-menu').click());
+  await app.browser.execute(() => document.querySelector('.pane.active > .pane-content:not([hidden]) .dw[data-widget="favorites"] .dw-menu').click());
   await menuItem("Größe");
   await menuItem("Größe: Breit und hoch");
   await app.browser.waitUntil(async () => (await place("Projekte", "favorites"))?.w === 8, { timeoutMsg: "menu size not saved" });
@@ -136,9 +136,9 @@ test("preset sizes from the keys, the size buttons and the widget menu", async (
 });
 
 test("start pages: from a template, renamed, reordered, reopened and deleted", async () => {
-  await app.click('.pane.active .dash-tabs [aria-label="Board hinzufügen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .dash-tabs [aria-label="Board hinzufügen"]');
   await menuItem("Persönlich");
-  await app.waitFor(".pane.active .dash-tab-input");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-tab-input");
   await app.browser.waitUntil(() => app.browser.execute(() => document.activeElement?.classList.contains("dash-tab-input")), { timeoutMsg: "rename field not focused" });
   await app.keys(["Control", "a"]);
   await app.type("Privat");
@@ -147,28 +147,28 @@ test("start pages: from a template, renamed, reordered, reopened and deleted", a
   assert.equal(await activeTab(), "Privat");
   const kinds = (await board("Privat")).widgets.map((w) => w.kind);
   for (const k of ["scratchpad", "inbox", "resurface", "writing", "checklist"]) assert.ok(kinds.includes(k), `${k} in „Persönlich“: ${kinds}`);
-  await app.waitFor('.pane.active .dw[data-kind="resurface"]');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-kind="resurface"]');
   // Renamed with F2, moved left with Alt+←.
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .dash-tab")].find((b) => b.textContent.trim() === "Privat").focus());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-tab")].find((b) => b.textContent.trim() === "Privat").focus());
   await app.keys(["F2"]);
-  await app.waitFor(".pane.active .dash-tab-input");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-tab-input");
   await app.keys(["Control", "a"]);
   await app.type("Persönliches");
   await app.keys(["Enter"]);
   await app.browser.waitUntil(async () => (await tabs()).includes("Persönliches"), { timeoutMsg: "not renamed" });
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .dash-tab")].find((b) => b.textContent.trim() === "Persönliches").focus());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-tab")].find((b) => b.textContent.trim() === "Persönliches").focus());
   await app.keys(["Alt", "ArrowLeft"]);
   await app.browser.waitUntil(async () => (await tabs()).join() === "Heute,Persönliches,Projekte", { timeoutMsg: `not moved: ${await tabs()}` });
   await app.browser.waitUntil(async () => (await saved()).boards.map((b) => b.name).join() === "Heute,Persönliches,Projekte");
   // The one used last opens after a restart of the window.
   await reload();
   await app.keys(["Control", "t"]);
-  await app.waitFor(".pane.active .dash-tab");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-tab");
   assert.equal(await activeTab(), "Persönliches");
   await app.shot("106-tabs");
   // Deleted from its menu.
   await app.browser.execute(() => {
-    const t = [...document.querySelectorAll(".pane.active .dash-tab")].find((b) => b.textContent.trim() === "Persönliches");
+    const t = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-tab")].find((b) => b.textContent.trim() === "Persönliches");
     t.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 300, clientY: 120 }));
   });
   await menuItem("Board löschen");
@@ -184,7 +184,7 @@ test("a board file leaves out secrets; an import checks it and names what it lea
   await app.invoke("dashboard_save", { dashboard: { ...d, boards, active: "projekte" } });
   await reload();
   await app.keys(["Control", "t"]);
-  await app.waitFor('.pane.active .dw[data-widget="clock"] .dw-zones');
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .dw[data-widget="clock"] .dw-zones');
   const file = path.join(tmp, "projekte.dashboard.json");
   await app.browser.execute((p) => window.dispatchEvent(new CustomEvent("arcalo:dashboard-export", { detail: { board: "projekte", path: p } })), file);
   await app.browser.waitUntil(async () => fs.existsSync(file), { timeoutMsg: "not exported" });

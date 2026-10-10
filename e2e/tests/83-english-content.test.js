@@ -32,8 +32,8 @@ async function failure(cmd, args) {
 test("the daily note is written in English", async () => {
   await app.dismissToasts();
   await app.click('.ribbon [aria-label^="Today\'s daily note"]');
-  await app.waitFor(".pane.active .ProseMirror h2");
-  const heads = await app.browser.execute(() => [...document.querySelectorAll(".pane.active .ProseMirror h2")].map((h) => h.textContent));
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  const heads = await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror h2")].map((h) => h.textContent));
   assert.deepEqual(heads.slice(0, 2), ["Focus", "Notes"]);
   await app.shot("en-83-daily");
 });
@@ -51,7 +51,7 @@ test("/time books in English, and an English due word becomes the date", async (
   await app.type("/time NP-8801/1020 1.5h english review @yesterday");
   await app.keys(["Escape"]);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .ProseMirror .time-chip");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror .time-chip");
   await app.waitText(".toast-title", /h booked/);
   const e = (await app.invoke("time_entries", { from: null, to: null })).find((x) => x.description === "english review");
   assert.ok(e, "entry booked");
@@ -63,17 +63,17 @@ test("/time books in English, and an English due word becomes the date", async (
   await app.type("[ ] call Bob due:tomorrow ");
   const next = new Date(Date.now() + 86400000);
   const tomorrow = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
-  await app.browser.waitUntil(async () => (await app.text(".pane.active .ProseMirror")).includes(`due:${tomorrow}`), { timeoutMsg: "due:tomorrow not resolved" });
+  await app.browser.waitUntil(async () => (await app.text(".pane.active > .pane-content:not([hidden]) .ProseMirror")).includes(`due:${tomorrow}`), { timeoutMsg: "due:tomorrow not resolved" });
   await app.shot("en-83-time-due");
 });
 
 test("a new page, its deletion and the undo are English", async () => {
   await app.dismissToasts();
   await app.click('.ribbon [aria-label^="New page"]');
-  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active .page-title")?.value)) === "Untitled", {
+  await app.browser.waitUntil(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .page-title")?.value)) === "Untitled", {
     timeoutMsg: "new page is not “Untitled”",
   });
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await app.waitFor(".menu");
   await app.click(".menu-item.danger");
   await app.waitText(".toast", /Page deleted/);

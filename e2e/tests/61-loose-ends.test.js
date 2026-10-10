@@ -58,8 +58,8 @@ async function store(name, bytes) {
 async function openPage(title, content) {
   const page = await app.invoke("page_create", { parentId: null, title, icon: null, content });
   await app.invoke("search_open", { target: { kind: "page", page_id: page.id, new_tab: true } });
-  await app.browser.waitUntil(async () => (await (await app.$(".pane.active .page-title")).getValue()) === title, { timeoutMsg: `${title} not open` });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.browser.waitUntil(async () => (await (await app.$(".pane.active > .pane-content:not([hidden]) .page-title")).getValue()) === title, { timeoutMsg: `${title} not open` });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   return page;
 }
 
@@ -75,10 +75,10 @@ test("[[file.ext]] links show and open the file; a missing one is a missing file
   await store("Daten.xlsx", Buffer.from("PK fake xlsx"));
   const pagesBefore = (await app.invoke("workspace_tree")).length;
   const page = await openPage("Dateiverweise", "Angebot: [[Angebot.pdf]], Tabelle: [[Ordner/Daten.xlsx|die Daten]], fehlt: [[Fehlt.docx]] und [[Neue Seite E2E]].\n");
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .ProseMirror .wikilink.file-link")).length === 3, { timeoutMsg: "file links not rendered" });
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .wikilink.file-link.is-missing")).length === 1, { timeoutMsg: "missing file not marked" });
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .ProseMirror .wikilink.file-link")).length === 3, { timeoutMsg: "file links not rendered" });
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .wikilink.file-link.is-missing")).length === 1, { timeoutMsg: "missing file not marked" });
   const links = await app.browser.execute(() =>
-    [...document.querySelectorAll(".pane.active .ProseMirror a[data-wikilink]")].map((a) => ({ cls: a.className, file: a.dataset.fileLink ?? null, text: a.innerText.trim(), icon: !!a.querySelector(".file-link-icon svg") })),
+    [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror a[data-wikilink]")].map((a) => ({ cls: a.className, file: a.dataset.fileLink ?? null, text: a.innerText.trim(), icon: !!a.querySelector(".file-link-icon svg") })),
   );
   assert.deepEqual(links, [
     { cls: "wikilink file-link", file: "Angebot.pdf", text: "Angebot.pdf", icon: true },
@@ -114,7 +114,7 @@ test("[[file.ext]] links show and open the file; a missing one is a missing file
   await app.shot("61-file-links");
 
   // Hovering a file link previews no page.
-  const pdfLink = await app.$('.pane.active .wikilink.file-link[data-file-link="Angebot.pdf"]');
+  const pdfLink = await app.$('.pane.active > .pane-content:not([hidden]) .wikilink.file-link[data-file-link="Angebot.pdf"]');
   await pdfLink.moveTo();
   await sleep(900);
   assert.equal(await (await app.$(".link-preview")).isExisting(), false, "no page preview for a file");
@@ -128,7 +128,7 @@ test("[[file.ext]] links show and open the file; a missing one is a missing file
 
   // A click on the missing file names file and folder; no page is created.
   await app.dismissToasts();
-  await (await app.$('.pane.active .wikilink.file-link[data-file-link="Fehlt.docx"]')).click();
+  await (await app.$('.pane.active > .pane-content:not([hidden]) .wikilink.file-link[data-file-link="Fehlt.docx"]')).click();
   const missing = path.join(app.dataDir, "attachments", "Fehlt.docx");
   await app.waitText(".toast-danger .toast-detail", new RegExp(`^Datei nicht gefunden: ${missing.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`));
   await app.shot("61-missing-file-toast");
@@ -155,7 +155,7 @@ test("code on slides is highlighted; the white Beamer slide uses light code colo
   await app.browser.refresh();
   await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000 });
   await openPage("Folien mit Code", "# Code auf Folien\n\n```ts\nconst antwort: number = 42; // Kommentar\nfunction frage(): string {\n  return \"Leben\";\n}\n```\n\n```rust\nfn main() { let x = 1; }\n```\n");
-  await app.click('.pane.active .page-view [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .page-view [aria-label="Weitere Aktionen"]');
   assert.ok(await menuClick("Präsentieren"));
   await app.waitFor(".presentation .present-slide .slide-content .hljs-keyword", 10000);
   // Rust is loaded on demand.

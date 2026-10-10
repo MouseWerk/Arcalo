@@ -23,7 +23,7 @@ async function patchSettings(f) {
   await app.invoke("settings_save", { settings: f(structuredClone(view.settings)) });
   await app.browser.pause(400);
 }
-const sections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active .bf-grid > .bf-card")].map((e) => e.dataset.section));
+const sections = () => app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .bf-grid > .bf-card")].map((e) => e.dataset.section));
 const ALLOW = [/Müller|Weiß|Zürich|Kundentermin|Abstimmung|Vertriebsrunde/];
 
 before(async () => {
@@ -43,18 +43,18 @@ test("opened from the palette, in English with English numbers", async () => {
   await app.type("Morning briefing");
   await app.browser.pause(250);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .bf-view .bf-grid", 15000);
-  assert.match(await app.text(".pane.active .bf-view h1"), /Morning briefing/);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .bf-view .bf-grid", 15000);
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .bf-view h1"), /Morning briefing/);
   assert.match(await app.text(".pane.active .tab.active"), /Briefing/);
   // No Jira site: no Jira section.
   assert.deepEqual(await sections(), ["ai", "meetings", "tasks", "time"]);
-  const tasks = await app.text('.pane.active .bf-card[data-section="tasks"]');
+  const tasks = await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="tasks"]');
   assert.match(tasks, /Overdue[\s\S]*Send the offer to client X[\s\S]*Due today[\s\S]*Review the contract/i);
   // No AI connected: a hint and the way to the settings.
-  assert.match(await app.text('.pane.active .bf-card[data-section="ai"]'), /No AI is connected/);
-  assert.ok(await app.browser.execute(() => !document.querySelector(".pane.active .bf-ai-refresh")));
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="ai"]'), /No AI is connected/);
+  assert.ok(await app.browser.execute(() => !document.querySelector(".pane.active > .pane-content:not([hidden]) .bf-ai-refresh")));
   // Hours with a decimal point.
-  const time = await app.text('.pane.active .bf-card[data-section="time"]');
+  const time = await app.text('.pane.active > .pane-content:not([hidden]) .bf-card[data-section="time"]');
   assert.match(time, /Last workday:/);
   assert.doesNotMatch(time, /\d,\d+ h/);
   assert.deepEqual(await germanLeftovers(app, ALLOW), []);
@@ -64,12 +64,12 @@ test("opened from the palette, in English with English numbers", async () => {
 test("time tracking off leaves the hours out; the gear says why", async () => {
   await patchSettings((s) => ({ ...s, time: { ...s.time, enabled: false } }));
   await app.browser.waitUntil(async () => (await sections()).join(",") === "ai,meetings,tasks", { timeoutMsg: `sections ${await sections()}` });
-  await app.click(".pane.active .bf-gear");
-  await app.waitFor('.pane.active .bf-section-item[data-section="time"]');
-  assert.match(await app.text('.pane.active .bf-section-item[data-section="time"]'), /time tracking off/);
-  assert.match(await app.text('.pane.active .bf-section-item[data-section="jira"]'), /Jira not set up/);
+  await app.click(".pane.active > .pane-content:not([hidden]) .bf-gear");
+  await app.waitFor('.pane.active > .pane-content:not([hidden]) .bf-section-item[data-section="time"]');
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .bf-section-item[data-section="time"]'), /time tracking off/);
+  assert.match(await app.text('.pane.active > .pane-content:not([hidden]) .bf-section-item[data-section="jira"]'), /Jira not set up/);
   // Switched off here: gone at once.
-  await app.click('.pane.active .bf-section-item[data-section="ai"] .switch');
+  await app.click('.pane.active > .pane-content:not([hidden]) .bf-section-item[data-section="ai"] .switch');
   await app.browser.waitUntil(async () => (await sections()).join(",") === "meetings,tasks", { timeoutMsg: `sections ${await sections()}` });
   assert.deepEqual(await germanLeftovers(app, ALLOW), []);
   await app.shot("115-briefing-en-customize");
@@ -93,7 +93,7 @@ test("the widget in English", async () => {
   });
   await reload();
   await app.keys(["Control", "t"]);
-  const w = '.pane.active [data-widget="briefing"]';
+  const w = '.pane.active > .pane-content:not([hidden]) [data-widget="briefing"]';
   await app.waitFor(`${w} .dw-bf-count`, 15000);
   assert.match(await app.text(w), /tasks due/);
   assert.match(await app.text(`${w} .dw-bf-ai`), /No AI connected/);

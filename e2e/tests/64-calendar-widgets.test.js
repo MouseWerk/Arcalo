@@ -29,7 +29,7 @@ after(async () => {
 
 test("Ctrl+Shift+E and the palette open the Kalender", async () => {
   await app.keys(["Control", "Shift", "e"]);
-  await app.waitFor(".pane.active .calv");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv");
   await app.waitText(".pane.active .tab.active", /Kalender/);
   await app.click(".pane.active .tab.active .tab-close");
   await app.keys(["Control", "k"]);
@@ -37,15 +37,15 @@ test("Ctrl+Shift+E and the palette open the Kalender", async () => {
   await app.type("Kalender");
   await app.waitText(".pal-item.sel", /Termine aus Outlook und ICS/);
   await app.keys(["Enter"]);
-  await app.waitFor(".pane.active .calv");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv");
 });
 
 test("the start page widget lists today's meetings and opens the calendar on one", async () => {
   await app.keys(["Control", "t"]);
-  await app.waitFor(".pane.active .dash");
-  const button = (text) => app.browser.execute((t) => [...document.querySelectorAll(".pane.active .dash-bar .btn")].find((b) => b.textContent.trim() === t)?.click(), text);
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash");
+  const button = (text) => app.browser.execute((t) => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .dash-bar .btn")].find((b) => b.textContent.trim() === t)?.click(), text);
   await button("Anpassen");
-  await app.waitText(".pane.active .dash-bar .btn", /Widget hinzufügen/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .dash-bar .btn", /Widget hinzufügen/);
   await button("Widget hinzufügen");
   // The widget gallery (1.6); „Termine“ is on the default board already, this adds a second one.
   await app.click('.dash-gallery-card[data-kind="agenda"]');
@@ -56,7 +56,7 @@ test("the start page widget lists today's meetings and opens the calendar on one
   await app.browser.execute(() => document.querySelector('.dw[data-kind="agenda"]').scrollIntoView({ block: "center" }));
   await app.shot("64-dashboard-agenda");
   await app.click('.dw[data-kind="agenda"] .dw-agenda-row');
-  await app.waitText(".pane.active .calv-detail-title", /Daily Standup/);
+  await app.waitText(".pane.active > .pane-content:not([hidden]) .calv-detail-title", /Daily Standup/);
 });
 
 test("the timesheet offers this week's unbooked meetings and books one", async () => {

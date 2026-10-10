@@ -368,7 +368,7 @@ const calm = async (x = 5, y = 880) => {
   await app.browser.performActions([{ type: "pointer", id: "m", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", x, y }] }]).catch(() => {});
 };
 /** A text cursor in the last heading instead of a selected first block (blurred later). */
-const placeCursor = () => app.click(".pane.active .ProseMirror h2:last-of-type");
+const placeCursor = () => app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror h2:last-of-type");
 /** No caret, selection, hover state or toast in the picture. */
 const settle = async (x = 5, y = 880) => {
   await app.browser.execute(() => {
@@ -436,7 +436,7 @@ async function palette(text, item) {
 }
 const selectText = (text) =>
   app.browser.execute((t) => {
-    const root = document.querySelector(".pane.active .ProseMirror");
+    const root = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const i = n.data.indexOf(t);
@@ -666,7 +666,7 @@ async function split() {
   await closeTabs();
   await sidebar(true);
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await app.browser.execute(() => {
     const r = [...document.querySelectorAll(".sidebar .tree-row")].find((x) => x.innerText.trim() === "PRJ-2026-X Rollout");
     const b = r.getBoundingClientRect();
@@ -686,8 +686,8 @@ async function note() {
   await closeTabs();
   await panel(false);
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click(".pane.active .ProseMirror > p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror > p");
   await settle();
   await shot("note-dark");
 }
@@ -697,7 +697,7 @@ async function preview() {
   await closeTabs();
   await panel(false);
   await openTree("PRJ-2026-X Rollout");
-  const link = await app.waitFor('.pane.active .ProseMirror a[data-wikilink][data-target="Architecture"]');
+  const link = await app.waitFor('.pane.active > .pane-content:not([hidden]) .ProseMirror a[data-wikilink][data-target="Architecture"]');
   await settle();
   await link.moveTo();
   await app.waitText(".link-preview-title", /Architecture/);
@@ -712,14 +712,14 @@ async function tableToolbar() {
   await closeTabs();
   await panel(false);
   await openTree("PRJ-2026-X Rollout");
-  await app.waitFor(".pane.active .ProseMirror table");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror table");
   await app.browser.execute(() => {
-    const cell = [...document.querySelectorAll(".pane.active .ProseMirror td")].find((c) => c.textContent.includes("ERP system integration"));
+    const cell = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .ProseMirror td")].find((c) => c.textContent.includes("ERP system integration"));
     const p = cell.querySelector("p") ?? cell;
     const range = document.createRange();
     range.selectNodeContents(p);
     range.collapse(false);
-    document.querySelector(".pane.active .ProseMirror").focus();
+    document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").focus();
     const sel = getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
@@ -737,9 +737,9 @@ async function versions() {
   const page = await app.invoke("page_resolve", { title: "Architecture", create: false });
   const original = (await app.invoke("page_get", { id: page.id })).content;
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   // A first version, then an edited state.
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await clickText(".menu-item", "/Versions/");
   await app.waitFor(".versions-snapshot");
   await app.click(".versions-snapshot");
@@ -754,8 +754,8 @@ async function versions() {
   await app.browser.refresh();
   await ready();
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await clickText(".menu-item", "/Versions/");
   await app.waitFor(".versions-snapshot");
   await app.click(".versions-snapshot");
@@ -777,14 +777,14 @@ async function board() {
   await closeTabs();
   await panel(false);
   await openTree("Go-live sprint");
-  await app.waitFor(".pane.active .coll .board-col");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll .board-col");
   await settle();
   await shot("board-view");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll button")].find((b) => b.innerText.trim() === "Table")?.click());
-  await app.waitFor(".pane.active .coll-table");
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Table")?.click());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .coll-table");
   await settle();
   await shot("table-view");
-  await app.browser.execute(() => [...document.querySelectorAll(".pane.active .coll button")].find((b) => b.innerText.trim() === "Board")?.click());
+  await app.browser.execute(() => [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .coll button")].find((b) => b.innerText.trim() === "Board")?.click());
 }
 
 async function blocks() {
@@ -792,10 +792,10 @@ async function blocks() {
   await closeTabs();
   await panel(false);
   await openTree("Order portal concept");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click(".pane.active .ProseMirror > p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror > p");
   await settle();
-  await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror .toc-block")?.scrollIntoView({ block: "start" }));
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror .toc-block")?.scrollIntoView({ block: "start" }));
   await sleep(300);
   await shot("editor-blocks");
 }
@@ -804,8 +804,8 @@ async function present() {
   await setTheme("light");
   await closeTabs();
   await openTree("Status report week 40");
-  await app.waitFor(".pane.active .ProseMirror");
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await clickText(".menu-item", "/^Present/");
   await app.waitFor(".presentation .present-slide");
   await app.keys(["ArrowRight"]);
@@ -823,7 +823,7 @@ async function activity() {
   await panel(true);
   await app.click('.ribbon [aria-label^="Timeline"]');
   await app.waitFor(".activity-item");
-  await clickText(".pane.active button", "Yesterday");
+  await clickText(".pane.active > .pane-content:not([hidden]) button", "Yesterday");
   await sleep(800);
   await settle();
   await shot("activity-feed");
@@ -835,8 +835,8 @@ async function review() {
   await closeTabs();
   await panel(false);
   await app.click(".ribbon .ribbon-review");
-  await app.waitFor(".pane.active .rv-view .rv-stats");
-  await app.browser.execute(() => document.querySelector(".pane.active .rv-view")?.focus());
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .rv-view .rv-stats");
+  await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .rv-view")?.focus());
   await app.keys(["ArrowLeft"]);
   await app.waitText(".rv-date", /Yesterday|Wednesday/);
   await sleep(800);
@@ -849,8 +849,8 @@ async function dashboard() {
   await closeTabs();
   await panel(false);
   await app.keys(["Control", "t"]);
-  await app.waitFor(".pane.active .dash-grid .dw");
-  await app.browser.waitUntil(async () => (await app.$$(".pane.active .dw-skel")).length === 0, { timeout: 15000 });
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .dash-grid .dw");
+  await app.browser.waitUntil(async () => (await app.$$(".pane.active > .pane-content:not([hidden]) .dw-skel")).length === 0, { timeout: 15000 });
   await sleep(1200);
   await settle();
   await app.browser.execute(() => document.querySelector(".home")?.scrollTo(0, 0));
@@ -864,7 +864,7 @@ async function timeSuggest() {
   const page = await app.invoke("page_resolve", { title: "Weekly sync 22.09.", create: false });
   const original = (await app.invoke("page_get", { id: page.id })).content;
   await openTree("Weekly sync 22.09.");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.caretToEnd();
   await app.keys(["Enter"]);
   await app.type("/time NP-88");
@@ -892,7 +892,7 @@ async function workCard() {
   await closeTabs();
   await panel(false);
   await openTree("Integration test plan");
-  await app.waitFor(".pane.active .work-card");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .work-card");
   await settle();
   await shot("page-work-card");
 }
@@ -915,7 +915,7 @@ async function cite() {
   await setTheme("light");
   await closeTabs();
   await openTree("Weekly sync 22.09.");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await panel(true);
   await app.keys(["Control", "j"]);
   const ta = await app.waitFor(".composer textarea");
@@ -935,7 +935,7 @@ async function history() {
   await setTheme("dark");
   await closeTabs();
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await panel(true);
   await app.browser.execute(() => document.querySelector(".assistant-head .chat-history-btn, .assistant-head button[aria-label='History']")?.click());
   if (!(await app.$(".chat-history").isExisting())) await app.click('.assistant-head button[aria-label="History"]');
@@ -952,7 +952,7 @@ async function inlineAi() {
   await closeTabs();
   await panel(false);
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await selectText("The middleware connects the ERP to the order portal through IDocs.");
   await app.keys(["Control", "j"]);
   await app.waitFor(".ai-bar");
@@ -973,8 +973,8 @@ async function summary() {
   await closeTabs();
   await panel(false);
   await openTree("Weekly sync 22.09.");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click('.pane.active [aria-label="More actions"]');
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click('.pane.active > .pane-content:not([hidden]) [aria-label="More actions"]');
   await clickText(".menu-item", "/Summarize the meeting/");
   await app.waitText(".summary-preview h2", /Decisions/, 15000);
   await sleep(600);
@@ -990,12 +990,12 @@ async function calendar() {
   await panel(false);
   await sidebar(false);
   await app.click(".ribbon .ribbon-calendar-view");
-  await app.waitFor(".pane.active .calv-head");
-  await clickText(".pane.active .calv-views button", "Work week");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .calv-head");
+  await clickText(".pane.active > .pane-content:not([hidden]) .calv-views button", "Work week");
   await sleep(700);
   await app.browser.execute(() => {
-    const s = document.querySelector(".pane.active .calv-scroll, .pane.active .calv-body, .pane.active .calv-grid");
-    const row = [...document.querySelectorAll(".pane.active .calv-hour, .pane.active .calv-time")].find((e) => e.innerText.trim() === "08:00");
+    const s = document.querySelector(".pane.active > .pane-content:not([hidden]) .calv-scroll, .pane.active > .pane-content:not([hidden]) .calv-body, .pane.active > .pane-content:not([hidden]) .calv-grid");
+    const row = [...document.querySelectorAll(".pane.active > .pane-content:not([hidden]) .calv-hour, .pane.active > .pane-content:not([hidden]) .calv-time")].find((e) => e.innerText.trim() === "08:00");
     if (s && row) s.scrollTop = row.offsetTop - 8;
   });
   await settle();
@@ -1029,8 +1029,8 @@ async function weekProposal() {
   await closeTabs();
   await panel(false);
   await app.click('.ribbon [aria-label="Time tracking"]');
-  await app.waitFor(".pane.active .wp-open");
-  await app.click(".pane.active .wp-open");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .wp-open");
+  await app.click(".pane.active > .pane-content:not([hidden]) .wp-open");
   await app.waitFor(".dialog .wp-days");
   await sleep(600);
   const mark = () =>
@@ -1059,7 +1059,7 @@ async function mail() {
   await closeTabs();
   await panel(false);
   await openTree("Integration test plan");
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await palette("current e-mail", /Take over current e-mail/);
   await app.waitFor(".dialog .mailx-card");
   await sleep(400);
@@ -1083,7 +1083,7 @@ async function linkGroup() {
   await closeTabs();
   await panel(false);
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
   await placeCursor();
   await settle();
   await app.click(".ribbon .quick-group");
@@ -1122,7 +1122,7 @@ async function tasks() {
   await closeTabs();
   await panel(false);
   await app.click('.ribbon [aria-label^="Tasks"]');
-  await app.waitFor(".pane.active .task-row, .pane.active .tasks");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .task-row, .pane.active > .pane-content:not([hidden]) .tasks");
   await sleep(500);
   await settle();
   await shot("tasks-view");
@@ -1173,8 +1173,8 @@ async function themes() {
   await app.browser.refresh();
   await ready();
   await openTree("Architecture");
-  await app.waitFor(".pane.active .ProseMirror h2");
-  await app.click(".pane.active .ProseMirror > p");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror h2");
+  await app.click(".pane.active > .pane-content:not([hidden]) .ProseMirror > p");
   await settle();
   await shot("theme-tokyo-night");
   await save(() => ({ theme: s.theme, appearance: s.appearance }));

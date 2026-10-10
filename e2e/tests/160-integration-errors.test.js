@@ -45,7 +45,7 @@ after(async () => {
 const status = () => app.invoke("jira_status");
 async function openSettings(section) {
   await app.click('button[aria-label^="Einstellungen"]');
-  await app.waitFor(".pane.active .settings");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .settings");
   const wide = await app.browser.execute((s) => !!document.querySelector(`.settings-nav-item[data-section="${s}"]`)?.offsetParent, section);
   if (wide) await app.click(`.settings-nav-item[data-section="${section}"]`);
   else await app.select(".settings-section-select", section);
@@ -91,7 +91,7 @@ test("an address copied from the browser is cut to the site; a rejected search s
   const shown = await app.waitFor(`.jira-query[data-query="${typo.id}"] .jira-query-error`);
   assert.match(await app.textOf(shown), /Beim letzten Abgleich fehlgeschlagen: .*400.* Die JQL in der Jira-Suche prüfen/);
   assert.equal(await app.browser.execute(() => document.querySelectorAll(".jira-query-error").length), 1);
-  assert.match(await app.text(".pane.active .settings-body"), /Alle Jira-Sites jetzt abgleichen/, "not the calendars' label");
+  assert.match(await app.text(".pane.active > .pane-content:not([hidden]) .settings-body"), /Alle Jira-Sites jetzt abgleichen/, "not the calendars' label");
   await app.browser.execute(() => document.querySelector(".jira-queries")?.scrollIntoView({ block: "center" }));
   await app.shot("160-jira-query-error");
 

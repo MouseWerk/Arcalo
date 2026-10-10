@@ -36,13 +36,13 @@ test("the slash menu says which entry Enter takes (aria-activedescendant on the 
   await app.keys("ArrowDown");
   await sleep(150);
   const aria = await app.browser.execute(() => {
-    const pm = document.querySelector(".pane.active .ProseMirror");
+    const pm = document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror");
     const id = pm.getAttribute("aria-activedescendant");
     return { expanded: pm.getAttribute("aria-expanded"), controls: pm.getAttribute("aria-controls"), selected: id && document.getElementById(id)?.getAttribute("aria-selected"), list: !!document.getElementById(pm.getAttribute("aria-controls") ?? "") };
   });
   assert.deepEqual(aria, { expanded: "true", controls: aria.controls, selected: "true", list: true });
   await app.keys("Escape");
-  await until(async () => (await app.browser.execute(() => document.querySelector(".pane.active .ProseMirror").getAttribute("aria-expanded"))) !== "true", "aria-expanded stayed true");
+  await until(async () => (await app.browser.execute(() => document.querySelector(".pane.active > .pane-content:not([hidden]) .ProseMirror").getAttribute("aria-expanded"))) !== "true", "aria-expanded stayed true");
   // Dismissed: Enter makes a new line instead of inserting the hidden entry.
   await app.keys("Enter");
   await sleep(200);
@@ -103,7 +103,7 @@ test("undoing the deletion of the open page brings its tab back", async () => {
   const page = await app.invoke("page_create", { parentId: null, title: "Offen geloescht", icon: null, content: "x\n" });
   await open(page.id, true);
   await app.waitText(".pane.active .tab.active", /Offen geloescht/);
-  await app.click('.pane.active .vh [aria-label="Weitere Aktionen"]');
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label="Weitere Aktionen"]');
   await app.waitFor(".menu");
   await app.browser.execute(() => [...document.querySelectorAll(".menu .menu-item")].find((b) => /Seite löschen/.test(b.textContent)).click());
   await app.waitText(".toast", /Seite gelöscht/);
@@ -156,17 +156,17 @@ test("the source view shows a failed save and saves once there is room", async (
   const page = await app.invoke("page_create", { parentId: null, title: "Quelltext voll", icon: null, content: "Anfang\n" });
   await open(page.id, true);
   await app.waitText(".pane.active .tab.active", /Quelltext voll/);
-  await app.click('.pane.active .vh [aria-label^="Markdown-Quelltext"]');
-  const ta = await app.waitFor(".pane.active .source-text");
+  await app.click('.pane.active > .pane-content:not([hidden]) .vh [aria-label^="Markdown-Quelltext"]');
+  const ta = await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-text");
   fs.writeFileSync(path.join(dataDir, "test-disk-full"), "");
   await ta.click();
   await app.browser.execute(() => {
-    const t = document.querySelector(".pane.active .source-text");
+    const t = document.querySelector(".pane.active > .pane-content:not([hidden]) .source-text");
     t.setSelectionRange(t.value.length, t.value.length);
   });
   await app.type("Mehr");
-  await app.waitFor(".pane.active .source-editor[data-save-status=failed] .save-failed");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .source-editor[data-save-status=failed] .save-failed");
   fs.rmSync(path.join(dataDir, "test-disk-full"));
   await until(async () => /Mehr/.test((await app.invoke("page_get", { id: page.id })).content), "not saved after the disk had room", 15000);
-  await until(async () => !(await app.browser.execute(() => !!document.querySelector(".pane.active .save-failed"))), "the note stayed");
+  await until(async () => !(await app.browser.execute(() => !!document.querySelector(".pane.active > .pane-content:not([hidden]) .save-failed"))), "the note stayed");
 });
