@@ -105,8 +105,22 @@ test("a saved JQL search syncs its issues", async () => {
 });
 
 test("the Issues page: groups, search, filters and an opened issue", async () => {
+  // The list loads compact rows without the comments (1.17); the opened issue shows them from its view.
+  await app.browser.execute(() => {
+    window.__issueLoads = [];
+    const orig = window.fetch.bind(window);
+    window.fetch = (url, init) =>
+      orig(url, init).then((r) => {
+        const cmd = decodeURIComponent(String(url).replace(/^.*localhost\//, "").split("?")[0]);
+        if (cmd.startsWith("jira_issues")) r.clone().text().then((body) => window.__issueLoads.push({ cmd, body }));
+        return r;
+      });
+  });
   await app.click(".ribbon-issues");
   await app.waitFor("[data-issue-row]");
+  const loads = await app.browser.execute(() => window.__issueLoads);
+  assert.ok(loads.length > 0 && loads.every((l) => l.cmd === "jira_issues_compact"), loads.map((l) => l.cmd).join(", "));
+  assert.ok(loads.every((l) => !l.body.includes("First look at") && l.body.includes("The token has expired")), "comments in the list, or descriptions missing");
   assert.deepEqual((await texts(".issues-group-title span:first-child")).filter(Boolean), ["OPS · Operations", "PROJ · Portal"]);
   assert.equal(await count("[data-issue-row]"), 4, "my four open issues");
   assert.match(await app.text('[data-issue-row="PROJ-123"]'), /Login fails on SSO[\s\S]*In Progress/i);

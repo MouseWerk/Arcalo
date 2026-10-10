@@ -110,6 +110,12 @@ async function waitForPort(port, timeout = 15000) {
   throw new Error(`port ${port} did not open`);
 }
 
+/**
+ * A timing budget in ms for the minimum of several runs: `local` on a developer machine, `ci` on CI
+ * (`CI` set; the runners are slower and shared), by default 1.6 times as much.
+ */
+export const budget = (local, ci = Math.round(local * 1.6)) => (process.env.CI ? ci : local);
+
 /** Wraps node:test's `test` so a failing test leaves a screenshot and the editor DOM behind. */
 export function guarded(test, getApp) {
   return (name, fn) =>
