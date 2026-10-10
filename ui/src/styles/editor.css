@@ -522,6 +522,10 @@
   scrollbar-width: none;
 }
 .vh-toolbar .editor-toolbar::-webkit-scrollbar { display: none; }
+/* Buttons hidden past an edge fade out there instead of showing cut in half. */
+.vh-toolbar .editor-toolbar.fade-right { mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+.vh-toolbar .editor-toolbar.fade-left { mask-image: linear-gradient(90deg, transparent, #000 24px); }
+.vh-toolbar .editor-toolbar.fade-left.fade-right { mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
 @container pane (max-width: 1040px) {
   .vh-toolbar .tb-menu .tb-label, .vh-toolbar .tb-menu .tb-caret { display: none; }
   .vh-toolbar .tb-menu { padding: 0 6px; }

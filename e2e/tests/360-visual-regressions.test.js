@@ -105,7 +105,7 @@ test("a split pane's tab strip starts at a tab and keeps the active title readab
     ids.push((await app.invoke("page_create", { parentId: null, title: t, icon: null, content: "Text" })).id);
   }
   await app.invoke("search_open", { target: { kind: "page", page_id: ids[1], new_tab: false } });
-  await app.waitFor(".pane.active .ProseMirror");
+  await app.waitFor(".pane.active > .pane-content:not([hidden]) .ProseMirror");
   await app.click('.pane.active .tabbar [aria-label="Rechts teilen"]');
   await sleep(600);
   for (const id of [ids[2], ids[3], ids[1], ids[0]]) {
@@ -148,6 +148,15 @@ test("booked-time strips without room for a reference show the hatch only; today
   // Today's head with its note and a task due today.
   const daily = await app.invoke("daily_note", { date: null });
   await app.invoke("page_save", { id: daily.id, content: "# Heute\n\n- [ ] Heute fällig 360" });
+  // A work week of six days with today in it, every day of the week (on a Saturday the usual
+  // Monday to Friday shows six columns too, with today the sixth; its head wrapped there).
+  const today = ((new Date().getDay() + 6) % 7) + 1;
+  const six = [...new Set([1, 2, 3, 4, 5, today <= 5 ? 6 : today])].sort();
+  const view = await app.invoke("settings_get");
+  const before = view.settings.workdays;
+  await app.invoke("settings_save", { settings: { ...view.settings, workdays: six } });
+  await app.browser.refresh();
+  await app.browser.waitUntil(async () => app.browser.execute(() => document.body.classList.contains("ready")), { timeout: 20000, timeoutMsg: "not ready after the reload" });
   for (const [w, h] of [[1920, 1080], [1280, 800], [900, 700]]) {
     await app.browser.setWindowSize(w, h);
     await ribbon("Kalender");
@@ -173,7 +182,10 @@ test("booked-time strips without room for a reference show the hatch only; today
     assert.deepEqual(unreadable, [], `${w}px`);
     const wrapped = r.heads.filter((x) => x.rows > 1);
     assert.deepEqual(wrapped, [], `${w}px: day head chips on more than one row`);
+    assert.ok(w === 900 || r.heads.length === 6, `${w}px: ${r.heads.length} day heads instead of six`);
   }
+  const after = await app.invoke("settings_get");
+  await app.invoke("settings_save", { settings: { ...after.settings, workdays: before } });
   await app.browser.setWindowSize(1280, 800);
 });
 
