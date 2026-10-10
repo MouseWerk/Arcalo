@@ -28,8 +28,9 @@ export interface GraphNodeData {
   tags: string[];
   netzplan: string[];
   jira: string | null;
-  created_at: string;
-  updated_at: string;
+  /** Only in `graph_data` and `graph_patch` answers: the view does not show them (the date range is a filter). */
+  created_at?: string;
+  updated_at?: string;
   daily: boolean;
   links_in: number;
   links_out: number;
@@ -41,6 +42,41 @@ export interface GraphData {
   unresolved: { from: number; key: string; title: string }[];
   files: { from: number; name: string }[];
   removed: number[];
+}
+
+/** What `graph_compact` answers (`arcalo_core::graph::GraphTable`): nodes as arrays with their folder once in `folders` (no dates), links as `from, to` pairs. */
+export interface GraphTable {
+  folders: string[];
+  nodes: [number, string, string | null, number | null, number, string[], string[], string | null, boolean, number, number][];
+  links: number[];
+  unresolved: [number, string, string][];
+  files: [number, string][];
+  removed: number[];
+}
+
+/** The graph of a {@link GraphTable} as the objects of `graph_data` (without the dates). */
+export function fromGraphTable(t: GraphTable): GraphData {
+  const links: GraphData["links"] = [];
+  for (let i = 0; i + 1 < t.links.length; i += 2) links.push({ from: t.links[i], to: t.links[i + 1] });
+  return {
+    nodes: t.nodes.map(([id, title, icon, parent_id, folder, tags, netzplan, jira, daily, links_in, links_out]) => ({
+      id,
+      title,
+      icon,
+      parent_id,
+      folder: t.folders[folder] ?? "",
+      tags,
+      netzplan,
+      jira,
+      daily,
+      links_in,
+      links_out,
+    })),
+    links,
+    unresolved: t.unresolved.map(([from, key, title]) => ({ from, key, title })),
+    files: t.files.map(([from, name]) => ({ from, name })),
+    removed: t.removed,
+  };
 }
 
 /** What the view adds on top of the data. */

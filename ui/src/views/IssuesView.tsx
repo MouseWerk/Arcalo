@@ -293,6 +293,8 @@ function IssueDetail({ issue }: { issue: Issue }) {
   useEffect(() => {
     jiraApi.view(issue.key).then(setView, () => {});
   }, [issue.key, pages]);
+  // The list loads the issues without their comments; the issue's view has them.
+  const comments = view?.issue?.key === issue.key ? view.issue.comments : issue.comments;
   const s = useApp.getState;
   return (
     <div className="issue-detail">
@@ -324,10 +326,10 @@ function IssueDetail({ issue }: { issue: Issue }) {
           )}
         </dl>
         {issue.description ? <div className="issue-desc">{issue.description}</div> : <div className="faint small">{t("jira.noDescription")}</div>}
-        {issue.comments.length > 0 && (
+        {comments.length > 0 && (
           <div className="issue-comments">
             <h3>{t("jira.comments")}</h3>
-            {issue.comments.map((c, n) => (
+            {comments.map((c, n) => (
               <div key={n} className="issue-comment">
                 <div className="issue-comment-head">
                   <b>{c.author}</b> <span className="faint small">{c.created ? relative(c.created) : ""}</span>

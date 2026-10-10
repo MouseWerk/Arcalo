@@ -366,6 +366,12 @@ fn workspace_tree(state: State<AppState>) -> Result<Vec<PageNode>> {
     state.reader().page_tree()
 }
 
+/// The tree as the sidebar loads it: rows instead of objects (`PageRow`), half the size.
+#[tauri::command(async)]
+fn workspace_tree_compact(state: State<AppState>) -> Result<Vec<arcalo_core::model::PageRow>> {
+    Ok(state.reader().page_tree()?.into_iter().map(Into::into).collect())
+}
+
 #[tauri::command(async)]
 fn page_get(state: State<AppState>, id: i64) -> Result<PageDoc> {
     state.reader().page_doc(id)
@@ -4896,6 +4902,7 @@ pub fn run() {
             security::applock_show_main,
             security::applock_test_idle,
             workspace_tree,
+            workspace_tree_compact,
             page_get,
             page_save,
             page_collection,
@@ -5155,6 +5162,7 @@ pub fn run() {
             jira::jira_wbs_set,
             jira::jira_sync_now,
             jira::jira_issues,
+            jira::jira_issues_compact,
             jira::jira_index,
             jira::jira_issue_view,
             jira::jira_issue_fetch,
@@ -5171,6 +5179,7 @@ pub fn run() {
             filing::smart_pages,
             filing::smart_groups,
             graph::graph_data,
+            graph::graph_compact,
             graph::graph_patch,
             graph::graph_state_get,
             graph::graph_state_set,

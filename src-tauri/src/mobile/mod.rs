@@ -47,6 +47,7 @@ pub fn run() {
         })
         .invoke_handler(crate::security::guard(tauri::generate_handler![
             crate::workspace_tree,
+            crate::workspace_tree_compact,
             crate::page_get,
             crate::page_save,
             crate::page_create,
