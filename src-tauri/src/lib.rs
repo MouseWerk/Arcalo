@@ -995,25 +995,36 @@ fn required(value: &str, what: &str) -> Result<String> {
     if v.is_empty() { Err(Error::State(trf!("{what} fehlt", "{what} is missing"))) } else { Ok(v.to_owned()) }
 }
 
-#[tauri::command(async)]
-fn project_create(state: State<AppState>, code: String, name: String) -> Result<Project> {
-    state
-        .db()
-        .create_project(&required(&code, tr!("Projekt-ID", "Project ID"))?, &required(&name, tr!("Name", "Name"))?)
+/// Tells the UI that projects, Netzpläne, Vorgänge or Leistungsarten changed (its shared WBS cache
+/// reads them again), whoever changed them: a view, the assistant, a test, the sample data.
+fn wbs_changed<T>(app: &AppHandle, result: Result<T>) -> Result<T> {
+    if result.is_ok() {
+        let _ = app.emit("data://wbs", ());
+    }
+    result
 }
 
 #[tauri::command(async)]
-fn project_update(state: State<AppState>, id: i64, name: String) -> Result<()> {
-    state.db().update_project(id, &required(&name, tr!("Name", "Name"))?)
+fn project_create(app: AppHandle, state: State<AppState>, code: String, name: String) -> Result<Project> {
+    let code = required(&code, tr!("Projekt-ID", "Project ID"))?;
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().create_project(&code, &name))
 }
 
 #[tauri::command(async)]
-fn project_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_project(id)
+fn project_update(app: AppHandle, state: State<AppState>, id: i64, name: String) -> Result<()> {
+    let name = required(&name, tr!("Name", "Name"))?;
+    wbs_changed(&app, state.db().update_project(id, &name))
+}
+
+#[tauri::command(async)]
+fn project_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_project(id))
 }
 
 #[tauri::command(async)]
 fn netzplan_create(
+    app: AppHandle,
     state: State<AppState>,
     project_id: i64,
     netzplan_nr: String,
@@ -1023,28 +1034,31 @@ fn netzplan_create(
 ) -> Result<Netzplan> {
     let nr = required(&netzplan_nr, tr!("Netzplan-Nr.", "Network no."))?;
     let wbs = if wbs_element.trim().is_empty() { nr.clone() } else { wbs_element.trim().to_owned() };
-    state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0))
+    wbs_changed(&app, state.db().create_netzplan(project_id, &nr, &wbs, description.trim(), planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
 fn netzplan_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     wbs_element: String,
     description: String,
     planned_hours: f64,
 ) -> Result<()> {
-    state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0))
+    wbs_changed(&app, state.db().update_netzplan(id, &wbs_element, &description, planned_hours.max(0.0)))
 }
 
 #[tauri::command(async)]
-fn netzplan_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_netzplan(id)
+fn netzplan_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_netzplan(id))
 }
 
 /// Adds a Vorgang; `predecessors` are Vorgang numbers of the same Netzplan.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 fn vorgang_create(
+    app: AppHandle,
     state: State<AppState>,
     netzplan_id: i64,
     vorgang_nr: String,
@@ -1066,7 +1080,7 @@ fn vorgang_create(
                 .ok_or_else(|| Error::not_found("vorgang", p.clone()))
         })
         .collect::<Result<_>>()?;
-    db.atomic(|| {
+    let created = db.atomic(|| {
         // A new Vorgang has no successors, so linking it cannot create a cycle.
         let mut v =
             db.create_vorgang(netzplan_id, &nr, description.trim(), duration_days.max(0.0), planned_hours.max(0.0))?;
@@ -1075,11 +1089,13 @@ fn vorgang_create(
             v.predecessors.push(p);
         }
         Ok(v)
-    })
+    });
+    wbs_changed(&app, created)
 }
 
 #[tauri::command(async)]
 fn vorgang_update(
+    app: AppHandle,
     state: State<AppState>,
     id: i64,
     description: String,
@@ -1087,12 +1103,16 @@ fn vorgang_update(
     planned_hours: f64,
     remaining_hours: Option<f64>,
 ) -> Result<()> {
-    state.db().update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours)
+    let db = state.db();
+    wbs_changed(
+        &app,
+        db.update_vorgang(id, &description, duration_days.max(0.0), planned_hours.max(0.0), remaining_hours),
+    )
 }
 
 #[tauri::command(async)]
-fn vorgang_delete(state: State<AppState>, id: i64) -> Result<()> {
-    state.db().delete_vorgang(id)
+fn vorgang_delete(app: AppHandle, state: State<AppState>, id: i64) -> Result<()> {
+    wbs_changed(&app, state.db().delete_vorgang(id))
 }
 
 #[tauri::command(async)]
@@ -1101,13 +1121,13 @@ fn leistungsarten_list(state: State<AppState>) -> Result<Vec<(String, String)>> 
 }
 
 #[tauri::command(async)]
-fn leistungsart_save(state: State<AppState>, code: String, description: String) -> Result<()> {
-    state.db().upsert_leistungsart(&code, &description)
+fn leistungsart_save(app: AppHandle, state: State<AppState>, code: String, description: String) -> Result<()> {
+    wbs_changed(&app, state.db().upsert_leistungsart(&code, &description))
 }
 
 #[tauri::command(async)]
-fn leistungsart_delete(state: State<AppState>, code: String) -> Result<()> {
-    state.db().delete_leistungsart(&code)
+fn leistungsart_delete(app: AppHandle, state: State<AppState>, code: String) -> Result<()> {
+    wbs_changed(&app, state.db().delete_leistungsart(&code))
 }
 
 // ---------------------------------------------------------- time tracking
@@ -3993,6 +4013,7 @@ fn onboarding_reset(app: AppHandle, state: State<AppState>) -> Result<SettingsVi
 fn demo_remove(app: AppHandle, state: State<AppState>) -> Result<usize> {
     let n = demo::remove(&state.db())?;
     let _ = app.emit("data://entries", ());
+    let _ = app.emit("data://wbs", ());
     Ok(n)
 }
 

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { BookmarkPlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, IconButton, Segmented, Select, Switch } from "../../components/ui";
-import { api } from "../../lib/api";
+import { leistungsarten, wbsTree } from "../../lib/wbsCache";
 import { systemLang, useT } from "../../lib/i18n";
 import { exportFileName, numberFormatOf, withNumberFormat } from "../../lib/prefs";
 import { timeTrackingOn } from "../../lib/timetracking";
@@ -77,8 +77,8 @@ export function TimePrefGroups({ draft, update }: SectionProps) {
   const [np, setNp] = useState("");
   const [la, setLa] = useState("");
   useEffect(() => {
-    api.wbs().then((w: ProjectTree[]) => setNps(w.flatMap((p) => p.netzplaene.map((n) => n.netzplan_nr))), () => {});
-    api.leistungsarten().then(setLas, () => {});
+    wbsTree().then((w: ProjectTree[]) => setNps(w.flatMap((p) => p.netzplaene.map((n) => n.netzplan_nr))), () => {});
+    leistungsarten().then(setLas, () => {});
   }, []);
   const example = exportFileName(tp.export_file_pattern, { from: "2026-09-21", to: "2026-09-27", format: "sap_cats", week: 39, pernr: draft.pernr });
   return (

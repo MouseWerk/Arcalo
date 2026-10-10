@@ -1,11 +1,11 @@
 // Shared WBS pickers for timer, manual entries and the editor dialogs.
 
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
 import { useApp } from "../store/app";
 import { Select, type Tone } from "../components/ui";
 import type { AlertLevel, ProjectTree } from "../lib/types";
 import { useT, withLabel } from "../lib/i18n";
+import { leistungsarten, wbsTree } from "../lib/wbsCache";
 
 /** Budget levels as badges show them. */
 export const LEVEL: Record<AlertLevel, { readonly label: string; tone: Tone }> = {
@@ -20,8 +20,12 @@ export function useWbs() {
   const [wbs, setWbs] = useState<ProjectTree[]>([]);
   const [las, setLas] = useState<[string, string][]>([]);
   useEffect(() => {
-    api.wbs().then(setWbs).catch(() => {});
-    api.leistungsarten().then(setLas).catch(() => {});
+    let alive = true;
+    wbsTree().then((w) => alive && setWbs(w), () => {});
+    leistungsarten().then((l) => alive && setLas(l), () => {});
+    return () => {
+      alive = false;
+    };
   }, [version]);
   return { wbs, las };
 }
