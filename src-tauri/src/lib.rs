@@ -224,8 +224,9 @@ pub struct AppState {
     db: Mutex<Database>,
     /// Read-only connections for commands that only read (WAL: they see the last committed
     /// state and neither wait for a save nor hold one up); several, so one long read (the task
-    /// list, the graph) does not hold up the small reads of a page switch. Empty when they could
-    /// not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
+    /// list, the graph) does not hold up the small reads of a page switch. The one after the
+    /// first [`READERS`] is for slow reads nobody waits for ([`background_read`]). Empty when they
+    /// could not be opened; reads then use `db`. Never held while taking `db`, or the other way round.
     readers: Vec<Mutex<Database>>,
     /// The reader to wait for when all are busy (round robin).
     next_reader: AtomicUsize,
@@ -251,8 +252,21 @@ pub struct AppState {
     caps: Mutex<Capabilities>,
 }
 
-/// Read-only connections of [`AppState`].
+/// Read-only connections of [`AppState`] for the reads of views and page switches.
 const READERS: usize = 3;
+
+/// Runs a slow read that no view waits for (tag suggestions, duplicate hints, unlinked mentions
+/// of the opened page) on a thread of its own with the background connection: it holds neither a
+/// worker of the async runtime nor one of the readers the next page switch needs. Such reads
+/// queue behind each other instead.
+pub(crate) async fn background_read<T: Send + 'static>(
+    app: tauri::AppHandle,
+    f: impl FnOnce(&Database) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>().background_reader()))
+        .await
+        .map_err(|e| Error::State(e.to_string()))?
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // A panic while holding the lock leaves SQLite consistent (transactions roll back).
@@ -265,17 +279,25 @@ impl AppState {
     }
     /// The connection for commands that only read (see [`AppState::reader`]).
     fn reader(&self) -> MutexGuard<'_, Database> {
-        if self.readers.is_empty() {
+        let readers = &self.readers[..self.readers.len().min(READERS)];
+        if readers.is_empty() {
             return lock(&self.db);
         }
-        for r in &self.readers {
+        for r in readers {
             match r.try_lock() {
                 Ok(g) => return g,
                 Err(std::sync::TryLockError::Poisoned(e)) => return e.into_inner(),
                 Err(std::sync::TryLockError::WouldBlock) => {}
             }
         }
-        lock(&self.readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len()])
+        lock(&readers[self.next_reader.fetch_add(1, Ordering::Relaxed) % readers.len()])
+    }
+    /// The connection for slow reads nobody waits for (see [`background_read`]).
+    fn background_reader(&self) -> MutexGuard<'_, Database> {
+        match self.readers.get(READERS) {
+            Some(r) => lock(r),
+            None => self.reader(),
+        }
     }
     /// A fresh read-only connection for one long read (Markdown mirror, export, backup), so
     /// neither connection above is held meanwhile; `None` falls back to the main one.
@@ -4734,7 +4756,7 @@ pub fn run() {
             let keys = provider_keys(&dir, &settings.providers);
             let ai = AiRuntime::new(settings, &keys, &proxy_passwords);
 
-            let readers = match (0..READERS)
+            let readers = match (0..=READERS)
                 .map(|_| Database::open_read_only(dir.join(datadir::DB_FILE)))
                 .collect::<arcalo_core::Result<Vec<_>>>()
             {
