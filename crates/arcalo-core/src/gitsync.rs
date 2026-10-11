@@ -4220,9 +4220,21 @@ mod safety_tests {
         {
             note("b", f, t);
         }
-        sync(&git, &req("b", false)).unwrap();
+        let first_b = sync(&git, &req("b", false)).unwrap();
+        eprintln!("DIAG first b: {first_b:?}");
+        let rb = base.join("b/git-sync");
+        eprintln!("DIAG record: {:?}", fs::read_to_string(pending_file(&rb)));
+        eprintln!("DIAG start: {:?}", fs::read_to_string(rb.join(".git").join(START_FILE)));
+        eprintln!("DIAG status: {}", sh(&rb, &["status", "--porcelain", "--ignored"]));
+        eprintln!("DIAG ls: {}", sh(&rb, &["ls-files", "--eol"]));
+        eprintln!("DIAG kept: {:?}", fs::read_to_string(rb.join(KEPT_FILE)));
         note("b", "Notiz.md", "neuester Stand von B\n");
-        assert!(sync(&git, &req("b", false)).unwrap().committed);
+        let second_b = sync(&git, &req("b", false)).unwrap();
+        eprintln!("DIAG second b: {second_b:?}");
+        eprintln!("DIAG record2: {:?}", fs::read_to_string(pending_file(&rb)));
+        eprintln!("DIAG status2: {}", sh(&rb, &["status", "--porcelain"]));
+        eprintln!("DIAG worktree Notiz: {:?}", fs::read(rb.join("Notiz.md")));
+        assert!(second_b.committed);
         let commits = sh(&bare, &["rev-list", "--count", "main"]);
 
         // The backup is restored on a: the mirror is the old state, one note edited since then
